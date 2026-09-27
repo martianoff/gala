@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -73,8 +74,8 @@ func TestNoTypeErasureInGeneratedGo(t *testing.T) {
 	// mean different things. Examples silently ceasing to transpile is the
 	// more serious of the two and would otherwise hide behind slack in the
 	// exemption count. Both sit a little above their current values (7 and
-	// 57), so ordinary additions do not trip them.
-	const maxSkipped, maxExempt = 15, 70
+	// 9), so ordinary additions do not trip them.
+	const maxSkipped, maxExempt = 15, 12
 	require.LessOrEqual(t, skipped, maxSkipped,
 		"%d examples failed to transpile in this harness (ceiling %d). Each one is "+
 			"a file this guard no longer checks; find out why before raising this.",
@@ -106,13 +107,15 @@ func TestNoTypeErasureInGeneratedGo(t *testing.T) {
 // sourceRequestsAny reports whether the GALA source names `any` itself, in
 // which case `any` in the output is what was asked for rather than a fallback.
 // Comments are stripped so a note mentioning the word does not grant an
-// exemption.
+// exemption, and so are type-parameter constraints: `[T any]` is how GALA
+// spells an unconstrained type parameter, not a request for an `any` value.
 func sourceRequestsAny(src string) bool {
 	for _, line := range strings.Split(src, "\n") {
 		code := line
 		if i := strings.Index(code, "//"); i >= 0 {
 			code = code[:i]
 		}
+		code = typeParamListRE.ReplaceAllStringFunc(code, dropAnyConstraints)
 		for _, f := range strings.FieldsFunc(code, func(r rune) bool {
 			return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
 		}) {
@@ -122,6 +125,27 @@ func sourceRequestsAny(src string) bool {
 		}
 	}
 	return false
+}
+
+// typeParamListRE matches one innermost bracketed list: a type-parameter list
+// (`[K comparable, V any]`) or a type-argument list (`[string, any]`).
+var typeParamListRE = regexp.MustCompile(`\[[^\[\]]*\]`)
+
+// anyConstraintRE matches one type-parameter declaration constrained by any:
+// a name followed by `any`. A bare `any` type argument has no name before it
+// and is left alone.
+var anyConstraintRE = regexp.MustCompile(`^\s*[A-Za-z_][A-Za-z0-9_]*\s+any\s*$`)
+
+// dropAnyConstraints removes the `any` constraints from a bracketed list,
+// keeping every other entry.
+func dropAnyConstraints(list string) string {
+	entries := strings.Split(list[1:len(list)-1], ",")
+	for i, e := range entries {
+		if anyConstraintRE.MatchString(e) {
+			entries[i] = strings.TrimSuffix(strings.TrimSpace(e), "any")
+		}
+	}
+	return "[" + strings.Join(entries, ",") + "]"
 }
 
 // findErasedTypes returns the positions in generated Go where a type is `any`

@@ -9,6 +9,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 1. [Project Structure](#1-project-structure)
 2. [Variable Declarations](#2-variable-declarations)
 3. [Functions](#3-functions)
+   - [Local Functions](#local-functions)
    - [Named Arguments](#named-arguments)
    - [Default Parameter Values](#default-parameter-values)
 4. [Types and Structs](#4-types-and-structs)
@@ -234,6 +235,31 @@ func square(x int) int = x * x
 >     }
 > }
 > ```
+
+### Local Functions
+Named functions and methods are declared only at the top level of a file. A
+function local to a body is a [lambda](#lambda-expressions) bound to a `val`; a
+lambda states its result type after the parameter list, exactly where a
+function does:
+
+```gala
+func report(scores Array[int]) string {
+    val clamp = (s int) int => if (s < 0) 0 else s
+    return scores.Map((s) => s"${clamp(s)}").MkString(", ")
+}
+```
+
+A recursive local helper is declared through `var` and then assigned, so the
+lambda can refer to it:
+
+```gala
+var fact func(int) int
+fact = (n int) => if (n <= 1) 1 else n * fact(n - 1)
+```
+
+A named `func` inside a body is rejected with
+[GALA-E0052](errors/GALA-E0052.md), whose hint spells out the equivalent lambda.
+A lambda takes no type parameters, so a generic helper stays at the top level.
 
 ### Parameters
 Function parameters can be explicitly marked as `val` or `var`. By default, they are `val` (immutable).

@@ -5025,18 +5025,7 @@ func recordParamDefault(exprs *map[int]transpiler.DefaultExpr, i int, pctx *gram
 // tokens keeps every space, newline and comment as written.
 func paramDefaultSource(pctx *grammar.ParameterContext) (transpiler.DefaultExpr, grammar.IExpressionContext) {
 	exprCtx := pctx.ParamDefault().(*grammar.ParamDefaultContext).Expression()
-	return transpiler.DefaultExpr{Text: sourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}, exprCtx
-}
-
-// sourceText returns the source characters a rule context spans, whitespace
-// included. It falls back to GetText() only when the tokens carry no input
-// stream (a tree built by hand rather than parsed).
-func sourceText(ctx antlr.ParserRuleContext) string {
-	start, stop := ctx.GetStart(), ctx.GetStop()
-	if start == nil || stop == nil || start.GetInputStream() == nil || stop.GetStop() < start.GetStart() {
-		return ctx.GetText()
-	}
-	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
+	return transpiler.DefaultExpr{Text: transpiler.SourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}, exprCtx
 }
 
 // checkImportPathsWellFormed rejects an import whose path no package can have:

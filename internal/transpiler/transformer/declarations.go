@@ -64,8 +64,9 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		return decl, nil, err
 	}
 	if funcCtx := ctx.FunctionDeclaration(); funcCtx != nil {
-		decl, err := t.transformFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
-		return decl, nil, err
+		// transformDeclaration only sees statements inside a body; top-level
+		// functions arrive through transformTopLevelDeclaration.
+		return nil, nil, checkNestedFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
 		decls, err := t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))

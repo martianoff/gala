@@ -3569,3 +3569,14 @@ gala_exec_test(
     src = "tuple_match_irrefutable.gala",
     expected = "tuple_match_irrefutable.out",
 )
+
+# Local functions are lambdas bound to a val; a named func inside a body is
+# GALA-E0052. Covers the shapes that diagnostic points at: expression and block
+# lambdas with a stated result type, a recursive lambda through var, and a
+# generic helper kept at the top level.
+gala_exec_test(
+    name = "local_function_lambda",
+    src = "local_function_lambda.gala",
+    expected = "local_function_lambda.out",
+    deps = ["//collection_immutable"],
+)
