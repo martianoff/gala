@@ -3524,6 +3524,18 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A type named like a type parameter (`A`, `T`, `V`, Go's `testing.B`) is an
+# ordinary type; only a generic declaration's own parameters are type
+# parameters, and they shadow a same-named package type. Covers lambdas over
+# collections of such types, a match yielding one, a type parameter shadowing
+# a package struct, and a multi-letter type parameter.
+gala_exec_test(
+    name = "single_letter_type_names",
+    src = "single_letter_type_names.gala",
+    expected = "single_letter_type_names.out",
+    deps = ["//collection_immutable"],
+)
+
 gala_exec_test(
     name = "generic_type_param_none",
     src = "generic_type_param_none.gala",

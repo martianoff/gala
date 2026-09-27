@@ -963,11 +963,11 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 				break
 			}
 		}
-		// Direct map lookup, bypassing the single-uppercase-letter fallback in
-		// isActiveTypeParam — that fallback fires when activeTypeParams is empty
-		// (e.g. inside a non-generic function whose body matches on a generic
-		// type), and would otherwise let us emit a type-param Go signature
-		// for a function that doesn't declare it.
+		// Only a parameter the enclosing declaration binds may become the
+		// result type. isActiveTypeParam also accepts a callee's unbound
+		// placeholder (e.g. inside a non-generic function whose body matches
+		// on a generic type), which would emit a type-param Go signature for
+		// a function that doesn't declare it.
 		if sharedTypeParam != nil && t.activeTypeParams[sharedTypeParam.String()] {
 			t.traceType(nil, sharedTypeParam, "match-result-fallback-to-shared-type-param")
 			return sharedTypeParam, nil

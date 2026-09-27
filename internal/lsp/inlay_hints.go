@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/owenrumney/go-lsp/lsp"
@@ -173,6 +174,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 	bindings := m[2]
 
 	var variant *transpiler.SealedVariant
+	var owner *transpiler.TypeMetadata
 	for _, tm := range richAST.Types {
 		if !tm.IsSealed {
 			continue
@@ -180,6 +182,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		for idx := range tm.SealedVariants {
 			if tm.SealedVariants[idx].Name == constructorName {
 				variant = &tm.SealedVariants[idx]
+				owner = tm
 				break
 			}
 		}
@@ -205,9 +208,13 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 			continue
 		}
 		if i < len(variant.FieldTypes) {
+			// A field typed by the sealed type's own type parameter has no
+			// type to show until the subject is known; any other name — a
+			// user type called `A` included — is a real type. Compare the
+			// display form: metadata loaded from another package can spell
+			// the parameter `std.T` or `Immutable[T]`.
 			typeName := cleanGoTypeForDisplay(variant.FieldTypes[i].String())
-			// Skip unresolved type parameters (single uppercase letter like T, U, A, B)
-			if len(typeName) == 1 && typeName[0] >= 'A' && typeName[0] <= 'Z' {
+			if slices.Contains(owner.TypeParams, typeName) {
 				continue
 			}
 			pos := findWholeWord(line[bindingsStart:], binding)
