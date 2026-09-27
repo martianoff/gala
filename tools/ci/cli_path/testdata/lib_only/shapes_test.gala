@@ -1,0 +1,7 @@
+package libonly
+
+import . "martianoff/gala/test"
+
+func TestCircleArea(t T) T = Eq(t, Area(Circle(2)), 12)
+
+func TestRectArea(t T) T = Eq(t, Area(Rect(3, 4)), 12)

@@ -1,0 +1,5 @@
+package b
+
+// The CLI-path harness rewrites "label-v1" to "label-v2" between builds and
+// expects both executables to pick the change up.
+func Label() string = "label-v1"

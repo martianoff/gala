@@ -1,0 +1,243 @@
+name: CLI path and downstream
+
+# The other PR lanes build GALA with Bazel from the sources in this repository.
+# Nobody outside this repository builds that way: users run the `gala` binary,
+# which transpiles against a snapshot of the stdlib embedded in the binary,
+# extracts it into GALA_HOME, and keeps per-project build workspaces and caches
+# there. Bugs in any of that — a stdlib file missing from the embedded
+# snapshot, a stale build workspace, a Windows path or line-ending problem —
+# were invisible to CI and surfaced in downstream projects weeks later.
+#
+# This workflow builds the CLI from the PR the way a release does, then uses
+# only that binary:
+#
+#   cli-examples    `gala run` over the single-file examples, stdout vs .out
+#   cli-fixtures    build/run/test over project layouts in
+#                   tools/ci/cli_path/testdata, including a warm-vs-fresh
+#                   GALA_HOME comparison after an edit
+#   downstream      build and test real downstream projects at pinned refs
+#
+# The first two run on Linux AND Windows; the Windows lane is the point for
+# drive-letter paths, .exe names, CRLF checkouts and BOM-prefixed sources.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+
+# Checkouts, artifacts and builds only; the token never needs to write.
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-cli:
+    name: Build gala CLI (release-style)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # workspace_status.sh stamps the version from `git describe`, as
+          # the release build does, which needs the tags.
+          fetch-depth: 0
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: cli-path-build
+          repository-cache: true
+
+      # Same target, stamping and platforms as release.yml. Windows is
+      # cross-compiled here rather than built on a Windows runner: the binary
+      # is pure Go, and one Linux build job is several times faster than a
+      # cold Bazel on windows-latest.
+      - name: Build linux/amd64 and windows/amd64 binaries
+        run: |
+          set -euo pipefail
+          chmod +x tools/workspace_status.sh
+          mkdir -p dist
+          for target in linux_amd64: windows_amd64:.exe; do
+            platform=${target%%:*}
+            ext=${target#*:}
+            bazel build //cmd/gala:gala \
+              --platforms="@rules_go//go/toolchain:${platform}" \
+              --stamp --workspace_status_command=tools/workspace_status.sh
+            cp "bazel-bin/cmd/gala/gala_/gala${ext}" "dist/gala-${platform}${ext}"
+          done
+          ls -l dist
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: gala-cli
+          path: dist/
+          retention-days: 3
+
+  cli-examples:
+    name: CLI examples (${{ matrix.os }})
+    needs: build-cli
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Download gala CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gala-cli
+          path: ${{ runner.temp }}/gala-cli
+
+      - name: Select binary
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/gala-cli"
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$dir/gala-windows_amd64.exe"; else bin="$dir/gala-linux_amd64"; chmod +x "$bin"; fi
+          echo "GALA=$bin" >> "$GITHUB_ENV"
+          "$bin" version
+
+      # A fresh GALA_HOME per job (run_examples.sh puts it under the work dir).
+      - name: gala run over examples/
+        run: tools/ci/cli_path/run_examples.sh "${RUNNER_TEMP}/cli-examples"
+
+  cli-fixtures:
+    name: CLI fixtures (${{ matrix.os }}, ${{ matrix.fixture }})
+    needs: build-cli
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # One job per layout, so a failing layout names itself in the check
+        # list and the others stay independently green. Adding a layout: a
+        # directory under tools/ci/cli_path/testdata, a fixture_<name>
+        # function in run_fixtures.sh, and an entry here.
+        fixture: [root_main, cmd_app, nested, lib_only, sequence]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Download gala CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gala-cli
+          path: ${{ runner.temp }}/gala-cli
+
+      - name: Select binary
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/gala-cli"
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$dir/gala-windows_amd64.exe"; else bin="$dir/gala-linux_amd64"; chmod +x "$bin"; fi
+          echo "GALA=$bin" >> "$GITHUB_ENV"
+          "$bin" version
+
+      - name: Run fixture
+        run: tools/ci/cli_path/run_fixtures.sh "${RUNNER_TEMP}/cli-fixtures" "${{ matrix.fixture }}"
+
+  downstream:
+    name: Downstream ${{ matrix.name }}
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each downstream project is built with the PR's CLI, the way its own
+        # CI builds it (`gala build` / `gala test` against a released CLI).
+        #
+        # Refs are PINNED, for the reason perf-real-build.yml gives: a moving
+        # ref makes every run vary two things at once, and breakage that lands
+        # in a downstream repository would redden whichever gala PR ran next.
+        # downstream-drift.yml is the lane that watches moving refs.
+        #
+        # Bumping a pin: pick the downstream commit (normally the head of its
+        # default branch), run this workflow against master with it via a
+        # throwaway PR or workflow_dispatch, and update `ref` in the same PR as
+        # whatever change needed it. A red run right after a bump is then
+        # attributable to the bump. Adding a project is one entry here.
+        #
+        # goflags: gala-tui's root package peaks at ~10 GB RSS while compiling,
+        # so its packages are compiled one at a time, as its own CI does.
+        include:
+          - name: gala-tui
+            repo: martianoff/gala-tui
+            ref: 175ee9d1564cef75fad555815079d3a17bd53c29
+            commands: test
+            goflags: -p=1
+          - name: gala-server
+            repo: martianoff/gala-server
+            ref: c68fc093eb6b2598b1b3a4f2fe9e45404a0ce57f
+            commands: build test
+            goflags: ""
+          - name: gala-acp
+            repo: martianoff/gala-acp
+            ref: b79743ba1faa2cfd1a5cc24e36f80cfaa4c12a85
+            commands: test
+            goflags: ""
+    steps:
+      - name: Checkout ${{ matrix.repo }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.ref }}
+          path: downstream
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Download gala CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gala-cli
+          path: ${{ runner.temp }}/gala-cli
+
+      - name: Build and test
+        working-directory: downstream
+        env:
+          GALA_HOME: ${{ runner.temp }}/gala-home
+          GOFLAGS: ${{ matrix.goflags }}
+          COMMANDS: ${{ matrix.commands }}
+        run: |
+          set -euo pipefail
+          gala="${RUNNER_TEMP}/gala-cli/gala-linux_amd64"
+          chmod +x "$gala"
+          "$gala" version
+          for cmd in $COMMANDS; do
+            echo "::group::gala $cmd"
+            start=$(date +%s)
+            "$gala" "$cmd"
+            echo "gala $cmd: $(( $(date +%s) - start ))s"
+            echo "::endgroup::"
+          done
