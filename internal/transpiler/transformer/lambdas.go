@@ -21,17 +21,8 @@ import (
 //            wrapBlockReturnsInSome
 
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
-	// An initializer in a typed slot (e.g. `val f func(int) int = (x) => x + 1`)
-	// threads the declared signature here so the otherwise context-free lambda
-	// resolves its params/return to the declared types instead of falling back to
-	// `any`. Consume the hint so it applies to exactly this lambda and does not
-	// leak into nested body lambdas (curried `(a) => (b) => ...`), which receive
-	// their own decomposed expectation from transformLambdaWithExpectedType.
-	if t.expectedLambdaParamTypes != nil || t.expectedLambdaRetType != nil {
-		params, ret := t.expectedLambdaParamTypes, t.expectedLambdaRetType
-		t.expectedLambdaParamTypes, t.expectedLambdaRetType = nil, nil
-		return t.transformLambdaWithExpectedType(ctx, ret, params, true)
-	}
+	// A lambda in a typed slot never reaches here: the slot lowers it through
+	// lowerAgainst. This is the context-free form.
 	return t.transformLambdaWithExpectedType(ctx, nil, nil, true)
 }
 
@@ -184,31 +175,17 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	}
 	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
 
-	// Curried lambda: when this lambda's return type is itself a function type
-	// and the body is another lambda, thread the decomposed signature into the
-	// body lambda so its params/return resolve to the declared types instead of
-	// `any`. Set here (and cleared after the body transform) so it reaches only
-	// the body's bare lambda, which consumes it in transformLambda.
-	// restoreInner is idempotent: the eager call after the body preserves the
-	// success-path timing the code below depends on, and the defer covers the
-	// two error returns in between. No input is known to observe the
-	// difference — the enclosing setter already restores via defer — so this
-	// is about the invariant holding locally rather than by the caller's good
-	// behaviour. See scoped_state.go.
-	prevInnerParams, prevInnerRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
-	restoreInner := func() {
-		t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
-	}
-	defer restoreInner()
+	// The body is lowered in a fresh context: its expected type is this
+	// lambda's result type, never the slot type the lambda itself fills.
+	var bodyExpected transpiler.Type
 	if retType != nil && retType != ExpectedVoid {
-		if innerRet, innerParams, ok := t.lambdaExpectation(t.astTypeToTranspilerType(retType)); ok {
-			t.expectedLambdaParamTypes = innerParams
-			t.expectedLambdaRetType = innerRet
+		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || !containsAny(retType) {
+			bodyExpected = rt
 		}
 	}
 
 	if ctx.Block() != nil {
-		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue)
+		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodyExpected)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +194,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	} else if ctx.Expression() != nil {
-		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType)
+		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodyExpected)
 		if err != nil {
 			return nil, err
 		}
@@ -226,7 +203,6 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	}
-	restoreInner()
 
 	// Build the function literal
 	funcType := &ast.FuncType{
@@ -253,13 +229,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // when the expected return type is already concrete (caller keeps its own)
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
-func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool) (*ast.BlockStmt, ast.Expr, error) {
+func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodyExpected transpiler.Type) (*ast.BlockStmt, ast.Expr, error) {
 	// Signal to transformBlock that the lambda body's last expression is
 	// promoted to the implicit return when this lambda is value-returning.
 	// Without this, a trailing bare `match` whose value becomes the lambda's
 	// return would be marked statement-position and forced to void.
 	if !isVoidExpected {
 		t.blockLastStmtIsValue = true
+		t.blockLastValueExpected = bodyExpected
 	}
 	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
@@ -383,8 +360,14 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
 // Returns (body, inferredReturnType, error). Extracted from
 // transformLambdaWithExpectedType as part of A6.
-func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool) (*ast.BlockStmt, ast.Expr, error) {
-	expr, err := t.transformExpression(ctx.Expression())
+func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodyExpected transpiler.Type) (*ast.BlockStmt, ast.Expr, error) {
+	var expr ast.Expr
+	var err error
+	if t.needsExpectedType(ctx.Expression()) {
+		expr, err = t.lowerAgainst(ctx.Expression(), bodyExpected, true)
+	} else {
+		expr, err = t.transformExpression(ctx.Expression())
+	}
 	if err != nil {
 		return nil, nil, err
 	}

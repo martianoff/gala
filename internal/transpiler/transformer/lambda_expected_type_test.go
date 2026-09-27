@@ -134,6 +134,128 @@ func main() {
 	}
 }
 
+// TestSealedVariantLambdaTypeArgs covers the same two-phase inference for a
+// case constructor of a generic sealed type.
+func TestSealedVariantLambdaTypeArgs(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	for _, ctor := range []string{"Ended(X = 5, F = (v) => v * 2)", "Ended(5, (v) => v * 2)"} {
+		t.Run(ctor, func(t *testing.T) {
+			out, err := trans.Transpile(`package main
+
+sealed type Ev[T any] {
+    case Ended(X T, F func(T) T)
+    case Idle()
+}
+
+func run(e Ev[int]) int = e match {
+    case Ended(x, f) => f(x)
+    case Idle() => 0
+}
+
+func main() {
+    Println(run(`+ctor+`))
+}`, "sealed_variant_lambda_test.gala")
+			require.NoError(t, err)
+			body := out[strings.Index(out, "func main()"):]
+			assert.Contains(t, body, "Ended[int]{}.Apply(")
+			assert.Contains(t, body, "func(v int) int {")
+		})
+	}
+}
+
+// TestNestedIfInBranchLambdaBody pins the lambda boundary: an if-expression
+// inside the body of a branch lambda is lowered against the lambda's own result
+// type (`int`), never the slot type the branching expression fills
+// (`func(int) int`).
+func TestNestedIfInBranchLambdaBody(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "typed val, expression body",
+			input: `package main
+
+func main() {
+    val c = true
+    val f func(int) int = if (c) (x) => if (x > 0) x else 0 - x else (x) => x
+    Println(f(-3))
+}`,
+		},
+		{
+			name: "expression-bodied function, block body",
+			input: `package main
+
+func mk(c bool) func(int) int = if (c) (x) => {
+    val y = if (x > 0) x else 0 - x
+    y
+} else (x) => x
+
+func main() {
+    Println(mk(true)(-4))
+}`,
+		},
+		{
+			name: "return statement",
+			input: `package main
+
+func ret(c bool) func(int) int {
+    return if (c) (x) => if (x > 0) x else 0 - x else (x) => x
+}
+
+func main() {
+    Println(ret(true)(-5))
+}`,
+		},
+		{
+			name: "struct field, block body",
+			input: `package main
+
+struct Holder(F func(int) int)
+
+func main() {
+    val c = true
+    val h = Holder(F = if (c) (x) => {
+        val y = if (x > 0) x else 0 - x
+        y
+    } else (x) => x)
+    Println(h.F(-6))
+}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "nested_if_lambda_test.gala")
+			require.NoError(t, err)
+			assert.Equal(t, 1, strings.Count(out, "func() func(int) int {"), "only the outer IIFE returns the slot type")
+			assert.Contains(t, out, "func() int {", "the inner IIFE returns the lambda's result type")
+		})
+	}
+}
+
+// TestIfBetweenThunkReturningFunctions pins the function-type encoding for a
+// function that returns a zero-parameter function: `func(int) func() int`, not
+// `func(int, void) int`.
+func TestIfBetweenThunkReturningFunctions(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	out, err := trans.Transpile(`package main
+
+func thunk(n int) func() int = () => n * 2
+
+func main() {
+    val c = true
+    val g = if (c) thunk else thunk
+    Println(g(7)())
+}`, "thunk_if_test.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "func() func(int) func() int {")
+}
+
 // TestGenericCtorLambdaUninferableTypeArg pins the diagnostic for a lambda
 // parameter whose type only the constructor's unbound type parameter could
 // give: GALA-E0033 at the parameter, not Go's "undefined: T".

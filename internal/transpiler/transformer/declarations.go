@@ -204,40 +204,16 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 	}
 
-	// Downward type-inference for sealed-variant constructors (context 1):
-	// when the val carries an explicit type annotation (`val c Cmd[int] = NoCmd()`),
-	// push the declared type onto expectedArgTypes so the RHS call dispatcher
-	// can pick up the parent sealed type's type arguments and emit
-	// `NoCmd[int]{}.Apply()` instead of an uninstantiated `NoCmd{}.Apply()`.
-	// transformCallWithArgsCtx consumes the top hint on entry so this only
-	// affects the immediately-enclosing call (B1).
+	// An explicit type annotation (`val c Cmd[int] = NoCmd()`, `val f func(int) int
+	// = (x) => x + 1`) is the initializer's expected type (see lowerAgainst).
+	var declaredType transpiler.Type
 	if ctx.Type_() != nil && len(namesCtx) == 1 {
-		typeExpr, terr := t.transformType(ctx.Type_())
-		if terr == nil {
-			declaredType := t.astTypeToTranspilerType(typeExpr)
-			if declaredType != nil && !declaredType.IsNil() {
-				release := t.expectedArgTypes.push(declaredType)
-				defer release()
-			}
-			// When the declared type is a function type and the initializer is a
-			// bare lambda (directly or via if-expression branches), thread the
-			// declared signature into the lambda so untyped params resolve to the
-			// declared types instead of `any` (which would emit non-compiling Go).
-			if expectedRetType, expectedParams, ok := t.lambdaExpectation(declaredType); ok {
-				prevParams, prevRet, prevIf := t.expectedLambdaParamTypes, t.expectedLambdaRetType, t.expectedIfExprType
-				t.expectedLambdaParamTypes = expectedParams
-				t.expectedLambdaRetType = expectedRetType
-				t.expectedIfExprType = typeExpr
-				defer func() {
-					t.expectedLambdaParamTypes = prevParams
-					t.expectedLambdaRetType = prevRet
-					t.expectedIfExprType = prevIf
-				}()
-			}
+		if typeExpr, terr := t.transformType(ctx.Type_()); terr == nil {
+			declaredType = t.astTypeToTranspilerType(typeExpr)
 		}
 	}
 
-	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+	rhsExprs, err := t.transformExpressionListAgainst(ctx.ExpressionList().(*grammar.ExpressionListContext), declaredType)
 	if err != nil {
 		return nil, err
 	}
@@ -516,24 +492,19 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		}
 	}
 
-	// Mirror transformValDeclaration: push an explicit declared type onto
-	// expectedArgTypes so RHS sealed-variant constructors can pick up the
-	// parent's concrete type args (B1).
+	// As in transformValDeclaration, an explicit type is the initializer's
+	// expected type.
+	var declaredType transpiler.Type
 	if ctx.Type_() != nil && len(namesCtx) == 1 {
-		typeExpr, terr := t.transformType(ctx.Type_())
-		if terr == nil {
-			declaredType := t.astTypeToTranspilerType(typeExpr)
-			if declaredType != nil && !declaredType.IsNil() {
-				release := t.expectedArgTypes.push(declaredType)
-				defer release()
-			}
+		if typeExpr, terr := t.transformType(ctx.Type_()); terr == nil {
+			declaredType = t.astTypeToTranspilerType(typeExpr)
 		}
 	}
 
 	rhsExprs := make([]ast.Expr, 0)
 	if ctx.ExpressionList() != nil {
 		var err error
-		rhsExprs, err = t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+		rhsExprs, err = t.transformExpressionListAgainst(ctx.ExpressionList().(*grammar.ExpressionListContext), declaredType)
 		if err != nil {
 			return nil, err
 		}
@@ -864,55 +835,18 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 }
 
 // transformExpressionBodiedFunction handles the `func foo() T = expr` form by
-// transforming the expression into a single-return block body. It threads
-// expected types into lambdas and if-expressions when the
-// function has a declared return type. Extracted from transformFunctionDeclaration
-// as part of A5.
+// transforming the expression into a single-return block body. A lambda,
+// if-expression or match body is lowered against the declared return type.
 func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, funcType *ast.FuncType) (*ast.BlockStmt, error) {
 	var expr ast.Expr
 	var err error
-
-	// If the expression is a lambda and the return type resolves to a function
-	// type, pass expected types to the lambda for better inference.
-	lambdaCtx := t.findLambdaInExpression(exprCtx)
-	if lambdaCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-		if expectedRetType, expectedParams, ok := t.lambdaExpectation(t.astTypeToTranspilerType(funcType.Results.List[0].Type)); ok {
-			expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParams, false)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	// if-expression or match choosing between lambdas for a function-typed
-	// result: lower the branches against that type.
-	if expr == nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-		expr, _, err = t.transformBranchingInSlot(exprCtx, t.astTypeToTranspilerType(funcType.Results.List[0].Type))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// if-expression with expected return type.
-	if expr == nil {
-		ifExprCtx := t.findIfExpressionInExpression(exprCtx)
-		if ifExprCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-			expectedType := funcType.Results.List[0].Type
-			oldExpected := t.expectedIfExprType
-			t.expectedIfExprType = expectedType
-			expr, err = t.transformIfExpression(ifExprCtx)
-			t.expectedIfExprType = oldExpected
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if expr == nil {
+	if funcType.Results != nil && len(funcType.Results.List) > 0 && t.needsExpectedType(exprCtx) {
+		expr, err = t.lowerAgainst(exprCtx, t.astTypeToTranspilerType(funcType.Results.List[0].Type), false)
+	} else {
 		expr, err = t.transformExpression(exprCtx)
-		if err != nil {
-			return nil, err
-		}
+	}
+	if err != nil {
+		return nil, err
 	}
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
 		expr = t.wrapWithAssertion(expr, funcType.Results.List[0].Type)

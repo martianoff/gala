@@ -163,38 +163,13 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 		if retCtx.Expression() != nil {
 			var expr ast.Expr
 			var err error
-			// If the return expression is an if-expression and we know the
-			// enclosing function's return type, set expectedIfExprType so that the
-			// if-expression IIFE gets a concrete return type instead of falling back
-			// to `any` when HM type inference fails in multi-file batch mode.
-			ifExprCtx := t.findIfExpressionInExpression(retCtx.Expression())
-			// If the return expression is a bare lambda and the enclosing
-			// function returns a function type, propagate the expected param
-			// and return types into the lambda. This mirrors what
-			// transformExpressionBodiedFunction does for `func f() T = lambda`,
-			// without which the lambda's untyped parameters fall through as
-			// `any` and downstream match expressions that scrutinize them
-			// erase their generic type arguments (e.g. `Try[Msg]` → `Try[any]`).
-			lambdaCtx := t.findLambdaInExpression(retCtx.Expression())
-			if lambdaCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-				if expectedRetType, expectedParams, ok := t.lambdaExpectation(t.currentFuncReturnType); ok {
-					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParams, false)
-				}
-			}
-			// An if-expression or match choosing between lambdas for a
-			// function-typed result lowers its branches against that type.
-			if expr == nil && err == nil {
-				expr, _, err = t.transformBranchingInSlot(retCtx.Expression(), t.currentFuncReturnType)
-			}
-			if expr == nil && err == nil {
-				if ifExprCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-					oldExpected := t.expectedIfExprType
-					t.expectedIfExprType = t.typeToExpr(t.currentFuncReturnType)
-					expr, err = t.transformIfExpression(ifExprCtx)
-					t.expectedIfExprType = oldExpected
-				} else {
-					expr, err = t.transformExpression(retCtx.Expression())
-				}
+			// A lambda, if-expression or match takes its types from the
+			// enclosing function's return type.
+			retExpr := retCtx.Expression()
+			if t.needsExpectedType(retExpr) {
+				expr, err = t.lowerAgainst(retExpr, t.currentFuncReturnType, false)
+			} else {
+				expr, err = t.transformExpression(retExpr)
 			}
 			if err != nil {
 				return nil, err
@@ -245,22 +220,14 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		return nil, err
 	}
 
-	// Downward type-inference for sealed-variant constructors on the RHS:
-	// when the LHS is a single bare variable (`failure = Some(...)`) and that
-	// variable's declared type carries concrete type arguments
-	// (e.g. `Option[string]`), push the LHS type onto the expected-type stack
-	// so the RHS call dispatcher can pick up the parent sealed type's type
-	// arguments and emit `Some[string]{}.Apply(...)` instead of an
-	// uninstantiated `Some{}.Apply(...)`. Mirrors the same hint pushed by val
-	// declarations with explicit type annotations (declarations.go).
+	// A single bare variable's type is the RHS's expected type, so
+	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`.
 	rhsListCtx := ctx.GetChild(2).(*grammar.ExpressionListContext)
+	var lhsType transpiler.Type
 	if lhsName, lhsOk := t.singleAssignmentLHSName(lhsCtx); lhsOk {
-		if lhsType := t.getValType(lhsName); !lhsType.IsNil() {
-			release := t.expectedArgTypes.push(lhsType)
-			defer release()
-		}
+		lhsType = t.getValType(lhsName)
 	}
-	rhsExprs, err := t.transformExpressionList(rhsListCtx)
+	rhsExprs, err := t.transformExpressionListAgainst(rhsListCtx, lhsType)
 	if err != nil {
 		return nil, err
 	}
@@ -535,12 +502,11 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		}
 		var stmt ast.Stmt
 		var err error
-		if valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext)); isTrailing && lastStmtIsValue && valueExpr != nil &&
-			t.branchValueUsesExpected(valueExpr, lastValueExpected) {
-			// The block's value flows into a typed slot: lower it against
-			// that type, exactly like an if-expression branch's value.
+		if valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext)); isTrailing && lastStmtIsValue &&
+			!transpiler.IsUnusable(lastValueExpected) && t.needsExpectedType(valueExpr) {
+			// The block's value fills a typed slot: lower it against that type.
 			var expr ast.Expr
-			if expr, err = t.transformBranchValue(valueExpr, lastValueExpected); err == nil {
+			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
 		} else {

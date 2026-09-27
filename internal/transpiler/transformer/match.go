@@ -1643,11 +1643,11 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 // Returns (stmts, resultType, error) where stmts are the Go statements for the body,
 // and resultType is the type (VoidType for assignments/incDec, or the expression type).
 // armExpected is the match's expected value type (nil when unknown); an
-// expression body is lowered against it (see transformBranchValue).
+// expression body is lowered against it (see lowerAgainst).
 func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armExpected transpiler.Type) ([]ast.Stmt, transpiler.Type, error) {
 	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
-		expr, err := t.transformBranchValue(exprCtx, armExpected)
+		expr, err := t.lowerAgainst(exprCtx, armExpected, true)
 		if err != nil {
 			return nil, nil, err
 		}

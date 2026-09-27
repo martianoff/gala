@@ -102,6 +102,12 @@ func (t *galaASTTransformer) toInferTypeMemoized(typ transpiler.Type, normalized
 	return &infer.TypeConst{Name: typ.String()}
 }
 
+// isInferUnit reports whether typ is the `unit` type constant.
+func isInferUnit(typ infer.Type) bool {
+	c, ok := typ.(*infer.TypeConst)
+	return ok && c.Name == "unit"
+}
+
 // fromInferType converts an infer.Type back to a transpiler.Type
 // Returns NilType for unresolved type variables (caller should check and handle)
 func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
@@ -121,14 +127,15 @@ func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 	case *infer.TypeApp:
 		if v.Name == "->" {
 			// `unit -> R` is a zero-parameter function (see toInferType).
-			if c, ok := v.Args[0].(*infer.TypeConst); ok && c.Name == "unit" {
+			if isInferUnit(v.Args[0]) {
 				return transpiler.FuncType{Results: []transpiler.Type{t.fromInferType(v.Args[1])}}
 			}
-			// This is more complex because it's curried
+			// This is more complex because it's curried. A nested `unit -> R`
+			// is the result (a returned thunk), not a further parameter.
 			params := []transpiler.Type{t.fromInferType(v.Args[0])}
 			curr := v.Args[1]
 			for {
-				if next, ok := curr.(*infer.TypeApp); ok && next.Name == "->" {
+				if next, ok := curr.(*infer.TypeApp); ok && next.Name == "->" && !isInferUnit(next.Args[0]) {
 					params = append(params, t.fromInferType(next.Args[0]))
 					curr = next.Args[1]
 				} else {

@@ -497,11 +497,7 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	if exprCtx == nil {
 		return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "a `bind` block must end with a value expression")
 	}
-	if !resultType.IsNil() {
-		release := t.expectedArgTypes.push(resultType)
-		defer release()
-	}
-	expr, err := t.transformExpression(exprCtx)
+	expr, err := t.lowerAgainst(exprCtx, resultType, true)
 	if err != nil {
 		return nil, err
 	}

@@ -67,11 +67,6 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"currentScope":            func(t *galaASTTransformer) { t.pushScope() },
 	"currentFuncReturnType":   func(t *galaASTTransformer) { t.currentFuncReturnType = transpiler.BasicType{Name: "int"} },
 	"currentMatchSubjectType": func(t *galaASTTransformer) { t.currentMatchSubjectType = transpiler.BasicType{Name: "int"} },
-	"expectedIfExprType":      func(t *galaASTTransformer) { t.expectedIfExprType = ast.NewIdent("int") },
-	"expectedLambdaParamTypes": func(t *galaASTTransformer) {
-		t.expectedLambdaParamTypes = []transpiler.Type{transpiler.BasicType{Name: "int"}}
-	},
-	"expectedLambdaRetType": func(t *galaASTTransformer) { t.expectedLambdaRetType = ast.NewIdent("int") },
 	"expectedArgTypes":      func(t *galaASTTransformer) { t.expectedArgTypes.push(transpiler.BasicType{Name: "int"}) },
 	"matchInStatementPos":   func(t *galaASTTransformer) { t.matchInStatementPos = true },
 	"loweringDefault":       func(t *galaASTTransformer) { t.loweringDefault = &defaultLowering{} },

@@ -28,6 +28,12 @@ func TestInferFuncTypeRoundTrip(t *testing.T) {
 		{"zero parameters returning a function", transpiler.FuncType{Results: []transpiler.Type{
 			transpiler.FuncType{Params: []transpiler.Type{intT}, Results: []transpiler.Type{intT}},
 		}}},
+		{"one parameter returning a thunk", transpiler.FuncType{Params: []transpiler.Type{intT}, Results: []transpiler.Type{
+			transpiler.FuncType{Results: []transpiler.Type{intT}},
+		}}},
+		{"two parameters returning a thunk", transpiler.FuncType{Params: []transpiler.Type{intT, strT}, Results: []transpiler.Type{
+			transpiler.FuncType{Results: []transpiler.Type{strT}},
+		}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

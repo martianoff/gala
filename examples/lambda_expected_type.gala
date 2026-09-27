@@ -20,7 +20,26 @@ struct Box(N int, F func() int)
 
 struct Op(F func(int) int)
 
+sealed type Task[T any] {
+    case Run(From T, F func(T) T)
+    case Skip()
+}
+
+func runTask(s Task[int]) int = s match {
+    case Run(from, f) => f(from)
+    case Skip() => 0
+}
+
 func apply(f func(int) int, x int) int = f(x)
+
+func thunk(n int) func() int = () => n * 2
+
+// The if-expression inside the branch lambda's body is lowered against the
+// lambda's result type (int), not the slot type (func(int) int).
+func absOrSelf(c bool) func(int) int = if (c) (x) => {
+    val y = if (x > 0) x else 0 - x
+    y
+} else (x) => x
 
 func pickIf(up bool) func(int) int {
     return if (up) (x) => x + 1 else (x) => x - 1
@@ -76,4 +95,13 @@ func main() {
     Println(apply(if (up) (x) => x * 5 else (x) => x * 6, 1))
     Println(pickIf(false)(1))
     Println(pickMatch(false)(1))
+
+    // Generic sealed variants, and lambda / thunk boundaries
+    Println(runTask(Run(From = 5, F = (v) => v * 4)))
+    Println(runTask(Run(6, (v) => v + 4)))
+    val abs func(int) int = if (up) (x) => if (x > 0) x else 0 - x else (x) => x
+    val pickThunk = if (up) thunk else thunk
+    Println(abs(-8))
+    Println(absOrSelf(true)(-9))
+    Println(pickThunk(7)())
 }

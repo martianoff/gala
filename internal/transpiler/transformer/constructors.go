@@ -169,9 +169,9 @@ func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.T
 }
 
 // transformTupleElementExpressions transforms each element of a tuple literal
-// with its corresponding expected type pushed onto expectedArgTypes, so that
+// against its corresponding expected type (see lowerAgainst), so that
 // sealed-variant constructors nested directly inside an element can resolve
-// their type arguments from the surrounding tuple slot (B1).
+// their type arguments from the surrounding tuple slot.
 func (t *galaASTTransformer) transformTupleElementExpressions(
 	elemExprs []grammar.IExpressionContext,
 	perElemExpected []transpiler.Type,
@@ -182,17 +182,7 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 		if i < len(perElemExpected) {
 			expected = perElemExpected[i]
 		}
-		if expected != nil && !expected.IsNil() {
-			release := t.expectedArgTypes.push(expected)
-			expr, err := t.transformExpression(eCtx)
-			release()
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, expr)
-			continue
-		}
-		expr, err := t.transformExpression(eCtx)
+		expr, err := t.lowerAgainst(eCtx, expected, true)
 		if err != nil {
 			return nil, err
 		}

@@ -26,6 +26,7 @@ type tailCtx struct {
 	paramNames []string
 	paramTypes []ast.Expr
 	retType    ast.Expr
+	expected   transpiler.Type // retType, the terminal branches' expected type
 }
 
 // tryTransformSelfTailRecursion rewrites direct self-tail-recursion in an
@@ -116,14 +117,12 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 		retType = funcType.Results.List[0].Type
 	}
 
-	// Thread the declared return type into branch lowering so nested
-	// if-expressions and lambdas in terminal branches infer correctly, matching
+	// Terminal branches are lowered against the declared return type, matching
 	// transformExpressionBodiedFunction.
-	oldExpected := t.expectedIfExprType
-	t.expectedIfExprType = retType
-	defer func() { t.expectedIfExprType = oldExpected }()
-
 	tc := &tailCtx{funcName: funcName, paramNames: paramNames, paramTypes: paramTypes, retType: retType}
+	if retType != nil {
+		tc.expected = t.astTypeToTranspilerType(retType)
+	}
 
 	ifStmt, found, err := t.buildTailIfStmt(ifExprCtx, tc)
 	if err != nil {
@@ -244,7 +243,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 
 		// Terminal value: return it.
-		e, err := t.transformExpression(exprCtx)
+		e, err := t.lowerAgainst(exprCtx, tc.expected, false)
 		if err != nil {
 			return nil, false, err
 		}
@@ -255,11 +254,7 @@ func (t *galaASTTransformer) buildTailBranch(
 	// Block branch: reuse the shared branch transform and append a terminal
 	// return when it does not already terminate. Tail self-calls hidden inside
 	// block branches are not detected in this slice.
-	var branchExpected transpiler.Type
-	if tc.retType != nil {
-		branchExpected = t.astTypeToTranspilerType(tc.retType)
-	}
-	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, branchExpected)
+	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, tc.expected)
 	if err != nil {
 		return nil, false, err
 	}
