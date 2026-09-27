@@ -2201,7 +2201,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// now-unused go_builtins import is pruned by the import cleanup pass. GALA
 	// source never spells bare `panic` — only emitted Go does, exactly like the
 	// `.Size()` sugar's `len()`.
-	return lowerPanicWrapperToBuiltin(&ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}), nil
+	return t.lowerPanicWrapperToBuiltin(&ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}), nil
 }
 
 // handleNamedArgsCall is a thin dispatcher for named-argument calls. It

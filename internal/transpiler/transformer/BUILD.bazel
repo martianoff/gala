@@ -79,6 +79,7 @@ go_test(
         "binary_type_test.go",
         "bind_test.go",
         "binding_named_like_type_test.go",
+        "block_function_tail_test.go",
         "bridge_func_type_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",

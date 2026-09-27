@@ -1193,6 +1193,13 @@ gala_exec_test(
     expected = "match_type_inference.out",
 )
 
+# A block-bodied function returns its trailing expression
+gala_exec_test(
+    name = "block_function_trailing_value",
+    src = "block_function_trailing_value.gala",
+    expected = "block_function_trailing_value.out",
+)
+
 # Match as last expression in function block body auto-returns
 gala_exec_test(
     name = "match_return_iife",

@@ -243,10 +243,14 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	// statement-position and forced to void.
 	var b *ast.BlockStmt
 	var err error
-	if isVoidExpected {
+	switch {
+	case isVoidExpected:
 		b, err = t.transformBlock(ctx.Block().(*grammar.BlockContext))
-	} else {
+	case expectsReturnValue:
 		b, err = t.transformValueBlock(ctx.Block().(*grammar.BlockContext), bodySlot)
+	default:
+		// With no value expected, only a trailing IIFE is promoted below.
+		b, err = t.transformBlockWithTail(ctx.Block().(*grammar.BlockContext), tailIIFE, bodySlot)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -300,7 +304,7 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 			// A trailing bare expression, a trailing `match` and a trailing
 			// `if (c) { a } else { b }` all carry the block's value; the shared
 			// helper covers each shape.
-			if promoted, ok := promoteTrailingValue(b, plainReturn); ok {
+			if promoted, ok := t.promoteTrailingValue(b, plainReturn); ok {
 				b.List = promoted.List
 			}
 		} else if last, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok && isIIFE(last.X) && !isVoidIIFE(last.X) {
@@ -1334,7 +1338,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	if ctx.GetBodyBlock() != nil {
 		// Partial function arm body: the trailing expression is wrapped in
 		// Some(...) below, so it is value-consumed.
-		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), slot{})
+		b, err := t.transformBlockWithTail(ctx.GetBodyBlock().(*grammar.BlockContext), tailExpr, slot{})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1814,9 +1818,9 @@ func plainReturn(ret *ast.ReturnStmt) ast.Stmt { return ret }
 // branches and recurses through promoteIfBranchValues.
 //
 // It reports ok=false when the trailing statement produces no value — a void
-// IIFE (a statement-position match whose every arm is void), or any other
-// statement kind — leaving the block as written.
-func promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.BlockStmt, bool) {
+// call, a void IIFE (a statement-position match whose every arm is void), or
+// any other statement kind — leaving the block as written.
+func (t *galaASTTransformer) promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.BlockStmt, bool) {
 	if blk == nil || len(blk.List) == 0 {
 		return nil, false
 	}
@@ -1830,7 +1834,7 @@ func promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast
 		// branch needs no value and is left as written — `if c { return x }
 		// else { panic(...) }` is what Go wants here. `return panic(...)` is
 		// not a Go expression.
-		if isNoReturnCallExpr(last.X) {
+		if t.isNoReturnCallExpr(last.X) {
 			return blk, true
 		}
 		// A void IIFE (a statement-position match whose every arm is void)
@@ -1838,9 +1842,14 @@ func promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast
 		if isVoidIIFE(last.X) {
 			return nil, false
 		}
+		// Nor does a void call such as `Println(...)`: `return Println(...)`
+		// is not Go.
+		if _, void := t.getExprTypeName(last.X).(transpiler.VoidType); void {
+			return nil, false
+		}
 		return replaceLastStmt(blk, mkReturn(&ast.ReturnStmt{Results: []ast.Expr{last.X}})), true
 	case *ast.IfStmt:
-		promoted, ok := promoteIfBranchValues(last, mkReturn)
+		promoted, ok := t.promoteIfBranchValues(last, mkReturn)
 		if !ok {
 			return nil, false
 		}
@@ -1858,24 +1867,24 @@ func promoteTrailingValue(blk *ast.BlockStmt, mkReturn func(*ast.ReturnStmt) ast
 // It applies only to a complete chain whose every branch ends in a value. An
 // `if` with no `else` has a fall-through path that produces nothing, so the
 // chain is left as written.
-func promoteIfBranchValues(stmt *ast.IfStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.IfStmt, bool) {
+func (t *galaASTTransformer) promoteIfBranchValues(stmt *ast.IfStmt, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.IfStmt, bool) {
 	if stmt.Body == nil || stmt.Else == nil {
 		return nil, false
 	}
-	body, ok := promoteTrailingValue(stmt.Body, mkReturn)
+	body, ok := t.promoteTrailingValue(stmt.Body, mkReturn)
 	if !ok {
 		return nil, false
 	}
 	var elseStmt ast.Stmt
 	switch e := stmt.Else.(type) {
 	case *ast.BlockStmt:
-		promoted, ok := promoteTrailingValue(e, mkReturn)
+		promoted, ok := t.promoteTrailingValue(e, mkReturn)
 		if !ok {
 			return nil, false
 		}
 		elseStmt = promoted
 	case *ast.IfStmt:
-		promoted, ok := promoteIfBranchValues(e, mkReturn)
+		promoted, ok := t.promoteIfBranchValues(e, mkReturn)
 		if !ok {
 			return nil, false
 		}
