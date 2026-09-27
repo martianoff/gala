@@ -285,18 +285,17 @@ Named arguments work with struct construction, `Copy()` method overrides, functi
 Parameters can have default values. When a function is called without providing a defaulted argument, the default expression is injected at the call site. Default parameters must come after required parameters.
 
 ```gala
-func connect(host string, port int = 8080, tls bool = true) Connection {
-    // ...
-}
+func connect(host string, port int = 8080, tls bool = true) string =
+    s"$host:$port tls=$tls"
 
 // Positional: omit trailing defaults
-connect("localhost")                    // port=8080, tls=true
-connect("localhost", 3000)              // tls=true
-connect("localhost", 3000, false)       // all explicit
+Println(connect("localhost"))                    // localhost:8080 tls=true
+Println(connect("localhost", 3000))              // localhost:3000 tls=true
+Println(connect("localhost", 3000, false))       // localhost:3000 tls=false
 
 // Named arguments + defaults: skip any defaulted parameter
-connect("localhost", tls = false)       // port=8080
-connect(host = "localhost", port = 443) // tls=true
+Println(connect("localhost", tls = false))       // localhost:8080 tls=false
+Println(connect(host = "localhost", port = 443)) // localhost:443 tls=true
 ```
 
 Default expressions are evaluated at each call site (not once at definition time):
