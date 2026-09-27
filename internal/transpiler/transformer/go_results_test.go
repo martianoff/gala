@@ -96,6 +96,21 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 			[]string{`template.Must(template.New("x").Parse("hi"))`}, []string{"GoTry"}},
 		{"value-free if-expression of Println calls", "    if (true) fmt.Println(\"a\") else fmt.Println(\"b\")",
 			nil, nil},
+		// The arms of a statement-position match discard their values, and so
+		// does a match at the tail of such an arm: its Go call arm must not be
+		// read as the value its void arm cannot give.
+		{"match at the tail of a statement-position match arm", `    Try(strconv.Atoi("1")) match {
+        case Failure(_) => twice(1)
+        case Success(n) => {
+            strconv.Itoa(n) match {
+                case "1" => {
+                    os.Stdout.WriteString("one")
+                    os.Stdout.WriteString("\n")
+                }
+                case _ => each((_) => fmt.Println("other"))
+            }
+        }
+    }`, []string{`os.Stdout.WriteString("\n")`}, []string{"GoTry", "return each("}},
 		{"void lambda body", "    each((n) => fmt.Println(n))",
 			[]string{"fmt.Println(n)"}, []string{"GoTry"}},
 	}

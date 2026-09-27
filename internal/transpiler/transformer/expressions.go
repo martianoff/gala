@@ -1004,6 +1004,10 @@ type slot struct {
 	// error into a Failure, so a Go call there yields its plain value and
 	// panics on the error rather than producing a Try (see tryThunkValue).
 	tryThunk bool
+	// discarded: nothing reads the value filling the slot — the arms of a
+	// statement-position match. A block filling it lowers its trailing match
+	// or if as a statement, not as the block's value (see transformValueBlock).
+	discarded bool
 	// open: typ may hold placeholders for type parameters the call left
 	// unbound (an `any` fill, see inferFuncTypeSubstFromArgs, or the generic
 	// method path's default-to-any view). An open slot type never overrides

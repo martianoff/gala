@@ -471,6 +471,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	stmtPosition := t.matchInStatementPos
 	t.matchInStatementPos = false
 	defer func() { t.matchInStatementPos = stmtPosition }()
+	// In statement position every arm's value is discarded too, so an arm
+	// block's trailing match is itself a statement.
+	s.discarded = stmtPosition
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type, and the arms' enclosing return type for sealed-variant inference.

@@ -459,7 +459,14 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 // if/else chain, is its value (a value-returning lambda body or a match arm). s is
 // the slot that value fills, zero when unknown: a lambda, if or match tail is
 // lowered against it (see lowerAgainst).
+//
+// A block whose value is discarded (s.discarded: an arm of a statement-position
+// match) lowers its tail as a statement, so a trailing match there is a
+// statement-position match too rather than a value mixing value and void arms.
 func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
+	if s.discarded {
+		return t.transformBlockWithTail(ctx, tailDiscarded, slot{})
+	}
 	return t.transformBlockWithTail(ctx, tailValue, s)
 }
 
