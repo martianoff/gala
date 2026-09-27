@@ -1,0 +1,110 @@
+package main
+
+// A `.Copy(...)` override takes any expression, including a lambda. The
+// overridden field's declared type is the lambda's expected type, so untyped
+// lambda parameters are inferred from it, the same as a named constructor
+// argument.
+
+import "martianoff/gala/examples/copy_lambda_override/handlers"
+
+struct Box(N int, F func() int)
+
+struct Calc(Label string, Op func(int) int, Pair func(int, string) string)
+
+struct Hooks(OnEvent func(string), Classify func(int) Option[string])
+
+struct Cell[T any](Value T, Map func(T) T)
+
+// Source counts how often its Get() method is called.
+struct Source(var hits int)
+
+func (s *Source) Get() Calc {
+    s.hits = s.hits + 1
+    return Calc(Label = s"get${s.hits}", Op = (x) => x, Pair = (n, t) => t)
+}
+
+func twice[T any](c Cell[T]) Cell[T] = c.Copy(Map = (v) => c.Map(c.Map(v)))
+
+func main() {
+    // Zero-argument lambda.
+    val b = Box(N = 1, F = () => 1)
+    val b2 = b.Copy(F = () => 2)
+    Println(s"zero-arg: ${b2.F()} n=${b2.N}")
+
+    // Untyped parameters inferred from the field type.
+    val c = Calc(Label = "id", Op = (x) => x, Pair = (n, s) => s)
+    val c2 = c.Copy(Op = (x) => x + 1, Pair = (n, s) => s"$s#$n")
+    Println(s"inferred: ${c2.Op(41)} ${c2.Pair(7, "k")} label=${c2.Label}")
+
+    // Block body.
+    val c3 = c.Copy(Op = (x) => {
+        val doubled = x * 2
+        return doubled + 1
+    })
+    Println(s"block: ${c3.Op(10)}")
+
+    // Void lambda and a partial function.
+    var events = 0
+    val h = Hooks(OnEvent = (e) => { events = events + 1 }, Classify = { case 0 => "zero" })
+    val h2 = h.Copy(OnEvent = (e) => { events = events + 10 }, Classify = { case n if n > 0 => "positive" })
+    h.OnEvent("a")
+    h2.OnEvent("b")
+    Println(s"void: events=$events")
+    Println(s"partial: ${h2.Classify(3).GetOrElse("none")} ${h2.Classify(0).GetOrElse("none")}")
+
+    // if- and match-expression overrides.
+    val up = true
+    val b3 = b.Copy(N = if (up) 10 else 20)
+    val b4 = b.Copy(N = b.N match {
+        case 1 => 100
+        case _ => 0
+    })
+    Println(s"if: n=${b3.N} f=${b3.F()}")
+    Println(s"match: n=${b4.N}")
+
+    // By-name sugar: a plain expression for a func() field becomes a thunk.
+    val b5 = b.Copy(F = b.N + 41)
+    Println(s"by-name: ${b5.F()}")
+
+    // Generic struct: the field type mentions T, bound from the receiver.
+    val cell = Cell[int](Value = 5, Map = (v) => v * 3)
+    val cell2 = cell.Copy(Map = (v) => v - 1)
+    Println(s"generic: ${cell2.Map(cell2.Value)} ${twice(cell).Map(1)}")
+    val words = Cell[string](Value = "go", Map = (v) => v + "!")
+    Println(s"generic string: ${words.Copy(Map = (v) => v + "?").Map(words.Value)}")
+
+    // Pointer and ConstPtr receivers.
+    var mb = Box(N = 7, F = () => 7)
+    val mp = &mb
+    Println(s"pointer: ${mp.Copy(F = () => mp.N * 2).F()}")
+    val cp = &b
+    Println(s"constptr: ${cp.Copy(F = () => 9).F()}")
+
+    // Every field overridden: the receiver is still evaluated, exactly once.
+    val only = Calc(Label = "only", Op = (x) => x, Pair = (n, s) => s)
+    val all = only.Copy(Label = "all", Op = (x) => x - 1, Pair = (n, s) => s + s)
+    Println(s"all fields: ${all.Label} ${all.Op(1)} ${all.Pair(0, "ab")}")
+    var calls = 0
+    val fresh = () => {
+        calls = calls + 1
+        return Calc(Label = s"c$calls", Op = (x) => x, Pair = (n, s) => s)
+    }
+    val m1 = fresh().Copy(Label = "m1", Op = (x) => x, Pair = (n, s) => s)
+    val m2 = fresh().Copy(Op = (x) => x * 2)
+    Println(s"receiver calls: $calls ${m1.Label} ${m2.Label} ${m2.Op(4)} ${m2.Pair(0, "p")}")
+
+    // A user type's own Get() is a method call, not an Immutable unwrap.
+    var source = Source(hits = 0)
+    val src = &source
+    val got = src.Get().Copy(Op = (x) => x + 100)
+    Println(s"user Get: hits=${src.hits} ${got.Label} ${got.Op(1)}")
+
+    // Cross-package generic struct.
+    val hd = handlers.Handler[int](Name = "inc", Run = (x) => x + 1)
+    val hd2 = hd.Copy(Run = (x) => x * 10)
+    Println(s"cross-package: ${hd2.Name} ${hd2.Run(4)}")
+    val hd3 = handlers.Rename(hd, "inc2")
+    Println(s"cross-package rename: ${hd3.Name} ${hd3.Run(4)}")
+    val made = handlers.Make("made").Copy(Run = (x) => x - 1)
+    Println(s"cross-package call receiver: ${made.Name} ${made.Run(4)}")
+}

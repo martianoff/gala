@@ -174,6 +174,15 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		}, nil
 	}
 
+	// The result is the receiver's own instantiated type; its type arguments
+	// also bind the type parameters in the overridden fields' declared types.
+	resultType := t.copyResultTypeExpr(typeName, typeObj)
+	fieldTypes := t.structFieldTypes[typeName]
+	var typeArgs map[string]transpiler.Type
+	if subst := t.structTypeArgSubst(resultType, typeName); subst != nil {
+		typeArgs = t.typeArgTypes(subst)
+	}
+
 	// 2. Parse overrides
 	overrides := make(map[string]ast.Expr)
 	for _, argCtx := range argListCtx.AllArgument() {
@@ -192,22 +201,50 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		if !found {
 			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
 		}
-		pat := arg.Pattern()
-		if pat == nil {
+		// A lambda override parses as the argument rule's lambdaExpression
+		// alternative rather than as a pattern, so read the argument the way
+		// function calls do.
+		exprCtx, lambdaCtx, isSpread, err := extractArgContent(arg)
+		if err != nil || isSpread {
 			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be expressions")
 		}
-		ep, ok := pat.(*grammar.ExpressionPatternContext)
-		if !ok {
-			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), "Copy overrides must be expressions")
+		// An override fills the field's slot exactly as a named constructor
+		// argument does: the field's declared type is the expected type, so a
+		// lambda infers its parameter types from it and the other argument
+		// forms (partial functions, by-name thunks, generic calls) see it too.
+		var expected transpiler.Type = transpiler.NilType{}
+		if ft, ok := fieldTypes[fieldName]; ok && ft != nil {
+			expected = ft
+			if typeArgs != nil {
+				expected = t.substituteInType(expected, typeArgs)
+			}
 		}
-		val, err := t.transformExpression(ep.Expression())
+		var val ast.Expr
+		if lambdaCtx != nil {
+			val, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expected)
+		} else {
+			val, err = t.transformArgumentWithExpectedType(exprCtx, expected)
+		}
 		if err != nil {
 			return nil, err
 		}
 		overrides[fieldName] = val
 	}
 
-	// 3. Construct new struct instance
+	// 3. Construct new struct instance. Each kept field reads the receiver, so
+	// a receiver that is not a plain variable path (e.g. `f().Copy(...)`) would
+	// run once per kept field, and one whose fields are all overridden would
+	// not be read at all — never evaluated, and a Go "declared and not used"
+	// error for a local. In either case bind it once as the parameter of an
+	// immediately-applied function literal and read the kept fields from that.
+	source := receiver
+	allOverridden := len(overrides) == len(fields)
+	bind := allOverridden || !t.isPlainReceiverPath(receiver)
+	if allOverridden {
+		source = ast.NewIdent("_") // evaluated, never read
+	} else if bind {
+		source = ast.NewIdent(t.nextTempVar())
+	}
 	var elts []ast.Expr
 	immutFlags := t.structImmutFields[typeName]
 	for i, fn := range fields {
@@ -230,7 +267,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 					Fun: t.stdIdent(transpiler.FuncCopy),
 					Args: []ast.Expr{
 						&ast.SelectorExpr{
-							X:   receiver,
+							X:   source,
 							Sel: ast.NewIdent(fn),
 						},
 					},
@@ -239,10 +276,73 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		}
 	}
 
-	return &ast.CompositeLit{
-		Type: t.copyResultTypeExpr(typeName, typeObj),
+	lit := &ast.CompositeLit{
+		Type: resultType,
 		Elts: elts,
+	}
+	if !bind {
+		return lit, nil
+	}
+	return &ast.CallExpr{
+		Fun: &ast.FuncLit{
+			Type: &ast.FuncType{
+				Params: &ast.FieldList{List: []*ast.Field{{
+					Names: []*ast.Ident{source.(*ast.Ident)},
+					Type:  t.typeToExpr(typeObj),
+				}}},
+				Results: &ast.FieldList{List: []*ast.Field{{Type: t.copyResultTypeExpr(typeName, typeObj)}}},
+			},
+			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{lit}}}},
+		},
+		Args: []ast.Expr{receiver},
 	}, nil
+}
+
+// isPlainReceiverPath reports whether reading a Copy receiver more than once
+// is equivalent to reading it once: a variable, a field path off one, and the
+// nullary accessors the transformer inserts — `.Get()` unwrapping an Immutable
+// val or field, `.Deref()` reading through a ConstPtr. A user type's own
+// `Get()`/`Deref()` method may have side effects, so an accessor counts as
+// plain only when its operand is provably the wrapper; anything unproven is
+// bound once instead, which is always correct.
+func (t *galaASTTransformer) isPlainReceiverPath(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.ParenExpr:
+		return t.isPlainReceiverPath(e.X)
+	case *ast.SelectorExpr:
+		return t.isPlainReceiverPath(e.X)
+	case *ast.CallExpr:
+		sel, ok := e.Fun.(*ast.SelectorExpr)
+		if !ok || len(e.Args) != 0 || !t.isPlainReceiverPath(sel.X) {
+			return false
+		}
+		switch sel.Sel.Name {
+		case transpiler.MethodGet:
+			return t.isImmutableOperand(sel.X)
+		case transpiler.MethodDeref:
+			return t.isConstPtrType(t.getExprTypeName(sel.X))
+		}
+	}
+	return false
+}
+
+// isImmutableOperand reports whether x is an Immutable wrapper: a val binding
+// (whose inferred type is its unwrapped value type), an Immutable struct
+// field, or an expression whose inferred type is Immutable.
+func (t *galaASTTransformer) isImmutableOperand(x ast.Expr) bool {
+	switch e := x.(type) {
+	case *ast.Ident:
+		if t.isVal(e.Name) {
+			return true
+		}
+	case *ast.SelectorExpr:
+		if t.isImmutableField(t.getExprTypeName(e.X), e, e.Sel.Name) {
+			return true
+		}
+	}
+	return t.isImmutableType(t.getExprTypeName(x))
 }
 
 // copyResultTypeExpr builds the composite-literal type for an inlined

@@ -608,6 +608,16 @@ val p2 = p1.Copy(age = 31) // p2 is Person("Alice", 31)
 ```
 
 If no overrides are provided, it performs a complete copy of the original object.
+
+An override can be any expression, including a lambda, a partial function, or an `if`/`match` expression. The overridden field's declared type is the expected type, the same as for a named constructor argument, so a lambda's parameter types are inferred from the field. On a generic struct, the receiver's type arguments fill in the field type. The receiver is evaluated exactly once:
+
+```gala
+struct Calc(Label string, Op func(int) int)
+
+val c = Calc(Label = "id", Op = (x) => x)
+val inc = c.Copy(Op = (x) => x + 1) // x is int, taken from the field type
+```
+
 **Note:** Providing an override on non-struct types will result in a compilation error.
 
 #### Equal Method

@@ -75,7 +75,9 @@ func (s Person) Equal(other Person) bool {
 }
 
 var p = std.NewImmutable(Person{name: std.NewImmutable("Alice"), age: std.NewImmutable(30)})
-var p2 = std.NewImmutable(Person{name: std.NewImmutable("Bob"), age: std.NewImmutable(31)})
+var p2 = std.NewImmutable(func(_ Person) Person {
+	return Person{name: std.NewImmutable("Bob"), age: std.NewImmutable(31)}
+}(p.Get()))
 `,
 		},
 		{
@@ -163,7 +165,9 @@ func (s Outer) Unapply(v any) (std.Immutable[Inner], bool) {
 	return *new(std.Immutable[Inner]), false
 }
 func selectChained(o Outer, idx int) Inner {
-	return Inner{Selected: std.NewImmutable(idx)}
+	return func(_ Inner) Inner {
+		return Inner{Selected: std.NewImmutable(idx)}
+	}(o.Tab.Get())
 }
 `,
 		},
@@ -360,6 +364,201 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
 			}
 			assert.NotContains(t, got, "Box{")
 			assert.NotContains(t, got, "Entry{")
+		})
+	}
+}
+
+// TestCopyOverridesAnyExpression guards that a `.Copy(...)` override accepts
+// any expression, not only the forms that parse through the argument rule's
+// pattern alternative. A lambda parses as the rule's lambdaExpression
+// alternative and used to be rejected with "Copy overrides must be
+// expressions". The overridden field's declared type is the expected type, so
+// untyped lambda parameters are inferred from it — with the receiver's type
+// arguments substituted for a generic struct — exactly as for a named
+// constructor argument.
+func TestCopyOverridesAnyExpression(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	const decls = `package main
+
+struct Box(N int, F func() int)
+struct Calc(Op func(int) int, Pair func(int, string) string, OnEvent func(string))
+struct Cell[T any](Value T, Map func(T) T)
+`
+	tests := []struct {
+		name  string
+		body  string
+		wants []string
+	}{
+		{
+			name:  "zero-argument lambda",
+			body:  `func f(b Box) Box = b.Copy(F = () => 2)`,
+			wants: []string{"F: std.NewImmutable(func() int {\n\t\treturn 2\n\t})"},
+		},
+		{
+			name:  "untyped parameters take the field's parameter types",
+			body:  `func f(c Calc) Calc = c.Copy(Op = (x) => x + 1, Pair = (n, s) => s)`,
+			wants: []string{"Op: std.NewImmutable(func(x int) int {", "Pair: std.NewImmutable(func(n int, s string) string {"},
+		},
+		{
+			name: "block body",
+			body: `func f(c Calc) Calc = c.Copy(Op = (x) => {
+    val y = x * 2
+    return y + 1
+})`,
+			wants: []string{"Op: std.NewImmutable(func(x int) int {"},
+		},
+		{
+			name:  "void lambda",
+			body:  `func f(c Calc) Calc = c.Copy(OnEvent = (e) => { Println(e) })`,
+			wants: []string{"OnEvent: std.NewImmutable(func(e string) {"},
+		},
+		{
+			name:  "if-expression",
+			body:  `func f(b Box, up bool) Box = b.Copy(N = if (up) 1 else 2)`,
+			wants: []string{"N: std.NewImmutable(func() int {"},
+		},
+		{
+			name: "match expression",
+			body: `func f(b Box) Box = b.Copy(N = b.N match {
+    case 1 => 10
+    case _ => 0
+})`,
+			wants: []string{"N: std.NewImmutable(func(obj int) int {"},
+		},
+		{
+			name:  "by-name sugar lifts a plain expression into the func field",
+			body:  `func f(b Box) Box = b.Copy(F = b.N + 1)`,
+			wants: []string{"F: std.NewImmutable(func() int {\n\t\treturn b.N.Get() + 1\n\t})"},
+		},
+		{
+			name:  "generic struct with a type-parameter receiver",
+			body:  `func f[T any](c Cell[T]) Cell[T] = c.Copy(Map = (v) => c.Map(v))`,
+			wants: []string{"Map: std.NewImmutable(func(v T) T {"},
+		},
+		{
+			name:  "generic struct with a concrete receiver",
+			body:  `func f(c Cell[string]) Cell[string] = c.Copy(Map = (v) => v + "!")`,
+			wants: []string{"Cell[string]{Value: std.Copy(c.Value), Map: std.NewImmutable(func(v string) string {"},
+		},
+		{
+			name:  "pointer receiver",
+			body:  `func f(c *Cell[int]) Cell[int] = c.Copy(Map = (v) => v * 2)`,
+			wants: []string{"Map: std.NewImmutable(func(v int) int {"},
+		},
+		{
+			name: "ConstPtr receiver",
+			body: `func main() {
+    val c = Cell[int](Value = 1, Map = (v) => v)
+    val p = &c
+    val d = p.Copy(Map = (v) => v * 2)
+}`,
+			wants: []string{"Map: std.NewImmutable(func(v int) int {"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.body, "")
+			require.NoError(t, err)
+			for _, want := range tt.wants {
+				assert.Contains(t, got, want)
+			}
+			// No lambda parameter or result may fall back to `any`. Only the
+			// function under test is checked: the generated Unapply takes `v any`.
+			body := got[strings.LastIndex(got, "\nfunc "):]
+			assert.NotContains(t, body, " any)")
+			assert.NotContains(t, body, " any,")
+			assert.NotContains(t, body, ") any {")
+		})
+	}
+}
+
+// TestCopyReceiverEvaluatedOnce guards that the receiver of an inlined
+// `recv.Copy(...)` is evaluated exactly once. Each kept field reads the
+// receiver, so a call receiver used to run once per kept field, and when
+// every field was overridden the receiver was dropped: never evaluated, and
+// "declared and not used" for a local val. Such receivers are bound once as
+// the parameter of an immediately-applied function literal; a plain variable
+// path with a kept field keeps the direct composite literal.
+func TestCopyReceiverEvaluatedOnce(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	const decls = `package main
+
+struct P(N int, M int)
+struct Cell[T any](Value T, Map func(T) T)
+func mk() P = P(1, 2)
+`
+	tests := []struct {
+		name    string
+		body    string
+		wants   []string
+		notWant string
+	}{
+		{
+			name: "every field overridden on a local val",
+			body: `func main() {
+    val p = P(1, 2)
+    Println(p.Copy(N = 3, M = 4).N)
+}`,
+			wants: []string{"func(_ P) P {\n\t\treturn P{N: std.NewImmutable(3), M: std.NewImmutable(4)}\n\t}(p.Get())"},
+		},
+		{
+			name:  "call receiver is bound once",
+			body:  `func f() int = mk().Copy(N = 5).M`,
+			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(5), M: std.Copy(_tmp_1.M)}\n\t}(mk())"},
+		},
+		{
+			name:  "generic receiver keeps its type arguments",
+			body:  `func f[T any](c Cell[T]) Cell[T] = c.Copy(Value = c.Value, Map = (v) => v)`,
+			wants: []string{"func(_ Cell[T]) Cell[T] {", "}(c)"},
+		},
+		{
+			// A user type's own Get() is an ordinary method that may have
+			// side effects; only the transformer's Immutable unwrap is a
+			// re-readable path.
+			name: "user-defined Get() receiver is bound once",
+			body: `struct Src(var n int)
+func (s *Src) Get() P {
+    s.n = s.n + 1
+    return P(s.n, 0)
+}
+func f(src *Src) P = src.Get().Copy(N = 9)`,
+			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(9), M: std.Copy(_tmp_1.M)}\n\t}(src.Get())"},
+		},
+		{
+			name:    "val receiver unwrapped by the transformer is not bound",
+			body:    "func f() P {\n    val p = P(1, 2)\n    return p.Copy(N = 5)\n}",
+			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.Get().M)}"},
+			notWant: "_tmp_",
+		},
+		{
+			name:    "plain variable path with a kept field is not bound",
+			body:    `func f(p P) P = p.Copy(N = 5)`,
+			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.M)}"},
+			notWant: "_tmp_",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.body, "")
+			require.NoError(t, err)
+			for _, want := range tt.wants {
+				assert.Contains(t, got, want)
+			}
+			if tt.notWant != "" {
+				assert.NotContains(t, got, tt.notWant)
+			}
 		})
 	}
 }
