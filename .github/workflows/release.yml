@@ -55,6 +55,7 @@ jobs:
             runner: ubuntu-latest
             platform: "@rules_go//go/toolchain:linux_amd64"
             ext: ""
+            smoke: true  # the runner executes this binary natively
           - os: linux
             arch: arm64
             runner: ubuntu-latest
@@ -70,11 +71,13 @@ jobs:
             runner: macos-latest
             platform: "@rules_go//go/toolchain:darwin_arm64"
             ext: ""
+            smoke: true  # macos-latest is arm64
           - os: windows
             arch: amd64
             runner: windows-latest
             platform: "@rules_go//go/toolchain:windows_amd64"
             ext: ".exe"
+            smoke: true
 
     steps:
       - name: Checkout code
@@ -86,6 +89,7 @@ jobs:
       # host Go SDK for type inference, and the smoke test below compiles a
       # program with it.
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
@@ -99,7 +103,9 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
+          # Keyed on the Go patch version, as in test.yml: GOROOT is part of
+          # every transpile action key.
+          disk-cache: ${{ github.workflow }}-go${{ steps.setup-go.outputs.go-version }}
           repository-cache: true
 
       - name: Make workspace status script executable (Unix)
@@ -144,27 +150,45 @@ jobs:
           cp bazel-bin/cmd/gala/gala_/gala dist/gala-${{ matrix.os }}-${{ matrix.arch }}
           chmod +x dist/gala-${{ matrix.os }}-${{ matrix.arch }}
 
-      # The only binary this runner can execute natively. It checks the two
-      # things a release can get wrong after compiling fine: the stamped
-      # version, and that the embedded stdlib is enough for `gala run` on a
-      # clean machine (fresh GALA_HOME, nothing cached from the repo).
-      - name: Smoke test binary (linux/amd64)
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+      - name: Prepare binary (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item bazel-bin/cmd/gala/gala_/gala.exe dist/gala-${{ matrix.os }}-${{ matrix.arch }}.exe
+
+      # Runs on every row whose binary the runner can execute natively
+      # (linux/amd64, darwin/arm64, windows/amd64). It checks the two things a
+      # release can get wrong after compiling fine: the stamped version, and
+      # that the embedded stdlib is enough for `gala run` on a clean machine
+      # (fresh GALA_HOME, nothing cached from the repo).
+      - name: Smoke test binary
+        if: matrix.smoke
+        shell: bash
         env:
           TAG: ${{ github.event.release.tag_name }}
+          GALA_BIN: dist/gala-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
         run: |
-          gala="$PWD/dist/gala-linux-amd64"
+          set -euo pipefail
+          gala="$PWD/$GALA_BIN"
 
-          version_output="$("$gala" version)"
+          if ! version_output="$("$gala" version)"; then
+            echo "::error::'gala version' failed"
+            exit 1
+          fi
           echo "$version_output"
-          if ! grep -qF -- "$TAG" <<<"$version_output"; then
+          if [ "$(head -n 1 <<<"$version_output")" != "GALA version ${TAG}" ]; then
             echo "::error::'gala version' does not report the release tag '${TAG}'"
             exit 1
           fi
 
-          work="$(mktemp -d)"
-          export GALA_HOME="$(mktemp -d)"
+          # RUNNER_TEMP is a native path on every OS, which the Windows binary
+          # needs (it does not understand Git Bash's /tmp).
+          work="${RUNNER_TEMP}/gala-smoke"
+          export GALA_HOME="${RUNNER_TEMP}/gala-smoke-home"
           export GALA_CACHE="$GALA_HOME/pkg/mod"
+          rm -rf "$work" "$GALA_HOME"
+          mkdir -p "$work"
           cat > "$work/main.gala" <<'EOF'
           package main
 
@@ -173,19 +197,17 @@ jobs:
               Println(s"Hello, $name!")
           }
           EOF
-          run_output="$(cd "$work" && "$gala" run main.gala)"
+          if ! run_output="$(cd "$work" && "$gala" run main.gala)"; then
+            echo "$run_output"
+            echo "::error::'gala run' of a hello-world program failed"
+            exit 1
+          fi
+          run_output="$(tr -d '\r' <<<"$run_output")"
           echo "$run_output"
           if [ "$run_output" != "Hello, GALA!" ]; then
             echo "::error::'gala run' of a hello-world program printed '${run_output}', expected 'Hello, GALA!'"
             exit 1
           fi
-
-      - name: Prepare binary (Windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist
-          Copy-Item bazel-bin/cmd/gala/gala_/gala.exe dist/gala-${{ matrix.os }}-${{ matrix.arch }}.exe
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
