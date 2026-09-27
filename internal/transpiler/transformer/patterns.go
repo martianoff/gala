@@ -562,90 +562,6 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 	return ifStmt, nil
 }
 
-// getExtractedType determines the type of the value extracted by an extractor pattern.
-// For example, when matching Some(v) against Option[int], the extracted type is int.
-func (t *galaASTTransformer) getExtractedType(extractorName string, objType transpiler.Type) transpiler.Type {
-	return t.getExtractedTypeAtIndex(extractorName, objType, 0)
-}
-
-// getExtractedTypeAtIndex determines the type of the value extracted at a specific index.
-// It uses companion object metadata discovered by the analyzer instead of hardcoding extractor names.
-// For Tuple[A, B], index 0 returns A, index 1 returns B.
-func (t *galaASTTransformer) getExtractedTypeAtIndex(extractorName string, objType transpiler.Type, index int) transpiler.Type {
-	return t.getExtractedTypeAtIndexWithArgs(extractorName, objType, index, -1)
-}
-
-// getExtractedTypeAtIndexWithArgs determines the type of the value extracted at a specific index.
-// numArgs is the total number of arguments in the pattern, used to decide whether to expand tuples.
-func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName string, objType transpiler.Type, index int, numArgs int) transpiler.Type {
-	genType, ok := objType.(transpiler.GenericType)
-	if !ok || len(genType.Params) == 0 {
-		return transpiler.NilType{}
-	}
-
-	baseName := genType.Base.BaseName()
-
-	var extractedType transpiler.Type
-
-	// Normalize extractor name by removing package prefix for lookup
-	normalizedName := stripStdPrefix(extractorName)
-
-	// Check if this is a direct struct match (extractor type equals container type)
-	// This handles cases like Tuple(a, b) matching against Tuple[A, B]
-	if normalizedName == baseName || extractorName == baseName {
-		// Direct struct match - extract type param at the specified index
-		if index < len(genType.Params) {
-			extractedType = genType.Params[index]
-		}
-	} else {
-		// First, check if this is a generic extractor with type parameters
-		// For example, Cons[T] with Unapply(l List[T]) Option[Tuple[T, List[T]]]
-		extractedType = t.getGenericExtractorResultTypeWithArgs(extractorName, objType, index, numArgs)
-
-		// If not found, look up companion object metadata
-		if transpiler.IsUnusable(extractedType) {
-			companionMeta := t.getCompanionObjectMetadata(extractorName)
-			if companionMeta != nil {
-				// Verify the companion works with this container type
-				if companionMeta.TargetType == baseName ||
-					companionMeta.TargetType == withStdPrefix(baseName) ||
-					withStdPrefix(companionMeta.TargetType) == baseName {
-					// Find which container type param index to extract
-					if index < len(companionMeta.ExtractIndices) {
-						paramIndex := companionMeta.ExtractIndices[index]
-						if paramIndex < len(genType.Params) {
-							extractedType = genType.Params[paramIndex]
-						}
-					} else if len(companionMeta.ExtractIndices) == 1 && index == 0 {
-						// Common case: companion extracts one value, use its index
-						paramIndex := companionMeta.ExtractIndices[0]
-						if paramIndex < len(genType.Params) {
-							extractedType = genType.Params[paramIndex]
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Check if the extracted type is a type parameter (like T, U, A, B)
-	// If so, return NilType{} to avoid generating invalid type assertions.
-	if extractedType != nil && !extractedType.IsNil() {
-		if basic, ok := extractedType.(transpiler.BasicType); ok {
-			name := basic.Name
-			// Type parameters are typically single uppercase letters or short names
-			if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
-				return transpiler.NilType{}
-			}
-		}
-	}
-
-	if extractedType == nil {
-		return transpiler.NilType{}
-	}
-	return extractedType
-}
-
 // isDirectStructMatch checks if the pattern type directly matches the container type
 // AND the matched type is a generic type with type parameters.
 // For example, Tuple pattern matching against Tuple[A, B] is a direct match.
@@ -671,9 +587,12 @@ func (t *galaASTTransformer) isDirectStructMatch(patternTypeName string, matched
 
 	normalizedContainer := stripStdPrefix(containerBaseName)
 
-	// Check for exact match
+	// Check for exact match. Only a tuple is read positionally (V1, V2, …);
+	// any other declared generic struct is matched through its own fields by
+	// generateDirectStructFieldMatch, so `Box(md, in)` against Box[int] reads
+	// Md and In rather than tuple accessors typed by Box's type arguments.
 	if normalizedPattern == normalizedContainer {
-		return true
+		return t.isTupleType(normalizedContainer) || len(t.structFields[t.resolveStructTypeName(patternTypeName)]) == 0
 	}
 
 	// Check for tuple pattern matching with parentheses syntax
@@ -749,26 +668,9 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 			},
 		}
 
-		// Check if this is a simple binding or a nested pattern
+		// A binding or a nested pattern, both lowered by the general dispatcher.
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
-				// Simple binding: name := obj.V{i+1}.Get()
-				// Note: .Get() already returns the concrete type, so no type assertion needed
-				name := p.Identifier().GetText()
-				t.currentScope.vals[name] = false
-				t.currentScope.valTypes[name] = elemType
-
-				assign := &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(name)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{elemExpr},
-				}
-				stmts = append(stmts, assign)
-				continue
-			}
-
-			// Nested pattern - transform recursively
 			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, elemType)
 			if err != nil {
 				return nil, nil, err
@@ -839,8 +741,22 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), fmt.Sprintf("struct '%s' has %d fields but pattern has %d arguments", structName, len(fields), len(args)))
 	}
 
-	// Get field types if available
+	// Get field types if available. They are the declared types, so for a
+	// generic struct they mention its type parameters: substitute the matched
+	// type's arguments (Box[int] turns `Md Mode[T]` into Mode[int]).
 	fieldTypes := t.structFieldTypes[structName]
+	substituteFieldType := func(ft transpiler.Type) transpiler.Type { return ft }
+	if meta := t.getTypeMeta(structName); meta != nil && len(meta.TypeParams) > 0 {
+		subject := matchedType
+		if ptr, ok := subject.(transpiler.PointerType); ok {
+			subject = ptr.Elem
+		}
+		if gen, ok := subject.(transpiler.GenericType); ok && len(gen.Params) == len(meta.TypeParams) {
+			substituteFieldType = func(ft transpiler.Type) transpiler.Type {
+				return t.substituteConcreteTypes(ft, meta.TypeParams, gen.Params)
+			}
+		}
+	}
 
 	// Generate bindings for each pattern argument using direct field access
 	for i, argCtx := range args {
@@ -859,7 +775,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		var fieldType transpiler.Type = transpiler.BasicType{Name: "any"}
 		if fieldTypes != nil {
 			if ft, ok := fieldTypes[fieldName]; ok {
-				fieldType = ft
+				fieldType = substituteFieldType(ft)
 			}
 		}
 
@@ -876,25 +792,11 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			},
 		}
 
-		// Check if this is a simple binding or a nested pattern
+		// A binding (`name := obj.Field.Get()`) or a nested pattern such as
+		// `Circle(r)`, both lowered by the general dispatcher against the
+		// field's type.
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			if p := t.getPrimaryFromExpression(exprPat.Expression()); p != nil && p.Identifier() != nil {
-				// Simple binding: name := obj.FieldName.Get()
-				name := p.Identifier().GetText()
-				t.currentScope.vals[name] = false
-				t.currentScope.valTypes[name] = fieldType
-
-				assign := &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(name)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{elemExpr},
-				}
-				stmts = append(stmts, assign)
-				continue
-			}
-
-			// Nested pattern - transform recursively
 			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, fieldType)
 			if err != nil {
 				return nil, nil, err
@@ -1387,24 +1289,7 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 			},
 		}
 
-		// Check if this is a simple binding (identifier) or nested pattern
-		if p := t.getPrimaryFromExpression(patExpr); p != nil && p.Identifier() != nil {
-			// Simple binding: x := obj.V{i+1}.Get()
-			// Note: .Get() already returns the concrete type, so no type assertion needed
-			name := p.Identifier().GetText()
-			t.currentScope.vals[name] = false
-			t.currentScope.valTypes[name] = elemType
-
-			assign := &ast.AssignStmt{
-				Lhs: []ast.Expr{ast.NewIdent(name)},
-				Tok: token.DEFINE,
-				Rhs: []ast.Expr{elemExpr},
-			}
-			stmts = append(stmts, assign)
-			continue
-		}
-
-		// Handle nested patterns recursively. Bindings from the nested pattern
+		// A binding or a nested pattern, both lowered recursively. Bindings
 		// must be appended BEFORE we accumulate the condition so any later
 		// element pattern (e.g. `code` in `(true, code)`) still gets bound.
 		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(patExpr, elemExpr, elemType)
@@ -1429,33 +1314,6 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 	}
 	// All patterns are simple bindings or wildcards, condition is always true
 	return ast.NewIdent("true"), stmts, nil
-}
-
-// getCompanionObjectMetadata looks up companion object metadata by name.
-// It tries various name formats: short name, std-prefixed name, and fully qualified name.
-func (t *galaASTTransformer) getCompanionObjectMetadata(name string) *transpiler.CompanionObjectMetadata {
-	if t.companionObjects == nil {
-		return nil
-	}
-
-	// Try exact name first
-	if meta, ok := t.companionObjects[name]; ok {
-		return meta
-	}
-
-	// Try with std prefix
-	if meta, ok := t.companionObjects[withStdPrefix(name)]; ok {
-		return meta
-	}
-
-	// Try without std prefix
-	if hasStdPrefix(name) {
-		if meta, ok := t.companionObjects[stripStdPrefix(name)]; ok {
-			return meta
-		}
-	}
-
-	return nil
 }
 
 // inferExtractorTypeParams attempts to infer type parameters for a generic extractor
@@ -1527,79 +1385,6 @@ func splitPackageQualifier(name string) (pkg, bare string) {
 // Delegates to unifyForInference for consistent unification logic across the codebase.
 func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeParams []string, substitution map[string]transpiler.Type) bool {
 	return t.unifyForInference(pattern, concrete, typeParams, substitution)
-}
-
-// getGenericExtractorResultTypeWithArgs determines the extracted type for a generic extractor.
-// For example, Cons[T] with Unapply(l List[T]) Option[Tuple[T, List[T]]] - when matching
-// against List[int], this returns Tuple[int, List[int]] for index 0.
-// numArgs is the total number of arguments in the pattern (-1 means use default behavior).
-// If numArgs > 1 and the result is a Tuple with matching arity, individual elements are returned.
-func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName string, objType transpiler.Type, index int, numArgs int) transpiler.Type {
-	// Use unified resolution to find the extractor's type metadata
-	extractorMeta := t.getTypeMeta(extractorName)
-	if extractorMeta == nil || len(extractorMeta.TypeParams) == 0 {
-		return transpiler.NilType{}
-	}
-
-	// Get the Unapply method
-	unapplyMeta, ok := extractorMeta.Methods["Unapply"]
-	if !ok || len(unapplyMeta.ParamTypes) == 0 {
-		return transpiler.NilType{}
-	}
-
-	// Infer type parameters from the matched type
-	inferredTypes := t.inferExtractorTypeParams(extractorMeta, objType)
-	if len(inferredTypes) != len(extractorMeta.TypeParams) {
-		return transpiler.NilType{}
-	}
-
-	// Substitute type parameters in the return type
-	returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, extractorMeta.TypeParams, inferredTypes)
-	if transpiler.IsUnusable(returnType) {
-		return transpiler.NilType{}
-	}
-
-	// Unwrap Option[X] to get X
-	innerType := t.unwrapOptionType(returnType)
-	if transpiler.IsUnusable(innerType) {
-		return transpiler.NilType{}
-	}
-
-	// Check if the result is a Tuple
-	if genType, ok := innerType.(transpiler.GenericType); ok {
-		baseName := genType.Base.BaseName()
-		if t.isTupleTypeName(baseName) || baseName == "Tuple" || baseName == "std.Tuple" {
-			// If numArgs matches the Tuple arity, expand the Tuple
-			// This handles implicit expansion: Cons(head, tail) -> [int, List[int]]
-			if numArgs > 0 && numArgs == len(genType.Params) {
-				if index < len(genType.Params) {
-					return genType.Params[index]
-				}
-				return transpiler.NilType{}
-			}
-			// If numArgs is 1, return the full Tuple type for explicit Tuple matching
-			// This handles: Cons(Tuple(head, tail)) -> Tuple[int, List[int]]
-			if numArgs == 1 && index == 0 {
-				return innerType
-			}
-			// Default behavior (numArgs == -1): index 0 returns full Tuple, others expand
-			if numArgs < 0 {
-				if index == 0 {
-					return innerType
-				}
-				if index < len(genType.Params) {
-					return genType.Params[index]
-				}
-			}
-		}
-	}
-
-	// For non-tuple results, return the inner type for index 0
-	if index == 0 {
-		return innerType
-	}
-
-	return transpiler.NilType{}
 }
 
 // unwrapOptionType unwraps Option[X] to return X
