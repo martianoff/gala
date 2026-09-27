@@ -3,6 +3,7 @@ package json
 import (
     "bytes"
     "encoding/json"
+    "math"
     "strconv"
     "strings"
     . "martianoff/gala/std"
@@ -69,9 +70,30 @@ func (e *JsonEncoderImpl) WriteInt64(v int64) {
     e.needsComma = true
 }
 
-func (e *JsonEncoderImpl) WriteFloat64(v float64) {
+func (e *JsonEncoderImpl) WriteUint64(v uint64) {
     e.writeCommaIfNeeded()
-    e.buf.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
+    e.buf.WriteString(strconv.FormatUint(v, 10))
+    e.needsComma = true
+}
+
+func (e *JsonEncoderImpl) WriteFloat64(v float64) {
+    e.writeFloat(v, 64)
+}
+
+func (e *JsonEncoderImpl) WriteFloat32(v float32) {
+    e.writeFloat(float64(v), 32)
+}
+
+// writeFloat renders v in the shortest decimal form that parses back to the
+// same value at bitSize. JSON has no spelling for NaN or the infinities, so
+// they fail the encode (the Encode Try becomes a Failure) instead of
+// producing a document no JSON parser accepts.
+func (e *JsonEncoderImpl) writeFloat(v float64, bitSize int) {
+    if math.IsNaN(v) || math.IsInf(v, 0) {
+        go_builtins.Panic(s"json: unsupported float value ${strconv.FormatFloat(v, 'g', -1, 64)}: JSON has no NaN or Infinity")
+    }
+    e.writeCommaIfNeeded()
+    e.buf.WriteString(strconv.FormatFloat(v, 'f', -1, bitSize))
     e.needsComma = true
 }
 
@@ -263,6 +285,45 @@ func (d *JsonDecoderImpl) ReadInt64() int64 {
     return v
 }
 
+// ReadIntN reads a signed integer that must fit in bitSize bits. A value
+// outside the range is a decode error, never a silent wrap.
+func (d *JsonDecoderImpl) ReadIntN(bitSize int) int64 {
+    d.consumeElemComma()
+    d.skipWs()
+    val s = d.readNumberStr()
+    val v, err = strconv.ParseInt(s, 10, bitSize)
+    if err != nil {
+        go_builtins.Panic(f"json at pos ${d.pos}: invalid ${intKindName("int", bitSize)} ${s}%q")
+    }
+    return v
+}
+
+// ReadUintN reads an unsigned integer that must fit in bitSize bits (0 is
+// the platform uint size). Negative and out-of-range values are errors.
+func (d *JsonDecoderImpl) ReadUintN(bitSize int) uint64 {
+    d.consumeElemComma()
+    d.skipWs()
+    val s = d.readNumberStr()
+    val v, err = strconv.ParseUint(s, 10, bitSize)
+    if err != nil {
+        go_builtins.Panic(f"json at pos ${d.pos}: invalid ${intKindName("uint", bitSize)} ${s}%q")
+    }
+    return v
+}
+
+// ReadFloat32 reads a float that fits a finite float32; a literal that
+// overflows it is an error rather than a silent infinity.
+func (d *JsonDecoderImpl) ReadFloat32() float32 {
+    d.consumeElemComma()
+    d.skipWs()
+    val s = d.readNumberStr()
+    val v, err = strconv.ParseFloat(s, 32)
+    if err != nil {
+        go_builtins.Panic(f"json at pos ${d.pos}: invalid float32 ${s}%q")
+    }
+    return float32(v)
+}
+
 func (d *JsonDecoderImpl) ReadFloat64() float64 {
     d.consumeElemComma()
     d.skipWs()
@@ -298,6 +359,12 @@ func (d *JsonDecoderImpl) ReadRune() rune {
 }
 
 func (d *JsonDecoderImpl) IsNull() bool {
+    // Inside an array the next value sits behind the element separator, so
+    // step over it first: without this `[1,null]` reads `,null` as not-null
+    // and an Array[Option[T]] fails on its second element. Consuming the
+    // separator here is safe because the read that follows would consume it
+    // anyway, and consumeElemComma is a no-op once it has.
+    d.consumeElemComma()
     d.skipWs()
     return d.pos + 4 <= d.data.Size() && BytesToString(d.data, d.pos, d.pos + 4) == "null"
 }
@@ -403,6 +470,11 @@ func (d *JsonDecoderImpl) readJsonString() string {
     }
     go_builtins.Panic("json: unterminated string")
 }
+
+// intKindName names the Go integer kind a strconv bit size stands for; 0 is
+// the platform-sized int or uint.
+func intKindName(prefix string, bitSize int) string =
+    if (bitSize == 0) prefix else prefix + strconv.Itoa(bitSize)
 
 func (d *JsonDecoderImpl) readNumberStr() string {
     val start = d.pos

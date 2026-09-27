@@ -517,6 +517,17 @@ const (
 	// An alias to a struct declared in the same package keeps working, because
 	// there the receiver base type is local and Go accepts it.
 	CodeMethodOnNonLocalAlias ErrorCode = "GALA-E0048"
+
+	// E0050: a codec (`json.Codec[T]`, `yaml.Codec[T]`, `StructMeta[T]()`)
+	// was requested for a struct with a field whose type has no encoding — a
+	// function, a pointer, a Go slice or map, a sealed type, a generic struct,
+	// a HashMap with non-string keys, or an Option directly inside an Option.
+	//
+	// The generated EncodeFields/DecodeFields used to emit `null` for such a
+	// field and skip it on decode, so the value was silently lost: encoding
+	// succeeded and decoding returned a zero value. A shape the codec cannot
+	// represent is now rejected where the codec is requested.
+	CodeUnsupportedCodecField ErrorCode = "GALA-E0050"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

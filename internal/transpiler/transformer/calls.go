@@ -1410,7 +1410,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		switch firstParamType {
 		case "StructMeta", "std.StructMeta",
 			"StructMetaOps", "json.StructMetaOps":
-			args = t.autoInjectStructMeta(args, methodMeta, typeArgs)
+			args = t.autoInjectStructMeta(args, methodMeta, typeArgs, line, col)
 		}
 	}
 

@@ -2785,6 +2785,19 @@ gala_exec_test(
     ],
 )
 
+# Every numeric kind (sized ints/uints, float32, aliases, time.Duration) must
+# round-trip through the JSON codec instead of encoding as null; out-of-range
+# input and NaN are failures.
+gala_exec_test(
+    name = "json_codec_numeric_kinds",
+    src = "json_codec_numeric_kinds.gala",
+    expected = "json_codec_numeric_kinds.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Regression: Array[Foo] of structs round-trip through manual encoder + decoder.
 # Before the StartObject/StartArray fix, the decoder panicked on element 2+
 # because container openers did not consume the inter-element comma.

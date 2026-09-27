@@ -98,6 +98,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0042](/docs/errors/gala-e0042/) | Lambda parameter is not parenthesized | Syntax |
 | [GALA-E0043](/docs/errors/gala-e0043/) | Type name called as a constructor | Collections |
 | [GALA-E0044](/docs/errors/gala-e0044/) | Type has no such method | Types |
+| [GALA-E0050](/docs/errors/gala-e0050/) | Codec field type has no encoding | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 

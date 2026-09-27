@@ -14,6 +14,7 @@ package yaml
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -45,9 +46,16 @@ import (
 // ============================================================================
 
 type YamlEncoderImpl struct {
-	buf           bytes.Buffer
-	depth         int    // current indent level (each level = 2 spaces)
-	stack         []byte // frame kinds: 'r' root, 'o' mapping, 'a' sequence
+	buf   bytes.Buffer
+	depth int    // current indent level (each level = 2 spaces)
+	stack []byte // frame kinds: 'r' root, 'o' mapping, 'a' sequence
+	// emptyMarks parallels stack: the buffer length just after each open
+	// container's header ("key:", "- ", "-"), or -1 for a root container.
+	// A container that closes with the buffer still at its mark (plus the
+	// header's newline) wrote no children, and is rewritten in flow style
+	// ("key: []", "- {}") — block style has no spelling for an empty
+	// container, and a bare "key:" reads back as null.
+	emptyMarks    []int
 	pendingKey    string
 	hasKey        bool
 	inlineNextKey bool // first key after "- " sits on the same line
@@ -98,21 +106,25 @@ func (e *YamlEncoderImpl) emitKeyHeader(key string) {
 // startContainerPrelude handles the prelude common to StartObject and
 // StartArray: emit any pending key header (or sequence-item dash) and adjust
 // indent so the new container's children render at the right depth.
-func (e *YamlEncoderImpl) startContainerPrelude(isObject bool) {
+//
+// It returns the buffer length just after the header, before any newline the
+// header ends with, or -1 for the document root (see emptyMarks).
+func (e *YamlEncoderImpl) startContainerPrelude(isObject bool) int {
 	parent := e.topFrame()
 	if parent == 'r' && !e.startedDoc {
 		// Document root — no prelude, depth stays 0.
 		e.startedDoc = true
-		return
+		return -1
 	}
 	if e.hasKey {
 		// We're a value of a mapping pair: emit "key:\n", then indent children.
 		e.emitKeyHeader(e.pendingKey)
+		mark := e.buf.Len()
 		e.buf.WriteByte('\n')
 		e.depth++
 		e.pendingKey = ""
 		e.hasKey = false
-		return
+		return mark
 	}
 	if parent == 'a' {
 		// We're a list element that is itself a container.
@@ -122,45 +134,60 @@ func (e *YamlEncoderImpl) startContainerPrelude(isObject bool) {
 			e.buf.WriteString("- ")
 			e.depth++
 			e.inlineNextKey = true
-		} else {
-			// Nested sequence in sequence: bare "-" line, indent inner.
-			e.buf.WriteString("-\n")
-			e.depth++
+			return e.buf.Len()
 		}
-		return
+		// Nested sequence in sequence: bare "-" line, indent inner.
+		e.buf.WriteString("-")
+		mark := e.buf.Len()
+		e.buf.WriteByte('\n')
+		e.depth++
+		return mark
 	}
 	panic("yaml encoder: container started with no key in mapping context")
 }
 
-func (e *YamlEncoderImpl) WriteStartObject() {
-	e.startContainerPrelude(true)
-	e.stack = append(e.stack, 'o')
-}
-
-func (e *YamlEncoderImpl) WriteEndObject() {
-	if len(e.stack) == 0 || e.stack[len(e.stack)-1] != 'o' {
-		panic("yaml encoder: WriteEndObject without matching StartObject")
+// endContainer pops the innermost container of the given kind. When it wrote
+// no children, its header is rewritten in flow style with `flow` ("[]" or
+// "{}") so the empty container reads back as empty rather than null.
+func (e *YamlEncoderImpl) endContainer(kind byte, flow string) {
+	if len(e.stack) == 0 || e.stack[len(e.stack)-1] != kind {
+		panic(fmt.Sprintf("yaml encoder: end of %c container without a matching start", kind))
 	}
+	mark := e.emptyMarks[len(e.emptyMarks)-1]
 	e.stack = e.stack[:len(e.stack)-1]
+	e.emptyMarks = e.emptyMarks[:len(e.emptyMarks)-1]
+	if mark >= 0 && e.buf.Len() <= mark+1 {
+		e.buf.Truncate(mark)
+		if e.buf.Len() > 0 && e.buf.Bytes()[e.buf.Len()-1] != ' ' {
+			e.buf.WriteByte(' ')
+		}
+		e.buf.WriteString(flow)
+		e.buf.WriteByte('\n')
+	}
 	if e.topFrame() != 'r' && e.depth > 0 {
 		e.depth--
 	}
+}
+
+func (e *YamlEncoderImpl) WriteStartObject() {
+	mark := e.startContainerPrelude(true)
+	e.stack = append(e.stack, 'o')
+	e.emptyMarks = append(e.emptyMarks, mark)
+}
+
+func (e *YamlEncoderImpl) WriteEndObject() {
+	e.endContainer('o', "{}")
 	e.inlineNextKey = false
 }
 
 func (e *YamlEncoderImpl) WriteStartArray() {
-	e.startContainerPrelude(false)
+	mark := e.startContainerPrelude(false)
 	e.stack = append(e.stack, 'a')
+	e.emptyMarks = append(e.emptyMarks, mark)
 }
 
 func (e *YamlEncoderImpl) WriteEndArray() {
-	if len(e.stack) == 0 || e.stack[len(e.stack)-1] != 'a' {
-		panic("yaml encoder: WriteEndArray without matching StartArray")
-	}
-	e.stack = e.stack[:len(e.stack)-1]
-	if e.topFrame() != 'r' && e.depth > 0 {
-		e.depth--
-	}
+	e.endContainer('a', "[]")
 }
 
 func (e *YamlEncoderImpl) WriteKey(name string) {
@@ -196,7 +223,24 @@ func (e *YamlEncoderImpl) writeScalar(value string) {
 func (e *YamlEncoderImpl) WriteString(v string)   { e.writeScalar(encodeString(v)) }
 func (e *YamlEncoderImpl) WriteInt(v int)         { e.writeScalar(strconv.Itoa(v)) }
 func (e *YamlEncoderImpl) WriteInt64(v int64)     { e.writeScalar(strconv.FormatInt(v, 10)) }
-func (e *YamlEncoderImpl) WriteFloat64(v float64) { e.writeScalar(strconv.FormatFloat(v, 'f', -1, 64)) }
+func (e *YamlEncoderImpl) WriteUint64(v uint64)   { e.writeScalar(strconv.FormatUint(v, 10)) }
+func (e *YamlEncoderImpl) WriteFloat64(v float64) { e.writeScalar(formatYamlFloat(v, 64)) }
+func (e *YamlEncoderImpl) WriteFloat32(v float32) { e.writeScalar(formatYamlFloat(float64(v), 32)) }
+
+// formatYamlFloat renders a float in the shortest form that parses back to
+// the same value at the given bit size. NaN and the infinities use YAML's
+// core-schema spellings (.nan, .inf, -.inf), which parseYamlFloat accepts.
+func formatYamlFloat(v float64, bitSize int) string {
+	switch {
+	case math.IsNaN(v):
+		return ".nan"
+	case math.IsInf(v, 1):
+		return ".inf"
+	case math.IsInf(v, -1):
+		return "-.inf"
+	}
+	return strconv.FormatFloat(v, 'f', -1, bitSize)
+}
 func (e *YamlEncoderImpl) WriteBool(v bool) {
 	if v {
 		e.writeScalar("true")
@@ -263,6 +307,9 @@ func looksReserved(s string) bool {
 		"True", "False", "Null", "TRUE", "FALSE", "NULL":
 		return true
 	}
+	if _, ok := yamlSpecialFloat(s); ok {
+		return true
+	}
 	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return true
 	}
@@ -306,7 +353,7 @@ var _ std.FieldEncoder = (*YamlEncoderImpl)(nil)
 // toRunes / runesToString are package-private helpers used by naming.gala
 // (the GALA parser doesn't accept []rune(s) / string(rs) conversions).
 // Mirror of json/byte_utils.go's same-named helpers.
-func toRunes(s string) []rune       { return []rune(s) }
+func toRunes(s string) []rune        { return []rune(s) }
 func runesToString(rs []rune) string { return string(rs) }
 
 // ============================================================================
@@ -329,8 +376,8 @@ const (
 type yNode struct {
 	kind    yKind
 	scalar  string
-	nullish bool         // true for null / empty / ~
-	mapKeys []string     // parallel to mapVals, ordered
+	nullish bool     // true for null / empty / ~
+	mapKeys []string // parallel to mapVals, ordered
 	mapVals []*yNode
 	seq     []*yNode
 }
@@ -512,13 +559,74 @@ func (d *YamlDecoderImpl) ReadInt64() int64 {
 	return v
 }
 
-func (d *YamlDecoderImpl) ReadFloat64() float64 {
+// ReadIntN reads a signed integer that must fit in bitSize bits; a value
+// outside that range is an error, never a silent wrap.
+func (d *YamlDecoderImpl) ReadIntN(bitSize int) int64 {
 	s, _ := d.readScalarText()
-	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	v, err := strconv.ParseInt(strings.TrimSpace(s), 10, bitSize)
 	if err != nil {
-		panic(fmt.Sprintf("yaml: invalid float %q: %v", s, err))
+		panic(fmt.Sprintf("yaml: invalid %s %q: %v", intKindName("int", bitSize), s, err))
 	}
 	return v
+}
+
+// ReadUintN reads an unsigned integer that must fit in bitSize bits;
+// negative or out-of-range values are errors.
+func (d *YamlDecoderImpl) ReadUintN(bitSize int) uint64 {
+	s, _ := d.readScalarText()
+	v, err := strconv.ParseUint(strings.TrimSpace(s), 10, bitSize)
+	if err != nil {
+		panic(fmt.Sprintf("yaml: invalid %s %q: %v", intKindName("uint", bitSize), s, err))
+	}
+	return v
+}
+
+// intKindName names the Go integer kind a bit size stands for; 0 is the
+// platform-sized int/uint, as in strconv.
+func intKindName(prefix string, bitSize int) string {
+	if bitSize == 0 {
+		return prefix
+	}
+	return prefix + strconv.Itoa(bitSize)
+}
+
+func (d *YamlDecoderImpl) ReadFloat64() float64 {
+	s, _ := d.readScalarText()
+	return parseYamlFloat(s, 64)
+}
+
+func (d *YamlDecoderImpl) ReadFloat32() float32 {
+	s, _ := d.readScalarText()
+	return float32(parseYamlFloat(s, 32))
+}
+
+// parseYamlFloat parses a float at the given bit size. The YAML core-schema
+// spellings of NaN and the infinities are accepted; a finite literal that
+// overflows the bit size is an error rather than a silent infinity.
+func parseYamlFloat(raw string, bitSize int) float64 {
+	s := strings.TrimSpace(raw)
+	if v, ok := yamlSpecialFloat(s); ok {
+		return v
+	}
+	v, err := strconv.ParseFloat(s, bitSize)
+	if err != nil || math.IsInf(v, 0) || math.IsNaN(v) {
+		panic(fmt.Sprintf("yaml: invalid float%d %q", bitSize, raw))
+	}
+	return v
+}
+
+// yamlSpecialFloat recognises the YAML 1.2 core-schema spellings of NaN and
+// the infinities.
+func yamlSpecialFloat(s string) (float64, bool) {
+	switch s {
+	case ".nan", ".NaN", ".NAN":
+		return math.NaN(), true
+	case ".inf", ".Inf", ".INF", "+.inf", "+.Inf", "+.INF":
+		return math.Inf(1), true
+	case "-.inf", "-.Inf", "-.INF":
+		return math.Inf(-1), true
+	}
+	return 0, false
 }
 
 func (d *YamlDecoderImpl) ReadBool() bool {
@@ -964,6 +1072,14 @@ func parseInlineScalar(raw string) *yNode {
 	s := strings.TrimSpace(raw)
 	if s == "" || s == "~" || s == "null" || s == "Null" || s == "NULL" {
 		return newScalarNode("", true)
+	}
+	// Flow-style empty containers, which the encoder writes for an empty
+	// Array/List/HashMap/struct.
+	switch s {
+	case "[]":
+		return &yNode{kind: ySeq}
+	case "{}":
+		return &yNode{kind: yMap}
 	}
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		return newScalarNode(unescapeDoubleQuoted(s[1:len(s)-1]), false)

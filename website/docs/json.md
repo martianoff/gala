@@ -147,6 +147,12 @@ Println(s"first tag: ${decoded.Tags.Get(0).Key}/${decoded.Tags.Get(0).Color}")
 
 The same applies to `HashMap[string, Tag]`, `List[Tag]`, and `Array[Array[Tag]]`. No additional builder calls or type annotations are required — declare the struct shape, ask for `Codec[T](naming)`, and the codec handles the rest.
 
+### Field Types
+
+A field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (`K` a string or an alias of `string`), nested to any depth. A field of any other type — a function, a pointer, a Go slice or map, a sealed type, a generic struct, `Option[Option[T]]` — is a compile error, [GALA-E0050](/docs/errors/gala-e0050/); a field is never silently written as `null`.
+
+Decoding checks ranges: `300` into an `int8`, `-1` into a `uint`, or `1e39` into a `float32` makes `Decode` return a `Failure`. JSON cannot represent NaN or ±Infinity, so encoding one makes `Encode` return a `Failure`.
+
 ---
 
 ## Unknown Fields
