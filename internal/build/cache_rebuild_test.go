@@ -42,6 +42,31 @@ func TestTranspile_RecopiesWhenOnlyANonGalaInputChanges(t *testing.T) {
 			edit:        "greeting.txt",
 			editContent: "embed-v2",
 		},
+		{
+			// Go resolves an embed pattern against the directory of the file
+			// that declares it, so this asset is util/greeting.txt, not a
+			// greeting.txt at the project root.
+			name: "embedded asset in a subpackage",
+			files: map[string]string{
+				"main.gala":         "package main\n\nfunc main() {\n    Println(\"main\")\n}\n",
+				"util/util.gala":    "package util\n\nembed val Greeting = \"greeting.txt\"\n",
+				"util/greeting.txt": "embed-v1",
+			},
+			edit:        "util/greeting.txt",
+			editContent: "embed-v2",
+		},
+		{
+			// A hand-written Go file embeds its own assets; its directive is
+			// not in any generated code.
+			name: "asset embedded by a hand-written Go file",
+			files: map[string]string{
+				"main.gala":        "package main\n\nfunc main() {\n    Println(\"main\")\n}\n",
+				"assets/assets.go": "package assets\n\nimport _ \"embed\"\n\n//go:embed page.html\nvar Page string\n",
+				"assets/page.html": "<p>v1</p>",
+			},
+			edit:        "assets/page.html",
+			editContent: "<p>v2</p>",
+		},
 	}
 
 	for _, tt := range tests {
@@ -51,7 +76,7 @@ func TestTranspile_RecopiesWhenOnlyANonGalaInputChanges(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(projectDir, "gala.mod"),
 				[]byte("module example.com/rebuild\n\ngala 0.0.0\n"), 0644))
 			for name, content := range tt.files {
-				require.NoError(t, os.WriteFile(filepath.Join(projectDir, name), []byte(content), 0644))
+				writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
 			}
 
 			// Each run is a fresh builder, as each `gala build` is a fresh process.
@@ -63,14 +88,14 @@ func TestTranspile_RecopiesWhenOnlyANonGalaInputChanges(t *testing.T) {
 				require.NoError(t, b.ensureStdlib())
 				require.NoError(t, b.transpileDeps())
 				require.NoError(t, b.transpile())
-				copied, err := os.ReadFile(filepath.Join(b.workspace.GenDir, tt.edit))
+				copied, err := os.ReadFile(filepath.Join(b.workspace.GenDir, filepath.FromSlash(tt.edit)))
 				require.NoError(t, err, "%s must be copied into gen/", tt.edit)
 				return string(copied)
 			}
 
 			require.Equal(t, tt.files[tt.edit], transpile())
 
-			require.NoError(t, os.WriteFile(filepath.Join(projectDir, tt.edit), []byte(tt.editContent), 0644))
+			writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(tt.edit)), tt.editContent)
 			require.Equal(t, tt.editContent, transpile(),
 				"editing only %s must reach the tree go build compiles", tt.edit)
 		})

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,9 +33,12 @@ import (
 //	.gala sources  every non-test .gala file under the project
 //	module files   gala.mod, and go.mod (its module path drives import rewriting)
 //	Go inputs      hand-written files the Go toolchain compiles, copied into
-//	               gen/ (.go, cgo and assembly sources — see goToolchainInput)
+//	               gen/ (.go, cgo and assembly sources — see goToolchainInput),
+//	               and the files their own //go:embed directives match
 //	embed assets   files matched by the //go:embed patterns the previous
-//	               transpile emitted (recorded next to the key)
+//	               transpile emitted (recorded next to the key, relative to the
+//	               project, since Go resolves a pattern against the directory
+//	               of the file that declares it)
 //	dependencies   the dependency key below: the analyzer reads dependency
 //	               sources while transpiling the project
 //
@@ -79,67 +81,32 @@ func (t toolchainKey) writeTo(h hash.Hash) {
 		t.GalaVersion, t.Transpiler, t.GoSDK, t.Stdlib)
 }
 
-var (
-	transpilerIdentityOnce  sync.Once
-	transpilerIdentityValue string
-)
-
-// transpilerIdentity is a content hash of the running executable, computed once
-// per process. The transpiler is compiled into this binary, so its bytes are the
-// only identity that changes with every change to the transpiler — including the
-// rebuilds of an unstamped "dev" binary that the version string cannot tell
-// apart.
+// transpilerIdentity is a content hash of the running executable (the one the
+// analysis cache already computes, analyzer.BinaryHash). The transpiler is
+// compiled into this binary, so its bytes are the only identity that changes
+// with every change to the transpiler — including the rebuilds of an unstamped
+// "dev" binary that the version string cannot tell apart.
 //
 // When the executable cannot be read, the identity is unique to this process:
 // every build re-transpiles, which is slow but never stale.
-func transpilerIdentity() string {
-	transpilerIdentityOnce.Do(func() {
-		if id, err := hashExecutable(); err == nil {
-			transpilerIdentityValue = id
-			return
-		}
-		transpilerIdentityValue = fmt.Sprintf("unhashable:%d:%d", os.Getpid(), time.Now().UnixNano())
-	})
-	return transpilerIdentityValue
-}
-
-func hashExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
+var transpilerIdentity = sync.OnceValue(func() string {
+	if id := analyzer.BinaryHash(); id != "" {
+		return id
 	}
-	f, err := os.Open(exe)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-var (
-	goSDKIdentityOnce  sync.Once
-	goSDKIdentityValue string
-)
+	return fmt.Sprintf("unhashable:%d:%d", os.Getpid(), time.Now().UnixNano())
+})
 
 // goSDKIdentity names the Go SDK the analyzer resolves Go package types from:
 // its root and the contents of its VERSION file. Upgrading Go in place keeps the
 // root and changes VERSION; switching SDKs changes the root.
-func goSDKIdentity() string {
-	goSDKIdentityOnce.Do(func() {
-		root := analyzer.GoSDKRoot()
-		if root == "" {
-			goSDKIdentityValue = "none"
-			return
-		}
-		version, _ := os.ReadFile(filepath.Join(root, "VERSION"))
-		goSDKIdentityValue = root + "|" + strings.TrimSpace(string(version))
-	})
-	return goSDKIdentityValue
-}
+var goSDKIdentity = sync.OnceValue(func() string {
+	root := analyzer.GoSDKRoot()
+	if root == "" {
+		return "none"
+	}
+	version, _ := os.ReadFile(filepath.Join(root, "VERSION"))
+	return root + "|" + strings.TrimSpace(string(version))
+})
 
 // computeSourceHash computes the transpile key over the declared input set
 // described at the top of this file. files holds every file input; a file that
@@ -217,18 +184,23 @@ func computeDepsHash(requires []mod.Require, replaces []mod.Replace, tc toolchai
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// walkCopiedTree visits the files the transpile step copies out of a source
-// tree (copyNonGalaFiles) plus the .gala sources, applying the same skip rules:
-// hidden directories, vendor, testdata, bazel-* entries and symlinks are not
-// part of the tree. Unreadable entries are skipped, as copyNonGalaFiles does.
-func walkCopiedTree(root string, visit func(path string, info os.FileInfo)) error {
+// walkCopiedTree visits the files of a source tree the transpile step reads or
+// copies (copyNonGalaFiles is built on it), and is the one definition of that
+// tree: hidden directories, vendor, testdata, bazel-* entries, symlinks and
+// stale transpiler output (.gen.go) are not part of it. Entries that cannot be
+// stat'd are skipped (Bazel junctions on Windows report "Incorrect function").
+func walkCopiedTree(root string, visit func(path string, info os.FileInfo) error) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || path == root {
 			return nil
 		}
+		// Bazel creates symlinks (Linux) or junctions (Windows) that may point
+		// to nonexistent targets.
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
+		// On Windows, junctions may not have ModeDir set, so the bazel-* name is
+		// checked before the IsDir() gate.
 		name := info.Name()
 		if strings.HasPrefix(name, "bazel-") {
 			if info.IsDir() {
@@ -242,24 +214,24 @@ func walkCopiedTree(root string, visit func(path string, info os.FileInfo)) erro
 			}
 			return nil
 		}
-		visit(path, info)
-		return nil
+		if strings.HasSuffix(name, ".gen.go") {
+			return nil
+		}
+		return visit(path, info)
 	})
 }
 
 // dependencyInputs lists every file of a dependency's source tree that its
 // transpile reads or copies. A dependency's non-.gala files are all copied into
-// its output (embedded assets included), so all of them are inputs; stale
-// transpiler output (.gen.go) is the one thing the copy skips.
+// its output (embedded assets included), so all of them are inputs.
 func dependencyInputs(dir string) ([]string, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, err
 	}
 	var files []string
-	err := walkCopiedTree(dir, func(path string, info os.FileInfo) {
-		if !strings.HasSuffix(info.Name(), ".gen.go") {
-			files = append(files, path)
-		}
+	err := walkCopiedTree(dir, func(path string, _ os.FileInfo) error {
+		files = append(files, path)
+		return nil
 	})
 	return files, err
 }
@@ -267,12 +239,10 @@ func dependencyInputs(dir string) ([]string, error) {
 // goToolchainInput reports whether a hand-written file copied into gen/ is read
 // by `go build`: Go sources, and the cgo, assembly and object inputs a package
 // may carry. Other copied files only reach the binary through //go:embed, which
-// the embed patterns cover — keying on them too would make every build that
-// drops its binary into the project directory invalidate the next one.
+// the embed patterns cover (those in generated code and those in hand-written
+// Go files) — keying on them too would make every build that drops its binary
+// into the project directory invalidate the next one.
 func goToolchainInput(name string) bool {
-	if strings.HasSuffix(name, ".gen.go") {
-		return false // stale transpiler output; copyNonGalaFiles skips it
-	}
 	switch filepath.Ext(name) {
 	case ".go", ".s", ".S", ".sx", ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
 		".m", ".f", ".F", ".for", ".f90", ".syso":
@@ -282,16 +252,28 @@ func goToolchainInput(name string) bool {
 }
 
 // projectGoInputs lists the hand-written files under the project that `go
-// build` reads from gen/, plus the project's go.mod when present.
+// build` reads from gen/: the Go toolchain inputs, the files their own
+// //go:embed directives match, and the project's go.mod when present.
 func projectGoInputs(projectDir string) ([]string, error) {
-	var files []string
-	err := walkCopiedTree(projectDir, func(path string, info os.FileInfo) {
+	var files, goFiles []string
+	err := walkCopiedTree(projectDir, func(path string, info os.FileInfo) error {
 		if goToolchainInput(info.Name()) {
 			files = append(files, path)
+			if filepath.Ext(path) == ".go" {
+				goFiles = append(goFiles, path)
+			}
 		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, goFile := range goFiles {
+		content, err := os.ReadFile(goFile)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, embedInputs(filepath.Dir(goFile), extractEmbedPatterns(string(content)))...)
 	}
 	if goMod := filepath.Join(projectDir, "go.mod"); fileExists(goMod) {
 		files = append(files, goMod)
@@ -299,12 +281,12 @@ func projectGoInputs(projectDir string) ([]string, error) {
 	return files, nil
 }
 
-// embedInputs resolves //go:embed patterns against the project directory the
-// way copyEmbedFiles does, expanding matched directories to their files.
-func embedInputs(projectDir string, patterns []string) []string {
+// embedInputs resolves //go:embed patterns against dir the way copyEmbedFiles
+// does, expanding matched directories to their files.
+func embedInputs(dir string, patterns []string) []string {
 	var files []string
 	for _, pattern := range patterns {
-		matches, _ := filepath.Glob(filepath.Join(projectDir, pattern))
+		matches, _ := filepath.Glob(filepath.Join(dir, filepath.FromSlash(pattern)))
 		for _, m := range matches {
 			info, err := os.Stat(m)
 			if err != nil {
@@ -350,9 +332,11 @@ const (
 )
 
 // sourceStamp is what .gala-source-hash records: the transpile key, and the
-// embed patterns that transpile emitted. The patterns come out of the generated
-// code, so they are only known after transpiling; recording them lets the next
-// build key on the assets they match before deciding whether to transpile.
+// embed patterns that transpile emitted, relative to the project directory
+// (each joined to the directory of the file that declares it). The patterns
+// come out of the generated code, so they are only known after transpiling;
+// recording them lets the next build key on the assets they match before
+// deciding whether to transpile.
 type sourceStamp struct {
 	Key    string
 	Embeds []string
@@ -388,9 +372,40 @@ func writeSourceStamp(path string, stamp sourceStamp) {
 }
 
 // sourceKey computes the transpile key for the current project, with embed
-// assets resolved from the given patterns. It returns "" when an input cannot
-// be read.
+// assets resolved from the given project-relative patterns. It returns "" when
+// an input cannot be read.
+//
+// The key has two parts because the embed patterns of generated code are only
+// known once transpiling is done: transpile() computes the base part before it
+// transpiles and, when the patterns changed, the embed part before it copies
+// the assets, so no part describes a file read later than the copy in gen/.
 func (b *Builder) sourceKey(galaFiles, embeds []string) string {
+	return combineSourceKey(b.baseSourceKey(galaFiles), b.embedKey(embeds))
+}
+
+// combineSourceKey joins the two parts of the transpile key; either part being
+// "" (an unreadable input) makes the whole key "".
+func combineSourceKey(base, embeds string) string {
+	if base == "" || embeds == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("base:" + base + "\nembeds:" + embeds + "\n"))
+	return hex.EncodeToString(sum[:])
+}
+
+// embedKey hashes the assets the given project-relative embed patterns match,
+// or returns "" when one cannot be read.
+func (b *Builder) embedKey(patterns []string) string {
+	h := sha256.New()
+	if !hashFiles(h, embedInputs(b.workspace.ProjectDir, patterns)) {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// baseSourceKey hashes every transpile input except the assets matched by the
+// embed patterns of generated code (see embedKey).
+func (b *Builder) baseSourceKey(galaFiles []string) string {
 	files := append([]string(nil), galaFiles...)
 	if galaMod := filepath.Join(b.workspace.ProjectDir, "gala.mod"); fileExists(galaMod) {
 		files = append(files, galaMod)
@@ -399,8 +414,7 @@ func (b *Builder) sourceKey(galaFiles, embeds []string) string {
 	if err != nil {
 		return ""
 	}
-	files = append(files, goInputs...)
-	files = dedupe(append(files, embedInputs(b.workspace.ProjectDir, embeds)...))
+	files = dedupe(append(files, goInputs...))
 	depsKey, err := b.depsKey()
 	if err != nil {
 		return ""

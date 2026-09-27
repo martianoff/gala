@@ -51,6 +51,8 @@ func newCacheFixture(t *testing.T) *cacheFixture {
 		"app/hook.go":           "package main\n",
 		"app/native/native.go":  "package native\n",
 		"app/native/native.h":   "int x;\n",
+		"app/native/embed.go":   "package native\n\nimport _ \"embed\"\n\n//go:embed page.html\nvar Page string\n",
+		"app/native/page.html":  "<p>v1</p>",
 		"app/greeting.txt":      "hello",
 		"app/static/site.css":   "body{}",
 		"app/cmd/app/main.gala": "package main\n\nfunc main() {}\n",
@@ -149,6 +151,9 @@ func TestCacheKeyMutationMatrix(t *testing.T) {
 		}, miss, hit},
 		{"embedded file edited", func(t *testing.T, fx *cacheFixture) {
 			fx.write(t, "greeting.txt", "goodbye")
+		}, miss, hit},
+		{"file embedded by a hand-written Go file edited", func(t *testing.T, fx *cacheFixture) {
+			fx.write(t, "native/page.html", "<p>v2</p>")
 		}, miss, hit},
 		{"file added under an embedded glob", func(t *testing.T, fx *cacheFixture) {
 			fx.write(t, "static/extra.css", "p{}")
@@ -341,4 +346,26 @@ func TestTranspileDeps_RetranspilesAfterLocalReplaceEdit(t *testing.T) {
 	second := transpileDeps()
 	require.Contains(t, second, `"v2"`, "the edited dependency source must be re-transpiled")
 	require.NotContains(t, second, `"v1"`)
+}
+
+// A //go:embed directive can list several patterns, quoted or not, with or
+// without the "all:" prefix; each names files the key has to cover.
+func TestExtractEmbedPatterns(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+		want []string
+	}{
+		{"single pattern", "//go:embed greeting.txt\nvar g string\n", []string{"greeting.txt"}},
+		{"several patterns on one line", "//go:embed a.txt static/*\n", []string{"a.txt", "static/*"}},
+		{"quoted patterns", "//go:embed \"a.txt\" `b.txt`\n", []string{"a.txt", "b.txt"}},
+		{"all: prefix", "//go:embed all:static\n", []string{"static"}},
+		{"indented directive", "\t//go:embed x.txt\n", []string{"x.txt"}},
+		{"no directive", "// go:embed x.txt\nvar x string\n", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, extractEmbedPatterns(tt.code))
+		})
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -527,7 +528,8 @@ func (b *Builder) transpile() error {
 	// that no longer matches — the next build re-transpiles.
 	hashFile := filepath.Join(b.workspace.Dir, sourceStampName)
 	previous, _ := readSourceStamp(hashFile)
-	currentHash := b.sourceKey(galaFiles, previous.Embeds)
+	baseKey := b.baseSourceKey(galaFiles)
+	currentHash := combineSourceKey(baseKey, b.embedKey(previous.Embeds))
 	if currentHash != "" && currentHash == previous.Key {
 		if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
 			if b.verbose {
@@ -590,12 +592,17 @@ func (b *Builder) transpile() error {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
 
-		// Collect embed patterns from generated Go code
-		allEmbedPatterns = append(allEmbedPatterns, extractEmbedPatterns(goCode)...)
-
 		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
 		if err != nil {
 			relPath = filepath.Base(galaFile)
+		}
+
+		// Collect embed patterns from generated Go code. Go resolves a pattern
+		// against the directory of the file that declares it, so each is made
+		// relative to the project directory.
+		relDir := filepath.ToSlash(filepath.Dir(relPath))
+		for _, pattern := range extractEmbedPatterns(goCode) {
+			allEmbedPatterns = append(allEmbedPatterns, path.Join(relDir, pattern))
 		}
 		// Preserve the subdirectory layout in gen/ so each GALA subpackage
 		// lands in its own directory — this is what the Go toolchain needs
@@ -613,6 +620,16 @@ func (b *Builder) transpile() error {
 		if b.verbose {
 			fmt.Printf("  %s -> %s\n", relPath, outName)
 		}
+	}
+
+	// When the emitted embed patterns differ from the ones the key was computed
+	// with, the sources declaring them changed; key the assets the new patterns
+	// match. This hashes them before they are copied below, so an asset edited
+	// from here on leaves a key that no longer matches the next build.
+	sort.Strings(allEmbedPatterns)
+	allEmbedPatterns = dedupe(allEmbedPatterns)
+	if !slices.Equal(allEmbedPatterns, previous.Embeds) {
+		currentHash = combineSourceKey(baseKey, b.embedKey(allEmbedPatterns))
 	}
 
 	// Copy embed source files to the gen directory
@@ -634,15 +651,8 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("rewriting project module imports: %w", err)
 	}
 
-	// Record the key for the next build, with the embed patterns this transpile
-	// emitted. When those differ from the patterns the key was computed with,
-	// the sources that declare them changed, and the key is recomputed so it
-	// covers the assets the new patterns match.
-	sort.Strings(allEmbedPatterns)
-	allEmbedPatterns = dedupe(allEmbedPatterns)
-	if !slices.Equal(allEmbedPatterns, previous.Embeds) {
-		currentHash = b.sourceKey(galaFiles, allEmbedPatterns)
-	}
+	// Record the key for the next build, with the embed patterns this
+	// transpile emitted.
 	if currentHash != "" {
 		writeSourceStamp(hashFile, sourceStamp{Key: currentHash, Embeds: allEmbedPatterns})
 	}
@@ -869,17 +879,20 @@ func (b *Builder) recordSourceHash() {
 	writeSourceStamp(filepath.Join(b.workspace.Dir, sourceStampName), sourceStamp{Key: hash})
 }
 
-// extractEmbedPatterns parses //go:embed directives from generated Go code
-// and returns the embed patterns.
+// extractEmbedPatterns parses //go:embed directives from Go code and returns
+// the embed patterns. A directive may list several space-separated patterns,
+// quoted or not, and a pattern may carry the "all:" prefix, which does not
+// change the files it names on disk.
 func extractEmbedPatterns(goCode string) []string {
 	var patterns []string
 	for _, line := range strings.Split(goCode, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//go:embed ") {
-			pattern := strings.TrimPrefix(trimmed, "//go:embed ")
-			pattern = strings.TrimSpace(pattern)
-			if pattern != "" {
-				patterns = append(patterns, pattern)
+		if rest, ok := strings.CutPrefix(trimmed, "//go:embed "); ok {
+			for _, field := range strings.Fields(rest) {
+				pattern := strings.TrimPrefix(strings.Trim(field, "\"`"), "all:")
+				if pattern != "" {
+					patterns = append(patterns, pattern)
+				}
 			}
 		}
 	}
