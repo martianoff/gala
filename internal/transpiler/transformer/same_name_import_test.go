@@ -215,6 +215,44 @@ func main() {
 			contains:    []string{"func(info gfs.FileInfo) string"},
 			notContains: []string{"func(info fs.FileInfo)"},
 		},
+		{
+			// os.Stat returns io/fs's FileInfo, which this file does not
+			// import. A dot import of GALA's `fs` must neither strip its
+			// qualifier nor lend it GALA's FileInfo fields.
+			name: "go type from an unimported package beside a dot-imported gala package of the same name",
+			src: `package main
+
+import (
+    "os"
+    . "martianoff/gala/fs"
+)
+
+func main() {
+    Println(Try(os.Stat(".")).Map((fi) => fi.IsDir()).GetOrElse(false), Exists("."))
+}
+`,
+			contains:    []string{"func(fi fs.FileInfo) bool", "fi.IsDir()", `"io/fs"`},
+			notContains: []string{"func(fi FileInfo)", "fi.IsDir.Get()"},
+		},
+		{
+			// An unaliased `math/rand/v2` binds `rand`, not the last path
+			// segment `v2`.
+			name: "go type from a major-version import path",
+			src: `package main
+
+import (
+    "math/rand/v2"
+    . "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    val r = rand.New(rand.NewPCG(1, 2))
+    Println(ArrayOf(r).Map((x) => x.IntN(1)).MkString(","))
+}
+`,
+			contains:    []string{"func(x *rand.Rand) int"},
+			notContains: []string{"v2.Rand"},
+		},
 	}
 
 	for _, tc := range cases {

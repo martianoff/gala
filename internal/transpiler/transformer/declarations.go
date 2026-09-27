@@ -1264,7 +1264,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 					} else if t.importManager.IsDotImported(pkg) {
 						t.markDotImportUsed(pkg)
 					} else {
-						if alias, ok := t.importManager.GetAlias(pkg); ok {
+						if alias, ok := t.packageQualifier(pkg); ok {
 							targetType = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(identName)}
 						}
 					}
@@ -1571,7 +1571,7 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 							// Dot-imported package: use unqualified name
 							t.markDotImportUsed(pkg)
 							field.Type = ast.NewIdent(typeName)
-						} else if alias, ok := t.importManager.GetAlias(pkg); ok {
+						} else if alias, ok := t.packageQualifier(pkg); ok {
 							field.Type = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
 						} else {
 							field.Type = ast.NewIdent(typeName)

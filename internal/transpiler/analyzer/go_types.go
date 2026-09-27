@@ -497,7 +497,7 @@ func isUnresolvedType(t transpiler.Type) bool {
 }
 
 // fileImportPaths maps the name a file refers to each import by (its alias, or
-// each name the path may bind — see packageNameCandidates) to that import's path.
+// each name the path may bind — see transpiler.PackageNameCandidates) to that import's path.
 // When two imports claim one name, the surer binding wins: an alias over the
 // last path segment, and the last path segment over a name derived by
 // stripping a version suffix or `go-` prefix.
@@ -524,7 +524,7 @@ func fileImportPaths(f *ast.File) map[string]string {
 			continue
 		}
 		last := path[strings.LastIndex(path, "/")+1:]
-		for _, name := range packageNameCandidates(path) {
+		for _, name := range transpiler.PackageNameCandidates(path) {
 			if name == last {
 				bind(name, path, lastSegment)
 			} else {

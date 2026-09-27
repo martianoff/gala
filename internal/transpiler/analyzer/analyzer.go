@@ -116,8 +116,7 @@ type galaAnalyzer struct {
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
 	currentDotImportPkgs map[string]bool                // Package names that are dot-imported in the current file
-	currentNamedImportPkgs map[string]bool              // Package names imported with a non-dot import in the current file (e.g. `import "pkg/x"` or `import al "pkg/x"`)
-	currentExplicitImportPaths map[string]bool          // Full GALA import paths the current file declared (covers BOTH dot and named imports — used to scope unresolved-symbol errors to symbols that *should* have been imported)
+	currentQualifiers   fileQualifiers                 // Import table of the file whose declarations are being resolved (see fileQualifiers)
 	analyzeDepth int                                    // recursion depth for profiling
 	cache        *analysisCache                         // disk-based package analysis cache
 
@@ -778,17 +777,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
-	// 0.55 Collect import aliases (e.g., import im "path/to/pkg" → im → actual package name),
-	// and every named import's qualifier → path for package-level val inference.
-	importPaths := make(map[string]string)
+	// 0.55 Collect import aliases (e.g., import im "path/to/pkg" → im → actual package name).
 	for _, impDecl := range sourceFile.AllImportDeclaration() {
 		ctx := impDecl.(*grammar.ImportDeclarationContext)
 		for _, spec := range ctx.AllImportSpec() {
 			s := spec.(*grammar.ImportSpecContext)
-			qualifier, path, named := importQualifier(s, richAST)
-			if named {
-				importPaths[qualifier] = path
-			}
+			path := strings.Trim(s.STRING().GetText(), "\"")
 			if aliasIdent := s.Identifier(); aliasIdent != nil {
 				alias := aliasIdent.GetText()
 				if alias != "." {
@@ -884,28 +878,22 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	logPhase("scan-sibling-imports", phaseStart)
 	phaseStart = time.Now()
 
+	// Each file's import table (see fileQualifiers), for this file and every
+	// sibling.
+	fileQuals := a.qualifiersForFile(sourceFile, richAST)
+	siblingQuals := make([]fileQualifiers, len(siblingTrees))
+	for i, sib := range siblingTrees {
+		siblingQuals[i] = a.qualifiersForFile(sib, richAST)
+	}
+
 	// Build set of dot-imported package names for type resolution.
 	// Collect from main file AND all sibling files so that when resolving types in
 	// sibling struct fields, we correctly qualify types from their dot imports too.
 	dotImportPkgs := make(map[string]bool)
-	allSourceFiles := []*grammar.SourceFileContext{sourceFile}
-	for _, sib := range siblingTrees {
-		allSourceFiles = append(allSourceFiles, sib)
-	}
-	for _, sf := range allSourceFiles {
-		for _, impDecl := range sf.AllImportDeclaration() {
-			ctx := impDecl.(*grammar.ImportDeclarationContext)
-			for _, spec := range ctx.AllImportSpec() {
-				s := spec.(*grammar.ImportSpecContext)
-				// Dot import: importSpec has no identifier but has more than just the STRING
-				// (the extra child is the '.' terminal)
-				isDotImport := s.Identifier() == nil && s.GetChildCount() > 1
-				if isDotImport {
-					path := strings.Trim(s.STRING().GetText(), "\"")
-					if pkgAlias, ok := richAST.Packages[path]; ok {
-						dotImportPkgs[pkgAlias] = true
-					}
-				}
+	for _, q := range append([]fileQualifiers{fileQuals}, siblingQuals...) {
+		for _, b := range q.dots {
+			if b.IsGala && b.PkgName != "" {
+				dotImportPkgs[b.PkgName] = true
 			}
 		}
 	}
@@ -918,23 +906,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// only accepted if *this file* explicitly imported
 	// `martianoff/gala/collection_immutable` (dot or named). Sibling
 	// imports do NOT propagate — that's the GALA-E0025 contract.
-	importPkgsForFile := func(sf *grammar.SourceFileContext) map[string]bool {
+	importPkgsForFile := func(q fileQualifiers) map[string]bool {
 		set := make(map[string]bool)
 		set[registry.StdPackageName] = true // std prelude
 		set[pkgName] = true                 // self
-		for _, impDecl := range sf.AllImportDeclaration() {
-			ctx := impDecl.(*grammar.ImportDeclarationContext)
-			for _, spec := range ctx.AllImportSpec() {
-				s := spec.(*grammar.ImportSpecContext)
-				path := strings.Trim(s.STRING().GetText(), "\"")
-				if pname, ok := richAST.Packages[path]; ok && pname != "" {
-					set[pname] = true
-				}
-			}
-		}
+		q.galaPackageNames(set)
 		return set
 	}
-	explicitImportPkgs := importPkgsForFile(sourceFile)
+	explicitImportPkgs := importPkgsForFile(fileQuals)
 
 	// Per-file import sets, keyed by canonical path, for the current file and
 	// every sibling. A method whose receiver type is declared in a sibling
@@ -945,21 +924,25 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// strictly per-file.
 	fileImportSets := make(map[string]map[string]bool)
 	fileImportSets[canonicalPath(filePath)] = explicitImportPkgs
-	for i, sib := range siblingTrees {
+	for i, q := range siblingQuals {
 		if i < len(siblingPaths) {
-			fileImportSets[canonicalPath(siblingPaths[i])] = importPkgsForFile(sib)
+			fileImportSets[canonicalPath(siblingPaths[i])] = importPkgsForFile(q)
 		}
 	}
 
 	// Set currentRichAST and dot-import tracking so resolveTypeWithParams can check
 	// already-known types (from dot-imported packages) before blindly qualifying with
 	// the current package name. This prevents e.g. Array from collection_immutable
-	// being misqualified as server.Array.
+	// being misqualified as server.Array. currentQualifiers is the import table
+	// of the file whose declarations are being resolved; sibling extraction
+	// swaps in the sibling's own.
 	a.currentRichAST = richAST
 	a.currentDotImportPkgs = dotImportPkgs
+	a.currentQualifiers = fileQuals
 	defer func() {
 		a.currentRichAST = nil
 		a.currentDotImportPkgs = nil
+		a.currentQualifiers = fileQualifiers{}
 	}()
 
 	// 1. Collect all types
@@ -1616,7 +1599,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	// 2b. Record this file's package-level val/var declarations so cross-file
 	// references unwrap their std.Immutable[T] wrapper correctly.
-	a.extractPackageVals(sourceFile, pkgName, richAST, docs, absFilePath, importPaths)
+	a.extractPackageVals(sourceFile, pkgName, richAST, docs, absFilePath)
 
 	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
 	a.discoverCompanionObjects(richAST)
@@ -1660,8 +1643,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				knownGalaPkgs[name] = true
 			}
 		}
-		goRefs := a.collectGoQualifiedTypes(sourceFile, knownGalaPkgs, richAST.Types)
-		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets, goRefs); len(errs) > 0 {
+		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets, fileQuals); len(errs) > 0 {
 			return nil, errs[0]
 		}
 
@@ -1698,10 +1680,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 // previously fell back to "default to current package" qualification
 // when a bare name didn't resolve. Mirrors Go's compile-time rule that
 // every cross-package symbol needs an explicit import in the file
-// using it. `goRefs` carries this file's Go imports, so a qualified type
-// written against one of them is not mistaken for a GALA package of the
-// same name.
-func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool, goRefs goQualifiedTypes) []*galaerr.SemanticError {
+// using it. `quals` is this file's import table, for the hint.
+func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool, quals fileQualifiers) []*galaerr.SemanticError {
 	var errs []*galaerr.SemanticError
 	// Per-call memo: many TypeMetadata / FunctionMetadata entries share
 	// the same DefinedIn (e.g. all 100+ types declared in one .gala
@@ -1736,7 +1716,7 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 		return match
 	}
 	check := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
-		walkTypeForUnresolvedPackages(t, explicit, knownGala, goRefs, &errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(t, explicit, knownGala, quals, &errs, pos, ctxName)
 	}
 	for fname, fm := range richAST.Functions {
 		if fm == nil || !isThisFile(fm.DefinedIn) {
@@ -1795,7 +1775,7 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 				}
 			}
 			mcheck := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
-				walkTypeForUnresolvedPackages(t, allowed, knownGala, goRefs, &errs, pos, ctxName)
+				walkTypeForUnresolvedPackages(t, allowed, knownGala, quals, &errs, pos, ctxName)
 			}
 			for _, pt := range mm.ParamTypes {
 				mcheck(pt, mm.Pos, tname+"."+mname)
@@ -1814,120 +1794,64 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 // against CodeUnresolvedCrossPackageSymbol (GALA-E0025): GALA mirrors
 // Go's rule that every cross-package symbol needs an explicit import
 // in the file using it. Packages not in `knownGala` are treated as
-// Go-side (validated by the Go compiler) and skipped, as is a qualified
-// type this file writes against its own Go import (see goQualifiedTypes).
-func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[string]bool, goRefs goQualifiedTypes, errs *[]*galaerr.SemanticError, pos transpiler.SourcePos, ctxName string) {
+// Go-side (validated by the Go compiler) and skipped, as is a type that
+// carries an import path: one written against a Go import (see
+// fileQualifiers.withGoImportPath).
+func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[string]bool, quals fileQualifiers, errs *[]*galaerr.SemanticError, pos transpiler.SourcePos, ctxName string) {
 	if t == nil {
 		return
 	}
 	switch tt := t.(type) {
 	case transpiler.NamedType:
-		if tt.Package != "" && !explicit[tt.Package] && knownGala[tt.Package] && !goRefs.refs[tt.Package+"."+tt.Name] {
+		if tt.Package != "" && tt.ImportPath == "" && !explicit[tt.Package] && knownGala[tt.Package] {
 			msg := fmt.Sprintf("undefined: %s (used in %s) — '%s' is not imported in this file",
 				tt.Name, ctxName, tt.Package)
-			var hint string
-			if goPath, ok := goRefs.imports[tt.Package]; ok {
-				// A bare name reached the GALA package through a sibling's dot
-				// import; "add an explicit import" would read as nonsense next
-				// to this file's own import of the same name.
-				hint = fmt.Sprintf(
-					"`%[1]s` in this file is the Go import %[2]q, which does not provide `%[3]s`. "+
-						"To use the GALA package's `%[3]s`, import it in this file too: `import . \"<path-ending-in-%[1]s>\"` for unqualified usage, "+
-						"or under an alias (`import g%[1]s \"<path>\"`) and call it as `g%[1]s.%[3]s`. Sibling files' imports do not propagate.",
-					tt.Package, goPath, tt.Name)
-			} else {
-				hint = fmt.Sprintf(
-					"add an explicit import to this file. For unqualified usage: `import . \"<path-ending-in-%s>\"`. "+
-						"For qualified usage: `import \"<path>\"` and call it as `%s.%s`. Sibling files' imports do not propagate.",
-					tt.Package, tt.Package, tt.Name)
-			}
 			*errs = append(*errs, galaerr.NewCodedSemanticError(
 				galaerr.CodeUnresolvedCrossPackageSymbol,
-				pos.Line, pos.Column, msg, hint))
+				pos.Line, pos.Column, msg, unresolvedPackageHint(tt, quals)))
 		}
 	case transpiler.GenericType:
-		walkTypeForUnresolvedPackages(tt.Base, explicit, knownGala, goRefs, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Base, explicit, knownGala, quals, errs, pos, ctxName)
 		for _, p := range tt.Params {
-			walkTypeForUnresolvedPackages(p, explicit, knownGala, goRefs, errs, pos, ctxName)
+			walkTypeForUnresolvedPackages(p, explicit, knownGala, quals, errs, pos, ctxName)
 		}
 	case transpiler.ArrayType:
-		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, goRefs, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, quals, errs, pos, ctxName)
 	case transpiler.MapType:
-		walkTypeForUnresolvedPackages(tt.Key, explicit, knownGala, goRefs, errs, pos, ctxName)
-		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, goRefs, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Key, explicit, knownGala, quals, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, quals, errs, pos, ctxName)
 	case transpiler.PointerType:
-		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, goRefs, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, quals, errs, pos, ctxName)
 	case transpiler.FuncType:
 		for _, pt := range tt.Params {
-			walkTypeForUnresolvedPackages(pt, explicit, knownGala, goRefs, errs, pos, ctxName)
+			walkTypeForUnresolvedPackages(pt, explicit, knownGala, quals, errs, pos, ctxName)
 		}
 		for _, rt := range tt.Results {
-			walkTypeForUnresolvedPackages(rt, explicit, knownGala, goRefs, errs, pos, ctxName)
+			walkTypeForUnresolvedPackages(rt, explicit, knownGala, quals, errs, pos, ctxName)
 		}
 	}
 }
 
-// goQualifiedTypes records what this file's Go imports mean to the
-// explicit-import check (GALA-E0025).
-//
-// GALA ships packages whose names collide with Go stdlib ones — strings, io,
-// path, fs, json, crypto, regex — and the check compares bare package names. A
-// file that imports Go's `strings` and writes `*strings.Builder` in a
-// signature yields NamedType{Package: "strings"}, which the metadata cannot
-// tell apart from a reference to GALA's `strings` once any sibling has loaded
-// that package. The source can: a type written with a qualifier this file
-// binds to a Go import is a Go type, whatever GALA packages the rest of the
-// package loads. A bare name that resolved to the GALA package is still
-// checked — this file's Go import does not make that name visible.
-type goQualifiedTypes struct {
-	// imports maps each qualifier this file binds to a Go import to the
-	// import's path.
-	imports map[string]string
-	// refs holds "qualifier.Name" for every qualified type this file writes
-	// against one of those qualifiers.
-	refs map[string]bool
-}
-
-// collectGoQualifiedTypes builds the goQualifiedTypes for sourceFile. Only Go
-// imports whose name is also a known GALA package can matter to the check, so
-// a file without such a clash — nearly every file — skips the source walk.
-func (a *galaAnalyzer) collectGoQualifiedTypes(sourceFile *grammar.SourceFileContext, knownGala map[string]bool, galaTypes map[string]*transpiler.TypeMetadata) goQualifiedTypes {
-	g := goQualifiedTypes{imports: make(map[string]string)}
-	for _, imp := range scanFileImports(sourceFile) {
-		if imp.IsDot || a.isGalaImport(imp.Path) {
-			continue
-		}
-		for _, name := range imp.LocalNames() {
-			if knownGala[name] {
-				g.imports[name] = imp.Path
-			}
-		}
+// unresolvedPackageHint is the GALA-E0025 hint for t. When this file binds
+// t's package name to a Go import — a bare name reached the GALA package
+// through a sibling's dot import — "add an explicit import" would read as
+// nonsense next to that import, so the hint names it and suggests an alias
+// for the qualified form.
+func unresolvedPackageHint(t transpiler.NamedType, quals fileQualifiers) string {
+	lead, alias := "add an explicit import to this file.", ""
+	if goPath, ok := quals.goImport(t.Package); ok {
+		lead = fmt.Sprintf("`%s` in this file is the Go import %q, which does not provide `%s`; import the GALA package in this file too.",
+			t.Package, goPath, t.Name)
+		alias = "g" + t.Package
 	}
-	if len(g.imports) == 0 {
-		return g
+	qualifier, importName := t.Package, ""
+	if alias != "" {
+		qualifier, importName = alias, alias+" "
 	}
-	// Metadata cannot tell `fs.FileInfo` written against the Go import from a
-	// bare `FileInfo` that resolved to GALA's `fs`. When the file writes both
-	// and the GALA package declares the member, the member is left to the
-	// check; a bare name the GALA package does not declare (say, a local
-	// `Builder`) is no ambiguity.
-	g.refs = make(map[string]bool)
-	bare := make(map[string]bool)
-	walkTypeContexts(sourceFile, func(tc *grammar.TypeContext) {
-		if qualifier, member, _, ok := typeQualifier(tc); ok {
-			if g.imports[qualifier] != "" {
-				g.refs[qualifier+"."+member] = true
-			}
-		} else if qi := tc.QualifiedIdentifier(); qi != nil {
-			bare[qi.GetText()] = true
-		}
-	})
-	for ref := range g.refs {
-		if _, galaDeclares := galaTypes[ref]; galaDeclares && bare[ref[strings.Index(ref, ".")+1:]] {
-			delete(g.refs, ref)
-		}
-	}
-	return g
+	return fmt.Sprintf(
+		"%s For unqualified usage: `import . \"<path-ending-in-%s>\"`. "+
+			"For qualified usage: `import %s\"<path>\"` and call it as `%s.%s`. Sibling files' imports do not propagate.",
+		lead, t.Package, importName, qualifier, t.Name)
 }
 
 // countErrors returns the number of Error-severity warnings in the list.
@@ -2464,7 +2388,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		// recursively resolve type arguments so inner types get proper prefixes
 		if idx := strings.Index(typeName, "["); idx != -1 {
 			baseQualified := typeName[:idx]
-			baseType := transpiler.ParseType(baseQualified)
+			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseQualified))
 
 			_, argStrs := extractBaseAndArgs(typeName)
 			var params []transpiler.Type
@@ -2475,7 +2399,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 				return transpiler.GenericType{Base: baseType, Params: params}
 			}
 		}
-		return transpiler.ParseType(typeName)
+		return a.currentQualifiers.withGoImportPath(transpiler.ParseType(typeName))
 	}
 
 	// Check if it's a type parameter - these should not be prefixed
@@ -3799,6 +3723,10 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 // by — the first declaration and reaching the Go compiler as "already
 // declared".
 func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
+	// The sibling's declarations resolve against the sibling's own imports.
+	outerQualifiers := a.currentQualifiers
+	a.currentQualifiers = a.qualifiersForFile(sibTree, richAST)
+	defer func() { a.currentQualifiers = outerQualifiers }()
 	absSibPath := a.parsedFileCacheKey(sibFilePath)
 	docs := a.docsForTree(absSibPath, sibTree)
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
@@ -4276,7 +4204,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 	// caller so they reuse the canonical path and docs map resolved above —
 	// docsForTree's own note explains why re-deriving them per sibling is worth
 	// avoiding.
-	a.extractPackageVals(sibTree, pkgName, richAST, docs, absSibPath, nil)
+	a.extractPackageVals(sibTree, pkgName, richAST, docs, absSibPath)
 	return nil
 }
 
@@ -4395,16 +4323,7 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 // otherwise it is left as NilType. The unwrap itself only needs the val/var
 // classification, so an unknown type still produces correct code — it merely
 // yields weaker downstream type inference for that identifier.
-//
-// importPaths maps the file's import qualifiers to paths; when nil it is built
-// from sourceFile, and only if an initializer needs it.
-func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, docs map[int]string, absFilePath string, importPaths map[string]string) {
-	qualifiers := func() map[string]string {
-		if importPaths == nil {
-			importPaths = importPathsByQualifier(sourceFile, richAST)
-		}
-		return importPaths
-	}
+func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, docs map[int]string, absFilePath string) {
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		var (
 			idList   grammar.IIdentifierListContext
@@ -4447,7 +4366,7 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			if typeCtx != nil {
 				valType = a.resolveTypeWithParams(typeCtx.GetText(), pkgName, nil)
 			} else if len(exprs) == len(names) {
-				valType = a.inferPackageValInitType(exprs[i], pkgName, richAST, qualifiers)
+				valType = a.inferPackageValInitType(exprs[i], pkgName, richAST)
 			}
 			valType = knownType(valType)
 			if richAST.PackageVals == nil {
@@ -4491,8 +4410,9 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 // val are Immutable. A reference to a binding declared later in the same file
 // is not resolved.
 //
-// importPaths maps each import qualifier of the declaring file to its path.
-func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, pkgName string, richAST *transpiler.RichAST, importPaths func() map[string]string) transpiler.Type {
+// A qualifier resolves through the declaring file's import table
+// (a.currentQualifiers).
+func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, pkgName string, richAST *transpiler.RichAST) transpiler.Type {
 	postfix := transformer.LeadingPostfixExpr(expr, true)
 	if postfix == nil {
 		// Not a single operand: of those, only a signed number is recognised.
@@ -4520,13 +4440,13 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 	var importPath, pkg string
 	if len(suffixes) > 0 {
 		if sel := suffixes[0].(*grammar.PostfixSuffixContext).Identifier(); sel != nil {
-			path, ok := importPaths()[name]
+			b, ok := a.currentQualifiers.named[name]
 			if !ok {
 				return transpiler.NilType{}
 			}
-			importPath, name, suffixes = path, sel.GetText(), suffixes[1:]
-			if pkg = richAST.Packages[importPath]; pkg == "" {
-				pkg = path[strings.LastIndex(path, "/")+1:]
+			importPath, name, suffixes = b.Path, sel.GetText(), suffixes[1:]
+			if pkg = b.PkgName; pkg == "" {
+				pkg = transpiler.AssumedPackageName(b.Path)
 			}
 		}
 	}
@@ -4618,35 +4538,6 @@ func literalType(lit *grammar.LiteralContext) transpiler.Type {
 		return transpiler.BasicType{Name: "bool"}
 	}
 	return transpiler.NilType{}
-}
-
-// importQualifier returns the qualifier a file writes for the import spec s —
-// its alias, else the package's real name — and the import path. ok is false
-// for a dot or blank import, which has no qualifier.
-func importQualifier(s *grammar.ImportSpecContext, richAST *transpiler.RichAST) (qualifier, path string, ok bool) {
-	path = strings.Trim(s.STRING().GetText(), "\"")
-	if aliasIdent := s.Identifier(); aliasIdent != nil {
-		qualifier = aliasIdent.GetText()
-	} else if s.GetChildCount() > 1 {
-		return "", path, false // dot import
-	} else if qualifier = richAST.Packages[path]; qualifier == "" {
-		qualifier = path[strings.LastIndex(path, "/")+1:]
-	}
-	return qualifier, path, qualifier != "." && qualifier != "_"
-}
-
-// importPathsByQualifier maps each named import of sourceFile, by qualifier,
-// to its path.
-func importPathsByQualifier(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST) map[string]string {
-	out := make(map[string]string)
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		for _, spec := range impDecl.(*grammar.ImportDeclarationContext).AllImportSpec() {
-			if qualifier, path, ok := importQualifier(spec.(*grammar.ImportSpecContext), richAST); ok {
-				out[qualifier] = path
-			}
-		}
-	}
-	return out
 }
 
 // inferLiteralType returns the type of a literal expression, or "" if not a literal.
@@ -5077,12 +4968,7 @@ func recordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, pctx *g
 func checkDuplicateImports(sourceFile *grammar.SourceFileContext) error {
 	seen := make(map[string]int) // path+local -> line of the first occurrence
 	for _, imp := range scanFileImports(sourceFile) {
-		// The alias, else the path's last segment: for one path, equal keys
-		// mean the same binding repeated, whatever package name Go assigns.
-		local := imp.Alias
-		if local == "" {
-			local = imp.Path[strings.LastIndex(imp.Path, "/")+1:]
-		}
+		local := imp.SpelledName()
 		if imp.IsDot {
 			// A dot import binds no name of its own, but repeating one still
 			// redeclares every symbol it introduces.

@@ -57,9 +57,8 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 				return ident, nil
 			}
 			alias := pkg
-			if a, path, ok := t.importManager.Qualifier(pkg); ok {
+			if a, ok := t.packageQualifier(pkg); ok {
 				alias = a
-				t.importManager.AddTransitive(path, alias)
 			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(alias),

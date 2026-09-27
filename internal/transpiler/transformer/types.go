@@ -125,11 +125,8 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 						if t.importManager.IsDotImported(pkg) {
 							t.markDotImportUsed(pkg)
 						} else {
-							if alias, path, ok := t.importManager.Qualifier(pkg); ok {
+							if alias, ok := t.packageQualifier(pkg); ok {
 								ident = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
-								// Track transitive import: the type may come from a sibling
-								// file's import — record so the import gets added to this file.
-								t.importManager.AddTransitive(path, alias)
 							}
 						}
 					}
@@ -306,21 +303,15 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			if v.Package == registry.StdPackageName {
 				return t.stdIdent(v.Name)
 			}
-			// A Go type carries its import path. Resolve it by path before any
-			// check keyed by package name: a Go `strings.Builder` must keep the
-			// Go qualifier even when this file also imports (or dot-imports) a
-			// GALA package named `strings`.
-			// A Go type written in GALA source carries no path; it resolves
-			// through this file's Go import of that name (goImportForPathlessType).
+			// A type that carries its import path resolves by that path, before
+			// any check keyed by package name (dot imports, the current package).
 			if v.ImportPath != "" {
-				if entry, ok := t.importManager.GetByPath(v.ImportPath); ok {
-					if entry.IsDot {
-						return ast.NewIdent(v.Name)
-					}
-					return &ast.SelectorExpr{X: ast.NewIdent(entry.Alias), Sel: ast.NewIdent(v.Name)}
-				}
-			} else if entry, ok := t.goImportForPathlessType(v.Package, v.Name); ok {
-				return &ast.SelectorExpr{X: ast.NewIdent(entry.Alias), Sel: ast.NewIdent(v.Name)}
+				return t.selectorForImportPath(v)
+			}
+			// A Go type whose import path was lost resolves through this
+			// file's Go import of that name.
+			if entry, ok := t.goImportForPathlessType(v); ok {
+				return &ast.SelectorExpr{X: ast.NewIdent(entry.QualifierFor(v.Package)), Sel: ast.NewIdent(v.Name)}
 			}
 			// Check if this is a dot import - if so, use just the type name
 			if t.importManager.IsDotImported(v.Package) {
@@ -328,33 +319,19 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 				return ast.NewIdent(v.Name)
 			}
 			// Check if this is the current package - if so, don't qualify with
-			// package name. Guard on ImportPath: a foreign Go package whose *name*
-			// collides with the current GALA package (e.g. `io/fs` — package name
-			// "fs" — referenced from GALA's own `fs` stdlib package) carries a
-			// non-empty ImportPath and is NOT local, so it must still be qualified.
-			// Genuinely-local types (built by GALA analysis) have no ImportPath;
-			// without this guard `io/fs.FileInfo` would drop to a bare `FileInfo`
-			// and collide with the package's own `FileInfo` type. (The local
-			// `FileInfo` struct and `io/fs.FileInfo` both stringify to `fs.FileInfo`
-			// inside this package; only ImportPath distinguishes them, so it must be
-			// preserved through inference for this guard to stay correct.)
-			if v.Package == t.packageName && v.ImportPath == "" {
+			// package name. A foreign Go package whose *name* collides with the
+			// current GALA package (e.g. `io/fs` — package name "fs" — referenced
+			// from GALA's own `fs` stdlib package) carries an ImportPath and was
+			// resolved above; only a genuinely local type reaches this point.
+			if v.Package == t.packageName {
 				return ast.NewIdent(v.Name)
 			}
-			// Track transitive import: if this package-qualified type is used but
-			// not explicitly imported in the source file, record the needed import
-			// so it can be added to the output file. A Go type this file does not
-			// import (e.g., os.Stat returns fs.FileInfo — "io/fs" not in GALA
-			// imports) gets a qualifier no import of this file binds; a GALA type
-			// uses this file's qualifier for its package (e.g., im for
-			// collection_immutable).
+			// A GALA type: this file's qualifier for its package (e.g., im for
+			// collection_immutable), with the import recorded in case the
+			// package reached this file through a sibling.
 			pkgName := v.Package
-			if v.ImportPath != "" {
-				pkgName = t.importManager.TransitiveQualifier(v.ImportPath, v.Package)
-				t.importManager.AddTransitive(v.ImportPath, pkgName)
-			} else if alias, path, ok := t.importManager.Qualifier(v.Package); ok {
+			if alias, ok := t.packageQualifier(v.Package); ok {
 				pkgName = alias
-				t.importManager.AddTransitive(path, pkgName)
 			}
 			return &ast.SelectorExpr{
 				X:   ast.NewIdent(pkgName),
@@ -693,7 +670,7 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		// package (io/fs — package "fs" — inside GALA's own `fs`) becomes
 		// indistinguishable from a local type, which drops its qualifier at
 		// generation (`fs.DirEntry` -> bare `DirEntry`) and blocks method lookup.
-		if path, ok := t.importManager.GetPath(x.Name); ok {
+		if path, ok := t.importManager.PathForQualifier(x.Name); ok {
 			named.ImportPath = path
 		}
 		return named
