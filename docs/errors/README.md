@@ -35,7 +35,6 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0013` | Non-defaulted parameter after defaulted parameter | [GALA-E0013.md](GALA-E0013.md) |
 | `GALA-E0014` | Default expression type mismatch | [GALA-E0014.md](GALA-E0014.md) |
 | `GALA-E0015` | Bare `return` inside a value-producing match | [GALA-E0015.md](GALA-E0015.md) |
-| `GALA-E0016` | Struct field name collides with type name | [GALA-E0016.md](GALA-E0016.md) |
 | `GALA-E0017` | Internal transpiler panic | [GALA-E0017.md](GALA-E0017.md) |
 | `GALA-E0018` | Sealed variant type parameter cannot be inferred | [GALA-E0018.md](GALA-E0018.md) |
 | `GALA-E0019` | Empty parenthesized expression | [GALA-E0019.md](GALA-E0019.md) |
@@ -68,6 +67,12 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0046` | Package already imported | [GALA-E0046.md](GALA-E0046.md) |
 | `GALA-E0047` | `if` takes no initializer statement | [GALA-E0047.md](GALA-E0047.md) |
 | `GALA-E0048` | Method on an alias to a non-local type | [GALA-E0048.md](GALA-E0048.md) |
+
+### Retired codes
+
+| Code | Was | Why it went |
+|------|-----|-------------|
+| `GALA-E0016` | Generic struct field named like another generic type of its package | Such fields are accepted now: `struct Box[T any](Mode Mode[T])` compiles. The number is not reused. |
 
 ## Adding a new code
 

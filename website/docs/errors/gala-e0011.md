@@ -72,5 +72,4 @@ The transpiler builds a single canonical metadata entry per type. A second decla
 - [GALA-E0012](/docs/errors/gala-e0012/) — the same rule for methods
 - [GALA-E0027](/docs/errors/gala-e0027/) — the same rule for top-level functions
 - [GALA-E0028](/docs/errors/gala-e0028/) — the same rule for type *aliases*
-- [GALA-E0016](/docs/errors/gala-e0016/) — a field name that shadows a type name
 - [All GALA error codes](/docs/errors/)

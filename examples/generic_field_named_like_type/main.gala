@@ -1,0 +1,120 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/examples/generic_field_named_like_type/lib"
+
+// A generic struct's field may share its name with another generic type of
+// the same package: `Mode Mode[T]`. Matching on, reading, copying and
+// chaining through such a field must keep the field and the type apart.
+
+// Mode is the sealed type the fields below are named after.
+sealed type Mode[T any] {
+    case A(Fn func(int) T)
+    case B(Fn func(string) T)
+}
+
+// Inner is a generic struct a field of Box is named after.
+struct Inner[T any](X T)
+
+// Label is a plain struct a field of Box is named after.
+struct Label(Text string)
+
+// Box has three fields, each named like its type.
+struct Box[T any](Mode Mode[T], Inner Inner[T], Label Label)
+
+// Match on the field in a method body.
+func (b Box[T]) Run(i int, s string) T = b.Mode match {
+    case A(fn) => fn(i)
+    case B(fn) => fn(s)
+}
+
+// Match on the field in a generic function.
+func kind[T any](b Box[T]) string = b.Mode match {
+    case A(_) => "a"
+    case B(_) => "b"
+}
+
+// The type name stays usable in type position next to the field.
+func (b Box[T]) GetMode() Mode[T] = b.Mode
+
+func (b Box[T]) Swap(m Mode[T]) Box[T] = b.Copy(Mode = m)
+
+func (b Box[T]) Local() string {
+    // Explicit annotations on purpose: the type names in type position.
+    val m Mode[T] = b.Mode
+    val in Inner[T] = b.Inner
+    return m match {
+        case A(_) => s"local-a ${in.X}"
+        case B(_) => s"local-b ${in.X}"
+    }
+}
+
+// Match on the field inside a lambda.
+func (b Box[T]) Tags(xs Array[int]) Array[string] = xs.Map((x) => b.Mode match {
+    case A(_) => s"a$x"
+    case B(_) => s"b$x"
+})
+
+// Construct variants of the type while matching on the field.
+func (b Box[T]) Flip() Mode[T] = b.Mode match {
+    case A(fn) => B[T]((s) => fn(s.Size()))
+    case B(fn) => A[T]((i) => fn(s"$i"))
+}
+
+// Field access chain through a field named like its type.
+struct Outer[T any](Box Box[T])
+
+func (o Outer[T]) Deep(i int) T = o.Box.Mode match {
+    case A(fn) => fn(i)
+    case B(fn) => fn("deep")
+}
+
+// Non-generic struct with a field named like a generic type.
+struct Plain(Mode Mode[int])
+
+func (p Plain) Kind() string = p.Mode match {
+    case A(_) => "plain-a"
+    case B(_) => "plain-b"
+}
+
+// Field named like a generic type from another package.
+struct Host[T any](Harness lib.Harness[string, T])
+
+func (h Host[T]) Mode() string = lib.ModeName(h.Harness.Mode)
+
+func main() {
+    val b = Box[int](Mode = A[int]((x) => x * 2), Inner = Inner(X = 7), Label = Label(Text = "lbl"))
+    Println(b.Run(21, "zz"))
+    Println(kind(b))
+    Println(b.Inner.X)
+    Println(b.Label.Text)
+    Println(b.GetMode() match {
+        case A(fn) => fn(1)
+        case B(fn) => fn("q")
+    })
+    Println(b.Local())
+    Println(b.Tags(ArrayOf(1, 2)).MkString(","))
+    Println(b.Flip() match {
+        case A(fn) => fn(5)
+        case B(fn) => fn("four")
+    })
+
+    val c = b.Copy(Mode = B[int]((s) => s.Size()))
+    Println(c.Run(0, "hello"))
+    Println(kind(c))
+    Println(b.Swap(c.Mode).Local())
+    Println(Outer[int](Box = c).Deep(3))
+    Println(Plain(Mode = B[int]((s) => s.Size())).Kind())
+
+    val h = lib.Harness[string, int](Model = lib.Model(State = "ready"), Mode = lib.Count[int]((n) => n + 1))
+    Println(h.Step(41, "x"))
+    Println(h.State())
+    Println(h.Model.State)
+    Println(h.Mode match {
+        case lib.Count(fn) => s"count ${fn(1)}"
+        case lib.Text(fn) => s"text ${fn("y")}"
+    })
+    val t = h.WithMode(lib.Text[int]((s) => s.Size()))
+    Println(t.Step(0, "four"))
+    Println(Host[int](Harness = t).Mode())
+}

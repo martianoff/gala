@@ -1,0 +1,34 @@
+package lib
+
+// Library-side generic types whose fields share their names with other
+// generic types of the same package.
+
+// Mode is a generic sealed type that a field of Harness is named after.
+sealed type Mode[T any] {
+    case Count(Fn func(int) T)
+    case Text(Fn func(string) T)
+}
+
+// Model is a generic struct that a field of Harness is named after.
+struct Model[M any](State M)
+
+// Harness carries a Model and a Mode in fields named like their types.
+struct Harness[M any, T any](Model Model[M], Mode Mode[T])
+
+// Step dispatches on the field that is named like its sealed type.
+func (h Harness[M, T]) Step(n int, s string) T = h.Mode match {
+    case Count(fn) => fn(n)
+    case Text(fn) => fn(s)
+}
+
+// State reads through the field that is named like its struct type.
+func (h Harness[M, T]) State() M = h.Model.State
+
+// WithMode replaces the Mode field through Copy.
+func (h Harness[M, T]) WithMode(m Mode[T]) Harness[M, T] = h.Copy(Mode = m)
+
+// ModeName names the active mode.
+func ModeName[T any](m Mode[T]) string = m match {
+    case Count(_) => "count"
+    case Text(_) => "text"
+}

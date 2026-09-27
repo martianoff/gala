@@ -88,7 +88,7 @@ struct Path(Points Array[int])
 
 The duplicate was doubly damaging. The field-type map kept only the later type, so the earlier field's type was lost; and the ordered field-name list contained the name *twice*, which the generator emitted verbatim — producing Go with a duplicated struct field that could not compile. Because the resulting failure surfaced in generated code, it pointed at a line the author never wrote. Rejecting in the analyzer keeps the error on the declaration.
 
-**Scope.** Fields within one struct declaration. A field name that collides with a *type* name in the same package is [GALA-E0016](/docs/errors/gala-e0016/); duplicate sealed-variant case names are [GALA-E0031](/docs/errors/gala-e0031/).
+**Scope.** Fields within one struct declaration. A field may share its name with a *type* of the same package — that is not a redeclaration. Duplicate sealed-variant case names are [GALA-E0031](/docs/errors/gala-e0031/).
 
 ---
 
@@ -100,6 +100,5 @@ The duplicate was doubly damaging. The field-type map kept only the later type, 
 
 ## Related
 
-- [GALA-E0016](/docs/errors/gala-e0016/) — a field name that shadows a type name
 - [Collections](/features/collections/) — `Array` and friends instead of repeated fields
 - [All GALA error codes](/docs/errors/)

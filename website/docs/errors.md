@@ -70,7 +70,6 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0013](/docs/errors/gala-e0013/) | Non-defaulted parameter follows a defaulted one | Declarations |
 | [GALA-E0014](/docs/errors/gala-e0014/) | Default value type does not match the parameter type | Declarations |
 | [GALA-E0015](/docs/errors/gala-e0015/) | Bare `return` inside a value-producing match | Pattern matching |
-| [GALA-E0016](/docs/errors/gala-e0016/) | Generic struct field name collides with a generic type name | Declarations |
 | [GALA-E0017](/docs/errors/gala-e0017/) | Internal transpiler panic | Internal |
 | [GALA-E0018](/docs/errors/gala-e0018/) | Cannot infer the type parameter of a sealed variant constructor | Type inference |
 | [GALA-E0019](/docs/errors/gala-e0019/) | Empty parenthesized expression `()` used as a value | Expressions |
@@ -102,6 +101,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
+One code is retired: **GALA-E0016** rejected a generic struct field named like another generic type of its package, such as `struct Box[T any](Mode Mode[T])`. Such fields are accepted now, and the number is not reused.
+
 ---
 
 ## Codes you will not see in practice
@@ -126,7 +127,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
-**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0016](/docs/errors/gala-e0016/), [E0034](/docs/errors/gala-e0034/).
+**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/).
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
