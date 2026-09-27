@@ -317,7 +317,7 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	// tryThunkValue), not a Try inside the Try.
 	if ctx == t.tryThunkLambda && len(b.List) > 0 {
 		if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
-			ret.Results[0], _ = t.tryThunkIIFE(ret.Results[0])
+			ret.Results[0] = t.tryThunkIIFE(ret.Results[0])
 		}
 	}
 	// Returns deferred until the slot was known are lowered now, before the
@@ -441,8 +441,8 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 // goCallReturnsErrorOnly checks if expr is a call to a Go function whose sole return
 // type is `error`. Returns the function name for the error message, or "" otherwise.
 // This only catches error-only returns (e.g., Close(), ListenAndServe()), NOT multi-return
-// functions like fmt.Println() which return (int, error) — those are handled by
-// tryWrapGoMultiReturnWithErrorPanic in non-void contexts.
+// functions like fmt.Println() which return (int, error) — those are one GALA value
+// (see go_results.go), and a discarded one is dropped back to the plain call.
 func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 	if t.goTypeInfo == nil {
 		return ""
@@ -635,7 +635,6 @@ func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, met
 
 	return nil
 }
-
 
 // inferBlockReturnType tries to infer the return type from a block's return statements.
 // Returns nil if no concrete type can be inferred.

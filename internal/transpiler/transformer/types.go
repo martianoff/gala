@@ -31,29 +31,7 @@ func isStdTupleIdent(ident ast.Expr) bool {
 // every callsite (`transformType`, `typeToExpr`, the positional ctor in
 // `tryTransformCompanionApplyOrStructCtor`, and `transformTupleLiteral`)
 // agrees on the mapping. (B2 — collapses 4 open-coded `Tuple%d` sites.)
-func tupleArityName(n int) (string, bool) {
-	switch n {
-	case 2:
-		return transpiler.TypeTuple, true
-	case 3:
-		return transpiler.TypeTuple3, true
-	case 4:
-		return transpiler.TypeTuple4, true
-	case 5:
-		return transpiler.TypeTuple5, true
-	case 6:
-		return transpiler.TypeTuple6, true
-	case 7:
-		return transpiler.TypeTuple7, true
-	case 8:
-		return transpiler.TypeTuple8, true
-	case 9:
-		return transpiler.TypeTuple9, true
-	case 10:
-		return transpiler.TypeTuple10, true
-	}
-	return "", false
-}
+func tupleArityName(n int) (string, bool) { return transpiler.TupleArityName(n) }
 
 // tupleTypeNames returns the canonical std tuple type names in arity order
 // (`Tuple` then `Tuple3` … `Tuple10`). Used by callers that need to iterate

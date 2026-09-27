@@ -399,22 +399,38 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 // several results: the Try or Tuple the call is (see transpiler.GoResultValueOf).
 // It returns "" for anything else.
 func goCallValueType(richAST *transpiler.RichAST, receiverText, name string) string {
-	end := skipTrailingWhitespace(receiverText, len(receiverText)-1) + 1
-	start := end
-	for start > 0 && isIdentChar(receiverText[start-1]) {
-		start--
-	}
-	if start == end || (start > 0 && receiverText[start-1] == '.') {
-		return ""
-	}
-	sig := goPackageFunc(richAST, receiverText[start:end], name)
-	if sig == nil {
-		return ""
-	}
-	if v, ok := transpiler.GoResultValueOf(sig.Returns); ok {
-		return typeDisplayName(v.Type)
+	if _, sig := goPackageCallee(richAST, receiverText, name); sig != nil {
+		if v, ok := transpiler.GoResultValueOf(sig.Returns); ok {
+			return typeDisplayName(v.Type)
+		}
 	}
 	return ""
+}
+
+// goPackageCallee resolves `qualifier.name`, where qualifier is the identifier
+// ending text, to a function of the Go package that qualifier names — directly
+// or through an import alias. The signature is nil when there is no such
+// function, including when the qualifier is itself selected off something
+// (`a.os`).
+func goPackageCallee(richAST *transpiler.RichAST, text, name string) (string, *transpiler.GoFuncSignature) {
+	end := skipTrailingWhitespace(text, len(text)-1) + 1
+	start := end
+	for start > 0 && isIdentChar(text[start-1]) {
+		start--
+	}
+	if start == end || (start > 0 && text[start-1] == '.') {
+		return "", nil
+	}
+	qualifier := text[start:end]
+	if sig := goPackageFunc(richAST, qualifier, name); sig != nil {
+		return qualifier, sig
+	}
+	if richAST != nil {
+		if pkg, ok := richAST.ImportAliases[qualifier]; ok {
+			return qualifier, goPackageFunc(richAST, pkg, name)
+		}
+	}
+	return qualifier, nil
 }
 
 // skipTrailingWhitespace walks backward from `start` over ASCII whitespace

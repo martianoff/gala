@@ -1084,8 +1084,14 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentListContext, receiver ast.Expr, method string) (ast.Expr, error) {
 	var mArgs []ast.Expr
 	hasSpread := false
-	goSig := t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
-	for i, argCtx := range argListCtx.AllArgument() {
+	args := argListCtx.AllArgument()
+	// The Go method's parameters, for passing a Go call's results through
+	// and for naming a Try passed where its plain value is expected.
+	var goSig *transpiler.GoFuncSignature
+	if len(args) > 0 {
+		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
+	}
+	for i, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
 		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
 		if extractErr != nil {
@@ -1099,6 +1105,7 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 			return nil, err
 		}
 		if !isSpread && arg.Identifier() == nil {
+			expr = t.spreadGoResultArg(goSig, len(args), expr)
 			if cerr := t.checkGoResultGoArg(goSig, i, expr, exprCtx); cerr != nil {
 				return nil, cerr
 			}
@@ -1518,15 +1525,17 @@ func (t *galaASTTransformer) transformFunctionArgs(
 ) (positional []ast.Expr, named map[string]ast.Expr, hasSpread bool, err error) {
 	named = make(map[string]ast.Expr)
 	argIdx := 0
+	args := argListCtx.AllArgument()
 
-	// A Go callee's parameter types, for naming a Go call's Try or Tuple
-	// passed where its plain value is expected (see checkGoResultGoArg).
+	// A Go callee's parameters, for passing a Go call's results through
+	// (spreadGoResultArg) and for naming a Try or Tuple passed where its plain
+	// value is expected (checkGoResultGoArg).
 	var goSig *transpiler.GoFuncSignature
 	if callCtx.funcMeta == nil && callCtx.applyMethodMeta == nil && len(callCtx.goFuncParamTypes) > 0 {
 		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: fun})
 	}
 
-	for _, argCtx := range argListCtx.AllArgument() {
+	for _, argCtx := range args {
 		arg := argCtx.(*grammar.ArgumentContext)
 		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
 		if extractErr != nil {
@@ -1578,12 +1587,13 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
-		tryThunk := len(argListCtx.AllArgument()) == 1 && isTryThunkParam(funcCallCtx, argIdx)
+		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, argIdx)
 		expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, expectedType, callCtx, tryThunk)
 		if aerr != nil {
 			return nil, nil, false, aerr
 		}
 		if !isSpreadAll {
+			expr = t.spreadGoResultArg(goSig, len(args), expr)
 			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, exprCtx); cerr != nil {
 				return nil, nil, false, cerr
 			}
@@ -3304,13 +3314,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 			if concreteResult {
 				retTypeExpr = t.typeToExpr(resultType)
 			}
-			return &ast.FuncLit{
-				Type: &ast.FuncType{
-					Params:  &ast.FieldList{},
-					Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
-				},
-				Body: thunkBody,
-			}, true
+			return thunkLit(thunkBody, retTypeExpr), true
 		}
 	}
 

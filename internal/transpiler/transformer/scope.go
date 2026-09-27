@@ -19,7 +19,7 @@ type scope struct {
 	// addVar (plain parameters, match/pattern binds, lambda params, loop vars),
 	// so the concurrency capture-safety check can tell a reassignment race apart
 	// from an immutable binding. See isMutableVar.
-	mutable  map[string]bool
+	mutable map[string]bool
 	// sendable records names whose DECLARED type is the `Sendable[F]` boundary
 	// marker. The marker is transparently unwrapped by transformType, so the
 	// type stored in valTypes is the bare `F` (e.g. a plain `func() int`); this

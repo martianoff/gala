@@ -590,6 +590,11 @@ func goResultsDisplay(returns []transpiler.Type) string {
 	if v, ok := transpiler.GoResultValueOf(returns); ok && !v.Type.IsNil() {
 		return cleanGoTypeForDisplay(v.Type.String())
 	}
+	return goResultsTuple(returns)
+}
+
+// goResultsTuple renders Go results the way Go writes them: `([]byte, error)`.
+func goResultsTuple(returns []transpiler.Type) string {
 	parts := make([]string, len(returns))
 	for i, r := range returns {
 		parts[i] = goTypeString(r)

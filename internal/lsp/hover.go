@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -92,7 +91,7 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 		return memberHover(richAST, recv, word)
 	}
 	// `pkg.Func` of an imported Go package.
-	if info := goFuncHover(richAST, text, line, char, word); info != "" {
+	if info := goFuncHover(richAST, lines, line, char, word); info != "" {
 		return info
 	}
 
@@ -217,39 +216,15 @@ func packageMemberHover(richAST *transpiler.RichAST, pkg, name string) string {
 	return ""
 }
 
-// goFuncHover renders `pkg.Name` under the cursor when pkg is a Go package the
-// file imports and Name one of its functions.
-func goFuncHover(richAST *transpiler.RichAST, text string, line, char int, name string) string {
-	lines := strings.Split(text, "\n")
-	if line >= len(lines) || char > len(lines[line]) {
+// goFuncHover renders `pkg.Name` under the cursor when pkg is a Go package and
+// Name one of its functions. A local value named like the package never gets
+// here: typeAtDot answers for it first.
+func goFuncHover(richAST *transpiler.RichAST, lines []string, line, char int, name string) string {
+	prefix, isMember := memberAccessPrefix(lines, line, char)
+	if !isMember {
 		return ""
 	}
-	l := lines[line]
-	start := char
-	for start > 0 && isIdentChar(l[start-1]) {
-		start--
-	}
-	if start == 0 || l[start-1] != '.' {
-		return ""
-	}
-	qEnd := start - 1
-	qStart := qEnd
-	for qStart > 0 && isIdentChar(l[qStart-1]) {
-		qStart--
-	}
-	if qStart == qEnd || (qStart > 0 && l[qStart-1] == '.') {
-		return ""
-	}
-	qualifier := l[qStart:qEnd]
-	importPath, imported := parseGalaImports(text)[qualifier]
-	if !imported {
-		return ""
-	}
-	pkg := path.Base(importPath)
-	if real, ok := richAST.GoImportNames[importPath]; ok {
-		pkg = real
-	}
-	sig := goPackageFunc(richAST, pkg, name)
+	qualifier, sig := goPackageCallee(richAST, prefix, name)
 	if sig == nil {
 		return ""
 	}
@@ -271,33 +246,12 @@ func goPackageFunc(richAST *transpiler.RichAST, pkg, name string) *transpiler.Go
 func formatGoFunc(pkg, name string, sig *transpiler.GoFuncSignature) string {
 	var b strings.Builder
 	b.WriteString("```gala\nfunc " + name + goFuncSigString(sig) + "\n```\n")
-	if len(sig.Returns) > 1 {
-		goResults := make([]string, len(sig.Returns))
-		for i, r := range sig.Returns {
-			goResults[i] = goTypeString(r)
-		}
-		b.WriteString(fmt.Sprintf("\nGo returns `(%s)`; a call used as a value is `%s`. `val %s = %s.%s(...)` binds the results one by one.\n",
-			strings.Join(goResults, ", "), goResultsDisplay(sig.Returns), goResultNames(sig.Returns), pkg, name))
+	if v, ok := transpiler.GoResultValueOf(sig.Returns); ok {
+		fmt.Fprintf(&b, "\nGo returns `%s`; a call used as a value is `%s`. `val %s = %s.%s(...)` binds the results one by one.\n",
+			goResultsTuple(sig.Returns), goResultsDisplay(sig.Returns), transpiler.PlaceholderNames(len(sig.Returns), v.Fails), pkg, name)
 	}
-	b.WriteString(fmt.Sprintf("\n*Package: %s (Go)*\n", pkg))
+	fmt.Fprintf(&b, "\n*Package: %s (Go)*\n", pkg)
 	return b.String()
-}
-
-// goResultNames renders placeholder binding names for Go results: `v, err`,
-// `a, b, c`, `a, b, err`.
-func goResultNames(returns []transpiler.Type) string {
-	fails := len(returns) > 0 && goTypeString(returns[len(returns)-1]) == "error"
-	if fails && len(returns) == 2 {
-		return "v, err"
-	}
-	names := make([]string, len(returns))
-	for i := range names {
-		names[i] = string(rune('a' + i))
-	}
-	if fails {
-		names[len(names)-1] = "err"
-	}
-	return strings.Join(names, ", ")
 }
 
 // memberHover renders a method or field selected on a receiver of known type.

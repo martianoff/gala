@@ -88,37 +88,20 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 // GALA's own Println and Print are statements, not Go calls, and keep their
 // plain form.
 func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
-	isPrintBuiltin := false
-	if id, ok := base.(*ast.Ident); ok && (id.Name == "Println" || id.Name == "Print") {
-		isPrintBuiltin = !t.isVal(id.Name) && !t.isVar(id.Name)
-	}
-	var argList *grammar.ArgumentListContext
-	if al, ok := suffix.ArgumentList().(*grammar.ArgumentListContext); ok {
-		argList = al
-	}
-	restore := t.markGoSpreadArg(base, argList)
+	isPrint := t.isBuiltinPrint(base)
 	call, err := t.applyCallSuffix(base, suffix)
-	restore()
-	if err != nil || isPrintBuiltin {
+	if err != nil || isPrint {
 		return call, err
 	}
 	// A conversion to a basic type (`string(data)`) of a converted Go call.
-	if id, ok := base.(*ast.Ident); ok && goBasicTypeNames[id.Name] && !t.isVal(id.Name) && !t.isVar(id.Name) {
+	if id, ok := base.(*ast.Ident); ok && transpiler.IsPrimitiveType(id.Name) && !t.isVal(id.Name) && !t.isVar(id.Name) {
 		if ce, ok := call.(*ast.CallExpr); ok && len(ce.Args) == 1 {
-			if res := t.goResultOf(ce.Args[0]); res != nil && !res.typ.IsNil() {
+			if res := t.goResultOf(ce.Args[0]); res != nil {
 				return nil, t.goResultMisuse(res, fmt.Sprintf("it cannot be converted to `%s`", id.Name), suffix)
 			}
 		}
 	}
 	return t.liftGoResults(call, suffix)
-}
-
-// goBasicTypeNames are the Go basic types a conversion `T(x)` can name.
-var goBasicTypeNames = map[string]bool{
-	"string": true, "bool": true, "byte": true, "rune": true,
-	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
-	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true, "uintptr": true,
-	"float32": true, "float64": true, "complex64": true, "complex128": true,
 }
 
 // resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
@@ -374,7 +357,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if exprList == nil {
 		return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "index expression requires expression list")
 	}
-	if res := t.goResultOf(base); res != nil && !res.typ.IsNil() {
+	if res := t.goResultOf(base); res != nil && !res.Type.IsNil() {
 		return nil, t.goResultMisuse(res, "it cannot be indexed", suffix)
 	}
 	base = t.unwrapImmutable(base)

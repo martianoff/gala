@@ -21,9 +21,9 @@ import (
 // wherever its call is used as a value:
 //
 //	(T, error)        → Try[T]               std.GoTry(call)
-//	(A, B, error)     → Try[Tuple[A, B]]     std.GoTry2(call)   … GoTry10
+//	(A, B, error)     → Try[Tuple[A, B]]     std.GoTry2(call)    … GoTry10
 //	(A, B)            → Tuple[A, B]          std.GoTuple(call)
-//	(A, B, C)         → Tuple3[A, B, C]      std.GoTuple3(call)      … GoTuple10
+//	(A, B, C)         → Tuple3[A, B, C]      std.GoTuple3(call)  … GoTuple10
 //
 // Go spreads a multi-value call over the parameters of the function it is
 // passed to (`f(g())`), and each helper takes exactly the call's results, so
@@ -41,7 +41,8 @@ import (
 //     turn an error into a Failure", so they keep producing Try[T] rather
 //     than Try[Try[T]] (see tryThunkValue),
 //   - the sole argument of a Go function whose parameters take the results
-//     one for one (`template.Must(tmpl.Parse(s))`), which Go spreads,
+//     one for one (`template.Must(tmpl.Parse(s))`), which Go spreads
+//     (spreadGoResultArg),
 //   - a statement, whose value is discarded (dropDiscardedGoResults).
 //
 // A call whose only result is `error` is one value already, and stays an
@@ -50,29 +51,36 @@ import (
 
 // goResult records one Go call converted to a GALA value.
 type goResult struct {
-	raw    *ast.CallExpr   // the Go call itself, yielding every result
-	fails  bool            // the last result is `error`: the value is a Try
-	typ    transpiler.Type // Try[T], Tuple[A, B], Try[Tuple[A, B]], …; NilType when a result type is unknown
-	count  int             // number of results, including a trailing error
-	callee string          // the callee as written, for diagnostics ("os.ReadFile"); "" when unavailable
-	via    string          // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
+	transpiler.GoResultValue
+	raw    *ast.CallExpr                 // the Go call itself, yielding every result
+	suffix *grammar.PostfixSuffixContext // the call's argument list, for quoting the callee in a diagnostic
+	via    string                        // the name the value was read through (`data` of `val data = os.ReadFile(p)`); "" for the call itself
+}
+
+// count is the number of the call's results, a trailing error included.
+func (r *goResult) count() int {
+	if r.Fails {
+		return r.Values + 1
+	}
+	return r.Values
 }
 
 // call renders the call for a diagnostic: `os.ReadFile(...)`.
 func (r *goResult) call() string {
-	if r.callee == "" {
+	if calleeText(r.suffix) == "" {
 		return "this call"
 	}
 	return "`" + r.source() + "`"
 }
 
 // source renders the call as a pasteable placeholder: `os.ReadFile(...)`, or
-// `...` when the callee is not known.
+// `...` when the callee is not worth quoting.
 func (r *goResult) source() string {
-	if r.callee == "" {
+	callee := calleeText(r.suffix)
+	if callee == "" {
 		return "..."
 	}
-	return r.callee + "(...)"
+	return callee + "(...)"
 }
 
 // liftGoResults converts expr, a call just built from its suffix, to one GALA
@@ -80,31 +88,18 @@ func (r *goResult) source() string {
 // returned unchanged.
 func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	call, ok := expr.(*ast.CallExpr)
-	if !ok || t.isImmutableUnwrapCall(call) || t.isGalaCallee(call) {
+	if !ok {
 		return expr, nil
 	}
+	// The signature first: it answers at once for almost every call (no Go
+	// type info, or a single result), before the guards that infer types.
 	sig := t.resolveGoCallSignature(call)
-	if sig == nil || len(sig.Returns) < 2 {
+	if sig == nil || len(sig.Returns) < 2 || t.isImmutableUnwrapCall(call) || t.isGalaCallee(call) {
 		return expr, nil
 	}
-	// The sole argument of a Go function that takes the results one for one
-	// stays the raw call; Go spreads it (see markGoSpreadArg).
-	if mark := t.goSpreadArg; mark.stop != 0 && suffix != nil && suffix.GetStop() != nil &&
-		suffix.GetStop().GetTokenIndex() == mark.stop && len(sig.Returns) == mark.params {
-		return expr, nil
-	}
-	returns := t.resolveGoCallReturnTypes(call)
-	if len(returns) != len(sig.Returns) {
-		returns = sig.Returns
-	}
+	returns := t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
 	value, _ := transpiler.GoResultValueOf(returns)
-	res := &goResult{
-		raw:    call,
-		fails:  value.Fails,
-		typ:    value.Type,
-		count:  len(returns),
-		callee: calleeText(suffix),
-	}
+	res := &goResult{GoResultValue: value, raw: call, suffix: suffix}
 	if value.Values > transpiler.MaxGoResultValues {
 		line, col := t.lastLine, t.lastCol
 		if suffix != nil {
@@ -112,15 +107,15 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.Postfi
 		}
 		return nil, galaerr.NewCodedSemanticError(galaerr.CodeGoCallResultAsValue, line, col,
 			fmt.Sprintf("%s returns %d values, more than the %d a Tuple holds, so it has no GALA value", res.call(), value.Values, transpiler.MaxGoResultValues),
-			fmt.Sprintf("bind the results by name: `val %s = %s`", placeholderNames(res.count, res.fails), res.source()))
+			fmt.Sprintf("bind the results by name: `val %s = %s`", transpiler.PlaceholderNames(res.count(), res.Fails), res.source()))
 	}
-	wrapper := &ast.CallExpr{Fun: t.stdHelperIdent(goResultHelper(value.Values, res.fails)), Args: []ast.Expr{call}}
+	wrapper := &ast.CallExpr{Fun: t.stdHelperIdent(goResultHelper(value.Values, res.Fails)), Args: []ast.Expr{call}}
 	if t.goResults == nil {
 		t.goResults = make(map[*ast.CallExpr]*goResult)
 	}
 	t.goResults[wrapper] = res
-	if !res.typ.IsNil() {
-		t.exprTypeCache[wrapper] = res.typ
+	if !res.Type.IsNil() {
+		t.exprTypeCache[wrapper] = res.Type
 	}
 	return wrapper, nil
 }
@@ -140,12 +135,18 @@ func goResultHelper(n int, fails bool) string {
 	}
 }
 
+// stdIsInScope reports whether std's names are reachable without a qualifier:
+// in std itself, or where it is dot-imported.
+func (t *galaASTTransformer) stdIsInScope() bool {
+	return t.packageName == registry.StdPackageName || t.importManager.IsDotImported(registry.StdPackageName)
+}
+
 // stdHelperIdent references a std function the way stdIdent does, without
 // marking the std import as needed: a converted call that ends up discarded is
 // unwrapped again, and an import kept only for it would be unused. The import
 // is claimed for the wrappers that survive (dropDiscardedGoResults).
 func (t *galaASTTransformer) stdHelperIdent(name string) ast.Expr {
-	if t.packageName == registry.StdPackageName || t.importManager.IsDotImported(registry.StdPackageName) {
+	if t.stdIsInScope() {
 		return ast.NewIdent(name)
 	}
 	return &ast.SelectorExpr{X: ast.NewIdent(registry.StdPackageName), Sel: ast.NewIdent(name)}
@@ -163,11 +164,11 @@ func calleeText(suffix *grammar.PostfixSuffixContext) string {
 		return ""
 	}
 	start, end := postfix.GetStart().GetStart(), suffix.GetStart().GetStart()-1
-	if end < start {
+	if end < start || end-start >= 60 {
 		return ""
 	}
 	text := postfix.GetStart().GetInputStream().GetText(start, end)
-	if text == "" || len(text) > 60 || strings.ContainsAny(text, "\n\r") {
+	if text == "" || strings.ContainsAny(text, "\n\r") {
 		return ""
 	}
 	return text
@@ -196,12 +197,8 @@ func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
 // isImmutableUnwrapCall reports whether expr is the `.Get()` that
 // unwrapImmutable inserts to read a val through its std.Immutable wrapper.
 func (t *galaASTTransformer) isImmutableUnwrapCall(expr ast.Expr) bool {
-	call, ok := expr.(*ast.CallExpr)
-	if !ok || len(call.Args) != 0 {
-		return false
-	}
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != transpiler.MethodGet {
+	sel := immutableGetReceiver(expr)
+	if sel == nil {
 		return false
 	}
 	// A val's scope entry records the unwrapped type, so the wrapper is
@@ -211,6 +208,20 @@ func (t *galaASTTransformer) isImmutableUnwrapCall(expr ast.Expr) bool {
 		return true
 	}
 	return t.isImmutableType(t.getExprTypeName(sel.X))
+}
+
+// immutableGetReceiver returns the selector of a zero-argument `.Get()` call,
+// the shape of an Immutable unwrap, and nil for anything else.
+func immutableGetReceiver(expr ast.Expr) *ast.SelectorExpr {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return nil
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != transpiler.MethodGet {
+		return nil
+	}
+	return sel
 }
 
 // rawGoCall returns the Go call inside a converted value, yielding every
@@ -226,25 +237,38 @@ func (t *galaASTTransformer) rawGoCall(expr ast.Expr) ast.Expr {
 }
 
 // goResultOf returns the conversion expr carries: expr is a converted Go call,
-// or reads a val bound to one. nil otherwise.
+// or reads a val bound to one. nil otherwise, and nil when the converted
+// value's type is unknown, since no misuse can then be judged.
 func (t *galaASTTransformer) goResultOf(expr ast.Expr) *goResult {
+	// Nothing is converted until a Go call is, so most files stop here.
+	if len(t.goResults) == 0 {
+		return nil
+	}
 	expr = ast.Unparen(expr)
 	if call, ok := expr.(*ast.CallExpr); ok {
 		if res := t.goResults[call]; res != nil {
-			return res
+			return typedGoResult(res)
 		}
-		if t.isImmutableUnwrapCall(call) {
-			expr = call.Fun.(*ast.SelectorExpr).X
+		// A val read through its Immutable wrapper: `data.Get()`.
+		if sel := immutableGetReceiver(call); sel != nil {
+			expr = sel.X
 		}
 	}
-	if id, ok := expr.(*ast.Ident); ok {
+	if id, ok := expr.(*ast.Ident); ok && t.isVal(id.Name) || ok && t.isVar(id.Name) {
 		if res := t.boundGoResult(id.Name); res != nil {
 			named := *res
 			named.via = id.Name
-			return &named
+			return typedGoResult(&named)
 		}
 	}
 	return nil
+}
+
+func typedGoResult(res *goResult) *goResult {
+	if res.Type.IsNil() {
+		return nil
+	}
+	return res
 }
 
 // bindGoResult remembers that name is bound to a converted Go call, so a later
@@ -279,105 +303,122 @@ func (t *galaASTTransformer) boundGoResult(name string) *goResult {
 
 // dropDiscardedGoResults unwraps converted calls whose value is discarded: an
 // expression statement, and the call of a `go` or `defer` statement, which Go
-// would otherwise evaluate at once as an argument of the helper. The std
-// import is claimed for the conversions that remain.
+// would otherwise evaluate at once as an argument of the helper. A conversion
+// that remains claims the std import.
+//
+// One walk does both: ast.Inspect visits a node's children after the node, so
+// a wrapper replaced by its raw call is never visited, and every conversion the
+// walk meets is one that stays. The file is walked rather than the map because
+// a conversion built while lowering an alternative that was then thrown away
+// is in the map but not in the file.
 func (t *galaASTTransformer) dropDiscardedGoResults(file *ast.File) {
 	if len(t.goResults) == 0 {
 		return
 	}
-	unwrap := func(e ast.Expr) (*ast.CallExpr, bool) {
-		call, ok := e.(*ast.CallExpr)
-		if !ok {
-			return nil, false
+	raw := func(e ast.Expr) *ast.CallExpr {
+		if call, ok := e.(*ast.CallExpr); ok {
+			if res := t.goResults[call]; res != nil {
+				return res.raw
+			}
 		}
-		res := t.goResults[call]
-		if res == nil {
-			return nil, false
-		}
-		return res.raw, true
+		return nil
 	}
-	dropped := make(map[*ast.CallExpr]bool)
+	needsStd := !t.stdIsInScope()
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.ExprStmt:
-			if raw, ok := unwrap(s.X); ok {
-				dropped[s.X.(*ast.CallExpr)] = true
-				s.X = raw
+			if r := raw(s.X); r != nil {
+				s.X = r
 			}
 		case *ast.GoStmt:
-			if raw, ok := unwrap(s.Call); ok {
-				dropped[s.Call] = true
-				s.Call = raw
+			if r := raw(s.Call); r != nil {
+				s.Call = r
 			}
 		case *ast.DeferStmt:
-			if raw, ok := unwrap(s.Call); ok {
-				dropped[s.Call] = true
-				s.Call = raw
+			if r := raw(s.Call); r != nil {
+				s.Call = r
 			}
-		}
-		return true
-	})
-	if t.packageName == registry.StdPackageName || t.importManager.IsDotImported(registry.StdPackageName) {
-		return
-	}
-	// A surviving conversion needs the std import. Walk the file rather than
-	// the map: a conversion built while lowering an alternative that was then
-	// thrown away is in the map but not in the file.
-	ast.Inspect(file, func(n ast.Node) bool {
-		if t.needsStdImport {
-			return false
-		}
-		if call, ok := n.(*ast.CallExpr); ok && t.goResults[call] != nil && !dropped[call] {
-			t.needsStdImport = true
-			return false
+		case *ast.CallExpr:
+			if needsStd && t.goResults[s] != nil {
+				t.needsStdImport = true
+			}
 		}
 		return true
 	})
 }
 
+// spreadGoResultArg returns the raw Go call when arg is the sole argument
+// (argCount 1) of a call to a Go function whose parameters take that call's
+// results one for one — `template.Must(tmpl.Parse(text))`, which Go spreads —
+// and arg itself otherwise. sig may be nil.
+func (t *galaASTTransformer) spreadGoResultArg(sig *transpiler.GoFuncSignature, argCount int, arg ast.Expr) ast.Expr {
+	if sig == nil || sig.IsVariadic || argCount != 1 || len(sig.Params) < 2 {
+		return arg
+	}
+	if res := t.goResults[asCall(arg)]; res != nil && res.count() == len(sig.Params) {
+		return res.raw
+	}
+	return arg
+}
+
 // tryThunkValue is the value a Try thunk computes from expr: Try(...) already
 // turns an error into a Failure, so a Go call's error becomes the panic Try
 // catches instead of a Try inside the Try. For a call that returns (T, error),
-// or (A, B, error) and so on, that is a func literal running the call and
+// or (A, B, error) and so on, that is a func body running the call and
 // panicking on the error; for a Go call returning only `error`, one that
 // yields Void. ok is false when expr is neither.
 func (t *galaASTTransformer) tryThunkValue(expr ast.Expr) (body *ast.BlockStmt, resultType ast.Expr, ok bool) {
-	raw := t.rawGoCall(expr)
-	if res := t.goResults[asCall(expr)]; res != nil && !res.fails {
+	if res := t.goResults[asCall(expr)]; res != nil && !res.Fails {
 		// A Tuple of values that cannot fail is the thunk's value as it is.
 		return nil, nil, false
 	}
+	raw := t.rawGoCall(expr)
 	if block, retType := t.tryWrapGoMultiReturnWithErrorPanic(raw); block != nil {
 		return block, retType, true
 	}
-	if t.goCallReturnsErrorOnly(raw) == "" {
+	if !t.isGoErrorOnlyCall(raw) {
 		return nil, nil, false
 	}
-	// func() std.Void { if err := call; err != nil { panic(err) }; return std.Void{} }
-	errIdent := ast.NewIdent("_err")
+	// func() std.Void { if _err := call; _err != nil { panic(_err) }; return std.Void{} }
 	void := t.stdIdent("Void")
 	return &ast.BlockStmt{List: []ast.Stmt{
 		&ast.IfStmt{
-			Init: &ast.AssignStmt{Lhs: []ast.Expr{errIdent}, Tok: token.DEFINE, Rhs: []ast.Expr{raw}},
+			Init: &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_err")}, Tok: token.DEFINE, Rhs: []ast.Expr{raw}},
 			Cond: &ast.BinaryExpr{X: ast.NewIdent("_err"), Op: token.NEQ, Y: ast.NewIdent("nil")},
 			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: &ast.CallExpr{
 				Fun: ast.NewIdent("panic"), Args: []ast.Expr{ast.NewIdent("_err")},
 			}}}},
 		},
 		&ast.ReturnStmt{Results: []ast.Expr{&ast.CompositeLit{Type: void}}},
-	}}, t.stdIdent("Void"), true
+	}}, void, true
+}
+
+// isGoErrorOnlyCall reports whether expr calls a Go function or method whose
+// only result is `error` — any callee shape resolveGoCallSignature knows,
+// dot-imported and generic ones included.
+func (t *galaASTTransformer) isGoErrorOnlyCall(expr ast.Expr) bool {
+	sig := t.resolveGoCallSignature(expr)
+	if sig == nil || len(sig.Returns) != 1 || sig.Returns[0] == nil || sig.Returns[0].String() != "error" {
+		return false
+	}
+	return !t.isGalaCallee(expr.(*ast.CallExpr))
+}
+
+// thunkLit is the zero-parameter func literal returning resultType.
+func thunkLit(body *ast.BlockStmt, resultType ast.Expr) *ast.FuncLit {
+	return &ast.FuncLit{
+		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: resultType}}}},
+		Body: body,
+	}
 }
 
 // tryThunkIIFE is tryThunkValue as an expression: the func literal, called.
-func (t *galaASTTransformer) tryThunkIIFE(expr ast.Expr) (ast.Expr, bool) {
+func (t *galaASTTransformer) tryThunkIIFE(expr ast.Expr) ast.Expr {
 	body, retType, ok := t.tryThunkValue(expr)
 	if !ok {
-		return expr, false
+		return expr
 	}
-	return &ast.CallExpr{Fun: &ast.FuncLit{
-		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: retType}}}},
-		Body: body,
-	}}, true
+	return &ast.CallExpr{Fun: thunkLit(body, retType)}
 }
 
 func asCall(expr ast.Expr) *ast.CallExpr {
@@ -401,42 +442,14 @@ func isTryThunkParam(callCtx callContext, argIdx int) bool {
 		return false
 	}
 	gen, ok := ret.(transpiler.GenericType)
-	if !ok || len(gen.Params) != 1 || stripPackagePrefix(gen.Base.String()) != transpiler.TypeTry {
+	if !ok || len(gen.Params) != 1 {
+		return false
+	}
+	if base, ok := gen.Base.(transpiler.NamedType); !ok || base.Name != transpiler.TypeTry {
 		return false
 	}
 	ft, ok := params[argIdx].(transpiler.FuncType)
 	return ok && len(ft.Params) == 0 && len(ft.Results) == 1 && ft.Results[0].String() == gen.Params[0].String()
-}
-
-// markGoSpreadArg notes the sole argument of a call to a Go function taking
-// several parameters, which a Go call returning as many results fills one for
-// one (`template.Must(tmpl.Parse(s))`). That argument is left unconverted. It
-// returns the function restoring the previous mark.
-func (t *galaASTTransformer) markGoSpreadArg(base ast.Expr, argList *grammar.ArgumentListContext) func() {
-	prev := t.goSpreadArg
-	restore := func() { t.goSpreadArg = prev }
-	t.goSpreadArg = goSpreadArgMark{}
-	if argList == nil || len(argList.AllArgument()) != 1 {
-		return restore
-	}
-	arg := argList.AllArgument()[0].(*grammar.ArgumentContext)
-	if arg.Identifier() != nil || arg.GetStop() == nil {
-		return restore
-	}
-	call := &ast.CallExpr{Fun: base}
-	sig := t.lookupGoCallSignature(call)
-	if sig == nil || sig.IsVariadic || len(sig.Params) < 2 || t.isGalaCallee(call) {
-		return restore
-	}
-	t.goSpreadArg = goSpreadArgMark{stop: arg.GetStop().GetTokenIndex(), params: len(sig.Params)}
-	return restore
-}
-
-// goSpreadArgMark identifies the argument markGoSpreadArg leaves unconverted:
-// the token that ends it, and the parameter count a call there must return.
-type goSpreadArgMark struct {
-	stop   int // 0 when no argument is marked
-	params int
 }
 
 // checkGoResultAgainst reports a converted Go call — or a val bound to one —
@@ -445,7 +458,7 @@ type goSpreadArgMark struct {
 // generated code; this names the call and the ways to reach the value.
 func (t *galaASTTransformer) checkGoResultAgainst(expr ast.Expr, expected transpiler.Type, ctx antlr.ParserRuleContext) error {
 	res := t.goResultOf(expr)
-	if res == nil || res.typ.IsNil() || !t.cannotHold(expected, res.typ) {
+	if res == nil || !t.cannotHold(expected, res.Type) {
 		return nil
 	}
 	return t.goResultMisuse(res, fmt.Sprintf("`%s` is expected here", displayType(expected)), ctx)
@@ -458,16 +471,12 @@ func (t *galaASTTransformer) checkGoResultGoArg(sig *transpiler.GoFuncSignature,
 	if sig == nil || len(sig.Params) == 0 {
 		return nil
 	}
-	var param transpiler.Type
-	switch {
-	case i < len(sig.Params) && !(sig.IsVariadic && i == len(sig.Params)-1):
-		param = sig.Params[i].Type
-	case sig.IsVariadic && i >= len(sig.Params)-1:
-		// Stored element-wise: `...string` is recorded as string.
-		param = sig.Params[len(sig.Params)-1].Type
-	default:
+	last := len(sig.Params) - 1
+	param := sig.Params[min(i, last)].Type
+	if i > last && !sig.IsVariadic {
 		return nil
 	}
+	// A variadic parameter is recorded element-wise: `...string` as string.
 	return t.checkGoResultAgainst(expr, param, ctx)
 }
 
@@ -483,7 +492,7 @@ func (t *galaASTTransformer) cannotHold(expected, got transpiler.Type) bool {
 	if gen, ok := expected.(transpiler.GenericType); ok && len(gen.Params) == 1 && t.isImmutableType(expected) {
 		return t.cannotHold(gen.Params[0], got)
 	}
-	if expected.String() == got.String() || stripPackagePrefix(expected.String()) == stripPackagePrefix(got.String()) {
+	if stripPackagePrefix(expected.String()) == stripPackagePrefix(got.String()) {
 		return false
 	}
 	switch e := expected.(type) {
@@ -515,31 +524,37 @@ func isStructOrSealed(meta *transpiler.TypeMetadata) bool {
 // then `resp.StatusCode`. A Try or Tuple member (Map, GetOrElse, V1) is fine.
 func (t *galaASTTransformer) checkGoResultMember(base ast.Expr, member string, ctx antlr.ParserRuleContext) error {
 	res := t.goResultOf(base)
-	if res == nil || res.typ.IsNil() {
+	if res == nil {
 		return nil
 	}
-	gen, ok := res.typ.(transpiler.GenericType)
+	gen, ok := res.Type.(transpiler.GenericType)
 	if !ok {
 		return nil
 	}
 	meta := t.getTypeMeta(gen.Base.String())
-	if meta == nil {
+	if meta == nil || hasMember(meta, member) {
 		return nil
 	}
+	return t.goResultMisuse(res, fmt.Sprintf("a %s has no member `%s`", stripPackagePrefix(gen.Base.String()), member), ctx)
+}
+
+// hasMember reports whether a type declares member as a method or field, of
+// itself or of one of its sealed cases, or has it synthesized.
+func hasMember(meta *transpiler.TypeMetadata, member string) bool {
 	if _, ok := meta.Methods[member]; ok {
-		return nil
+		return true
 	}
 	if _, ok := meta.Fields[member]; ok || isSynthesizedMethodName(member) {
-		return nil
+		return true
 	}
 	for _, v := range meta.SealedVariants {
 		for _, f := range v.FieldNames {
 			if f == member {
-				return nil
+				return true
 			}
 		}
 	}
-	return t.goResultMisuse(res, fmt.Sprintf("a %s has no member `%s`", genericBaseName(res.typ), member), ctx)
+	return false
 }
 
 // checkGoResultOperands reports a converted Go call — or a val bound to one —
@@ -547,7 +562,7 @@ func (t *galaASTTransformer) checkGoResultMember(base ast.Expr, member string, c
 // Try or a Tuple.
 func (t *galaASTTransformer) checkGoResultOperands(op string, ctx antlr.ParserRuleContext, operands ...ast.Expr) error {
 	for _, e := range operands {
-		if res := t.goResultOf(e); res != nil && !res.typ.IsNil() {
+		if res := t.goResultOf(e); res != nil {
 			return t.goResultMisuse(res, fmt.Sprintf("it cannot be an operand of `%s`", op), ctx)
 		}
 	}
@@ -558,7 +573,7 @@ func (t *galaASTTransformer) checkGoResultOperands(op string, ctx antlr.ParserRu
 // that can fail: its value is a Try, not a Tuple.
 func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, ctx antlr.ParserRuleContext) error {
 	res := t.goResultOf(expr)
-	if res == nil || !res.fails {
+	if res == nil || !res.Fails {
 		return nil
 	}
 	return t.goResultMisuse(res, "a Try is not a Tuple, so it cannot be destructured with `val (...)`", ctx)
@@ -567,23 +582,22 @@ func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, ctx an
 // goResultMisuse builds the GALA-E0049 diagnostic for a converted Go call used
 // as something it is not.
 func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antlr.ParserRuleContext) error {
-	var msg, hint string
-	shape := fmt.Sprintf("returns %d values", res.count)
-	if res.fails {
+	shape := fmt.Sprintf("returns %d values", res.count())
+	if res.Fails {
 		shape = "can fail"
 	}
+	var msg string
 	if res.via == "" {
-		msg = fmt.Sprintf("%s %s, so it produces `%s`; %s", res.call(), shape, displayType(res.typ), what)
+		msg = fmt.Sprintf("%s %s, so it produces `%s`; %s", res.call(), shape, displayType(res.Type), what)
 	} else {
-		msg = fmt.Sprintf("`%s` holds the result of %s, which %s, so it is a `%s`; %s", res.via, res.call(), shape, displayType(res.typ), what)
+		msg = fmt.Sprintf("`%s` holds the result of %s, which %s, so it is a `%s`; %s", res.via, res.call(), shape, displayType(res.Type), what)
 	}
-	if res.fails {
+	names := transpiler.PlaceholderNames(res.count(), res.Fails)
+	hint := fmt.Sprintf("read the values with `val (%s) = ...` or `.V1`, `.V2`, ...; or bind the results Go-style: `val %s = %s`",
+		names, names, res.source())
+	if res.Fails {
 		hint = fmt.Sprintf("take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val %s = %s`",
-			placeholderNames(res.count, true), res.source())
-	} else {
-		names := placeholderNames(res.count, false)
-		hint = fmt.Sprintf("read the values with `val (%s) = ...` or `.V1`, `.V2`, ...; or bind the results Go-style: `val %s = %s`",
-			names, names, res.source())
+			names, res.source())
 	}
 	line, col := t.lastLine, t.lastCol
 	if ctx != nil && ctx.GetStart() != nil {
@@ -596,31 +610,7 @@ func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antl
 	return err
 }
 
-// genericBaseName is the bare name of a generic type: Try, Tuple3.
-func genericBaseName(typ transpiler.Type) string {
-	if gen, ok := typ.(transpiler.GenericType); ok {
-		return stripPackagePrefix(gen.Base.String())
-	}
-	return displayType(typ)
-}
-
 // displayType renders a type as GALA source spells it.
 func displayType(typ transpiler.Type) string {
 	return strings.ReplaceAll(typ.String(), registry.StdPackageName+".", "")
-}
-
-// placeholderNames renders placeholder binding names for n results, the last
-// one `err` when the call fails: `a, b, c` / `v, err` / `a, b, err`.
-func placeholderNames(n int, fails bool) string {
-	if fails && n == 2 {
-		return "v, err"
-	}
-	names := make([]string, n)
-	for i := range names {
-		names[i] = string(rune('a' + i))
-	}
-	if fails {
-		names[n-1] = "err"
-	}
-	return strings.Join(names, ", ")
 }
