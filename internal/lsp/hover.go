@@ -246,9 +246,11 @@ func goPackageFunc(richAST *transpiler.RichAST, pkg, name string) *transpiler.Go
 func formatGoFunc(pkg, name string, sig *transpiler.GoFuncSignature) string {
 	var b strings.Builder
 	b.WriteString("```gala\nfunc " + name + goFuncSigString(sig) + "\n```\n")
-	if v, ok := transpiler.GoResultValueOf(sig.Returns); ok {
+	// Only when the GALA value can be named: an unresolved result type, or
+	// more results than a Tuple holds, has none.
+	if v, ok := transpiler.GoResultValueOf(sig.Returns); ok && !v.Type.IsNil() {
 		fmt.Fprintf(&b, "\nGo returns `%s`; a call used as a value is `%s`. `val %s = %s.%s(...)` binds the results one by one.\n",
-			goResultsTuple(sig.Returns), goResultsDisplay(sig.Returns), transpiler.PlaceholderNames(len(sig.Returns), v.Fails), pkg, name)
+			goResultsTuple(sig.Returns), cleanGoTypeForDisplay(v.Type.String()), transpiler.PlaceholderNames(len(sig.Returns), v.Fails), pkg, name)
 	}
 	fmt.Fprintf(&b, "\n*Package: %s (Go)*\n", pkg)
 	return b.String()

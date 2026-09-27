@@ -620,7 +620,9 @@ same.
 `Try(goCall())` is the call's own Try — the conversion is not applied twice —
 so `Try(strconv.Atoi(s))`, `Try(() => strconv.Atoi(s))` and `strconv.Atoi(s)`
 are all a `Try[int]`. Going through `Try(...)` also turns a panic inside the
-call into a `Failure`.
+call into a `Failure`. Any other by-name parameter takes the call's value like
+an ordinary argument: `Future(os.ReadFile(path))` is a `Future[Try[[]byte]]`
+that completes with the `Try`.
 
 **Taking the results one by one.** A binding of several names (no
 parentheses) still receives Go's results as they are, which is the way to hand

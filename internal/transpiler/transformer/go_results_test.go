@@ -64,6 +64,9 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 			[]string{`std.Try_Map(std.GoTry(strconv.Atoi("1")),`}},
 		{"interpolated value", "    Println(s\"${strconv.Atoi(\"1\")}\")",
 			[]string{`std.GoTry(strconv.Atoi("1"))`}},
+		// A Tuple compares like any other Tuple.
+		{"Tuple compared with ==", "    val c = strings.Cut(\"a=b\", \"=\")\n    Println(c == (\"a\", \"b\", true))",
+			[]string{`std.GoTuple3(strings.Cut("a=b", "="))`}},
 	}
 	for _, tc := range converted {
 		t.Run("converts/"+tc.name, func(t *testing.T) {
