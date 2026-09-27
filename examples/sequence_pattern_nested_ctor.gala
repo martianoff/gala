@@ -1,0 +1,115 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Nested constructor patterns inside a sequence pattern, typed element
+// patterns, and generic struct patterns against an `any` subject.
+//
+// A sub-pattern such as `Square(s)` in `case Array(Square(s), _)` is a pattern
+// against the element, never a binding of the name `Square`; the bindings it
+// declares (`s`) are visible to the arm. The arm is still gated on the size
+// check, so a too-short sequence falls through to the next case.
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+struct Box[T any](V T, Tag string)
+struct Pair[K any, V any](Key K, Val V)
+struct Plain(N int)
+
+func firstSquare(xs Array[Shape]) string = xs match {
+    case Array(Square(s), _)       => s"square $s first of two"
+    case Array(Circle(r), rest...) => s"circle $r then ${rest.Size()} more"
+    case _                         => "no match"
+}
+
+func nestedOption(xs Array[Option[Shape]]) int = xs match {
+    case Array(Some(Square(s)), rest...) => s + rest.Size()
+    case Array(None(), _)                => -1
+    case _                               => 0
+}
+
+func literalHead(xs List[int]) string = xs match {
+    case List(0, second, _...) => s"zero then $second"
+    case List(first, _...)     => s"starts with $first"
+    case _                     => "empty"
+}
+
+func typedHead(xs Array[any]) string = xs match {
+    case Array(n: int, _)    => s"int $n"
+    case Array(s: string, _) => s"string $s"
+    case _                   => "other"
+}
+
+func describe(x any) string = x match {
+    case Box[int](v, tag)        => s"int box $tag ${v + 1}"
+    case Box[string](v, _)       => s"string box ${v + "!"}"
+    case Pair[string, int](k, v) => s"pair $k=${v * 2}"
+    case Plain(n)                => s"plain $n"
+    case _                       => "other"
+}
+
+// A sub-pattern only runs once its guard holds: on an empty sequence (or an
+// empty Option) the element is never read, so a struct pattern on a pointer
+// element does not dereference nil and a user extractor is not invoked.
+struct Node(V int)
+
+var probes = 0
+
+struct Probe()
+
+func (p Probe) Unapply(n int) Option[int] {
+    probes = probes + 1
+    return Some(n)
+}
+
+func firstNode(xs Array[*Node]) string = xs match {
+    case Array(Node(v), rest...) => s"node $v then ${rest.Size()}"
+    case _                       => "none"
+}
+
+func probed(xs Array[int]) string = xs match {
+    case Array(Probe(x), y) => s"probe $x $y"
+    case _                  => "short"
+}
+
+func payload(o Option[*Node]) string = o match {
+    case Some(Node(v)) => s"some $v"
+    case _             => "empty"
+}
+
+func main() {
+    Println(firstSquare(ArrayOf[Shape](Square(4), Circle(1))))
+    Println(firstSquare(ArrayOf[Shape](Circle(2), Square(1), Square(3))))
+    Println(firstSquare(ArrayOf[Shape](Square(4))))
+    Println(firstSquare(EmptyArray[Shape]()))
+
+    Println(nestedOption(ArrayOf[Option[Shape]](Some(Square(5)), None())))
+    Println(nestedOption(ArrayOf[Option[Shape]](None(), None())))
+    Println(nestedOption(EmptyArray[Option[Shape]]()))
+
+    Println(literalHead(ListOf(0, 7, 8)))
+    Println(literalHead(ListOf(3)))
+    Println(literalHead(EmptyList[int]()))
+
+    Println(typedHead(ArrayOf[any](1, "two")))
+    Println(typedHead(ArrayOf[any]("one", 2)))
+    Println(typedHead(EmptyArray[any]()))
+
+    Println(describe(Box(V = 41, Tag = "b")))
+    Println(describe(Box(V = "hi", Tag = "s")))
+    Println(describe(Pair[string, int](Key = "k", Val = 21)))
+    Println(describe(Plain(N = 3)))
+    Println(describe(Box(V = true, Tag = "x")))
+
+    Println(firstNode(ArrayOf(&Node(V = 1), &Node(V = 2))))
+    Println(firstNode(EmptyArray[*Node]()))
+    Println(probed(ArrayOf(1)))
+    Println(s"probes after the short sequence: $probes")
+    Println(probed(ArrayOf(1, 2)))
+    Println(s"probes after the match: $probes")
+    Println(payload(Some(&Node(V = 5))))
+    Println(payload(None[*Node]()))
+}

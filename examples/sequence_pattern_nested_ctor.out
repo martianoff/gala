@@ -1,0 +1,26 @@
+square 4 first of two
+circle 2 then 2 more
+no match
+no match
+6
+-1
+0
+zero then 7
+starts with 3
+empty
+int 1
+string one
+other
+int box b 42
+string box hi!
+pair k=42
+plain 3
+other
+node 1 then 1
+none
+short
+probes after the short sequence: 0
+probe 1 2
+probes after the match: 1
+some 5
+empty

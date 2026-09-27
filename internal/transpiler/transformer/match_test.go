@@ -174,11 +174,13 @@ var res = std.NewImmutable(func(obj std.Option[any]) string {
 		_tmp_1 := std.Some[any]{}.Unapply(obj)
 		_tmp_2 := _tmp_1.IsDefined()
 		var _tmp_3 any
+		var s string
+		var _tmp_4 bool
 		if _tmp_2 {
 			_tmp_3 = _tmp_1.Get()
+			s, _tmp_4 = std.As[string](_tmp_3)
 		}
 		_ = _tmp_3
-		s, _tmp_4 := std.As[string](_tmp_3)
 		if _tmp_2 && _tmp_4 {
 			return s
 		} else {
