@@ -1042,6 +1042,7 @@ A few edge cases:
 
 ```gala
 val limit = 10
+val n = 12
 val r = n match {
     case x if x == limit => "at the limit"
     case x               => s"bound $x"
