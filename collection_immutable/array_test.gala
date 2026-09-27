@@ -587,3 +587,92 @@ func TestArrayLargeAccessDepth5(t T) T {
     val t3 = Eq[int](t2, xs.Append(n).Get(n), n)
     return Eq[int](t3, xs.Updated(1048575, -1).Get(1048575), -1)
 }
+
+// === Sort Stability Tests ===
+// Sorted, SortWith and SortBy are stable: elements whose keys compare equal keep
+// their original relative order.
+
+struct Row(Name string, K int)
+
+func rowNames(rows Array[Row]) string = rows.Map((r) => r.Name).MkString(",")
+
+// stableByK is the expected stable result of sorting by K: every K=0 row, then
+// every K=1 row, each group in input order.
+func stableByK(rows Array[Row]) string =
+    rowNames(rows.Filter((r) => r.K == 0).AppendAll(rows.Filter((r) => r.K == 1)))
+
+func TestArraySortStability(t T) T {
+    val mixed = ArrayOf(Row("a", 1), Row("b", 0), Row("c", 1), Row("d", 0))
+    val same = ArrayOf(Row("a", 0), Row("b", 0), Row("c", 0), Row("d", 0))
+    val big = ArrayTabulate(40, (i) => Row(s"r$i", i % 2))
+
+    val t1 = Eq[string](t, rowNames(mixed.SortBy((r) => r.K)), "b,d,a,c")
+    val t2 = Eq[string](t1, rowNames(mixed.SortWith((x, y) => x.K < y.K)), "b,d,a,c")
+    val t3 = Eq[string](t2, rowNames(same.SortBy((r) => r.K)), "a,b,c,d")
+    val t4 = Eq[string](t3, rowNames(same.SortWith((x, y) => x.K < y.K)), "a,b,c,d")
+    val t5 = Eq[string](t4, rowNames(big.SortBy((r) => r.K)), stableByK(big))
+    return Eq[string](t5, rowNames(big.SortWith((x, y) => x.K < y.K)), stableByK(big))
+}
+
+func TestListSortStability(t T) T {
+    val mixed = ListOf(Row("a", 1), Row("b", 0), Row("c", 1), Row("d", 0))
+    val same = ListOf(Row("a", 0), Row("b", 0), Row("c", 0), Row("d", 0))
+    val t1 = Eq[string](t, rowNames(mixed.SortBy((r) => r.K).ToArray()), "b,d,a,c")
+    val t2 = Eq[string](t1, rowNames(mixed.SortWith((x, y) => x.K < y.K).ToArray()), "b,d,a,c")
+    return Eq[string](t2, rowNames(same.SortBy((r) => r.K).ToArray()), "a,b,c,d")
+}
+
+func TestHashMapSortStability(t T) T {
+    val m = ArrayTabulate(40, (i) => i).FoldLeft(EmptyHashMap[string, int](), (acc, i) => acc.Put(s"k$i", i % 2))
+    // Entries with equal values keep the order ToArray yields them in.
+    val entries = m.ToArray()
+    val expected = entries.Filter((e) => e.V2 == 0).AppendAll(entries.Filter((e) => e.V2 == 1)).Map((e) => e.V1).MkString(",")
+    val t1 = Eq[string](t, m.SortBy((e) => e.V2).Map((e) => e.V1).MkString(","), expected)
+    return Eq[string](t1, m.SortWith((x, y) => x.V2 < y.V2).Map((e) => e.V1).MkString(","), expected)
+}
+
+// === Sort Result Independence Tests ===
+// A sorted array's leaves are windows of the sort's working buffer. Appending to
+// or updating the result must copy, never write into memory another array reads.
+
+func TestArraySortResultIsIndependent(t T) T {
+    // 100 elements: three full leaves and a partial last leaf.
+    val xs = ArrayTabulate(100, (i) => 99 - i)
+    val sorted = xs.Sorted()
+    val appendedA = sorted.Append(1000)
+    val appendedB = sorted.Append(2000)
+    val updated = sorted.Updated(0, -1)
+    val updatedLast = sorted.Updated(99, -99)
+    val sliced = sorted.Slice(10, 20)
+
+    val t1 = Eq[int](t, appendedA.Get(100), 1000)
+    val t2 = Eq[int](t1, appendedB.Get(100), 2000)
+    val t3 = Eq[int](t2, updated.Get(0), -1)
+    val t4 = Eq[int](t3, updatedLast.Get(99), -99)
+    val t5 = Eq[int](t4, sliced.Get(0), 10)
+    val t6 = Eq[int](t5, sliced.Size(), 10)
+    // The sorted array and the input are unchanged.
+    val t7 = Eq[int](t6, sorted.Size(), 100)
+    val t8 = Eq[int](t7, sorted.Get(0), 0)
+    val t9 = Eq[int](t8, sorted.Get(99), 99)
+    val t10 = Eq[int](t9, xs.Get(0), 99)
+    return Eq[string](t10, updated.Slice(0, 3).MkString(","), "-1,1,2")
+}
+
+func TestArrayFromSliceCopiesInput(t T) T {
+    val src = go_interop.SliceWithSize[int](40)
+    val arr = ArrayFromSlice(src)
+    src[0] = 7
+    src[39] = 7
+    val t1 = Eq[int](t, arr.Get(0), 0)
+    return Eq[int](t1, arr.Get(39), 0)
+}
+
+// A non-strict comparator (<=) reports "less" both ways for equal keys; the sort
+// must still treat them as equal and keep their input order.
+func TestArraySortWithNonStrictIsStable(t T) T {
+    val mixed = ArrayOf(Row("a", 1), Row("b", 0), Row("c", 1), Row("d", 0))
+    val big = ArrayTabulate(40, (i) => Row(s"r$i", i % 2))
+    val t1 = Eq[string](t, rowNames(mixed.SortWith((x, y) => x.K <= y.K)), "b,d,a,c")
+    return Eq[string](t1, rowNames(big.SortWith((x, y) => x.K <= y.K)), stableByK(big))
+}

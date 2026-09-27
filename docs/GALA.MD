@@ -2342,6 +2342,9 @@ val empty = SliceEmpty[int]()            // Creates Go []int{}
 | `SliceWithSize[T](size)` | Zero-initialized slice |
 | `SliceWithSizeAndCapacity[T](size, cap)` | Slice with length and capacity |
 | `SliceCopy(slice)` | Copy a slice |
+| `SliceClip(s)` | Drop unused capacity, so appending always reallocates |
+| `SliceSortStable(s, cmp)` | Stable in-place sort; `cmp(i, j)` compares `s[i]` and `s[j]` |
+| `SliceSortedStable(s, cmp)` | Stably sorted copy, leaving `s` unchanged |
 | `SliceAppendAll(dst, src)` | Append all elements |
 | `SlicePrepend(s, value)` | Insert at front |
 | `SlicePrependAll(s, values)` | Prepend all elements |
@@ -2559,6 +2562,8 @@ fmt.Println(m5.Contains("banana"))  // false
 | `SortBy(f)` | Sort entries by key function |
 | `MkString(sep)` | Join entries as `"key -> value"` with separator |
 
+`Sorted`, `SortWith` and `SortBy` are stable: entries that compare equal keep their original relative order.
+
 #### Mutable HashMap (collection_mutable)
 
 The mutable HashMap uses hash buckets with O(1) average operations. It modifies the map in place for better performance when mutation is acceptable.
@@ -2610,6 +2615,8 @@ fmt.Println(snapshot.Size())  // Still has data
 | `SortWith(less)` | Sort entries with custom comparator |
 | `SortBy(f)` | Sort entries by key function |
 | `MkString(sep)` | Join entries as `"key -> value"` with separator |
+
+`Sorted`, `SortWith` and `SortBy` are stable: entries that compare equal keep their original relative order.
 
 #### Custom Key Types
 

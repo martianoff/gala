@@ -155,7 +155,7 @@ var sum = arr.FoldLeft(0, (acc, x) => acc + x)  // 15
 
 ### Sorting
 
-Sorting returns a new `*Array[T]`, leaving the original unchanged.
+Sorting returns a new `*Array[T]`, leaving the original unchanged. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
 
 ```gala
 var arr = ArrayOf(3, 1, 4, 1, 5, 9)

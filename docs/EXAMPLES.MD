@@ -830,7 +830,7 @@ A
 
 ## Sorted API - Sorting Collections
 
-All collection types support `Sorted()`, `SortWith()`, and `SortBy()` for flexible sorting:
+All collection types support `Sorted()`, `SortWith()`, and `SortBy()` for flexible sorting. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
 
 ```gala
 package main
@@ -860,6 +860,10 @@ func main() {
     // HashSet.Sorted
     val set = HashSetOf(5, 3, 1)
     Println(set.Sorted())                    // Array(1, 3, 5)
+
+    // Sorting is stable: equal keys keep their input order
+    val words = ArrayOf("bb", "a", "cc", "d")
+    Println(words.SortBy((w) => w.Size()))   // Array(a, d, bb, cc)
 
     // Empty collection
     Println(EmptyArray[int]().Sorted())      // Array()

@@ -222,6 +222,9 @@ val backToArray = ArrayFromSlice(goSlice)
 | <code>SliceEmpty[T]()</code> | Create empty Go slice |
 | <code>SliceWithCapacity[T](cap)</code> | Empty slice with capacity |
 | <code>SliceCopy(slice)</code> | Copy a slice |
+| <code>SliceClip(s)</code> | Drop unused capacity, so appending always reallocates |
+| <code>SliceSortStable(s, cmp)</code> | Stable in-place sort; <code>cmp(i, j)</code> compares <code>s[i]</code> and <code>s[j]</code> |
+| <code>SliceSortedStable(s, cmp)</code> | Stably sorted copy, leaving <code>s</code> unchanged |
 | <code>SliceAppendAll(dst, src)</code> | Append all elements |
 | <code>SlicePrepend(s, value)</code> | Insert at front |
 | <code>SliceTake(s, n)</code> | Take first n elements |

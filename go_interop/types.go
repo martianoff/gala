@@ -11,6 +11,7 @@ package go_interop
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -202,6 +203,70 @@ func SliceCopy[T any](elements []T) []T {
 	result := make([]T, len(elements))
 	copy(result, elements)
 	return result
+}
+
+// SliceClip removes the unused capacity of s, like slices.Clip: appending to
+// the result always reallocates instead of writing past len(s) into memory the
+// caller may still use.
+func SliceClip[T any](s []T) []T {
+	return slices.Clip(s)
+}
+
+// SliceSortStable sorts s in place by cmp, which compares the elements at
+// indices i and j of s as they were before the call, the way cmp.Compare does.
+// The sort is stable: elements that compare equal keep their relative order.
+// It moves each element once and allocates only the index permutation.
+func SliceSortStable[T any](s []T, cmp func(i, j int) int) {
+	order := stableOrder(len(s), cmp)
+	// Position k receives the element that was at order[k]. Walk each cycle of
+	// the permutation once; order[k] = k marks position k as done.
+	for start := range s {
+		if order[start] == start {
+			continue
+		}
+		saved := s[start]
+		k := start
+		for {
+			from := order[k]
+			order[k] = k
+			if from == start {
+				s[k] = saved
+				break
+			}
+			s[k] = s[from]
+			k = from
+		}
+	}
+}
+
+// SliceSortedStable returns a new slice holding the elements of s ordered by
+// cmp, which compares the elements at indices i and j of s the way cmp.Compare
+// does. The sort is stable, and s is not modified.
+func SliceSortedStable[T any](s []T, cmp func(i, j int) int) []T {
+	order := stableOrder(len(s), cmp)
+	result := make([]T, len(s))
+	for k, i := range order {
+		result[k] = s[i]
+	}
+	return result
+}
+
+// stableOrder returns the indices 0..n-1 ordered by cmp, ties broken by index.
+// The tie-break makes the order total, so slices.SortFunc's unstable pdqsort
+// yields exactly the stable order: fewer comparisons than a merge-based stable
+// sort, and only ints move while sorting, however large the elements are.
+func stableOrder(n int, cmp func(i, j int) int) []int {
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortFunc(order, func(i, j int) int {
+		if c := cmp(i, j); c != 0 {
+			return c
+		}
+		return i - j
+	})
+	return order
 }
 
 // === Map Creation Functions ===

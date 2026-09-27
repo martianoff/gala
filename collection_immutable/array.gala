@@ -76,53 +76,56 @@ func ArrayFill[T any](n int, value T) Array[T] {
     return builder.Result()
 }
 
-// ArrayFromSlice creates an Array from a slice.
-// Optimized to build the tree bottom-up in O(n) time.
-func ArrayFromSlice[T any](elements []T) Array[T] {
-    var n = elements.Size()
+// ArrayFromSlice creates an Array from a slice. The elements are copied once, so
+// later changes to the slice do not affect the Array.
+func ArrayFromSlice[T any](elements []T) Array[T] = arrayFromOwnedSlice(go_interop.SliceCopy(elements))
+
+// arrayFromOwnedSlice builds an Array on top of elements without copying them:
+// each leaf is a window of the slice with its capacity clipped, so appending to
+// a leaf can never write into its neighbour. Every operation that changes a leaf
+// copies it first. Only pass a slice nothing else holds or changes afterwards.
+func arrayFromOwnedSlice[T any](elements []T) Array[T] {
+    val n = elements.Size()
     if n == 0 {
         return EmptyArray[T]()
     }
-
-    // Build leaf nodes - each holds up to 32 elements
-    var leaves []*arrayNode[T]
+    var leaves = go_interop.SliceWithCapacity[*arrayNode[T]](chunkCount(n))
     for i := 0; i < n; i += branchingFactor {
-        var end = i + branchingFactor
-        if end > n {
-            end = n
-        }
-        var values []T
-        for j := i; j < end; j++ {
-            values = go_interop.SliceAppend(values, elements[j])
-        }
-        var leaf = &arrayNode[T](values = values, isLeaf = true)
-        leaves = go_interop.SliceAppend(leaves, leaf)
+        val values = go_interop.SliceClip(go_interop.Slice(elements, i, chunkEnd(i, n)))
+        leaves = go_interop.SliceAppend(leaves, &arrayNode[T](values = values, isLeaf = true))
     }
+    return arrayFromLeaves(leaves, n)
+}
 
-    // Build tree bottom-up
-    var currentLevel = leaves
+// arrayFromLeaves builds the tree above leaves, which hold the elements in index
+// order with every leaf full except possibly the last, and returns the Array.
+// depth counts the levels from the leaves up, so a lone leaf is depth 1.
+func arrayFromLeaves[T any](leaves []*arrayNode[T], length int) Array[T] {
+    var level = leaves
     var depth = 1
-
-    for currentLevel.Size() > 1 {
-        var nextLevel []*arrayNode[T]
-        for i := 0; i < currentLevel.Size(); i += branchingFactor {
-            var end = i + branchingFactor
-            if end > currentLevel.Size() {
-                end = currentLevel.Size()
-            }
-            var children []*arrayNode[T]
-            for j := i; j < end; j++ {
-                children = go_interop.SliceAppend(children, currentLevel[j])
-            }
-            var node = &arrayNode[T](children = children, isLeaf = false)
-            nextLevel = go_interop.SliceAppend(nextLevel, node)
-        }
-        currentLevel = nextLevel
+    for level.Size() > 1 {
+        level = groupNodes(level)
         depth++
     }
-
     var emptyPrefix []T
-    return Array[T](root = currentLevel[0], length = n, depth = depth, prefix = emptyPrefix)
+    return Array[T](root = level[0], length = length, depth = depth, prefix = emptyPrefix)
+}
+
+// chunkCount is the number of branchingFactor-sized chunks needed to hold n items.
+func chunkCount(n int) int = (n + branchingMask) / branchingFactor
+
+// chunkEnd is the exclusive end of the chunk that starts at i, given n items.
+func chunkEnd(i int, n int) int = if (i + branchingFactor < n) i + branchingFactor else n
+
+// groupNodes builds the next tree level up: one parent per branchingFactor nodes,
+// each holding a capacity-clipped window of level, like the leaves.
+func groupNodes[T any](level []*arrayNode[T]) []*arrayNode[T] {
+    var parents = go_interop.SliceWithCapacity[*arrayNode[T]](chunkCount(level.Size()))
+    for i := 0; i < level.Size(); i += branchingFactor {
+        val children = go_interop.SliceClip(go_interop.Slice(level, i, chunkEnd(i, level.Size())))
+        parents = go_interop.SliceAppend(parents, &arrayNode[T](children = children, isLeaf = false))
+    }
+    return parents
 }
 
 // arrayBuilder builds an Array incrementally without intermediate slice conversion.
@@ -983,13 +986,26 @@ func (a Array[T]) Sliding(size int) Array[Array[T]] {
     return builder.Result()
 }
 
-// ToGoSlice converts the array to a Go slice.
+// ToGoSlice converts the array to a Go slice. The slice is a fresh copy the caller owns.
 func (a Array[T]) ToGoSlice() []T {
-    var result = go_interop.SliceWithSize[T](a.length)
-    for i := 0; i < a.length; i++ {
-        result[i] = a.Get(i)
+    val withPrefix = go_interop.SliceAppendAll(go_interop.SliceWithCapacity[T](a.length), a.prefix)
+    return appendLeaves(withPrefix, a.root)
+}
+
+// appendLeaves appends every element under node to dst in index order, a whole
+// leaf at a time rather than descending from the root once per element.
+func appendLeaves[T any](dst []T, node *arrayNode[T]) []T {
+    if node == nil {
+        return dst
     }
-    return result
+    if node.isLeaf {
+        return go_interop.SliceAppendAll(dst, node.values)
+    }
+    var out = dst
+    for i := 0; i < node.children.Size(); i++ {
+        out = appendLeaves(out, node.children[i])
+    }
+    return out
 }
 
 // ToList converts the array to a List.
@@ -1033,56 +1049,53 @@ func (a Array[T]) MkString(sep string) string {
 
 // === Sorting ===
 
-// arrayMergeSort sorts an array using merge sort with the given comparison function.
-func arrayMergeSort[T any](arr Array[T], less func(T, T) bool) Array[T] {
-    if arr.Size() <= 1 {
-        return arr
-    }
-    val mid = arr.Size() / 2
-    val left = arrayMergeSort(arr.Take(mid), less)
-    val right = arrayMergeSort(arr.Drop(mid), less)
-    return arrayMerge(left, right, less)
-}
-
-// arrayMerge merges two sorted arrays into one sorted array.
-func arrayMerge[T any](left Array[T], right Array[T], less func(T, T) bool) Array[T] {
-    var builder = newArrayBuilder[T]()
-    var i = 0
-    var j = 0
-    for i < left.Size() && j < right.Size() {
-        if less(left.Get(i), right.Get(j)) {
-            builder.Add(left.Get(i))
-            i = i + 1
-        } else {
-            builder.Add(right.Get(j))
-            j = j + 1
-        }
-    }
-    for i < left.Size() {
-        builder.Add(left.Get(i))
-        i = i + 1
-    }
-    for j < right.Size() {
-        builder.Add(right.Get(j))
-        j = j + 1
-    }
-    return builder.Result()
-}
+// lessToCompare orders x and y by less as a three-way comparison. If less reports
+// true both ways (a non-strict comparator such as <=), x and y count as equal, so
+// the sort keeps them in their original order.
+func lessToCompare[T any](less func(T, T) bool, x T, y T) int =
+    if (less(x, y)) (if (less(y, x)) 0 else -1) else if (less(y, x)) 1 else 0
 
 // Sorted returns a new array with elements sorted in natural order.
 // Elements must be primitive types or implement std.Ordered[T].
-func (a Array[T]) Sorted() Array[T] =
-    arrayMergeSort(a, (x T, y T) => CompareValues(x, y) < 0)
+// The sort is stable: equal elements keep their original relative order.
+func (a Array[T]) Sorted() Array[T] {
+    if a.length <= 1 {
+        return a
+    }
+    val elements = a.ToGoSlice()
+    go_interop.SliceSortStable(elements, (i, j) => CompareValues(elements[i], elements[j]))
+    return arrayFromOwnedSlice(elements)
+}
 
 // SortWith returns a new array sorted using the given comparison function.
-// The function should return true if x should come before y.
-func (a Array[T]) SortWith(less func(T, T) bool) Array[T] =
-    arrayMergeSort(a, less)
+// The function should return true if x should come before y; it should be a strict
+// ordering (use <, not <=).
+// The sort is stable: elements that compare equal keep their original relative order.
+func (a Array[T]) SortWith(less func(T, T) bool) Array[T] {
+    if a.length <= 1 {
+        return a
+    }
+    val elements = a.ToGoSlice()
+    go_interop.SliceSortStable(elements, (i, j) => lessToCompare(less, elements[i], elements[j]))
+    return arrayFromOwnedSlice(elements)
+}
 
 // SortBy returns a new array sorted by a key extracted from each element.
 // Keys must be primitive types or implement std.Ordered.
-func (a Array[T]) SortBy[K comparable](f func(T) K) Array[T] =
-    arrayMergeSort(a, (x T, y T) => CompareValues(f(x), f(y)) < 0)
+// The sort is stable: elements with equal keys keep their original relative order.
+// f runs once per element: keys are computed up front, not on every comparison.
+func (a Array[T]) SortBy[K comparable](f func(T) K) Array[T] {
+    if a.length <= 1 {
+        return a
+    }
+    val elements = a.ToGoSlice()
+    val keys = go_interop.SliceWithSize[K](a.length)
+    for i := 0; i < a.length; i++ {
+        keys[i] = f(elements[i])
+    }
+    go_interop.SliceSortStable(elements, (i, j) => CompareValues(keys[i], keys[j]))
+    return arrayFromOwnedSlice(elements)
+}
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
 // Returns the array with the first n elements removed.

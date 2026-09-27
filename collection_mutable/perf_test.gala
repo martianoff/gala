@@ -213,6 +213,34 @@ func benchArrayReverse() {
     printResult("Array.Reverse (size=10000)", ns)
 }
 
+// sortInput is n scrambled ints with about ten copies of each value.
+func sortInput(n int) *Array[int] = ArrayTabulate(n, (i) => (i * 2654435761) % (n / 10))
+
+// Array sort benchmarks
+func benchArraySorted() {
+    val arr = sortInput(100000)
+    val ns = measureNs(20, () => {
+        arr.Sorted()
+    })
+    printResult("Array.Sorted (size=100000)", ns)
+}
+
+func benchArraySortWith() {
+    val arr = sortInput(100000)
+    val ns = measureNs(20, () => {
+        arr.SortWith((a, b) => a < b)
+    })
+    printResult("Array.SortWith (size=100000)", ns)
+}
+
+func benchArraySortBy() {
+    val arr = sortInput(100000)
+    val ns = measureNs(20, () => {
+        arr.SortBy((x) => x % 1000)
+    })
+    printResult("Array.SortBy (size=100000)", ns)
+}
+
 // ============ MUTABLE LIST BENCHMARKS ============
 
 // List creation benchmark - small
@@ -1095,6 +1123,9 @@ func main() {
     benchArrayFoldLeft()
     benchArrayClone()
     benchArrayReverse()
+    benchArraySorted()
+    benchArraySortWith()
+    benchArraySortBy()
 
     fmt.Println("")
     fmt.Println("--- List Operations ---")
