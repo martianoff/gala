@@ -406,6 +406,9 @@ val desc = flag match {
 A tuple arm made only of wildcards and bindings (or nested such tuples) matches every value, so it closes a match too:
 
 ```gala
+func divmod(a int, b int) Tuple3[int, int, string] =
+    if (b == 0) (0, 0, "division by zero") else (a / b, a % b, "ok")
+
 val result = divmod(17, 0) match {
     case (q, r, "ok") => s"$q remainder $r"
     case (_, _, err)  => s"Error: $err"   // covers every other Tuple3
