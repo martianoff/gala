@@ -108,7 +108,8 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		if line0 >= len(lines) {
 			continue
 		}
-		absEnd := lh.Column + len(lh.Name)
+		// The transformer reports an ANTLR column, which counts code points.
+		absEnd := runeToByte(lines[line0], lh.Column) + len(lh.Name)
 		typeStr := cleanGoTypeForDisplay(lh.Type.String())
 		if typeStr == "" {
 			continue
@@ -116,6 +117,10 @@ func (h *GalaHandler) InlayHint(ctx context.Context, params *lsp.InlayHintParams
 		hints = append(hints, makeTypeHint(line0, absEnd, typeStr))
 	}
 
+	x := h.index(text)
+	for i := range hints {
+		hints[i].Position = x.toWire(hints[i].Position)
+	}
 	return hints, nil
 }
 
@@ -205,7 +210,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 			if len(typeName) == 1 && typeName[0] >= 'A' && typeName[0] <= 'Z' {
 				continue
 			}
-			pos := strings.Index(line[bindingsStart:], binding)
+			pos := findWholeWord(line[bindingsStart:], binding)
 			if pos >= 0 {
 				pos += bindingsStart
 				hints = append(hints, makeTypeHint(lineNum, pos+len(binding), typeName))
