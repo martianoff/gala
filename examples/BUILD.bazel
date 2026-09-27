@@ -173,6 +173,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "lambda_return_slot",
+    src = "lambda_return_slot.gala",
+    expected = "lambda_return_slot.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "bind_notation_user",
     src = "bind_notation_user.gala",
     expected = "bind_notation_user.out",

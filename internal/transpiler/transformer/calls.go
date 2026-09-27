@@ -1367,10 +1367,10 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 			}
 		}
 		// Step 2: fall back to enclosing function's return type.
-		if len(inferredMap) < len(typeMeta.TypeParams) && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
+		if len(inferredMap) < len(typeMeta.TypeParams) && t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
 			if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
 				returnInferred := make(map[string]transpiler.Type)
-				t.unifyForInference(methodMeta.ReturnType, t.currentFuncReturnType, typeMeta.TypeParams, returnInferred)
+				t.unifyForInference(methodMeta.ReturnType, t.returnSlot.typ, typeMeta.TypeParams, returnInferred)
 				for tp, inferred := range returnInferred {
 					if _, alreadySet := inferredMap[tp]; !alreadySet {
 						inferredMap[tp] = inferred
@@ -3561,7 +3561,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // Returns a typed AST expression (e.g., None[User]) or nil if inference fails.
 //
 // Context sources tried, in order:
-//  1. currentFuncReturnType — the enclosing function's return type (or the
+//  1. returnSlot.typ — the enclosing function's return type (or the
 //     expected-result type promoted onto it by val/arg/match-arm contexts).
 //     Authoritative for a constructor in *value* position: the arm body's type
 //     is the match *result* type, not the subject type.
@@ -3585,7 +3585,7 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 	// Try each context source in priority order: enclosing function return type
 	// first (authoritative for value position), then match subject (proxy
 	// fallback when no return type pins the result).
-	sources := []transpiler.Type{t.currentFuncReturnType, t.currentMatchSubjectType}
+	sources := []transpiler.Type{t.returnSlot.typ, t.currentMatchSubjectType}
 	for _, src := range sources {
 		if transpiler.IsUnusable(src) {
 			continue

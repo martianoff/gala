@@ -266,7 +266,13 @@ explicit, not boilerplate to eliminate.
 ## 6. Type-safety rules
 
 1. `bind`/`also` are rejected unless the enclosing block's result type is a known,
-   bindable `M` (a type exposing `FlatMap`, §7).
+   bindable `M` (a type exposing `FlatMap`, §7). The block's result type is that of the
+   innermost enclosing function or lambda — a `bind` inside a lambda never uses the
+   surrounding function's return type. In a lambda whose result type is not known from
+   an annotation or its expected function type (e.g. `opt.FlatMap((x) => { bind … })`
+   or a `Try(() => { bind … })` thunk), `M[R]` is the lambda's result type as its
+   other `return` values settle it, or else the type of the block's trailing
+   expression, which must then be an `M` value.
 2. A `bind`/`also` whose expression is not that same `M` is a compile error
    (heterogeneous bind is not supported — convert at the call site, §5).
 3. `also` must directly follow a `bind` or another `also`; an `also` that does not is a

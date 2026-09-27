@@ -686,6 +686,14 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	if err != nil {
 		return nil, err
 	}
+	// The if-expression lowers to an IIFE: a `return` in a branch yields the
+	// branch's value, not the enclosing lambda's. An open slot type holds
+	// placeholders, so it is no return type.
+	iifeType := s.typ
+	if s.open {
+		iifeType = nil
+	}
+	defer t.enterIIFEReturnSlot(iifeType)()
 
 	branches := ctx.AllIfExprBranch()
 	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext), s)

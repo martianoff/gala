@@ -786,7 +786,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		return false
 	}
 	if funcMeta.ReturnType != nil && !funcMeta.ReturnType.IsNil() {
-		for _, exp := range []transpiler.Type{expected, t.currentFuncReturnType} {
+		for _, exp := range []transpiler.Type{expected, t.returnSlot.typ} {
 			if !phantomUnfilled() {
 				break
 			}

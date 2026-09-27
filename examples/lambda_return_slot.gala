@@ -1,0 +1,284 @@
+package main
+
+import (
+    "errors"
+    "strconv"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// A lambda has its own return slot: a `return`, a `bind` block or a match in its
+// body takes its type from the lambda, never from the enclosing function.
+
+func apply[T any](f func() T) T = f()
+
+func parse(s string) Try[int] = Try(strconv.Atoi(s))
+
+func half(n int) Try[int] = if (n % 2 == 0) Success(n / 2) else Failure[int](errors.New(s"$n is odd"))
+
+// The lambdas in the if-expression take their types from the returned value,
+// not from the enclosing function's `func(string) string`.
+func scaler(k int) func(string) string {
+    val scale = apply(() => {
+        return if (k > 0) (x int) => x * k else (x int) => x
+    })
+    return (s) => s"$s:${scale(5)}"
+}
+
+// `None()` infers from the lambda's other return (Option[int]), not from the
+// enclosing function's Option[string].
+func small(n int) Option[string] {
+    val o = apply(() => {
+        if (n > 5) {
+            return Some(n)
+        }
+        return None()
+    })
+    return o.Map((v) => s"v=$v")
+}
+
+// A returned match takes the lambda's type.
+func classify(n int) Option[string] {
+    val code = apply(() => {
+        return n match {
+            case 0 => 10
+            case _ => n + 1
+        }
+    })
+    return Some(s"code=$code")
+}
+
+// A `bind` block in a lambda whose result type is not known takes its monad
+// from its own trailing value.
+func viaFlatMap(s string) Try[int] =
+    parse(s).FlatMap((n) => {
+        bind h = half(n)
+        bind q = half(h)
+        Success(q + 1)
+    })
+
+func viaThunk(s string) Try[Try[int]] = Try(() => {
+    bind n = parse(s)
+    bind h = half(n)
+    Success(h)
+})
+
+func viaTypedLambda(s string) Try[int] {
+    val f func(string) Try[int] = (x) => {
+        bind n = parse(x)
+        bind h = half(n)
+        Success(h * 10)
+    }
+    return f(s)
+}
+
+// The slot is inferred from all of the body's result values, in any order: an
+// early `return None()` guard takes its type from a later value.
+func guard(o Option[int]) Option[int] = o.FlatMap((x) => {
+    if (x < 0) {
+        return None()
+    }
+    return Some(x + 1)
+})
+
+func guardTrailing(o Option[int]) Option[int] = o.FlatMap((x) => {
+    if (x < 0) {
+        return None()
+    }
+    Some(x * 10)
+})
+
+// `Failure(e)` has no element type of its own; it takes the bind block's.
+func failFirst(s string) Try[int] = parse(s).FlatMap((n) => {
+    if (n > 3) {
+        return Failure(errors.New("big"))
+    }
+    bind m = parse(s)
+    if (m == 0) {
+        return Failure(errors.New("zero"))
+    }
+    Success(n + m)
+})
+
+// A statement-position match whose arms return is inlined: its `return`
+// leaves the lambda, so it fills the lambda's slot.
+func firstZero(n int) Option[string] {
+    val o = apply(() => {
+        n match {
+            case 0 => {
+                return Some(0)
+            }
+            case _ => {
+                Println("not zero")
+            }
+        }
+        return None()
+    })
+    return o.Map((v) => s"v=$v")
+}
+
+// A deferred `return None()` in such a match still makes it inlined.
+func zeroIsNone(n int) Option[string] {
+    val o = apply(() => {
+        n match {
+            case 0 => {
+                return None()
+            }
+            case _ => {
+                Println("not zero")
+            }
+        }
+        Some(n)
+    })
+    return o.Map((v) => s"v=$v")
+}
+
+// The match subject is only a guess for `None()`: it never fixes the slot,
+// so the lambda's result type comes from `Some("x")`.
+func subjectNotResult(o Option[int]) string {
+    val r = apply(() => {
+        o match {
+            case None() => {
+                return None()
+            }
+            case _ => {
+                Println("some")
+            }
+        }
+        return Some("x")
+    })
+    return s"$r"
+}
+
+// The same holds for the lambda's trailing value: inside a match over an
+// Option[int], a trailing `None()` takes Option[string] from the `return`. It
+// falls back to the subject only when nothing else types the lambda.
+func trailingNone(o Option[int]) string = o match {
+    case Some(v) => {
+        val r = apply(() => {
+            if (v > 1) {
+                return Some("x")
+            }
+            None()
+        })
+        s"$r"
+    }
+    case _ => "none"
+}
+
+func onlyTrailingNone(o Option[int]) string = o match {
+    case Some(_) => {
+        val r = apply(() => {
+            Println("side effect")
+            None()
+        })
+        s"$r"
+    }
+    case _ => "none"
+}
+
+// An if-expression lowers to an IIFE: a `return` in a branch is the branch's
+// value and leaves the lambda's slot alone.
+func doubledSize(s string) Option[string] {
+    val o = apply(() => {
+        if (s == "x") {
+            return None()
+        }
+        val n = if (s == "") {
+            return 0
+        } else {
+            s.ByteSize()
+        }
+        Some(n * 2)
+    })
+    return o.Map((v) => s"v=$v")
+}
+
+// Inside a generic function or method, its own type parameters (and its
+// receiver's) are resolved types: a value of type T or Option[T] types the
+// lambda.
+func identities[T any](xs Array[T]) Array[T] = xs.Map((x) => {
+    return x
+})
+
+func wrapped[T any](x T) Option[T] {
+    val r = apply(() => {
+        return Some(x)
+    })
+    return r
+}
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Read() T {
+    val f = () => {
+        return c.V
+    }
+    return f()
+}
+
+func (c Cell[T]) PairUp[U any](us Array[U]) Array[Tuple[T, U]] = us.FoldLeft(EmptyArray[Tuple[T, U]](), (acc, u) => {
+    if (acc.Size() > 1) {
+        return acc
+    }
+    acc.Append((c.V, u))
+})
+
+func (c Cell[T]) With[U any](o Option[U], skip bool) Option[Tuple[T, U]] = o.FlatMap((u) => {
+    if (skip) {
+        return None()
+    }
+    Some((c.V, u))
+})
+
+// Nested lambdas each have their own slot.
+func nested(n int) string {
+    val outer = apply(() => {
+        val inner = apply(() => {
+            return if (n > 0) n * 2 else 0
+        })
+        return inner > 2
+    })
+    return s"nested=$outer"
+}
+
+func main() {
+    Println(scaler(3)("a"))
+    Println(scaler(0)("b"))
+    Println(small(3))
+    Println(small(7))
+    Println(classify(0))
+    Println(classify(4))
+    Println(viaFlatMap("8"))
+    Println(viaFlatMap("6"))
+    Println(viaThunk("4"))
+    Println(viaThunk("x"))
+    Println(viaTypedLambda("12"))
+    Println(guard(Some(3)))
+    Println(guard(Some(-1)))
+    Println(guardTrailing(Some(3)))
+    Println(guardTrailing(Some(-1)))
+    Println(failFirst("2"))
+    Println(failFirst("5"))
+    Println(failFirst("0"))
+    Println(firstZero(0))
+    Println(firstZero(1))
+    Println(zeroIsNone(0))
+    Println(zeroIsNone(2))
+    Println(subjectNotResult(None[int]()))
+    Println(subjectNotResult(Some(1)))
+    Println(trailingNone(Some(2)))
+    Println(trailingNone(Some(1)))
+    Println(onlyTrailingNone(Some(1)))
+    Println(doubledSize("x"))
+    Println(doubledSize(""))
+    Println(doubledSize("abc"))
+    Println(identities(ArrayOf(1, 2)))
+    Println(wrapped("w"))
+    Println(Cell(7).Read())
+    Println(Cell("k").PairUp(ArrayOf(1, 2, 3)))
+    Println(Cell(3).With(Some("u"), false))
+    Println(Cell(3).With(Some("u"), true))
+    Println(nested(3))
+    Println(nested(-1))
+}

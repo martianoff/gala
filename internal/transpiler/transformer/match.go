@@ -861,9 +861,9 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			// This handles cases where branches call methods from pure Go packages
 			// whose return types aren't in the GALA type metadata.
 			// Safety: if the fallback type is wrong, the Go compiler will catch it.
-			if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-				t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-return")
-				return t.currentFuncReturnType, nil
+			if t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
+				t.traceType(nil, t.returnSlot.typ, "match-result-fallback-to-enclosing-return")
+				return t.returnSlot.typ, nil
 			}
 			// No enclosing concrete return type either — this is a dispatch-style
 			// match used purely for side effects (all arms call void functions,
@@ -880,12 +880,12 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		// where every branch yields the same type parameter T as the
 		// declared return — emitting `func(...) any` for the IIFE breaks
 		// the Go compile because `any` does not satisfy `T`.
-		if t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-			enclosingName := t.currentFuncReturnType.String()
+		if t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
+			enclosingName := t.returnSlot.typ.String()
 			for _, typ := range types {
 				if typ != nil && !typ.IsNil() && typ.String() == enclosingName {
-					t.traceType(nil, t.currentFuncReturnType, "match-result-fallback-to-enclosing-typeparam-return")
-					return t.currentFuncReturnType, nil
+					t.traceType(nil, t.returnSlot.typ, "match-result-fallback-to-enclosing-typeparam-return")
+					return t.returnSlot.typ, nil
 				}
 			}
 		}

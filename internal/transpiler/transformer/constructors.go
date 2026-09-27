@@ -136,7 +136,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 //     (`f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`). It is there
 //     because lowerAgainst pushes a pushing slot's type (argSlot) for a plain
 //     expression such as a tuple literal; a result slot does not push.
-//  2. `currentFuncReturnType` — the enclosing function's declared return
+//  2. `returnSlot.typ` — the enclosing function's declared return
 //     type, used when the tuple literal is the value at a function return.
 //
 // Returns nil if no Tuple-shaped expected type is available. When (1)
@@ -150,7 +150,7 @@ func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.T
 			return gen.Params
 		}
 	}
-	candidates := []transpiler.Type{t.currentFuncReturnType}
+	candidates := []transpiler.Type{t.returnSlot.typ}
 	for _, cand := range candidates {
 		if transpiler.IsUnusable(cand) {
 			continue

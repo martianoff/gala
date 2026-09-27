@@ -58,7 +58,7 @@ type galaASTTransformer struct {
 	cachedTypeResolverRev    uint64 // import-manager revision cachedTypeResolver was built at
 	tempVarCount             int
 	inferer                  *infer.Inferer
-	currentFuncReturnType    transpiler.Type              // return type of the function currently being transformed
+	returnSlot               returnSlot                   // result type of the innermost function or lambda body (see return_slot.go)
 	currentMatchSubjectType  transpiler.Type              // type of the match expression's subject (for branch type inference)
 	typeAliases              map[string]transpiler.Type   // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	goTypeInfo               *transpiler.GoTypeInfo       // type info from Go packages (stdlib, local Go files, third-party)

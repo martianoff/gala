@@ -446,10 +446,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type, and the arms' enclosing return type for sealed-variant inference.
-	if !transpiler.IsUnusable(s.typ) {
-		prevReturn := t.currentFuncReturnType
-		t.currentFuncReturnType = s.typ
-		defer func() { t.currentFuncReturnType = prevReturn }()
+	// A match in value position lowers to an IIFE, so a `return` in an arm
+	// leaves the IIFE: it must not fill or defer into an enclosing lambda's
+	// fillable slot. (A statement-position match whose arms return is inlined,
+	// and its returns do exit the lambda, so it keeps the lambda's slot.)
+	switch {
+	case !stmtPosition:
+		defer t.enterIIFEReturnSlot(s.typ)()
+	case !transpiler.IsUnusable(s.typ):
+		defer t.enterReturnSlot(returnSlot{typ: s.typ})()
 	}
 
 	var clauses []ast.Stmt
@@ -732,7 +737,7 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int
 // `perElemExpected`, when non-nil, supplies a higher-priority per-element
 // fallback for type-parameter synthesis (used for the call-site bidirectional
 // inference path). The previous fallback —
-// `currentFuncReturnType` — is still consulted when the per-element hint is
+// `returnSlot.typ` — is still consulted when the per-element hint is
 // absent or itself uninformative, preserving the enclosing-return-type case.
 // When neither hint resolves a concrete element type, the parameter
 // degrades to `any` (matching the historical behavior).
@@ -757,7 +762,7 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 		fallbackTypes = perElemExpected
 	}
 	if fallbackTypes == nil {
-		if retType, ok := t.currentFuncReturnType.(transpiler.GenericType); ok &&
+		if retType, ok := t.returnSlot.typ.(transpiler.GenericType); ok &&
 			t.isTupleTypeName(retType.Base.String()) && len(retType.Params) == n {
 			fallbackTypes = retType.Params
 		}
