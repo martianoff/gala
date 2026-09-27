@@ -77,6 +77,23 @@ func (p Plain) Kind() string = p.Mode match {
     case B(_) => "plain-b"
 }
 
+// Wrapped has a sealed-variant field named like a generic type.
+sealed type Wrapped[T any] {
+    case Wrap(Mode Mode[T])
+    case Bare()
+}
+
+func runMode[T any](m Mode[T], i int) T = m match {
+    case A(fn) => fn(i)
+    case B(fn) => fn(s"$i")
+}
+
+// Eval runs the wrapped mode, if any.
+func (w Wrapped[T]) Eval(i int) Option[T] = w match {
+    case Wrap(m) => Some(runMode(m, i))
+    case Bare() => None[T]()
+}
+
 // Field named like a generic type from another package.
 struct Host[T any](Harness lib.Harness[string, T])
 
@@ -117,4 +134,11 @@ func main() {
     val t = h.WithMode(lib.Text[int]((s) => s.Size()))
     Println(t.Step(0, "four"))
     Println(Host[int](Harness = t).Mode())
+
+    Println(Wrap[int](b.Mode).Eval(4).GetOrElse(-1))
+    Println(Wrap[int](c.Mode).Eval(1234).GetOrElse(-1))
+    Println(Bare[int]().Eval(4).GetOrElse(-1))
+    Println(lib.SlotName(lib.Filled[int](h.Mode)))
+    Println(lib.SlotName(lib.Filled[int](t.Mode)))
+    Println(lib.SlotName(lib.Vacant[int]()))
 }

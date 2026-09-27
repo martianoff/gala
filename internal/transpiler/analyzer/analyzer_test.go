@@ -405,6 +405,55 @@ struct Handler(Name string)
 	}
 }
 
+// The same holds when the type is declared in a sibling file of the package:
+// a struct field and a sealed-variant field named like that generic type are
+// accepted and keep their declared types.
+func TestFieldNamedLikeTypeFromSiblingFileIsAccepted(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	tmpDir := t.TempDir()
+
+	typesPath := filepath.Join(tmpDir, "types.gala")
+	require.NoError(t, os.WriteFile(typesPath, []byte(`package mylib
+
+sealed type Mode[T any] {
+    case A(Fn func(int) T)
+    case B(Fn func(string) T)
+}
+`), 0644))
+
+	mainSrc := `package mylib
+
+struct Box[T any](Mode Mode[T])
+
+sealed type Slot[T any] {
+    case Filled(Mode Mode[T])
+    case Vacant()
+}
+`
+	mainPath := filepath.Join(tmpDir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0644))
+
+	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{typesPath})
+	tree, _, err := p.Parse(mainSrc)
+	require.NoError(t, err)
+	richAST, err := a.Analyze(tree, nil, mainPath)
+	require.NoError(t, err)
+
+	box, ok := richAST.Types["mylib.Box"]
+	require.True(t, ok, "mylib.Box should exist in Types")
+	require.Contains(t, box.Fields, "Mode")
+	assert.Equal(t, "mylib.Mode[T]", box.Fields["Mode"].String())
+
+	slot, ok := richAST.Types["mylib.Slot"]
+	require.True(t, ok, "mylib.Slot should exist in Types")
+	require.NotEmpty(t, slot.SealedVariants)
+	filled := slot.SealedVariants[0]
+	require.Equal(t, "Filled", filled.Name)
+	require.Equal(t, []string{"Mode"}, filled.FieldNames)
+	require.Len(t, filled.FieldTypes, 1)
+	assert.Equal(t, "mylib.Mode[T]", filled.FieldTypes[0].String())
+}
+
 func TestTypeRedefinitionError(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	searchPaths := getStdSearchPath()

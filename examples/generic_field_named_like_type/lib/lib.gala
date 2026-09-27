@@ -1,16 +1,7 @@
 package lib
 
-// Library-side generic types whose fields share their names with other
-// generic types of the same package.
-
-// Mode is a generic sealed type that a field of Harness is named after.
-sealed type Mode[T any] {
-    case Count(Fn func(int) T)
-    case Text(Fn func(string) T)
-}
-
-// Model is a generic struct that a field of Harness is named after.
-struct Model[M any](State M)
+// Library-side generic declarations whose fields share their names with
+// generic types declared in the sibling file types.gala.
 
 // Harness carries a Model and a Mode in fields named like their types.
 struct Harness[M any, T any](Model Model[M], Mode Mode[T])
@@ -31,4 +22,17 @@ func (h Harness[M, T]) WithMode(m Mode[T]) Harness[M, T] = h.Copy(Mode = m)
 func ModeName[T any](m Mode[T]) string = m match {
     case Count(_) => "count"
     case Text(_) => "text"
+}
+
+// Slot is a sealed type whose variant field is named like a generic type
+// from the sibling file.
+sealed type Slot[T any] {
+    case Filled(Mode Mode[T])
+    case Vacant()
+}
+
+// SlotName names the mode held by a slot.
+func SlotName[T any](s Slot[T]) string = s match {
+    case Filled(m) => ModeName(m)
+    case Vacant() => "vacant"
 }

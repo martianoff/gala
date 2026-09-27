@@ -1,0 +1,13 @@
+package lib
+
+// Generic types declared in a sibling file of the declarations whose fields
+// are named after them (lib.gala).
+
+// Mode is a generic sealed type that fields in lib.gala are named after.
+sealed type Mode[T any] {
+    case Count(Fn func(int) T)
+    case Text(Fn func(string) T)
+}
+
+// Model is a generic struct that a field of Harness is named after.
+struct Model[M any](State M)

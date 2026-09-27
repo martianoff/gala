@@ -84,6 +84,23 @@ func (h Harness[M, T]) State() M = h.Model.State`,
 			want: []string{"Model std.Immutable[Model[M]]", "Mode  std.Immutable[Mode[T]]", "func(obj Mode[T]) T {", "h.Model.Get().State.Get()"},
 		},
 		{
+			name: "sealed-variant field named like a generic type",
+			pkg:  "main",
+			decl: `sealed type W[T any] {
+    case Wrap(Mode Mode[T])
+    case Bare()
+}
+
+func name[T any](w W[T]) string = w match {
+    case Wrap(m) => m match {
+        case A(_) => "a"
+        case B(_) => "b"
+    }
+    case Bare() => "bare"
+}`,
+			want: []string{"Mode     std.Immutable[Mode[T]]", "Apply(Mode Mode[T]) W[T]", "Unapply(v W[T]) std.Option[Mode[T]]", "func(obj W[T]) string {", "func(obj Mode[T]) string {"},
+		},
+		{
 			name: "non-generic struct with a field named like a generic type",
 			pkg:  "main",
 			decl: `struct Plain(Mode Mode[int])

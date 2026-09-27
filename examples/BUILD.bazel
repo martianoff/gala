@@ -53,6 +53,7 @@ filegroup(
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
         "generic_field_named_like_type/lib/lib.gala",
+        "generic_field_named_like_type/lib/types.gala",
         "generic_field_named_like_type/main.gala",
         "go_type_inference_lib/textutil.gala",
         "go_type_inference_multifile/helpers.gala",
@@ -2345,10 +2346,14 @@ gala_exec_test(
 
 # A generic struct's field named like another generic type of its package
 # (`struct Box[T any](Mode Mode[T])`): matching on the field, reading through
-# it, copying it and chaining through it, in `main` and in a library package.
+# it, copying it and chaining through it, in `main` and in a library package
+# whose types sit in a sibling file; plus sealed-variant fields named likewise.
 gala_library(
     name = "generic_field_named_like_type_lib",
-    srcs = ["generic_field_named_like_type/lib/lib.gala"],
+    srcs = [
+        "generic_field_named_like_type/lib/lib.gala",
+        "generic_field_named_like_type/lib/types.gala",
+    ],
     importpath = "martianoff/gala/examples/generic_field_named_like_type/lib",
     visibility = ["//visibility:public"],
 )
