@@ -574,22 +574,19 @@ func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] = l.GroupMap(f
 // and tail=nil (Go zero values), so it must never be used as a group: branch on
 // MapContains and start a fresh emptyList for new keys.
 func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
-    // Pass 1 evaluates key and value in input order, collecting the pairs
-    // reversed. Pass 2 prepends each pair onto its group: walking the reversed
-    // pairs leaves every group in input order, without an O(n) Append per element.
-    var pairs = emptyList[Tuple[K, V]]()
+    // Each group is built reversed (O(1) prepends) and reversed once at the end,
+    // instead of an O(n) Append per element.
+    val result = go_interop.MapEmpty[K, List[V]]()
     var current = l
     for !current.isEmpty {
         val elem = current.head
-        pairs = consList[Tuple[K, V]]((key(elem), value(elem)), pairs)
+        val k = key(elem)
+        val group = if (go_interop.MapContains(result, k)) result[k] else emptyList[V]()
+        result[k] = consList[V](value(elem), group)
         current = *current.tail
     }
-    var result = go_interop.MapEmpty[K, List[V]]()
-    for !pairs.isEmpty {
-        val k = pairs.head.V1
-        val group = if (go_interop.MapContains(result, k)) result[k] else emptyList[V]()
-        result[k] = consList[V](pairs.head.V2, group)
-        pairs = *pairs.tail
+    for k, group := range result {
+        result[k] = group.Reverse()
     }
     return result
 }

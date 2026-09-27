@@ -4,6 +4,7 @@ package collection_immutable
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 
@@ -69,8 +70,11 @@ func TestListConstructionDifferential(t *testing.T) {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {
 			p := NewProp(t, n)
 			ref := p.Ints(n, n/4+2)
-			for name, l := range listPaths(p, ref) {
-				checkList(p, name, l, ref)
+			paths := listPaths(p, ref)
+			// Sorted names: checkList draws from p.Rng, so the path order must
+			// not follow Go's unseeded map iteration.
+			for _, name := range slices.Sorted(maps.Keys(paths)) {
+				checkList(p, name, paths[name], ref)
 			}
 		})
 	}
@@ -93,7 +97,7 @@ func TestListOpsDifferential(t *testing.T) {
 			checkList(p, "FilterNot", l.FilterNot(isEven), RefFilter(ref, func(x int) bool { return !isEven(x) }))
 			checkList(p, "FlatMap", List_FlatMap(l, func(x int) List[int] {
 				log.Record(x)
-				return ArrayTabulate(x%3, func(j int) int { return x*10 + j }).ToList()
+				return ListFromSlice(FlatMapFn(x))
 			}), RefFlatMap(ref))
 			log.Expect(p, "FlatMap", ref)
 			checkList(p, "Collect", List_Collect(l, func(x int) Option[int] {
@@ -170,9 +174,14 @@ func TestListOpsDifferential(t *testing.T) {
 			log.Expect(p, "GroupBy", ref)
 			EqGroups(p, "GroupBy", groups, RefGroupBy(ref, key))
 			mapped := map[int][]int{}
-			for k, g := range List_GroupMap(l, key, func(x int) int { return x + 1 }) {
+			var valueLog VisitLog
+			for k, g := range List_GroupMap(l,
+				func(x int) int { log.Record(x); return key(x) },
+				func(x int) int { valueLog.Record(x); return x + 1 }) {
 				mapped[k] = g.ToGoSlice()
 			}
+			log.Expect(p, "GroupMap key", ref)
+			valueLog.Expect(p, "GroupMap value", ref)
 			wantMapped := map[int][]int{}
 			for k, g := range RefGroupBy(ref, key) {
 				wantMapped[k] = RefMap(g, func(x int) int { return x + 1 })

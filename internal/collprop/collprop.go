@@ -5,7 +5,8 @@
 // reference model (a slice or a map) on randomized inputs. Inputs are drawn
 // from a math/rand source whose seed is derived from the test name and the
 // input size, so every run is reproducible. A failure message always carries
-// the seed; set PROP_SEED to rerun everything under a different base seed.
+// the base seed and the size: rerun with PROP_SEED set to that base seed to get
+// the same inputs, or to any other integer to explore different ones.
 package collprop
 
 import (
@@ -17,6 +18,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"martianoff/gala/std"
@@ -40,37 +42,48 @@ var SortSizes = append([]int{3, 11, 12, 13, 50, 100}, BoundarySizes...)
 // reach cross the 32-way HAMT fan-out at every level.
 var MapSizes = []int{0, 1, 2, 31, 32, 33, 1023, 1024, 1025, 32767, 32768, 32769}
 
-func baseSeed() int64 {
-	if s := os.Getenv("PROP_SEED"); s != "" {
-		if v, err := strconv.ParseInt(s, 0, 64); err == nil {
-			return v
-		}
+const defaultBaseSeed = 0x6a1a5eed
+
+// baseSeed reads PROP_SEED. A value that does not parse fails the test rather
+// than silently falling back to the default seed.
+func baseSeed(t *testing.T) int64 {
+	t.Helper()
+	s := os.Getenv("PROP_SEED")
+	if s == "" {
+		return defaultBaseSeed
 	}
-	return 0x6a1a5eed
+	v, err := strconv.ParseInt(s, 0, 64)
+	if err != nil {
+		t.Fatalf("PROP_SEED=%q is not an integer: %v", s, err)
+	}
+	return v
 }
 
 // Prop is one reproducible property run: a seeded source plus a test handle
-// whose failures report the seed and the input size.
+// whose failures report the base seed and the input size.
 type Prop struct {
 	T    *testing.T
+	Base int64 // the PROP_SEED value this run's seed is derived from
 	Seed int64
 	N    int
 	Rng  *rand.Rand
 }
 
-// NewProp seeds a run from the test name and the input size.
+// NewProp seeds a run from the base seed, the test name and the input size.
 func NewProp(t *testing.T, n int) *Prop {
 	t.Helper()
+	base := baseSeed(t)
 	h := fnv.New64a()
 	h.Write([]byte(t.Name()))
-	seed := baseSeed() ^ int64(h.Sum64()) ^ int64(n)*0x3c6ef372fe94f82b
-	return &Prop{T: t, Seed: seed, N: n, Rng: rand.New(rand.NewSource(seed))}
+	seed := base ^ int64(h.Sum64()) ^ int64(n)*0x3c6ef372fe94f82b
+	return &Prop{T: t, Base: base, Seed: seed, N: n, Rng: rand.New(rand.NewSource(seed))}
 }
 
-// Fatalf fails the test, prefixing the message with the seed and size.
+// Fatalf fails the test, prefixing the message with the PROP_SEED value that
+// reproduces it and the input size.
 func (p *Prop) Fatalf(format string, args ...any) {
 	p.T.Helper()
-	p.T.Fatalf("[seed=%d n=%d] %s", p.Seed, p.N, fmt.Sprintf(format, args...))
+	p.T.Fatalf("[PROP_SEED=%d n=%d] %s", p.Base, p.N, fmt.Sprintf(format, args...))
 }
 
 // Ints returns n random ints in [0, bound): small bounds give many duplicates.
@@ -251,6 +264,38 @@ func RefLastIndexOf(xs []int, v int) int {
 	return -1
 }
 
+// RefSetAlgebra returns the reference union, intersection and difference.
+func RefSetAlgebra[T comparable](a, b map[T]bool) (union, inter, diff map[T]bool) {
+	union, inter, diff = maps.Clone(a), map[T]bool{}, map[T]bool{}
+	maps.Copy(union, b)
+	for k := range a {
+		if b[k] {
+			inter[k] = true
+		} else {
+			diff[k] = true
+		}
+	}
+	return union, inter, diff
+}
+
+// RefRange returns the entries of m in [lo, hi], in [lo, ...) and in (..., hi]:
+// the reference for the inclusive Range / RangeFrom / RangeTo of tree collections.
+func RefRange[K cmp.Ordered, V any](m map[K]V, lo, hi K) (in, from, to map[K]V) {
+	in, from, to = map[K]V{}, map[K]V{}, map[K]V{}
+	for k, v := range m {
+		if k >= lo && k <= hi {
+			in[k] = v
+		}
+		if k >= lo {
+			from[k] = v
+		}
+		if k <= hi {
+			to[k] = v
+		}
+	}
+	return in, from, to
+}
+
 // === Sorting ===
 
 // SortItem orders by Key only, so items with equal keys stay distinguishable
@@ -288,11 +333,36 @@ func TupleOf[A any, B any](a A, b B) std.Tuple[A, B] {
 	return std.Tuple[A, B]{V1: std.NewImmutable(a), V2: std.NewImmutable(b)}
 }
 
+// ShuffledKeys returns the keys of m in an order drawn from p.Rng. Go's map
+// iteration order is not seeded, so an input built by ranging over a map would
+// change from run to run, and a failure would not reproduce under its seed.
+func ShuffledKeys[K comparable, V any](p *Prop, m map[K]V) []K {
+	keys := slices.Collect(maps.Keys(m))
+	names := make(map[K]string, len(keys))
+	for _, k := range keys {
+		names[k] = fmt.Sprint(k)
+	}
+	slices.SortFunc(keys, func(a, b K) int { return strings.Compare(names[a], names[b]) })
+	p.Rng.Shuffle(len(keys), func(i, j int) { keys[i], keys[j] = keys[j], keys[i] })
+	return keys
+}
+
+// ShuffledEntries returns the entries of m as tuples, in ShuffledKeys order.
+func ShuffledEntries[K comparable, V any](p *Prop, m map[K]V) []std.Tuple[K, V] {
+	keys := ShuffledKeys(p, m)
+	out := make([]std.Tuple[K, V], len(keys))
+	for i, k := range keys {
+		out[i] = TupleOf(k, m[k])
+	}
+	return out
+}
+
 // CollidingKey hashes into only a handful of buckets, so hash-trie and bucket
 // implementations must handle many keys that share a full 32-bit hash.
 type CollidingKey struct{ V int }
 
-func (k CollidingKey) Hash() uint32 { return uint32(k.V % 5) }
+// Hash keeps negative keys (absent-key probes) in the same five buckets.
+func (k CollidingKey) Hash() uint32 { return uint32((k.V%5 + 5) % 5) }
 
 var _ std.Hashable = CollidingKey{}
 

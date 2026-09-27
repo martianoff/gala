@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	. "martianoff/gala/internal/collprop"
-	. "martianoff/gala/std"
 )
 
 func checkHashMap[K comparable](p *Prop, what string, m HashMap[K, int], ref map[K]int, absent []K) {
@@ -88,10 +87,7 @@ func runHashMapWorkload[K comparable](t *testing.T, kind KeyKind[K]) {
 			checkHashMap(p, "final", m, ref, absent)
 
 			// Bulk construction paths agree with the incremental one.
-			entries := make([]Tuple[K, int], 0, len(ref))
-			for k, v := range ref {
-				entries = append(entries, TupleOf(k, v))
-			}
+			entries := ShuffledEntries(p, ref)
 			checkHashMap(p, "HashMapFromSlice", HashMapFromSlice(entries), ref, absent)
 			checkHashMap(p, "HashMapOf", HashMapOf(entries...), ref, absent)
 			checkHashMap(p, "HashMapFromGoMap", HashMapFromGoMap(ref), ref, absent)
@@ -236,7 +232,7 @@ func runHashSetWorkload[T comparable](t *testing.T, kind KeyKind[T]) {
 			for i, v := range versions {
 				checkHashSet(p, fmt.Sprintf("version %d re-read", i), v.s, v.ref, absent)
 			}
-			elems := slices.Collect(maps.Keys(ref))
+			elems := ShuffledKeys(p, ref)
 			checkHashSet(p, "HashSetFromSlice", HashSetFromSlice(elems), ref, absent)
 			checkHashSet(p, "HashSetOf", HashSetOf(elems...), ref, absent)
 
@@ -247,15 +243,7 @@ func runHashSetWorkload[T comparable](t *testing.T, kind KeyKind[T]) {
 				other = other.Add(k)
 				refOther[k] = true
 			}
-			union, inter, diff := maps.Clone(ref), map[T]bool{}, map[T]bool{}
-			maps.Copy(union, refOther)
-			for k := range ref {
-				if refOther[k] {
-					inter[k] = true
-				} else {
-					diff[k] = true
-				}
-			}
+			union, inter, diff := RefSetAlgebra(ref, refOther)
 			checkHashSet(p, "Union", s.Union(other), union, absent)
 			checkHashSet(p, "Intersect", s.Intersect(other), inter, absent)
 			checkHashSet(p, "Diff", s.Diff(other), diff, absent)
@@ -275,7 +263,6 @@ func TestHashSetDifferential(t *testing.T) {
 	runHashSetWorkload(t, StringKeys)
 	runHashSetWorkload(t, CollidingKeys)
 }
-
 
 func checkTreeMap[K cmp.Ordered](p *Prop, what string, m TreeMap[K, int], ref map[K]int) {
 	p.T.Helper()
@@ -351,27 +338,12 @@ func runTreeMapWorkload[K cmp.Ordered](t *testing.T, kind KeyKind[K]) {
 				checkTreeMap(p, fmt.Sprintf("version %d re-read", i), v.m, v.ref)
 			}
 			checkTreeMap(p, "TreeMapFromGoMap", TreeMapFromGoMap(ref), ref)
-			entries := make([]Tuple[K, int], 0, len(ref))
-			for k, v := range ref {
-				entries = append(entries, TupleOf(k, v))
-			}
-			checkTreeMap(p, "TreeMapFromSlice", TreeMapFromSlice(entries), ref)
+			checkTreeMap(p, "TreeMapFromSlice", TreeMapFromSlice(ShuffledEntries(p, ref)), ref)
 
 			// Range bounds are inclusive on both ends.
 			for r := 0; r < 5; r++ {
 				lo, hi := kind.Mk(p.Rng.Intn(n+2)), kind.Mk(p.Rng.Intn(n+2))
-				want, wantFrom, wantTo := map[K]int{}, map[K]int{}, map[K]int{}
-				for k, v := range ref {
-					if k >= lo && k <= hi {
-						want[k] = v
-					}
-					if k >= lo {
-						wantFrom[k] = v
-					}
-					if k <= hi {
-						wantTo[k] = v
-					}
-				}
+				want, wantFrom, wantTo := RefRange(ref, lo, hi)
 				checkTreeMap(p, fmt.Sprintf("Range(%v,%v)", lo, hi), m.Range(lo, hi), want)
 				checkTreeMap(p, fmt.Sprintf("RangeFrom(%v)", lo), m.RangeFrom(lo), wantFrom)
 				checkTreeMap(p, fmt.Sprintf("RangeTo(%v)", hi), m.RangeTo(hi), wantTo)
@@ -440,21 +412,10 @@ func runTreeSetWorkload[T cmp.Ordered](t *testing.T, kind KeyKind[T]) {
 			for i, v := range versions {
 				check(fmt.Sprintf("version %d re-read", i), v.s, v.ref)
 			}
-			check("TreeSetFromSlice", TreeSetFromSlice(slices.Collect(maps.Keys(ref))), ref)
+			check("TreeSetFromSlice", TreeSetFromSlice(ShuffledKeys(p, ref)), ref)
 			for r := 0; r < 5; r++ {
 				lo, hi := kind.Mk(p.Rng.Intn(n+2)), kind.Mk(p.Rng.Intn(n+2))
-				want, wantFrom, wantTo := map[T]bool{}, map[T]bool{}, map[T]bool{}
-				for k := range ref {
-					if k >= lo && k <= hi {
-						want[k] = true
-					}
-					if k >= lo {
-						wantFrom[k] = true
-					}
-					if k <= hi {
-						wantTo[k] = true
-					}
-				}
+				want, wantFrom, wantTo := RefRange(ref, lo, hi)
 				check(fmt.Sprintf("Range(%v,%v)", lo, hi), s.Range(lo, hi), want)
 				check(fmt.Sprintf("RangeFrom(%v)", lo), s.RangeFrom(lo), wantFrom)
 				check(fmt.Sprintf("RangeTo(%v)", hi), s.RangeTo(hi), wantTo)
@@ -466,15 +427,7 @@ func runTreeSetWorkload[T cmp.Ordered](t *testing.T, kind KeyKind[T]) {
 				other = other.Add(k)
 				refOther[k] = true
 			}
-			union, inter, diff := maps.Clone(ref), map[T]bool{}, map[T]bool{}
-			maps.Copy(union, refOther)
-			for k := range ref {
-				if refOther[k] {
-					inter[k] = true
-				} else {
-					diff[k] = true
-				}
-			}
+			union, inter, diff := RefSetAlgebra(ref, refOther)
 			check("Union", s.Union(other), union)
 			check("Intersect", s.Intersect(other), inter)
 			check("Diff", s.Diff(other), diff)

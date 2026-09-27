@@ -6,6 +6,7 @@ package collection_immutable
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"testing"
 
@@ -97,8 +98,11 @@ func TestArrayConstructionDifferential(t *testing.T) {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {
 			p := NewProp(t, n)
 			ref := p.Ints(n, n/4+2)
-			for name, a := range arrayPaths(p, ref) {
-				checkArray(p, name, a, ref)
+			paths := arrayPaths(p, ref)
+			// Sorted names: checkArray draws from p.Rng, so the path order must
+			// not follow Go's unseeded map iteration.
+			for _, name := range slices.Sorted(maps.Keys(paths)) {
+				checkArray(p, name, paths[name], ref)
 			}
 			// ArrayFromSlice copies: mutating the source afterwards is invisible.
 			src := slices.Clone(ref)
@@ -133,14 +137,14 @@ func TestArrayHugeConstructionDifferential(t *testing.T) {
 				"ArrayTabulate":  ArrayTabulate(n, func(i int) int { return ref[i] }),
 				"Map":            Array_Map(identity, func(i int) int { return ref[i] }),
 				"Filter": Array_Map(identity.Filter(func(i int) bool { return i%2 == 0 }),
-					func(i int) int { return ref[i/2*2] }),
+					func(i int) int { return ref[i] }),
 			}
 			wantFilter := make([]int, 0, n/2+1)
 			for i := 0; i < n; i += 2 {
 				wantFilter = append(wantFilter, ref[i])
 			}
-			for name, a := range paths {
-				want := ref
+			for _, name := range slices.Sorted(maps.Keys(paths)) {
+				a, want := paths[name], ref
 				if name == "Filter" {
 					want = wantFilter
 				}
@@ -182,7 +186,7 @@ func TestArrayOpsDifferential(t *testing.T) {
 
 				flat := Array_FlatMap(a, func(x int) Array[int] {
 					log.Record(x)
-					return ArrayTabulate(x%3, func(j int) int { return x*10 + j })
+					return ArrayFromSlice(FlatMapFn(x))
 				})
 				log.Expect(p, w("FlatMap"), ref)
 				checkArray(p, w("FlatMap"), flat, RefFlatMap(ref))

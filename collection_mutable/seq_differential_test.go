@@ -271,13 +271,14 @@ func TestMutableArrayOpsDifferential(t *testing.T) {
 			p.EqInts("Partition.1", part.V1.Get().ToGoSlice(), RefFilter(ref, isEven))
 			p.EqInts("Partition.2", part.V2.Get().ToGoSlice(), RefFilter(ref, odd))
 			other := p.Ints(n/2+3, 100)
-			for i, z := range Array_Zip(a, ArrayFromSlice(other)).ToGoSlice() {
+			zipped := Array_Zip(a, ArrayFromSlice(other)).ToGoSlice()
+			if len(zipped) != min(n, len(other)) {
+				p.Fatalf("Zip: length %d, want %d", len(zipped), min(n, len(other)))
+			}
+			for i, z := range zipped {
 				if z.V1.Get() != ref[i] || z.V2.Get() != other[i] {
 					p.Fatalf("Zip: element %d is %v", i, z)
 				}
-			}
-			if got := Array_Zip(a, ArrayFromSlice(other)).Length(); got != min(n, len(other)) {
-				p.Fatalf("Zip: length %d, want %d", got, min(n, len(other)))
 			}
 			for i, z := range Array_ZipWithIndex(a).ToGoSlice() {
 				if z.V1.Get() != ref[i] || z.V2.Get() != i {

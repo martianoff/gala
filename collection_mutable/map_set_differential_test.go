@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	. "martianoff/gala/internal/collprop"
-	. "martianoff/gala/std"
 )
 
 // mutMap is the in-place API that HashMap and TreeMap share.
@@ -125,7 +124,11 @@ func runMutMapWorkload[K comparable](p *Prop, kind KeyKind[K], n int, m mutMap[K
 			if !present {
 				ref[k] = op.Value
 			}
-			if got != ref[k] || calls != map[bool]int{true: 0, false: 1}[present] {
+			wantCalls := 1
+			if present {
+				wantCalls = 0
+			}
+			if got != ref[k] || calls != wantCalls {
 				p.Fatalf("op %d %s(%v) = %d with %d calls, want %d (key present: %v)", i, name, k, got, calls, ref[k], present)
 			}
 		default:
@@ -158,11 +161,7 @@ func runMutHashMap[K comparable](t *testing.T, kind KeyKind[K]) {
 			absent := []K{kind.Mk(-1)}
 
 			clone := m.Clone()
-			entries := make([]Tuple[K, int], 0, len(ref))
-			for k, v := range ref {
-				entries = append(entries, TupleOf(k, v))
-			}
-			checkMutMap[K](p, "HashMapFromSlice", HashMapFromSlice(entries), ref, nil, absent)
+			checkMutMap[K](p, "HashMapFromSlice", HashMapFromSlice(ShuffledEntries(p, ref)), ref, nil, absent)
 			checkMutMap[K](p, "HashMapFromGoMap", HashMapFromGoMap(ref), ref, nil, absent)
 
 			even := func(_ K, v int) bool { return v%2 == 0 }
@@ -219,18 +218,7 @@ func runMutTreeMap[K cmp.Ordered](t *testing.T, kind KeyKind[K]) {
 
 			for r := 0; r < 5; r++ {
 				lo, hi := kind.Mk(p.Rng.Intn(n+2)), kind.Mk(p.Rng.Intn(n+2))
-				want, wantFrom, wantTo := map[K]int{}, map[K]int{}, map[K]int{}
-				for k, v := range ref {
-					if k >= lo && k <= hi {
-						want[k] = v
-					}
-					if k >= lo {
-						wantFrom[k] = v
-					}
-					if k <= hi {
-						wantTo[k] = v
-					}
-				}
+				want, wantFrom, wantTo := RefRange(ref, lo, hi)
 				checkMutMap[K](p, fmt.Sprintf("Range(%v,%v)", lo, hi), m.Range(lo, hi), want, SortedKeys(want), absent)
 				checkMutMap[K](p, fmt.Sprintf("RangeFrom(%v)", lo), m.RangeFrom(lo), wantFrom, SortedKeys(wantFrom), absent)
 				checkMutMap[K](p, fmt.Sprintf("RangeTo(%v)", hi), m.RangeTo(hi), wantTo, SortedKeys(wantTo), absent)
@@ -348,20 +336,6 @@ func runMutSetWorkload[T comparable](p *Prop, kind KeyKind[T], n int, s mutSet[T
 	return ref
 }
 
-// setAlgebra returns the reference union, intersection and difference.
-func setAlgebra[T comparable](a, b map[T]bool) (union, inter, diff map[T]bool) {
-	union, inter, diff = maps.Clone(a), map[T]bool{}, map[T]bool{}
-	maps.Copy(union, b)
-	for k := range a {
-		if b[k] {
-			inter[k] = true
-		} else {
-			diff[k] = true
-		}
-	}
-	return union, inter, diff
-}
-
 func runMutHashSet[T comparable](t *testing.T, kind KeyKind[T]) {
 	for _, n := range MapSizes {
 		if kind.Skips(n) {
@@ -371,7 +345,7 @@ func runMutHashSet[T comparable](t *testing.T, kind KeyKind[T]) {
 			p := NewProp(t, n)
 			s := EmptyHashSet[T]()
 			ref := runMutSetWorkload[T](p, kind, n, s, nil)
-			checkMutSet[T](p, "HashSetFromSlice", HashSetFromSlice(slices.Collect(maps.Keys(ref))), ref, nil)
+			checkMutSet[T](p, "HashSetFromSlice", HashSetFromSlice(ShuffledKeys(p, ref)), ref, nil)
 
 			other := EmptyHashSet[T]()
 			refOther := map[T]bool{}
@@ -380,7 +354,7 @@ func runMutHashSet[T comparable](t *testing.T, kind KeyKind[T]) {
 				other.Add(k)
 				refOther[k] = true
 			}
-			union, inter, diff := setAlgebra(ref, refOther)
+			union, inter, diff := RefSetAlgebra(ref, refOther)
 			checkMutSet[T](p, "Union", s.Union(other), union, nil)
 			checkMutSet[T](p, "Intersect", s.Intersect(other), inter, nil)
 			checkMutSet[T](p, "Diff", s.Diff(other), diff, nil)
@@ -393,7 +367,7 @@ func runMutHashSet[T comparable](t *testing.T, kind KeyKind[T]) {
 			s.UnionInPlace(other)
 			checkMutSet[T](p, "UnionInPlace", s, refOther, nil)
 			s.DiffInPlace(clone)
-			_, _, rest := setAlgebra(refOther, ref)
+			_, _, rest := RefSetAlgebra(refOther, ref)
 			checkMutSet[T](p, "DiffInPlace", s, rest, nil)
 			checkMutSet[T](p, "Clone after edits to the original", clone, ref, nil)
 		})
@@ -418,16 +392,11 @@ func runMutTreeSet[T cmp.Ordered](t *testing.T, kind KeyKind[T]) {
 			s.ForEachReverse(func(x T) { backwards = append(backwards, x) })
 			slices.Reverse(backwards)
 			EqSlices(p, "ForEachReverse", backwards, keys)
-			checkMutSet[T](p, "TreeSetFromSlice", TreeSetFromSlice(slices.Collect(maps.Keys(ref))), ref, keys)
+			checkMutSet[T](p, "TreeSetFromSlice", TreeSetFromSlice(ShuffledKeys(p, ref)), ref, keys)
 
 			for r := 0; r < 5; r++ {
 				lo, hi := kind.Mk(p.Rng.Intn(n+2)), kind.Mk(p.Rng.Intn(n+2))
-				want := map[T]bool{}
-				for k := range ref {
-					if k >= lo && k <= hi {
-						want[k] = true
-					}
-				}
+				want, _, _ := RefRange(ref, lo, hi)
 				checkMutSet[T](p, fmt.Sprintf("Range(%v,%v)", lo, hi), s.Range(lo, hi), want, SortedKeys(want))
 			}
 			other := EmptyTreeSet[T]()
@@ -437,7 +406,7 @@ func runMutTreeSet[T cmp.Ordered](t *testing.T, kind KeyKind[T]) {
 				other.Add(k)
 				refOther[k] = true
 			}
-			union, inter, diff := setAlgebra(ref, refOther)
+			union, inter, diff := RefSetAlgebra(ref, refOther)
 			checkMutSet[T](p, "Union", s.Union(other), union, SortedKeys(union))
 			checkMutSet[T](p, "Intersect", s.Intersect(other), inter, SortedKeys(inter))
 			checkMutSet[T](p, "Diff", s.Diff(other), diff, SortedKeys(diff))
