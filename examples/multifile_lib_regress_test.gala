@@ -476,5 +476,11 @@ func main() {
     Println(multifile_lib_regress.GoStringsClassify("nope"))
     Println(multifile_lib_regress.GoStringsClassify("cookie:c"))
     Println(multifile_lib_regress.GoStringsUpper("go"))
+    // The same collision for a Go function passed as a VALUE (strings.Fields
+    // handed to Map): its signature must be Go's, not the sibling's GALA one.
+    Println(multifile_lib_regress.GoFieldsCounts(ArrayOf("a b c", "d", "")).String())
+    // A same-package GENERIC function passed as a value in a NAMED package,
+    // consumed by a lambda that writes the element type down.
+    Println(multifile_lib_regress.MapEchoSizes(ArrayOf("ab", "cde")).String())
 
 }

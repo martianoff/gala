@@ -156,7 +156,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// e.g., funcName[T] — instantiated reference to a generic function.
 		// Resolve to the substituted FuncType so callers can unify against it.
 		if id, ok := e.X.(*ast.Ident); ok {
-			if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) == 1 {
+			if fm, exists := t.functionByName(id.Name); exists && len(fm.TypeParams) == 1 {
 				typeArgs := []transpiler.Type{t.astTypeToTranspilerType(e.Index)}
 				return t.instantiateFuncMetaType(fm, typeArgs)
 			}
@@ -174,7 +174,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// e.g., funcName[T, U] — instantiated reference to a generic function with
 		// multiple type parameters. Resolve to the substituted FuncType.
 		if id, ok := e.X.(*ast.Ident); ok {
-			if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) == len(e.Indices) {
+			if fm, exists := t.functionByName(id.Name); exists && len(fm.TypeParams) == len(e.Indices) {
 				var typeArgs []transpiler.Type
 				for _, idx := range e.Indices {
 					typeArgs = append(typeArgs, t.astTypeToTranspilerType(idx))
@@ -481,14 +481,10 @@ func (t *galaASTTransformer) lookupBareFuncRefMeta(expr ast.Expr) *transpiler.Fu
 		}
 	case *ast.SelectorExpr:
 		x, ok := e.X.(*ast.Ident)
-		if !ok || t.importManager == nil || !t.importManager.IsPackage(x.Name) {
+		if !ok {
 			return nil
 		}
-		pkgName := x.Name
-		if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
-			pkgName = actual
-		}
-		if fm, ok := t.functions[pkgName+"."+e.Sel.Name]; ok {
+		if fm, ok := t.functionForQualifier(x.Name, e.Sel.Name); ok {
 			return fm
 		}
 	}

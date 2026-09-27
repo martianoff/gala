@@ -622,7 +622,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			// an explicit instantiation `funcName[A, B, ...]` so Go gets a
 			// concrete signature.
 			if id, isIdent := expr.(*ast.Ident); isIdent && substitutedParamType != nil && !substitutedParamType.IsNil() {
-				if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) > 0 {
+				if fm, exists := t.functionByName(id.Name); exists && len(fm.TypeParams) > 0 {
 					if expectedFT, isFT := substitutedParamType.(transpiler.FuncType); isFT {
 						rawFT := t.funcMetaToRawType(fm)
 						combined := append([]string{}, methodMeta.TypeParams...)

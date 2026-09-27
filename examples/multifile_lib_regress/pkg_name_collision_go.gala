@@ -32,3 +32,11 @@ func GoStringsClassify(s string) string {
 // GoStringsUpper is the Go-side counterpart of GalaStringsUpper, so both
 // packages are exercised for the same operation in one build.
 func GoStringsUpper(s string) string = strings.ToUpper(s)
+
+// GoFieldsCounts passes GO's strings.Fields as a function VALUE rather than
+// calling it. The reference's type decides Map's result type, so it must be
+// Go's func(string) []string, not the signature of the GALA strings.Fields
+// (func(string) Array[string]) that the sibling file imports. The chained
+// lambda spreads the element, which only compiles if it is a []string.
+func GoFieldsCounts(lines Array[string]) Array[int] =
+    lines.Map(strings.Fields).Map((f) => ArrayOf(f...).Size())

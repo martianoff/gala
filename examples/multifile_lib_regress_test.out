@@ -119,3 +119,5 @@ query=q
 malformed
 other
 GO
+Array(3, 1, 0)
+Array(2, 3)

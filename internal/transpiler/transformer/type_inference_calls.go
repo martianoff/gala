@@ -75,7 +75,9 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			// Generic functions are excluded for the same reason as the
 			// Ident case: they need instantiation, not a raw signature whose
 			// type variables would leak.
-			if fm, ok := t.functions[qualName]; ok && fm != nil && len(fm.TypeParams) == 0 {
+			// Only a qualifier this file binds to a GALA import reads the
+			// package-name-keyed metadata (see functionForQualifier).
+			if fm, ok := t.functionForQualifier(x.Name, e.Sel.Name); ok && len(fm.TypeParams) == 0 {
 				return t.funcMetaToRawType(fm)
 			}
 			if t.goTypeInfo != nil {

@@ -374,6 +374,11 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 // "lib.DefaultClose". Type queries on the lowered default (the by-name sugar's
 // "is this already a function?", a call's result type) resolve it through
 // here; the name itself is qualified once the whole default is lowered.
+//
+// The current package's own functions are keyed the way the analyzer keys
+// them: bare in `main`/`test`, "pkg.Name" in any other package. Looking up
+// only the bare name would miss every same-package function of a named
+// package.
 func (t *galaASTTransformer) functionByName(name string) (*transpiler.FunctionMetadata, bool) {
 	if fm, ok := t.functions[name]; ok {
 		return fm, true
@@ -382,5 +387,37 @@ func (t *galaASTTransformer) functionByName(name string) (*transpiler.FunctionMe
 		fm, ok := t.functions[d.pkg+"."+name]
 		return fm, ok
 	}
+	if key := ownFunctionKey(t.packageName, name); key != name {
+		if fm, ok := t.functions[key]; ok && fm != nil {
+			return fm, true
+		}
+	}
 	return nil, false
+}
+
+// ownFunctionKey is the t.functions key of function name declared in package
+// pkg, mirroring the analyzer: `main` and `test` register bare names, every
+// other package registers "pkg.Name".
+func ownFunctionKey(pkg, name string) string {
+	if pkg == "" || pkg == "main" || pkg == "test" {
+		return name
+	}
+	return pkg + "." + name
+}
+
+// functionForQualifier resolves the selector `qualifier.name`, as written in
+// THIS file, to GALA function metadata. t.functions is keyed by package NAME
+// and merged across every file of the package, so a qualifier only reads it
+// when this file binds that qualifier to a GALA import: Go's `strings` must
+// not pick up the signatures of GALA's `strings` that a sibling imported.
+func (t *galaASTTransformer) functionForQualifier(qualifier, name string) (*transpiler.FunctionMetadata, bool) {
+	if t.importManager == nil {
+		return nil, false
+	}
+	entry, isGala, ok := t.importForQualifier(qualifier)
+	if !ok || !isGala {
+		return nil, false
+	}
+	fm, ok := t.functions[entry.PkgName+"."+name]
+	return fm, ok && fm != nil
 }
