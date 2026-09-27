@@ -166,15 +166,21 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		expectsReturnValue = true
 	}
 
-	// Track the current function's return type for nested match expression fallback.
-	// When a match expression inside a lambda can't infer branch types (e.g., branches
-	// call methods from pure Go packages), it falls back to the enclosing return type.
-	prevFuncReturnType := t.currentFuncReturnType
-	// An explicit result annotation counts (retType is it, not the caller's).
+	// The lambda has its own return slot, separate from the enclosing
+	// function's: a `return`, a `bind` block and the match-result fallback in
+	// the body see this lambda's result type, never the enclosing function's.
+	// A known result (annotated, or a concrete expected type) fills the slot;
+	// otherwise the slot is empty, and open unless the lambda is void — a
+	// `bind` block then takes its monad type from its own trailing value.
+	prevFuncReturnType, prevReturnSlotOpen := t.currentFuncReturnType, t.returnSlotOpen
 	if isConcreteExpectedType {
 		t.currentFuncReturnType = t.astTypeToTranspilerType(retType)
+		t.returnSlotOpen = false
+	} else {
+		t.currentFuncReturnType = nil
+		t.returnSlotOpen = !isVoidExpected
 	}
-	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
+	defer func() { t.currentFuncReturnType, t.returnSlotOpen = prevFuncReturnType, prevReturnSlotOpen }()
 
 	// The body is lowered in a fresh context: its expected type is this
 	// lambda's result type, never the slot type the lambda itself fills.

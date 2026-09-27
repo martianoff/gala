@@ -49,6 +49,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 	}{
 		{"currentScope", t.currentScope != nil},
 		{"currentFuncReturnType", t.currentFuncReturnType != nil},
+		{"returnSlotOpen", t.returnSlotOpen},
 		{"currentMatchSubjectType", t.currentMatchSubjectType != nil},
 		{"expectedArgTypes", len(t.expectedArgTypes.stack) != 0},
 		{"loweringDefault", t.loweringDefault != nil},

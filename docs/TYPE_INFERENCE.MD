@@ -623,7 +623,9 @@ the verbatim-call fallback:
    expected-type sources are tried in order: the call-site hint on the
    `expectedArgTypes` stack (consumed at dispatcher entry — e.g. an argument
    slot, a `val` with a declared type, or a `bind` block's trailing value),
-   then the enclosing function's return type (`currentFuncReturnType`).
+   then the result type of the innermost enclosing function or lambda
+   (`currentFuncReturnType`; inside a lambda this is the lambda's own result
+   type, or unset while it is not known — never the surrounding function's).
 
 The call target is rewritten into an explicit instantiation
 (`InvalidOf[string, string]("…")`) **only when every type parameter resolves to

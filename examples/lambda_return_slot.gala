@@ -1,0 +1,98 @@
+package main
+
+import (
+    "errors"
+    "strconv"
+)
+
+// A lambda has its own return slot: a `return`, a `bind` block or a match in its
+// body takes its type from the lambda, never from the enclosing function.
+
+func apply[T any](f func() T) T = f()
+
+func parse(s string) Try[int] = Try(strconv.Atoi(s))
+
+func half(n int) Try[int] = if (n % 2 == 0) Success(n / 2) else Failure[int](errors.New(s"$n is odd"))
+
+// The lambdas in the if-expression take their types from the returned value,
+// not from the enclosing function's `func(string) string`.
+func scaler(k int) func(string) string {
+    val scale = apply(() => {
+        return if (k > 0) (x int) => x * k else (x int) => x
+    })
+    return (s) => s"$s:${scale(5)}"
+}
+
+// `None()` infers from the lambda's first return (Option[int]), not from the
+// enclosing function's Option[string].
+func small(n int) Option[string] {
+    val o = apply(() => {
+        if (n > 5) {
+            return Some(n)
+        }
+        return None()
+    })
+    return o.Map((v) => s"v=$v")
+}
+
+// A returned match takes the lambda's type.
+func classify(n int) Option[string] {
+    val code = apply(() => {
+        return n match {
+            case 0 => 10
+            case _ => n + 1
+        }
+    })
+    return Some(s"code=$code")
+}
+
+// A `bind` block in a lambda whose result type is not known takes its monad
+// from its own trailing value.
+func viaFlatMap(s string) Try[int] =
+    parse(s).FlatMap((n) => {
+        bind h = half(n)
+        bind q = half(h)
+        Success(q + 1)
+    })
+
+func viaThunk(s string) Try[Try[int]] = Try(() => {
+    bind n = parse(s)
+    bind h = half(n)
+    Success(h)
+})
+
+func viaTypedLambda(s string) Try[int] {
+    val f func(string) Try[int] = (x) => {
+        bind n = parse(x)
+        bind h = half(n)
+        Success(h * 10)
+    }
+    return f(s)
+}
+
+// Nested lambdas each have their own slot.
+func nested(n int) string {
+    val outer = apply(() => {
+        val inner = apply(() => {
+            return if (n > 0) n * 2 else 0
+        })
+        return inner > 2
+    })
+    return s"nested=$outer"
+}
+
+func main() {
+    Println(scaler(3)("a"))
+    Println(scaler(0)("b"))
+    Println(small(3))
+    Println(small(7))
+    Println(classify(0))
+    Println(classify(4))
+    Println(viaFlatMap("8"))
+    Println(viaFlatMap("6"))
+    Println(viaThunk("4"))
+    Println(viaThunk("x"))
+    Println(viaTypedLambda("12"))
+    Println(nested(3))
+    Println(nested(-1))
+}

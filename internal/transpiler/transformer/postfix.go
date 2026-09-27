@@ -446,10 +446,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type, and the arms' enclosing return type for sealed-variant inference.
+	// A return in an arm leaves the match's IIFE, so it never fixes an
+	// enclosing lambda's open result slot: the slot is restored afterwards.
+	prevReturn, prevOpen := t.currentFuncReturnType, t.returnSlotOpen
+	defer func() { t.currentFuncReturnType, t.returnSlotOpen = prevReturn, prevOpen }()
 	if !transpiler.IsUnusable(s.typ) {
-		prevReturn := t.currentFuncReturnType
-		t.currentFuncReturnType = s.typ
-		defer func() { t.currentFuncReturnType = prevReturn }()
+		t.currentFuncReturnType, t.returnSlotOpen = s.typ, false
 	}
 
 	var clauses []ast.Stmt

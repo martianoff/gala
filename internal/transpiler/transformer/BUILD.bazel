@@ -124,6 +124,7 @@ go_test(
         "imports_test.go",
         "interpolation_diagnostics_test.go",
         "lambda_expected_type_test.go",
+        "lambda_return_slot_test.go",
         "line_directives_test.go",
         "literals_test.go",
         "lsp_scope_test.go",

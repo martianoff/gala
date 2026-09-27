@@ -1,0 +1,13 @@
+a:15
+b:5
+None()
+Some(v=7)
+Some(code=10)
+Some(code=5)
+Success(3)
+Failure(3 is odd)
+Success(Success(2))
+Success(Failure(strconv.Atoi: parsing "x": invalid syntax))
+Success(60)
+nested=true
+nested=false

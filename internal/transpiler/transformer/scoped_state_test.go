@@ -66,6 +66,7 @@ func TestEveryTransformerFieldIsClassified(t *testing.T) {
 var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"currentScope":            func(t *galaASTTransformer) { t.pushScope() },
 	"currentFuncReturnType":   func(t *galaASTTransformer) { t.currentFuncReturnType = transpiler.BasicType{Name: "int"} },
+	"returnSlotOpen":          func(t *galaASTTransformer) { t.returnSlotOpen = true },
 	"currentMatchSubjectType": func(t *galaASTTransformer) { t.currentMatchSubjectType = transpiler.BasicType{Name: "int"} },
 	"expectedArgTypes":      func(t *galaASTTransformer) { t.expectedArgTypes.push(transpiler.BasicType{Name: "int"}) },
 	"matchInStatementPos":   func(t *galaASTTransformer) { t.matchInStatementPos = true },
