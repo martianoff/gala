@@ -145,7 +145,15 @@ func (t *galaASTTransformer) isKnownFunctionName(name string) bool {
 // used to compile stops compiling — the difference is that the rejection now
 // happens in GALA, in GALA's vocabulary, with the real constructor named.
 func (t *galaASTTransformer) positionalCtorIsUnavailable(typePackage string, fields []string, argCount int) bool {
-	if typePackage == "" || typePackage == t.packageName {
+	return PositionalCtorUnavailable(typePackage, t.packageName, fields, argCount)
+}
+
+// PositionalCtorUnavailable is positionalCtorIsUnavailable for a call made
+// from package fromPackage. It is exported so the analyzer, which infers a
+// package-level val's type from its constructor call, dispatches that call
+// exactly as the transformer lowers it.
+func PositionalCtorUnavailable(typePackage, fromPackage string, fields []string, argCount int) bool {
+	if typePackage == "" || typePackage == fromPackage {
 		return false
 	}
 	n := argCount

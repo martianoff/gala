@@ -88,6 +88,12 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 			return nil, nil, err
 		}
 		if pkgIdent, isIdent := pkgAst.(*ast.Ident); isIdent && t.importManager.IsPackage(pkgIdent.Name) {
+			// `case pkg.R(x)` where R is an imported extractor val/var.
+			if b, ok := t.lookupBinding(pkgIdent.Name, ctorName); ok {
+				if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, qArgList, objExpr, matchedType, patExprCtx); handled {
+					return expr, stmts, err
+				}
+			}
 			pkgName := pkgIdent.Name
 			if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
 				pkgName = actual
@@ -207,20 +213,12 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	// Check if rawName is a variable whose type has an Unapply method (instance extractor).
 	// This enables patterns like: val r = regex.MustCompile("..."); x match { case r(groups) => ... }
 	// where `r` is a variable of a type that defines Unapply.
-	if varType := t.getType(rawName); varType != nil && !varType.IsNil() {
-		varTypeName := varType.BaseName()
-		if varMeta := t.getTypeMeta(varTypeName); varMeta != nil {
-			if unapplyMeta, hasUnapply := varMeta.Methods["Unapply"]; hasUnapply {
-				// Variable's type has Unapply - use the variable itself as the extractor
-				returnType := unapplyMeta.ReturnType
-				if !t.isDirectUnapplyReturnType(returnType) {
-					return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-						fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
-							rawName, varTypeName, returnType.String()))
-				}
-				return t.generateVariableUnapplyPattern(rawName, varMeta, unapplyMeta, objExpr, argList, matchedType)
-			}
-		}
+	b, bound := t.lookupBinding("", rawName)
+	if !bound {
+		b = binding{name: rawName, typ: t.getType(rawName)}
+	}
+	if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, argList, objExpr, matchedType, patExprCtx); handled {
+		return expr, stmts, err
 	}
 
 	// Extractor not found or doesn't have Unapply method.
@@ -2030,16 +2028,47 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	return finalCond, allBindings, nil
 }
 
+// tryBindingExtractorPattern matches against a val/var — `r`, or an imported
+// `pkg.R` — whose type defines Unapply: `case r(groups) =>`. handled is false
+// when the binding's type has no Unapply.
+func (t *galaASTTransformer) tryBindingExtractorPattern(
+	b binding,
+	argList *grammar.ArgumentListContext,
+	objExpr ast.Expr,
+	matchedType transpiler.Type,
+	patExprCtx grammar.IExpressionContext,
+) (ast.Expr, []ast.Stmt, bool, error) {
+	if b.typ == nil || b.typ.IsNil() {
+		return nil, nil, false, nil
+	}
+	varTypeName := b.typ.BaseName()
+	varMeta := t.getTypeMeta(varTypeName)
+	if varMeta == nil {
+		return nil, nil, false, nil
+	}
+	unapplyMeta, hasUnapply := varMeta.Methods["Unapply"]
+	if !hasUnapply {
+		return nil, nil, false, nil
+	}
+	if returnType := unapplyMeta.ReturnType; !t.isDirectUnapplyReturnType(returnType) {
+		return nil, nil, true, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+			fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
+				b, varTypeName, returnType.String()))
+	}
+	expr, stmts, err := t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, objExpr, argList, matchedType)
+	return expr, stmts, true, err
+}
+
 // generateVariableUnapplyPattern generates a pattern match using a variable's Unapply method.
 // Instead of Type{}.Unapply(obj), it generates variableName.Unapply(obj).
 // This enables instance extractors like:
 //
-//	val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
+//	val dateRegex = regex.MustCompile("(\d{4})-(\d{2})-(\d{2})")
 //	input match { case dateRegex(groups) => ... }
 //
 // which generates: _tmp := dateRegex.Unapply(input)
 func (t *galaASTTransformer) generateVariableUnapplyPattern(
-	variableName string,
+	b binding,
 	varTypeMeta *transpiler.TypeMetadata,
 	unapplyMeta *transpiler.MethodMetadata,
 	objExpr ast.Expr,
@@ -2053,19 +2082,16 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	// Get the return type of Unapply, substituting type params from the variable's concrete type.
 	// e.g., if variable is JsonEncoder[Person] and Unapply returns Option[T], resolve T=Person → Option[Person]
 	returnType := unapplyMeta.ReturnType
-	if varType := t.getType(variableName); varType != nil {
-		// Unwrap Immutable[X] to get X (vals are wrapped)
-		unwrapped := unwrapGalaType(varType)
-		if genType, ok := unwrapped.(transpiler.GenericType); ok && len(varTypeMeta.TypeParams) > 0 {
-			typeSubst := make(map[string]string)
-			for i, tp := range varTypeMeta.TypeParams {
-				if i < len(genType.Params) {
-					typeSubst[tp] = genType.Params[i].String()
-				}
+	// Unwrap Immutable[X] to get X (vals are wrapped)
+	if genType, ok := unwrapGalaType(b.typ).(transpiler.GenericType); ok && len(varTypeMeta.TypeParams) > 0 {
+		typeSubst := make(map[string]string)
+		for i, tp := range varTypeMeta.TypeParams {
+			if i < len(genType.Params) {
+				typeSubst[tp] = genType.Params[i].String()
 			}
-			if len(typeSubst) > 0 {
-				returnType = t.substituteTranspilerTypeParams(returnType, typeSubst)
-			}
+		}
+		if len(typeSubst) > 0 {
+			returnType = t.substituteTranspilerTypeParams(returnType, typeSubst)
 		}
 	}
 
@@ -2075,18 +2101,8 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 		isBoolReturn = true
 	}
 
-	// Build the receiver expression for the variable.
-	// If the variable is a val (immutable), it's wrapped in Immutable[T],
-	// so we need to call .Get() first to unwrap it before calling .Unapply().
-	var receiverExpr ast.Expr = ast.NewIdent(variableName)
-	if t.isVal(variableName) {
-		receiverExpr = &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   ast.NewIdent(variableName),
-				Sel: ast.NewIdent("Get"),
-			},
-		}
-	}
+	// The receiver reads the variable, unwrapping a val's Immutable[T].
+	receiverExpr := t.bindingRead(b)
 
 	// Generate: _tmp_result := variableName[.Get()].Unapply(obj)
 	resultName := t.nextTempVar()

@@ -91,94 +91,65 @@ func TestMergeNoOpWhenNothingNew(t *testing.T) {
 	}
 }
 
-// TestMergeImportedVals pins how package-level bindings travel through Merge.
-// An imported package's own bindings become package-qualified ImportedVals
-// (exported names only); bindings of the SAME package never do, and never leak
-// into the receiver's own, unqualified PackageVals either — the transformer
-// pre-registers those as the current package's names.
-func TestMergeImportedVals(t *testing.T) {
-	colorType := NamedType{Package: "colors", Name: "Color"}
-	tests := []struct {
-		name         string
-		receiverPkg  string
-		other        *RichAST
-		wantImported map[string]Type
-	}{
-		{
-			name:        "different package: exported bindings are qualified",
-			receiverPkg: "main",
-			other: &RichAST{
-				PackageName: "colors",
-				PackageVals: map[string]*PackageValMetadata{
-					"Green":  {Name: "Green", Type: colorType, IsVal: true},
-					"Hits":   {Name: "Hits", Type: BasicType{Name: "int"}},
-					"secret": {Name: "secret", Type: BasicType{Name: "int"}, IsVal: true},
-				},
-			},
-			wantImported: map[string]Type{
-				"colors.Green": colorType,
-				"colors.Hits":  BasicType{Name: "int"},
-			},
+// TestMergeLeavesPackageValsAlone: package-level bindings never travel through
+// Merge — the receiver's own PackageVals are pre-registered unqualified by the
+// transformer, and imported bindings arrive only via AddImportedVals.
+func TestMergeLeavesPackageValsAlone(t *testing.T) {
+	r := &RichAST{PackageName: "main"}
+	r.Merge(&RichAST{
+		PackageName: "colors",
+		PackageVals: map[string]*PackageValMetadata{
+			"Green": {Name: "Green", Type: NamedType{Package: "colors", Name: "Color"}, IsVal: true},
 		},
-		{
-			name:        "same package: nothing is imported",
-			receiverPkg: "colors",
-			other: &RichAST{
-				PackageName: "colors",
-				PackageVals: map[string]*PackageValMetadata{
-					"Green": {Name: "Green", Type: colorType, IsVal: true},
-				},
-			},
-			wantImported: map[string]Type{},
-		},
-		{
-			name:        "already-qualified bindings pass through a closure merge",
-			receiverPkg: "main",
-			other: &RichAST{
-				PackageName: "palette",
-				ImportedVals: map[string]*PackageValMetadata{
-					"colors.Green": {Name: "Green", Type: colorType, IsVal: true},
-				},
-			},
-			wantImported: map[string]Type{"colors.Green": colorType},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			r := &RichAST{PackageName: tc.receiverPkg}
-			r.Merge(tc.other)
-			if len(r.PackageVals) != 0 {
-				t.Errorf("Merge widened the receiver's own PackageVals: %v", r.PackageVals)
-			}
-			if len(r.ImportedVals) != len(tc.wantImported) {
-				t.Fatalf("ImportedVals = %v, want keys %v", r.ImportedVals, tc.wantImported)
-			}
-			for key, want := range tc.wantImported {
-				got, ok := r.ImportedVals[key]
-				if !ok {
-					t.Fatalf("ImportedVals missing %q", key)
-				}
-				if got.Type.String() != want.String() {
-					t.Errorf("ImportedVals[%q].Type = %s, want %s", key, got.Type, want)
-				}
-			}
-		})
+	})
+	if len(r.PackageVals) != 0 || len(r.ImportedVals) != 0 {
+		t.Fatalf("Merge carried bindings: PackageVals=%v ImportedVals=%v", r.PackageVals, r.ImportedVals)
 	}
 }
 
-// TestMergeImportedValsKeepsKnownType: a later merge that only knows a
-// binding by name must not erase the type an earlier merge recorded.
-func TestMergeImportedValsKeepsKnownType(t *testing.T) {
-	known := &RichAST{PackageName: "colors", PackageVals: map[string]*PackageValMetadata{
-		"Green": {Name: "Green", Type: NamedType{Package: "colors", Name: "Color"}, IsVal: true},
-	}}
-	unknown := &RichAST{PackageName: "colors", PackageVals: map[string]*PackageValMetadata{
-		"Green": {Name: "Green", Type: NilType{}, IsVal: true},
-	}}
+// TestAddImportedValsKeyedByPath: two imported packages sharing a name keep
+// their bindings apart, and a package already recorded is not overwritten.
+func TestAddImportedValsKeyedByPath(t *testing.T) {
+	a := map[string]*PackageValMetadata{"Limit": {Name: "Limit", Type: BasicType{Name: "int"}, IsVal: true}}
+	b := map[string]*PackageValMetadata{"Limit": {Name: "Limit", Type: BasicType{Name: "string"}, IsVal: true}}
 	r := &RichAST{PackageName: "main"}
-	r.Merge(known)
-	r.Merge(unknown)
-	if got := r.ImportedVals["colors.Green"].Type; IsUnusable(got) {
-		t.Fatalf("known type was replaced by an unknown one")
+	r.AddImportedVals("example.com/a/util", a)
+	r.AddImportedVals("example.com/b/util", b)
+	r.AddImportedVals("example.com/a/util", b) // closure walks revisit packages
+
+	tests := []struct{ path, want string }{
+		{"example.com/a/util", "int"},
+		{"example.com/b/util", "string"},
+	}
+	for _, tc := range tests {
+		if got := r.ImportedVals[tc.path]["Limit"].Type.String(); got != tc.want {
+			t.Errorf("ImportedVals[%q][Limit] = %s, want %s", tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestPreferPackageVal: a known type is never traded for an unknown one.
+func TestPreferPackageVal(t *testing.T) {
+	known := &PackageValMetadata{Type: BasicType{Name: "int"}}
+	unknown := &PackageValMetadata{Type: NilType{}}
+	tests := []struct {
+		name                string
+		existing, candidate *PackageValMetadata
+		want                bool
+	}{
+		{"nothing recorded", nil, unknown, true},
+		{"nil candidate", nil, nil, false},
+		{"nil Type counts as unknown", &PackageValMetadata{}, known, true},
+		{"known kept over nil Type", known, &PackageValMetadata{}, false},
+		{"unknown replaced by known", unknown, known, true},
+		{"known kept over unknown", known, unknown, false},
+		{"known kept over known", known, &PackageValMetadata{Type: BasicType{Name: "string"}}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PreferPackageVal(tc.existing, tc.candidate); got != tc.want {
+				t.Errorf("PreferPackageVal = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

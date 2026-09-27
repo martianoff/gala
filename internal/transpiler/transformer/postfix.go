@@ -81,20 +81,11 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 
 // resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
 func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (ast.Expr, error) {
-	// `pkg.Name` naming a package-level binding of an imported GALA package.
-	// A `val` lowers to std.Immutable[T] there, so reading it takes the same
-	// .Get() a same-package reference gets in transformPrimary; a `var` is a
-	// plain T and stays as written.
-	if xIdent, ok := base.(*ast.Ident); ok {
-		if pv := t.importedPackageVal(xIdent.Name, selName); pv != nil {
-			selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}
-			if !pv.IsVal {
-				return selExpr, nil
-			}
-			return &ast.CallExpr{
-				Fun: &ast.SelectorExpr{X: selExpr, Sel: ast.NewIdent(transpiler.MethodGet)},
-			}, nil
-		}
+	// `pkg.Name` naming an imported package-level binding is read at once, as
+	// transformPrimary reads a same-package one: a val types as Immutable[T]
+	// (inferSelectorExprType), so unwrapImmutable adds the .Get().
+	if xIdent, ok := base.(*ast.Ident); ok && t.importedPackageVal(xIdent.Name, selName) != nil {
+		return t.unwrapImmutable(&ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}), nil
 	}
 
 	xType := t.getExprTypeName(base)
@@ -185,42 +176,12 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 	// We do NOT scan all known types — that's too broad and causes false
 	// positives (e.g., "Err" matching std.Try.Err on a context.Context val).
 	if xTypeName == "" || xType.IsNil() {
-		if ce, ok := selExpr.X.(*ast.CallExpr); ok && len(ce.Args) == 0 {
-			if se, ok := ce.Fun.(*ast.SelectorExpr); ok && se.Sel.Name == "Get" {
-				if id, ok := se.X.(*ast.Ident); ok && t.isVal(id.Name) {
-					// Resolve the val's actual type from scope
-					valType := t.getValType(id.Name)
-					if !valType.IsNil() {
-						innerType := valType
-						// Unwrap Immutable[T] → T
-						if gen, ok := valType.(transpiler.GenericType); ok && len(gen.Params) > 0 {
-							baseName := gen.Base.String()
-							if baseName == transpiler.TypeImmutable || baseName == "std."+transpiler.TypeImmutable {
-								innerType = gen.Params[0]
-							}
-						}
-						// Check if the resolved inner type has this field as immutable
-						innerName := innerType.String()
-						if idx := strings.Index(innerName, "["); idx != -1 {
-							innerName = innerName[:idx]
-						}
-						innerName = strings.TrimPrefix(innerName, "*")
-						resolvedInner := t.resolveStructTypeName(innerName)
-						if fields, ok := t.structFields[resolvedInner]; ok {
-							for i, f := range fields {
-								if f == selName {
-									return t.structImmutFields[resolvedInner][i]
-								}
-							}
-						}
-						if typeMeta := t.getTypeMeta(innerName); typeMeta != nil {
-							for i, f := range typeMeta.FieldNames {
-								if f == selName {
-									return i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i]
-								}
-							}
-						}
-					}
+		// bindingRef accepts a call only as a val's `.Get()` (`v` or `pkg.V`).
+		// The recursion runs with a known type, so it cannot come back here.
+		if _, isCall := selExpr.X.(*ast.CallExpr); isCall {
+			if b, ok := t.bindingRef(selExpr.X); ok {
+				if inner := unwrapGalaType(b.typ); !inner.IsNil() {
+					return t.isImmutableField(inner, selExpr, selName)
 				}
 			}
 		}

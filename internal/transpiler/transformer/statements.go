@@ -123,19 +123,12 @@ func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExp
 }
 
 func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext) (ast.Stmt, error) {
+	if name := t.immutableBindingName(ctx.Expression()); name != "" {
+		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", name))
+	}
 	expr, err := t.transformExpression(ctx.Expression())
 	if err != nil {
 		return nil, err
-	}
-
-	// Check for mutability - get the name if it's an identifier
-	if ident, ok := expr.(*ast.Ident); ok {
-		if t.isVal(ident.Name) {
-			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", ident.Name))
-		}
-	}
-	if name, ok := t.importedValRead(expr); ok {
-		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", name))
 	}
 
 	// Determine the token (++ or --)
@@ -220,17 +213,10 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
 	lhsCtx := ctx.GetChild(0).(*grammar.ExpressionListContext)
 	for _, exprCtx := range lhsCtx.AllExpression() {
-		if pc := t.getPrimaryFromExpression(exprCtx); pc != nil {
-			if pc.Identifier() != nil {
-				name := pc.Identifier().GetText()
-				// Only block direct variable reassignment (e.g., v = ...), not field/index
-				// access through a val binding (e.g., v.data = ..., v[i] = ...).
-				// Field access assignments are checked by the field immutability check below.
-				// For value types (non-pointer), Go compiler itself catches invalid mutations.
-				if t.isVal(name) && t.isDirectVariableExpression(exprCtx) {
-					return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
-				}
-			}
+		// Only direct reassignment of a val (`v = ...`, `pkg.V = ...`) is blocked
+		// here; a field or index through a val binding is checked below or by Go.
+		if name := t.immutableBindingName(exprCtx); name != "" {
+			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
 		}
 		// Check for dereference assignment (*ptr = value) where ptr is ConstPtr
 		if t.isConstPtrDerefAssignment(exprCtx) {
@@ -261,14 +247,6 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	lhsExprs, err := t.transformExpressionList(lhsCtx)
 	if err != nil {
 		return nil, err
-	}
-	// `pkg.Name = ...` on an imported package-level val — which the LHS
-	// transform has already turned into a `pkg.Name.Get()` read — is as
-	// immutable as reassigning a same-package val.
-	for _, lhs := range lhsExprs {
-		if name, ok := t.importedValRead(lhs); ok {
-			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
-		}
 	}
 
 	// Downward type-inference for sealed-variant constructors on the RHS:
@@ -904,44 +882,35 @@ func (t *galaASTTransformer) singleAssignmentLHSName(lhsCtx *grammar.ExpressionL
 // with no postfix operations (field access, indexing, or method calls).
 // Returns true for `v`, false for `v.data`, `v[i]`, `v.Method()`, etc.
 func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionContext) bool {
-	if ctx == nil {
-		return false
+	postfix := LeadingPostfixExpr(ctx, true)
+	return postfix != nil && len(postfix.AllPostfixSuffix()) == 0
+}
+
+// immutableBindingName returns the source spelling of the val that ctx names
+// directly — `Name`, or `pkg.Name` for an imported package-level val — or ""
+// for anything else (a var, a field or index through a val, a call).
+func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) string {
+	postfix := LeadingPostfixExpr(ctx, true)
+	primary := PrimaryOf(postfix)
+	if primary == nil || primary.Identifier() == nil {
+		return ""
 	}
-	orExpr := ctx.OrExpr()
-	if orExpr == nil {
-		return false
+	pkg, name := "", primary.Identifier().GetText()
+	switch suffixes := postfix.AllPostfixSuffix(); len(suffixes) {
+	case 0:
+	case 1:
+		sel := suffixes[0].(*grammar.PostfixSuffixContext).Identifier()
+		if sel == nil {
+			return ""
+		}
+		pkg, name = name, sel.GetText()
+	default:
+		return ""
 	}
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) != 1 {
-		return false
+	if b, ok := t.lookupBinding(pkg, name); ok && b.isVal {
+		return b.String()
 	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) != 1 {
-		return false
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) != 1 {
-		return false
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) != 1 {
-		return false
-	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) != 1 {
-		return false
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) != 1 {
-		return false
-	}
-	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return false
-	}
-	// A direct variable expression has no postfix suffixes (no .field, [index], or (args))
-	return len(postfixExpr.(*grammar.PostfixExprContext).AllPostfixSuffix()) == 0
+	return ""
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {

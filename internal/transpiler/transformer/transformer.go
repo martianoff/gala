@@ -291,13 +291,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// reference does. Same-file declarations refine these entries with their
 	// precisely-inferred type when their own declaration is transformed below.
 	for name, meta := range richAST.PackageVals {
-		if meta == nil {
-			continue
-		}
-		if meta.IsVal {
-			t.addVal(name, meta.Type)
-		} else {
-			t.addVar(name, meta.Type)
+		if meta != nil {
+			t.registerPackageVal(name, meta)
 		}
 	}
 
