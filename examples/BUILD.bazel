@@ -1681,7 +1681,7 @@ gala_exec_test(
     ],
 )
 
-# Immutable Array operations on arrays of 1024+ elements (tree depth 3 and 4)
+# Immutable Array operations on arrays of 1024+ elements (tree depth 2 to 4)
 gala_exec_test(
     name = "array_large_access",
     src = "array_large_access.gala",

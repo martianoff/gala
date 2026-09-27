@@ -2,7 +2,8 @@ package main
 
 import . "martianoff/gala/collection_immutable"
 
-// Arrays of 1024 or more elements are stored as a tree of depth 3 or more.
+// Arrays of 1024 or more elements are stored as a multi-level tree (depth 2 at
+// 1024, depth 3 from 1025, depth 4 from 32769).
 // Every operation must read and write the element at the requested index.
 
 func describe(n int) string {

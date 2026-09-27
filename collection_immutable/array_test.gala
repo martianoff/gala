@@ -553,9 +553,9 @@ func TestArrayPrependLargeAccess(t T) T {
 }
 
 // === Large Array Tests ===
-// From 1024 elements up the builder produces a tree of depth 3 or more (depth 4
-// from 32769, depth 5 from 1048577). Get, Append, Updated and every builder-based
-// operation must agree on that depth.
+// From 1024 elements up the builder takes its multi-level path: depth 2 at
+// 1024, depth 3 from 1025, depth 4 from 32769, depth 5 from 1048577. Get,
+// Append, Updated and every builder-based operation must agree on that depth.
 
 func arrayLargeCase(t T, n int) T {
     val xs = ArrayTabulate(n, (i) => i)
