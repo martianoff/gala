@@ -3599,15 +3599,12 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 		if !ok || len(gen.Params) == 0 {
 			continue
 		}
-		// Reject if any param is itself an unresolved type parameter (e.g., still T).
-		hasUnresolved := false
-		for _, p := range gen.Params {
-			if t.isActiveTypeParam(p.String()) {
-				hasUnresolved = true
-				break
-			}
-		}
-		if hasUnresolved {
+		// Reject a context type that names a type parameter left unbound (the
+		// `T` of a callee's `Option[T]` before T is known). A type parameter
+		// of the declaration being lowered — its own or its receiver's — is
+		// resolved: `return None()` in `func f[U any]() Option[U]` is
+		// `None[U]`.
+		if slices.ContainsFunc(gen.Params, t.typeMentionsUnresolvedTypeParam) {
 			continue
 		}
 
