@@ -106,8 +106,9 @@ or panic", so the same call would have meant two different things depending on
 where it was written.
 
 **Where it stands down.** A multi-value call that is the *sole* argument of a
-Go function keeps Go's meaning of spreading over the parameters
-(`fmt.Println(strconv.Atoi("7"))` prints `7 <nil>`). `Try(call)`,
+call is left to Go, which spreads it over the parameters when their count
+matches (`fmt.Println(strconv.Atoi("7"))` prints `7 <nil>`) and reports the
+mismatch otherwise. `Try(call)`,
 `val a, b = call`, and a single name or expression-lambda body over a
 `(T, error)` call are the documented forms and are untouched.
 

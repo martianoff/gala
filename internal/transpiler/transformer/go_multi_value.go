@@ -33,20 +33,15 @@ import (
 // expression-lambda bodies, single-name bindings of a call without an error
 // result, and arguments that must be one value. These positions are now
 // rejected in GALA as GALA-E0049, naming the call and pointing at the form that
-// does say what was meant. The sole argument of a Go callee is left alone: Go
-// spreads it over the parameters (`fmt.Println(strconv.Atoi(s))`).
+// does say what was meant. The sole argument of a call is left to Go, which
+// spreads it over the callee's parameters when their count matches
+// (`fmt.Println(strconv.Atoi(s))`) and reports the mismatch otherwise.
 
 // goMultiValueResultCount returns how many values expr yields when it is a
 // call to a Go function or method with two or more results, and 0 otherwise.
 // It also reports whether the last result is `error`, which decides the hint.
 func (t *galaASTTransformer) goMultiValueResultCount(expr ast.Expr) (int, bool) {
-	for {
-		paren, ok := expr.(*ast.ParenExpr)
-		if !ok {
-			break
-		}
-		expr = paren.X
-	}
+	expr = ast.Unparen(expr)
 	if t.isImmutableUnwrapCall(expr) {
 		// `v.Get()` reading a val through its Immutable wrapper yields one
 		// value, even when the wrapped Go type has a multi-value Get method.
@@ -80,28 +75,47 @@ func (t *galaASTTransformer) isImmutableUnwrapCall(expr ast.Expr) bool {
 	return t.isImmutableType(t.getExprTypeName(sel.X))
 }
 
-// goMultiValueCallName renders the callee of a Go call for a diagnostic:
-// `os.ReadFile`, or `.Method` when the receiver is itself an expression.
-func (t *galaASTTransformer) goMultiValueCallName(expr ast.Expr) string {
-	for {
-		paren, ok := expr.(*ast.ParenExpr)
-		if !ok {
-			break
-		}
-		expr = paren.X
+// goCallee names the callee of a Go call for a diagnostic. When the callee can
+// be written back as GALA (`os.ReadFile`, a val's method `v.Read`), callee
+// holds it and the hints quote it. When the receiver is itself an expression
+// (`exec.Command("ls").Output()`), only the method is named.
+type goCallee struct {
+	callee string // pasteable callee, or "" when the receiver is an expression
+	method string // the method name, used when callee is ""
+}
+
+// subject renders the callee as the subject of the diagnostic's message.
+func (c goCallee) subject() string {
+	if c.callee != "" {
+		return c.callee
 	}
-	call, ok := expr.(*ast.CallExpr)
+	if c.method != "" {
+		return "the `" + c.method + "` call"
+	}
+	return "the call"
+}
+
+// call renders a placeholder call for a hint: `os.ReadFile(...)`, or `...`.
+func (c goCallee) call() string {
+	if c.callee != "" {
+		return c.callee + "(...)"
+	}
+	return "..."
+}
+
+func (t *galaASTTransformer) goMultiValueCallee(expr ast.Expr) goCallee {
+	call, ok := ast.Unparen(expr).(*ast.CallExpr)
 	if !ok {
-		return "the call"
+		return goCallee{}
 	}
 	if name := t.extractFuncName(call.Fun); name != "" {
-		return name
+		return goCallee{callee: name}
 	}
 	fun, _ := splitCallFunTypeArgs(call.Fun)
 	if sel, ok := fun.(*ast.SelectorExpr); ok {
-		return "." + sel.Sel.Name
+		return goCallee{method: sel.Sel.Name}
 	}
-	return "the call"
+	return goCallee{}
 }
 
 // checkGoMultiValueInSingleValueSlot rejects a Go multi-value call standing
@@ -123,10 +137,19 @@ func (t *galaASTTransformer) checkGoMultiValueInSpan(expr ast.Expr, start, stop 
 	if n == 0 {
 		return nil
 	}
-	name := t.goMultiValueCallName(expr)
-	msg := fmt.Sprintf("%s returns %d values, but %s takes a single value", name, n, slot)
-	return t.goMultiValueError(start, stop, msg, goMultiValueHint(name, n, errorLast))
+	c := t.goMultiValueCallee(expr)
+	msg := fmt.Sprintf("%s returns %d values, but %s takes a single value", c.subject(), n, slot)
+	hint := goMultiValueHint(c, n, errorLast)
+	if slot == slotIfBranch {
+		// `if (c) fmt.Println("a") else ...` written for its effect alone is
+		// still an if-expression; braced branches make it a statement.
+		hint += "; if the value is not used, write an if statement with braced branches: `if (c) { ... } else { ... }`"
+	}
+	return t.goMultiValueError(start, stop, msg, hint)
 }
+
+// slotIfBranch names an if-expression branch in E0049 messages.
+const slotIfBranch = "an if-expression branch"
 
 // checkGoMultiValueTupleDestructure rejects `val (a, b) = goCall()`: the
 // parenthesized form destructures a GALA Tuple, which a Go call does not return.
@@ -135,9 +158,9 @@ func (t *galaASTTransformer) checkGoMultiValueTupleDestructure(expr ast.Expr, ct
 	if n == 0 {
 		return nil
 	}
-	name := t.goMultiValueCallName(expr)
-	msg := fmt.Sprintf("%s returns %d values, not a Tuple, so it cannot be destructured with `val (...)`", name, n)
-	hint := fmt.Sprintf("drop the parentheses — `val %s = %s(...)` binds each result by name", goMultiValueNames(n), name)
+	c := t.goMultiValueCallee(expr)
+	msg := fmt.Sprintf("%s returns %d values, not a Tuple, so it cannot be destructured with `val (...)`", c.subject(), n)
+	hint := fmt.Sprintf("drop the parentheses — `val %s = %s` binds each result by name", goMultiValueNames(n), c.call())
 	return t.goMultiValueError(ctx.GetStart(), ctx.GetStop(), msg, hint)
 }
 
@@ -157,9 +180,11 @@ func (t *galaASTTransformer) goMultiValueError(start, stop antlr.Token, msg, hin
 
 // isSingleValueArgSlot reports whether a call argument must be exactly one
 // value. Go spreads a multi-value call over a callee's parameters only when it
-// is the call's sole argument (`f(g())`), so any argument of a multi-argument
-// call is a single-value slot, as is a parameter typed as a GALA Tuple — the
-// shape an author reaching for "the call's results" would write.
+// is the call's sole argument (`f(g())`), so any argument, positional or named,
+// of a multi-argument call is a single-value slot, as is a parameter typed as a
+// GALA Tuple — the shape an author reaching for "the call's results" would
+// write. A sole argument otherwise stays with Go, which accepts the spread when
+// the parameter count matches and reports the mismatch when it does not.
 func (t *galaASTTransformer) isSingleValueArgSlot(argCount int, expectedType transpiler.Type) bool {
 	if argCount > 1 {
 		return true
@@ -187,11 +212,11 @@ func exprCtxAt(list grammar.IExpressionListContext, i int) antlr.ParserRuleConte
 
 // goMultiValueHint names the GALA form for a Go call's results: Try when the
 // last result is an error, a multi-name binding otherwise.
-func goMultiValueHint(name string, n int, errorLast bool) string {
+func goMultiValueHint(c goCallee, n int, errorLast bool) string {
 	if errorLast {
-		return fmt.Sprintf("wrap it in `Try(%s(...))` and match on `Success(v)` / `Failure(e)`, or bind the results with `val %s = %s(...)`", name, goMultiValueNames(n), name)
+		return fmt.Sprintf("wrap it in `Try(%s)` and match on `Success(v)` / `Failure(e)`, or bind the results with `val %s = %s`", c.call(), goMultiValueNames(n), c.call())
 	}
-	return fmt.Sprintf("bind the results by name first: `val %s = %s(...)`", goMultiValueNames(n), name)
+	return fmt.Sprintf("bind the results by name first: `val %s = %s`", goMultiValueNames(n), c.call())
 }
 
 // goMultiValueNames renders placeholder binding names for n results:

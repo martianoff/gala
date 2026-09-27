@@ -492,27 +492,9 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		return nil, nil
 	}
 
-	// Extract the function signature from the call.
-	// Case 1: simple pkg.Func() call — look up by qualified name.
-	// Case 2: chained call like expr.Method() — resolve receiver type, then look up method.
-	var sig *transpiler.GoFuncSignature
-	funExpr, _ := splitCallFunTypeArgs(callExpr.Fun)
-	switch fun := funExpr.(type) {
-	case *ast.SelectorExpr:
-		if id, ok := fun.X.(*ast.Ident); ok {
-			// Simple case: pkg.Func() or receiver.Method() where receiver is an ident
-			qualifiedName := id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(qualifiedName)
-			if sig == nil {
-				// Could be a method call on a variable — resolve its type
-				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-			}
-		} else {
-			// Chained call: e.g., exec.Command(...).Output()
-			// Resolve the type of fun.X (the receiver expression) and look up the method
-			sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-		}
-	}
+	// The callee's signature: a package function, a method on any receiver
+	// expression, or a dot-imported function.
+	sig := t.resolveGoCallSignature(callExpr)
 	if sig == nil || len(sig.Returns) < 2 {
 		return nil, nil
 	}

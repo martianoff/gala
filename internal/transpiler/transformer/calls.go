@@ -1547,6 +1547,11 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			if aerr != nil {
 				return nil, nil, false, aerr
 			}
+			if lambdaCtx == nil && t.isSingleValueArgSlot(len(argListCtx.AllArgument()), namedExpectedType) {
+				if cerr := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "this argument"); cerr != nil {
+					return nil, nil, false, cerr
+				}
+			}
 			named[argName] = expr
 			continue
 		}
@@ -3840,12 +3845,41 @@ func (t *galaASTTransformer) resolveGoFuncParamTypes(funcName string) []transpil
 // counterpart of resolveGoFuncParamTypes, used so each name in a destructuring
 // binding gets its corresponding return type (enabling `.Size()` etc. on the
 // value component) instead of NilType.
+//
+// A signature the call's arguments cannot fit is not the callee. The `.Get()`
+// that reads a val field through its Immutable wrapper takes no arguments, and
+// must not resolve to a Go method of the field's type that happens to be named
+// Get (`(*http.Client).Get(url)` returns two values).
 func (t *galaASTTransformer) resolveGoCallSignature(expr ast.Expr) *transpiler.GoFuncSignature {
-	if t.goTypeInfo == nil {
-		return nil
-	}
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
+		return nil
+	}
+	if sig := t.lookupGoCallSignature(callExpr); sig != nil && goCallArgsFit(sig, callExpr) {
+		return sig
+	}
+	return nil
+}
+
+// goCallArgsFit reports whether call's arguments can be passed to sig: one per
+// parameter, at least all but the last for a variadic callee, or a sole
+// argument that Go spreads over several parameters (`f(g())`).
+func goCallArgsFit(sig *transpiler.GoFuncSignature, call *ast.CallExpr) bool {
+	args, params := len(call.Args), len(sig.Params)
+	switch {
+	case args == params:
+		return true
+	case sig.IsVariadic:
+		return args >= params-1
+	default:
+		return args == 1 && params > 1
+	}
+}
+
+// lookupGoCallSignature finds the Go signature a call's callee names, without
+// checking the call's arguments against it (see resolveGoCallSignature).
+func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *transpiler.GoFuncSignature {
+	if t.goTypeInfo == nil {
 		return nil
 	}
 	funExpr, _ := splitCallFunTypeArgs(callExpr.Fun)

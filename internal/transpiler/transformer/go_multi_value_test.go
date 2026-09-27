@@ -82,6 +82,24 @@ func TestGoMultiValueInSingleValueSlot(t *testing.T) {
 			body:     "    Println(twoArgs(\"a\", strconv.Atoi(\"1\")))",
 			contains: "strconv.Atoi returns 2 values, but this argument takes a single value",
 		},
+		{
+			name:     "named argument",
+			body:     "    Println(twoArgs(a = \"a\", b = strconv.Atoi(\"1\")))",
+			contains: "strconv.Atoi returns 2 values, but this argument takes a single value",
+		},
+		{
+			// The receiver is an expression, so the hint cannot quote the
+			// callee; it must not print a fragment like `Try(.Cut(...))`.
+			name: "method call on an expression receiver",
+			body: `    val m = strings.NewReplacer("a", "b").Replace("a") match {
+        case _ => "x"
+    }
+    val r = bytes.NewBufferString("a").ReadString('\n') match {
+        case _ => "y"
+    }
+    Println(m + r)`,
+			contains: "the `ReadString` call returns 2 values, but a match subject takes a single value (hint: wrap it in `Try(...)`",
+		},
 	}
 	for _, tc := range rejected {
 		t.Run("rejects/"+tc.name, func(t *testing.T) {
@@ -112,6 +130,13 @@ func TestGoMultiValueInSingleValueSlot(t *testing.T) {
 		{"expression lambda over a (T, error) call", "    val f = () => strconv.Atoi(\"1\")\n    Println(f())"},
 		{"sole argument of a Go function", "    fmt.Println(strconv.Atoi(\"1\"))"},
 		{"if statement whose branches call a multi-value Go function", "    if (strings.HasPrefix(\"ab\", \"a\")) { fmt.Println(\"a\") } else { fmt.Println(\"b\") }"},
+		// A val field whose Go type has a multi-value Get(url) method: the
+		// Immutable unwrap `.Get()` takes no arguments, so it is not that method.
+		{"val field of a Go type with a multi-value Get method", `    val a = Api(Client = http.DefaultClient, Name = "x")
+    Println(useIt(a.Client, 1))
+    val c = a.Client
+    val r = if (true) a.Client else http.DefaultClient
+    Println(c == r)`},
 	}
 	for _, tc := range accepted {
 		t.Run("accepts/"+tc.name, func(t *testing.T) {
@@ -119,13 +144,30 @@ func TestGoMultiValueInSingleValueSlot(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+
+	// A dot-imported (T, error) function takes the documented single-name form
+	// just like a qualified one.
+	t.Run("accepts/single name over a dot-imported (T, error) call", func(t *testing.T) {
+		out, err := trans.Transpile(`package main
+
+import . "strconv"
+
+func main() {
+    val n = Atoi("1")
+    Println(n)
+}`, "go_multi_value_test.gala")
+		require.NoError(t, err)
+		assert.Contains(t, out, "_v0, _err := Atoi(\"1\")")
+	})
 }
 
 func goMultiValueProgram(body string) string {
 	return `package main
 
 import (
+    "bytes"
     "fmt"
+    "net/http"
     "os"
     "strconv"
     "strings"
@@ -135,8 +177,12 @@ func takesPair(p Tuple[string, bool]) string = p.V1
 
 func twoArgs(a string, b int) string = a
 
+struct Api(Client *http.Client, Name string)
+
+func useIt(c *http.Client, n int) int = n
+
 func main() {
-    Println(os.Getenv("HOME") + fmt.Sprint(1) + strconv.Itoa(1) + strings.ToUpper("a") + takesPair(("a", true)) + twoArgs("a", 1))
+    Println(os.Getenv("HOME") + fmt.Sprint(1) + strconv.Itoa(1) + strings.ToUpper("a") + takesPair(("a", true)) + twoArgs("a", 1) + http.MethodGet + bytes.NewBufferString("b").String())
 ` + body + `
 }`
 }
