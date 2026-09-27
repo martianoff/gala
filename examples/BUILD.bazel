@@ -34,6 +34,8 @@ filegroup(
         "cross_file_unwrap_lib/types.gala",
         "cross_pkg_field_eq/lib/lib.gala",
         "cross_pkg_field_eq/main.gala",
+        "cross_pkg_generic_ctor_lambda/lib/lib.gala",
+        "cross_pkg_generic_ctor_lambda/main.gala",
         "cross_pkg_lambda_infer/lib/lib.gala",
         "cross_pkg_lambda_infer/main.gala",
         "cross_pkg_namedarg/lib/lib.gala",
@@ -2385,6 +2387,37 @@ gala_exec_test(
     src = "cross_pkg_lambda_infer/main.gala",
     expected = "cross_pkg_lambda_infer/main.out",
     gala_deps = [":cross_pkg_lambda_infer_lib"],
+)
+
+# A lambda passed to a generic struct from another package, built without
+# explicit type arguments, takes the type arguments the constructor's other
+# arguments determine (`lib.Cell(Value = 5, Map = (v) => v * 3)`), instead of
+# being emitted as `func(v T) T`.
+gala_library(
+    name = "cross_pkg_generic_ctor_lambda_lib",
+    srcs = ["cross_pkg_generic_ctor_lambda/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_generic_ctor_lambda/lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "cross_pkg_generic_ctor_lambda_test",
+    src = "cross_pkg_generic_ctor_lambda/main.gala",
+    expected = "cross_pkg_generic_ctor_lambda/main.out",
+    gala_deps = [":cross_pkg_generic_ctor_lambda_lib"],
+    deps = ["//collection_immutable"],
+)
+
+# A lambda takes its types from its slot: a generic struct field whose type
+# arguments come from the constructor's other arguments or the lambda's own
+# body, and an if-expression or match whose branches are lambdas (the IIFE
+# returns the slot's function type).
+gala_exec_test(
+    name = "lambda_expected_type",
+    src = "lambda_expected_type.gala",
+    expected = "lambda_expected_type.out",
+    deps = ["//collection_immutable"],
 )
 
 gala_library(

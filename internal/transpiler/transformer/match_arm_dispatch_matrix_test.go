@@ -93,7 +93,7 @@ func main() {
 		},
 		{
 			// Default arm with panic — covers the second `lowerMatchArmTailExpr`
-			// callsite in match.go (transformMatchClauses default-case path).
+			// callsite in match.go (buildMatchExpressionFromClauses default-case path).
 			name: "default arm panic",
 			input: `package main
 

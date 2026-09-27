@@ -184,7 +184,7 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 		// self-infers (typeToExpr(NilType) -> `any`, isConcreteExpectedType
 		// stays false), while a bare-expression argument is recognized as
 		// targeting a zero-arg function type and lifted into a thunk by
-		// transformArgumentWithExpectedType. Mirrors the generic-funcMeta
+		// transformArgument. Mirrors the generic-funcMeta
 		// masking in resolveExpectedFuncArgType below.
 		if ft, ok := paramType.(transpiler.FuncType); ok &&
 			!funcTypeParamsMentionTypeParams(ft.Params, ctx.applyTypeParams) {
@@ -250,7 +250,7 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 
 	// Non-FuncType param of a non-generic GALA function: pass the declared
 	// param type through verbatim so sealed-variant downward inference (the
-	// expectedArgTypes push in transformArgumentWithExpectedType)
+	// expectedArgTypes push in lowerAgainst)
 	// can resolve a zero-arg case constructor like `NoCmd()` against the
 	// callee's declared parameter type (e.g. `Cmd[Msg]`). Skipping FuncType
 	// is intentional: those have a dedicated path above with masking logic.

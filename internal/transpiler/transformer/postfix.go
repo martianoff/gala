@@ -369,8 +369,14 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "primaryExpr must have primary, lambda, if expression, or partial function")
 }
 
-// transformPostfixMatchExpression handles match expressions with the new grammar
+// transformPostfixMatchExpression handles match expressions with the new grammar.
 func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
+	return t.transformPostfixMatchExpressionAgainst(ctx, slot{})
+}
+
+// transformPostfixMatchExpressionAgainst lowers a match whose value fills slot s
+// (zero when none); see buildMatchExpressionFromClauses.
+func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar.PostfixExprContext, s slot) (ast.Expr, error) {
 	// Get the primary expression being matched
 	primaryExpr := ctx.PrimaryExpr()
 	if primaryExpr == nil {
@@ -393,12 +399,12 @@ func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.Postfi
 
 	// Now handle the match expression
 	caseClauses := ctx.AllCaseClause()
-	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx)
+	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx, s)
 }
 
 // buildMatchExpressionFromClauses builds a match expression from the subject and case clauses.
 // ctx is used for error position reporting when case clauses are empty.
-func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext) (ast.Expr, error) {
+func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext, s slot) (ast.Expr, error) {
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
 	if transpiler.IsUnusable(matchedType) {
@@ -438,19 +444,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	t.matchInStatementPos = false
 	defer func() { t.matchInStatementPos = stmtPosition }()
 
-	// Downward inference for match-arm sealed-variant constructors (context 5):
-	// when the match expression's value flows into a slot with a known
-	// concrete type (val with explicit type, function return, function arg),
-	// promote that expected type to the IIFE's enclosing return type so each
-	// arm's expression can resolve unannotated case constructors against it.
-	// expectedArgTypes carries the slot type set by the val-decl / argument
-	// transformers; consume the top hint (so subsequent unrelated calls
-	// don't see it) and stash on currentFuncReturnType for the duration of
-	// arm processing (B1).
-	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
-		t.expectedArgTypes.consume()
+	// The slot type the match fills (see lowerAgainst) is each arm's expected
+	// value type, and the arms' enclosing return type for sealed-variant inference.
+	if !transpiler.IsUnusable(s.typ) {
 		prevReturn := t.currentFuncReturnType
-		t.currentFuncReturnType = pending
+		t.currentFuncReturnType = s.typ
 		defer func() { t.currentFuncReturnType = prevReturn }()
 	}
 
@@ -528,8 +526,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			if ccCtx.GetBodyBlock() != nil {
 				// The default arm's block-body last expression becomes the
 				// arm's value, so it is value-consumed.
-				t.blockLastStmtIsValue = true
-				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
+				b, err := t.transformValueBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext), s)
 				if err != nil {
 					return nil, err
 				}
@@ -558,7 +555,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
-				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt())
+				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), s)
 				if err != nil {
 					return nil, err
 				}
@@ -569,7 +566,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			continue
 		}
 
-		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType)
+		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, s)
 		if err != nil {
 			return nil, err
 		}
@@ -588,6 +585,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if err != nil {
 		return nil, err
 	}
+	resultType = t.branchingResultType(resultType, s)
 
 	// Statement-position matches discard their value; force the IIFE to be
 	// void so that arms with mixed value/void payloads — e.g. one arm calling

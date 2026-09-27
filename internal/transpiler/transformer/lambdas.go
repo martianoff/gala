@@ -21,17 +21,8 @@ import (
 //            wrapBlockReturnsInSome
 
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
-	// An initializer in a typed slot (e.g. `val f func(int) int = (x) => x + 1`)
-	// threads the declared signature here so the otherwise context-free lambda
-	// resolves its params/return to the declared types instead of falling back to
-	// `any`. Consume the hint so it applies to exactly this lambda and does not
-	// leak into nested body lambdas (curried `(a) => (b) => ...`), which receive
-	// their own decomposed expectation from transformLambdaWithExpectedType.
-	if t.expectedLambdaParamTypes != nil || t.expectedLambdaRetType != nil {
-		params, ret := t.expectedLambdaParamTypes, t.expectedLambdaRetType
-		t.expectedLambdaParamTypes, t.expectedLambdaRetType = nil, nil
-		return t.transformLambdaWithExpectedType(ctx, ret, params, true)
-	}
+	// A lambda in a typed slot never reaches here: the slot lowers it through
+	// lowerAgainst. This is the context-free form.
 	return t.transformLambdaWithExpectedType(ctx, nil, nil, true)
 }
 
@@ -179,36 +170,23 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// When a match expression inside a lambda can't infer branch types (e.g., branches
 	// call methods from pure Go packages), it falls back to the enclosing return type.
 	prevFuncReturnType := t.currentFuncReturnType
+	// An explicit result annotation counts (retType is it, not the caller's).
 	if isConcreteExpectedType {
-		t.currentFuncReturnType = t.astTypeToTranspilerType(expectedRetType)
+		t.currentFuncReturnType = t.astTypeToTranspilerType(retType)
 	}
 	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
 
-	// Curried lambda: when this lambda's return type is itself a function type
-	// and the body is another lambda, thread the decomposed signature into the
-	// body lambda so its params/return resolve to the declared types instead of
-	// `any`. Set here (and cleared after the body transform) so it reaches only
-	// the body's bare lambda, which consumes it in transformLambda.
-	// restoreInner is idempotent: the eager call after the body preserves the
-	// success-path timing the code below depends on, and the defer covers the
-	// two error returns in between. No input is known to observe the
-	// difference — the enclosing setter already restores via defer — so this
-	// is about the invariant holding locally rather than by the caller's good
-	// behaviour. See scoped_state.go.
-	prevInnerParams, prevInnerRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
-	restoreInner := func() {
-		t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevInnerParams, prevInnerRet
-	}
-	defer restoreInner()
+	// The body is lowered in a fresh context: its expected type is this
+	// lambda's result type, never the slot type the lambda itself fills.
+	var bodySlot slot
 	if retType != nil && retType != ExpectedVoid {
-		if innerRet, innerParams, ok := t.lambdaExpectation(t.astTypeToTranspilerType(retType)); ok {
-			t.expectedLambdaParamTypes = innerParams
-			t.expectedLambdaRetType = innerRet
+		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || !containsAny(retType) {
+			bodySlot = resultSlot(rt)
 		}
 	}
 
 	if ctx.Block() != nil {
-		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue)
+		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +195,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	} else if ctx.Expression() != nil {
-		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType)
+		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
 			return nil, err
 		}
@@ -226,7 +204,6 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	}
-	restoreInner()
 
 	// Build the function literal
 	funcType := &ast.FuncType{
@@ -253,15 +230,18 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // when the expected return type is already concrete (caller keeps its own)
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
-func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool) (*ast.BlockStmt, ast.Expr, error) {
-	// Signal to transformBlock that the lambda body's last expression is
-	// promoted to the implicit return when this lambda is value-returning.
-	// Without this, a trailing bare `match` whose value becomes the lambda's
-	// return would be marked statement-position and forced to void.
-	if !isVoidExpected {
-		t.blockLastStmtIsValue = true
+func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+	// A value-returning lambda's body is a value block: its last expression
+	// is promoted to the implicit return. Otherwise a trailing bare `match`
+	// whose value becomes the lambda's return would be marked
+	// statement-position and forced to void.
+	var b *ast.BlockStmt
+	var err error
+	if isVoidExpected {
+		b, err = t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	} else {
+		b, err = t.transformValueBlock(ctx.Block().(*grammar.BlockContext), bodySlot)
 	}
-	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -383,8 +363,8 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
 // Returns (body, inferredReturnType, error). Extracted from
 // transformLambdaWithExpectedType as part of A6.
-func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool) (*ast.BlockStmt, ast.Expr, error) {
-	expr, err := t.transformExpression(ctx.Expression())
+func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+	expr, err := t.lowerAgainst(ctx.Expression(), bodySlot, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -958,10 +938,6 @@ func (t *galaASTTransformer) isNewImmutableCall(call *ast.CallExpr) bool {
 	return false
 }
 
-// transformArgumentWithExpectedType transforms an argument expression, using the expected
-// parameter type to properly type lambda expressions and partial function literals.
-// transformArgumentWithExpectedType moved to calls.go
-
 // findPartialFunctionInExpression traverses the expression tree to find a partial function literal
 func (t *galaASTTransformer) findPartialFunctionInExpression(exprCtx grammar.IExpressionContext) *grammar.PartialFunctionLiteralContext {
 	if exprCtx == nil {
@@ -1347,10 +1323,17 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	if ctx.GetBodyBlock() != nil {
 		// Partial function arm body: the trailing expression is wrapped in
 		// Some(...) below, so it is value-consumed.
-		t.blockLastStmtIsValue = true
-		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
+		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), slot{})
 		if err != nil {
 			return nil, nil, err
+		}
+		// A trailing expression is the arm's value, lowered like a match
+		// arm's tail; it was left as a bare statement, so the arm had no
+		// result and the whole literal failed with "no case branches".
+		if n := len(b.List); n > 0 {
+			if exprStmt, ok := b.List[n-1].(*ast.ExprStmt); ok {
+				b.List[n-1], _ = t.lowerMatchArmTailExpr(exprStmt.X)
+			}
 		}
 		// Wrap the last expression/return in Some
 		body = t.wrapBlockReturnsInSome(b.List)
@@ -1559,7 +1542,7 @@ func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
 }
 
 // tryRewriteAsPlaceholderLambda is the L4 entry point called by
-// transformArgumentWithExpectedType. It returns (expr, handled, error):
+// transformArgument. It returns (expr, handled, error):
 //
 //	handled=false — the expression is not a placeholder lambda candidate;
 //	                caller should fall through to ordinary expression

@@ -1,0 +1,159 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A lambda takes its parameter and result types from the slot it fills.
+// This covers two slots that used to lose that type:
+//   - a field of a generic struct built without explicit type arguments, whose
+//     type arguments come from the other arguments (or the lambda's own body);
+//   - an if-expression or match whose branches are lambdas.
+
+struct Cell[T any](Value T, Map func(T) T)
+
+struct Conv[A any, B any](From A, Fn func(A) B)
+
+struct Bag[T any](Items Array[T], Step func(T) T)
+
+struct Gen[T any](Make func() T)
+
+struct Box(N int, F func() int)
+
+struct Op(F func(int) int)
+
+sealed type Task[T any] {
+    case Run(From T, F func(T) T)
+    case Skip()
+}
+
+func runTask(s Task[int]) int = s match {
+    case Run(from, f) => f(from)
+    case Skip() => 0
+}
+
+struct Pipe[A any, B any](Input A, Done func(A) B)
+
+sealed type Mode[T any] {
+    case ByInt(Fn func(int) T)
+    case ByText(Fn func(string) T)
+}
+
+struct Inner[T any](X T)
+
+struct Holder[T any](Md Mode[T], In Inner[T])
+
+struct Outer[T any](H Holder[T])
+
+struct Tag[T any](N int)
+
+func runMode(m Mode[int]) int = m match {
+    case ByInt(f) => f(1)
+    case ByText(f) => f("x")
+}
+
+func apply(f func(int) int, x int) int = f(x)
+
+func applyTo[T any, R any](v T, f func(T) R) R = f(v)
+
+func thunk(n int) func() int = () => n * 2
+
+// The if-expression inside the branch lambda's body is lowered against the
+// lambda's result type (int), not the slot type (func(int) int).
+func absOrSelf(c bool) func(int) int = if (c) (x) => {
+    val y = if (x > 0) x else 0 - x
+    y
+} else (x) => x
+
+func pickIf(up bool) func(int) int {
+    return if (up) (x) => x + 1 else (x) => x - 1
+}
+
+func pickMatch(up bool) func(int) int = up match {
+    case true => (x) => x * 10
+    case _ => (x) => x * 20
+}
+
+func main() {
+    // Generic struct constructors
+    val named = Cell(Value = 5, Map = (v) => v * 3)
+    val positional = Cell(7, (v) => v - 1)
+    val conv = Conv(From = 2, Fn = (a) => s"n=$a")
+    val bag = Bag(Items = ArrayOf(1, 2, 3), Step = (v) => v + 10)
+    val gen = Gen(Make = () => 42)
+    Println(named.Map(named.Value))
+    Println(positional.Map(positional.Value))
+    Println(conv.Fn(conv.From))
+    Println(bag.Items.Map(bag.Step))
+    Println(gen.Make())
+
+    // Branches that are lambdas
+    val up = true
+    val box = Box(N = 1, F = if (up) () => 3 else () => 4)
+    val chain = Op(F = if (!up) (x) => x else if (up) (x) => x * 2 else (x) => x * 3)
+    val blocks = Op(F = if (up) { (x) => x + 7 } else { (x) => x + 8 })
+    val arms = Op(F = up match {
+        case true => (x) => x + 100
+        case _ => (x) => x + 200
+    })
+    val blockArms = Op(F = up match {
+        case true => { (x) => x + 300 }
+        case _ => { (x) => x + 400 }
+    })
+    val typed func(int) int = if (up) (x) => x + 50 else (x) => x + 60
+    val step = Cell(Value = 2, Map = if (up) (v) => v * v else (v) => v)
+    val boxCopy = box.Copy(F = if (up) () => 30 else () => 40)
+    val armsCopy = arms.Copy(F = up match {
+        case true => (x) => x + 1000
+        case _ => (x) => x
+    })
+    Println(box.F())
+    Println(chain.F(1))
+    Println(blocks.F(1))
+    Println(arms.F(1))
+    Println(blockArms.F(1))
+    Println(typed(1))
+    Println(step.Map(step.Value))
+    Println(boxCopy.F())
+    Println(armsCopy.F(1))
+    Println(apply(if (up) (x) => x * 5 else (x) => x * 6, 1))
+    Println(pickIf(false)(1))
+    Println(pickMatch(false)(1))
+
+    // Generic sealed variants, and lambda / thunk boundaries
+    Println(runTask(Run(From = 5, F = (v) => v * 4)))
+    Println(runTask(Run(6, (v) => v + 4)))
+    val abs func(int) int = if (up) (x) => if (x > 0) x else 0 - x else (x) => x
+    val pickThunk = if (up) thunk else thunk
+    Println(abs(-8))
+    Println(absOrSelf(true)(-9))
+    Println(pickThunk(7)())
+
+    // Branch lambdas whose slot still has an unbound type parameter, and a
+    // lambda whose annotated result type is its return slot
+    val pipe = Pipe(Input = 5, Done = if (up) (x) => x + 1 else (x) => x)
+    val offset = (n int) func(int) int => {
+        return if (n > 0) (x) => x + n else (x) => x - n
+    }
+    Println(pipe.Done(pipe.Input))
+    Println(applyTo(5, if (up) (x) => x * 7 else (x) => x))
+    Println(offset(4)(1))
+
+    // Struct type arguments bound through fields of generic type, and from
+    // the slot type when no field binds them
+    val holder = Holder(Md = ByInt[int]((x) => x + 10), In = Inner(X = 7))
+    val outer = Outer(H = holder)
+    val holder2 = Holder(ByInt[int]((x) => x + 20), Inner(8))
+    val outer2 = Outer(holder2)
+    val tag Tag[string] = Tag(N = 9)
+    Println(runMode(outer.H.Md), outer.H.In.X)
+    Println(runMode(outer2.H.Md), outer2.H.In.X)
+    Println(tag.N)
+
+    // A value block's slot does not leak into a later block; a partial
+    // function arm block's trailing expression is the arm's value
+    val suffixers = ArrayOf(3, 7).Collect({
+        case n if n > 0 => {
+            if (n > 5) (s string) => s else (s string) => s + "!"
+        }
+    })
+    Println(suffixers.Map((f) => f("hi")))
+}

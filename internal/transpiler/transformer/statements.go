@@ -161,36 +161,9 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
 		var results []ast.Expr
 		if retCtx.Expression() != nil {
-			var expr ast.Expr
-			var err error
-			// If the return expression is an if-expression and we know the
-			// enclosing function's return type, set expectedIfExprType so that the
-			// if-expression IIFE gets a concrete return type instead of falling back
-			// to `any` when HM type inference fails in multi-file batch mode.
-			ifExprCtx := t.findIfExpressionInExpression(retCtx.Expression())
-			// If the return expression is a bare lambda and the enclosing
-			// function returns a function type, propagate the expected param
-			// and return types into the lambda. This mirrors what
-			// transformExpressionBodiedFunction does for `func f() T = lambda`,
-			// without which the lambda's untyped parameters fall through as
-			// `any` and downstream match expressions that scrutinize them
-			// erase their generic type arguments (e.g. `Try[Msg]` → `Try[any]`).
-			lambdaCtx := t.findLambdaInExpression(retCtx.Expression())
-			if lambdaCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-				if expectedRetType, expectedParams, ok := t.lambdaExpectation(t.currentFuncReturnType); ok {
-					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParams, false)
-				}
-			}
-			if expr == nil && err == nil {
-				if ifExprCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-					oldExpected := t.expectedIfExprType
-					t.expectedIfExprType = t.typeToExpr(t.currentFuncReturnType)
-					expr, err = t.transformIfExpression(ifExprCtx)
-					t.expectedIfExprType = oldExpected
-				} else {
-					expr, err = t.transformExpression(retCtx.Expression())
-				}
-			}
+			// A lambda, if-expression or match takes its types from the
+			// enclosing function's return type.
+			expr, err := t.lowerAgainst(retCtx.Expression(), resultSlot(t.currentFuncReturnType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -240,22 +213,14 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		return nil, err
 	}
 
-	// Downward type-inference for sealed-variant constructors on the RHS:
-	// when the LHS is a single bare variable (`failure = Some(...)`) and that
-	// variable's declared type carries concrete type arguments
-	// (e.g. `Option[string]`), push the LHS type onto the expected-type stack
-	// so the RHS call dispatcher can pick up the parent sealed type's type
-	// arguments and emit `Some[string]{}.Apply(...)` instead of an
-	// uninstantiated `Some{}.Apply(...)`. Mirrors the same hint pushed by val
-	// declarations with explicit type annotations (declarations.go).
+	// A single bare variable's type is the RHS's expected type, so
+	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`.
 	rhsListCtx := ctx.GetChild(2).(*grammar.ExpressionListContext)
+	var lhsType transpiler.Type
 	if lhsName, lhsOk := t.singleAssignmentLHSName(lhsCtx); lhsOk {
-		if lhsType := t.getValType(lhsName); !lhsType.IsNil() {
-			release := t.expectedArgTypes.push(lhsType)
-			defer release()
-		}
+		lhsType = t.getValType(lhsName)
 	}
-	rhsExprs, err := t.transformExpressionList(rhsListCtx)
+	rhsExprs, err := t.transformExpressionListAgainst(rhsListCtx, lhsType)
 	if err != nil {
 		return nil, err
 	}
@@ -451,14 +416,26 @@ func forClauseSlots(forClause *grammar.ForClauseContext) (init, post *grammar.Si
 	return init, post
 }
 
+// transformBlock lowers a block whose trailing statement is discarded, like
+// the trailing statement of an if or for body.
 func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
+	return t.transformBlockWithTail(ctx, false, slot{})
+}
+
+// transformValueBlock lowers a block whose trailing expression is its value
+// (a value-returning function or lambda body, a match arm or partial-function
+// body). s is the slot that value fills, zero when unknown: a lambda, if or
+// match tail is lowered against it (see lowerAgainst).
+func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
+	return t.transformBlockWithTail(ctx, true, s)
+}
+
+// transformBlockWithTail lowers a block. lastStmtIsValue and lastValueExpected
+// describe this block's trailing statement only; they are parameters, not
+// transformer state, so nested and sibling blocks cannot inherit them.
+func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, lastStmtIsValue bool, lastValueExpected slot) (*ast.BlockStmt, error) {
 	t.pushScope()
 	defer t.popScope()
-	// Capture and reset the block-last-stmt-is-value flag once: it applies
-	// only to *this* block's last statement, not to any nested blocks.
-	lastStmtIsValue := t.blockLastStmtIsValue
-	t.blockLastStmtIsValue = false
-	defer func() { t.blockLastStmtIsValue = lastStmtIsValue }()
 
 	block := &ast.BlockStmt{}
 	allStmts := ctx.AllStatement()
@@ -515,9 +492,9 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		// value". A non-trailing statement is unconditionally
 		// statement-position; the trailing statement is statement-position
 		// only when the caller did NOT signal that the block's last
-		// expression is consumed (via blockLastStmtIsValue) — function
+		// expression is consumed (transformValueBlock) — function
 		// bodies with a return type, lambda bodies, and match arm bodies
-		// all set that flag, since their trailing expression becomes the
+		// all use it, since their trailing expression becomes the
 		// block's value.
 		prev := t.matchInStatementPos
 		isTrailing := i == lastIdx
@@ -525,7 +502,19 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		if discardsValue && stmtIsBareMatchExpression(stmtCtx.(*grammar.StatementContext), t) {
 			t.matchInStatementPos = true
 		}
-		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		var stmt ast.Stmt
+		var err error
+		if valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext)); isTrailing && lastStmtIsValue &&
+			!transpiler.IsUnusable(lastValueExpected.typ) && t.needsExpectedType(valueExpr) {
+			// The block's value fills a typed slot: a lambda, if or match tail is
+			// lowered against it. A plain tail stays an ordinary statement.
+			var expr ast.Expr
+			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
+				stmt = &ast.ExprStmt{X: expr}
+			}
+		} else {
+			stmt, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		}
 		t.matchInStatementPos = prev
 		if err != nil {
 			return nil, err
@@ -533,7 +522,7 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		// A statement-position match with a user-written `return X` inside an
 		// arm body cannot be lowered as an IIFE (the bare return that
 		// stripReturnStatements emits only exits the synthetic lambda, leaving
-		// any enclosing for-loop spinning forever). transformMatchExpression
+		// any enclosing for-loop spinning forever). buildMatchExpressionFromClauses
 		// detects this case, builds the body as an inlined block, and stores
 		// it in pendingMatchStmtBlock; we replace the placeholder ExprStmt
 		// with the inlined block here so the user's `return X` becomes a real
@@ -612,30 +601,26 @@ func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclaration
 // declaration / simpleStatement → expression to reach the match check.
 // The transformer is passed for access to expressionIsBareMatch.
 func stmtIsBareMatchExpression(ctx *grammar.StatementContext, t *galaASTTransformer) bool {
+	exprCtx := trailingValueExpression(ctx)
+	return exprCtx != nil && t.expressionIsBareMatch(exprCtx)
+}
+
+// trailingValueExpression returns the expression of an expression statement
+// (statement → declaration → simpleStatement → expression), or nil when the
+// statement is anything else.
+func trailingValueExpression(ctx *grammar.StatementContext) grammar.IExpressionContext {
 	if ctx == nil {
-		return false
+		return nil
 	}
-	declCtx := ctx.Declaration()
-	if declCtx == nil {
-		return false
+	dc, ok := ctx.Declaration().(*grammar.DeclarationContext)
+	if !ok || dc == nil {
+		return nil
 	}
-	dc, ok := declCtx.(*grammar.DeclarationContext)
-	if !ok {
-		return false
+	sc, ok := dc.SimpleStatement().(*grammar.SimpleStatementContext)
+	if !ok || sc == nil {
+		return nil
 	}
-	simpleCtx := dc.SimpleStatement()
-	if simpleCtx == nil {
-		return false
-	}
-	sc, ok := simpleCtx.(*grammar.SimpleStatementContext)
-	if !ok {
-		return false
-	}
-	exprCtx := sc.Expression()
-	if exprCtx == nil {
-		return false
-	}
-	return t.expressionIsBareMatch(exprCtx)
+	return sc.Expression()
 }
 
 func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {

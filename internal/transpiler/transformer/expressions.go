@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"slices"
 )
 
 // NOTE: transformCallExpr was removed - it was dead code.
@@ -339,6 +340,20 @@ func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionList
 	return exprs, nil
 }
 
+// transformExpressionListAgainst lowers a declaration's or assignment's
+// right-hand side; a single expression is lowered against argSlot(expected).
+func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.ExpressionListContext, expected transpiler.Type) ([]ast.Expr, error) {
+	exprs := ctx.AllExpression()
+	if len(exprs) != 1 {
+		return t.transformExpressionList(ctx)
+	}
+	e, err := t.lowerAgainst(exprs[0], argSlot(expected), true)
+	if err != nil {
+		return nil, err
+	}
+	return []ast.Expr{e}, nil
+}
+
 func (t *galaASTTransformer) isBinaryOperator(op string) bool {
 	switch op {
 	case "||", "&&", "==", "!=", "<", "<=", ">", ">=",
@@ -649,6 +664,13 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 // Lambda-related functions moved to lambdas.go
 // findLambdaInExpression moved to lambdas.go
 func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
+	return t.transformIfExpressionAgainst(ctx, slot{})
+}
+
+// transformIfExpressionAgainst lowers an if-expression to an IIFE. s is the slot
+// it fills (zero when none): each branch value is lowered against it, and its
+// type informs the IIFE's result type (see branchingResultType).
+func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpressionContext, s slot) (ast.Expr, error) {
 	// 'if' '(' cond ')' thenBranch 'else' elseBranch
 	// Branches can be either expressions or blocks.
 	cond, err := t.transformExpression(ctx.Expression())
@@ -656,24 +678,15 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 		return nil, err
 	}
 
-	// An if-expression feeding a function-typed slot (e.g.
-	// `val f func(int) int = if (c) { (x) => x } else { (x) => x * 2 }`) threads
-	// the declared signature into each branch's lambda. The bare lambda consumes
-	// the hint (transformLambda), so re-establish it before each branch.
-	branchParams, branchRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
-
 	branches := ctx.AllIfExprBranch()
-	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
-	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext))
+	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext), s)
 	if err != nil {
 		return nil, err
 	}
-	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
-	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext))
+	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext), s)
 	if err != nil {
 		return nil, err
 	}
-	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
 
 	retType := transpiler.Type(transpiler.NilType{})
 	if inferred, err := t.inferIfType(cond, thenExpr, elseExpr); err == nil && !inferred.IsNil() {
@@ -703,11 +716,7 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 		}
 	}
 
-	retTypeExpr := t.typeToExpr(retType)
-	// If type inference failed and we have an expected type from the enclosing function, use it
-	if retType.IsNil() && t.expectedIfExprType != nil {
-		retTypeExpr = t.expectedIfExprType
-	}
+	retTypeExpr := t.typeToExpr(t.branchingResultType(retType, s))
 
 	// Build the then-block: preceding statements + return lastExpr.
 	// When the branch already terminates with an explicit return, the synthesized
@@ -753,58 +762,70 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 // transformBlock, which uses this to mark the match as statement-position
 // so void-returning arm calls do not get wrapped in `return ...`.
 func (t *galaASTTransformer) expressionIsBareMatch(exprCtx grammar.IExpressionContext) bool {
-	if exprCtx == nil {
-		return false
+	return t.bareMatchPostfix(exprCtx) != nil
+}
+
+// bareMatchPostfix returns the postfix expression of a bare match (see
+// expressionIsBareMatch), or nil.
+func (t *galaASTTransformer) bareMatchPostfix(exprCtx grammar.IExpressionContext) *grammar.PostfixExprContext {
+	postfixCtx := t.barePostfix(exprCtx)
+	if postfixCtx == nil || postfixCtx.GetChildCount() <= 1 {
+		return nil
 	}
-	orExpr := exprCtx.OrExpr()
-	if orExpr == nil {
-		return false
-	}
-	orCtx := orExpr.(*grammar.OrExprContext)
-	if len(orCtx.AllAndExpr()) != 1 {
-		return false
-	}
-	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
-	if len(andCtx.AllEqualityExpr()) != 1 {
-		return false
-	}
-	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
-	if len(eqCtx.AllRelationalExpr()) != 1 {
-		return false
-	}
-	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
-	if len(relCtx.AllAdditiveExpr()) != 1 {
-		return false
-	}
-	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
-	if len(addCtx.AllMultiplicativeExpr()) != 1 {
-		return false
-	}
-	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
-	if len(mulCtx.AllUnaryExpr()) != 1 {
-		return false
-	}
-	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
-	postfixExpr := unaryCtx.PostfixExpr()
-	if postfixExpr == nil {
-		return false
-	}
-	postfixCtx := postfixExpr.(*grammar.PostfixExprContext)
 	// transformPostfixExpr detects match by scanning children for a node whose
 	// text is the keyword `match`. Mirror that here.
-	if postfixCtx.GetChildCount() <= 1 {
-		return false
-	}
 	for i := 0; i < postfixCtx.GetChildCount(); i++ {
 		child := postfixCtx.GetChild(i)
 		if child == nil {
 			continue
 		}
 		if pt, ok := child.(antlr.ParseTree); ok && pt.GetText() == "match" {
-			return true
+			return postfixCtx
 		}
 	}
-	return false
+	return nil
+}
+
+// barePostfix returns the postfix expression exprCtx consists of when no
+// operator surrounds it, or nil.
+func (t *galaASTTransformer) barePostfix(exprCtx grammar.IExpressionContext) *grammar.PostfixExprContext {
+	if exprCtx == nil {
+		return nil
+	}
+	orExpr := exprCtx.OrExpr()
+	if orExpr == nil {
+		return nil
+	}
+	orCtx := orExpr.(*grammar.OrExprContext)
+	if len(orCtx.AllAndExpr()) != 1 {
+		return nil
+	}
+	andCtx := orCtx.AndExpr(0).(*grammar.AndExprContext)
+	if len(andCtx.AllEqualityExpr()) != 1 {
+		return nil
+	}
+	eqCtx := andCtx.EqualityExpr(0).(*grammar.EqualityExprContext)
+	if len(eqCtx.AllRelationalExpr()) != 1 {
+		return nil
+	}
+	relCtx := eqCtx.RelationalExpr(0).(*grammar.RelationalExprContext)
+	if len(relCtx.AllAdditiveExpr()) != 1 {
+		return nil
+	}
+	addCtx := relCtx.AdditiveExpr(0).(*grammar.AdditiveExprContext)
+	if len(addCtx.AllMultiplicativeExpr()) != 1 {
+		return nil
+	}
+	mulCtx := addCtx.MultiplicativeExpr(0).(*grammar.MultiplicativeExprContext)
+	if len(mulCtx.AllUnaryExpr()) != 1 {
+		return nil
+	}
+	unaryCtx := mulCtx.UnaryExpr(0).(*grammar.UnaryExprContext)
+	postfixExpr := unaryCtx.PostfixExpr()
+	if postfixExpr == nil {
+		return nil
+	}
+	return postfixExpr.(*grammar.PostfixExprContext)
 }
 
 // findIfExpressionInExpression traverses the expression tree to find an if-expression
@@ -872,9 +893,12 @@ func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpre
 // (its last statement is an explicit `return`); when true, the caller must
 // not append a synthesized `return <expr>` to the branch body, since that
 // would be unreachable dead code with a placeholder expression.
-func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext) ([]ast.Stmt, ast.Expr, bool, error) {
+//
+// s is the if-expression's slot; the branch's value expression is lowered
+// against it (see lowerAgainst).
+func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, s slot) ([]ast.Stmt, ast.Expr, bool, error) {
 	if exprCtx := ctx.Expression(); exprCtx != nil {
-		expr, err := t.transformExpression(exprCtx)
+		expr, err := t.lowerAgainst(exprCtx, s, true)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -901,16 +925,12 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	// Try to extract expression from the last statement:
 	// statement → declaration → simpleStatement → expression
 	lastStmtCtx := stmts[len(stmts)-1].(*grammar.StatementContext)
-	if declCtx := lastStmtCtx.Declaration(); declCtx != nil {
-		if simpleCtx := declCtx.SimpleStatement(); simpleCtx != nil {
-			if exprCtx := simpleCtx.Expression(); exprCtx != nil {
-				expr, err := t.transformExpression(exprCtx)
-				if err != nil {
-					return nil, nil, false, err
-				}
-				return preceding, expr, false, nil
-			}
+	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
+		expr, err := t.lowerAgainst(exprCtx, s, true)
+		if err != nil {
+			return nil, nil, false, err
 		}
+		return preceding, expr, false, nil
 	}
 
 	// If the last statement isn't a bare expression, transform it normally
@@ -933,6 +953,164 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		return preceding, branchExpr, true, nil
 	}
 	return preceding, ast.NewIdent("nil"), false, nil
+}
+
+// slot is the type a value is lowered against (see lowerAgainst), with the
+// slot kind's policy for a plain expression.
+type slot struct {
+	typ transpiler.Type
+	// push: a plain expression (not a lambda, if or match) sees typ pushed on
+	// expectedArgTypes for downward inference. Argument and declaration slots
+	// push; return-type slots (return, expression-bodied function, lambda body,
+	// TCO branch) do not. An if/match passes its slot, policy included, to its
+	// branches.
+	push bool
+	// open: typ may hold placeholders for type parameters the call left
+	// unbound (an `any` fill, see inferFuncTypeSubstFromArgs, or the generic
+	// method path's default-to-any view). An open slot type never overrides
+	// the branches' own type (see branchingResultType); user-written `any` is
+	// not a placeholder and does not make a slot open.
+	open bool
+}
+
+// argSlot is the slot of an argument, declaration or other pushing position.
+func argSlot(typ transpiler.Type) slot { return slot{typ: typ, push: true} }
+
+// resultSlot is the slot of a function or lambda result.
+func resultSlot(typ transpiler.Type) slot { return slot{typ: typ} }
+
+// exprForm classifies an expression by the forms whose lowering depends on
+// the slot they fill; at most one field is set.
+type exprForm struct {
+	grouped grammar.IExpressionContext // e for `(e)`
+	lambda  *grammar.LambdaExpressionContext
+	ifExpr  *grammar.IfExpressionContext
+	match   *grammar.PostfixExprContext
+}
+
+func (t *galaASTTransformer) classifyExpr(exprCtx grammar.IExpressionContext) exprForm {
+	if exprCtx == nil {
+		return exprForm{}
+	}
+	if inner := t.groupedExpression(exprCtx); inner != nil {
+		return exprForm{grouped: inner}
+	}
+	if l := t.findLambdaInExpression(exprCtx); l != nil {
+		return exprForm{lambda: l}
+	}
+	if i := t.findIfExpressionInExpression(exprCtx); i != nil {
+		return exprForm{ifExpr: i}
+	}
+	return exprForm{match: t.bareMatchPostfix(exprCtx)}
+}
+
+// needsExpectedType reports whether exprCtx is a lambda, an if-expression or a
+// match, possibly parenthesized.
+func (t *galaASTTransformer) needsExpectedType(exprCtx grammar.IExpressionContext) bool {
+	f := t.classifyExpr(exprCtx)
+	if f.grouped != nil {
+		return t.needsExpectedType(f.grouped)
+	}
+	return f.lambda != nil || f.ifExpr != nil || f.match != nil
+}
+
+// lowerAgainst lowers exprCtx in check mode against the slot it fills. A lambda
+// takes its parameter and result types from a function type (strict is
+// transformLambdaWithExpectedType's untyped-parameter policy); an if-expression
+// or match lowers each branch against the same slot (branch lambdas strictly);
+// a plain expression follows the slot's push policy. A lambda body is never
+// lowered against the outer slot: it gets resultSlot(the lambda's result type).
+func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
+	if transpiler.IsUnusable(s.typ) {
+		return t.transformExpression(exprCtx)
+	}
+	f := t.classifyExpr(exprCtx)
+	switch {
+	case f.grouped != nil:
+		expr, err := t.lowerAgainst(f.grouped, s, strict)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ParenExpr{X: expr}, nil
+	case f.lambda != nil:
+		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(s.typ); ok {
+			return t.transformLambdaWithExpectedType(f.lambda, expectedRetType, expectedParamTypes, strict)
+		}
+		return t.transformExpression(exprCtx)
+	case f.ifExpr != nil:
+		return t.transformIfExpressionAgainst(f.ifExpr, s)
+	case f.match != nil:
+		return t.transformPostfixMatchExpressionAgainst(f.match, s)
+	}
+	if s.push {
+		release := t.expectedArgTypes.push(s.typ)
+		defer release()
+	}
+	return t.transformExpression(exprCtx)
+}
+
+// branchingResultType picks the result type of an if-expression or match from
+// its branches' inferred type and its slot. The slot type is the fallback when
+// inference fails. It also wins over function-typed branches (it is what they
+// were lowered against, and its spelling is what the value must be assignable
+// to), unless the slot is open or has a masked (nil) part: then the branches'
+// own type is the concrete one. Branches of a non-function type keep theirs: a
+// by-name thunk slot (`Future(x match {...})`) receives a value, not a function.
+func (t *galaASTTransformer) branchingResultType(inferred transpiler.Type, s slot) transpiler.Type {
+	if transpiler.IsUnusable(s.typ) {
+		return inferred
+	}
+	if transpiler.IsUnusable(inferred) {
+		return s.typ
+	}
+	if !s.open && !typeHasMaskedPart(s.typ) &&
+		t.resolveTranspilerTypeAsFuncType(s.typ) != nil && t.resolveTranspilerTypeAsFuncType(inferred) != nil {
+		return s.typ
+	}
+	return inferred
+}
+
+// typeHasMaskedPart reports whether typ contains a nil part: a type parameter
+// masked out as unresolved (see maskTypeParamResults). Unlike `any`, nil is
+// never written in GALA source.
+func typeHasMaskedPart(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return true
+	}
+	switch v := typ.(type) {
+	case transpiler.FuncType:
+		return slices.ContainsFunc(v.Params, typeHasMaskedPart) || slices.ContainsFunc(v.Results, typeHasMaskedPart)
+	case transpiler.GenericType:
+		return slices.ContainsFunc(v.Params, typeHasMaskedPart)
+	case transpiler.ArrayType:
+		return typeHasMaskedPart(v.Elem)
+	case transpiler.PointerType:
+		return typeHasMaskedPart(v.Elem)
+	case transpiler.MapType:
+		return typeHasMaskedPart(v.Key) || typeHasMaskedPart(v.Elem)
+	}
+	return false
+}
+
+// groupedExpression returns e for an expression that is exactly `(e)`, or nil.
+func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContext) grammar.IExpressionContext {
+	p := t.barePostfix(exprCtx)
+	if p == nil || p.GetChildCount() != 1 {
+		return nil
+	}
+	primExpr, ok := p.PrimaryExpr().(*grammar.PrimaryExprContext)
+	if !ok || primExpr == nil {
+		return nil
+	}
+	prim, ok := primExpr.Primary().(*grammar.PrimaryContext)
+	if !ok || prim == nil {
+		return nil
+	}
+	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
+	if !ok || list == nil || len(list.AllExpression()) != 1 {
+		return nil
+	}
+	return list.Expression(0)
 }
 
 // unwrapImmutable is the single canonical unwrap helper for val-wrapped

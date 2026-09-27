@@ -80,6 +80,14 @@ func (t *galaASTTransformer) toInferTypeMemoized(typ transpiler.Type, normalized
 		} else {
 			res = &infer.TypeConst{Name: "unit"}
 		}
+		// A zero-parameter function takes `unit`, matching how toInferExpr
+		// encodes a zero-argument call (applied to a `unit` literal). Encoding
+		// it as its bare result would make `func() int` indistinguishable from
+		// `int`: an if-expression choosing between `() => 3` and `() => 4`
+		// would be typed `int`.
+		if len(v.Params) == 0 {
+			return &infer.TypeApp{Name: "->", Args: []infer.Type{&infer.TypeConst{Name: "unit"}, res}}
+		}
 		for i := len(v.Params) - 1; i >= 0; i-- {
 			res = &infer.TypeApp{Name: "->", Args: []infer.Type{
 				t.toInferTypeMemoized(v.Params[i], normalizedNames),
@@ -92,6 +100,12 @@ func (t *galaASTTransformer) toInferTypeMemoized(typ transpiler.Type, normalized
 	}
 
 	return &infer.TypeConst{Name: typ.String()}
+}
+
+// isInferUnit reports whether typ is the `unit` type constant.
+func isInferUnit(typ infer.Type) bool {
+	c, ok := typ.(*infer.TypeConst)
+	return ok && c.Name == "unit"
 }
 
 // fromInferType converts an infer.Type back to a transpiler.Type
@@ -112,11 +126,16 @@ func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 		return transpiler.NilType{}
 	case *infer.TypeApp:
 		if v.Name == "->" {
-			// This is more complex because it's curried
+			// `unit -> R` is a zero-parameter function (see toInferType).
+			if isInferUnit(v.Args[0]) {
+				return transpiler.FuncType{Results: []transpiler.Type{t.fromInferType(v.Args[1])}}
+			}
+			// This is more complex because it's curried. A nested `unit -> R`
+			// is the result (a returned thunk), not a further parameter.
 			params := []transpiler.Type{t.fromInferType(v.Args[0])}
 			curr := v.Args[1]
 			for {
-				if next, ok := curr.(*infer.TypeApp); ok && next.Name == "->" {
+				if next, ok := curr.(*infer.TypeApp); ok && next.Name == "->" && !isInferUnit(next.Args[0]) {
 					params = append(params, t.fromInferType(next.Args[0]))
 					curr = next.Args[1]
 				} else {

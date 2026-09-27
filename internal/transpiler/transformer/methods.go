@@ -220,11 +220,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			}
 		}
 		var val ast.Expr
-		if lambdaCtx != nil {
-			val, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expected)
-		} else {
-			val, err = t.transformArgumentWithExpectedType(exprCtx, expected)
-		}
+		val, err = t.lowerArg(exprCtx, lambdaCtx, argSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}

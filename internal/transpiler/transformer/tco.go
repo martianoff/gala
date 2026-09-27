@@ -27,6 +27,15 @@ type tailCtx struct {
 	retType    ast.Expr
 }
 
+// tailResultSlot is the slot a terminal branch fills: the declared return
+// type, as for transformExpressionBodiedFunction.
+func (t *galaASTTransformer) tailResultSlot(tc *tailCtx) slot {
+	if tc.retType == nil {
+		return slot{}
+	}
+	return resultSlot(t.astTypeToTranspilerType(tc.retType))
+}
+
 // tryTransformSelfTailRecursion rewrites direct self-tail-recursion in an
 // expression-bodied function whose body is an if-expression into a `for {}`
 // loop, so deep recursion runs in constant stack space.
@@ -115,13 +124,8 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 		retType = funcType.Results.List[0].Type
 	}
 
-	// Thread the declared return type into branch lowering so nested
-	// if-expressions and lambdas in terminal branches infer correctly, matching
+	// Terminal branches are lowered against the declared return type, matching
 	// transformExpressionBodiedFunction.
-	oldExpected := t.expectedIfExprType
-	t.expectedIfExprType = retType
-	defer func() { t.expectedIfExprType = oldExpected }()
-
 	tc := &tailCtx{funcName: funcName, paramNames: paramNames, paramTypes: paramTypes, retType: retType}
 
 	ifStmt, found, err := t.buildTailIfStmt(ifExprCtx, tc)
@@ -243,7 +247,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 
 		// Terminal value: return it.
-		e, err := t.transformExpression(exprCtx)
+		e, err := t.lowerAgainst(exprCtx, t.tailResultSlot(tc), false)
 		if err != nil {
 			return nil, false, err
 		}
@@ -254,7 +258,7 @@ func (t *galaASTTransformer) buildTailBranch(
 	// Block branch: reuse the shared branch transform and append a terminal
 	// return when it does not already terminate. Tail self-calls hidden inside
 	// block branches are not detected in this slice.
-	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx)
+	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, t.tailResultSlot(tc))
 	if err != nil {
 		return nil, false, err
 	}
