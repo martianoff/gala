@@ -31,46 +31,37 @@ func main() {
 
 func twice(n int) int = n * 2
 `
+	const (
+		subPass  = "package b\n\nimport . \"martianoff/gala/test\"\n\nfunc TestSquare(t T) T = Eq(t, Square(4), 16)\n"
+		subFail  = "package b\n\nimport . \"martianoff/gala/test\"\n\nfunc TestSquare(t T) T = Eq(t, Square(4), 17)\n"
+		rootPass = "package main\n\nimport . \"martianoff/gala/test\"\n\nfunc TestTwice(t T) T = Eq(t, twice(2), 4)\n"
+		rootFail = "package main\n\nimport . \"martianoff/gala/test\"\n\nfunc TestTwice(t T) T = Eq(t, twice(2), 5)\n"
+	)
 	cases := []struct {
-		name    string
-		files   map[string]string
-		wantErr bool
+		name     string
+		subTest  string // internal/a/b/b_test.gala
+		rootTest string // main_test.gala; "" for none
+		wantErr  bool   // the run fails with a test failure, not a build error
 	}{
-		{
-			name: "tests only in a subpackage",
-			files: map[string]string{
-				"internal/a/b/b.gala":      square,
-				"internal/a/b/b_test.gala": "package b\n\nimport . \"martianoff/gala/test\"\n\nfunc TestSquare(t T) T = Eq(t, Square(4), 16)\n",
-			},
-		},
-		{
-			name: "tests in the root and in a subpackage",
-			files: map[string]string{
-				"internal/a/b/b.gala":      square,
-				"internal/a/b/b_test.gala": "package b\n\nimport . \"martianoff/gala/test\"\n\nfunc TestSquare(t T) T = Eq(t, Square(4), 16)\n",
-				"main_test.gala":           "package main\n\nimport . \"martianoff/gala/test\"\n\nfunc TestTwice(t T) T = Eq(t, twice(2), 4)\n",
-			},
-		},
-		{
-			name: "a failing subpackage test fails the run",
-			files: map[string]string{
-				"internal/a/b/b.gala":      square,
-				"internal/a/b/b_test.gala": "package b\n\nimport . \"martianoff/gala/test\"\n\nfunc TestSquare(t T) T = Eq(t, Square(4), 17)\n",
-				"main_test.gala":           "package main\n\nimport . \"martianoff/gala/test\"\n\nfunc TestTwice(t T) T = Eq(t, twice(2), 4)\n",
-			},
-			wantErr: true,
-		},
+		{name: "tests only in a subpackage", subTest: subPass},
+		{name: "tests in the root and in a subpackage", subTest: subPass, rootTest: rootPass},
+		{name: "a failing subpackage test fails the run", subTest: subFail, rootTest: rootPass, wantErr: true},
+		// The subpackage's test actually runs when the root has none.
+		{name: "a failing test only in a subpackage fails the run", subTest: subFail, wantErr: true},
+		{name: "a failing root test fails the run when the subpackage passes", subTest: subPass, rootTest: rootFail, wantErr: true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			projectDir := t.TempDir()
 			files := map[string]string{
-				"gala.mod":  "module example.com/nested\n\ngala 0.0.0\n",
-				"main.gala": mainSrc,
+				"gala.mod":                 "module example.com/nested\n\ngala 0.0.0\n",
+				"main.gala":                mainSrc,
+				"internal/a/b/b.gala":      square,
+				"internal/a/b/b_test.gala": tc.subTest,
 			}
-			for k, v := range tc.files {
-				files[k] = v
+			if tc.rootTest != "" {
+				files["main_test.gala"] = tc.rootTest
 			}
 			for name, content := range files {
 				p := filepath.Join(projectDir, filepath.FromSlash(name))
@@ -90,7 +81,10 @@ func twice(n int) int = n * 2
 				t.Skipf("Go toolchain unavailable/mismatched in this environment: %v", testErr)
 			}
 			if tc.wantErr {
-				assert.Error(t, testErr)
+				// A test failure — not the "undefined: TestSquare" build
+				// failure a root test_main listing subpackage tests hit.
+				require.Error(t, testErr)
+				assert.Contains(t, testErr.Error(), "tests failed")
 				return
 			}
 			assert.NoError(t, testErr)
@@ -101,7 +95,7 @@ func twice(n int) int = n * 2
 // TestSplitRootTestFiles: only files directly in the project root are root
 // tests.
 func TestSplitRootTestFiles(t *testing.T) {
-	root := filepath.Join("proj")
+	root := "proj"
 	rootTests, subTests := splitRootTestFiles(root, []string{
 		filepath.Join(root, "main_test.gala"),
 		filepath.Join(root, "internal", "a", "b", "b_test.gala"),

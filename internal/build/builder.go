@@ -1,6 +1,7 @@
 package build
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1475,9 +1476,11 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
-// Test runs the test flow: transpile source + test files, discover test functions,
-// generate a test main, build, and execute the test binary.
-// If verbose is true, passes -v-style output. Returns the exit code from the test run.
+// Test runs the test flow: transpile source + test files, discover test
+// functions, and run them. Each package's tests run through a generated
+// `go test` harness in that package; a package-main root's own tests run as a
+// synthesized test binary instead. If verbose is true, `go test` runs with -v.
+// Returns an error when any test fails.
 func (b *Builder) Test(verbose bool) error {
 	// Step 1: Ensure workspace exists
 	if b.verbose {
@@ -1615,7 +1618,7 @@ func (b *Builder) Test(verbose bool) error {
 		// own package — otherwise the root harness would fail to compile when
 		// a subpackage owns a test function that the root package cannot see.
 		// Tests run via `go test ./gen/...`.
-		if err := b.writeLibraryTestHarnesses(testFiles); err != nil {
+		if _, err := b.writeLibraryTestHarnesses(testFiles); err != nil {
 			return fmt.Errorf("writing test harnesses: %w", err)
 		}
 		if b.verbose {
@@ -1640,9 +1643,9 @@ func (b *Builder) Test(verbose bool) error {
 		}
 		rootTestFuncs = append(rootTestFuncs, funcs...)
 	}
-	subTestPkgs, err := b.writeSubpackageTestHarnesses(subTestFiles)
+	subTestDirs, err := b.writeLibraryTestHarnesses(subTestFiles)
 	if err != nil {
-		return err
+		return fmt.Errorf("writing test harnesses: %w", err)
 	}
 
 	var rootErr error
@@ -1706,13 +1709,16 @@ func (b *Builder) Test(verbose bool) error {
 	}
 
 	// The subpackages' tests run even when the root's failed, so one run
-	// reports every failure.
-	if len(subTestPkgs) > 0 {
-		if err := b.runGoTest(verbose, subTestPkgs); err != nil {
-			return err
+	// reports every test failure.
+	var subErr error
+	if len(subTestDirs) > 0 {
+		pkgs := make([]string, len(subTestDirs))
+		for i, dir := range subTestDirs {
+			pkgs[i] = "./gen/" + filepath.ToSlash(dir)
 		}
+		subErr = b.runGoTest(verbose, pkgs)
 	}
-	return rootErr
+	return errors.Join(rootErr, subErr)
 }
 
 // runGoTest runs `go test` on pkgs (patterns relative to the workspace) — the
@@ -1745,8 +1751,9 @@ func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
 // splitRootTestFiles separates the test files in the project root directory
 // from those in its subpackages.
 func splitRootTestFiles(projectDir string, testFiles []string) (root, sub []string) {
+	absRoot, _ := filepath.Abs(projectDir)
 	for _, tf := range testFiles {
-		if rel, err := filepath.Rel(projectDir, filepath.Dir(tf)); err == nil && rel == "." {
+		if inDir(absRoot, tf) {
 			root = append(root, tf)
 		} else {
 			sub = append(sub, tf)
@@ -1755,34 +1762,10 @@ func splitRootTestFiles(projectDir string, testFiles []string) (root, sub []stri
 	return root, sub
 }
 
-// writeSubpackageTestHarnesses writes the per-package test harnesses for
-// subpackage test files (see writeLibraryTestHarnesses) and returns the `go
-// test` patterns of the packages that received one, in a stable order.
-func (b *Builder) writeSubpackageTestHarnesses(subTestFiles []string) ([]string, error) {
-	if len(subTestFiles) == 0 {
-		return nil, nil
-	}
-	if err := b.writeLibraryTestHarnesses(subTestFiles); err != nil {
-		return nil, fmt.Errorf("writing test harnesses: %w", err)
-	}
-	seen := make(map[string]bool)
-	var pkgs []string
-	for _, tf := range subTestFiles {
-		rel, err := filepath.Rel(b.workspace.ProjectDir, filepath.Dir(tf))
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(b.workspace.GenDir, rel, "gala_test_harness_test.go")); err != nil {
-			continue // no TestXxx in that package
-		}
-		pkg := "./gen/" + filepath.ToSlash(rel)
-		if !seen[pkg] {
-			seen[pkg] = true
-			pkgs = append(pkgs, pkg)
-		}
-	}
-	sort.Strings(pkgs)
-	return pkgs, nil
+// inDir reports whether file f sits directly in the directory absDir.
+func inDir(absDir, f string) bool {
+	abs, _ := filepath.Abs(f)
+	return filepath.Dir(abs) == absDir
 }
 
 // transpileTestMain transpiles source + test files together for package main projects.
@@ -1899,7 +1882,10 @@ func renameUserMainInDir(dir string, sourceNames map[string]bool, verbose bool) 
 // references tests declared in its own source directory — bundling all test
 // funcs into a single root-level harness would fail to compile when a
 // subpackage owns a test that the root package cannot see.
-func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
+//
+// It returns the directories, relative to gen/ and in sorted order, that
+// received a harness.
+func (b *Builder) writeLibraryTestHarnesses(testFiles []string) ([]string, error) {
 	// Group tests by the gen subdirectory they will land in.
 	type bucket struct {
 		pkgName string
@@ -1909,7 +1895,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 	for _, tf := range testFiles {
 		funcs, err := FindTestFunctions(tf)
 		if err != nil {
-			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
+			return nil, fmt.Errorf("scanning %s for test functions: %w", tf, err)
 		}
 		if len(funcs) == 0 {
 			continue
@@ -1927,6 +1913,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 		}
 	}
 
+	var written []string
 	for relDir, bkt := range byDir {
 		if bkt.pkgName == "" {
 			continue
@@ -1936,15 +1923,17 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 			harnessDir = filepath.Join(b.workspace.GenDir, relDir)
 		}
 		if err := os.MkdirAll(harnessDir, 0755); err != nil {
-			return fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
+			return nil, fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
 		}
 		harnessPath := filepath.Join(harnessDir, "gala_test_harness_test.go")
 		harnessCode := GenerateGoTestHarness(bkt.pkgName, bkt.funcs)
 		if err := os.WriteFile(harnessPath, []byte(harnessCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", harnessPath, err)
+			return nil, fmt.Errorf("writing %s: %w", harnessPath, err)
 		}
+		written = append(written, relDir)
 	}
-	return nil
+	sort.Strings(written)
+	return written, nil
 }
 
 // transpileTestLibrary transpiles source files and test files into gen/ as the
@@ -2174,8 +2163,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 func rootPackageName(sourceFiles []string, projectDir string) string {
 	absRoot, _ := filepath.Abs(projectDir)
 	for _, f := range sourceFiles {
-		abs, _ := filepath.Abs(f)
-		if filepath.Dir(abs) == absRoot {
+		if inDir(absRoot, f) {
 			return detectPackageName(f)
 		}
 	}
