@@ -75,6 +75,7 @@ func main() {
 	assert.NoError(t, err)
 	result, err := g.Generate(fset, file)
 	assert.NoError(t, err)
+	checkGeneratedGo(t, result)
 
 	// The cross-file reads must unwrap via .Get(), not pass the raw wrapper.
 	assert.Contains(t, result, "errResp(code.Get())", "cross-file val must unwrap with .Get()")

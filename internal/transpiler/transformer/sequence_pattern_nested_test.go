@@ -44,7 +44,7 @@ func transpileSequencePattern(t *testing.T, body string) (string, error) {
 	t.Helper()
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 	return trans.Transpile(sequencePatternPrelude+body+"\n", "")
 }
 

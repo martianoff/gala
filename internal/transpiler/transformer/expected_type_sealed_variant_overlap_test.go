@@ -140,6 +140,7 @@ func wrap(errOpt Option[error], q string) T {
 		require.NoError(t, err, "iteration %d: transform", i)
 		gen, err := g.Generate(fset, file)
 		require.NoError(t, err, "iteration %d: generate", i)
+		checkGeneratedGo(t, gen)
 
 		// Local pkg_a.B must lower to B{}.Apply(...) with both args. If
 		// the wrong (sibling, zero-arg) variant won the lookup at any

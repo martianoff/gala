@@ -34,7 +34,7 @@ func TestMatchArmDispatchMatrix(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	cases := []struct {
 		name string
@@ -54,10 +54,12 @@ func TestMatchArmDispatchMatrix(t *testing.T) {
 			name: "value+void+panic in single statement match",
 			input: `package main
 
-func handle(code Int) Unit = code match {
-    case 0 => Println("zero")
-    case 1 => Panic("one is forbidden")
-    case _ => Println("other")
+func handle(code int) {
+    code match {
+        case 0 => Println("zero")
+        case 1 => Panic("one is forbidden")
+        case _ => Println("other")
+    }
 }
 
 func main() {
@@ -73,10 +75,10 @@ func main() {
 		{
 			// Same, but match is used as a value — exercises the
 			// inferCommonResultType path with a NilType arm.
-			name: "panic arm in value match returning Int",
+			name: "panic arm in value match returning int",
 			input: `package main
 
-func resolve(opt Option[Int]) Int = opt match {
+func resolve(opt Option[int]) int = opt match {
     case Some(n) => n
     case None()  => Panic("missing")
 }
@@ -97,7 +99,7 @@ func main() {
 			name: "default arm panic",
 			input: `package main
 
-func describe(code Int) String = code match {
+func describe(code int) string = code match {
     case 0 => "zero"
     case _ => Panic("unknown")
 }

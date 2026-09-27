@@ -16,7 +16,7 @@ func TestMultiVariables(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name     string
@@ -94,7 +94,7 @@ func TestValMultiReturnFromSingleExpression(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// Use strconv.Atoi which returns (int, error) - a Go multi-return function.
 	// val num, err = strconv.Atoi("42") should call Atoi exactly once.
@@ -129,7 +129,7 @@ func TestImmutableAssignmentError(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	input := `package main
 

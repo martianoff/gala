@@ -19,7 +19,7 @@ import (
 //
 //  1. value literal — `(a, b, c, ...)`
 //  2. positional constructor — `Tuple(a, b, c, ...)`
-//  3. type-arg position — `val x: Tuple[Int, Int, ...] = ...`
+//  3. type-arg position — `val x: Tuple[int, int, ...] = ...`
 //  4. pattern position — `case (x, y, z, ...) =>`
 //  5. .V_n field access — `t.V_n`
 //
@@ -32,7 +32,7 @@ func TestTupleArityRoundTripMatrix(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	for n := 2; n <= 10; n++ {
 		n := n
@@ -87,7 +87,7 @@ func makeTupleArityProgram(n int) string {
 	for i := 0; i < n; i++ {
 		values[i] = fmt.Sprintf("%d", i+1)
 		bindings[i] = fmt.Sprintf("v%d", i+1)
-		intTypes[i] = "Int"
+		intTypes[i] = "int"
 	}
 	tupleName := tupleNameForArity(n)
 
@@ -103,7 +103,7 @@ func makeTupleArityProgram(n int) string {
 
 	// Position 1 — value literal, plus position 4 — pattern, plus
 	// position 5 — .V_n field access. Sum the destructured values.
-	fmt.Fprintf(&b, "func sumPattern() Int {\n")
+	fmt.Fprintf(&b, "func sumPattern() int {\n")
 	fmt.Fprintf(&b, "    val t = (%s)\n", strings.Join(values, ", "))
 	fmt.Fprintf(&b, "    val s = t match {\n")
 	fmt.Fprintf(&b, "        case (%s) => %s\n",

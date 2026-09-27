@@ -20,7 +20,7 @@ import (
 func TestGenericFieldNamedLikeGenericTypeMatchParam(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 
 	const types = `
 sealed type Mode[T any] {

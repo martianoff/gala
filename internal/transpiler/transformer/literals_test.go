@@ -17,7 +17,7 @@ func TestLiteralRestrictions(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name         string
@@ -127,7 +127,7 @@ func TestQualifiedImportMethodCall(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name  string
@@ -248,8 +248,8 @@ func (sb *StringBuilder) AppendStr(s Str) {
     sb.parts.Append(s)
 }
 
-func (sb *StringBuilder) ToString() string {
-    var result = ""
+func (sb *StringBuilder) RuneCount() int {
+    var result = 0
     for i := 0; i < sb.parts.Length(); i++ {
         result = result + sb.parts.Get(i).runes.Length()
     }
@@ -276,7 +276,7 @@ func TestCharAndRawStringLiterals(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name        string

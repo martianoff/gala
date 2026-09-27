@@ -14,12 +14,12 @@ import (
 
 // newThunkSugarTranspiler builds a transpiler wired with the std search path so
 // companion-Apply resolution (e.g. `Box[T]`) works in these tests.
-func newThunkSugarTranspiler() *transpiler.GalaToGoTranspiler {
+func newThunkSugarTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 func mainBodyOf(t *testing.T, out string) string {

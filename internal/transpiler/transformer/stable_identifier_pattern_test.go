@@ -361,6 +361,7 @@ func Perm() iofs.FileMode = iofs.ModePerm
 			require.NoError(t, err)
 			out, err := generator.NewGoCodeGenerator().Generate(fset, file)
 			require.NoError(t, err)
+			checkGeneratedGo(t, out)
 
 			require.Contains(t, out, tc.want)
 			require.NotContains(t, out, tc.notWant)

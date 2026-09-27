@@ -18,12 +18,12 @@ import (
 // Conversely, a concretely-typed subject must NOT be asserted — `p.(Person)` on
 // a non-interface value is itself a Go compile error.
 func TestMatchStructPatternAnySubjectAssertsType(t *testing.T) {
-	newTranspiler := func() *transpiler.GalaToGoTranspiler {
+	newTranspiler := func() *checkedTranspiler {
 		p := transpiler.NewAntlrGalaParser()
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
-		return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		return newCheckedTranspiler(p, a, tr, g)
 	}
 
 	t.Run("any subject inserts type assertion", func(t *testing.T) {

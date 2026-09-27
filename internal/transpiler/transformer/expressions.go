@@ -746,6 +746,29 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		}
 	}
 
+	// Both branches are void calls, as in the statement `if (c) a() else b()`:
+	// there is no value to return, so the branches run as statements in a
+	// closure with no result. Returning them would emit `func() void`, which
+	// is not Go, and `return a()` of a void call, which Go rejects.
+	if _, isVoid := retType.(transpiler.VoidType); isVoid {
+		branchBody := func(stmts []ast.Stmt, last ast.Expr, terminates bool) *ast.BlockStmt {
+			if !terminates && last != nil {
+				stmts = append(stmts, &ast.ExprStmt{X: last})
+			}
+			return &ast.BlockStmt{List: stmts}
+		}
+		return &ast.CallExpr{
+			Fun: &ast.FuncLit{
+				Type: &ast.FuncType{Params: &ast.FieldList{}},
+				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.IfStmt{
+					Cond: cond,
+					Body: branchBody(thenStmts, thenExpr, thenTerminates),
+					Else: branchBody(elseStmts, elseExpr, elseTerminates),
+				}}},
+			},
+		}, nil
+	}
+
 	retTypeExpr := t.typeToExpr(t.branchingResultType(retType, s))
 
 	// Build the then-block: preceding statements + return lastExpr.

@@ -16,7 +16,7 @@ func TestImmutable(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name     string
@@ -218,7 +218,7 @@ func TestPointerToValModification(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// Test: Modifying through pointer to val should be an error
 	// since it would break immutability guarantees

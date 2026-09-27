@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newForbiddenBuiltinTranspiler() *transpiler.GalaToGoTranspiler {
+func newForbiddenBuiltinTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 // TestForbiddenGoBuiltinsAreHardErrors verifies that bare Go builtins are

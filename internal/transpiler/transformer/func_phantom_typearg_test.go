@@ -26,7 +26,7 @@ func TestFuncPhantomReturnTypeParamInference(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// A two-param generic where the second param is carried only by the return
 	// type of `failWith`, exactly like Validated's Invalid-only constructor.

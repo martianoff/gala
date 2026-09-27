@@ -32,7 +32,7 @@ func transpileNestedTuple(t *testing.T, body string) (string, error) {
 	t.Helper()
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 	return trans.Transpile(nestedTuplePrelude+body+"\n", "")
 }
 
@@ -178,7 +178,7 @@ sealed type Ev[T any] {
 	transpile := func(src string) (string, error) {
 		p := transpiler.NewAntlrGalaParser()
 		a := analyzer.NewGalaAnalyzer(p, append([]string{root}, getStdSearchPath()...), root)
-		return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).
+		return newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).
 			Transpile(src, filepath.Join(root, "main.gala"))
 	}
 	const header = `package main
