@@ -1,6 +1,7 @@
 package main
 
 import (
+    "fmt"
     "math"
     "net"
     "os"
@@ -101,4 +102,8 @@ func main() {
     val missing = filepath.Join(os.TempDir(), "gala-go-call-results-missing")
     Println(FromError(os.Remove(missing)).IsFailure())
     Println(Try(os.Remove(missing)).IsFailure())
+
+    // Nothing reads a statement's value, so its Go calls are made as they
+    // are: this if-expression is an if statement.
+    if (n.IsSuccess()) fmt.Println("statement if") else fmt.Println("not reached")
 }

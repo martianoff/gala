@@ -92,3 +92,27 @@ func TestCompletionAfterAGoCallOffersTryMembers(t *testing.T) {
 		}
 	}
 }
+
+// A Go call matched as the Try it is raises no diagnostic: `Success(n)` and
+// `Failure(_)` are patterns of the call's Try[int].
+func TestNoDiagnosticForMatchOnAGoCall(t *testing.T) {
+	const src = `package main
+
+import "strconv"
+
+func parsePort(text string) string = strconv.Atoi(text) match {
+    case Success(n) => s"port $n"
+    case Failure(_) => "not a number"
+}
+
+func main() {
+    Println(parsePort("8080"))
+}
+`
+	h := newHarness(t)
+	uri := openFileOnDisk(t, h, src)
+	settle(t, h, uri, src, "func parsePort", "parsePort")
+	for _, d := range h.Diagnostics(uri) {
+		t.Errorf("unexpected diagnostic at line %d: %s", d.Range.Start.Line, d.Message)
+	}
+}

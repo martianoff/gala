@@ -94,8 +94,20 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 			[]string{`fmt.Println("x")`, `fmt.Fprintf(os.Stdout, "y")`}, []string{"GoTry"}},
 		{"sole argument a Go function spreads", "    Println(template.Must(template.New(\"x\").Parse(\"hi\")).Name())",
 			[]string{`template.Must(template.New("x").Parse("hi"))`}, []string{"GoTry"}},
-		{"value-free if-expression of Println calls", "    if (true) fmt.Println(\"a\") else fmt.Println(\"b\")",
-			nil, nil},
+		// An if-expression whose value is discarded is an if statement: its
+		// branches are statements, not the value of a func literal.
+		{"statement-position if-expression", "    if (true) fmt.Println(\"a\") else fmt.Println(\"b\")",
+			[]string{"if true {\n\t\tfmt.Println(\"a\")\n\t} else {\n\t\tfmt.Println(\"b\")\n\t}"}, []string{"GoTry", "func() std.Try"}},
+		{"statement-position if-expression before another statement", "    if (true) fmt.Println(\"a\") else os.Stdout.WriteString(\"b\")\n    Println(\"c\")",
+			[]string{`fmt.Println("a")`, `os.Stdout.WriteString("b")`}, []string{"GoTry", "func() std.Try"}},
+		{"statement-position if-expression with a block branch", `    if (true) fmt.Println("a") else {
+        os.Stdout.WriteString("b")
+        fmt.Println("c")
+    }`, []string{`os.Stdout.WriteString("b")`, `fmt.Println("c")`}, []string{"GoTry", "func() std.Try"}},
+		{"statement-position if-expression with a value branch", "    if (true) 1 else fmt.Println(\"b\")",
+			[]string{"_ = 1", `fmt.Println("b")`}, []string{"GoTry", "func() std.Try"}},
+		{"statement-position if-expression nested in a branch", "    if (true) fmt.Println(\"a\") else if (false) fmt.Println(\"b\") else fmt.Println(\"c\")",
+			[]string{`fmt.Println("c")`}, []string{"GoTry", "func() std.Try"}},
 		// The arms of a statement-position match discard their values, and so
 		// does a match at the tail of such an arm: its Go call arm must not be
 		// read as the value its void arm cannot give.

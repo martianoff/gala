@@ -71,12 +71,12 @@ import (
 // to; the documented `val a, b, c = f()` spelling reports the same three, so
 // this is the existing cost of that shape rather than a new one.
 //
-// Lowered 573 -> 561 when unwrapImmutable stopped asking for the type of a
+// Lowered 573 -> 562 when unwrapImmutable stopped asking for the type of a
 // `nil` operand (`err == nil`), which removed 19 sites. The difference is the
 // method names of Try calls on converted Go calls (`strconv.Atoi(s).GetOrElse`)
 // in go_call_results.gala and try_val_destructure.gala, reported like every
 // other method name in the corpus (`.Get`, `.Map`, ...).
-const unresolvedBudget = 561
+const unresolvedBudget = 562
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

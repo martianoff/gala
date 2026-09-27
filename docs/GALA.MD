@@ -1822,7 +1822,10 @@ error[GALA-E0049]: `data` holds the result of `os.ReadFile(...)`, which can fail
 ```
 
 A statement whose value is not used — `sb.WriteString("x")`, `fmt.Fprintf(w, ...)`
-on its own line — calls the Go function as it is.
+on its own line — calls the Go function as it is. So does a branch of an
+if-expression, or an arm of a match, whose value is not used:
+`if (verbose) fmt.Println(msg) else log.Print(msg)` on its own line is an if
+statement.
 
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 
