@@ -216,33 +216,18 @@ func sweepAbandonedSiblings(destDir string) {
 // copyModuleFiles copies the files a cached module keeps from sourceDir into
 // destDir.
 func copyModuleFiles(sourceDir, destDir string) error {
-	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// The whole module tree is kept, minus VCS metadata: a build needs
-		// more than sources — `//go:embed` assets, templates and other data
-		// files — and a module fetched without them fails to build, or builds
-		// with the data missing. The set matches what sum.HashDir covers, so
-		// gala.sum verifies exactly what was stored.
-		if info.IsDir() {
-			if path != sourceDir && !sum.IsModuleContent(info.Name(), true) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !sum.IsModuleContent(info.Name(), false) {
-			return nil
-		}
-		// Calculate relative path
-		relPath, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
-
-		// Create destination path
-		destPath := filepath.Join(destDir, relPath)
+	// The whole module tree is kept, minus VCS metadata: a build needs more
+	// than sources — `//go:embed` assets, templates and other data files — and
+	// a module fetched without them fails to build, or builds with the data
+	// missing. sum.WalkModuleFiles also defines what sum.HashDir covers, so
+	// gala.sum verifies exactly what was stored.
+	//
+	// Symbolic links are not stored: following one would copy a file from
+	// outside the module (anything the link names on this machine) into the
+	// cache, where a build could embed it, and a link to a directory or a
+	// dangling link would fail the fetch.
+	return sum.WalkModuleFiles(sourceDir, func(path, rel string) error {
+		destPath := filepath.Join(destDir, filepath.FromSlash(rel))
 
 		// Ensure parent directory exists
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {

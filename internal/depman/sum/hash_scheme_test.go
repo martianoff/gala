@@ -1,6 +1,8 @@
 package sum
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,9 +96,77 @@ func TestVerify_UnknownScheme(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported hash scheme")
 }
 
-func TestParse_AcceptsH2(t *testing.T) {
-	f, err := Parse("github.com/example/utils v1.2.3 h2:abc123==")
+// The parser accepts any "h<N>:" scheme, so a gala.sum a later gala writes
+// with a newer scheme still parses (and `gala mod add` does not drop its
+// entries); only a hash with no scheme is rejected.
+func TestParse_HashSchemes(t *testing.T) {
+	tests := []struct {
+		hash string
+		ok   bool
+	}{
+		{"h1:abc123==", true},
+		{"h2:abc123==", true},
+		{"h3:abc123==", true},
+		{"h12:abc123==", true},
+		{"abc123==", false},
+		{"h:abc123==", false},
+		{"hx:abc123==", false},
+		{"x1:abc123==", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.hash, func(t *testing.T) {
+			f, err := Parse("github.com/example/utils v1.2.3 " + tt.hash)
+			if !tt.ok {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, f.Entries, 1)
+			assert.Equal(t, tt.hash, f.Entries[0].Hash)
+		})
+	}
+}
+
+// h2 orders files by their slash-separated path, so the same tree hashes the
+// same on every OS: '\' sorts after digits and letters, '/' before them.
+func TestHashDir_H2OrdersBySlashPath(t *testing.T) {
+	files := map[string]string{"api/x.go": "a", "api0.txt": "b", "web/a": "c", "webA.txt": "d"}
+	got, err := HashDir(writeTree(t, files))
 	require.NoError(t, err)
-	require.Len(t, f.Entries, 1)
-	assert.Equal(t, "h2:abc123==", f.Entries[0].Hash)
+
+	h := sha256.New()
+	for _, rel := range []string{"api/x.go", "api0.txt", "web/a", "webA.txt"} {
+		h.Write([]byte(rel))
+		h.Write([]byte{0})
+		h.Write([]byte(files[rel]))
+		h.Write([]byte{0})
+	}
+	assert.Equal(t, "h2:"+base64.StdEncoding.EncodeToString(h.Sum(nil)), got)
+}
+
+// h2 hashes content byte for byte: a data file whose CR bytes changed is a
+// different file.
+func TestHashDir_H2HashesRawBytes(t *testing.T) {
+	crlf, err := HashDir(writeTree(t, map[string]string{"asset.bin": "a\r\nb"}))
+	require.NoError(t, err)
+	lf, err := HashDir(writeTree(t, map[string]string{"asset.bin": "a\nb"}))
+	require.NoError(t, err)
+	assert.NotEqual(t, crlf, lf)
+}
+
+// Symbolic links are not module content: following one would hash a file
+// outside the module, which differs from machine to machine.
+func TestHashDir_H2SkipsSymlinks(t *testing.T) {
+	dir := writeTree(t, map[string]string{"lib.gala": "package lib\n"})
+	before, err := HashDir(dir)
+	require.NoError(t, err)
+
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	require.NoError(t, os.WriteFile(outside, []byte("secret"), 0644))
+	if err := os.Symlink(outside, filepath.Join(dir, "link.txt")); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	after, err := HashDir(dir)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
 }

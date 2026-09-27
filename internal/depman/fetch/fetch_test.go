@@ -417,6 +417,34 @@ func TestCache_GetGalaMod_IgnoresIncompleteModule(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// Symbolic links in a fetched tree are not stored: a link to a file outside
+// the module would otherwise copy that file into the cache, and a link to a
+// directory or a dangling one would fail the fetch.
+func TestCache_Store_SkipsSymlinks(t *testing.T) {
+	cache, sourceDir := newStoreFixture(t)
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	require.NoError(t, os.WriteFile(outside, []byte("secret"), 0644))
+	links := map[string]string{
+		"file-link": outside,
+		"dir-link":  filepath.Dir(outside),
+		"dangling":  filepath.Join(t.TempDir(), "missing"),
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(sourceDir, name)); err != nil {
+			t.Skipf("cannot create symlinks here: %v", err)
+		}
+	}
+
+	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
+
+	modPath := cache.Config().ModulePath("github.com/test/lib", "v1.0.0")
+	assert.FileExists(t, filepath.Join(modPath, "lib.gala"))
+	for name := range links {
+		_, err := os.Lstat(filepath.Join(modPath, name))
+		assert.True(t, os.IsNotExist(err), "%s must not be stored", name)
+	}
+}
+
 // Staging trees a killed process left behind are removed by a later store once
 // they are old enough to belong to nobody; a recent one may be a live store.
 func TestCache_Store_SweepsAbandonedStaging(t *testing.T) {

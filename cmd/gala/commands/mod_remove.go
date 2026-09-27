@@ -49,20 +49,18 @@ func runModRemove(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Read gala.sum before changing anything.
+	galaSum := loadGalaSum()
+
 	if err := mod.WriteFile(galaMod, "gala.mod"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to write gala.mod: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Remove from gala.sum if it exists
-	galaSum, err := sum.ParseFile("gala.sum")
-	if err == nil {
-		// Remove all entries for this module/version
-		galaSum.Remove(modulePath, version)
-
-		if err := sum.WriteFile(galaSum, "gala.sum"); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update gala.sum: %v\n", err)
-		}
+	// Remove all gala.sum entries for this module/version
+	galaSum.Remove(modulePath, version)
+	if err := sum.WriteFile(galaSum, "gala.sum"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update gala.sum: %v\n", err)
 	}
 
 	fmt.Printf("Removed %s@%s\n", modulePath, version)

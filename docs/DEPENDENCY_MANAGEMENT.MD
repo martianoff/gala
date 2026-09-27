@@ -163,7 +163,9 @@ Each line contains:
 - Module path
 - Version
 - Optional file suffix (e.g., `/gala.mod`)
-- Hash scheme and SHA-256 hash. `h2:` covers every file of the module except VCS metadata (`.git` and the like), so data files a build embeds are verified too. `h1:` is the earlier scheme and covers only `.gala`/`.go` sources, `gala.mod`, `go.sum` and `BUILD.bazel`; existing `h1:` entries still verify, and `gala mod tidy` rewrites them as `h2:`.
+- Hash scheme and SHA-256 hash. For a module line, `h2:` covers every regular file of the module except VCS metadata (`.git` and the like), byte for byte, so data files a build embeds are verified too; symbolic links are not part of a module and are not fetched. `h1:` is the earlier module scheme and covers only `.gala`/`.go` sources, `gala.mod`, `go.sum` and `BUILD.bazel`; existing `h1:` module lines still verify, and `gala mod tidy` rewrites them as `h2:`. `/gala.mod` lines hash that one file and keep the `h1:` prefix.
+
+> **Compatibility:** gala versions before `h2:` reject a `gala.sum` that contains an `h2:` line ("invalid hash format"). Their `gala mod verify` fails, and their `gala mod add` / `gala mod update` rewrite `gala.sum` from scratch, dropping every other entry. Everyone working on a project, and its CI, should use a gala that understands `h2:` before `gala mod tidy` rewrites its `gala.sum`. `gala build` does not read `gala.sum` and is unaffected. Current gala accepts any `h<N>:` scheme when reading `gala.sum`, and stops instead of rewriting a `gala.sum` it cannot parse.
 
 ---
 
@@ -502,7 +504,7 @@ GALA projects can depend on other GALA libraries — packages written in GALA an
 
 ### How It Works
 
-When you add a GALA dependency (without the `--go` flag), the source `.gala` files are fetched to `~/.gala/pkg/mod/`. At build time, `gala build` automatically transpiles these dependencies to Go before compiling:
+When you add a GALA dependency (without the `--go` flag), the module is fetched to the GALA module cache (`~/.gala/pkg/mod/` by default; `GALA_HOME` or `GALA_CACHE` move it). At build time, `gala build` automatically transpiles these dependencies to Go before compiling:
 
 1. The builder scans `gala.mod` for GALA dependencies (entries without `// go`)
 2. For each dep that contains `.gala` files, the transpiler pipeline runs (parse → analyze → transform → generate)
