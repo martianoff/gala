@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/depman/sum"
@@ -88,15 +89,133 @@ func (c *Cache) ListVersions(modulePath string) ([]version.Version, error) {
 
 // Store stores a module in the cache from a source directory.
 // It copies all .gala files and gala.mod to the cache.
+//
+// The module is assembled in a private staging directory next to its final
+// location and published with a single rename, with the completion marker
+// already inside (see IsCompleteModuleDir). Copying straight into the final
+// directory made the module visible — and, since presence was all the cache
+// checked, trusted — from its first file on: a fetch that was interrupted, or
+// that another process read while it was still copying, left a partial module
+// that was never fetched again.
+//
+// Two processes storing the same version each stage their own copy; the first
+// rename wins and the other discards its copy.
 func (c *Cache) Store(modulePath, ver, sourceDir string) error {
 	destDir := c.config.ModulePath(modulePath, ver)
 
-	// Create destination directory
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destDir), 0755); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
+	sweepAbandonedSiblings(destDir)
+	// A dot-prefixed sibling: on the same filesystem, so the rename is atomic,
+	// and invisible to ListVersions' "<module>@*" glob and to source walks.
+	staging, err := os.MkdirTemp(filepath.Dir(destDir), siblingPrefix(destDir, stagingTag))
+	if err != nil {
+		return fmt.Errorf("failed to create cache staging directory: %w", err)
+	}
+	defer os.RemoveAll(staging) // no-op once the rename succeeds
 
-	// Walk source directory and copy relevant files
+	if err := copyModuleFiles(sourceDir, staging); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(staging, completeMarkerName), nil, 0644); err != nil {
+		return fmt.Errorf("failed to mark cached module complete: %w", err)
+	}
+	return publishModuleDir(staging, destDir)
+}
+
+// publishModuleDir moves a fully staged module into place.
+func publishModuleDir(staging, destDir string) error {
+	if IsCompleteModuleDir(destDir) {
+		return nil // another process published this version first
+	}
+	// A directory without the marker was left by an interrupted fetch (or by a
+	// gala that predates the marker). It cannot be trusted, and a directory
+	// cannot be renamed over it, so it is first moved aside with one rename.
+	// Deleting it in place instead could delete a complete copy that another
+	// process published between the check above and the delete; a rename
+	// moves exactly one tree, and the one moved is checked afterwards.
+	//
+	// The staging name is already unique, so the set-aside name derived from it
+	// is too.
+	aside := strings.Replace(staging, siblingPrefix(destDir, stagingTag), siblingPrefix(destDir, staleTag), 1)
+	if err := renameWithRetry(destDir, aside); err == nil {
+		defer os.RemoveAll(aside)
+		if IsCompleteModuleDir(aside) {
+			// A concurrent fetch published between the check and the rename:
+			// put its copy back and drop ours.
+			if err := renameWithRetry(aside, destDir); err == nil {
+				return nil
+			}
+		}
+	} else if !os.IsNotExist(err) && !IsCompleteModuleDir(destDir) {
+		return fmt.Errorf("failed to set aside incomplete cached module %s: %w", destDir, err)
+	}
+	if err := renameWithRetry(staging, destDir); err != nil {
+		if IsCompleteModuleDir(destDir) {
+			return nil // lost the race to a concurrent fetch of the same version
+		}
+		return fmt.Errorf("failed to publish cached module %s: %w", destDir, err)
+	}
+	return nil
+}
+
+// renameWithRetry renames a directory, retrying briefly when the rename fails
+// for a reason that may pass. On Windows, antivirus scanners and indexers open
+// files that were just written, and a directory holding an open file cannot be
+// renamed until they let go. A rename that fails because the source is gone or
+// the destination exists is not retried: another process got there first, and
+// the caller decides what that means.
+func renameWithRetry(from, to string) error {
+	var err error
+	delay := 10 * time.Millisecond
+	for attempt := 0; attempt < renameAttempts; attempt++ {
+		if err = os.Rename(from, to); err == nil || os.IsNotExist(err) {
+			return err
+		}
+		if _, statErr := os.Lstat(to); statErr == nil {
+			return err
+		}
+		time.Sleep(delay)
+		delay *= 2
+	}
+	return err
+}
+
+// renameAttempts bounds renameWithRetry to about 2.5 seconds of waiting.
+const renameAttempts = 8
+
+// The dot-prefixed siblings a Store creates next to a module version: its
+// staging tree, and an incomplete tree it moved out of the way.
+const (
+	stagingTag = "staging"
+	staleTag   = "stale"
+)
+
+func siblingPrefix(destDir, tag string) string {
+	return "." + filepath.Base(destDir) + "." + tag + "-"
+}
+
+// abandonedAfter is how old a staging or set-aside sibling must be before a
+// later Store deletes it. Store removes its own on every return path; one
+// left behind means the process was killed. A live Store finishes in seconds,
+// so an hour-old sibling belongs to nobody.
+const abandonedAfter = time.Hour
+
+// sweepAbandonedSiblings deletes the staging and set-aside trees that killed
+// processes left next to destDir, so they do not accumulate in the cache.
+func sweepAbandonedSiblings(destDir string) {
+	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(destDir), "."+filepath.Base(destDir)+".*"))
+	for _, m := range matches {
+		if info, err := os.Stat(m); err == nil && time.Since(info.ModTime()) > abandonedAfter {
+			os.RemoveAll(m)
+		}
+	}
+}
+
+// copyModuleFiles copies the files a cached module keeps from sourceDir into
+// destDir.
+func copyModuleFiles(sourceDir, destDir string) error {
 	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -168,8 +287,14 @@ func (c *Cache) Verify(modulePath, ver, expectedHash string) error {
 	return sum.Verify(modDir, expectedHash)
 }
 
-// GetGalaMod returns the gala.mod for a cached module, if present.
+// GetGalaMod returns the gala.mod for a cached module, if present. A module
+// that is not cached completely (see IsCached) has none, so callers that can
+// fetch — the dependency graph builder — fetch it again instead of resolving
+// against a partial copy.
 func (c *Cache) GetGalaMod(modulePath, ver string) (*mod.File, error) {
+	if !c.config.IsCached(modulePath, ver) {
+		return nil, fmt.Errorf("module not cached: %s@%s", modulePath, ver)
+	}
 	modDir := c.config.ModulePath(modulePath, ver)
 	galaModPath := filepath.Join(modDir, "gala.mod")
 	return mod.ParseFile(galaModPath)

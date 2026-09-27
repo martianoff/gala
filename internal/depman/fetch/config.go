@@ -95,9 +95,24 @@ func sanitizePath(modulePath string) string {
 	return modulePath
 }
 
-// IsCached returns true if a module version is already cached.
+// IsCached returns true if a module version is cached completely — see
+// IsCompleteModuleDir.
 func (c *Config) IsCached(modulePath, version string) bool {
-	modPath := c.ModulePath(modulePath, version)
-	info, err := os.Stat(modPath)
-	return err == nil && info.IsDir()
+	return IsCompleteModuleDir(c.ModulePath(modulePath, version))
+}
+
+// completeMarkerName is written into a module's staged tree last, before the
+// tree is renamed into the cache. It is a dotfile so that neither the module
+// hash (sum.HashDir) nor any source walk sees it.
+const completeMarkerName = ".gala-module-complete"
+
+// IsCompleteModuleDir reports whether dir holds a module version a fetch
+// finished publishing. The directory existing is not enough: a fetch used to
+// create it first and fill it one file at a time, so an interrupted or
+// concurrent fetch left a partial module behind that every later build trusted.
+// A published tree always carries the marker, because it was written into the
+// staged tree before the rename that made the tree visible.
+func IsCompleteModuleDir(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, completeMarkerName))
+	return err == nil && !info.IsDir()
 }

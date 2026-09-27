@@ -281,8 +281,11 @@ func (b *Builder) ensureDeps() error {
 		}
 
 		modDir := b.effectiveDepDir(req)
-		if _, err := os.Stat(modDir); err == nil {
-			continue // Already cached or local replacement present
+		// Local replaces were handled above, so modDir is a module-cache entry.
+		// It counts only when a fetch finished publishing it: a bare directory
+		// is what an interrupted fetch leaves, and is fetched again.
+		if fetch.IsCompleteModuleDir(modDir) {
+			continue
 		}
 
 		fetchPath, fetchVersion := req.Path, req.Version
