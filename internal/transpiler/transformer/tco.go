@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/transpiler"
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the ANTLR parse
@@ -26,7 +25,15 @@ type tailCtx struct {
 	paramNames []string
 	paramTypes []ast.Expr
 	retType    ast.Expr
-	expected   transpiler.Type // retType, the terminal branches' expected type
+}
+
+// tailResultSlot is the slot a terminal branch fills: the declared return
+// type, as for transformExpressionBodiedFunction.
+func (t *galaASTTransformer) tailResultSlot(tc *tailCtx) slot {
+	if tc.retType == nil {
+		return slot{}
+	}
+	return resultSlot(t.astTypeToTranspilerType(tc.retType))
 }
 
 // tryTransformSelfTailRecursion rewrites direct self-tail-recursion in an
@@ -120,9 +127,6 @@ func (t *galaASTTransformer) tryTransformSelfTailRecursion(
 	// Terminal branches are lowered against the declared return type, matching
 	// transformExpressionBodiedFunction.
 	tc := &tailCtx{funcName: funcName, paramNames: paramNames, paramTypes: paramTypes, retType: retType}
-	if retType != nil {
-		tc.expected = t.astTypeToTranspilerType(retType)
-	}
 
 	ifStmt, found, err := t.buildTailIfStmt(ifExprCtx, tc)
 	if err != nil {
@@ -243,7 +247,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 
 		// Terminal value: return it.
-		e, err := t.lowerAgainst(exprCtx, tc.expected, false)
+		e, err := t.lowerAgainst(exprCtx, t.tailResultSlot(tc), false)
 		if err != nil {
 			return nil, false, err
 		}
@@ -254,7 +258,7 @@ func (t *galaASTTransformer) buildTailBranch(
 	// Block branch: reuse the shared branch transform and append a terminal
 	// return when it does not already terminate. Tail self-calls hidden inside
 	// block branches are not detected in this slice.
-	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, tc.expected)
+	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, t.tailResultSlot(tc))
 	if err != nil {
 		return nil, false, err
 	}

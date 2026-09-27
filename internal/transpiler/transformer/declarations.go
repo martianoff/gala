@@ -838,13 +838,11 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 // transforming the expression into a single-return block body. A lambda,
 // if-expression or match body is lowered against the declared return type.
 func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, funcType *ast.FuncType) (*ast.BlockStmt, error) {
-	var expr ast.Expr
-	var err error
-	if funcType.Results != nil && len(funcType.Results.List) > 0 && t.needsExpectedType(exprCtx) {
-		expr, err = t.lowerAgainst(exprCtx, t.astTypeToTranspilerType(funcType.Results.List[0].Type), false)
-	} else {
-		expr, err = t.transformExpression(exprCtx)
+	var result slot
+	if funcType.Results != nil && len(funcType.Results.List) > 0 {
+		result = resultSlot(t.astTypeToTranspilerType(funcType.Results.List[0].Type))
 	}
+	expr, err := t.lowerAgainst(exprCtx, result, false)
 	if err != nil {
 		return nil, err
 	}

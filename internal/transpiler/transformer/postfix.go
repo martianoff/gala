@@ -371,12 +371,12 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 
 // transformPostfixMatchExpression handles match expressions with the new grammar.
 func (t *galaASTTransformer) transformPostfixMatchExpression(ctx *grammar.PostfixExprContext) (ast.Expr, error) {
-	return t.transformPostfixMatchExpressionAgainst(ctx, nil)
+	return t.transformPostfixMatchExpressionAgainst(ctx, slot{})
 }
 
-// transformPostfixMatchExpressionAgainst lowers a match whose value fills a slot
-// of type expected (nil when none); see buildMatchExpressionFromClauses.
-func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar.PostfixExprContext, expected transpiler.Type) (ast.Expr, error) {
+// transformPostfixMatchExpressionAgainst lowers a match whose value fills slot s
+// (zero when none); see buildMatchExpressionFromClauses.
+func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar.PostfixExprContext, s slot) (ast.Expr, error) {
 	// Get the primary expression being matched
 	primaryExpr := ctx.PrimaryExpr()
 	if primaryExpr == nil {
@@ -399,12 +399,12 @@ func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar
 
 	// Now handle the match expression
 	caseClauses := ctx.AllCaseClause()
-	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx, expected)
+	return t.buildMatchExpressionFromClauses(subject, "obj", caseClauses, ctx, s)
 }
 
 // buildMatchExpressionFromClauses builds a match expression from the subject and case clauses.
 // ctx is used for error position reporting when case clauses are empty.
-func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext, expected transpiler.Type) (ast.Expr, error) {
+func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext, s slot) (ast.Expr, error) {
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
 	if transpiler.IsUnusable(matchedType) {
@@ -446,9 +446,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type, and the arms' enclosing return type for sealed-variant inference.
-	if !transpiler.IsUnusable(expected) {
+	if !transpiler.IsUnusable(s.typ) {
 		prevReturn := t.currentFuncReturnType
-		t.currentFuncReturnType = expected
+		t.currentFuncReturnType = s.typ
 		defer func() { t.currentFuncReturnType = prevReturn }()
 	}
 
@@ -527,7 +527,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				// The default arm's block-body last expression becomes the
 				// arm's value, so it is value-consumed.
 				t.blockLastStmtIsValue = true
-				t.blockLastValueExpected = expected
+				t.blockLastValueExpected = s
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, err
@@ -557,7 +557,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
-				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), expected)
+				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), s)
 				if err != nil {
 					return nil, err
 				}
@@ -568,7 +568,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			continue
 		}
 
-		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, expected)
+		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, s)
 		if err != nil {
 			return nil, err
 		}
@@ -587,9 +587,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if err != nil {
 		return nil, err
 	}
-	if t.resolveTranspilerTypeAsFuncType(expected) != nil && t.resolveTranspilerTypeAsFuncType(resultType) != nil {
-		resultType = expected // see branchingResultType
-	}
+	resultType = t.branchingResultType(resultType, s.typ)
 
 	// Statement-position matches discard their value; force the IIFE to be
 	// void so that arms with mixed value/void payloads — e.g. one arm calling

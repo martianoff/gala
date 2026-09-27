@@ -14,70 +14,6 @@ import (
 	"martianoff/gala/internal/transpiler/registry"
 )
 
-func (t *galaASTTransformer) transformMatchExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
-	expr, paramName, matchedType, err := t.parseMatchSubject(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	t.pushScope()
-	defer t.popScope()
-	t.addVar(paramName, matchedType)
-
-	// Track match subject type so branch bodies can infer type params
-	// for sealed variant constructors (e.g., None() infers None[int] from Option[int])
-	prevMatchSubjectType := t.currentMatchSubjectType
-	t.currentMatchSubjectType = matchedType
-	defer func() { t.currentMatchSubjectType = prevMatchSubjectType }()
-
-	// Consume the statement-position marker set by transformBlock so arm
-	// bodies see matchInStatementPos = false (a NESTED match used as the
-	// arm's value must remain value-producing).
-	stmtPosition := t.matchInStatementPos
-	t.matchInStatementPos = false
-	defer func() { t.matchInStatementPos = stmtPosition }()
-
-	clauses, defaultBody, resultType, err := t.transformMatchClauses(ctx, paramName, matchedType, stmtPosition)
-	if err != nil {
-		return nil, err
-	}
-
-	// Statement-position matches discard their value; force the IIFE to be
-	// void so void-returning arm calls do not appear as `return d.Skip()`
-	// (which Go rejects as "no value used as value").
-	if stmtPosition {
-		resultType = transpiler.VoidType{}
-	}
-
-	t.needsStdImport = true
-
-	matchLine, matchCol := 0, 0
-	if ctx != nil && ctx.GetStart() != nil {
-		matchLine = ctx.GetStart().GetLine()
-		matchCol = ctx.GetStart().GetColumn()
-	}
-
-	// Statement-position match with a user-written `return X` inside an arm
-	// body cannot use the IIFE lowering. Wrapping the body in
-	// `func(obj T) { ... }(subject)` would trap that `return X` inside the
-	// IIFE's lambda — the surrounding gala function never returns, and any
-	// enclosing for-loop spins forever (the bug fired as a runtime hang, not
-	// a compile error). Inline the body instead so user returns become
-	// genuine Go returns from the enclosing function. Synthesized arm-tail
-	// returns (added to feed the IIFE's value channel) are stripped, since
-	// the value would have been discarded anyway.
-	if stmtPosition && t.containsUserReturnInClauses(clauses, defaultBody) {
-		body := t.buildMatchBodyForInline(clauses, defaultBody)
-		t.pendingMatchStmtBlock = t.buildInlinedMatchBlock(expr, paramName, matchedType, body)
-		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
-		// and replaces the wrapping ExprStmt with the inlined block.
-		return ast.NewIdent("_"), nil
-	}
-
-	body := t.buildMatchBody(clauses, defaultBody, resultType)
-	return t.generateMatchIIFE(expr, paramName, matchedType, body, resultType, matchLine, matchCol)
-}
-
 // containsUserReturnInClauses reports whether any user-written `return X`
 // appears inside the if-else clauses or default body of a lowered match.
 func (t *galaASTTransformer) containsUserReturnInClauses(clauses []ast.Stmt, defaultBody []ast.Stmt) bool {
@@ -131,37 +67,6 @@ func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName str
 	})
 	stmts = append(stmts, body...)
 	return &ast.BlockStmt{List: stmts}
-}
-
-// parseMatchSubject extracts and type-checks the expression being matched.
-func (t *galaASTTransformer) parseMatchSubject(ctx grammar.IExpressionContext) (ast.Expr, string, transpiler.Type, error) {
-	exprCtx := ctx.GetChild(0).(grammar.IExpressionContext)
-	expr, err := t.transformExpression(exprCtx)
-	if err != nil {
-		return nil, "", nil, err
-	}
-
-	paramName := "obj"
-	if primary := t.getPrimaryFromExpression(exprCtx); primary != nil {
-		if primary.Identifier() != nil {
-			paramName = primary.Identifier().GetText()
-		}
-	}
-
-	// Infer matched expression type (manual first, then HM fallback)
-	matchedType := t.getExprTypeNameManual(expr)
-	if transpiler.IsUnusable(matchedType) {
-		matchedType, _ = t.inferExprType(expr)
-	}
-	if transpiler.IsUnusable(matchedType) {
-		if parserCtx, ok := ctx.(antlr.ParserRuleContext); ok {
-			return nil, "", nil, t.semanticErrorAt(parserCtx, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
-		}
-		line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-		return nil, "", nil, galaerr.NewSemanticErrorAt(line, col, "cannot infer type of matched expression. Please add explicit type annotation to the variable being matched")
-	}
-
-	return expr, paramName, matchedType, nil
 }
 
 // extractVariantName extracts the variant/constructor name from a case pattern text.
@@ -742,202 +647,6 @@ func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionO
 	return nil
 }
 
-// transformMatchClauses processes all case clauses and infers the common result type.
-func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContext, paramName string, matchedType transpiler.Type, discardValue bool) ([]ast.Stmt, []ast.Stmt, transpiler.Type, error) {
-	var clauses []ast.Stmt
-	var defaultBody []ast.Stmt
-	foundDefault := false
-	var resultTypes []transpiler.Type
-	var casePatterns []string
-
-	// Pre-scan: check if there's an explicit, UNGUARDED wildcard `_` case.
-	// A guarded wildcard (`case _ if g`) is conditional — it can fall through
-	// to later cases — so it is not a catch-all and must not suppress a binding
-	// pattern acting as the default.
-	hasExplicitWildcard := false
-	for i := 3; i < ctx.GetChildCount()-1; i++ {
-		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
-		if ok && isWildcard(ccCtx.Pattern().GetText()) && ccCtx.GetGuard() == nil {
-			hasExplicitWildcard = true
-			break
-		}
-	}
-
-	for i := 3; i < ctx.GetChildCount()-1; i++ {
-		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
-		if !ok {
-			continue
-		}
-
-		patCtx := ccCtx.Pattern()
-		patternText := patCtx.GetText()
-		// A guarded clause is conditional and never a default, even when its
-		// pattern is a wildcard or binding — control can fall through to a
-		// later case when the guard is false.
-		treatAsDefault := ccCtx.GetGuard() == nil &&
-			(isWildcard(patternText) ||
-				(!hasExplicitWildcard && isBindingPattern(patternText)))
-
-		if treatAsDefault {
-			if foundDefault {
-				return nil, nil, nil, galaerr.NewCodedSemanticError(
-					galaerr.CodeMultipleDefaults,
-					ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
-					"multiple default cases in match expression",
-					"keep one default case; combine logic with guards or nested matches if you need sub-cases")
-			}
-			foundDefault = true
-
-			var bindingStmts []ast.Stmt
-			if isBindingPattern(patternText) {
-				t.currentScope.vals[patternText] = false
-				if matchedType != nil && !matchedType.IsNil() {
-					t.currentScope.valTypes[patternText] = matchedType
-				}
-				bindingStmts = append(bindingStmts, &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(patternText)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{ast.NewIdent(paramName)},
-				})
-			}
-
-			if ccCtx.GetBodyBlock() != nil {
-				// The default arm's block-body last expression becomes the
-				// arm's value (when not void), so it is value-consumed.
-				t.blockLastStmtIsValue = true
-				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				defaultBody = append(bindingStmts, b.List...)
-				if len(b.List) > 0 {
-					lastStmt := b.List[len(b.List)-1]
-					if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
-						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
-						casePatterns = append(casePatterns, "case _")
-					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-						// B8: classify and lower via the unified helper.
-						stmt, typ := t.lowerMatchArmTailExpr(exprStmt.X)
-						defaultBody[len(defaultBody)-1] = stmt
-						resultTypes = append(resultTypes, typ)
-						casePatterns = append(casePatterns, "case _")
-					} else if ifStmt, ok := lastStmt.(*ast.IfStmt); ok {
-						// A trailing if/else is the arm's value too, carried by
-						// its branches. Every branch yields the same type, so
-						// the first one gives the arm's result type.
-						if promoted, ok := promoteIfBranchValues(ifStmt, t.armReturn); ok {
-							defaultBody[len(defaultBody)-1] = promoted
-							if result := firstBranchResult(promoted); result != nil {
-								resultTypes = append(resultTypes, t.inferResultType(result))
-								casePatterns = append(casePatterns, "case _")
-							}
-						}
-					}
-				}
-			} else if ccCtx.GetBodyStmt() != nil {
-				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), nil)
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				defaultBody = append(bindingStmts, bodyStmts...)
-				resultTypes = append(resultTypes, bodyType)
-				casePatterns = append(casePatterns, "case _")
-			}
-			continue
-		}
-
-		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, nil)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		clauses = append(clauses, clause)
-		resultTypes = append(resultTypes, resultType)
-		casePatterns = append(casePatterns, fmt.Sprintf("case %s", patternText))
-	}
-
-	// Always collect variant patterns for exhaustiveness check
-	var variantPatterns []string
-	for i := 3; i < ctx.GetChildCount()-1; i++ {
-		ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
-		if !ok {
-			continue
-		}
-		pat := ccCtx.Pattern().GetText()
-		if !isDefaultPattern(pat) {
-			variantPatterns = append(variantPatterns, pat)
-		}
-	}
-
-	// B6: Validate arity of sealed-variant extractor patterns. A pattern like
-	// `Rect(w, h)` against a variant `Rect(w, h, label)` silently truncates and
-	// causes runtime confusion; reject it here.
-	if arityErr := t.validateSealedVariantArity(matchedType, variantPatterns, ctx); arityErr != nil {
-		return nil, nil, nil, arityErr
-	}
-
-	isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
-
-	// A binding pattern (e.g., `case n =>`) is a catch-all even though it's
-	// processed as a regular clause.
-	hasDefault := foundDefault
-	if !hasDefault {
-		for i := 3; i < ctx.GetChildCount()-1; i++ {
-			ccCtx, ok := ctx.GetChild(i).(*grammar.CaseClauseContext)
-			if !ok {
-				continue
-			}
-			// A guarded binding pattern is conditional, not a catch-all default.
-			if isBindingPattern(ccCtx.Pattern().GetText()) && ccCtx.GetGuard() == nil {
-				hasDefault = true
-				break
-			}
-		}
-	}
-
-	if !hasDefault {
-		if isSealed && !isExhaustive {
-			return nil, nil, nil, galaerr.NewCodedSemanticError(
-				galaerr.CodeNonExhaustiveMatch,
-				ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-				fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
-				"add the missing variant cases, or add a `case _ => ...` default to cover them")
-		} else if isSealed && isExhaustive {
-			// Exhaustive sealed match — generate synthetic panic("unreachable") default
-			defaultBody = []ast.Stmt{
-				&ast.ExprStmt{X: &ast.CallExpr{
-					Fun:  ast.NewIdent("panic"),
-					Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
-				}},
-			}
-		} else if !isSealed {
-			return nil, nil, nil, galaerr.NewCodedSemanticError(
-				galaerr.CodeMissingDefault,
-				ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-				"match expression must have a default case",
-				"add `case _ => ...`")
-		}
-	}
-	// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
-
-	var matchCtx antlr.ParserRuleContext
-	if pc, ok := ctx.(antlr.ParserRuleContext); ok {
-		matchCtx = pc
-	}
-	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, matchCtx, discardValue)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// Reject bare `return` inside a value-producing match (the IIFE would need
-	// to return a concrete type, but a bare return produces none). See GALA-E0015.
-	startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-	if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
-		return nil, nil, nil, err
-	}
-
-	return clauses, defaultBody, resultType, nil
-}
-
 // buildMatchBody chains case clauses into an if-else chain with default body,
 // and applies void stripping or return fixup based on result type.
 func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []ast.Stmt, resultType transpiler.Type) []ast.Stmt {
@@ -974,43 +683,6 @@ func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []as
 	}
 
 	return body
-}
-
-// generateMatchIIFE wraps the match body in an immediately-invoked function expression.
-func (t *galaASTTransformer) generateMatchIIFE(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt, resultType transpiler.Type, matchLine, matchCol int) (ast.Expr, error) {
-	paramType := t.typeToExpr(matchedType)
-	if paramType == nil {
-		return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer type of matched expression. Please add explicit type annotation")
-	}
-
-	var resultsField *ast.FieldList
-	if resultType == nil || !resultType.IsVoid() {
-		resultTypeExpr := t.typeToExpr(resultType)
-		if resultTypeExpr == nil {
-			return nil, galaerr.NewSemanticErrorAt(matchLine, matchCol, "cannot infer result type of match expression. Please ensure all branches return the same type")
-		}
-		resultsField = &ast.FieldList{
-			List: []*ast.Field{{Type: resultTypeExpr}},
-		}
-	}
-
-	return &ast.CallExpr{
-		Fun: &ast.FuncLit{
-			Type: &ast.FuncType{
-				Params: &ast.FieldList{
-					List: []*ast.Field{
-						{
-							Names: []*ast.Ident{ast.NewIdent(paramName)},
-							Type:  paramType,
-						},
-					},
-				},
-				Results: resultsField,
-			},
-			Body: &ast.BlockStmt{List: body},
-		},
-		Args: []ast.Expr{expr},
-	}, nil
 }
 
 // inferResultType infers the type of an expression used as a case clause result
@@ -1522,8 +1194,8 @@ func collectReferencedIdents(nodes []ast.Node) map[string]bool {
 }
 
 // transformCaseClauseWithType transforms a case clause and returns its result
-// type. armExpected is the match's expected value type (see transformCaseBodyStmt).
-func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType, armExpected transpiler.Type) (ast.Stmt, transpiler.Type, error) {
+// type. armSlot is the slot the match fills (see transformCaseBodyStmt).
+func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
 	defer t.popScope()
 
@@ -1554,7 +1226,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		// The case body's block last expression becomes the arm's value, so
 		// it is value-consumed (not statement-position).
 		t.blockLastStmtIsValue = true
-		t.blockLastValueExpected = armExpected
+		t.blockLastValueExpected = armSlot
 		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
 		if err != nil {
 			return nil, nil, err
@@ -1591,7 +1263,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 			resultType = transpiler.VoidType{}
 		}
 	} else if ctx.GetBodyStmt() != nil {
-		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armExpected)
+		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armSlot)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1642,12 +1314,12 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 // transformCaseBodyStmt transforms a simpleStatement case body.
 // Returns (stmts, resultType, error) where stmts are the Go statements for the body,
 // and resultType is the type (VoidType for assignments/incDec, or the expression type).
-// armExpected is the match's expected value type (nil when unknown); an
+// armSlot is the slot the match fills (zero when none); an
 // expression body is lowered against it (see lowerAgainst).
-func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armExpected transpiler.Type) ([]ast.Stmt, transpiler.Type, error) {
+func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
 	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
-		expr, err := t.lowerAgainst(exprCtx, armExpected, true)
+		expr, err := t.lowerAgainst(exprCtx, armSlot, true)
 		if err != nil {
 			return nil, nil, err
 		}

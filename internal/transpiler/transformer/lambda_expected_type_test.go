@@ -237,6 +237,180 @@ func main() {
 	}
 }
 
+// TestBranchLambdasWithUnboundTypeParams covers an if-expression or match of
+// lambdas in a slot whose type still mentions an unbound type parameter: a
+// generic constructor's (masked, then inferred from the branches) or a generic
+// function's (filled with an `any` placeholder). The IIFE returns the branches'
+// own type, never the unresolved slot type.
+func TestBranchLambdasWithUnboundTypeParams(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	cases := []struct {
+		name     string
+		input    string
+		contains []string
+	}{
+		{
+			name: "if-expression in a generic struct constructor",
+			input: `package main
+
+struct Pipe[A any, B any](Input A, Done func(A) B)
+
+func main() {
+    val up = true
+    val p = Pipe(Input = 5, Done = if (up) (x) => x + 1 else (x) => x)
+    Println(p.Done(p.Input))
+}`,
+			contains: []string{"Pipe[int, int]{", "func() func(int) int {"},
+		},
+		{
+			name: "match in a generic struct constructor",
+			input: `package main
+
+struct Pipe[A any, B any](Input A, Done func(A) B)
+
+func main() {
+    val up = true
+    val p = Pipe(Input = 5, Done = up match {
+        case true => (x) => x * 2
+        case _ => (x) => x
+    })
+    Println(p.Done(p.Input))
+}`,
+			contains: []string{"Pipe[int, int]{", "func(obj bool) func(int) int {"},
+		},
+		{
+			name: "if-expression in a generic sealed-variant constructor",
+			input: `package main
+
+sealed type Job[A any, B any] {
+    case Run(Input A, Done func(A) B)
+    case Stop()
+}
+
+func runJob(j Job[int, int]) int = j match {
+    case Run(i, d) => d(i)
+    case Stop() => 0
+}
+
+func main() {
+    val up = true
+    Println(runJob(Run(Input = 5, Done = if (up) (x) => x + 3 else (x) => x)))
+}`,
+			contains: []string{"Run[int, int]{}.Apply(", "func() func(int) int {"},
+		},
+		{
+			name: "if-expression for a generic function's partly bound parameter",
+			input: `package main
+
+func Apply[T any, R any](v T, f func(T) R) R = f(v)
+
+func main() {
+    val up = true
+    Println(Apply(5, if (up) (x) => x + 1 else (x) => x - 1))
+}`,
+			contains: []string{"func() func(int) int {"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "unbound_branch_test.gala")
+			require.NoError(t, err)
+			body := out[strings.Index(out, "func main()"):]
+			for _, want := range tc.contains {
+				assert.Contains(t, body, want)
+			}
+			assert.NotContains(t, body, "any", "an unresolved slot type leaked into the IIFE")
+			assert.NotRegexp(t, `func\(int\) [A-Z]\b`, body, "a type parameter leaked into the IIFE")
+		})
+	}
+}
+
+// TestStructTypeArgsFromGenericFields covers a generic struct literal whose
+// type argument is bound only through fields of generic type (a sealed type, a
+// generic struct, a nested generic struct value), or, failing that, by the
+// slot type; an undeterminable one is a GALA error, never an uninstantiated
+// `Holder{...}` literal.
+func TestStructTypeArgsFromGenericFields(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	decls := `package main
+
+sealed type Mode[T any] {
+    case ByInt(Fn func(int) T)
+    case ByText(Fn func(string) T)
+}
+
+struct Inner[T any](X T)
+
+struct Holder[T any](Md Mode[T], In Inner[T])
+
+struct Outer[T any](H Holder[T])
+
+struct Tag[T any](N int)
+
+`
+	cases := []struct {
+		name     string
+		body     string
+		contains []string
+	}{
+		{
+			name:     "named, sealed-variant and generic-struct fields",
+			body:     `val h = Holder(Md = ByInt[int]((x) => x), In = Inner(X = 7))`,
+			contains: []string{"Holder[int]{"},
+		},
+		{
+			name:     "positional",
+			body:     `val h = Holder(ByInt[int]((x) => x), Inner(7))`,
+			contains: []string{"Holder[int]{"},
+		},
+		{
+			name: "nested generic struct value",
+			body: `val h = Holder(Md = ByInt[int]((x) => x), In = Inner(X = 7))
+    val o = Outer(H = h)
+    val o2 = Outer(h)`,
+			contains: []string{"Outer[int]{"},
+		},
+		{
+			name:     "type argument from the slot type",
+			body:     `val g Tag[string] = Tag(N = 1)`,
+			contains: []string{"Tag[string]{"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(decls+"func main() {\n    "+tc.body+"\n    Println(\"ok\")\n}", "generic_field_test.gala")
+			require.NoError(t, err)
+			body := out[strings.Index(out, "func main()"):]
+			for _, want := range tc.contains {
+				assert.Contains(t, body, want)
+			}
+			assert.NotRegexp(t, `\b(Holder|Outer|Tag)\{`, body, "an uninstantiated generic literal was emitted")
+		})
+	}
+
+	_, err := trans.Transpile(decls+"func main() {\n    val g = Tag(N = 1)\n    Println(g.N)\n}", "generic_field_test.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot infer type argument T of generic struct Tag")
+}
+
+// TestAnnotatedLambdaResultIsItsReturnSlot pins that an explicit result type on
+// a lambda is what a `return` in its body is lowered against.
+func TestAnnotatedLambdaResultIsItsReturnSlot(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	out, err := trans.Transpile(`package main
+
+func main() {
+    val g = (n int) func(int) int => {
+        return if (n > 0) (x) => x + n else (x) => x - n
+    }
+    Println(g(4)(1))
+}`, "annotated_lambda_test.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "return func(x int) int {")
+}
+
 // TestIfBetweenThunkReturningFunctions pins the function-type encoding for a
 // function that returns a zero-parameter function: `func(int) func() int`, not
 // `func(int, void) int`.

@@ -43,4 +43,4 @@ entirely, which is exactly the distinction that matters.
 
 **Related work.** Introduced as B6 in PR #166 via `validateSealedVariantArity`
 in `match.go`. The arity check runs alongside the exhaustiveness check
-(GALA-E0002) during `transformMatchClauses`.
+(GALA-E0002) during `buildMatchExpressionFromClauses` in `postfix.go`.

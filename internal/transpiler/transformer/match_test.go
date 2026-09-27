@@ -675,7 +675,7 @@ func resolve(opt std.Option[int]) int {
 		},
 		{
 			// Regression: panic on the default `case _` arm. Exercises the
-			// distinct default-case lowering path in transformMatchClauses.
+			// distinct default-case lowering path in buildMatchExpressionFromClauses.
 			name: "Panic as default match arm emits bare statement",
 			input: `package main
 

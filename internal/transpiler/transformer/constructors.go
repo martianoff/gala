@@ -133,7 +133,9 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 //  1. The top of `expectedArgTypes` — the slot type at the immediately
 //     enclosing call argument / val-decl / tuple-element position. This
 //     drives bidirectional inference for the call-site case
-//     (`f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`).
+//     (`f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`). It is there
+//     because lowerAgainst pushes a pushing slot's type (argSlot) for a plain
+//     expression such as a tuple literal; a result slot does not push.
 //  2. `currentFuncReturnType` — the enclosing function's declared return
 //     type, used when the tuple literal is the value at a function return.
 //
@@ -182,7 +184,7 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 		if i < len(perElemExpected) {
 			expected = perElemExpected[i]
 		}
-		expr, err := t.lowerAgainst(eCtx, expected, true)
+		expr, err := t.lowerAgainst(eCtx, argSlot(expected), true)
 		if err != nil {
 			return nil, err
 		}

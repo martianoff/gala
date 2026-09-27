@@ -17,7 +17,7 @@ import (
 
 // This file contains function/method call transformation logic extracted from expressions.go
 // Functions: applyCallSuffix, transformCallWithArgsCtx, handleNamedArgsCall,
-//            transformArgumentWithExpectedType, inferTypeArgsFromApply,
+//            lowerArg, transformArgument, inferTypeArgsFromApply,
 //            isGenericMethodName, isGenericMethodWithImports, isMethodGenericViaTypeMeta
 
 // forbiddenGoBuiltinSuggestions maps each bare Go builtin that GALA forbids in
@@ -600,7 +600,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			// Skip lambda/partial args — can't infer types from them.
 			// Also skip placeholder-lambda expressions (L4): they contain `_`
 			// identifiers that only make sense once rewritten as a lambda,
-			// which happens later in transformArgumentWithExpectedType.
+			// which happens later in transformArgument.
 			if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil || t.findPartialFunctionInExpression(exprCtx) != nil {
 				continue
 			}
@@ -749,11 +749,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			return true, nil, cerr
 		}
 		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
+		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
+		if aerr != nil {
+			return true, nil, aerr
+		}
 		if lambdaCtx != nil {
-			expr, lerr := t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-			if lerr != nil {
-				return true, nil, lerr
-			}
 			// Harvest newly-inferred method type params from the
 			// lambda's actual result/param types and commit to typeSubst.
 			if methodMeta != nil && typeMeta != nil && i < len(methodMeta.ParamTypes) {
@@ -774,14 +774,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					}
 				}
 			}
-			mArgs = append(mArgs, expr)
-		} else {
-			expr, aerr := t.transformArgumentWithExpectedType(exprCtx, expectedType)
-			if aerr != nil {
-				return true, nil, aerr
-			}
-			mArgs = append(mArgs, expr)
 		}
+		mArgs = append(mArgs, expr)
 	}
 
 	// Record "any" for any method type param GALA could not resolve from the
@@ -1102,13 +1096,7 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		if isSpread {
 			hasSpread = true
 		}
-		var expr ast.Expr
-		var err error
-		if lambdaCtx != nil {
-			expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, transpiler.NilType{})
-		} else {
-			expr, err = t.transformArgumentWithExpectedType(exprCtx, transpiler.NilType{})
-		}
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, transpiler.NilType{}, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1147,13 +1135,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		// unresolved type params in return types.
 		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 		expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
-		var expr ast.Expr
-		var err error
-		if lambdaCtx != nil {
-			expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-		} else {
-			expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-		}
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1198,13 +1180,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
-			var expr ast.Expr
-			var err error
-			if lambdaCtx != nil {
-				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-			} else {
-				expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-			}
+			expr, err := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
 			if err != nil {
 				return nil, err
 			}
@@ -1215,13 +1191,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
-			var expr ast.Expr
-			var err error
-			if lambdaCtx != nil {
-				expr, err = t.transformLambdaArgWithExpectedType(lambdaCtx, expectedType)
-			} else {
-				expr, err = t.transformArgumentWithExpectedType(exprCtx, expectedType)
-			}
+			expr, err := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
 			if err != nil {
 				return nil, err
 			}
@@ -1263,6 +1233,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	fun ast.Expr,
 	typeName string,
 	args []ast.Expr,
+	slotType transpiler.Type,
 	line, col int,
 ) (handled bool, result ast.Expr, err error) {
 	// Tuple → TupleN arity rewrite for the bare positional constructor.
@@ -1314,7 +1285,10 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// Infer type args from positional arg types when the call site omitted
 		// them. Without this, a generic struct like `Tuple(a, b)` emits
 		// `Tuple{V1: a, V2: b}` — Go rejects the bare generic type.
-		typedFun := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args)
+		typedFun, err := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args, slotType, line, col)
+		if err != nil {
+			return true, nil, t.preferMissingFieldError(err, typeName, resolvedTypeName, fields, func(i int, _ string) bool { return i < len(args) }, line, col)
+		}
 		lit, err := t.buildStructLiteral(typedFun, typeName, resolvedTypeName, fields, args, false, line, col)
 		return true, lit, err
 	}
@@ -1334,7 +1308,11 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// type-used-as-constructor check rather than dropping the surplus.
 		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 && len(args) <= len(fields) &&
 			!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
-			lit, err := t.buildStructLiteral(fun, typeName, resolvedTypeName, fields, args, true, line, col)
+			typedFun, err := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args, slotType, line, col)
+			if err != nil {
+				return true, nil, t.preferMissingFieldError(err, typeName, resolvedTypeName, fields, func(i int, _ string) bool { return i < len(args) }, line, col)
+			}
+			lit, err := t.buildStructLiteral(typedFun, typeName, resolvedTypeName, fields, args, true, line, col)
 			return true, lit, err
 		}
 		return false, nil, nil
@@ -1594,10 +1572,11 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	return positional, named, hasSpread, nil
 }
 
-// lowerFunctionArg lowers one argument of a regular call against its slot's
-// expected type. An argument that is (or holds) a lambda for a generic struct
-// constructor first has the constructor's still-unbound type parameters masked
-// out of that type (see genericCtorLambdaExpectation).
+// lowerFunctionArg lowers one argument of a regular call (see lowerArg). For a
+// generic struct or sealed-variant constructor, an argument whose lowering
+// depends on its slot type (a lambda, or an if/match of lambdas) first has the
+// constructor's still-unbound type parameters masked out of that type (see
+// genericCtorLambdaExpectation).
 func (t *galaASTTransformer) lowerFunctionArg(
 	exprCtx grammar.IExpressionContext,
 	lambdaCtx *grammar.LambdaExpressionContext,
@@ -1605,14 +1584,10 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	callCtx functionCallContext,
 ) (ast.Expr, error) {
 	strict := false
-	if lambdaCtx != nil || t.findLambdaInExpression(exprCtx) != nil {
+	if lambdaCtx != nil || t.needsExpectedType(exprCtx) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
-	if lambdaCtx != nil {
-		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expected)
-		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
-	}
-	return t.transformArgument(exprCtx, expected, strict)
+	return t.lowerArg(exprCtx, lambdaCtx, expected, strict)
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -1666,11 +1641,10 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	// companion struct, but the per-field types live on the parent sealed type's
 	// SealedVariants; the call's type arguments (explicit or inferred, see
 	// collectFunctionCallContext) are substituted as for a generic struct.
-	sv, _, err := t.sealedVariantForCall(fun, line, col)
-	if err != nil {
-		return transpiler.NilType{}, err
+	if callCtx.variantErr != nil {
+		return transpiler.NilType{}, callCtx.variantErr
 	}
-	if sv != nil {
+	if sv := callCtx.variant; sv != nil {
 		for i, fieldName := range sv.FieldNames {
 			if fieldName == argName && i < len(sv.FieldTypes) {
 				if transpiler.IsUnusable(sv.FieldTypes[i]) {
@@ -1815,6 +1789,15 @@ type functionCallContext struct {
 	// type arguments known before its lambdas are lowered (structCtorTypeSubst).
 	structTypeParams []string
 	structTypeSubst  map[string]string
+	// The sealed variant the call constructs and its parent (nil otherwise),
+	// and the lookup's ambiguity error, reported for a named argument.
+	variant       *transpiler.SealedVariant
+	variantParent *transpiler.TypeMetadata
+	variantErr    error
+	// slotType is the type of the slot the call's value fills, when pushed
+	// (see lowerAgainst): it supplies a generic struct literal's type
+	// arguments that its fields leave undetermined.
+	slotType transpiler.Type
 	// applyMethodMeta is set when the call site is of the form `Type[T](args)`
 	// and Type has an Apply method. It lets the argument-transformation pass
 	// see the Apply method's expected parameter types (with type-param
@@ -1911,13 +1894,14 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 		}
 	}
 
-	// Sealed-variant case constructor of a generic sealed type: the same
-	// two-phase inference as a generic struct, over the variant's fields. (A
-	// variant is a companion with an Apply method.)
-	if ctx.applyMethodMeta == nil {
-		return ctx
+	// Sealed-variant case constructor, looked up once per call (a function or
+	// a struct with fields is never one). A generic sealed type gets the same
+	// two-phase inference as a generic struct, over the variant's fields.
+	if ctx.applyMethodMeta != nil && ctx.funcMeta == nil && len(ctx.structFieldExpectedTypes) == 0 {
+		line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+		ctx.variant, ctx.variantParent, ctx.variantErr = t.sealedVariantForCall(fun, line, col)
 	}
-	if sv, parent, _ := t.sealedVariantForCall(fun, 0, 0); sv != nil && parent != nil && len(parent.TypeParams) > 0 {
+	if sv, parent := ctx.variant, ctx.variantParent; sv != nil && parent != nil && len(parent.TypeParams) > 0 {
 		ctx.structTypeParams = parent.TypeParams
 		ctx.structTypeSubst = t.structCtorTypeSubst(fun, parent.TypeParams, sv.FieldNames, sv.FieldTypes, argListCtx)
 		if len(ctx.applyTypeSubst) == 0 {
@@ -2065,7 +2049,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		return nil, err
 	}
 
-	// Consume the expected-type hint (set by transformArgumentWithExpectedType
+	// Consume the expected-type hint (pushed by lowerAgainst
 	// for the immediately-enclosing call). Removed eagerly so nested arg
 	// transforms inside this call don't pick up the outer call's expectation
 	// (B1).
@@ -2129,6 +2113,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 5: Regular function call context gathering ---
 	callCtx := t.collectFunctionCallContext(fun, argListCtx)
+	callCtx.slotType = pendingExpected
 
 	// --- Section 6: Argument transformation ---
 	// Walks the argument list, classifying each arg as positional or named,
@@ -2143,7 +2128,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		}
-		return t.handleNamedArgsCall(fun, args, namedArgs, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
 	// --- Section 8: Default-arg injection for under-filled positional calls ---
@@ -2163,7 +2148,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 10: Companion Apply / positional struct construction ---
 	if typeName != "" {
-		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args,
+		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args, pendingExpected,
 			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
@@ -2227,7 +2212,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 // Keeping the body a dispatcher matches the established A1 pattern for
 // `transformCallWithArgsCtx` in this file: the numbered sections map to
 // the helpers below and are easy to navigate.
-func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, callCtx functionCallContext, line, col int) (ast.Expr, error) {
 	// 1. Extract the type name for struct field lookup.
 	typeName, qualifiedName := extractTypeNameFromExpr(fun)
 
@@ -2251,11 +2236,11 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return nil, ferr
 			}
 			if found {
-				return buildSealedVariantApplyCall(t.inferVariantTypeArgs(fun, namedArgs, line, col), variantFieldNames, namedArgs), nil
+				return buildSealedVariantApplyCall(t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs), variantFieldNames, namedArgs), nil
 			}
 		}
 		// 3. Regular GALA struct construction with named args.
-		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, line, col)
+		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, callCtx.slotType, line, col)
 	}
 
 	// 4. Go-imported type (direct or dot-imported).
@@ -2326,14 +2311,13 @@ func decodeGenericBase(x ast.Expr) (string, string) {
 // with named arguments and no explicit type arguments, inferred from the
 // argument values against the variant's field types. It returns fun unchanged
 // when inference does not apply or cannot bind every type parameter.
-func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, namedArgs map[string]ast.Expr, line, col int) ast.Expr {
+func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.SealedVariant, parent *transpiler.TypeMetadata, namedArgs map[string]ast.Expr) ast.Expr {
 	switch fun.(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
 		return fun
 	}
-	sv, parent, err := t.sealedVariantForCall(fun, line, col)
-	if err != nil || sv == nil || parent == nil || len(parent.TypeParams) == 0 {
+	if sv == nil || parent == nil || len(parent.TypeParams) == 0 {
 		return fun
 	}
 	inferred := make(map[string]transpiler.Type, len(parent.TypeParams))
@@ -2384,12 +2368,25 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 	typeName, resolvedTypeName string,
 	fields []string,
 	namedArgs map[string]ast.Expr,
+	slotType transpiler.Type,
 	line, col int,
 ) (ast.Expr, error) {
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
 
-	typeExpr := t.inferTypeArgsFromNamedArgs(fun, typeName, resolvedTypeName, namedArgs, fieldTypes)
+	// A named argument matching no field was silently dropped, so the slip
+	// surfaced only as the missing field it was meant to supply. Report it as
+	// itself — before the missing-field check, which would otherwise name the
+	// field the author thought they had just written, and before type-argument
+	// inference, which would blame the type argument that field was to bind.
+	if err := t.checkUnknownStructFields(typeName, resolvedTypeName, fields, namedArgs, line, col); err != nil {
+		return nil, err
+	}
+	provided := func(_ int, fieldName string) bool { _, ok := namedArgs[fieldName]; return ok }
+	typeExpr, err := t.inferTypeArgsFromNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, slotType, line, col)
+	if err != nil {
+		return nil, t.preferMissingFieldError(err, typeName, resolvedTypeName, fields, provided, line, col)
+	}
 	typeArgSubst := t.structTypeArgSubst(typeExpr, resolvedTypeName)
 
 	var elts []ast.Expr
@@ -2413,21 +2410,10 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: valExpr})
 	}
 
-	// A named argument matching no field was silently dropped, so the slip
-	// surfaced only as the missing field it was meant to supply. Report it as
-	// itself — and before the missing-field check, which would otherwise name
-	// the field the author thought they had just written.
-	if err := t.checkUnknownStructFields(typeName, resolvedTypeName, fields, namedArgs, line, col); err != nil {
-		return nil, err
-	}
-
 	// Fields the call site left out take their declared default; one with no
 	// default is required, and omitting it is an error rather than a silent
 	// Go zero value. See struct_defaults.go.
-	defaulted, err := t.fillOmittedStructFields(
-		typeName, resolvedTypeName, fields,
-		func(_ int, fieldName string) bool { _, ok := namedArgs[fieldName]; return ok },
-		typeArgSubst, line, col)
+	defaulted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, typeArgSubst, line, col)
 	if err != nil {
 		return nil, err
 	}
@@ -2436,115 +2422,125 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 	return &ast.CompositeLit{Type: typeExpr, Elts: elts}, nil
 }
 
-// inferTypeArgsFromPositionalArgs is the positional-args counterpart of
-// inferTypeArgsFromNamedArgs. It returns a type expression with all
-// generic type parameters filled in from the types of the positional
-// arg values, or returns `fun` verbatim if inference does not apply or
-// cannot complete. Inference applies only when `fun` is a bare Ident or
-// SelectorExpr (no explicit type args in the source), and the underlying
-// type declares type parameters. The fields slice gives the positional
-// index → field-name mapping so we can look up each field's declared
-// type and check whether it is a type parameter to fill in.
+// inferTypeArgsFromPositionalArgs returns the literal type for a positional
+// generic struct construction; see structLiteralType. fields gives the
+// position → field-name mapping.
 func (t *galaASTTransformer) inferTypeArgsFromPositionalArgs(
 	fun ast.Expr,
 	typeName, resolvedTypeName string,
 	fields []string,
 	args []ast.Expr,
-) ast.Expr {
-	switch fun.(type) {
-	case *ast.Ident, *ast.SelectorExpr:
-		// Eligible for inference.
-	default:
-		return fun
-	}
-
-	typeMeta := t.getTypeMeta(resolvedTypeName)
-	if typeMeta == nil || len(typeMeta.TypeParams) == 0 {
-		return fun
-	}
-
-	// An alias standing in for an instantiated generic — `type IntPair
-	// Pair[int]` — already names the instantiation, so adding type arguments
-	// to the alias itself would emit `IntPair[int]`, which Go rejects because
-	// the alias is not generic.
-	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
-		return fun
-	}
-
+	slotType transpiler.Type,
+	line, col int,
+) (ast.Expr, error) {
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
-	if fieldTypes == nil {
-		return fun
-	}
-
-	inferred := make(map[string]transpiler.Type, len(typeMeta.TypeParams))
-	for i, fieldName := range fields {
-		if i >= len(args) {
-			break
-		}
-		if fieldType, ok := fieldTypes[fieldName]; ok {
-			t.unifyFieldArgForInference(fieldType, args[i], typeMeta.TypeParams, inferred)
-		}
-	}
-	inferredTypeArgs := t.orderedTypeArgExprs(typeMeta.TypeParams, inferred)
-	if inferredTypeArgs == nil {
-		return fun // incomplete inference — let downstream stages handle it
-	}
-
-	// Use `fun` itself as the base — it is already the correctly qualified
-	// identifier shape (bare Ident when dot-imported, SelectorExpr otherwise),
-	// so we don't need to reconstruct from `typeName` (which may carry the
-	// `std.` prefix and produce a malformed `std.std.Tuple` literal).
-	if len(inferredTypeArgs) == 1 {
-		return &ast.IndexExpr{X: fun, Index: inferredTypeArgs[0]}
-	}
-	return &ast.IndexListExpr{X: fun, Indices: inferredTypeArgs}
+	return t.structLiteralType(fun, typeName, resolvedTypeName, slotType, line, col,
+		func(typeParams []string, inferred map[string]transpiler.Type) {
+			for i, fieldName := range fields {
+				if i >= len(args) {
+					break
+				}
+				if fieldType, ok := fieldTypes[fieldName]; ok {
+					t.unifyFieldArgForInference(fieldType, args[i], typeParams, inferred)
+				}
+			}
+		})
 }
 
-// inferTypeArgsFromNamedArgs returns a type expression with all generic
-// type parameters filled in from the types of the named-arg values, or
-// returns `fun` verbatim if inference does not apply or cannot complete.
-// Inference applies only when `fun` is a bare Ident or SelectorExpr (no
-// explicit type args in the source), and the underlying type declares
-// type parameters.
+// inferTypeArgsFromNamedArgs returns the literal type for a named-argument
+// generic struct construction; see structLiteralType.
 func (t *galaASTTransformer) inferTypeArgsFromNamedArgs(
 	fun ast.Expr,
 	typeName, resolvedTypeName string,
+	fields []string,
 	namedArgs map[string]ast.Expr,
-	fieldTypes map[string]transpiler.Type,
-) ast.Expr {
+	slotType transpiler.Type,
+	line, col int,
+) (ast.Expr, error) {
+	fieldTypes := t.structFieldTypes[resolvedTypeName]
+	return t.structLiteralType(fun, typeName, resolvedTypeName, slotType, line, col,
+		func(typeParams []string, inferred map[string]transpiler.Type) {
+			for _, fieldName := range fields {
+				if val, ok := namedArgs[fieldName]; ok {
+					if fieldType, ok := fieldTypes[fieldName]; ok {
+						t.unifyFieldArgForInference(fieldType, val, typeParams, inferred)
+					}
+				}
+			}
+		})
+}
+
+// preferMissingFieldError returns the omitted-required-field error for a
+// construction whose type arguments could not be inferred, when there is one:
+// the missing field is often the one that would have bound them. Otherwise it
+// returns inferErr.
+func (t *galaASTTransformer) preferMissingFieldError(
+	inferErr error,
+	typeName, resolvedTypeName string,
+	fields []string,
+	provided func(i int, fieldName string) bool,
+	line, col int,
+) error {
+	if _, missingErr := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, nil, line, col); missingErr != nil {
+		return missingErr
+	}
+	return inferErr
+}
+
+// structLiteralType adds type arguments to a generic struct literal's type
+// when the call site wrote none: those the field values determine (bind), then
+// any left from slotType when it names the same struct (`val t Tag[int] =
+// Tag(N = 1)`). A type parameter still undetermined is an error rather than an
+// uninstantiated `Box{...}` literal, which Go rejects. fun is returned as is
+// when it already has type arguments, names a non-generic type, or is an alias
+// of an instantiated generic (`type IntPair Pair[int]`).
+func (t *galaASTTransformer) structLiteralType(
+	fun ast.Expr,
+	typeName, resolvedTypeName string,
+	slotType transpiler.Type,
+	line, col int,
+	bind func(typeParams []string, inferred map[string]transpiler.Type),
+) (ast.Expr, error) {
 	switch fun.(type) {
 	case *ast.Ident, *ast.SelectorExpr:
-		// Eligible for inference.
 	default:
-		return fun
+		return fun, nil
 	}
-
 	typeMeta := t.getTypeMeta(resolvedTypeName)
 	if typeMeta == nil || len(typeMeta.TypeParams) == 0 {
-		return fun
+		return fun, nil
+	}
+	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
+		return fun, nil
 	}
 
 	inferred := make(map[string]transpiler.Type, len(typeMeta.TypeParams))
-	for fieldName, fieldType := range fieldTypes {
-		if val, ok := namedArgs[fieldName]; ok {
-			t.unifyFieldArgForInference(fieldType, val, typeMeta.TypeParams, inferred)
+	bind(typeMeta.TypeParams, inferred)
+	if gen, ok := slotType.(transpiler.GenericType); ok && len(gen.Params) == len(typeMeta.TypeParams) &&
+		t.resolveStructTypeName(gen.Base.String()) == resolvedTypeName {
+		for i, tp := range typeMeta.TypeParams {
+			if _, bound := inferred[tp]; !bound {
+				inferred[tp] = gen.Params[i]
+			}
 		}
 	}
-	inferredTypeArgs := t.orderedTypeArgExprs(typeMeta.TypeParams, inferred)
-	if inferredTypeArgs == nil {
-		return fun // incomplete inference — let downstream stages handle it
-	}
 
-	var baseExpr ast.Expr
-	if sel, isSel := fun.(*ast.SelectorExpr); isSel {
-		baseExpr = &ast.SelectorExpr{X: sel.X, Sel: ast.NewIdent(typeName)}
-	} else {
-		baseExpr = ast.NewIdent(typeName)
+	typeArgs := t.orderedTypeArgExprs(typeMeta.TypeParams, inferred)
+	if typeArgs == nil {
+		var missing []string
+		for _, tp := range typeMeta.TypeParams {
+			if typ, ok := inferred[tp]; !ok || transpiler.IsUnusable(typ) {
+				missing = append(missing, tp)
+			}
+		}
+		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+			"cannot infer type argument %s of generic struct %s from its fields; write it explicitly, e.g. `%s[%s](...)`",
+			strings.Join(missing, ", "), typeName, typeName, strings.Join(typeMeta.TypeParams, ", ")))
 	}
-	if len(inferredTypeArgs) == 1 {
-		return &ast.IndexExpr{X: baseExpr, Index: inferredTypeArgs[0]}
+	if len(typeArgs) == 1 {
+		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}, nil
 	}
-	return &ast.IndexListExpr{X: baseExpr, Indices: inferredTypeArgs}
+	return &ast.IndexListExpr{X: fun, Indices: typeArgs}, nil
 }
 
 // unifyFieldArgForInference binds the struct type parameters that the value
@@ -3135,8 +3131,21 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 	return result, nil
 }
 
-func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
-	return t.transformArgument(exprCtx, expectedType, false)
+// lowerArg lowers one call argument against its slot's expected type: a direct
+// lambda (lambdaCtx, from extractArgContent) through
+// transformLambdaWithExpectedType, anything else through transformArgument.
+// strict is the untyped-lambda-parameter policy (see transformArgument).
+func (t *galaASTTransformer) lowerArg(
+	exprCtx grammar.IExpressionContext,
+	lambdaCtx *grammar.LambdaExpressionContext,
+	expected transpiler.Type,
+	strict bool,
+) (ast.Expr, error) {
+	if lambdaCtx != nil {
+		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expected)
+		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+	}
+	return t.transformArgument(exprCtx, expected, strict)
 }
 
 // transformArgument lowers an expression standing in a slot of expectedType.
@@ -3166,7 +3175,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// Check mode: an if-expression or match lowers its branches against the
 	// slot type; anything else sees it pushed for downward inference.
-	expr, err := t.lowerAgainst(exprCtx, expectedType, strict)
+	expr, err := t.lowerAgainst(exprCtx, argSlot(expectedType), strict)
 	if err != nil {
 		return nil, err
 	}
@@ -3334,14 +3343,6 @@ func (t *galaASTTransformer) liftToImmutableForArg(expr ast.Expr, expectedType t
 		},
 		Args: []ast.Expr{expr},
 	}
-}
-
-// transformLambdaArgWithExpectedType transforms a direct lambda argument.
-// When the grammar's argument rule matches lambdaExpression directly instead of going through
-// pattern -> expression -> primaryExpr -> lambdaExpression, we get the lambda context directly.
-func (t *galaASTTransformer) transformLambdaArgWithExpectedType(lambdaCtx *grammar.LambdaExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
-	expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expectedType)
-	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, false)
 }
 
 func (t *galaASTTransformer) inferTypeArgsFromApply(

@@ -30,7 +30,29 @@ func runTask(s Task[int]) int = s match {
     case Skip() => 0
 }
 
+struct Pipe[A any, B any](Input A, Done func(A) B)
+
+sealed type Mode[T any] {
+    case ByInt(Fn func(int) T)
+    case ByText(Fn func(string) T)
+}
+
+struct Inner[T any](X T)
+
+struct Holder[T any](Md Mode[T], In Inner[T])
+
+struct Outer[T any](H Holder[T])
+
+struct Tag[T any](N int)
+
+func runMode(m Mode[int]) int = m match {
+    case ByInt(f) => f(1)
+    case ByText(f) => f("x")
+}
+
 func apply(f func(int) int, x int) int = f(x)
+
+func applyTo[T any, R any](v T, f func(T) R) R = f(v)
 
 func thunk(n int) func() int = () => n * 2
 
@@ -104,4 +126,25 @@ func main() {
     Println(abs(-8))
     Println(absOrSelf(true)(-9))
     Println(pickThunk(7)())
+
+    // Branch lambdas whose slot still has an unbound type parameter, and a
+    // lambda whose annotated result type is its return slot
+    val pipe = Pipe(Input = 5, Done = if (up) (x) => x + 1 else (x) => x)
+    val offset = (n int) func(int) int => {
+        return if (n > 0) (x) => x + n else (x) => x - n
+    }
+    Println(pipe.Done(pipe.Input))
+    Println(applyTo(5, if (up) (x) => x * 7 else (x) => x))
+    Println(offset(4)(1))
+
+    // Struct type arguments bound through fields of generic type, and from
+    // the slot type when no field binds them
+    val holder = Holder(Md = ByInt[int]((x) => x + 10), In = Inner(X = 7))
+    val outer = Outer(H = holder)
+    val holder2 = Holder(ByInt[int]((x) => x + 20), Inner(8))
+    val outer2 = Outer(holder2)
+    val tag Tag[string] = Tag(N = 9)
+    Println(runMode(outer.H.Md), outer.H.In.X)
+    Println(runMode(outer2.H.Md), outer2.H.In.X)
+    Println(tag.N)
 }

@@ -161,16 +161,9 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
 		var results []ast.Expr
 		if retCtx.Expression() != nil {
-			var expr ast.Expr
-			var err error
 			// A lambda, if-expression or match takes its types from the
 			// enclosing function's return type.
-			retExpr := retCtx.Expression()
-			if t.needsExpectedType(retExpr) {
-				expr, err = t.lowerAgainst(retExpr, t.currentFuncReturnType, false)
-			} else {
-				expr, err = t.transformExpression(retExpr)
-			}
+			expr, err := t.lowerAgainst(retCtx.Expression(), resultSlot(t.currentFuncReturnType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -432,7 +425,7 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 	t.blockLastStmtIsValue = false
 	defer func() { t.blockLastStmtIsValue = lastStmtIsValue }()
 	lastValueExpected := t.blockLastValueExpected
-	t.blockLastValueExpected = nil
+	t.blockLastValueExpected = slot{}
 	defer func() { t.blockLastValueExpected = lastValueExpected }()
 
 	block := &ast.BlockStmt{}
@@ -503,8 +496,9 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		var stmt ast.Stmt
 		var err error
 		if valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext)); isTrailing && lastStmtIsValue &&
-			!transpiler.IsUnusable(lastValueExpected) && t.needsExpectedType(valueExpr) {
-			// The block's value fills a typed slot: lower it against that type.
+			!transpiler.IsUnusable(lastValueExpected.typ) && t.needsExpectedType(valueExpr) {
+			// The block's value fills a typed slot: a lambda, if or match tail is
+			// lowered against it. A plain tail stays an ordinary statement.
 			var expr ast.Expr
 			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
@@ -519,7 +513,7 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		// A statement-position match with a user-written `return X` inside an
 		// arm body cannot be lowered as an IIFE (the bare return that
 		// stripReturnStatements emits only exits the synthetic lambda, leaving
-		// any enclosing for-loop spinning forever). transformMatchExpression
+		// any enclosing for-loop spinning forever). buildMatchExpressionFromClauses
 		// detects this case, builds the body as an inlined block, and stores
 		// it in pendingMatchStmtBlock; we replace the placeholder ExprStmt
 		// with the inlined block here so the user's `return X` becomes a real

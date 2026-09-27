@@ -170,22 +170,23 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// When a match expression inside a lambda can't infer branch types (e.g., branches
 	// call methods from pure Go packages), it falls back to the enclosing return type.
 	prevFuncReturnType := t.currentFuncReturnType
+	// An explicit result annotation counts (retType is it, not the caller's).
 	if isConcreteExpectedType {
-		t.currentFuncReturnType = t.astTypeToTranspilerType(expectedRetType)
+		t.currentFuncReturnType = t.astTypeToTranspilerType(retType)
 	}
 	defer func() { t.currentFuncReturnType = prevFuncReturnType }()
 
 	// The body is lowered in a fresh context: its expected type is this
 	// lambda's result type, never the slot type the lambda itself fills.
-	var bodyExpected transpiler.Type
+	var bodySlot slot
 	if retType != nil && retType != ExpectedVoid {
 		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || !containsAny(retType) {
-			bodyExpected = rt
+			bodySlot = resultSlot(rt)
 		}
 	}
 
 	if ctx.Block() != nil {
-		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodyExpected)
+		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +195,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			retType = inferredRet
 		}
 	} else if ctx.Expression() != nil {
-		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodyExpected)
+		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
 			return nil, err
 		}
@@ -229,14 +230,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // when the expected return type is already concrete (caller keeps its own)
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
-func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodyExpected transpiler.Type) (*ast.BlockStmt, ast.Expr, error) {
+func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	// Signal to transformBlock that the lambda body's last expression is
 	// promoted to the implicit return when this lambda is value-returning.
 	// Without this, a trailing bare `match` whose value becomes the lambda's
 	// return would be marked statement-position and forced to void.
 	if !isVoidExpected {
 		t.blockLastStmtIsValue = true
-		t.blockLastValueExpected = bodyExpected
+		t.blockLastValueExpected = bodySlot
 	}
 	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
@@ -360,14 +361,8 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
 // Returns (body, inferredReturnType, error). Extracted from
 // transformLambdaWithExpectedType as part of A6.
-func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodyExpected transpiler.Type) (*ast.BlockStmt, ast.Expr, error) {
-	var expr ast.Expr
-	var err error
-	if t.needsExpectedType(ctx.Expression()) {
-		expr, err = t.lowerAgainst(ctx.Expression(), bodyExpected, true)
-	} else {
-		expr, err = t.transformExpression(ctx.Expression())
-	}
+func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+	expr, err := t.lowerAgainst(ctx.Expression(), bodySlot, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -940,10 +935,6 @@ func (t *galaASTTransformer) isNewImmutableCall(call *ast.CallExpr) bool {
 	}
 	return false
 }
-
-// transformArgumentWithExpectedType transforms an argument expression, using the expected
-// parameter type to properly type lambda expressions and partial function literals.
-// transformArgumentWithExpectedType moved to calls.go
 
 // findPartialFunctionInExpression traverses the expression tree to find a partial function literal
 func (t *galaASTTransformer) findPartialFunctionInExpression(exprCtx grammar.IExpressionContext) *grammar.PartialFunctionLiteralContext {
@@ -1542,7 +1533,7 @@ func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
 }
 
 // tryRewriteAsPlaceholderLambda is the L4 entry point called by
-// transformArgumentWithExpectedType. It returns (expr, handled, error):
+// transformArgument. It returns (expr, handled, error):
 //
 //	handled=false — the expression is not a placeholder lambda candidate;
 //	                caller should fall through to ordinary expression
