@@ -227,6 +227,14 @@ func TestListDistinct(t T) T {
     return Eq[int](t, distinct.Length(), 3)
 }
 
+// Distinct keeps the first occurrence of each element, in order (like Array.Distinct).
+func TestListDistinctKeepsFirstOccurrence(t T) T =
+    Eq(t, ListOf(3, 1, 3, 2, 1).Distinct().MkString(","), "3,1,2")
+
+// Slice clamps a negative start to 0 instead of widening the slice.
+func TestListSliceNegativeStart(t T) T =
+    Eq(t, ListOf(10, 20, 30, 40).Slice(-1, 2).MkString(","), "10,20")
+
 func TestListAppendAll(t T) T {
     val list1 = ListOf(1, 2)
     val list2 = ListOf(3, 4)

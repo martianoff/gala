@@ -129,6 +129,21 @@ gala_test(
     ],
 )
 
+# Differential / property tests against Go reference models (slices, maps).
+go_test(
+    name = "collection_mutable_differential_test",
+    size = "medium",
+    srcs = [
+        "map_set_differential_test.go",
+        "seq_differential_test.go",
+    ],
+    embed = [":collection_mutable"],
+    deps = [
+        "//internal/collprop",
+        "//std",
+    ],
+)
+
 # Performance benchmarks - GALA mutable collections
 gala_binary(
     name = "perf_gala",

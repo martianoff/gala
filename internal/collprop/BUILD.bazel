@@ -1,0 +1,10 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "collprop",
+    testonly = True,
+    srcs = ["collprop.go"],
+    importpath = "martianoff/gala/internal/collprop",
+    visibility = ["//:__subpackages__"],
+    deps = ["//std"],
+)

@@ -508,91 +508,88 @@ func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
     return result.Reverse()
 }
 
-// Distinct returns a new list with duplicate elements removed. O(n^2).
+// Distinct returns a new list with duplicate elements removed, keeping the first
+// occurrence of each element in its original position (like Array.Distinct). O(n^2).
 func (l List[T]) Distinct() List[T] {
-    if l.isEmpty {
-        return emptyList[T]()
+    // seen holds the kept elements in reverse order: O(1) prepends, one final Reverse.
+    var seen = emptyList[T]()
+    var current = l
+    for !current.isEmpty {
+        if !seen.Contains(current.head) {
+            seen = consList[T](current.head, seen)
+        }
+        current = *current.tail
     }
-    val tailDistinct = l.tail.Distinct()
-    if tailDistinct.Contains(l.head) {
-        return tailDistinct
-    }
-    return consList[T](l.head, tailDistinct)
+    return seen.Reverse()
 }
 
 // SplitAt splits the list at the given index.
 func (l List[T]) SplitAt(n int) Tuple[List[T], List[T]] = (l.Take(n), l.Drop(n))
 
 // Slice returns elements from index start (inclusive) to end (exclusive).
-func (l List[T]) Slice(start int, end int) List[T] = l.Drop(start).Take(end - start)
+// Out-of-range bounds are clamped to [0, Length()], as for Array.Slice.
+func (l List[T]) Slice(start int, end int) List[T] {
+    val from = if (start < 0) 0 else start
+    return l.Drop(from).Take(end - from)
+}
 
 // Span splits the list into a prefix/suffix pair according to a predicate.
-// The first element contains the longest prefix of elements that satisfy p.
+// The first element contains the longest prefix of elements that satisfy p. O(n).
 func (l List[T]) Span(p func(T) bool) Tuple[List[T], List[T]] {
-    // Build prefix iteratively
-    var prefix = emptyList[T]()
+    // Collect the prefix reversed (O(1) prepends) and reverse it once.
+    var reversedPrefix = emptyList[T]()
     var current = l
     for !current.isEmpty && p(current.head) {
-        prefix = prefix.Append(current.head)
+        reversedPrefix = consList[T](current.head, reversedPrefix)
         current = *current.tail
     }
     // current is now the suffix (first element that doesn't satisfy p)
-    return (prefix, current)
+    return (reversedPrefix.Reverse(), current)
 }
 
-// PartitionMap applies a function to each element and partitions results into Left and Right.
+// PartitionMap applies a function to each element and partitions results into Left and Right. O(n).
 func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A], List[B]] {
+    // Both sides are collected reversed (O(1) prepends) and reversed once.
     var lefts = emptyList[A]()
     var rights = emptyList[B]()
     var current = l
     for !current.isEmpty {
         f(current.head) match {
-            case Left(l) => lefts = lefts.Append(l)
-            case Right(r) => rights = rights.Append(r)
+            case Left(l) => lefts = consList[A](l, lefts)
+            case Right(r) => rights = consList[B](r, rights)
         }
         current = *current.tail
     }
-    return (lefts, rights)
+    return (lefts.Reverse(), rights.Reverse())
 }
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.
-//
-// A zero-valued List[T] returned by a missing-key map lookup has isEmpty=false
-// and tail=nil (Go zero values), so calling Append on it would dereference
-// a nil tail. Branch on MapContains and start a fresh emptyList for new keys.
-func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] {
-    var result = go_interop.MapEmpty[K, List[T]]()
-    var current = l
-    for !current.isEmpty {
-        val elem = current.head
-        val key = f(elem)
-        if go_interop.MapContains(result, key) {
-            result[key] = result[key].Append(elem)
-        } else {
-            result[key] = consList[T](elem, emptyList[T]())
-        }
-        current = *current.tail
-    }
-    return result
-}
+// Each group keeps the input order. f runs once per element, in order. O(n).
+func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] = l.GroupMap(f, (elem) => elem)
 
 // GroupMap partitions elements and maps values according to discriminator and value functions.
+// Each group keeps the input order. key and value run once per element, in order. O(n).
 //
-// See GroupBy for why we must branch on MapContains instead of reading the
-// zero-valued List[V] back from the map.
+// A zero-valued List[V] returned by a missing-key map lookup has isEmpty=false
+// and tail=nil (Go zero values), so it must never be used as a group: branch on
+// MapContains and start a fresh emptyList for new keys.
 func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
-    var result = go_interop.MapEmpty[K, List[V]]()
+    // Pass 1 evaluates key and value in input order, collecting the pairs
+    // reversed. Pass 2 prepends each pair onto its group: walking the reversed
+    // pairs leaves every group in input order, without an O(n) Append per element.
+    var pairs = emptyList[Tuple[K, V]]()
     var current = l
     for !current.isEmpty {
         val elem = current.head
-        val k = key(elem)
-        val v = value(elem)
-        if go_interop.MapContains(result, k) {
-            result[k] = result[k].Append(v)
-        } else {
-            result[k] = consList[V](v, emptyList[V]())
-        }
+        pairs = consList[Tuple[K, V]]((key(elem), value(elem)), pairs)
         current = *current.tail
+    }
+    var result = go_interop.MapEmpty[K, List[V]]()
+    for !pairs.isEmpty {
+        val k = pairs.head.V1
+        val group = if (go_interop.MapContains(result, k)) result[k] else emptyList[V]()
+        result[k] = consList[V](pairs.head.V2, group)
+        pairs = *pairs.tail
     }
     return result
 }
