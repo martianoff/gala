@@ -190,11 +190,16 @@ jobs:
         # goflags: gala-tui's root package peaks at ~10 GB RSS while compiling,
         # so its packages are compiled one at a time, as its own CI does.
         include:
+          # gala-tui main after its fix for the GALA-E0045 required-field check.
           - name: gala-tui
             repo: martianoff/gala-tui
-            ref: 175ee9d1564cef75fad555815079d3a17bd53c29
+            ref: 2ad65e1650cfac290c94367b8393b65e55a9efa5
             commands: test
             goflags: -p=1
+          # gala-server is pinned where it is until two things land: a gala-tui
+          # release it can require in place of v0.11.0 (which fails GALA-E0045),
+          # and the GALA fix for Go subpackage types imported by directory path.
+          # Bump it after both, the same way as above.
           - name: gala-server
             repo: martianoff/gala-server
             ref: c68fc093eb6b2598b1b3a4f2fe9e45404a0ce57f
