@@ -26,9 +26,10 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		return nil, nil
 	}
 
-	line, char := h.index(text).toByte(params.Position)
+	x := h.index(text)
+	line, char := x.toByte(params.Position)
 	locs, err := h.definitionLocations(uri, text, richAST, varTypeMap, line, char)
-	return h.locationsToWire(locs), err
+	return h.locationsToWire(uri, x, locs), err
 }
 
 // definitionLocations resolves the definition of the identifier at a byte
@@ -916,21 +917,25 @@ func (h *GalaHandler) References(ctx context.Context, params *lsp.ReferenceParam
 		return nil, nil
 	}
 
-	line, char := h.index(text).toByte(params.Position)
+	x := h.index(text)
+	line, char := x.toByte(params.Position)
 	word := wordAtPosition(text, line, char)
 	if word == "" {
 		return nil, nil
 	}
 
 	// The current document first, then every other file of its package, which
-	// is where a package-level symbol's declaration and other uses live.
-	locs := wordOccurrences(text, word, uri)
+	// is where a package-level symbol's declaration and other uses live. Each
+	// file's occurrences convert against the text they were found in.
+	locs := occurrencesToWire(x, wordOccurrences(text, word, uri))
 	for _, path := range h.packageFiles(uriToPath(uri), text) {
 		if src, ok := h.fileText(path); ok {
-			locs = append(locs, wordOccurrences(src, word, pathToURI(path))...)
+			if found := wordOccurrences(src, word, pathToURI(path)); len(found) > 0 {
+				locs = append(locs, occurrencesToWire(newLineIndex(src, x.enc), found)...)
+			}
 		}
 	}
-	return h.locationsToWire(locs), nil
+	return locs, nil
 }
 
 // wordOccurrences returns the location of every whole-word occurrence of word

@@ -104,10 +104,14 @@ func (h *GalaHandler) WorkspaceSymbol(ctx context.Context, params *lsp.Workspace
 		}
 		pkgName := sourcePackageName(text)
 		uri := lsp.DocumentURI(pathToURI(path))
-		x := newLineIndex(text, enc)
+		var x *lineIndex // built on the file's first match: most files have none
 		add := func(d declaration) {
 			if !strings.Contains(strings.ToLower(d.name), query) {
 				return
+			}
+			if x == nil {
+				idx := newLineIndex(text, enc)
+				x = &idx
 			}
 			container := d.container
 			if container == "" {

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -106,8 +107,51 @@ func TestLocationAtConvertsAnalyzerColumns(t *testing.T) {
 	// ANTLR column of `answer`: 13 code points precede it.
 	loc := h.locationAt(path, transpiler.SourcePos{Line: 1, Column: 13}, "answer")
 	require.NotNil(t, loc)
-	wire := h.locationsToWire([]lsp.Location{*loc})[0]
+	wire := h.locationsToWire("file:///other.gala", h.index(""), []lsp.Location{*loc})[0]
 	assert.Equal(t, 0, wire.Range.Start.Line)
 	assert.Equal(t, 14, wire.Range.Start.Character, "UTF-16: the emoji is two units")
 	assert.Equal(t, 20, wire.Range.End.Character)
+}
+
+// Locations in the request's own document convert against the text the
+// handler worked on, not a newer copy; a file that cannot be read keeps its
+// byte columns instead of collapsing to column 0.
+func TestLocationsToWireUsesSnapshotAndKeepsUnreadable(t *testing.T) {
+	h := NewGalaHandler()
+	const uri = "file:///doc.gala"
+	h.documents[uri] = "éééé x\n" // a newer copy than the handler's snapshot
+	snapshot := newLineIndex("é x\n", lsp.PositionEncodingUTF16)
+	missing := lsp.DocumentURI(pathToURI(filepath.Join(t.TempDir(), "gone.gala")))
+	rng := lsp.Range{Start: lsp.Position{Line: 0, Character: 3}, End: lsp.Position{Line: 0, Character: 4}}
+
+	got := h.locationsToWire(uri, snapshot, []lsp.Location{{URI: uri, Range: rng}, {URI: missing, Range: rng}})
+	assert.Equal(t, 2, got[0].Range.Start.Character, "converted on the snapshot: é is 2 bytes, 1 unit")
+	assert.Equal(t, 3, got[1].Range.Start.Character, "unreadable file keeps its byte column")
+}
+
+// An error found in another file keeps its column: converting it against this
+// document's unrelated line would move it, or clamp it to that line's length.
+func TestErrorToDiagnosticOtherFileKeepsColumn(t *testing.T) {
+	x := newLineIndex("package p\n}\n", lsp.PositionEncodingUTF16)
+	here := filepath.Join("pkg", "a.gala")
+
+	other := galaerr.NewSemanticErrorInFile(filepath.Join("pkg", "b.gala"), 2, 30, "boom")
+	d := errorToDiagnostic(other, x, here)
+	assert.Equal(t, 30, d.Range.Start.Character)
+	assert.Equal(t, 31, d.Range.End.Character)
+
+	own := galaerr.NewSemanticErrorInFile(here, 2, 30, "boom")
+	d = errorToDiagnostic(own, x, here)
+	assert.Equal(t, 1, d.Range.Start.Character, "this file's error clamps to its line")
+}
+
+// A CRLF line's "\r" is not part of the line: a past-end column clamps to the
+// visible end, and a byte column there reports the visible length.
+func TestLineIndexDropsCarriageReturn(t *testing.T) {
+	x := newLineIndex("aé\r\nb\r\n", lsp.PositionEncodingUTF16)
+	line, col := x.toByte(lsp.Position{Line: 0, Character: 99})
+	assert.Equal(t, 0, line)
+	assert.Equal(t, 3, col, "clamps before the \\r")
+	assert.Equal(t, 2, x.toWire(lsp.Position{Line: 0, Character: 4}).Character)
+	assert.Equal(t, "b", nthLine("aé\r\nb\r\n", 1))
 }

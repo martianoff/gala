@@ -355,7 +355,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	tree, docs, err := h.parser.Parse(text)
 	if err != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(err, x)...)
+		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
 		// Primary parse failed — try ANTLR's error-recovered partial tree.
 		// If the analyzer can extract type metadata from it, cache the
 		// richAST so completion/hover/definition work while mid-edit.
@@ -372,13 +372,13 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	richAST, err := h.newAnalyzer(filePath, text).Analyze(tree, docs, filePath)
 	if err != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(err, x)...)
+		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
 		return diagnostics
 	}
 
 	result, transformErr := h.transformAndPublish(uri, richAST, tree, text)
 	if transformErr != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr, x)...)
+		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr, x, filePath)...)
 	}
 
 	// Cache the transpiler's resolved variable types
@@ -722,23 +722,26 @@ func zeroRange() lsp.Range {
 }
 
 // errorsToDiagnostics converts an error (possibly MultiError) into diagnostics
-// positioned on the document x indexes.
-func errorsToDiagnostics(err error, x lineIndex) []lsp.Diagnostic {
+// positioned on the document x indexes, the file at filePath.
+func errorsToDiagnostics(err error, x lineIndex, filePath string) []lsp.Diagnostic {
 	var multiErr *galaerr.MultiError
 	if errors.As(err, &multiErr) {
 		diags := make([]lsp.Diagnostic, 0)
 		for _, subErr := range multiErr.Errors {
-			diags = append(diags, errorToDiagnostic(subErr, x))
+			diags = append(diags, errorToDiagnostic(subErr, x, filePath))
 		}
 		return diags
 	}
-	return []lsp.Diagnostic{errorToDiagnostic(err, x)}
+	return []lsp.Diagnostic{errorToDiagnostic(err, x, filePath)}
 }
 
 // errorToDiagnostic positions an error from its line and column. The parser and
 // the transformer both report ANTLR columns — code points, neither bytes nor
-// UTF-16 units — so the column is converted before it goes on the wire.
-func errorToDiagnostic(err error, x lineIndex) lsp.Diagnostic {
+// UTF-16 units — so the column is converted before it goes on the wire, against
+// the text of the document x indexes. An error found in another file (a sibling
+// or an imported package) is not on that text, so its column is passed through
+// rather than converted against — and clamped to — an unrelated line.
+func errorToDiagnostic(err error, x lineIndex, filePath string) lsp.Diagnostic {
 	msg := err.Error()
 	line := 0
 	char := 0
@@ -768,11 +771,18 @@ func errorToDiagnostic(err error, x lineIndex) lsp.Diagnostic {
 		}
 	}
 
-	return lsp.Diagnostic{
-		Range: x.rangeToWire(lsp.Range{
+	rng := lsp.Range{
+		Start: lsp.Position{Line: line, Character: char},
+		End:   lsp.Position{Line: line, Character: char + 1},
+	}
+	if semErr == nil || semErr.FilePath == "" || filePath == "" || sameFilePath(semErr.FilePath, filePath) {
+		rng = x.rangeToWire(lsp.Range{
 			Start: lsp.Position{Line: line, Character: x.runeToByte(line, char)},
 			End:   lsp.Position{Line: line, Character: x.runeToByte(line, char+1)},
-		}),
+		})
+	}
+	return lsp.Diagnostic{
+		Range:    rng,
 		Severity: sevPtr(lsp.SeverityError),
 		Source:   "gala",
 		Message:  msg,

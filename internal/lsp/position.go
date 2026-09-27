@@ -71,12 +71,15 @@ func newLineIndex(text string, enc lsp.PositionEncodingKind) lineIndex {
 	return lineIndex{lines: strings.Split(text, "\n"), enc: enc}
 }
 
-// line returns the text of line n, without its "\n"; "" when out of range.
+// line returns the text of line n, without its line terminator ("\n" or
+// "\r\n"); "" when out of range. Dropping the "\r" makes a past-end column
+// clamp to the end of the visible line, as the protocol asks, rather than
+// land between "\r" and "\n".
 func (x lineIndex) line(n int) string {
 	if n < 0 || n >= len(x.lines) {
 		return ""
 	}
-	return x.lines[n]
+	return strings.TrimSuffix(x.lines[n], "\r")
 }
 
 // toByte converts a request position into a line and a byte column on it.
@@ -102,25 +105,42 @@ func (x lineIndex) runeToByte(n, runeCol int) int {
 }
 
 // locationsToWire converts byte-column locations, which may name any file,
-// into wire locations. Each file's text is looked up once: the editor's copy
-// when it is open, otherwise the file on disk.
-func (h *GalaHandler) locationsToWire(locs []lsp.Location) []lsp.Location {
+// into wire locations. Locations in the request's own document (uri) convert
+// against x, the text the handler computed them on — not a copy an edit may
+// have replaced since. Any other file's text is looked up once: the editor's
+// copy when it is open, otherwise the file on disk. A file that cannot be read
+// keeps its byte columns, which are right on ASCII, rather than collapsing to
+// column 0.
+func (h *GalaHandler) locationsToWire(uri string, x lineIndex, locs []lsp.Location) []lsp.Location {
 	if len(locs) == 0 {
 		return locs
 	}
-	enc := h.positionEncoding()
-	indexes := make(map[lsp.DocumentURI]lineIndex)
+	indexes := map[lsp.DocumentURI]*lineIndex{lsp.DocumentURI(uri): &x}
 	out := make([]lsp.Location, len(locs))
 	for i, loc := range locs {
-		x, ok := indexes[loc.URI]
-		if !ok {
-			text, _ := h.fileText(uriToPath(string(loc.URI)))
-			x = newLineIndex(text, enc)
-			indexes[loc.URI] = x
+		idx, seen := indexes[loc.URI]
+		if !seen {
+			if text, ok := h.fileText(uriToPath(string(loc.URI))); ok {
+				other := newLineIndex(text, x.enc)
+				idx = &other
+			}
+			indexes[loc.URI] = idx
 		}
-		out[i] = lsp.Location{URI: loc.URI, Range: x.rangeToWire(loc.Range)}
+		out[i] = loc
+		if idx != nil {
+			out[i].Range = idx.rangeToWire(loc.Range)
+		}
 	}
 	return out
+}
+
+// occurrencesToWire converts byte-column locations that all lie in the text x
+// indexes into wire locations, in place.
+func occurrencesToWire(x lineIndex, locs []lsp.Location) []lsp.Location {
+	for i := range locs {
+		locs[i].Range = x.rangeToWire(locs[i].Range)
+	}
+	return locs
 }
 
 // wireToByte converts a column counted in enc units into a byte offset on
@@ -161,7 +181,8 @@ func byteToWire(line string, b int, enc lsp.PositionEncodingKind) int {
 	return units
 }
 
-// nthLine returns line n of text without its "\n"; "" when out of range.
+// nthLine returns line n of text without its line terminator, as
+// lineIndex.line does; "" when out of range.
 func nthLine(text string, n int) string {
 	for ; n > 0; n-- {
 		i := strings.IndexByte(text, '\n')
@@ -174,9 +195,9 @@ func nthLine(text string, n int) string {
 		return ""
 	}
 	if i := strings.IndexByte(text, '\n'); i >= 0 {
-		return text[:i]
+		text = text[:i]
 	}
-	return text
+	return strings.TrimSuffix(text, "\r")
 }
 
 // runeToByte converts a code-point column on line into a byte offset, clamped
