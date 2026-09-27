@@ -414,12 +414,27 @@ func TestStrPadding(t T) T {
 }
 
 // Test Capitalize and Uncapitalize
-func TestStrCapitalize(t T) T {
-    val t1 = Eq(t, s.S("hello").Capitalize().ToString(), "Hello")
-    val t2 = Eq(t1, s.S("Hello").Uncapitalize().ToString(), "hello")
-    val t3 = Eq(t2, s.S("").Capitalize().ToString(), "")
-    return Eq(t3, s.S("").Uncapitalize().ToString(), "")
-}
+func TestStrCapitalize(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.S(input).Capitalize().ToString(), expected),
+    Case[string, string](Name = "ascii", Input = "hello", Expected = "Hello"),
+    Case[string, string](Name = "already upper", Input = "Hello", Expected = "Hello"),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single rune", Input = "x", Expected = "X"),
+    Case[string, string](Name = "multibyte first rune", Input = "élan", Expected = "Élan"),
+    Case[string, string](Name = "non-letter first rune", Input = "1abc", Expected = "1abc"),
+    Case[string, string](Name = "only first rune changes", Input = "hello world", Expected = "Hello world"),
+    Case[string, string](Name = "spans many leaves", Input = s.Repeat("ab", 600), Expected = "Ab" + s.Repeat("ab", 599)),
+)
+
+func TestStrUncapitalize(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, s.S(input).Uncapitalize().ToString(), expected),
+    Case[string, string](Name = "ascii", Input = "Hello", Expected = "hello"),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single rune", Input = "X", Expected = "x"),
+    Case[string, string](Name = "multibyte first rune", Input = "Élan", Expected = "élan"),
+    Case[string, string](Name = "only first rune changes", Input = "HELLO", Expected = "hELLO"),
+    Case[string, string](Name = "spans many leaves", Input = s.Repeat("AB", 600), Expected = "aB" + s.Repeat("AB", 599)),
+)
 
 // Test TitleCase
 func TestStrTitleCase(t T) T = RunCases[string, string](t,
@@ -447,6 +462,19 @@ func TestStrSplitAt(t T) T {
     val (first, second) = s.S("hello").SplitAt(2)
     val t1 = Eq(t, first.ToString(), "he")
     return Eq(t1, second.ToString(), "llo")
+}
+
+// The rune-indexed operations count runes, not bytes, on multibyte input.
+func TestStrRuneIndexedOpsUnicode(t T) T {
+    val str = s.S("héllo 日本語")
+    val (left, right) = str.SplitAt(7)
+    val t1 = Eq(t, left.ToString(), "héllo 日")
+    val t2 = Eq(t1, right.ToString(), "本語")
+    val t3 = Eq(t2, str.Take(3).ToString(), "hél")
+    val t4 = Eq(t3, str.Drop(6).ToString(), "日本語")
+    val t5 = Eq(t4, str.TakeRight(2).ToString(), "本語")
+    val t6 = Eq(t5, str.DropRight(3).ToString(), "héllo ")
+    return Eq(t6, str.Substring(1, 4).ToString(), "éll")
 }
 
 // Test Lines
@@ -532,6 +560,39 @@ func TestStrToChars(t T) T {
     val t1 = Eq(t, chars.Length(), 2)
     val t2 = Eq(t1, chars.Get(0), 'h')
     return Eq(t2, chars.Get(1), 'i')
+}
+
+// ToChars decodes the string rune by rune: round-tripping the runes back to a
+// string gives the input, except that each invalid UTF-8 byte becomes U+FFFD.
+func TestStrToCharsRoundTrip(t T) T = RunCases[string, string](t,
+    (sub T, input string, expected string) => Eq(sub, string(s.S(input).ToChars().ToGoSlice()), expected),
+    Case[string, string](Name = "empty", Input = "", Expected = ""),
+    Case[string, string](Name = "single rune", Input = "a", Expected = "a"),
+    Case[string, string](Name = "single multibyte rune", Input = "✓", Expected = "✓"),
+    Case[string, string](Name = "mixed widths", Input = "héllo 日本語 ✓", Expected = "héllo 日本語 ✓"),
+    Case[string, string](Name = "invalid byte", Input = "a\xffb", Expected = "a�b"),
+    Case[string, string](Name = "truncated sequence", Input = "a\xe6\x97", Expected = "a��"),
+    Case[string, string](Name = "spans many leaves", Input = s.Repeat("héllo", 300), Expected = s.Repeat("héllo", 300)),
+)
+
+func TestStrToCharsLength(t T) T = RunCases[string, int](t,
+    (sub T, input string, expected int) => Eq(sub, s.S(input).ToChars().Length(), expected),
+    Case[string, int](Name = "empty", Input = "", Expected = 0),
+    Case[string, int](Name = "single multibyte rune", Input = "日", Expected = 1),
+    Case[string, int](Name = "mixed widths", Input = "héllo 日本語 ✓", Expected = 11),
+    Case[string, int](Name = "one rune per invalid byte", Input = "a\xff\xfeb", Expected = 4),
+    Case[string, int](Name = "exactly one leaf", Input = s.Repeat("é", 32), Expected = 32),
+    Case[string, int](Name = "one past a leaf", Input = s.Repeat("é", 33), Expected = 33),
+    Case[string, int](Name = "two tree levels", Input = s.Repeat("é", 1025), Expected = 1025),
+)
+
+// Indexing into a multi-level rune Array reaches the right rune at the edges.
+func TestStrToCharsIndexing(t T) T {
+    val chars = s.S(s.Repeat("ab", 600) + "✓").ToChars()
+    val t1 = Eq(t, chars.Get(0), 'a')
+    val t2 = Eq(t1, chars.Get(1023), 'b')
+    val t3 = Eq(t2, chars.Get(1024), 'a')
+    return Eq(t3, chars.Get(1200), '✓')
 }
 
 // Test Concat and Plus

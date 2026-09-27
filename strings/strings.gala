@@ -7,6 +7,7 @@ import (
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     cm "martianoff/gala/collection_mutable"
+    "martianoff/gala/go_interop"
     "martianoff/gala/lazy"
 )
 
@@ -140,14 +141,11 @@ func strFromRunes(runes Array[rune]) Str = Str(runes = lazy.Of(runes), str = str
 // emptyStr creates an empty Str.
 func emptyStr() Str = Str(runes = lazy.Of(EmptyArray[rune]()), str = "")
 
-// stringToRunes converts a string to an Array of runes.
-func stringToRunes(s string) Array[rune] {
-    var result = EmptyArray[rune]()
-    for _, r := range s {
-        result = result.Append(r)
-    }
-    return result
-}
+// stringToRunes converts a string to an Array of runes in one bulk build: a
+// single string-to-rune-slice conversion, then the Array's bottom-up
+// construction. Each invalid UTF-8 byte decodes to one U+FFFD, exactly as
+// ranging over the string does.
+func stringToRunes(s string) Array[rune] = ArrayFromSlice(go_interop.ToRunes(s))
 
 // runesToString converts an Array of runes to a string.
 func runesToString(runes Array[rune]) string = string(runes.ToGoSlice())
@@ -307,8 +305,8 @@ func (s Str) Capitalize() Str {
     if s.IsEmpty() {
         return s
     }
-    val first = unicode.ToUpper(s.runes.Get().Head())
-    return strFromRunes(EmptyArray[rune]().Append(first).AppendAll(s.runes.Get().Tail()))
+    val runes = s.runes.Get()
+    return strFromRunes(runes.Updated(0, unicode.ToUpper(runes.Head())))
 }
 
 // Uncapitalize uncapitalizes first character.
@@ -316,8 +314,8 @@ func (s Str) Uncapitalize() Str {
     if s.IsEmpty() {
         return s
     }
-    val first = unicode.ToLower(s.runes.Get().Head())
-    return strFromRunes(EmptyArray[rune]().Append(first).AppendAll(s.runes.Get().Tail()))
+    val runes = s.runes.Get()
+    return strFromRunes(runes.Updated(0, unicode.ToLower(runes.Head())))
 }
 
 // TitleCase capitalizes each whitespace-separated word.
