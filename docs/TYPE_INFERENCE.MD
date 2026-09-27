@@ -456,7 +456,8 @@ return type.
 - Otherwise the body's own result values fill it, **in any order**. A `return`
   whose value has a fully resolved type fills the slot. A resolved type has no
   masked part, is not `any` or void, and names no type parameter left unbound by
-  a callee (the `T` of `Failure(e)`'s `Try[T]`). Any other `return` (`return
+  a callee (the `T` of `Failure(e)`'s `Try[T]`). The type parameters of the
+  enclosing generic function or method, and of its receiver, count as resolved. Any other `return` (`return
   None()`, `return Failure(e)`) is deferred. Once the body is lowered, the promoted
   trailing value or a `bind` chain can also fill the slot. The deferred returns
   are then lowered again against it, so an early guard

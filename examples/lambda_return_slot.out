@@ -32,5 +32,11 @@ None()
 None()
 Some(v=0)
 Some(v=6)
+Array(1, 2)
+Some(w)
+7
+Array((k, 1), (k, 2))
+Some((3, u))
+None()
 nested=true
 nested=false

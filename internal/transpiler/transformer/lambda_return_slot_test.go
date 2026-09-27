@@ -300,6 +300,88 @@ func run(s string) Try[int] {
 	}
 }
 
+// Inside a generic function or method, the declaration's own type parameters
+// and its receiver's are resolved types: a value of type T or Option[T] fills
+// a lambda's result slot.
+func TestLambdaReturnSlotInGenericDeclarations(t *testing.T) {
+	const prelude = `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func apply[T any](f func() T) T = f()
+
+struct Box[T any](V T)
+`
+	tests := []struct {
+		name     string
+		body     string
+		contains []string
+	}{
+		{
+			name:     "function type parameter",
+			body:     "func genC[T any](xs Array[T]) Array[T] = xs.Map((x) => { return x })\n",
+			contains: []string{"func(x T) T {"},
+		},
+		{
+			name: "function type parameter inside a generic type",
+			body: `
+func genB[T any](x T) Option[T] {
+    val r = apply(() => {
+        return Some(x)
+    })
+    return r
+}
+`,
+			contains: []string{"apply(func() std.Option[T] {"},
+		},
+		{
+			name: "receiver type parameter",
+			body: `
+func (b Box[T]) Get() T {
+    val f = () => {
+        return b.V
+    }
+    return f()
+}
+`,
+			contains: []string{"func() T {"},
+		},
+		{
+			name: "generic method with a FoldLeft block lambda",
+			body: `
+func (b Box[T]) Pairs[U any](us Array[U]) Array[Tuple[T, U]] = us.FoldLeft(EmptyArray[Tuple[T, U]](), (acc, u) => {
+    if (acc.Size() > 1) {
+        return acc
+    }
+    acc.Append((b.V, u))
+})
+`,
+			contains: []string{"return acc"},
+		},
+		{
+			name: "generic method with a FlatMap guard",
+			body: `
+func (b Box[T]) With[U any](o Option[U], skip bool) Option[Tuple[T, U]] = o.FlatMap((u) => {
+    if (skip) {
+        return None()
+    }
+    Some((b.V, u))
+})
+`,
+			contains: []string{"return std.None[std.Tuple[T, U]]{}"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := newBindTranspiler().Transpile(prelude+tt.body, "")
+			require.NoError(t, err)
+			for _, want := range tt.contains {
+				assert.Contains(t, got, want)
+			}
+		})
+	}
+}
+
 // A lambda of unknown result type needs one result value of a known type, and
 // a `bind` block in it must end with a value of the block's monad; anything
 // else is rejected with a GALA error, not handed to the Go compiler.

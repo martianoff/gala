@@ -719,7 +719,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	// Track the current function's return type so tuple literals in return statements
 	// can use it as a fallback when element type inference fails.
-	var funcSlot returnSlot
+	funcSlot := returnSlot{typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr))}
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
 		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}

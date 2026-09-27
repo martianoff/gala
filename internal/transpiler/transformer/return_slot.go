@@ -23,6 +23,10 @@ type returnSlot struct {
 	body     *grammar.BlockContext // a fillable lambda's block body: its trailing value is a result value
 	deferred []deferredReturn
 	guesses  []ast.Expr // result values typed from a guess (the match subject): they never fill the slot
+	// typeParams are the type parameters of the enclosing function
+	// declaration and its receiver, in scope for every slot inside it: a type
+	// naming one of them is resolved (see isSettledType).
+	typeParams map[string]bool
 }
 
 // deferredReturn is a result value (a `return` value or the body's trailing
@@ -39,11 +43,33 @@ type deferredReturn struct {
 }
 
 // enterReturnSlot makes s the current return slot and returns the function
-// that restores the previous one, for `defer t.enterReturnSlot(s)()`.
+// that restores the previous one, for `defer t.enterReturnSlot(s)()`. A slot
+// nested in a function (a lambda's, an IIFE's) keeps the function's type
+// parameters.
 func (t *galaASTTransformer) enterReturnSlot(s returnSlot) func() {
 	prev := t.returnSlot
+	if s.typeParams == nil {
+		s.typeParams = prev.typeParams
+	}
 	t.returnSlot = s
 	return func() { t.returnSlot = prev }
+}
+
+// declaredTypeParams is the set of type parameter names a function declaration
+// brings into scope: its own and its receiver's. It is never nil, so a
+// function's slot does not inherit an outer declaration's.
+func declaredTypeParams(own *ast.FieldList, receiver []*ast.Field) map[string]bool {
+	names := map[string]bool{}
+	fields := receiver
+	if own != nil {
+		fields = append(append([]*ast.Field{}, own.List...), receiver...)
+	}
+	for _, f := range fields {
+		for _, n := range f.Names {
+			names[n.Name] = true
+		}
+	}
+	return names
 }
 
 // enterIIFEReturnSlot is enterReturnSlot for a value-position construct
@@ -106,7 +132,7 @@ func (t *galaASTTransformer) typeMentionsUnresolvedTypeParam(typ transpiler.Type
 }
 
 func (t *galaASTTransformer) isUnresolvedTypeParamName(name string) bool {
-	if name == "" || transpiler.IsPrimitiveType(name) || t.activeTypeParams[name] {
+	if name == "" || transpiler.IsPrimitiveType(name) || t.activeTypeParams[name] || t.returnSlot.typeParams[name] {
 		return false
 	}
 	return t.lookupTypeName(name).IsNil()

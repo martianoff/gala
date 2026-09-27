@@ -3,6 +3,8 @@ package main
 import (
     "errors"
     "strconv"
+
+    . "martianoff/gala/collection_immutable"
 )
 
 // A lambda has its own return slot: a `return`, a `bind` block or a match in its
@@ -192,6 +194,43 @@ func doubledSize(s string) Option[string] {
     return o.Map((v) => s"v=$v")
 }
 
+// Inside a generic function or method, its own type parameters (and its
+// receiver's) are resolved types: a value of type T or Option[T] types the
+// lambda.
+func identities[T any](xs Array[T]) Array[T] = xs.Map((x) => {
+    return x
+})
+
+func wrapped[T any](x T) Option[T] {
+    val r = apply(() => {
+        return Some(x)
+    })
+    return r
+}
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Read() T {
+    val f = () => {
+        return c.V
+    }
+    return f()
+}
+
+func (c Cell[T]) PairUp[U any](us Array[U]) Array[Tuple[T, U]] = us.FoldLeft(EmptyArray[Tuple[T, U]](), (acc, u) => {
+    if (acc.Size() > 1) {
+        return acc
+    }
+    acc.Append((c.V, u))
+})
+
+func (c Cell[T]) With[U any](o Option[U], skip bool) Option[Tuple[T, U]] = o.FlatMap((u) => {
+    if (skip) {
+        return None()
+    }
+    Some((c.V, u))
+})
+
 // Nested lambdas each have their own slot.
 func nested(n int) string {
     val outer = apply(() => {
@@ -234,6 +273,12 @@ func main() {
     Println(doubledSize("x"))
     Println(doubledSize(""))
     Println(doubledSize("abc"))
+    Println(identities(ArrayOf(1, 2)))
+    Println(wrapped("w"))
+    Println(Cell(7).Read())
+    Println(Cell("k").PairUp(ArrayOf(1, 2, 3)))
+    Println(Cell(3).With(Some("u"), false))
+    Println(Cell(3).With(Some("u"), true))
     Println(nested(3))
     Println(nested(-1))
 }
