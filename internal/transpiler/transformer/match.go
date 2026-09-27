@@ -105,10 +105,11 @@ func extractVariantName(patternText string) string {
 
 // armMatchesEverything reports whether a lowered case clause (see
 // transformCaseClauseWithType) tests nothing: its condition is the constant
-// `true`, so it matches every value. The decision reads the lowering itself, so
-// every pattern rule — a lowercase sealed variant, a zero-field extractor, a
-// literal — counts exactly as it runs. A guard makes the condition a
-// conjunction, never the bare constant.
+// `true`. Used for tuple arms, where it reads the lowering itself, so an
+// element that is a lowercase sealed variant, a zero-field extractor or a
+// literal counts exactly as it runs. A guard makes the condition a
+// conjunction, never the bare constant. (extractBindingDefault answers the
+// same question but builds the default body, and an empty arm reads as nil.)
 func armMatchesEverything(clause ast.Stmt) bool {
 	if block, ok := clause.(*ast.BlockStmt); ok && len(block.List) > 0 {
 		clause = block.List[len(block.List)-1]
