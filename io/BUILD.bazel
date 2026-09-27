@@ -29,3 +29,25 @@ gala_test(
     srcs = ["io_test.gala"],
     deps = [":io"],
 )
+
+# Every non-test source file this package ships. The released CLI embeds a
+# snapshot of the stdlib (//internal/stdlib:generate_embedded); its
+# completeness test compares that snapshot against this glob, so a new file
+# here that is not added to the embed fails bazel test, not the released CLI.
+filegroup(
+    name = "shipped_sources",
+    srcs = glob(
+        [
+            "*.gala",
+            "*.go",
+        ],
+        exclude = [
+            "*_test.gala",
+            "*_test.go",
+            "*.gen.go",
+        ],
+        # A pure-Go or pure-GALA package leaves one pattern empty.
+        allow_empty = True,
+    ),
+    visibility = ["//internal/stdlib:__pkg__"],
+)

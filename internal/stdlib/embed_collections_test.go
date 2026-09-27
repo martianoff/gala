@@ -53,6 +53,30 @@ func TestSubprocessAsyncEmbedded(t *testing.T) {
 	}
 }
 
+// TestConcurrentRetryEmbedded guards the concurrent package's retry helpers
+// (retry.gala: Retry, ConstantBackoff, ExponentialBackoff, NoBackoff). They live
+// in their own file next to future.gala and event_bus.gala; when that file is
+// left out of the embed, `gala build` cannot resolve concurrent.Retry even
+// though `bazel test` (repo-source builds) passes.
+func TestConcurrentRetryEmbedded(t *testing.T) {
+	files, ok := EmbeddedPackages["concurrent"]
+	if !ok {
+		t.Fatalf("package \"concurrent\" is not embedded at all")
+	}
+	if _, ok := files["retry.gen.go"]; !ok {
+		t.Errorf("concurrent embed is missing \"retry.gen.go\" — add \"//concurrent:retry_go\" to the generate_embedded srcs in internal/stdlib/BUILD.bazel")
+	}
+	content, ok := files["retry.gala"]
+	if !ok {
+		t.Fatalf("concurrent embed is missing \"retry.gala\" — add \"//concurrent:retry.gala\" to the generate_embedded srcs in internal/stdlib/BUILD.bazel")
+	}
+	for _, sym := range []string{"func Retry", "func ConstantBackoff", "func ExponentialBackoff", "func NoBackoff"} {
+		if !strings.Contains(content, sym) {
+			t.Errorf("concurrent retry.gala embed does not define %s", sym)
+		}
+	}
+}
+
 // TestSubprocessAsyncMethodsEmbedded is a symbol-level check: the embedded async
 // GALA source actually carries its public method surface, so a content
 // regression (not just a missing filename) is caught too.
