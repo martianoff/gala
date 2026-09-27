@@ -262,12 +262,14 @@ jobs:
           rm -rf gala-*/ gala-intellij-plugin/
           mv release/* .
           rmdir release
-          sha256sum gala-* *.zip > checksums-sha256.txt
+          sha256sum gala-linux-* gala-darwin-* gala-windows-* *.zip > checksums-sha256.txt
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/gala-*
+            artifacts/gala-linux-*
+            artifacts/gala-darwin-*
+            artifacts/gala-windows-*
             artifacts/*.zip
             artifacts/checksums-sha256.txt
