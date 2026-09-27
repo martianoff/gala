@@ -1,0 +1,9 @@
+package boxes
+
+// Pair is a generic struct copied from another package in
+// examples/generic_struct_copy.gala.
+struct Pair[A any, B any](First A, Second B, Tag string)
+
+// Retag copies inside the declaring package; the result keeps [A, B].
+func Retag[A any, B any](p Pair[A, B], tag string) Pair[A, B] =
+    if (tag == "") p else p.Copy(Tag = tag)

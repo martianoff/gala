@@ -2425,6 +2425,26 @@ gala_exec_test(
     ],
 )
 
+# `.Copy(...)` on a generic struct keeps the receiver's type arguments:
+# val-bound, if/match arms, pointer and ConstPtr receivers, nested and
+# multi-parameter generics, no overrides, a sealed variant, cross-package.
+gala_library(
+    name = "generic_struct_copy_boxes",
+    srcs = ["generic_struct_copy/boxes/boxes.gala"],
+    importpath = "martianoff/gala/examples/generic_struct_copy/boxes",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "generic_struct_copy",
+    src = "generic_struct_copy.gala",
+    expected = "generic_struct_copy.out",
+    deps = [
+        ":generic_struct_copy_boxes",
+        "//collection_immutable",
+    ],
+)
+
 # Repro: type alias for func type in library package + match through alias
 # Exercises: sibling type alias extraction, NamedType.BaseName() package qualification,
 # chained function call inference, match result type in lambda context

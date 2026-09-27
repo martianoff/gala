@@ -125,6 +125,15 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	// the inferencer can resolve to a struct type.
 	typeObj := t.getExprTypeNameManual(receiver)
 
+	// A ConstPtr[T] receiver (`val p = &v; p.Copy(...)`) copies the pointee:
+	// read its fields through Deref(), exactly as field access does.
+	if t.isConstPtrType(typeObj) {
+		if gen, ok := typeObj.(transpiler.GenericType); ok && len(gen.Params) == 1 {
+			receiver = &ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(transpiler.MethodDeref)}}
+			typeObj = gen.Params[0]
+		}
+	}
+
 	// Strip generic decorations (e.g. "Person[int]" -> "Person") and any pointer
 	// prefix so the name lines up with the structFields map keys.
 	typeName := stripTypeNameDecorations(typeObj.String())
@@ -231,9 +240,37 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	}
 
 	return &ast.CompositeLit{
-		Type: t.ident(typeName),
+		Type: t.copyResultTypeExpr(typeName, typeObj),
 		Elts: elts,
 	}, nil
+}
+
+// copyResultTypeExpr builds the composite-literal type for an inlined
+// `recv.Copy(field = value)`. Copy cannot change field types, so the result is
+// the receiver's own instantiated type: a generic receiver keeps its type
+// arguments (`Box[string]`, `Box[T]`), and a pointer receiver yields the
+// pointee's value type — matching the generated `func (s Box[T]) Copy() Box[T]`.
+func (t *galaASTTransformer) copyResultTypeExpr(typeName string, recvType transpiler.Type) ast.Expr {
+	base := t.ident(typeName)
+	for {
+		ptr, ok := recvType.(transpiler.PointerType)
+		if !ok {
+			break
+		}
+		recvType = ptr.Elem
+	}
+	gen, ok := recvType.(transpiler.GenericType)
+	if !ok || len(gen.Params) == 0 {
+		return base
+	}
+	params := make([]ast.Expr, len(gen.Params))
+	for i, p := range gen.Params {
+		params[i] = t.typeToExpr(p)
+	}
+	if len(params) == 1 {
+		return &ast.IndexExpr{X: base, Index: params[0]}
+	}
+	return &ast.IndexListExpr{X: base, Indices: params}
 }
 
 func (t *galaASTTransformer) initGenericMethods() {

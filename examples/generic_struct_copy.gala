@@ -1,0 +1,69 @@
+package main
+
+// `.Copy(...)` on a generic struct yields the receiver's own instantiated
+// type — the same type arguments, since Copy cannot change field types —
+// whether the result is bound to a val, returned from an if-expression or a
+// match arm, read through a pointer, or taken from another package.
+
+import "martianoff/gala/examples/generic_struct_copy/boxes"
+import . "martianoff/gala/collection_immutable"
+
+struct Box[T any](Item T, N int)
+
+struct Entry[K comparable, V any](Key K, Value V, Hits int)
+
+sealed type Slot[T any] {
+    case Filled(Value T)
+    case Empty
+}
+
+sealed type Ev {
+    case Inc()
+    case Keep()
+}
+
+func pick[T any](b Box[T], up bool) Box[T] = if (up) b.Copy(N = b.N + 1) else b
+
+func step[T any](b Box[T], ev Ev) Box[T] = ev match {
+    case Inc()  => b.Copy(N = b.N + 1)
+    case Keep() => b
+}
+
+func viaPtr[T any](b *Box[T]) Box[T] = b.Copy(N = 0)
+
+func hit[K comparable, V any](e Entry[K, V]) Entry[K, V] = e.Copy(Hits = e.Hits + 1)
+
+func main() {
+    // val-bound, concrete type arguments
+    val c = Box(Item = "x", N = 1).Copy(N = 5)
+    Println(s"val: ${c.Item} ${c.N}")
+
+    // if-expression and match arms, in a generic function and inline
+    val same = if (c.N > 3) c.Copy(N = 6) else c
+    Println(s"if: ${same.N} ${pick(c, true).N} ${pick(c, false).N}")
+    Println(s"match: ${step(c, Inc()).N} ${step(c, Keep()).N}")
+
+    // pointer receivers: a Go pointer (`&` of a var) and a ConstPtr (`&` of a val)
+    var m = Box(Item = "m", N = 1)
+    Println(s"ptr: ${viaPtr(&m).N}")
+    val cp = &c
+    Println(s"constptr: ${cp.Copy(N = 7).N} ${cp.Item}")
+
+    // nested and multi-parameter generics
+    val nested = Box(Item = ArrayOf(1, 2, 3), N = 0).Copy(N = 3)
+    Println(s"nested: ${nested.Item.Size()} ${nested.N}")
+    val e = hit(Entry[string, int](Key = "k", Value = 1, Hits = 0)).Copy(Value = 2)
+    Println(s"multi: ${e.Key} ${e.Value} ${e.Hits}")
+
+    // no overrides: the copy still types as Box[string]
+    val plain = c.Copy()
+    Println(s"no-override: ${plain.N} ${c.Copy().N}")
+
+    // sealed variant
+    val slot = Filled(5).Copy(Value = 9)
+    Println(s"sealed: ${slot}")
+
+    // cross-package generic struct
+    val p = boxes.Pair[int, string](First = 1, Second = "s", Tag = "a").Copy(Tag = "b")
+    Println(s"cross-pkg: ${p.First} ${p.Second} ${p.Tag} ${boxes.Retag(p, "c").Tag}")
+}
