@@ -211,6 +211,41 @@ func main() {
 			contains: []string{"Apply(func(a int) int {"},
 		},
 		{
+			// A pointer receiver binds `T` too: the type metadata is keyed by
+			// the element type, so looking it up by `*Box` found nothing and
+			// the default was lowered as `func(x T) T`.
+			name: "pointer receiver binds the receiver's type arguments",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b *Box[T]) Scale(n int, f func(T) T = (x) => x) T = f(b.V)
+
+func main() {
+    var box = Box[int](V = 1)
+    val p = &box
+    Println(p.Scale(1), p.Scale(n = 2))
+}`,
+			contains: []string{"Scale(1, func(x int) int {", "Scale(2, func(x int) int {"},
+			absent:   []string{"func(x T) T"},
+		},
+		{
+			name: "pointer receiver, zero-argument call",
+			input: `package main
+
+struct Box[T any](V T)
+
+func (b *Box[T]) Get2(f func(T) T = (x) => x) T = f(b.V)
+
+func main() {
+    var box = Box[int](V = 1)
+    val p = &box
+    Println(p.Get2())
+}`,
+			contains: []string{"Get2(func(x int) int {"},
+			absent:   []string{"func(x T) T"},
+		},
+		{
 			// Only a DEFAULT `nil` is passed as is. An explicit `nil` argument to
 			// a zero-argument function parameter keeps the by-name sugar's
 			// meaning: a thunk returning nil.
@@ -361,6 +396,22 @@ func Inc(n int) int = n + 1
 struct Backend(Name string, OnClose func() int = DefaultClose, Step func(int) int = Inc)
 
 func Run(f func() int = DefaultClose, g func(int) int = Inc) int = f() + g(1)
+
+func name() string = "lib"
+
+func Greet(s string) string = "hi " + s
+
+struct Greeter(Label string, Say func(string) string = (name) => Greet(name))
+
+func Pick(o Option[int], f func(Option[int]) int = (o) => o match {
+    case Some(name) => name
+    case _ => 0
+}) int = f(o)
+
+func Bump(n int, f func(int) int = (x) => {
+    val name = x + 1
+    name
+}) int = f(n)
 `)
 	return root
 }
@@ -405,6 +456,23 @@ func main() {
 		assert.Contains(t, body, "Step: std.NewImmutable(lib.Inc)")
 		assert.Contains(t, body, "lib.Run(lib.DefaultClose, lib.Inc)")
 		assert.NotContains(t, body, "return lib.DefaultClose")
+	})
+
+	// Names a default binds itself — a lambda parameter, a match binding, a
+	// val local — are not the declaring package's top-level `name`, even
+	// though lib declares one (unexported, so qualifying would also error).
+	t.Run("names the default binds are not qualified", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/fdefs/lib"
+
+func main() {
+    Println(lib.Greeter(Label = "a").Say("x"), lib.Pick(Some(3)), lib.Bump(1))
+}`)
+		require.NoError(t, err)
+		body := out[strings.Index(out, "func main()"):]
+		assert.NotContains(t, body, "lib.name")
+		assert.Contains(t, body, "return lib.Greet(name)")
 	})
 
 	t.Run("an unexported helper is reported at the default", func(t *testing.T) {

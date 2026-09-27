@@ -43,7 +43,7 @@ type defaultSource struct {
 // recordDefaultLambdaHints). A foreign default's tokens carry another file's
 // positions, so no line markers are emitted for them either.
 type defaultLowering struct {
-	pkg     string // declaring package: names borrowed from it are qualified as soon as they are lowered
+	pkg     string // declaring package: bare function names resolve there (functionByName); they are qualified once the whole default is lowered
 	foreign bool   // declared in a file other than the one being transformed
 }
 

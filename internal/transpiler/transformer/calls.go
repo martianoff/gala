@@ -883,7 +883,12 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 	// A default may use the receiver (`f func(int) int = (x) => x * b.K`): it
 	// is lowered with the receiver bound as in the method body, so `b.K`
 	// resolves — and unwraps an immutable field — as it does there, and the
-	// call-site receiver is then put in its place.
+	// call-site receiver is then put in its place. A pointer receiver is bound
+	// by its element type: field access reads the same through either, and the
+	// element type is what the type metadata is keyed by.
+	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
+		recvType = ptr.Elem
+	}
 	src := defaultSource{
 		DefaultExpr: methodMeta.DefaultExprs[i],
 		file:        methodMeta.DefinedIn,
@@ -909,9 +914,6 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 // arguments recvType carries (`T` → `int` for Box[int]), overlaid on extra
 // (which is not modified). extra is returned as is when recvType carries none.
 func receiverTypeSubst(typeParams []string, recvType transpiler.Type, extra map[string]string) map[string]string {
-	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
-		recvType = ptr.Elem
-	}
 	generic, ok := recvType.(transpiler.GenericType)
 	if !ok || len(generic.Params) != len(typeParams) {
 		return extra
@@ -3135,15 +3137,6 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	expr, err := t.transformExpression(exprCtx)
 	if err != nil {
 		return nil, err
-	}
-	// A default declared in another package names that package's functions
-	// bare. Qualify them before anything below asks what the expression is:
-	// bare, `DefaultClose` resolves to nothing here, and the thunk sugar would
-	// wrap a function reference into `func() T { return lib.DefaultClose }`.
-	if t.loweringDefault != nil {
-		if expr, err = t.qualifyDefaultExpr(expr, t.loweringDefault.pkg); err != nil {
-			return nil, err
-		}
 	}
 
 	// Lift bare T value to Immutable[T] when the expected param type is

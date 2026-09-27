@@ -363,5 +363,24 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 	if found {
 		return t.functions[resolved]
 	}
-	return nil
+	fm, _ := t.functionByName(name)
+	return fm
+}
+
+// functionByName looks up a GALA function referenced by a bare name. While a
+// default declared in another package is being lowered, a bare name there is
+// one of THAT package's functions: `OnClose func() int = DefaultClose`
+// references lib's DefaultClose, which this package knows only as
+// "lib.DefaultClose". Type queries on the lowered default (the by-name sugar's
+// "is this already a function?", a call's result type) resolve it through
+// here; the name itself is qualified once the whole default is lowered.
+func (t *galaASTTransformer) functionByName(name string) (*transpiler.FunctionMetadata, bool) {
+	if fm, ok := t.functions[name]; ok {
+		return fm, true
+	}
+	if d := t.loweringDefault; d != nil && d.pkg != "" && d.pkg != t.packageName {
+		fm, ok := t.functions[d.pkg+"."+name]
+		return fm, ok
+	}
+	return nil, false
 }

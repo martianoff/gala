@@ -143,7 +143,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			return typ
 		}
 		// Check if this is a reference to a known GALA function (e.g., passing getAnswer as func() int).
-		if fm, ok := t.functions[e.Name]; ok && len(fm.TypeParams) == 0 {
+		if fm, ok := t.functionByName(e.Name); ok && len(fm.TypeParams) == 0 {
 			var params []transpiler.Type
 			params = append(params, fm.ParamTypes...)
 			var results []transpiler.Type
@@ -477,7 +477,7 @@ func (t *galaASTTransformer) instantiateFuncMetaType(fm *transpiler.FunctionMeta
 func (t *galaASTTransformer) lookupBareFuncRefMeta(expr ast.Expr) *transpiler.FunctionMetadata {
 	switch e := expr.(type) {
 	case *ast.Ident:
-		if fm, ok := t.functions[e.Name]; ok {
+		if fm, ok := t.functionByName(e.Name); ok {
 			return fm
 		}
 	case *ast.SelectorExpr:
