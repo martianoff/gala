@@ -470,7 +470,11 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, l
 				return nil, err
 			}
 			if lastStmtIsValue {
-				t.tryFillReturnSlot(res.typ)
+				if res.guessed {
+					t.returnSlot.guesses = append(t.returnSlot.guesses, expr)
+				} else {
+					t.tryFillReturnSlot(res.typ)
+				}
 				block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			} else {
 				block.List = append(block.List, &ast.ExprStmt{X: expr})
@@ -516,6 +520,12 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, l
 			var expr ast.Expr
 			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
+			}
+		} else if isTrailing && lastStmtIsValue && valueExpr != nil && ctx == t.returnSlot.body && t.returnSlotPending() {
+			// The trailing value of a lambda whose result type is not known
+			// yet is one of its result values, like a `return` value.
+			if err = t.checkForbiddenStatementKeyword(valueExpr); err == nil {
+				stmt = &ast.ExprStmt{X: t.lowerFillingValue(valueExpr, false)}
 			}
 		} else {
 			stmt, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))

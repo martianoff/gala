@@ -25,6 +25,10 @@ Some(v=2)
 None()
 some
 Some(x)
+Some(x)
+None()
+side effect
+None()
 None()
 Some(v=0)
 Some(v=6)

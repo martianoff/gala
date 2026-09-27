@@ -177,6 +177,9 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	} else {
 		lambdaSlot.fillable = !isVoidExpected
 	}
+	if block, ok := ctx.Block().(*grammar.BlockContext); ok && lambdaSlot.fillable {
+		lambdaSlot.body = block
+	}
 	defer t.enterReturnSlot(lambdaSlot)()
 
 	// The body is lowered in a fresh context: its expected type is this

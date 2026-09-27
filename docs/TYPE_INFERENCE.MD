@@ -461,9 +461,12 @@ return type.
   trailing value or a `bind` chain can also fill the slot. The deferred returns
   are then lowered again against it, so an early guard
   `if (x < 0) { return None() }` takes `Option[int]` from a later `Some(x + 1)`.
-- Only a value's own type fills the slot, never a guess. While such a `return`
-  is first lowered, the enclosing match subject (which `None()` would otherwise
-  fall back to) is hidden.
+- Only a value's own type fills the slot, never a guess. While a `return`
+  value or the body's trailing value is first lowered, the enclosing match
+  subject (which `None()` would otherwise fall back to) is hidden. A trailing
+  value that fails to lower that way is deferred like a `return`. The same holds
+  for a `bind` block's trailing value, and a `bind` type taken from the subject
+  never fills the slot.
 - If nothing fills the slot, each deferred return is lowered again with that
   context restored. One that still has no settled type is an error: "cannot
   infer the result type of this lambda" (or the constructor's own error, such as

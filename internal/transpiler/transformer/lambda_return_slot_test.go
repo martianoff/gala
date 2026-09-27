@@ -155,6 +155,41 @@ func subjectNotResult(o Option[int]) string {
 			notContains: []string{"return std.None[int]"},
 		},
 		{
+			name: "a trailing value is not typed from the match subject",
+			body: `
+func trailingNone(o Option[int]) string = o match {
+    case Some(v) => {
+        val r = apply(() => {
+            if (v > 1) {
+                return Some("x")
+            }
+            None()
+        })
+        s"$r"
+    }
+    case _ => "none"
+}
+`,
+			contains:    []string{"apply(func() std.Option[string] {", "return std.None[string]{}"},
+			notContains: []string{"return std.None[int]"},
+		},
+		{
+			name: "a trailing value falls back to the match subject when nothing else types the lambda",
+			body: `
+func onlyTrailingNone(o Option[int]) string = o match {
+    case Some(_) => {
+        val r = apply(() => {
+            Println("side effect")
+            None()
+        })
+        s"$r"
+    }
+    case _ => "none"
+}
+`,
+			contains: []string{"apply(func() std.Option[int] {", "return std.None[int]{}"},
+		},
+		{
 			name: "a return in an if-expression branch leaves the lambda's slot alone",
 			body: `
 func doubledSize(s string) Option[string] {
