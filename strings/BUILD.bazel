@@ -29,6 +29,7 @@ go_library(
     deps = [
         "//collection_immutable",  # keep
         "//collection_mutable",  # keep
+        "//go_interop",  # keep
         "//lazy",  # keep
         "//std",  # keep
     ],

@@ -207,6 +207,48 @@ func benchSubstring() {
     printResult("Str.Substring(100,500)", ns)
 }
 
+// ============ RUNE CONVERSION ============
+// Each iteration builds a fresh Str, so these include the one-time conversion
+// of the string into its rune Array that the cached-Str benchmarks above skip.
+
+val line80 = Repeat("abcdefghij", 8)
+val text10k = Repeat("abcdefghij", 1000)
+
+func benchToChars80() {
+    val ns = measureNs(100000, () => {
+        S(line80).ToChars()
+    })
+    printResult("S(80).ToChars()", ns)
+}
+
+func benchToChars10k() {
+    val ns = measureNs(1000, () => {
+        S(text10k).ToChars()
+    })
+    printResult("S(10000).ToChars()", ns)
+}
+
+func benchDrop80() {
+    val ns = measureNs(100000, () => {
+        S(line80).Drop(40)
+    })
+    printResult("S(80).Drop(40)", ns)
+}
+
+func benchSplitAt80() {
+    val ns = measureNs(100000, () => {
+        S(line80).SplitAt(40)
+    })
+    printResult("S(80).SplitAt(40)", ns)
+}
+
+func benchCapitalize80() {
+    val ns = measureNs(100000, () => {
+        S(line80).Capitalize()
+    })
+    printResult("S(80).Capitalize()", ns)
+}
+
 // ============ STRINGBUILDER ============
 
 func benchBuilderAppend100() {
@@ -304,6 +346,14 @@ func main() {
 
     Println("--- Substring ---")
     benchSubstring()
+    Println("")
+
+    Println("--- Rune Conversion (fresh Str) ---")
+    benchToChars80()
+    benchToChars10k()
+    benchDrop80()
+    benchSplitAt80()
+    benchCapitalize80()
     Println("")
 
     Println("--- StringBuilder ---")
