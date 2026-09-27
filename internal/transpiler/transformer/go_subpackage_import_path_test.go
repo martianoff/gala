@@ -114,7 +114,7 @@ func Pick(o Option[int]) *Box {
 			defer func() { _ = os.Chdir(wd) }()
 
 			p := transpiler.NewAntlrGalaParser()
-			trans := transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths),
+			trans := newCheckedTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths),
 				transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 			goCode, err := trans.Transpile(tc.source, galaFile)
 			require.NoError(t, err)

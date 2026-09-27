@@ -64,7 +64,7 @@ func exampleCorpus(t *testing.T) []corpusFile {
 				continue
 			}
 
-			trans, tr := newTranspilerWithTransformer()
+			trans, tr := newCorpusTranspiler()
 			out, err := trans.Transpile(string(src), filepath.Base(path))
 			corpusFiles = append(corpusFiles, corpusFile{
 				Name:       filepath.Base(path),
@@ -102,9 +102,17 @@ func discoverExampleSources(t *testing.T) []string {
 }
 
 // newTranspilerWithTransformer builds the standard pipeline and also returns
-// the transformer, which the corpus guards need in order to read the
-// diagnostics it collected. newTranspiler discards it.
-func newTranspilerWithTransformer() (*transpiler.GalaToGoTranspiler, transpiler.ASTTransformer) {
+// the transformer, which callers need in order to read the diagnostics it
+// collected. newTranspiler discards it.
+func newTranspilerWithTransformer() (*checkedTranspiler, transpiler.ASTTransformer) {
+	trans, tr := newCorpusTranspiler()
+	return &checkedTranspiler{trans}, tr
+}
+
+// newCorpusTranspiler is newTranspilerWithTransformer without the unit-test
+// oracle, for the example corpus: TestGeneratedGoOracleCorpus checks corpus
+// output itself, and Bazel compiles every example.
+func newCorpusTranspiler() (*transpiler.GalaToGoTranspiler, transpiler.ASTTransformer) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()

@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTypeAsCtorTranspiler() *transpiler.GalaToGoTranspiler {
+func newTypeAsCtorTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 // TestTypeCalledAsConstructorIsRejected pins B4: calling a type name as though

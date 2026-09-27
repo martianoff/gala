@@ -32,7 +32,7 @@ func TestMatchReturnInsideStatementMatch(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name     string
@@ -75,6 +75,8 @@ func main() {
 		{
 			name: "return inside match arm nested in for loop — early exit",
 			input: `package main
+
+import . "martianoff/gala/collection_immutable"
 
 func firstOdd(xs Array[int]) int {
     var i = 0

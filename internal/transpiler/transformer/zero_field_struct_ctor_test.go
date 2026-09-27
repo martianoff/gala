@@ -20,7 +20,7 @@ func TestZeroFieldStructConstructor(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	t.Run("Foo() lowers to composite literal", func(t *testing.T) {
 		input := `package main

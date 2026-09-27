@@ -837,7 +837,7 @@ func newDocGuardTranspilerWithPaths(extraRoots ...string) transpiler.Transpiler 
 	a := analyzer.NewGalaAnalyzer(p, append(getStdSearchPath(), extraRoots...))
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 // readErrorDoc returns the text of docs/errors/<code>.md. getStdSearchPath

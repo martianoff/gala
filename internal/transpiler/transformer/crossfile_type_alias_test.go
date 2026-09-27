@@ -67,6 +67,7 @@ func main() {
 	assert.NoError(t, err)
 	result, err := g.Generate(fset, file)
 	assert.NoError(t, err)
+	checkGeneratedGo(t, result)
 
 	// The alias names a non-struct, so the call is a Go conversion — never a
 	// composite literal, which would drop the argument.

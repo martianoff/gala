@@ -21,7 +21,7 @@ func TestSealedTypeCompanionApplyDispatch(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// `Box` is sealed with a single case carrying one field, so the synthetic
 	// parent struct has two fields: `value` + `_variant`. A two-argument call

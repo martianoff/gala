@@ -133,6 +133,7 @@ func wrap(tag string, x string) Option[T] {
 	require.NoError(t, err)
 	gen, err := g.Generate(fset, file)
 	require.NoError(t, err)
+	checkGeneratedGo(t, gen)
 
 	// Each case must lower to `<Case>{}.Apply(...)` so the result has
 	// type T — Some[T]{}.Apply accepts T, not the bare case struct.
@@ -218,6 +219,7 @@ func wrap(x string) Option[O] {
 	require.NoError(t, err)
 	gen, err := g.Generate(fset, file)
 	require.NoError(t, err)
+	checkGeneratedGo(t, gen)
 
 	require.True(t, strings.Contains(gen, "W{}.Apply("),
 		"expected generated code to contain W{}.Apply(...) for dot-imported variant\n--- generated ---\n%s", gen)

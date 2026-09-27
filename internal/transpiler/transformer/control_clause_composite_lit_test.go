@@ -90,7 +90,7 @@ sealed type Dir {
 			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 			tr := transformer.NewGalaASTTransformer()
 			g := generator.NewGoCodeGenerator()
-			trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+			trans := newCheckedTranspiler(p, a, tr, g)
 
 			got, err := trans.Transpile(tt.input, "")
 			require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestCompositeLiteralOutsideControlClauseUnchanged(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	got, err := trans.Transpile(`package main
 

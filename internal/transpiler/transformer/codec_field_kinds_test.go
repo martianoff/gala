@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newCodecTestTranspiler() *transpiler.GalaToGoTranspiler {
+func newCodecTestTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	return newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 }
 
 // TestCodecFieldKinds_Emission pins how each scalar kind crosses the

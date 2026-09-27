@@ -104,7 +104,7 @@ func runCrossModuleCell(t *testing.T, dep crossModDep, cons crossModConsumer) {
 	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	out, err := trans.Transpile(consumerSource, consumerFile)
 	require.NoError(t, err,

@@ -408,6 +408,13 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)
 		stdAlreadyImported := t.importManager.IsDotImported(registry.StdPackageName)
+		// ... or written in the source under its own name, `import
+		// "martianoff/gala/std"`, which is emitted as written. Adding a
+		// second one would redeclare `std`.
+		if e, ok := t.importManager.GetByPath(registry.StdImportPath); ok &&
+			!e.Implicit() && !e.IsDot && e.Alias == registry.StdPackageName {
+			stdAlreadyImported = true
+		}
 		if !stdAlreadyImported {
 			// Add import at the beginning
 			importDecl := &ast.GenDecl{

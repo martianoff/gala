@@ -32,12 +32,12 @@ import (
 // (`TestErrorPathAssertions/GALA-E0018 qualified None() uninferred in lambda`)
 // covers the qualified-name guard that previously misfired.
 func TestNoneQualifiedDownwardInference(t *testing.T) {
-	newTranspiler := func() *transpiler.GalaToGoTranspiler {
+	newTranspiler := func() *checkedTranspiler {
 		p := transpiler.NewAntlrGalaParser()
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
-		return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		return newCheckedTranspiler(p, a, tr, g)
 	}
 
 	cases := []struct {

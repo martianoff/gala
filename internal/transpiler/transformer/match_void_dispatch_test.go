@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestMatchVoidDispatch verifies that a match expression used purely as a
@@ -23,7 +24,7 @@ func TestMatchVoidDispatch(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name     string
@@ -134,7 +135,7 @@ func TestMatchValueContextFallback(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// When the enclosing function declares a concrete return type, the existing
 	// fallback still takes effect (no regression).
@@ -171,12 +172,13 @@ func TestIfExprFormInsideMatchArmBody(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	tests := []struct {
 		name     string
 		input    string
 		mustHave []string
+		wantErr  string // non-empty: the transpile must fail with this
 	}{
 		{
 			name: "parenthesized if-expr with void branches inside string-literal match arm",
@@ -202,6 +204,9 @@ func dispatch(key string, flag bool) {
 			},
 		},
 		{
+			// An if-expression branch is an expression, so the assignment
+			// takes the whole if as its target. Lowered, that assigned to a
+			// function call's result; it is rejected instead.
 			name: "parenthesized if-expr with void-call then-branch and assignment else-branch (faithful repro)",
 			input: `package main
 
@@ -219,10 +224,29 @@ func dispatch(key string, flag bool) {
     Println(slot)
 }
 `,
+			wantErr: "cannot assign to an if-expression",
+		},
+		{
+			name: "braced if with void-call then-branch and assignment else-branch",
+			input: `package main
+
+func voidA() {}
+
+func dispatch(key string, flag bool) {
+    var slot string
+    key match {
+        case "k" => {
+            if (flag) { voidA() } else { slot = "x" }
+        }
+        case _ => voidA()
+    }
+    Println(slot)
+}
+`,
 			mustHave: []string{
 				`func dispatch(key string, flag bool) {`,
 				`voidA()`,
-				`slot`,
+				`slot = "x"`,
 			},
 		},
 		{
@@ -245,10 +269,7 @@ func processAll(keys []string, flag bool) {
     Println(slot)
 }
 `,
-			mustHave: []string{
-				`func processAll(`,
-				`voidA()`,
-			},
+			wantErr: "cannot assign to an if-expression",
 		},
 		{
 			name: "parenthesized if-expr with void branches inside sealed-variant match arm",
@@ -283,6 +304,11 @@ func dispatch(t Tag, flag bool) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(tt.input, "")
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
 			assert.NoError(t, err, "transpilation must not panic on if-expr form inside match arm body")
 			gen := stripGeneratedHeader(got)
 			for _, frag := range tt.mustHave {

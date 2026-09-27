@@ -75,7 +75,7 @@ func Snapshot(w Widget, width int, height int) string = "tui-snap"
 	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	input := `package main
 

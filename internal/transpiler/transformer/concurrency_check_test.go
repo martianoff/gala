@@ -17,12 +17,12 @@ import (
 // newConcurrencyTranspiler builds a full transpiler wired to the std search path
 // so the Sendable boundary marker resolves and the collection packages are
 // available for the capture-safety cases.
-func newConcurrencyTranspiler() *transpiler.GalaToGoTranspiler {
+func newConcurrencyTranspiler() *checkedTranspiler {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	return newCheckedTranspiler(p, a, tr, g)
 }
 
 // TestSendableCaptureErrors covers PR3 enforcement: a closure (explicit lambda
@@ -337,7 +337,7 @@ type sendableRejectCase struct {
 // assertSendableRejected drives the reject-case assertions shared by every
 // corner-case table: the coded error, the explanation, the named capture, and
 // (unless skipped) the caret pointing at the exact offending identifier.
-func assertSendableRejected(t *testing.T, trans *transpiler.GalaToGoTranspiler, tc sendableRejectCase) {
+func assertSendableRejected(t *testing.T, trans *checkedTranspiler, tc sendableRejectCase) {
 	t.Helper()
 	_, err := trans.Transpile(tc.input, "concurrency_check_corner.gala")
 	require.Error(t, err, "expected the boundary capture to be rejected")
@@ -370,7 +370,7 @@ func assertSendableRejected(t *testing.T, trans *transpiler.GalaToGoTranspiler, 
 
 // assertSendableAccepted drives the accept-case assertions: clean transpile and
 // no leak of the transparent marker into the generated Go.
-func assertSendableAccepted(t *testing.T, trans *transpiler.GalaToGoTranspiler, input string) {
+func assertSendableAccepted(t *testing.T, trans *checkedTranspiler, input string) {
 	t.Helper()
 	out, err := trans.Transpile(input, "concurrency_check_corner_ok.gala")
 	require.NoError(t, err, "safe captures must transpile cleanly")
@@ -540,7 +540,7 @@ import (
 
 struct Policy(retries int, var override bool)
 
-struct AppModel(team string, statuses Array[int], policy Policy, sessions cm.Array[int])
+struct AppModel(team string, statuses Array[int], policy Policy, sessions *cm.Array[int])
 
 func (m AppModel) label() string = m.team
 
@@ -550,7 +550,7 @@ func runBool(body Sendable[func() bool]) bool = body()
 
 func g(a string, b Array[int]) int = a.Size() + b.Size()
 
-func sz(a cm.Array[int]) int = a.Size()
+func sz(a *cm.Array[int]) int = a.Size()
 
 func consume(x AppModel) int = x.statuses.Size()
 
@@ -1074,7 +1074,7 @@ func run(body Sendable[func() int]) int = body()
 
 func main() {
     val im = NewImmutable(41)
-    Println(run(() => im.Get() + 1))
+    Println(run(() => im + 1))
 }`,
 		},
 		{

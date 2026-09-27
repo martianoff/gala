@@ -276,6 +276,7 @@ func main() {
 			require.NoError(t, err)
 			out, err := generator.NewGoCodeGenerator().Generate(fset, file)
 			require.NoError(t, err)
+			checkGeneratedGo(t, out)
 
 			for _, want := range tc.contains {
 				assert.Contains(t, out, want)

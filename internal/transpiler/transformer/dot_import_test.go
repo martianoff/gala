@@ -18,7 +18,7 @@ func TestDotImportNoDuplicate(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	input := `package testpkg
 
@@ -96,7 +96,7 @@ func TestDotImportClashError(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	input := `package testpkg
 
@@ -178,7 +178,7 @@ func Other() int = 1
 	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	input := `package testpkg
 
@@ -205,7 +205,7 @@ func TestDotImportNoQualifiedReferences(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	input := `package testpkg
 
@@ -235,7 +235,7 @@ func TestDotImportNoClashNoError(t *testing.T) {
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// std and time_utils should not clash
 	input := `package testpkg
@@ -386,7 +386,7 @@ func PrintHarnessFrame(s SessionInstance) string = s.W.Label
 	a := analyzer.NewGalaAnalyzer(p, nil)
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+	trans := newCheckedTranspiler(p, a, tr, g)
 
 	// Demo / consumer file dot-imports both the root and harness. Each symbol
 	// it references is only legitimately declared in the harness subpackage;

@@ -19,12 +19,12 @@ import (
 // path previously bound `_` to `any`, which prevented the field-access
 // transform from finding the struct metadata and emitting the unwrap.
 func TestPlaceholderFieldImmutableUnwrap(t *testing.T) {
-	newTranspiler := func() *transpiler.GalaToGoTranspiler {
+	newTranspiler := func() *checkedTranspiler {
 		p := transpiler.NewAntlrGalaParser()
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
-		return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		return newCheckedTranspiler(p, a, tr, g)
 	}
 
 	const explicitSrc = `package main
@@ -106,12 +106,12 @@ func normalizeParamName(s string) string {
 // across a range of forms: Immutable field access, non-field expressions,
 // nested/parenthesized placeholders, method calls, and multiple placeholders.
 func TestPlaceholderEquivalentToExplicitLambda(t *testing.T) {
-	newTranspiler := func() *transpiler.GalaToGoTranspiler {
+	newTranspiler := func() *checkedTranspiler {
 		p := transpiler.NewAntlrGalaParser()
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
-		return transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+		return newCheckedTranspiler(p, a, tr, g)
 	}
 
 	// prelude declares a struct with an Immutable field plus a method.
