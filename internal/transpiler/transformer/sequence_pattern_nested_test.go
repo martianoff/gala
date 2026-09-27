@@ -26,6 +26,16 @@ sealed type Shape {
 struct Box[T any](V T, Tag string)
 struct Pair[K any, V any](Key K, Val V)
 struct Plain(N int)
+struct Node(V int)
+
+var probes = 0
+
+struct Probe()
+
+func (p Probe) Unapply(n int) Option[int] {
+    probes = probes + 1
+    return Some(n)
+}
 
 `
 
@@ -66,9 +76,8 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case Array(Square(s), _) => s
     case _                   => 0
 }`,
-			inGuard:     []string{"= obj.Get(0)"},
-			afterGuard:  []string{"Square{}.Unapply(", "s := "},
-			notContains: []string{"Square :=", "var Square"},
+			inGuard:     []string{"= obj.Get(0)", "Square{}.Unapply(", "s = "},
+			notContains: []string{"Square :=", "var Square", "s := "},
 		},
 		{
 			name: "doubly nested extractor with a rest binding",
@@ -76,17 +85,38 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case Array(Some(Square(s)), rest...) => s + rest.Size()
     case _                               => 0
 }`,
-			inGuard:     []string{"rest = obj.SeqDrop(1)"},
-			afterGuard:  []string{"Some[Shape]{}.Unapply(", "Square{}.Unapply(", "s := "},
-			notContains: []string{"Some :=", "Square :="},
+			inGuard:     []string{"rest = obj.SeqDrop(1)", "Some[Shape]{}.Unapply(", "Square{}.Unapply(", "s = "},
+			notContains: []string{"Some :=", "Square :=", "s := "},
 		},
 		{
-			name: "literal element compares, plain element binds",
+			name: "plain element binds inside the guard, the literal compares in the arm condition",
 			body: `func f(xs List[int]) int = xs match {
     case List(0, second, _...) => second
     case _                     => 0
 }`,
-			afterGuard: []string{"== 0", "second := "},
+			inGuard:    []string{"second = "},
+			afterGuard: []string{"== 0"},
+		},
+		{
+			// A struct pattern on a pointer element reads a field through the
+			// pointer; on an empty array that pointer is nil.
+			name: "struct pattern on a pointer element reads fields only inside the guard",
+			body: `func f(xs Array[*Node]) int = xs match {
+    case Array(Node(v), rest...) => v + rest.Size()
+    case _                       => 0
+}`,
+			inGuard:     []string{".V.Get()", "v = "},
+			notContains: []string{"v := "},
+		},
+		{
+			// A user extractor must not run (or count) for an arm whose
+			// sequence is too short.
+			name: "user extractor runs only inside the guard",
+			body: `func f(xs Array[int]) int = xs match {
+    case Array(Probe(x), y) => x + y
+    case _                  => 0
+}`,
+			inGuard: []string{"Probe{}.Unapply("},
 		},
 	}
 
@@ -107,6 +137,28 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A sub-pattern of an Option-returning extractor reads the payload, which is
+// only set when the extractor matched: `Some(Node(v))` against None must not
+// read a field through the nil payload. The sub-pattern runs inside the
+// `if ok { payload = result.Get() ... }` guard; `v` is declared before it.
+func TestExtractorSubPatternRunsInsideGuard(t *testing.T) {
+	got, err := transpileSequencePattern(t, `func f(o Option[*Node]) int = o match {
+    case Some(Node(v)) => v
+    case _             => 0
+}`)
+	require.NoError(t, err)
+	m := regexp.MustCompile(`if (_tmp_\d+) \{\n\s*(_tmp_\d+) = (_tmp_\d+)\.Get\(\)`).FindStringSubmatch(got)
+	require.NotNil(t, m, "extractor guard not found in:\n%s", got)
+	start := strings.Index(got, m[0])
+	end := strings.Index(got[start:], "\n\t\t\t}\n")
+	require.NotEqual(t, -1, end)
+	guard := got[start : start+end]
+	assert.Contains(t, guard, m[2]+".V.Get()", "the field read must be inside the guard")
+	assert.Contains(t, guard, "v = ")
+	assert.Contains(t, got[:start], "var v int", "v must be declared before the guard")
+	assert.NotContains(t, got, "v := ")
 }
 
 // A typed element's ok flag is assigned (not declared) inside the guard, so

@@ -51,6 +51,35 @@ func describe(x any) string = x match {
     case _                       => "other"
 }
 
+// A sub-pattern only runs once its guard holds: on an empty sequence (or an
+// empty Option) the element is never read, so a struct pattern on a pointer
+// element does not dereference nil and a user extractor is not invoked.
+struct Node(V int)
+
+var probes = 0
+
+struct Probe()
+
+func (p Probe) Unapply(n int) Option[int] {
+    probes = probes + 1
+    return Some(n)
+}
+
+func firstNode(xs Array[*Node]) string = xs match {
+    case Array(Node(v), rest...) => s"node $v then ${rest.Size()}"
+    case _                       => "none"
+}
+
+func probed(xs Array[int]) string = xs match {
+    case Array(Probe(x), y) => s"probe $x $y"
+    case _                  => "short"
+}
+
+func payload(o Option[*Node]) string = o match {
+    case Some(Node(v)) => s"some $v"
+    case _             => "empty"
+}
+
 func main() {
     Println(firstSquare(ArrayOf[Shape](Square(4), Circle(1))))
     Println(firstSquare(ArrayOf[Shape](Circle(2), Square(1), Square(3))))
@@ -74,4 +103,13 @@ func main() {
     Println(describe(Pair[string, int](Key = "k", Val = 21)))
     Println(describe(Plain(N = 3)))
     Println(describe(Box(V = true, Tag = "x")))
+
+    Println(firstNode(ArrayOf(&Node(V = 1), &Node(V = 2))))
+    Println(firstNode(EmptyArray[*Node]()))
+    Println(probed(ArrayOf(1)))
+    Println(s"probes after the short sequence: $probes")
+    Println(probed(ArrayOf(1, 2)))
+    Println(s"probes after the match: $probes")
+    Println(payload(Some(&Node(V = 5))))
+    Println(payload(None[*Node]()))
 }

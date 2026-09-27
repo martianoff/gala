@@ -94,6 +94,11 @@ type galaASTTransformer struct {
 	typeNameCache            typeNameMemo                 // name-normalization memo shared by functionTypeEnv and buildTypeEnv; see sharedTypeNameMemo
 	typeNameCacheEpoch       uint32                       // typeEnvEpoch the memo above was filled at
 	typeNameCacheImportRev   uint64                       // importManager.Revision the memo above was filled at
+
+	// patternDefineTypes records the Go type of each name a pattern's `:=`
+	// declares, so a sub-pattern's statements can be split into declarations
+	// outside a guard and assignments inside it (see hoistPatternDecls).
+	patternDefineTypes map[*ast.AssignStmt][]ast.Expr
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -201,6 +206,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.activeTypeParams = make(map[string]bool)
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
+	t.patternDefineTypes = nil
 	t.genericMethods = make(map[string]map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types

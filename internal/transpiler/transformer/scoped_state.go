@@ -99,6 +99,7 @@ var accumulatedStateFields = []string{
 	"traceTypeResolution",
 	"typeTraces",
 	"exprTypeCache",
+	"patternDefineTypes",
 	"defaultTrees",
 	"warnTypeInference",
 	"inferenceWarnings",

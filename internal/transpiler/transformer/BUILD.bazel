@@ -22,6 +22,7 @@ go_library(
         "match.go",
         "method_receiver_alias.go",
         "methods.go",
+        "pattern_hoist.go",
         "patterns.go",
         "postfix.go",
         "scope.go",
