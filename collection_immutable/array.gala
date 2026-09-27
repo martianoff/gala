@@ -217,9 +217,10 @@ func (b *arrayBuilder[T]) Result() Array[T] {
         level2Nodes = go_interop.SliceAppend(level2Nodes, node)
     }
 
-    // Continue building up the tree
+    // Continue building up the tree. Each level2 node has leaf children, so a
+    // tree whose root is one of them has depth 2.
     var currentLevel = level2Nodes
-    var depth = 3
+    var depth = 2
 
     for currentLevel.Size() > 1 {
         var nextLevel []*arrayNode[T]

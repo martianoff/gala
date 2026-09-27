@@ -551,3 +551,39 @@ func TestArrayPrependLargeAccess(t T) T {
     val t3 = Eq[int](t2, arr.Get(24), 25)
     return Eq[int](t3, arr.Get(49), 50)
 }
+
+// === Large Array Tests ===
+// From 1024 elements up the builder takes its multi-level path: depth 2 at
+// 1024, depth 3 from 1025, depth 4 from 32769, depth 5 from 1048577. Get,
+// Append, Updated and every builder-based operation must agree on that depth.
+
+func arrayLargeCase(t T, n int) T {
+    val xs = ArrayTabulate(n, (i) => i)
+    val probes = ArrayOf(0, 31, 32, 1023, n / 2, n - 1)
+    val t1 = probes.FoldLeft(t, (acc, i) => Eq[int](acc, xs.Get(i), i))
+    val t2 = Eq[int](t1, xs.Append(n).Get(n), n)
+    val t3 = Eq[int](t2, xs.Updated(n - 1, -1).Get(n - 1), -1)
+    val t4 = Eq[int](t3, xs.Get(n - 1), n - 1)
+    val t5 = Eq[int](t4, xs.Reverse().Get(0), n - 1)
+    val t6 = Eq[int](t5, xs.Reverse().Get(n - 1), 0)
+    val t7 = Eq[int](t6, xs.Map((x) => x * 2).Get(n - 1), 2 * (n - 1))
+    val t8 = Eq[int](t7, xs.Filter((x) => x % 2 == 0).Get(n / 4), n / 2)
+    val t9 = Eq[int](t8, xs.Drop(n / 2).Get(0), n / 2)
+    val t10 = Eq[int](t9, xs.Take(n - 1).Get(n - 2), n - 2)
+    val t11 = Eq[int](t10, xs.Slice(32, n).Get(0), 32)
+    val t12 = Eq[int](t11, xs.Zip(xs.Map((x) => x * 2)).Get(n - 1).V2, 2 * (n - 1))
+    val t13 = Eq[int](t12, xs.AppendAll(xs).Get(n + 32), 32)
+    return Eq[int](t13, xs.Reverse().Sorted().Get(n - 1), n - 1)
+}
+
+func TestArrayLargeAccess(t T) T =
+    ArrayOf(1024, 1025, 32768, 32769, 40000).FoldLeft(t, (acc, n) => arrayLargeCase(acc, n))
+
+func TestArrayLargeAccessDepth5(t T) T {
+    val n = 1048577
+    val xs = ArrayTabulate(n, (i) => i)
+    val t1 = Eq[int](t, xs.Get(32), 32)
+    val t2 = Eq[int](t1, xs.Get(n - 1), n - 1)
+    val t3 = Eq[int](t2, xs.Append(n).Get(n), n)
+    return Eq[int](t3, xs.Updated(1048575, -1).Get(1048575), -1)
+}

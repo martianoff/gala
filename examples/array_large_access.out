@@ -1,0 +1,3 @@
+n=1000 get(32)=32 last=999 append=1000 map=1998 filter=500 drop=500 sorted=999
+n=1024 get(32)=32 last=1023 append=1024 map=2046 filter=512 drop=512 sorted=1023
+n=32769 get(32)=32 last=32768 append=32769 map=65536 filter=16384 drop=16384 sorted=32768
