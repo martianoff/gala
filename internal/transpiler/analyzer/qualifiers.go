@@ -80,19 +80,37 @@ func (q fileQualifiers) goImport(qualifier string) (string, bool) {
 	return b.Path, true
 }
 
+// currentGoTypeInfo is the Go type info of the file being analyzed, nil
+// outside Analyze.
+func (a *galaAnalyzer) currentGoTypeInfo() *transpiler.GoTypeInfo {
+	if a.currentRichAST == nil {
+		return nil
+	}
+	return a.currentRichAST.GoTypeInfo
+}
+
 // withGoImportPath records on a package-qualified type written in this file
 // the path of the Go import its qualifier is bound to, so the type stays tied
 // to that import — `*strings.Builder` after `import "strings"` is Go's type
-// even when a GALA package named `strings` is loaded too. Other types are
-// returned unchanged.
-func (q fileQualifiers) withGoImportPath(t transpiler.Type) transpiler.Type {
+// even when a GALA package named `strings` is loaded too.
+//
+// Only a type the Go package declares is tied to it. When the package's type
+// info was loaded (its real name is known), `strings.Str` — no such Go type —
+// stays untied, so GALA-E0025 still reports it against the GALA package of
+// that name. Without type info the Go import is taken at its word. Other
+// types are returned unchanged.
+func (q fileQualifiers) withGoImportPath(t transpiler.Type, gi *transpiler.GoTypeInfo) transpiler.Type {
 	nt, ok := t.(transpiler.NamedType)
 	if !ok || nt.ImportPath != "" || nt.Package == "" {
 		return t
 	}
-	if path, ok := q.goImport(nt.Package); ok {
-		nt.ImportPath = path
-		return nt
+	b, ok := q.named[nt.Package]
+	if !ok || b.IsGala {
+		return t
 	}
-	return t
+	if b.PkgName != "" && !gi.DeclaresType(b.PkgName, nt.Name) {
+		return t
+	}
+	nt.ImportPath = b.Path
+	return nt
 }

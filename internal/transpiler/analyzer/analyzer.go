@@ -2387,7 +2387,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		// recursively resolve type arguments so inner types get proper prefixes
 		if idx := strings.Index(typeName, "["); idx != -1 {
 			baseQualified := typeName[:idx]
-			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseQualified))
+			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseQualified), a.currentGoTypeInfo())
 
 			_, argStrs := extractBaseAndArgs(typeName)
 			var params []transpiler.Type
@@ -2398,7 +2398,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 				return transpiler.GenericType{Base: baseType, Params: params}
 			}
 		}
-		return a.currentQualifiers.withGoImportPath(transpiler.ParseType(typeName))
+		return a.currentQualifiers.withGoImportPath(transpiler.ParseType(typeName), a.currentGoTypeInfo())
 	}
 
 	// Check if it's a type parameter - these should not be prefixed

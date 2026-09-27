@@ -69,3 +69,45 @@ import (
 		assert.False(t, isGo, "core.X in this file is the GALA package's")
 	})
 }
+
+// TestWithGoImportPath: a type written against a Go import is tied to it only
+// when the Go package declares the type, or when its type info is missing.
+func TestWithGoImportPath(t *testing.T) {
+	const src = `package repro
+
+import (
+    "strings"
+    "k8s.io/api/core/v1"
+)
+`
+	tree, _, err := transpiler.NewAntlrGalaParser().Parse(src)
+	require.NoError(t, err)
+	sf := tree.(*grammar.SourceFileContext)
+	a := &galaAnalyzer{}
+	named := func(pkg, name string) transpiler.NamedType { return transpiler.NamedType{Package: pkg, Name: name} }
+
+	gi := transpiler.NewGoTypeInfo()
+	gi.Types["strings.Builder"] = &transpiler.GoTypeData{}
+	gi.Types["v1.Pod"] = &transpiler.GoTypeData{}
+	withInfo := a.qualifiersForFile(sf, &transpiler.RichAST{
+		GoImportNames: map[string]string{"strings": "strings", "k8s.io/api/core/v1": "v1"},
+	})
+	cases := []struct {
+		typ      transpiler.NamedType
+		wantPath string
+	}{
+		{named("strings", "Builder"), "strings"},
+		{named("strings", "Str"), ""}, // Go's strings declares no Str
+		{named("v1", "Pod"), "k8s.io/api/core/v1"},
+		{named("core", "Widget"), ""}, // the k8s package is v1; core is not bound to it
+	}
+	for _, tc := range cases {
+		got := withInfo.withGoImportPath(tc.typ, gi).(transpiler.NamedType)
+		assert.Equal(t, tc.wantPath, got.ImportPath, tc.typ.String())
+	}
+
+	// Without type info the Go import is taken at its word.
+	noInfo := a.qualifiersForFile(sf, &transpiler.RichAST{})
+	got := noInfo.withGoImportPath(named("strings", "Str"), nil).(transpiler.NamedType)
+	assert.Equal(t, "strings", got.ImportPath)
+}

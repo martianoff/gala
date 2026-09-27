@@ -262,13 +262,7 @@ func (t *galaASTTransformer) goImportForPathlessType(v transpiler.NamedType) (*I
 		if owner, ok := t.importManager.Qualifier(v.Package); ok && !owner.Implicit() {
 			return nil, false
 		}
-		gi := t.richAST.GoTypeInfo
-		if gi == nil {
-			return nil, false
-		}
-		_, goType := gi.Types[key]
-		_, goAlias := gi.TypeAliases[key]
-		if !goType && !goAlias {
+		if !t.richAST.GoTypeInfo.DeclaresType(v.Package, v.Name) {
 			return nil, false
 		}
 	}

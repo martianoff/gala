@@ -166,6 +166,26 @@ func g() int = gs.S("xy").Length()
 `,
 		},
 		{
+			// Go's `strings` declares no `Str`, so the qualified reference is
+			// not tied to the Go import and is still reported against the
+			// GALA package of that name.
+			name: "qualified gala type name that the go import does not declare still fires",
+			file: `package repro
+
+import "strings"
+
+func f(s strings.Str) string = strings.TrimSpace("x")
+`,
+			sibling: `package repro
+
+import "martianoff/gala/strings"
+
+func g() int = strings.S("xy").Length()
+`,
+			wantErr: []string{"GALA-E0025", "undefined: Str", "'strings' is not imported in this file",
+				"`strings` in this file is the Go import \"strings\""},
+		},
+		{
 			// With both spellings in one file the metadata cannot tell them
 			// apart, so the bare name keeps its diagnostic.
 			name: "bare gala name still fires when the same member is also written against the go import",
