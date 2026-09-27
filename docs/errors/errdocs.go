@@ -53,7 +53,23 @@ func Page(code string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no reference page for %s; run `gala explain --list` to see the codes that exist", norm)
 	}
-	return string(data), nil
+	return stripDocCheckMarkers(string(data)), nil
+}
+
+// stripDocCheckMarkers drops the `<!-- doc-check: ... -->` lines that tell the
+// documentation test how to treat the next code block. They are invisible
+// when the page is rendered as HTML, but `gala explain` prints the markdown.
+func stripDocCheckMarkers(page string) string {
+	lines := strings.Split(page, "\n")
+	out := lines[:0]
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "<!-- doc-check:") && strings.HasSuffix(trimmed, "-->") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // Codes lists every documented code, ascending. Used by `gala explain --list`

@@ -76,6 +76,7 @@ No annotations, no `Sendable` in sight, no ceremony. Idiomatic GALA passes the c
 
 The standard library marks its boundaries this way:
 
+<!-- doc-check: fragment -->
 ```gala
 // concurrent/future.gala — the Future body is a boundary.
 func (f Future[T]) Apply(body Sendable[func() T]) Future[T] = ...
@@ -128,6 +129,7 @@ Three of the four shapes of unsafe capture, and what the compiler actually print
 
 **A reassignable `var`** — the closure runs on another goroutine while the enclosing scope can still reassign the slot:
 
+<!-- doc-check: error GALA-E0037 -->
 ```gala
 package main
 
@@ -155,6 +157,7 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures reassignable
 
 **A `val` of a mutable type, used whole** — the goroutine and the enclosing scope alias the same mutable contents. A **method call is a whole use**, since a method may read or write mutable internals:
 
+<!-- doc-check: error GALA-E0037 -->
 ```gala
 package main
 
@@ -183,6 +186,7 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures "buffer" (ty
 
 **An unshareable field path** — the message names the specific field and why:
 
+<!-- doc-check: error GALA-E0037 -->
 ```gala
 struct AppModel(team string, statuses Array[int], var attempts int)
 
@@ -210,6 +214,7 @@ A conservative whole-value check would force you to copy fields into local `val`
 
 A run of `.field` reads is recorded as a path, and a **trailing method call on that path** is treated as a read of its receiver — it defers to the leaf field's shareability rather than forcing a whole use. Anything else — a bare reference, an argument, an index, a chained (non-terminal) call, a `match` subject — marks the capture as used *whole*. A capture read only through field paths is accepted when every accessed path reads through `val` fields to a shareable type.
 
+<!-- doc-check: fragment -->
 ```gala
 struct AppModel(team string, statuses Array[int], var attempts int)
 func project(team string, statuses Array[int]) string = s"$team: ${statuses.Size()}"
@@ -228,6 +233,7 @@ Reading a frozen projection of an otherwise-mutable value is race-free, so no sn
 
 Calling a method on a field you just read works too — the receiver's own type decides:
 
+<!-- doc-check: fragment -->
 ```gala
 // OK — `team` is a `string`, which is unconditionally shareable.
 Future(() => model.team.Size())

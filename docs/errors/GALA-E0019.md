@@ -25,16 +25,19 @@ func handle(code Int) Unit = code match {
 
 **Fix.** Replace `()` with whatever the arm actually does:
 
+<!-- doc-check: fragment -->
 ```gala
 case _ => Println("other")        // an actual side-effecting call
 case _ => { /* no-op block */ }   // an explicit empty block, when allowed
 ```
 
-If the arm represents an unreachable case, prefer panic with a coded
-message so a future bug surfaces loudly:
+If the arm represents an unreachable case, fail loudly with a coded message so
+a future bug surfaces. A bare `panic(...)` is [GALA-E0035](GALA-E0035.md);
+GALA's form is `go_builtins.Panic` (import `"martianoff/gala/go_builtins"`):
 
+<!-- doc-check: fragment -->
 ```gala
-case _ => panic("unreachable: handler received unexpected code")
+case _ => go_builtins.Panic("unreachable: handler received unexpected code")
 ```
 
 **Rationale.** GALA's grammar reuses `expressionList?` inside `'(' … ')'`

@@ -1,0 +1,48 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "doccheck_test",
+    # Transpiles every ```gala block in the language docs and on the website,
+    # several harnesses per fragment.
+    size = "large",
+    srcs = ["doc_snippets_test.go"],
+    # The pages under check, plus every GALA package a snippet may import:
+    # Linux CI sandboxes tests, so anything not declared here does not exist.
+    data = [
+        "//docs:language_docs",
+        "//docs/errors:error_docs",
+        "//website:pages",
+        "//collection_immutable:gala_sources",
+        "//collection_mutable:gala_sources",
+        "//concurrent:gala_sources",
+        "//crypto:gala_sources",
+        "//examples:all_gala_sources",
+        "//examples:all_go_bridge_sources",
+        "//fs:gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//io:gala_sources",
+        "//json:gala_sources",
+        "//lazy:gala_sources",
+        "//path:gala_sources",
+        "//regex:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//strings:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+        "//time_utils:gala_sources",
+        "//validation:gala_sources",
+        "//yaml:gala_sources",
+    ],
+    deps = [
+        "//galaerr",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)

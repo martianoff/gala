@@ -1,0 +1,13 @@
+# The site's Markdown pages, read as test data: //internal/doccheck compiles
+# their ```gala blocks, and the error-page guard in
+# //internal/transpiler/transformer checks that every error code has a page.
+filegroup(
+    name = "pages",
+    srcs = glob([
+        "*.md",
+        "docs/*.md",
+        "docs/errors/*.md",
+        "features/*.md",
+    ]),
+    visibility = ["//visibility:public"],
+)

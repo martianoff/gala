@@ -180,7 +180,7 @@ arr.SortWith((a, b) => a > b)             // Array(9, 5, 4, 3, 1, 1)
 
 // Sort by key function
 val words = ListOf("banana", "apple", "cherry")
-words.SortBy((s) => len(s))               // List("apple", "banana", "cherry")
+words.SortBy((s) => s.Size())             // List("apple", "banana", "cherry")
 
 // Sets produce sorted Array
 val set = HashSetOf(5, 3, 1)
@@ -236,6 +236,7 @@ m.FoldLeftKV(0, (acc, k, v) => acc + v) // 15
 
 GALA infers lambda parameter types from the collection's element type. This means you can write expressive pipelines without any type annotations:
 
+<!-- doc-check: fragment -->
 ```gala
 val people = ArrayOf(
     Person("Alice", 30),

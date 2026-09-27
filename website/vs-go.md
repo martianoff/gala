@@ -94,6 +94,7 @@ if user.Name != nil {
 
 With `Option[T]`, you never forget a nil check. The type system enforces it. You can also pattern match on options directly:
 
+<!-- doc-check: fragment -->
 ```gala
 val res = opt match {
     case Some(v) => s"got $v"
@@ -158,6 +159,7 @@ The GALA version reads as a linear pipeline: divide, double, divide again, recov
 
 You can also pattern match on `Try[T]`:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = result match {
     case Success(v) => s"got $v"
@@ -193,12 +195,14 @@ for _, x := range nums {
 
 GALA's `Collect` combines filter and transform in a single pass using partial functions:
 
+<!-- doc-check: fragment -->
 ```gala
 val evenDoubled = nums.Collect({ case n if n % 2 == 0 => n * 2 })
 ```
 
 Other collection operations:
 
+<!-- doc-check: fragment -->
 ```gala
 val sum = nums.FoldLeft(0, (acc, x) => acc + x)
 val sorted = nums.SortWith((a, b) => a > b)

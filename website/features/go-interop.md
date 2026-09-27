@@ -255,6 +255,7 @@ MapForEach(goMap, (k string, v int) => {
 
 Convert between `HashMap` and Go map:
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/collection_immutable"
 
@@ -278,17 +279,21 @@ val backToGoMap = hashMap.ToGoMap()
 
 ## Go Built-in Functions
 
-Go's built-in functions are available directly:
+Bare Go builtins such as `len`, `cap`, `make` and `panic` are **not** part of GALA's surface — calling one is [GALA-E0035](/docs/errors/gala-e0035/). Each has a GALA form or a `go_interop` wrapper:
 
 ```gala
-val length = len("hello")         // 5
-val sliceCap = cap(mySlice)       // slice capacity
-val ch = make(chan int, 10)       // buffered channel
+import "martianoff/gala/go_interop"
+
+val length = "hello".Size()                    // 5 — characters; .ByteSize() for bytes
+val mySlice = go_interop.SliceOf(1, 2, 3)
+val sliceCap = go_interop.SliceCap(mySlice)    // slice capacity
 
 // Println and Print are available without importing fmt
 Println("hello world")
 Print("no newline")
 ```
+
+The full table of builtins and their replacements is in the [language reference](/docs/language-reference/#11-go-built-in-functions).
 
 ---
 

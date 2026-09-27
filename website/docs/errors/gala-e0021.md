@@ -50,12 +50,14 @@ go build: exit status 1
 
 **2. Annotate the binding.** When inference has too little context, a declared type forces it to commit, and the real mismatch surfaces against a fixed reference type:
 
+<!-- doc-check: fragment -->
 ```gala
 val ids Array[int] = parse(input)
 ```
 
 **3. Restructure.** If both branches of an `if` honestly produce different types, you usually want a sum type — `Option[A]` or `Either[A, B]` — instead of mixing values:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = if (ok) Right[string, int](42) else Left[string, int]("bad input")
 ```

@@ -22,6 +22,7 @@ func Seed() Array[string] = ArrayOf("a", "b")
 
 `effects/labels.gala` — same package, *no* import of its own:
 
+<!-- doc-check: fragment -->
 ```gala
 package effects
 

@@ -373,6 +373,7 @@ Additional capabilities beyond manual:
 
 When a lambda is passed as an argument to a method with known parameter types, the lambda's parameter types can be inferred from the method's signature. This allows omitting explicit parameter type annotations. Combined with Go's type parameter inference, method type parameters can also be omitted:
 
+<!-- doc-check: fragment -->
 ```gala
 // Before: all types explicit
 val doubled = opt.Map[int]((x int) => x * 2)
@@ -391,6 +392,7 @@ Lambda parameter inference works for:
 
 3. **FoldLeft/FoldRight accumulator** — The accumulator type parameter `U` in `FoldLeft[U](zero U, f func(U, T) U)` is inferred from the zero value argument's type, without requiring explicit type annotation:
 
+<!-- doc-check: fragment -->
 ```gala
 val sum = list.FoldLeft(0, (acc, x) => acc + x)        // acc inferred as int from 0
 val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as string from ""
@@ -402,6 +404,7 @@ val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as strin
    initializer, both branches of an if-expression feeding the slot, and curried
    lambdas (the return type is decomposed into the body lambda):
 
+<!-- doc-check: fragment -->
 ```gala
 val direct func(int) int = (x) => x + 1                       // x inferred as int
 val branched func(int) int = if (c) { (x) => x } else { (x) => x * 2 }
@@ -671,6 +674,7 @@ appears only in its **return type**, never in a parameter — a *phantom*
 result-only param. The canonical case is an error-only constructor for a
 two-parameter type:
 
+<!-- doc-check: fragment -->
 ```gala
 // `A` is phantom: it appears in the return type but in no parameter.
 func InvalidOf[E any, A any](err E) Validated[E, A] = Invalid(ArrayOf(err))

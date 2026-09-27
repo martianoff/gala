@@ -75,7 +75,27 @@ func getGoImporter() types.Importer {
 		goImporterAvailable = false
 		fmt.Fprintf(os.Stderr, "Warning: Go SDK found at %s but importers failed — Go type inference disabled.\n", goroot)
 	})
-	return goImporterInst
+	if goImporterInst == nil {
+		return nil
+	}
+	return serialImporter{imp: goImporterInst}
+}
+
+// goImporterMu serializes every use of the shared importer. Neither go/importer
+// implementation is safe for concurrent use (the source importer keeps its
+// packages in an unguarded map), and one process can analyze several files at
+// once: the LSP, the build worker, a test running transpilers in parallel.
+var goImporterMu sync.Mutex
+
+// serialImporter is the shared importer behind goImporterMu.
+type serialImporter struct{ imp types.Importer }
+
+var _ types.Importer = serialImporter{}
+
+func (s serialImporter) Import(path string) (*types.Package, error) {
+	goImporterMu.Lock()
+	defer goImporterMu.Unlock()
+	return s.imp.Import(path)
 }
 
 // GoImporterAvailable returns whether the Go type importer is available.

@@ -21,6 +21,7 @@ GALA closes all three. Diagnostics are framed with a caret and a fix. Panics rep
 
 Errors from the GALA CLI are rendered Rust/Elm style: a coded header, the source locus, the offending line, a caret under the exact span, and a hint.
 
+<!-- doc-check: error GALA-E0035 -->
 ```gala
 package main
 

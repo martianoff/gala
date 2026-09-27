@@ -467,7 +467,7 @@ var list = ListOf("banana", "apple", "cherry")
 
 list.Sorted()                              // List("apple", "banana", "cherry")
 list.SortWith((a, b) => a > b)             // List("cherry", "banana", "apple")
-list.SortBy((s) => len(s))                 // List("apple", "banana", "cherry")
+list.SortBy((s) => s.Size())               // List("apple", "banana", "cherry")
 ```
 
 ### Conversion
