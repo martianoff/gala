@@ -2,6 +2,7 @@ package main
 
 import (
     gostrings "strings"
+    gourl "net/url"
     "martianoff/gala/strings"
     . "martianoff/gala/collection_immutable"
 )
@@ -40,4 +41,9 @@ func main() {
     // Both at once: a function over the aliased Go type.
     val render = ArrayOf((b *gostrings.Builder) => b.String())
     Println(length(render.Map((f) => f(&sb)).Head()))
+
+    // A Go function and a Go named collection under an aliased import: the
+    // (Values, error) call is wrapped by Try, and Size() on url.Values lowers
+    // to len().
+    Println(Try(gourl.ParseQuery("a=1&b=2")).Map((q) => q.Size()).GetOrElse(-1))
 }

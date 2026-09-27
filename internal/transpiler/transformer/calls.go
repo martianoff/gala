@@ -3847,7 +3847,7 @@ func (t *galaASTTransformer) resolveGoCallSignature(expr ast.Expr) *transpiler.G
 	switch fun := funExpr.(type) {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
-			if sig := t.goTypeInfo.GetFuncSignature(id.Name + "." + fun.Sel.Name); sig != nil {
+			if sig := t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name)); sig != nil {
 				return sig
 			}
 		}

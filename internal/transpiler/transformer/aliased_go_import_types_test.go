@@ -76,3 +76,24 @@ func main() {
 		})
 	}
 }
+
+// TestAliasedGoImportFunctionsAndNamedCollections covers package-level Go
+// lookups through an aliased import (`gourl "net/url"`): Go type info records
+// `url.ParseQuery` and `url.Values`, never `gourl.…`. Keyed by the alias, the
+// (Values, error) call was not recognised as multi-return inside Try, and
+// Size() on url.Values was not lowered to len().
+func TestAliasedGoImportFunctionsAndNamedCollections(t *testing.T) {
+	trans := newDefaultsTranspiler()
+	src := `package main
+
+import gourl "net/url"
+
+func main() {
+    Println(Try(gourl.ParseQuery("a=1&b=2")).Map((q) => q.Size()).GetOrElse(-1))
+}
+`
+	out, err := trans.Transpile(src, "aliased_go_import_funcs_test.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "len(q)")
+	assert.NotContains(t, out, "q.Size()")
+}

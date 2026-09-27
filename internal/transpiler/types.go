@@ -247,8 +247,6 @@ func IsPrimitiveType(name string) bool {
 	return false
 }
 
-// ParseType is a helper to transition from string-based types to structured types.
-// It should be used sparingly as we want the analyzer to produce structured types directly.
 // parseFuncType parses `func(P1, P2) R` and `func(P1) (R1, R2)`.
 func parseFuncType(s string) (FuncType, bool) {
 	closeParen := matchingClose(s, len("func"))
@@ -315,6 +313,8 @@ func splitTopLevel(s string) []string {
 	return append(parts, strings.TrimSpace(s[start:]))
 }
 
+// ParseType is a helper to transition from string-based types to structured types.
+// It should be used sparingly as we want the analyzer to produce structured types directly.
 func ParseType(s string) Type {
 	s = strings.TrimSpace(s)
 	if s == "" {

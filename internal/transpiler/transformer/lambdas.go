@@ -443,7 +443,7 @@ func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
 			funcName = id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(funcName)
+			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
 			if sig == nil {
 				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
 			}
@@ -498,8 +498,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
 			// Simple case: pkg.Func() or receiver.Method() where receiver is an ident
-			qualifiedName := id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(qualifiedName)
+			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
 			if sig == nil {
 				// Could be a method call on a variable — resolve its type
 				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)

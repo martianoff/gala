@@ -86,7 +86,7 @@ func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.
 	if !ok || named.Package == "" {
 		return nil, false
 	}
-	td := t.goTypeInfo.GetTypeData(named.Package + "." + named.Name)
+	td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(named))
 	if td == nil || td.Underlying == nil {
 		return nil, false
 	}
@@ -109,7 +109,7 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
 		named := typ.(transpiler.NamedType) // safe: goNamedUnderlying only reports ok for a NamedType
-		if t.goTypeInfo.GetMethodSignature(named.Package+"."+named.Name, "Size") != nil {
+		if t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(named), "Size") != nil {
 			return typ
 		}
 		return u

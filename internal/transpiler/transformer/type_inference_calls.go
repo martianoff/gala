@@ -366,8 +366,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			}
 		} else {
 			// For external Go packages not in t.imports, check Go type info
-			fullName := id.Name + "." + sel.Sel.Name
-			if retType := t.getGoFuncReturnTypeForCall(fullName, e, typeArgs); !retType.IsNil() {
+			if retType := t.getGoFuncReturnTypeForCall(t.goQualifiedName(id.Name, sel.Sel.Name), e, typeArgs); !retType.IsNil() {
 				return retType
 			}
 		}
