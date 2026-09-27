@@ -185,6 +185,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 
 	// 2. Parse overrides
 	overrides := make(map[string]ast.Expr)
+	overrideTypes := make(map[string]transpiler.Type)
 	for _, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		if arg.Identifier() == nil {
@@ -225,6 +226,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			return nil, err
 		}
 		overrides[fieldName] = val
+		overrideTypes[fieldName] = expected
 	}
 
 	// 3. Construct new struct instance. Each kept field reads the receiver, so
@@ -247,10 +249,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		if val, ok := overrides[fn]; ok {
 			finalVal := val
 			if i < len(immutFlags) && immutFlags[i] {
-				finalVal = &ast.CallExpr{
-					Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-					Args: []ast.Expr{val},
-				}
+				finalVal = t.newImmutableFor(val, overrideTypes[fn])
 			}
 			elts = append(elts, &ast.KeyValueExpr{
 				Key:   ast.NewIdent(fn),

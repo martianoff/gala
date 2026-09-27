@@ -194,30 +194,39 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 }
 
 // wrapImmutableFieldValue builds the `std.NewImmutable(value)` wrapper that
-// backs an immutable (`val`) struct field, naming the type argument explicitly
-// when the value alone would infer the wrong one.
+// backs an immutable (`val`) struct field. typeArgs maps the struct's
+// type-parameter names to the type arguments of the literal being built, so a
+// field declared with a type parameter resolves to the type it is instantiated
+// with at this construction site (`Box[int64](0)` → NewImmutable[int64]).
+func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
+	target := fieldType
+	if len(typeArgs) > 0 && !transpiler.IsUnusable(fieldType) {
+		target = t.substituteInType(fieldType, t.typeArgTypes(typeArgs))
+	}
+	return t.newImmutableFor(value, target)
+}
+
+// newImmutableFor builds `std.NewImmutable(value)` for a value that lands in an
+// `Immutable[target]` slot — a `val` struct field, a Copy override, a tuple
+// element — naming the type argument explicitly whenever inference from the
+// value alone would pick the wrong one. Every site that wraps a value whose
+// destination type it knows goes through here, so the rule lives in one place.
 //
 // Go infers NewImmutable's type parameter from its argument, and an untyped
 // constant argument collapses to its own default type (`0` → int, `1.5` →
-// float64). A field declared `int64` therefore receives an Immutable[int],
-// which is not assignable to Immutable[int64] — even though the constant is
-// perfectly representable and a plain Go field assignment would have converted
-// it. Spelling the type argument (`std.NewImmutable[int64](0)`) restores that
-// conversion at the argument position.
-//
-// typeArgs maps the struct's type-parameter names to the type arguments of the
-// literal being built, so a field declared with a type parameter resolves to the
-// type it is instantiated with at this construction site.
+// float64). A slot declared `int64` therefore receives an Immutable[int], which
+// is not assignable to Immutable[int64] — even though the constant is perfectly
+// representable and a plain Go assignment would have converted it. Spelling
+// the type argument (`std.NewImmutable[int64](0)`) restores that conversion at
+// the argument position.
 //
 // A bare `nil` has no type of its own at all, so Go cannot infer anything from
-// it ("cannot infer T"); it always takes the field's declared type
+// it ("cannot infer T"); it always takes the slot's declared type
 // (`std.NewImmutable[func(int) int](nil)`).
-func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
-	typeArg := immutableFieldTypeArg(value, fieldType, typeArgs)
-	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" && !transpiler.IsUnusable(fieldType) {
-		typeArg = t.typeToExpr(t.substituteInType(fieldType, t.typeArgTypes(typeArgs)))
-	}
-	if typeArg != nil {
+//
+// target may be nil or unresolved, in which case the inferred form is kept.
+func (t *galaASTTransformer) newImmutableFor(value ast.Expr, target transpiler.Type) ast.Expr {
+	if typeArg := t.immutableTypeArg(value, target); typeArg != nil {
 		return &ast.CallExpr{
 			Fun:  &ast.IndexExpr{X: t.stdIdent(transpiler.FuncNewImmutable), Index: typeArg},
 			Args: []ast.Expr{value},
@@ -229,50 +238,79 @@ func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType t
 	}
 }
 
-// immutableFieldTypeArg returns the explicit NewImmutable type argument for a
-// field whose declared type differs from the default type of an untyped
-// constant value, or nil when plain inference is already correct.
+// immutableTypeArg returns the explicit NewImmutable type argument for value
+// going into an Immutable[target], or nil when plain inference is already
+// correct.
 //
-// The rewrite is deliberately confined to untyped numeric constants going into
-// a field whose type resolves to a predeclared numeric type: that is exactly the
-// set of values whose type Go would have taken from the destination but takes
-// from the argument once the NewImmutable wrapper intervenes. Anything else (a
-// typed expression, a named or generic field type, a type parameter with no
-// concrete instantiation here) keeps the inferred form, so no construction that
-// compiles today changes shape.
-func immutableFieldTypeArg(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
-	if transpiler.IsUnusable(fieldType) {
+// Beyond `nil`, the rewrite is confined to untyped numeric constants going into
+// a numeric slot — a predeclared numeric type, a GALA type declared over one
+// (`type Millis int64`), or a Go named numeric type (`time.Duration`). That is
+// exactly the set of values whose type Go would have taken from the
+// destination but takes from the argument once the NewImmutable wrapper
+// intervenes. A typed expression, a non-numeric slot, or a type parameter with
+// no concrete instantiation keeps the inferred form.
+func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.Type) ast.Expr {
+	if target == nil || transpiler.IsUnusable(target) {
 		return nil
 	}
-	var fieldName string
-	switch ft := fieldType.(type) {
-	case transpiler.BasicType:
-		fieldName = ft.Name
-	case transpiler.NamedType:
-		if ft.Package != "" {
-			return nil
-		}
-		fieldName = ft.Name
-	default:
-		return nil
-	}
-	// A field declared with one of the struct's type parameters takes the type
-	// it is instantiated with here (`Box[int64](0)` → NewImmutable[int64]).
-	if arg, isTypeParam := typeArgs[fieldName]; isTypeParam {
-		argIdent, ok := arg.(*ast.Ident)
-		if !ok {
-			return nil
-		}
-		fieldName = argIdent.Name
-	}
-	if !isNumericPrimitive(fieldName) {
-		return nil
+	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" {
+		return t.typeToExpr(target)
 	}
 	defaultName, ok := untypedNumericConstDefault(value)
-	if !ok || defaultName == fieldName {
+	if !ok || !t.isNumericSlotType(target) {
 		return nil
 	}
-	return ast.NewIdent(fieldName)
+	if basic, isBasic := target.(transpiler.BasicType); isBasic && basic.Name == defaultName {
+		return nil
+	}
+	return t.typeToExpr(target)
+}
+
+// isNumericSlotType reports whether typ is a numeric type an untyped numeric
+// constant converts to: a predeclared numeric type, a GALA type declared over
+// one (following alias chains), or a package-qualified Go named type whose
+// underlying type is numeric.
+func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
+	// The hop bound stops a declaration chain that refers back to itself.
+	for hop := 0; hop < 16; hop++ {
+		var bareName string
+		switch ty := typ.(type) {
+		case transpiler.BasicType:
+			// A bare declared name (`Millis`) parses as a BasicType too.
+			bareName = ty.Name
+		case transpiler.NamedType:
+			if u, ok := t.goNamedUnderlying(ty); ok {
+				typ = u
+				continue
+			}
+			if ty.Package != "" && ty.Package != t.packageName {
+				resolved := t.followAliasChain(ty)
+				if resolved.BaseName() == ty.BaseName() {
+					return false
+				}
+				typ = resolved
+				continue
+			}
+			// This package's own declarations are keyed by their bare name.
+			bareName = ty.Name
+		default:
+			return false
+		}
+		if isNumericPrimitive(bareName) {
+			return true
+		}
+		if next, ok := t.typeAliases[bareName]; ok && !next.IsNil() {
+			typ = next
+			continue
+		}
+		// Declared later in this file than the site being lowered.
+		if target, ok := t.fileTypeDeclTargets[bareName]; ok {
+			typ = transpiler.ParseType(target)
+			continue
+		}
+		return false
+	}
+	return false
 }
 
 // structTypeArgSubst pairs a struct's type-parameter names with the type

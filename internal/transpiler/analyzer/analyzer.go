@@ -1259,6 +1259,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// already recorded from another file.
 	decls := newPackageDecls(filePath)
 
+	// pendingDefaultChecks validates each function's parameter defaults after
+	// section 2.5, when every declared type of the package can be resolved.
+	var pendingDefaultChecks []func(underlying func(transpiler.Type) transpiler.Type) error
+
 	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
@@ -1439,10 +1443,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						}
 					}
 				}
-				// Validate default parameter rules
-				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), filePath, defaultSpans); err != nil {
-					return nil, err
-				}
+				// Validate default parameter rules once the sibling files' type
+				// declarations are known too (section 2.5): a default is checked
+				// against the type its parameter's named type is declared over.
+				checkMeta, checkLine, checkCol, checkSpans := funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), defaultSpans
+				pendingDefaultChecks = append(pendingDefaultChecks, func(underlying func(transpiler.Type) transpiler.Type) error {
+					return validateDefaultParams(checkMeta, checkLine, checkCol, filePath, checkSpans, underlying)
+				})
 				// Reject redeclaration of a top-level function within the same
 				// package. The sibling-metadata pass may have already registered
 				// the function from another file; if it lives in a different
@@ -1506,6 +1513,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	logPhase("extract-sibling-metadata", phaseStart)
 	phaseStart = time.Now()
+
+	if len(pendingDefaultChecks) > 0 {
+		underlying := a.declaredTypeUnderlying(sourceFile, pkgName, richAST)
+		for _, check := range pendingDefaultChecks {
+			if err := check(underlying); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// 2.75 Collect embed declarations
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -3825,14 +3841,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// sibling files and to anything declared above them, so an alias
 			// used before its declaration was reported as an unknown type.
 			if ctx.TypeAlias() != nil {
-				aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
-				aliasTarget := ""
-				if aliasCtx.Type_() != nil {
-					aliasTarget = aliasCtx.Type_().GetText()
-				} else if aliasCtx.Identifier() != nil {
-					aliasTarget = aliasCtx.Identifier().GetText()
-				}
-				if aliasTarget != "" {
+				if aliasTarget := typeAliasTarget(ctx); aliasTarget != "" {
 					underlyingType := a.resolveTypeWithParams(aliasTarget, pkgName, meta.TypeParams)
 					if !underlyingType.IsNil() {
 						if richAST.TypeAliases == nil {
@@ -4192,7 +4201,13 @@ func spanOfCtx(ctx antlr.ParserRuleContext) defaultExprSpan {
 // defaultSpans (optional, keyed by param index) carries each default
 // expression's source span so the type-mismatch diagnostic can render an exact
 // caret over the offending value.
-func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan) error {
+//
+// underlying (optional) sees through a declared type name to the type it is
+// declared over, so a literal default for a parameter typed `Millis` (declared
+// `type Millis int64`) or `time.Duration` is checked the way Go converts it: a
+// numeric literal is a valid default for any type whose underlying type is
+// numeric.
+func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan, underlying func(transpiler.Type) transpiler.Type) error {
 	_ = filePath // filePath is retained for future use; position info now travels via the coded error
 	if len(funcMeta.DefaultExprs) == 0 {
 		return nil
@@ -4231,7 +4246,8 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 		if literalType == "" {
 			continue // non-literal expression, can't validate statically
 		}
-		if !typesCompatibleForDefault(paramType, literalType) {
+		if !typesCompatibleForDefault(paramType, literalType) &&
+			(underlying == nil || !typesCompatibleForDefault(underlying(funcMeta.ParamTypes[i]).String(), literalType)) {
 			paramName := ""
 			if i < len(funcMeta.ParamNames) {
 				paramName = funcMeta.ParamNames[i]
@@ -4256,6 +4272,86 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	return nil
+}
+
+// typeAliasTarget returns the target of a `type X Y` declaration as written,
+// or "" when the declaration is a struct or interface. `typeAlias: identifier
+// | type`, and both branches name an alias: `type Millis int64` and `type
+// Coord Point` take the identifier branch.
+func typeAliasTarget(typeDecl *grammar.TypeDeclarationContext) string {
+	aliasCtx, ok := typeDecl.TypeAlias().(*grammar.TypeAliasContext)
+	if !ok || aliasCtx == nil {
+		return ""
+	}
+	if aliasCtx.Type_() != nil {
+		return aliasCtx.Type_().GetText()
+	}
+	if aliasCtx.Identifier() != nil {
+		return aliasCtx.Identifier().GetText()
+	}
+	return ""
+}
+
+// declaredTypeUnderlying returns a resolver that follows a named type to the
+// type it is declared over: a `type Millis int64` of this file or a sibling
+// (through alias chains), or a Go named type such as `time.Duration`. Types it
+// cannot see through are returned unchanged.
+func (a *galaAnalyzer) declaredTypeUnderlying(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) transpiler.Type {
+	// This file's own type declarations are not in richAST.TypeAliases (only
+	// siblings' are), so read their targets here.
+	local := make(map[string]transpiler.Type)
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		typeDecl, ok := topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext)
+		if !ok || typeDecl == nil || typeDecl.Identifier() == nil {
+			continue
+		}
+		target := typeAliasTarget(typeDecl)
+		if target == "" {
+			continue
+		}
+		if resolved := a.resolveTypeWithParams(target, pkgName, nil); !resolved.IsNil() {
+			local[typeDecl.Identifier().GetText()] = resolved
+		}
+	}
+	declared := func(name string) (transpiler.Type, bool) {
+		if next, ok := local[name]; ok {
+			return next, true
+		}
+		if next, ok := richAST.TypeAliases[name]; ok && !next.IsNil() {
+			return next, true
+		}
+		return nil, false
+	}
+	step := func(typ transpiler.Type) (transpiler.Type, bool) {
+		// A bare declared name (`Millis`) resolves to a BasicType carrying it.
+		if basic, ok := typ.(transpiler.BasicType); ok {
+			return declared(basic.Name)
+		}
+		named, ok := typ.(transpiler.NamedType)
+		if !ok {
+			return typ, false
+		}
+		if named.Package == "" || named.Package == pkgName {
+			return declared(named.Name)
+		}
+		if richAST.GoTypeInfo != nil {
+			if td := richAST.GoTypeInfo.GetTypeData(named.Package + "." + named.Name); td != nil && td.Underlying != nil {
+				return td.Underlying, true
+			}
+		}
+		return typ, false
+	}
+	return func(typ transpiler.Type) transpiler.Type {
+		// The hop bound stops a chain that refers back to itself.
+		for hop := 0; hop < 16; hop++ {
+			next, ok := step(typ)
+			if !ok || next.String() == typ.String() {
+				break
+			}
+			typ = next
+		}
+		return typ
+	}
 }
 
 // extractPackageVals records package-level `val`/`var` declarations from a

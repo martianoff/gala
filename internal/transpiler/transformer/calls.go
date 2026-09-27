@@ -1848,9 +1848,17 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
 					ctx.structFieldExpectedTypes = make([]transpiler.Type, len(fields))
 					for i, fieldName := range fields {
-						if ft, ok := fieldTypes[fieldName]; ok {
-							ctx.structFieldExpectedTypes[i] = ft
+						ft, ok := fieldTypes[fieldName]
+						if !ok {
+							continue
 						}
+						// A tuple field of a generic struct names the struct's
+						// type parameters, which are not instantiated here;
+						// its element types would leak `T` into the literal.
+						if gen, isGeneric := ft.(transpiler.GenericType); isGeneric && len(typeMeta.TypeParams) > 0 && t.isTupleTypeName(gen.Base.String()) {
+							continue
+						}
+						ctx.structFieldExpectedTypes[i] = ft
 					}
 					// Generic struct: a lambda for a `func(T) T` field must see
 					// the call's type arguments, not the declared `T`.

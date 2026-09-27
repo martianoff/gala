@@ -93,6 +93,7 @@ var accumulatedStateFields = []string{
 	"tempVarCount",
 	"inferer",
 	"typeAliases",
+	"fileTypeDeclTargets",
 	"goTypeInfo",
 	"filePath",
 	"richAST",

@@ -769,6 +769,9 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	}
 
 	var typeParams []ast.Expr
+	// slotTypes records, per element, the slot type an untyped constant was
+	// given, so its NewImmutable wrapper names the same type argument.
+	slotTypes := make([]transpiler.Type, n)
 	for i, expr := range exprs {
 		exprType := t.getExprTypeName(expr)
 		if exprType.IsNil() || exprType.IsAny() {
@@ -786,6 +789,15 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 			// the parent type is the lowest common type for both arms.
 			if fallbackTypes != nil && i < len(fallbackTypes) {
 				expected := fallbackTypes[i]
+				// An untyped numeric constant adopts its slot's numeric type
+				// (`(1, 2)` into Tuple[int64, float32]) exactly as Go would
+				// convert it on assignment, instead of freezing its default
+				// type (`int`) into the tuple's type arguments.
+				if _, untyped := untypedNumericConstDefault(expr); untyped && !transpiler.IsUnusable(expected) && t.isNumericSlotType(expected) {
+					typeParams = append(typeParams, t.typeToExpr(expected))
+					slotTypes[i] = expected
+					continue
+				}
 				if expected != nil && !expected.IsNil() && !expected.IsAny() && expected.String() != exprType.String() {
 					if parent := t.sealedCaseParent(exprType); parent != nil && parent.String() == expected.String() {
 						typeParams = append(typeParams, t.typeToExpr(expected))
@@ -814,10 +826,7 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 		wrappedExpr := expr
 		exprType := t.getExprTypeName(expr)
 		if !t.isImmutableType(exprType) {
-			wrappedExpr = &ast.CallExpr{
-				Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-				Args: []ast.Expr{expr},
-			}
+			wrappedExpr = t.newImmutableFor(expr, slotTypes[i])
 		}
 		elts = append(elts, &ast.KeyValueExpr{
 			Key:   ast.NewIdent(fieldName),
