@@ -9,3 +9,6 @@ WORKSPACE.bazel text eol=lf
 MODULE.bazel text eol=lf
 # Shell scripts run on Linux CI; a CRLF checkout breaks the shebang line.
 *.sh text eol=lf
+# Go fuzz corpus entries are parsed line by line; a CRLF checkout would add a
+# stray \r to every value, so a seed would no longer replay the input it holds.
+internal/transpiler/fuzz/testdata/fuzz/** -text

@@ -93,6 +93,9 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 // error reported is the same on every run.
 func (t *galaASTTransformer) finalizeCodecs(file *ast.File) error {
 	t.expandNestedStructMetas()
+	// Emit in name order: structMetas is a map, and ranging over it directly
+	// made the declaration order — and so the generated file — differ from
+	// one run to the next for any program with more than one codec'd struct.
 	names := make([]string, 0, len(t.structMetas))
 	for genName := range t.structMetas {
 		names = append(names, genName)

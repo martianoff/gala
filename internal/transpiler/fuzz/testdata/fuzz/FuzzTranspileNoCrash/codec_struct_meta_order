@@ -1,0 +1,2 @@
+go test fuzz v1
+string("package main\n\nimport (\n    . \"martianoff/gala/std\"\n    . \"martianoff/gala/json\"\n)\n\nstruct Alpha(X int)\nstruct Bravo(Y string)\nstruct Charlie(Z int)\nstruct Delta(W string, Inner Alpha)\n\nfunc main() {\n    Println(Codec[Alpha](SnakeCase()).Encode(Alpha(1)).Get())\n    Println(Codec[Bravo](SnakeCase()).Encode(Bravo(\"b\")).Get())\n    Println(Codec[Charlie](SnakeCase()).Encode(Charlie(3)).Get())\n    Println(Codec[Delta](SnakeCase()).Encode(Delta(\"d\", Alpha(4))).Get())\n}\n")

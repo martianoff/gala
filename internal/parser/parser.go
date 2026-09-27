@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -113,7 +114,23 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string
 	}
 	docs := extractDocComments(result.tokens)
 
-	errs := append([]error(nil), result.errors...)
+	// The source-text check goes first: an illegal character is the root
+	// cause of any lexer error it provokes, so it should lead the report.
+	// Outside a literal the lexer has no rule for such a character either and
+	// reports a token recognition error at the same spot; that one says less,
+	// so it is dropped rather than shown twice.
+	var errs []error
+	charErr := checkSourceChars(input)
+	if charErr != nil {
+		errs = append(errs, charErr)
+	}
+	for _, err := range result.errors {
+		var se *galaerr.SyntaxError
+		if charErr != nil && errors.As(err, &se) && se.Line == charErr.Line && se.Column == charErr.Column {
+			continue
+		}
+		errs = append(errs, err)
+	}
 	if err := p.checkEmptyLines(result.input, result.tree); err != nil {
 		errs = append(errs, err)
 	}

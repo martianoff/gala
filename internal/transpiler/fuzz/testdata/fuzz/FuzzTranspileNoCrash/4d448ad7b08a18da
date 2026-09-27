@@ -1,0 +1,2 @@
+go test fuzz v1
+string("package main\r\n\r\nimport \"fmt\"\r\n\r\ntype Adder struct { Delta int }\r\nfunc (a Adder) Apply(x int) int = x + a.Delta\r\n\r\ntype Multiply struct {}\r\nfunc (m Multiply) Apply(x int, y int) int = x * y\r\n\r\nfunc main() {\r\n    al a 5dd= Adder(5)\r\n    val res1 = add5(10) // 15\r\n\r\n    val res2 = Multiply(3, 4) // 12\r\n\r\n    fmt.Println(res1, res2)\r\n}\r\n")

@@ -1,0 +1,54 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+# Native Go fuzz targets for the transpiler. Under `bazel test` each target runs
+# over its seed corpus (f.Add seeds + testdata/fuzz/<Target>/*) as a plain unit
+# test; tools/fuzz.sh runs the actual fuzzer. See CONTRIBUTING.MD.
+go_test(
+    name = "fuzz_test",
+    # The seed pass transpiles a few hundred programs, several of them twice.
+    size = "large",
+    srcs = [
+        "harness_test.go",
+        "no_crash_test.go",
+        "source_encoding_test.go",
+        "string_literals_test.go",
+    ],
+    # The seeds include a sample of examples/, which import most of the
+    # standard library. Stage all of it so the seed outcomes are the same
+    # under the Linux sandbox as on an unsandboxed checkout.
+    data = glob(["testdata/**"]) + [
+        "//collection_immutable:gala_sources",
+        "//collection_mutable:gala_sources",
+        "//concurrent:gala_sources",
+        "//crypto:gala_sources",
+        "//examples:all_gala_sources",
+        "//examples:all_go_bridge_sources",
+        "//fs:gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//io:gala_sources",
+        "//json:gala_sources",
+        "//lazy:gala_sources",
+        "//path:gala_sources",
+        "//regex:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//strings:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+        "//time_utils:gala_sources",
+        "//validation:gala_sources",
+        "//yaml:gala_sources",
+    ],
+    deps = [
+        "//galaerr",
+        "//internal/parser",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+        "@rules_go//go/tools/bazel",
+    ],
+)

@@ -83,6 +83,7 @@ go_test(
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
         "codec_field_kinds_test.go",
+        "codec_struct_meta_order_test.go",
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
         "compilation_gate_test.go",
