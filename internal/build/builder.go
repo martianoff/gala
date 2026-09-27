@@ -1623,31 +1623,32 @@ func (b *Builder) Test(verbose bool) error {
 		}
 
 		// Step 9: Run tests via `go test`
-		args := []string{"test", "-count=1"}
-		if verbose {
-			args = append(args, "-v")
-		}
-		args = append(args, "./gen/...")
-		cmd := exec.Command("go", args...)
-		cmd.Dir = b.workspace.Dir
-		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		return b.runGoTest(verbose, []string{"./gen/..."})
+	}
 
-		if b.verbose {
-			fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	// For a package-main root, the synthesized test binary runs the root's own
+	// tests only. A subpackage's TestXxx is declared in that subpackage, which
+	// the root package cannot name (and a root test_main listing it fails with
+	// "undefined: TestXxx"), so subpackage tests run through a harness in their
+	// own package — the library route — via `go test`.
+	rootTestFiles, subTestFiles := splitRootTestFiles(b.workspace.ProjectDir, testFiles)
+	var rootTestFuncs []string
+	for _, tf := range rootTestFiles {
+		funcs, err := FindTestFunctions(tf)
+		if err != nil {
+			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
 		}
+		rootTestFuncs = append(rootTestFuncs, funcs...)
+	}
+	subTestPkgs, err := b.writeSubpackageTestHarnesses(subTestFiles)
+	if err != nil {
+		return err
+	}
 
-		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
-			}
-			return fmt.Errorf("go test: %w", err)
-		}
-	} else {
-		// For main packages: generate test_main.gen.go with func main() and
-		// build a test binary.
-		testMainCode := GenerateTestMain(allTestFuncs)
+	var rootErr error
+	if len(rootTestFuncs) > 0 {
+		// Generate test_main.gen.go with func main() and build a test binary.
+		testMainCode := GenerateTestMain(rootTestFuncs)
 		testMainPath := filepath.Join(b.workspace.GenDir, "test_main.gen.go")
 		if err := os.WriteFile(testMainPath, []byte(testMainCode), 0644); err != nil {
 			return fmt.Errorf("writing test_main.gen.go: %w", err)
@@ -1697,13 +1698,91 @@ func (b *Builder) Test(verbose bool) error {
 
 		if err := execCmd.Run(); err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+				rootErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+			} else {
+				return fmt.Errorf("running test binary: %w", err)
 			}
-			return fmt.Errorf("running test binary: %w", err)
 		}
 	}
 
+	// The subpackages' tests run even when the root's failed, so one run
+	// reports every failure.
+	if len(subTestPkgs) > 0 {
+		if err := b.runGoTest(verbose, subTestPkgs); err != nil {
+			return err
+		}
+	}
+	return rootErr
+}
+
+// runGoTest runs `go test` on pkgs (patterns relative to the workspace) — the
+// packages that carry a generated test harness.
+func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
+	args := []string{"test", "-count=1"}
+	if verbose {
+		args = append(args, "-v")
+	}
+	args = append(args, pkgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = b.workspace.Dir
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if b.verbose {
+		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		}
+		return fmt.Errorf("go test: %w", err)
+	}
 	return nil
+}
+
+// splitRootTestFiles separates the test files in the project root directory
+// from those in its subpackages.
+func splitRootTestFiles(projectDir string, testFiles []string) (root, sub []string) {
+	for _, tf := range testFiles {
+		if rel, err := filepath.Rel(projectDir, filepath.Dir(tf)); err == nil && rel == "." {
+			root = append(root, tf)
+		} else {
+			sub = append(sub, tf)
+		}
+	}
+	return root, sub
+}
+
+// writeSubpackageTestHarnesses writes the per-package test harnesses for
+// subpackage test files (see writeLibraryTestHarnesses) and returns the `go
+// test` patterns of the packages that received one, in a stable order.
+func (b *Builder) writeSubpackageTestHarnesses(subTestFiles []string) ([]string, error) {
+	if len(subTestFiles) == 0 {
+		return nil, nil
+	}
+	if err := b.writeLibraryTestHarnesses(subTestFiles); err != nil {
+		return nil, fmt.Errorf("writing test harnesses: %w", err)
+	}
+	seen := make(map[string]bool)
+	var pkgs []string
+	for _, tf := range subTestFiles {
+		rel, err := filepath.Rel(b.workspace.ProjectDir, filepath.Dir(tf))
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(b.workspace.GenDir, rel, "gala_test_harness_test.go")); err != nil {
+			continue // no TestXxx in that package
+		}
+		pkg := "./gen/" + filepath.ToSlash(rel)
+		if !seen[pkg] {
+			seen[pkg] = true
+			pkgs = append(pkgs, pkg)
+		}
+	}
+	sort.Strings(pkgs)
+	return pkgs, nil
 }
 
 // transpileTestMain transpiles source + test files together for package main projects.
