@@ -1064,3 +1064,18 @@ func main() {
 		require.NoError(t, err)
 	})
 }
+
+// TestMalformedImportPathRejected: an import path no package can have — a
+// relative or filesystem path — is reported against the import that wrote it,
+// rather than reaching code generation, whose last check on generated imports
+// reports a transpiler defect.
+func TestMalformedImportPathRejected(t *testing.T) {
+	for _, path := range []string{"./util", "../util", `C:\\lib\\util`, "/abs/util", "example.com/b ox"} {
+		t.Run(path, func(t *testing.T) {
+			err := analyzeSources(t, "package main\n\nimport \""+path+"\"\n\nfunc main() {\n    Println(\"x\")\n}\n", nil)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0020")
+			assert.Contains(t, err.Error(), "is not an import path")
+		})
+	}
+}

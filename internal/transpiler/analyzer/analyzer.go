@@ -101,6 +101,11 @@ type galaAnalyzer struct {
 	parser       transpiler.GalaParser
 	searchPaths  []string
 	packageFiles []string                       // Explicit sibling files belonging to the same package
+	// pkgImportPath is the import path of the package analyzePackage is
+	// loading ("" for the compilation unit): its files record it as
+	// RichAST.OwnImportPath rather than a path derived from the directory
+	// layout, which under Bazel need not match the declared importpath.
+	pkgImportPath string
 	// analyzedPkgs caches per-package metadata across files in a batch.
 	// Each entry holds an OWN-ONLY projection of the package's RichAST
 	// (Types/Functions/methods/etc. originating in that package). The
@@ -692,10 +697,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// check below fail open. See module.AllowsInternalImport.
 	importerPath := a.resolver.PackageImportPath(filePath)
 
-	// Reject a package imported twice before resolving anything, so the
-	// duplicate is reported against the source rather than escaping into the
-	// generated Go as a redeclaration.
-	if err := checkDuplicateImports(sourceFile); err != nil {
+	// Reject a package imported twice, or a path no package can have, before
+	// resolving anything, so either is reported against the source rather than
+	// escaping into the generated Go.
+	fileImports := scanFileImports(sourceFile)
+	if err := checkDuplicateImports(fileImports); err != nil {
+		return nil, err
+	}
+	if err := checkImportPathsWellFormed(fileImports); err != nil {
 		return nil, err
 	}
 
@@ -860,7 +869,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		// The types declared here record this package's own import path; the
 		// transformer emits a type carrying it unqualified rather than as an
 		// import of the package into itself.
-		richAST.OwnImportPath = goFilesImportPath(dirPath, a.resolver.PackageImportPath(filePath))
+		ownImportPath := a.pkgImportPath
+		if ownImportPath == "" {
+			ownImportPath = a.resolver.PackageImportPath(filePath)
+		}
+		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
 		goInfo := AnalyzeGoFiles(dirPath, richAST.OwnImportPath)
 		if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
 			if richAST.GoTypeInfo == nil {
@@ -2653,9 +2666,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// Save and clear packageFiles to prevent them from interfering with recursive
 	// Analyze calls. packageFiles are specific to the current compilation unit's package
 	// and must not be applied when analyzing other packages (e.g., std).
-	savedPackageFiles := a.packageFiles
-	a.packageFiles = nil
-	defer func() { a.packageFiles = savedPackageFiles }()
+	savedPackageFiles, savedPkgImportPath := a.packageFiles, a.pkgImportPath
+	a.packageFiles, a.pkgImportPath = nil, importPath
+	defer func() { a.packageFiles, a.pkgImportPath = savedPackageFiles, savedPkgImportPath }()
 
 	// Use the resolver to find the package directory
 	dirPath, err := a.resolver.ResolvePackagePath(relPath)
@@ -4924,6 +4937,27 @@ func sourceText(ctx antlr.ParserRuleContext) string {
 	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
 }
 
+// checkImportPathsWellFormed rejects an import whose path no package can have:
+// a filesystem or relative path (`./util`, `C:\lib`), or one with a space or
+// an empty element. Such a path would otherwise pass through as a Go import
+// and fail the transformer's last check on generated imports
+// (transformer.CheckImportPaths), which reports a transpiler defect — this
+// reports it against the import that wrote it.
+func checkImportPathsWellFormed(imports []fileImport) error {
+	for _, imp := range imports {
+		if transpiler.IsValidGoImportPath(imp.Path) {
+			continue
+		}
+		return galaerr.NewCodedSemanticError(
+			galaerr.CodePackageNotFound,
+			imp.Tok.GetLine(), imp.Tok.GetColumn(),
+			fmt.Sprintf("package not found: %q is not an import path", imp.Path),
+			"import a package by its module path joined with its directory (e.g. \"example.com/app/util\"), not by a relative or filesystem path",
+		)
+	}
+	return nil
+}
+
 // checkDuplicateImports rejects a file that imports the same package twice
 // under the same local name.
 //
@@ -4944,9 +4978,9 @@ func sourceText(ctx antlr.ParserRuleContext) string {
 // different aliases (`import "strings"` plus `import gostr "strings"`), and
 // that emits two distinct identifiers, so it stays legal here — which is why
 // the key is the path plus the LOCAL name rather than the path alone.
-func checkDuplicateImports(sourceFile *grammar.SourceFileContext) error {
+func checkDuplicateImports(imports []fileImport) error {
 	seen := make(map[string]int) // path+local -> line of the first occurrence
-	for _, imp := range scanFileImports(sourceFile) {
+	for _, imp := range imports {
 		local := imp.SpelledName()
 		if imp.IsDot {
 			// A dot import binds no name of its own, but repeating one still

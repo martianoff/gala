@@ -29,6 +29,7 @@ func TestGoSubpackageTypeImportedByModulePath(t *testing.T) {
 		galaDir string // directory of the GALA file under the module root
 		source  string
 		imports []string // import paths the generated Go must declare
+		absent  []string // text the generated Go must not contain
 	}{
 		{
 			name:    "package main at the module root",
@@ -81,7 +82,7 @@ func Pick(o Option[int]) *Box {
     return b
 }
 `,
-			imports: nil,
+			absent: []string{"box.Box"}, // its own type is unqualified
 		},
 	}
 
@@ -132,8 +133,8 @@ func Pick(o Option[int]) *Box {
 			}
 			assert.NotContains(t, got, "example.com/gosubpkg/"+filepath.ToSlash(tc.galaDir),
 				"a package must not import itself:\n%s", goCode)
-			if tc.galaDir == "box" {
-				assert.NotContains(t, goCode, "box.Box", "its own type is unqualified:\n%s", goCode)
+			for _, text := range tc.absent {
+				assert.NotContains(t, goCode, text, "generated Go:\n%s", goCode)
 			}
 		})
 	}

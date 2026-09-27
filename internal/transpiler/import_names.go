@@ -8,16 +8,16 @@ import (
 
 // IsValidGoImportPath reports whether p can be written in a Go import
 // declaration: non-empty slash-separated elements of ASCII letters, digits and
-// `-._~+`, none of them `.` or `..`, and no leading or trailing slash. That
-// is the character set golang.org/x/mod/module.CheckImportPath allows, so a
-// filesystem path — a drive letter (`C:`), a backslash, a leading `/` — is
-// never valid.
+// `-._~+`, none beginning or ending with a dot (so none is `.` or `..`), and
+// no leading or trailing slash. Those are the character-set and dot rules of
+// golang.org/x/mod/module.CheckImportPath, so a filesystem path — a drive
+// letter (`C:`), a backslash, a leading `/`, a relative `./` — is never valid.
 func IsValidGoImportPath(p string) bool {
 	if p == "" {
 		return false
 	}
 	for elem := range strings.SplitSeq(p, "/") {
-		if elem == "" || elem == "." || elem == ".." {
+		if elem == "" || elem[0] == '.' || elem[len(elem)-1] == '.' {
 			return false
 		}
 		for i := 0; i < len(elem); i++ {

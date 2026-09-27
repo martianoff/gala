@@ -121,7 +121,7 @@ type PackageValMetadata struct {
 type RichAST struct {
 	Tree             antlr.Tree
 	PackageName      string
-	OwnImportPath    string // this file's package's Go import path, when known; a type carrying it is emitted unqualified (a package does not import itself)
+	OwnImportPath    string // this package's import path, when known; types carrying it are emitted unqualified
 	Types            map[string]*TypeMetadata
 	Functions        map[string]*FunctionMetadata
 	Packages         map[string]string                   // path -> pkgName

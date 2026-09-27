@@ -222,11 +222,17 @@ func (t *galaASTTransformer) resolveTypeQualifier(v transpiler.NamedType) ast.Ex
 	return &ast.SelectorExpr{X: ast.NewIdent(qualifier), Sel: ast.NewIdent(v.Name)}
 }
 
+// isOwnPackageType reports whether v, which carries an import path, is
+// declared by this file's own package (its hand-written Go): a package does
+// not import itself, so such a type is emitted unqualified.
+func (t *galaASTTransformer) isOwnPackageType(v transpiler.NamedType) bool {
+	return t.richAST != nil && v.ImportPath == t.richAST.OwnImportPath
+}
+
 // selectorForImportPath emits a type that carries its import path, resolved
 // by that path.
 func (t *galaASTTransformer) selectorForImportPath(v transpiler.NamedType) ast.Expr {
-	if t.richAST != nil && v.ImportPath == t.richAST.OwnImportPath {
-		// Declared by this package's own hand-written Go.
+	if t.isOwnPackageType(v) {
 		return ast.NewIdent(v.Name)
 	}
 	entry, ok := t.importManager.GetByPath(v.ImportPath)

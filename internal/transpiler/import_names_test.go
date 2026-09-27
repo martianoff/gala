@@ -87,7 +87,7 @@ func TestIsValidGoImportPath(t *testing.T) {
 	for _, p := range []string{
 		"", `C:\Users\me\proj\box`, "C:/Users/me/proj/box", "/home/me/proj/box",
 		"./box", "../box", "example.com//box", "example.com/box/", `example.com\box`,
-		"example.com/b ox",
+		"example.com/b ox", "example.com/.hidden/x", "example.com/x./y",
 	} {
 		assert.False(t, IsValidGoImportPath(p), p)
 	}
