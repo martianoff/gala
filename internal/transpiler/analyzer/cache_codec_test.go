@@ -125,11 +125,13 @@ func buildSyntheticCache() *CachedRichAST {
 				},
 				"c": transpiler.ArrayType{Elem: transpiler.NamedType{Package: "std", Name: "Foo"}},
 			},
+			FieldDefaults: map[string]transpiler.DefaultExpr{"a": {Text: "(x int) => x + 1", Pos: transpiler.SourcePos{Line: 3, Column: 17}}},
 			Methods: map[string]*transpiler.MethodMetadata{
 				"M1": {
 					Name: "M1", Package: "synthetic",
-					ParamTypes: []transpiler.Type{transpiler.BasicType{Name: "int"}},
-					ReturnType: transpiler.BasicType{Name: "string"},
+					ParamTypes:   []transpiler.Type{transpiler.BasicType{Name: "int"}},
+					ReturnType:   transpiler.BasicType{Name: "string"},
+					DefaultExprs: map[int]transpiler.DefaultExpr{0: {Text: "1 + 2", Pos: transpiler.SourcePos{Line: 9, Column: 4}}},
 				},
 			},
 		}
@@ -145,7 +147,8 @@ func buildSyntheticCache() *CachedRichAST {
 					Params: []transpiler.Type{transpiler.BasicType{Name: "any"}},
 				},
 			},
-			ReturnType: transpiler.NamedType{Package: "std", Name: "Either"},
+			ReturnType:   transpiler.NamedType{Package: "std", Name: "Either"},
+			DefaultExprs: map[int]transpiler.DefaultExpr{1: {Text: "(s string) => s + \"!\"", Pos: transpiler.SourcePos{Line: 5, Column: 30}}},
 		}
 	}
 	return r

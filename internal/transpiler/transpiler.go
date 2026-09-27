@@ -328,13 +328,13 @@ type TypeMetadata struct {
 	Fields               map[string]Type // Name -> Type
 	FieldNames           []string        // To preserve order
 	FieldPositions       map[string]SourcePos // Name -> (line, column) of the field declaration identifier
-	// FieldDefaults maps a field name to the source text of its declared
-	// default expression, for the shorthand form `struct Cfg(Tries int = 3)`.
-	// A field absent from this map is required: constructing the struct with
-	// call syntax and omitting it is an error. The text is re-parsed and
-	// transformed at each construction site, so the default is evaluated per
-	// construction — matching how function parameter defaults behave.
-	FieldDefaults        map[string]string
+	// FieldDefaults maps a field name to its declared default expression, for
+	// the shorthand form `struct Cfg(Tries int = 3)`. A field absent from this
+	// map is required: constructing the struct with call syntax and omitting it
+	// is an error. The text is re-parsed and transformed at each construction
+	// site, so the default is evaluated per construction — matching how
+	// function parameter defaults behave.
+	FieldDefaults map[string]DefaultExpr
 	// IsShorthand is true when the type came from the shorthand form
 	// `struct Cfg(Name string, Tries int = 3)` rather than the block form
 	// `type Cfg struct { ... }`.
@@ -352,6 +352,16 @@ type TypeMetadata struct {
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
+}
+
+// DefaultExpr is a declared default value — of a function or method parameter,
+// or of a shorthand struct field. Text is the expression exactly as written,
+// whitespace included, since it is re-parsed at every call or construction site
+// that omits the argument. Pos is where its first token sits in the declaring
+// file, so a diagnostic raised while lowering it points at the default itself.
+type DefaultExpr struct {
+	Text string
+	Pos  SourcePos
 }
 
 // SourcePos is a 1-based line, 0-based column (ANTLR convention) position in a source file.
@@ -392,13 +402,13 @@ type MethodMetadata struct {
 	Doc          string    // Doc comment above the declaration ("" when undocumented)
 	Pos          SourcePos // Position of the method name identifier in DefinedIn
 	ParamTypes   []Type
-	ParamNames   []string         // Parameter names (for named argument matching)
+	ParamNames   []string // Parameter names (for named argument matching)
 	ReturnType   Type
 	TypeParams   []string
-	DefaultExprs map[int]string   // Param index -> default expression source text (nil = required)
-	ReceiverName string           // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
-	IsGeneric    bool             // Force transformation to standalone function
-	DefinedIn    string           // Source file where this method was defined (for redefinition detection)
+	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
+	ReceiverName string              // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
+	IsGeneric    bool                // Force transformation to standalone function
+	DefinedIn    string              // Source file where this method was defined (for redefinition detection)
 }
 
 type FunctionMetadata struct {
@@ -416,8 +426,8 @@ type FunctionMetadata struct {
 	ParamImmutFlags []bool
 	ReturnType      Type
 	TypeParams      []string
-	DefaultExprs    map[int]string // Param index -> default expression source text (nil = required)
-	DefinedIn       string         // Source file where this function was defined
+	DefaultExprs    map[int]DefaultExpr // Param index -> declared default (absent = required)
+	DefinedIn       string              // Source file where this function was defined
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

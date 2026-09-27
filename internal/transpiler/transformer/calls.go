@@ -321,11 +321,27 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
 			if funcMeta := t.getFunction(funcName); funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
-				filled, err := t.fillDefaultArgs(nil, funcMeta, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+				filled, err := t.fillDefaultArgs(nil, funcMeta, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
 				}
 				return &ast.CallExpr{Fun: base, Args: filled}, nil
+			}
+		}
+
+		// Zero-argument method call — the same injection for a method whose
+		// parameters all have defaults (`box.Scale()`). The argument-carrying
+		// dispatcher fills defaults for under-filled calls, but a call with no
+		// argument list never reaches it.
+		if sel, ok := base.(*ast.SelectorExpr); ok && zeroArgLookupBase != "" {
+			if typeMeta := t.getTypeMeta(zeroArgLookupBase); typeMeta != nil {
+				if methodMeta := typeMeta.Methods[sel.Sel.Name]; methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
+					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+					if err != nil {
+						return nil, err
+					}
+					return &ast.CallExpr{Fun: base, Args: filled}, nil
+				}
 			}
 		}
 
@@ -702,9 +718,13 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		return view
 	}
+	var argListLine, argListCol int
+	if argListCtx != nil {
+		argListLine, argListCol = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+	}
 	for i, arg := range slots {
 		if arg == nil {
-			expr, derr := t.methodDefaultArg(methodMeta, i, receiver, recvType.BaseName())
+			expr, derr := t.methodDefaultArg(methodMeta, i, receiver, recvType, typeSubst, argListLine, argListCol)
 			if derr != nil {
 				return true, nil, derr
 			}
@@ -856,20 +876,81 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, methodMeta *tr
 }
 
 // methodDefaultArg is the default value of a method's i-th parameter at a call
-// on callSiteReceiver.
-func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvTypeName string) (ast.Expr, error) {
-	expr, err := t.transformDefaultExpr(methodMeta.DefaultExprs[i])
-	if err != nil {
-		return nil, err
+// on callSiteReceiver, at line/col. typeSubst (may be nil) carries the type
+// arguments the call has bound so far; a declared parameter type that still
+// mentions an unbound type parameter is not threaded into the default.
+func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvType transpiler.Type, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+	// A default may use the receiver (`f func(int) int = (x) => x * b.K`): it
+	// is lowered with the receiver bound as in the method body, so `b.K`
+	// resolves — and unwraps an immutable field — as it does there, and the
+	// call-site receiver is then put in its place. A pointer receiver is bound
+	// by its element type: field access reads the same through either, and the
+	// element type is what the type metadata is keyed by.
+	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
+		recvType = ptr.Elem
 	}
-	// Substitute receiver references and unwrap immutable field accesses. Only
-	// when the call-site receiver differs from the method's receiver name — when
-	// they match, transformDefaultExpr already handles the unwrapping via the
-	// current scope.
-	if methodMeta.ReceiverName != "" && !isIdentNamed(callSiteReceiver, methodMeta.ReceiverName) {
-		expr = t.substituteReceiverInDefault(expr, methodMeta.ReceiverName, callSiteReceiver, recvTypeName)
+	src := defaultSource{
+		DefaultExpr: methodMeta.DefaultExprs[i],
+		file:        methodMeta.DefinedIn,
+		pkg:         methodMeta.Package,
+		typeParams:  methodMeta.TypeParams,
+		recv:        methodMeta.ReceiverName,
+		recvType:    recvType,
+		recvExpr:    callSiteReceiver,
 	}
-	return expr, nil
+	// The receiver's own type arguments (`T` of a Box[int] receiver) are bound
+	// by the receiver, whichever call form reached here.
+	if recvMeta := t.getTypeMeta(t.resolveStructTypeName(recvType.BaseName())); recvMeta != nil && len(recvMeta.TypeParams) > 0 {
+		typeSubst = receiverTypeSubst(recvMeta.TypeParams, recvType, typeSubst)
+		src.typeParams = append(slices.Clone(recvMeta.TypeParams), src.typeParams...)
+	}
+	if i < len(methodMeta.ParamTypes) {
+		src.declared = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+	}
+	return t.transformDefaultExpr(src, line, col)
+}
+
+// receiverTypeSubst maps a generic receiver type's parameters to the type
+// arguments recvType carries (`T` → `int` for Box[int]), overlaid on extra
+// (which is not modified). extra is returned as is when recvType carries none.
+func receiverTypeSubst(typeParams []string, recvType transpiler.Type, extra map[string]string) map[string]string {
+	generic, ok := recvType.(transpiler.GenericType)
+	if !ok || len(generic.Params) != len(typeParams) {
+		return extra
+	}
+	subst := make(map[string]string, len(typeParams)+len(extra))
+	for k, v := range extra {
+		subst[k] = v
+	}
+	for i, tp := range typeParams {
+		if _, bound := subst[tp]; !bound && !transpiler.IsUnusable(generic.Params[i]) {
+			subst[tp] = generic.Params[i].String()
+		}
+	}
+	return subst
+}
+
+// replaceReceiver puts the call-site receiver in place of the method's receiver
+// name in a lowered default. A function literal that binds that name itself — a
+// lambda parameter or local called like the receiver — shadows it, so nothing
+// inside it is replaced.
+func replaceReceiver(expr ast.Expr, name string, with ast.Expr) ast.Expr {
+	holder := &ast.ParenExpr{X: expr}
+	ast.Inspect(holder, func(n ast.Node) bool {
+		if n == nil || n == with {
+			return false
+		}
+		if fl, isFuncLit := n.(*ast.FuncLit); isFuncLit && boundNames(fl)[name] {
+			return false
+		}
+		for _, slot := range referenceSlots(n) {
+			if id, isIdent := (*slot).(*ast.Ident); isIdent && id.Name == name {
+				*slot = with
+			}
+		}
+		return true
+	})
+	return holder.X
 }
 
 // emitGenericMethodFreeFunc builds the monomorphized free-function call that a
@@ -1149,12 +1230,11 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		}
 	}
 	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
-	recvTypeName := recvType.BaseName()
 	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvType, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvType, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -2039,14 +2119,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
-			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
 	// --- Section 8: Default-arg injection for under-filled positional calls ---
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.DefaultExprs) > 0 && len(args) < len(callCtx.funcMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -2831,29 +2911,25 @@ func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected 
 	return &ast.IndexListExpr{X: fun, Indices: typeArgs}, true
 }
 
-// parseDefaultExpr parses a GALA expression string (from a default parameter value)
-// into an ANTLR expression context that can be transformed by the normal pipeline.
-func (t *galaASTTransformer) parseDefaultExpr(exprText string) (grammar.IExpressionContext, error) {
-	input := antlr.NewInputStream(exprText)
-	lexer := grammar.NewgalaLexer(input)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
-	p := grammar.NewgalaParser(stream)
-	p.RemoveErrorListeners()
-	return p.Expression(), nil
-}
-
-// transformDefaultExpr parses and transforms a default expression string into a Go AST expression.
-func (t *galaASTTransformer) transformDefaultExpr(exprText string) (ast.Expr, error) {
-	exprCtx, err := t.parseDefaultExpr(exprText)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse default expression %q: %w", exprText, err)
+// funcDefaultArg is the default value of a function's i-th parameter at a call
+// at line/col. typeSubst (may be nil) carries the type arguments the call binds,
+// explicitly or by inference from the arguments it does pass.
+func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadata, i int, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+	src := defaultSource{
+		DefaultExpr: funcMeta.DefaultExprs[i],
+		file:        funcMeta.DefinedIn,
+		pkg:         funcMeta.Package,
+		typeParams:  funcMeta.TypeParams,
 	}
-	return t.transformExpression(exprCtx)
+	if i < len(funcMeta.ParamTypes) {
+		src.declared = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[i], typeSubst)
+	}
+	return t.transformDefaultExpr(src, line, col)
 }
 
 // fillDefaultArgs fills missing positional arguments with default values from function metadata.
 // Called when a function has defaults and fewer args were provided than parameters.
-func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, line, col int) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, typeSubst map[string]string, line, col int) ([]ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 
@@ -2862,13 +2938,12 @@ func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpil
 
 	// Fill missing positions with defaults
 	for i := len(args); i < totalParams; i++ {
-		defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
-		if !hasDefault {
+		if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"missing required argument %q (parameter %d) in call to %s",
 				funcMeta.ParamNames[i], i+1, funcMeta.Name))
 		}
-		expr, err := t.transformDefaultExpr(defaultExprText)
+		expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -2885,6 +2960,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
 	funcMeta *transpiler.FunctionMetadata,
+	typeSubst map[string]string,
 	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
@@ -2924,8 +3000,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	// Fill remaining gaps with defaults
 	for i, slot := range result {
 		if slot == nil {
-			defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
-			if !hasDefault {
+			if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
 				paramName := ""
 				if i < len(funcMeta.ParamNames) {
 					paramName = funcMeta.ParamNames[i]
@@ -2934,7 +3009,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 					"missing required argument %q (parameter %d) in call to %s",
 					paramName, i+1, funcMeta.Name))
 			}
-			expr, err := t.transformDefaultExpr(defaultExprText)
+			expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 			if err != nil {
 				return nil, err
 			}
@@ -2953,7 +3028,8 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
 	methodMeta *transpiler.MethodMetadata,
-	recvTypeName string,
+	recvType transpiler.Type,
+	typeSubst map[string]string,
 	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
@@ -2989,7 +3065,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 				}
 				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
 			}
-			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvTypeName)
+			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvType, typeSubst, line, col)
 			if err != nil {
 				return nil, err
 			}
@@ -3001,7 +3077,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 
 // fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.
 // callSiteReceiver is the actual receiver expression at the call site.
-func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvTypeName string, line, col int) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvType transpiler.Type, typeSubst map[string]string, line, col int) ([]ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 	copy(result, args)
@@ -3009,7 +3085,7 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", methodMeta.ParamNames[i], i+1, methodMeta.Name))
 		}
-		expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvTypeName)
+		expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvType, typeSubst, line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -3018,87 +3094,16 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 	return result, nil
 }
 
-// isIdentNamed checks if an expression is a simple identifier with the given name.
-func isIdentNamed(expr ast.Expr, name string) bool {
-	if id, ok := expr.(*ast.Ident); ok {
-		return id.Name == name
-	}
-	return false
-}
-
-// substituteReceiver replaces all occurrences of the receiver identifier in a
-// transformed default expression with the actual call-site receiver expression.
-// For example, if the method is `func (c Config) copy(host string = c.host, ...)`
-// and the call site is `config.Get().copy(port = 8080)`, then `c.host` in the
-// default expression becomes `config.Get().host.Get()`.
-//
-// structImmutFields maps struct type names to their field immutability flags.
-// When a field access on the receiver is detected and the field is immutable,
-// `.Get()` is appended to unwrap the Immutable[T] wrapper.
-func (t *galaASTTransformer) substituteReceiverInDefault(expr ast.Expr, receiverName string, callSiteReceiver ast.Expr, recvTypeName string) ast.Expr {
-	switch e := expr.(type) {
-	case *ast.Ident:
-		if e.Name == receiverName {
-			return callSiteReceiver
-		}
-		return e
-	case *ast.SelectorExpr:
-		newX := t.substituteReceiverInDefault(e.X, receiverName, callSiteReceiver, recvTypeName)
-		result := &ast.SelectorExpr{X: newX, Sel: e.Sel}
-		// If this is a field access on the receiver (c.field), check if the field is immutable
-		// and add .Get() to unwrap Immutable[T]
-		if t.isReceiverFieldAccess(e.X, receiverName) {
-			resolvedTypeName := t.resolveStructTypeName(recvTypeName)
-			if fields, ok := t.structFields[resolvedTypeName]; ok {
-				immutFlags := t.structImmutFields[resolvedTypeName]
-				for i, fieldName := range fields {
-					if fieldName == e.Sel.Name && immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-						// Field is immutable — add .Get() unwrap
-						return &ast.CallExpr{
-							Fun: &ast.SelectorExpr{X: result, Sel: ast.NewIdent("Get")},
-						}
-					}
-				}
-			}
-		}
-		return result
-	case *ast.CallExpr:
-		newFun := t.substituteReceiverInDefault(e.Fun, receiverName, callSiteReceiver, recvTypeName)
-		newArgs := make([]ast.Expr, len(e.Args))
-		for i, arg := range e.Args {
-			newArgs[i] = t.substituteReceiverInDefault(arg, receiverName, callSiteReceiver, recvTypeName)
-		}
-		return &ast.CallExpr{Fun: newFun, Args: newArgs, Ellipsis: e.Ellipsis}
-	case *ast.IndexExpr:
-		return &ast.IndexExpr{
-			X:     t.substituteReceiverInDefault(e.X, receiverName, callSiteReceiver, recvTypeName),
-			Index: t.substituteReceiverInDefault(e.Index, receiverName, callSiteReceiver, recvTypeName),
-		}
-	case *ast.UnaryExpr:
-		return &ast.UnaryExpr{Op: e.Op, X: t.substituteReceiverInDefault(e.X, receiverName, callSiteReceiver, recvTypeName)}
-	case *ast.BinaryExpr:
-		return &ast.BinaryExpr{
-			X:  t.substituteReceiverInDefault(e.X, receiverName, callSiteReceiver, recvTypeName),
-			Op: e.Op,
-			Y:  t.substituteReceiverInDefault(e.Y, receiverName, callSiteReceiver, recvTypeName),
-		}
-	case *ast.ParenExpr:
-		return &ast.ParenExpr{X: t.substituteReceiverInDefault(e.X, receiverName, callSiteReceiver, recvTypeName)}
-	default:
-		return expr
-	}
-}
-
-// isReceiverFieldAccess checks if an expression is the receiver identifier (or receiver.Get()).
-func (t *galaASTTransformer) isReceiverFieldAccess(expr ast.Expr, receiverName string) bool {
-	// Direct: c.field
-	if id, ok := expr.(*ast.Ident); ok && id.Name == receiverName {
-		return true
-	}
-	return false
-}
-
 func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.IExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
+	return t.transformArgument(exprCtx, expectedType, false)
+}
+
+// transformArgument lowers an expression standing in a slot of expectedType.
+// strict is the untyped-lambda-parameter policy of transformLambdaWithExpectedType:
+// a declared slot (a parameter or field default) passes true, so an unannotated
+// lambda parameter the type does not cover is GALA-E0033; a call argument,
+// whose expected type may still be partly inferred, passes false.
+func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContext, expectedType transpiler.Type, strict bool) (ast.Expr, error) {
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
 		return t.transformPartialFunctionLiteral(pfCtx, expectedType)
@@ -3106,19 +3111,8 @@ func (t *galaASTTransformer) transformArgumentWithExpectedType(exprCtx grammar.I
 
 	// Try to find a lambda in this expression
 	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
-		// Extract the expected return type and parameter types from the function type
-		var expectedRetType ast.Expr
-		var expectedParamTypes []transpiler.Type
-		if funcType, ok := expectedType.(transpiler.FuncType); ok {
-			if len(funcType.Results) > 0 {
-				expectedRetType = t.typeToExpr(funcType.Results[0])
-			} else {
-				// Void function - use sentinel value
-				expectedRetType = ExpectedVoid
-			}
-			expectedParamTypes = funcType.Params
-		}
-		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, false)
+		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expectedType)
+		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
 	}
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
@@ -3314,16 +3308,7 @@ func (t *galaASTTransformer) liftToImmutableForArg(expr ast.Expr, expectedType t
 // When the grammar's argument rule matches lambdaExpression directly instead of going through
 // pattern -> expression -> primaryExpr -> lambdaExpression, we get the lambda context directly.
 func (t *galaASTTransformer) transformLambdaArgWithExpectedType(lambdaCtx *grammar.LambdaExpressionContext, expectedType transpiler.Type) (ast.Expr, error) {
-	var expectedRetType ast.Expr
-	var expectedParamTypes []transpiler.Type
-	if funcType, ok := expectedType.(transpiler.FuncType); ok {
-		if len(funcType.Results) > 0 {
-			expectedRetType = t.typeToExpr(funcType.Results[0])
-		} else {
-			expectedRetType = ExpectedVoid
-		}
-		expectedParamTypes = funcType.Params
-	}
+	expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expectedType)
 	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, false)
 }
 

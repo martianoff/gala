@@ -188,6 +188,22 @@ Expression functions also support defaults:
 func greet(name string, greeting string = "Hello") string = s"$greeting, $name!"
 ```
 
+A default is checked against the parameter's declared type exactly as an explicit
+argument would be. For a function-typed parameter, that means a lambda default
+takes its parameter and result types from the declaration, and `nil` is a valid
+default:
+
+```gala
+func shout(s string, decorate func(string) string = (x) => x + "!") string = decorate(s)
+func run(hook func() int = nil) int = if (hook == nil) 0 else hook()
+
+struct Backend(
+    Name         string,
+    Origin       func() Tuple[int, int] = () => (0, 0),
+    CursorReport func(int, int)         = (r, c) => {},
+)
+```
+
 The compiler validates defaults at compile time:
 - Default expression type must match the parameter type
 - Parameters with defaults must be contiguous at the end of the parameter list

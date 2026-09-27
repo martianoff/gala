@@ -1352,14 +1352,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 								} else {
 									methodMeta.ParamNames = append(methodMeta.ParamNames, "")
 								}
-								// Extract default expression source text
-								if paramCtx.ParamDefault() != nil {
-									if methodMeta.DefaultExprs == nil {
-										methodMeta.DefaultExprs = make(map[int]string)
-									}
-									defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
-									methodMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
-								}
+								recordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
 							}
 						}
 					}
@@ -1463,14 +1456,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							} else {
 								funcMeta.ParamNames = append(funcMeta.ParamNames, "")
 							}
-							// Extract default expression source text
-							if paramCtx.ParamDefault() != nil {
-								if funcMeta.DefaultExprs == nil {
-									funcMeta.DefaultExprs = make(map[int]string)
-								}
-								defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
-								exprCtx := defaultCtx.Expression()
-								funcMeta.DefaultExprs[i] = exprCtx.GetText()
+							if exprCtx := recordParamDefault(&funcMeta.DefaultExprs, i, paramCtx); exprCtx != nil {
 								if defaultSpans == nil {
 									defaultSpans = make(map[int]defaultExprSpan)
 								}
@@ -4094,14 +4080,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							} else {
 								methodMeta.ParamNames = append(methodMeta.ParamNames, "")
 							}
-							// Extract default expression source text
-							if paramCtx.ParamDefault() != nil {
-								if methodMeta.DefaultExprs == nil {
-									methodMeta.DefaultExprs = make(map[int]string)
-								}
-								defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
-								methodMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
-							}
+							recordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
 						}
 					}
 				}
@@ -4183,13 +4162,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 								} else {
 									funcMeta.ParamNames = append(funcMeta.ParamNames, "")
 								}
-								if paramCtx.ParamDefault() != nil {
-									if funcMeta.DefaultExprs == nil {
-										funcMeta.DefaultExprs = make(map[int]string)
-									}
-									defaultCtx := paramCtx.ParamDefault().(*grammar.ParamDefaultContext)
-									funcMeta.DefaultExprs[i] = defaultCtx.Expression().GetText()
-								}
+								recordParamDefault(&funcMeta.DefaultExprs, i, paramCtx)
 							}
 						}
 					}
@@ -4268,7 +4241,7 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	// Check literal type compatibility
-	for i, defaultText := range funcMeta.DefaultExprs {
+	for i, def := range funcMeta.DefaultExprs {
 		if i >= len(funcMeta.ParamTypes) {
 			continue
 		}
@@ -4276,7 +4249,7 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 		if paramType == "" || paramType == "<nil>" {
 			continue
 		}
-		literalType := inferLiteralType(defaultText)
+		literalType := inferLiteralType(def.Text)
 		if literalType == "" {
 			continue // non-literal expression, can't validate statically
 		}
@@ -4940,9 +4913,50 @@ func recordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, pctx *g
 		return
 	}
 	if meta.FieldDefaults == nil {
-		meta.FieldDefaults = make(map[string]string)
+		meta.FieldDefaults = make(map[string]transpiler.DefaultExpr)
 	}
-	meta.FieldDefaults[fieldName] = pctx.ParamDefault().(*grammar.ParamDefaultContext).Expression().GetText()
+	meta.FieldDefaults[fieldName], _ = paramDefaultSource(pctx)
+}
+
+// recordParamDefault stores the i-th parameter's default expression, if it has
+// one, on a function or method's DefaultExprs, and returns the expression's
+// parse tree (nil when the parameter has no default).
+func recordParamDefault(exprs *map[int]transpiler.DefaultExpr, i int, pctx *grammar.ParameterContext) grammar.IExpressionContext {
+	if pctx.ParamDefault() == nil {
+		return nil
+	}
+	if *exprs == nil {
+		*exprs = make(map[int]transpiler.DefaultExpr)
+	}
+	def, exprCtx := paramDefaultSource(pctx)
+	(*exprs)[i] = def
+	return exprCtx
+}
+
+// paramDefaultSource returns a parameter's default expression exactly as it is
+// written in the source, with the position of its first token, and the
+// expression's parse tree.
+//
+// The text is re-parsed at every call or construction site that omits the
+// argument, so it must survive a second lexing. ctx.GetText() does not: it
+// concatenates token texts and drops the hidden-channel whitespace between
+// them, which turns `(a int) => a + 1` into `(aint)=>a+1` — a lambda whose one
+// parameter is named `aint`. The character interval covered by the expression's
+// tokens keeps every space, newline and comment as written.
+func paramDefaultSource(pctx *grammar.ParameterContext) (transpiler.DefaultExpr, grammar.IExpressionContext) {
+	exprCtx := pctx.ParamDefault().(*grammar.ParamDefaultContext).Expression()
+	return transpiler.DefaultExpr{Text: sourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}, exprCtx
+}
+
+// sourceText returns the source characters a rule context spans, whitespace
+// included. It falls back to GetText() only when the tokens carry no input
+// stream (a tree built by hand rather than parsed).
+func sourceText(ctx antlr.ParserRuleContext) string {
+	start, stop := ctx.GetStart(), ctx.GetStop()
+	if start == nil || stop == nil || start.GetInputStream() == nil || stop.GetStop() < start.GetStart() {
+		return ctx.GetText()
+	}
+	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
 }
 
 // checkDuplicateImports rejects a file that imports the same package twice

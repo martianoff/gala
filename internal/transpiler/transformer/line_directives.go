@@ -48,9 +48,10 @@ import (
 // emitLineMarkers reports whether source-mapped `//line` directives should be
 // emitted. They require a known source file to point at; when transpiling an
 // anonymous snippet (empty filePath, e.g. LSP completion) there is no source map
-// to build, so markers are suppressed.
+// to build, so markers are suppressed. They are also suppressed inside a default
+// value declared in another file, whose line numbers are not this file's.
 func (t *galaASTTransformer) emitLineMarkers() bool {
-	return t.filePath != ""
+	return t.filePath != "" && (t.loweringDefault == nil || !t.loweringDefault.foreign)
 }
 
 // lineMarkerStmt builds the statement-position marker for a 1-based GALA line: a

@@ -1,0 +1,41 @@
+package func_defaults_lib
+
+// Cell is a type this package owns. A default that mentions it is lowered at
+// the construction site, in whatever package that is, so the emitted Go has to
+// qualify it — including inside a lambda default's parameter list and body.
+struct Cell(Ch string)
+
+// Frame must be exported: a default is evaluated at each construction site, so
+// everything it names has to be visible there.
+func Frame(c Cell) Cell = Cell("[" + c.Ch + "]")
+
+// Backend is a set of optional hooks, each defaulting to a no-op. Every field
+// is function-typed, so each default takes its parameter and result types from
+// the field's declared type.
+struct Backend(
+    Name         string,
+    Origin       func() Tuple[int, int] = () => (0, 0),
+    CursorReport func(int, int)         = (r, c) => {},
+    Render       func(Cell) Cell        = (c) => Frame(Cell(c.Ch + "!")),
+    Pick         func(Option[int]) int  = (o) => o.GetOrElse(-1),
+    OnClose      func() int             = nil,
+    OnReset      func() int             = Zero,
+)
+
+// Decorate carries a function-typed parameter default across the package
+// boundary too.
+func Decorate(name string, suffix func(string) string = (s) => s + "!") string = suffix(name)
+
+// Twice is called by Scaled's default, which is lowered at the call site — in
+// another package — so the call must reach Go as `func_defaults_lib.Twice`.
+func Twice(n int) int = n * 2
+
+// Scaled's default lambda uses this package's own function.
+func Scaled(n int, f func(int) int = (a) => Twice(a)) int = f(n)
+
+// Zero is a function-reference default: `OnReset` and `Applied` take the
+// function itself, not a thunk that returns it.
+func Zero() int = 0
+
+// Applied defaults its function parameter to a reference to Twice.
+func Applied(n int, f func(int) int = Twice) int = f(n)

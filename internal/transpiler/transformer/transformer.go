@@ -78,6 +78,8 @@ type galaASTTransformer struct {
 	expectedIfExprType       ast.Expr                     // expected return type for if-expression IIFE (set by expression-bodied function handler)
 	expectedLambdaParamTypes []transpiler.Type            // expected param types threaded into a bare lambda initializer (e.g. `val f func(int) int = (x) => ...`); consulted by transformLambda for the otherwise context-free lambda path
 	expectedLambdaRetType    ast.Expr                     // expected return type paired with expectedLambdaParamTypes for the bare lambda initializer path
+	defaultTrees             map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
+	loweringDefault          *defaultLowering             // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
 	expectedArgTypes         expectedArgTypeStack         // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos      bool                         // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
 	methodReceivers          []methodReceiver             // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
@@ -227,6 +229,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
 	t.structMetas = make(map[string]*structMetaConfig)
+	t.defaultTrees = nil
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"
 	t.warnTypeInference = os.Getenv("GALA_WARN_TYPES") == "1"
