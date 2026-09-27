@@ -307,6 +307,37 @@ func main() {
 			contains: []string{"func() func(int) int {", "func(obj bool) func(int) int {"},
 		},
 		{
+			name: "if-expression as a Copy override",
+			input: `package main
+
+struct Box(N int, F func() int)
+
+func main() {
+    val up = true
+    val b = Box(N = 1, F = () => 1)
+    val c = b.Copy(F = if (up) () => 3 else () => 4)
+    Println(c.F())
+}`,
+			contains: []string{"func() func() int {"},
+		},
+		{
+			name: "match as a Copy override",
+			input: `package main
+
+struct Op(F func(int) int)
+
+func main() {
+    val up = true
+    val o = Op(F = (x) => x)
+    val c = o.Copy(F = up match {
+        case true => (x) => x + 1
+        case _ => (x) => x
+    })
+    Println(c.F(1))
+}`,
+			contains: []string{"func(obj bool) func(int) int {", "return func(x int) int {"},
+		},
+		{
 			name: "branch lambdas in a generic constructor",
 			input: `package main
 

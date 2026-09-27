@@ -59,6 +59,11 @@ func main() {
     })
     val typed func(int) int = if (up) (x) => x + 50 else (x) => x + 60
     val step = Cell(Value = 2, Map = if (up) (v) => v * v else (v) => v)
+    val boxCopy = box.Copy(F = if (up) () => 30 else () => 40)
+    val armsCopy = arms.Copy(F = up match {
+        case true => (x) => x + 1000
+        case _ => (x) => x
+    })
     Println(box.F())
     Println(chain.F(1))
     Println(blocks.F(1))
@@ -66,6 +71,8 @@ func main() {
     Println(blockArms.F(1))
     Println(typed(1))
     Println(step.Map(step.Value))
+    Println(boxCopy.F())
+    Println(armsCopy.F(1))
     Println(apply(if (up) (x) => x * 5 else (x) => x * 6, 1))
     Println(pickIf(false)(1))
     Println(pickMatch(false)(1))
