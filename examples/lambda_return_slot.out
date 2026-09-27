@@ -9,5 +9,15 @@ Failure(3 is odd)
 Success(Success(2))
 Success(Failure(strconv.Atoi: parsing "x": invalid syntax))
 Success(60)
+Some(4)
+None()
+Some(30)
+None()
+Success(4)
+Failure(big)
+Failure(zero)
+Some(v=0)
+not zero
+None()
 nested=true
 nested=false

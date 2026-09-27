@@ -23,7 +23,7 @@ func scaler(k int) func(string) string {
     return (s) => s"$s:${scale(5)}"
 }
 
-// `None()` infers from the lambda's first return (Option[int]), not from the
+// `None()` infers from the lambda's other return (Option[int]), not from the
 // enclosing function's Option[string].
 func small(n int) Option[string] {
     val o = apply(() => {
@@ -70,6 +70,51 @@ func viaTypedLambda(s string) Try[int] {
     return f(s)
 }
 
+// The slot is inferred from all of the body's result values, in any order: an
+// early `return None()` guard takes its type from a later value.
+func guard(o Option[int]) Option[int] = o.FlatMap((x) => {
+    if (x < 0) {
+        return None()
+    }
+    return Some(x + 1)
+})
+
+func guardTrailing(o Option[int]) Option[int] = o.FlatMap((x) => {
+    if (x < 0) {
+        return None()
+    }
+    Some(x * 10)
+})
+
+// `Failure(e)` has no element type of its own; it takes the bind block's.
+func failFirst(s string) Try[int] = parse(s).FlatMap((n) => {
+    if (n > 3) {
+        return Failure(errors.New("big"))
+    }
+    bind m = parse(s)
+    if (m == 0) {
+        return Failure(errors.New("zero"))
+    }
+    Success(n + m)
+})
+
+// A statement-position match whose arms return is inlined: its `return`
+// leaves the lambda, so it fills the lambda's slot.
+func firstZero(n int) Option[string] {
+    val o = apply(() => {
+        n match {
+            case 0 => {
+                return Some(0)
+            }
+            case _ => {
+                Println("not zero")
+            }
+        }
+        return None()
+    })
+    return o.Map((v) => s"v=$v")
+}
+
 // Nested lambdas each have their own slot.
 func nested(n int) string {
     val outer = apply(() => {
@@ -93,6 +138,15 @@ func main() {
     Println(viaThunk("4"))
     Println(viaThunk("x"))
     Println(viaTypedLambda("12"))
+    Println(guard(Some(3)))
+    Println(guard(Some(-1)))
+    Println(guardTrailing(Some(3)))
+    Println(guardTrailing(Some(-1)))
+    Println(failFirst("2"))
+    Println(failFirst("5"))
+    Println(failFirst("0"))
+    Println(firstZero(0))
+    Println(firstZero(1))
     Println(nested(3))
     Println(nested(-1))
 }

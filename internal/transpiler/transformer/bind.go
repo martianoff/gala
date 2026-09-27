@@ -209,14 +209,23 @@ func firstReferencedName(expr ast.Expr, names map[string]bool) string {
 }
 
 // bindResult is the result type M[R] of a bind block, shared by every level of
-// its FlatMap chain. It is the enclosing function's or lambda's result type.
-// In a lambda whose result type is not known (see returnSlotOpen) it starts
-// empty and the block's trailing value fills it: that value is lowered before
-// any enclosing continuation lambda or FlatMap call is built, so every level
-// sees the filled type.
+// its FlatMap chain: the enclosing function's or lambda's result type. When
+// that is not known it starts empty and is filled from the lambda's return
+// slot or the block's trailing value, which is lowered before any enclosing
+// continuation lambda or FlatMap call is built, so every level sees it.
 type bindResult struct {
 	typ   transpiler.Type
-	monad string // the block's monad (lookup base name), set by its first clause
+	monad string // the block's monad (lookup base name)
+}
+
+// newBindResult starts a bind block whose result type is typ (nil when not
+// known yet).
+func (t *galaASTTransformer) newBindResult(typ transpiler.Type) *bindResult {
+	res := &bindResult{typ: typ}
+	if !transpiler.IsUnusable(typ) {
+		res.monad = t.monadBaseName(typ)
+	}
+	return res
 }
 
 // desugarBindChain lowers a run of statements beginning with a `bind` into a
@@ -287,15 +296,13 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 
 	// Same-monad requirement: the clause's monad must match the block's monad.
 	// (Heterogeneous lift is a separate feature.) Compare normalized base names.
+	// A block whose result type is not known yet takes its monad from its
+	// first clause.
 	if res.monad == "" {
 		res.monad = lookupBaseName
 	}
-	resultBase := res.monad
-	if !transpiler.IsUnusable(res.typ) {
-		resultBase = t.monadBaseName(res.typ)
-	}
-	if lookupBaseName != resultBase {
-		return preppedBind{}, t.semanticErrorAt(e.ctx, "cannot `bind` a "+lookupBaseName+" inside a "+resultBase+" block (heterogeneous bind is not supported)")
+	if lookupBaseName != res.monad {
+		return preppedBind{}, t.semanticErrorAt(e.ctx, "cannot `bind` a "+lookupBaseName+" inside a "+res.monad+" block (heterogeneous bind is not supported)")
 	}
 
 	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType}, nil
@@ -517,6 +524,10 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	if exprCtx == nil {
 		return nil, t.semanticErrorAt(sc, "a `bind` block must end with a value expression")
 	}
+	// A `return` in the chain may have filled the lambda's slot meanwhile.
+	if transpiler.IsUnusable(res.typ) {
+		res.typ = t.returnSlot.typ
+	}
 	expr, err := t.lowerAgainst(exprCtx, argSlot(res.typ), true)
 	if err != nil {
 		return nil, err
@@ -524,7 +535,7 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	expr = t.unwrapImmutable(expr)
 	if transpiler.IsUnusable(res.typ) {
 		typ := t.getExprTypeName(expr)
-		if typeHasMaskedPart(typ) || typ.IsAny() {
+		if !t.isSettledType(typ) {
 			return nil, t.semanticErrorAt(sc, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
 		}
 		if base := t.monadBaseName(typ); base != res.monad {

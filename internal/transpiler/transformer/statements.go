@@ -159,26 +159,16 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 		return nil, nil
 	}
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
-		var results []ast.Expr
-		if retCtx.Expression() != nil {
-			// A lambda, if-expression or match takes its types from the
-			// result type of the innermost enclosing function or lambda.
-			expr, err := t.lowerAgainst(retCtx.Expression(), resultSlot(t.currentFuncReturnType), false)
-			if err != nil {
-				return nil, err
-			}
-			expr = t.unwrapImmutable(expr)
-			results = append(results, expr)
-			// In a lambda of unknown result type the first return with a
-			// concrete type fixes the slot for the rest of the body, so a
-			// later `return None()` infers from it (see transformLambdaWithExpectedType).
-			if t.returnSlotOpen && transpiler.IsUnusable(t.currentFuncReturnType) {
-				if typ := t.getExprTypeName(expr); !typeHasMaskedPart(typ) && !typ.IsAny() && !typ.IsVoid() {
-					t.currentFuncReturnType, t.returnSlotOpen = typ, false
-				}
-			}
+		if retCtx.Expression() == nil {
+			return &ast.ReturnStmt{}, nil
 		}
-		return &ast.ReturnStmt{Results: results}, nil
+		// A lambda, if-expression or match takes its types from the result
+		// type of the innermost enclosing function or lambda.
+		stmt, err := t.lowerReturnValue(retCtx.Expression())
+		if err != nil {
+			return nil, err
+		}
+		return stmt, nil
 	}
 	return nil, nil
 }
@@ -467,17 +457,20 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, l
 			return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`also` must follow a `bind`")
 		}
 		if bindDeclFromStatement(stmtCtx) != nil {
-			// The block's monad is the enclosing function's or lambda's result
-			// type; in a lambda whose result type is not known it is taken
-			// from the block's trailing value instead.
-			if transpiler.IsUnusable(t.currentFuncReturnType) && !t.returnSlotOpen {
+			// The block's monad is the result type of the enclosing function
+			// or lambda. When that is not known, a block whose value is
+			// consumed takes it from its own trailing value, and fills the
+			// enclosing lambda's slot with it.
+			res := t.newBindResult(t.returnSlot.typ)
+			if transpiler.IsUnusable(res.typ) && !lastStmtIsValue {
 				return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`bind` requires the enclosing function to declare a monad return type")
 			}
-			expr, err := t.desugarBindChain(allStmts[i:], &bindResult{typ: t.currentFuncReturnType})
+			expr, err := t.desugarBindChain(allStmts[i:], res)
 			if err != nil {
 				return nil, err
 			}
 			if lastStmtIsValue {
+				t.tryFillReturnSlot(res.typ)
 				block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			} else {
 				block.List = append(block.List, &ast.ExprStmt{X: expr})

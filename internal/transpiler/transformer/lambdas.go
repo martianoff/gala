@@ -167,20 +167,17 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	}
 
 	// The lambda has its own return slot, separate from the enclosing
-	// function's: a `return`, a `bind` block and the match-result fallback in
+	// function's: a `return`, a `bind` block and the return-type fallbacks in
 	// the body see this lambda's result type, never the enclosing function's.
-	// A known result (annotated, or a concrete expected type) fills the slot;
-	// otherwise the slot is empty, and open unless the lambda is void — a
-	// `bind` block then takes its monad type from its own trailing value.
-	prevFuncReturnType, prevReturnSlotOpen := t.currentFuncReturnType, t.returnSlotOpen
+	// A known result (annotated, or a concrete expected type) fills it;
+	// otherwise the body's own values fill it (see return_slot.go).
+	var lambdaSlot returnSlot
 	if isConcreteExpectedType {
-		t.currentFuncReturnType = t.astTypeToTranspilerType(retType)
-		t.returnSlotOpen = false
+		lambdaSlot.typ = t.astTypeToTranspilerType(retType)
 	} else {
-		t.currentFuncReturnType = nil
-		t.returnSlotOpen = !isVoidExpected
+		lambdaSlot.fillable = !isVoidExpected
 	}
-	defer func() { t.currentFuncReturnType, t.returnSlotOpen = prevFuncReturnType, prevReturnSlotOpen }()
+	defer t.enterReturnSlot(lambdaSlot)()
 
 	// The body is lowered in a fresh context: its expected type is this
 	// lambda's result type, never the slot type the lambda itself fills.
@@ -308,6 +305,11 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 			// a bare call could equally be a discarded side effect.
 			b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{last.X}}
 		}
+	}
+	// Returns deferred until the slot was known are lowered now, before the
+	// result type is read off the body.
+	if err := t.settleReturnSlot(b); err != nil {
+		return nil, nil, err
 	}
 	var retType ast.Expr
 	if !isConcreteExpectedType && !isVoidExpected {

@@ -24,6 +24,7 @@ go_library(
         "methods.go",
         "patterns.go",
         "postfix.go",
+        "return_slot.go",
         "scope.go",
         "scoped_state.go",
         "sealed.go",

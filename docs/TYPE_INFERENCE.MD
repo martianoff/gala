@@ -444,6 +444,31 @@ The lift is purely additive — passing a bare `T` where a `func() T` is expecte
 is otherwise a type error — and an argument whose own type is already a function
 is passed through untouched, so an existing thunk is never double-wrapped.
 
+### Lambda Result Type (the Return Slot)
+
+A lambda has its own return slot (`returnSlot` in
+`internal/transpiler/transformer/return_slot.go`). A `return`, a `bind` block and
+the return-type fallbacks in its body use it, never the enclosing function's
+return type.
+
+- An annotated result (`(x int) Option[int] => …`) or a concrete expected
+  function type fills the slot up front.
+- Otherwise the body's own result values fill it, **in any order**. A `return`
+  whose value has a fully resolved type fills the slot. A resolved type has no
+  masked part, is not `any` or void, and names no type parameter left unbound by
+  a callee (the `T` of `Failure(e)`'s `Try[T]`). Any other `return` (`return
+  None()`, `return Failure(e)`) is deferred. Once the body is lowered, the promoted
+  trailing value or a `bind` chain can also fill the slot. The deferred returns
+  are then lowered again against it, so an early guard
+  `if (x < 0) { return None() }` takes `Option[int]` from a later `Some(x + 1)`.
+- If nothing fills the slot, a deferred return is an error: "cannot infer the
+  result type of this lambda" (or the constructor's own error, such as
+  [`GALA-E0018`](errors/GALA-E0018.md)).
+
+A match lowered to an IIFE gives its arms their own slot, since a `return` in an
+arm leaves the IIFE. A statement-position match whose arms return is inlined
+instead, so its returns fill the lambda's slot.
+
 ---
 
 ## `bind` / `also` Element and Result Inference
@@ -453,7 +478,10 @@ things by type inference: the **result monad** `M[R]`, each clause's **bound ele
 type** `A`, and — for an `also` group with a `Zip` — the **product tuple** type.
 
 - **Result monad `M[R]`.** Taken from the enclosing block's declared result type (the
-  function's return type, or the expected type pushed onto the block). It fixes both the
+  function's or lambda's return slot, or the expected type pushed onto the block). In a
+  lambda whose result type is not known, a block whose value is consumed takes `M[R]`
+  from its trailing value, which must then be a settled `M` value, and fills the
+  lambda's slot with it (see [Lambda Result Type](#lambda-result-type-the-return-slot)). It fixes both the
   base monad `M` a clause must belong to and the FlatMap continuation's return type
   `M[R]`. The trailing value expression is transformed with `M[R]` pushed as its expected
   type, so constructors like `Success`/`Some`/`Valid` infer their type arguments from the
@@ -520,7 +548,7 @@ Five contexts feed the expected type:
   `None()` / `Some()`), and rewrites the receiver via
   `injectSealedVariantTypeArgs`. On a successful rewrite it consumes
   the hint so deeper sub-expressions cannot pick it up.
-  `inferZeroArgTypeParams` consults `currentFuncReturnType` **before**
+  `inferZeroArgTypeParams` consults `returnSlot.typ` **before**
   `currentMatchSubjectType`: in value position the arm body's type is
   the match *result* type, which the declared return pins, while the
   subject is only a proxy that coincides with the result when the match
@@ -538,11 +566,11 @@ Five contexts feed the expected type:
   verbatim for non-FuncType params of non-generic GALA functions, so
   the argument-transform path can push it onto the stack.
 - For **tuple elements** (context 4 / context 2 with tuple return),
-  `transformPrimary` inspects the enclosing `currentFuncReturnType`
+  `transformPrimary` inspects the enclosing `returnSlot.typ`
   for a Tuple-shaped expected type and pushes each per-slot type
   onto the stack for the duration of that element's transform.
 - For **match arms** (context 5), `buildMatchExpressionFromClauses`
-  promotes a pending expected slot type to `currentFuncReturnType`
+  promotes a pending expected slot type to `returnSlot.typ`
   for the IIFE's body, so each arm's expression — not just the first
   — picks it up via the existing companion-of-sealed lookup.
 
@@ -581,7 +609,7 @@ side-effect dispatch still rely on per-arm inference.
 | `transformer/call_context.go::resolveExpectedFuncArgType` | Surfaces non-FuncType param types from non-generic functions |
 | `transformer/constructors.go::transformPrimary` (paren/tuple case) | Pushes per-element expected type for tuple literals |
 | `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Pushes the explicit declared type before transforming RHS |
-| `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `currentFuncReturnType` for arm bodies |
+| `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `returnSlot.typ` for arm bodies |
 
 ---
 
@@ -624,7 +652,7 @@ the verbatim-call fallback:
    `expectedArgTypes` stack (consumed at dispatcher entry — e.g. an argument
    slot, a `val` with a declared type, or a `bind` block's trailing value),
    then the result type of the innermost enclosing function or lambda
-   (`currentFuncReturnType`; inside a lambda this is the lambda's own result
+   (`returnSlot.typ`; inside a lambda this is the lambda's own result
    type, or unset while it is not known — never the surrounding function's).
 
 The call target is rewritten into an explicit instantiation

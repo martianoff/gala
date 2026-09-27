@@ -719,14 +719,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	// Track the current function's return type so tuple literals in return statements
 	// can use it as a fallback when element type inference fails.
-	prevFuncReturnType, prevReturnSlotOpen := t.currentFuncReturnType, t.returnSlotOpen
+	var funcSlot returnSlot
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
-		t.currentFuncReturnType = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
-	} else {
-		t.currentFuncReturnType = nil
+		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}
-	t.returnSlotOpen = false
-	defer func() { t.currentFuncReturnType, t.returnSlotOpen = prevFuncReturnType, prevReturnSlotOpen }()
+	defer t.enterReturnSlot(funcSlot)()
 
 	var body *ast.BlockStmt
 	if ctx.Block() != nil {
@@ -869,7 +866,7 @@ func (t *galaASTTransformer) resolveReturnTypeAsFuncType(typeExpr ast.Expr) *tra
 
 // resolveTranspilerTypeAsFuncType is the transpiler.Type-input variant of
 // resolveReturnTypeAsFuncType. Used at sites where the enclosing function's
-// return type is already a transpiler.Type (e.g. currentFuncReturnType) and
+// return type is already a transpiler.Type (e.g. returnSlot.typ) and
 // we want to thread expected lambda param/return types into a returned
 // lambda expression.
 func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type) *transpiler.FuncType {

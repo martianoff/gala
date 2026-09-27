@@ -270,7 +270,8 @@ explicit, not boilerplate to eliminate.
    innermost enclosing function or lambda — a `bind` inside a lambda never uses the
    surrounding function's return type. In a lambda whose result type is not known from
    an annotation or its expected function type (e.g. `opt.FlatMap((x) => { bind … })`
-   or a `Try(() => { bind … })` thunk), `M[R]` is the type of the block's trailing
+   or a `Try(() => { bind … })` thunk), `M[R]` is the lambda's result type as its
+   other `return` values settle it, or else the type of the block's trailing
    expression, which must then be an `M` value.
 2. A `bind`/`also` whose expression is not that same `M` is a compile error
    (heterogeneous bind is not supported — convert at the call site, §5).

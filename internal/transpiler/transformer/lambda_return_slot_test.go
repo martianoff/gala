@@ -56,6 +56,64 @@ func small(n int) Option[string] {
 			notContains: []string{"std.None[string]"},
 		},
 		{
+			name: "an early return None() guard infers from a later return",
+			body: `
+func guard(o Option[int]) Option[int] = o.FlatMap((x) => {
+    if (x < 0) {
+        return None()
+    }
+    return Some(x + 1)
+})
+`,
+			contains: []string{"return std.None[int]{}", "func(x int) std.Option[int] {"},
+		},
+		{
+			name: "an early return None() guard infers from the trailing value",
+			body: `
+func guard(o Option[int]) Option[int] = o.FlatMap((x) => {
+    if (x < 0) {
+        return None()
+    }
+    Some(x * 10)
+})
+`,
+			contains: []string{"return std.None[int]{}"},
+		},
+		{
+			name: "a return with an unbound type parameter never fixes the slot",
+			body: `
+func failFirst(s string) Try[int] = parse(s).FlatMap((n) => {
+    if (n > 3) {
+        return Failure(strconv.ErrRange)
+    }
+    bind m = parse(s)
+    Success(n + m)
+})
+`,
+			contains:    []string{"std.Failure[int]{}", "func(n int) std.Try[int] {"},
+			notContains: []string{"[T]", "Success[T]"},
+		},
+		{
+			name: "a return in an inlined statement-position match fills the lambda's slot",
+			body: `
+func firstZero(n int) Option[string] {
+    val o = apply(() => {
+        n match {
+            case 0 => {
+                return Some(0)
+            }
+            case _ => {
+                Println("x")
+            }
+        }
+        return None()
+    })
+    return o.Map((v) => s"v=$v")
+}
+`,
+			contains: []string{"return std.None[int]{}", "apply(func() std.Option[int] {"},
+		},
+		{
 			name: "returned match takes the lambda's type",
 			body: `
 func classify(n int) Option[string] {
@@ -146,10 +204,10 @@ func run(s string) Try[int] {
 	}
 }
 
-// A `bind` block in a lambda of unknown result type must end with a value of
-// the block's monad; anything else is rejected with a GALA error, not handed to
-// the Go compiler.
-func TestLambdaReturnSlotBindErrors(t *testing.T) {
+// A lambda of unknown result type needs one result value of a known type, and
+// a `bind` block in it must end with a value of the block's monad; anything
+// else is rejected with a GALA error, not handed to the Go compiler.
+func TestLambdaReturnSlotErrors(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -172,6 +230,23 @@ func run(s string) string {
 }
 `,
 			wantErr: "must end with a std.Try value",
+		},
+		{
+			name: "no result value has a fully known type",
+			input: `package main
+
+import "strconv"
+
+func apply[T any](f func() T) T = f()
+
+func run() string {
+    val r = apply(() => {
+        return Failure(strconv.ErrRange)
+    })
+    return s"$r"
+}
+`,
+			wantErr: "cannot infer the result type of this lambda",
 		},
 		{
 			name: "bind in a function with no return type",
