@@ -56,6 +56,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"loweringDefault", t.loweringDefault != nil},
 		{"matchInStatementPos", t.matchInStatementPos},
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
+		{"unrecordedCallee", t.unrecordedCallee != nil},
 	}
 }
 

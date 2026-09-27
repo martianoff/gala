@@ -3607,3 +3607,11 @@ gala_exec_test(
     src = "none_branch_result_type.gala",
     expected = "none_branch_result_type.out",
 )
+
+# A user Get() on a generic receiver (pointer or value), called from generic
+# code, returns the method's result type — not the receiver type.
+gala_exec_test(
+    name = "get_generic_pointer_receiver",
+    src = "get_generic_pointer_receiver.gala",
+    expected = "get_generic_pointer_receiver.out",
+)

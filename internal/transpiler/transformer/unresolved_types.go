@@ -50,7 +50,7 @@ type UnresolvedType struct {
 // bury the real signal. What matters is a top-level query that has exhausted
 // its routes and is handing NilType back to a caller that must now fall back.
 func (t *galaASTTransformer) recordUnresolved(expr ast.Expr) {
-	if t.hasNoTypeByConstruction(expr) {
+	if expr == t.unrecordedCallee || t.hasNoTypeByConstruction(expr) {
 		return
 	}
 	// Deduplicate on the AST node, before rendering. A failed lookup is not

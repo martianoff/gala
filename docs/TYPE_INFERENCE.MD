@@ -353,10 +353,10 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `arr[i]` | Array element type |
 | `Some(x)`, `None[T]()` | Option type construction |
 | `Left(x)`, `Right(x)` | Either type construction |
-| `expr.Get()` | Immutable inner type, generic container element (`Array[T].Get()` → `T`), or — when the receiver is a non-generic named type (or a pointer to one) with a user-declared `Get` method — that method's declared return type |
+| `expr.Get()` | On a `val`, an immutable field, or an `Immutable[T]`: the unwrapped inner type. Otherwise an ordinary method call: a generic container element (`Array[T].Get(i)` → `T`), a user-declared `Get` method's return type (value or pointer receiver, generic or not), or a Go type's `Get` from Go type info (`url.Values.Get` → `string`) |
 | `NewImmutable(x)` | Immutable wrapper type |
 
-> **Note:** `Get` is special-cased because it backs implicit `Immutable` unwrapping and the built-in container accessors. A user type may still declare its own `Get` method (e.g. a `Get() Option[T]` accessor); its declared return type is honored so that chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field.
+> **Note:** `Get` is special-cased only for implicit `Immutable` unwrapping. Every other `Get` is inferred like any other method call, so a user type's own `Get` method (e.g. a `Get() Option[T]` accessor) keeps its declared return type and chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field. A generic receiver — value or pointer — has its type arguments substituted into the declared return type even when they are type parameters of the enclosing generic function: inside `func f[T any](b *Box[T])`, `b.Get()` on `func (b *Box[T]) Get() T` is `T`. A `Get` that cannot be resolved is never typed as the receiver itself.
 
 ### Hindley-Milner Inference (`inferExprType`)
 

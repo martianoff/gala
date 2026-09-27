@@ -75,6 +75,7 @@ type galaASTTransformer struct {
 	inferenceWarnings        []string                     // collected type inference warnings
 	unresolvedTypes          []UnresolvedType             // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
 	unresolvedSeen           map[ast.Expr]bool            // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
+	unrecordedCallee         ast.Expr                     // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
 	diagPackageNames         map[string]bool              // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas              map[string]*structMetaConfig // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames   map[string]string            // type name -> actual generated interface name (for collision avoidance)

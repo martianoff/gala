@@ -168,6 +168,45 @@ func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 	return transpiler.ParseType(typ.String())
 }
 
+// toInferCallee converts a call's callee, keeping that one query out of the
+// unresolved-type inventory when the call itself is already accounted for.
+//
+// The bridge reaches a call after querying the call's own type, and converts
+// it only when that type was not usable as-is: missing, `any`, or written in
+// terms of the enclosing function's type parameters. A missing type is
+// recorded as the call; a type in terms of type parameters (`T`, `Option[T]`
+// inside a generic body) is the call's real type. Either way, a callee that
+// names a function or method — the `opt.Map` in `opt.Map(f)` — has nothing
+// more to report: it is not a value and has no type of its own. Recording it
+// counted every such call a second time, or counted a call that had typed.
+//
+// `any` is left out, so the callee of a call widened to `any` still counts.
+// So does a callee that computes a function (a call, a func literal, an index
+// into a slice of funcs), the receiver and arguments, and every other query
+// of the same node.
+func (t *galaASTTransformer) toInferCallee(call *ast.CallExpr, callType transpiler.Type) infer.Expr {
+	if !t.warnTypeInference || callType.IsAny() || !isCalleeName(call.Fun) {
+		return t.toInferExpr(call.Fun)
+	}
+	prev := t.unrecordedCallee
+	t.unrecordedCallee = call.Fun
+	defer func() { t.unrecordedCallee = prev }()
+	return t.toInferExpr(call.Fun)
+}
+
+// isCalleeName reports whether a callee names a function or method (`f`,
+// `pkg.F`, `x.Method`, `F[K, V]`) rather than computing one. `F[int]` is left
+// out: it cannot be told apart from indexing a slice of funcs.
+func isCalleeName(fun ast.Expr) bool {
+	switch f := ast.Unparen(fun).(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+		return true
+	case *ast.IndexListExpr:
+		return isCalleeName(f.X)
+	}
+	return false
+}
+
 // toInferExpr converts a Go AST expression to an infer.Expr
 func (t *galaASTTransformer) toInferExpr(expr ast.Expr) infer.Expr {
 	if expr == nil {
@@ -195,7 +234,7 @@ func (t *galaASTTransformer) toInferExpr(expr ast.Expr) infer.Expr {
 	case *ast.ParenExpr:
 		return t.toInferExpr(e.X)
 	case *ast.CallExpr:
-		fn := t.toInferExpr(e.Fun)
+		fn := t.toInferCallee(e, manualType)
 		if len(e.Args) == 0 {
 			// Call with no args... HM App needs an arg.
 			// In GALA/Go, we can use a "unit" type or just handle it.

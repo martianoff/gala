@@ -174,6 +174,12 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 				return i < len(typeMeta.ImmutFlags) && typeMeta.ImmutFlags[i]
 			}
 		}
+		// A method is not a field, so it is never an Immutable one. Without
+		// this, `opt.Map` on a std type reaches the field-type query below,
+		// which has no answer for a method and reports it as unresolved.
+		if _, isMethod := typeMeta.Methods[selName]; isMethod {
+			return false
+		}
 	}
 
 	// Check structFieldTypes (Immutable wrapper in field type)
