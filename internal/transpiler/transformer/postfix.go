@@ -3,7 +3,6 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -469,15 +468,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		defer t.enterReturnSlot(returnSlot{typ: s.typ})()
 	}
 
-	var clauses []ast.Stmt
-	var defaultBody []ast.Stmt
-	foundDefault := false
-	// irrefutableTupleArm: an unguarded tuple arm whose lowered condition is
-	// constant true, so it matches every value (see armMatchesEverything).
-	irrefutableTupleArm := false
-	var resultTypes []transpiler.Type
-	var casePatterns []string
-
 	// Validate sealed-variant pattern arity before transforming arms. An
 	// under-/over-bound extractor pattern (e.g. `Rect(w, h)` for a 3-field
 	// Rect) must surface as a coded GALA-E0004 here; otherwise the mis-bound
@@ -506,100 +496,78 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 	}
 
-	for _, cc := range caseClauses {
+	// Which arm is the default depends on the patterns alone: an explicit
+	// wildcard `_` always, or a binding pattern when there is no explicit
+	// wildcard elsewhere (the binding acts as catch-all). A guarded clause is
+	// conditional and never a default — control can fall through to a later
+	// case when the guard is false.
+	isDefault := make([]bool, len(caseClauses))
+	foundDefault := false
+	for i, cc := range caseClauses {
 		ccCtx := cc.(*grammar.CaseClauseContext)
+		patternText := ccCtx.Pattern().GetText()
+		if ccCtx.GetGuard() != nil || !(isWildcard(patternText) || (!hasExplicitWildcard && isBindingPattern(patternText))) {
+			continue
+		}
+		if foundDefault {
+			return nil, galaerr.NewCodedSemanticError(
+				galaerr.CodeMultipleDefaults,
+				ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
+				"multiple default cases in match expression",
+				"keep one default case; combine logic with guards or nested matches if you need sub-cases")
+		}
+		foundDefault = true
+		isDefault[i] = true
+	}
 
-		patCtx := ccCtx.Pattern()
-		patternText := patCtx.GetText()
-		// Treat as default: explicit wildcard `_` always, OR binding pattern when
-		// there's no explicit wildcard elsewhere (binding acts as catch-all). A
-		// guarded clause is conditional and never a default — control can fall
-		// through to a later case when the guard is false.
-		treatAsDefault := ccCtx.GetGuard() == nil &&
-			(isWildcard(patternText) ||
-				(!hasExplicitWildcard && isBindingPattern(patternText)))
+	arms := make([]matchArm, len(caseClauses))
+	lowerArm := func(i int, armSlot slot) (transpiler.Type, error) {
+		ccCtx := caseClauses[i].(*grammar.CaseClauseContext)
+		var arm matchArm
+		var err error
+		if isDefault[i] {
+			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, matchedType, armSlot)
+		} else {
+			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, matchedType, armSlot)
+			arm.hasResult = arm.resultType != nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		arms[i] = arm
+		return arm.resultType, nil
+	}
+	if err := t.lowerBranches(len(caseClauses), s, !stmtPosition && transpiler.IsUnusable(s.typ), lowerArm); err != nil {
+		return nil, err
+	}
 
-		if treatAsDefault {
-			if foundDefault {
-				return nil, galaerr.NewCodedSemanticError(
-					galaerr.CodeMultipleDefaults,
-					ccCtx.GetStart().GetLine(), ccCtx.GetStart().GetColumn(),
-					"multiple default cases in match expression",
-					"keep one default case; combine logic with guards or nested matches if you need sub-cases")
-			}
-			foundDefault = true
-
-			// For binding patterns, register the variable and add assignment
-			var bindingStmts []ast.Stmt
-			if isBindingPattern(patternText) {
-				t.currentScope.vals[patternText] = false
-				if matchedType != nil && !matchedType.IsNil() {
-					t.currentScope.valTypes[patternText] = matchedType
-				}
-				bindingStmts = append(bindingStmts, &ast.AssignStmt{
-					Lhs: []ast.Expr{ast.NewIdent(patternText)},
-					Tok: token.DEFINE,
-					Rhs: []ast.Expr{ast.NewIdent(paramName)},
-				})
-			}
-
-			if ccCtx.GetBodyBlock() != nil {
-				// The default arm's block-body last expression becomes the
-				// arm's value, so it is value-consumed.
-				b, err := t.transformValueBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext), s)
-				if err != nil {
-					return nil, err
-				}
-				defaultBody = append(bindingStmts, b.List...)
-				if len(b.List) > 0 {
-					lastStmt := b.List[len(b.List)-1]
-					if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
-						resultTypes = append(resultTypes, t.inferResultType(ret.Results[0]))
-						casePatterns = append(casePatterns, "case _")
-					} else if exprStmt, ok := lastStmt.(*ast.ExprStmt); ok {
-						// Block's last expression statement becomes the return value
-						defaultBody[len(defaultBody)-1] = t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}})
-						resultTypes = append(resultTypes, t.inferResultType(exprStmt.X))
-						casePatterns = append(casePatterns, "case _")
-					} else if ifStmt, ok := lastStmt.(*ast.IfStmt); ok {
-						// A trailing if/else is the arm's value too, carried by
-						// its branches. Every branch yields the same type, so
-						// the first one gives the arm's result type.
-						if promoted, ok := t.promoteIfBranchValues(ifStmt, t.armReturn); ok {
-							defaultBody[len(defaultBody)-1] = promoted
-							if result := firstBranchResult(promoted); result != nil {
-								resultTypes = append(resultTypes, t.inferResultType(result))
-								casePatterns = append(casePatterns, "case _")
-							}
-						}
-					}
-				}
-			} else if ccCtx.GetBodyStmt() != nil {
-				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), s)
-				if err != nil {
-					return nil, err
-				}
-				defaultBody = append(bindingStmts, bodyStmts...)
-				resultTypes = append(resultTypes, bodyType)
+	var clauses []ast.Stmt
+	var defaultBody []ast.Stmt
+	// irrefutableTupleArm: an unguarded tuple arm whose lowered condition is
+	// constant true, so it matches every value (see armMatchesEverything).
+	irrefutableTupleArm := false
+	var resultTypes []transpiler.Type
+	var casePatterns []string
+	for i, arm := range arms {
+		ccCtx := caseClauses[i].(*grammar.CaseClauseContext)
+		if isDefault[i] {
+			defaultBody = arm.defaultBody
+			if arm.hasResult {
+				resultTypes = append(resultTypes, arm.resultType)
 				casePatterns = append(casePatterns, "case _")
 			}
 			continue
 		}
-
-		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, s)
-		if err != nil {
-			return nil, err
-		}
-		if !irrefutableTupleArm && ccCtx.GetGuard() == nil && armMatchesEverything(clause) &&
-			t.isTuplePatternOfSubjectArity(patCtx, matchedType) {
+		if !irrefutableTupleArm && ccCtx.GetGuard() == nil && armMatchesEverything(arm.clause) &&
+			t.isTuplePatternOfSubjectArity(ccCtx.Pattern(), matchedType) {
 			irrefutableTupleArm = true
 		}
-		if clause != nil {
-			clauses = append(clauses, clause)
+		if arm.clause != nil {
+			clauses = append(clauses, arm.clause)
 		}
-		if resultType != nil {
-			resultTypes = append(resultTypes, resultType)
-			casePatterns = append(casePatterns, fmt.Sprintf("case %s", patternText))
+		if arm.hasResult {
+			resultTypes = append(resultTypes, arm.resultType)
+			casePatterns = append(casePatterns, fmt.Sprintf("case %s", ccCtx.Pattern().GetText()))
 		}
 	}
 

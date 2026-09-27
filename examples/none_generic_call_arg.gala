@@ -1,0 +1,54 @@
+package main
+
+// A bare `None()` passed as an argument takes its type from the parameter it
+// fills, whether the callee is generic or not. A parameter that names none of
+// the callee's type parameters (`Option[Drag]`) is typed as declared; one that
+// does (`Option[T]`) is typed once T is fixed by explicit type arguments or by
+// the other arguments. Positional and named arguments, functions and methods
+// all behave the same.
+
+struct Drag(X int)
+
+func describe(d Option[Drag]) string = d match {
+    case Some(Drag(x)) => s"drag at $x"
+    case _ => "no drag"
+}
+
+func take[T comparable](d Option[Drag], v T) string = s"${describe(d)}, v=$v"
+
+func orElse[T comparable](d Option[T], v T) T = d.GetOrElse(v)
+
+struct Board(Name string)
+
+func (b Board) Take[T comparable](d Option[Drag], v T) string = s"${b.Name}: ${describe(d)}, v=$v"
+
+func (b Board) OrElse[T comparable](d Option[T], v T) T = d.GetOrElse(v)
+
+struct Cell[T comparable](V T)
+
+func (c Cell[T]) Put(d Option[Drag]) string = s"${describe(d)}, cell=${c.V}"
+
+func (c Cell[T]) Or(d Option[T]) T = d.GetOrElse(c.V)
+
+// The parameter's type wins over the enclosing result type (Option[string]).
+func label(v int) Option[string] = Some(take(None(), v))
+
+func main() {
+    Println(take[int](None(), 1))
+    Println(take(None(), 2))
+    Println(take(Some(Drag(7)), 3))
+    Println(orElse[int](None(), 4))
+    Println(orElse(None(), "five"))
+    Println(take(v = 6, d = None()))
+    Println(orElse(v = 7.5, d = None()))
+
+    val board = Board("main")
+    Println(board.Take(None(), 8))
+    Println(board.Take[string](None(), "nine"))
+    Println(board.OrElse(None(), true))
+
+    Println(Cell(10).Put(None()))
+    Println(Cell("eleven").Or(None()))
+
+    Println(label(12).GetOrElse("none"))
+}

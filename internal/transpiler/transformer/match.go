@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -1401,6 +1402,156 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	}
 
 	return ifStmt, resultType, nil
+}
+
+// matchArm is one lowered case clause of a match: a regular arm's clause, or
+// the default arm's body. hasResult reports whether the arm contributes
+// resultType to the match's result type.
+type matchArm struct {
+	clause      ast.Stmt
+	defaultBody []ast.Stmt
+	resultType  transpiler.Type
+	hasResult   bool
+}
+
+// lowerDefaultMatchArm lowers the default arm of a match (a wildcard, or the
+// catch-all binding pattern) against armSlot. Its body's trailing value, or
+// the value its trailing if/else carries, is the arm's value.
+func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (matchArm, error) {
+	var arm matchArm
+	// For binding patterns, register the variable and add assignment
+	var bindingStmts []ast.Stmt
+	if patternText := ctx.Pattern().GetText(); isBindingPattern(patternText) {
+		t.currentScope.vals[patternText] = false
+		if matchedType != nil && !matchedType.IsNil() {
+			t.currentScope.valTypes[patternText] = matchedType
+		}
+		bindingStmts = append(bindingStmts, &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(patternText)},
+			Tok: token.DEFINE,
+			Rhs: []ast.Expr{ast.NewIdent(paramName)},
+		})
+	}
+
+	if ctx.GetBodyBlock() != nil {
+		// The default arm's block-body last expression becomes the
+		// arm's value, so it is value-consumed.
+		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), armSlot)
+		if err != nil {
+			return matchArm{}, err
+		}
+		arm.defaultBody = append(bindingStmts, b.List...)
+		if len(b.List) > 0 {
+			last := len(arm.defaultBody) - 1
+			switch lastStmt := b.List[len(b.List)-1].(type) {
+			case *ast.ReturnStmt:
+				if len(lastStmt.Results) > 0 {
+					arm.resultType, arm.hasResult = t.inferResultType(lastStmt.Results[0]), true
+				}
+			case *ast.ExprStmt:
+				// Block's last expression statement becomes the return value
+				arm.defaultBody[last] = t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{lastStmt.X}})
+				arm.resultType, arm.hasResult = t.inferResultType(lastStmt.X), true
+			case *ast.IfStmt:
+				// A trailing if/else is the arm's value too, carried by
+				// its branches. Every branch yields the same type, so
+				// the first one gives the arm's result type.
+				if promoted, ok := t.promoteIfBranchValues(lastStmt, t.armReturn); ok {
+					arm.defaultBody[last] = promoted
+					if result := firstBranchResult(promoted); result != nil {
+						arm.resultType, arm.hasResult = t.inferResultType(result), true
+					}
+				}
+			}
+		}
+	} else if ctx.GetBodyStmt() != nil {
+		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armSlot)
+		if err != nil {
+			return matchArm{}, err
+		}
+		arm.defaultBody = append(bindingStmts, bodyStmts...)
+		arm.resultType, arm.hasResult = bodyType, true
+	}
+	return arm, nil
+}
+
+// lowerBranches lowers the n branches of a match or if-expression filling slot
+// s: lower(i, s) lowers branch i against s, records it, and returns its value
+// type (nil when it has none).
+//
+// siblingTyped is set for a construct whose value is used but whose slot has
+// no type. Its type is then the one its branches unify to, and a branch that
+// cannot be typed on its own takes it from its siblings: a bare `None()` arm
+// next to `Some(v)` is `None[T]`. The matched value's type and the enclosing
+// result type are not the construct's type, so a zero-arg constructor may not
+// guess from them (siblingTypedBranch): such a branch fails its first lowering
+// with GALA-E0018 and is lowered again against the type the other branches
+// unify to, in either order. When they unify to no settled type, or the
+// constructor still has none against it (it is not the branch's value, as in
+// `val d = None()` inside the branch), it is lowered again as before, guesses
+// included. Any other error is reported as it is.
+func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, lower func(i int, s slot) (transpiler.Type, error)) error {
+	outer := t.siblingTypedBranch
+	t.siblingTypedBranch = outer || siblingTyped
+	var types []transpiler.Type
+	var retry []int
+	for i := range n {
+		typ, err := lower(i, s)
+		switch {
+		case err != nil && siblingTyped && isUninferredVariantError(err):
+			retry = append(retry, i)
+		case err != nil:
+			t.siblingTypedBranch = outer
+			return err
+		case typ != nil:
+			types = append(types, typ)
+		}
+	}
+	t.siblingTypedBranch = outer
+	if len(retry) == 0 {
+		return nil
+	}
+	common := t.siblingsType(types)
+	for _, i := range retry {
+		if common != nil {
+			restore := t.enterReturnSlot(returnSlot{typ: common})
+			_, err := lower(i, argSlot(common))
+			restore()
+			if err == nil {
+				continue
+			}
+			if !isUninferredVariantError(err) {
+				return err
+			}
+			// The constructor that has no type is not the branch's value
+			// (`val d = None()` inside it): the siblings' type does not
+			// apply to it, so it keeps the guesses it had before.
+		}
+		if _, err := lower(i, s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isUninferredVariantError reports whether err is GALA-E0018: a zero-arg
+// constructor of a generic sealed type found no type argument in its context.
+func isUninferredVariantError(err error) bool {
+	var se *galaerr.SemanticError
+	return errors.As(err, &se) && se.Code == galaerr.CodeSealedVariantUninferred
+}
+
+// siblingsType is the settled type the value types of a construct's typed
+// branches unify to, or nil.
+func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Type {
+	if len(types) == 0 {
+		return nil
+	}
+	common, err := t.inferCommonResultType(types, make([]string, len(types)), nil, false)
+	if err != nil || transpiler.IsUnusable(common) || !t.isSettledType(common) {
+		return nil
+	}
+	return common
 }
 
 // transformCaseBodyStmt transforms a simpleStatement case body.

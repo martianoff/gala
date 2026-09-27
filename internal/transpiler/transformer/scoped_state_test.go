@@ -68,10 +68,11 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"currentScope":            func(t *galaASTTransformer) { t.pushScope() },
 	"returnSlot":              func(t *galaASTTransformer) { t.returnSlot.typ = transpiler.BasicType{Name: "int"} },
 	"currentMatchSubjectType": func(t *galaASTTransformer) { t.currentMatchSubjectType = transpiler.BasicType{Name: "int"} },
-	"expectedArgTypes":      func(t *galaASTTransformer) { t.expectedArgTypes.push(transpiler.BasicType{Name: "int"}) },
-	"matchInStatementPos":   func(t *galaASTTransformer) { t.matchInStatementPos = true },
-	"loweringDefault":       func(t *galaASTTransformer) { t.loweringDefault = &defaultLowering{} },
-	"pendingMatchStmtBlock": func(t *galaASTTransformer) { t.pendingMatchStmtBlock = &ast.BlockStmt{} },
+	"siblingTypedBranch":      func(t *galaASTTransformer) { t.siblingTypedBranch = true },
+	"expectedArgTypes":        func(t *galaASTTransformer) { t.expectedArgTypes.push(transpiler.BasicType{Name: "int"}) },
+	"matchInStatementPos":     func(t *galaASTTransformer) { t.matchInStatementPos = true },
+	"loweringDefault":         func(t *galaASTTransformer) { t.loweringDefault = &defaultLowering{} },
+	"pendingMatchStmtBlock":   func(t *galaASTTransformer) { t.pendingMatchStmtBlock = &ast.BlockStmt{} },
 }
 
 // TestScopedStateResidueCoversEveryScopedField asserts the hand-written

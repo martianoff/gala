@@ -70,7 +70,16 @@ import (
 // sites are the temporaries a multi-value binding inside a lambda body lowers
 // to; the documented `val a, b, c = f()` spelling reports the same three, so
 // this is the existing cost of that shape rather than a new one.
-const unresolvedBudget = 573
+//
+// Raised 573 -> 598 by examples/none_branch_result_type.gala (20 sites) and
+// examples/none_generic_call_arg.gala (5). They exercise bare `None()` in
+// match arms, if branches and generic-call arguments, which failed to
+// transpile before, so none of their sites used to type. The sites are the
+// shapes already unresolved across the corpus: a method called on a `val`
+// bound to a match or if-expression (`m.GetOrElse`), a method on a
+// generic-typed parameter (`d.GetOrElse`), and the `Apply` selector of a
+// constructor. No example that transpiled before reports a new site.
+const unresolvedBudget = 598
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

@@ -3589,3 +3589,21 @@ gala_exec_test(
     src = "pointer_method_on_val.gala",
     expected = "pointer_method_on_val.out",
 )
+
+# A bare `None()` argument takes its type from the parameter it fills, also
+# when the callee is generic: `Option[Drag]` as declared, `Option[T]` once T
+# is fixed. Functions, methods and named arguments.
+gala_exec_test(
+    name = "none_generic_call_arg",
+    src = "none_generic_call_arg.gala",
+    expected = "none_generic_call_arg.out",
+)
+
+# A bare `None()` match arm or if/else branch takes the match's or if's result
+# type — the expected type, or else the type of the other arms — never the
+# matched value's type.
+gala_exec_test(
+    name = "none_branch_result_type",
+    src = "none_branch_result_type.gala",
+    expected = "none_branch_result_type.out",
+)
