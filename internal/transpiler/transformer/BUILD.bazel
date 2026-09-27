@@ -143,6 +143,7 @@ go_test(
         "multi_var_test.go",
         "nested_generic_method_infer_test.go",
         "nested_success_typearg_test.go",
+        "nested_tuple_pattern_test.go",
         "none_qualified_downward_inference_test.go",
         "option_test.go",
         "panic_audit_test.go",

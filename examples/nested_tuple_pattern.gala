@@ -1,0 +1,69 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Parenthesized tuple patterns nested inside other patterns. `(n, s)` in
+// `Some((n, s))` is ONE argument of Some — a pattern against its tuple payload —
+// not two, and not zero.
+
+sealed type Msg {
+    case Move(Pos Tuple[int, int], Label string)
+    case Quit()
+}
+
+struct Holder(Pair Tuple[string, int], Tag string)
+
+func optionTuple(o Option[Tuple[int, string]]) string = o match {
+    case Some((n, s)) => s"some $n $s"
+    case _            => "none"
+}
+
+func eitherTuple(e Either[string, Tuple[int, int]]) string = e match {
+    case Right((a, b)) => s"right ${a + b}"
+    case Left(err)     => s"left $err"
+}
+
+func tryTuple(t Try[Tuple[string, bool]]) string = t match {
+    case Success((s, true))  => s"ok $s"
+    case Success((s, false)) => s"off $s"
+    case Failure(e)          => s"failed ${e.Error()}"
+}
+
+func userVariant(m Msg) string = m match {
+    case Move((x, 0), label) => s"$label along x to $x"
+    case Move((x, y), label) => s"$label to ($x, $y)"
+    case Quit()              => "quit"
+}
+
+func structField(h Holder) string = h match {
+    case Holder(("k", v), tag) => s"$tag has k=$v"
+    case Holder((k, v), _)     => s"$k=${v * 2}"
+    case _                     => "other"
+}
+
+func sequenceElement(xs Array[Tuple[string, int]]) string = xs match {
+    case Array((k, v), rest...) => s"first $k=$v, ${rest.Size()} more"
+    case _                      => "empty"
+}
+
+func tupleInTuple(t Tuple[Tuple[int, int], string]) string = t match {
+    case ((a, b), s) => s"$s ${a * b}"
+    case _           => "never"
+}
+
+func main() {
+    Println(optionTuple(Some((1, "a"))))
+    Println(optionTuple(None()))
+    Println(eitherTuple(Right[string, Tuple[int, int]]((2, 3))))
+    Println(eitherTuple(Left[string, Tuple[int, int]]("bad")))
+    Println(tryTuple(Success(("x", true))))
+    Println(tryTuple(Success(("y", false))))
+    Println(userVariant(Move(Pos = (4, 0), Label = "slide")))
+    Println(userVariant(Move(Pos = (1, 2), Label = "jump")))
+    Println(userVariant(Quit()))
+    Println(structField(Holder(Pair = ("k", 7), Tag = "h")))
+    Println(structField(Holder(Pair = ("z", 5), Tag = "h")))
+    Println(sequenceElement(ArrayOf(("a", 1), ("b", 2))))
+    Println(sequenceElement(EmptyArray[Tuple[string, int]]()))
+    Println(tupleInTuple(((3, 4), "area")))
+}

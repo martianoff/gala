@@ -464,11 +464,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// pattern flows into arm type inference and fails far away as a confusing
 	// match-branch type mismatch.
 	{
-		patternTexts := make([]string, 0, len(caseClauses))
+		patterns := make([]grammar.IPatternContext, 0, len(caseClauses))
 		for _, cc := range caseClauses {
-			patternTexts = append(patternTexts, cc.(*grammar.CaseClauseContext).Pattern().GetText())
+			patterns = append(patterns, cc.(*grammar.CaseClauseContext).Pattern())
 		}
-		if arityErr := t.validateSealedVariantArity(matchedType, patternTexts, ctx); arityErr != nil {
+		if arityErr := t.validateSealedVariantArity(matchedType, patterns); arityErr != nil {
 			return nil, arityErr
 		}
 	}

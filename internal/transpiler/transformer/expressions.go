@@ -561,41 +561,50 @@ func (t *galaASTTransformer) getCallPatternWithTypeArgsFromExpression(ctx gramma
 //
 // Returns the primary expr for the package qualifier, the constructor name, the
 // argument list (nil for an empty call), and ok=true when the shape matches.
-func (t *galaASTTransformer) getQualifiedCallPattern(ctx grammar.IExpressionContext) (pkgPrimaryExpr *grammar.PrimaryExprContext, ctorName string, argList *grammar.ArgumentListContext, ok bool) {
+func (t *galaASTTransformer) getQualifiedCallPattern(ctx grammar.IExpressionContext) (pkgPrimaryExpr *grammar.PrimaryExprContext, ctorName string, argList *grammar.ArgumentListContext, typeArgs *grammar.ExpressionListContext, ok bool) {
 	postfixCtx := t.getSinglePostfixExpr(ctx)
 	if postfixCtx == nil {
-		return nil, "", nil, false
+		return nil, "", nil, nil, false
 	}
 
+	// `pkg.Ctor(args)`, or `pkg.Ctor[T](args)` with explicit type arguments.
 	suffixes := postfixCtx.AllPostfixSuffix()
-	if len(suffixes) != 2 {
-		return nil, "", nil, false
+	if len(suffixes) != 2 && len(suffixes) != 3 {
+		return nil, "", nil, nil, false
 	}
 	memberSuffix := suffixes[0].(*grammar.PostfixSuffixContext)
-	callSuffix := suffixes[1].(*grammar.PostfixSuffixContext)
+	callSuffix := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
 
 	// First suffix must be a member access `.Ident`.
 	if memberSuffix.Identifier() == nil {
-		return nil, "", nil, false
+		return nil, "", nil, nil, false
 	}
 	ctorName = memberSuffix.Identifier().GetText()
 
-	// Second suffix must be a call `(...)`.
-	if callSuffix.GetChildCount() < 2 {
-		return nil, "", nil, false
+	// A middle suffix must be type arguments `[...]`.
+	if len(suffixes) == 3 {
+		typeArgsSuffix := suffixes[1].(*grammar.PostfixSuffixContext)
+		if suffixOpener(typeArgsSuffix) != "[" {
+			return nil, "", nil, nil, false
+		}
+		if el := typeArgsSuffix.ExpressionList(); el != nil {
+			typeArgs = el.(*grammar.ExpressionListContext)
+		}
 	}
-	if callSuffix.GetChild(0).(antlr.ParseTree).GetText() != "(" {
-		return nil, "", nil, false
+
+	// Last suffix must be a call `(...)`.
+	if callSuffix.GetChildCount() < 2 || suffixOpener(callSuffix) != "(" {
+		return nil, "", nil, nil, false
 	}
 
 	primaryExpr := postfixCtx.PrimaryExpr()
 	if primaryExpr == nil {
-		return nil, "", nil, false
+		return nil, "", nil, nil, false
 	}
 	if al := callSuffix.ArgumentList(); al != nil {
 		argList = al.(*grammar.ArgumentListContext)
 	}
-	return primaryExpr.(*grammar.PrimaryExprContext), ctorName, argList, true
+	return primaryExpr.(*grammar.PrimaryExprContext), ctorName, argList, typeArgs, true
 }
 
 func (t *galaASTTransformer) getBinaryToken(op string) token.Token {
