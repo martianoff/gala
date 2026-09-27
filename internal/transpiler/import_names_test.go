@@ -6,9 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestAssumedPackageName pins the name an unaliased import binds when its
-// package name differs from the last path segment, e.g. `yaml` for
-// "gopkg.in/yaml.v3".
+// TestAssumedPackageName pins the guess for an unaliased import whose real
+// package name is unknown.
 func TestAssumedPackageName(t *testing.T) {
 	cases := []struct {
 		path string
@@ -31,22 +30,46 @@ func TestAssumedPackageName(t *testing.T) {
 	}
 }
 
-// TestPackageNameCandidates covers the ambiguity AssumedPackageName cannot
-// settle alone: a trailing `/vN` is a module major version for `math/rand/v2`
-// but the package name itself for `k8s.io/api/core/v1`.
-func TestPackageNameCandidates(t *testing.T) {
+// TestImportNames: an alias or a known package name is definite; otherwise a
+// `/vN` suffix does not settle the name, so both readings are listed.
+func TestImportNames(t *testing.T) {
 	cases := []struct {
-		path string
-		want []string
+		name                 string
+		path, alias, pkgName string
+		want                 []ImportName
 	}{
-		{"strings", []string{"strings"}},
-		{"k8s.io/api/core/v1", []string{"core", "v1"}},
-		{"math/rand/v2", []string{"rand", "v2"}},
-		{"gopkg.in/yaml.v3", []string{"yaml", "yaml.v3"}},
+		{"alias", "k8s.io/api/core/v1", "corev1", "v1", []ImportName{{"corev1", RankAlias}}},
+		{"known name", "k8s.io/api/core/v1", "", "v1", []ImportName{{"v1", RankPackageName}}},
+		{"k8s-style, unknown", "k8s.io/api/core/v1", "", "", []ImportName{{"v1", RankLastSegment}, {"core", RankDerived}}},
+		{"major version, unknown", "math/rand/v2", "", "", []ImportName{{"v2", RankLastSegment}, {"rand", RankDerived}}},
+		{"gopkg.in, unknown", "gopkg.in/yaml.v3", "", "", []ImportName{{"yaml.v3", RankLastSegment}, {"yaml", RankDerived}}},
+		{"hyphenated, unknown", "github.com/mattn/go-sqlite3", "", "", []ImportName{{"go-sqlite3", RankLastSegment}, {"sqlite3", RankDerived}}},
+		{"plain", "strings", "", "", []ImportName{{"strings", RankLastSegment}}},
 	}
 	for _, tc := range cases {
-		t.Run(tc.path, func(t *testing.T) {
-			assert.Equal(t, tc.want, PackageNameCandidates(tc.path))
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, ImportNames(tc.path, tc.alias, tc.pkgName))
 		})
 	}
+}
+
+// TestRankedNames: a guessed name never shadows a surer binding, whatever the
+// order the imports are declared in.
+func TestRankedNames(t *testing.T) {
+	r := NewRankedNames[string]()
+	r.Bind("k8s.io/api/core/v1", "", "", "k8s")    // may bind v1 or core
+	r.Bind("example.com/core", "", "core", "local") // is package core
+	r.Bind("example.com/other", "v1", "", "aliased")
+	got, _ := r.Get("core")
+	assert.Equal(t, "local", got)
+	got, _ = r.Get("v1")
+	assert.Equal(t, "aliased", got)
+	_, ok := r.Get("v2")
+	assert.False(t, ok)
+}
+
+// TestLastPathSegment is the part after the last slash.
+func TestLastPathSegment(t *testing.T) {
+	assert.Equal(t, "v1", LastPathSegment("k8s.io/api/core/v1"))
+	assert.Equal(t, "strings", LastPathSegment("strings"))
 }

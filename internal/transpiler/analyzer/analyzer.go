@@ -115,7 +115,7 @@ type galaAnalyzer struct {
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
-	currentDotImportPkgs map[string]bool                // Package names that are dot-imported in the current file
+	currentDotImportPkgs map[string]bool                // Package names dot-imported by the current file OR any sibling — package-wide on purpose: sibling declarations resolve through it too, and GALA-E0025 (not this set) enforces per-file imports
 	currentQualifiers   fileQualifiers                 // Import table of the file whose declarations are being resolved (see fileQualifiers)
 	analyzeDepth int                                    // recursion depth for profiling
 	cache        *analysisCache                         // disk-based package analysis cache
@@ -777,26 +777,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
-	// 0.55 Collect import aliases (e.g., import im "path/to/pkg" → im → actual package name).
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
-			if aliasIdent := s.Identifier(); aliasIdent != nil {
-				alias := aliasIdent.GetText()
-				if alias != "." {
-					if pkgName, ok := richAST.Packages[path]; ok {
-						if richAST.ImportAliases == nil {
-							richAST.ImportAliases = make(map[string]string)
-						}
-						richAST.ImportAliases[alias] = pkgName
-					}
-				}
-			}
-		}
-	}
-
 	logPhase("scan-gala-imports", phaseStart)
 	phaseStart = time.Now()
 
@@ -838,7 +818,28 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 				}
 				richAST.GoTypeInfo.Merge(goInfo)
+				// The package's real name, which its path does not settle
+				// (math/rand/v2 is rand, k8s.io/api/core/v1 is v1).
+				if name := goPackageName(goInfo, path); name != "" {
+					if richAST.GoImportNames == nil {
+						richAST.GoImportNames = make(map[string]string)
+					}
+					richAST.GoImportNames[path] = name
+				}
 			}
+		}
+	}
+
+	// 0.62 This file's import table (see fileQualifiers), now that its GALA and
+	// Go imports are loaded, and the import aliases it records (e.g.,
+	// import im "path/to/pkg" → im → actual package name).
+	fileQuals := a.qualifiersForFile(sourceFile, richAST)
+	for name, b := range fileQuals.named {
+		if b.IsGala && b.Alias == name && b.PkgName != "" {
+			if richAST.ImportAliases == nil {
+				richAST.ImportAliases = make(map[string]string)
+			}
+			richAST.ImportAliases[name] = b.PkgName
 		}
 	}
 
@@ -878,9 +879,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	logPhase("scan-sibling-imports", phaseStart)
 	phaseStart = time.Now()
 
-	// Each file's import table (see fileQualifiers), for this file and every
-	// sibling.
-	fileQuals := a.qualifiersForFile(sourceFile, richAST)
+	// Every sibling's import table (see fileQualifiers).
 	siblingQuals := make([]fileQualifiers, len(siblingTrees))
 	for i, sib := range siblingTrees {
 		siblingQuals[i] = a.qualifiersForFile(sib, richAST)
@@ -1526,7 +1525,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			if i < len(siblingPaths) {
 				sibPath = siblingPaths[i]
 			}
-			if err := a.extractSiblingFullMetadata(sibTree, pkgName, richAST, sibPath, decls); err != nil {
+			if err := a.extractSiblingFullMetadata(sibTree, siblingQuals[i], pkgName, richAST, sibPath, decls); err != nil {
 				return nil, err
 			}
 		}
@@ -1539,7 +1538,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			if i < len(siblingPaths) {
 				sibPath = siblingPaths[i]
 			}
-			if err := a.extractSiblingFullMetadata(sibTree, pkgName, richAST, sibPath, decls); err != nil {
+			if err := a.extractSiblingFullMetadata(sibTree, siblingQuals[i], pkgName, richAST, sibPath, decls); err != nil {
 				return nil, err
 			}
 		}
@@ -3722,10 +3721,10 @@ func siblingTypeRedefinedError(typeName, pkgName string, existing *transpiler.Ty
 // rejected here rather than silently overwriting — or being silently dropped
 // by — the first declaration and reaching the Go compiler as "already
 // declared".
-func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
+func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, sibQuals fileQualifiers, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
 	// The sibling's declarations resolve against the sibling's own imports.
 	outerQualifiers := a.currentQualifiers
-	a.currentQualifiers = a.qualifiersForFile(sibTree, richAST)
+	a.currentQualifiers = sibQuals
 	defer func() { a.currentQualifiers = outerQualifiers }()
 	absSibPath := a.parsedFileCacheKey(sibFilePath)
 	docs := a.docsForTree(absSibPath, sibTree)
@@ -4444,10 +4443,11 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 			if !ok {
 				return transpiler.NilType{}
 			}
-			importPath, name, suffixes = b.Path, sel.GetText(), suffixes[1:]
+			// The package's name, else the qualifier as written.
 			if pkg = b.PkgName; pkg == "" {
-				pkg = transpiler.AssumedPackageName(b.Path)
+				pkg = name
 			}
+			importPath, name, suffixes = b.Path, sel.GetText(), suffixes[1:]
 		}
 	}
 

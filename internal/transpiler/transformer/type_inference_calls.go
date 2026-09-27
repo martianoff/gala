@@ -277,11 +277,8 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		// Only a qualifier bound to a GALA import reads t.functions, which is
 		// keyed by package NAME: Go `strings` must not pick up GALA `strings`
 		// signatures loaded by a sibling (see ImportManager.ClaimGalaPackageNames).
-		if _, isGala, ok := t.importForQualifier(id.Name); ok && isGala {
-			pkgName := id.Name
-			if actual, ok := t.importManager.ResolveAlias(pkgName); ok {
-				pkgName = actual
-			}
+		if entry, isGala, ok := t.importForQualifier(id.Name); ok && isGala {
+			pkgName := entry.PkgName
 			fullName := pkgName + "." + sel.Sel.Name
 			if fMeta, ok := t.functions[fullName]; ok {
 				retType := fMeta.ReturnType

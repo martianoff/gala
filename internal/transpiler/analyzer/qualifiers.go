@@ -8,9 +8,12 @@ import (
 // importBinding is one import of a file.
 type importBinding struct {
 	Path string
-	// PkgName is the package's name: for a GALA import the name its metadata
-	// is filed under (richAST.Packages), empty when the package failed to
-	// load; for a Go import the name the import binds.
+	// Alias is the name written for the import, empty when none was.
+	Alias string
+	// PkgName is the package's real name when known: for a GALA import the
+	// name its metadata is filed under (richAST.Packages; empty when the
+	// package failed to load), for a Go import the name its type info reports
+	// (richAST.GoImportNames).
 	PkgName string
 	IsGala  bool
 }
@@ -18,42 +21,37 @@ type importBinding struct {
 // fileQualifiers is a file's import table — the one place the analyzer
 // answers "what does qualifier X mean in this file". Everything that needs a
 // per-file view of the imports derives from it: the GALA-E0025 explicit set,
-// the dot-import set used by type resolution, and the import path recorded on
-// a type written against a Go import.
+// the dot-import set used by type resolution, import aliases, package-level
+// val inference, and the import path recorded on a type written against a Go
+// import.
 type fileQualifiers struct {
-	// named maps every qualifier the file binds to its import. An unaliased
-	// GALA import binds its package name; an unaliased Go import binds every
-	// name its path may bind (transpiler.PackageNameCandidates).
+	// named maps every qualifier the file binds to its import, ranked as
+	// transpiler.ImportNames describes: when the real name of an unaliased
+	// import is unknown, every plausible name is bound, below any surer one.
 	named map[string]importBinding
 	// dots lists the dot imports.
 	dots []importBinding
 }
 
-// qualifiersForFile builds sf's import table. richAST supplies GALA package
-// names, so it must run after the file's imports were loaded.
+// qualifiersForFile builds sf's import table. richAST supplies package names,
+// so it must run after the file's imports were loaded.
 func (a *galaAnalyzer) qualifiersForFile(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) fileQualifiers {
-	q := fileQualifiers{named: make(map[string]importBinding)}
+	names := transpiler.NewRankedNames[importBinding]()
+	var q fileQualifiers
 	for _, imp := range scanFileImports(sf) {
-		b := importBinding{Path: imp.Path, IsGala: a.isGalaImport(imp.Path)}
-		names := imp.LocalNames()
+		b := importBinding{Path: imp.Path, Alias: imp.Alias, IsGala: a.isGalaImport(imp.Path)}
 		if b.IsGala {
 			b.PkgName = richAST.Packages[imp.Path]
-			if imp.Alias == "" && b.PkgName != "" {
-				names = []string{b.PkgName}
-			}
 		} else {
-			b.PkgName = imp.LocalName()
+			b.PkgName = richAST.GoImportNames[imp.Path]
 		}
 		if imp.IsDot {
 			q.dots = append(q.dots, b)
 			continue
 		}
-		for _, name := range names {
-			if _, taken := q.named[name]; !taken && name != "" && name != "_" {
-				q.named[name] = b
-			}
-		}
+		names.Bind(imp.Path, imp.Alias, b.PkgName, b)
 	}
+	q.named = names.Map()
 	return q
 }
 

@@ -17,11 +17,13 @@ import (
 //
 // Import resolution follows these rules:
 //  1. If an alias is explicitly provided (e.g., `import libalias "pkg/lib"`), use that alias
-//  2. If no alias, use the package name from the import path (last path component)
+//  2. If no alias, use the package's real name when known; otherwise every name the
+//     path may bind (transpiler.ImportNames), below any surer binding
 //  3. Dot imports (e.g., `import . "pkg/lib"`) make symbols directly accessible
 type ImportManager struct {
 	entries    []*ImportEntry          // All imports in declaration order
 	byAlias    map[string]*ImportEntry // Lookup by user alias (how it appears in code)
+	aliasRank  map[string]int          // How sure each byAlias binding is (transpiler.Rank*)
 	byPath     map[string]*ImportEntry // Lookup by full import path
 	byPkgName  map[string]*ImportEntry // Lookup by actual package name
 	dotImports []*ImportEntry          // Dot-imported packages
@@ -75,6 +77,7 @@ func NewImportManager() *ImportManager {
 	return &ImportManager{
 		entries:           make([]*ImportEntry, 0),
 		byAlias:           make(map[string]*ImportEntry),
+		aliasRank:         make(map[string]int),
 		byPath:            make(map[string]*ImportEntry),
 		byPkgName:         make(map[string]*ImportEntry),
 		dotImports:        make([]*ImportEntry, 0),
@@ -92,9 +95,11 @@ func NewImportManager() *ImportManager {
 // when a path repeats, so one Add can move it twice. Only the non-zero matters.
 func (m *ImportManager) Revision() uint64 { return m.revision }
 
-// Add registers an import. If actualPkgName is empty, it defaults to the name
-// Go assumes from the path (transpiler.AssumedPackageName). If alias is empty,
-// it defaults to actualPkgName.
+// Add registers an import. actualPkgName is the package's real name, empty
+// when unknown; the entry's PkgName then defaults to the name Go assumes from
+// the path (transpiler.AssumedPackageName), and every name the import may
+// bind resolves to it through GetByAlias, below any surer binding. If alias is
+// empty, the entry's Alias is the package name.
 //
 // An existing entry for the same path is replaced when it was only implicit
 // (see AddFromPackages) or binds the same name. A second explicit import of
@@ -109,6 +114,12 @@ func (m *ImportManager) Add(path, alias string, isDot bool, actualPkgName string
 func (m *ImportManager) add(path, alias string, isDot bool, actualPkgName string, implicit bool) *ImportEntry {
 	m.revision++
 
+	// The names the import binds in source, ranked. An implicit entry binds
+	// its package name below anything this file wrote.
+	names := []transpiler.ImportName{{Name: alias, Rank: 0}}
+	if !implicit {
+		names = transpiler.ImportNames(path, alias, actualPkgName)
+	}
 	// Derive package name from path if not provided
 	if actualPkgName == "" {
 		actualPkgName = transpiler.AssumedPackageName(path)
@@ -145,11 +156,26 @@ func (m *ImportManager) add(path, alias string, isDot bool, actualPkgName string
 		// For dot imports, also index by package name for lookups
 		m.byPkgName[actualPkgName] = entry
 	} else {
-		m.byAlias[effectiveAlias] = entry
+		for _, n := range names {
+			m.bindAlias(n.Name, entry, n.Rank)
+		}
 		m.byPkgName[actualPkgName] = entry
 	}
 
 	return entry
+}
+
+// bindAlias points name at entry unless a surer binding holds it; on a tie
+// the later import wins.
+func (m *ImportManager) bindAlias(name string, entry *ImportEntry, rank int) {
+	if name == "" || name == "_" {
+		return
+	}
+	if _, taken := m.byAlias[name]; taken && m.aliasRank[name] > rank {
+		return
+	}
+	m.byAlias[name] = entry
+	m.aliasRank[name] = rank
 }
 
 // removeEntry removes an entry from all indexes.
@@ -169,9 +195,12 @@ func (m *ImportManager) removeEntry(entry *ImportEntry) {
 		delete(m.byPath, entry.Path)
 	}
 
-	// Remove from byAlias
-	if e, ok := m.byAlias[entry.Alias]; ok && e == entry {
-		delete(m.byAlias, entry.Alias)
+	// Remove from byAlias — every name the entry was bound under
+	for name, e := range m.byAlias {
+		if e == entry {
+			delete(m.byAlias, name)
+			delete(m.aliasRank, name)
+		}
 	}
 
 	// Remove from byPkgName
@@ -278,32 +307,16 @@ func (m *ImportManager) renameAlias(entry *ImportEntry, alias string) {
 	m.revision++
 	if cur, ok := m.byAlias[entry.Alias]; ok && cur == entry {
 		delete(m.byAlias, entry.Alias)
+		delete(m.aliasRank, entry.Alias)
 	}
 	entry.Alias = alias
 	entry.named = true
-	m.byAlias[alias] = entry
+	m.bindAlias(alias, entry, transpiler.RankAlias)
 }
 
-// freeAlias returns base, or base with a numeric suffix, whichever no import
-// of this file binds yet.
+// freeAlias returns base, or base with a numeric suffix, whichever neither an
+// import of this file nor a transitive import binds yet.
 func (m *ImportManager) freeAlias(base string) string {
-	alias := base
-	for i := 2; ; i++ {
-		if _, taken := m.byAlias[alias]; !taken {
-			return alias
-		}
-		alias = fmt.Sprintf("%s%d", base, i)
-	}
-}
-
-// TransitiveQualifier picks the qualifier for a package this file does not
-// import but generated code references: the one already chosen for the path,
-// else pkgName when neither an import nor another transitive import binds it,
-// else pkgName with a numeric suffix.
-func (m *ImportManager) TransitiveQualifier(path, pkgName string) string {
-	if alias, ok := m.transitiveImports[path]; ok {
-		return alias
-	}
 	taken := func(alias string) bool {
 		if _, ok := m.byAlias[alias]; ok {
 			return true
@@ -315,11 +328,21 @@ func (m *ImportManager) TransitiveQualifier(path, pkgName string) string {
 		}
 		return false
 	}
-	alias := pkgName
+	alias := base
 	for i := 2; taken(alias); i++ {
-		alias = fmt.Sprintf("%s%d", pkgName, i)
+		alias = fmt.Sprintf("%s%d", base, i)
 	}
 	return alias
+}
+
+// TransitiveQualifier picks the qualifier for a package this file does not
+// import but generated code references: the one already chosen for the path,
+// else a free alias based on pkgName.
+func (m *ImportManager) TransitiveQualifier(path, pkgName string) string {
+	if alias, ok := m.transitiveImports[path]; ok {
+		return alias
+	}
+	return m.freeAlias(pkgName)
 }
 
 // Qualifier returns the import through which this file refers to the package
@@ -689,8 +712,9 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, co
 // previously inline in transformer.Transform.
 //
 // pathMap maps a GALA import path to its Go module path where they differ (see
-// RichAST.ImportPathMap). An import whose qualifier is not the package name Go
-// would assume from its path is written with that qualifier as its name.
+// RichAST.ImportPathMap). An import whose qualifier is not the name Add would
+// give it (transpiler.AssumedPackageName) is written with that qualifier as
+// its name.
 func (m *ImportManager) AddTransitiveImportsToFile(file *ast.File, pathMap map[string]string) {
 	for galaPath, alias := range m.transitiveImports {
 		path := galaPath
@@ -731,7 +755,7 @@ func (m *ImportManager) AddTransitiveImportsToFile(file *ast.File, pathMap map[s
 					Value: fmt.Sprintf("\"%s\"", path),
 				},
 			}
-			if alias != "" && alias != path[strings.LastIndex(path, "/")+1:] {
+			if alias != "" && alias != transpiler.AssumedPackageName(path) {
 				spec.Name = ast.NewIdent(alias)
 			}
 			importDecl := &ast.GenDecl{

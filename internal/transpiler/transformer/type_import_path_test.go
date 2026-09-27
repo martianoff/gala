@@ -34,6 +34,7 @@ func TestTypeToExprByImportPath(t *testing.T) {
 			{"math/rand/v2", "rand", "rand.Rand"},
 			{"gopkg.in/yaml.v3", "yaml", "yaml.Node"},
 			{"github.com/mattn/go-sqlite3", "sqlite3", "sqlite3.Conn"},
+			{"k8s.io/api/core/v1", "v1", "v1.Pod"},
 		}
 		for _, tc := range cases {
 			tr := fixture()
@@ -51,6 +52,27 @@ func TestTypeToExprByImportPath(t *testing.T) {
 		got := tr.typeToExpr(transpiler.NamedType{Package: "fs", Name: "FileInfo", ImportPath: "io/fs"})
 		assert.Equal(t, "fs.FileInfo", selector(t, got))
 		assert.Equal(t, "fs", tr.importManager.GetTransitiveImports()["io/fs"], "io/fs must be imported")
+	})
+
+	t.Run("a qualifier resolves only through this file's imports", func(t *testing.T) {
+		// A qualifier with no import entry — a transitive or synthesized one —
+		// is not a package this file wrote, so importForQualifier reports
+		// ok=false. The call-inference lookup it guards was behind
+		// IsPackage (the same alias index) before, so it skips such
+		// qualifiers exactly as it did.
+		tr := fixture()
+		tr.importManager.Add("martianoff/gala/strings", "gs", false, "strings")
+		tr.importManager.Add("strings", "", false, "")
+		tr.galaPkgPaths = map[string]bool{"martianoff/gala/strings": true}
+		tr.importManager.AddTransitive("io/fs", "fs")
+
+		entry, isGala, ok := tr.importForQualifier("gs")
+		assert.True(t, ok && isGala && entry.PkgName == "strings")
+		_, isGala, ok = tr.importForQualifier("strings")
+		assert.True(t, ok && !isGala)
+		_, _, ok = tr.importForQualifier("fs")
+		assert.False(t, ok)
+		assert.Equal(t, ok, tr.importManager.IsPackage("fs"))
 	})
 
 	t.Run("a dot-imported path emits the bare name and keeps the import", func(t *testing.T) {

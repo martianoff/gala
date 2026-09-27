@@ -303,40 +303,11 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 			if v.Package == registry.StdPackageName {
 				return t.stdIdent(v.Name)
 			}
-			// A type that carries its import path resolves by that path, before
-			// any check keyed by package name (dot imports, the current package).
-			if v.ImportPath != "" {
-				return t.selectorForImportPath(v)
-			}
-			// A Go type whose import path was lost resolves through this
-			// file's Go import of that name.
-			if entry, ok := t.goImportForPathlessType(v); ok {
-				return &ast.SelectorExpr{X: ast.NewIdent(entry.QualifierFor(v.Package)), Sel: ast.NewIdent(v.Name)}
-			}
-			// Check if this is a dot import - if so, use just the type name
-			if t.importManager.IsDotImported(v.Package) {
-				t.markDotImportUsed(v.Package)
-				return ast.NewIdent(v.Name)
-			}
-			// Check if this is the current package - if so, don't qualify with
-			// package name. A foreign Go package whose *name* collides with the
-			// current GALA package (e.g. `io/fs` — package name "fs" — referenced
-			// from GALA's own `fs` stdlib package) carries an ImportPath and was
-			// resolved above; only a genuinely local type reaches this point.
-			if v.Package == t.packageName {
-				return ast.NewIdent(v.Name)
-			}
-			// A GALA type: this file's qualifier for its package (e.g., im for
-			// collection_immutable), with the import recorded in case the
-			// package reached this file through a sibling.
-			pkgName := v.Package
-			if alias, ok := t.packageQualifier(v.Package); ok {
-				pkgName = alias
-			}
-			return &ast.SelectorExpr{
-				X:   ast.NewIdent(pkgName),
-				Sel: ast.NewIdent(v.Name),
-			}
+			// A foreign Go package whose *name* collides with the current GALA
+			// package (e.g. `io/fs` — package name "fs" — referenced from GALA's
+			// own `fs` stdlib package) carries an ImportPath, which
+			// resolveTypeQualifier checks before treating the type as local.
+			return t.resolveTypeQualifier(v)
 		}
 		// Check if this is a known std type without package prefix
 		if t.isKnownStdType(v.Name) {

@@ -324,26 +324,52 @@ func TestImportManager_TransitiveQualifier(t *testing.T) {
 	assert.Equal(t, "io", m.TransitiveQualifier("io", "io"))
 }
 
-// TestImportManager_UnaliasedGoImportName: an unaliased Go import binds the
-// name Go assumes from its path, and generated code qualifies its types with
-// the package's real name, which differs from that guess only for paths like
-// `k8s.io/api/core/v1` (package v1).
-func TestImportManager_UnaliasedGoImportName(t *testing.T) {
+// TestImportManager_UnaliasedGoImportNames: an unaliased Go import answers to
+// its real package name when the analyzer learned it. Otherwise it answers to
+// every name its path may bind, since a `/vN` suffix does not settle the name
+// (math/rand/v2 is package rand, k8s.io/api/core/v1 is package v1), and a
+// guessed name never shadows a surer binding.
+func TestImportManager_UnaliasedGoImportNames(t *testing.T) {
 	cases := []struct {
-		path, realName, wantAlias string
+		path, realName string
+		unknownNames   []string
 	}{
-		{"math/rand/v2", "rand", "rand"},
-		{"gopkg.in/yaml.v3", "yaml", "yaml"},
-		{"github.com/mattn/go-sqlite3", "sqlite3", "sqlite3"},
-		{"k8s.io/api/core/v1", "v1", "core"},
+		{"k8s.io/api/core/v1", "v1", []string{"v1", "core"}},
+		{"math/rand/v2", "rand", []string{"v2", "rand"}},
+		{"gopkg.in/yaml.v3", "yaml", []string{"yaml"}},
+		{"github.com/mattn/go-sqlite3", "sqlite3", []string{"sqlite3"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
-			entry := transformer.NewImportManager().Add(tc.path, "", false, "")
-			assert.Equal(t, tc.wantAlias, entry.Alias)
-			assert.Equal(t, tc.realName, entry.QualifierFor(tc.realName))
+			known := transformer.NewImportManager()
+			known.Add(tc.path, "", false, tc.realName)
+			entry, ok := known.GetByAlias(tc.realName)
+			if assert.True(t, ok) {
+				assert.Equal(t, tc.path, entry.Path)
+				assert.Equal(t, tc.realName, entry.QualifierFor(tc.realName))
+			}
+
+			unknown := transformer.NewImportManager()
+			unknown.Add(tc.path, "", false, "")
+			for _, name := range tc.unknownNames {
+				entry, ok := unknown.GetByAlias(name)
+				if assert.True(t, ok, name) {
+					assert.Equal(t, tc.path, entry.Path)
+				}
+			}
 		})
 	}
+
+	// A guessed `core` from the k8s path does not shadow a package that
+	// really is `core`, declared after it.
+	m := transformer.NewImportManager()
+	m.Add("k8s.io/api/core/v1", "", false, "")
+	m.Add("example.com/core", "", false, "core")
+	entry, _ := m.GetByAlias("core")
+	assert.Equal(t, "example.com/core", entry.Path)
+	entry, _ = m.GetByAlias("v1")
+	assert.Equal(t, "k8s.io/api/core/v1", entry.Path)
+
 	aliased := transformer.NewImportManager().Add("math/rand/v2", "r2", false, "")
 	assert.Equal(t, "r2", aliased.QualifierFor("rand"), "a written alias wins")
 }

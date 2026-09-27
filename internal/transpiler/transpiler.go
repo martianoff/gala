@@ -133,6 +133,7 @@ type RichAST struct {
 	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
 	ImportedVals     map[string]map[string]*PackageValMetadata // import path -> exported package-level val/var name -> metadata (see AddImportedVals)
 	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
+	GoImportNames    map[string]string                   // this file's Go import path -> the package's real name, when the loaded Go package tells it (k8s.io/api/core/v1 -> v1)
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)

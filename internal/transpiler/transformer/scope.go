@@ -231,8 +231,8 @@ func (t *galaASTTransformer) importedPackageVal(x, sel string) *transpiler.Packa
 	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 || t.importManager == nil {
 		return nil
 	}
-	entry, ok := t.importManager.GetByAlias(x)
-	if !ok || entry.IsDot {
+	entry, isGala, ok := t.importForQualifier(x)
+	if !ok || !isGala || entry.IsDot {
 		return nil
 	}
 	pv := t.richAST.ImportedVals[entry.Path][sel]

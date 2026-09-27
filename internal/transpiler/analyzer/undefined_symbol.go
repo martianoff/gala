@@ -209,15 +209,6 @@ type fileImport struct {
 	Tok antlr.Token
 }
 
-// LocalName is how the package is referred to in source: its alias when one was
-// given, otherwise the name Go assumes from its path (see transpiler.AssumedPackageName).
-func (fi fileImport) LocalName() string {
-	if fi.Alias != "" {
-		return fi.Alias
-	}
-	return transpiler.AssumedPackageName(fi.Path)
-}
-
 // SpelledName is the alias, else the path's last segment, taken as written.
 // For one path, equal spelled names mean the same binding repeated, whatever
 // package name Go assigns — which is what the duplicate-import check keys on.
@@ -225,16 +216,7 @@ func (fi fileImport) SpelledName() string {
 	if fi.Alias != "" {
 		return fi.Alias
 	}
-	return fi.Path[strings.LastIndex(fi.Path, "/")+1:]
-}
-
-// LocalNames is every name the import may bind in source: the alias, or
-// transpiler.PackageNameCandidates when there is none.
-func (fi fileImport) LocalNames() []string {
-	if fi.Alias != "" {
-		return []string{fi.Alias}
-	}
-	return transpiler.PackageNameCandidates(fi.Path)
+	return transpiler.LastPathSegment(fi.Path)
 }
 
 // scanFileImports decodes every import spec the file declares.
@@ -428,30 +410,38 @@ func (a *galaAnalyzer) fileImportsFullyLoaded(imports []fileImport, richAST *tra
 }
 
 // goPackageContributed reports whether the analyzer learned any symbol of the
-// Go package at `importPath`. Go metadata is keyed by package name, which is
-// one of transpiler.PackageNameCandidates for the overwhelming majority of packages; a
-// package that renames itself simply reads as "contributed nothing", which is
-// the safe answer for the caller.
+// Go package at `importPath`. Go metadata is keyed by package name: the real
+// one when the analyzer learned it (RichAST.GoImportNames), else one of the
+// names the path may bind. A package that renames itself beyond those simply
+// reads as "contributed nothing", which is the safe answer for the caller.
 func goPackageContributed(rich *transpiler.RichAST, importPath string) bool {
 	if rich == nil {
 		return false
 	}
-	for _, name := range transpiler.PackageNameCandidates(importPath) {
-		if name != "" && goPackageNameContributed(rich, name) {
+	for _, n := range transpiler.ImportNames(importPath, "", rich.GoImportNames[importPath]) {
+		if n.Name != "" && (len(rich.GoExports[n.Name]) > 0 || goInfoDeclaresPackage(rich.GoTypeInfo, n.Name)) {
 			return true
 		}
 	}
 	return false
 }
 
-// goPackageNameContributed reports whether any Go symbol is keyed under the
-// package name `name`.
-func goPackageNameContributed(rich *transpiler.RichAST, name string) bool {
-	if len(rich.GoExports[name]) > 0 {
-		return true
+// goPackageName is the real name of the Go package at importPath, read from
+// its type info: whichever name the path may bind that the package's symbols
+// are filed under. Empty when none is.
+func goPackageName(gi *transpiler.GoTypeInfo, importPath string) string {
+	for _, n := range transpiler.ImportNames(importPath, "", "") {
+		if goInfoDeclaresPackage(gi, n.Name) {
+			return n.Name
+		}
 	}
-	gi := rich.GoTypeInfo
-	if gi == nil {
+	return ""
+}
+
+// goInfoDeclaresPackage reports whether any symbol in gi is filed under the
+// package name `name`.
+func goInfoDeclaresPackage(gi *transpiler.GoTypeInfo, name string) bool {
+	if gi == nil || name == "" {
 		return false
 	}
 	prefix := name + "."
@@ -848,12 +838,16 @@ func collectQualifiers(imports []fileImport, rich *transpiler.RichAST) map[strin
 			addQualifierOf(q, k)
 		}
 	}
-	// This file's own imports: the alias when one is given, otherwise every
-	// name the path may bind — how a Go import is referenced.
+	// This file's own imports: every name each may bind (transpiler.ImportNames)
+	// — how a Go import is referenced.
 	for _, imp := range imports {
-		for _, name := range imp.LocalNames() {
-			if name != "" {
-				q[name] = true
+		pkgName := rich.GoImportNames[imp.Path]
+		if pkgName == "" {
+			pkgName = rich.Packages[imp.Path]
+		}
+		for _, n := range transpiler.ImportNames(imp.Path, imp.Alias, pkgName) {
+			if n.Name != "" {
+				q[n.Name] = true
 			}
 		}
 	}

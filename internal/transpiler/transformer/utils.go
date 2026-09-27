@@ -182,9 +182,48 @@ func (t *galaASTTransformer) packageQualifier(pkg string) (string, bool) {
 	return entry.Alias, true
 }
 
+// isGoTyped reports whether nt is a Go type: one carrying the import path of
+// a package that is not GALA.
+func (t *galaASTTransformer) isGoTyped(nt transpiler.NamedType) bool {
+	return nt.ImportPath != "" && !t.galaPkgPaths[nt.ImportPath]
+}
+
+// resolveTypeQualifier emits the package-qualified type v (v.Package != "",
+// not std) as this file refers to it — the transformer's one resolver for a
+// type's qualifier:
+//   - a type carrying its import path resolves by that path, before any check
+//     keyed by package name: a Go `strings.Builder` keeps the Go qualifier
+//     even when this file also imports, or dot-imports, a GALA package named
+//     `strings`;
+//   - a Go type whose path was lost resolves through this file's Go import of
+//     that name (goImportForPathlessType);
+//   - a dot-imported package emits the bare name; the current package too;
+//   - a GALA type uses this file's qualifier for its package (e.g., im for
+//     collection_immutable), with the import recorded in case the package
+//     reached this file through a sibling.
+func (t *galaASTTransformer) resolveTypeQualifier(v transpiler.NamedType) ast.Expr {
+	if v.ImportPath != "" {
+		return t.selectorForImportPath(v)
+	}
+	if entry, ok := t.goImportForPathlessType(v); ok {
+		return &ast.SelectorExpr{X: ast.NewIdent(entry.QualifierFor(v.Package)), Sel: ast.NewIdent(v.Name)}
+	}
+	if t.importManager.IsDotImported(v.Package) {
+		t.markDotImportUsed(v.Package)
+		return ast.NewIdent(v.Name)
+	}
+	if v.Package == t.packageName {
+		return ast.NewIdent(v.Name)
+	}
+	qualifier := v.Package
+	if alias, ok := t.packageQualifier(v.Package); ok {
+		qualifier = alias
+	}
+	return &ast.SelectorExpr{X: ast.NewIdent(qualifier), Sel: ast.NewIdent(v.Name)}
+}
+
 // selectorForImportPath emits a type that carries its import path, resolved
-// by that path: a Go `strings.Builder` keeps the Go qualifier even when this
-// file also imports, or dot-imports, a GALA package named `strings`.
+// by that path.
 func (t *galaASTTransformer) selectorForImportPath(v transpiler.NamedType) ast.Expr {
 	entry, ok := t.importManager.GetByPath(v.ImportPath)
 	if ok && entry.IsDot {

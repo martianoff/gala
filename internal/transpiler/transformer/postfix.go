@@ -130,7 +130,7 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 	if p, ok := base.(transpiler.PointerType); ok {
 		base = p.Elem
 	}
-	if nt, ok := base.(transpiler.NamedType); ok && nt.ImportPath != "" && !t.galaPkgPaths[nt.ImportPath] {
+	if nt, ok := base.(transpiler.NamedType); ok && t.isGoTyped(nt) {
 		return false
 	}
 	xTypeName := xType.String()
