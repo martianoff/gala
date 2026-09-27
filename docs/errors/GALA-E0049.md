@@ -7,6 +7,7 @@ results](../GALA.MD#go-functions-that-return-several-results)). The error fires
 when that value — the call itself, or a name bound to it — is used where the
 call's plain first result is expected:
 
+<!-- doc-check: fragment -->
 ```gala
 val data = os.ReadFile(path)       // data is a Try[[]byte]
 count(data)                        // count takes a []byte
@@ -51,6 +52,7 @@ error[GALA-E0049]: `data` holds the result of `os.ReadFile(...)`, which can fail
 
 **Fix.** Decide what a failure means, and say it with the Try:
 
+<!-- doc-check: fragment -->
 ```gala
 // Handle both outcomes
 val total = os.ReadFile("notes.txt") match {

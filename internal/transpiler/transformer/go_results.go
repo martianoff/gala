@@ -20,10 +20,10 @@ import (
 // function that returns several results is therefore presented as ONE value
 // wherever its call is used as a value:
 //
-//	(T, error)        → Try[T]               std.FromResult(call)
-//	(A, B, error)     → Try[Tuple[A, B]]     std.FromResult2(call)   … FromResult10
-//	(A, B)            → Tuple[A, B]          std.TupleOf(call)
-//	(A, B, C)         → Tuple3[A, B, C]      std.Tuple3Of(call)      … Tuple10Of
+//	(T, error)        → Try[T]               std.GoTry(call)
+//	(A, B, error)     → Try[Tuple[A, B]]     std.GoTry2(call)   … GoTry10
+//	(A, B)            → Tuple[A, B]          std.GoTuple(call)
+//	(A, B, C)         → Tuple3[A, B, C]      std.GoTuple3(call)      … GoTuple10
 //
 // Go spreads a multi-value call over the parameters of the function it is
 // passed to (`f(g())`), and each helper takes exactly the call's results, so
@@ -130,13 +130,13 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.Postfi
 func goResultHelper(n int, fails bool) string {
 	switch {
 	case fails && n == 1:
-		return "FromResult"
+		return "GoTry"
 	case fails:
-		return fmt.Sprintf("FromResult%d", n)
+		return fmt.Sprintf("GoTry%d", n)
 	case n == 2:
-		return "TupleOf"
+		return "GoTuple"
 	default:
-		return fmt.Sprintf("Tuple%dOf", n)
+		return fmt.Sprintf("GoTuple%d", n)
 	}
 }
 

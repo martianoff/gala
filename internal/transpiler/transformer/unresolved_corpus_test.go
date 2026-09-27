@@ -70,7 +70,16 @@ import (
 // sites are the temporaries a multi-value binding inside a lambda body lowers
 // to; the documented `val a, b, c = f()` spelling reports the same three, so
 // this is the existing cost of that shape rather than a new one.
-const unresolvedBudget = 573
+//
+// Raised 573 -> 578 when a Go call returning several results became one GALA
+// value: examples/go_call_results.gala and the rewritten
+// examples/try_val_destructure.gala call Try methods on such calls
+// (`strconv.Atoi(s).GetOrElse`, `os.Create(p).Get`), and a method selector on
+// a Try reports its selector the same way `sum2("a", "b").GetOrElse` in
+// bind_notation_also.gala already does. The removed go_multi_value_results
+// example accounts for the rest of the difference; no site outside these two
+// files changed.
+const unresolvedBudget = 578
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

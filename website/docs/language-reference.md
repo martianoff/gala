@@ -566,6 +566,7 @@ wherever it is used as a value:
 A `Try` is `Success(value)` when the call worked and `Failure(err)` when it
 returned an error, so the usual `Try` tools apply directly:
 
+<!-- doc-check: fragment -->
 ```gala
 import (
     "os"
@@ -601,6 +602,7 @@ call into a `Failure`.
 parentheses) still receives Go's results as they are, which is the way to hand
 them straight back to Go code:
 
+<!-- doc-check: fragment -->
 ```gala
 val data, err = os.ReadFile(path)   // data []byte, err error
 var n, parseErr = strconv.Atoi(s)   // var: raw values, reassignable

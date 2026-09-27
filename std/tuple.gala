@@ -117,38 +117,38 @@ type Tuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J an
 func (t Tuple10[A, B, C, D, E, F, G, H, I, J]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5}, ${t.V6}, ${t.V7}, ${t.V8}, ${t.V9}, ${t.V10})"
 
-// TupleOf builds a Tuple from 2 values. A Go call returning 2 values and no
+// GoTuple builds a Tuple from 2 values. A Go call returning 2 values and no
 // error is converted with it when used as a value.
-func TupleOf[A any, B any](a A, b B) Tuple[A, B] = (a, b)
+func GoTuple[A any, B any](a A, b B) Tuple[A, B] = (a, b)
 
-// Tuple3Of builds a Tuple3 from 3 values. A Go call returning 3 values and no
+// GoTuple3 builds a Tuple3 from 3 values. A Go call returning 3 values and no
 // error is converted with it when used as a value.
-func Tuple3Of[A any, B any, C any](a A, b B, c C) Tuple3[A, B, C] = (a, b, c)
+func GoTuple3[A any, B any, C any](a A, b B, c C) Tuple3[A, B, C] = (a, b, c)
 
-// Tuple4Of builds a Tuple4 from 4 values. A Go call returning 4 values and no
+// GoTuple4 builds a Tuple4 from 4 values. A Go call returning 4 values and no
 // error is converted with it when used as a value.
-func Tuple4Of[A any, B any, C any, D any](a A, b B, c C, d D) Tuple4[A, B, C, D] = (a, b, c, d)
+func GoTuple4[A any, B any, C any, D any](a A, b B, c C, d D) Tuple4[A, B, C, D] = (a, b, c, d)
 
-// Tuple5Of builds a Tuple5 from 5 values. A Go call returning 5 values and no
+// GoTuple5 builds a Tuple5 from 5 values. A Go call returning 5 values and no
 // error is converted with it when used as a value.
-func Tuple5Of[A any, B any, C any, D any, E any](a A, b B, c C, d D, e E) Tuple5[A, B, C, D, E] = (a, b, c, d, e)
+func GoTuple5[A any, B any, C any, D any, E any](a A, b B, c C, d D, e E) Tuple5[A, B, C, D, E] = (a, b, c, d, e)
 
-// Tuple6Of builds a Tuple6 from 6 values. A Go call returning 6 values and no
+// GoTuple6 builds a Tuple6 from 6 values. A Go call returning 6 values and no
 // error is converted with it when used as a value.
-func Tuple6Of[A any, B any, C any, D any, E any, F any](a A, b B, c C, d D, e E, f F) Tuple6[A, B, C, D, E, F] = (a, b, c, d, e, f)
+func GoTuple6[A any, B any, C any, D any, E any, F any](a A, b B, c C, d D, e E, f F) Tuple6[A, B, C, D, E, F] = (a, b, c, d, e, f)
 
-// Tuple7Of builds a Tuple7 from 7 values. A Go call returning 7 values and no
+// GoTuple7 builds a Tuple7 from 7 values. A Go call returning 7 values and no
 // error is converted with it when used as a value.
-func Tuple7Of[A any, B any, C any, D any, E any, F any, G any](a A, b B, c C, d D, e E, f F, g G) Tuple7[A, B, C, D, E, F, G] = (a, b, c, d, e, f, g)
+func GoTuple7[A any, B any, C any, D any, E any, F any, G any](a A, b B, c C, d D, e E, f F, g G) Tuple7[A, B, C, D, E, F, G] = (a, b, c, d, e, f, g)
 
-// Tuple8Of builds a Tuple8 from 8 values. A Go call returning 8 values and no
+// GoTuple8 builds a Tuple8 from 8 values. A Go call returning 8 values and no
 // error is converted with it when used as a value.
-func Tuple8Of[A any, B any, C any, D any, E any, F any, G any, H any](a A, b B, c C, d D, e E, f F, g G, h H) Tuple8[A, B, C, D, E, F, G, H] = (a, b, c, d, e, f, g, h)
+func GoTuple8[A any, B any, C any, D any, E any, F any, G any, H any](a A, b B, c C, d D, e E, f F, g G, h H) Tuple8[A, B, C, D, E, F, G, H] = (a, b, c, d, e, f, g, h)
 
-// Tuple9Of builds a Tuple9 from 9 values. A Go call returning 9 values and no
+// GoTuple9 builds a Tuple9 from 9 values. A Go call returning 9 values and no
 // error is converted with it when used as a value.
-func Tuple9Of[A any, B any, C any, D any, E any, F any, G any, H any, I any](a A, b B, c C, d D, e E, f F, g G, h H, i I) Tuple9[A, B, C, D, E, F, G, H, I] = (a, b, c, d, e, f, g, h, i)
+func GoTuple9[A any, B any, C any, D any, E any, F any, G any, H any, I any](a A, b B, c C, d D, e E, f F, g G, h H, i I) Tuple9[A, B, C, D, E, F, G, H, I] = (a, b, c, d, e, f, g, h, i)
 
-// Tuple10Of builds a Tuple10 from 10 values. A Go call returning 10 values and no
+// GoTuple10 builds a Tuple10 from 10 values. A Go call returning 10 values and no
 // error is converted with it when used as a value.
-func Tuple10Of[A any, B any, C any, D any, E any, F any, G any, H any, I any, J any](a A, b B, c C, d D, e E, f F, g G, h H, i I, j J) Tuple10[A, B, C, D, E, F, G, H, I, J] = (a, b, c, d, e, f, g, h, i, j)
+func GoTuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J any](a A, b B, c C, d D, e E, f F, g G, h H, i I, j J) Tuple10[A, B, C, D, E, F, G, H, I, J] = (a, b, c, d, e, f, g, h, i, j)

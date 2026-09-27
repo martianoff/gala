@@ -12,10 +12,10 @@ import (
 // TestGoCallResultsAsOneValue covers the conversion of a Go call returning
 // several results to one GALA value, in every single-value position:
 //
-//	(T, error)    → Try[T]            std.FromResult(call)
-//	(A, B, error) → Try[Tuple[A, B]]  std.FromResult2(call)
-//	(A, B)        → Tuple[A, B]       std.TupleOf(call)
-//	(A, B, C)     → Tuple3[A, B, C]   std.Tuple3Of(call)
+//	(T, error)    → Try[T]            std.GoTry(call)
+//	(A, B, error) → Try[Tuple[A, B]]  std.GoTry2(call)
+//	(A, B)        → Tuple[A, B]       std.GoTuple(call)
+//	(A, B, C)     → Tuple3[A, B, C]   std.GoTuple3(call)
 //
 // Hermetic: `os`, `strconv`, `strings`, `net` and friends resolve through the
 // Go SDK, which CI provides via .bazelrc --action_env=GOROOT. The examples
@@ -29,41 +29,41 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 		contains []string
 	}{
 		{"val binding, (T, error)", "    val n = strconv.Atoi(\"1\")\n    Println(n)",
-			[]string{`std.NewImmutable(std.FromResult(strconv.Atoi("1")))`}},
+			[]string{`std.NewImmutable(std.GoTry(strconv.Atoi("1")))`}},
 		{"val binding, (A, B, error)", "    val hp = net.SplitHostPort(\"h:1\")\n    Println(hp)",
-			[]string{`std.FromResult2(net.SplitHostPort("h:1"))`}},
+			[]string{`std.GoTry2(net.SplitHostPort("h:1"))`}},
 		{"val binding, (A, B, C)", "    val c = strings.Cut(\"a=b\", \"=\")\n    Println(c)",
-			[]string{`std.Tuple3Of(strings.Cut("a=b", "="))`}},
+			[]string{`std.GoTuple3(strings.Cut("a=b", "="))`}},
 		{":= binding", "    n := strconv.Atoi(\"1\")\n    Println(n)",
-			[]string{`std.FromResult(strconv.Atoi("1"))`}},
+			[]string{`std.GoTry(strconv.Atoi("1"))`}},
 		{"var binding", "    var n = strconv.Atoi(\"1\")\n    Println(n)",
-			[]string{`var n = std.FromResult(strconv.Atoi("1"))`}},
+			[]string{`var n = std.GoTry(strconv.Atoi("1"))`}},
 		{"match subject", `    val m = os.ReadFile("f") match {
         case Success(_) => "read"
         case Failure(_) => "failed"
     }
-    Println(m)`, []string{`}(std.FromResult(os.ReadFile("f")))`}},
+    Println(m)`, []string{`}(std.GoTry(os.ReadFile("f")))`}},
 		{"tuple destructuring of a (A, B, C) call", "    val (k, v, found) = strings.Cut(\"a=b\", \"=\")\n    Println(k, v, found)",
-			[]string{`__tuple_1 = std.Tuple3Of(strings.Cut("a=b", "="))`}},
+			[]string{`__tuple_1 = std.GoTuple3(strings.Cut("a=b", "="))`}},
 		{"argument of a GALA function", "    Println(describe(strconv.Atoi(\"1\")))",
-			[]string{`describe(std.FromResult(strconv.Atoi("1")))`}},
+			[]string{`describe(std.GoTry(strconv.Atoi("1")))`}},
 		{"sole argument of a variadic Go function", "    fmt.Println(strconv.Atoi(\"1\"))",
-			[]string{`fmt.Println(std.FromResult(strconv.Atoi("1")))`}},
+			[]string{`fmt.Println(std.GoTry(strconv.Atoi("1")))`}},
 		{"expression-lambda body", "    val f = () => strconv.Atoi(\"1\")\n    Println(f())",
-			[]string{`func() std.Try[int] {`, `return std.FromResult(strconv.Atoi("1"))`}},
+			[]string{`func() std.Try[int] {`, `return std.GoTry(strconv.Atoi("1"))`}},
 		{"if-expression branches", "    val r = if (true) strconv.Atoi(\"1\") else strconv.Atoi(\"2\")\n    Println(r)",
-			[]string{`return std.FromResult(strconv.Atoi("1"))`, `return std.FromResult(strconv.Atoi("2"))`}},
+			[]string{`return std.GoTry(strconv.Atoi("1"))`, `return std.GoTry(strconv.Atoi("2"))`}},
 		{"match-arm results", `    val r = 1 match {
         case 1 => strconv.Atoi("1")
         case _ => strconv.Atoi("2")
     }
-    Println(r)`, []string{`return std.FromResult(strconv.Atoi("1"))`}},
+    Println(r)`, []string{`return std.GoTry(strconv.Atoi("1"))`}},
 		{"struct field value", "    Println(Holder(N = strconv.Atoi(\"1\")))",
-			[]string{`std.FromResult(strconv.Atoi("1"))`}},
+			[]string{`std.GoTry(strconv.Atoi("1"))`}},
 		{"method chained on the value", "    Println(strconv.Atoi(\"1\").Map((n) => n + 1))",
-			[]string{`std.Try_Map(std.FromResult(strconv.Atoi("1")),`}},
+			[]string{`std.Try_Map(std.GoTry(strconv.Atoi("1")),`}},
 		{"interpolated value", "    Println(s\"${strconv.Atoi(\"1\")}\")",
-			[]string{`std.FromResult(strconv.Atoi("1"))`}},
+			[]string{`std.GoTry(strconv.Atoi("1"))`}},
 	}
 	for _, tc := range converted {
 		t.Run("converts/"+tc.name, func(t *testing.T) {
@@ -83,21 +83,21 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 		absent   []string
 	}{
 		{"multi-name val binding", "    val n, err = strconv.Atoi(\"1\")\n    Println(n, err)",
-			[]string{`= strconv.Atoi("1")`}, []string{"FromResult"}},
+			[]string{`= strconv.Atoi("1")`}, []string{"GoTry"}},
 		{"multi-name var binding", "    var n, err = strconv.Atoi(\"1\")\n    Println(n, err)",
-			[]string{`var n, err = strconv.Atoi("1")`}, []string{"FromResult"}},
+			[]string{`var n, err = strconv.Atoi("1")`}, []string{"GoTry"}},
 		{"multi-name :=", "    n, err := strconv.Atoi(\"1\")\n    Println(n, err)",
-			[]string{`= strconv.Atoi("1")`}, []string{"FromResult"}},
+			[]string{`= strconv.Atoi("1")`}, []string{"GoTry"}},
 		{"multi-name reassignment", "    var n = 0\n    var e error = nil\n    n, e = strconv.Atoi(\"1\")\n    Println(n, e)",
-			[]string{`n, e = strconv.Atoi("1")`}, []string{"FromResult"}},
+			[]string{`n, e = strconv.Atoi("1")`}, []string{"GoTry"}},
 		{"statement", "    fmt.Println(\"x\")\n    fmt.Fprintf(os.Stdout, \"y\")",
-			[]string{`fmt.Println("x")`, `fmt.Fprintf(os.Stdout, "y")`}, []string{"FromResult"}},
+			[]string{`fmt.Println("x")`, `fmt.Fprintf(os.Stdout, "y")`}, []string{"GoTry"}},
 		{"sole argument a Go function spreads", "    Println(template.Must(template.New(\"x\").Parse(\"hi\")).Name())",
-			[]string{`template.Must(template.New("x").Parse("hi"))`}, []string{"FromResult"}},
+			[]string{`template.Must(template.New("x").Parse("hi"))`}, []string{"GoTry"}},
 		{"value-free if-expression of Println calls", "    if (true) fmt.Println(\"a\") else fmt.Println(\"b\")",
 			nil, nil},
 		{"void lambda body", "    each((n) => fmt.Println(n))",
-			[]string{"fmt.Println(n)"}, []string{"FromResult"}},
+			[]string{"fmt.Println(n)"}, []string{"GoTry"}},
 	}
 	for _, tc := range raw {
 		t.Run("keeps raw/"+tc.name, func(t *testing.T) {
@@ -203,7 +203,7 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
     val c = a.Client
     Println(c == http.DefaultClient)`), "go_results_test.gala")
 		require.NoError(t, err)
-		assert.NotContains(t, out, "FromResult")
+		assert.NotContains(t, out, "GoTry")
 	})
 
 	t.Run("converts a dot-imported (T, error) function", func(t *testing.T) {
@@ -216,7 +216,7 @@ func main() {
     Println(n)
 }`, "go_results_test.gala")
 		require.NoError(t, err)
-		assert.Contains(t, out, `std.FromResult(Atoi("1"))`)
+		assert.Contains(t, out, `std.GoTry(Atoi("1"))`)
 	})
 }
 

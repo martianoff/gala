@@ -219,6 +219,7 @@ no wrapping needed. A Go call becomes one GALA value like this:
 | several values and an error | `Try` of a Tuple | `net.SplitHostPort(addr)` is a `Try[Tuple[string, string]]` |
 | only an `error` | the `error` itself | `os.Remove(path)` is an `error` |
 
+<!-- doc-check: fragment -->
 ```gala
 import "strconv"
 
