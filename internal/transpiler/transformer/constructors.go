@@ -91,12 +91,19 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		// type happens to resolve to nil/any.
 		elemExprs := el.AllExpression()
 		if len(elemExprs) > 1 {
-			perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
+			perElemExpected, fromSlot := t.tupleElementExpectedTypes(len(elemExprs))
 			exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
 			if err != nil {
 				return nil, err
 			}
-			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			// Only the literal's own slot fixes its element types; the
+			// enclosing function's return type is a hint for any tuple in the
+			// body, so an untyped constant keeps its default there.
+			var slotTypes []transpiler.Type
+			if fromSlot {
+				slotTypes = perElemExpected
+			}
+			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, slotTypes, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
 		exprs := make([]ast.Expr, 0, len(elemExprs))
 		for _, eCtx := range elemExprs {
@@ -130,44 +137,31 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 // tuple literal of the given arity, computed from the most-specific available
 // outer context. Checks two sources, most-specific first:
 //
-//  1. The top of `expectedArgTypes` — the slot type at the immediately
-//     enclosing call argument / val-decl / tuple-element position. This
-//     drives bidirectional inference for the call-site case
-//     (`f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`). It is there
-//     because lowerAgainst pushes a pushing slot's type (argSlot) for a plain
-//     expression such as a tuple literal; a result slot does not push.
-//  2. `returnSlot.typ` — the enclosing function's declared return
-//     type, used when the tuple literal is the value at a function return.
+//  1. The top of `expectedArgTypes` — the type of the slot the literal itself
+//     fills: a call argument, val declaration or tuple element (lowerAgainst
+//     pushes an argSlot's type), or a function or lambda result when the
+//     literal is the whole result expression (lowerAgainst pushes a result
+//     slot's type for a tuple literal only). This drives bidirectional
+//     inference for `f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`.
+//  2. `returnSlot.typ` — the enclosing function's declared return type, a
+//     hint for any tuple literal in the body.
 //
-// Returns nil if no Tuple-shaped expected type is available. When (1)
-// matches, the entry is consumed off the stack so that nested expressions
-// inside this tuple do not pick it up again (B1 contract).
-func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.Type {
+// fromSlot is true for (1). Returns nil if no Tuple-shaped expected type is
+// available. When (1) matches, the entry is consumed off the stack so that
+// nested expressions inside this tuple do not pick it up again (B1 contract).
+func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) (types []transpiler.Type, fromSlot bool) {
 	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 		if gen, ok := pending.(transpiler.GenericType); ok &&
 			t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
 			t.expectedArgTypes.consume()
-			return gen.Params
+			return gen.Params, true
 		}
 	}
-	candidates := []transpiler.Type{t.returnSlot.typ}
-	for _, cand := range candidates {
-		if transpiler.IsUnusable(cand) {
-			continue
-		}
-		gen, ok := cand.(transpiler.GenericType)
-		if !ok {
-			continue
-		}
-		if !t.isTupleTypeName(gen.Base.String()) {
-			continue
-		}
-		if len(gen.Params) != arity {
-			continue
-		}
-		return gen.Params
+	if gen, ok := t.returnSlot.typ.(transpiler.GenericType); ok &&
+		t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
+		return gen.Params, false
 	}
-	return nil
+	return nil, false
 }
 
 // transformTupleElementExpressions transforms each element of a tuple literal
@@ -209,8 +203,9 @@ func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType t
 // newImmutableFor builds `std.NewImmutable(value)` for a value that lands in an
 // `Immutable[target]` slot — a `val` struct field, a Copy override, a tuple
 // element — naming the type argument explicitly whenever inference from the
-// value alone would pick the wrong one. Every site that wraps a value whose
-// destination type it knows goes through here, so the rule lives in one place.
+// value alone would pick the wrong one. Struct construction, field defaults,
+// Copy overrides and tuple literals all go through here, so the rule lives in
+// one place. (liftToImmutableForArg always spells the type, so it needs none.)
 //
 // Go infers NewImmutable's type parameter from its argument, and an untyped
 // constant argument collapses to its own default type (`0` → int, `1.5` →
@@ -305,7 +300,7 @@ func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
 		}
 		// Declared later in this file than the site being lowered.
 		if target, ok := t.fileTypeDeclTargets[bareName]; ok {
-			typ = transpiler.ParseType(target)
+			typ = target
 			continue
 		}
 		return false

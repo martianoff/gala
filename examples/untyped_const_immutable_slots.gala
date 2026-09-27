@@ -22,16 +22,43 @@ func window() Tuple[Late, float32] = (1, 2)
 type Millis int64
 type Ratio float32
 
-struct Nums(i8 int8, i16 int16, i32 int32, i64 int64, u uint, u8 uint8, u16 uint16, u32 uint32, u64 uint64, f32 float32, f64 float64, ms Millis, r Ratio)
+struct Nums(
+    i8 int8,
+    i16 int16,
+    i32 int32,
+    i64 int64,
+    u uint,
+    u8 uint8,
+    u16 uint16,
+    u32 uint32,
+    u64 uint64,
+    f32 float32,
+    f64 float64,
+    ms Millis,
+    r Ratio,
+)
 
 func show(n Nums) string =
     s"${n.i8} ${n.i16} ${n.i32} ${n.i64} ${n.u} ${n.u8} ${n.u16} ${n.u32} ${n.u64} ${n.f32} ${n.f64} ${n.ms} ${n.r}"
 
 // Field defaults of every kind.
-struct Defaults(i8 int8 = 1, i64 int64 = 2, u32 uint32 = 3, f32 float32 = 0.5, ms Millis = 250, r Ratio = 0.25, late Late = 7)
+struct Defaults(
+    i8 int8 = 1,
+    i64 int64 = 2,
+    u32 uint32 = 3,
+    f32 float32 = 0.5,
+    ms Millis = 250,
+    r Ratio = 0.25,
+    late Late = 7,
+)
 
 // Parameter defaults of declared and Go named numeric types.
-func wait(ms Millis = 12, r Ratio = 0.5, d time.Duration = 5, late Late = 8) string = s"$ms $r $d $late"
+func wait(
+    ms Millis = 12,
+    r Ratio = 0.5,
+    d time.Duration = 5,
+    late Late = 8,
+) string = s"$ms $r $d $late"
 
 struct Box[T any](item T)
 

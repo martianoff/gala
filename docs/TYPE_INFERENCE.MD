@@ -654,7 +654,9 @@ one declared further down the file), or a Go named numeric type
 (`time.Duration`). The sites are the struct constructor (positional, named,
 composite literal, field defaults), Copy overrides, and tuple literals with an
 expected element type (return position, call argument, typed `val`, struct
-field). A bare `nil` always takes the slot's declared type.
+field). Only the slot the tuple literal itself fills counts: a local
+`val t = (1, 2)` inside a function returning `Tuple[int64, int64]` is still a
+`Tuple[int, int]`. A bare `nil` always takes the slot's declared type.
 
 Parameter defaults follow the same rule at analysis time: `func f(ms Millis =
 12)` is accepted because `Millis` is declared over `int64`, while

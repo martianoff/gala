@@ -59,9 +59,9 @@ type GoTypeData struct {
 // NewGoTypeInfo creates an empty GoTypeInfo.
 func NewGoTypeInfo() *GoTypeInfo {
 	return &GoTypeInfo{
-		Functions:   make(map[string]*GoFuncSignature),
-		Types:       make(map[string]*GoTypeData),
-		Variables:   make(map[string]Type),
+		Functions:        make(map[string]*GoFuncSignature),
+		Types:            make(map[string]*GoTypeData),
+		Variables:        make(map[string]Type),
 		Constants:        make(map[string]Type),
 		UntypedConstants: make(map[string]bool),
 		TypeAliases:      make(map[string]Type),

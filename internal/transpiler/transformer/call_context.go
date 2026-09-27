@@ -278,8 +278,8 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		case transpiler.GenericType:
 			// A tuple-typed field gives a tuple literal argument its element
 			// types, so `Span((5, 6))` builds a Tuple[int64, int64] for a
-			// field declared that way. Only concrete field types are recorded
-			// for this (see structFieldExpectedTypes).
+			// field declared that way — or, for a generic struct, with the
+			// call's type arguments substituted, as for a named argument.
 			if t.isTupleTypeName(ft.Base.String()) {
 				expectedType = ft
 			}

@@ -729,7 +729,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 }
 
 func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {
-	return t.transformTupleLiteralWithExpected(exprs, nil, line...)
+	return t.transformTupleLiteralWithExpected(exprs, nil, nil, line...)
 }
 
 // transformTupleLiteralWithExpected lowers a tuple literal `(a, b, ...)` to
@@ -741,7 +741,14 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int
 // absent or itself uninformative, preserving the enclosing-return-type case.
 // When neither hint resolves a concrete element type, the parameter
 // degrades to `any` (matching the historical behavior).
-func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr, perElemExpected []transpiler.Type, line ...int) (ast.Expr, error) {
+//
+// slotElems, when non-nil, holds the element types of the slot the literal
+// itself fills (a declared return, argument or field type). An untyped numeric
+// constant element adopts its slot element's numeric type (`(1, 2)` into
+// Tuple[int64, float32]) exactly as Go converts it on assignment. A mere hint,
+// such as the enclosing function's return type seen by a local tuple, does not
+// retype a constant.
+func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr, perElemExpected, slotElems []transpiler.Type, line ...int) (ast.Expr, error) {
 	n := len(exprs)
 	if n < 2 || n > 10 {
 		errLine, errCol := t.lastLine, t.lastCol
@@ -777,6 +784,9 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 		if exprType.IsNil() || exprType.IsAny() {
 			if fallbackTypes != nil && !fallbackTypes[i].IsNil() && !fallbackTypes[i].IsAny() {
 				typeParams = append(typeParams, t.typeToExpr(fallbackTypes[i]))
+				// A bare `nil` element has no type of its own; its wrapper
+				// must name the slot type too.
+				slotTypes[i] = fallbackTypes[i]
 			} else {
 				typeParams = append(typeParams, ast.NewIdent("any"))
 			}
@@ -787,17 +797,15 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 			// arguments. This keeps a tuple-typed match-arm result aligned
 			// with the surrounding function's declared return type, where
 			// the parent type is the lowest common type for both arms.
-			if fallbackTypes != nil && i < len(fallbackTypes) {
-				expected := fallbackTypes[i]
-				// An untyped numeric constant adopts its slot's numeric type
-				// (`(1, 2)` into Tuple[int64, float32]) exactly as Go would
-				// convert it on assignment, instead of freezing its default
-				// type (`int`) into the tuple's type arguments.
-				if _, untyped := t.untypedNumericConstExprDefault(expr); untyped && !transpiler.IsUnusable(expected) && t.isNumericSlotType(expected) {
-					typeParams = append(typeParams, t.typeToExpr(expected))
-					slotTypes[i] = expected
+			if i < len(slotElems) {
+				if _, untyped := t.untypedNumericConstExprDefault(expr); untyped && t.isNumericSlotType(slotElems[i]) {
+					typeParams = append(typeParams, t.typeToExpr(slotElems[i]))
+					slotTypes[i] = slotElems[i]
 					continue
 				}
+			}
+			if fallbackTypes != nil && i < len(fallbackTypes) {
+				expected := fallbackTypes[i]
 				if expected != nil && !expected.IsNil() && !expected.IsAny() && expected.String() != exprType.String() {
 					if parent := t.sealedCaseParent(exprType); parent != nil && parent.String() == expected.String() {
 						typeParams = append(typeParams, t.typeToExpr(expected))

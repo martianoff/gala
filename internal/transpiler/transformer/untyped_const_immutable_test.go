@@ -120,6 +120,48 @@ func triple() Tuple3[int8, Millis, float64] = (1, 2, 3)`,
 			},
 		},
 		{
+			// The return type fixes only the returned literal (directly or
+			// through an if); a local tuple in the body keeps its own types.
+			name: "return type retypes the returned tuple, not a local one",
+			extra: `func take(n int) int = n
+func f() Tuple[int64, int64] {
+    val t = (1, 2)
+    Println(take(t.V1))
+    return (3, 4)
+}
+func g(c bool) Tuple[int64, int64] = if (c) (5, 6) else (7, 8)`,
+			body: `Println(f().V1 + g(true).V1)`,
+			contains: []string{
+				"std.Tuple[int, int]{V1: std.NewImmutable(1), V2: std.NewImmutable(2)}",
+				"std.Tuple[int64, int64]{V1: std.NewImmutable[int64](3), V2: std.NewImmutable[int64](4)}",
+				"std.Tuple[int64, int64]{V1: std.NewImmutable[int64](5), V2: std.NewImmutable[int64](6)}",
+				"std.Tuple[int64, int64]{V1: std.NewImmutable[int64](7), V2: std.NewImmutable[int64](8)}",
+			},
+		},
+		{
+			// A generic struct's tuple field: concrete, or instantiated by the
+			// call's type arguments.
+			name: "tuple field of a generic struct",
+			extra: `struct Tagged[T any](item T, span Tuple[int64, int64])
+struct Pair[T any](p Tuple[T, T])`,
+			body: `val a = Tagged(1, (5, 6))
+    val b = Pair[int64]((1, 2))
+    Println(a.span.V1 + b.p.V1)`,
+			contains: []string{
+				"std.Tuple[int64, int64]{V1: std.NewImmutable[int64](5), V2: std.NewImmutable[int64](6)}",
+				"std.Tuple[int64, int64]{V1: std.NewImmutable[int64](1), V2: std.NewImmutable[int64](2)}",
+			},
+		},
+		{
+			// A bare nil has no type at all; its wrapper takes the slot type.
+			name:  "nil tuple element takes the slot type",
+			extra: "func pick() Tuple[func(int) int, int64] = (nil, 9)",
+			body:  `Println(pick().V2)`,
+			contains: []string{
+				"std.Tuple[func(int) int, int64]{V1: std.NewImmutable[func(int) int](nil), V2: std.NewImmutable[int64](9)}",
+			},
+		},
+		{
 			// A Go package's untyped constant is untyped in Go exactly as a
 			// literal is, and so is constant arithmetic over it.
 			name: "Go untyped constants at every site",

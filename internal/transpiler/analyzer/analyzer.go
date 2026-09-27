@@ -1261,7 +1261,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	// pendingDefaultChecks validates each function's parameter defaults after
 	// section 2.5, when every declared type of the package can be resolved.
-	var pendingDefaultChecks []func(underlying func(transpiler.Type) transpiler.Type) error
+	type pendingDefaultCheck struct {
+		meta      *transpiler.FunctionMetadata
+		line, col int
+		spans     map[int]defaultExprSpan
+	}
+	var pendingDefaultChecks []pendingDefaultCheck
 
 	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -1446,10 +1451,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				// Validate default parameter rules once the sibling files' type
 				// declarations are known too (section 2.5): a default is checked
 				// against the type its parameter's named type is declared over.
-				checkMeta, checkLine, checkCol, checkSpans := funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), defaultSpans
-				pendingDefaultChecks = append(pendingDefaultChecks, func(underlying func(transpiler.Type) transpiler.Type) error {
-					return validateDefaultParams(checkMeta, checkLine, checkCol, filePath, checkSpans, underlying)
-				})
+				if len(funcMeta.DefaultExprs) > 0 {
+					pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
+						meta: funcMeta, line: ctx.GetStart().GetLine(), col: ctx.GetStart().GetColumn(), spans: defaultSpans,
+					})
+				}
 				// Reject redeclaration of a top-level function within the same
 				// package. The sibling-metadata pass may have already registered
 				// the function from another file; if it lives in a different
@@ -1517,7 +1523,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	if len(pendingDefaultChecks) > 0 {
 		underlying := a.declaredTypeUnderlying(sourceFile, pkgName, richAST)
 		for _, check := range pendingDefaultChecks {
-			if err := check(underlying); err != nil {
+			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
 				return nil, err
 			}
 		}
