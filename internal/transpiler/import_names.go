@@ -6,6 +6,33 @@ import (
 	"unicode"
 )
 
+// IsValidGoImportPath reports whether p can be written in a Go import
+// declaration: non-empty slash-separated elements of ASCII letters, digits and
+// `-._~+`, none beginning or ending with a dot (so none is `.` or `..`), and
+// no leading or trailing slash. Those are the character-set and dot rules of
+// golang.org/x/mod/module.CheckImportPath, so a filesystem path — a drive
+// letter (`C:`), a backslash, a leading `/`, a relative `./` — is never valid.
+func IsValidGoImportPath(p string) bool {
+	if p == "" {
+		return false
+	}
+	for elem := range strings.SplitSeq(p, "/") {
+		if elem == "" || elem[0] == '.' || elem[len(elem)-1] == '.' {
+			return false
+		}
+		for i := 0; i < len(elem); i++ {
+			c := elem[i]
+			switch {
+			case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+			case strings.IndexByte("-._~+", c) >= 0:
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // LastPathSegment is the part of an import path after its last slash.
 func LastPathSegment(importPath string) string {
 	return importPath[strings.LastIndex(importPath, "/")+1:]

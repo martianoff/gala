@@ -272,14 +272,21 @@ func (r *Resolver) PackageImportPath(filePath string) string {
 		return ""
 	}
 
-	rel, inside := relWithin(absRoot, absDir)
+	return moduleImportPath(r.moduleName, absRoot, absDir)
+}
+
+// moduleImportPath is the import path of the package in directory dir of the
+// module modPath rooted at root: modPath joined with dir's slash-separated
+// path relative to root; "" when dir lies outside root.
+func moduleImportPath(modPath, root, dir string) string {
+	rel, inside := relWithin(root, dir)
 	if !inside {
 		return ""
 	}
 	if rel == "." {
-		return r.moduleName
+		return modPath
 	}
-	return r.moduleName + "/" + rel
+	return modPath + "/" + rel
 }
 
 // ResolvePackagePath converts an import path to a filesystem path.
@@ -1220,4 +1227,27 @@ func DeclaredModulePath(dir string) string {
 		}
 	}
 	return ""
+}
+
+// PackageImportPathForDir returns the import path of the package in directory
+// dir: the path declared by the nearest enclosing module (gala.mod, or failing
+// that go.mod, at dir or any ancestor) joined with dir's slash-separated path
+// relative to that module's root. It returns "" when no enclosing module
+// declares a path. It is path arithmetic over module files, never a
+// filesystem path.
+func PackageImportPathForDir(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	for root := abs; ; {
+		if modPath := DeclaredModulePath(root); modPath != "" {
+			return moduleImportPath(modPath, root, abs)
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return ""
+		}
+		root = parent
+	}
 }

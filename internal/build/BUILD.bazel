@@ -37,6 +37,7 @@ go_test(
         "config_test.go",
         "contention_perf_test.go",
         "deptranspiler_test.go",
+        "go_subpackage_test.go",
         "go_toolchain_test.go",
         "gomod_test.go",
         "main_package_test.go",

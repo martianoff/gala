@@ -33,7 +33,7 @@ func TestAnalyzeGoFiles_RegistersMapAndChanElementTypes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644); err != nil {
 		t.Fatal(err)
 	}
-	info := analyzer.AnalyzeGoFiles(dir)
+	info := analyzer.AnalyzeGoFiles(dir, "")
 	require.NotNil(t, info)
 	if info.Types["bytes.Buffer"] == nil {
 		t.Error("expected bytes.Buffer registered via map value type")
@@ -66,7 +66,7 @@ func TestAnalyzeGoFiles_RecoversUnresolvedSignatureTypesFromSource(t *testing.T)
 		"func Plain(s string) int { return len(s) }\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "sample.go"), []byte(src), 0644))
 
-	info := analyzer.AnalyzeGoFiles(dir)
+	info := analyzer.AnalyzeGoFiles(dir, "")
 	require.NotNil(t, info)
 
 	sig := info.GetFuncSignature("sample.Wrap")
@@ -495,4 +495,42 @@ func TestGoTypeInfo_NilSafety(t *testing.T) {
 	assert.Nil(t, info.GetFieldType("foo.Bar", "Baz"))
 	assert.Nil(t, info.GetMethodReturnType("foo.Bar", "Baz"))
 	assert.Nil(t, info.ResolveTypeAlias("foo.Bar"))
+}
+
+// A Go type declared in a hand-written Go package inside a module records the
+// package's Go import path — the module path joined with the package's
+// directory relative to the module root — never the directory it was read
+// from. Code generation imports the type by that path, so a directory would be
+// emitted as `import "C:\\…\\box"` (unparseable) or `import "/home/…/box"`
+// ("not a package path").
+func TestAnalyzeGoFiles_RecordsModuleImportPathNotDirectory(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"),
+		[]byte("module example.com/gosubpkg\n\ngo 1.25\n"), 0644))
+	boxDir := filepath.Join(root, "internal", "box")
+	require.NoError(t, os.MkdirAll(boxDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(boxDir, "box.go"), []byte(
+		"package box\n\ntype Box struct{ Size int }\n\nfunc New(size int) *Box { return &Box{Size: size} }\n"), 0644))
+
+	cases := []struct {
+		name, importPath, want string
+	}{
+		{"derived from the enclosing module", "", "example.com/gosubpkg/internal/box"},
+		{"given by the caller", "example.org/other/box", "example.org/other/box"},
+		{"a filesystem path given by the caller is replaced", boxDir, "example.com/gosubpkg/internal/box"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			info := analyzer.AnalyzeGoFiles(boxDir, tc.importPath)
+			sig := info.GetFuncSignature("box.New")
+			require.NotNil(t, sig)
+			require.Len(t, sig.Returns, 1)
+			ptr, ok := sig.Returns[0].(transpiler.PointerType)
+			require.True(t, ok, "want *box.Box, got %s", sig.Returns[0])
+			named, ok := ptr.Elem.(transpiler.NamedType)
+			require.True(t, ok, "want *box.Box, got %s", sig.Returns[0])
+			assert.Equal(t, "box", named.Package)
+			assert.Equal(t, tc.want, named.ImportPath)
+		})
+	}
 }

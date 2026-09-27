@@ -3,7 +3,6 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
-	"path/filepath"
 	"strings"
 
 	"martianoff/gala/internal/transpiler"
@@ -1239,17 +1238,11 @@ func (t *galaASTTransformer) isForeignGoType(typ transpiler.Type) bool {
 		// Never preserve the ImportPath of a type that belongs to the CURRENT
 		// package. A Go type declared in the current package (e.g. via an
 		// events.go alongside the .gala sources) carries the current package's
-		// own directory as its ImportPath; keeping it would emit a
+		// own import path (RichAST.OwnImportPath); keeping it would emit a
 		// `<currentPackage>.LocalType` qualifier (undefined). Only a genuinely
 		// foreign type (io/fs, whose package name collides with the current `fs`)
 		// needs its qualifier preserved through combinator param inference.
-		if t.filePath != "" {
-			currentDir := filepath.ToSlash(filepath.Dir(t.filePath))
-			if filepath.ToSlash(v.ImportPath) == currentDir {
-				return false
-			}
-		}
-		return true
+		return !t.isOwnPackageType(v)
 	case transpiler.PointerType:
 		return t.isForeignGoType(v.Elem)
 	case transpiler.ArrayType:

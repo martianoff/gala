@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"sort"
+	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -703,6 +704,40 @@ func (m *ImportManager) ValidateDotImports(richAST *transpiler.RichAST, line, co
 			line, col, msg,
 			"qualify or alias one of the dot-imports to disambiguate",
 		)
+	}
+	return nil
+}
+
+// CheckImportPaths is the last gate on the imports a generated file declares:
+// each must be a valid Go import path (transpiler.IsValidGoImportPath). An
+// import path is recorded on types far from here — by the analyzer, from the
+// Go packages it type-checks — and a filesystem path that slipped in would
+// otherwise surface as unparseable Go on Windows (`"C:\Users\…"`) or as `go`
+// rejecting "not a package path" elsewhere, neither naming the cause.
+func CheckImportPaths(file *ast.File) error {
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.IMPORT {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			importSpec, ok := spec.(*ast.ImportSpec)
+			if !ok {
+				continue
+			}
+			path, err := strconv.Unquote(importSpec.Path.Value)
+			if err == nil && transpiler.IsValidGoImportPath(path) {
+				continue
+			}
+			return galaerr.NewCodedSemanticError(
+				galaerr.CodeInternalTransformerPanic,
+				0, 0,
+				fmt.Sprintf("internal transpiler error: the generated Go would import %s, which is not a Go import path",
+					importSpec.Path.Value),
+				"not an error in your code: an internal transpiler defect recorded a path that is not an import path; "+
+					"please file an issue at https://github.com/martianoff/gala/issues with the source that triggered it",
+			)
+		}
 	}
 	return nil
 }
