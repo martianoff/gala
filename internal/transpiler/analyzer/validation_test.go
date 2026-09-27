@@ -149,6 +149,100 @@ func TestValidateTypeReferences_TypeParamPlaceholders(t *testing.T) {
 	}
 }
 
+// A type parameter is recognised by the declaration that binds it, not by its
+// spelling: a multi-letter parameter is valid inside its declaration, and a
+// single-letter name that nothing binds and nothing declares is reported.
+func TestValidateTypeReferences_TypeParamsByScope(t *testing.T) {
+	cases := []struct {
+		name        string
+		setup       func(ast *transpiler.RichAST)
+		wantMissing string // "" means no type-reference warning is expected
+	}{
+		{
+			name: "multi-letter type param of the type",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Types["Box"] = &transpiler.TypeMetadata{
+					Name: "Box", Package: "myapp", TypeParams: []string{"Elem"},
+					Fields:     map[string]transpiler.Type{"Value": transpiler.BasicType{Name: "Elem"}},
+					FieldNames: []string{"Value"},
+				}
+			},
+		},
+		{
+			name: "method type param alongside the receiver type's",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Types["Box"] = &transpiler.TypeMetadata{
+					Name: "Box", Package: "myapp", TypeParams: []string{"Elem"},
+					Methods: map[string]*transpiler.MethodMetadata{
+						"Map": {
+							Name:       "Map",
+							TypeParams: []string{"Out"},
+							ParamTypes: []transpiler.Type{transpiler.FuncType{
+								Params:  []transpiler.Type{transpiler.BasicType{Name: "Elem"}},
+								Results: []transpiler.Type{transpiler.BasicType{Name: "Out"}},
+							}},
+							ReturnType: transpiler.BasicType{Name: "Out"},
+						},
+					},
+				}
+			},
+		},
+		{
+			name: "function type param",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Functions["Id"] = &transpiler.FunctionMetadata{
+					Name: "Id", Package: "myapp", TypeParams: []string{"Value"},
+					ParamTypes: []transpiler.Type{transpiler.BasicType{Name: "Value"}},
+					ReturnType: transpiler.BasicType{Name: "Value"},
+				}
+			},
+		},
+		{
+			name: "single-letter name nothing binds or declares",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Types["Holder"] = &transpiler.TypeMetadata{
+					Name: "Holder", Package: "myapp",
+					Fields:     map[string]transpiler.Type{"Value": transpiler.BasicType{Name: "X"}},
+					FieldNames: []string{"Value"},
+				}
+			},
+			wantMissing: `"X"`,
+		},
+		{
+			name: "a function's type param is not in scope in another function",
+			setup: func(ast *transpiler.RichAST) {
+				ast.Functions["Id"] = &transpiler.FunctionMetadata{
+					Name: "Id", Package: "myapp", TypeParams: []string{"T"},
+					ReturnType: transpiler.BasicType{Name: "T"},
+				}
+				ast.Functions["Plain"] = &transpiler.FunctionMetadata{
+					Name: "Plain", Package: "myapp",
+					ReturnType: transpiler.BasicType{Name: "T"},
+				}
+			},
+			wantMissing: `"T"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ast := newTestRichAST()
+			tc.setup(ast)
+			var missing []string
+			for _, w := range analyzer.ValidateRichAST(ast) {
+				if w.Category == "type-reference" {
+					missing = append(missing, w.Message)
+				}
+			}
+			if tc.wantMissing == "" {
+				assert.Empty(t, missing)
+				return
+			}
+			require.Len(t, missing, 1)
+			assert.Contains(t, missing[0], tc.wantMissing)
+		})
+	}
+}
+
 func TestValidateTypeReferences_PackageQualifiedUnknownPackage(t *testing.T) {
 	ast := newTestRichAST()
 	ast.Types["Handler"] = &transpiler.TypeMetadata{

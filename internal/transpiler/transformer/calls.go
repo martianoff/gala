@@ -982,11 +982,8 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 	recvTypeArgs := t.getReceiverTypeArgs(recvType)
 	var concreteRecvTypeArgs []ast.Expr
 	for _, arg := range recvTypeArgs {
-		if ident, ok := arg.(*ast.Ident); ok {
-			if len(ident.Name) == 1 && ident.Name[0] >= 'A' && ident.Name[0] <= 'Z' {
-				// Skip unresolved type params like T, U, K, V
-				continue
-			}
+		if ident, ok := arg.(*ast.Ident); ok && t.isUnboundTypeParam(ident.Name) {
+			continue
 		}
 		concreteRecvTypeArgs = append(concreteRecvTypeArgs, arg)
 	}
@@ -1061,7 +1058,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	for i, tp := range typeMeta.TypeParams {
 		if i < len(recvTypeArgs) {
 			arg := recvTypeArgs[i]
-			if len(arg) == 1 && arg[0] >= 'A' && arg[0] <= 'Z' {
+			if t.isUnboundTypeParam(arg) {
 				hasUnresolvedTypeParams = true
 				break
 			}

@@ -651,6 +651,13 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		typeParams = tp
 	}
+	// The receiver's type arguments (`func (b Box[T]) ...`) and the function's
+	// own type parameters are in scope for the signature and the body, and
+	// shadow any same-named type declared outside.
+	if originalRecvTypeExpr != nil {
+		defer t.bindTypeParams(t.extractTypeParams(originalRecvTypeExpr)...)()
+	}
+	defer t.bindTypeParams(fieldListOrNil(typeParams)...)()
 
 	// Signature
 	funcType, err := t.transformSignature(ctx.Signature().(*grammar.SignatureContext), typeParams)
@@ -904,18 +911,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 		if err != nil {
 			return nil, err
 		}
-		for _, field := range tParams.List {
-			for _, n := range field.Names {
-				t.activeTypeParams[n.Name] = true
-			}
-		}
-		defer func() {
-			for _, field := range tParams.List {
-				for _, n := range field.Names {
-					delete(t.activeTypeParams, n.Name)
-				}
-			}
-		}()
+		defer t.bindTypeParams(tParams.List...)()
 	}
 
 	fields := &ast.FieldList{}
@@ -1052,19 +1048,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		if err != nil {
 			return nil, err
 		}
-		// Populate activeTypeParams
-		for _, field := range tParams.List {
-			for _, n := range field.Names {
-				t.activeTypeParams[n.Name] = true
-			}
-		}
-		defer func() {
-			for _, field := range tParams.List {
-				for _, n := range field.Names {
-					delete(t.activeTypeParams, n.Name)
-				}
-			}
-		}()
+		defer t.bindTypeParams(tParams.List...)()
 	}
 
 	if ctx.StructType() != nil {

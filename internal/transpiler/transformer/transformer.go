@@ -38,7 +38,8 @@ type galaASTTransformer struct {
 	needsStdImport    bool
 	needsFmtImport    bool
 	needsUtf8Import   bool
-	activeTypeParams  map[string]bool
+	activeTypeParams  map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
+	typeParamNames    map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
 	structFields      map[string][]string
 	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
 	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
@@ -204,6 +205,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
+	t.typeParamNames = nil
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.patternDefineTypes = nil

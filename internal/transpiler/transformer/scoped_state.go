@@ -47,6 +47,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		name  string
 		isSet bool
 	}{
+		{"activeTypeParams", len(t.activeTypeParams) != 0},
 		{"currentScope", t.currentScope != nil},
 		{"returnSlot", t.returnSlot.typ != nil || t.returnSlot.fillable || t.returnSlot.deferred != nil || t.returnSlot.typeParams != nil},
 		{"currentMatchSubjectType", t.currentMatchSubjectType != nil},
@@ -79,7 +80,7 @@ var accumulatedStateFields = []string{
 	"needsFmtImport",
 	"needsUtf8Import",
 	"needsEmbedImport",
-	"activeTypeParams",
+	"typeParamNames",
 	"structFields",
 	"structFieldTypes",
 	"genericMethods",

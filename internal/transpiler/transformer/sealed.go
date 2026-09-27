@@ -37,18 +37,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		if err != nil {
 			return nil, err
 		}
-		for _, field := range tParams.List {
-			for _, n := range field.Names {
-				t.activeTypeParams[n.Name] = true
-			}
-		}
-		defer func() {
-			for _, field := range tParams.List {
-				for _, n := range field.Names {
-					delete(t.activeTypeParams, n.Name)
-				}
-			}
-		}()
+		defer t.bindTypeParams(tParams.List...)()
 	}
 
 	// Parse all variants (two passes: first collect, then resolve field name conflicts)

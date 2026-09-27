@@ -55,6 +55,7 @@ go_test(
         "hover_coverage_test.go",
         "hover_internal_test.go",
         "hover_variable_test.go",
+        "inlay_hints_internal_test.go",
         "member_dot_internal_test.go",
         "package_files_internal_test.go",
         "position_encoding_test.go",
