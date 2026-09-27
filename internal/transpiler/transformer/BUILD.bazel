@@ -282,6 +282,9 @@ go_test(
         # .gala and joining it with std's hand-written Go. The same goes for
         # every other package with hand-written Go beside its .gala.
         "//concurrent:execution_context.go",
+        "//json:byte_utils.go",
+        "//subprocess:subprocess.go",
+        "//yaml:codec.go",
         "//std:embedded_fs.go",
         "//std:interfaces.go",
         "//std:types.go",
