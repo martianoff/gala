@@ -1212,6 +1212,11 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 
 	// Don't unwrap if it's a type name (identifier or selector)
 	if ident, ok := expr.(*ast.Ident); ok {
+		// `nil` is a keyword, never a val, so it is never wrapped; asking for
+		// its type (`err == nil` unwraps both operands) only finds none.
+		if ident.Name == "nil" {
+			return expr
+		}
 		if !t.isVal(ident.Name) && !t.isVar(ident.Name) {
 			if !t.lookupTypeName(ident.Name).IsNil() {
 				return expr

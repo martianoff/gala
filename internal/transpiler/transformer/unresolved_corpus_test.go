@@ -71,15 +71,12 @@ import (
 // to; the documented `val a, b, c = f()` spelling reports the same three, so
 // this is the existing cost of that shape rather than a new one.
 //
-// Raised 573 -> 578 when a Go call returning several results became one GALA
-// value: examples/go_call_results.gala and the rewritten
-// examples/try_val_destructure.gala call Try methods on such calls
-// (`strconv.Atoi(s).GetOrElse`, `os.Create(p).Get`), and a method selector on
-// a Try reports its selector the same way `sum2("a", "b").GetOrElse` in
-// bind_notation_also.gala already does. The removed go_multi_value_results
-// example accounts for the rest of the difference; no site outside these two
-// files changed.
-const unresolvedBudget = 578
+// Lowered 573 -> 561 when unwrapImmutable stopped asking for the type of a
+// `nil` operand (`err == nil`), which removed 19 sites. The difference is the
+// method names of Try calls on converted Go calls (`strconv.Atoi(s).GetOrElse`)
+// in go_call_results.gala and try_val_destructure.gala, reported like every
+// other method name in the corpus (`.Get`, `.Map`, ...).
+const unresolvedBudget = 561
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

@@ -219,15 +219,14 @@ no wrapping needed. A Go call becomes one GALA value like this:
 | several values and an error | `Try` of a Tuple | `net.SplitHostPort(addr)` is a `Try[Tuple[string, string]]` |
 | only an `error` | the `error` itself | `os.Remove(path)` is an `error` |
 
-<!-- doc-check: fragment -->
 ```gala
 import "strconv"
 
-val port = strconv.Atoi(text) match {
+val port = strconv.Atoi("8080") match {
     case Success(n) => n
-    case Failure(_) => 8080
+    case Failure(_) => 80
 }
-val timeout = strconv.Atoi(raw).GetOrElse(30)
+val timeout = strconv.Atoi("30s").GetOrElse(30) // not a number: 30
 ```
 
 - For a call that returns **only** an `error`, write `Try(os.Remove(path))`: it is

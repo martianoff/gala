@@ -7,17 +7,24 @@ results](../GALA.MD#go-functions-that-return-several-results)). The error fires
 when that value — the call itself, or a name bound to it — is used where the
 call's plain first result is expected:
 
-<!-- doc-check: fragment -->
 ```gala
-val data = os.ReadFile(path)       // data is a Try[[]byte]
-count(data)                        // count takes a []byte
-string(data)                       // conversion
-data[0]                            // index
-val n = strconv.Atoi(text)
-n + 1                              // operand
-val resp = http.Get(url)
-resp.StatusCode                    // member of the plain value
-val (data, err) = os.ReadFile(path)  // a Try is not a Tuple
+import (
+    "net/http"
+    "os"
+    "strconv"
+)
+
+func count(data []byte) int = data.Size()
+
+val data = os.ReadFile("notes.txt")   // data is a Try[[]byte]
+count(data)                           // count takes a []byte
+string(data)                          // conversion
+data[0]                               // index
+val n = strconv.Atoi("42")
+n + 1                                 // operand
+val resp = http.Get("https://example.com")
+resp.StatusCode                       // member of the plain value
+val (bytes, err) = os.ReadFile("notes.txt") // a Try is not a Tuple
 ```
 
 It also fires for a Go call returning more than ten values, which no Tuple
@@ -52,8 +59,11 @@ error[GALA-E0049]: `data` holds the result of `os.ReadFile(...)`, which can fail
 
 **Fix.** Decide what a failure means, and say it with the Try:
 
-<!-- doc-check: fragment -->
 ```gala
+import "os"
+
+func count(data []byte) int = data.Size()
+
 // Handle both outcomes
 val total = os.ReadFile("notes.txt") match {
     case Success(data) => count(data)

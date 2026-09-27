@@ -591,7 +591,6 @@ wherever it is used as a value:
 A `Try` is `Success(value)` when the call worked and `Failure(err)` when it
 returned an error, so the usual `Try` tools apply directly:
 
-<!-- doc-check: fragment -->
 ```gala
 import (
     "os"
@@ -599,12 +598,12 @@ import (
     "strings"
 )
 
-val port = strconv.Atoi(text) match {          // Try[int]
+val port = strconv.Atoi("8080") match {                  // Try[int]
     case Success(n) => n
-    case Failure(_) => 8080
+    case Failure(_) => 80
 }
-val size = os.ReadFile(path).Map((data) => data.Size()).GetOrElse(0)
-val (key, value, found) = strings.Cut(line, "=") // Tuple3 destructuring
+val size = os.ReadFile("app.conf").Map((data) => data.Size()).GetOrElse(0)
+val (key, value, found) = strings.Cut("port=8080", "=") // Tuple3 destructuring
 ```
 
 This holds in every position that takes one value: a `val`, a match subject,
@@ -627,10 +626,14 @@ call into a `Failure`.
 parentheses) still receives Go's results as they are, which is the way to hand
 them straight back to Go code:
 
-<!-- doc-check: fragment -->
 ```gala
-val data, err = os.ReadFile(path)   // data []byte, err error
-var n, parseErr = strconv.Atoi(s)   // var: raw values, reassignable
+import (
+    "os"
+    "strconv"
+)
+
+val data, err = os.ReadFile("app.conf")  // data []byte, err error
+var n, parseErr = strconv.Atoi("42")     // var: raw values, reassignable
 ```
 
 The sole argument of a Go function whose parameters take the results one for
