@@ -48,14 +48,15 @@ type deferredReturn struct {
 // enterReturnSlot makes s the current return slot and returns the function
 // that restores the previous one, for `defer t.enterReturnSlot(s)()`. A slot
 // nested in a function (a lambda's, an IIFE's) keeps the function's type
-// parameters.
+// parameters. A body with its own slot is not a branch typed by its siblings
+// (see lowerBranches), even inside one.
 func (t *galaASTTransformer) enterReturnSlot(s returnSlot) func() {
-	prev := t.returnSlot
+	prev, prevSiblingTyped := t.returnSlot, t.siblingTypedBranch
 	if s.typeParams == nil {
 		s.typeParams = prev.typeParams
 	}
-	t.returnSlot = s
-	return func() { t.returnSlot = prev }
+	t.returnSlot, t.siblingTypedBranch = s, false
+	return func() { t.returnSlot, t.siblingTypedBranch = prev, prevSiblingTyped }
 }
 
 // declaredTypeParams is the set of type parameter names a function declaration

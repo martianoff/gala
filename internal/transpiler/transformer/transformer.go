@@ -61,6 +61,7 @@ type galaASTTransformer struct {
 	inferer                 *infer.Inferer
 	returnSlot              returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	currentMatchSubjectType transpiler.Type                               // type of the match expression's subject (for branch type inference)
+	siblingTypedBranch      bool                                          // set while a match arm or if branch with no slot type is first lowered: its type comes from its siblings, so a zero-arg constructor in it takes none from the enclosing result type or the match subject (see lowerBranches)
 	typeAliases             map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets     map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
 	goTypeInfo              *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
@@ -76,6 +77,7 @@ type galaASTTransformer struct {
 	inferenceWarnings       []string                                      // collected type inference warnings
 	unresolvedTypes         []UnresolvedType                              // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
 	unresolvedSeen          map[ast.Expr]bool                             // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
+	unrecordedCallee        ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
 	diagPackageNames        map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas             map[string]*structMetaConfig                  // generated StructMeta structs (keyed by generated name)
 	instanceInterfaceNames  map[string]string                             // type name -> actual generated interface name (for collision avoidance)

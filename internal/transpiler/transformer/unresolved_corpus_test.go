@@ -71,12 +71,25 @@ import (
 // to; the documented `val a, b, c = f()` spelling reports the same three, so
 // this is the existing cost of that shape rather than a new one.
 //
-// Lowered 573 -> 562 when unwrapImmutable stopped asking for the type of a
-// `nil` operand (`err == nil`), which removed 19 sites. The difference is the
-// method names of Try calls on converted Go calls (`strconv.Atoi(s).GetOrElse`)
-// in go_call_results.gala and try_val_destructure.gala, reported like every
-// other method name in the corpus (`.Get`, `.Map`, ...).
-const unresolvedBudget = 562
+// Raised 573 -> 598 by examples/none_branch_result_type.gala (20 sites) and
+// examples/none_generic_call_arg.gala (5). They exercise bare `None()` in
+// match arms, if branches and generic-call arguments, which failed to
+// transpile before, so none of their sites used to type. The sites are the
+// shapes already unresolved across the corpus: a method called on a `val`
+// bound to a match or if-expression (`m.GetOrElse`), a method on a
+// generic-typed parameter (`d.GetOrElse`), and the `Apply` selector of a
+// constructor. No example that transpiled before reports a new site.
+//
+// Lowered 598 -> 168 when method names stopped being counted as values. About
+// 430 entries were the `.Map` in `opt.Map(f)`: the Immutable-field check asked
+// a std type's method for its field type, and the Hindley-Milner bridge asked
+// for the type of every call's callee. A method call is typed as a call, and
+// the call is still recorded when it fails; a method taken as a value
+// (`val get = b.Get`) still counts. See unresolved_types_test.go.
+//
+// Lowered 168 -> 157 when unwrapImmutable stopped asking for the type of a
+// `nil` operand (`err == nil`); see unresolved_nil_test.go.
+const unresolvedBudget = 157
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.
@@ -107,6 +120,7 @@ func TestUnresolvedTypeInventory(t *testing.T) {
 	total := len(sites)
 
 	t.Logf("corpus: %d files, %d transpiled, %d skipped", len(files), len(files)-skipped, skipped)
+	t.Logf("unresolved-type inventory: %d (budget %d)", total, unresolvedBudget)
 	require.Less(t, skipped, len(files),
 		"every example failed to transpile; the inventory is measuring nothing")
 

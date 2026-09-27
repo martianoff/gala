@@ -248,15 +248,16 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		}
 	}
 
-	// Non-FuncType param of a non-generic GALA function: pass the declared
-	// param type through verbatim so sealed-variant downward inference (the
-	// expectedArgTypes push in lowerAgainst)
-	// can resolve a zero-arg case constructor like `NoCmd()` against the
-	// callee's declared parameter type (e.g. `Cmd[Msg]`). Skipping FuncType
-	// is intentional: those have a dedicated path above with masking logic.
-	if expectedType.IsNil() && ctx.funcMeta != nil && len(ctx.funcMeta.TypeParams) == 0 && argIdx < len(ctx.funcMeta.ParamTypes) {
+	// Non-FuncType param that names none of the callee's type parameters
+	// (every param of a non-generic function, `d Option[Drag]` of a generic
+	// one): its declared type is known whatever the type arguments are, so it
+	// passes through verbatim and sealed-variant downward inference (the
+	// expectedArgTypes push in lowerAgainst) can resolve a zero-arg case
+	// constructor like `NoCmd()` or `None()` against it. Skipping FuncType is
+	// intentional: those have a dedicated path above with masking logic.
+	if expectedType.IsNil() && ctx.funcMeta != nil && argIdx < len(ctx.funcMeta.ParamTypes) {
 		paramType := ctx.funcMeta.ParamTypes[argIdx]
-		if !paramType.IsNil() {
+		if !paramType.IsNil() && !typeMentionsTypeParam(paramType, ctx.funcMeta.TypeParams) {
 			if _, isFunc := paramType.(transpiler.FuncType); !isFunc {
 				expectedType = paramType
 			}

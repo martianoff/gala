@@ -705,15 +705,28 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	}
 	defer t.enterIIFEReturnSlot(iifeType)()
 
+	// A branch with no slot type to lower against is typed by the other one
+	// (see lowerBranches).
 	branches := ctx.AllIfExprBranch()
-	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext), s)
-	if err != nil {
+	var lowered [2]struct {
+		stmts      []ast.Stmt
+		expr       ast.Expr
+		terminates bool
+	}
+	siblingTyped := transpiler.IsUnusable(s.typ)
+	lowerBranch := func(i int, bs slot) (transpiler.Type, error) {
+		b := &lowered[i]
+		var err error
+		if b.stmts, b.expr, b.terminates, err = t.transformIfExprBranch(branches[i].(*grammar.IfExprBranchContext), bs); err != nil || !siblingTyped {
+			return nil, err
+		}
+		return t.getExprTypeName(b.expr), nil
+	}
+	if err := t.lowerBranches(2, s, siblingTyped, lowerBranch); err != nil {
 		return nil, err
 	}
-	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext), s)
-	if err != nil {
-		return nil, err
-	}
+	thenStmts, thenExpr, thenTerminates := lowered[0].stmts, lowered[0].expr, lowered[0].terminates
+	elseStmts, elseExpr, elseTerminates := lowered[1].stmts, lowered[1].expr, lowered[1].terminates
 
 	retType := transpiler.Type(transpiler.NilType{})
 	if inferred, err := t.inferIfType(cond, thenExpr, elseExpr); err == nil && !inferred.IsNil() {

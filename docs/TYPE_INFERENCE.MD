@@ -353,10 +353,10 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `arr[i]` | Array element type |
 | `Some(x)`, `None[T]()` | Option type construction |
 | `Left(x)`, `Right(x)` | Either type construction |
-| `expr.Get()` | Immutable inner type, generic container element (`Array[T].Get()` → `T`), or — when the receiver is a non-generic named type (or a pointer to one) with a user-declared `Get` method — that method's declared return type |
+| `expr.Get()` | On a `val`, an immutable field, or an `Immutable[T]`: the unwrapped inner type. Otherwise an ordinary method call: a generic container element (`Array[T].Get(i)` → `T`), a user-declared `Get` method's return type (value or pointer receiver, generic or not), or a Go type's `Get` from Go type info (`url.Values.Get` → `string`) |
 | `NewImmutable(x)` | Immutable wrapper type |
 
-> **Note:** `Get` is special-cased because it backs implicit `Immutable` unwrapping and the built-in container accessors. A user type may still declare its own `Get` method (e.g. a `Get() Option[T]` accessor); its declared return type is honored so that chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field.
+> **Note:** `Get` is special-cased only for implicit `Immutable` unwrapping. Every other `Get` is inferred like any other method call, so a user type's own `Get` method (e.g. a `Get() Option[T]` accessor) keeps its declared return type and chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field. A generic receiver — value or pointer — has its type arguments substituted into the declared return type even when they are type parameters of the enclosing generic function: inside `func f[T any](b *Box[T])`, `b.Get()` on `func (b *Box[T]) Get() T` is `T`. A `Get` that cannot be resolved is never typed as the receiver itself.
 
 ### Hindley-Milner Inference (`inferExprType`)
 
@@ -556,11 +556,15 @@ Five contexts feed the expected type:
   whose mismatched save/restore bookkeeping silently leaked state
   across siblings.
 - For the **zero-arg call** path (`NoCmd()` with empty parens),
-  `applyCallSuffix` peeks the top hint after `inferZeroArgTypeParams`
-  (which covers the enclosing-return and match-subject fallbacks for
-  `None()` / `Some()`), and rewrites the receiver via
-  `injectSealedVariantTypeArgs`. On a successful rewrite it consumes
-  the hint so deeper sub-expressions cannot pick it up.
+  `applyCallSuffix` first peeks the top hint and rewrites the receiver
+  via `injectSealedVariantTypeArgs`. On a successful rewrite it
+  consumes the hint so deeper sub-expressions cannot pick it up. The
+  hint is the type of the slot the constructor itself fills, so it wins
+  over the enclosing-return and match-subject fallbacks of
+  `inferZeroArgTypeParams`, which run only when no hint applies:
+  `take(None(), 1)` for `take[T any](d Option[Drag], v T)` inside a
+  function returning `Option[int]`, or inside an arm of a match on an
+  `Option[int]`, is `None[Drag]`.
   `inferZeroArgTypeParams` consults `returnSlot.typ` **before**
   `currentMatchSubjectType`: in value position the arm body's type is
   the match *result* type, which the declared return pins, while the
@@ -583,8 +587,16 @@ Five contexts feed the expected type:
   rewrite.
 - For **function arguments** (context 3),
   `resolveExpectedFuncArgType` returns the declared param type
-  verbatim for non-FuncType params of non-generic GALA functions, so
-  the argument-transform path can push it onto the stack.
+  verbatim for a non-FuncType param that names none of the callee's
+  type parameters — every param of a non-generic function, and
+  `d Option[Drag]` of `take[T any](d Option[Drag], v T)` whether the
+  type arguments are explicit (`take[int](None(), 1)`) or inferred
+  (`take(None(), 1)`) — so the argument-transform path can push it onto
+  the stack. A param that names one (`d Option[T]`) is pushed with the
+  call's type arguments substituted, once explicit type arguments or
+  the other arguments fix them (`take2[int](None(), 1)`,
+  `take2(None(), "x")`). Methods, generic methods and named arguments
+  resolve their parameter types the same way.
 - For **tuple elements** (context 4 / context 2 with tuple return),
   `transformPrimary` inspects the enclosing `returnSlot.typ`
   for a Tuple-shaped expected type and pushes each per-slot type
@@ -593,6 +605,21 @@ Five contexts feed the expected type:
   promotes a pending expected slot type to `returnSlot.typ`
   for the IIFE's body, so each arm's expression — not just the first
   — picks it up via the existing companion-of-sealed lookup.
+- A **match or if-expression with no expected type** whose value is
+  used (`val m = o match { … }`, `val m = if (b) Some(v) else None()`)
+  has the type its arms or branches unify to, and that — not the
+  matched value's type, and not the enclosing function's result type —
+  types a bare `None()` among them. `lowerBranches` lowers each arm
+  with those two fallbacks hidden (`siblingTypedBranch`); an arm that
+  then cannot be typed on its own (`None()` fails with E0018) is
+  lowered again, after the others, against the type they unify to. So
+  inside `func pick[T any](o Option[int], v T) T`,
+  `o match { case Some(_) => Some(v); case None() => None() }` is an
+  `Option[T]` and the arm is `None[T]`, in either arm order. When the
+  other arms unify to no fully known type, the arm is lowered again
+  with the fallbacks restored, as before. A body with its own result
+  slot inside an arm (a lambda, a match or if with an expected type)
+  is unaffected.
 
 If none of the contexts supplies a concrete type and the constructor
 is a sealed variant of a generic parent, the transpiler fails fast
@@ -626,7 +653,8 @@ side-effect dispatch still rely on per-arm inference.
 | `transformer/calls.go::injectSealedVariantTypeArgs` | Rewrites `Variant(...)` → `Variant[Args]` when expected is the sealed parent |
 | `transformer/calls.go::applyCallSuffix` (zero-arg branch) | Peeks/consumes the top hint for `Variant()`; emits `GALA-E0018` when no signal pins the parameter |
 | `transformer/calls.go::transformCallWithArgsCtx` | Consumes the top hint for `Variant(arg, …)` |
-| `transformer/call_context.go::resolveExpectedFuncArgType` | Surfaces non-FuncType param types from non-generic functions |
+| `transformer/call_context.go::resolveExpectedFuncArgType` | Surfaces non-FuncType param types that name none of the callee's type parameters |
+| `transformer/match.go::lowerBranches` | Types a match arm or if branch with no expected type from its siblings |
 | `transformer/constructors.go::transformPrimary` (paren/tuple case) | Pushes per-element expected type for tuple literals |
 | `transformer/declarations.go::transformValDeclaration` / `transformVarDeclaration` | Pushes the explicit declared type before transforming RHS |
 | `transformer/postfix.go::buildMatchExpressionFromClauses` | Promotes a pending slot type to `returnSlot.typ` for arm bodies |
