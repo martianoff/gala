@@ -562,90 +562,6 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 	return ifStmt, nil
 }
 
-// getExtractedType determines the type of the value extracted by an extractor pattern.
-// For example, when matching Some(v) against Option[int], the extracted type is int.
-func (t *galaASTTransformer) getExtractedType(extractorName string, objType transpiler.Type) transpiler.Type {
-	return t.getExtractedTypeAtIndex(extractorName, objType, 0)
-}
-
-// getExtractedTypeAtIndex determines the type of the value extracted at a specific index.
-// It uses companion object metadata discovered by the analyzer instead of hardcoding extractor names.
-// For Tuple[A, B], index 0 returns A, index 1 returns B.
-func (t *galaASTTransformer) getExtractedTypeAtIndex(extractorName string, objType transpiler.Type, index int) transpiler.Type {
-	return t.getExtractedTypeAtIndexWithArgs(extractorName, objType, index, -1)
-}
-
-// getExtractedTypeAtIndexWithArgs determines the type of the value extracted at a specific index.
-// numArgs is the total number of arguments in the pattern, used to decide whether to expand tuples.
-func (t *galaASTTransformer) getExtractedTypeAtIndexWithArgs(extractorName string, objType transpiler.Type, index int, numArgs int) transpiler.Type {
-	genType, ok := objType.(transpiler.GenericType)
-	if !ok || len(genType.Params) == 0 {
-		return transpiler.NilType{}
-	}
-
-	baseName := genType.Base.BaseName()
-
-	var extractedType transpiler.Type
-
-	// Normalize extractor name by removing package prefix for lookup
-	normalizedName := stripStdPrefix(extractorName)
-
-	// Check if this is a direct struct match (extractor type equals container type)
-	// This handles cases like Tuple(a, b) matching against Tuple[A, B]
-	if normalizedName == baseName || extractorName == baseName {
-		// Direct struct match - extract type param at the specified index
-		if index < len(genType.Params) {
-			extractedType = genType.Params[index]
-		}
-	} else {
-		// First, check if this is a generic extractor with type parameters
-		// For example, Cons[T] with Unapply(l List[T]) Option[Tuple[T, List[T]]]
-		extractedType = t.getGenericExtractorResultTypeWithArgs(extractorName, objType, index, numArgs)
-
-		// If not found, look up companion object metadata
-		if transpiler.IsUnusable(extractedType) {
-			companionMeta := t.getCompanionObjectMetadata(extractorName)
-			if companionMeta != nil {
-				// Verify the companion works with this container type
-				if companionMeta.TargetType == baseName ||
-					companionMeta.TargetType == withStdPrefix(baseName) ||
-					withStdPrefix(companionMeta.TargetType) == baseName {
-					// Find which container type param index to extract
-					if index < len(companionMeta.ExtractIndices) {
-						paramIndex := companionMeta.ExtractIndices[index]
-						if paramIndex < len(genType.Params) {
-							extractedType = genType.Params[paramIndex]
-						}
-					} else if len(companionMeta.ExtractIndices) == 1 && index == 0 {
-						// Common case: companion extracts one value, use its index
-						paramIndex := companionMeta.ExtractIndices[0]
-						if paramIndex < len(genType.Params) {
-							extractedType = genType.Params[paramIndex]
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Check if the extracted type is a type parameter (like T, U, A, B)
-	// If so, return NilType{} to avoid generating invalid type assertions.
-	if extractedType != nil && !extractedType.IsNil() {
-		if basic, ok := extractedType.(transpiler.BasicType); ok {
-			name := basic.Name
-			// Type parameters are typically single uppercase letters or short names
-			if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
-				return transpiler.NilType{}
-			}
-		}
-	}
-
-	if extractedType == nil {
-		return transpiler.NilType{}
-	}
-	return extractedType
-}
-
 // isDirectStructMatch checks if the pattern type directly matches the container type
 // AND the matched type is a generic type with type parameters.
 // For example, Tuple pattern matching against Tuple[A, B] is a direct match.
@@ -1400,33 +1316,6 @@ func (t *galaASTTransformer) transformTuplePattern(patternExprs []grammar.IExpre
 	return ast.NewIdent("true"), stmts, nil
 }
 
-// getCompanionObjectMetadata looks up companion object metadata by name.
-// It tries various name formats: short name, std-prefixed name, and fully qualified name.
-func (t *galaASTTransformer) getCompanionObjectMetadata(name string) *transpiler.CompanionObjectMetadata {
-	if t.companionObjects == nil {
-		return nil
-	}
-
-	// Try exact name first
-	if meta, ok := t.companionObjects[name]; ok {
-		return meta
-	}
-
-	// Try with std prefix
-	if meta, ok := t.companionObjects[withStdPrefix(name)]; ok {
-		return meta
-	}
-
-	// Try without std prefix
-	if hasStdPrefix(name) {
-		if meta, ok := t.companionObjects[stripStdPrefix(name)]; ok {
-			return meta
-		}
-	}
-
-	return nil
-}
-
 // inferExtractorTypeParams attempts to infer type parameters for a generic extractor
 // by examining its Unapply method's first parameter type and matching it against
 // the type of the expression being matched.
@@ -1496,79 +1385,6 @@ func splitPackageQualifier(name string) (pkg, bare string) {
 // Delegates to unifyForInference for consistent unification logic across the codebase.
 func (t *galaASTTransformer) unifyTypes(pattern, concrete transpiler.Type, typeParams []string, substitution map[string]transpiler.Type) bool {
 	return t.unifyForInference(pattern, concrete, typeParams, substitution)
-}
-
-// getGenericExtractorResultTypeWithArgs determines the extracted type for a generic extractor.
-// For example, Cons[T] with Unapply(l List[T]) Option[Tuple[T, List[T]]] - when matching
-// against List[int], this returns Tuple[int, List[int]] for index 0.
-// numArgs is the total number of arguments in the pattern (-1 means use default behavior).
-// If numArgs > 1 and the result is a Tuple with matching arity, individual elements are returned.
-func (t *galaASTTransformer) getGenericExtractorResultTypeWithArgs(extractorName string, objType transpiler.Type, index int, numArgs int) transpiler.Type {
-	// Use unified resolution to find the extractor's type metadata
-	extractorMeta := t.getTypeMeta(extractorName)
-	if extractorMeta == nil || len(extractorMeta.TypeParams) == 0 {
-		return transpiler.NilType{}
-	}
-
-	// Get the Unapply method
-	unapplyMeta, ok := extractorMeta.Methods["Unapply"]
-	if !ok || len(unapplyMeta.ParamTypes) == 0 {
-		return transpiler.NilType{}
-	}
-
-	// Infer type parameters from the matched type
-	inferredTypes := t.inferExtractorTypeParams(extractorMeta, objType)
-	if len(inferredTypes) != len(extractorMeta.TypeParams) {
-		return transpiler.NilType{}
-	}
-
-	// Substitute type parameters in the return type
-	returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, extractorMeta.TypeParams, inferredTypes)
-	if transpiler.IsUnusable(returnType) {
-		return transpiler.NilType{}
-	}
-
-	// Unwrap Option[X] to get X
-	innerType := t.unwrapOptionType(returnType)
-	if transpiler.IsUnusable(innerType) {
-		return transpiler.NilType{}
-	}
-
-	// Check if the result is a Tuple
-	if genType, ok := innerType.(transpiler.GenericType); ok {
-		baseName := genType.Base.BaseName()
-		if t.isTupleTypeName(baseName) || baseName == "Tuple" || baseName == "std.Tuple" {
-			// If numArgs matches the Tuple arity, expand the Tuple
-			// This handles implicit expansion: Cons(head, tail) -> [int, List[int]]
-			if numArgs > 0 && numArgs == len(genType.Params) {
-				if index < len(genType.Params) {
-					return genType.Params[index]
-				}
-				return transpiler.NilType{}
-			}
-			// If numArgs is 1, return the full Tuple type for explicit Tuple matching
-			// This handles: Cons(Tuple(head, tail)) -> Tuple[int, List[int]]
-			if numArgs == 1 && index == 0 {
-				return innerType
-			}
-			// Default behavior (numArgs == -1): index 0 returns full Tuple, others expand
-			if numArgs < 0 {
-				if index == 0 {
-					return innerType
-				}
-				if index < len(genType.Params) {
-					return genType.Params[index]
-				}
-			}
-		}
-	}
-
-	// For non-tuple results, return the inner type for index 0
-	if index == 0 {
-		return innerType
-	}
-
-	return transpiler.NilType{}
 }
 
 // unwrapOptionType unwraps Option[X] to return X
