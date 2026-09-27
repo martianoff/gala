@@ -137,6 +137,7 @@ fixture_nested() {
 
 # lib_only: no package main at all.
 fixture_lib_only() {
+  local dir
   dir=$(stage lib_only)
   cd "$dir"
   gala_ok build.log build || return 0
