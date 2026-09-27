@@ -132,7 +132,7 @@ jobs:
         # list and the others stay independently green. Adding a layout: a
         # directory under tools/ci/cli_path/testdata, a fixture_<name>
         # function in run_fixtures.sh, and an entry here.
-        fixture: [root_main, cmd_app, nested, lib_only, sequence]
+        fixture: [root_main, cmd_app, nested, lib_only, gala_dep, sequence]
     defaults:
       run:
         shell: bash
@@ -161,7 +161,9 @@ jobs:
           "$bin" version
 
       - name: Run fixture
-        run: tools/ci/cli_path/run_fixtures.sh "${RUNNER_TEMP}/cli-fixtures" "${{ matrix.fixture }}"
+        env:
+          FIXTURE: ${{ matrix.fixture }}
+        run: tools/ci/cli_path/run_fixtures.sh "${RUNNER_TEMP}/cli-fixtures" "$FIXTURE"
 
   downstream:
     name: Downstream ${{ matrix.name }}
@@ -223,10 +225,12 @@ jobs:
           name: gala-cli
           path: ${{ runner.temp }}/gala-cli
 
+      # GALA_HOME is left at its default (~/.gala, empty on a fresh runner),
+      # which is how each project's own CI runs. An explicit GALA_HOME is the
+      # cli-fixtures lane's job (see its gala_dep fixture).
       - name: Build and test
         working-directory: downstream
         env:
-          GALA_HOME: ${{ runner.temp }}/gala-home
           GOFLAGS: ${{ matrix.goflags }}
           COMMANDS: ${{ matrix.commands }}
         run: |

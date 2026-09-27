@@ -4,7 +4,7 @@
 #   GALA=/path/to/gala tools/ci/cli_path/run_fixtures.sh <work-dir> [fixture...]
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
-# nested, lib_only, sequence.
+# nested, lib_only, gala_dep, sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
 # with the CLI, which transpiles against the stdlib snapshot embedded in the
@@ -145,6 +145,19 @@ fixture_lib_only() {
   expect_line "tests ran" test.log '^ok '
 }
 
+# gala_dep: a published GALA module in gala.mod, fetched from GitHub into the
+# empty GALA_HOME and built against. Needs network access.
+fixture_gala_dep() {
+  local dir
+  dir=$(stage gala_dep)
+  cd "$dir"
+  gala_ok build.log build || return 0
+  "$(exe "$dir/gala_dep")" >out.txt
+  expect_output "built binary" expected.out out.txt
+  gala_ok run.log run || return 0
+  expect_output "gala run" expected.out run.log
+}
+
 # sequence: the order a user actually types commands in, against one warm
 # GALA_HOME, then an edit, then the same builds from an empty GALA_HOME. Every
 # binary a warm build produced must behave exactly like the from-scratch one:
@@ -190,7 +203,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only sequence)
+  fixtures=(root_main cmd_app nested lib_only gala_dep sequence)
 fi
 
 for name in "${fixtures[@]}"; do
