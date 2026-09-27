@@ -12,5 +12,7 @@ pointer: 14
 constptr: 9
 all fields: all 0 abab
 receiver calls: 2 m1 c2 8 p
+user Get: hits=1 get1 101
 cross-package: inc 40
 cross-package rename: inc2 6
+cross-package call receiver: made 3

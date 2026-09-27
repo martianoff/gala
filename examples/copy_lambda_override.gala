@@ -15,6 +15,14 @@ struct Hooks(OnEvent func(string), Classify func(int) Option[string])
 
 struct Cell[T any](Value T, Map func(T) T)
 
+// Source counts how often its Get() method is called.
+struct Source(var hits int)
+
+func (s *Source) Get() Calc {
+    s.hits = s.hits + 1
+    return Calc(Label = s"get${s.hits}", Op = (x) => x, Pair = (n, t) => t)
+}
+
 func twice[T any](c Cell[T]) Cell[T] = c.Copy(Map = (v) => c.Map(c.Map(v)))
 
 func main() {
@@ -85,10 +93,18 @@ func main() {
     val m2 = fresh().Copy(Op = (x) => x * 2)
     Println(s"receiver calls: $calls ${m1.Label} ${m2.Label} ${m2.Op(4)} ${m2.Pair(0, "p")}")
 
+    // A user type's own Get() is a method call, not an Immutable unwrap.
+    var source = Source(hits = 0)
+    val src = &source
+    val got = src.Get().Copy(Op = (x) => x + 100)
+    Println(s"user Get: hits=${src.hits} ${got.Label} ${got.Op(1)}")
+
     // Cross-package generic struct.
     val hd = handlers.Handler[int](Name = "inc", Run = (x) => x + 1)
     val hd2 = hd.Copy(Run = (x) => x * 10)
     Println(s"cross-package: ${hd2.Name} ${hd2.Run(4)}")
     val hd3 = handlers.Rename(hd, "inc2")
     Println(s"cross-package rename: ${hd3.Name} ${hd3.Run(4)}")
+    val made = handlers.Make("made").Copy(Run = (x) => x - 1)
+    Println(s"cross-package call receiver: ${made.Name} ${made.Run(4)}")
 }

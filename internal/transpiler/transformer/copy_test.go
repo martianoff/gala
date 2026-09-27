@@ -523,6 +523,25 @@ func mk() P = P(1, 2)
 			wants: []string{"func(_ Cell[T]) Cell[T] {", "}(c)"},
 		},
 		{
+			// A user type's own Get() is an ordinary method that may have
+			// side effects; only the transformer's Immutable unwrap is a
+			// re-readable path.
+			name: "user-defined Get() receiver is bound once",
+			body: `struct Src(var n int)
+func (s *Src) Get() P {
+    s.n = s.n + 1
+    return P(s.n, 0)
+}
+func f(src *Src) P = src.Get().Copy(N = 9)`,
+			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(9), M: std.Copy(_tmp_1.M)}\n\t}(src.Get())"},
+		},
+		{
+			name:    "val receiver unwrapped by the transformer is not bound",
+			body:    "func f() P {\n    val p = P(1, 2)\n    return p.Copy(N = 5)\n}",
+			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.Get().M)}"},
+			notWant: "_tmp_",
+		},
+		{
 			name:    "plain variable path with a kept field is not bound",
 			body:    `func f(p P) P = p.Copy(N = 5)`,
 			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.M)}"},

@@ -3,6 +3,9 @@ package handlers
 // Handler is copied from another package in examples/copy_lambda_override.gala.
 struct Handler[T any](Name string, Run func(T) T)
 
+// Make builds an identity Handler; a call receiver for Copy in the example.
+func Make(name string) Handler[int] = Handler[int](Name = name, Run = (x) => x)
+
 // Rename copies inside the declaring package with a lambda override.
 func Rename[T any](h Handler[T], name string) Handler[T] =
     h.Copy(Name = name, Run = (x) => h.Run(h.Run(x)))
