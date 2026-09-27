@@ -34,18 +34,15 @@ func (b Box) Scale(k int, f func(int) int = (x int) =>
 
 	hooks := rich.Types["defpkg.Hooks"]
 	require.NotNil(t, hooks)
-	assert.Equal(t, "(a int) => a + 1", hooks.FieldDefaults["OnOne"])
-	assert.Equal(t, transpiler.SourcePos{Line: 5, Column: 26}, hooks.FieldDefaultPos["OnOne"])
+	assert.Equal(t, transpiler.DefaultExpr{Text: "(a int) => a + 1", Pos: transpiler.SourcePos{Line: 5, Column: 26}}, hooks.FieldDefaults["OnOne"])
 
 	greet := rich.Functions["defpkg.greet"]
 	require.NotNil(t, greet)
-	assert.Equal(t, `(s string) => s + "!"`, greet.DefaultExprs[1])
-	assert.Equal(t, transpiler.SourcePos{Line: 8, Column: 48}, greet.DefaultPos[1])
+	assert.Equal(t, transpiler.DefaultExpr{Text: `(s string) => s + "!"`, Pos: transpiler.SourcePos{Line: 8, Column: 48}}, greet.DefaultExprs[1])
 
 	box := rich.Types["defpkg.Box"]
 	require.NotNil(t, box)
 	scale := box.Methods["Scale"]
 	require.NotNil(t, scale)
-	assert.Equal(t, "(x int) =>\n    x * 2", scale.DefaultExprs[1])
-	assert.Equal(t, transpiler.SourcePos{Line: 14, Column: 44}, scale.DefaultPos[1])
+	assert.Equal(t, transpiler.DefaultExpr{Text: "(x int) =>\n    x * 2", Pos: transpiler.SourcePos{Line: 14, Column: 44}}, scale.DefaultExprs[1])
 }

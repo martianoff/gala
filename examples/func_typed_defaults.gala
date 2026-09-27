@@ -38,6 +38,25 @@ struct Counter(N int)
 
 func (c Counter) Step(by func(int) int = (n) => n + 10) int = by(c.N)
 
+// Gauge's defaults use the receiver: at the call site it is the call's own
+// receiver — unless a lambda parameter of the same name shadows it.
+struct Gauge(K int)
+
+func (g Gauge) Read(f func(int) int = (x) => x * g.K) int = f(3)
+
+func (g Gauge) Peek(f func(Gauge) int = (g) => g.K + 1) int = f(g)
+
+// Holder's receiver binds `T` for its method's default, also on a call with
+// no arguments.
+struct Holder[T any](V T)
+
+func (h Holder[T]) Apply(f func(T) T = (a) => a) T = f(h.V)
+
+// An explicit `nil` passed to a zero-argument function parameter is by-name
+// sugar for a thunk returning nil — unlike a `nil` DEFAULT, which is the absent
+// function.
+func probe(f func() *int) bool = f() == nil
+
 func main() {
     // Every hook omitted.
     val h = Hooks(Name = "local")
@@ -57,6 +76,8 @@ func main() {
     Println(Counter(1).Step((n) => n * 100))
     Println(twice(21), twice(21, (a, b) => a + b), twice("ab", (a, b) => a + b))
     Println(Labeled[int](Value = 1).Show(5), Labeled(Value = "x").Show("y"))
+    val gauge = Gauge(2)
+    Println(gauge.Read(), gauge.Peek(), Holder(7).Apply(), probe(nil))
 
     // Declared in another package, constructed here with every hook omitted.
     val b = func_defaults_lib.Backend(Name = "tui")
@@ -66,5 +87,5 @@ func main() {
     Println(b.Render(func_defaults_lib.Cell("a")).Ch)
     Println(b.Pick(Some(4)), b.Pick(None[int]()))
     Println(b.OnClose == nil)
-    Println(func_defaults_lib.Decorate("lib"))
+    Println(func_defaults_lib.Decorate("lib"), func_defaults_lib.Scaled(4))
 }

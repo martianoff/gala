@@ -38,6 +38,22 @@ func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContex
 // ExpectedVoid is a sentinel value indicating the lambda should have no return type
 var ExpectedVoid ast.Expr = &ast.Ident{Name: "__void__"}
 
+// lambdaExpectation decomposes a function-shaped expected type — a func type,
+// or a named alias of one — into what transformLambdaWithExpectedType takes:
+// the expected result type (ExpectedVoid when there is none) and the parameter
+// types. ok is false when typ is not function-shaped.
+func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Expr, params []transpiler.Type, ok bool) {
+	ft := t.resolveTranspilerTypeAsFuncType(typ)
+	if ft == nil {
+		return nil, nil, false
+	}
+	ret = ExpectedVoid
+	if len(ft.Results) > 0 {
+		ret = t.typeToExpr(ft.Results[0])
+	}
+	return ret, ft.Params, true
+}
+
 // transformLambdaWithExpectedType lowers a lambda, applying expectedParamTypes /
 // expectedRetType when present. requireTypedParams controls the untyped-parameter
 // policy: when true (the bare/initializer path), a parameter with no annotation
@@ -185,14 +201,8 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	}
 	defer restoreInner()
 	if retType != nil && retType != ExpectedVoid {
-		if innerFT := t.resolveReturnTypeAsFuncType(retType); innerFT != nil {
-			var innerRet ast.Expr
-			if len(innerFT.Results) > 0 {
-				innerRet = t.typeToExpr(innerFT.Results[0])
-			} else {
-				innerRet = ExpectedVoid
-			}
-			t.expectedLambdaParamTypes = innerFT.Params
+		if innerRet, innerParams, ok := t.lambdaExpectation(t.astTypeToTranspilerType(retType)); ok {
+			t.expectedLambdaParamTypes = innerParams
 			t.expectedLambdaRetType = innerRet
 		}
 	}

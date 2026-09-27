@@ -1,6 +1,10 @@
 package lsp
 
-import "testing"
+import (
+	"testing"
+
+	"martianoff/gala/internal/transpiler"
+)
 
 func TestMemberDotOffset(t *testing.T) {
 	for _, tt := range []struct {
@@ -63,15 +67,15 @@ func TestCallInsertText(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		params   []string
-		defaults map[int]string
+		defaults map[int]transpiler.DefaultExpr
 		snippets bool
 		want     string
 		snippet  bool
 	}{
 		{"no parameters", nil, nil, true, "Name()", false},
 		{"required parameters", []string{"a", "b"}, nil, true, "Name(a = $1, b = $2)$0", true},
-		{"defaults are left out", []string{"a", "b", "c"}, map[int]string{1: "1", 2: "2"}, true, "Name(a = $1)$0", true},
-		{"only defaults", []string{"a"}, map[int]string{0: "1"}, true, "Name($0)", true},
+		{"defaults are left out", []string{"a", "b", "c"}, map[int]transpiler.DefaultExpr{1: {Text: "1"}, 2: {Text: "2"}}, true, "Name(a = $1)$0", true},
+		{"only defaults", []string{"a"}, map[int]transpiler.DefaultExpr{0: {Text: "1"}}, true, "Name($0)", true},
 		{"plain-text client", []string{"a"}, nil, false, "Name(", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

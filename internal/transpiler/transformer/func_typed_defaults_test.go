@@ -2,6 +2,8 @@ package transformer_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -157,6 +159,70 @@ func main() {
 }`,
 			contains: []string{"Scale(3)"},
 		},
+		{
+			// The receiver used inside a lambda default is the CALL-SITE
+			// receiver, with its immutable field unwrapped — not the
+			// declaration's receiver name, which names nothing here.
+			name: "lambda method default uses the receiver",
+			input: `package main
+
+struct Box(K int)
+
+func (b Box) Scale(f func(int) int = (x) => x * b.K) int = f(3)
+
+func main() {
+    val box = Box(2)
+    Println(box.Scale())
+}`,
+			contains: []string{"return x * box.Get().K.Get()"},
+			absent:   []string{"x * b.K"},
+		},
+		{
+			name: "lambda parameter shadowing the receiver name is left alone",
+			input: `package main
+
+struct Box(K int)
+
+func (b Box) Peek(f func(Box) int = (b) => b.K + 1) int = f(b)
+
+func main() {
+    val box = Box(2)
+    Println(box.Peek())
+}`,
+			contains: []string{"Peek(func(b Box) int {", "return b.K.Get() + 1"},
+		},
+		{
+			// The receiver's type arguments bind `T` for a zero-argument call
+			// just as they do for a call with arguments.
+			name: "zero-argument call on a generic receiver",
+			input: `package main
+
+struct Holder[T any](V T)
+
+func (h Holder[T]) Apply(f func(T) T = (a) => a) T = f(h.V)
+
+func main() {
+    val h = Holder(1)
+    Println(h.Apply())
+}`,
+			contains: []string{"Apply(func(a int) int {"},
+		},
+		{
+			// Only a DEFAULT `nil` is passed as is. An explicit `nil` argument to
+			// a zero-argument function parameter keeps the by-name sugar's
+			// meaning: a thunk returning nil.
+			name: "explicit nil to a by-name parameter is still a thunk",
+			input: `package main
+
+func probe(f func() *int) bool = f() == nil
+
+func probeDefault(f func() *int = nil) bool = f == nil
+
+func main() {
+    Println(probe(nil), probeDefault())
+}`,
+			contains: []string{"probe(func() *int {", "probeDefault(nil)"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -197,4 +263,74 @@ func main() {
 	assert.Equal(t, galaerr.CodeUntypedLambdaParam, se.Code)
 	assert.Equal(t, 5, se.Line)
 	assert.Equal(t, 23, se.Column)
+}
+
+// funcDefaultsFixture is a module whose library declares parameter defaults
+// that use the library's own functions, for lowering at a call site in another
+// package.
+func funcDefaultsFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+	write("gala.mod", "module example.com/fdefs\n\ngala dev\n")
+	write("lib/lib.gala", `package lib
+
+func Twice(n int) int = n * 2
+
+func helper(n int) int = n + 1
+
+func Wrap(n int, f func(int) int = (a) => Twice(a)) int = f(n)
+
+func Hidden(n int, f func(int) int = (a) => helper(a)) int = f(n)
+
+struct Gauge(K int)
+
+func (g Gauge) Read(f func(int) int = (x) => Twice(x) + g.K) int = f(1)
+`)
+	return root
+}
+
+// TestCrossPackageParamDefaults: a parameter default declared in another
+// package is lowered in the caller's scope, so the names it borrows from its
+// own package must be qualified — including inside a lambda — exactly as a
+// struct field default's are.
+func TestCrossPackageParamDefaults(t *testing.T) {
+	root := funcDefaultsFixture(t)
+
+	t.Run("exported helpers are qualified", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/fdefs/lib"
+
+func main() {
+    val g = lib.Gauge(5)
+    Println(lib.Wrap(3), g.Read())
+}`)
+		require.NoError(t, err)
+		body := out[strings.Index(out, "func main()"):]
+		assert.Contains(t, body, "return lib.Twice(a)")
+		assert.Contains(t, body, "return lib.Twice(x) + g.Get().K.Get()")
+	})
+
+	t.Run("an unexported helper is reported at the default", func(t *testing.T) {
+		_, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/fdefs/lib"
+
+func main() {
+    Println(lib.Hidden(3))
+}`)
+		require.Error(t, err)
+		var se *galaerr.SemanticError
+		require.True(t, errors.As(err, &se), "want a SemanticError, got %T: %v", err, err)
+		assert.Contains(t, se.Error(), `"helper", which is unexported in package "lib"`)
+		assert.Equal(t, filepath.Join(root, "lib", "lib.gala"), filepath.Clean(se.FilePath))
+		assert.Equal(t, 9, se.Line)
+		assert.Equal(t, 37, se.Column)
+	})
 }

@@ -10,8 +10,9 @@ hi.
 100
 21 42 abab
 <5> <y>
+6 3 7 true
 0 0
 [a!]
 4 -1
 true
-lib!
+lib! 8

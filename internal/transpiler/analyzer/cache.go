@@ -48,7 +48,7 @@ import (
 //
 // v7: default expressions (FunctionMetadata/MethodMetadata.DefaultExprs,
 // TypeMetadata.FieldDefaults) are stored as written, whitespace included, and
-// carry the position of their first token (DefaultPos / FieldDefaultPos). A v6
+// carry the position of their first token (transpiler.DefaultExpr). A v6
 // payload holds whitespace-stripped text, which re-parses `(a int) => a` as a
 // lambda with one parameter named `aint`.
 const CacheVersion = "v7"

@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -9,10 +8,8 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -216,41 +213,14 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 // size across a file full of interpolations. Seeding is O(1).
 //
 // line is 1-based and col 0-based, as ANTLR reports them; a line <= 0 means the
-// caller had no position and the expression is parsed at 1:0.
+// caller had no position and the expression is parsed at 1:0. The parsing
+// itself is parser.ParseExpressionAt, shared with declared default values.
 func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col int) (ast.Expr, error) {
-	is := antlr.NewInputStream(exprText)
-	lexer := grammar.NewgalaLexer(is)
-	if line > 0 {
-		if sim, ok := lexer.Interpreter.(*antlr.LexerATNSimulator); ok {
-			sim.Line = line
-			sim.CharPositionInLine = col
-		}
+	exprCtx, err := parser.ParseExpressionAt(exprText, line, col, "interpolated expression")
+	if err != nil {
+		return nil, err
 	}
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
-	p := grammar.NewgalaParser(stream)
-
-	errorListener := &parser.GalaErrorListener{}
-	lexer.RemoveErrorListeners()
-	lexer.AddErrorListener(errorListener)
-	p.RemoveErrorListeners()
-	p.AddErrorListener(errorListener)
-
-	exprCtx := p.Expression()
-	if len(errorListener.Errors) > 0 {
-		return nil, errorListener.Errors[0]
-	}
-	// The `expression` rule is not anchored to EOF, so it happily matches a
-	// PREFIX and stops: `x +` parses as `x`, reports nothing, and the dangling
-	// operator is dropped. Requiring that the whole embedded text was consumed
-	// is what actually turns that into an error.
-	if tok := stream.LT(1); tok != nil && tok.GetTokenType() != antlr.TokenEOF {
-		return nil, galaerr.NewSyntaxError(
-			tok.GetLine(),
-			tok.GetColumn(),
-			fmt.Sprintf("unexpected %q in interpolated expression", tok.GetText()),
-		)
-	}
-	return t.transformExpression(exprCtx.(*grammar.ExpressionContext))
+	return t.transformExpression(exprCtx)
 }
 
 // formatVerbForType returns the Go printf format verb for a GALA type.

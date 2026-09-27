@@ -40,7 +40,7 @@ func (h *GalaHandler) callAtArgumentStart(uri, text string, line, char int) (cal
 
 // parameters returns the target's parameter names and types in declaration
 // order, and the indexes of those that have a default.
-func (t callTarget) parameters() (names []string, types []transpiler.Type, defaults map[int]string) {
+func (t callTarget) parameters() (names []string, types []transpiler.Type, defaults map[int]transpiler.DefaultExpr) {
 	switch {
 	case t.fn != nil:
 		return t.fn.ParamNames, t.fn.ParamTypes, t.fn.DefaultExprs
@@ -91,7 +91,7 @@ func parameterCompletions(call *callContext, target callTarget) []lsp.Completion
 			detail = cleanGoTypeForDisplay(types[i].String())
 		}
 		if def, ok := defaults[i]; ok {
-			detail += " = " + def
+			detail += " = " + def.Text
 		}
 		item := lsp.CompletionItem{
 			Label:      name,
@@ -116,7 +116,7 @@ func parameterCompletions(call *callContext, target callTarget) []lsp.Completion
 // named arguments, with a tab stop for each value; parameters that have a
 // default are left out, as a call may omit them. Any other client gets the call
 // opened for the arguments to be typed.
-func callInsertText(name string, paramNames []string, defaults map[int]string, snippets bool) (string, *lsp.InsertTextFormat) {
+func callInsertText(name string, paramNames []string, defaults map[int]transpiler.DefaultExpr, snippets bool) (string, *lsp.InsertTextFormat) {
 	if len(paramNames) == 0 {
 		return name + "()", nil
 	}

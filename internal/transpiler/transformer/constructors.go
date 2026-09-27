@@ -223,11 +223,7 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
 	typeArg := immutableFieldTypeArg(value, fieldType, typeArgs)
 	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" && !transpiler.IsUnusable(fieldType) {
-		paramMap := make(map[string]transpiler.Type, len(typeArgs))
-		for name, arg := range typeArgs {
-			paramMap[name] = t.astTypeToTranspilerType(arg)
-		}
-		typeArg = t.typeToExpr(t.substituteInType(fieldType, paramMap))
+		typeArg = t.typeToExpr(t.substituteInType(fieldType, t.typeArgTypes(typeArgs)))
 	}
 	if typeArg != nil {
 		return &ast.CallExpr{
@@ -310,6 +306,16 @@ func (t *galaASTTransformer) structTypeArgSubst(typeExpr ast.Expr, resolvedTypeN
 		subst[tp] = indices[i]
 	}
 	return subst
+}
+
+// typeArgTypes converts the type-argument expressions of structTypeArgSubst to
+// types, for substituting into a field's declared type.
+func (t *galaASTTransformer) typeArgTypes(subst map[string]ast.Expr) map[string]transpiler.Type {
+	out := make(map[string]transpiler.Type, len(subst))
+	for name, arg := range subst {
+		out[name] = t.astTypeToTranspilerType(arg)
+	}
+	return out
 }
 
 // untypedNumericConstDefault reports the Go default type of an untyped numeric

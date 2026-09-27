@@ -36,12 +36,12 @@ import (
 // The shorthand's field list is a constructor signature; a block struct is a
 // layout.
 
-// structFieldDefaults returns the field-name → default-expression-text map for
+// structFieldDefaults returns the field-name → declared-default map for
 // a struct, or nil when the type declares no defaults. resolvedTypeName is the
 // key already resolved by resolveStructTypeName; getTypeMeta re-resolves it
 // against the metadata tables and falls back to the RichAST for types added
 // after the initial copy.
-func (t *galaASTTransformer) structFieldDefaults(resolvedTypeName string) (defaults map[string]string, isShorthand bool) {
+func (t *galaASTTransformer) structFieldDefaults(resolvedTypeName string) (defaults map[string]transpiler.DefaultExpr, isShorthand bool) {
 	meta := t.getTypeMeta(resolvedTypeName)
 	if meta == nil {
 		return nil, false
@@ -72,10 +72,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	defaults := meta.FieldDefaults
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
-	typeArgTypes := make(map[string]transpiler.Type, len(typeArgSubst))
-	for name, arg := range typeArgSubst {
-		typeArgTypes[name] = t.astTypeToTranspilerType(arg)
-	}
+	var typeArgs map[string]transpiler.Type // converted on first use
 
 	var missing []string
 	var elts []ast.Expr
@@ -83,27 +80,28 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		if provided(i, fieldName) {
 			continue
 		}
-		defaultText, hasDefault := defaults[fieldName]
+		def, hasDefault := defaults[fieldName]
 		if !hasDefault {
 			missing = append(missing, fieldName)
 			continue
+		}
+		if typeArgs == nil {
+			typeArgs = t.typeArgTypes(typeArgSubst)
 		}
 		// Re-parsed and re-transformed per construction site, so a default like
 		// `time.Now()` is evaluated at each construction rather than once at
 		// declaration — the same contract function parameter defaults have.
 		// The field's declared type is the expected type, as it is for a value
 		// passed explicitly.
-		src := defaultSource{text: defaultText, pos: meta.FieldDefaultPos[fieldName], file: meta.DefinedIn}
-		declared := t.substituteInType(fieldTypes[fieldName], typeArgTypes)
-		val, err := t.transformDefaultExpr(src, declared, meta.TypeParams, line, col)
+		val, err := t.transformDefaultExpr(defaultSource{
+			DefaultExpr: def,
+			file:        meta.DefinedIn,
+			pkg:         meta.Package,
+			declared:    t.substituteInType(fieldTypes[fieldName], typeArgs),
+			typeParams:  meta.TypeParams,
+		}, line, col)
 		if err != nil {
 			return nil, err
-		}
-		// The expression was resolved in THIS package's scope; names it borrows
-		// from the declaring package need qualifying. See qualifyDefaultExpr.
-		val, err = t.qualifyDefaultExpr(val, meta.Package)
-		if err != nil {
-			return nil, placeForeignDefaultError(err, src, line, col)
 		}
 		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
 			val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
@@ -148,7 +146,7 @@ func unknownStructFieldError(typeName string, unknown, fields []string, line, co
 func missingStructFieldsError(
 	typeName string,
 	missing []string,
-	defaults map[string]string,
+	defaults map[string]transpiler.DefaultExpr,
 	fields []string,
 	line, col int,
 ) error {
@@ -228,13 +226,14 @@ func (t *galaASTTransformer) isShorthandStruct(resolvedTypeName string) bool {
 	return meta != nil && meta.IsShorthand && len(meta.FieldNames) > 0
 }
 
-// qualifyDefaultExpr rewrites a lowered default expression so the names in it
-// resolve from the package doing the CONSTRUCTING, not the one that declared
-// the default.
+// qualifyDefaultExpr rewrites a lowered default expression — of a struct field
+// or of a function or method parameter — so the names in it resolve from the
+// package doing the CALLING or CONSTRUCTING, not the one that declared the
+// default.
 //
 // A default is source text on the declaring package's metadata, and it is
-// transformed at the construction site — so it is resolved in the caller's
-// scope. For a same-package construction that is correct. Across packages it is
+// transformed at the use site — so it is resolved in the caller's scope. For a
+// same-package use that is correct. Across packages it is
 // not: `struct Snap(Entries Array[Entry] = EmptyArray[Entry]())` declared in
 // `lib` lowers at a call site in `main` as `EmptyArray[Entry]()`, and `Entry`
 // names nothing there. The generated Go then fails with `undefined: Entry`,
@@ -258,41 +257,47 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, owningPkg string)
 		}
 	}
 
+	// An unexported name cannot be reached from another package at all, so
+	// qualifying it would only trade one Go error for another. Say what is
+	// actually wrong. The error carries no position; transformDefaultExpr
+	// places it at the default.
 	var err error
+	unexported := func(name string) {
+		err = galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf(
+			"default expression refers to %q, which is unexported in package %q — "+
+				"a default is evaluated at each call or construction site, so everything it names "+
+				"must be visible there; export it or use a literal default",
+			name, owningPkg))
+	}
+	qualified := map[ast.Node]bool{}
 	rewriteIdent := func(id *ast.Ident) ast.Expr {
 		if !t.packageDeclares(owningPkg, id.Name) {
 			return id
 		}
-		// An unexported name cannot be reached from another package at all, so
-		// qualifying it would only trade one Go error for another. Say what is
-		// actually wrong.
 		if !ast.IsExported(id.Name) {
-			err = galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf(
-				"default expression for a field of %q refers to %q, which is unexported in package %q — "+
-					"a default is evaluated at each construction site, so everything it names must be visible there; "+
-					"export it or use a literal default",
-				owningPkg, id.Name, owningPkg))
+			unexported(id.Name)
 			return id
 		}
-		return &ast.SelectorExpr{X: ast.NewIdent(owningPkg), Sel: ast.NewIdent(id.Name)}
+		sel := &ast.SelectorExpr{X: ast.NewIdent(owningPkg), Sel: ast.NewIdent(id.Name)}
+		qualified[sel] = true
+		return sel
 	}
 	// Names a lambda default binds itself (its parameters and locals) refer to
 	// those bindings, not to the declaring package, whatever they are called.
 	bound := boundNames(expr)
 	holder := &ast.ParenExpr{X: expr}
 	ast.Inspect(holder, func(n ast.Node) bool {
+		if qualified[n] {
+			return false // rewritten just now; its `pkg` ident is not a reference to qualify
+		}
 		// Already qualified. The one thing to check is that what it names is
 		// reachable: a default that calls the declaring package's own
-		// unexported helper cannot be evaluated at a call site in another
+		// unexported helper cannot be evaluated at a use site in another
 		// package, and emitting `lib.helper()` would just hand the author a Go
 		// visibility error about code they never wrote.
 		if sel, ok := n.(*ast.SelectorExpr); ok {
 			if base, ok := sel.X.(*ast.Ident); ok && base.Name == owningPkg && !ast.IsExported(sel.Sel.Name) {
-				err = galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf(
-					"default expression refers to %q, which is unexported in package %q — "+
-						"a default is evaluated at each construction site, so everything it names "+
-						"must be visible there; export it or use a literal default",
-					sel.Sel.Name, owningPkg))
+				unexported(sel.Sel.Name)
 			}
 		}
 		for _, slot := range referenceSlots(n) {

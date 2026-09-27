@@ -145,6 +145,56 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 	return exprCtx, errorListener.Errors
 }
 
+// ParseExpressionAt parses input as exactly one GALA expression whose first
+// character sits at line/col of some enclosing source file (line 1-based, col
+// 0-based, as ANTLR reports them; line <= 0 parses at 1:0). It is how the
+// transpiler re-parses expression text it holds apart from its file: the
+// embedded expressions of an interpolated string, and declared default values.
+//
+// Three things make that safe:
+//
+//   - Positions are absolute. The lexer is SEEDED at line/col before it reads
+//     anything, so every token — and every diagnostic, line marker or hint
+//     derived from one — carries its real position. Seeding is O(1); padding
+//     the text with the equivalent newlines would re-lex a prefix as long as
+//     the line number on every call.
+//   - The ANTLR prediction-context caches are isolated, as for every other
+//     parse, so concurrent transpiles cannot corrupt a shared cache.
+//   - The whole input must be consumed. The `expression` rule is not anchored
+//     to EOF and happily matches a prefix: `x +` parses as `x` with the
+//     operator silently dropped. A leftover token is reported as a syntax
+//     error naming what, which the caller describes ("interpolated
+//     expression", "default value").
+func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
+	lexer := grammar.NewgalaLexer(antlr.NewInputStream(input))
+	isolateLexerCaches(lexer.BaseLexer)
+	if line > 0 {
+		if sim, ok := lexer.Interpreter.(*antlr.LexerATNSimulator); ok {
+			sim.Line = line
+			sim.CharPositionInLine = col
+		}
+	}
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	psr := grammar.NewgalaParser(stream)
+	isolateParserCaches(psr.BaseParser)
+
+	errorListener := &GalaErrorListener{}
+	lexer.RemoveErrorListeners()
+	lexer.AddErrorListener(errorListener)
+	psr.RemoveErrorListeners()
+	psr.AddErrorListener(errorListener)
+
+	exprCtx := psr.Expression()
+	if len(errorListener.Errors) > 0 {
+		return nil, errorListener.Errors[0]
+	}
+	if tok := stream.LT(1); tok != nil && tok.GetTokenType() != antlr.TokenEOF {
+		return nil, galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn(),
+			fmt.Sprintf("unexpected %q in %s", tok.GetText(), what))
+	}
+	return exprCtx, nil
+}
+
 // sharedDFA lazily builds one DFA slice per ATN and reuses it forever. The
 // generated static decisionToDFA is unexported, so we build our own from the
 // same (shared) ATN. Concurrent parses may mutate these DFA states, but every

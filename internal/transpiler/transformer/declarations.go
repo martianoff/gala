@@ -223,15 +223,9 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			// bare lambda (directly or via if-expression branches), thread the
 			// declared signature into the lambda so untyped params resolve to the
 			// declared types instead of `any` (which would emit non-compiling Go).
-			if ft := t.resolveReturnTypeAsFuncType(typeExpr); ft != nil {
-				var expectedRetType ast.Expr
-				if len(ft.Results) > 0 {
-					expectedRetType = t.typeToExpr(ft.Results[0])
-				} else {
-					expectedRetType = ExpectedVoid
-				}
+			if expectedRetType, expectedParams, ok := t.lambdaExpectation(declaredType); ok {
 				prevParams, prevRet, prevIf := t.expectedLambdaParamTypes, t.expectedLambdaRetType, t.expectedIfExprType
-				t.expectedLambdaParamTypes = ft.Params
+				t.expectedLambdaParamTypes = expectedParams
 				t.expectedLambdaRetType = expectedRetType
 				t.expectedIfExprType = typeExpr
 				defer func() {
@@ -882,14 +876,8 @@ func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.I
 	// type, pass expected types to the lambda for better inference.
 	lambdaCtx := t.findLambdaInExpression(exprCtx)
 	if lambdaCtx != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-		if expectedFuncType := t.resolveReturnTypeAsFuncType(funcType.Results.List[0].Type); expectedFuncType != nil {
-			var expectedRetType ast.Expr
-			if len(expectedFuncType.Results) > 0 {
-				expectedRetType = t.typeToExpr(expectedFuncType.Results[0])
-			} else {
-				expectedRetType = ExpectedVoid
-			}
-			expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params, false)
+		if expectedRetType, expectedParams, ok := t.lambdaExpectation(t.astTypeToTranspilerType(funcType.Results.List[0].Type)); ok {
+			expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParams, false)
 			if err != nil {
 				return nil, err
 			}

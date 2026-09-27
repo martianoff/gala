@@ -4,74 +4,70 @@ import (
 	"errors"
 	"go/ast"
 	"path/filepath"
-	"strings"
-
-	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
 // Default values — for function and method parameters and for shorthand struct
 // fields — are recorded by the analyzer as source text plus the position of
-// their first token. They are re-parsed and lowered at every call or
-// construction site that omits the argument, so a default like `time.Now()` is
-// evaluated per call, and so a default declared in one package can be lowered
-// in another.
+// their first token (transpiler.DefaultExpr). They are re-parsed and lowered at
+// every call or construction site that omits the argument, so a default like
+// `time.Now()` is evaluated per call, and so a default declared in one package
+// can be lowered in another.
 
-// defaultSource is one declared default value, as the analyzer recorded it.
+// defaultSource is one declared default value together with what lowering it
+// needs to know about its declaration.
 type defaultSource struct {
+	transpiler.DefaultExpr
+	file       string          // declaring source file; "" when unknown
+	pkg        string          // declaring package; names it borrows from there are qualified at a use site in another package
+	declared   transpiler.Type // the parameter's or field's declared type, type arguments substituted; nil when unknown
+	typeParams []string        // type parameters of the declaration; a declared type still mentioning one is not threaded
+}
+
+// defaultTreeKey identifies one declared default's text at one position.
+type defaultTreeKey struct {
 	text string
-	pos  transpiler.SourcePos // first token of the expression; zero when unknown
-	file string               // declaring source file; "" when unknown
+	pos  transpiler.SourcePos
+	file string
 }
 
-// funcDefault returns the recorded default of a function's i-th parameter.
-func funcDefault(m *transpiler.FunctionMetadata, i int) defaultSource {
-	return defaultSource{text: m.DefaultExprs[i], pos: m.DefaultPos[i], file: m.DefinedIn}
-}
-
-// methodDefault returns the recorded default of a method's i-th parameter.
-func methodDefault(m *transpiler.MethodMetadata, i int) defaultSource {
-	return defaultSource{text: m.DefaultExprs[i], pos: m.DefaultPos[i], file: m.DefinedIn}
-}
-
-// parseDefaultExpr parses a default expression's source text into an ANTLR
-// expression context that the normal pipeline can lower.
-//
-// When the declaration position is known the text is lexed behind padding that
-// puts its first token back at that line and column, so every token — and so
-// every diagnostic, line marker and LSP hint derived from one — carries its
-// real position in the declaring file rather than one relative to the snippet.
-func parseDefaultExpr(src defaultSource) grammar.IExpressionContext {
-	text := src.text
-	if src.pos.Line > 0 {
-		text = strings.Repeat("\n", src.pos.Line-1) + strings.Repeat(" ", src.pos.Column) + text
+// defaultExprTree parses a default's recorded text at its recorded position,
+// once per default per file: lowering is per use site, but the parse tree is
+// the same at every one of them.
+func (t *galaASTTransformer) defaultExprTree(src defaultSource) (grammar.IExpressionContext, error) {
+	key := defaultTreeKey{text: src.Text, pos: src.Pos, file: src.file}
+	if tree, ok := t.defaultTrees[key]; ok {
+		return tree, nil
 	}
-	lexer := grammar.NewgalaLexer(antlr.NewInputStream(text))
-	p := grammar.NewgalaParser(antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel))
-	p.RemoveErrorListeners()
-	return p.Expression()
+	tree, err := parser.ParseExpressionAt(src.Text, src.Pos.Line, src.Pos.Column, "default value")
+	if err != nil {
+		return nil, err
+	}
+	if t.defaultTrees == nil {
+		t.defaultTrees = make(map[defaultTreeKey]grammar.IExpressionContext)
+	}
+	t.defaultTrees[key] = tree
+	return tree, nil
 }
 
 // transformDefaultExpr lowers a default value at a call or construction site.
 //
-// expected is the declared type of the parameter or field. It gives the
-// default the same expected type an explicitly passed argument gets, so a
-// lambda default takes its parameter and result types from the declaration —
-// `OnOne func(int) int = (a) => a + 1` — exactly as `Hooks(OnOne = (a) => a +
-// 1)` would. typeParams are the declaring function's or type's type
-// parameters: an expected type that still mentions one has no meaning at the
-// use site, so it is not threaded.
+// The declared type is the default's expected type, exactly as it is for an
+// argument passed explicitly: a lambda default takes its parameter and result
+// types from it — `OnOne func(int) int = (a) => a + 1` lowers as
+// `Hooks(OnOne = (a) => a + 1)` would — and `nil` stays `nil`.
 //
-// useLine/useCol locate the call or construction. A diagnostic from a default
-// declared in another file is attributed to that file; one whose declaring file
-// is unknown is reported at the use site.
-func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, expected transpiler.Type, typeParams []string, useLine, useCol int) (ast.Expr, error) {
-	exprCtx := parseDefaultExpr(src)
-
-	local := src.pos.Line > 0 && src.file != "" && t.filePath != "" && filepath.Clean(src.file) == filepath.Clean(t.filePath)
+// A default declared in another package is lowered in THIS package's scope, so
+// the names it borrows from its own package are qualified afterwards (see
+// qualifyDefaultExpr). useLine/useCol locate the call or construction: a
+// diagnostic from a default declared in another file is attributed to that
+// file, or to the use site when the declaring file is unknown.
+func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, useCol int) (ast.Expr, error) {
+	local := src.Pos.Line > 0 && src.file != "" && t.filePath != "" && filepath.Clean(src.file) == filepath.Clean(t.filePath)
 	if !local {
 		// The default's tokens do not belong to this file: keep them out of
 		// this file's line map and LSP hints.
@@ -80,9 +76,16 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, expected tr
 		defer func() { t.inForeignDefault = prev }()
 	}
 
-	expr, err := t.transformWithDeclaredType(exprCtx, expected, typeParams)
+	exprCtx, err := t.defaultExprTree(src)
+	var expr ast.Expr
+	if err == nil {
+		expr, err = t.transformWithDeclaredType(exprCtx, src.declared, src.typeParams)
+	}
+	if err == nil {
+		expr, err = t.qualifyDefaultExpr(expr, src.pkg)
+	}
 	if err != nil && !local {
-		return nil, placeForeignDefaultError(err, src, useLine, useCol)
+		err = placeForeignDefaultError(err, src, useLine, useCol)
 	}
 	return expr, err
 }
@@ -96,10 +99,10 @@ func placeForeignDefaultError(err error, src defaultSource, useLine, useCol int)
 	if !errors.As(err, &se) || se.FilePath != "" {
 		return err
 	}
-	if src.file != "" && src.pos.Line > 0 {
+	if src.file != "" && src.Pos.Line > 0 {
 		se.FilePath = src.file
 		if se.Line == 0 {
-			se.Line, se.Column = src.pos.Line, src.pos.Column
+			se.Line, se.Column = src.Pos.Line, src.Pos.Column
 		}
 	} else {
 		se.Line, se.Column = useLine, useCol
@@ -108,10 +111,13 @@ func placeForeignDefaultError(err error, src defaultSource, useLine, useCol int)
 }
 
 // transformWithDeclaredType lowers an expression that stands in a slot of a
-// declared type. A lambda takes its parameter and result types from that type
-// and, as in a typed `val` initializer, an unannotated parameter that the type
-// does not cover is an error rather than `any`. Anything else goes through the
-// ordinary argument path with the type as its expectation.
+// declared type. As in a typed `val` initializer, an unannotated lambda
+// parameter that the type does not cover is an error rather than `any`.
+//
+// A bare `nil` is returned as is: it is already a value of the declared type
+// (the absent function, pointer, ...), and must not be lifted into a thunk
+// `func() T { return nil }` by the by-name sugar that an explicit argument to a
+// zero-argument function parameter gets.
 func (t *galaASTTransformer) transformWithDeclaredType(exprCtx grammar.IExpressionContext, declared transpiler.Type, typeParams []string) (ast.Expr, error) {
 	if declared != nil {
 		if inner, isSendable := transpiler.UnwrapSendable(declared); isSendable {
@@ -121,17 +127,8 @@ func (t *galaASTTransformer) transformWithDeclaredType(exprCtx grammar.IExpressi
 	if transpiler.IsUnusable(declared) || typeMentionsTypeParam(declared, typeParams) {
 		return t.transformExpression(exprCtx)
 	}
-	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
-		var params []transpiler.Type
-		var ret ast.Expr
-		if ft := t.resolveTranspilerTypeAsFuncType(declared); ft != nil {
-			params = ft.Params
-			ret = ExpectedVoid
-			if len(ft.Results) > 0 {
-				ret = t.typeToExpr(ft.Results[0])
-			}
-		}
-		return t.transformLambdaWithExpectedType(lambdaCtx, ret, params, true)
+	if exprCtx.GetText() == "nil" {
+		return ast.NewIdent("nil"), nil
 	}
-	return t.transformArgumentWithExpectedType(exprCtx, declared)
+	return t.transformArgument(exprCtx, declared, true)
 }

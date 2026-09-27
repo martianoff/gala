@@ -177,14 +177,8 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 			// erase their generic type arguments (e.g. `Try[Msg]` → `Try[any]`).
 			lambdaCtx := t.findLambdaInExpression(retCtx.Expression())
 			if lambdaCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
-				if expectedFuncType := t.resolveTranspilerTypeAsFuncType(t.currentFuncReturnType); expectedFuncType != nil {
-					var expectedRetType ast.Expr
-					if len(expectedFuncType.Results) > 0 {
-						expectedRetType = t.typeToExpr(expectedFuncType.Results[0])
-					} else {
-						expectedRetType = ExpectedVoid
-					}
-					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedFuncType.Params, false)
+				if expectedRetType, expectedParams, ok := t.lambdaExpectation(t.currentFuncReturnType); ok {
+					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParams, false)
 				}
 			}
 			if expr == nil && err == nil {

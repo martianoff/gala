@@ -24,3 +24,10 @@ struct Backend(
 // Decorate carries a function-typed parameter default across the package
 // boundary too.
 func Decorate(name string, suffix func(string) string = (s) => s + "!") string = suffix(name)
+
+// Twice is called by Scaled's default, which is lowered at the call site — in
+// another package — so the call must reach Go as `func_defaults_lib.Twice`.
+func Twice(n int) int = n * 2
+
+// Scaled's default lambda uses this package's own function.
+func Scaled(n int, f func(int) int = (a) => Twice(a)) int = f(n)
