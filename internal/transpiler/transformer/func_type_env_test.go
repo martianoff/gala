@@ -239,63 +239,42 @@ func typeDeclarationContext(t *testing.T, decl string) *grammar.TypeDeclarationC
 	return nil
 }
 
-func TestFunctionTypeEnvRebuildsWhenScopeShadowsANormalizedName(t *testing.T) {
-	tr := funcTypeEnvFixture(t)
-	// A signature that mentions an unqualified type, so its conversion has to
-	// resolve the name — and getType consults the scope chain first.
-	tr.functions["takesThing"] = &transpiler.FunctionMetadata{
-		ParamTypes: []transpiler.Type{transpiler.NamedType{Name: "Thing"}},
-		ReturnType: transpiler.BasicType{Name: "int"},
-	}
-	tr.invalidateTypeEnv()
-
-	first := tr.functionTypeEnv()
-	// Nothing in scope is named Thing, so the conversion answered from
-	// package metadata and a local binding could still change that answer.
-	require.Contains(t, tr.funcTypeEnvNames, "Thing")
-	unshadowed := asTypeConst(t, asTypeApp(t, first["takesThing"].Type).Args[0]).Name
-
-	// Shadow the name with a local binding of a different type. The cached
-	// conversion was produced with the other answer, so it must not be reused.
-	tr.currentScope.valTypes["Thing"] = transpiler.BasicType{Name: "bool"}
-	rebuilt := tr.functionTypeEnv()
-	require.False(t, sameScheme(first["takesThing"], rebuilt["takesThing"]),
-		"a local binding shadowing a normalized type name did not force a rebuild")
-	require.Equal(t, "bool", asTypeConst(t, asTypeApp(t, rebuilt["takesThing"].Type).Args[0]).Name,
-		"the rebuilt environment did not pick up the shadowing binding, which was %q", unshadowed)
-}
-
-// A build that happened while a local shadowed a normalized type name must
-// not survive the shadow: the next caller, back in a clean scope, would
-// otherwise inherit the local's type in every signature mentioning the name.
-// Before this cache existed the environment was rebuilt per call, so this is
-// the case the cache has to be careful about rather than the common one.
-func TestFunctionTypeEnvNotReusedAfterShadowEnds(t *testing.T) {
+// A type name in a function signature is resolved in the type namespace, so a
+// local binding that merely shares the name (a parameter `Thing Thing`, a
+// struct field) neither changes the signature nor invalidates the cache —
+// whether the binding is in scope before the first build or only after it.
+func TestFunctionTypeEnvIgnoresLocalBindingNamedLikeAType(t *testing.T) {
 	sig := &transpiler.FunctionMetadata{
 		ParamTypes: []transpiler.Type{transpiler.NamedType{Name: "Thing"}},
 		ReturnType: transpiler.BasicType{Name: "int"},
 	}
+	paramName := func(env infer.TypeEnv) string {
+		return asTypeConst(t, asTypeApp(t, env["takesThing"].Type).Args[0]).Name
+	}
 
-	// The answer an unshadowed scope gives.
 	clean := funcTypeEnvFixture(t)
 	clean.functions["takesThing"] = sig
 	clean.invalidateTypeEnv()
-	want := asTypeConst(t, asTypeApp(t, clean.functionTypeEnv()["takesThing"].Type).Args[0]).Name
+	want := paramName(clean.functionTypeEnv())
+	require.NotEqual(t, "bool", want)
 
-	// The same transformer, but the first build happens under a shadow.
+	// Binding added after the first build: the cached environment is reused.
 	tr := funcTypeEnvFixture(t)
 	tr.functions["takesThing"] = sig
 	tr.invalidateTypeEnv()
-	tr.pushScope()
+	first := tr.functionTypeEnv()
 	tr.currentScope.valTypes["Thing"] = transpiler.BasicType{Name: "bool"}
-	shadowed := asTypeConst(t, asTypeApp(t, tr.functionTypeEnv()["takesThing"].Type).Args[0]).Name
-	require.Equal(t, "bool", shadowed,
-		"the shadowed build should answer from the local binding")
-	tr.popScope()
+	again := tr.functionTypeEnv()
+	require.True(t, sameTypeEnv(first, again), "a local binding named like a type rebuilt the environment")
+	require.Equal(t, want, paramName(again))
 
-	got := asTypeConst(t, asTypeApp(t, tr.functionTypeEnv()["takesThing"].Type).Args[0]).Name
-	require.Equal(t, want, got,
-		"an environment built under a shadow was reused after the shadow was popped")
+	// Binding in scope before the first build: it does not leak into the signature.
+	shadowed := funcTypeEnvFixture(t)
+	shadowed.functions["takesThing"] = sig
+	shadowed.invalidateTypeEnv()
+	shadowed.currentScope.valTypes["Thing"] = transpiler.BasicType{Name: "bool"}
+	require.Equal(t, want, paramName(shadowed.functionTypeEnv()),
+		"a local binding named like a type answered for the type in a signature")
 }
 
 // Under GALA_TRACE_TYPES the environment is neither memoized nor cached, so

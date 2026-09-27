@@ -324,7 +324,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
 		typeName := t.getExprTypeName(rhsExprs[i])
-		if qName := t.getType(typeName.String()); !qName.IsNil() {
+		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 		if mutable {
@@ -397,7 +397,7 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 		if typeName.IsNil() {
 			return typeName
 		}
-		if qName := t.getType(typeName.String()); !qName.IsNil() {
+		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 		return typeName

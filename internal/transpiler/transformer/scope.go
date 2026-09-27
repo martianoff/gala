@@ -85,7 +85,32 @@ func (t *galaASTTransformer) recordLSPVarType(name string, typeName transpiler.T
 	t.lspVarTypes[key] = typeName
 }
 
+// getType resolves name as an EXPRESSION: a local binding (val, var,
+// parameter, pattern bind) shadows a type of the same name, and the binding's
+// type is returned. Callers that hold a name in TYPE position — a type
+// annotation, a type argument, a pattern's type, a receiver type — must use
+// lookupTypeName instead, or a binding that happens to share the type's name
+// (`struct Spec(Align Option[Align])`, `func f(Style Style)`) answers for the
+// type.
 func (t *galaASTTransformer) getType(name string) transpiler.Type {
+	if !strings.Contains(name, ".") {
+		// Local variables have the highest priority in expression position.
+		for s := t.currentScope; s != nil; s = s.parent {
+			if typeName, ok := s.valTypes[name]; ok {
+				t.traceType(nil, typeName, "scope:local:"+name)
+				return typeName
+			}
+		}
+	}
+	return t.lookupTypeName(name)
+}
+
+// lookupTypeName resolves name in the TYPE namespace only: a (possibly
+// package-qualified) type known to the type metadata. Local bindings are never
+// consulted — in Go, as in GALA, a type name in type position cannot be
+// shadowed by a value that merely shares the name within the same declaration
+// (a struct field, a parameter).
+func (t *galaASTTransformer) lookupTypeName(name string) transpiler.Type {
 	// 1. If name already has a dot, it might be pkg.Type - resolve alias and check directly
 	if strings.Contains(name, ".") {
 		resolvedName := name
@@ -103,17 +128,7 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 		return transpiler.NilType{}
 	}
 
-	// 2. Search in current scope (local variables have highest priority)
-	s := t.currentScope
-	for s != nil {
-		if typeName, ok := s.valTypes[name]; ok {
-			t.traceType(nil, typeName, "scope:local:"+name)
-			return typeName
-		}
-		s = s.parent
-	}
-
-	// 3. Use unified type resolution for type metadata lookup
+	// 2. Use unified type resolution for type metadata lookup
 	resolved := t.resolveTypeMetaName(name)
 	if resolved != "" {
 		result := transpiler.ParseType(resolved)

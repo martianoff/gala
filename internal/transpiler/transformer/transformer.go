@@ -93,7 +93,6 @@ type galaASTTransformer struct {
 	funcTypeEnv              infer.TypeEnv                // cached function-derived half of the Hindley-Milner environment for the current file; see functionTypeEnv
 	funcTypeEnvEpoch         uint32                       // typeEnvEpoch the cache above was built at
 	funcTypeEnvImportRev     uint64                       // importManager.Revision the cache above was built at, so an import change rebuilds it without being announced
-	funcTypeEnvNames         map[string]struct{}          // unqualified type names the cached environment normalized; binding one of them in scope makes the cache stale (see scopeShadowsFuncTypeNames)
 	typeNameScratch          typeNameMemo                 // reusable memo for the per-call scope-to-typeEnv conversion in buildTypeEnv
 }
 

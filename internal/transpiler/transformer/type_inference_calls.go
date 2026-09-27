@@ -568,7 +568,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	for offset := strings.Index(id.Name, "_"); offset != -1; {
 		receiverType := id.Name[:offset]
 		methodName := id.Name[offset+1:]
-		resolvedRecvType := t.getType(receiverType)
+		resolvedRecvType := t.lookupTypeName(receiverType)
 		resolvedRecvTypeName := resolvedRecvType.String()
 		if resolvedRecvType.IsNil() {
 			resolvedRecvTypeName = receiverType

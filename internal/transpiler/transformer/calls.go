@@ -404,10 +404,10 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr) 
 		recvType = ptr.Elem
 	}
 	if gen, ok := recvType.(transpiler.GenericType); ok {
-		if qBase := t.getType(gen.Base.String()); !qBase.IsNil() {
+		if qBase := t.lookupTypeName(gen.Base.String()); !qBase.IsNil() {
 			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
 		}
-	} else if qName := t.getType(recvType.BaseName()); !qName.IsNil() {
+	} else if qName := t.lookupTypeName(recvType.BaseName()); !qName.IsNil() {
 		recvType = qName
 	}
 	if isPtr {
@@ -1364,7 +1364,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		var funExpr ast.Expr
 		isStdType := hasStdPrefix(typeName)
 		if !isStdType {
-			resolvedType := t.getType(typeName)
+			resolvedType := t.lookupTypeName(typeName)
 			isStdType = !resolvedType.IsNil() && resolvedType.GetPackage() == registry.StdPackageName
 		}
 		if isStdType {

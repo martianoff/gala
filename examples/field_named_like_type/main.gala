@@ -1,0 +1,89 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import "martianoff/gala/examples/field_named_like_type/lib"
+
+// A binding (struct field, parameter, local, pattern bind) that shares its
+// name with a type must not shadow that type in type position.
+
+sealed type Align {
+    case AlignLeft()
+    case AlignRight()
+}
+
+struct Style(Bold bool)
+
+struct Box[T any](Item T)
+
+// Fields named like types from another package.
+struct Row(Badge lib.Badge, Kind Option[lib.Kind])
+
+// Field named like the type argument of std's Option.
+struct Spec(Name string, Align Option[Align])
+
+// Field named like the type argument of collection types and a user generic.
+struct Layout(Align Array[Align], Style List[Style], Box Box[Box[int]])
+
+// Field named like its own plain type.
+struct Theme(Style Style, Align Align)
+
+// Sealed-variant field named like its type argument.
+sealed type Cell {
+    case Text(Align Option[Align], Body string)
+    case Empty()
+}
+
+// Parameters named like their type argument / their type.
+func describe(Align Option[Align], Style Style) string =
+    s"${Align.IsDefined()} ${Style.Bold}"
+
+func alignName(a Align) string = a match {
+    case AlignLeft() => "left"
+    case AlignRight() => "right"
+}
+
+// Method parameter named like its type argument.
+func (sp Spec) With(Align Option[Align]) Spec = sp.Copy(Align = Align)
+
+func (sp Spec) Describe() string = sp.Align match {
+    case Some(a) => s"${sp.Name}:${alignName(a)}"
+    case None() => s"${sp.Name}:none"
+}
+
+func cellText(c Cell) string = c match {
+    case Text(Align, body) => s"${body}/${Align.Map(alignName).GetOrElse(\"-\")}"
+    case Empty() => "empty"
+}
+
+func main() {
+    val spec = Spec(Name = "x", Align = Some[Align](AlignLeft()))
+    Println(spec.Align.IsDefined())
+    Println(spec.Describe())
+    Println(spec.With(None()).Describe())
+
+    val layout = Layout(
+        Align = ArrayOf[Align](AlignLeft(), AlignRight()),
+        Style = ListOf(Style(true)),
+        Box = Box(Box(7)),
+    )
+    Println(layout.Align.Map(alignName).MkString(","))
+    Println(layout.Style.Exists(_.Bold))
+    Println(layout.Box.Item.Item)
+
+    val theme = Theme(Style = Style(false), Align = AlignRight())
+    Println(s"${theme.Style.Bold} ${alignName(theme.Align)}")
+
+    Println(cellText(Text(Some[Align](AlignRight()), "hi")))
+    Println(cellText(Empty()))
+
+    Println(describe(Some[Align](AlignLeft()), Style(true)))
+
+    // A local named like the type argument of its own initializer.
+    val Align = Some[Align](AlignRight())
+    Println(Align.Map(alignName).GetOrElse("-"))
+
+    val badge = lib.NewBadge("tag", Some[lib.Kind](lib.Secondary()))
+    Println(badge.Describe())
+    val row = Row(Badge = badge, Kind = badge.Kind)
+    Println(s"${row.Badge.Label} ${row.Kind.Map(lib.KindName).GetOrElse(\"-\")}")
+}

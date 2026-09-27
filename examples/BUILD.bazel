@@ -48,6 +48,8 @@ filegroup(
         "cross_pkg_try_chain/pkg_session/session.gala",
         "cross_pkg_try_match/corelib/corelib.gala",
         "cross_pkg_try_match/main.gala",
+        "field_named_like_type/lib/lib.gala",
+        "field_named_like_type/main.gala",
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
         "go_type_inference_lib/textutil.gala",
@@ -2316,6 +2318,26 @@ gala_exec_test(
     src = "cross_pkg_field_eq/main.gala",
     expected = "cross_pkg_field_eq/cross_pkg_field_eq.out",
     gala_deps = [":cross_pkg_field_eq_lib"],
+    deps = ["//collection_immutable"],
+)
+
+# Regression guard: a struct field, parameter, or local that shares its name
+# with a type must not shadow that type in type position. `struct
+# Spec(Align Option[Align])` used to lower the type argument as `std.Align`
+# because the type name was resolved through the value scope, where the field
+# `Align` (typed `std.Option[...]`) answered for the type.
+gala_library(
+    name = "field_named_like_type_lib",
+    srcs = ["field_named_like_type/lib/lib.gala"],
+    importpath = "martianoff/gala/examples/field_named_like_type/lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "field_named_like_type_test",
+    src = "field_named_like_type/main.gala",
+    expected = "field_named_like_type/field_named_like_type.out",
+    gala_deps = [":field_named_like_type_lib"],
     deps = ["//collection_immutable"],
 )
 
