@@ -55,7 +55,11 @@ import (
 // v8: GoTypeInfo records which Go constants are untyped (UntypedConstants).
 // A v7 payload has none, so `math.MinInt8` stored in an int8 slot would be
 // wrapped with its default type again and fail to compile.
-const CacheVersion = "v8"
+//
+// v9: MethodMetadata.PointerReceiver and GoTypeData.PointerMethods record
+// which methods need an addressable receiver, and GoTypeData.NoCopy which
+// Go types must not be copied (GALA-E0053).
+const CacheVersion = "v9"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

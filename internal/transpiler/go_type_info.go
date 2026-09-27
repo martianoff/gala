@@ -54,6 +54,14 @@ type GoTypeData struct {
 	Methods    map[string]*GoFuncSignature // method set (exported only)
 	Underlying Type                      // underlying type for aliases and named types
 	TypeParams []string                  // type parameter names for generic types (empty for non-generic)
+	// PointerMethods names the exported methods declared on *T only (in the
+	// method set of *T but not of T). Go calls these only on an addressable
+	// receiver.
+	PointerMethods map[string]bool
+	// NoCopy names the type that makes a value of this type unsafe to copy
+	// ("sync.Mutex" for a struct holding one), or "" when copying is fine.
+	// See noCopyReason in the analyzer.
+	NoCopy string
 }
 
 // NewGoTypeInfo creates an empty GoTypeInfo.

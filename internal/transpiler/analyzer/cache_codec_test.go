@@ -109,9 +109,11 @@ func buildSyntheticCache() *CachedRichAST {
 		Returns: []transpiler.Type{transpiler.BasicType{Name: "string"}},
 	}
 	r.GoTypeInfo.Types["pkg.S"] = &transpiler.GoTypeData{
-		Kind:       "struct",
-		Fields:     map[string]transpiler.Type{"a": transpiler.BasicType{Name: "int"}},
-		FieldOrder: []string{"a"},
+		Kind:           "struct",
+		Fields:         map[string]transpiler.Type{"a": transpiler.BasicType{Name: "int"}},
+		FieldOrder:     []string{"a"},
+		PointerMethods: map[string]bool{"Reset": true},
+		NoCopy:         "sync.Mutex",
 	}
 	for i := 0; i < 50; i++ {
 		name := "T" + itoa(i)
@@ -130,6 +132,7 @@ func buildSyntheticCache() *CachedRichAST {
 			FieldDefaults: map[string]transpiler.DefaultExpr{"a": {Text: "(x int) => x + 1", Pos: transpiler.SourcePos{Line: 3, Column: 17}}},
 			Methods: map[string]*transpiler.MethodMetadata{
 				"M1": {
+					PointerReceiver: true,
 					Name: "M1", Package: "synthetic",
 					ParamTypes:   []transpiler.Type{transpiler.BasicType{Name: "int"}},
 					ReturnType:   transpiler.BasicType{Name: "string"},

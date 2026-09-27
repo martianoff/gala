@@ -1283,11 +1283,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					}
 
 					methodMeta := &transpiler.MethodMetadata{
-						Name:         methodName,
-						Package:      pkgName,
-						Doc:          docAt(docs, ctx.GetStart()),
-						Pos:          transpiler.PosFromToken(ctx.Identifier().GetStart()),
-						ReceiverName: recvCtx.Identifier().GetText(),
+						Name:            methodName,
+						Package:         pkgName,
+						Doc:             docAt(docs, ctx.GetStart()),
+						Pos:             transpiler.PosFromToken(ctx.Identifier().GetStart()),
+						ReceiverName:    recvCtx.Identifier().GetText(),
+						PointerReceiver: isPointerReceiver(recvCtx),
 					}
 					if ctx.TypeParameters() != nil {
 						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -3151,11 +3152,12 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 				retType = sig.Returns[0]
 			}
 			methods[mName] = &transpiler.MethodMetadata{
-				Name:       mName,
-				Package:    pkgName,
-				ParamTypes: paramTypes,
-				ParamNames: paramNames,
-				ReturnType: retType,
+				Name:            mName,
+				Package:         pkgName,
+				ParamTypes:      paramTypes,
+				ParamNames:      paramNames,
+				ReturnType:      retType,
+				PointerReceiver: td.PointerMethods[mName],
 			}
 		}
 
@@ -3540,6 +3542,12 @@ func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
 	}
 
 	return nil
+}
+
+// isPointerReceiver reports whether a method receiver is declared as a
+// pointer (`func (c *Counter) Bump()`).
+func isPointerReceiver(recv *grammar.ReceiverContext) bool {
+	return recv.Type_() != nil && strings.HasPrefix(recv.Type_().GetText(), "*")
 }
 
 func getBaseTypeName(ctx grammar.ITypeContext) string {
@@ -4020,12 +4028,13 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 
 				methodMeta := &transpiler.MethodMetadata{
-					Name:         methodName,
-					Package:      pkgName,
-					Doc:          docAt(docs, ctx.GetStart()),
-					Pos:          sibPos,
-					ReceiverName: recvCtx.Identifier().GetText(),
-					DefinedIn:    absSibPath,
+					Name:            methodName,
+					Package:         pkgName,
+					Doc:             docAt(docs, ctx.GetStart()),
+					Pos:             sibPos,
+					ReceiverName:    recvCtx.Identifier().GetText(),
+					PointerReceiver: isPointerReceiver(recvCtx),
+					DefinedIn:       absSibPath,
 				}
 				if ctx.TypeParameters() != nil {
 					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)

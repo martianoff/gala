@@ -62,7 +62,8 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 
 func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	if suffix.Identifier() != nil {
-		return t.resolveFieldAccess(base, suffix.Identifier().GetText())
+		id := suffix.Identifier().GetStart()
+		return t.resolveFieldAccess(base, suffix.Identifier().GetText(), id.GetLine(), id.GetColumn())
 	}
 
 	childCount := suffix.GetChildCount()
@@ -80,7 +81,8 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 }
 
 // resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
-func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (ast.Expr, error) {
+// line and col locate selName, for a diagnostic about it.
+func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string, line, col int) (ast.Expr, error) {
 	// `pkg.Name` naming an imported package-level binding is read at once, as
 	// transformPrimary reads a same-package one: a val types as Immutable[T]
 	// (inferSelectorExprType), so unwrapImmutable adds the .Get().
@@ -92,7 +94,8 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (
 	isImmutable := t.isImmutableType(xType)
 
 	// Don't unwrap if we're accessing Immutable's own fields/methods
-	if !isImmutable || (selName != "Get" && selName != "value") {
+	selectsThroughImmutable := !isImmutable || (selName != "Get" && selName != "value")
+	if selectsThroughImmutable {
 		base = t.unwrapImmutable(base)
 		// After unwrapping Immutable[T], update xType to T so that
 		// isImmutableField can look up the correct struct metadata.
@@ -108,6 +111,15 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string) (
 	if isConstPtr && selName != "Deref" && selName != "IsNil" && selName != "ptr" {
 		base = t.unwrapConstPtr(base)
 		xType = t.getExprTypeName(base)
+	}
+
+	// A pointer-receiver method needs an addressable receiver; a val's Get()
+	// is a copy, so it gets an addressable copy instead.
+	if selectsThroughImmutable {
+		var err error
+		if base, err = t.addressableReceiver(base, xType, selName, line, col); err != nil {
+			return nil, err
+		}
 	}
 
 	selExpr := &ast.SelectorExpr{X: base, Sel: ast.NewIdent(selName)}

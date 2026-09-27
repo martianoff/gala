@@ -3580,3 +3580,12 @@ gala_exec_test(
     expected = "local_function_lambda.out",
     deps = ["//collection_immutable"],
 )
+
+# A pointer-receiver method (Go's url.URL.String, a GALA `func (c *Counter)`)
+# called through a val, a val's field, a call result, or a literal: Go cannot
+# address those, so the method runs on a copy and the val stays unchanged.
+gala_exec_test(
+    name = "pointer_method_on_val",
+    src = "pointer_method_on_val.gala",
+    expected = "pointer_method_on_val.out",
+)

@@ -67,6 +67,9 @@ const (
 	FuncCopy          = "Copy"
 	MethodGet        = "Get"
 	MethodPtr        = "Ptr"
+	// FuncAddrOfCopy gives a pointer-receiver method an addressable copy of a
+	// receiver Go cannot address (a val's Get(), a call result).
+	FuncAddrOfCopy = "AddrOfCopy"
 
 	// ConstPtr - read-only pointer wrapper for pointers to immutable values
 	TypeConstPtr    = "ConstPtr"
@@ -422,6 +425,10 @@ type MethodMetadata struct {
 	ReceiverName string              // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
 	IsGeneric    bool                // Force transformation to standalone function
 	DefinedIn    string              // Source file where this method was defined (for redefinition detection)
+	// PointerReceiver is true for `func (r *T) M()`. Go calls such a method
+	// only on an addressable receiver, so a call through a val (whose Get()
+	// returns a copy) needs an addressable temporary.
+	PointerReceiver bool
 }
 
 type FunctionMetadata struct {

@@ -880,6 +880,7 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 
 	// Set underlying type
 	data.Underlying = goTypeToTranspilerType(typ.Underlying())
+	data.NoCopy = noCopyReason(typ)
 
 	// Extract struct fields. Preserve declaration order in FieldOrder so
 	// downstream consumers that build positional composite literals
@@ -922,15 +923,34 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 
 	// Also include value receiver methods
 	mset = types.NewMethodSet(typ)
+	valueMethods := make(map[string]bool, mset.Len())
 	for i := 0; i < mset.Len(); i++ {
 		sel := mset.At(i)
 		fn := sel.Obj().(*types.Func)
 		if !fn.Exported() {
 			continue
 		}
+		valueMethods[fn.Name()] = true
 		if _, exists := data.Methods[fn.Name()]; !exists {
 			sig := fn.Type().(*types.Signature)
 			data.Methods[fn.Name()] = convertSignature(sig)
+		}
+	}
+
+	// A method in the *T set but not the T set has a pointer receiver: Go
+	// calls it only on an addressable T. Interfaces and pointer types have no
+	// such split.
+	markPointerMethod := func(name string) {
+		if data.PointerMethods == nil {
+			data.PointerMethods = make(map[string]bool)
+		}
+		data.PointerMethods[name] = true
+	}
+	if _, isIface := typ.Underlying().(*types.Interface); !isIface {
+		for name := range data.Methods {
+			if !valueMethods[name] {
+				markPointerMethod(name)
+			}
 		}
 	}
 
@@ -950,6 +970,13 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 			}
 			sig := fn.Type().(*types.Signature)
 			data.Methods[fn.Name()] = convertSignature(sig)
+			// The method-set difference above sees nothing here (both sets
+			// are empty for an uninstantiated generic), so read the receiver.
+			if recv := sig.Recv(); recv != nil {
+				if _, isPtr := recv.Type().(*types.Pointer); isPtr {
+					markPointerMethod(fn.Name())
+				}
+			}
 		}
 	}
 

@@ -3372,6 +3372,54 @@ val name = getPersonName(&alice)  // OK: &val returns ConstPtr
 // incrementAge(&alice)  // Would need explicit conversion or var binding
 ```
 
+#### Pointer-Receiver Methods on a `val`
+
+A method with a pointer receiver — a GALA `func (c *Counter) Bump()` or a Go
+one such as `url.URL.String` — can be called on a `val`, on a field reached
+through one, on a call result, or on a literal. Go can only call such a method
+on an addressable value, so the method runs on a fresh copy (`std.AddrOfCopy`),
+and whatever it assigns to the receiver's own fields is lost when the call
+returns. A `var`, a function parameter and a pattern binding are addressable
+Go variables, so there the method works on the variable itself.
+
+```gala
+package main
+
+import "net/url"
+
+struct Counter(var n int)
+
+func (c *Counter) Bump() int {
+    c.n = c.n + 1
+    return c.n
+}
+
+func main() {
+    val u = url.URL(Scheme = "https", Host = "example.com")
+    Println(u.String())  // https://example.com
+
+    val c = Counter(n = 1)
+    Println(c.Bump())    // 2 — bumped a copy
+    Println(c.n)         // 1 — the val is unchanged
+
+    var m = Counter(n = 10)
+    m.Bump()
+    Println(m.n)         // 11
+}
+```
+
+The copy is shallow. A method that writes through a map, slice or pointer the
+value holds (`http.Request.AddCookie` writes into the `Header` map) changes data
+the `val` shares.
+
+A value that must not be copied is rejected instead
+([GALA-E0053](errors/GALA-E0053.md)): on a copy, `mu.Lock()` would lock nothing
+and `sb.WriteString(s)` would be lost. That covers `go vet`'s copylocks set —
+any `sync` or `sync/atomic` type (`Mutex`, `WaitGroup`, `Once`, `atomic.Int64`,
+…), a type whose pointer has `Lock()`/`Unlock()`, a `noCopy` marker, and any
+struct holding one of them — plus `strings.Builder` and `bytes.Buffer`. Hold
+such a value in a `var` field or local, or behind a pointer (`&sync.Mutex{}`).
+
 #### Building Immutable Data Structures
 
 Use `ConstPtr` for truly immutable linked structures:
