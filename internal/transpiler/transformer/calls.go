@@ -749,7 +749,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			return true, nil, cerr
 		}
 		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
-		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
+		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, push: true, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
 		if aerr != nil {
 			return true, nil, aerr
 		}
@@ -1096,7 +1096,7 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		if isSpread {
 			hasSpread = true
 		}
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, transpiler.NilType{}, false)
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(transpiler.NilType{}), false)
 		if err != nil {
 			return nil, err
 		}
@@ -1135,7 +1135,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		// unresolved type params in return types.
 		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 		expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, push: true, open: true}, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1180,7 +1180,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
-			expr, err := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
+			expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expectedType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -1191,7 +1191,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
-			expr, err := t.lowerArg(exprCtx, lambdaCtx, expectedType, false)
+			expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expectedType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -1587,7 +1587,7 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	if lambdaCtx != nil || t.needsExpectedType(exprCtx) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
-	return t.lowerArg(exprCtx, lambdaCtx, expected, strict)
+	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, push: true, open: callCtx.typeArgPlaceholders}, strict)
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -1785,6 +1785,10 @@ type functionCallContext struct {
 	goFuncParamTypes         []transpiler.Type
 	structFieldExpectedTypes []transpiler.Type
 	inferredTypeSubst        map[string]string
+	// typeArgPlaceholders: inferredTypeSubst fills some type parameter with
+	// an `any` placeholder (see inferFuncTypeSubstFromArgs), so the call's
+	// argument slots are open.
+	typeArgPlaceholders bool
 	// A generic struct / sealed-variant constructor's type parameters and the
 	// type arguments known before its lambdas are lowered (structCtorTypeSubst).
 	structTypeParams []string
@@ -1870,7 +1874,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 			ctx.inferredTypeSubst = explicit
 		} else {
 			// No explicit type args — infer from non-lambda arguments.
-			ctx.inferredTypeSubst = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
+			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
 		}
 	}
 
@@ -3138,22 +3142,23 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 func (t *galaASTTransformer) lowerArg(
 	exprCtx grammar.IExpressionContext,
 	lambdaCtx *grammar.LambdaExpressionContext,
-	expected transpiler.Type,
+	s slot,
 	strict bool,
 ) (ast.Expr, error) {
 	if lambdaCtx != nil {
-		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expected)
+		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(s.typ)
 		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
 	}
-	return t.transformArgument(exprCtx, expected, strict)
+	return t.transformArgument(exprCtx, s, strict)
 }
 
-// transformArgument lowers an expression standing in a slot of expectedType.
+// transformArgument lowers an expression standing in argument slot s.
 // strict is the untyped-lambda-parameter policy of transformLambdaWithExpectedType:
 // a declared slot (a parameter or field default) passes true, so an unannotated
 // lambda parameter the type does not cover is GALA-E0033; a call argument,
 // whose expected type may still be partly inferred, passes false.
-func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContext, expectedType transpiler.Type, strict bool) (ast.Expr, error) {
+func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
+	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
 		return t.transformPartialFunctionLiteral(pfCtx, expectedType)
@@ -3175,7 +3180,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// Check mode: an if-expression or match lowers its branches against the
 	// slot type; anything else sees it pushed for downward inference.
-	expr, err := t.lowerAgainst(exprCtx, argSlot(expectedType), strict)
+	expr, err := t.lowerAgainst(exprCtx, s, strict)
 	if err != nil {
 		return nil, err
 	}
@@ -3630,10 +3635,11 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 // inferFuncTypeSubstFromArgs pre-scans non-lambda arguments of a generic function call
 // to infer type parameter substitutions. For example, in Iterate(1, (x) => x * 2),
 // it infers T = int from the first argument (1), enabling the lambda param x to be typed as int.
-func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext) map[string]string {
+// placeholders reports that some type parameter was filled with `any`.
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext) (subst map[string]string, placeholders bool) {
 	inferredMap := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames))
 	if len(inferredMap) == 0 {
-		return nil
+		return nil, false
 	}
 
 	// Type params no non-lambda argument binds (e.g. `A` in `body func(R) A`)
@@ -3643,9 +3649,10 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 	for _, tp := range funcMeta.TypeParams {
 		if _, ok := inferredMap[tp]; !ok {
 			inferredMap[tp] = transpiler.BasicType{Name: "any"}
+			placeholders = true
 		}
 	}
-	return typeSubstStrings(inferredMap)
+	return typeSubstStrings(inferredMap), placeholders
 }
 
 // callArg is one argument of a call: its expression (nil for a direct lambda),

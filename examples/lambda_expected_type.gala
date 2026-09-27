@@ -147,4 +147,13 @@ func main() {
     Println(runMode(outer.H.Md), outer.H.In.X)
     Println(runMode(outer2.H.Md), outer2.H.In.X)
     Println(tag.N)
+
+    // A value block's slot does not leak into a later block; a partial
+    // function arm block's trailing expression is the arm's value
+    val suffixers = ArrayOf(3, 7).Collect({
+        case n if n > 0 => {
+            if (n > 5) (s string) => s else (s string) => s + "!"
+        }
+    })
+    Println(suffixers.Map((f) => f("hi")))
 }

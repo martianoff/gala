@@ -231,15 +231,17 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
 func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
-	// Signal to transformBlock that the lambda body's last expression is
-	// promoted to the implicit return when this lambda is value-returning.
-	// Without this, a trailing bare `match` whose value becomes the lambda's
-	// return would be marked statement-position and forced to void.
-	if !isVoidExpected {
-		t.blockLastStmtIsValue = true
-		t.blockLastValueExpected = bodySlot
+	// A value-returning lambda's body is a value block: its last expression
+	// is promoted to the implicit return. Otherwise a trailing bare `match`
+	// whose value becomes the lambda's return would be marked
+	// statement-position and forced to void.
+	var b *ast.BlockStmt
+	var err error
+	if isVoidExpected {
+		b, err = t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	} else {
+		b, err = t.transformValueBlock(ctx.Block().(*grammar.BlockContext), bodySlot)
 	}
-	b, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1321,10 +1323,17 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	if ctx.GetBodyBlock() != nil {
 		// Partial function arm body: the trailing expression is wrapped in
 		// Some(...) below, so it is value-consumed.
-		t.blockLastStmtIsValue = true
-		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
+		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), slot{})
 		if err != nil {
 			return nil, nil, err
+		}
+		// A trailing expression is the arm's value, lowered like a match
+		// arm's tail; it was left as a bare statement, so the arm had no
+		// result and the whole literal failed with "no case branches".
+		if n := len(b.List); n > 0 {
+			if exprStmt, ok := b.List[n-1].(*ast.ExprStmt); ok {
+				b.List[n-1], _ = t.lowerMatchArmTailExpr(exprStmt.X)
+			}
 		}
 		// Wrap the last expression/return in Some
 		body = t.wrapBlockReturnsInSome(b.List)

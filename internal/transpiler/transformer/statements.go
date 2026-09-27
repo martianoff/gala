@@ -416,17 +416,26 @@ func forClauseSlots(forClause *grammar.ForClauseContext) (init, post *grammar.Si
 	return init, post
 }
 
+// transformBlock lowers a block whose trailing statement is discarded, like
+// the trailing statement of an if or for body.
 func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
+	return t.transformBlockWithTail(ctx, false, slot{})
+}
+
+// transformValueBlock lowers a block whose trailing expression is its value
+// (a value-returning function or lambda body, a match arm or partial-function
+// body). s is the slot that value fills, zero when unknown: a lambda, if or
+// match tail is lowered against it (see lowerAgainst).
+func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
+	return t.transformBlockWithTail(ctx, true, s)
+}
+
+// transformBlockWithTail lowers a block. lastStmtIsValue and lastValueExpected
+// describe this block's trailing statement only; they are parameters, not
+// transformer state, so nested and sibling blocks cannot inherit them.
+func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, lastStmtIsValue bool, lastValueExpected slot) (*ast.BlockStmt, error) {
 	t.pushScope()
 	defer t.popScope()
-	// Capture and reset the block-last-stmt-is-value flag once: it applies
-	// only to *this* block's last statement, not to any nested blocks.
-	lastStmtIsValue := t.blockLastStmtIsValue
-	t.blockLastStmtIsValue = false
-	defer func() { t.blockLastStmtIsValue = lastStmtIsValue }()
-	lastValueExpected := t.blockLastValueExpected
-	t.blockLastValueExpected = slot{}
-	defer func() { t.blockLastValueExpected = lastValueExpected }()
 
 	block := &ast.BlockStmt{}
 	allStmts := ctx.AllStatement()
@@ -483,9 +492,9 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		// value". A non-trailing statement is unconditionally
 		// statement-position; the trailing statement is statement-position
 		// only when the caller did NOT signal that the block's last
-		// expression is consumed (via blockLastStmtIsValue) — function
+		// expression is consumed (transformValueBlock) — function
 		// bodies with a return type, lambda bodies, and match arm bodies
-		// all set that flag, since their trailing expression becomes the
+		// all use it, since their trailing expression becomes the
 		// block's value.
 		prev := t.matchInStatementPos
 		isTrailing := i == lastIdx

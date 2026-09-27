@@ -394,6 +394,80 @@ struct Tag[T any](N int)
 	assert.Contains(t, err.Error(), "cannot infer type argument T of generic struct Tag")
 }
 
+// TestUserWrittenAnySlot pins that a slot type the user wrote with `any` is
+// not a placeholder: it is the IIFE's fallback when the branches' type cannot
+// be inferred.
+func TestUserWrittenAnySlot(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	cases := []struct {
+		name     string
+		input    string
+		contains string
+	}{
+		{
+			name: "uninferable branches fall back to a map[string]any result",
+			input: `package main
+
+func pickMap(c bool) map[string]any = if (c) nil else nil
+
+func main() {
+    Println(pickMap(true) == nil)
+}`,
+			contains: "return func() map[string]any {",
+		},
+		{
+			name: "uninferable branches fall back to a []any result",
+			input: `package main
+
+func pickList(c bool) []any = if (c) nil else nil
+
+func main() {
+    Println(pickList(true) == nil)
+}`,
+			contains: "return func() []any {",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "user_any_test.gala")
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.contains)
+		})
+	}
+}
+
+// TestValueBlockSlotDoesNotLeak pins that a value block's slot applies to that
+// block only: after a match arm block lowered against func(int) int, a later
+// partial-function arm block's trailing if-expression is not lowered against
+// it (and its trailing expression is the arm's value).
+func TestValueBlockSlotDoesNotLeak(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	out, err := trans.Transpile(`package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val c = true
+    val g func(int) int = c match {
+        case true => { (x) => x + 1 }
+        case _ => (x) => x
+    }
+    val fs = ArrayOf(3, 7).Collect({
+        case n if n > 0 => {
+            if (n > 5) (s string) => s else (s string) => s + "!"
+        }
+    })
+    Println(g(1))
+    Println(fs.Map((f) => f("hi")))
+}`, "block_slot_leak_test.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "func() func(string) string {")
+	assert.Equal(t, 1, strings.Count(out, "func() func(int) int {")+strings.Count(out, "func(obj bool) func(int) int {"),
+		"only the match lowers against func(int) int")
+}
+
 // TestAnnotatedLambdaResultIsItsReturnSlot pins that an explicit result type on
 // a lambda is what a `return` in its body is lowered against.
 func TestAnnotatedLambdaResultIsItsReturnSlot(t *testing.T) {

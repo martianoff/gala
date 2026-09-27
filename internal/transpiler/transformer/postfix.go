@@ -526,9 +526,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			if ccCtx.GetBodyBlock() != nil {
 				// The default arm's block-body last expression becomes the
 				// arm's value, so it is value-consumed.
-				t.blockLastStmtIsValue = true
-				t.blockLastValueExpected = s
-				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
+				b, err := t.transformValueBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext), s)
 				if err != nil {
 					return nil, err
 				}
@@ -587,7 +585,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if err != nil {
 		return nil, err
 	}
-	resultType = t.branchingResultType(resultType, s.typ)
+	resultType = t.branchingResultType(resultType, s)
 
 	// Statement-position matches discard their value; force the IIFE to be
 	// void so that arms with mixed value/void payloads — e.g. one arm calling

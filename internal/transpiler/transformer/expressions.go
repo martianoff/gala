@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"slices"
 )
 
 // NOTE: transformCallExpr was removed - it was dead code.
@@ -715,7 +716,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		}
 	}
 
-	retTypeExpr := t.typeToExpr(t.branchingResultType(retType, s.typ))
+	retTypeExpr := t.typeToExpr(t.branchingResultType(retType, s))
 
 	// Build the then-block: preceding statements + return lastExpr.
 	// When the branch already terminates with an explicit return, the synthesized
@@ -964,6 +965,12 @@ type slot struct {
 	// TCO branch) do not. An if/match passes its slot, policy included, to its
 	// branches.
 	push bool
+	// open: typ may hold placeholders for type parameters the call left
+	// unbound (an `any` fill, see inferFuncTypeSubstFromArgs, or the generic
+	// method path's default-to-any view). An open slot type never overrides
+	// the branches' own type (see branchingResultType); user-written `any` is
+	// not a placeholder and does not make a slot open.
+	open bool
 }
 
 // argSlot is the slot of an argument, declaration or other pushing position.
@@ -1043,55 +1050,46 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 }
 
 // branchingResultType picks the result type of an if-expression or match from
-// its branches' inferred type and the slot type. A fully concrete slot type
-// wins when the branches are functions (it is what they were lowered against,
-// and its spelling is what the value must be assignable to), and is the
-// fallback when inference failed. A slot type with unresolved parts (an `any`
-// placeholder or a masked type parameter) never wins, and branches of a
-// non-function type keep theirs: a by-name thunk slot (`Future(x match {...})`)
-// receives a value, not a function.
-func (t *galaASTTransformer) branchingResultType(inferred, expected transpiler.Type) transpiler.Type {
-	if !typeFullyConcrete(expected) {
+// its branches' inferred type and its slot. The slot type is the fallback when
+// inference fails. It also wins over function-typed branches (it is what they
+// were lowered against, and its spelling is what the value must be assignable
+// to), unless the slot is open or has a masked (nil) part: then the branches'
+// own type is the concrete one. Branches of a non-function type keep theirs: a
+// by-name thunk slot (`Future(x match {...})`) receives a value, not a function.
+func (t *galaASTTransformer) branchingResultType(inferred transpiler.Type, s slot) transpiler.Type {
+	if transpiler.IsUnusable(s.typ) {
 		return inferred
 	}
-	if transpiler.IsUnusable(inferred) ||
-		(t.resolveTranspilerTypeAsFuncType(expected) != nil && t.resolveTranspilerTypeAsFuncType(inferred) != nil) {
-		return expected
+	if transpiler.IsUnusable(inferred) {
+		return s.typ
+	}
+	if !s.open && !typeHasMaskedPart(s.typ) &&
+		t.resolveTranspilerTypeAsFuncType(s.typ) != nil && t.resolveTranspilerTypeAsFuncType(inferred) != nil {
+		return s.typ
 	}
 	return inferred
 }
 
-// typeFullyConcrete reports whether typ contains no nil or `any` part.
-func typeFullyConcrete(typ transpiler.Type) bool {
-	if transpiler.IsUnusableOrAny(typ) {
-		return false
+// typeHasMaskedPart reports whether typ contains a nil part: a type parameter
+// masked out as unresolved (see maskTypeParamResults). Unlike `any`, nil is
+// never written in GALA source.
+func typeHasMaskedPart(typ transpiler.Type) bool {
+	if typ == nil || typ.IsNil() {
+		return true
 	}
 	switch v := typ.(type) {
 	case transpiler.FuncType:
-		for _, p := range v.Params {
-			if !typeFullyConcrete(p) {
-				return false
-			}
-		}
-		for _, r := range v.Results {
-			if _, void := r.(transpiler.VoidType); !void && !typeFullyConcrete(r) {
-				return false
-			}
-		}
+		return slices.ContainsFunc(v.Params, typeHasMaskedPart) || slices.ContainsFunc(v.Results, typeHasMaskedPart)
 	case transpiler.GenericType:
-		for _, p := range v.Params {
-			if !typeFullyConcrete(p) {
-				return false
-			}
-		}
+		return slices.ContainsFunc(v.Params, typeHasMaskedPart)
 	case transpiler.ArrayType:
-		return typeFullyConcrete(v.Elem)
+		return typeHasMaskedPart(v.Elem)
 	case transpiler.PointerType:
-		return typeFullyConcrete(v.Elem)
+		return typeHasMaskedPart(v.Elem)
 	case transpiler.MapType:
-		return typeFullyConcrete(v.Key) && typeFullyConcrete(v.Elem)
+		return typeHasMaskedPart(v.Key) || typeHasMaskedPart(v.Elem)
 	}
-	return true
+	return false
 }
 
 // groupedExpression returns e for an expression that is exactly `(e)`, or nil.
