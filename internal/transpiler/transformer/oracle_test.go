@@ -62,11 +62,13 @@ func (c *checkedTranspiler) Transpile(input, filePath string) (string, error) {
 }
 
 type oracleOutput struct {
-	test     string // e.g. TestAssignment
-	site     string // test-file position of the Transpile call
-	input    string
-	filePath string
-	output   string
+	test   string // e.g. TestAssignment
+	site   string // test-file position of the Transpile call
+	input  string
+	output string
+	// multiFile is multiFileReason for the transpiled path, taken when the
+	// output is recorded: a test's TempDir is gone by the time the oracle runs.
+	multiFile string
 }
 
 type oracleRecorder struct {
@@ -96,7 +98,7 @@ func (r *oracleRecorder) record(input, filePath, output string) {
 		}
 	}
 	r.mu.Lock()
-	r.outputs = append(r.outputs, oracleOutput{test, site, input, filePath, output})
+	r.outputs = append(r.outputs, oracleOutput{test, site, input, output, multiFileReason(filePath)})
 	r.mu.Unlock()
 }
 
@@ -113,18 +115,7 @@ type oracleAllowance struct {
 // "typecheck"). Each entry needs a reason and the text of the finding it
 // covers. An entry that no longer matches anything fails the run, so the list
 // only shrinks.
-var oracleAllowlist = map[string]oracleAllowance{
-	// A `val` holding a Go struct whose method has a pointer receiver:
-	// `val u = url.URL{...}; u.String()` lowers to `u.Get().String()`, and
-	// Immutable.Get() returns a non-addressable copy, so Go rejects it
-	// ("cannot call pointer method String on url.URL"). Fixing it needs the
-	// Go method set at the call site and an addressable temporary for the
-	// receiver — an open transpiler bug, not a fixture problem.
-	"TestGoImportedTypeStaysPartial/typecheck": {
-		reason: "pointer-receiver Go method on a val-held struct",
-		match:  "cannot call pointer method String on url.URL",
-	},
-}
+var oracleAllowlist = map[string]oracleAllowance{}
 
 func TestMain(m *testing.M) {
 	code := m.Run()
@@ -198,7 +189,7 @@ func runOracle() bool {
 			continue
 		}
 
-		if reason := multiFileReason(o.filePath); reason != "" {
+		if reason := o.multiFile; reason != "" {
 			skipReasons[reason]++
 			unexamined[o.test+"/typecheck"] = true
 			continue
