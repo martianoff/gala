@@ -2772,6 +2772,19 @@ val scaled = 1.5e-3   // scientific notation
 
 Hex literals transpile to Go as-is, so any valid Go hex integer is a valid GALA hex integer.
 
+Binary (`0b1010`) and octal (`0o644`, or Go's classic `0644`) integers work the same way. As in
+Go, a leading `0` makes an integer literal octal, so `08` or `0129` is a syntax error ("invalid
+digit '8' in octal literal"); drop the leading zeros for a decimal number. Floats may keep
+leading zeros (`08.5`).
+
+### Source Text
+
+A `.gala` file is UTF-8 text, under the same rules as Go source: it must be valid UTF-8 and may
+not contain a NUL character or a byte order mark — except one byte order mark as the very first
+character, which is ignored. The rule covers comments and literals too. To put one of these
+values in a string, write it as an escape (`"\x00"`, `"\xff"`, `"\uFEFF"`). A violation is
+reported as [GALA-E0051](errors/GALA-E0051.md) at the offending character.
+
 ### String Literals
 GALA supports Go-style string literals:
 

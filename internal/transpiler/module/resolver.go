@@ -2,6 +2,7 @@
 package module
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1078,17 +1079,7 @@ func findPackageDirByPathSuffix(root string, suffix []string) string {
 		}
 		for _, e := range entries {
 			path := filepath.Join(dir, e.Name())
-
-			isDir := e.IsDir()
-			if !isDir {
-				if info, err := os.Stat(path); err == nil {
-					isDir = info.IsDir()
-				}
-			}
-			if !isDir {
-				continue
-			}
-			if skipDirs[e.Name()] {
+			if !entryIsDir(path, e) || skipDirs[e.Name()] {
 				continue
 			}
 			if e.Name() == pkgName && matchesSuffix(path) && hasGalaFiles(path) {
@@ -1125,21 +1116,7 @@ func findPackageDirByName(root, pkgName string) string {
 		}
 		for _, e := range entries {
 			path := filepath.Join(dir, e.Name())
-
-			// Resolve symlinks/junctions to determine if this is a directory.
-			// On Windows, os.ReadDir may not detect symlinks or junctions via
-			// ModeSymlink, so always fall back to os.Stat when IsDir is false.
-			isDir := e.IsDir()
-			if !isDir {
-				if info, err := os.Stat(path); err == nil {
-					isDir = info.IsDir()
-				}
-			}
-
-			if !isDir {
-				continue
-			}
-			if skipDirs[e.Name()] {
+			if !entryIsDir(path, e) || skipDirs[e.Name()] {
 				continue
 			}
 			if e.Name() == pkgName && hasGalaFiles(path) {
@@ -1154,6 +1131,25 @@ func findPackageDirByName(root, pkgName string) string {
 	}
 
 	return walk(root)
+}
+
+// entryIsDir reports whether a directory entry is, or links to, a directory.
+// The recursive package searches follow links on purpose (Bazel's execroot
+// symlinks source directories to the workspace), so a link has to be resolved
+// with os.Stat — on Windows a junction is reported as an irregular entry rather
+// than as a symlink, which is why any non-regular type is resolved, not just
+// ModeSymlink. A regular file is never a directory, and resolving every one of
+// them made a "package not found" search stat each file in the tree: seconds
+// per missing import on a repository-sized root.
+func entryIsDir(path string, e fs.DirEntry) bool {
+	if e.IsDir() {
+		return true
+	}
+	if e.Type().IsRegular() {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // hasGalaFiles checks if a directory contains at least one .gala file.

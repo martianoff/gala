@@ -116,6 +116,32 @@ Pull requests run three CI jobs (`.github/workflows/test.yml`): `bazel build //.
 `manual` so `//...` skips it); and the parser and analyzer test suites under the Go race
 detector (`--@rules_go//go/config:race`).
 
+### Fuzzing the transpiler
+
+`internal/transpiler/fuzz` holds native Go fuzz targets for the whole pipeline:
+
+| Target | Input | Property |
+|--------|-------|----------|
+| `FuzzStringLiterals` | arbitrary content in `"…"`, `` `…` ``, `s"…"`, `f"…"`, `'…'` | a positioned diagnostic or parseable Go; where the spec fixes a value, the emitted Go literal evaluates to the bytes Go's `strconv.Unquote` gives |
+| `FuzzTranspileNoCrash` | arbitrary bytes, mutated examples | no panic, hang or internal error (GALA-E0017); diagnostics positioned inside the input; accepted input yields parseable Go with no leaked markers, identical across two runs |
+| `FuzzSourceEncoding` | examples with a leading BOM, non-ASCII comments, raw vs escaped non-ASCII in strings | both spellings give the same Go (ignoring comments and literal spelling), or the same diagnostics on the same lines |
+
+`bazel test //internal/transpiler/fuzz:fuzz_test` runs each target over its seed
+corpus — the `f.Add` seeds plus `testdata/fuzz/<Target>/*` — as an ordinary unit
+test, so it is part of `bazel test //...`. To generate new inputs, run the fuzzer
+itself:
+
+```bash
+tools/fuzz.sh                               # list the targets
+tools/fuzz.sh FuzzStringLiterals 15m        # fuzz one target for 15 minutes
+```
+
+The script builds the Bazel-generated ANTLR sources, copies them next to the
+grammar (they are git-ignored, and the copies it created are removed when it exits), and runs `go test -fuzz`: Go's fuzzer needs its
+own coverage-instrumented build, which a Bazel `go_test` does not produce. When it
+finds a failure it writes the input to `testdata/fuzz/<Target>/`; fix the bug and
+commit that file so the seed pass replays it from then on.
+
 ## Code Style
 
 ### Go Code (transpiler, standard library runtime)

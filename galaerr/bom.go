@@ -17,8 +17,9 @@ const bom = "\xef\xbb\xbf"
 // whitespace), so the line scanners that look for a `package ` prefix silently
 // miss the first line.
 //
-// Only a leading BOM is removed. A U+FEFF appearing anywhere else is left
-// alone, since there it is ordinary content rather than an encoding marker.
+// Only a leading BOM is removed. A U+FEFF anywhere else is left in place for
+// the parser to report: as in Go, it is an illegal character there
+// (GALA-E0051).
 func StripBOM(s string) string {
 	return strings.TrimPrefix(s, bom)
 }

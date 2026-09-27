@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"martianoff/gala/galaerr"
 )
 
 // utf8BOM is the UTF-8 encoding of U+FEFF. Written as explicit bytes because a
@@ -134,13 +136,25 @@ func TestParseWithLeadingBOMPreservesPositions(t *testing.T) {
 	}
 }
 
-// TestParseBOMOnlyAtStartIsStripped confirms only a leading BOM is special: a
-// U+FEFF inside a string literal is ordinary content and must survive parsing.
+// TestParseBOMOnlyAtStartIsStripped confirms only a leading BOM is special. A
+// U+FEFF anywhere else is not stripped: as in Go, it is an illegal character
+// (GALA-E0051) reported at its own position. It used to be accepted inside a
+// string literal and copied verbatim into the generated Go, which Go rejects,
+// surfacing as an internal transpiler error. Written as an escape, the same
+// value parses.
 func TestParseBOMOnlyAtStartIsStripped(t *testing.T) {
 	src := "package main\n\nval s = \"a" + utf8BOM + "b\"\n"
 
 	_, _, errs := NewAntlrGalaParser().ParseLenient(src)
-	assert.Empty(t, errs, "a BOM inside a string literal is content, not a marker: %v", errs)
+	require.Len(t, errs, 1, "%v", errs)
+	var se *galaerr.SemanticError
+	require.ErrorAs(t, errs[0], &se)
+	assert.Equal(t, galaerr.CodeIllegalSourceCharacter, se.Code)
+	assert.Equal(t, 3, se.Line)
+	assert.Equal(t, 10, se.Column)
+
+	_, _, errs = NewAntlrGalaParser().ParseLenient("package main\n\nval s = \"a\\uFEFFb\"\n")
+	assert.Empty(t, errs, "the escaped spelling must parse: %v", errs)
 }
 
 func errStrings(errs []error) []string {

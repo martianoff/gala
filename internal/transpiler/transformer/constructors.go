@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -546,8 +549,33 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 	}, nil
 }
 
+// checkIntLiteral rejects the one INT_LIT spelling the lexer admits that Go
+// does not: a leading zero followed by an 8 or 9. The grammar's plain-decimal
+// alternative is `[0-9]+`, but a leading 0 makes the literal octal in Go (the
+// classic `0644` form GALA keeps), so `08` or `0129` used to reach the
+// generated Go verbatim and fail to parse there — an internal transpiler
+// error instead of a diagnostic at the literal.
+func (t *galaASTTransformer) checkIntLiteral(node antlr.TerminalNode) error {
+	text := node.GetText()
+	if len(text) < 2 || text[0] != '0' || strings.IndexFunc(text, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return nil
+	}
+	bad := strings.IndexAny(text, "89")
+	if bad < 0 {
+		return nil
+	}
+	tok := node.GetSymbol()
+	err := galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn()+bad,
+		fmt.Sprintf("invalid digit %q in octal literal %s (a leading 0 makes an integer literal octal; drop the leading zeros for a decimal number)", text[bad], text))
+	err.FilePath = t.filePath
+	return err
+}
+
 func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.Expr, error) {
 	if ctx.INT_LIT() != nil {
+		if err := t.checkIntLiteral(ctx.INT_LIT()); err != nil {
+			return nil, err
+		}
 		return &ast.BasicLit{Kind: token.INT, Value: ctx.INT_LIT().GetText()}, nil
 	}
 	if ctx.FLOAT_LIT() != nil {

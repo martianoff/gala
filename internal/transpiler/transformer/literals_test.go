@@ -9,6 +9,7 @@ import (
 	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLiteralRestrictions(t *testing.T) {
@@ -83,6 +84,40 @@ var m map[string]int`,
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+// TestLeadingZeroIntegerLiterals: a leading 0 makes an integer literal octal,
+// in GALA as in Go, and the lexer's decimal alternative admits `08`. Such a
+// literal used to reach the generated Go verbatim and fail to parse there
+// (an internal transpiler error); it is now a syntax error at the bad digit.
+func TestLeadingZeroIntegerLiterals(t *testing.T) {
+	tests := []struct {
+		lit     string
+		wantErr string // empty: must transpile
+	}{
+		{lit: "0"},
+		{lit: "00"},
+		{lit: "0644"},
+		{lit: "10"},
+		{lit: "0x1F"},
+		{lit: "0o17"},
+		{lit: "08.5"}, // a float: leading zeros are fine there, as in Go
+		{lit: "08", wantErr: `line 4:13 invalid digit '8' in octal literal 08`},
+		{lit: "0129", wantErr: `line 4:15 invalid digit '9' in octal literal 0129`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.lit, func(t *testing.T) {
+			src := "package main\n\nfunc main() {\n    val x = " + tt.lit + "\n    Println(x)\n}\n"
+			out, err := newTranspiler().Transpile(src, "")
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.Contains(t, out, tt.lit)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
 }

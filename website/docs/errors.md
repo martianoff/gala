@@ -99,6 +99,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0043](/docs/errors/gala-e0043/) | Type name called as a constructor | Collections |
 | [GALA-E0044](/docs/errors/gala-e0044/) | Type has no such method | Types |
 | [GALA-E0050](/docs/errors/gala-e0050/) | Codec field type has no encoding | Types |
+| [GALA-E0051](/docs/errors/gala-e0051/) | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | Literals |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -138,7 +139,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression. Each names its GALA replacement.
 
-**Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
+**Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0051](/docs/errors/gala-e0051/) illegal source character · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
 
 **Syntax** — [E0042](/docs/errors/gala-e0042/) unparenthesized lambda parameter (`x => e`); GALA always writes `(x) => e`.
 
