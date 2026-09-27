@@ -13,6 +13,7 @@ package multifile_lib_regress
 
 import . "martianoff/gala/collection_immutable"
 import "strings"
+import "time"
 
 // GoStringsClassify uses GO's strings.SplitN (returns []string), spreads it into
 // an Array, and matches on an element. Both the element type and the match arms
@@ -40,3 +41,13 @@ func GoStringsUpper(s string) string = strings.ToUpper(s)
 // lambda spreads the element, which only compiles if it is a []string.
 func GoFieldsCounts(lines Array[string]) Array[int] =
     lines.Map(strings.Fields).Map((f) => ArrayOf(f...).Size())
+
+// GoTimeNowSet calls GO's time.Now with no arguments. The sibling imports a
+// GALA package named `time` whose Now has a defaulted parameter; that default
+// must not be injected into this call.
+func GoTimeNowSet() bool = !time.Now().IsZero()
+
+// GoTimeAfterFuncStopped passes a zero-argument callback to GO's
+// time.AfterFunc. The lambda must be typed from Go's signature (func()), not
+// from the sibling's GALA AfterFunc (func(string) string).
+func GoTimeAfterFuncStopped() bool = time.AfterFunc(time.Hour, () => Println("fired")).Stop()

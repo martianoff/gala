@@ -482,5 +482,14 @@ func main() {
     // A same-package GENERIC function passed as a value in a NAMED package,
     // consumed by a lambda that writes the element type down.
     Println(multifile_lib_regress.MapEchoSizes(ArrayOf("ab", "cde")).String())
-
+    // A user GALA package named `time` next to Go's `time` in a sibling file:
+    // each call resolves against its own package's signature.
+    Println(multifile_lib_regress.GalaTimeNow())
+    Println(multifile_lib_regress.GalaTimeAfterFunc())
+    Println(multifile_lib_regress.GoTimeNowSet())
+    Println(multifile_lib_regress.GoTimeAfterFuncStopped())
+    // A parameter shadowing the GALA `time` import: its method, not the package function.
+    Println(multifile_lib_regress.ShadowedTimeQualifier(multifile_lib_regress.Clock("wall")))
+    // A dot-imported GENERIC function passed as a value in a named package.
+    Println(multifile_lib_regress.FlattenSizes(ArrayOf(ListOf(ListOf(1, 2)), ListOf(ListOf(3)))).String())
 }

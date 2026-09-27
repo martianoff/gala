@@ -3197,6 +3197,16 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
+# Sibling package NAMED `time`, like Go's. One file of multifile_lib_regress
+# imports it and a sibling file imports Go's `time`: the sibling's Go calls must
+# not pick up this package's default parameters or callback types.
+gala_library(
+    name = "multifile_lib_regress_time_pkg",
+    srcs = ["multifile_lib_regress/time_pkg/time.gala"],
+    importpath = "martianoff/gala/examples/multifile_lib_regress/time_pkg",
+    visibility = ["//visibility:public"],
+)
+
 gala_library(
     name = "multifile_lib_regress",
     srcs = [
@@ -3227,6 +3237,7 @@ gala_library(
         ":multifile_lib_regress_directive_pkg",
         ":multifile_lib_regress_proc_pkg",
         ":multifile_lib_regress_team_pkg",
+        ":multifile_lib_regress_time_pkg",
         "//collection_immutable",
         "//examples/go_struct_bridge",
         "//go_interop",

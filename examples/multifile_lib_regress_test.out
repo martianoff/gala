@@ -121,3 +121,9 @@ other
 GO
 Array(3, 1, 0)
 Array(2, 3)
+now@UTC
+tick!
+true
+true
+clock:wall
+Array(2, 1)

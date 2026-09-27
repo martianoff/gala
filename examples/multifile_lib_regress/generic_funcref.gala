@@ -15,3 +15,9 @@ func echoValue[T any](x T) T = x
 // lambda whose parameter type must be concrete.
 func MapEchoSizes(items Array[string]) Array[int] =
     items.Map(echoValue).Map((s) => s.Size())
+
+// FlattenSizes passes a DOT-IMPORTED generic function (collection_immutable's
+// Flatten, keyed "collection_immutable.Flatten") as a value. It must be
+// instantiated the same way as a same-package one.
+func FlattenSizes(lists Array[List[List[int]]]) Array[int] =
+    lists.Map(Flatten).Map((l) => l.Size())
