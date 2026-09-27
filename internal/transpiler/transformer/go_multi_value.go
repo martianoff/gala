@@ -47,12 +47,23 @@ func (t *galaASTTransformer) goMultiValueResultCount(expr ast.Expr) (int, bool) 
 		// value, even when the wrapped Go type has a multi-value Get method.
 		return 0, false
 	}
-	returns := t.resolveGoCallReturnTypes(expr)
-	if len(returns) < 2 {
+	// The count and whether the last result is `error` (never a type
+	// parameter) read off the declared signature; no instantiation needed.
+	sig := t.resolveGoCallSignature(expr)
+	if sig == nil || len(sig.Returns) < 2 {
 		return 0, false
 	}
-	last := returns[len(returns)-1]
-	return len(returns), last != nil && last.String() == "error"
+	last := sig.Returns[len(sig.Returns)-1]
+	return len(sig.Returns), last != nil && last.String() == "error"
+}
+
+// checkGoMultiValueArg rejects a Go multi-value call passed as a call argument
+// that must be one value (see isSingleValueArgSlot). Lambdas are never calls.
+func (t *galaASTTransformer) checkGoMultiValueArg(expr ast.Expr, exprCtx grammar.IExpressionContext, lambdaCtx *grammar.LambdaExpressionContext, argCount int, expectedType transpiler.Type) error {
+	if lambdaCtx != nil || !t.isSingleValueArgSlot(argCount, expectedType) {
+		return nil
+	}
+	return t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "this argument")
 }
 
 // isImmutableUnwrapCall reports whether expr is the `.Get()` that

@@ -1547,10 +1547,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			if aerr != nil {
 				return nil, nil, false, aerr
 			}
-			if lambdaCtx == nil && t.isSingleValueArgSlot(len(argListCtx.AllArgument()), namedExpectedType) {
-				if cerr := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "this argument"); cerr != nil {
-					return nil, nil, false, cerr
-				}
+			if cerr := t.checkGoMultiValueArg(expr, exprCtx, lambdaCtx, len(argListCtx.AllArgument()), namedExpectedType); cerr != nil {
+				return nil, nil, false, cerr
 			}
 			named[argName] = expr
 			continue
@@ -1571,10 +1569,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		if aerr != nil {
 			return nil, nil, false, aerr
 		}
-		if lambdaCtx == nil && t.isSingleValueArgSlot(len(argListCtx.AllArgument()), expectedType) {
-			if cerr := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, "this argument"); cerr != nil {
-				return nil, nil, false, cerr
-			}
+		if cerr := t.checkGoMultiValueArg(expr, exprCtx, lambdaCtx, len(argListCtx.AllArgument()), expectedType); cerr != nil {
+			return nil, nil, false, cerr
 		}
 		positional = append(positional, expr)
 		argIdx++

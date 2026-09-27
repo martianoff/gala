@@ -484,25 +484,20 @@ func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 // os.MkdirTemp returns (string, error) -- the error is converted to a panic
 // which Try catches as Failure.
 func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (*ast.BlockStmt, ast.Expr) {
-	if t.goTypeInfo == nil {
-		return nil, nil
-	}
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return nil, nil
 	}
 
-	// The callee's signature: a package function, a method on any receiver
-	// expression, or a dot-imported function.
-	sig := t.resolveGoCallSignature(callExpr)
-	if sig == nil || len(sig.Returns) < 2 {
+	// The callee's returns — a package function, a method on any receiver
+	// expression, or a dot-imported function. They are written into the
+	// generated func literal's result clause, so a generic callee's returns
+	// come back instantiated; otherwise the emitted Go would name the callee's
+	// own type parameters.
+	returns := t.resolveGoCallReturnTypes(callExpr)
+	if len(returns) < 2 {
 		return nil, nil
 	}
-
-	// The value types are written into the generated func literal's result
-	// clause, so a generic callee's declared returns have to be instantiated
-	// first — otherwise the emitted Go names the callee's own type parameters.
-	returns := t.instantiateGoSignatureReturns(sig, callExpr.Args, t.callSiteTypeArgs(callExpr), callExpr.Ellipsis != token.NoPos)
 
 	// Check that the LAST return is error
 	lastRet := returns[len(returns)-1]
