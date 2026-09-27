@@ -1,0 +1,20 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Arrays of 1024 or more elements are stored as a tree of depth 3 or more.
+// Every operation must read and write the element at the requested index.
+
+func describe(n int) string {
+    val xs = ArrayTabulate(n, (i) => i)
+    val doubled = xs.Map((x) => x * 2)
+    val evens = xs.Filter((x) => x % 2 == 0)
+    val sorted = xs.Reverse().Sorted()
+    return s"n=$n get(32)=${xs.Get(32)} last=${xs.Get(n - 1)} append=${xs.Append(n).Get(n)} " +
+        s"map=${doubled.Get(n - 1)} filter=${evens.Get(n / 4)} drop=${xs.Drop(n / 2).Get(0)} " +
+        s"sorted=${sorted.Get(n - 1)}"
+}
+
+func main() {
+    ArrayOf(1000, 1024, 32769).ForEach((n) => Println(describe(n)))
+}
