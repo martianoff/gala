@@ -1,0 +1,77 @@
+package main
+
+// A capitalized identifier in pattern position that names an in-scope value is
+// a stable identifier: the arm compares the subject for equality with that
+// value, as in Scala. It is NOT a fresh binding — a binding matches every value,
+// so the first such arm would silently swallow all the others. These cases
+// assert the RUNTIME answer, because that failure mode compiles and exits 0.
+
+type Environment string
+
+val Development Environment = "development"
+var Production Environment = "production"
+
+func describe(env Environment) string = env match {
+    case Development => "dev"
+    case Production  => "prod"
+    case _           => s"other: $env"
+}
+
+val Answer = 42
+
+// Stable identifiers nest inside extractors, tuples and struct patterns.
+func probe(o Option[int]) string = o match {
+    case Some(Answer) => "the answer"
+    case Some(n)      => s"some $n"
+    case None()       => "none"
+}
+
+func pair(p Tuple[int, string]) string = p match {
+    case (Answer, s) => s"answer with $s"
+    case _           => "no answer"
+}
+
+struct Point(X int, Y int)
+
+val Origin = 0
+
+func axis(p Point) string = p match {
+    case Point(Origin, y) => s"on the y axis at $y"
+    case Point(x, Origin) => s"on the x axis at $x"
+    case _                => "off both axes"
+}
+
+func main() {
+    Println(describe(Production))
+    Println(describe(Development))
+    Println(describe(Environment("staging")))
+
+    Println(probe(Some(42)))
+    Println(probe(Some(7)))
+    Println(probe(None[int]()))
+
+    Println(pair((42, "a")))
+    Println(pair((7, "b")))
+
+    Println(axis(Point(0, 5)))
+    Println(axis(Point(3, 0)))
+    Println(axis(Point(3, 5)))
+
+    // A local capitalized val is a stable identifier too.
+    val Limit = 10
+    val hits = 10 match {
+        case Limit => "at the limit"
+        case _     => "not at the limit"
+    }
+    Println(hits)
+
+    // A lowercase identifier always binds a fresh variable, shadowing any
+    // outer value of the same name. Compare against a lowercase value with a
+    // guard.
+    val limit = 10
+    val below = 3 match {
+        case n if n == limit => "at the lowercase limit"
+        case n               => s"bound $n"
+    }
+    Println(below)
+}

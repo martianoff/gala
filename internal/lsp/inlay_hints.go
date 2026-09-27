@@ -201,7 +201,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 	parts := strings.Split(bindings, ",")
 	for i, binding := range parts {
 		binding = strings.TrimSpace(binding)
-		if binding == "" || binding == "_" || strings.Contains(binding, " ") {
+		if binding == "" || binding == "_" || strings.Contains(binding, " ") || isStablePatternName(binding, richAST) {
 			continue
 		}
 		if i < len(variant.FieldTypes) {
@@ -218,6 +218,17 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		}
 	}
 	return hints
+}
+
+// isStablePatternName reports whether name, written in a case pattern, is a
+// stable identifier rather than a binding: a capitalized name of one of the
+// package's vals/vars, which the pattern compares against instead of binding.
+func isStablePatternName(name string, richAST *transpiler.RichAST) bool {
+	if !isExported(name) || richAST == nil {
+		return false
+	}
+	_, ok := richAST.PackageVals[name]
+	return ok
 }
 
 func makeTypeHint(line, col int, typeName string) lsp.InlayHint {

@@ -9,6 +9,10 @@ import (
 type scope struct {
 	vals     map[string]bool
 	valTypes map[string]transpiler.Type
+	// caseArm marks the scope a case clause pushes for its pattern (and body).
+	// While the pattern is lowered, a name found in this scope was bound
+	// earlier in the same pattern, never by the code around the match.
+	caseArm bool
 	// mutable records names that are genuinely reassignable `var` bindings —
 	// only real `var` declarations and `var`-marked parameters. It intentionally
 	// does NOT include the many val-by-semantics bindings that also route through

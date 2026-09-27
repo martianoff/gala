@@ -571,6 +571,15 @@ gala_exec_test(
     expected = "bare_variant_pattern.out",
 )
 
+# A capitalized identifier naming an in-scope value is a stable identifier: the
+# arm compares for equality instead of binding. Asserts RUNTIME OUTPUT for the
+# same reason as bare_variant_pattern: a binding would be a silent catch-all.
+gala_exec_test(
+    name = "stable_identifier_pattern",
+    src = "stable_identifier_pattern.gala",
+    expected = "stable_identifier_pattern.out",
+)
+
 gala_exec_test(
     name = "string_escapes",
     src = "string_escapes.gala",

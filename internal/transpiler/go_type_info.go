@@ -68,6 +68,13 @@ func NewGoTypeInfo() *GoTypeInfo {
 	}
 }
 
+// IsEmpty reports whether g declares nothing: no functions, types, variables,
+// constants or type aliases.
+func (g *GoTypeInfo) IsEmpty() bool {
+	return len(g.Functions) == 0 && len(g.Types) == 0 && len(g.Variables) == 0 &&
+		len(g.Constants) == 0 && len(g.TypeAliases) == 0
+}
+
 // Merge combines another GoTypeInfo into this one.
 func (g *GoTypeInfo) Merge(other *GoTypeInfo) {
 	if other == nil {

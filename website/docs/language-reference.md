@@ -357,6 +357,20 @@ val desc = flag match {
 }
 ```
 
+#### Stable Identifiers (Constants in Patterns)
+A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same library package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. Lowercase identifiers always bind, so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
+```gala
+type Environment string
+
+val Development Environment = "development"
+
+func mode(env Environment, limit Environment) string = env match {
+    case Development     => "dev"       // env == Development
+    case x if x == limit => "limit"     // lowercase value: use a guard
+    case _               => "other"
+}
+```
+
 #### Type-Based Pattern Matching
 ```gala
 val res = x match {
