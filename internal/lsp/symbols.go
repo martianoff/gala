@@ -72,7 +72,18 @@ func (h *GalaHandler) DocumentSymbol(ctx context.Context, params *lsp.DocumentSy
 	sort.SliceStable(symbols, func(a, b int) bool {
 		return symbols[a].SelectionRange.Start.Line < symbols[b].SelectionRange.Start.Line
 	})
+	symbolsToWire(h.index(text), symbols)
 	return symbols, nil
+}
+
+// symbolsToWire converts the byte-column ranges of an outline, children
+// included, to wire columns.
+func symbolsToWire(x lineIndex, symbols []lsp.DocumentSymbol) {
+	for i := range symbols {
+		symbols[i].Range = x.rangeToWire(symbols[i].Range)
+		symbols[i].SelectionRange = x.rangeToWire(symbols[i].SelectionRange)
+		symbolsToWire(x, symbols[i].Children)
+	}
 }
 
 // WorkspaceSymbol finds declarations whose name contains the query, ignoring
@@ -81,6 +92,7 @@ func (h *GalaHandler) DocumentSymbol(ctx context.Context, params *lsp.DocumentSy
 // such as .gala, VCS metadata) and Bazel output trees are skipped.
 func (h *GalaHandler) WorkspaceSymbol(ctx context.Context, params *lsp.WorkspaceSymbolParams) ([]lsp.SymbolInformation, error) {
 	query := strings.ToLower(params.Query)
+	enc := h.positionEncoding()
 	var symbols []lsp.SymbolInformation
 	for _, path := range h.workspaceFiles() {
 		if ctx.Err() != nil {
@@ -92,6 +104,7 @@ func (h *GalaHandler) WorkspaceSymbol(ctx context.Context, params *lsp.Workspace
 		}
 		pkgName := sourcePackageName(text)
 		uri := lsp.DocumentURI(pathToURI(path))
+		x := newLineIndex(text, enc)
 		add := func(d declaration) {
 			if !strings.Contains(strings.ToLower(d.name), query) {
 				return
@@ -103,7 +116,7 @@ func (h *GalaHandler) WorkspaceSymbol(ctx context.Context, params *lsp.Workspace
 			symbols = append(symbols, lsp.SymbolInformation{
 				Name:          d.name,
 				Kind:          d.kind,
-				Location:      lsp.Location{URI: uri, Range: d.selectionRange()},
+				Location:      lsp.Location{URI: uri, Range: x.rangeToWire(d.selectionRange())},
 				ContainerName: container,
 			})
 		}

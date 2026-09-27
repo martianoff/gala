@@ -63,6 +63,9 @@ type GalaHandler struct {
 	// snippetSupport is whether the client accepts snippet insert text in
 	// completion items (tab stops such as `$1`), from Initialize.
 	snippetSupport bool
+	// posEncoding is the unit Position.Character is counted in, negotiated in
+	// Initialize; see position.go.
+	posEncoding lsp.PositionEncodingKind
 
 	mu              sync.Mutex
 	documents       map[string]string              // URI -> source text
@@ -164,6 +167,10 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 		h.snippetSupport = *td.Completion.CompletionItem.SnippetSupport
 		h.mu.Unlock()
 	}
+	posEncoding := negotiatePositionEncoding(params.Capabilities)
+	h.mu.Lock()
+	h.posEncoding = posEncoding
+	h.mu.Unlock()
 
 	fmt.Fprintf(os.Stderr, "[gala-lsp] Initialize rootPath=%s extraSearchPaths=%v\n", h.rootPath, h.extraSearchPaths)
 
@@ -177,6 +184,7 @@ func (h *GalaHandler) Initialize(ctx context.Context, params *lsp.InitializePara
 
 	return &lsp.InitializeResult{
 		Capabilities: lsp.ServerCapabilities{
+			PositionEncoding: &posEncoding,
 			TextDocumentSync: &lsp.TextDocumentSyncOptions{
 				OpenClose: &openClose,
 				Change:    lsp.SyncFull,
@@ -343,10 +351,11 @@ func (h *GalaHandler) publishDiagnostics(uri, text string) {
 
 func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	diagnostics := make([]lsp.Diagnostic, 0) // must be [] not null in JSON
+	x := h.index(text)
 
 	tree, docs, err := h.parser.Parse(text)
 	if err != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
+		diagnostics = append(diagnostics, errorsToDiagnostics(err, x)...)
 		// Primary parse failed — try ANTLR's error-recovered partial tree.
 		// If the analyzer can extract type metadata from it, cache the
 		// richAST so completion/hover/definition work while mid-edit.
@@ -363,13 +372,13 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	richAST, err := h.newAnalyzer(filePath, text).Analyze(tree, docs, filePath)
 	if err != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(err)...)
+		diagnostics = append(diagnostics, errorsToDiagnostics(err, x)...)
 		return diagnostics
 	}
 
 	result, transformErr := h.transformAndPublish(uri, richAST, tree, text)
 	if transformErr != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr)...)
+		diagnostics = append(diagnostics, errorsToDiagnostics(transformErr, x)...)
 	}
 
 	// Cache the transpiler's resolved variable types
@@ -712,20 +721,24 @@ func zeroRange() lsp.Range {
 	}
 }
 
-// errorsToDiagnostics converts an error (possibly MultiError) into diagnostics.
-func errorsToDiagnostics(err error) []lsp.Diagnostic {
+// errorsToDiagnostics converts an error (possibly MultiError) into diagnostics
+// positioned on the document x indexes.
+func errorsToDiagnostics(err error, x lineIndex) []lsp.Diagnostic {
 	var multiErr *galaerr.MultiError
 	if errors.As(err, &multiErr) {
 		diags := make([]lsp.Diagnostic, 0)
 		for _, subErr := range multiErr.Errors {
-			diags = append(diags, errorToDiagnostic(subErr))
+			diags = append(diags, errorToDiagnostic(subErr, x))
 		}
 		return diags
 	}
-	return []lsp.Diagnostic{errorToDiagnostic(err)}
+	return []lsp.Diagnostic{errorToDiagnostic(err, x)}
 }
 
-func errorToDiagnostic(err error) lsp.Diagnostic {
+// errorToDiagnostic positions an error from its line and column. The parser and
+// the transformer both report ANTLR columns — code points, neither bytes nor
+// UTF-16 units — so the column is converted before it goes on the wire.
+func errorToDiagnostic(err error, x lineIndex) lsp.Diagnostic {
 	msg := err.Error()
 	line := 0
 	char := 0
@@ -756,10 +769,10 @@ func errorToDiagnostic(err error) lsp.Diagnostic {
 	}
 
 	return lsp.Diagnostic{
-		Range: lsp.Range{
-			Start: lsp.Position{Line: line, Character: char},
-			End:   lsp.Position{Line: line, Character: char + 1},
-		},
+		Range: x.rangeToWire(lsp.Range{
+			Start: lsp.Position{Line: line, Character: x.runeToByte(line, char)},
+			End:   lsp.Position{Line: line, Character: x.runeToByte(line, char+1)},
+		}),
 		Severity: sevPtr(lsp.SeverityError),
 		Source:   "gala",
 		Message:  msg,
