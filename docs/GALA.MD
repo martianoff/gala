@@ -992,7 +992,12 @@ case Some(y) if y > 0 => "positive"
 ```
 
 #### Stable Identifiers (Constants in Patterns)
-As in Scala, a **capitalized** bare identifier that names an in-scope value — a local `val`/`var`, a package-level `val`/`var`, or a `const`/`var` declared in a hand-written `.go` file of the same package — is a *stable identifier*: the arm compares the subject for equality with that value instead of binding a new variable.
+As in Scala, a **capitalized** bare identifier in a `case` pattern that names a value in scope is a *stable identifier*: the arm compares the subject with that value using Go's `==` instead of binding a new variable. The value can be:
+
+- a local `val`/`var` or a function parameter,
+- a package-level `val`/`var` from any file of the package,
+- a name bound by an enclosing `case` arm,
+- a `const`/`var` declared in a hand-written `.go` file of the same package. This works in library packages only, not in `package main`, and not when the file imports a package with the same name as its own (such as GALA's `fs` importing Go's `io/fs`): the Go declarations of the two cannot be told apart, so the name binds.
 
 ```gala
 type Environment string
@@ -1007,9 +1012,15 @@ func describe(env Environment) string = env match {
 }
 ```
 
-Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`. The comparison is Go's `==`, so the value's type must be comparable with the matched type. A stable-identifier arm is conditional, so the match still needs a `case _` default.
+Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`, and in partial functions. A qualified name such as `case math.MaxInt8` is always compared, never bound. Because the comparison is Go's `==`, the value's type must be comparable with the matched type: an `Array`, a `List` or a function value fails in the Go build. A stable-identifier arm is conditional, so the match still needs a `case _` default.
 
-A **lowercase** identifier is always a fresh binding, even when an outer value has the same name — it shadows that value and matches everything. To compare against a lowercase value, use a guard:
+A few edge cases:
+
+- **Variants and extractors come first.** A name that is a zero-field sealed variant or extractor (`case None`, `case Debug`) matches that variant, even if a value has the same name.
+- **Lowercase names always bind.** A lowercase identifier is a fresh binding even when an outer value has the same name: it shadows that value and matches everything. To compare against a lowercase value, use a guard (below).
+- **A name cannot appear twice in one pattern.** `case (X, X)` and `case (x, x)` are rejected, because a name bound earlier in the same pattern is not a value to compare with. To match equal parts, use `case (a, b) if a == b`.
+- **Unknown names bind.** A capitalized identifier that names no value, variant or extractor still binds, as shown in [Basic Sealed Type](#basic-sealed-type).
+- **Declarations bind.** Destructuring declarations such as `val (A, b) = pair` are not patterns in this sense: every name in them is a new binding.
 
 ```gala
 val limit = 10
@@ -1018,8 +1029,6 @@ val r = n match {
     case x               => s"bound $x"
 }
 ```
-
-A capitalized identifier that names no value (and no variant or extractor) still binds, as shown in [Basic Sealed Type](#basic-sealed-type).
 
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.

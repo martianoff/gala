@@ -1230,6 +1230,7 @@ func collectReferencedIdents(nodes []ast.Node) map[string]bool {
 func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
 	defer t.popScope()
+	t.currentScope.caseArm = true
 
 	patCtx := ctx.Pattern()
 	cond, bindings, err := t.transformPatternWithType(patCtx, ast.NewIdent(paramName), matchedType)

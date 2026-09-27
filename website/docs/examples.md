@@ -199,6 +199,44 @@ func main() {
 
 See also: [Language Reference - Extractors and Unapply](/docs/language-reference/#extractors-and-unapply)
 
+## Matching Against Constants (Stable Identifiers)
+
+A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name always binds, so compare against a lowercase value with a guard.
+
+```gala
+package main
+
+type Environment string
+
+val Development Environment = "development"
+val Production Environment = "production"
+val Answer = 42
+
+func describe(env Environment) string = env match {
+    case Development => "dev"
+    case Production  => "prod"
+    case _           => s"other: $env"
+}
+
+func probe(o Option[int]) string = o match {
+    case Some(Answer) => "the answer"
+    case Some(n)      => s"some $n"
+    case _            => "none"
+}
+
+func main() {
+    Println(describe(Production))                  // prod
+    Println(probe(Some(42)))                       // the answer
+    val limit = 10
+    Println(10 match {
+        case n if n == limit => "at the limit"
+        case n               => s"bound $n"
+    })                                             // at the limit
+}
+```
+
+See also: [Language Reference - Stable Identifiers](/docs/language-reference/#stable-identifiers-constants-in-patterns)
+
 ## Type-Based Pattern Matching Example
 
 ```gala

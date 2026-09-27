@@ -40,9 +40,13 @@ func (h *GalaHandler) definitionLocations(uri, text string, richAST *transpiler.
 		return nil, nil
 	}
 
-	// Check if cursor is on a pattern binding (case Xxx(b, h) =>)
-	if loc := patternBindingDefinition(text, word, uri, line, char); loc != nil {
-		return []lsp.Location{*loc}, nil
+	// Check if cursor is on a pattern binding (case Xxx(b, h) =>). A package
+	// val named in a pattern is compared against, not bound, so it navigates to
+	// its declaration below instead.
+	if !isStablePatternName(word, richAST) {
+		if loc := patternBindingDefinition(text, word, uri, line, char); loc != nil {
+			return []lsp.Location{*loc}, nil
+		}
 	}
 
 	// Check if it's a dot-accessed method/field: receiver.Method or receiver.Field

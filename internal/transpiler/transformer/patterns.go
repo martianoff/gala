@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -287,35 +288,66 @@ func bareVariantBindingError(name string, variant *transpiler.SealedVariant, par
 // compares the subject for equality with that value. Binding it instead would
 // shadow the value and match everything, so `case Development =>` would
 // silently become a catch-all. The value may be a local or package-level
-// val/var, or a const/var declared in a hand-written Go file of the same
-// package. Lowercase identifiers always bind (and may shadow an outer value).
+// val/var, a parameter, a binding of an enclosing case arm, or a const/var
+// declared in a hand-written Go file of the same (non-main) package.
+// Lowercase identifiers always bind (and may shadow an outer value), and a
+// name bound earlier in the same pattern is not a value in scope: `case (X, X)`
+// is a repeated binding, rejected by transformSimpleBindingOrLiteral.
 func (t *galaASTTransformer) isStableIdentifierPattern(name string) bool {
-	if name == "" || !unicode.IsUpper([]rune(name)[0]) {
+	if first, _ := utf8.DecodeRuneInString(name); !unicode.IsUpper(first) {
 		return false
 	}
-	if t.bindingScope(name) != nil {
+	if s := t.bindingScope(name); s != nil {
+		return !t.boundInCurrentPattern(s)
+	}
+	// Same-package Go declarations are keyed by the package name, which an
+	// imported package can share whatever alias it is imported under (GALA's
+	// `fs` importing Go's `io/fs`). The key then cannot tell the two apart, so
+	// the name binds.
+	if t.goTypeInfo == nil || t.packageName == "" {
+		return false
+	}
+	for _, imp := range t.importManager.All() {
+		if imp.PkgName == t.packageName {
+			return false
+		}
+	}
+	qualName := t.packageName + "." + name
+	if _, ok := t.goTypeInfo.Constants[qualName]; ok {
 		return true
 	}
-	if t.goTypeInfo != nil && t.packageName != "" {
-		qualName := t.packageName + "." + name
-		if _, ok := t.goTypeInfo.Constants[qualName]; ok {
-			return true
-		}
-		if _, ok := t.goTypeInfo.Variables[qualName]; ok {
-			return true
-		}
+	_, ok := t.goTypeInfo.Variables[qualName]
+	return ok
+}
+
+// boundInCurrentPattern reports whether s, the scope a name resolved to, is
+// the scope of the case arm whose pattern is being lowered — i.e. the name was
+// bound earlier in this same pattern.
+func (t *galaASTTransformer) boundInCurrentPattern(s *scope) bool {
+	return s == t.currentScope && s.caseArm
+}
+
+// patternIdentifier returns the name when a pattern is a bare identifier, and
+// "" for anything else — a literal, a qualified name such as `math.MaxInt8`,
+// or an operator expression — all of which compare by equality.
+func patternIdentifier(ctx grammar.IExpressionContext) string {
+	postfix := LeadingPostfixExpr(ctx, true)
+	if postfix == nil || len(postfix.AllPostfixSuffix()) > 0 || len(postfix.AllCaseClause()) > 0 {
+		return ""
 	}
-	return false
+	if p := PrimaryOf(postfix); p != nil && p.Identifier() != nil {
+		return p.Identifier().GetText()
+	}
+	return ""
 }
 
 // transformSimpleBindingOrLiteral handles the two remaining pattern shapes once a
 // pattern is known not to be a tuple/extractor/constructor call: a bare identifier
 // binds a variable (with a zero-field sealed-variant shortcut), and anything else
-// — a literal, or a stable identifier (see isStableIdentifierPattern) — is
-// compared for equality.
+// — a literal, a qualified name, or a stable identifier (see
+// isStableIdentifierPattern) — is compared for equality.
 func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if p := t.getPrimaryFromExpression(patExprCtx); p != nil && p.Identifier() != nil {
-		name := p.Identifier().GetText()
+	if name := patternIdentifier(patExprCtx); name != "" {
 
 		// A bare identifier that names a variant of the type being matched is
 		// never a binding — binding it would turn the arm into a catch-all that
@@ -355,14 +387,23 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 			}
 		}
 
+		// A name bound earlier in this same pattern is neither a fresh binding
+		// (Go would reject the redeclaration) nor a value to compare against.
+		if s := t.bindingScope(name); s != nil && t.boundInCurrentPattern(s) {
+			err := galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
+				fmt.Sprintf("'%s' is bound more than once in this pattern", name))
+			err.Hint = "bind each part to its own name and compare them in a guard: `case (a, b) if a == b =>`"
+			return nil, nil, err
+		}
+
 		if !t.isStableIdentifierPattern(name) {
 			t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
-			// The bound variable has the matched type. When that type is unknown
-			// the binding stays untyped, exactly as a default-arm binding does
-			// (see transformMatchClauses): recording `any` would let inference
-			// downstream silently erase the value's real type.
+			// Set the type of the bound variable to the matched type
 			if matchedType != nil && !matchedType.IsNil() {
 				t.currentScope.valTypes[name] = matchedType
+			} else {
+				// Type is unknown, explicitly set to any so type inference works correctly
+				t.currentScope.valTypes[name] = transpiler.BasicType{Name: "any"}
 			}
 			// A subject declared `any` binds as `any`: that is its type. A
 			// binding that has to be hoisted out of a guard with an unknown

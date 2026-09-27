@@ -1308,6 +1308,7 @@ func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar
 func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
 	defer t.popScope()
+	t.currentScope.caseArm = true
 
 	patCtx := ctx.Pattern()
 	cond, bindings, err := t.transformPatternWithType(patCtx, ast.NewIdent(paramName), matchedType)

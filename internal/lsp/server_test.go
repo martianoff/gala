@@ -726,6 +726,31 @@ func TestDefinition_LocalVar(t *testing.T) {
 	}
 }
 
+// A package val named inside a case pattern is a stable identifier: the arm
+// compares against it, so go-to-definition lands on the val, not the pattern.
+func TestDefinition_StableIdentifierInPattern(t *testing.T) {
+	h := newHarness(t)
+	src := "package main\n" +
+		"\n" +
+		"val Answer = 42\n" +
+		"\n" +
+		"func probe(o Option[int]) string = o match {\n" +
+		"    case Some(Answer) => \"the answer\"\n" +
+		"    case _            => \"other\"\n" +
+		"}\n"
+	uri := openFileOnDisk(t, h, src)
+	locs, err := h.Definition(uri, 5, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locs) == 0 {
+		t.Fatal("no definition found for a package val used in a pattern")
+	}
+	if locs[0].Range.Start.Line != 2 {
+		t.Errorf("expected definition on line 2 (val Answer), got line %d", locs[0].Range.Start.Line)
+	}
+}
+
 // ====================================================================
 // Definition: bind/also bound names (monadic do-notation) resolve to
 // their declaration, exactly like val/var.
