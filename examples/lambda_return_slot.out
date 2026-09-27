@@ -19,5 +19,14 @@ Failure(zero)
 Some(v=0)
 not zero
 None()
+None()
+not zero
+Some(v=2)
+None()
+some
+Some(x)
+None()
+Some(v=0)
+Some(v=6)
 nested=true
 nested=false

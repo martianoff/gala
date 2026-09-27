@@ -114,6 +114,67 @@ func firstZero(n int) Option[string] {
 			contains: []string{"return std.None[int]{}", "apply(func() std.Option[int] {"},
 		},
 		{
+			name: "a deferred return keeps a statement-position match inlined",
+			body: `
+func zeroIsNone(n int) Option[string] {
+    val o = apply(() => {
+        n match {
+            case 0 => {
+                return None()
+            }
+            case _ => {
+                Println("x")
+            }
+        }
+        Some(n)
+    })
+    return o.Map((v) => s"v=$v")
+}
+`,
+			contains: []string{"return std.None[int]{}", "apply(func() std.Option[int] {"},
+		},
+		{
+			name: "a type guessed from the match subject never fixes the slot",
+			body: `
+func subjectNotResult(o Option[int]) string {
+    val r = apply(() => {
+        o match {
+            case None() => {
+                return None()
+            }
+            case _ => {
+                Println("some")
+            }
+        }
+        return Some("x")
+    })
+    return s"$r"
+}
+`,
+			contains:    []string{"return std.None[string]{}", "apply(func() std.Option[string] {"},
+			notContains: []string{"return std.None[int]"},
+		},
+		{
+			name: "a return in an if-expression branch leaves the lambda's slot alone",
+			body: `
+func doubledSize(s string) Option[string] {
+    val o = apply(() => {
+        if (s == "x") {
+            return None()
+        }
+        val n = if (s == "") {
+            return 0
+        } else {
+            s.ByteSize()
+        }
+        Some(n * 2)
+    })
+    return o.Map((v) => s"v=$v")
+}
+`,
+			contains: []string{"return std.None[int]{}", "apply(func() std.Option[int] {"},
+		},
+		{
 			name: "returned match takes the lambda's type",
 			body: `
 func classify(n int) Option[string] {

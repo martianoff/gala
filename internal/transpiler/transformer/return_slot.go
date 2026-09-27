@@ -8,29 +8,30 @@ import (
 )
 
 // returnSlot is the result type that a `return`, a `bind` block and the
-// return-type fallbacks see in the body being lowered: the innermost function
-// or lambda (or match arm IIFE) result type.
+// return-type fallbacks see in the body being lowered: the result type of the
+// innermost function, lambda, or construct lowered to an IIFE.
 //
 // A lambda has its own slot, never the enclosing function's. When its result
 // type is known (an annotation, or a concrete expected type) typ holds it. When
 // it is not, the slot is fillable: the body's own values fill it, in any order.
-// A `return` whose value has a resolved type fills the slot; one whose value
+// A `return` whose value has a settled type fills the slot; one whose value
 // does not (`return None()`, `return Failure(e)`) is deferred and lowered again
-// against the filled slot once the whole body is lowered (see settle).
+// once the whole body is lowered (see settleReturnSlot).
 type returnSlot struct {
 	typ      transpiler.Type
 	fillable bool
 	deferred []deferredReturn
 }
 
-// deferredReturn is a `return` in a fillable slot whose value had no resolved
-// type when it was reached. stmt is patched once the slot is filled; scope is
-// the lexical scope the value is lowered in again; err is the first lowering's
-// error, reported when the slot is never filled.
+// deferredReturn is a `return` in a fillable slot whose value had no settled
+// type when it was reached. stmt is patched when the return is settled; scope
+// and subject are the lexical scope and match subject the value is lowered in
+// again; err is the first lowering's error.
 type deferredReturn struct {
 	stmt    *ast.ReturnStmt
 	exprCtx grammar.IExpressionContext
 	scope   *scope
+	subject transpiler.Type
 	err     error
 }
 
@@ -40,6 +41,20 @@ func (t *galaASTTransformer) enterReturnSlot(s returnSlot) func() {
 	prev := t.returnSlot
 	t.returnSlot = s
 	return func() { t.returnSlot = prev }
+}
+
+// enterIIFEReturnSlot is enterReturnSlot for a value-position construct
+// lowered to an IIFE (a match or an if-expression), whose value fills a slot
+// of type typ. A `return` in it leaves only the IIFE, so it sees typ, and it
+// never fills or defers into an enclosing lambda's fillable slot.
+func (t *galaASTTransformer) enterIIFEReturnSlot(typ transpiler.Type) func() {
+	switch {
+	case !transpiler.IsUnusable(typ):
+		return t.enterReturnSlot(returnSlot{typ: typ})
+	case t.returnSlot.fillable:
+		return t.enterReturnSlot(returnSlot{})
+	}
+	return func() {}
 }
 
 // isSettledType reports whether typ can fix a lambda's result slot: it is
@@ -111,7 +126,11 @@ func (t *galaASTTransformer) tryFillReturnSlot(typ transpiler.Type) bool {
 // lowerReturnValue lowers the value of a `return` statement against the
 // current slot. In a fillable slot that is still empty, the value is lowered
 // on its own: a settled type fills the slot, anything else defers the return
-// until the body is lowered (see settle).
+// until the body is lowered (see settleReturnSlot).
+//
+// Only the value's own type may fill the slot, never a guess: the enclosing
+// match subject, which a zero-arg constructor such as `None()` falls back to,
+// is hidden while the value is lowered here.
 func (t *galaASTTransformer) lowerReturnValue(exprCtx grammar.IExpressionContext) (*ast.ReturnStmt, error) {
 	if !t.returnSlot.fillable || !transpiler.IsUnusable(t.returnSlot.typ) {
 		expr, err := t.lowerAgainst(exprCtx, resultSlot(t.returnSlot.typ), false)
@@ -120,24 +139,34 @@ func (t *galaASTTransformer) lowerReturnValue(exprCtx grammar.IExpressionContext
 		}
 		return &ast.ReturnStmt{Results: []ast.Expr{t.unwrapImmutable(expr)}}, nil
 	}
-	stmt := &ast.ReturnStmt{}
+	subject := t.currentMatchSubjectType
+	t.currentMatchSubjectType = nil
 	expr, err := t.transformExpression(exprCtx)
+	t.currentMatchSubjectType = subject
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
-		stmt.Results = []ast.Expr{expr}
 		if t.tryFillReturnSlot(t.getExprTypeName(expr)) {
-			return stmt, nil
+			return &ast.ReturnStmt{Results: []ast.Expr{expr}}, nil
 		}
+	} else {
+		// A placeholder until the return is settled, so it still reads as a
+		// value return: a statement-position match whose arm holds it must
+		// be inlined, not lowered to a void IIFE.
+		expr = ast.NewIdent("nil")
 	}
-	t.returnSlot.deferred = append(t.returnSlot.deferred, deferredReturn{stmt: stmt, exprCtx: exprCtx, scope: t.currentScope, err: err})
+	stmt := &ast.ReturnStmt{Results: []ast.Expr{expr}}
+	t.returnSlot.deferred = append(t.returnSlot.deferred, deferredReturn{
+		stmt: stmt, exprCtx: exprCtx, scope: t.currentScope, subject: subject, err: err,
+	})
 	return stmt, nil
 }
 
 // settleReturnSlot finishes a fillable slot once the lambda body is lowered.
 // If no `return` filled it, the body's other result values (the promoted
-// trailing value, a `bind` chain) are tried. The deferred returns are then
-// lowered again against the filled slot. When nothing fills it, a deferred
-// return is an error: its value's type cannot be inferred.
+// trailing value, a `bind` chain) are tried. Each deferred return is then
+// lowered again in its own scope: against the filled slot, or — when nothing
+// filled it — with its match-subject context back, where a value that still
+// has no settled type is an error.
 func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	s := &t.returnSlot
 	if !s.fillable || len(s.deferred) == 0 {
@@ -160,22 +189,20 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 			return transpiler.IsUnusable(s.typ)
 		})
 	}
-	if transpiler.IsUnusable(s.typ) {
-		d := s.deferred[0]
-		if d.err != nil {
-			return d.err
-		}
-		return t.semanticErrorAt(d.exprCtx, "cannot infer the result type of this lambda: no `return` or result value has a fully known type — annotate the lambda's result type (e.g. `(x int) Option[int] => { ... }`)")
-	}
-	outer := t.currentScope
-	defer func() { t.currentScope = outer }()
+	filled := !transpiler.IsUnusable(s.typ)
+	outerScope, outerSubject := t.currentScope, t.currentMatchSubjectType
+	defer func() { t.currentScope, t.currentMatchSubjectType = outerScope, outerSubject }()
 	for _, d := range s.deferred {
-		t.currentScope = d.scope
+		t.currentScope, t.currentMatchSubjectType = d.scope, d.subject
 		expr, err := t.lowerAgainst(d.exprCtx, resultSlot(s.typ), false)
 		if err != nil {
 			return err
 		}
-		d.stmt.Results = []ast.Expr{t.unwrapImmutable(expr)}
+		expr = t.unwrapImmutable(expr)
+		if !filled && !t.isSettledType(t.getExprTypeName(expr)) {
+			return t.semanticErrorAt(d.exprCtx, "cannot infer the result type of this lambda: no `return` or result value has a fully known type — annotate the lambda's result type (e.g. `(x int) Option[int] => { ... }`)")
+		}
+		d.stmt.Results = []ast.Expr{expr}
 	}
 	s.deferred = nil
 	return nil

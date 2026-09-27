@@ -115,6 +115,56 @@ func firstZero(n int) Option[string] {
     return o.Map((v) => s"v=$v")
 }
 
+// A deferred `return None()` in such a match still makes it inlined.
+func zeroIsNone(n int) Option[string] {
+    val o = apply(() => {
+        n match {
+            case 0 => {
+                return None()
+            }
+            case _ => {
+                Println("not zero")
+            }
+        }
+        Some(n)
+    })
+    return o.Map((v) => s"v=$v")
+}
+
+// The match subject is only a guess for `None()`: it never fixes the slot,
+// so the lambda's result type comes from `Some("x")`.
+func subjectNotResult(o Option[int]) string {
+    val r = apply(() => {
+        o match {
+            case None() => {
+                return None()
+            }
+            case _ => {
+                Println("some")
+            }
+        }
+        return Some("x")
+    })
+    return s"$r"
+}
+
+// An if-expression lowers to an IIFE: a `return` in a branch is the branch's
+// value and leaves the lambda's slot alone.
+func doubledSize(s string) Option[string] {
+    val o = apply(() => {
+        if (s == "x") {
+            return None()
+        }
+        val n = if (s == "") {
+            return 0
+        } else {
+            s.ByteSize()
+        }
+        Some(n * 2)
+    })
+    return o.Map((v) => s"v=$v")
+}
+
 // Nested lambdas each have their own slot.
 func nested(n int) string {
     val outer = apply(() => {
@@ -147,6 +197,13 @@ func main() {
     Println(failFirst("0"))
     Println(firstZero(0))
     Println(firstZero(1))
+    Println(zeroIsNone(0))
+    Println(zeroIsNone(2))
+    Println(subjectNotResult(None[int]()))
+    Println(subjectNotResult(Some(1)))
+    Println(doubledSize("x"))
+    Println(doubledSize(""))
+    Println(doubledSize("abc"))
     Println(nested(3))
     Println(nested(-1))
 }

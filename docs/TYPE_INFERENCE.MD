@@ -461,13 +461,18 @@ return type.
   trailing value or a `bind` chain can also fill the slot. The deferred returns
   are then lowered again against it, so an early guard
   `if (x < 0) { return None() }` takes `Option[int]` from a later `Some(x + 1)`.
-- If nothing fills the slot, a deferred return is an error: "cannot infer the
-  result type of this lambda" (or the constructor's own error, such as
+- Only a value's own type fills the slot, never a guess. While such a `return`
+  is first lowered, the enclosing match subject (which `None()` would otherwise
+  fall back to) is hidden.
+- If nothing fills the slot, each deferred return is lowered again with that
+  context restored. One that still has no settled type is an error: "cannot
+  infer the result type of this lambda" (or the constructor's own error, such as
   [`GALA-E0018`](errors/GALA-E0018.md)).
 
-A match lowered to an IIFE gives its arms their own slot, since a `return` in an
-arm leaves the IIFE. A statement-position match whose arms return is inlined
-instead, so its returns fill the lambda's slot.
+A value-position match or if-expression lowers to an IIFE and gives its arms
+and branches their own slot, since a `return` there leaves only the IIFE. A
+statement-position match whose arms return is inlined instead, so its returns
+fill the lambda's slot.
 
 ---
 

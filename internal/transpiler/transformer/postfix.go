@@ -451,10 +451,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// fillable slot. (A statement-position match whose arms return is inlined,
 	// and its returns do exit the lambda, so it keeps the lambda's slot.)
 	switch {
+	case !stmtPosition:
+		defer t.enterIIFEReturnSlot(s.typ)()
 	case !transpiler.IsUnusable(s.typ):
 		defer t.enterReturnSlot(returnSlot{typ: s.typ})()
-	case !stmtPosition && t.returnSlot.fillable:
-		defer t.enterReturnSlot(returnSlot{})()
 	}
 
 	var clauses []ast.Stmt
