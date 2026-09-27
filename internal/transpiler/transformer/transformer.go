@@ -525,6 +525,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Remove unused imports from the generated AST. PruneUnused rewrites the
 	// file without touching the import manager, so no cache is invalidated.
 	t.importManager.PruneUnused(file, richAST)
+	if err := CheckImportPaths(file); err != nil {
+		return nil, nil, err
+	}
 
 	return fset, file, nil
 }

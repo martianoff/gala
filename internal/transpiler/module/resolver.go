@@ -1221,3 +1221,33 @@ func DeclaredModulePath(dir string) string {
 	}
 	return ""
 }
+
+// PackageImportPathForDir returns the import path of the package in directory
+// dir: the path declared by the nearest enclosing module (gala.mod, or failing
+// that go.mod, at dir or any ancestor) joined with dir's slash-separated path
+// relative to that module's root. It returns "" when no enclosing module
+// declares a path. It is path arithmetic over module files, never a
+// filesystem path.
+func PackageImportPathForDir(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	for root := abs; ; {
+		if modPath := DeclaredModulePath(root); modPath != "" {
+			rel, inside := relWithin(root, abs)
+			if !inside {
+				return ""
+			}
+			if rel == "." {
+				return modPath
+			}
+			return modPath + "/" + rel
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return ""
+		}
+		root = parent
+	}
+}

@@ -225,6 +225,10 @@ func (t *galaASTTransformer) resolveTypeQualifier(v transpiler.NamedType) ast.Ex
 // selectorForImportPath emits a type that carries its import path, resolved
 // by that path.
 func (t *galaASTTransformer) selectorForImportPath(v transpiler.NamedType) ast.Expr {
+	if t.richAST != nil && v.ImportPath == t.richAST.OwnImportPath {
+		// Declared by this package's own hand-written Go.
+		return ast.NewIdent(v.Name)
+	}
 	entry, ok := t.importManager.GetByPath(v.ImportPath)
 	if ok && entry.IsDot {
 		t.markDotImportUsed(entry.PkgName)

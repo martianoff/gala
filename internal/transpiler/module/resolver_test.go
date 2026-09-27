@@ -764,3 +764,23 @@ func TestDeclaredModulePath(t *testing.T) {
 		assert.Equal(t, "example.com/bommed", DeclaredModulePath(dir))
 	})
 }
+
+// TestPackageImportPathForDir: a directory's import path is its nearest
+// module's path joined with the slash-separated relative directory — never a
+// filesystem path.
+func TestPackageImportPathForDir(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"),
+		[]byte("module example.com/m\n\ngo 1.25\n"), 0644))
+	deep := filepath.Join(root, "internal", "box")
+	require.NoError(t, os.MkdirAll(deep, 0755))
+	nested := filepath.Join(root, "vendored")
+	require.NoError(t, os.MkdirAll(filepath.Join(nested, "sub"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "gala.mod"),
+		[]byte("module example.com/vendored\n"), 0644))
+
+	assert.Equal(t, "example.com/m", PackageImportPathForDir(root))
+	assert.Equal(t, "example.com/m/internal/box", PackageImportPathForDir(deep))
+	assert.Equal(t, "example.com/vendored/sub", PackageImportPathForDir(filepath.Join(nested, "sub")),
+		"the nearest module wins")
+}

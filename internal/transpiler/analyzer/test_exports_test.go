@@ -29,7 +29,7 @@ func GetBaseMetadata(p transpiler.GalaParser, searchPaths []string) *transpiler.
 		resolver:           module.NewResolver(searchPaths),
 	}
 
-	stdAST, err := a.analyzePackage(registry.StdPackageName)
+	stdAST, err := a.analyzePackage(registry.StdPackageName, registry.StdImportPath)
 	if err != nil {
 		return &transpiler.RichAST{
 			Types:            make(map[string]*transpiler.TypeMetadata),

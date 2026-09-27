@@ -672,7 +672,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	} else if _, inProgress := a.analyzedPkgs[registry.StdImportPath]; !inProgress {
 		// First time analyzing std - set placeholder to prevent infinite recursion
 		a.analyzedPkgs[registry.StdImportPath] = nil
-		stdAST, err := a.analyzePackage(registry.StdPackageName)
+		stdAST, err := a.analyzePackage(registry.StdPackageName, registry.StdImportPath)
 		if err == nil {
 			a.storeAnalyzedPkg(registry.StdImportPath, stdAST)
 			a.mergeAnalyzedClosureAt(richAST, registry.StdImportPath, mergeVisited)
@@ -749,7 +749,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						}
 					}
 
-					importedAST, err := a.analyzePackage(relPath)
+					importedAST, err := a.analyzePackage(relPath, path)
 					if err != nil {
 						line := s.GetStart().GetLine()
 						warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
@@ -808,7 +808,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			// instead of falling back to `any`.
 			if !goTypeInfoNonEmpty(goInfo) {
 				if dir, ok := a.resolveGoSrcDir(path); ok {
-					if srcInfo := AnalyzeGoFiles(dir); goTypeInfoNonEmpty(srcInfo) {
+					if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
 						goInfo = srcInfo
 					}
 				}
@@ -857,7 +857,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// parameter types as the un-substituted type-parameter name.
 	if filePath != "" && pkgName != "main" && pkgName != "test" {
 		dirPath := filepath.Dir(filePath)
-		goInfo := AnalyzeGoFiles(dirPath)
+		// The types declared here record this package's own import path; the
+		// transformer emits a type carrying it unqualified rather than as an
+		// import of the package into itself.
+		richAST.OwnImportPath = goFilesImportPath(dirPath, a.resolver.PackageImportPath(filePath))
+		goInfo := AnalyzeGoFiles(dirPath, richAST.OwnImportPath)
 		if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
@@ -2424,7 +2428,7 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
 						}
 					}
-					importedAST, err := a.analyzePackage(relPath)
+					importedAST, err := a.analyzePackage(relPath, path)
 					if err == nil {
 						a.storeAnalyzedPkg(path, importedAST)
 						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
@@ -2623,7 +2627,11 @@ func (a *galaAnalyzer) isStdType(name string) bool {
 	return registry.IsStdType(name)
 }
 
-func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, retErr error) {
+// analyzePackage loads the GALA package the importing file names importPath;
+// relPath is the form the resolver and the caches key it by. importPath is
+// what the package's hand-written Go types record as theirs (AnalyzeGoFiles),
+// so code generation imports them the way the source does.
+func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler.RichAST, retErr error) {
 	// Every failure to load a package is recorded, whatever the reason. The
 	// undefined-symbol check consults the record: a package that did not load
 	// contributes none of its symbols, and its callers' callers cannot tell
@@ -2856,7 +2864,7 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, re
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
-	goInfo := AnalyzeGoFiles(dirPath)
+	goInfo := AnalyzeGoFiles(dirPath, importPath)
 	if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
 		if pkgAST.GoTypeInfo == nil {
 			pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()
@@ -3046,7 +3054,7 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 
 		// Mark as in-progress so a cycle through this import does not loop.
 		a.analyzedPkgs[imp] = nil
-		importedAST, err := a.analyzePackage(relPath)
+		importedAST, err := a.analyzePackage(relPath, imp)
 		if err != nil || importedAST == nil {
 			continue
 		}
