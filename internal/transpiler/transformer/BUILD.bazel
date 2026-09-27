@@ -73,6 +73,7 @@ go_test(
         "binary_codegen_test.go",
         "binary_type_test.go",
         "bind_test.go",
+        "binding_named_like_type_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
         "collect_partial_function_test.go",

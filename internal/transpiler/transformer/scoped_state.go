@@ -120,8 +120,9 @@ var accumulatedStateFields = []string{
 	"funcTypeEnv",
 	"funcTypeEnvEpoch",
 	"funcTypeEnvImportRev",
-	"funcTypeEnvNames",
-	"typeNameScratch",
+	"typeNameCache",
+	"typeNameCacheEpoch",
+	"typeNameCacheImportRev",
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the

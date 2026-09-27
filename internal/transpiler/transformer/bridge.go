@@ -14,7 +14,7 @@ func (t *galaASTTransformer) normalizeTypeName(name string) string {
 	if strings.Contains(name, ".") {
 		return name
 	}
-	resolvedType := t.getType(name)
+	resolvedType := t.lookupTypeName(name)
 	if !resolvedType.IsNil() {
 		return resolvedType.String()
 	}
@@ -24,21 +24,8 @@ func (t *galaASTTransformer) normalizeTypeName(name string) string {
 // typeNameMemo memoizes unqualified-name normalization for one conversion
 // pass. A transpiler.Type tree names the same handful of types over and over,
 // so without this the same import lookup runs once per occurrence.
-//
-// consulted records every unqualified name the pass normalized. getType
-// consults the scope chain before package metadata, so those are the names a
-// local binding added later can change the answer for — which is what
-// functionTypeEnv's cache validity turns on. Recording only the names the
-// scope happened to answer during the pass would be wrong: a name resolved
-// from type metadata now can be answered from a scope later.
 type typeNameMemo struct {
-	resolved  map[string]string
-	consulted map[string]struct{}
-	// track enables consulted collection. It is off for the per-call scope
-	// conversion in buildTypeEnv, which only needs `resolved`: the names it
-	// converts are looked up in the very scope chain that built them, so
-	// there is nothing to record and no reason to walk it twice.
-	track bool
+	resolved map[string]string
 }
 
 func (t *galaASTTransformer) normalizeTypeNameMemoized(name string, memo *typeNameMemo) string {
@@ -53,14 +40,6 @@ func (t *galaASTTransformer) normalizeTypeNameMemoized(name string, memo *typeNa
 			memo.resolved = make(map[string]string, 32)
 		}
 		memo.resolved[name] = resolved
-		// Only unqualified names reach the scope chain: normalizeTypeName
-		// returns a dotted name untouched.
-		if memo.track && !strings.Contains(name, ".") {
-			if memo.consulted == nil {
-				memo.consulted = make(map[string]struct{}, 16)
-			}
-			memo.consulted[name] = struct{}{}
-		}
 	}
 	return resolved
 }
@@ -292,16 +271,7 @@ func (t *galaASTTransformer) inferIfType(cond, then, elseExpr ast.Expr) (transpi
 func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 	fnEnv := t.functionTypeEnv()
 
-	// The memo is reused across calls so a per-call conversion costs no
-	// allocation. It is scratch: nothing retains the infer.Type trees it
-	// produces beyond this map.
-	memo := &t.typeNameScratch
-	clear(memo.resolved)
-	if t.traceTypeResolution {
-		// Tracing records every resolution, so it must not be served from
-		// a memo that would collapse repeats into one event.
-		memo = nil
-	}
+	memo := t.sharedTypeNameMemo()
 
 	// A function of the same name is about to overwrite the entry anyway,
 	// so skip the conversion instead of allocating a scheme to discard.
@@ -348,7 +318,9 @@ func (t *galaASTTransformer) scopeBindingCount() int {
 // allocations together accounting for all but the scope walk. The conversion
 // is therefore cached and only redone when something it reads has changed.
 //
-// Two things can change that, and they are checked differently. The import
+// Name normalization answers from the type namespace only (lookupTypeName),
+// never from the scope chain, so which local bindings are in scope cannot
+// change the result. Two things can, and they are checked differently. The import
 // manager moves a revision on every mutation of its entry set, so the cache
 // records the revision it was stamped with and a moved revision rebuilds it —
 // the same derived validity the resolver snapshot uses, which means a site
@@ -363,31 +335,18 @@ func (t *galaASTTransformer) scopeBindingCount() int {
 // generic scheme's quantified variables a fresh variable per use, so a
 // cached scheme's variables stay an uninstantiated template no matter how
 // many runs read it.
-//
-// An environment that was built while the scope chain shadowed one of the
-// names it normalized is returned but never stored: it is right for the
-// caller that asked for it and wrong for the next caller once the shadow is
-// gone, so it must not outlive the scope it was built in. That costs reuse
-// for as long as such a binding is in scope, which degrades to the
-// uncached behaviour for that span.
 func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 	if t.funcTypeEnv != nil &&
 		t.funcTypeEnvEpoch == t.typeEnvEpoch &&
-		t.funcTypeEnvImportRev == t.importManager.Revision() &&
-		!t.scopeShadowsFuncTypeNames() {
+		t.funcTypeEnvImportRev == t.importManager.Revision() {
 		return t.funcTypeEnv
 	}
 
-	memo := &typeNameMemo{track: true}
-	if t.traceTypeResolution {
-		// Tracing records every resolution, so it must not be served from a
-		// memo, and the cache would turn a per-inference conversion into a
-		// per-file one. Build fresh and keep nothing, which is what
-		// buildTypeEnv does for the scope half.
-		memo = nil
-	} else {
-		memo.resolved = make(map[string]string, 32)
-	}
+	// Under tracing the memo is nil (see sharedTypeNameMemo), and the cache
+	// would turn a per-inference conversion into a per-file one, so build
+	// fresh and keep nothing, which is what buildTypeEnv does for the scope
+	// half.
+	memo := t.sharedTypeNameMemo()
 
 	env := make(infer.TypeEnv, len(t.functions))
 	for name, meta := range t.functions {
@@ -414,56 +373,39 @@ func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 		}
 	}
 
-	// Two cases where the environment must not outlive this call.
-	//
-	// Under tracing there is nothing worth keeping: the memo is nil, and the
-	// names it would have recorded are what the shadow check below needs.
-	//
-	// The conversion above ran against the scope chain as it stands right
-	// now, so if a local binding answered one of the names it normalized,
-	// that local's type is baked into every signature mentioning the name.
-	// Caching it would hand the answer to a later caller that no longer has
-	// the shadow. Returning it uncached keeps the shadowed call correct and
-	// leaves the next call to rebuild from a clean scope.
-	if memo == nil || t.scopeShadows(memo.consulted) {
+	// Under tracing there is nothing worth keeping (see above).
+	if memo == nil {
 		return env
 	}
 
 	t.funcTypeEnv = env
 	t.funcTypeEnvEpoch = t.typeEnvEpoch
 	t.funcTypeEnvImportRev = t.importManager.Revision()
-	t.funcTypeEnvNames = memo.consulted
 	return env
 }
 
-// scopeShadows reports whether the current scope chain binds any of names.
-// getType answers from the scope before it answers from package metadata, so
-// a binding that collides with a name a conversion normalized is what makes
-// that conversion's answer scope-dependent.
+// sharedTypeNameMemo returns the name-normalization memo shared by
+// functionTypeEnv and buildTypeEnv. normalizeTypeName reads only the type
+// namespace, never the scope chain, so a memoized answer stays right for as
+// long as the state the function-environment cache is keyed on stays put: the
+// memo is reset when typeEnvEpoch or the import manager's revision moves, and
+// kept across inferences otherwise.
 //
-// The scan is over the chain's bindings rather than over the name set, because
-// a chain holds a handful of bindings while the name set holds every
-// unqualified type mentioned by every signature in the file.
-func (t *galaASTTransformer) scopeShadows(names map[string]struct{}) bool {
-	if len(names) == 0 {
-		return false
+// Under tracing it returns nil: every resolution must be recorded, so none
+// may be served from a memo that would collapse repeats into one event.
+func (t *galaASTTransformer) sharedTypeNameMemo() *typeNameMemo {
+	if t.traceTypeResolution {
+		return nil
 	}
-	for s := t.currentScope; s != nil; s = s.parent {
-		for name := range s.valTypes {
-			if _, ok := names[name]; ok {
-				return true
-			}
-		}
+	rev := t.importManager.Revision()
+	if t.typeNameCache.resolved == nil {
+		t.typeNameCache.resolved = make(map[string]string, 32)
+	} else if t.typeNameCacheEpoch != t.typeEnvEpoch || t.typeNameCacheImportRev != rev {
+		clear(t.typeNameCache.resolved)
 	}
-	return false
-}
-
-// scopeShadowsFuncTypeNames reports whether the current scope chain binds any
-// of the unqualified type names the cached function environment normalized.
-// Such a binding is the only way the cached conversion can have gone stale
-// without invalidateTypeEnv having been called.
-func (t *galaASTTransformer) scopeShadowsFuncTypeNames() bool {
-	return t.scopeShadows(t.funcTypeEnvNames)
+	t.typeNameCacheEpoch = t.typeEnvEpoch
+	t.typeNameCacheImportRev = rev
+	return &t.typeNameCache
 }
 
 // invalidateTypeEnv marks the cached function environment stale. Every write

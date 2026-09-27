@@ -310,7 +310,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				typeName = callReturns[i]
 			}
 
-			if qName := t.getType(typeName.String()); !qName.IsNil() {
+			if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 				typeName = qName
 			}
 
@@ -378,7 +378,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			}
 		}
 
-		if qName := t.getType(typeName.String()); !qName.IsNil() {
+		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 
@@ -564,7 +564,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 			}
 		}
 
-		if qName := t.getType(typeName.String()); !qName.IsNil() {
+		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 
@@ -1051,15 +1051,9 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			param := pCtx.(*grammar.ParameterContext)
 			pName := param.Identifier().GetText()
 			// The analyzer (transformer.go:162) already populates structFieldTypes
-			// with correctly-resolved types. Re-resolving here would route through
-			// the value scope, which has been polluted by transformParameter adding
-			// each field name to the local scope (declarations.go:1232-1236). When
-			// the field name shadows a type name (e.g., `struct M(Palette Palette[T])`),
-			// the value-scope lookup returns the field's already-generic type, which
-			// then gets re-wrapped with the type arguments — producing a doubled
-			// generic like `Palette[T][T]`. Skip re-resolving when the analyzer has
-			// already provided a non-nil entry; only fall back when missing (e.g.,
-			// for shapes the analyzer didn't model).
+			// with correctly-resolved types; only fall back to resolving the
+			// declared type here when it is missing (e.g., for shapes the
+			// analyzer didn't model).
 			if existing, ok := t.structFieldTypes[name][pName]; ok && !existing.IsNil() {
 				continue
 			}
@@ -1256,7 +1250,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 			identName := aliasCtx.Identifier().GetText()
 			targetType = ast.NewIdent(identName)
 			// Resolve the identifier to a potentially qualified type
-			resolvedType := t.getType(identName)
+			resolvedType := t.lookupTypeName(identName)
 			if !resolvedType.IsNil() {
 				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 					if pkg == registry.StdPackageName {
@@ -1403,7 +1397,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 	}
 	isVal := ctx.VAL() != nil
 	isVariadic := ctx.ELLIPSIS() != nil
-	if qName := t.getType(typeName.String()); !qName.IsNil() {
+	if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
 	// Variadic parameters are Go slices at runtime (e.g., ...Route becomes []Route).
@@ -1572,7 +1566,7 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 				// No explicit type: treat identifier as the type (for function types like func(T) bool)
 				typeName := paramCtx.Identifier().GetText()
 				// Check if this identifier resolves to a known type
-				resolvedType := t.getType(typeName)
+				resolvedType := t.lookupTypeName(typeName)
 				if !resolvedType.IsNil() {
 					if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 						if pkg == registry.StdPackageName {

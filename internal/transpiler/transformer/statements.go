@@ -105,10 +105,7 @@ func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExp
 	if t.getFunction(name) != nil {
 		return nil
 	}
-	if !t.getType(name).IsNil() {
-		return nil
-	}
-	if t.getTypeMeta(name) != nil {
+	if !t.getType(name).IsNil() || t.getTypeMeta(name) != nil {
 		return nil
 	}
 	if _, ok := t.structFields[name]; ok {
@@ -324,7 +321,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
 		typeName := t.getExprTypeName(rhsExprs[i])
-		if qName := t.getType(typeName.String()); !qName.IsNil() {
+		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 		if mutable {
@@ -397,7 +394,7 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 		if typeName.IsNil() {
 			return typeName
 		}
-		if qName := t.getType(typeName.String()); !qName.IsNil() {
+		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
 		}
 		return typeName

@@ -374,7 +374,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	}
 
 	typeName := t.resolveType(t.getBaseTypeName(typeExpr))
-	if qName := t.getType(typeName.String()); !qName.IsNil() {
+	if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 		typeName = qName
 	}
 	// If the type expression is a pointer (*T), wrap the resolved type

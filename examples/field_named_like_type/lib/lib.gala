@@ -1,0 +1,25 @@
+package lib
+
+// Library-side declarations whose fields and parameters share their names
+// with the types they carry.
+
+// Kind is the badge category.
+sealed type Kind {
+    case Primary()
+    case Secondary()
+}
+
+// Badge carries an optional Kind in a field that is itself named Kind.
+struct Badge(Label string, Kind Option[Kind])
+
+// KindName renders a Kind as lower-case text.
+func KindName(k Kind) string = k match {
+    case Primary() => "primary"
+    case Secondary() => "secondary"
+}
+
+// NewBadge builds a Badge from parameters named like its fields' types.
+func NewBadge(Label string, Kind Option[Kind]) Badge = Badge(Label = Label, Kind = Kind)
+
+// Describe renders the badge as `label:kind`, or `label:-` without a kind.
+func (b Badge) Describe() string = s"${b.Label}:${b.Kind.Map(KindName).GetOrElse(\"-\")}"

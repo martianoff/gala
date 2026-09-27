@@ -114,7 +114,7 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 			}
 			ident = ast.NewIdent(typeName)
 			// Use resolution to determine if this type belongs to an imported package
-			resolvedType := t.getType(typeName)
+			resolvedType := t.lookupTypeName(typeName)
 			if !resolvedType.IsNil() {
 				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 					// Type belongs to an imported package, use package-qualified identifier
@@ -624,8 +624,8 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 	}
 	switch e := expr.(type) {
 	case *ast.Ident:
-		// Try to resolve via getType first (handles dot imports, std types, etc.)
-		if resolved := t.getType(e.Name); !resolved.IsNil() {
+		// Resolve in the type namespace first (handles dot imports, std types, etc.)
+		if resolved := t.lookupTypeName(e.Name); !resolved.IsNil() {
 			return resolved
 		}
 		// Fall back to simple resolution (for type parameters like T, U, etc.)
@@ -746,7 +746,7 @@ func (t *galaASTTransformer) isTypeBaseExpr(expr ast.Expr) bool {
 	case *ast.IndexListExpr:
 		return t.isTypeBaseExpr(e.X)
 	case *ast.Ident:
-		return !t.isVal(e.Name) && !t.isVar(e.Name) && !t.getType(e.Name).IsNil()
+		return !t.isVal(e.Name) && !t.isVar(e.Name) && !t.lookupTypeName(e.Name).IsNil()
 	case *ast.SelectorExpr:
 		if id, ok := e.X.(*ast.Ident); ok {
 			return t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName
