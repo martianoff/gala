@@ -393,7 +393,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
-	t.finalizeCodecs(file)
+	if err := t.finalizeCodecs(file); err != nil {
+		return nil, nil, err
+	}
 
 	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)

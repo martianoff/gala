@@ -530,6 +530,23 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "codec requested for a struct with a function field",
+			code: galaerr.CodeUnsupportedCodecField, // GALA-E0050
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "martianoff/gala/json"
+
+struct Job(Name string, Run func() int)
+
+func main() {
+    val codec = json.Codec[Job](json.AsIs())
+    Println(codec.Encode(Job("build", () => 1)))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

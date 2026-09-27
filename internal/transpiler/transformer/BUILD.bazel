@@ -82,6 +82,7 @@ go_test(
         "bridge_func_type_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
+        "codec_field_kinds_test.go",
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
         "compilation_gate_test.go",

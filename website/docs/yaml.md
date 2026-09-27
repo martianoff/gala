@@ -206,12 +206,15 @@ The codec emits and parses a focused, predictable subset of YAML:
 
 - block-style mappings
 - block-style sequences
-- scalars (`string`, `int`, `float`, `bool`, `null`)
+- scalars (`string`, `int`, `float`, `bool`, `null`), including `.nan`, `.inf` and `-.inf`
 - literal block scalars (`|`)
 - comments
 - nested structures
+- the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List` or `HashMap` so it reads back as empty rather than `null`
 
-Out of scope: anchors, aliases, flow style, custom tags. If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
+Struct fields follow the same rules as the JSON codec: every int, uint and float kind, aliases and Go named types over them, structs, and `Option` / `Array` / `List` / `HashMap[string, V]` of those; any other field type is a compile error ([GALA-E0050](/docs/errors/gala-e0050/)). Out-of-range numbers are decode errors.
+
+Out of scope: anchors, aliases, other flow-style collections, custom tags. If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
 
 ---
 

@@ -2015,6 +2015,12 @@ codec.Encode(user).Get()
 
 The decoder silently drops fields that are not declared on the target struct — there is no strict mode. See the website [Json docs](https://martianov.dev/docs/json/) for the long-form treatment.
 
+#### Field Types
+
+A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string or an alias of `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`.
+
+Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List` or `HashMap` in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
+
 ### Yaml
 
 The `yaml` package mirrors `json` exactly: same builder API, same auto-injected `StructMeta[T]`, same `Encode` / `Decode` / `Unapply` surface. The only difference is the emitted format — block-style YAML instead of JSON. Located in the `yaml` package.
@@ -2077,7 +2083,9 @@ type FieldEncoder interface {
     WriteString(v string)
     WriteInt(v int)
     WriteInt64(v int64)
+    WriteUint64(v uint64)
     WriteFloat64(v float64)
+    WriteFloat32(v float32)
     WriteBool(v bool)
     WriteRune(v rune)
     WriteNull()
@@ -2087,6 +2095,8 @@ type FieldEncoder interface {
     WriteEndArray()
 }
 ```
+
+The decoder side mirrors it (`ReadString`, `ReadInt`, `ReadInt64`, `ReadFloat64`, …). The sized kinds are range-checked by the decoder: `ReadIntN(bitSize)` and `ReadUintN(bitSize)` must reject a value that does not fit `bitSize` bits (`0` is the platform `uint` size), and `ReadFloat32` one that overflows `float32` — generated code converts their result to the field's kind, so a decoder that wraps instead would corrupt data. The encoder writes int8…int32 through `WriteInt64` and every unsigned kind through `WriteUint64`.
 
 Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the transpiler will auto-inject StructMeta for your format too.
 

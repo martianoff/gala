@@ -1,0 +1,6 @@
+{"Level":-8,"Delta":-1600,"Count":2000000000,"Flags":255,"Port":8080,"Seq":4000000000,"Total":18446744073709551615,"Ratio":0.25,"Took":1500,"Timeout":3000000000,"Tag":"probe","Raw":7,"Offset":-42,"Samples":[1.5,-0.125],"Limits":{"max":65535}}
+round trip equal: true
+timeout: 3s
+int8 300 fails: true
+uint16 -1 fails: true
+NaN fails: true

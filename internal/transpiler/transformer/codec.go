@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
+	"sort"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -28,6 +30,12 @@ type structMetaConfig struct {
 	typeMetadata  *transpiler.TypeMetadata
 	generatedName string
 	resolvedName  string
+	// rootName, line and col identify the use site (`Codec[T]`, `StructMeta[T]()`)
+	// that first asked for this codec. A struct reached only as a nested field
+	// inherits them from its parent, so a diagnostic about any field points at
+	// the code that requested the codec.
+	rootName  string
+	line, col int
 }
 
 // ---- StructMeta interception ----
@@ -58,6 +66,9 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 		typeMetadata:  typeMeta,
 		generatedName: genName,
 		resolvedName:  resolvedName,
+		rootName:      typeName,
+		line:          line,
+		col:           col,
 	}
 
 	// Register type metadata so the transpiler can resolve method return types.
@@ -76,22 +87,38 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 // Array/List/HashMap, gets its own _StructMeta_X registered so the
 // recursive EncodeFields/DecodeFields dispatch in codec_typed.go can
 // find it.  The walk is a simple worklist fixpoint.
-func (t *galaASTTransformer) finalizeCodecs(file *ast.File) {
+//
+// A field whose type has no encoding fails the build with GALA-E0050. The
+// configs are visited in name order so that, when several are broken, the
+// error reported is the same on every run.
+func (t *galaASTTransformer) finalizeCodecs(file *ast.File) error {
 	t.expandNestedStructMetas()
-	for _, config := range t.structMetas {
-		decls := t.generateStructMetaDecls(config)
+	names := make([]string, 0, len(t.structMetas))
+	for genName := range t.structMetas {
+		names = append(names, genName)
+	}
+	sort.Strings(names)
+	for _, genName := range names {
+		decls, err := t.generateStructMetaDecls(t.structMetas[genName])
+		if err != nil {
+			return err
+		}
 		file.Decls = append(file.Decls, decls...)
 	}
+	return nil
 }
 
 // expandNestedStructMetas walks every registered StructMeta config's fields
 // and registers fresh entries for any nested struct types that we have
 // metadata for.  Repeats until the set is closed.
 func (t *galaASTTransformer) expandNestedStructMetas() {
+	// Seed in name order: a nested struct inherits its use site from whichever
+	// parent reaches it first, and that must not depend on map iteration.
 	worklist := make([]string, 0, len(t.structMetas))
 	for genName := range t.structMetas {
 		worklist = append(worklist, genName)
 	}
+	sort.Strings(worklist)
 	for len(worklist) > 0 {
 		genName := worklist[0]
 		worklist = worklist[1:]
@@ -101,7 +128,7 @@ func (t *galaASTTransformer) expandNestedStructMetas() {
 		}
 		for _, fieldName := range config.typeMetadata.FieldNames {
 			fieldType := config.typeMetadata.Fields[fieldName]
-			added := t.registerNestedStructMetaForType(fieldType)
+			added := t.registerNestedStructMetaForType(fieldType, config)
 			worklist = append(worklist, added...)
 		}
 	}
@@ -111,7 +138,10 @@ func (t *galaASTTransformer) expandNestedStructMetas() {
 // type reachable through the given field type's container layers
 // (Immutable, Option, Array, List, HashMap value).  Returns the list of
 // freshly-registered generated names so the caller can keep walking.
-func (t *galaASTTransformer) registerNestedStructMetaForType(fieldType transpiler.Type) []string {
+//
+// Sealed types are not registered: they have no codec encoding, and leaving
+// them out is what makes the field that reaches one fail with GALA-E0050.
+func (t *galaASTTransformer) registerNestedStructMetaForType(fieldType transpiler.Type, parent *structMetaConfig) []string {
 	var added []string
 	t.collectNestedStructTypeNames(fieldType, func(name string) {
 		genName := "_StructMeta_" + name
@@ -119,7 +149,7 @@ func (t *galaASTTransformer) registerNestedStructMetaForType(fieldType transpile
 			return
 		}
 		typeMeta, resolved := t.getTypeMetaResolved(name)
-		if typeMeta == nil || len(typeMeta.FieldNames) == 0 {
+		if typeMeta == nil || len(typeMeta.FieldNames) == 0 || typeMeta.IsSealed {
 			return
 		}
 		t.structMetas[genName] = &structMetaConfig{
@@ -127,6 +157,9 @@ func (t *galaASTTransformer) registerNestedStructMetaForType(fieldType transpile
 			typeMetadata:  typeMeta,
 			generatedName: genName,
 			resolvedName:  resolved,
+			rootName:      parent.rootName,
+			line:          parent.line,
+			col:           parent.col,
 		}
 		t.registerStructMetaTypeMeta(genName, name)
 		added = append(added, genName)
@@ -141,37 +174,16 @@ func (t *galaASTTransformer) collectNestedStructTypeNames(ty transpiler.Type, cb
 	if ty == nil {
 		return
 	}
-	if gt, ok := ty.(transpiler.GenericType); ok {
-		base := gt.Base.BaseName()
-		if base == "Immutable" || base == "std.Immutable" ||
-			base == "Option" || base == "std.Option" {
-			if len(gt.Params) > 0 {
-				t.collectNestedStructTypeNames(gt.Params[0], cb)
-			}
-			return
-		}
-		if base == "Array" || base == "List" ||
-			base == "collection_immutable.Array" || base == "collection_immutable.List" {
-			if len(gt.Params) > 0 {
-				t.collectNestedStructTypeNames(gt.Params[0], cb)
-			}
-			return
-		}
-		if base == "HashMap" || base == "collection_immutable.HashMap" {
-			if len(gt.Params) == 2 {
-				t.collectNestedStructTypeNames(gt.Params[1], cb)
-			}
-			return
-		}
-		// Other generics (user-defined) — only recurse into the base name as
-		// the candidate; their type params are not part of any struct shape
-		// the transpiler currently codegens for.
-		if name := gt.Base.BaseName(); name != "" {
-			cb(name)
-		}
+	ty = t.codecUnalias(ty)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable", "Option", "Array", "List":
+		t.collectNestedStructTypeNames(params[0], cb)
+		return
+	case "HashMap":
+		t.collectNestedStructTypeNames(params[1], cb)
 		return
 	}
-	if name := namedTypeSimpleName(ty); name != "" {
+	if name := codecStructName(ty); name != "" {
 		cb(name)
 	}
 }
@@ -190,7 +202,11 @@ func (t *galaASTTransformer) collectionIdent(name string) ast.Expr {
 	}
 }
 
-func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) []ast.Decl {
+func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) ([]ast.Decl, error) {
+	encode, decode, err := t.genStructMetaMethods(config)
+	if err != nil {
+		return nil, err
+	}
 	var decls []ast.Decl
 	meta := config.typeMetadata
 	genName := config.generatedName
@@ -208,12 +224,11 @@ func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) [
 
 	decls = append(decls, t.genNumFields(genName, len(meta.FieldNames)))
 	decls = append(decls, t.genFieldName(genName, meta.FieldNames))
-	// Option-C: the only typed serialisation methods.  EncodeFields /
-	// DecodeFields live in codec_typed.go.
-	decls = append(decls, t.genEncodeFields(config))
-	decls = append(decls, t.genDecodeFields(config))
+	// The only typed serialisation methods. EncodeFields / DecodeFields live
+	// in codec_typed.go.
+	decls = append(decls, encode, decode)
 
-	return decls
+	return decls, nil
 }
 
 // --- NumFields() int ---
@@ -255,32 +270,6 @@ func (t *galaASTTransformer) genFieldName(genName string, fieldNames []string) *
 		Body: &ast.BlockStmt{List: []ast.Stmt{
 			&ast.SwitchStmt{Tag: ast.NewIdent("i"), Body: &ast.BlockStmt{List: cases}},
 		}},
-	}
-}
-
-func baseTypeName(t transpiler.Type) string {
-	if t == nil {
-		return ""
-	}
-	switch bt := t.(type) {
-	case transpiler.BasicType:
-		return bt.Name
-	case transpiler.NamedType:
-		return bt.Name
-	case transpiler.GenericType:
-		// Generic types (e.g., Option[int]) — report the base name so codec
-		// dispatch can find metadata for the parameterized container.
-		return bt.Base.BaseName()
-	case transpiler.PointerType:
-		return baseTypeName(bt.Elem)
-	case transpiler.ArrayType, transpiler.MapType, transpiler.FuncType, transpiler.NilType:
-		// Composite/terminal kinds have no single base name — codec paths that
-		// reach here with these should skip field-by-field codegen.
-		return ""
-	default:
-		// New Type implementations must be added here so codec generation does
-		// not silently fall through.
-		return ""
 	}
 }
 
@@ -336,37 +325,53 @@ func (t *galaASTTransformer) registerStructMetaTypeMeta(genName, targetTypeName 
 
 // autoInjectStructMeta prepends a generated _StructMeta_T{} before existing args.
 // This enables: Codec[Person](SnakeCase()) → Apply(_StructMeta_Person{}, SnakeCase())
-func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr) []ast.Expr {
+//
+// A root type the codec cannot describe — a generic struct, or a struct with
+// no fields — fails with GALA-E0050 here rather than as a Go compile error
+// about a StructMeta that was never generated.
+func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, line, col int) ([]ast.Expr, error) {
 	if len(typeArgs) == 0 {
-		return args
+		return args, nil
 	}
 	typeArgName := ""
-	if id, ok := typeArgs[0].(*ast.Ident); ok {
-		typeArgName = id.Name
-	} else if sel, ok := typeArgs[0].(*ast.SelectorExpr); ok {
-		typeArgName = sel.Sel.Name
+	switch arg := typeArgs[0].(type) {
+	case *ast.Ident:
+		typeArgName = arg.Name
+	case *ast.SelectorExpr:
+		typeArgName = arg.Sel.Name
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		root := types.ExprString(arg)
+		return nil, t.codecError(&structMetaConfig{rootName: root, line: line, col: col},
+			fmt.Sprintf("generic type %s has no codec encoding", root))
 	}
 	if typeArgName == "" {
-		return args
+		return args, nil
 	}
 
 	// Ensure StructMeta is generated for this type
 	genName := "_StructMeta_" + typeArgName
 	if _, exists := t.structMetas[genName]; !exists {
 		typeMeta, resolved := t.getTypeMetaResolved(typeArgName)
+		if typeMeta != nil && !typeMeta.IsSealed && len(typeMeta.FieldNames) == 0 {
+			return nil, t.codecError(&structMetaConfig{rootName: typeArgName, line: line, col: col},
+				noFieldsReason(typeArgName))
+		}
 		if typeMeta != nil && len(typeMeta.FieldNames) > 0 {
 			t.structMetas[genName] = &structMetaConfig{
 				typeName:      typeArgName,
 				typeMetadata:  typeMeta,
 				generatedName: genName,
 				resolvedName:  resolved,
+				rootName:      typeArgName,
+				line:          line,
+				col:           col,
 			}
 			t.registerStructMetaTypeMeta(genName, typeArgName)
 		}
 	}
 
 	// Prepend StructMeta before existing args
-	return append([]ast.Expr{&ast.CompositeLit{Type: ast.NewIdent(genName)}}, args...)
+	return append([]ast.Expr{&ast.CompositeLit{Type: ast.NewIdent(genName)}}, args...), nil
 }
 
 func buildFieldAccess(receiver ast.Expr, fieldName string, isImmut bool) ast.Expr {
@@ -417,8 +422,9 @@ func exprStmt(expr ast.Expr) *ast.ExprStmt {
 	return &ast.ExprStmt{X: expr}
 }
 
-func methodCall(receiver, method string) *ast.CallExpr {
+func methodCall(receiver, method string, args ...ast.Expr) *ast.CallExpr {
 	return &ast.CallExpr{
-		Fun: &ast.SelectorExpr{X: ast.NewIdent(receiver), Sel: ast.NewIdent(method)},
+		Fun:  &ast.SelectorExpr{X: ast.NewIdent(receiver), Sel: ast.NewIdent(method)},
+		Args: args,
 	}
 }
