@@ -179,6 +179,7 @@ Println(ptr.Age)      // 30
 
 `ConstPtr` is useful for struct fields that hold references to shared, immutable data:
 
+<!-- doc-check: fragment -->
 ```gala
 struct Team(Leader ConstPtr[Person], MemberCount int)
 
@@ -215,6 +216,7 @@ m.Put("b", 2)
 
 **Accumulators in loops** — When building up a value iteratively:
 
+<!-- doc-check: fragment -->
 ```gala
 var total = 0
 for _, v := range items {

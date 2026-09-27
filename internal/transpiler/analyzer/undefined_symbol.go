@@ -5,10 +5,12 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -286,6 +288,10 @@ type undefChecker struct {
 	// reads each candidate's gala.mod/go.mod, and a successful compile must not
 	// pay for hint machinery it never uses.
 	hintRoots func() []hintRoot
+
+	// hints is the source index behind the import hint, built on the first
+	// undefined name and reused for the rest.
+	hints *hintIndex
 
 	// importResolves reports whether an import path maps to a directory, so
 	// the hint can suggest a spelling the compiler will accept.
@@ -984,7 +990,10 @@ func (c *undefChecker) report(name string, tok antlr.Token) {
 // declared by GALA packages the search paths can see, it names the import(s)
 // that would bring it into scope; otherwise it falls back to generic guidance.
 func (c *undefChecker) hintFor(name string) string {
-	candidates := galaPackagesDeclaring(name, c.hintRoots(), c.importResolves)
+	if c.hints == nil {
+		c.hints = newHintIndex(c.hintRoots())
+	}
+	candidates := galaPackagesDeclaring(name, c.hints, c.importResolves)
 	switch len(candidates) {
 	case 0:
 		return "check the spelling, add the import that introduces this name, or declare it — " +
@@ -1151,74 +1160,111 @@ var (
 	goDeclarationKeywords   = []string{"func ", "type ", "var ", "const "}
 )
 
-// galaPackagesDeclaring finds every importable package under one of `roots`
-// that declares a top-level `name`. Declarations are read from the candidate
-// packages' own source — their `func` / `type` / `struct` / `sealed type` /
-// `val` / `var` declarations — so the association comes from real
-// declarations rather than a name list or a path substring. It only runs when
-// an error is already being emitted, so a successful compile never pays for
-// the directory walk.
-func galaPackagesDeclaring(name string, roots []hintRoot, resolves func(importPath, dir string) bool) []galaPkgExport {
-	var found []galaPkgExport
-	for _, root := range roots {
-		if root.dir == "" {
-			continue
+// hintSource is one source file the import hint may search — a non-test
+// .gala file, or a hand-written .go file of a GALA package — reduced to what
+// the hint needs: its directory, its package name and its top-level names.
+type hintSource struct {
+	dir   string
+	pkg   string
+	names map[string]bool
+}
+
+// hintIndex holds, per hint root (in root order), the source files under it.
+// It is built once per checker and shared by every undefined name the file
+// reports: rescanning the tree for each name cost seconds on a
+// repository-sized root once a file had a few typos. A root is read only when
+// every earlier root came up empty, so the common case — the name is declared
+// under the first root — never walks the later ones.
+type hintIndex struct {
+	roots []hintRoot
+	files [][]hintSource
+	read  []bool
+}
+
+func newHintIndex(roots []hintRoot) *hintIndex {
+	return &hintIndex{roots: roots, files: make([][]hintSource, len(roots)), read: make([]bool, len(roots))}
+}
+
+// filesUnder returns root i's source files, reading them on first use. It only
+// runs when an error is already being emitted, so a successful compile never
+// pays for the directory walk.
+func (idx *hintIndex) filesUnder(i int) []hintSource {
+	if idx.read[i] {
+		return idx.files[i]
+	}
+	idx.read[i] = true
+	root := idx.roots[i]
+	if root.dir == "" {
+		return nil
+	}
+	// WalkDir, not Walk: Walk lstats every entry, most of them files this
+	// search never opens. WalkDir reads the entry type from the directory
+	// listing; like Walk, it does not follow links.
+	_ = filepath.WalkDir(root.dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return nil
 		}
+		if d.IsDir() {
+			base := filepath.Base(path)
+			if path != root.dir && (strings.HasPrefix(base, ".") || strings.HasPrefix(base, "bazel-") ||
+				base == "node_modules" || base == "testdata") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		var keywords []string
+		switch {
+		case filepath.Ext(path) == ".gala" && !strings.HasSuffix(path, "_test.gala"):
+			keywords = galaDeclarationKeywords
+		case filepath.Ext(path) == ".go" &&
+			!strings.HasSuffix(path, "_test.go") && !strings.HasSuffix(path, ".gen.go"):
+			keywords = goDeclarationKeywords
+		default:
+			return nil
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil
+		}
+		pkg, names := scanHintSource(string(data), keywords)
+		if pkg == "" || pkg == "main" {
+			return nil
+		}
+		idx.files[i] = append(idx.files[i], hintSource{dir: filepath.Dir(path), pkg: pkg, names: names})
+		return nil
+	})
+	return idx.files[i]
+}
+
+// galaPackagesDeclaring finds every importable package in idx that declares a
+// top-level `name`. Declarations are read from the candidate packages' own
+// source — their `func` / `type` / `struct` / `sealed type` / `val` / `var`
+// declarations — so the association comes from real declarations rather than
+// a name list or a path substring. Roots are tried in order and the first one
+// with a match wins.
+func galaPackagesDeclaring(name string, idx *hintIndex, resolves func(importPath, dir string) bool) []galaPkgExport {
+	var found []galaPkgExport
+	for i, root := range idx.roots {
 		seenDir := make(map[string]bool)
-		_ = filepath.Walk(root.dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info == nil {
-				return nil
+		for _, f := range idx.filesUnder(i) {
+			if seenDir[f.dir] || !f.names[name] {
+				continue
 			}
-			if info.IsDir() {
-				base := filepath.Base(path)
-				if path != root.dir && (strings.HasPrefix(base, ".") || strings.HasPrefix(base, "bazel-") ||
-					base == "node_modules" || base == "testdata") {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			var keywords []string
-			switch {
-			case filepath.Ext(path) == ".gala" && !strings.HasSuffix(path, "_test.gala"):
-				keywords = galaDeclarationKeywords
-			case filepath.Ext(path) == ".go" &&
-				!strings.HasSuffix(path, "_test.go") && !strings.HasSuffix(path, ".gen.go"):
-				keywords = goDeclarationKeywords
-			default:
-				return nil
-			}
-			dir := filepath.Dir(path)
-			if seenDir[dir] {
-				return nil
-			}
-			data, rerr := os.ReadFile(path)
+			rel, rerr := filepath.Rel(root.dir, f.dir)
 			if rerr != nil {
-				return nil
-			}
-			src := string(data)
-			if !declaresTopLevel(src, name, keywords) {
-				return nil
-			}
-			pkg := packageClauseOf(src)
-			if pkg == "" || pkg == "main" {
-				return nil
-			}
-			rel, rerr := filepath.Rel(root.dir, dir)
-			if rerr != nil {
-				return nil
+				continue
 			}
 			rel = filepath.ToSlash(rel)
 			if rel == "." || rel == "" || strings.HasPrefix(rel, "..") {
-				return nil
+				continue
 			}
-			importPath := pickImportPath(rel, root.prefix, dir, resolves)
+			importPath := pickImportPath(rel, root.prefix, f.dir, resolves)
 			if importPath == "" {
-				return nil
+				continue
 			}
-			seenDir[dir] = true
-			found = append(found, galaPkgExport{importPath: importPath, pkgName: pkg})
-			return nil
-		})
+			seenDir[f.dir] = true
+			found = append(found, galaPkgExport{importPath: importPath, pkgName: f.pkg})
+		}
 		if len(found) > 0 {
 			break
 		}
@@ -1253,48 +1299,42 @@ func pickImportPath(rel, modulePrefix, dir string, resolves func(importPath, dir
 	return candidates[0]
 }
 
-// declaresTopLevel reports whether `src` declares `name` at the top level.
-// Top-level declarations start in column 0 in both GALA and gofmt'd Go;
-// anything indented belongs to a nested scope and is not an export.
-func declaresTopLevel(src, name string, keywords []string) bool {
-	for _, line := range strings.Split(src, "\n") {
+// scanHintSource returns, in one pass over `src`, its package clause and the
+// names it declares at the top level: the identifier right after one of
+// `keywords`. Top-level declarations start in column 0 in both GALA and
+// gofmt'd Go; anything indented belongs to a nested scope and is not an
+// export.
+func scanHintSource(src string, keywords []string) (string, map[string]bool) {
+	pkg := ""
+	names := make(map[string]bool)
+	for line := range strings.Lines(src) {
+		if pkg == "" {
+			if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "package "); ok {
+				pkg = strings.TrimSpace(rest)
+				continue
+			}
+		}
 		if line == "" || line[0] == ' ' || line[0] == '\t' {
 			continue
 		}
-		trimmed := strings.TrimRight(line, " \t\r")
 		for _, kw := range keywords {
-			rest, ok := strings.CutPrefix(trimmed, kw)
+			rest, ok := strings.CutPrefix(line, kw)
 			if !ok {
 				continue
 			}
-			if declaredNameIs(strings.TrimLeft(rest, " \t"), name) {
-				return true
+			rest = strings.TrimLeft(rest, " \t")
+			end := strings.IndexFunc(rest, func(r rune) bool {
+				return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+			})
+			if end < 0 {
+				end = len(rest)
+			}
+			if end > 0 {
+				names[rest[:end]] = true
 			}
 		}
 	}
-	return false
-}
-
-// declaredNameIs reports whether the declaration text `rest` names `name`
-// first — i.e. the identifier is followed by a non-identifier character.
-func declaredNameIs(rest, name string) bool {
-	if !strings.HasPrefix(rest, name) {
-		return false
-	}
-	if len(rest) == len(name) {
-		return true
-	}
-	c := rest[len(name)]
-	return !(c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
-}
-
-func packageClauseOf(src string) string {
-	for _, line := range strings.Split(src, "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "package "); ok {
-			return strings.TrimSpace(rest)
-		}
-	}
-	return ""
+	return pkg, names
 }
 
 // --- type-position qualifiers ------------------------------------------------

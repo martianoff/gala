@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"martianoff/gala/internal/stdlib"
 )
 
 // One set of sources can be generated two ways: `gala build` puts the library at
@@ -20,16 +18,16 @@ func TestSourceHashDistinguishesTreeShape(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, []byte("package lib\n"), 0644))
 	files := []string{file}
 
-	plain := computeSourceHash(files, "dev", "fp", "")
-	consumer := computeSourceHash(files, "dev", "fp", "cmd/app")
+	plain := computeSourceHash(files, toolchainWith("dev", "fp"), "", "")
+	consumer := computeSourceHash(files, toolchainWith("dev", "fp"), "cmd/app", "")
 
 	require.NotEmpty(t, plain)
 	require.NotEqual(t, plain, consumer,
 		"the same sources generated into a different tree shape must not share a cache key")
 
 	// Two different consumers are also distinct, and each shape is stable.
-	require.NotEqual(t, consumer, computeSourceHash(files, "dev", "fp", "cmd/other"))
-	require.Equal(t, consumer, computeSourceHash(files, "dev", "fp", "cmd/app"))
+	require.NotEqual(t, consumer, computeSourceHash(files, toolchainWith("dev", "fp"), "cmd/other", ""))
+	require.Equal(t, consumer, computeSourceHash(files, toolchainWith("dev", "fp"), "cmd/app", ""))
 }
 
 // treeShape names the layout, relative to the project root so that building the
@@ -70,26 +68,26 @@ func TestSubdirBuildDoesNotLeaveAStalePlainKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ws.Ensure())
 
-	hashFile := filepath.Join(ws.Dir, ".gala-source-hash")
+	hashFile := filepath.Join(ws.Dir, sourceStampName)
 
 	// What a plain build leaves behind.
 	plainBuilder := &Builder{config: config, workspace: ws, stdlibVersion: "dev"}
 	plainKey := plainBuilder.keyForCurrentSources(t)
-	require.NoError(t, os.WriteFile(hashFile, []byte(plainKey), 0644))
+	writeSourceStamp(hashFile, sourceStamp{Key: plainKey})
 
 	// A subdirectory build replaces gen/ and records its own shape.
 	subBuilder := &Builder{config: config, workspace: ws, stdlibVersion: "dev"}
 	subBuilder.SetSourceDir(filepath.Join(projectDir, "cmd", "app"))
 	subBuilder.recordSourceHash()
 
-	stored, err := os.ReadFile(hashFile)
-	require.NoError(t, err)
-	require.NotEqual(t, plainKey, string(stored),
+	stored, ok := readSourceStamp(hashFile)
+	require.True(t, ok)
+	require.NotEqual(t, plainKey, stored.Key,
 		"a subdirectory build must not leave the plain build's key describing its tree")
 
 	// So the next plain build sees a mismatch and re-transpiles rather than
 	// trusting the consumer tree sitting in gen/.
-	require.NotEqual(t, string(stored), plainBuilder.keyForCurrentSources(t),
+	require.NotEqual(t, stored.Key, plainBuilder.keyForCurrentSources(t),
 		"the following plain build must not match the key the subdirectory build left")
 }
 
@@ -99,8 +97,8 @@ func (b *Builder) keyForCurrentSources(t *testing.T) string {
 	t.Helper()
 	files, err := findGalaFilesRecursive(b.workspace.ProjectDir)
 	require.NoError(t, err)
-	galaMod := filepath.Join(b.workspace.ProjectDir, "gala.mod")
-	key := computeSourceHash(append(files, galaMod), b.stdlibVersion, stdlib.Fingerprint(), b.treeShape())
+	// These builders carry no parsed gala.mod, so there is no dependency key.
+	key := b.sourceKey(files, nil)
 	require.NotEmpty(t, key)
 	return key
 }

@@ -247,12 +247,87 @@ func IsPrimitiveType(name string) bool {
 	return false
 }
 
+// parseFuncType parses `func(P1, P2) R` and `func(P1) (R1, R2)`.
+func parseFuncType(s string) (FuncType, bool) {
+	closeParen := matchingClose(s, len("func"))
+	if closeParen == -1 {
+		return FuncType{}, false
+	}
+	var ft FuncType
+	for _, p := range splitTopLevel(s[len("func(") : closeParen]) {
+		ft.Params = append(ft.Params, ParseType(p))
+	}
+	rest := strings.TrimSpace(s[closeParen+1:])
+	switch {
+	case rest == "":
+	case strings.HasPrefix(rest, "(") && matchingClose(rest, 0) == len(rest)-1:
+		for _, r := range splitTopLevel(rest[1 : len(rest)-1]) {
+			ft.Results = append(ft.Results, ParseType(r))
+		}
+	default:
+		ft.Results = []Type{ParseType(rest)}
+	}
+	return ft, true
+}
+
+// matchingClose returns the index of the bracket closing the one at s[open]
+// ('(' or '['), counting every kind of nesting, or -1 when it is unbalanced.
+func matchingClose(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// splitTopLevel splits a comma-separated type list at the commas that are not
+// nested inside brackets or parentheses, trimming each part and dropping an
+// empty list's single empty part.
+func splitTopLevel(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, strings.TrimSpace(s[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, strings.TrimSpace(s[start:]))
+}
+
 // ParseType is a helper to transition from string-based types to structured types.
 // It should be used sparingly as we want the analyzer to produce structured types directly.
 func ParseType(s string) Type {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return NilType{}
+	}
+	// A function type, in the form FuncType.String() prints. Without this a
+	// function-typed type argument that round-trips through its string form
+	// (`func(int) int`) came back as an opaque name, so calling a value of that
+	// type inferred nothing.
+	if strings.HasPrefix(s, "func(") {
+		if ft, ok := parseFuncType(s); ok {
+			return ft
+		}
 	}
 	if strings.HasPrefix(s, "[]") {
 		return ArrayType{Elem: ParseType(s[2:])}
@@ -268,9 +343,7 @@ func ParseType(s string) Type {
 		return PointerType{Elem: innerType}
 	}
 	if strings.HasPrefix(s, "map[") {
-		// Very simple map parsing, doesn't handle nested maps well
-		closingBracket := strings.Index(s, "]")
-		if closingBracket != -1 {
+		if closingBracket := matchingClose(s, 3); closingBracket != -1 {
 			key := ParseType(s[4:closingBracket])
 			elem := ParseType(s[closingBracket+1:])
 			return MapType{Key: key, Elem: elem}
@@ -279,26 +352,14 @@ func ParseType(s string) Type {
 	if strings.Contains(s, "[") && strings.HasSuffix(s, "]") {
 		idx := strings.Index(s, "[")
 		base := ParseType(s[:idx])
-		paramsStr := s[idx+1 : len(s)-1]
-
-		// Split by comma, respecting nested brackets
-		var params []Type
-		bracketCount := 0
-		start := 0
-		for i := 0; i < len(paramsStr); i++ {
-			switch paramsStr[i] {
-			case '[':
-				bracketCount++
-			case ']':
-				bracketCount--
-			case ',':
-				if bracketCount == 0 {
-					params = append(params, ParseType(paramsStr[start:i]))
-					start = i + 1
-				}
-			}
+		parts := splitTopLevel(s[idx+1 : len(s)-1])
+		if len(parts) == 0 {
+			parts = []string{""}
 		}
-		params = append(params, ParseType(paramsStr[start:]))
+		params := make([]Type, len(parts))
+		for i, p := range parts {
+			params[i] = ParseType(p)
+		}
 		return GenericType{Base: base, Params: params}
 	}
 	if idx := strings.LastIndex(s, "."); idx != -1 {

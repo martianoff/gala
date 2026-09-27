@@ -38,7 +38,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 		return nil, nil
 	}
 
-	line, char := int(params.Position.Line), int(params.Position.Character)
+	line, char := h.index(text).toByte(params.Position)
 	info := h.hoverInfo(text, uriToPath(uri), richAST, varTypes, line, char)
 	if info == "" {
 		return nil, nil
@@ -68,7 +68,11 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 	// case, or a type. Resolved by position against the metadata the analyzer
 	// already recorded rather than by re-reading the source — the same anchor
 	// go-to-definition uses.
-	if info := declarationAt(richAST, path, line, char, word); info != "" {
+	//
+	// Declaration positions are ANTLR columns, which count code points; so
+	// does the cursor they are compared against.
+	runeChar := byteToRune(lines[line], char)
+	if info := declarationAt(richAST, path, line, runeChar, word); info != "" {
 		return info
 	}
 
@@ -104,7 +108,7 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 	// It wins over the by-name search at the end of this function: a package val
 	// and a type may share a name, and the binding is what a reference to it
 	// means.
-	if pv := packageValAt(richAST, word, path, line, char, isLocal); pv != nil {
+	if pv := packageValAt(richAST, word, path, line, runeChar, isLocal); pv != nil {
 		// The bare key is the binding's own type; locals are keyed
 		// "funcName.varName", and typStr may be a shadowing local's.
 		return packageValHover(richAST, pv, lookupVarType(varTypes, "", word))
@@ -127,8 +131,8 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 // Text-scanning for `func (r Recv) Name(` and friends is the thing this package
 // tells itself not to do: the shapes are ambiguous (generic receivers, one-line
 // bodies, comments, string literals) and the transpiler has already resolved
-// them exactly. SourcePos is 1-based line, 0-based column, matching
-// definition.go's locationAt.
+// them exactly. SourcePos is 1-based line, 0-based code-point column, matching
+// definition.go's locationAt; char is in the same unit.
 func declarationAt(richAST *transpiler.RichAST, path string, line, char int, word string) string {
 	if path == "" {
 		return ""
@@ -185,8 +189,10 @@ func declarationAt(richAST *transpiler.RichAST, path string, line, char int, wor
 	return ""
 }
 
-// posCovers reports whether an analyzer SourcePos names the identifier under an
-// LSP cursor.
+// posCovers reports whether an analyzer SourcePos names the identifier under a
+// cursor. char is a code-point column, the unit SourcePos.Column is in (see
+// position.go); name is an identifier, which is ASCII, so its length is the
+// same in bytes and code points.
 func posCovers(pos transpiler.SourcePos, line, char int, name string) bool {
 	if pos.Line == 0 {
 		return false
@@ -561,6 +567,7 @@ func variantSignature(v *transpiler.SealedVariant) string {
 // declaration position is exact and overrules that guess.
 //
 // Hover and go-to-definition both ask this, and the rule belongs in one place.
+// char is a code-point column, as for posCovers.
 func packageValAt(richAST *transpiler.RichAST, word, path string, line, char int, isLocal bool) *transpiler.PackageValMetadata {
 	pv, ok := richAST.PackageVals[word]
 	if !ok {

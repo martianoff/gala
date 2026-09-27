@@ -1,0 +1,7 @@
+package main
+
+import "example.com/nested/internal/a"
+
+func main() {
+    Println(a.Describe(3))
+}

@@ -101,6 +101,11 @@ type galaAnalyzer struct {
 	parser       transpiler.GalaParser
 	searchPaths  []string
 	packageFiles []string                       // Explicit sibling files belonging to the same package
+	// pkgImportPath is the import path of the package analyzePackage is
+	// loading ("" for the compilation unit): its files record it as
+	// RichAST.OwnImportPath rather than a path derived from the directory
+	// layout, which under Bazel need not match the declared importpath.
+	pkgImportPath string
 	// analyzedPkgs caches per-package metadata across files in a batch.
 	// Each entry holds an OWN-ONLY projection of the package's RichAST
 	// (Types/Functions/methods/etc. originating in that package). The
@@ -672,7 +677,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	} else if _, inProgress := a.analyzedPkgs[registry.StdImportPath]; !inProgress {
 		// First time analyzing std - set placeholder to prevent infinite recursion
 		a.analyzedPkgs[registry.StdImportPath] = nil
-		stdAST, err := a.analyzePackage(registry.StdPackageName)
+		stdAST, err := a.analyzePackage(registry.StdPackageName, registry.StdImportPath)
 		if err == nil {
 			a.storeAnalyzedPkg(registry.StdImportPath, stdAST)
 			a.mergeAnalyzedClosureAt(richAST, registry.StdImportPath, mergeVisited)
@@ -692,10 +697,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// check below fail open. See module.AllowsInternalImport.
 	importerPath := a.resolver.PackageImportPath(filePath)
 
-	// Reject a package imported twice before resolving anything, so the
-	// duplicate is reported against the source rather than escaping into the
-	// generated Go as a redeclaration.
-	if err := checkDuplicateImports(sourceFile); err != nil {
+	// Reject a package imported twice, or a path no package can have, before
+	// resolving anything, so either is reported against the source rather than
+	// escaping into the generated Go.
+	fileImports := scanFileImports(sourceFile)
+	if err := checkDuplicateImports(fileImports); err != nil {
+		return nil, err
+	}
+	if err := checkImportPathsWellFormed(fileImports); err != nil {
 		return nil, err
 	}
 
@@ -749,7 +758,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						}
 					}
 
-					importedAST, err := a.analyzePackage(relPath)
+					importedAST, err := a.analyzePackage(relPath, path)
 					if err != nil {
 						line := s.GetStart().GetLine()
 						warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
@@ -808,7 +817,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			// instead of falling back to `any`.
 			if !goTypeInfoNonEmpty(goInfo) {
 				if dir, ok := a.resolveGoSrcDir(path); ok {
-					if srcInfo := AnalyzeGoFiles(dir); goTypeInfoNonEmpty(srcInfo) {
+					if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
 						goInfo = srcInfo
 					}
 				}
@@ -857,8 +866,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// parameter types as the un-substituted type-parameter name.
 	if filePath != "" && pkgName != "main" && pkgName != "test" {
 		dirPath := filepath.Dir(filePath)
-		goInfo := AnalyzeGoFiles(dirPath)
-		if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
+		// The types declared here record this package's own import path; the
+		// transformer emits a type carrying it unqualified rather than as an
+		// import of the package into itself.
+		ownImportPath := a.pkgImportPath
+		if ownImportPath == "" {
+			ownImportPath = a.resolver.PackageImportPath(filePath)
+		}
+		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
+		goInfo := AnalyzeGoFiles(dirPath, richAST.OwnImportPath)
+		if !goInfo.IsEmpty() {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 			}
@@ -1242,6 +1259,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// already recorded from another file.
 	decls := newPackageDecls(filePath)
 
+	// pendingDefaultChecks validates each function's parameter defaults after
+	// section 2.5, when every declared type of the package can be resolved.
+	type pendingDefaultCheck struct {
+		meta      *transpiler.FunctionMetadata
+		line, col int
+		spans     map[int]defaultExprSpan
+	}
+	var pendingDefaultChecks []pendingDefaultCheck
+
 	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
@@ -1422,9 +1448,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						}
 					}
 				}
-				// Validate default parameter rules
-				if err := validateDefaultParams(funcMeta, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), filePath, defaultSpans); err != nil {
-					return nil, err
+				// Validate default parameter rules once the sibling files' type
+				// declarations are known too (section 2.5): a default is checked
+				// against the type its parameter's named type is declared over.
+				if len(funcMeta.DefaultExprs) > 0 {
+					pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
+						meta: funcMeta, line: ctx.GetStart().GetLine(), col: ctx.GetStart().GetColumn(), spans: defaultSpans,
+					})
 				}
 				// Reject redeclaration of a top-level function within the same
 				// package. The sibling-metadata pass may have already registered
@@ -1489,6 +1519,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	logPhase("extract-sibling-metadata", phaseStart)
 	phaseStart = time.Now()
+
+	if len(pendingDefaultChecks) > 0 {
+		underlying := a.declaredTypeUnderlying(sourceFile, pkgName, richAST)
+		for _, check := range pendingDefaultChecks {
+			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// 2.75 Collect embed declarations
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -2424,7 +2463,7 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
 						}
 					}
-					importedAST, err := a.analyzePackage(relPath)
+					importedAST, err := a.analyzePackage(relPath, path)
 					if err == nil {
 						a.storeAnalyzedPkg(path, importedAST)
 						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
@@ -2623,7 +2662,11 @@ func (a *galaAnalyzer) isStdType(name string) bool {
 	return registry.IsStdType(name)
 }
 
-func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, retErr error) {
+// analyzePackage loads the GALA package the importing file names importPath;
+// relPath is the form the resolver and the caches key it by. importPath is
+// what the package's hand-written Go types record as theirs (AnalyzeGoFiles),
+// so code generation imports them the way the source does.
+func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler.RichAST, retErr error) {
 	// Every failure to load a package is recorded, whatever the reason. The
 	// undefined-symbol check consults the record: a package that did not load
 	// contributes none of its symbols, and its callers' callers cannot tell
@@ -2645,9 +2688,9 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, re
 	// Save and clear packageFiles to prevent them from interfering with recursive
 	// Analyze calls. packageFiles are specific to the current compilation unit's package
 	// and must not be applied when analyzing other packages (e.g., std).
-	savedPackageFiles := a.packageFiles
-	a.packageFiles = nil
-	defer func() { a.packageFiles = savedPackageFiles }()
+	savedPackageFiles, savedPkgImportPath := a.packageFiles, a.pkgImportPath
+	a.packageFiles, a.pkgImportPath = nil, importPath
+	defer func() { a.packageFiles, a.pkgImportPath = savedPackageFiles, savedPkgImportPath }()
 
 	// Use the resolver to find the package directory
 	dirPath, err := a.resolver.ResolvePackagePath(relPath)
@@ -2856,8 +2899,8 @@ func (a *galaAnalyzer) analyzePackage(relPath string) (_ *transpiler.RichAST, re
 	// Always extract Go type information from .go files, even in mixed GALA+Go packages.
 	// This ensures Go-defined functions and variables (e.g., concurrent.Spawn) are available
 	// for type inference when GALA code calls them.
-	goInfo := AnalyzeGoFiles(dirPath)
-	if len(goInfo.Functions) > 0 || len(goInfo.Types) > 0 || len(goInfo.Variables) > 0 || len(goInfo.TypeAliases) > 0 {
+	goInfo := AnalyzeGoFiles(dirPath, importPath)
+	if !goInfo.IsEmpty() {
 		if pkgAST.GoTypeInfo == nil {
 			pkgAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 		}
@@ -3046,7 +3089,7 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 
 		// Mark as in-progress so a cycle through this import does not loop.
 		a.analyzedPkgs[imp] = nil
-		importedAST, err := a.analyzePackage(relPath)
+		importedAST, err := a.analyzePackage(relPath, imp)
 		if err != nil || importedAST == nil {
 			continue
 		}
@@ -3804,14 +3847,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// sibling files and to anything declared above them, so an alias
 			// used before its declaration was reported as an unknown type.
 			if ctx.TypeAlias() != nil {
-				aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
-				aliasTarget := ""
-				if aliasCtx.Type_() != nil {
-					aliasTarget = aliasCtx.Type_().GetText()
-				} else if aliasCtx.Identifier() != nil {
-					aliasTarget = aliasCtx.Identifier().GetText()
-				}
-				if aliasTarget != "" {
+				if aliasTarget := typeAliasTarget(ctx); aliasTarget != "" {
 					underlyingType := a.resolveTypeWithParams(aliasTarget, pkgName, meta.TypeParams)
 					if !underlyingType.IsNil() {
 						if richAST.TypeAliases == nil {
@@ -4171,7 +4207,13 @@ func spanOfCtx(ctx antlr.ParserRuleContext) defaultExprSpan {
 // defaultSpans (optional, keyed by param index) carries each default
 // expression's source span so the type-mismatch diagnostic can render an exact
 // caret over the offending value.
-func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan) error {
+//
+// underlying (optional) sees through a declared type name to the type it is
+// declared over, so a literal default for a parameter typed `Millis` (declared
+// `type Millis int64`) or `time.Duration` is checked the way Go converts it: a
+// numeric literal is a valid default for any type whose underlying type is
+// numeric.
+func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column int, filePath string, defaultSpans map[int]defaultExprSpan, underlying func(transpiler.Type) transpiler.Type) error {
 	_ = filePath // filePath is retained for future use; position info now travels via the coded error
 	if len(funcMeta.DefaultExprs) == 0 {
 		return nil
@@ -4210,7 +4252,8 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 		if literalType == "" {
 			continue // non-literal expression, can't validate statically
 		}
-		if !typesCompatibleForDefault(paramType, literalType) {
+		if !typesCompatibleForDefault(paramType, literalType) &&
+			(underlying == nil || !typesCompatibleForDefault(underlying(funcMeta.ParamTypes[i]).String(), literalType)) {
 			paramName := ""
 			if i < len(funcMeta.ParamNames) {
 				paramName = funcMeta.ParamNames[i]
@@ -4235,6 +4278,86 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 	}
 
 	return nil
+}
+
+// typeAliasTarget returns the target of a `type X Y` declaration as written,
+// or "" when the declaration is a struct or interface. `typeAlias: identifier
+// | type`, and both branches name an alias: `type Millis int64` and `type
+// Coord Point` take the identifier branch.
+func typeAliasTarget(typeDecl *grammar.TypeDeclarationContext) string {
+	aliasCtx, ok := typeDecl.TypeAlias().(*grammar.TypeAliasContext)
+	if !ok || aliasCtx == nil {
+		return ""
+	}
+	if aliasCtx.Type_() != nil {
+		return aliasCtx.Type_().GetText()
+	}
+	if aliasCtx.Identifier() != nil {
+		return aliasCtx.Identifier().GetText()
+	}
+	return ""
+}
+
+// declaredTypeUnderlying returns a resolver that follows a named type to the
+// type it is declared over: a `type Millis int64` of this file or a sibling
+// (through alias chains), or a Go named type such as `time.Duration`. Types it
+// cannot see through are returned unchanged.
+func (a *galaAnalyzer) declaredTypeUnderlying(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) transpiler.Type {
+	// This file's own type declarations are not in richAST.TypeAliases (only
+	// siblings' are), so read their targets here.
+	local := make(map[string]transpiler.Type)
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		typeDecl, ok := topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext)
+		if !ok || typeDecl == nil || typeDecl.Identifier() == nil {
+			continue
+		}
+		target := typeAliasTarget(typeDecl)
+		if target == "" {
+			continue
+		}
+		if resolved := a.resolveTypeWithParams(target, pkgName, nil); !resolved.IsNil() {
+			local[typeDecl.Identifier().GetText()] = resolved
+		}
+	}
+	declared := func(name string) (transpiler.Type, bool) {
+		if next, ok := local[name]; ok {
+			return next, true
+		}
+		if next, ok := richAST.TypeAliases[name]; ok && !next.IsNil() {
+			return next, true
+		}
+		return nil, false
+	}
+	step := func(typ transpiler.Type) (transpiler.Type, bool) {
+		// A bare declared name (`Millis`) resolves to a BasicType carrying it.
+		if basic, ok := typ.(transpiler.BasicType); ok {
+			return declared(basic.Name)
+		}
+		named, ok := typ.(transpiler.NamedType)
+		if !ok {
+			return typ, false
+		}
+		if named.Package == "" || named.Package == pkgName {
+			return declared(named.Name)
+		}
+		if richAST.GoTypeInfo != nil {
+			if td := richAST.GoTypeInfo.GetTypeData(named.Package + "." + named.Name); td != nil && td.Underlying != nil {
+				return td.Underlying, true
+			}
+		}
+		return typ, false
+	}
+	return func(typ transpiler.Type) transpiler.Type {
+		// The hop bound stops a chain that refers back to itself.
+		for hop := 0; hop < 16; hop++ {
+			next, ok := step(typ)
+			if !ok || next.String() == typ.String() {
+				break
+			}
+			typ = next
+		}
+		return typ
+	}
 }
 
 // extractPackageVals records package-level `val`/`var` declarations from a
@@ -4916,6 +5039,27 @@ func sourceText(ctx antlr.ParserRuleContext) string {
 	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
 }
 
+// checkImportPathsWellFormed rejects an import whose path no package can have:
+// a filesystem or relative path (`./util`, `C:\lib`), or one with a space or
+// an empty element. Such a path would otherwise pass through as a Go import
+// and fail the transformer's last check on generated imports
+// (transformer.CheckImportPaths), which reports a transpiler defect — this
+// reports it against the import that wrote it.
+func checkImportPathsWellFormed(imports []fileImport) error {
+	for _, imp := range imports {
+		if transpiler.IsValidGoImportPath(imp.Path) {
+			continue
+		}
+		return galaerr.NewCodedSemanticError(
+			galaerr.CodePackageNotFound,
+			imp.Tok.GetLine(), imp.Tok.GetColumn(),
+			fmt.Sprintf("package not found: %q is not an import path", imp.Path),
+			"import a package by its module path joined with its directory (e.g. \"example.com/app/util\"), not by a relative or filesystem path",
+		)
+	}
+	return nil
+}
+
 // checkDuplicateImports rejects a file that imports the same package twice
 // under the same local name.
 //
@@ -4936,9 +5080,9 @@ func sourceText(ctx antlr.ParserRuleContext) string {
 // different aliases (`import "strings"` plus `import gostr "strings"`), and
 // that emits two distinct identifiers, so it stays legal here — which is why
 // the key is the path plus the LOCAL name rather than the path alone.
-func checkDuplicateImports(sourceFile *grammar.SourceFileContext) error {
+func checkDuplicateImports(imports []fileImport) error {
 	seen := make(map[string]int) // path+local -> line of the first occurrence
-	for _, imp := range scanFileImports(sourceFile) {
+	for _, imp := range imports {
 		local := imp.SpelledName()
 		if imp.IsDot {
 			// A dot import binds no name of its own, but repeating one still

@@ -1081,7 +1081,12 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	case f.match != nil:
 		return t.transformPostfixMatchExpressionAgainst(f.match, s)
 	}
-	if s.push {
+	// A tuple literal filling a result slot (`func f() Tuple[int64, int64] =
+	// (1, 2)`) takes its element types from the slot, exactly as one in an
+	// argument slot does. It is the only plain expression a result slot pushes
+	// for: the literal consumes the entry itself (tupleElementExpectedTypes),
+	// so nothing nested inside it sees the result type.
+	if s.push || t.isTupleLiteralFor(exprCtx, s.typ) {
 		release := t.expectedArgTypes.push(s.typ)
 		defer release()
 	}
@@ -1144,6 +1149,27 @@ func typeHasMaskedPart(typ transpiler.Type) bool {
 
 // groupedExpression returns e for an expression that is exactly `(e)`, or nil.
 func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContext) grammar.IExpressionContext {
+	list := t.parenthesizedList(exprCtx)
+	if list == nil || len(list.AllExpression()) != 1 {
+		return nil
+	}
+	return list.Expression(0)
+}
+
+// isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
+// `(a, b, ...)` whose arity matches the tuple type typ.
+func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
+	gen, ok := typ.(transpiler.GenericType)
+	if !ok || !t.isTupleTypeName(gen.Base.String()) {
+		return false
+	}
+	list := t.parenthesizedList(exprCtx)
+	return list != nil && len(list.AllExpression()) > 1 && len(list.AllExpression()) == len(gen.Params)
+}
+
+// parenthesizedList returns the list of an expression that is exactly a
+// parenthesized expression list — `(e)` or a tuple literal — or nil.
+func (t *galaASTTransformer) parenthesizedList(exprCtx grammar.IExpressionContext) *grammar.TupleExpressionListContext {
 	p := t.barePostfix(exprCtx)
 	if p == nil || p.GetChildCount() != 1 {
 		return nil
@@ -1157,10 +1183,10 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 		return nil
 	}
 	list, ok := prim.TupleExpressionList().(*grammar.TupleExpressionListContext)
-	if !ok || list == nil || len(list.AllExpression()) != 1 {
+	if !ok {
 		return nil
 	}
-	return list.Expression(0)
+	return list
 }
 
 // unwrapImmutable is the single canonical unwrap helper for val-wrapped

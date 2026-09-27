@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -91,12 +94,19 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		// type happens to resolve to nil/any.
 		elemExprs := el.AllExpression()
 		if len(elemExprs) > 1 {
-			perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
+			perElemExpected, fromSlot := t.tupleElementExpectedTypes(len(elemExprs))
 			exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
 			if err != nil {
 				return nil, err
 			}
-			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			// Only the literal's own slot fixes its element types; the
+			// enclosing function's return type is a hint for any tuple in the
+			// body, so an untyped constant keeps its default there.
+			var slotTypes []transpiler.Type
+			if fromSlot {
+				slotTypes = perElemExpected
+			}
+			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, slotTypes, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
 		exprs := make([]ast.Expr, 0, len(elemExprs))
 		for _, eCtx := range elemExprs {
@@ -130,44 +140,31 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 // tuple literal of the given arity, computed from the most-specific available
 // outer context. Checks two sources, most-specific first:
 //
-//  1. The top of `expectedArgTypes` — the slot type at the immediately
-//     enclosing call argument / val-decl / tuple-element position. This
-//     drives bidirectional inference for the call-site case
-//     (`f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`). It is there
-//     because lowerAgainst pushes a pushing slot's type (argSlot) for a plain
-//     expression such as a tuple literal; a result slot does not push.
-//  2. `returnSlot.typ` — the enclosing function's declared return
-//     type, used when the tuple literal is the value at a function return.
+//  1. The top of `expectedArgTypes` — the type of the slot the literal itself
+//     fills: a call argument, val declaration or tuple element (lowerAgainst
+//     pushes an argSlot's type), or a function or lambda result when the
+//     literal is the whole result expression (lowerAgainst pushes a result
+//     slot's type for a tuple literal only). This drives bidirectional
+//     inference for `f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`.
+//  2. `returnSlot.typ` — the enclosing function's declared return type, a
+//     hint for any tuple literal in the body.
 //
-// Returns nil if no Tuple-shaped expected type is available. When (1)
-// matches, the entry is consumed off the stack so that nested expressions
-// inside this tuple do not pick it up again (B1 contract).
-func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.Type {
+// fromSlot is true for (1). Returns nil if no Tuple-shaped expected type is
+// available. When (1) matches, the entry is consumed off the stack so that
+// nested expressions inside this tuple do not pick it up again (B1 contract).
+func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) (types []transpiler.Type, fromSlot bool) {
 	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 		if gen, ok := pending.(transpiler.GenericType); ok &&
 			t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
 			t.expectedArgTypes.consume()
-			return gen.Params
+			return gen.Params, true
 		}
 	}
-	candidates := []transpiler.Type{t.returnSlot.typ}
-	for _, cand := range candidates {
-		if transpiler.IsUnusable(cand) {
-			continue
-		}
-		gen, ok := cand.(transpiler.GenericType)
-		if !ok {
-			continue
-		}
-		if !t.isTupleTypeName(gen.Base.String()) {
-			continue
-		}
-		if len(gen.Params) != arity {
-			continue
-		}
-		return gen.Params
+	if gen, ok := t.returnSlot.typ.(transpiler.GenericType); ok &&
+		t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
+		return gen.Params, false
 	}
-	return nil
+	return nil, false
 }
 
 // transformTupleElementExpressions transforms each element of a tuple literal
@@ -194,30 +191,40 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 }
 
 // wrapImmutableFieldValue builds the `std.NewImmutable(value)` wrapper that
-// backs an immutable (`val`) struct field, naming the type argument explicitly
-// when the value alone would infer the wrong one.
+// backs an immutable (`val`) struct field. typeArgs maps the struct's
+// type-parameter names to the type arguments of the literal being built, so a
+// field declared with a type parameter resolves to the type it is instantiated
+// with at this construction site (`Box[int64](0)` → NewImmutable[int64]).
+func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
+	target := fieldType
+	if len(typeArgs) > 0 && !transpiler.IsUnusable(fieldType) {
+		target = t.substituteInType(fieldType, t.typeArgTypes(typeArgs))
+	}
+	return t.newImmutableFor(value, target)
+}
+
+// newImmutableFor builds `std.NewImmutable(value)` for a value that lands in an
+// `Immutable[target]` slot — a `val` struct field, a Copy override, a tuple
+// element — naming the type argument explicitly whenever inference from the
+// value alone would pick the wrong one. Struct construction, field defaults,
+// Copy overrides and tuple literals all go through here, so the rule lives in
+// one place. (liftToImmutableForArg always spells the type, so it needs none.)
 //
 // Go infers NewImmutable's type parameter from its argument, and an untyped
 // constant argument collapses to its own default type (`0` → int, `1.5` →
-// float64). A field declared `int64` therefore receives an Immutable[int],
-// which is not assignable to Immutable[int64] — even though the constant is
-// perfectly representable and a plain Go field assignment would have converted
-// it. Spelling the type argument (`std.NewImmutable[int64](0)`) restores that
-// conversion at the argument position.
-//
-// typeArgs maps the struct's type-parameter names to the type arguments of the
-// literal being built, so a field declared with a type parameter resolves to the
-// type it is instantiated with at this construction site.
+// float64). A slot declared `int64` therefore receives an Immutable[int], which
+// is not assignable to Immutable[int64] — even though the constant is perfectly
+// representable and a plain Go assignment would have converted it. Spelling
+// the type argument (`std.NewImmutable[int64](0)`) restores that conversion at
+// the argument position.
 //
 // A bare `nil` has no type of its own at all, so Go cannot infer anything from
-// it ("cannot infer T"); it always takes the field's declared type
+// it ("cannot infer T"); it always takes the slot's declared type
 // (`std.NewImmutable[func(int) int](nil)`).
-func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
-	typeArg := immutableFieldTypeArg(value, fieldType, typeArgs)
-	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" && !transpiler.IsUnusable(fieldType) {
-		typeArg = t.typeToExpr(t.substituteInType(fieldType, t.typeArgTypes(typeArgs)))
-	}
-	if typeArg != nil {
+//
+// target may be nil or unresolved, in which case the inferred form is kept.
+func (t *galaASTTransformer) newImmutableFor(value ast.Expr, target transpiler.Type) ast.Expr {
+	if typeArg := t.immutableTypeArg(value, target); typeArg != nil {
 		return &ast.CallExpr{
 			Fun:  &ast.IndexExpr{X: t.stdIdent(transpiler.FuncNewImmutable), Index: typeArg},
 			Args: []ast.Expr{value},
@@ -229,50 +236,79 @@ func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType t
 	}
 }
 
-// immutableFieldTypeArg returns the explicit NewImmutable type argument for a
-// field whose declared type differs from the default type of an untyped
-// constant value, or nil when plain inference is already correct.
+// immutableTypeArg returns the explicit NewImmutable type argument for value
+// going into an Immutable[target], or nil when plain inference is already
+// correct.
 //
-// The rewrite is deliberately confined to untyped numeric constants going into
-// a field whose type resolves to a predeclared numeric type: that is exactly the
-// set of values whose type Go would have taken from the destination but takes
-// from the argument once the NewImmutable wrapper intervenes. Anything else (a
-// typed expression, a named or generic field type, a type parameter with no
-// concrete instantiation here) keeps the inferred form, so no construction that
-// compiles today changes shape.
-func immutableFieldTypeArg(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
-	if transpiler.IsUnusable(fieldType) {
+// Beyond `nil`, the rewrite is confined to untyped numeric constants going into
+// a numeric slot — a predeclared numeric type, a GALA type declared over one
+// (`type Millis int64`), or a Go named numeric type (`time.Duration`). That is
+// exactly the set of values whose type Go would have taken from the
+// destination but takes from the argument once the NewImmutable wrapper
+// intervenes. A typed expression, a non-numeric slot, or a type parameter with
+// no concrete instantiation keeps the inferred form.
+func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.Type) ast.Expr {
+	if target == nil || transpiler.IsUnusable(target) {
 		return nil
 	}
-	var fieldName string
-	switch ft := fieldType.(type) {
-	case transpiler.BasicType:
-		fieldName = ft.Name
-	case transpiler.NamedType:
-		if ft.Package != "" {
-			return nil
+	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" {
+		return t.typeToExpr(target)
+	}
+	defaultName, ok := t.untypedNumericConstExprDefault(value)
+	if !ok || !t.isNumericSlotType(target) {
+		return nil
+	}
+	if basic, isBasic := target.(transpiler.BasicType); isBasic && basic.Name == defaultName {
+		return nil
+	}
+	return t.typeToExpr(target)
+}
+
+// isNumericSlotType reports whether typ is a numeric type an untyped numeric
+// constant converts to: a predeclared numeric type, a GALA type declared over
+// one (following alias chains), or a package-qualified Go named type whose
+// underlying type is numeric.
+func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
+	// The hop bound stops a declaration chain that refers back to itself.
+	for hop := 0; hop < 16; hop++ {
+		var bareName string
+		switch ty := typ.(type) {
+		case transpiler.BasicType:
+			// A bare declared name (`Millis`) parses as a BasicType too.
+			bareName = ty.Name
+		case transpiler.NamedType:
+			if u, ok := t.goNamedUnderlying(ty); ok {
+				typ = u
+				continue
+			}
+			if ty.Package != "" && ty.Package != t.packageName {
+				resolved := t.followAliasChain(ty)
+				if resolved.BaseName() == ty.BaseName() {
+					return false
+				}
+				typ = resolved
+				continue
+			}
+			// This package's own declarations are keyed by their bare name.
+			bareName = ty.Name
+		default:
+			return false
 		}
-		fieldName = ft.Name
-	default:
-		return nil
-	}
-	// A field declared with one of the struct's type parameters takes the type
-	// it is instantiated with here (`Box[int64](0)` → NewImmutable[int64]).
-	if arg, isTypeParam := typeArgs[fieldName]; isTypeParam {
-		argIdent, ok := arg.(*ast.Ident)
-		if !ok {
-			return nil
+		if isNumericPrimitive(bareName) {
+			return true
 		}
-		fieldName = argIdent.Name
+		if next, ok := t.typeAliases[bareName]; ok && !next.IsNil() {
+			typ = next
+			continue
+		}
+		// Declared later in this file than the site being lowered.
+		if target, ok := t.fileTypeDeclTargets[bareName]; ok {
+			typ = target
+			continue
+		}
+		return false
 	}
-	if !isNumericPrimitive(fieldName) {
-		return nil
-	}
-	defaultName, ok := untypedNumericConstDefault(value)
-	if !ok || defaultName == fieldName {
-		return nil
-	}
-	return ast.NewIdent(fieldName)
+	return false
 }
 
 // structTypeArgSubst pairs a struct's type-parameter names with the type
@@ -315,6 +351,46 @@ func (t *galaASTTransformer) typeArgTypes(subst map[string]ast.Expr) map[string]
 // anything that is not built purely from numeric literals. Constant arithmetic
 // stays untyped in Go, so `60 * 1000` is classified like a bare literal.
 func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
+	return untypedNumericConstDefaultWith(expr, nil)
+}
+
+// untypedNumericConstExprDefault is untypedNumericConstDefault that also knows
+// the untyped constants Go packages declare: `math.MinInt8`, `math.Pi`, and
+// constant expressions built from them (`math.MaxInt8 - 1`) are untyped in Go
+// exactly as literals are, so they take the type of the slot they land in.
+func (t *galaASTTransformer) untypedNumericConstExprDefault(expr ast.Expr) (string, bool) {
+	return untypedNumericConstDefaultWith(expr, t.goUntypedNumericConstDefault)
+}
+
+// goUntypedNumericConstDefault reports the default type of a reference to an
+// untyped numeric constant of an imported Go package (`math.MaxInt8` → int).
+func (t *galaASTTransformer) goUntypedNumericConstDefault(expr ast.Expr) (string, bool) {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok || t.goTypeInfo == nil {
+		return "", false
+	}
+	qualifier, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	entry, isGala, ok := t.importForQualifier(qualifier.Name)
+	if !ok || isGala {
+		return "", false
+	}
+	key := entry.PkgName + "." + sel.Sel.Name
+	if !t.goTypeInfo.UntypedConstants[key] {
+		return "", false
+	}
+	basic, ok := t.goTypeInfo.Constants[key].(transpiler.BasicType)
+	if !ok || numericConstRank(basic.Name) < 0 {
+		return "", false
+	}
+	return basic.Name, true
+}
+
+// untypedNumericConstDefaultWith is the shared walk; named, when non-nil,
+// classifies a leaf that is not a literal (a named constant reference).
+func untypedNumericConstDefaultWith(expr ast.Expr, named func(ast.Expr) (string, bool)) (string, bool) {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
 		switch e.Kind {
@@ -326,21 +402,21 @@ func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
 			return "rune", true
 		}
 	case *ast.ParenExpr:
-		return untypedNumericConstDefault(e.X)
+		return untypedNumericConstDefaultWith(e.X, named)
 	case *ast.UnaryExpr:
 		switch e.Op {
 		case token.ADD, token.SUB, token.XOR:
-			return untypedNumericConstDefault(e.X)
+			return untypedNumericConstDefaultWith(e.X, named)
 		}
 	case *ast.BinaryExpr:
 		switch e.Op {
 		case token.SHL, token.SHR:
 			// The shift count does not influence the result's default type.
-			return untypedNumericConstDefault(e.X)
+			return untypedNumericConstDefaultWith(e.X, named)
 		case token.ADD, token.SUB, token.MUL, token.QUO, token.REM,
 			token.AND, token.OR, token.XOR, token.AND_NOT:
-			left, okLeft := untypedNumericConstDefault(e.X)
-			right, okRight := untypedNumericConstDefault(e.Y)
+			left, okLeft := untypedNumericConstDefaultWith(e.X, named)
+			right, okRight := untypedNumericConstDefaultWith(e.Y, named)
 			if !okLeft || !okRight {
 				return "", false
 			}
@@ -348,6 +424,10 @@ func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
 				return right, true
 			}
 			return left, true
+		}
+	case *ast.SelectorExpr:
+		if named != nil {
+			return named(e)
 		}
 	}
 	return "", false
@@ -469,8 +549,33 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 	}, nil
 }
 
+// checkIntLiteral rejects the one INT_LIT spelling the lexer admits that Go
+// does not: a leading zero followed by an 8 or 9. The grammar's plain-decimal
+// alternative is `[0-9]+`, but a leading 0 makes the literal octal in Go (the
+// classic `0644` form GALA keeps), so `08` or `0129` used to reach the
+// generated Go verbatim and fail to parse there — an internal transpiler
+// error instead of a diagnostic at the literal.
+func (t *galaASTTransformer) checkIntLiteral(node antlr.TerminalNode) error {
+	text := node.GetText()
+	if len(text) < 2 || text[0] != '0' || strings.IndexFunc(text, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return nil
+	}
+	bad := strings.IndexAny(text, "89")
+	if bad < 0 {
+		return nil
+	}
+	tok := node.GetSymbol()
+	err := galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn()+bad,
+		fmt.Sprintf("invalid digit %q in octal literal %s (a leading 0 makes an integer literal octal; drop the leading zeros for a decimal number)", text[bad], text))
+	err.FilePath = t.filePath
+	return err
+}
+
 func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.Expr, error) {
 	if ctx.INT_LIT() != nil {
+		if err := t.checkIntLiteral(ctx.INT_LIT()); err != nil {
+			return nil, err
+		}
 		return &ast.BasicLit{Kind: token.INT, Value: ctx.INT_LIT().GetText()}, nil
 	}
 	if ctx.FLOAT_LIT() != nil {

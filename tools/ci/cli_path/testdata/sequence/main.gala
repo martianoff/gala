@@ -1,0 +1,11 @@
+package main
+
+import "example.com/sequence/internal/a/b"
+
+// Root executable. cmd/app is a second executable in the same module; both
+// share internal/a/b, so a stale build of that package shows up in both.
+func Banner() string = s"root ${b.Label()}"
+
+func main() {
+    Println(Banner())
+}

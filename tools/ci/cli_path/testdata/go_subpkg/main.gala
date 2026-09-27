@@ -1,0 +1,17 @@
+package main
+
+import "example.com/gosubpkg/box"
+
+// The match's type is inferred from the Go package's return type, so the
+// generated Go has to name *box.Box through its import path.
+func open(o Option[int]) *box.Box {
+    val b = o match {
+        case Some(n) => box.New(n)
+        case None() => box.New(0)
+    }
+    return b
+}
+
+func main() {
+    Println(s"size: ${open(Some(3)).Size}")
+}

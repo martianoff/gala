@@ -1,10 +1,10 @@
 ---
 layout: default
-title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E0044)"
-description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0044."
+title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E0048)"
+description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0048."
 keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala-e0039, gala-e0040, gala-e0041, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
 permalink: /docs/errors/
-last_modified_at: 2026-07-31
+last_modified_at: 2026-09-27
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Error Codes</p>
@@ -98,7 +98,13 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0042](/docs/errors/gala-e0042/) | Lambda parameter is not parenthesized | Syntax |
 | [GALA-E0043](/docs/errors/gala-e0043/) | Type name called as a constructor | Collections |
 | [GALA-E0044](/docs/errors/gala-e0044/) | Type has no such method | Types |
+| [GALA-E0045](/docs/errors/gala-e0045/) | Missing required field in struct construction | Declarations |
+| [GALA-E0046](/docs/errors/gala-e0046/) | Package already imported | Packages |
+| [GALA-E0047](/docs/errors/gala-e0047/) | `if` takes no initializer statement | Go surface |
+| [GALA-E0048](/docs/errors/gala-e0048/) | Method on an alias to a non-local type | Declarations |
 | [GALA-E0049](/docs/errors/gala-e0049/) | A Go call's Try or Tuple used as its plain value | Types |
+| [GALA-E0050](/docs/errors/gala-e0050/) | Codec field type has no encoding | Types |
+| [GALA-E0051](/docs/errors/gala-e0051/) | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | Literals |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -128,17 +134,17 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
-**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/).
+**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type.
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
 **Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type. See [Type Inference](/features/type-inference/).
 
-**Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility. See [Dependency Management](/docs/dependency-management/).
+**Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import. See [Dependency Management](/docs/dependency-management/).
 
-**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression. Each names its GALA replacement.
+**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression · [E0047](/docs/errors/gala-e0047/) the `if` initializer statement. Each names its GALA replacement.
 
-**Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
+**Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0051](/docs/errors/gala-e0051/) illegal source character · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
 
 **Syntax** — [E0042](/docs/errors/gala-e0042/) unparenthesized lambda parameter (`x => e`); GALA always writes `(x) => e`.
 

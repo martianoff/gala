@@ -38,13 +38,25 @@ func TestEveryErrorCodeHasADocPage(t *testing.T) {
 	codes := declaredErrorCodes(t, filepath.Join(root, "galaerr", "errors.go"))
 	require.NotEmpty(t, codes, "no error codes parsed; this guard would pass vacuously")
 
-	var missing []string
+	var missing, missingWeb []string
 	for _, code := range codes {
 		page := filepath.Join(root, "docs", "errors", code+".md")
 		if _, err := os.Stat(page); err != nil {
 			missing = append(missing, code)
 		}
+		webPage := filepath.Join(root, "website", "docs", "errors", strings.ToLower(code)+".md")
+		if _, err := os.Stat(webPage); err != nil {
+			missingWeb = append(missingWeb, code)
+		}
 	}
+	// The website is a hand-maintained mirror, not generated from docs/, and
+	// the CLI links every diagnostic to its page there — so a code without a
+	// site page prints a docs URL that 404s.
+	require.Empty(t, missingWeb,
+		"error code(s) %v have no page under website/docs/errors/. Add "+
+			"website/docs/errors/<code in lower case>.md (front matter, message, "+
+			"repro, fix) and list it in website/docs/errors.md.",
+		missingWeb)
 	require.Empty(t, missing,
 		"error code(s) %v are declared in galaerr/errors.go with no page under docs/errors/. "+
 			"Every code needs one: the pages are what a user finds when they paste a "+
@@ -76,6 +88,32 @@ func TestEveryErrorCodeHasADocPage(t *testing.T) {
 			"renumbered — which it should not be, since the codes are a stable "+
 			"external interface.",
 		orphaned)
+
+	webPages, err := filepath.Glob(filepath.Join(root, "website", "docs", "errors", "gala-e*.md"))
+	require.NoError(t, err)
+	require.NotEmpty(t, webPages, "no website error pages found; check the //website:pages filegroup")
+	var orphanedWeb []string
+	for _, p := range webPages {
+		code := strings.ToUpper(strings.TrimSuffix(filepath.Base(p), ".md"))
+		if !declared[code] {
+			orphanedWeb = append(orphanedWeb, filepath.Base(p))
+		}
+	}
+	require.Empty(t, orphanedWeb,
+		"website page(s) %v under website/docs/errors/ have no matching code in galaerr/errors.go.",
+		orphanedWeb)
+
+	// The index is how a reader browsing the site finds a page at all.
+	index, err := os.ReadFile(filepath.Join(root, "website", "docs", "errors.md"))
+	require.NoError(t, err)
+	var unlisted []string
+	for _, code := range codes {
+		if !strings.Contains(string(index), "(/docs/errors/"+strings.ToLower(code)+"/)") {
+			unlisted = append(unlisted, code)
+		}
+	}
+	require.Empty(t, unlisted,
+		"error code(s) %v are not linked from the index at website/docs/errors.md.", unlisted)
 }
 
 var errorCodePattern = regexp.MustCompile(`^GALA-E\d{4}$`)

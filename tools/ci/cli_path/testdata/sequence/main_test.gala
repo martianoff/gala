@@ -1,0 +1,7 @@
+package main
+
+import . "martianoff/gala/test"
+
+// `gala test` builds a test binary in the same workspace `gala build` uses;
+// the build that follows it in the sequence must not pick that up.
+func TestBanner(t T) T = HasPrefix(t, Banner(), "root label-v")

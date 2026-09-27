@@ -18,29 +18,46 @@ type Config struct {
 	DownloadDir string
 }
 
-// DefaultConfig returns the default configuration.
+// DefaultConfig returns the default configuration: the module cache at
+// ModuleCacheDir(DefaultGalaHome()).
 func DefaultConfig() *Config {
-	cacheDir := defaultCacheDir()
+	return NewConfig(ModuleCacheDir(DefaultGalaHome()))
+}
+
+// NewConfig returns the configuration for a module cache rooted at cacheDir.
+func NewConfig(cacheDir string) *Config {
 	return &Config{
 		CacheDir:    cacheDir,
 		DownloadDir: filepath.Join(cacheDir, "cache", "download"),
 	}
 }
 
-// defaultCacheDir returns the default cache directory.
-// Uses GALA_CACHE environment variable if set, otherwise ~/.gala/pkg/mod
-func defaultCacheDir() string {
-	if dir := os.Getenv("GALA_CACHE"); dir != "" {
+// DefaultGalaHome returns the GALA home directory: GALA_HOME if set,
+// otherwise ~/.gala.
+func DefaultGalaHome() string {
+	if dir := os.Getenv("GALA_HOME"); dir != "" {
 		return dir
 	}
-
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		// Fall back to current directory
-		return filepath.Join(".", ".gala", "pkg", "mod")
+		return filepath.Join(".", ".gala")
 	}
+	return filepath.Join(homeDir, ".gala")
+}
 
-	return filepath.Join(homeDir, ".gala", "pkg", "mod")
+// ModuleCacheDir returns where fetched GALA modules live for a GALA home:
+// GALA_CACHE if set, otherwise <galaHome>/pkg/mod.
+//
+// This is the one place the location is decided. The fetcher writes modules
+// there and the builder reads them from there; when each resolved it on its
+// own, GALA_HOME moved only the builder's copy and GALA_CACHE only the
+// fetcher's, so a fetched dependency landed where the build never looked.
+func ModuleCacheDir(galaHome string) string {
+	if dir := os.Getenv("GALA_CACHE"); dir != "" {
+		return dir
+	}
+	return filepath.Join(galaHome, "pkg", "mod")
 }
 
 // EnsureDirs creates the cache directories if they don't exist.
@@ -95,9 +112,30 @@ func sanitizePath(modulePath string) string {
 	return modulePath
 }
 
-// IsCached returns true if a module version is already cached.
+// IsCached returns true if a module version is cached completely — see
+// IsCompleteModuleDir.
 func (c *Config) IsCached(modulePath, version string) bool {
-	modPath := c.ModulePath(modulePath, version)
-	info, err := os.Stat(modPath)
-	return err == nil && info.IsDir()
+	return IsCompleteModuleDir(c.ModulePath(modulePath, version))
+}
+
+// completeMarkerName is written into a module's staged tree last, before the
+// tree is renamed into the cache. Its ".gala-" prefix marks it as bookkeeping
+// rather than module content (sum.IsModuleContent), so the module hash does
+// not cover it.
+//
+// The name carries the layout of the stored tree. "-v2" trees hold the whole
+// module, not only its sources; a tree published under an earlier marker lacks
+// the module's data files, so it no longer counts as complete and is fetched
+// again once.
+const completeMarkerName = ".gala-module-complete-v2"
+
+// IsCompleteModuleDir reports whether dir holds a module version a fetch
+// finished publishing. The directory existing is not enough: a fetch used to
+// create it first and fill it one file at a time, so an interrupted or
+// concurrent fetch left a partial module behind that every later build trusted.
+// A published tree always carries the marker, because it was written into the
+// staged tree before the rename that made the tree visible.
+func IsCompleteModuleDir(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, completeMarkerName))
+	return err == nil && !info.IsDir()
 }

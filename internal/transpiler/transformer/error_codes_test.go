@@ -651,6 +651,24 @@ func main() {
 			expectCode:     galaerr.CodeIfInitializer,
 			expectContains: "Try(...)",
 		},
+		{
+			name:           "GALA-E0051 NUL inside a string literal",
+			input:          "package main\n\nfunc main() {\n    Println(\"a\x00b\")\n}",
+			expectCode:     galaerr.CodeIllegalSourceCharacter,
+			expectContains: "4:14 illegal character NUL",
+		},
+		{
+			name:           "GALA-E0051 byte order mark inside a raw string",
+			input:          "package main\n\nfunc main() {\n    Println(`\xef\xbb\xbf`)\n}",
+			expectCode:     galaerr.CodeIllegalSourceCharacter,
+			expectContains: "4:13 illegal byte order mark",
+		},
+		{
+			name:           "GALA-E0051 invalid UTF-8 inside a string literal",
+			input:          "package main\n\nfunc main() {\n    Println(\"caf\xe9\")\n}",
+			expectCode:     galaerr.CodeIllegalSourceCharacter,
+			expectContains: "4:16 invalid UTF-8 encoding (byte 0xE9)",
+		},
 	}
 
 	for _, tc := range cases {

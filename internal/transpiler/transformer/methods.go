@@ -86,7 +86,7 @@ func (t *galaASTTransformer) goNamedUnderlying(typ transpiler.Type) (transpiler.
 	if !ok || named.Package == "" {
 		return nil, false
 	}
-	td := t.goTypeInfo.GetTypeData(named.Package + "." + named.Name)
+	td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(named))
 	if td == nil || td.Underlying == nil {
 		return nil, false
 	}
@@ -109,7 +109,7 @@ func (t *galaASTTransformer) resolveNamedGoCollectionUnderlying(typ transpiler.T
 		// Don't shadow a real Size() method the named type declares — call it
 		// instead of lowering to len(). (url.Values / sort.StringSlice have none.)
 		named := typ.(transpiler.NamedType) // safe: goNamedUnderlying only reports ok for a NamedType
-		if t.goTypeInfo.GetMethodSignature(named.Package+"."+named.Name, "Size") != nil {
+		if t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(named), "Size") != nil {
 			return typ
 		}
 		return u
@@ -185,6 +185,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 
 	// 2. Parse overrides
 	overrides := make(map[string]ast.Expr)
+	overrideTypes := make(map[string]transpiler.Type)
 	for _, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		if arg.Identifier() == nil {
@@ -225,6 +226,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 			return nil, err
 		}
 		overrides[fieldName] = val
+		overrideTypes[fieldName] = expected
 	}
 
 	// 3. Construct new struct instance. Each kept field reads the receiver, so
@@ -247,10 +249,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		if val, ok := overrides[fn]; ok {
 			finalVal := val
 			if i < len(immutFlags) && immutFlags[i] {
-				finalVal = &ast.CallExpr{
-					Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-					Args: []ast.Expr{val},
-				}
+				finalVal = t.newImmutableFor(val, overrideTypes[fn])
 			}
 			elts = append(elts, &ast.KeyValueExpr{
 				Key:   ast.NewIdent(fn),

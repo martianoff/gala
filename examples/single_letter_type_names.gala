@@ -1,0 +1,70 @@
+package main
+
+import (
+    "testing"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Types whose names are a single capital letter are ordinary types. Only a
+// generic declaration's own type parameters are type parameters, and those
+// shadow a same-named package type inside that declaration.
+
+struct A(Name string)
+
+struct T(N int)
+
+sealed type V {
+    case Small(n int)
+    case Big(n int)
+}
+
+func size(v V) int = v match {
+    case Small(n) => n
+    case Big(n) => n * 10
+}
+
+func pick(xs Array[T]) Option[T] = xs.Find((t) => t.N > 1)
+
+// A match whose arms yield a Go type named B.
+func benchN(bs Array[*testing.B], fallback *testing.B) int {
+    val b = bs.HeadOption() match {
+        case Some(first) => first
+        case None() => fallback
+    }
+    return b.N
+}
+
+// The type parameter A shadows the package struct A.
+func firstOr[A any](xs Array[A], d A) A = xs.Find((x) => true) match {
+    case Some(a) => a
+    case None() => d
+}
+
+// A multi-letter type parameter.
+func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Count((x) => p(x))
+
+func main() {
+    val as = ArrayOf(A(Name = "x"), A(Name = "yy"))
+    Println(as.Find((a) => a.Name.Size() > 1).Map((a) => a.Name).GetOrElse("none"))
+    Println(as.Filter((a) => a.Name == "x").Size())
+
+    val ts = ArrayOf(T(1), T(2), T(3))
+    Println(pick(ts).Map((t) => t.N).GetOrElse(-1))
+    Println(ts.ForAll((t) => t.N > 0))
+
+    val vs = ArrayOf[V](Small(1), Big(100))
+    Println(vs.Find((v) => size(v) > 5).Map((v) => size(v)).GetOrElse(0))
+
+    val ot Option[T] = Some(T(5))
+    Println(ot.Filter((t) => t.N > 1).IsDefined())
+
+    val m = HashMapOf(("k", T(9)))
+    Println(m.Get("k").Map((t) => t.N).GetOrElse(0))
+
+    var fallback = testing.B(N = 7)
+    Println(benchN(ArrayOf[*testing.B](), &fallback))
+
+    Println(firstOr(as, A(Name = "d")).Name)
+    Println(firstOr(ArrayOf[int](), 42))
+    Println(countIf(ts, (t) => t.N >= 2))
+}

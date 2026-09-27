@@ -1,0 +1,56 @@
+package main
+
+// A block-bodied function with a result type returns its trailing
+// expression, as a block lambda and a match arm do. The trailing value is
+// lowered like `return value`, so it takes its type from the result type.
+
+struct Counter(name string, hits int)
+
+// A generic function: the trailing parameter is the result.
+func logged[U any](label string, o Option[U]) Option[U] {
+    Println(s"visit $label")
+    o
+}
+
+// A method: the trailing local val is the result.
+func (c Counter) Scaled(factor int) int {
+    val scaled = c.hits * factor
+    Println(s"${c.name} scaled to $scaled")
+    scaled
+}
+
+// A zero-argument constructor takes its type argument from the result type.
+func nothing(reason string) Option[int] {
+    Println(s"nothing: $reason")
+    None()
+}
+
+// A trailing if/else carries the value in its branches, nested ones too.
+func sign(n int) string {
+    if (n < 0) {
+        "negative"
+    } else if (n == 0) {
+        "zero"
+    } else {
+        if (n > 100) { "large" } else { "positive" }
+    }
+}
+
+// A trailing diverging call needs no value.
+func mustPositive(n int) int {
+    if (n > 0) {
+        return n
+    }
+    Panic(s"not positive: $n")
+}
+
+func main() {
+    Println(logged("a", Some(3)))
+    Println(Counter("c", 21).Scaled(2))
+    Println(nothing("empty"))
+    Println(sign(-5))
+    Println(sign(0))
+    Println(sign(7))
+    Println(sign(700))
+    Println(mustPositive(4))
+}

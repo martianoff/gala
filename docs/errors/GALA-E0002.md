@@ -44,6 +44,7 @@ prints it absolute.
 
 **Fix.** Either cover every variant explicitly:
 
+<!-- doc-check: fragment -->
 ```gala
 func name(c Color) string = c match {
     case Red()   => "red"
@@ -55,6 +56,7 @@ func name(c Color) string = c match {
 Or add a default branch when the remaining variants all collapse to the
 same result:
 
+<!-- doc-check: fragment -->
 ```gala
 func name(c Color) string = c match {
     case Red() => "red"

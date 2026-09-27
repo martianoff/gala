@@ -33,6 +33,7 @@ go_test(
         "import_names_test.go",
         "line_directives_guard_test.go",
         "merge_test.go",
+        "type_roundtrip_test.go",
     ],
     embed = [":transpiler"],
     deps = [

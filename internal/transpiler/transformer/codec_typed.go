@@ -1,55 +1,151 @@
 package transformer
 
-// Typed StructMeta codegen (Option-C refactor, Phase 2).
+// Typed StructMeta codegen.
 //
 // This file produces the `EncodeFields` / `DecodeFields` methods on every
-// `_StructMeta_T` type. Unlike the legacy `WriteTo` / `ReadFrom` pair, these
-// methods are fully typed end-to-end: no `any`, no runtime type assertions,
-// no boxing in the hot path. They delegate formatting to a
-// `FieldEncoder` / `FieldDecoder` implementation provided by the caller
-// (defined in `std/meta.gala`).
+// `_StructMeta_T` type. The methods are fully typed end-to-end: no `any`, no
+// runtime type assertions, no boxing in the hot path. They delegate
+// formatting to a `FieldEncoder` / `FieldDecoder` implementation provided by
+// the caller (defined in `std/meta.gala`).
 //
-// Supported field shapes:
-//   - Primitives: string, int, int64, float64, bool, rune
+// Supported value shapes, at any depth:
+//   - Scalars: string, bool, int, int8..int64, uint, uint8..uint64, uintptr,
+//     byte, float32, float64, rune — and any alias or Go named type over one
+//     (`type Millis int64`, `time.Duration`)
 //   - Immutable[T] for any supported T
-//   - Option[T] for any supported T  (None → null, Some(x) → encoded x)
-//   - Array[T] / List[T] of primitives or nested struct
-//   - HashMap[string, V] of primitive V or nested struct
-//   - Nested struct whose metadata we also emit        (recursive dispatch)
+//   - Option[T] for any supported T other than another Option
+//     (None → null, Some(x) → encoded x)
+//   - Array[T] / List[T] of any supported T
+//   - HashMap[K, V] where K is string-shaped and V is any supported T
+//   - Structs whose metadata we also emit (recursive dispatch)
 //
-// For nested struct dispatch (both directly-typed struct fields and
-// struct elements inside Array/List/HashMap), the generated code calls
-// the inner _StructMeta_X{}.EncodeFields / DecodeFields with a fresh
-// per-type nameFn/omitFn/lookup derived from the `naming` parameter
-// passed in by the caller.  The naming convention (SnakeCase, CamelCase,
-// AsIs, ...) propagates from the top-level codec into every level of
-// nesting; Rename/Omit/OmitEmpty overrides only apply at the top level
-// (the level where the user configured them) — nested fields use the
-// naming-only mapping.
+// Anything else is rejected at compile time with GALA-E0050. A shape the
+// codec cannot represent must never degrade to a silent `null` on encode or a
+// zero value on decode: that loses data without any signal to the author.
 //
-// Unsupported field shapes fall back to `w.WriteNull()` on encode and
-// `r.Skip()` on decode so the generated code always compiles. The design
-// doc flags these cases for future extension.
+// For nested struct dispatch the generated code calls the inner
+// _StructMeta_X{}.EncodeFields / DecodeFields with a fresh per-type
+// nameFn/omitFn/lookup derived from the `naming` parameter passed in by the
+// caller. The naming convention (SnakeCase, CamelCase, AsIs, ...) propagates
+// from the top-level codec into every level of nesting; Rename/Omit/OmitEmpty
+// overrides only apply at the top level (the level where the user configured
+// them) — nested fields use the naming-only mapping.
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 )
 
-// --- EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool) ---
+// codecScalar describes how one scalar kind crosses the FieldEncoder /
+// FieldDecoder boundary. The encoder and decoder work in a small set of wire
+// types (goType); every other kind is converted to and from one of them, and
+// narrowing on decode is range-checked by the decoder (ReadIntN / ReadUintN /
+// ReadFloat32) rather than wrapped.
+type codecScalar struct {
+	goType string // the Go type the Write/Read method takes or returns
+	write  string // FieldEncoder method
+	read   string // FieldDecoder method
+	bits   int    // bit-size argument to read; -1 when read takes none
+}
 
-func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) *ast.FuncDecl {
+var codecScalars = map[string]codecScalar{
+	"string":  {goType: "string", write: "WriteString", read: "ReadString", bits: -1},
+	"bool":    {goType: "bool", write: "WriteBool", read: "ReadBool", bits: -1},
+	"rune":    {goType: "rune", write: "WriteRune", read: "ReadRune", bits: -1},
+	"int":     {goType: "int", write: "WriteInt", read: "ReadInt", bits: -1},
+	"int64":   {goType: "int64", write: "WriteInt64", read: "ReadInt64", bits: -1},
+	"int8":    {goType: "int64", write: "WriteInt64", read: "ReadIntN", bits: 8},
+	"int16":   {goType: "int64", write: "WriteInt64", read: "ReadIntN", bits: 16},
+	"int32":   {goType: "int64", write: "WriteInt64", read: "ReadIntN", bits: 32},
+	"uint8":   {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 8},
+	"byte":    {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 8},
+	"uint16":  {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 16},
+	"uint32":  {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 32},
+	"uint64":  {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 64},
+	"uint":    {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 0},
+	"uintptr": {goType: "uint64", write: "WriteUint64", read: "ReadUintN", bits: 0},
+	"float32": {goType: "float32", write: "WriteFloat32", read: "ReadFloat32", bits: -1},
+	"float64": {goType: "float64", write: "WriteFloat64", read: "ReadFloat64", bits: -1},
+}
+
+// codecShapeError marks a value shape the codec has no encoding for. reason
+// says which shape and why; fieldShapeError adds the struct and field it was
+// reached through.
+type codecShapeError struct{ reason string }
+
+func (e *codecShapeError) Error() string { return "unsupported codec shape: " + e.reason }
+
+func unsupportedShape(format string, args ...any) error {
+	return &codecShapeError{reason: fmt.Sprintf(format, args...)}
+}
+
+// codecGen carries the per-struct state of one EncodeFields/DecodeFields
+// emission: the transformer (for type resolution and imports) and a counter
+// that keeps the temporaries of nested reads distinct.
+type codecGen struct {
+	t   *galaASTTransformer
+	seq int
+}
+
+func (g *codecGen) fresh(prefix string) *ast.Ident {
+	g.seq++
+	return ast.NewIdent(fmt.Sprintf("__%s%d", prefix, g.seq))
+}
+
+// genStructMetaMethods emits EncodeFields and DecodeFields for one struct.
+// A field whose type has no encoding fails the whole codec with GALA-E0050,
+// positioned at the Codec / StructMeta use site that asked for it.
+func (t *galaASTTransformer) genStructMetaMethods(config *structMetaConfig) (*ast.FuncDecl, *ast.FuncDecl, error) {
+	if config.typeMetadata.IsSealed {
+		return nil, nil, t.codecError(config, sealedReason(config.typeName))
+	}
+	enc, err := t.genEncodeFields(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	dec, err := t.genDecodeFields(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	return enc, dec, nil
+}
+
+// codecError builds the GALA-E0050 diagnostic, positioned at the Codec /
+// StructMeta use site that asked for the codec.
+func (t *galaASTTransformer) codecError(config *structMetaConfig, reason string) error {
+	return galaerr.NewCodedSemanticError(galaerr.CodeUnsupportedCodecField, config.line, config.col,
+		fmt.Sprintf("cannot generate a codec for %s: %s", config.rootName, reason),
+		codecSupportedShapesHint)
+}
+
+const codecSupportedShapesHint = "a codec field can be a string, bool, rune, int/uint/float kind, " +
+	"an alias or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those"
+
+// fieldShapeError names the struct field an unsupported shape was reached
+// through. Errors that are not shape errors pass through unchanged.
+func (t *galaASTTransformer) fieldShapeError(config *structMetaConfig, fieldName string, fieldType transpiler.Type, err error) error {
+	var shape *codecShapeError
+	if !errors.As(err, &shape) {
+		return err
+	}
+	return t.codecError(config, fmt.Sprintf("field %s.%s has type %s: %s",
+		config.typeName, fieldName, unwrapGalaType(fieldType).String(), shape.reason))
+}
+
+// --- EncodeFields(w FieldEncoder, t T, nameFn, omitFn, naming) ---
+
+func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) (*ast.FuncDecl, error) {
 	meta := config.typeMetadata
 	resolvedName := t.resolveStructTypeName(config.typeName)
 	immutFlags := t.structImmutFields[resolvedName]
+	g := &codecGen{t: t}
 
-	var stmts []ast.Stmt
-
-	// w.WriteStartObject()
-	stmts = append(stmts, exprStmt(methodCall("w", "WriteStartObject")))
+	stmts := []ast.Stmt{exprStmt(methodCall("w", "WriteStartObject"))}
 
 	// Per-field: if !omitFn(i) { w.WriteKey(nameFn(i)); <typed write> }
 	for i, fieldName := range meta.FieldNames {
@@ -57,30 +153,23 @@ func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) *ast.Func
 		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
 		fieldAccess := buildFieldAccess(ast.NewIdent("t"), fieldName, isImmut)
 
-		writeStmts := []ast.Stmt{
-			exprStmt(&ast.CallExpr{
-				Fun: &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent("WriteKey")},
-				Args: []ast.Expr{&ast.CallExpr{
-					Fun:  ast.NewIdent("nameFn"),
-					Args: []ast.Expr{intLit(i)},
-				}},
-			}),
+		valueStmts, err := g.write(fieldAccess, unwrapGalaType(fieldType))
+		if err != nil {
+			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
 		}
-		writeStmts = append(writeStmts, t.genTypedWrite(fieldAccess, fieldType)...)
+		writeStmts := append([]ast.Stmt{
+			exprStmt(methodCall("w", "WriteKey", &ast.CallExpr{Fun: ast.NewIdent("nameFn"), Args: []ast.Expr{intLit(i)}})),
+		}, valueStmts...)
 
 		stmts = append(stmts, &ast.IfStmt{
 			Cond: &ast.UnaryExpr{
 				Op: token.NOT,
-				X: &ast.CallExpr{
-					Fun:  ast.NewIdent("omitFn"),
-					Args: []ast.Expr{intLit(i)},
-				},
+				X:  &ast.CallExpr{Fun: ast.NewIdent("omitFn"), Args: []ast.Expr{intLit(i)}},
 			},
 			Body: &ast.BlockStmt{List: writeStmts},
 		})
 	}
 
-	// w.WriteEndObject()
 	stmts = append(stmts, exprStmt(methodCall("w", "WriteEndObject")))
 
 	return &ast.FuncDecl{
@@ -96,64 +185,99 @@ func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) *ast.Func
 			}},
 		},
 		Body: &ast.BlockStmt{List: stmts},
-	}
+	}, nil
 }
 
-// genTypedWrite returns the statements that serialize a single field via
-// the format-neutral FieldEncoder.  The caller has already written the key
-// (`w.WriteKey(...)`).  Unsupported shapes produce `w.WriteNull()` so the
-// code always compiles.
-func (t *galaASTTransformer) genTypedWrite(access ast.Expr, fieldType transpiler.Type) []ast.Stmt {
-	// Immutable[T] — unwrap.  The access already pulled `.Get()` for us
-	// (see buildFieldAccess); just use the inner type for method selection.
-	if gt, ok := fieldType.(transpiler.GenericType); ok {
-		base := gt.Base.BaseName()
-		if base == "Immutable" || base == "std.Immutable" {
-			if len(gt.Params) > 0 {
-				return t.genTypedWrite(access, gt.Params[0])
-			}
+// write returns the statements that serialize the value `access` of type ty
+// through the FieldEncoder `w`. The caller has already written the key (or is
+// inside an array).
+func (g *codecGen) write(access ast.Expr, ty transpiler.Type) ([]ast.Stmt, error) {
+	ty = g.t.codecUnalias(ty)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable":
+		return g.write(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")}}, params[0])
+	case "Option":
+		if g.t.codecNullable(params[0]) {
+			return nil, errNestedOption()
 		}
-		if base == "Option" || base == "std.Option" {
-			if len(gt.Params) > 0 {
-				return genOptionWrite(access, gt.Params[0])
-			}
+		body, err := g.write(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")}}, params[0])
+		if err != nil {
+			return nil, err
 		}
-		if base == "Array" || base == "List" ||
-			base == "collection_immutable.Array" || base == "collection_immutable.List" {
-			if len(gt.Params) > 0 {
-				return t.genCollectionWrite(access, gt.Params[0])
-			}
+		return []ast.Stmt{&ast.IfStmt{
+			Cond: &ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("IsDefined")}},
+			Body: &ast.BlockStmt{List: body},
+			Else: &ast.BlockStmt{List: []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}},
+		}}, nil
+	case "Array", "List":
+		elemType, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
 		}
-		if base == "HashMap" || base == "collection_immutable.HashMap" {
-			if len(gt.Params) == 2 {
-				return t.genHashMapWrite(access, gt.Params[1])
-			}
+		elem := g.fresh("elem")
+		body, err := g.write(elem, params[0])
+		if err != nil {
+			return nil, err
 		}
+		lambda := &ast.FuncLit{
+			Type: &ast.FuncType{Params: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{elem}, Type: elemType}}}},
+			Body: &ast.BlockStmt{List: body},
+		}
+		return []ast.Stmt{
+			exprStmt(methodCall("w", "WriteStartArray")),
+			exprStmt(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("ForEach")}, Args: []ast.Expr{lambda}}),
+			exprStmt(methodCall("w", "WriteEndArray")),
+		}, nil
+	case "HashMap":
+		keyType, keyIsString, err := g.mapKey(params[0])
+		if err != nil {
+			return nil, err
+		}
+		valueType, err := g.goType(params[1])
+		if err != nil {
+			return nil, err
+		}
+		k, v := g.fresh("k"), g.fresh("v")
+		var keyExpr ast.Expr = k
+		if !keyIsString {
+			keyExpr = &ast.CallExpr{Fun: ast.NewIdent("string"), Args: []ast.Expr{k}}
+		}
+		body, err := g.write(v, params[1])
+		if err != nil {
+			return nil, err
+		}
+		body = append([]ast.Stmt{exprStmt(methodCall("w", "WriteKey", keyExpr))}, body...)
+		lambda := &ast.FuncLit{
+			Type: &ast.FuncType{Params: &ast.FieldList{List: []*ast.Field{
+				{Names: []*ast.Ident{k}, Type: keyType},
+				{Names: []*ast.Ident{v}, Type: valueType},
+			}}},
+			Body: &ast.BlockStmt{List: body},
+		}
+		return []ast.Stmt{
+			exprStmt(methodCall("w", "WriteStartObject")),
+			exprStmt(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("ForEachKV")}, Args: []ast.Expr{lambda}}),
+			exprStmt(methodCall("w", "WriteEndObject")),
+		}, nil
 	}
 
-	// Primitives.
-	if method := primitiveWriteMethodFor(fieldType); method != "" {
-		return []ast.Stmt{exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(method)},
-			Args: []ast.Expr{access},
-		})}
-	}
-
-	// Nested struct fallback: if the type is a struct we've emitted meta for,
-	// call _StructMeta_T{}.EncodeFields recursively.  The inner call gets
-	// fresh nameFn/omitFn derived from `naming` and the inner StructMeta's
-	// own field names — Rename/Omit/OmitEmpty overrides do not propagate
-	// past the top level.  If the type is unknown, emit null so the
-	// generated code still compiles.
-	if name := namedTypeSimpleName(fieldType); name != "" {
-		genName := "_StructMeta_" + name
-		if _, ok := t.structMetas[genName]; ok {
-			return genNestedStructWrite(genName, access)
+	if sc, _, isWireType, ok := g.t.codecScalarOf(ty); ok {
+		arg := access
+		if !isWireType {
+			arg = &ast.CallExpr{Fun: ast.NewIdent(sc.goType), Args: []ast.Expr{access}}
 		}
+		return []ast.Stmt{exprStmt(methodCall("w", sc.write, arg))}, nil
 	}
 
-	// Fallback.
-	return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
+	genName, err := g.t.codecStructMeta(ty)
+	if err != nil {
+		return nil, err
+	}
+	return genNestedStructWrite(genName, access), nil
+}
+
+func errNestedOption() error {
+	return unsupportedShape("an Option nested directly in an Option has no encoding: None and Some(None) would both be null")
 }
 
 // genNestedStructWrite emits the call to _StructMeta_Inner{}.EncodeFields
@@ -208,223 +332,42 @@ func genNestedStructWrite(genName string, access ast.Expr) []ast.Stmt {
 	})}
 }
 
-// genOptionWrite: if Some → write inner; if None → WriteNull.
-func genOptionWrite(access ast.Expr, inner transpiler.Type) []ast.Stmt {
-	method := primitiveWriteMethodFor(inner)
-	if method == "" {
-		// Unsupported inner type — emit conservative null.
-		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
-	}
-	return []ast.Stmt{&ast.IfStmt{
-		Cond: &ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("IsDefined")}},
-		Body: &ast.BlockStmt{List: []ast.Stmt{
-			exprStmt(&ast.CallExpr{
-				Fun: &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(method)},
-				Args: []ast.Expr{&ast.CallExpr{
-					Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")},
-				}},
-			}),
-		}},
-		Else: &ast.BlockStmt{List: []ast.Stmt{
-			exprStmt(methodCall("w", "WriteNull")),
-		}},
-	}}
-}
+// --- DecodeFields(r FieldDecoder, lookup func(string) int, naming) T ---
 
-// genCollectionWrite: write start-array, iterate, write end-array.
-// Supports both primitive elements (direct WriteX) and nested struct
-// elements (recursive EncodeFields dispatch through _StructMeta_X{}).
-func (t *galaASTTransformer) genCollectionWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
-	elemGoType := t.goTypeFor(elem)
-	if elemGoType == nil {
-		// Try named-struct path for elements like Array[Inner].
-		if name := namedTypeSimpleName(elem); name != "" {
-			if _, ok := t.structMetas["_StructMeta_"+name]; ok {
-				elemGoType = t.qualifiedTypeIdent(name)
-			}
-		}
-		if elemGoType == nil {
-			return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
-		}
-	}
-
-	// Body of the lambda: either a primitive WriteX, a nested struct encode,
-	// or a nested collection / hashmap encode (Array[Array[T]] etc.).
-	innerStmts := t.genElementWrite(elem, ast.NewIdent("elem"))
-	if innerStmts == nil {
-		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
-	}
-
-	lambda := &ast.FuncLit{
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{List: []*ast.Field{
-				{Names: idents("elem"), Type: elemGoType},
-			}},
-		},
-		Body: &ast.BlockStmt{List: innerStmts},
-	}
-	return []ast.Stmt{
-		exprStmt(methodCall("w", "WriteStartArray")),
-		exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: access, Sel: ast.NewIdent("ForEach")},
-			Args: []ast.Expr{lambda},
-		}),
-		exprStmt(methodCall("w", "WriteEndArray")),
-	}
-}
-
-// genElementWrite emits the body that serialises a single collection
-// element (or HashMap value) of type `elem`, given an access expression
-// for the element value.  Returns nil if the shape is unsupported.
-func (t *galaASTTransformer) genElementWrite(elem transpiler.Type, access ast.Expr) []ast.Stmt {
-	// Primitive element: w.WriteX(access).
-	if method := primitiveWriteMethodFor(elem); method != "" {
-		return []ast.Stmt{exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent(method)},
-			Args: []ast.Expr{access},
-		})}
-	}
-	// Generic shapes (Immutable[T], Option[T], Array[T], List[T], HashMap[K, V]).
-	if gt, ok := elem.(transpiler.GenericType); ok {
-		base := gt.Base.BaseName()
-		if base == "Immutable" || base == "std.Immutable" {
-			if len(gt.Params) > 0 {
-				// Unwrap Immutable: call .Get() on the access then recurse.
-				inner := &ast.CallExpr{
-					Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")},
-				}
-				return t.genElementWrite(gt.Params[0], inner)
-			}
-		}
-		if base == "Option" || base == "std.Option" {
-			if len(gt.Params) > 0 {
-				return genOptionWrite(access, gt.Params[0])
-			}
-		}
-		if base == "Array" || base == "List" ||
-			base == "collection_immutable.Array" || base == "collection_immutable.List" {
-			if len(gt.Params) > 0 {
-				return t.genCollectionWrite(access, gt.Params[0])
-			}
-		}
-		if base == "HashMap" || base == "collection_immutable.HashMap" {
-			if len(gt.Params) == 2 {
-				return t.genHashMapWrite(access, gt.Params[1])
-			}
-		}
-	}
-	// Nested struct element: dispatch through _StructMeta_X{}.EncodeFields.
-	if name := namedTypeSimpleName(elem); name != "" {
-		genName := "_StructMeta_" + name
-		if _, ok := t.structMetas[genName]; ok {
-			return genNestedStructWrite(genName, access)
-		}
-	}
-	return nil
-}
-
-// genHashMapWrite: write start-object, iterate (k,v), write end-object.
-// Supports primitive values and nested struct values (recursive
-// EncodeFields dispatch through _StructMeta_X{}).
-func (t *galaASTTransformer) genHashMapWrite(access ast.Expr, elem transpiler.Type) []ast.Stmt {
-	elemGoType := t.goTypeFor(elem)
-	if elemGoType == nil {
-		// Try named-struct path for values like HashMap[string, Inner].
-		if name := namedTypeSimpleName(elem); name != "" {
-			if _, ok := t.structMetas["_StructMeta_"+name]; ok {
-				elemGoType = t.qualifiedTypeIdent(name)
-			}
-		}
-		if elemGoType == nil {
-			return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
-		}
-	}
-
-	valueStmts := t.genElementWrite(elem, ast.NewIdent("v"))
-	if valueStmts == nil {
-		return []ast.Stmt{exprStmt(methodCall("w", "WriteNull"))}
-	}
-
-	lambdaBody := []ast.Stmt{
-		exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: ast.NewIdent("w"), Sel: ast.NewIdent("WriteKey")},
-			Args: []ast.Expr{ast.NewIdent("k")},
-		}),
-	}
-	lambdaBody = append(lambdaBody, valueStmts...)
-
-	lambda := &ast.FuncLit{
-		Type: &ast.FuncType{
-			Params: &ast.FieldList{List: []*ast.Field{
-				{Names: idents("k"), Type: ast.NewIdent("string")},
-				{Names: idents("v"), Type: elemGoType},
-			}},
-		},
-		Body: &ast.BlockStmt{List: lambdaBody},
-	}
-	return []ast.Stmt{
-		exprStmt(methodCall("w", "WriteStartObject")),
-		exprStmt(&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: access, Sel: ast.NewIdent("ForEachKV")},
-			Args: []ast.Expr{lambda},
-		}),
-		exprStmt(methodCall("w", "WriteEndObject")),
-	}
-}
-
-// --- DecodeFields(r FieldDecoder, lookup func(string) int) T ---
-
-func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) *ast.FuncDecl {
+func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.FuncDecl, error) {
 	meta := config.typeMetadata
 	resolvedName := t.resolveStructTypeName(config.typeName)
 	immutFlags := t.structImmutFields[resolvedName]
+	g := &codecGen{t: t}
 
 	var stmts []ast.Stmt
 
-	// Per-field local var decls of the correct Go type (with zero-value
-	// defaults — Option fields default to None via zero-value, since
-	// Some/None share representation and the zero value is equivalent to
-	// None for our option layout in stdlib... but to be safe, initialise
-	// Options explicitly).
-	for i, fieldName := range meta.FieldNames {
+	// Per-field locals of the field's Go type. A field absent from the input
+	// keeps its zero value (None for Option fields).
+	for _, fieldName := range meta.FieldNames {
 		fieldType := meta.Fields[fieldName]
-		_ = i
-		localName := "_" + fieldName
-		goType := t.goTypeFor(unwrapGalaType(fieldType))
-		if goType == nil {
-			// Unsupported shape — fall back to named-type ident.
-			if name := namedTypeSimpleName(fieldType); name != "" {
-				goType = t.qualifiedTypeIdent(name)
-			} else {
-				goType = ast.NewIdent("interface{}")
-			}
+		goType, err := g.goType(unwrapGalaType(fieldType))
+		if err != nil {
+			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
 		}
-		stmts = append(stmts, &ast.DeclStmt{Decl: &ast.GenDecl{
-			Tok: token.VAR,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{Names: idents(localName), Type: goType},
-			},
-		}})
+		stmts = append(stmts, seqVarDecl("_"+fieldName, goType))
 	}
 
-	// r.StartObject()
 	stmts = append(stmts, exprStmt(methodCall("r", "StartObject")))
 
-	// Switch cases for each field.
 	var switchCases []ast.Stmt
 	for i, fieldName := range meta.FieldNames {
 		fieldType := meta.Fields[fieldName]
-		localName := "_" + fieldName
-		assignStmts := t.genTypedRead(ast.NewIdent(localName), fieldType)
-		if assignStmts == nil {
-			assignStmts = []ast.Stmt{exprStmt(methodCall("r", "Skip"))}
+		assignStmts, err := g.read(ast.NewIdent("_"+fieldName), unwrapGalaType(fieldType))
+		if err != nil {
+			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
 		}
 		switchCases = append(switchCases, &ast.CaseClause{
 			List: []ast.Expr{intLit(i)},
 			Body: assignStmts,
 		})
 	}
-	// default: r.Skip()
+	// default: r.Skip() — keys the struct does not declare.
 	switchCases = append(switchCases, &ast.CaseClause{
 		Body: []ast.Stmt{exprStmt(methodCall("r", "Skip"))},
 	})
@@ -446,28 +389,20 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) *ast.Func
 		Body: &ast.BlockStmt{List: forBody},
 	})
 
-	// r.EndObject()
 	stmts = append(stmts, exprStmt(methodCall("r", "EndObject")))
 
 	// return T{FieldName: _FieldName, ...}  (wrap Immutable fields)
 	var compositeElts []ast.Expr
 	for i, fieldName := range meta.FieldNames {
-		localName := "_" + fieldName
 		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
-		var value ast.Expr = ast.NewIdent(localName)
+		var value ast.Expr = ast.NewIdent("_" + fieldName)
 		if isImmut {
 			value = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{value}}
 		}
-		compositeElts = append(compositeElts, &ast.KeyValueExpr{
-			Key:   ast.NewIdent(fieldName),
-			Value: value,
-		})
+		compositeElts = append(compositeElts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: value})
 	}
 	stmts = append(stmts, &ast.ReturnStmt{Results: []ast.Expr{
-		&ast.CompositeLit{
-			Type: ast.NewIdent(config.typeName),
-			Elts: compositeElts,
-		},
+		&ast.CompositeLit{Type: ast.NewIdent(config.typeName), Elts: compositeElts},
 	}})
 
 	return &ast.FuncDecl{
@@ -482,76 +417,155 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) *ast.Func
 			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent(config.typeName)}}},
 		},
 		Body: &ast.BlockStmt{List: stmts},
-	}
+	}, nil
 }
 
-// genTypedRead emits statements that read a single field from the decoder
-// and assign to the given local variable.  Returns nil for shapes we can't
-// handle (the caller will fall back to `r.Skip()`).
-func (t *galaASTTransformer) genTypedRead(localIdent ast.Expr, fieldType transpiler.Type) []ast.Stmt {
-	// Unwrap Immutable: read inner, assign, final compositeLit will wrap.
-	if gt, ok := fieldType.(transpiler.GenericType); ok {
-		base := gt.Base.BaseName()
-		if base == "Immutable" || base == "std.Immutable" {
-			if len(gt.Params) > 0 {
-				return t.genTypedRead(localIdent, gt.Params[0])
-			}
-		}
-		if base == "Option" || base == "std.Option" {
-			if len(gt.Params) > 0 {
-				return t.genOptionRead(localIdent, gt.Params[0])
-			}
-		}
-		if base == "Array" || base == "List" ||
-			base == "collection_immutable.Array" || base == "collection_immutable.List" {
-			if len(gt.Params) > 0 {
-				short := base
-				if dot := lastDot(base); dot >= 0 {
-					short = base[dot+1:]
-				}
-				return t.genCollectionRead(localIdent, gt.Params[0], short)
-			}
-		}
-		if base == "HashMap" || base == "collection_immutable.HashMap" {
-			if len(gt.Params) == 2 {
-				return t.genHashMapRead(localIdent, gt.Params[1])
-			}
-		}
+// read returns the statements that decode one value of type ty from the
+// FieldDecoder `r` and assign it to target (an already-declared variable of
+// ty's Go type).
+func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error) {
+	ty = g.t.codecUnalias(ty)
+	assign := func(value ast.Expr) ast.Stmt {
+		return &ast.AssignStmt{Lhs: []ast.Expr{target}, Tok: token.ASSIGN, Rhs: []ast.Expr{value}}
 	}
 
-	if method := primitiveReadMethodFor(fieldType); method != "" {
-		return []ast.Stmt{&ast.AssignStmt{
-			Lhs: []ast.Expr{localIdent},
-			Tok: token.ASSIGN,
-			Rhs: []ast.Expr{&ast.CallExpr{
-				Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(method)},
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable":
+		innerType, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		tmp := g.fresh("inner")
+		body, err := g.read(tmp, params[0])
+		if err != nil {
+			return nil, err
+		}
+		stmts := append([]ast.Stmt{seqVarDecl(tmp.Name, innerType)}, body...)
+		stmts = append(stmts, assign(&ast.CallExpr{Fun: g.t.stdIdent("NewImmutable"), Args: []ast.Expr{tmp}}))
+		return []ast.Stmt{&ast.BlockStmt{List: stmts}}, nil
+	case "Option":
+		if g.t.codecNullable(params[0]) {
+			return nil, errNestedOption()
+		}
+		innerType, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		tmp := g.fresh("some")
+		body, err := g.read(tmp, params[0])
+		if err != nil {
+			return nil, err
+		}
+		ctor := func(name string, args ...ast.Expr) ast.Expr {
+			return &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   &ast.CompositeLit{Type: &ast.IndexExpr{X: g.t.stdIdent(name), Index: innerType}},
+					Sel: ast.NewIdent("Apply"),
+				},
+				Args: args,
+			}
+		}
+		someStmts := append([]ast.Stmt{seqVarDecl(tmp.Name, innerType)}, body...)
+		someStmts = append(someStmts, assign(ctor("Some", tmp)))
+		return []ast.Stmt{&ast.IfStmt{
+			Cond: methodCall("r", "IsNull"),
+			Body: &ast.BlockStmt{List: []ast.Stmt{
+				exprStmt(methodCall("r", "ReadNull")),
+				assign(ctor("None")),
 			}},
+			Else: &ast.BlockStmt{List: someStmts},
+		}}, nil
+	case "Array", "List":
+		elemType, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		slice, elem := g.fresh("slice"), g.fresh("elem")
+		elemStmts, err := g.read(elem, params[0])
+		if err != nil {
+			return nil, err
+		}
+		loopBody := append([]ast.Stmt{seqVarDecl(elem.Name, elemType)}, elemStmts...)
+		loopBody = append(loopBody, &ast.AssignStmt{
+			Lhs: []ast.Expr{slice},
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{&ast.CallExpr{Fun: ast.NewIdent("append"), Args: []ast.Expr{slice, elem}}},
+		})
+		ctorName := "ArrayFromSlice"
+		if kind == "List" {
+			ctorName = "ListFromSlice"
+		}
+		return []ast.Stmt{&ast.BlockStmt{List: []ast.Stmt{
+			seqVarDecl(slice.Name, &ast.ArrayType{Elt: elemType}),
+			exprStmt(methodCall("r", "StartArray")),
+			&ast.ForStmt{Cond: methodCall("r", "HasMoreElements"), Body: &ast.BlockStmt{List: loopBody}},
+			exprStmt(methodCall("r", "EndArray")),
+			assign(&ast.CallExpr{Fun: g.t.collectionIdent(ctorName), Args: []ast.Expr{slice}}),
+		}}}, nil
+	case "HashMap":
+		keyType, keyIsString, err := g.mapKey(params[0])
+		if err != nil {
+			return nil, err
+		}
+		valueType, err := g.goType(params[1])
+		if err != nil {
+			return nil, err
+		}
+		m, k, v := g.fresh("m"), g.fresh("k"), g.fresh("v")
+		valueStmts, err := g.read(v, params[1])
+		if err != nil {
+			return nil, err
+		}
+		var keyValue ast.Expr = methodCall("r", "ReadKey")
+		if !keyIsString {
+			keyValue = &ast.CallExpr{Fun: keyType, Args: []ast.Expr{keyValue}}
+		}
+		loopBody := []ast.Stmt{
+			&ast.AssignStmt{Lhs: []ast.Expr{k}, Tok: token.DEFINE, Rhs: []ast.Expr{keyValue}},
+			seqVarDecl(v.Name, valueType),
+		}
+		loopBody = append(loopBody, valueStmts...)
+		loopBody = append(loopBody, &ast.AssignStmt{
+			Lhs: []ast.Expr{m},
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{&ast.CallExpr{Fun: &ast.SelectorExpr{X: m, Sel: ast.NewIdent("Put")}, Args: []ast.Expr{k, v}}},
+		})
+		emptyMap := &ast.CallExpr{Fun: &ast.IndexListExpr{
+			X:       g.t.collectionIdent("EmptyHashMap"),
+			Indices: []ast.Expr{keyType, valueType},
 		}}
+		return []ast.Stmt{&ast.BlockStmt{List: []ast.Stmt{
+			&ast.AssignStmt{Lhs: []ast.Expr{m}, Tok: token.DEFINE, Rhs: []ast.Expr{emptyMap}},
+			exprStmt(methodCall("r", "StartObject")),
+			&ast.ForStmt{Cond: methodCall("r", "HasMoreFields"), Body: &ast.BlockStmt{List: loopBody}},
+			exprStmt(methodCall("r", "EndObject")),
+			assign(m),
+		}}}, nil
 	}
 
-	// Nested struct field: dispatch through _StructMeta_X{}.DecodeFields with
-	// a freshly-built lookup keyed by the inherited `naming` mapping.
-	if name := namedTypeSimpleName(fieldType); name != "" {
-		genName := "_StructMeta_" + name
-		if _, ok := t.structMetas[genName]; ok {
-			return []ast.Stmt{&ast.AssignStmt{
-				Lhs: []ast.Expr{localIdent},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   &ast.CompositeLit{Type: ast.NewIdent(genName)},
-						Sel: ast.NewIdent("DecodeFields"),
-					},
-					Args: []ast.Expr{
-						ast.NewIdent("r"),
-						genNestedStructLookup(genName),
-						ast.NewIdent("naming"),
-					},
-				}},
-			}}
+	if sc, declared, isWireType, ok := g.t.codecScalarOf(ty); ok {
+		var args []ast.Expr
+		if sc.bits >= 0 {
+			args = []ast.Expr{intLit(sc.bits)}
 		}
+		var value ast.Expr = methodCall("r", sc.read, args...)
+		if !isWireType {
+			value = &ast.CallExpr{Fun: declared, Args: []ast.Expr{value}}
+		}
+		return []ast.Stmt{assign(value)}, nil
 	}
-	return nil
+
+	genName, err := g.t.codecStructMeta(ty)
+	if err != nil {
+		return nil, err
+	}
+	return []ast.Stmt{assign(&ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.CompositeLit{Type: ast.NewIdent(genName)},
+			Sel: ast.NewIdent("DecodeFields"),
+		},
+		Args: []ast.Expr{ast.NewIdent("r"), genNestedStructLookup(genName), ast.NewIdent("naming")},
+	})}, nil
 }
 
 // genNestedStructLookup emits a closure: func(key string) int that looks up
@@ -585,11 +599,7 @@ func genNestedStructLookup(genName string) ast.Expr {
 				Tok: token.DEFINE,
 				Rhs: []ast.Expr{intLit(0)},
 			},
-			Cond: &ast.BinaryExpr{
-				X:  ast.NewIdent("i"),
-				Op: token.LSS,
-				Y:  ast.NewIdent("n"),
-			},
+			Cond: &ast.BinaryExpr{X: ast.NewIdent("i"), Op: token.LSS, Y: ast.NewIdent("n")},
 			Post: &ast.IncDecStmt{X: ast.NewIdent("i"), Tok: token.INC},
 			Body: &ast.BlockStmt{List: []ast.Stmt{
 				&ast.IfStmt{
@@ -597,10 +607,7 @@ func genNestedStructLookup(genName string) ast.Expr {
 						X: &ast.CallExpr{
 							Fun: ast.NewIdent("naming"),
 							Args: []ast.Expr{&ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   ast.NewIdent("_meta"),
-									Sel: ast.NewIdent("FieldName"),
-								},
+								Fun:  &ast.SelectorExpr{X: ast.NewIdent("_meta"), Sel: ast.NewIdent("FieldName")},
 								Args: []ast.Expr{ast.NewIdent("i")},
 							}},
 						},
@@ -624,399 +631,242 @@ func genNestedStructLookup(genName string) ast.Expr {
 	}
 }
 
-// genCollectionRead emits read statements for Array[T] or List[T] fields.
-// `containerName` is "Array" or "List" — the GALA collection ctor used for
-// the final FromSlice wrap.
-func (t *galaASTTransformer) genCollectionRead(localIdent ast.Expr, elem transpiler.Type, containerName string) []ast.Stmt {
-	elemGoType := t.goTypeFor(elem)
-	if elemGoType == nil {
-		if name := namedTypeSimpleName(elem); name != "" {
-			if _, ok := t.structMetas["_StructMeta_"+name]; ok {
-				elemGoType = t.qualifiedTypeIdent(name)
-			}
-		}
-		if elemGoType == nil {
-			return nil
-		}
+// --- type classification ---
+
+// codecContainer reports which codec-aware generic container ty is
+// ("Immutable", "Option", "Array", "List", "HashMap") together with its type
+// arguments, or "" when ty is none of them (or has the wrong arity).
+func codecContainer(ty transpiler.Type) (string, []transpiler.Type) {
+	gt, ok := ty.(transpiler.GenericType)
+	if !ok {
+		return "", nil
 	}
-
-	// Build the per-element read into a fresh local `__elem`.
-	elemLocal := ast.NewIdent("__elem")
-	elemReadStmts := t.genElementRead(elem, elemLocal)
-	if elemReadStmts == nil {
-		return nil
+	var kind string
+	arity := 1
+	switch gt.Base.BaseName() {
+	case "Immutable", "std.Immutable":
+		kind = "Immutable"
+	case "Option", "std.Option":
+		kind = "Option"
+	case "Array", "collection_immutable.Array":
+		kind = "Array"
+	case "List", "collection_immutable.List":
+		kind = "List"
+	case "HashMap", "collection_immutable.HashMap":
+		kind, arity = "HashMap", 2
+	default:
+		return "", nil
 	}
-
-	// var __sliceN []ElemGoType
-	sliceLocal := ast.NewIdent("__slice")
-	stmts := []ast.Stmt{
-		&ast.DeclStmt{Decl: &ast.GenDecl{
-			Tok: token.VAR,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{
-					Names: []*ast.Ident{sliceLocal},
-					Type:  &ast.ArrayType{Elt: elemGoType},
-				},
-			},
-		}},
+	if len(gt.Params) != arity {
+		return "", nil
 	}
-
-	// r.StartArray()
-	stmts = append(stmts, exprStmt(methodCall("r", "StartArray")))
-
-	// for r.HasMoreElements() { var __elem T; <read>; __slice = append(__slice, __elem) }
-	loopBody := []ast.Stmt{
-		&ast.DeclStmt{Decl: &ast.GenDecl{
-			Tok: token.VAR,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{
-					Names: []*ast.Ident{elemLocal},
-					Type:  elemGoType,
-				},
-			},
-		}},
-	}
-	loopBody = append(loopBody, elemReadStmts...)
-	loopBody = append(loopBody, &ast.AssignStmt{
-		Lhs: []ast.Expr{sliceLocal},
-		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{&ast.CallExpr{
-			Fun:  ast.NewIdent("append"),
-			Args: []ast.Expr{sliceLocal, elemLocal},
-		}},
-	})
-	stmts = append(stmts, &ast.ForStmt{
-		Cond: methodCall("r", "HasMoreElements"),
-		Body: &ast.BlockStmt{List: loopBody},
-	})
-
-	// r.EndArray()
-	stmts = append(stmts, exprStmt(methodCall("r", "EndArray")))
-
-	// localIdent = ArrayFromSlice(__slice) (or ListFromSlice for List)
-	ctorName := "ArrayFromSlice"
-	if containerName == "List" {
-		ctorName = "ListFromSlice"
-	}
-	stmts = append(stmts, &ast.AssignStmt{
-		Lhs: []ast.Expr{localIdent},
-		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{&ast.CallExpr{
-			Fun:  t.collectionIdent(ctorName),
-			Args: []ast.Expr{sliceLocal},
-		}},
-	})
-
-	// Wrap the whole thing in a block so the __slice / __elem locals don't
-	// leak across multiple collection reads inside the same parent.
-	return []ast.Stmt{&ast.BlockStmt{List: stmts}}
+	return kind, gt.Params
 }
 
-// genHashMapRead emits read statements for HashMap[string, V] fields.
-func (t *galaASTTransformer) genHashMapRead(localIdent ast.Expr, valueType transpiler.Type) []ast.Stmt {
-	valueGoType := t.goTypeFor(valueType)
-	if valueGoType == nil {
-		if name := namedTypeSimpleName(valueType); name != "" {
-			if _, ok := t.structMetas["_StructMeta_"+name]; ok {
-				valueGoType = t.qualifiedTypeIdent(name)
+// codecScalarOf classifies ty as a scalar the codec can carry: a built-in
+// scalar kind, an alias chain that ends at one (`type Millis int64`), or a Go
+// named type whose underlying type is one (`time.Duration`). It returns the
+// wire description, the Go expression naming ty (for the conversion back on
+// decode), and whether ty already is the wire type so no conversion is
+// needed.
+func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast.Expr, bool, bool) {
+	name, pkg, ok := simpleTypeName(ty)
+	if !ok {
+		return codecScalar{}, nil, false, false
+	}
+	if pkg == "" || pkg == t.packageName {
+		if sc, ok := codecScalars[name]; ok {
+			return sc, ast.NewIdent(name), name == sc.goType, true
+		}
+		return codecScalar{}, nil, false, false
+	}
+	if underlying, ok := t.goNamedUnderlying(ty); ok {
+		if uname, upkg, ok := simpleTypeName(underlying); ok && upkg == "" {
+			if sc, ok := codecScalars[uname]; ok {
+				return sc, t.codecTypeExpr(ty), false, true
 			}
 		}
-		if valueGoType == nil {
-			return nil
-		}
 	}
-
-	// var __m HashMap[string, V] = EmptyHashMap[string, V]()
-	mLocal := ast.NewIdent("__m")
-	stringIdent := ast.NewIdent("string")
-	emptyMapType := &ast.IndexListExpr{
-		X:       t.collectionIdent("HashMap"),
-		Indices: []ast.Expr{stringIdent, valueGoType},
-	}
-	stmts := []ast.Stmt{
-		&ast.DeclStmt{Decl: &ast.GenDecl{
-			Tok: token.VAR,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{
-					Names:  []*ast.Ident{mLocal},
-					Type:   emptyMapType,
-					Values: []ast.Expr{&ast.CallExpr{
-						Fun: &ast.IndexListExpr{
-							X:       t.collectionIdent("EmptyHashMap"),
-							Indices: []ast.Expr{ast.NewIdent("string"), valueGoType},
-						},
-					}},
-				},
-			},
-		}},
-	}
-
-	// r.StartObject()
-	stmts = append(stmts, exprStmt(methodCall("r", "StartObject")))
-
-	// for r.HasMoreFields() { __k := r.ReadKey(); var __v V; <read>; __m = __m.Put(__k, __v) }
-	kLocal := ast.NewIdent("__k")
-	vLocal := ast.NewIdent("__v")
-	valueReadStmts := t.genElementRead(valueType, vLocal)
-	if valueReadStmts == nil {
-		return nil
-	}
-	loopBody := []ast.Stmt{
-		&ast.AssignStmt{
-			Lhs: []ast.Expr{kLocal},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{methodCall("r", "ReadKey")},
-		},
-		&ast.DeclStmt{Decl: &ast.GenDecl{
-			Tok: token.VAR,
-			Specs: []ast.Spec{
-				&ast.ValueSpec{
-					Names: []*ast.Ident{vLocal},
-					Type:  valueGoType,
-				},
-			},
-		}},
-	}
-	loopBody = append(loopBody, valueReadStmts...)
-	loopBody = append(loopBody, &ast.AssignStmt{
-		Lhs: []ast.Expr{mLocal},
-		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{&ast.CallExpr{
-			Fun: &ast.SelectorExpr{X: mLocal, Sel: ast.NewIdent("Put")},
-			Args: []ast.Expr{kLocal, vLocal},
-		}},
-	})
-	stmts = append(stmts, &ast.ForStmt{
-		Cond: methodCall("r", "HasMoreFields"),
-		Body: &ast.BlockStmt{List: loopBody},
-	})
-
-	// r.EndObject()
-	stmts = append(stmts, exprStmt(methodCall("r", "EndObject")))
-
-	// localIdent = __m
-	stmts = append(stmts, &ast.AssignStmt{
-		Lhs: []ast.Expr{localIdent},
-		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{mLocal},
-	})
-
-	return []ast.Stmt{&ast.BlockStmt{List: stmts}}
+	return codecScalar{}, nil, false, false
 }
 
-// genElementRead emits the read statements for a single collection element
-// or HashMap value of type `elem`, assigning to the `target` ident.
-// Returns nil for unsupported shapes.
-func (t *galaASTTransformer) genElementRead(elem transpiler.Type, target ast.Expr) []ast.Stmt {
-	if method := primitiveReadMethodFor(elem); method != "" {
-		return []ast.Stmt{&ast.AssignStmt{
-			Lhs: []ast.Expr{target},
-			Tok: token.ASSIGN,
-			Rhs: []ast.Expr{&ast.CallExpr{
-				Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(method)},
-			}},
-		}}
+// codecUnalias resolves a local alias to the type it names, so an alias of a
+// scalar (`type Millis int64`), of a Go named type (`type Wait time.Duration`)
+// or of a container (`type Tags Array[string]`) classifies like its target.
+// GALA aliases lower to Go aliases (`type Millis = int64`), so the generated
+// code may name either side. Only unqualified names are looked up: the alias
+// table is keyed by simple name, so a qualified name could otherwise match an
+// unrelated local alias.
+func (t *galaASTTransformer) codecUnalias(ty transpiler.Type) transpiler.Type {
+	name, pkg, ok := simpleTypeName(ty)
+	if !ok || (pkg != "" && pkg != t.packageName) {
+		return ty
 	}
-	if gt, ok := elem.(transpiler.GenericType); ok {
-		base := gt.Base.BaseName()
-		if base == "Immutable" || base == "std.Immutable" {
-			if len(gt.Params) > 0 {
-				return t.genElementRead(gt.Params[0], target)
-			}
-		}
-		if base == "Option" || base == "std.Option" {
-			if len(gt.Params) > 0 {
-				return t.genOptionRead(target, gt.Params[0])
-			}
-		}
-		if base == "Array" || base == "List" ||
-			base == "collection_immutable.Array" || base == "collection_immutable.List" {
-			if len(gt.Params) > 0 {
-				short := base
-				if dot := lastDot(base); dot >= 0 {
-					short = base[dot+1:]
-				}
-				return t.genCollectionRead(target, gt.Params[0], short)
-			}
-		}
-		if base == "HashMap" || base == "collection_immutable.HashMap" {
-			if len(gt.Params) == 2 {
-				return t.genHashMapRead(target, gt.Params[1])
-			}
-		}
+	if _, isAlias := t.typeAliases[name]; !isAlias {
+		return ty
 	}
-	if name := namedTypeSimpleName(elem); name != "" {
-		genName := "_StructMeta_" + name
-		if _, ok := t.structMetas[genName]; ok {
-			return []ast.Stmt{&ast.AssignStmt{
-				Lhs: []ast.Expr{target},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   &ast.CompositeLit{Type: ast.NewIdent(genName)},
-						Sel: ast.NewIdent("DecodeFields"),
-					},
-					Args: []ast.Expr{
-						ast.NewIdent("r"),
-						genNestedStructLookup(genName),
-						ast.NewIdent("naming"),
-					},
-				}},
-			}}
-		}
-	}
-	return nil
+	return t.followAliasChain(transpiler.NamedType{Name: name})
 }
 
-// genOptionRead: if r.IsNull() { r.ReadNull(); local = None[E]{}.Apply() }
-//                else               { local = Some[E]{}.Apply(r.ReadX()) }
-func (t *galaASTTransformer) genOptionRead(localIdent ast.Expr, inner transpiler.Type) []ast.Stmt {
-	readMethod := primitiveReadMethodFor(inner)
-	if readMethod == "" {
-		return nil
+// codecNullable reports whether ty can encode as null: an Option, possibly
+// behind Immutable layers or aliases. Such a type inside an Option would make
+// None and Some(None) indistinguishable.
+func (t *galaASTTransformer) codecNullable(ty transpiler.Type) bool {
+	for {
+		switch kind, params := codecContainer(t.codecUnalias(ty)); kind {
+		case "Option":
+			return true
+		case "Immutable":
+			ty = params[0]
+		default:
+			return false
+		}
 	}
-	innerName := baseTypeName(inner)
-	noneCtor := &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X: &ast.CompositeLit{Type: &ast.IndexExpr{
-				X:     t.stdIdent("None"),
-				Index: ast.NewIdent(innerName),
-			}},
-			Sel: ast.NewIdent("Apply"),
-		},
+}
+
+// simpleTypeName splits a basic or named type into its bare name and package
+// qualifier ("" when unqualified).
+func simpleTypeName(ty transpiler.Type) (string, string, bool) {
+	switch v := ty.(type) {
+	case transpiler.BasicType:
+		if dot := lastDot(v.Name); dot >= 0 {
+			return v.Name[dot+1:], v.Name[:dot], true
+		}
+		return v.Name, "", true
+	case transpiler.NamedType:
+		if v.Package == "" {
+			if dot := lastDot(v.Name); dot >= 0 {
+				return v.Name[dot+1:], v.Name[:dot], true
+			}
+		}
+		return v.Name, v.Package, true
 	}
-	someCtor := &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X: &ast.CompositeLit{Type: &ast.IndexExpr{
-				X:     t.stdIdent("Some"),
-				Index: ast.NewIdent(innerName),
-			}},
-			Sel: ast.NewIdent("Apply"),
-		},
-		Args: []ast.Expr{&ast.CallExpr{
-			Fun: &ast.SelectorExpr{X: ast.NewIdent("r"), Sel: ast.NewIdent(readMethod)},
-		}},
+	return "", "", false
+}
+
+// codecStructMeta returns the generated _StructMeta_X name for a struct-typed
+// value, or an unsupported-shape error explaining why ty has no encoding.
+func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type) (string, error) {
+	name := codecStructName(ty)
+	if name != "" {
+		if _, ok := t.structMetas["_StructMeta_"+name]; ok {
+			return "_StructMeta_" + name, nil
+		}
+		if meta, _ := t.getTypeMetaResolved(name); meta != nil {
+			if meta.IsSealed {
+				return "", unsupportedShape("%s", sealedReason(name))
+			}
+			if len(meta.FieldNames) == 0 {
+				return "", unsupportedShape("%s", noFieldsReason(name))
+			}
+		}
 	}
-	return []ast.Stmt{&ast.IfStmt{
-		Cond: methodCall("r", "IsNull"),
-		Body: &ast.BlockStmt{List: []ast.Stmt{
-			exprStmt(methodCall("r", "ReadNull")),
-			&ast.AssignStmt{
-				Lhs: []ast.Expr{localIdent},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{noneCtor},
-			},
-		}},
-		Else: &ast.BlockStmt{List: []ast.Stmt{
-			&ast.AssignStmt{
-				Lhs: []ast.Expr{localIdent},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{someCtor},
-			},
-		}},
-	}}
+	switch ty.(type) {
+	case transpiler.FuncType:
+		return "", unsupportedShape("functions have no serialized form")
+	case transpiler.PointerType:
+		return "", unsupportedShape("pointers are not encoded; store the value itself")
+	case transpiler.ArrayType, transpiler.MapType:
+		return "", unsupportedShape("Go slices and maps are not encoded; use Array, List or HashMap")
+	case transpiler.GenericType:
+		return "", unsupportedShape("generic type %s has no codec encoding", ty.String())
+	}
+	if named, ok := ty.(transpiler.NamedType); ok && named.Package != "" && named.Package != t.packageName && t.goTypeInfo == nil {
+		return "", unsupportedShape("the underlying kind of %s is unknown because Go type information is unavailable (is the Go SDK on PATH or GOROOT set?)", ty.String())
+	}
+	return "", unsupportedShape("%s is neither a scalar nor a GALA struct the codec can describe", ty.String())
+}
+
+// sealedReason and noFieldsReason explain why a named type has no codec
+// encoding; they are shared by the field check and the Codec[T] root check.
+func sealedReason(name string) string {
+	return fmt.Sprintf("%s is a sealed type, and sealed types have no codec encoding yet", name)
+}
+
+func noFieldsReason(name string) string {
+	return fmt.Sprintf("%s has no fields, so the codec has nothing to describe", name)
+}
+
+// codecStructName is the name the StructMeta for a struct-typed value is
+// registered under (callers resolve aliases first). Returns "" for anything
+// but a basic or named type: generic user structs are not described by
+// StructMeta.
+func codecStructName(ty transpiler.Type) string {
+	switch v := ty.(type) {
+	case transpiler.BasicType:
+		return v.Name
+	case transpiler.NamedType:
+		return v.Name
+	}
+	return ""
+}
+
+// mapKey checks that a HashMap key type is string-shaped — JSON and YAML
+// object keys are text — and returns its Go type and whether it is exactly
+// `string` (so no conversion is needed).
+func (g *codecGen) mapKey(ty transpiler.Type) (ast.Expr, bool, error) {
+	ty = g.t.codecUnalias(ty)
+	sc, declared, isWireType, ok := g.t.codecScalarOf(ty)
+	if !ok || sc.goType != "string" {
+		return nil, false, unsupportedShape("HashMap keys must be strings (or an alias of string): object keys are text, and %s is not", ty.String())
+	}
+	return declared, isWireType, nil
+}
+
+// goType returns the Go type expression for a codec-supported value type, or
+// an unsupported-shape error.
+func (g *codecGen) goType(ty transpiler.Type) (ast.Expr, error) {
+	ty = g.t.codecUnalias(ty)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable", "Option":
+		inner, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		if kind == "Option" && g.t.codecNullable(params[0]) {
+			return nil, errNestedOption()
+		}
+		return &ast.IndexExpr{X: g.t.stdIdent(kind), Index: inner}, nil
+	case "Array", "List":
+		inner, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		return &ast.IndexExpr{X: g.t.collectionIdent(kind), Index: inner}, nil
+	case "HashMap":
+		k, _, err := g.mapKey(params[0])
+		if err != nil {
+			return nil, err
+		}
+		v, err := g.goType(params[1])
+		if err != nil {
+			return nil, err
+		}
+		return &ast.IndexListExpr{X: g.t.collectionIdent("HashMap"), Indices: []ast.Expr{k, v}}, nil
+	}
+	if _, declared, _, ok := g.t.codecScalarOf(ty); ok {
+		return declared, nil
+	}
+	if _, err := g.t.codecStructMeta(ty); err != nil {
+		return nil, err
+	}
+	return g.t.codecTypeExpr(ty), nil
+}
+
+// codecTypeExpr names a basic or named type in generated Go, qualifying and
+// importing it when it belongs to another package.
+func (t *galaASTTransformer) codecTypeExpr(ty transpiler.Type) ast.Expr {
+	if named, ok := ty.(transpiler.NamedType); ok && named.Package != "" && named.Package != t.packageName {
+		return t.typeToExpr(ty)
+	}
+	name, pkg, _ := simpleTypeName(ty)
+	if pkg == "" || pkg == t.packageName {
+		return ast.NewIdent(name)
+	}
+	return t.qualifiedTypeIdent(pkg + "." + name)
 }
 
 // --- helpers ---
-
-func primitiveWriteMethodFor(ty transpiler.Type) string {
-	switch baseTypeName(unwrapGalaType(ty)) {
-	case "string":
-		return "WriteString"
-	case "int":
-		return "WriteInt"
-	case "int64":
-		return "WriteInt64"
-	case "float64":
-		return "WriteFloat64"
-	case "bool":
-		return "WriteBool"
-	case "rune":
-		return "WriteRune"
-	}
-	return ""
-}
-
-func primitiveReadMethodFor(ty transpiler.Type) string {
-	switch baseTypeName(unwrapGalaType(ty)) {
-	case "string":
-		return "ReadString"
-	case "int":
-		return "ReadInt"
-	case "int64":
-		return "ReadInt64"
-	case "float64":
-		return "ReadFloat64"
-	case "bool":
-		return "ReadBool"
-	case "rune":
-		return "ReadRune"
-	}
-	return ""
-}
-
-// goTypeFor returns a Go AST type ident for a primitive or common generic
-// field type so DecodeFields can declare locals with the correct type.
-// Returns nil for shapes where we can't confidently name the Go type here.
-// The transformer receiver is required to emit properly-qualified references
-// to non-local packages (collection_immutable, std) honouring dot-imports.
-func (t *galaASTTransformer) goTypeFor(ty transpiler.Type) ast.Expr {
-	if ty == nil {
-		return nil
-	}
-	switch ty := ty.(type) {
-	case transpiler.BasicType:
-		return ast.NewIdent(ty.Name)
-	case transpiler.NamedType:
-		return t.qualifiedTypeIdent(ty.Name)
-	case transpiler.GenericType:
-		base := ty.Base.BaseName()
-		if base == "Immutable" || base == "std.Immutable" {
-			if len(ty.Params) > 0 {
-				return t.goTypeFor(ty.Params[0])
-			}
-		}
-		if base == "Option" || base == "std.Option" {
-			if len(ty.Params) > 0 {
-				inner := t.goTypeFor(ty.Params[0])
-				if inner == nil {
-					return nil
-				}
-				return &ast.IndexExpr{X: t.stdIdent("Option"), Index: inner}
-			}
-		}
-		if base == "Array" || base == "List" ||
-			base == "collection_immutable.Array" || base == "collection_immutable.List" {
-			if len(ty.Params) > 0 {
-				inner := t.goTypeFor(ty.Params[0])
-				if inner == nil {
-					return nil
-				}
-				name := base
-				if dot := lastDot(base); dot >= 0 {
-					name = base[dot+1:]
-				}
-				return &ast.IndexExpr{X: t.collectionIdent(name), Index: inner}
-			}
-		}
-		if base == "HashMap" || base == "collection_immutable.HashMap" {
-			if len(ty.Params) == 2 {
-				k := t.goTypeFor(ty.Params[0])
-				v := t.goTypeFor(ty.Params[1])
-				if k == nil || v == nil {
-					return nil
-				}
-				name := base
-				if dot := lastDot(base); dot >= 0 {
-					name = base[dot+1:]
-				}
-				return &ast.IndexListExpr{X: t.collectionIdent(name), Indices: []ast.Expr{k, v}}
-			}
-		}
-		// Other generics left for later phases.
-	}
-	return nil
-}
 
 // qualifiedTypeIdent emits an ast.Expr for a type name that may be
 // package-qualified.  For known packages (collection_immutable, std) it
@@ -1046,18 +896,6 @@ func lastDot(s string) int {
 	return -1
 }
 
-func namedTypeSimpleName(ty transpiler.Type) string {
-	switch t := ty.(type) {
-	case transpiler.BasicType:
-		return t.Name
-	case transpiler.NamedType:
-		return t.Name
-	case transpiler.GenericType:
-		return t.Base.BaseName()
-	}
-	return ""
-}
-
 func funcIntStringType() ast.Expr {
 	return &ast.FuncType{
 		Params:  &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("int")}}},
@@ -1085,8 +923,3 @@ func funcStringStringType() ast.Expr {
 		Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("string")}}},
 	}
 }
-
-// fmtDebugType is a development helper — callers use it to inspect type
-// strings when debugging failures in this pass. Deliberately exported
-// (lowercase) so it doesn't leak outside the package.
-var _ = fmt.Sprintf

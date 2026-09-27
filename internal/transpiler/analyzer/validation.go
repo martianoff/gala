@@ -61,13 +61,16 @@ func ValidateRichAST(ast *transpiler.RichAST) []ValidationWarning {
 
 // validateTypeReferences checks that every type referenced in struct fields and method
 // signatures exists in richAST.Types, is a builtin Go type, or has a valid import path.
+// A name the enclosing declaration binds as a type parameter is valid by scope.
 func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 	var warnings []ValidationWarning
 
 	for typeName, typeMeta := range ast.Types {
+		typeScope := typeParamScope(nil, typeMeta.TypeParams)
+
 		// Check field types
 		for fieldName, fieldType := range typeMeta.Fields {
-			if w := checkTypeExists(ast, fieldType, fmt.Sprintf("field %s.%s", typeName, fieldName)); w != nil {
+			if w := checkTypeExists(ast, fieldType, typeScope, fmt.Sprintf("field %s.%s", typeName, fieldName)); w != nil {
 				warnings = append(warnings, *w)
 			}
 		}
@@ -75,13 +78,14 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 		// Check method signatures
 		for methodName, methodMeta := range typeMeta.Methods {
 			loc := fmt.Sprintf("method %s.%s", typeName, methodName)
+			methodScope := receiverTypeArgScope(ast, methodMeta, len(typeMeta.TypeParams), typeParamScope(typeScope, methodMeta.TypeParams))
 			for i, paramType := range methodMeta.ParamTypes {
-				if w := checkTypeExists(ast, paramType, fmt.Sprintf("%s param[%d]", loc, i)); w != nil {
+				if w := checkTypeExists(ast, paramType, methodScope, fmt.Sprintf("%s param[%d]", loc, i)); w != nil {
 					warnings = append(warnings, *w)
 				}
 			}
 			if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
-				if w := checkTypeExists(ast, methodMeta.ReturnType, fmt.Sprintf("%s return", loc)); w != nil {
+				if w := checkTypeExists(ast, methodMeta.ReturnType, methodScope, fmt.Sprintf("%s return", loc)); w != nil {
 					warnings = append(warnings, *w)
 				}
 			}
@@ -95,7 +99,7 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 					fieldName = variant.FieldNames[i]
 				}
 				loc := fmt.Sprintf("sealed variant %s.%s field %s", typeName, variant.Name, fieldName)
-				if w := checkTypeExists(ast, ft, loc); w != nil {
+				if w := checkTypeExists(ast, ft, typeScope, loc); w != nil {
 					warnings = append(warnings, *w)
 				}
 			}
@@ -105,13 +109,14 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 	// Check function signatures
 	for funcName, funcMeta := range ast.Functions {
 		loc := fmt.Sprintf("function %s", funcName)
+		funcScope := typeParamScope(nil, funcMeta.TypeParams)
 		for i, paramType := range funcMeta.ParamTypes {
-			if w := checkTypeExists(ast, paramType, fmt.Sprintf("%s param[%d]", loc, i)); w != nil {
+			if w := checkTypeExists(ast, paramType, funcScope, fmt.Sprintf("%s param[%d]", loc, i)); w != nil {
 				warnings = append(warnings, *w)
 			}
 		}
 		if funcMeta.ReturnType != nil && !funcMeta.ReturnType.IsNil() {
-			if w := checkTypeExists(ast, funcMeta.ReturnType, fmt.Sprintf("%s return", loc)); w != nil {
+			if w := checkTypeExists(ast, funcMeta.ReturnType, funcScope, fmt.Sprintf("%s return", loc)); w != nil {
 				warnings = append(warnings, *w)
 			}
 		}
@@ -120,9 +125,84 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 	return warnings
 }
 
-// checkTypeExists verifies that a referenced type can be resolved.
+// typeParamScope returns the type parameters in scope inside a declaration
+// that declares params and is nested in a declaration whose scope is outer.
+func typeParamScope(outer map[string]bool, params []string) map[string]bool {
+	if len(params) == 0 {
+		return outer
+	}
+	scope := make(map[string]bool, len(outer)+len(params))
+	for name := range outer {
+		scope[name] = true
+	}
+	for _, name := range params {
+		scope[name] = true
+	}
+	return scope
+}
+
+// receiverTypeArgScope adds to scope the names a method's receiver gives its
+// type's parameters. A receiver may rename them (`func (b Box[E]) Get() E` on
+// `struct Box[T any]`), and the method metadata keeps the names as written. A
+// bare name in the signature that resolves to nothing else is taken as such a
+// name, provided there are no more of them than the type has parameters.
+func receiverTypeArgScope(ast *transpiler.RichAST, m *transpiler.MethodMetadata, typeParamCount int, scope map[string]bool) map[string]bool {
+	if typeParamCount == 0 {
+		return scope
+	}
+	unresolved := make(map[string]bool)
+	var walk func(transpiler.Type)
+	walk = func(t transpiler.Type) {
+		switch ty := t.(type) {
+		case transpiler.BasicType:
+			if checkTypeExists(ast, ty, scope, "") != nil {
+				unresolved[ty.Name] = true
+			}
+		case transpiler.NamedType:
+			if ty.Package == "" {
+				walk(transpiler.BasicType{Name: ty.Name})
+			}
+		case transpiler.GenericType:
+			walk(ty.Base)
+			for _, p := range ty.Params {
+				walk(p)
+			}
+		case transpiler.ArrayType:
+			walk(ty.Elem)
+		case transpiler.PointerType:
+			walk(ty.Elem)
+		case transpiler.MapType:
+			walk(ty.Key)
+			walk(ty.Elem)
+		case transpiler.FuncType:
+			for _, p := range ty.Params {
+				walk(p)
+			}
+			for _, r := range ty.Results {
+				walk(r)
+			}
+		}
+	}
+	for _, p := range m.ParamTypes {
+		walk(p)
+	}
+	if m.ReturnType != nil {
+		walk(m.ReturnType)
+	}
+	if len(unresolved) == 0 || len(unresolved) > typeParamCount {
+		return scope
+	}
+	names := make([]string, 0, len(unresolved))
+	for name := range unresolved {
+		names = append(names, name)
+	}
+	return typeParamScope(scope, names)
+}
+
+// checkTypeExists verifies that a referenced type can be resolved. scope holds
+// the type parameters bound where the type is written.
 // Returns nil if the type is valid, or a warning if it cannot be found.
-func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, location string) *ValidationWarning {
+func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, scope map[string]bool, location string) *ValidationWarning {
 	if transpiler.IsUnusableOrAny(t) {
 		return nil
 	}
@@ -133,8 +213,8 @@ func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, location string
 		if transpiler.IsPrimitiveType(ty.Name) {
 			return nil
 		}
-		// Type param placeholders (single uppercase letters or names matching type params) are valid
-		if isSingleUppercase(ty.Name) {
+		// A type parameter of the enclosing declaration is valid
+		if scope[ty.Name] {
 			return nil
 		}
 		// Check if it's a known type in the RichAST
@@ -171,7 +251,7 @@ func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, location string
 	case transpiler.NamedType:
 		if ty.Package == "" {
 			// Same as BasicType check
-			return checkTypeExists(ast, transpiler.BasicType{Name: ty.Name}, location)
+			return checkTypeExists(ast, transpiler.BasicType{Name: ty.Name}, scope, location)
 		}
 		// Package-qualified: check package exists
 		if !packageKnown(ast, ty.Package) {
@@ -186,37 +266,37 @@ func checkTypeExists(ast *transpiler.RichAST, t transpiler.Type, location string
 
 	case transpiler.GenericType:
 		// Check base type
-		if w := checkTypeExists(ast, ty.Base, location); w != nil {
+		if w := checkTypeExists(ast, ty.Base, scope, location); w != nil {
 			return w
 		}
 		// Check type parameters
 		for _, param := range ty.Params {
-			if w := checkTypeExists(ast, param, location); w != nil {
+			if w := checkTypeExists(ast, param, scope, location); w != nil {
 				return w
 			}
 		}
 		return nil
 
 	case transpiler.ArrayType:
-		return checkTypeExists(ast, ty.Elem, location)
+		return checkTypeExists(ast, ty.Elem, scope, location)
 
 	case transpiler.MapType:
-		if w := checkTypeExists(ast, ty.Key, location); w != nil {
+		if w := checkTypeExists(ast, ty.Key, scope, location); w != nil {
 			return w
 		}
-		return checkTypeExists(ast, ty.Elem, location)
+		return checkTypeExists(ast, ty.Elem, scope, location)
 
 	case transpiler.PointerType:
-		return checkTypeExists(ast, ty.Elem, location)
+		return checkTypeExists(ast, ty.Elem, scope, location)
 
 	case transpiler.FuncType:
 		for _, p := range ty.Params {
-			if w := checkTypeExists(ast, p, location); w != nil {
+			if w := checkTypeExists(ast, p, scope, location); w != nil {
 				return w
 			}
 		}
 		for _, r := range ty.Results {
-			if w := checkTypeExists(ast, r, location); w != nil {
+			if w := checkTypeExists(ast, r, scope, location); w != nil {
 				return w
 			}
 		}
@@ -465,23 +545,6 @@ func packageKnown(ast *transpiler.RichAST, pkg string) bool {
 				}
 			}
 		}
-	}
-	return false
-}
-
-// isSingleUppercase returns true if the name looks like a type parameter (e.g., "T", "K", "V").
-func isSingleUppercase(name string) bool {
-	if len(name) == 0 {
-		return false
-	}
-	// Single uppercase letter
-	if len(name) == 1 && name[0] >= 'A' && name[0] <= 'Z' {
-		return true
-	}
-	// Common multi-char type param names
-	switch name {
-	case "TKey", "TValue", "TResult", "TAcc":
-		return true
 	}
 	return false
 }

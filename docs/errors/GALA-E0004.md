@@ -26,6 +26,7 @@ func area(s Shape) int = s match {
 
 **Fix.** Bind every field — use `_` for the ones you don't care about:
 
+<!-- doc-check: fragment -->
 ```gala
 case Rect(w, h, _) => w * h
 ```

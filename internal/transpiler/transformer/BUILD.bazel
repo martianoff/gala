@@ -39,6 +39,7 @@ go_library(
         "type_as_constructor.go",
         "type_inference.go",
         "type_inference_calls.go",
+        "type_params.go",
         "types.go",
         "unknown_method.go",
         "unresolved_types.go",
@@ -69,6 +70,7 @@ go_test(
     # of the package's tests.
     size = "large",
     srcs = [
+        "aliased_go_import_types_test.go",
         "apply_test.go",
         "assignment_test.go",
         "auto_method_override_test.go",
@@ -78,9 +80,12 @@ go_test(
         "binary_type_test.go",
         "bind_test.go",
         "binding_named_like_type_test.go",
+        "block_function_tail_test.go",
         "bridge_func_type_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
+        "codec_field_kinds_test.go",
+        "codec_struct_meta_order_test.go",
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
         "compilation_gate_test.go",
@@ -121,6 +126,7 @@ go_test(
         "go_generic_multireturn_instantiation_test.go",
         "go_generic_return_instantiation_test.go",
         "go_results_test.go",
+        "go_subpackage_import_path_test.go",
         "immutable_test.go",
         "immutable_unwrap_matrix_test.go",
         "immutable_unwrapping_test.go",
@@ -172,6 +178,7 @@ go_test(
         "sequence_pattern_nested_test.go",
         "size_sugar_go_return_test.go",
         "some_wrap_sealed_case_test.go",
+        "stable_identifier_pattern_test.go",
         "string_escapes_test.go",
         "struct_defaults_test.go",
         "structs_test.go",
@@ -184,6 +191,7 @@ go_test(
         "tuple_callsite_inference_test.go",
         "tuple_either_test.go",
         "tuple_field_unwrap_repro_test.go",
+        "tuple_match_exhaustive_test.go",
         "tuple_positional_ctor_test.go",
         "tuple_return_arity_test.go",
         "type_as_constructor_test.go",
@@ -191,8 +199,10 @@ go_test(
         "type_import_path_test.go",
         "type_inference_regression_test.go",
         "type_inference_test.go",
+        "type_param_scope_test.go",
         "unknown_method_test.go",
         "unresolved_corpus_test.go",
+        "untyped_const_immutable_test.go",
         "use_binding_test.go",
         "user_get_method_test.go",
         "variables_test.go",
@@ -211,6 +221,9 @@ go_test(
         # Parsed by error_docs_completeness_test.go to enumerate the declared
         # error codes, so a new code without a page fails the build.
         "//galaerr:errors_src",
+        # The site mirror of the error pages, and its index, which
+        # error_docs_completeness_test.go also checks for every code.
+        "//website:pages",
         "//collection_immutable:gala_sources",
         "//collection_mutable:gala_sources",
         "//examples:single_file_gala_sources",

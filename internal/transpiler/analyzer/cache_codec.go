@@ -27,13 +27,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	"martianoff/gala/internal/transpiler"
 )
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x07}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x08}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -489,6 +490,14 @@ func (e *encoder) writeGoTypeInfoPtr(g *transpiler.GoTypeInfo) {
 	e.writeStringTypeMap(g.Variables)
 	e.writeStringTypeMap(g.Constants)
 	e.writeStringTypeMap(g.TypeAliases)
+	untyped := make([]string, 0, len(g.UntypedConstants))
+	for k, v := range g.UntypedConstants {
+		if v {
+			untyped = append(untyped, k)
+		}
+	}
+	sort.Strings(untyped)
+	e.writeStringSlice(untyped)
 }
 
 // -------- decoder --------
@@ -1023,6 +1032,9 @@ func (d *decoder) readGoTypeInfoPtr() *transpiler.GoTypeInfo {
 	g.TypeAliases = d.readStringTypeMap()
 	if g.TypeAliases == nil {
 		g.TypeAliases = make(map[string]transpiler.Type)
+	}
+	for _, k := range d.readStringSlice() {
+		g.UntypedConstants[k] = true
 	}
 	return g
 }

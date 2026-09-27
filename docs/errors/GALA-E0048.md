@@ -66,7 +66,9 @@ check enumerates them rather than relying on one:
 cannot define new methods on non-local type DateTime
 invalid receiver type Handler
 cannot define new methods on instantiated type Pair[int]
-``` Go permits a method only on a type its own package declares, so an
+```
+
+Go permits a method only on a type its own package declares, so an
 alias to `int64`, to `time.Duration` or to `func(int) int` is not a legal
 receiver.
 

@@ -3,6 +3,7 @@
 **When it fires.** An `if` is written with Go's initializer statement — a
 binding, then `;`, then the condition:
 
+<!-- doc-check: fragment -->
 ```gala
 if n, err := strconv.Atoi(text); err != nil {
     Println(n)
@@ -93,6 +94,7 @@ Rejecting keeps the statement surface as narrow as it already is for `defer`,
 chain, and the if-*expression* `if (cond) a else b`, whose parenthesized
 condition and mandatory `else` make it a value:
 
+<!-- doc-check: fragment -->
 ```gala
 val status = if (score > 50) "pass" else "fail"
 ```

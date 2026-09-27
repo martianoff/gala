@@ -13,8 +13,6 @@ import (
 
 func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionParams) (*lsp.CompletionList, error) {
 	uri := string(params.TextDocument.URI)
-	line := int(params.Position.Line)
-	char := int(params.Position.Character)
 
 	h.mu.Lock()
 	text := h.documents[uri]
@@ -22,6 +20,8 @@ func (h *GalaHandler) Completion(ctx context.Context, params *lsp.CompletionPara
 	varTypeMap := h.varTypes[uri]
 	snippets := h.snippetSupport
 	h.mu.Unlock()
+
+	line, char := h.index(text).toByte(params.Position)
 
 	items := make([]lsp.CompletionItem, 0)
 	incomplete := false

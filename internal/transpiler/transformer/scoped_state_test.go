@@ -65,6 +65,7 @@ func TestEveryTransformerFieldIsClassified(t *testing.T) {
 // field. Written as an explicit table rather than by reflection so that
 // renaming a field breaks the build here instead of silently skipping it.
 var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
+	"activeTypeParams":        func(t *galaASTTransformer) { t.activeTypeParams["T"] = true },
 	"currentScope":            func(t *galaASTTransformer) { t.pushScope() },
 	"returnSlot":              func(t *galaASTTransformer) { t.returnSlot.typ = transpiler.BasicType{Name: "int"} },
 	"currentMatchSubjectType": func(t *galaASTTransformer) { t.currentMatchSubjectType = transpiler.BasicType{Name: "int"} },

@@ -1,5 +1,6 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_gala//gala:defs.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_library", "gala_test")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files([
     "list.gala",
@@ -132,6 +133,23 @@ gala_test(
     ],
 )
 
+# Differential / property tests against Go reference models (slices, maps).
+go_test(
+    name = "collection_immutable_differential_test",
+    size = "medium",
+    shard_count = 4,
+    srcs = [
+        "array_differential_test.go",
+        "list_differential_test.go",
+        "map_set_differential_test.go",
+    ],
+    embed = [":collection_immutable"],
+    deps = [
+        "//internal/collprop",
+        "//std",
+    ],
+)
+
 # Performance benchmarks
 gala_binary(
     name = "perf_gala",
@@ -173,3 +191,6 @@ go_binary(
 #     srcs = ["go_native_perf_test.go"],
 #     embed = [":collection_immutable_lib"],
 # )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()

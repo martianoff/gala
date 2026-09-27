@@ -1,0 +1,11 @@
+package time
+
+// A GALA package whose NAME collides with Go's `time`. Only
+// pkg_name_collision.gala imports it; its sibling pkg_name_collision_go.gala
+// calls Go's `time` and must not see these signatures.
+
+// Now has a defaulted parameter that Go's time.Now does not have.
+func Now(zone string = "UTC") string = s"now@$zone"
+
+// AfterFunc takes a callback whose shape differs from Go's time.AfterFunc.
+func AfterFunc(label string, f func(string) string) string = f(label)

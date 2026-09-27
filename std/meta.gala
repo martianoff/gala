@@ -6,12 +6,20 @@ package std
 // Format-specific encoders (JsonEncoderImpl, YamlEncoderImpl, etc.) implement
 // this interface. The transpiler emits fully-typed per-field dispatch against
 // it — no `any`, no reflection, no runtime type assertions on user data.
+//
+// The generated code writes int8..int32 through WriteInt64, every unsigned
+// kind through WriteUint64, and float32 through WriteFloat32 (so a format can
+// print it in its shortest float32 form). An encoder panics on a value its
+// format cannot represent — JSON's NaN and infinities, for instance — which
+// the codec's Encode turns into a Failure.
 type FieldEncoder interface {
     WriteKey(name string)
     WriteString(v string)
     WriteInt(v int)
     WriteInt64(v int64)
+    WriteUint64(v uint64)
     WriteFloat64(v float64)
+    WriteFloat32(v float32)
     WriteBool(v bool)
     WriteRune(v rune)
     WriteNull()
@@ -35,7 +43,17 @@ type FieldDecoder interface {
     ReadString() string
     ReadInt() int
     ReadInt64() int64
+    // ReadIntN reads a signed integer that must fit in bitSize bits (8, 16,
+    // 32 or 64); an out-of-range value is a decode error, never a wrap.
+    ReadIntN(bitSize int) int64
+    // ReadUintN reads an unsigned integer that must fit in bitSize bits (8,
+    // 16, 32 or 64; 0 is the platform uint size); negative or out-of-range
+    // values are decode errors.
+    ReadUintN(bitSize int) uint64
     ReadFloat64() float64
+    // ReadFloat32 reads a float that must be representable as a finite
+    // float32; a literal that overflows it is a decode error.
+    ReadFloat32() float32
     ReadBool() bool
     ReadRune() rune
     IsNull() bool

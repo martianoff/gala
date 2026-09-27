@@ -668,6 +668,13 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		typeParams = tp
 	}
+	// The receiver's type arguments (`func (b Box[T]) ...`) and the function's
+	// own type parameters are in scope for the signature and the body, and
+	// shadow any same-named type declared outside.
+	if originalRecvTypeExpr != nil {
+		defer t.bindTypeParams(t.extractTypeParams(originalRecvTypeExpr)...)()
+	}
+	defer t.bindTypeParams(fieldListOrNil(typeParams)...)()
 
 	// Signature
 	funcType, err := t.transformSignature(ctx.Signature().(*grammar.SignatureContext), typeParams)
@@ -736,7 +743,10 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	// Track the current function's return type so tuple literals in return statements
 	// can use it as a fallback when element type inference fails.
-	funcSlot := returnSlot{typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr))}
+	funcSlot := returnSlot{
+		typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr)),
+		funcName:   t.sourceFunctionName(ctx, receiverTypeName),
+	}
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {
 		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}
@@ -744,29 +754,23 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	var body *ast.BlockStmt
 	if ctx.Block() != nil {
-		// When the function has a non-void return type, the block's last
-		// expression is promoted to the implicit return below, so it is a
-		// value block: a trailing bare `match` is NOT statement-position
-		// (which would force the IIFE to void and break the promotion).
+		// A function with a result type returns its body's trailing
+		// expression, as a lambda does: the body is lowered so that value is a
+		// `return`, and one that can still finish without a value is rejected
+		// here rather than left to Go's "missing return".
 		var b *ast.BlockStmt
 		var err error
-		if funcType.Results != nil && len(funcType.Results.List) > 0 {
-			b, err = t.transformValueBlock(ctx.Block().(*grammar.BlockContext), slot{})
+		hasResult := funcType.Results != nil && len(funcType.Results.List) > 0
+		if hasResult {
+			b, err = t.transformFunctionBody(ctx.Block().(*grammar.BlockContext))
 		} else {
 			b, err = t.transformBlock(ctx.Block().(*grammar.BlockContext))
 		}
 		if err != nil {
 			return nil, err
 		}
-		// Convert trailing IIFE expression statement to return statement for functions
-		// with a return type. This handles match expressions (compiled to IIFEs) that
-		// are the last expression in a function block body - same logic as lambdas.go.
-		if funcType.Results != nil && len(funcType.Results.List) > 0 && len(b.List) > 0 {
-			if exprStmt, ok := b.List[len(b.List)-1].(*ast.ExprStmt); ok {
-				if isIIFE(exprStmt.X) {
-					b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{exprStmt.X}}
-				}
-			}
+		if hasResult && !isTerminatingStmt(b) {
+			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), funcSlot.funcName, funcSlot.typ)
 		}
 		body = b
 	} else if ctx.Expression() != nil {
@@ -921,18 +925,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 		if err != nil {
 			return nil, err
 		}
-		for _, field := range tParams.List {
-			for _, n := range field.Names {
-				t.activeTypeParams[n.Name] = true
-			}
-		}
-		defer func() {
-			for _, field := range tParams.List {
-				for _, n := range field.Names {
-					delete(t.activeTypeParams, n.Name)
-				}
-			}
-		}()
+		defer t.bindTypeParams(tParams.List...)()
 	}
 
 	fields := &ast.FieldList{}
@@ -1069,19 +1062,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 		if err != nil {
 			return nil, err
 		}
-		// Populate activeTypeParams
-		for _, field := range tParams.List {
-			for _, n := range field.Names {
-				t.activeTypeParams[n.Name] = true
-			}
-		}
-		defer func() {
-			for _, field := range tParams.List {
-				for _, n := range field.Names {
-					delete(t.activeTypeParams, n.Name)
-				}
-			}
-		}()
+		defer t.bindTypeParams(tParams.List...)()
 	}
 
 	if ctx.StructType() != nil {

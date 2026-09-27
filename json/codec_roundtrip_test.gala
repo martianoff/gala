@@ -1,0 +1,238 @@
+package main
+
+// Round-trip properties for the StructMeta codecs.
+//
+// For every scalar kind the codec carries — and for each wrapped in Option,
+// Array, List and HashMap — decode(encode(v)) must give back v, through both
+// JSON and YAML. Values come from a fixed-seed generator plus each kind's
+// boundaries (min, max, 0, -1), so a kind that silently degrades to null or
+// zero, or that wraps on the way back, fails here.
+//
+// NaN and the infinities follow each format's rules: JSON has no spelling for
+// them, so encoding one fails; YAML spells them .nan / .inf / -.inf and
+// round-trips them.
+
+import (
+    "math"
+    "math/rand"
+    "time"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/test"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+type Millis int64
+type Label string
+type Wait time.Duration
+type Tags Array[Label]
+
+struct Ints(A int, B int8, C int16, D int32, E int64)
+struct Uints(A uint, B uint8, C uint16, D uint32, E uint64, F uintptr, G byte)
+struct Floats(A float32, B float64)
+struct Named(A Millis, B time.Duration, C Label, D Wait, E Tags)
+struct Wrapped(
+    A Option[int8],
+    B Array[uint16],
+    C List[float32],
+    D HashMap[Label, Millis],
+    E Option[Array[Option[uint64]]],
+    F Option[Ints],
+)
+
+val samples = 300
+
+// roundTrip checks decode(encode(v)) == v through both formats.
+func roundTrip[V any](t T, j json.JsonEncoder[V], y yaml.YamlEncoder[V], v V) T {
+    val viaJson = j.Encode(v).FlatMap((s) => j.Decode(s))
+    val viaYaml = y.Encode(v).FlatMap((s) => y.Decode(s))
+    val t1 = viaJson match {
+        case Success(got) => EqMsg(t, got, v, "json round trip")
+        case Failure(err) => Fail(t, s"json round trip of ${v}: ${err}")
+    }
+    return viaYaml match {
+        case Success(got) => EqMsg(t1, got, v, "yaml round trip")
+        case Failure(err) => Fail(t1, s"yaml round trip of ${v}: ${err}")
+    }
+}
+
+func finite64(f float64) float64 = if (math.IsNaN(f) || math.IsInf(f, 0)) 0.0 else f
+
+func finite32(f float32) float32 = if (math.IsNaN(float64(f)) || math.IsInf(float64(f), 0)) float32(0) else f
+
+func randomInts(r *rand.Rand) Ints =
+    Ints(int(r.Uint64()), int8(r.Uint64()), int16(r.Uint64()), int32(r.Uint64()), int64(r.Uint64()))
+
+func randomUints(r *rand.Rand) Uints = Uints(
+    uint(r.Uint64()),
+    uint8(r.Uint64()),
+    uint16(r.Uint64()),
+    uint32(r.Uint64()),
+    r.Uint64(),
+    uintptr(r.Uint64()),
+    byte(r.Uint64()),
+)
+
+// randomFloats draws every bit pattern, so subnormals, extremes and -0 all
+// appear; the non-finite ones are covered by their own tests.
+func randomFloats(r *rand.Rand) Floats =
+    Floats(finite32(math.Float32frombits(r.Uint32())), finite64(math.Float64frombits(r.Uint64())))
+
+func randomNamed(r *rand.Rand) Named = Named(
+    Millis(int64(r.Uint64())),
+    time.Duration(int64(r.Uint64())),
+    Label(s"label-${r.Intn(1000)}"),
+    Wait(int64(r.Uint64())),
+    ArrayTabulate(r.Intn(4), (i) => Label(s"tag-$i")),
+)
+
+func randomWrapped(r *rand.Rand) Wrapped {
+    val a = Unless(r.Intn(2) == 0, int8(r.Uint64()))
+    val b = ArrayTabulate(r.Intn(4), (i) => uint16(r.Uint64()))
+    val c = ArrayTabulate(r.Intn(4), (i) => finite32(math.Float32frombits(r.Uint32()))).ToList()
+    val d = ArrayTabulate(r.Intn(4), (i) => i)
+        .FoldLeft(EmptyHashMap[Label, Millis](), (m, i) => m.Put(Label(s"k${i}"), Millis(int64(r.Uint64()))))
+    val e = Unless(r.Intn(3) == 0, ArrayTabulate(r.Intn(4), (i) => Unless(r.Intn(2) == 0, r.Uint64())))
+    val f = Unless(r.Intn(2) == 0, randomInts(r))
+    return Wrapped(a, b, c, d, e, f)
+}
+
+func TestRoundTrip_IntKinds(t T) T {
+    val j = json.Codec[Ints](json.AsIs())
+    val y = yaml.Codec[Ints](yaml.AsIs())
+    val bounds = ArrayOf(
+        Ints(int(math.MinInt), int8(math.MinInt8), int16(math.MinInt16), int32(math.MinInt32), int64(math.MinInt64)),
+        Ints(int(math.MaxInt), int8(math.MaxInt8), int16(math.MaxInt16), int32(math.MaxInt32), int64(math.MaxInt64)),
+        Ints(0, 0, 0, 0, 0),
+        Ints(-1, -1, -1, -1, -1),
+    )
+    val r = rand.New(rand.NewSource(1))
+    val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
+    return ArrayTabulate(samples, (i) => randomInts(r)).FoldLeft(t1, (acc, v) => roundTrip(acc, j, y, v))
+}
+
+func TestRoundTrip_UintKinds(t T) T {
+    val j = json.Codec[Uints](json.AsIs())
+    val y = yaml.Codec[Uints](yaml.AsIs())
+    val bounds = ArrayOf(
+        Uints(
+            uint(math.MaxUint),
+            uint8(math.MaxUint8),
+            uint16(math.MaxUint16),
+            uint32(math.MaxUint32),
+            uint64(math.MaxUint64),
+            uintptr(math.MaxUint),
+            byte(math.MaxUint8),
+        ),
+        Uints(0, 0, 0, 0, 0, 0, 0),
+        Uints(1, 1, 1, 1, 1, 1, 1),
+    )
+    val r = rand.New(rand.NewSource(2))
+    val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
+    return ArrayTabulate(samples, (i) => randomUints(r)).FoldLeft(t1, (acc, v) => roundTrip(acc, j, y, v))
+}
+
+func TestRoundTrip_FloatKinds(t T) T {
+    val j = json.Codec[Floats](json.AsIs())
+    val y = yaml.Codec[Floats](yaml.AsIs())
+    val bounds = ArrayOf(
+        Floats(float32(math.MaxFloat32), float64(math.MaxFloat64)),
+        Floats(float32(-math.MaxFloat32), float64(-math.MaxFloat64)),
+        Floats(float32(math.SmallestNonzeroFloat32), float64(math.SmallestNonzeroFloat64)),
+        Floats(0.1, 0.1),
+        Floats(0, 0),
+        Floats(-1, -1),
+    )
+    val r = rand.New(rand.NewSource(3))
+    val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
+    return ArrayTabulate(samples, (i) => randomFloats(r)).FoldLeft(t1, (acc, v) => roundTrip(acc, j, y, v))
+}
+
+func TestRoundTrip_NamedKinds(t T) T {
+    val j = json.Codec[Named](json.AsIs())
+    val y = yaml.Codec[Named](yaml.AsIs())
+    val bounds = ArrayOf(
+        Named(Millis(math.MinInt64), time.Duration(math.MaxInt64), Label(""), Wait(math.MinInt64), EmptyArray[Label]()),
+        Named(Millis(0), time.Duration(-1), Label("x"), Wait(0), ArrayOf(Label(""))),
+    )
+    val r = rand.New(rand.NewSource(4))
+    val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
+    return ArrayTabulate(samples, (i) => randomNamed(r)).FoldLeft(t1, (acc, v) => roundTrip(acc, j, y, v))
+}
+
+func TestRoundTrip_WrappedKinds(t T) T {
+    val j = json.Codec[Wrapped](json.AsIs())
+    val y = yaml.Codec[Wrapped](yaml.AsIs())
+    // Empty containers and None elements inside an array are the shapes a
+    // format is most likely to confuse with null.
+    val bounds = ArrayOf(
+        Wrapped(
+            None[int8](),
+            EmptyArray[uint16](),
+            EmptyList[float32](),
+            EmptyHashMap[Label, Millis](),
+            Some(EmptyArray[Option[uint64]]()),
+            None[Ints](),
+        ),
+        Wrapped(
+            Some(int8(-1)),
+            ArrayOf(uint16(0)),
+            ListOf(float32(-0.5)),
+            EmptyHashMap[Label, Millis]().Put(Label(""), Millis(-1)),
+            Some(ArrayOf(None[uint64](), Some(uint64(0)), None[uint64]())),
+            Some(Ints(0, 0, 0, 0, 0)),
+        ),
+    )
+    val r = rand.New(rand.NewSource(5))
+    val t1 = bounds.FoldLeft(t, (acc, v) => roundTrip(acc, j, y, v))
+    return ArrayTabulate(samples, (i) => randomWrapped(r)).FoldLeft(t1, (acc, v) => roundTrip(acc, j, y, v))
+}
+
+func TestJson_NonFiniteFloatsFailToEncode(t T) T {
+    val j = json.Codec[Floats](json.AsIs())
+    val t1 = IsFailure(t, j.Encode(Floats(0, math.NaN())))
+    val t2 = IsFailure(t1, j.Encode(Floats(float32(math.Inf(1)), 0)))
+    return IsFailure(t2, j.Encode(Floats(0, math.Inf(-1))))
+}
+
+func TestYaml_NonFiniteFloatsRoundTrip(t T) T {
+    val y = yaml.Codec[Floats](yaml.AsIs())
+    val encoded = y.Encode(Floats(float32(math.Inf(-1)), math.NaN()))
+    val t1 = Eq(t, encoded.GetOrElse(""), "A: -.inf\nB: .nan")
+    val decoded = encoded.FlatMap((s) => y.Decode(s))
+    val t2 = IsSuccess(t1, decoded)
+    val got = decoded.GetOrElse(Floats(0, 0))
+    val t3 = IsTrue(t2, math.IsInf(float64(got.A), -1))
+    return IsTrue(t3, math.IsNaN(got.B))
+}
+
+// Earlier releases wrote Go's spelling (NaN, +Inf, -Inf); it still decodes.
+func TestYaml_LegacyNonFiniteSpellingsDecode(t T) T {
+    val y = yaml.Codec[Floats](yaml.AsIs())
+    val decoded = y.Decode("A: +Inf\nB: NaN")
+    val got = decoded.GetOrElse(Floats(0, 0))
+    val t1 = IsSuccess(t, decoded)
+    val t2 = IsTrue(t1, math.IsInf(float64(got.A), 1))
+    return IsTrue(t2, math.IsNaN(got.B))
+}
+
+// A value outside the field's range is a decode error, never a wrap.
+func TestDecode_OutOfRangeFails(t T) T {
+    val ints = json.Codec[Ints](json.AsIs())
+    val uints = json.Codec[Uints](json.AsIs())
+    val floats = json.Codec[Floats](json.AsIs())
+    val cases = ArrayOf(
+        ("int8 above max", ints.Decode("{\"B\":128}").IsFailure()),
+        ("int8 below min", ints.Decode("{\"B\":-129}").IsFailure()),
+        ("int16 above max", ints.Decode("{\"C\":32768}").IsFailure()),
+        ("int32 above max", ints.Decode("{\"D\":2147483648}").IsFailure()),
+        ("int64 above max", ints.Decode("{\"E\":9223372036854775808}").IsFailure()),
+        ("uint8 above max", uints.Decode("{\"B\":256}").IsFailure()),
+        ("uint16 negative", uints.Decode("{\"C\":-1}").IsFailure()),
+        ("uint64 above max", uints.Decode("{\"E\":18446744073709551616}").IsFailure()),
+        ("float32 overflow", floats.Decode("{\"A\":1e39}").IsFailure()),
+        ("int8 max and int32 min", ints.Decode("{\"B\":127,\"D\":-2147483648}").IsSuccess()),
+        ("uint64 max", uints.Decode("{\"E\":18446744073709551615}").IsSuccess()),
+    )
+    return cases.FoldLeft(t, (acc, c) => EqMsg(acc, c.V2, true, c.V1))
+}

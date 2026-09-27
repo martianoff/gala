@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"martianoff/gala/galaerr"
 )
 
 var (
@@ -89,11 +91,20 @@ func (h *GalaHandler) fileText(path string) (string, bool) {
 		}
 	}
 	h.mu.Unlock()
+	return readSource(path)
+}
+
+// readSource reads a source file from disk the way an open document is held:
+// without a leading byte order mark. Every position the server computes on a
+// file — and every position the parser and analyzer record — is relative to
+// the BOM-free text, and so is the document a client shows; reading the raw
+// bytes puts anything on the first line three bytes out.
+func readSource(path string) (string, bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", false
 	}
-	return string(b), true
+	return galaerr.StripBOM(string(b)), true
 }
 
 // sameFilePath reports whether two paths name the same file. Windows paths are

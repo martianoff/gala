@@ -26,10 +26,11 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 8. [Supported Expressions](#supported-expressions)
 9. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
 10. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
-11. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-12. [Go Type Inference](#go-type-inference)
-13. [Limitations and Edge Cases](#limitations-and-edge-cases)
-14. [Key Files](#key-files)
+11. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
+12. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+13. [Go Type Inference](#go-type-inference)
+14. [Limitations and Edge Cases](#limitations-and-edge-cases)
+15. [Key Files](#key-files)
 
 ---
 
@@ -372,6 +373,7 @@ Additional capabilities beyond manual:
 
 When a lambda is passed as an argument to a method with known parameter types, the lambda's parameter types can be inferred from the method's signature. This allows omitting explicit parameter type annotations. Combined with Go's type parameter inference, method type parameters can also be omitted:
 
+<!-- doc-check: fragment -->
 ```gala
 // Before: all types explicit
 val doubled = opt.Map[int]((x int) => x * 2)
@@ -390,6 +392,7 @@ Lambda parameter inference works for:
 
 3. **FoldLeft/FoldRight accumulator** — The accumulator type parameter `U` in `FoldLeft[U](zero U, f func(U, T) U)` is inferred from the zero value argument's type, without requiring explicit type annotation:
 
+<!-- doc-check: fragment -->
 ```gala
 val sum = list.FoldLeft(0, (acc, x) => acc + x)        // acc inferred as int from 0
 val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as string from ""
@@ -401,6 +404,7 @@ val joined = list.FoldLeft("", (acc, x) => acc + x)     // acc inferred as strin
    initializer, both branches of an if-expression feeding the slot, and curried
    lambdas (the return type is decomposed into the body lambda):
 
+<!-- doc-check: fragment -->
 ```gala
 val direct func(int) int = (x) => x + 1                       // x inferred as int
 val branched func(int) int = if (c) { (x) => x } else { (x) => x * 2 }
@@ -629,6 +633,40 @@ side-effect dispatch still rely on per-arm inference.
 
 ---
 
+## Untyped Constants in Immutable Slots
+
+An untyped numeric constant takes the type of the slot it initialises, exactly
+as a Go assignment converts it: `Entry(0)` for a field declared `int64`,
+`p.Copy(ratio = 0.5)` for a `float32` field, `(1, 2)` returned as
+`Tuple[int64, float32]`. Immutable slots are stored as `Immutable[T]`, and Go
+infers `NewImmutable`'s `T` from its argument, where an untyped constant
+collapses to its default type (`int`, `float64`, `rune`). So every site that
+wraps a value for a slot whose type it knows goes through one helper,
+`newImmutableFor` (`transformer/constructors.go`), which spells the slot type
+(`std.NewImmutable[int64](0)`) whenever that default differs.
+
+A Go package's untyped constant is untyped in Go exactly as a literal is, so
+`math.MinInt8`, `math.Pi` and constant arithmetic over them (`math.MaxInt8 -
+1`) follow the same rule; the analyzer records which Go constants are untyped
+(`GoTypeInfo.UntypedConstants`). A typed constant such as `time.Second` keeps
+its own type.
+
+A slot counts as numeric when its type is a predeclared numeric type, a GALA
+type declared over one (`type Millis int64`, through alias chains, including
+one declared further down the file), or a Go named numeric type
+(`time.Duration`). The sites are the struct constructor (positional, named,
+composite literal, field defaults), Copy overrides, and tuple literals with an
+expected element type (return position, call argument, typed `val`, struct
+field). Only the slot the tuple literal itself fills counts: a local
+`val t = (1, 2)` inside a function returning `Tuple[int64, int64]` is still a
+`Tuple[int, int]`. A bare `nil` always takes the slot's declared type.
+
+Parameter defaults follow the same rule at analysis time: `func f(ms Millis =
+12)` is accepted because `Millis` is declared over `int64`, while
+`ms Millis = "soon"` is still GALA-E0014.
+
+---
+
 ## Downward Inference for Generic Function Phantom Type Parameters
 
 The same problem arises for a generic **free function** whose type parameter
@@ -636,6 +674,7 @@ appears only in its **return type**, never in a parameter — a *phantom*
 result-only param. The canonical case is an error-only constructor for a
 two-parameter type:
 
+<!-- doc-check: fragment -->
 ```gala
 // `A` is phantom: it appears in the return type but in no parameter.
 func InvalidOf[E any, A any](err E) Validated[E, A] = Invalid(ArrayOf(err))

@@ -29,6 +29,16 @@ defaults:
     values:
       layout: "default"
 
+# BUILD.bazel feeds the pages to the documentation test (//internal/doccheck);
+# it is not site content. Listing `exclude` replaces Jekyll's default list, so
+# the defaults are repeated.
+exclude:
+  - BUILD.bazel
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+
 google_analytics: ""
 
 social:

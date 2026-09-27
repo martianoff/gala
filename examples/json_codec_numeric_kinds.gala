@@ -1,0 +1,72 @@
+package main
+
+import (
+    "math"
+    "time"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/json"
+)
+
+// Every numeric kind round-trips through the JSON codec: the sized ints and
+// uints, float32, aliases over them and Go named types such as time.Duration,
+// also inside Option, Array and HashMap. None of them may come back as null
+// or zero, and a value that does not fit its field is a decode failure.
+
+type Millis int64
+type Label string
+
+struct Reading(
+    Level int8,
+    Delta int16,
+    Count int32,
+    Flags uint8,
+    Port uint16,
+    Seq uint32,
+    Total uint64,
+    Ratio float32,
+    Took Millis,
+    Timeout time.Duration,
+    Tag Label,
+    Raw byte,
+    Offset Option[int32],
+    Samples Array[float32],
+    Limits HashMap[Label, uint16],
+)
+
+func main() {
+    val codec = Codec[Reading](AsIs())
+    val reading = Reading(
+        Level = -8,
+        Delta = -1600,
+        Count = 2000000000,
+        Flags = 255,
+        Port = 8080,
+        Seq = 4000000000,
+        Total = 18446744073709551615,
+        Ratio = 0.25,
+        Took = Millis(1500),
+        Timeout = 3 * time.Second,
+        Tag = Label("probe"),
+        Raw = 7,
+        Offset = Some(int32(-42)),
+        Samples = ArrayOf(float32(1.5), float32(-0.125)),
+        Limits = EmptyHashMap[Label, uint16]().Put(Label("max"), uint16(65535)),
+    )
+
+    val encoded = codec.Encode(reading)
+    Println(encoded.GetOrElse(""))
+
+    val decoded = encoded.FlatMap((s) => codec.Decode(s))
+    Println(s"round trip equal: ${decoded.Map((d) => d.Equal(reading)).GetOrElse(false)}")
+    Println(s"timeout: ${decoded.Map((d) => d.Timeout).GetOrElse(0)}")
+
+    // Out of range for the field's kind: a Failure, not a wrapped value.
+    val tooBig = codec.Decode("{\"Level\":300}")
+    val negative = codec.Decode("{\"Port\":-1}")
+    Println(s"int8 300 fails: ${tooBig.IsFailure()}")
+    Println(s"uint16 -1 fails: ${negative.IsFailure()}")
+
+    // JSON has no NaN.
+    val nan = codec.Encode(reading.Copy(Ratio = float32(math.NaN())))
+    Println(s"NaN fails: ${nan.IsFailure()}")
+}

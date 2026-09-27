@@ -54,6 +54,7 @@ When you write a sealed type, the transpiler produces several things automatical
 
 **Apply methods** — Each companion gets an `Apply` method so you can construct variants with function-call syntax:
 
+<!-- doc-check: fragment -->
 ```gala
 val c = Circle(3.14)
 val r = Rectangle(10.0, 20.0)
@@ -70,6 +71,7 @@ val p = Point()
 
 Variants are constructed by calling the companion name as a function. Positional and named arguments both work:
 
+<!-- doc-check: fragment -->
 ```gala
 // Positional arguments
 val c = Circle(3.14)
@@ -103,6 +105,7 @@ Generic sealed types work exactly like non-generic ones — you get companion ob
 
 The compiler knows every variant of a sealed type. When you match on all of them, no `case _` default is needed:
 
+<!-- doc-check: fragment -->
 ```gala
 func area(s Shape) string = s match {
     case Circle(r)       => f"circle area: ${3.14159 * r * r}%.2f"
@@ -117,6 +120,7 @@ If you forget a variant, the compiler tells you. This eliminates an entire class
 
 You can add `if` conditions to sealed type match branches:
 
+<!-- doc-check: fragment -->
 ```gala
 val desc = shape match {
     case Circle(r) if r > 100.0 => "large circle"
@@ -132,6 +136,7 @@ val desc = shape match {
 
 When you only care about a subset of variants, use `case _` as a catch-all. The compiler accepts this as a valid exhaustive match:
 
+<!-- doc-check: fragment -->
 ```gala
 sealed type Animal {
     case Dog(Name string)

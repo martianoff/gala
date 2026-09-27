@@ -622,7 +622,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			// an explicit instantiation `funcName[A, B, ...]` so Go gets a
 			// concrete signature.
 			if id, isIdent := expr.(*ast.Ident); isIdent && substitutedParamType != nil && !substitutedParamType.IsNil() {
-				if fm, exists := t.functions[id.Name]; exists && len(fm.TypeParams) > 0 {
+				if fm, exists := t.functionByName(id.Name); exists && len(fm.TypeParams) > 0 {
 					if expectedFT, isFT := substitutedParamType.(transpiler.FuncType); isFT {
 						rawFT := t.funcMetaToRawType(fm)
 						combined := append([]string{}, methodMeta.TypeParams...)
@@ -982,11 +982,8 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 	recvTypeArgs := t.getReceiverTypeArgs(recvType)
 	var concreteRecvTypeArgs []ast.Expr
 	for _, arg := range recvTypeArgs {
-		if ident, ok := arg.(*ast.Ident); ok {
-			if len(ident.Name) == 1 && ident.Name[0] >= 'A' && ident.Name[0] <= 'Z' {
-				// Skip unresolved type params like T, U, K, V
-				continue
-			}
+		if ident, ok := arg.(*ast.Ident); ok && t.isUnboundTypeParam(ident.Name) {
+			continue
 		}
 		concreteRecvTypeArgs = append(concreteRecvTypeArgs, arg)
 	}
@@ -1061,7 +1058,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	for i, tp := range typeMeta.TypeParams {
 		if i < len(recvTypeArgs) {
 			arg := recvTypeArgs[i]
-			if len(arg) == 1 && arg[0] >= 'A' && arg[0] <= 'Z' {
+			if t.isUnboundTypeParam(arg) {
 				hasUnresolvedTypeParams = true
 				break
 			}
@@ -1416,7 +1413,11 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		switch firstParamType {
 		case "StructMeta", "std.StructMeta",
 			"StructMetaOps", "json.StructMetaOps":
-			args = t.autoInjectStructMeta(args, methodMeta, typeArgs)
+			injected, err := t.autoInjectStructMeta(args, methodMeta, typeArgs, line, col)
+			if err != nil {
+				return true, nil, err
+			}
+			args = injected
 		}
 	}
 
@@ -2222,7 +2223,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// now-unused go_builtins import is pruned by the import cleanup pass. GALA
 	// source never spells bare `panic` — only emitted Go does, exactly like the
 	// `.Size()` sugar's `len()`.
-	return lowerPanicWrapperToBuiltin(&ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}), nil
+	return t.lowerPanicWrapperToBuiltin(&ast.CallExpr{Fun: fun, Args: args, Ellipsis: ellipsisPos(hasSpread)}), nil
 }
 
 // handleNamedArgsCall is a thin dispatcher for named-argument calls. It
@@ -3907,7 +3908,7 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 	switch fun := funExpr.(type) {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
-			if sig := t.goTypeInfo.GetFuncSignature(id.Name + "." + fun.Sel.Name); sig != nil {
+			if sig := t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name)); sig != nil {
 				return sig
 			}
 		}

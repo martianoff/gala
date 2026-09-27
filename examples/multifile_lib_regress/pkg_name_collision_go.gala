@@ -13,6 +13,7 @@ package multifile_lib_regress
 
 import . "martianoff/gala/collection_immutable"
 import "strings"
+import "time"
 
 // GoStringsClassify uses GO's strings.SplitN (returns []string), spreads it into
 // an Array, and matches on an element. Both the element type and the match arms
@@ -32,3 +33,21 @@ func GoStringsClassify(s string) string {
 // GoStringsUpper is the Go-side counterpart of GalaStringsUpper, so both
 // packages are exercised for the same operation in one build.
 func GoStringsUpper(s string) string = strings.ToUpper(s)
+
+// GoFieldsCounts passes GO's strings.Fields as a function VALUE rather than
+// calling it. The reference's type decides Map's result type, so it must be
+// Go's func(string) []string, not the signature of the GALA strings.Fields
+// (func(string) Array[string]) that the sibling file imports. The chained
+// lambda spreads the element, which only compiles if it is a []string.
+func GoFieldsCounts(lines Array[string]) Array[int] =
+    lines.Map(strings.Fields).Map((f) => ArrayOf(f...).Size())
+
+// GoTimeNowSet calls GO's time.Now with no arguments. The sibling imports a
+// GALA package named `time` whose Now has a defaulted parameter; that default
+// must not be injected into this call.
+func GoTimeNowSet() bool = !time.Now().IsZero()
+
+// GoTimeAfterFuncStopped passes a zero-argument callback to GO's
+// time.AfterFunc. The lambda must be typed from Go's signature (func()), not
+// from the sibling's GALA AfterFunc (func(string) string).
+func GoTimeAfterFuncStopped() bool = time.AfterFunc(time.Hour, () => Println("fired")).Stop()

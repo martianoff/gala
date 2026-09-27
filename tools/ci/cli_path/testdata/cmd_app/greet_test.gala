@@ -1,0 +1,5 @@
+package cmdapp
+
+import . "martianoff/gala/test"
+
+func TestGreet(t T) T = Eq(t, Greet("x"), "hello, x")

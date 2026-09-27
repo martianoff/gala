@@ -1,0 +1,5 @@
+package b
+
+// Two levels below internal/: reachable from the whole module, and from
+// nothing outside it.
+func Square(n int) int = n * n

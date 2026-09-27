@@ -94,6 +94,9 @@ func runModAdd(cmd *cobra.Command, args []string) {
 		isGoPackage = !hasGalaFiles(cachePath)
 	}
 
+	// Read gala.sum before changing anything.
+	galaSum := loadGalaSum()
+
 	// Update gala.mod
 	galaMod.AddRequire(modulePath, version, false)
 	// Mark as Go package if detected
@@ -108,10 +111,6 @@ func runModAdd(cmd *cobra.Command, args []string) {
 	}
 
 	// Update gala.sum
-	galaSum, err := sum.ParseFile("gala.sum")
-	if err != nil {
-		galaSum = sum.NewFile()
-	}
 	galaSum.Add(modulePath, version, "", hash)
 
 	// Also add gala.mod hash if present
@@ -166,4 +165,17 @@ func parseModuleArg(arg string) (modulePath, versionSpec string) {
 		return arg[:idx], arg[idx+1:]
 	}
 	return arg, ""
+}
+
+// loadGalaSum reads the project's gala.sum (an absent file reads as empty) for
+// a command that rewrites it. A gala.sum that cannot be parsed stops the
+// command: rewriting it from what could be read would silently drop every
+// other module's checksum.
+func loadGalaSum() *sum.File {
+	galaSum, err := sum.ParseFile("gala.sum")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: cannot read gala.sum: %v\n", err)
+		os.Exit(1)
+	}
+	return galaSum
 }

@@ -1,19 +1,19 @@
 package build
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
-	"martianoff/gala/internal/stdlib"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -30,6 +30,11 @@ type Builder struct {
 	verbose        bool
 	transpiledDeps map[string]string // modulePath -> transpiled directory
 	sourceDir      string            // override source directory (for running subdir files)
+
+	// toolchainID and depsKeyValue memoize cache-key inputs; see cachekey.go.
+	// Tests set toolchainID to simulate a different transpiler or Go SDK.
+	toolchainID  *toolchainKey
+	depsKeyValue *string
 }
 
 // SetSourceDir sets an override source directory for compilation.
@@ -262,8 +267,8 @@ func (b *Builder) ensureDeps() error {
 		return nil
 	}
 
-	config := fetch.DefaultConfig()
-	cache := fetch.NewCache(config)
+	// Fetch into the directory the build reads dependencies from.
+	cache := fetch.NewCache(fetch.NewConfig(b.config.GalaPkgDir))
 	fetcher := fetch.NewGitFetcher(cache)
 
 	for _, req := range galaReqs {
@@ -281,8 +286,11 @@ func (b *Builder) ensureDeps() error {
 		}
 
 		modDir := b.effectiveDepDir(req)
-		if _, err := os.Stat(modDir); err == nil {
-			continue // Already cached or local replacement present
+		// Local replaces were handled above, so modDir is a module-cache entry.
+		// It counts only when a fetch finished publishing it: a bare directory
+		// is what an interrupted fetch leaves, and is fetched again.
+		if fetch.IsCompleteModuleDir(modDir) {
+			continue
 		}
 
 		fetchPath, fetchVersion := req.Path, req.Version
@@ -488,70 +496,6 @@ func (b *Builder) treeShape() string {
 	return filepath.ToSlash(rel)
 }
 
-// computeSourceHash computes a SHA256 hash of all inputs for cache invalidation.
-// Includes .gala source files, gala.mod, the gala version, and the fingerprint
-// of the standard library the sources are compiled against, so that any change
-// to sources, dependencies, or the transpiler itself triggers a rebuild.
-//
-// The stdlib fingerprint belongs in this key because the stdlib is a transpile
-// input, not just a runtime dependency: signatures declared there decide which
-// analyses run over the project's own code. A stdlib that gains (or, through a
-// stale on-disk copy, loses) a marker type on a parameter changes the
-// diagnostics the very same sources produce. Keyed on the project's files
-// alone, an already-built workspace keeps serving the result it computed
-// against the previous stdlib — so repairing the stdlib would leave every
-// project that had been built before the repair silently unchecked until one of
-// its own files happened to change.
-//
-// `shape` names the LAYOUT the transpile produces in gen/, not just its inputs.
-// One set of sources can be generated two ways — `gala build` puts the library
-// at the gen root, `gala build ./cmd/app` additionally synthesizes a consumer
-// main under gen/cmd/main — and the hash has to tell those apart. Keyed on file
-// contents alone the two are identical, so a plain build following a
-// subdirectory build found a matching hash over a non-empty gen/, skipped
-// transpilation, and compiled the consumer tree the previous command left
-// behind. See treeShape.
-func computeSourceHash(files []string, galaVersion, stdlibFingerprint, shape string) string {
-	h := sha256.New()
-	h.Write([]byte("gala:" + galaVersion + "\n"))
-	h.Write([]byte("stdlib:" + stdlibFingerprint + "\n"))
-	h.Write([]byte("shape:" + shape + "\n"))
-	sorted := make([]string, len(files))
-	copy(sorted, files)
-	sort.Strings(sorted)
-	for _, f := range sorted {
-		content, err := os.ReadFile(f)
-		if err != nil {
-			return "" // force re-transpile on error
-		}
-		h.Write([]byte(f))
-		h.Write(content)
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// computeDepsHash computes the cache key for transpiled GALA dependencies from
-// the module's requirements and any replace directives. Including replaces
-// ensures that retargeting a dep (e.g. toggling `replace X => ../localX`)
-// invalidates the cache.
-//
-// The stdlib fingerprint is part of the key for the same reason it is part of
-// computeSourceHash: dependency sources are transpiled against the stdlib, so a
-// change to it can change their generated code and the diagnostics they raise,
-// even though the requirement list is untouched.
-func computeDepsHash(requires []mod.Require, replaces []mod.Replace, stdlibFingerprint string) string {
-	h := sha256.New()
-	h.Write([]byte("stdlib:" + stdlibFingerprint + "\n"))
-	for _, req := range requires {
-		h.Write([]byte(req.Path + "@" + req.Version + "\n"))
-	}
-	for _, rep := range replaces {
-		h.Write([]byte("replace " + rep.Old.Path + "@" + rep.Old.Version +
-			"=>" + rep.New.Path + "@" + rep.New.Version + "\n"))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 // transpile transpiles all .gala files in the project to the workspace.
 func (b *Builder) transpile() error {
 	if b.verbose {
@@ -579,19 +523,20 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("no .gala files found in %s", b.workspace.ProjectDir)
 	}
 
-	// Check if sources have changed since last transpilation
-	// Include gala.mod in hash so dep changes also invalidate the cache
-	hashFile := filepath.Join(b.workspace.Dir, ".gala-source-hash")
-	galaModFile := filepath.Join(b.workspace.ProjectDir, "gala.mod")
-	currentHash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion, stdlib.Fingerprint(), b.treeShape())
-	if currentHash != "" {
-		if oldHash, err := os.ReadFile(hashFile); err == nil && string(oldHash) == currentHash {
-			if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
-				if b.verbose {
-					fmt.Println("  Sources unchanged, skipping transpilation")
-				}
-				return nil
+	// Skip the transpile when every declared input (see cachekey.go) matches
+	// the key recorded by the build that produced gen/. The key is computed
+	// before transpiling, so an input edited while this build runs leaves a key
+	// that no longer matches — the next build re-transpiles.
+	hashFile := filepath.Join(b.workspace.Dir, sourceStampName)
+	previous, _ := readSourceStamp(hashFile)
+	baseKey := b.baseSourceKey(galaFiles)
+	currentHash := combineSourceKey(baseKey, b.embedKey(previous.Embeds))
+	if currentHash != "" && currentHash == previous.Key {
+		if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
+			if b.verbose {
+				fmt.Println("  Sources unchanged, skipping transpilation")
 			}
+			return nil
 		}
 	}
 
@@ -648,12 +593,17 @@ func (b *Builder) transpile() error {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
 
-		// Collect embed patterns from generated Go code
-		allEmbedPatterns = append(allEmbedPatterns, extractEmbedPatterns(goCode)...)
-
 		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
 		if err != nil {
 			relPath = filepath.Base(galaFile)
+		}
+
+		// Collect embed patterns from generated Go code. Go resolves a pattern
+		// against the directory of the file that declares it, so each is made
+		// relative to the project directory.
+		relDir := filepath.ToSlash(filepath.Dir(relPath))
+		for _, pattern := range extractEmbedPatterns(goCode) {
+			allEmbedPatterns = append(allEmbedPatterns, path.Join(relDir, pattern))
 		}
 		// Preserve the subdirectory layout in gen/ so each GALA subpackage
 		// lands in its own directory — this is what the Go toolchain needs
@@ -671,6 +621,16 @@ func (b *Builder) transpile() error {
 		if b.verbose {
 			fmt.Printf("  %s -> %s\n", relPath, outName)
 		}
+	}
+
+	// When the emitted embed patterns differ from the ones the key was computed
+	// with, the sources declaring them changed; key the assets the new patterns
+	// match. This hashes them before they are copied below, so an asset edited
+	// from here on leaves a key that no longer matches the next build.
+	sort.Strings(allEmbedPatterns)
+	allEmbedPatterns = dedupe(allEmbedPatterns)
+	if !slices.Equal(allEmbedPatterns, previous.Embeds) {
+		currentHash = combineSourceKey(baseKey, b.embedKey(allEmbedPatterns))
 	}
 
 	// Copy embed source files to the gen directory
@@ -692,9 +652,10 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("rewriting project module imports: %w", err)
 	}
 
-	// Save source hash for next build
+	// Record the key for the next build, with the embed patterns this
+	// transpile emitted.
 	if currentHash != "" {
-		os.WriteFile(hashFile, []byte(currentHash), 0644)
+		writeSourceStamp(hashFile, sourceStamp{Key: currentHash, Embeds: allEmbedPatterns})
 	}
 
 	return nil
@@ -910,25 +871,29 @@ func (b *Builder) recordSourceHash() {
 	if err != nil {
 		return
 	}
-	galaModFile := filepath.Join(b.workspace.ProjectDir, "gala.mod")
-	hash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion, stdlib.Fingerprint(), b.treeShape())
+	// No embed patterns: this path copies every project file into gen/ rather
+	// than resolving patterns, and it never consults the key it records.
+	hash := b.sourceKey(galaFiles, nil)
 	if hash == "" {
 		return
 	}
-	os.WriteFile(filepath.Join(b.workspace.Dir, ".gala-source-hash"), []byte(hash), 0644)
+	writeSourceStamp(filepath.Join(b.workspace.Dir, sourceStampName), sourceStamp{Key: hash})
 }
 
-// extractEmbedPatterns parses //go:embed directives from generated Go code
-// and returns the embed patterns.
+// extractEmbedPatterns parses //go:embed directives from Go code and returns
+// the embed patterns. A directive may list several space-separated patterns,
+// quoted or not, and a pattern may carry the "all:" prefix, which does not
+// change the files it names on disk.
 func extractEmbedPatterns(goCode string) []string {
 	var patterns []string
 	for _, line := range strings.Split(goCode, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//go:embed ") {
-			pattern := strings.TrimPrefix(trimmed, "//go:embed ")
-			pattern = strings.TrimSpace(pattern)
-			if pattern != "" {
-				patterns = append(patterns, pattern)
+		if rest, ok := strings.CutPrefix(trimmed, "//go:embed "); ok {
+			for _, field := range strings.Fields(rest) {
+				pattern := strings.TrimPrefix(strings.Trim(field, "\"`"), "all:")
+				if pattern != "" {
+					patterns = append(patterns, pattern)
+				}
 			}
 		}
 	}
@@ -1237,7 +1202,7 @@ func (b *Builder) invalidateWorkspace(versionFile string) error {
 	if err := b.workspace.CleanDeps(); err != nil {
 		return fmt.Errorf("clearing transpiled dependencies: %w", err)
 	}
-	for _, name := range []string{".gala-source-hash", ".gala-deps-hash", "go.mod", "go.sum"} {
+	for _, name := range []string{sourceStampName, depsStampName, "go.mod", "go.sum"} {
 		os.Remove(filepath.Join(b.workspace.Dir, name)) // absent is the normal case
 	}
 	return os.WriteFile(versionFile, []byte(b.stdlibVersion), 0644)
@@ -1395,10 +1360,11 @@ func (b *Builder) transpileDeps() error {
 		return nil
 	}
 
-	depsHashFile := filepath.Join(b.workspace.Dir, ".gala-deps-hash")
-	currentHash := computeDepsHash(galaReqs, b.galaMod.Replace, stdlib.Fingerprint())
+	depsHashFile := filepath.Join(b.workspace.Dir, depsStampName)
+	// An unreadable dependency leaves the key empty: never a hit, never recorded.
+	currentHash, _ := b.depsKey()
 
-	if oldHash, err := os.ReadFile(depsHashFile); err == nil && string(oldHash) == currentHash {
+	if oldHash, err := os.ReadFile(depsHashFile); err == nil && currentHash != "" && string(oldHash) == currentHash {
 		allExist := true
 		b.transpiledDeps = make(map[string]string)
 		for _, req := range galaReqs {
@@ -1420,7 +1386,7 @@ func (b *Builder) transpileDeps() error {
 		}
 	}
 
-	// Clean deps dir before transpiling
+	// Clean deps dir (and its recorded key) before transpiling
 	if err := b.workspace.CleanDeps(); err != nil {
 		return fmt.Errorf("cleaning deps dir: %w", err)
 	}
@@ -1433,7 +1399,9 @@ func (b *Builder) transpileDeps() error {
 
 	b.transpiledDeps = transpiledDeps
 
-	os.WriteFile(depsHashFile, []byte(currentHash), 0644)
+	if currentHash != "" {
+		os.WriteFile(depsHashFile, []byte(currentHash), 0644)
+	}
 
 	return nil
 }
@@ -1508,9 +1476,11 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
-// Test runs the test flow: transpile source + test files, discover test functions,
-// generate a test main, build, and execute the test binary.
-// If verbose is true, passes -v-style output. Returns the exit code from the test run.
+// Test runs the test flow: transpile source + test files, discover test
+// functions, and run them. Each package's tests run through a generated
+// `go test` harness in that package; a package-main root's own tests run as a
+// synthesized test binary instead. If verbose is true, `go test` runs with -v.
+// Returns an error when any test fails.
 func (b *Builder) Test(verbose bool) error {
 	// Step 1: Ensure workspace exists
 	if b.verbose {
@@ -1648,7 +1618,7 @@ func (b *Builder) Test(verbose bool) error {
 		// own package — otherwise the root harness would fail to compile when
 		// a subpackage owns a test function that the root package cannot see.
 		// Tests run via `go test ./gen/...`.
-		if err := b.writeLibraryTestHarnesses(testFiles); err != nil {
+		if _, err := b.writeLibraryTestHarnesses(testFiles); err != nil {
 			return fmt.Errorf("writing test harnesses: %w", err)
 		}
 		if b.verbose {
@@ -1656,31 +1626,32 @@ func (b *Builder) Test(verbose bool) error {
 		}
 
 		// Step 9: Run tests via `go test`
-		args := []string{"test", "-count=1"}
-		if verbose {
-			args = append(args, "-v")
-		}
-		args = append(args, "./gen/...")
-		cmd := exec.Command("go", args...)
-		cmd.Dir = b.workspace.Dir
-		cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		return b.runGoTest(verbose, []string{"./gen/..."})
+	}
 
-		if b.verbose {
-			fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	// For a package-main root, the synthesized test binary runs the root's own
+	// tests only. A subpackage's TestXxx is declared in that subpackage, which
+	// the root package cannot name (and a root test_main listing it fails with
+	// "undefined: TestXxx"), so subpackage tests run through a harness in their
+	// own package — the library route — via `go test`.
+	rootTestFiles, subTestFiles := splitRootTestFiles(b.workspace.ProjectDir, testFiles)
+	var rootTestFuncs []string
+	for _, tf := range rootTestFiles {
+		funcs, err := FindTestFunctions(tf)
+		if err != nil {
+			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
 		}
+		rootTestFuncs = append(rootTestFuncs, funcs...)
+	}
+	subTestDirs, err := b.writeLibraryTestHarnesses(subTestFiles)
+	if err != nil {
+		return fmt.Errorf("writing test harnesses: %w", err)
+	}
 
-		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
-			}
-			return fmt.Errorf("go test: %w", err)
-		}
-	} else {
-		// For main packages: generate test_main.gen.go with func main() and
-		// build a test binary.
-		testMainCode := GenerateTestMain(allTestFuncs)
+	var rootErr error
+	if len(rootTestFuncs) > 0 {
+		// Generate test_main.gen.go with func main() and build a test binary.
+		testMainCode := GenerateTestMain(rootTestFuncs)
 		testMainPath := filepath.Join(b.workspace.GenDir, "test_main.gen.go")
 		if err := os.WriteFile(testMainPath, []byte(testMainCode), 0644); err != nil {
 			return fmt.Errorf("writing test_main.gen.go: %w", err)
@@ -1730,13 +1701,71 @@ func (b *Builder) Test(verbose bool) error {
 
 		if err := execCmd.Run(); err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+				rootErr = fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+			} else {
+				return fmt.Errorf("running test binary: %w", err)
 			}
-			return fmt.Errorf("running test binary: %w", err)
 		}
 	}
 
+	// The subpackages' tests run even when the root's failed, so one run
+	// reports every test failure.
+	var subErr error
+	if len(subTestDirs) > 0 {
+		pkgs := make([]string, len(subTestDirs))
+		for i, dir := range subTestDirs {
+			pkgs[i] = "./gen/" + filepath.ToSlash(dir)
+		}
+		subErr = b.runGoTest(verbose, pkgs)
+	}
+	return errors.Join(rootErr, subErr)
+}
+
+// runGoTest runs `go test` on pkgs (patterns relative to the workspace) — the
+// packages that carry a generated test harness.
+func (b *Builder) runGoTest(verbose bool, pkgs []string) error {
+	args := []string{"test", "-count=1"}
+	if verbose {
+		args = append(args, "-v")
+	}
+	args = append(args, pkgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = b.workspace.Dir
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+b.config.GoPkgDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if b.verbose {
+		fmt.Printf("Running: go %s\n", strings.Join(args, " "))
+	}
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("tests failed (exit code %d)", exitErr.ExitCode())
+		}
+		return fmt.Errorf("go test: %w", err)
+	}
 	return nil
+}
+
+// splitRootTestFiles separates the test files in the project root directory
+// from those in its subpackages.
+func splitRootTestFiles(projectDir string, testFiles []string) (root, sub []string) {
+	absRoot, _ := filepath.Abs(projectDir)
+	for _, tf := range testFiles {
+		if inDir(absRoot, tf) {
+			root = append(root, tf)
+		} else {
+			sub = append(sub, tf)
+		}
+	}
+	return root, sub
+}
+
+// inDir reports whether file f sits directly in the directory absDir.
+func inDir(absDir, f string) bool {
+	abs, _ := filepath.Abs(f)
+	return filepath.Dir(abs) == absDir
 }
 
 // transpileTestMain transpiles source + test files together for package main projects.
@@ -1853,7 +1882,10 @@ func renameUserMainInDir(dir string, sourceNames map[string]bool, verbose bool) 
 // references tests declared in its own source directory — bundling all test
 // funcs into a single root-level harness would fail to compile when a
 // subpackage owns a test that the root package cannot see.
-func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
+//
+// It returns the directories, relative to gen/ and in sorted order, that
+// received a harness.
+func (b *Builder) writeLibraryTestHarnesses(testFiles []string) ([]string, error) {
 	// Group tests by the gen subdirectory they will land in.
 	type bucket struct {
 		pkgName string
@@ -1863,7 +1895,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 	for _, tf := range testFiles {
 		funcs, err := FindTestFunctions(tf)
 		if err != nil {
-			return fmt.Errorf("scanning %s for test functions: %w", tf, err)
+			return nil, fmt.Errorf("scanning %s for test functions: %w", tf, err)
 		}
 		if len(funcs) == 0 {
 			continue
@@ -1881,6 +1913,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 		}
 	}
 
+	var written []string
 	for relDir, bkt := range byDir {
 		if bkt.pkgName == "" {
 			continue
@@ -1890,15 +1923,17 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) error {
 			harnessDir = filepath.Join(b.workspace.GenDir, relDir)
 		}
 		if err := os.MkdirAll(harnessDir, 0755); err != nil {
-			return fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
+			return nil, fmt.Errorf("creating harness dir %s: %w", harnessDir, err)
 		}
 		harnessPath := filepath.Join(harnessDir, "gala_test_harness_test.go")
 		harnessCode := GenerateGoTestHarness(bkt.pkgName, bkt.funcs)
 		if err := os.WriteFile(harnessPath, []byte(harnessCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", harnessPath, err)
+			return nil, fmt.Errorf("writing %s: %w", harnessPath, err)
 		}
+		written = append(written, relDir)
 	}
-	return nil
+	sort.Strings(written)
+	return written, nil
 }
 
 // transpileTestLibrary transpiles source files and test files into gen/ as the
@@ -2128,8 +2163,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 func rootPackageName(sourceFiles []string, projectDir string) string {
 	absRoot, _ := filepath.Abs(projectDir)
 	for _, f := range sourceFiles {
-		abs, _ := filepath.Abs(f)
-		if filepath.Dir(abs) == absRoot {
+		if inDir(absRoot, f) {
 			return detectPackageName(f)
 		}
 	}

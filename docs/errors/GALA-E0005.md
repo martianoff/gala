@@ -8,6 +8,7 @@ must define `Unapply` (returning either `bool` for guard patterns or
 
 **Minimal repros.**
 
+<!-- doc-check: fragment -->
 ```gala
 // Typo: Som instead of Some
 val r = Some(42) match {
@@ -42,6 +43,8 @@ so typos usually come back with a "did you mean?" hint.
   func (e Even) Unapply(i int) bool = i % 2 == 0
   ```
   For a generic extractor that pulls out values:
+
+  <!-- doc-check: fragment -->
   ```gala
   type Wrap[T any] struct {}
   func (w Wrap[T]) Unapply(container Container[T]) Option[T] = ...

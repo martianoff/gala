@@ -21,6 +21,7 @@ GALA's [monad stack](/features/error-handling/) — `Option`, `Either`, `Try`, `
 
 When a later step reads an earlier value, combinators nest — here the final `Receipt` needs both the original order and the payment:
 
+<!-- doc-check: fragment -->
 ```gala
 fetchOrder(id).FlatMap((o) =>
     validateOrder(o).FlatMap((valid) =>
@@ -30,6 +31,7 @@ fetchOrder(id).FlatMap((o) =>
 
 With `bind`, every binding is a normal immutable local that stays in scope for the rest of the block:
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] {
     bind o       = fetchOrder(id)
@@ -55,6 +57,7 @@ Steps that don't depend on each other shouldn't be sequenced. `also` marks a bin
 | `Validated`                 | **accumulates every error**                   |
 | `Future`                    | runs the clauses **concurrently**             |
 
+<!-- doc-check: fragment -->
 ```gala
 func sum2(x string, y string) Option[int] {
     bind a = lookup(x)
@@ -69,6 +72,7 @@ func sum2(x string, y string) Option[int] {
 
 Fail-fast is the wrong model for form validation. The `Validated[E, A]` type (in the `validation` package) is a distinct sealed type — `Valid` / `Invalid` — kept separate from `Either`'s fail-fast semantics. Over `Validated`, an `also` group accumulates all errors:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/validation"
 
@@ -84,6 +88,7 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
 }
 ```
 
+<!-- doc-check: fragment -->
 ```gala
 val bad = makePerson("", "", -1)
 Println(s"errors: ${bad.GetErrors().Size()}")   // 3 — all three, not just the first
@@ -99,6 +104,7 @@ Under the sugar sit `Zip2` through **`Zip10`**, which combine that many `Validat
 
 The same `also`, over `Future`, runs the independent clauses concurrently:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 
@@ -120,12 +126,14 @@ GALA's standard library gets no special treatment: `Try`, `Option`, `Either`, an
 
 A type becomes bindable by providing one method:
 
+<!-- doc-check: fragment -->
 ```gala
 func (m M[T]) FlatMap[U any](f func(T) M[U]) M[U]
 ```
 
 That's the whole contract. A user-defined monad with no relationship to the standard library gets `bind` and sequential `also` for free:
 
+<!-- doc-check: fragment -->
 ```gala
 sealed type Step[T any] {
     case Go(Value T)

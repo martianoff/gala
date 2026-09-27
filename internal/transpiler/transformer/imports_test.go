@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -310,6 +311,27 @@ func TestImportManager_ImplicitGalaPackageGetsFreeQualifier(t *testing.T) {
 	goEntry, ok := m.GetByAlias("strings")
 	if assert.True(t, ok) {
 		assert.Equal(t, "strings", goEntry.Path)
+	}
+}
+
+// TestCheckImportPaths: the generated file's imports must all be Go import
+// paths; a filesystem path is reported as an internal error rather than
+// emitted.
+func TestCheckImportPaths(t *testing.T) {
+	file := func(paths ...string) *ast.File {
+		decl := &ast.GenDecl{Tok: token.IMPORT}
+		for _, p := range paths {
+			decl.Specs = append(decl.Specs, &ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(p)}})
+		}
+		return &ast.File{Name: ast.NewIdent("main"), Decls: []ast.Decl{decl}}
+	}
+	assert.NoError(t, transformer.CheckImportPaths(file("fmt", "example.com/m/box", "martianoff/gala/std")))
+	for _, bad := range []string{`C:\Users\me\m\box`, "/home/me/m/box"} {
+		err := transformer.CheckImportPaths(file("fmt", bad))
+		if assert.Error(t, err, bad) {
+			assert.Contains(t, err.Error(), "GALA-E0017")
+			assert.Contains(t, err.Error(), "not a Go import path")
+		}
 	}
 }
 

@@ -40,6 +40,7 @@ val decoded = codec.Decode(jsonStr)
 
 Create a codec with `Codec[T](naming)` and configure it with fluent builder methods:
 
+<!-- doc-check: fragment -->
 ```gala
 val codec = Codec[Person](SnakeCase())
     .Omit("Password")
@@ -62,6 +63,7 @@ Each builder method returns a new immutable codec instance — safe to share acr
 
 ## Serialization
 
+<!-- doc-check: fragment -->
 ```gala
 val person = Person("Alice", "Smith", 30)
 
@@ -82,6 +84,7 @@ val pretty = codec.EncodePretty(person).Get()
 
 ## Deserialization
 
+<!-- doc-check: fragment -->
 ```gala
 val decoded = codec.Decode(jsonStr)
 // decoded: Try[Person]
@@ -101,6 +104,7 @@ decoded.ForEach((p) => {
 
 Codec instances work as pattern matching extractors via `Unapply`. If decoding fails, the case does not match — no exception, no panic:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = jsonStr match {
     case codec(p) => s"Found: ${p.FirstName}, age ${p.Age}"
@@ -110,6 +114,7 @@ val result = jsonStr match {
 
 This is especially useful when handling input from external sources:
 
+<!-- doc-check: fragment -->
 ```gala
 val commandCodec = Codec[Command](SnakeCase())
 val eventCodec = Codec[Event](SnakeCase())
@@ -147,6 +152,12 @@ Println(s"first tag: ${decoded.Tags.Get(0).Key}/${decoded.Tags.Get(0).Color}")
 
 The same applies to `HashMap[string, Tag]`, `List[Tag]`, and `Array[Array[Tag]]`. No additional builder calls or type annotations are required — declare the struct shape, ask for `Codec[T](naming)`, and the codec handles the rest.
 
+### Field Types
+
+A field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (`K` a string or an alias of `string`), nested to any depth. A field of any other type — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is a compile error, [GALA-E0050](/docs/errors/gala-e0050/); a field is never silently written as `null`.
+
+Decoding checks ranges: `300` into an `int8`, `-1` into a `uint`, or `1e39` into a `float32` makes `Decode` return a `Failure`. JSON cannot represent NaN or ±Infinity, so encoding one makes `Encode` return a `Failure`.
+
 ---
 
 ## Unknown Fields
@@ -172,6 +183,7 @@ Skipping handles all JSON value shapes — strings, numbers, booleans, `null`, a
 
 For projects that prefer explicit package prefixes:
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/json"
 
@@ -185,6 +197,7 @@ codec.Encode(person)
 
 `Codec[T]` is powered by `StructMeta[T]` — a compiler intrinsic that generates type-safe field access at compile time. When you write:
 
+<!-- doc-check: fragment -->
 ```gala
 val codec = Codec[Person](SnakeCase())
 ```

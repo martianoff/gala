@@ -1,5 +1,6 @@
 load("@rules_go//go:def.bzl", "go_library")
 load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files([
     "stream.gala",
@@ -39,3 +40,6 @@ gala_test(
         "//collection_immutable",
     ],
 )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()

@@ -55,6 +55,7 @@ error[GALA-E0039]: `Circle` is a variant of sealed type "Shape", so `case Circle
 
 Spell the variant with parentheses, using `_` for fields the arm does not need:
 
+<!-- doc-check: fragment -->
 ```gala
 val r = s match {
     case Circle(_) => "circle"

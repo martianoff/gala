@@ -27,6 +27,9 @@ type returnSlot struct {
 	// declaration and its receiver, in scope for every slot inside it: a type
 	// naming one of them is resolved (see isSettledType).
 	typeParams map[string]bool
+	// funcName is the GALA name of the function declaration the slot belongs
+	// to (see sourceFunctionName), for diagnostics; "" for a lambda.
+	funcName string
 }
 
 // deferredReturn is a result value (a `return` value or the body's trailing

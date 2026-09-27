@@ -14,7 +14,10 @@ go_library(
 
 go_test(
     name = "sum_test",
-    srcs = ["sum_test.go"],
+    srcs = [
+        "hash_scheme_test.go",
+        "sum_test.go",
+    ],
     embed = [":sum"],
     deps = [
         "@com_github_stretchr_testify//assert",

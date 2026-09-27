@@ -55,6 +55,7 @@ val result = opt.FlatMap((x) => if (x > 5) Some(x) else None[int]())
 
 Extract the value with a fallback:
 
+<!-- doc-check: fragment -->
 ```gala
 val value = opt.GetOrElse(0)                 // 42
 val fallback = None[int]().GetOrElse(0)      // 0
@@ -89,6 +90,7 @@ opt.OnSome((v) => { Println(s"Found: $v") })
 
 Because `Option` is a sealed type, matching is exhaustive — no `case _` needed:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = opt match {
     case Some(v) => s"Got: $v"
@@ -169,6 +171,7 @@ val logged = Right[string, int](42)
 
 Exhaustive matching — no default case needed:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = result match {
     case Left(code)  => s"Error code: $code"
@@ -191,6 +194,7 @@ sealed type Try[T any] {
 
 ### Creating Try Values
 
+<!-- doc-check: fragment -->
 ```gala
 // Direct construction
 val success = Success(42)
@@ -239,6 +243,7 @@ val timeout = strconv.Atoi(raw).GetOrElse(30)
 
 Transform success values. Failures propagate untouched:
 
+<!-- doc-check: fragment -->
 ```gala
 val doubled = Success(21).Map((n) => n * 2)            // Success(42)
 val chained = Success(10).FlatMap((n) => divide(n, 2)) // Success(5) or Failure
@@ -269,6 +274,7 @@ val logged = Success(42)
 
 ### Safe Extraction
 
+<!-- doc-check: fragment -->
 ```gala
 val value = failure.GetOrElse(0)              // 0
 val alternative = failure.OrElse(Success(100)) // Success(100)
@@ -285,6 +291,7 @@ val either = Success(42).ToEither()    // Right(42)
 
 Exhaustive — no default case needed:
 
+<!-- doc-check: fragment -->
 ```gala
 val msg = result match {
     case Success(n) => s"Got: $n"
@@ -296,6 +303,7 @@ val msg = result match {
 
 Try enables elegant pipelines where errors short-circuit the chain:
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] =
     fetchOrder(id)
@@ -356,6 +364,7 @@ val pretty = codec.EncodePretty(config).Get()
 
 ### Deserialization
 
+<!-- doc-check: fragment -->
 ```gala
 val parsed = codec.Decode(jsonStr)
 // parsed: Try[Config]
@@ -367,6 +376,7 @@ val host = parsed.Map((c) => c.Host).GetOrElse("unknown")
 
 A codec doubles as a pattern-matching extractor — it parses JSON inside `match` expressions:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = inputStr match {
     case codec(c) => s"Host: ${c.Host}, Port: ${c.Port}"
@@ -382,6 +392,7 @@ This combines `Try`-based safety with pattern matching — the codec's extractor
 
 The real power of monadic error handling is composition. Instead of checking errors at every step, you build a pipeline and handle errors at the end:
 
+<!-- doc-check: fragment -->
 ```gala
 val name = user.Name
     .Map((n) => strings.ToUpper(n))
@@ -429,6 +440,7 @@ The final `Receipt` needs both the original order **and** the payment, so a `Fla
 
 **Before — nested `FlatMap`** (`o` survives only via the deepening indentation):
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] =
     fetchOrder(id).FlatMap[Receipt]((o) =>
@@ -439,6 +451,7 @@ func processOrder(id int) Try[Receipt] =
 
 **After — a flat `bind` block** (every value stays in scope, reads top-to-bottom):
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] {
     bind o = fetchOrder(id)
@@ -452,6 +465,7 @@ func processOrder(id int) Try[Receipt] {
 
 `bind` is fail-fast: over `Try`/`Option`/`Either` the first failure wins. `also` marks **independent** clauses, and over `Validated` (in the `validation` package) it accumulates *every* error instead of stopping at the first:
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/validation"
 
@@ -469,6 +483,7 @@ func makePerson(name string, email string, age int) Validated[string, Person] {
 
 Over `Future`, an `also` group runs its clauses **concurrently** rather than threading each through the next:
 
+<!-- doc-check: fragment -->
 ```gala
 func total() Future[int] {
     bind a = compute(2)

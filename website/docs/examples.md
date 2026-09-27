@@ -199,6 +199,44 @@ func main() {
 
 See also: [Language Reference - Extractors and Unapply](/docs/language-reference/#extractors-and-unapply)
 
+## Matching Against Constants (Stable Identifiers)
+
+A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name always binds, so compare against a lowercase value with a guard.
+
+```gala
+package main
+
+type Environment string
+
+val Development Environment = "development"
+val Production Environment = "production"
+val Answer = 42
+
+func describe(env Environment) string = env match {
+    case Development => "dev"
+    case Production  => "prod"
+    case _           => s"other: $env"
+}
+
+func probe(o Option[int]) string = o match {
+    case Some(Answer) => "the answer"
+    case Some(n)      => s"some $n"
+    case _            => "none"
+}
+
+func main() {
+    Println(describe(Production))                  // prod
+    Println(probe(Some(42)))                       // the answer
+    val limit = 10
+    Println(10 match {
+        case n if n == limit => "at the limit"
+        case n               => s"bound $n"
+    })                                             // at the limit
+}
+```
+
+See also: [Language Reference - Stable Identifiers](/docs/language-reference/#stable-identifiers-constants-in-patterns)
+
 ## Type-Based Pattern Matching Example
 
 ```gala
@@ -395,11 +433,24 @@ func main() {
 
 Boolean pattern matching is exhaustive when both `true` and `false` cases are covered:
 
+<!-- doc-check: fragment -->
 ```gala
 val desc = flag match {
     case true  => "enabled"
     case false => "disabled"
     // No case _ needed — true/false is exhaustive
+}
+```
+
+A tuple arm made only of wildcards and bindings (or nested such tuples) matches every value, so it closes a match too:
+
+```gala
+func divmod(a int, b int) Tuple3[int, int, string] =
+    if (b == 0) (0, 0, "division by zero") else (a / b, a % b, "ok")
+
+val result = divmod(17, 0) match {
+    case (q, r, "ok") => s"$q remainder $r"
+    case (_, _, err)  => s"Error: $err"   // covers every other Tuple3
 }
 ```
 

@@ -1,0 +1,4 @@
+go test fuzz v1
+string("package main\r\n\r\nimport . \"martianoff/gala/exampls/cross_file_unwrap_lib\"\r\nimport . \"martianoff/gala/collection_immutable\"\r\n\r\nfunc main() {\r\n    val routes = ArrayOf(Route(\"GET\", \"/api/users\", Handler(\"myHandler\")))\r\n    val filters = ArrayOf(\"auth\", \"log\")\r\n    val server = NewServer(routes, filters)\r\n    Println(ProcessServer(server))\r\n}\r\n")
+byte('\r')
+uint16(55)

@@ -38,7 +38,8 @@ type galaASTTransformer struct {
 	needsStdImport    bool
 	needsFmtImport    bool
 	needsUtf8Import   bool
-	activeTypeParams  map[string]bool
+	activeTypeParams  map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
+	typeParamNames    map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
 	structFields      map[string][]string
 	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
 	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
@@ -61,6 +62,7 @@ type galaASTTransformer struct {
 	returnSlot               returnSlot                   // result type of the innermost function or lambda body (see return_slot.go)
 	currentMatchSubjectType  transpiler.Type              // type of the match expression's subject (for branch type inference)
 	typeAliases              map[string]transpiler.Type   // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
+	fileTypeDeclTargets      map[string]transpiler.Type   // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
 	goTypeInfo               *transpiler.GoTypeInfo       // type info from Go packages (stdlib, local Go files, third-party)
 	filePath                 string                       // source file path (for error reporting)
 	richAST                  *transpiler.RichAST          // reference to the primary RichAST for live metadata access
@@ -208,6 +210,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
+	t.typeParamNames = nil
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.patternDefineTypes = nil
@@ -357,6 +360,18 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.registerDotImportedVals()
 	t.cacheTypeResolver()
 
+	// t.typeAliases fills as declarations are walked, so a declaration above
+	// `type Millis int64` would not see it. Record every alias target up front
+	// for the lookups that must not depend on declaration order.
+	t.fileTypeDeclTargets = make(map[string]transpiler.Type)
+	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
+		typeDecl, ok := topDeclCtx.TypeDeclaration().(*grammar.TypeDeclarationContext)
+		if !ok || typeDecl == nil || typeDecl.Identifier() == nil || typeDecl.TypeAlias() == nil {
+			continue
+		}
+		t.fileTypeDeclTargets[typeDecl.Identifier().GetText()] = transpiler.ParseType(typeDecl.TypeAlias().GetText())
+	}
+
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
 		decls, err := t.transformTopLevelDeclaration(topDeclCtx)
 		if err != nil {
@@ -385,7 +400,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.dropDiscardedGoResults(file)
 
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
-	t.finalizeCodecs(file)
+	if err := t.finalizeCodecs(file); err != nil {
+		return nil, nil, err
+	}
 
 	if t.needsStdImport && t.packageName != registry.StdPackageName {
 		// Check if std is already imported (e.g., as a dot import)
@@ -534,6 +551,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Remove unused imports from the generated AST. PruneUnused rewrites the
 	// file without touching the import manager, so no cache is invalidated.
 	t.importManager.PruneUnused(file, richAST)
+	if err := CheckImportPaths(file); err != nil {
+		return nil, nil, err
+	}
 
 	return fset, file, nil
 }

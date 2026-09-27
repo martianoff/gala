@@ -970,7 +970,7 @@ return lastResp
 |-------|-----------------|----------------|
 | Block body for single expr | `func f() T { return expr }` | `func f() T = expr` |
 | Lambda block for single expr | `(x) => { return x * 2 }` | `(x) => x * 2` |
-| Block lambda with no typed context | `val f = (x int) => { val y = x * 2; y }` — a standalone block lambda is treated as void | Add `return y`, or use an expression body. When the lambda is passed where a value is expected (e.g. `xs.Map(...)`), the trailing expression is already the result; no `return` needed |
+| Block lambda with no typed context | `val f = (x int) => { val y = x * 2; y }` — a standalone block lambda is treated as void, so the trailing `y` is rejected as evaluated but not used | Add `return y`, or use an expression body. When the lambda is passed where a value is expected (e.g. `xs.Map(...)`), the trailing expression is already the result; no `return` needed |
 | Multi-line when one-liner works | `if cond { return a } else { return b }` | Use if-expression: `if (cond) a else b` |
 
 ### 8e. If-Expressions (MEDIUM priority)
@@ -1002,6 +1002,58 @@ val label = if (count > 1) {
     val suffix = "s"
     s"$count item$suffix"
 } else "1 item"
+```
+
+### 8f. Redundant Trailing `return` (LOW priority)
+
+A block-bodied function or method with a result type returns its trailing
+expression, as a block lambda passed where a value is expected and a match arm
+do. A `return` on the **last** statement is therefore redundant: prefer the
+implicit trailing value. This is a style preference — an explicit trailing
+`return` is still valid GALA and compiles to the same Go.
+
+| Issue | Pattern to Flag | Recommended Fix |
+|-------|-----------------|----------------|
+| Trailing `return` in a block function or method | the final statement of a `func ... T { ... }` body is `return <expr>` | drop the `return`: end the body in `<expr>` |
+| Trailing `return` in both branches of a final if/else | the body ends in `if (c) { ...; return a } else { ...; return b }` | drop both `return`s: the branches carry the value |
+| Trailing `return` in a value-typed block lambda | `xs.Map((x) => { val y = x * 2; return y + 1 })` — the lambda is passed where a value is expected | `xs.Map((x) => { val y = x * 2; y + 1 })` |
+
+**Prefer rule 8d when it applies.** If the body is a single `return <expr>`
+(or can become one), the stronger fix is an expression body —
+`func f() T = expr`, `(x) => expr` — not a block that ends in `expr`.
+
+**Do NOT flag:**
+- **Early returns** — a `return` that is not the body's final statement, or one
+  inside a guard branch that exits before the end (`if (n < 0) { return None() }`
+  followed by more statements; a `return` inside a `for` loop or a `match` arm
+  that is not the tail).
+- **Bare `return`** in a function with no result type — it carries no value.
+- **A standalone block lambda with no typed context** — `val f = (x int) => { ...; return y }`.
+  Such a lambda is treated as void unless it returns explicitly, so the `return`
+  is required there (see rule 8d).
+
+**Check**: For each block-bodied `func` with a result type, and each block
+lambda passed as an argument, look at the last statement before the closing
+brace; flag it when it is `return <expr>` (or a final if/else whose every
+branch ends in `return <expr>`).
+
+**Bad pattern** — redundant trailing `return`:
+```gala
+func describe(u User) string {
+    val name = u.Name.Trim()
+    return s"$name (${u.Age})"
+}
+```
+
+**Good pattern** — implicit trailing value, `return` kept for the early exit:
+```gala
+func describe(u User) string {
+    if (u.Name == "") {
+        return "anonymous"          // early exit: keep `return`
+    }
+    val name = u.Name.Trim()
+    s"$name (${u.Age})"             // trailing value is the result
+}
 ```
 
 ### 9. Unnecessary Variables (MEDIUM priority)

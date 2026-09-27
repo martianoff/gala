@@ -51,7 +51,11 @@ import (
 // carry the position of their first token (transpiler.DefaultExpr). A v6
 // payload holds whitespace-stripped text, which re-parses `(a int) => a` as a
 // lambda with one parameter named `aint`.
-const CacheVersion = "v7"
+//
+// v8: GoTypeInfo records which Go constants are untyped (UntypedConstants).
+// A v7 payload has none, so `math.MinInt8` stored in an int8 slot would be
+// wrapped with its default type again and fail to compile.
+const CacheVersion = "v8"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -60,8 +64,9 @@ const CacheVersion = "v7"
 // If empty, only CacheVersion is used (backward compatible).
 var CompilerVersion string
 
-// binarySelfHash returns a short content hash of the running gala binary.
-// It is used to invalidate the on-disk analysis cache automatically when the
+// binaryHash is the SHA-256 content hash of the running gala binary, computed
+// once at init. The analysis cache directory uses a short prefix of it; it is
+// used to invalidate the on-disk analysis cache automatically when the
 // compiler binary changes — critical for unstamped "dev" builds (Version="dev",
 // GitCommit="unknown") where CompilerVersion alone cannot distinguish between
 // compiler revisions. Without this, recompiling the transpiler does not bust
@@ -73,7 +78,7 @@ var CompilerVersion string
 //
 // Returns an empty string on any I/O failure; the caller treats the empty case
 // as "no extra invalidation key", which preserves the previous behaviour.
-var binarySelfHash = func() string {
+var binaryHash = func() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
@@ -83,8 +88,14 @@ var binarySelfHash = func() string {
 		return ""
 	}
 	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])[:12]
+	return hex.EncodeToString(sum[:])
 }()
+
+// BinaryHash returns the SHA-256 content hash of the running gala binary, or
+// "" when it cannot be read. Other caches key on it for the same reason the
+// analysis cache does: it is the one identity that changes with every rebuild
+// of an unstamped binary.
+func BinaryHash() string { return binaryHash }
 
 // CachedRichAST is the serializable subset of RichAST (no antlr.Tree).
 //
@@ -109,8 +120,8 @@ type CachedRichAST struct {
 	TypeAliases      map[string]transpiler.Type
 	ImportPathMap    map[string]string
 	PackageVals      map[string]*transpiler.PackageValMetadata // this package's own exported package-level val/var bindings
-	DepsHash         string   // hash of transitive dependency content (for invalidation)
-	DirectImports    []string // GALA import paths this package directly imports (for re-merge on load)
+	DepsHash         string                                    // hash of transitive dependency content (for invalidation)
+	DirectImports    []string                                  // GALA import paths this package directly imports (for re-merge on load)
 }
 
 // belongsToPkg reports whether a fully-qualified key like "pkgName.SymName"
@@ -255,6 +266,11 @@ func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg string) *transpiler.GoTypeIn
 		if strings.HasPrefix(k, prefix) {
 			out.Constants[k] = v
 			any = true
+		}
+	}
+	for k, v := range g.UntypedConstants {
+		if strings.HasPrefix(k, prefix) {
+			out.UntypedConstants[k] = v
 		}
 	}
 	for k, v := range g.TypeAliases {
@@ -432,7 +448,7 @@ type analysisCache struct {
 // The cache directory path embeds:
 //   - CacheVersion: bump on serialization-format changes.
 //   - CompilerVersion: when stamping is active (Version + "-" + GitCommit).
-//   - binarySelfHash: short hash of the gala binary itself, so unstamped "dev"
+//   - binaryHash: short hash of the gala binary itself, so unstamped "dev"
 //     builds also invalidate when the binary changes. Without this, the
 //     analyzer's serialized pkgAST from an older revision (e.g. before
 //     transitive-type-merge in scanImports) could outlive the binary upgrade
@@ -449,8 +465,8 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 	if CompilerVersion != "" {
 		cacheDir = CacheVersion + "-" + CompilerVersion
 	}
-	if binarySelfHash != "" {
-		cacheDir = cacheDir + "-" + binarySelfHash
+	if binaryHash != "" {
+		cacheDir = cacheDir + "-" + binaryHash[:12]
 	}
 	parent := filepath.Join(projectRoot, ".gala", "cache")
 	dir := filepath.Join(parent, cacheDir)
@@ -686,9 +702,9 @@ type pkgFingerprintCache struct {
 }
 
 type pkgFingerprintEntry struct {
-	dirSize int64       // st.Size() of the directory inode
-	mtime   time.Time   // st.ModTime() of the directory inode
-	count   int         // number of relevant non-test files
+	dirSize int64     // st.Size() of the directory inode
+	mtime   time.Time // st.ModTime() of the directory inode
+	count   int       // number of relevant non-test files
 	fp      pkgFingerprint
 }
 
@@ -716,8 +732,8 @@ func pkgFingerprintForDir(dirPath string) pkgFingerprint {
 	// doesn't oscillate when irrelevant files are touched (Bazel sandbox
 	// drops have a habit of scattering symlinks). Sort for hash stability.
 	type fileEntry struct {
-		name      string
-		isGala    bool
+		name   string
+		isGala bool
 	}
 	var entries []fileEntry
 	for _, f := range files {

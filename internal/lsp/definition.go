@@ -8,7 +8,6 @@ import (
 
 	"github.com/owenrumney/go-lsp/lsp"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/module"
@@ -27,16 +26,27 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		return nil, nil
 	}
 
-	word := wordAtPosition(text, int(params.Position.Line), int(params.Position.Character))
+	x := h.index(text)
+	line, char := x.toByte(params.Position)
+	locs, err := h.definitionLocations(uri, text, richAST, varTypeMap, line, char)
+	return h.locationsToWire(uri, x, locs), err
+}
+
+// definitionLocations resolves the definition of the identifier at a byte
+// column, answering in byte columns; Definition converts at the boundary.
+func (h *GalaHandler) definitionLocations(uri, text string, richAST *transpiler.RichAST, varTypeMap map[string]string, line, char int) ([]lsp.Location, error) {
+	word := wordAtPosition(text, line, char)
 	if word == "" {
 		return nil, nil
 	}
-	line := int(params.Position.Line)
-	char := int(params.Position.Character)
 
-	// Check if cursor is on a pattern binding (case Xxx(b, h) =>)
-	if loc := patternBindingDefinition(text, word, uri, line, char); loc != nil {
-		return []lsp.Location{*loc}, nil
+	// Check if cursor is on a pattern binding (case Xxx(b, h) =>). A package
+	// val named in a pattern is compared against, not bound, so it navigates to
+	// its declaration below instead.
+	if !isStablePatternName(word, richAST) {
+		if loc := patternBindingDefinition(text, word, uri, line, char); loc != nil {
+			return []lsp.Location{*loc}, nil
+		}
 	}
 
 	// Check if it's a dot-accessed method/field: receiver.Method or receiver.Field
@@ -94,7 +104,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 		for _, v := range typeMeta.SealedVariants {
 			if v.Name == word {
-				if loc := locationAt(typeMeta.DefinedIn, v.Pos, word); loc != nil {
+				if loc := h.locationAt(typeMeta.DefinedIn, v.Pos, word); loc != nil {
 					return []lsp.Location{*loc}, nil
 				}
 				if typeMeta.DefinedIn != "" {
@@ -126,7 +136,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	// cursor to a method the call site cannot even reach.
 	for _, fm := range richAST.Functions {
 		if fm.Name == word {
-			if loc := locationAt(fm.DefinedIn, fm.Pos, word); loc != nil {
+			if loc := h.locationAt(fm.DefinedIn, fm.Pos, word); loc != nil {
 				return []lsp.Location{*loc}, nil
 			}
 			if fm.DefinedIn != "" {
@@ -152,7 +162,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 			}
 		}
 		if typeName == word {
-			if loc := locationAt(typeMeta.DefinedIn, typeMeta.Pos, word); loc != nil {
+			if loc := h.locationAt(typeMeta.DefinedIn, typeMeta.Pos, word); loc != nil {
 				return []lsp.Location{*loc}, nil
 			}
 			if typeMeta.DefinedIn != "" {
@@ -179,7 +189,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		}
 		// Check methods
 		if method, ok := typeMeta.Methods[word]; ok {
-			if loc := locationAt(method.DefinedIn, method.Pos, word); loc != nil {
+			if loc := h.locationAt(method.DefinedIn, method.Pos, word); loc != nil {
 				return []lsp.Location{*loc}, nil
 			}
 			if method.DefinedIn != "" {
@@ -200,7 +210,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		// Check regular struct fields
 		for _, fn := range typeMeta.FieldNames {
 			if fn == word {
-				if loc := fieldDefinitionLocation(typeMeta, word); loc != nil {
+				if loc := h.fieldDefinitionLocation(typeMeta, word); loc != nil {
 					return []lsp.Location{*loc}, nil
 				}
 				if typeMeta.DefinedIn != "" {
@@ -224,7 +234,7 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 		for _, v := range typeMeta.SealedVariants {
 			for _, fn := range v.FieldNames {
 				if fn == word {
-					if loc := locationAt(typeMeta.DefinedIn, v.Pos, v.Name); loc != nil {
+					if loc := h.locationAt(typeMeta.DefinedIn, v.Pos, v.Name); loc != nil {
 						return []lsp.Location{*loc}, nil
 					}
 					loc := localDefinition(text, v.Name, uri)
@@ -263,8 +273,8 @@ func (h *GalaHandler) Definition(ctx context.Context, params *lsp.DefinitionPara
 	// are rare enough that most requests must not pay for it.
 	if _, isBinding := richAST.PackageVals[word]; isBinding {
 		_, isLocal := lookupVarTypeScoped(varTypeMap, findEnclosingFunc(lines, line), word)
-		if pv := packageValAt(richAST, word, uriToPath(uri), line, char, isLocal); pv != nil {
-			if loc := locationAt(pv.DefinedIn, pv.Pos, word); loc != nil {
+		if pv := packageValAt(richAST, word, uriToPath(uri), line, byteToRune(lines[line], char), isLocal); pv != nil {
+			if loc := h.locationAt(pv.DefinedIn, pv.Pos, word); loc != nil {
 				return []lsp.Location{*loc}, nil
 			}
 		}
@@ -300,40 +310,39 @@ func patternBindingDefinition(text, word, uri string, curLine, curChar int) *lsp
 		}
 
 		// Found a case line: case Constructor(a, b, c) =>
-		parenOpen := strings.Index(trimmed, "(")
-		parenClose := strings.Index(trimmed, ")")
+		// Offsets are taken on the untrimmed line, so they are columns.
+		line := lines[i]
+		parenOpen := strings.Index(line, "(")
+		parenClose := strings.Index(line, ")")
 		if parenOpen < 0 || parenClose < 0 || parenClose <= parenOpen {
 			continue
 		}
 
-		bindings := trimmed[parenOpen+1 : parenClose]
-		for _, binding := range strings.Split(bindings, ",") {
-			binding = strings.TrimSpace(binding)
-			// Strip type annotation if present: "x int" → "x"
-			parts := strings.Fields(binding)
-			if len(parts) == 0 {
-				continue
+		// Each binding is the first identifier of its comma-separated slot
+		// ("x" or "x int"), located by walking the slot itself: searching the
+		// line for the name finds it inside any longer identifier first — `a`
+		// in `area`.
+		start := parenOpen + 1
+		for start <= parenClose {
+			end := start + strings.IndexAny(line[start:parenClose+1], ",)")
+			col := start
+			for col < end && (line[col] == ' ' || line[col] == '\t') {
+				col++
 			}
-			varName := parts[0]
-			if varName == word {
-				// Found the binding — return its position on the case line
-				col := strings.Index(lines[i][parenOpen:], word)
-				if col >= 0 {
-					col += parenOpen
-					// Find the absolute position accounting for any offset
-					absCol := strings.Index(lines[i], lines[i][col:col+len(word)])
-					if absCol < 0 {
-						absCol = col
-					}
-					return &lsp.Location{
-						URI: lsp.DocumentURI(uri),
-						Range: lsp.Range{
-							Start: lsp.Position{Line: i, Character: absCol},
-							End:   lsp.Position{Line: i, Character: absCol + len(word)},
-						},
-					}
+			nameEnd := col
+			for nameEnd < end && isIdentChar(line[nameEnd]) {
+				nameEnd++
+			}
+			if line[col:nameEnd] == word {
+				return &lsp.Location{
+					URI: lsp.DocumentURI(uri),
+					Range: lsp.Range{
+						Start: lsp.Position{Line: i, Character: col},
+						End:   lsp.Position{Line: i, Character: nameEnd},
+					},
 				}
 			}
+			start = end + 1
 		}
 	}
 	return nil
@@ -367,7 +376,7 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 
 	// Check methods first
 	if method, ok := tm.Methods[word]; ok {
-		if loc := locationAt(method.DefinedIn, method.Pos, word); loc != nil {
+		if loc := h.locationAt(method.DefinedIn, method.Pos, word); loc != nil {
 			return loc
 		}
 		if method.DefinedIn != "" {
@@ -378,7 +387,7 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 		for i, line := range strings.Split(text, "\n") {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "func ") && strings.Contains(trimmed, receiverType) && strings.Contains(trimmed, word) {
-				col := strings.Index(line, word)
+				col := findWholeWord(line, word)
 				if col >= 0 {
 					return &lsp.Location{
 						URI: lsp.DocumentURI(uri),
@@ -403,7 +412,7 @@ func (h *GalaHandler) dotMethodDefinition(text, word, uri string, curLine, curCh
 	// Prefer the exact position recorded by the analyzer over any text search,
 	// which would mis-match identically-named tokens inside comments.
 	if _, ok := tm.Fields[word]; ok {
-		if loc := fieldDefinitionLocation(tm, word); loc != nil {
+		if loc := h.fieldDefinitionLocation(tm, word); loc != nil {
 			return loc
 		}
 		if tm.DefinedIn != "" {
@@ -616,8 +625,8 @@ func dirSymbolLocation(dir, name string) *lsp.Location {
 // (func with a receiver) are skipped — a package-qualified reference resolves
 // to a package-level symbol, not a method.
 func goSymbolLocation(filePath, name string) *lsp.Location {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
+	data, ok := readSource(filePath)
+	if !ok {
 		return nil
 	}
 	absPath, err := filepath.Abs(filePath)
@@ -626,7 +635,7 @@ func goSymbolLocation(filePath, name string) *lsp.Location {
 	}
 	uri := pathToURI(absPath)
 	keywords := []string{"func ", "type ", "const ", "var "}
-	for i, line := range strings.Split(string(data), "\n") {
+	for i, line := range strings.Split(data, "\n") {
 		trimmed := strings.TrimSpace(line)
 		for _, kw := range keywords {
 			if !strings.HasPrefix(trimmed, kw) {
@@ -697,10 +706,10 @@ func packageDeclLocation(filePath string) *lsp.Location {
 		return nil
 	}
 	uri := lsp.DocumentURI(pathToURI(absPath))
-	if data, err := os.ReadFile(absPath); err == nil {
-		// TrimSpace below does not drop a U+FEFF, so a leading BOM would hide a
-		// package clause sitting on line 1.
-		for i, line := range strings.Split(galaerr.StripBOM(string(data)), "\n") {
+	if data, ok := readSource(absPath); ok {
+		// readSource drops a leading BOM, which TrimSpace below would not, and
+		// which would hide a package clause sitting on line 1.
+		for i, line := range strings.Split(data, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "package ") {
 				return &lsp.Location{URI: uri, Range: lsp.Range{
 					Start: lsp.Position{Line: i, Character: 0},
@@ -767,8 +776,8 @@ func goMethodInDir(dir, typeName, method string) *lsp.Location {
 // goMethodInFile looks for `func (recv [*]typeName[...]) method(` in a .go file
 // and returns the location of the method identifier.
 func goMethodInFile(filePath, typeName, method string) *lsp.Location {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
+	data, ok := readSource(filePath)
+	if !ok {
 		return nil
 	}
 	absPath, err := filepath.Abs(filePath)
@@ -776,7 +785,7 @@ func goMethodInFile(filePath, typeName, method string) *lsp.Location {
 		return nil
 	}
 	uri := pathToURI(absPath)
-	for i, line := range strings.Split(string(data), "\n") {
+	for i, line := range strings.Split(data, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "func (") {
 			continue
@@ -912,17 +921,22 @@ func (h *GalaHandler) References(ctx context.Context, params *lsp.ReferenceParam
 		return nil, nil
 	}
 
-	word := wordAtPosition(text, int(params.Position.Line), int(params.Position.Character))
+	x := h.index(text)
+	line, char := x.toByte(params.Position)
+	word := wordAtPosition(text, line, char)
 	if word == "" {
 		return nil, nil
 	}
 
 	// The current document first, then every other file of its package, which
-	// is where a package-level symbol's declaration and other uses live.
-	locs := wordOccurrences(text, word, uri)
+	// is where a package-level symbol's declaration and other uses live. Each
+	// file's occurrences convert against the text they were found in.
+	locs := occurrencesToWire(x, wordOccurrences(text, word, uri))
 	for _, path := range h.packageFiles(uriToPath(uri), text) {
 		if src, ok := h.fileText(path); ok {
-			locs = append(locs, wordOccurrences(src, word, pathToURI(path))...)
+			if found := wordOccurrences(src, word, pathToURI(path)); len(found) > 0 {
+				locs = append(locs, occurrencesToWire(newLineIndex(src, x.enc), found)...)
+			}
 		}
 	}
 	return locs, nil
@@ -975,10 +989,10 @@ func localDefinition(text, name, uri string) *lsp.Location {
 			if len(trimmed) > len(p) && isIdentChar(trimmed[len(p)]) {
 				continue // "func perimeter" should not match pattern "func p"
 			}
-			col := strings.Index(line, name)
-			if col < 0 {
-				col = 0
-			}
+			// Every pattern ends with the name, so it sits at the end of the
+			// matched prefix — not wherever the name first occurs on the line,
+			// which for `val a` is inside the keyword.
+			col := strings.Index(line, trimmed) + len(p) - len(name)
 			return &lsp.Location{
 				URI: lsp.DocumentURI(uri),
 				Range: lsp.Range{
@@ -1014,7 +1028,10 @@ func findWholeWord(line, name string) int {
 // analyzer into an LSP Location. Prefer this over any text search: the
 // analyzer records the exact identifier position at parse time, so the result
 // is immune to identically-named tokens inside comments, strings, or aliases.
-func locationAt(definedIn string, pos transpiler.SourcePos, name string) *lsp.Location {
+//
+// The analyzer's column counts code points; the location is returned in byte
+// columns like every other internal position, so the file is read to convert.
+func (h *GalaHandler) locationAt(definedIn string, pos transpiler.SourcePos, name string) *lsp.Location {
 	if definedIn == "" || pos.Line == 0 {
 		return nil
 	}
@@ -1024,16 +1041,20 @@ func locationAt(definedIn string, pos transpiler.SourcePos, name string) *lsp.Lo
 	}
 	uri := pathToURI(absPath)
 	line := pos.Line - 1 // analyzer is 1-based, LSP is 0-based
+	col := pos.Column
+	if text, ok := h.fileText(absPath); ok {
+		col = runeToByte(nthLine(text, line), col)
+	}
 	return &lsp.Location{
 		URI: lsp.DocumentURI(uri),
 		Range: lsp.Range{
-			Start: lsp.Position{Line: line, Character: pos.Column},
-			End:   lsp.Position{Line: line, Character: pos.Column + len(name)},
+			Start: lsp.Position{Line: line, Character: col},
+			End:   lsp.Position{Line: line, Character: col + len(name)},
 		},
 	}
 }
 
-func fieldDefinitionLocation(tm *transpiler.TypeMetadata, fieldName string) *lsp.Location {
+func (h *GalaHandler) fieldDefinitionLocation(tm *transpiler.TypeMetadata, fieldName string) *lsp.Location {
 	if tm == nil {
 		return nil
 	}
@@ -1041,7 +1062,7 @@ func fieldDefinitionLocation(tm *transpiler.TypeMetadata, fieldName string) *lsp
 	if !ok {
 		return nil
 	}
-	return locationAt(tm.DefinedIn, pos, fieldName)
+	return h.locationAt(tm.DefinedIn, pos, fieldName)
 }
 
 // fileLocation searches a file for a declaration of name using keyword patterns.
@@ -1051,12 +1072,12 @@ func fileLocation(filePath, name string) *lsp.Location {
 	if err != nil {
 		return nil
 	}
-	data, err := os.ReadFile(absPath)
-	if err != nil {
+	data, ok := readSource(absPath)
+	if !ok {
 		return nil
 	}
 	uri := pathToURI(absPath)
-	return localDefinition(string(data), name, uri)
+	return localDefinition(data, name, uri)
 }
 
 // fileLocationBroad searches a file for name using keyword patterns first,
@@ -1067,12 +1088,12 @@ func fileLocationBroad(filePath, name string) *lsp.Location {
 	if err != nil {
 		return nil
 	}
-	data, err := os.ReadFile(absPath)
-	if err != nil {
+	data, ok := readSource(absPath)
+	if !ok {
 		return nil
 	}
 	uri := pathToURI(absPath)
-	text := string(data)
+	text := data
 
 	if loc := localDefinition(text, name, uri); loc != nil {
 		return loc

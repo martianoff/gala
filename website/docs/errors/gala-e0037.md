@@ -153,6 +153,7 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures function val
 
 The check follows the field path and judges what the path *lands on*, so a method call on a deeply-immutable field is fine even when the enclosing struct is not shareable as a whole:
 
+<!-- doc-check: fragment -->
 ```gala
 // All accepted — every read lands on a deeply-immutable field of `model`,
 // even though `model` also carries a `var attempts int`.
@@ -169,6 +170,7 @@ What is rejected is a path that passes through a `var` field, or one that bottom
 
 **Snapshot into a `val`.** Copy the value before the boundary so the closure captures a stable copy:
 
+<!-- doc-check: fragment -->
 ```gala
 val snapshot = counter
 Future(() => snapshot + 1)

@@ -4,6 +4,8 @@ package build
 import (
 	"os"
 	"path/filepath"
+
+	"martianoff/gala/internal/depman/fetch"
 )
 
 // Config holds configuration for the build system.
@@ -24,20 +26,21 @@ type Config struct {
 	// Defaults to GalaHome/go/pkg/mod
 	GoPkgDir string
 
-	// GalaPkgDir is where GALA dependencies are cached.
-	// Defaults to GalaHome/pkg/mod
+	// GalaPkgDir is where GALA dependencies are cached: GALA_CACHE if set,
+	// otherwise GalaHome/pkg/mod (see fetch.ModuleCacheDir). Dependencies are
+	// both fetched into and read from here.
 	GalaPkgDir string
 }
 
 // DefaultConfig returns the default build configuration.
 func DefaultConfig() *Config {
-	galaHome := defaultGalaHome()
+	galaHome := fetch.DefaultGalaHome()
 	return &Config{
 		GalaHome:   galaHome,
 		BuildDir:   defaultBuildDir(galaHome),
 		StdlibDir:  filepath.Join(galaHome, "stdlib"),
 		GoPkgDir:   filepath.Join(galaHome, "go", "pkg", "mod"),
-		GalaPkgDir: filepath.Join(galaHome, "pkg", "mod"),
+		GalaPkgDir: fetch.ModuleCacheDir(galaHome),
 	}
 }
 
@@ -74,22 +77,6 @@ func defaultBuildDir(galaHome string) string {
 		return dir
 	}
 	return filepath.Join(galaHome, "build")
-}
-
-// defaultGalaHome returns the default GALA home directory.
-// Uses GALA_HOME environment variable if set, otherwise ~/.gala
-func defaultGalaHome() string {
-	if dir := os.Getenv("GALA_HOME"); dir != "" {
-		return dir
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// Fall back to current directory
-		return filepath.Join(".", ".gala")
-	}
-
-	return filepath.Join(homeDir, ".gala")
 }
 
 // EnsureDirs creates all necessary directories.

@@ -174,6 +174,30 @@ func add(a int, b int) int {
 }
 ```
 
+A block-bodied function with a result type returns its trailing expression, exactly as
+a block lambda or a match arm does — the `return` is optional. The trailing value takes
+its type from the result type, as a `return` value would, and a trailing `if`/`else`
+carries the value in its branches:
+
+```gala
+func logged[U any](o Option[U]) Option[U] {
+    Println("visited")
+    o                                  // same as `return o`
+}
+
+func sign(n int) string {
+    if (n < 0) { "negative" } else { "non-negative" }
+}
+```
+
+Prefer the implicit trailing value. `return` stays valid, both at the end and for early
+exits such as `if (n < 0) { return None() }`. The body must end in a value, a `return`, or
+a diverging call such as `Panic(...)`. A
+body that can finish without a value — a trailing `Println(...)`, an assignment, an `if`
+with no `else` — is a compile error. A value computed only to be thrown away (a bare
+name, literal or operator expression as a statement, including the trailing statement
+of a function with no result type) is rejected as evaluated but not used.
+
 > **Note:** Every parameter states its own type. GALA does not support Go-style
 > grouped parameters (`func add(a, b int)`); write `func add(a int, b int)`
 > instead. The same applies to struct-shorthand fields. A grouped declaration
@@ -224,6 +248,7 @@ func process(val data string, var count int) {
 #### Multi-Line Parameters and Trailing Commas
 Parameter lists support trailing commas, enabling clean multi-line formatting:
 
+<!-- doc-check: fragment -->
 ```gala
 func createServer(
     host string,
@@ -329,10 +354,10 @@ func main() {
 Function type parameters work seamlessly with generics:
 
 ```gala
-func map[T any, U any](value T, f func(T) U) U = f(value)
+func transform[T any, U any](value T, f func(T) U) U = f(value)
 
 func main() {
-    val result = map[int, string](42, (x int) => fmt.Sprintf("%d", x))
+    val result = transform[int, string](42, (x int) => fmt.Sprintf("%d", x))
 }
 ```
 
@@ -382,6 +407,7 @@ the void `func()`), you may pass a plain expression where a lambda is expected.
 The expression is automatically lifted into `() => expr`, so it is evaluated
 lazily — each time the thunk is invoked — instead of eagerly at the call site:
 
+<!-- doc-check: fragment -->
 ```gala
 func runTwice(body func() int) int = body() + body()
 
@@ -456,6 +482,7 @@ type does not declare is [GALA-E0044](errors/GALA-E0044.md).
 #### Spreading Slices
 You can spread a slice into a variadic function call using `...`.
 
+<!-- doc-check: fragment -->
 ```gala
 val items = SliceOf(1, 2, 3, 4)
 val total = sum(items...)  // Spreads slice as variadic arguments
@@ -531,6 +558,7 @@ type Person struct {
 #### Struct Construction
 Structs can be constructed using traditional Go-style named fields or using a functional shorthand (positional or named arguments).
 
+<!-- doc-check: fragment -->
 ```gala
 // Named fields (Go-style)
 val p1 = Person{Name: "Alice", Age: 30}
@@ -566,6 +594,7 @@ Omitting a field that declares **no** default is an error
 ([GALA-E0045](errors/GALA-E0045.md)), so a constructor call cannot quietly leave
 a zero where a value belongs:
 
+<!-- doc-check: error GALA-E0045 -->
 ```gala
 struct Cfg(Name string, Tries int)
 
@@ -618,6 +647,7 @@ Every GALA struct automatically provides `Copy()` and `Equal(other)` methods.
 #### Copy Method with Overrides
 The `Copy()` method allows creating a copy of a struct with optional field overrides. This is similar to Scala's `copy` method.
 
+<!-- doc-check: fragment -->
 ```gala
 val p1 = Person("Alice", 30)
 val p2 = p1.Copy(age = 31) // p2 is Person("Alice", 31)
@@ -639,6 +669,7 @@ val inc = c.Copy(Op = (x) => x + 1) // x is int, taken from the field type
 #### Equal Method
 The `Equal(other)` method compares the struct with another of the same type, deeply comparing all fields.
 
+<!-- doc-check: fragment -->
 ```gala
 val p1 = Person("Alice", 30)
 val p2 = Person("Alice", 30)
@@ -701,6 +732,7 @@ on a plain, locally declared type — so a built-in, an imported type, an unname
 composite (slice, map, func) and an instantiated type are all
 [GALA-E0048](errors/GALA-E0048.md):
 
+<!-- doc-check: fragment -->
 ```gala
 type Millis int64
 func (d Millis) Value() int64 = int64(d)     // built-in target
@@ -759,6 +791,7 @@ sealed type Shape {
 
 The same applies in match patterns — `case Point` and `case Point()` are interchangeable:
 
+<!-- doc-check: fragment -->
 ```gala
 val desc = s match {
     case Circle(r) => ...
@@ -770,7 +803,7 @@ val desc = s match {
 
 Variants with one or more fields always require parentheses (`case Rectangle(w, h)`, not `case Rectangle`). Writing the bare form for a field-bearing variant is rejected with [GALA-E0039](errors/GALA-E0039.md): a bare identifier is otherwise a variable binding, and a binding matches *every* value, so the arm would silently become a catch-all.
 
-The rule is scoped to the type being matched. A bare identifier that does not name a variant of the match subject's type is an ordinary binding, exactly as before:
+The rule is scoped to the type being matched. A bare identifier that does not name a variant of the match subject's type — and, if capitalized, does not name an in-scope value (see [Stable Identifiers](#stable-identifiers-constants-in-patterns)) — is an ordinary binding:
 
 ```gala
 val n = 42
@@ -788,6 +821,8 @@ This generates:
 - `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type.
 
 #### Construction and Pattern Matching
+
+<!-- doc-check: fragment -->
 ```gala
 val c = Circle(3.14)
 val r = Rectangle(10.0, 20.0)
@@ -824,6 +859,7 @@ contexts and the propagation mechanism are described in
 #### Wildcard Catch-All in Sealed Match
 When you only care about a subset of variants, use `case _ =>` as a catch-all instead of listing every variant. This is valid for exhaustive matching:
 
+<!-- doc-check: fragment -->
 ```gala
 sealed type Animal {
     case Dog(Name string)
@@ -843,6 +879,7 @@ control falls through to later cases when the guard is false. So a guarded
 wildcard may precede a real `case _` default without conflicting with it — only
 an *unguarded* `case _` counts as the default:
 
+<!-- doc-check: fragment -->
 ```gala
 val label = n match {
     case 0           => "zero"
@@ -856,6 +893,7 @@ When a `match` is used as a statement — its value is discarded — the arms ar
 pure side-effect dispatch and need not produce a common type. This lets each
 arm call a different function whose result is ignored:
 
+<!-- doc-check: fragment -->
 ```gala
 // value discarded: arms may return different types (string, bool, void)
 c match {
@@ -915,6 +953,7 @@ GALA supports `if` in two forms: as a **statement** (with blocks) and as an **ex
 #### If Statement (with blocks)
 Use blocks `{ ... }` for side effects. The `else` branch is optional. Braces are required.
 
+<!-- doc-check: fragment -->
 ```gala
 if x > 10 {
     fmt.Println("large")
@@ -935,6 +974,7 @@ if x > 100 {
 #### If Expression
 Use the expression form to produce a value. Parentheses around the condition are required, and both branches must be present. Branches can be either simple expressions or blocks.
 
+<!-- doc-check: fragment -->
 ```gala
 // Simple expressions
 val status = if (score > 50) "pass" else "fail"
@@ -958,8 +998,9 @@ val label = if (count > 1) {
 Both forms compile to a Go IIFE (immediately invoked function expression), so they can be used anywhere an expression is expected: `val` initializers, function arguments, return values, etc.
 
 ### Match Expression
-The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases.
+The `match` expression provides powerful pattern matching, supporting literals, variable bindings, and extractors. GALA follows Scala semantics for pattern matching, where the pattern (or an extractor) is responsible for matching against the object. A default case (`_`) is required unless matching on a sealed type with all variants covered (exhaustive match) or matching on boolean values with both `true` and `false` cases. An unguarded arm that matches every value serves as the default: `case _`, a plain binding (`case n`), or a tuple pattern of the subject's arity whose every element is a wildcard, a binding, or a nested such tuple (`case (_, _, err)` over a `Tuple3`).
 
+<!-- doc-check: fragment -->
 ```gala
 val result = x match {
     case 1 => "one"
@@ -977,6 +1018,7 @@ val desc = flag match {
 
 **Unused variable rule:** All variables extracted in match patterns must be referenced in the branch body or guard expression. Unused variables cause a compiler error. Use `_` to explicitly discard values you don't need:
 
+<!-- doc-check: fragment -->
 ```gala
 // ERROR: unused variable 'y' in match branch
 case Some(y) => "has value"
@@ -991,9 +1033,50 @@ case Some(y) => fmt.Sprintf("got %d", y)
 case Some(y) if y > 0 => "positive"
 ```
 
+#### Stable Identifiers (Constants in Patterns)
+As in Scala, a **capitalized** bare identifier in a `case` pattern that names a value in scope is a *stable identifier*: the arm compares the subject with that value using Go's `==` instead of binding a new variable. The value can be:
+
+- a local `val`/`var` or a function parameter,
+- a package-level `val`/`var` from any file of the package,
+- a name bound by an enclosing `case` arm,
+- a `const`/`var` declared in a hand-written `.go` file of the same package. This works in library packages only, not in `package main`, and not when the file imports a package with the same name as its own (such as GALA's `fs` importing Go's `io/fs`): the Go declarations of the two cannot be told apart, so the name binds.
+
+```gala
+type Environment string
+
+val Development Environment = "development"
+val Production Environment = "production"
+
+func describe(env Environment) string = env match {
+    case Development => "dev"            // env == Development
+    case Production  => "prod"           // env == Production
+    case _           => s"other: $env"
+}
+```
+
+Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`, and in partial functions. A qualified name such as `case math.MaxInt8` is always compared, never bound. Because the comparison is Go's `==`, the value's type must be comparable with the matched type: an `Array`, a `List` or a function value fails in the Go build. A stable-identifier arm is conditional, so the match still needs a `case _` default.
+
+A few edge cases:
+
+- **Variants and extractors come first.** A name that is a zero-field sealed variant or extractor (`case None`, `case Debug`) matches that variant, even if a value has the same name.
+- **Lowercase names always bind.** A lowercase identifier is a fresh binding even when an outer value has the same name: it shadows that value and matches everything. To compare against a lowercase value, use a guard (below).
+- **A name cannot appear twice in one pattern.** `case (X, X)` and `case (x, x)` are rejected, because a name bound earlier in the same pattern is not a value to compare with. To match equal parts, use `case (a, b) if a == b`.
+- **Unknown names bind.** A capitalized identifier that names no value, variant or extractor still binds, as shown in [Basic Sealed Type](#basic-sealed-type).
+- **Declarations bind.** Destructuring declarations such as `val (A, b) = pair` are not patterns in this sense: every name in them is a new binding.
+
+```gala
+val limit = 10
+val n = 12
+val r = n match {
+    case x if x == limit => "at the limit"
+    case x               => s"bound $x"
+}
+```
+
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.
 
+<!-- doc-check: fragment -->
 ```gala
 val res = x match {
     case s: string => "Found string: " + s
@@ -1010,8 +1093,8 @@ type Wrap[T any] struct { Value T }
 
 val w = Wrap[int](Value = 42)
 val res = w match {
-    case i: Wrap[int]    => "Wrapped int"
-    case s: Wrap[string] => "Wrapped string"
+    case i: Wrap[int]    => s"Wrapped int ${i.Value}"
+    case s: Wrap[string] => s"Wrapped string ${s.Value}"
     case _               => "Other"
 }
 ```
@@ -1030,6 +1113,7 @@ opt match {
 #### Wildcard Type Patterns
 GALA supports using the underscore `_` as a type in typed patterns. This matches any type and is equivalent to matching against `any`.
 
+<!-- doc-check: fragment -->
 ```gala
 val res = x match {
     case v: _ => "Matched any type: " + fmt.Sprintf("%T", v)
@@ -1061,7 +1145,7 @@ struct Person(Name string, Age int)
 
 val p = Person("Alice", 30)
 val msg = p match {
-    case Person(name, 30) => "Alice is 30"
+    case Person(name, 30) => name + " is 30"
     case Person(_, age)   => "Someone else is " + fmt.Sprintf("%d", age)
     case _                => "Unknown"
 }
@@ -1089,6 +1173,8 @@ func (p Positive) Unapply(i int) bool = i > 0
 ```
 
 **Important:** The parameter and return types must be concrete or properly parameterized. The following is **NOT allowed**:
+
+<!-- doc-check: fragment -->
 ```gala
 // INVALID - will cause a compile error
 func (e MyExtractor) Unapply(v any) any  // Unapply(any) any is not supported
@@ -1098,6 +1184,7 @@ func (e MyExtractor) Unapply(v any) any  // Unapply(any) any is not supported
 
 For extractors that work with generic container types, define a generic extractor that mirrors the container's type parameters:
 
+<!-- doc-check: fragment -->
 ```gala
 // Extractor for Wrap[T] containers
 type Wrapper[T any] struct {}
@@ -1115,6 +1202,7 @@ The transpiler infers the type parameter `T` from the matched type, so `Wrapper`
 
 **Pointer types** are also supported for extractor type inference:
 
+<!-- doc-check: fragment -->
 ```gala
 // Extractor for pointer to generic container
 type Unwrap[T any] struct {}
@@ -1129,6 +1217,7 @@ val res = c match {
 
 **Explicit type parameters** can also be provided when needed:
 
+<!-- doc-check: fragment -->
 ```gala
 val res = c match {
     case Unwrap[int](v) => v  // Explicit type parameter
@@ -1171,6 +1260,7 @@ declares — use `_` for fields you don't care about. See
 #### Pattern Matching Filters (Guards)
 Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables.
 
+<!-- doc-check: fragment -->
 ```gala
 val res = x match {
     case i: int if i > 100 => "Large integer"
@@ -1246,6 +1336,7 @@ for the rest of the block. The first failure short-circuits the whole block. Thi
 the nested `FlatMap` "pyramid" — every intermediate value is in scope, even one reused
 several steps later (the "graph" shape a linear pipe cannot express):
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] {
     bind o = fetchOrder(id)
@@ -1270,6 +1361,7 @@ inside a `Try` block: `bind n = strconv.Atoi(text)`.
 `also` clauses may not reference each other — use `bind` when a later step needs an
 earlier value.
 
+<!-- doc-check: fragment -->
 ```gala
 // Validated: report ALL invalid fields at once, not just the first
 func makePerson(name string, email string, age int) Validated[string, Person] {
@@ -1311,6 +1403,7 @@ for count < 5 {
 #### Infinite Loop
 An infinite loop that runs until explicitly broken:
 
+<!-- doc-check: fragment -->
 ```gala
 for {
     // Process forever or break when done
@@ -1417,6 +1510,7 @@ use `_` as a placeholder for each argument. The transpiler rewrites the
 expression into a lambda whose parameter count equals the number of `_`
 tokens, left-to-right:
 
+<!-- doc-check: fragment -->
 ```gala
 val nums = ArrayOf[int](1, 2, 3, 4, 5)
 
@@ -1458,6 +1552,7 @@ val r2 = pf(5)  // None[string]
 #### Syntax
 A partial function literal is a block that starts with `case` clauses:
 
+<!-- doc-check: fragment -->
 ```gala
 { case pattern1 => result1 case pattern2 => result2 }
 ```
@@ -1741,6 +1836,7 @@ form or config can report all of its problems at once. It lives in the `validati
 package (`import . "martianoff/gala/validation"`), kept separate from `Either`'s
 fail-fast semantics.
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/validation"
 
@@ -1769,6 +1865,7 @@ and the [Monadic Binding](#bind--also--monadic-binding) subsection.
 ### Try Monad
 `Try[T]` is a sealed type representing a computation that may either succeed with a value of type T or fail with an error. It provides a functional approach to error handling, similar to Scala's Try monad.
 
+<!-- doc-check: fragment -->
 ```gala
 // Defined as a sealed type in std:
 sealed type Try[T any] {
@@ -1824,6 +1921,7 @@ val either = success.ToEither()   // Either[error, int]
 #### Railway-Oriented Programming
 Try enables elegant error handling pipelines where errors short-circuit the chain:
 
+<!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] =
     fetchOrder(id)
@@ -1907,6 +2005,7 @@ also how a Go function returning only an `error` becomes a `Try[Void]`:
 
 **Value type (handle pattern):** `Future[T]` is a value type — pass it by value, never as `*Future[T]`. Although a Future holds mutable shared state (mutex, signal, completion flag), that state lives behind a pointer wrapped inside the Future, so copying a Future copies the handle and preserves its identity and synchronization. Use `Future[T]` in explicit type annotations (function signatures, struct fields):
 
+<!-- doc-check: fragment -->
 ```gala
 // Function returning a Future — use Future[T]
 func fetchUser(id int) Future[User] = Future[User](loadFromDB(id))
@@ -1925,6 +2024,7 @@ defers the work onto the execution context rather than running it eagerly at the
 call site. With `val` and type inference, the type parameter is inferred from the
 body automatically (`Future(expr)` needs no explicit `[T]`):
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/concurrent"
 
@@ -1977,6 +2077,7 @@ val codec = Codec[Person](SnakeCase())
 
 All operations return `Try[T]` for safe error handling:
 
+<!-- doc-check: fragment -->
 ```gala
 val person = Person("Alice", "Smith", 30)
 
@@ -1996,6 +2097,7 @@ decoded.ForEach((p) => Println(s"Name: ${p.FirstName}"))
 
 Codec instances work as pattern matching extractors via `Unapply`:
 
+<!-- doc-check: fragment -->
 ```gala
 val result = jsonStr match {
     case codec(p) => s"Found: ${p.FirstName}, age ${p.Age}"
@@ -2014,6 +2116,7 @@ val result = jsonStr match {
 
 #### Qualified Import
 
+<!-- doc-check: fragment -->
 ```gala
 import "martianoff/gala/json"
 
@@ -2050,6 +2153,12 @@ codec.Encode(user).Get()
 ```
 
 The decoder silently drops fields that are not declared on the target struct — there is no strict mode. See the website [Json docs](https://martianov.dev/docs/json/) for the long-form treatment.
+
+#### Field Types
+
+A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string or an alias of `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`.
+
+Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List` or `HashMap` in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
 
 ### Yaml
 
@@ -2113,7 +2222,9 @@ type FieldEncoder interface {
     WriteString(v string)
     WriteInt(v int)
     WriteInt64(v int64)
+    WriteUint64(v uint64)
     WriteFloat64(v float64)
+    WriteFloat32(v float32)
     WriteBool(v bool)
     WriteRune(v rune)
     WriteNull()
@@ -2123,6 +2234,8 @@ type FieldEncoder interface {
     WriteEndArray()
 }
 ```
+
+The decoder side mirrors it (`ReadString`, `ReadInt`, `ReadInt64`, `ReadFloat64`, …). The sized kinds are range-checked by the decoder: `ReadIntN(bitSize)` and `ReadUintN(bitSize)` must reject a value that does not fit `bitSize` bits (`0` is the platform `uint` size), and `ReadFloat32` one that overflows `float32` — generated code converts their result to the field's kind, so a decoder that wraps instead would corrupt data. The encoder writes int8…int32 through `WriteInt64` and every unsigned kind through `WriteUint64`.
 
 Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the transpiler will auto-inject StructMeta for your format too.
 
@@ -2156,6 +2269,7 @@ val digits = regex.MustCompile("\\d+")
 
 #### Matching and Searching
 
+<!-- doc-check: fragment -->
 ```gala
 digits.Matches("abc123")          // true
 digits.FindFirst("abc 123 def")   // Some("123")
@@ -2193,6 +2307,7 @@ import "martianoff/gala/io"
 
 #### Creating IO Values
 
+<!-- doc-check: fragment -->
 ```gala
 // Pure value (no side effects)
 val pure = io.Of(42)
@@ -2212,6 +2327,7 @@ val fromTry = io.FromTry(Success(42))
 
 #### Running IO
 
+<!-- doc-check: fragment -->
 ```gala
 val result = pure.Run()        // Try[int] — Success(42)
 val value = pure.UnsafeRun()   // int — 42 (panics on failure)
@@ -2219,6 +2335,7 @@ val value = pure.UnsafeRun()   // int — 42 (panics on failure)
 
 #### Composing IO
 
+<!-- doc-check: fragment -->
 ```gala
 // Map: transform success value
 val doubled = io.Map(io.Of(21), (x) => x * 2)
@@ -2342,6 +2459,7 @@ RemoveAll(dir).Get()
 `Try`-returning ops chain naturally with `FlatMap` so a multi-step
 filesystem flow short-circuits on the first failure:
 
+<!-- doc-check: fragment -->
 ```gala
 val flow = MkdirTemp("", "x_")
     .FlatMap[string]((d) => WriteFileString(path.Join(d, "f"), "ok", 0o644)
@@ -2498,6 +2616,7 @@ Everywhere else — that is, anywhere a value is expected — is an expression, 
 Go slice or map type may not appear there. The three shapes Go allows and GALA
 does not:
 
+<!-- doc-check: error GALA-E0040 -->
 ```gala
 val m = EmptyHashMap[string, []byte]()   // NO: explicit type argument on a call
 val b = []byte("hi")                     // NO: conversion
@@ -2798,6 +2917,19 @@ val scaled = 1.5e-3   // scientific notation
 
 Hex literals transpile to Go as-is, so any valid Go hex integer is a valid GALA hex integer.
 
+Binary (`0b1010`) and octal (`0o644`, or Go's classic `0644`) integers work the same way. As in
+Go, a leading `0` makes an integer literal octal, so `08` or `0129` is a syntax error ("invalid
+digit '8' in octal literal"); drop the leading zeros for a decimal number. Floats may keep
+leading zeros (`08.5`).
+
+### Source Text
+
+A `.gala` file is UTF-8 text, under the same rules as Go source: it must be valid UTF-8 and may
+not contain a NUL character or a byte order mark — except one byte order mark as the very first
+character, which is ignored. The rule covers comments and literals too. To put one of these
+values in a string, write it as an escape (`"\x00"`, `"\xff"`, `"\uFEFF"`). A violation is
+reported as [GALA-E0051](errors/GALA-E0051.md) at the offending character.
+
 ### String Literals
 GALA supports Go-style string literals:
 
@@ -2876,6 +3008,7 @@ If no `%spec` is given after a variable in an `f"..."` string, the format verb i
 
 String literals can be used freely inside `${...}` expressions — the lexer correctly tracks brace nesting and embedded quotes:
 
+<!-- doc-check: fragment -->
 ```gala
 import "strings"
 import . "martianoff/gala/collection_immutable"
@@ -2898,6 +3031,7 @@ val sub = s"${r.CtxGet(\"jwt-sub\").GetOrElse(\"none\")}"
 
 `Println` and `Print` are available without any import. They map directly to `fmt.Println` and `fmt.Print`:
 
+<!-- doc-check: fragment -->
 ```gala
 // No import needed
 Println("Hello, World!")
@@ -2928,6 +3062,7 @@ val letterA = rune(97)      // 'a'
 ### Type Conversions
 GALA supports Go-style type conversions using function call syntax:
 
+<!-- doc-check: fragment -->
 ```gala
 // Numeric conversions
 val n = int64(42)
@@ -3015,6 +3150,7 @@ Go's `if init; cond { … }` — a binding, a `;`, then the condition — is **n
 part of GALA's statement surface. A use is a hard transpile error
 (**GALA-E0047**).
 
+<!-- doc-check: fragment -->
 ```gala
 // NOT GALA
 if n, err := strconv.Atoi(text); err != nil { … }
@@ -3048,9 +3184,10 @@ satisfy `Close() error`. Multiple `use` bindings release **LIFO** (last acquired
 closes first), so nested resources unwind in the right order. No import is
 needed.
 
+<!-- doc-check: fragment -->
 ```gala
 // Two resources; `out` (acquired last) closes first, `in` closes last.
-func copyFile(src string, dst string) Try[Int] = Try(() => {
+func copyFile(src string, dst string) Try[int] = Try(() => {
     use in  = OpenFile(src)
     use out = CreateFile(dst)
     out.Write(in.ReadString())
@@ -3069,6 +3206,7 @@ When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]`
 
 A package-level `val` is a `std.Immutable[T]` in the generated Go, but it reads as a plain `T` wherever it is referenced: in its own file, in another file of the same package, and from another package — qualified (`colors.Green`), through an import alias (`c.Green`), or bare under a dot-import. A package-level `var` is a plain Go variable and stays reassignable from any package that can see it. Reassigning another package's `val` is an error, as it is for a same-package one.
 
+<!-- doc-check: fragment -->
 ```gala
 // package colors
 val Green = NamedColor(2)
@@ -3088,6 +3226,7 @@ GALA distinguishes between **pointer binding immutability** (whether the pointer
 
 #### val vs var Pointer Bindings
 
+<!-- doc-check: fragment -->
 ```gala
 var data = 42
 
@@ -3122,6 +3261,7 @@ type Node struct {
 
 **Compile-time error:** GALA prevents assigning `nil` to an immutable pointer field, since it would be useless (forever nil):
 
+<!-- doc-check: fragment -->
 ```gala
 type BadNode struct {
     next *Node  // immutable pointer
@@ -3185,6 +3325,7 @@ val value = *ptr  // Returns 42
 
 When accessing fields through `ConstPtr`, use direct field access syntax. The transpiler automatically inserts `Deref()` calls:
 
+<!-- doc-check: fragment -->
 ```gala
 val alice = Person(name = "Alice", age = 30)
 val team = Team(leader = &alice, memberCount = 5)
@@ -3199,6 +3340,7 @@ fmt.Println(team.leader.Deref().name)  // "Alice"
 
 This works with nested ConstPtr access too:
 
+<!-- doc-check: fragment -->
 ```gala
 val node2 = ImmutableNode(value = 20, next = NewConstPtr[ImmutableNode](nil))
 val node1 = ImmutableNode(value = 10, next = &node2)
@@ -3214,6 +3356,7 @@ fmt.Println(node1.next.Deref().value)  // 20
 
 The `*` operator on `ConstPtr` works for reading, just like regular pointers:
 
+<!-- doc-check: fragment -->
 ```gala
 val data = 42
 val ptr = &data  // ConstPtr[int]
@@ -3262,6 +3405,7 @@ fmt.Println(team.leader.name)  // "Alice"
 
 Functions can accept `ConstPtr[T]` parameters to guarantee they won't modify the pointed-to data:
 
+<!-- doc-check: fragment -->
 ```gala
 // Function accepts read-only pointer - use auto-deref for field access
 func getPersonName(p ConstPtr[Person]) string = p.name
@@ -3315,6 +3459,7 @@ fmt.Println(node1.next.next.value)  // 30
 
 #### Nil Checking
 
+<!-- doc-check: fragment -->
 ```gala
 val nilPtr = NewConstPtr[int](nil)
 val validPtr = &someValue
@@ -3342,6 +3487,7 @@ A single name bound to a Go call that returns several results gets one GALA valu
 
 **Use `var` for Go multi-return values** when you need to pass the results back to Go APIs:
 
+<!-- doc-check: fragment -->
 ```gala
 import "net/http"
 import "io"
@@ -3394,6 +3540,7 @@ sealed type Shape {
 }
 ```
 
+<!-- doc-check: fragment -->
 ```gala
 // ops.gala
 package shapes
@@ -3705,6 +3852,7 @@ This means there is exactly one valid in-directory test pattern: the **internal 
 
 Internal tests use the same package as the library, allowing access to unexported identifiers:
 
+<!-- doc-check: fragment -->
 ```gala
 package mypackage
 
@@ -4083,6 +4231,7 @@ If the Go SDK is not found, transpilation still succeeds but Go type inference i
 ### Optional Values in Immutable Fields
 Use `Option[T]` instead of nil for fields that may have no value. This follows the Scala idiom where null is avoided entirely.
 
+<!-- doc-check: fragment -->
 ```gala
 // BAD: Using nil with mutable field
 type Node[T any] struct {
@@ -4119,6 +4268,8 @@ val end = Node[int](value = 0, next = () => None[Node[T]]())
 - **Chain operations** - `list.Filter((x) => x > 0).Map((x) => x * 2)` is clearer than nested loops
 
 ### Lambda Syntax
+
+<!-- doc-check: fragment -->
 ```gala
 // Prefer implicit parameter types — the compiler infers them from context
 list.Map((x) => x * 2)
@@ -4141,6 +4292,7 @@ val f = (x int) => x * 2
 - **Exhaustive matching** - Match expressions covering all variants of a sealed type don't need `case _ =>`. The transpiler verifies exhaustiveness and reports missing variants
 - **Use sealed types instead of iota enums** - `sealed type Color { case Red() case Green() case Blue() }` instead of `const ( Red = iota; Green; Blue )`
 
+<!-- doc-check: fragment -->
 ```gala
 // BAD: Manual discriminator with iota
 type Shape struct {
@@ -4218,6 +4370,7 @@ val f = (x int) => x * 2  // standalone lambda, no method context
 
 When designing library APIs, use concrete function types so that callers benefit from lambda parameter type inference:
 
+<!-- doc-check: fragment -->
 ```gala
 // GOOD: Concrete param types — callers can write (req) => ...
 type Handler func(Request) Response
@@ -4229,6 +4382,7 @@ GET("/", (req) => Ok("hello"))
 GET("/users", (req) => JsonResponse(getUsers()))
 ```
 
+<!-- doc-check: fragment -->
 ```gala
 // BAD: 'any' params — callers must annotate lambda types
 func GET(path string, handler func(any) any) { ... }
@@ -4484,6 +4638,7 @@ A line of the form `name: description`, where `name` matches a declared
 parameter, documents that parameter. Signature help shows it against the
 parameter being typed rather than repeating the whole comment.
 
+<!-- doc-check: fragment -->
 ```gala
 // Map builds a new option by applying a function to all values of this option.
 // f: the function to apply.

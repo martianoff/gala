@@ -50,6 +50,7 @@ The caret underlines the default expression itself — this check records an exa
 
 Adjust the default to match the parameter type, or change the type to match the intended default:
 
+<!-- doc-check: fragment -->
 ```gala
 func create(a int = 0) int = a
 func create(a string = "not-an-int") string = a

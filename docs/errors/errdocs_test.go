@@ -69,3 +69,15 @@ func TestTitleIsTheHeadingWithoutTheCode(t *testing.T) {
 	// An unknown code has no heading to read and falls back to the input.
 	require.Equal(t, "GALA-E9999", Title("GALA-E9999"))
 }
+
+// TestPageDropsDocCheckMarkers: the documentation test's `<!-- doc-check: ... -->`
+// markers are invisible on the website but would print verbatim in
+// `gala explain`, so Page strips them.
+func TestPageDropsDocCheckMarkers(t *testing.T) {
+	for _, code := range Codes() {
+		page, err := Page(code)
+		require.NoError(t, err)
+		require.NotContains(t, page, "doc-check:", code)
+	}
+	require.Equal(t, "a\n```gala\nx\n```", stripDocCheckMarkers("a\n<!-- doc-check: fragment -->\n```gala\nx\n```"))
+}

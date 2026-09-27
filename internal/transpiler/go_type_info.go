@@ -10,8 +10,14 @@ type GoTypeInfo struct {
 	Types map[string]*GoTypeData
 	// Variables maps "pkg.VarName" -> type
 	Variables map[string]Type
-	// Constants maps "pkg.ConstName" -> type
+	// Constants maps "pkg.ConstName" -> type. An untyped constant is recorded
+	// under its default type (`math.MaxInt8` -> int).
 	Constants map[string]Type
+	// UntypedConstants holds the "pkg.ConstName" keys of constants declared
+	// without a type (`const MaxInt8 = 1<<7 - 1`). Like an untyped literal,
+	// such a constant takes the type of the slot it is assigned to, so its
+	// Constants entry is only the fallback default.
+	UntypedConstants map[string]bool
 	// TypeAliases maps "pkg.AliasName" -> underlying type
 	// Go type aliases (type X = Y) are resolved to their underlying type.
 	TypeAliases map[string]Type
@@ -53,12 +59,20 @@ type GoTypeData struct {
 // NewGoTypeInfo creates an empty GoTypeInfo.
 func NewGoTypeInfo() *GoTypeInfo {
 	return &GoTypeInfo{
-		Functions:   make(map[string]*GoFuncSignature),
-		Types:       make(map[string]*GoTypeData),
-		Variables:   make(map[string]Type),
-		Constants:   make(map[string]Type),
-		TypeAliases: make(map[string]Type),
+		Functions:        make(map[string]*GoFuncSignature),
+		Types:            make(map[string]*GoTypeData),
+		Variables:        make(map[string]Type),
+		Constants:        make(map[string]Type),
+		UntypedConstants: make(map[string]bool),
+		TypeAliases:      make(map[string]Type),
 	}
+}
+
+// IsEmpty reports whether g declares nothing: no functions, types, variables,
+// constants or type aliases.
+func (g *GoTypeInfo) IsEmpty() bool {
+	return len(g.Functions) == 0 && len(g.Types) == 0 && len(g.Variables) == 0 &&
+		len(g.Constants) == 0 && len(g.TypeAliases) == 0
 }
 
 // Merge combines another GoTypeInfo into this one.
@@ -77,6 +91,12 @@ func (g *GoTypeInfo) Merge(other *GoTypeInfo) {
 	}
 	for k, v := range other.Constants {
 		g.Constants[k] = v
+	}
+	if len(other.UntypedConstants) > 0 && g.UntypedConstants == nil {
+		g.UntypedConstants = make(map[string]bool, len(other.UntypedConstants))
+	}
+	for k, v := range other.UntypedConstants {
+		g.UntypedConstants[k] = v
 	}
 	for k, v := range other.TypeAliases {
 		g.TypeAliases[k] = v

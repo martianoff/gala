@@ -31,6 +31,7 @@ val f = (x int) => x + 1
 …or place the lambda in a typed context, which threads the declared signature
 into the lambda so the parameter types are inferred:
 
+<!-- doc-check: fragment -->
 ```gala
 val f func(int) int = (x) => x + 1               // declared val type
 arr.Map((x) => x * 2)                            // method argument

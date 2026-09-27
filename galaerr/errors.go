@@ -533,6 +533,27 @@ const (
 	// Also reported for a Go call returning more than ten values, which no
 	// Tuple holds.
 	CodeGoCallResultAsValue ErrorCode = "GALA-E0049"
+
+	// E0050: a codec (`json.Codec[T]`, `yaml.Codec[T]`, `StructMeta[T]()`)
+	// was requested for a struct with a field whose type has no encoding — a
+	// function, a pointer, a Go slice or map, a sealed type, a generic struct,
+	// a struct with no fields, a HashMap with non-string keys, or an Option
+	// inside an Option — or for a requested type that is itself one of these.
+	//
+	// The generated EncodeFields/DecodeFields used to emit `null` for such a
+	// field and skip it on decode, so the value was silently lost: encoding
+	// succeeded and decoding returned a zero value. A shape the codec cannot
+	// represent is now rejected where the codec is requested.
+	CodeUnsupportedCodecField ErrorCode = "GALA-E0050"
+
+	// E0051: the source text contains a character Go source may not contain:
+	// invalid UTF-8, a NUL character, or a byte order mark anywhere but the
+	// very start of the file. GALA copies a literal's raw text verbatim into
+	// the generated Go, so inside a literal these used to reach Go source,
+	// where they are illegal: NUL and U+FEFF surfaced as an internal
+	// transpiler error, and invalid UTF-8 was silently decoded to U+FFFD,
+	// compiling a string with a different value than the one written.
+	CodeIllegalSourceCharacter ErrorCode = "GALA-E0051"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

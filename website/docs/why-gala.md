@@ -193,6 +193,7 @@ Go's `if err != nil` pattern is explicit and clear. It is also repetitive. When 
 
 ### GALA
 
+<!-- doc-check: fragment -->
 ```gala
 import "os"
 import "strconv"
@@ -225,6 +226,7 @@ val output = parseInput(raw) match {
 
 Side-effect methods (`OnSuccess`/`OnFailure`, `OnSome`/`OnNone`, `OnRight`/`OnLeft`) let you insert logging, metrics, or debugging into a pipeline without breaking the chain:
 
+<!-- doc-check: fragment -->
 ```gala
 func findBinary() Option[string] =
     exec.LookPath("gala")
@@ -269,6 +271,7 @@ Go slices are bare arrays. To filter a slice, you write a for loop. To transform
 
 ### GALA
 
+<!-- doc-check: fragment -->
 ```gala
 import . "martianoff/gala/collection_immutable"
 
@@ -331,6 +334,7 @@ A transpiled language is only as useful as its ability to call existing code. If
 
 GALA transpiles directly to Go. Every Go package is importable, every Go type is usable, and every Go function is callable:
 
+<!-- doc-check: fragment -->
 ```gala
 import "os"
 import "net/http"
@@ -364,6 +368,7 @@ Go requires explicit types in many places where the compiler has enough informat
 
 ### GALA
 
+<!-- doc-check: fragment -->
 ```gala
 // Types inferred from values
 val x = 42                    // int

@@ -290,7 +290,7 @@ import (
     "martianoff/gala/go_interop"
 )
 
-func echoOpts(): SpawnOpts = SpawnOpts(
+func echoOpts() SpawnOpts = SpawnOpts(
     Cmd  = "echo",
     Args = go_interop.SliceOf("hello world"),
     Env  = go_interop.SliceEmpty[string](),
@@ -333,7 +333,7 @@ import (
     "martianoff/gala/go_interop"
 )
 
-func shellOpts(script string): SpawnOpts = {
+func shellOpts(script string) SpawnOpts {
     val cmd = if (runtime.GOOS == "windows") "cmd" else "sh"
     val flag = if (runtime.GOOS == "windows") "/c" else "-c"
     return SpawnOpts(
@@ -344,7 +344,7 @@ func shellOpts(script string): SpawnOpts = {
     )
 }
 
-func sortOpts(): SpawnOpts = SpawnOpts(
+func sortOpts() SpawnOpts = SpawnOpts(
     Cmd  = "sort",
     Args = go_interop.SliceEmpty[string](),
     Env  = go_interop.SliceEmpty[string](),

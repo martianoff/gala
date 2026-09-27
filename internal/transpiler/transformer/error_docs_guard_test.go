@@ -547,6 +547,42 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "codec requested for a struct with a function field",
+			code: galaerr.CodeUnsupportedCodecField, // GALA-E0050
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "martianoff/gala/json"
+
+struct Job(Name string, Run func() int)
+
+func main() {
+    val codec = json.Codec[Job](json.AsIs())
+    Println(codec.Encode(Job("build", () => 1)))
+}
+`)
+			},
+		},
+		// GALA-E0051's page quotes message lines only: the offending
+		// character cannot be printed in a framed snippet (NUL, a raw
+		// invalid byte) or is invisible there (U+FEFF). The locus and caret
+		// are covered by the parser's own position tests.
+		{
+			name:   "NUL inside a string literal",
+			code:   galaerr.CodeIllegalSourceCharacter, // GALA-E0051
+			render: renderEscapeVariant("val s = \"a\x00b\""),
+		},
+		{
+			name:   "byte order mark inside a string literal",
+			code:   galaerr.CodeIllegalSourceCharacter, // GALA-E0051
+			render: renderEscapeVariant("val s = \"\xef\xbb\xbf\""),
+		},
+		{
+			name:   "invalid UTF-8 inside a string literal",
+			code:   galaerr.CodeIllegalSourceCharacter, // GALA-E0051
+			render: renderEscapeVariant("val s = \"caf\xe9\""),
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
@@ -572,7 +608,8 @@ func main() {
 }
 
 // renderEscapeVariant drives GALA-E0038 for one malformed escape and returns
-// only the FIRST LINE of the rendered diagnostic.
+// only the FIRST LINE of the rendered diagnostic. The GALA-E0051 rows reuse it
+// for the same reason: that page, too, quotes message lines only.
 //
 // The GALA-E0038 page quotes these four variants as bare message lines rather
 // than as framed blocks, and that is an editorial choice worth preserving: they

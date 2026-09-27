@@ -24,6 +24,7 @@ val y = NewImmutable(getImm())   // Immutable[Immutable[int]]
 
 **Fix.** Assign the inner value directly — GALA will wrap it once for you.
 
+<!-- doc-check: fragment -->
 ```gala
 val x = 1                // compiler wraps as Immutable[int]
 val y = getImm().Get()   // unwrap once, the outer val wraps it again

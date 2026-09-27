@@ -22,8 +22,6 @@ import (
 // so ANTLR can actually produce a well-formed postfixExpr.
 func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHelpParams) (*lsp.SignatureHelp, error) {
 	uri := string(params.TextDocument.URI)
-	line := int(params.Position.Line)
-	char := int(params.Position.Character)
 
 	h.mu.Lock()
 	text := h.documents[uri]
@@ -34,6 +32,7 @@ func (h *GalaHandler) SignatureHelp(ctx context.Context, params *lsp.SignatureHe
 	if text == "" {
 		return nil, nil
 	}
+	line, char := h.index(text).toByte(params.Position)
 
 	// Ensure richAST + varTypes are available for signature resolution.
 	// This may short-circuit if the main DidChange pipeline already
@@ -192,20 +191,20 @@ func lineCharToOffset(text string, line, char int) int {
 // that has an argumentList) whose argumentList's source range contains
 // the given byte offset. Returns nil if no such call is found.
 func findCallAtOffset(tree antlr.Tree, text string, cursorOffset int) *callContext {
-	f := &callFinder{cursorOffset: cursorOffset, text: text}
+	f := &callFinder{cursorOffset: cursorOffset, offs: newTokenOffsets(text)}
 	antlr.ParseTreeWalkerDefault.Walk(f, tree)
 	if f.bestSuffix == nil {
 		return nil
 	}
-	return buildCallContext(f.bestSuffix, f.bestParent, text, cursorOffset)
+	return buildCallContext(f.bestSuffix, f.bestParent, text, f.offs, cursorOffset)
 }
 
 // callFinder is an ANTLR listener that tracks the innermost postfixSuffix
 // whose argumentList range brackets the cursor.
 type callFinder struct {
 	*grammar.BasegalaListener
-	cursorOffset int
-	text         string
+	cursorOffset int          // bytes
+	offs         tokenOffsets // token indexes (code points) -> bytes
 	bestSuffix   *grammar.PostfixSuffixContext
 	bestParent   *grammar.PostfixExprContext
 	bestDepth    int
@@ -229,7 +228,7 @@ func (f *callFinder) EnterPostfixSuffix(ctx *grammar.PostfixSuffixContext) {
 	// for the close paren means `foo(|)` (cursor right after `(`, at the
 	// position of `)`) counts as inside — which matches user expectation
 	// when they just typed the open paren.
-	start, stop := openParenRange(ctx)
+	start, stop := openParenRange(ctx, f.offs)
 	if start < 0 {
 		return
 	}
@@ -252,21 +251,21 @@ func (f *callFinder) EnterPostfixSuffix(ctx *grammar.PostfixSuffixContext) {
 // call-style postfixSuffix (or the '(' start and the argument list's
 // stop for a still-unclosed/recovered suffix). Returns (-1, -1) if the
 // suffix has no '('.
-func openParenRange(ctx *grammar.PostfixSuffixContext) (openAfter, closeAt int) {
+func openParenRange(ctx *grammar.PostfixSuffixContext, offs tokenOffsets) (openAfter, closeAt int) {
 	openParen := findChildTerminal(ctx, "(")
 	if openParen == nil {
 		return -1, -1
 	}
-	openAfter = openParen.GetSymbol().GetStart()
+	openAfter = offs.byteOf(openParen.GetSymbol().GetStart())
 	closeParen := findChildTerminal(ctx, ")")
 	if closeParen != nil {
-		closeAt = closeParen.GetSymbol().GetStart()
+		closeAt = offs.byteOf(closeParen.GetSymbol().GetStart())
 		return openAfter, closeAt
 	}
 	// Recovered tree without a matching ')' — treat end of the suffix as
 	// the close position.
 	if stop := ctx.GetStop(); stop != nil {
-		closeAt = stop.GetStop() + 1
+		closeAt = offs.byteOf(stop.GetStop() + 1)
 		return openAfter, closeAt
 	}
 	return openAfter, openAfter + 1
@@ -286,7 +285,7 @@ func findChildTerminal(ctx antlr.RuleContext, literal string) antlr.TerminalNode
 // buildCallContext turns a matched call-suffix + its enclosing postfixExpr
 // into the data the signature resolver needs: callee name, receiver text,
 // and argument index.
-func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.PostfixExprContext, text string, cursorOffset int) *callContext {
+func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.PostfixExprContext, text string, offs tokenOffsets, cursorOffset int) *callContext {
 	suffixes := parent.AllPostfixSuffix()
 	callIdx := -1
 	for i, s := range suffixes {
@@ -306,16 +305,16 @@ func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.
 		prev, _ := suffixes[callIdx-1].(*grammar.PostfixSuffixContext)
 		if prev != nil && prev.Identifier() != nil && findChildTerminal(prev, "(") == nil && findChildTerminal(prev, "[") == nil {
 			name = prev.Identifier().GetText()
-			receiverChain = contextText(parent.PrimaryExpr(), text)
+			receiverChain = contextText(parent.PrimaryExpr(), text, offs)
 			for i := 0; i < callIdx-1; i++ {
-				receiverChain += contextText(suffixes[i], text)
+				receiverChain += contextText(suffixes[i], text, offs)
 			}
 		}
 	}
 	// No preceding `.id` — this is a bare call on the primary expression.
 	// Use the primary expression's text as the callee name.
 	if name == "" {
-		primaryText := strings.TrimSpace(contextText(parent.PrimaryExpr(), text))
+		primaryText := strings.TrimSpace(contextText(parent.PrimaryExpr(), text, offs))
 		// Only treat it as a real call when the primary expression is a
 		// simple identifier. `(x+y)(` and similar grouping-into-call
 		// shapes are not what the user wants signature help for.
@@ -331,13 +330,13 @@ func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.
 		named:         map[string]bool{},
 	}
 	if open := findChildTerminal(callSuffix, "("); open != nil {
-		call.argStarts = append(call.argStarts, open.GetSymbol().GetStart())
+		call.argStarts = append(call.argStarts, offs.byteOf(open.GetSymbol().GetStart()))
 	}
 	argList, _ := callSuffix.ArgumentList().(*grammar.ArgumentListContext)
 	if argList != nil {
 		for _, child := range argList.GetChildren() {
 			if term, ok := child.(antlr.TerminalNode); ok && term.GetText() == "," {
-				call.argStarts = append(call.argStarts, term.GetSymbol().GetStart())
+				call.argStarts = append(call.argStarts, offs.byteOf(term.GetSymbol().GetStart()))
 			}
 		}
 	}
@@ -355,7 +354,7 @@ func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.
 		if !ok || arg.GetStart() == nil || arg.GetStop() == nil {
 			continue
 		}
-		start, end := arg.GetStart().GetStart(), arg.GetStop().GetStop()+1
+		start, end := offs.byteOf(arg.GetStart().GetStart()), offs.byteOf(arg.GetStop().GetStop()+1)
 		if start <= cursorOffset && cursorOffset <= end {
 			continue
 		}
@@ -372,7 +371,7 @@ func buildCallContext(callSuffix *grammar.PostfixSuffixContext, parent *grammar.
 // contextText returns the original source text covered by the given
 // parse-tree context. Uses start/stop character indices from the tokens
 // so whitespace and punctuation are preserved verbatim.
-func contextText(ctx antlr.RuleContext, text string) string {
+func contextText(ctx antlr.RuleContext, text string, offs tokenOffsets) string {
 	if ctx == nil {
 		return ""
 	}
@@ -388,10 +387,14 @@ func contextText(ctx antlr.RuleContext, text string) string {
 		return ""
 	}
 	s, e := start.GetStart(), stop.GetStop()
-	if s < 0 || e < 0 || s > e || e >= len(text) {
+	if s < 0 || e < 0 || s > e {
 		return ""
 	}
-	return text[s : e+1]
+	bs, be := offs.byteOf(s), offs.byteOf(e+1)
+	if be > len(text) || bs >= be {
+		return ""
+	}
+	return text[bs:be]
 }
 
 func isIdentifier(s string) bool {

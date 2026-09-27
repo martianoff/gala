@@ -2,6 +2,7 @@
 package module
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -272,14 +273,21 @@ func (r *Resolver) PackageImportPath(filePath string) string {
 		return ""
 	}
 
-	rel, inside := relWithin(absRoot, absDir)
+	return moduleImportPath(r.moduleName, absRoot, absDir)
+}
+
+// moduleImportPath is the import path of the package in directory dir of the
+// module modPath rooted at root: modPath joined with dir's slash-separated
+// path relative to root; "" when dir lies outside root.
+func moduleImportPath(modPath, root, dir string) string {
+	rel, inside := relWithin(root, dir)
 	if !inside {
 		return ""
 	}
 	if rel == "." {
-		return r.moduleName
+		return modPath
 	}
-	return r.moduleName + "/" + rel
+	return modPath + "/" + rel
 }
 
 // ResolvePackagePath converts an import path to a filesystem path.
@@ -1071,17 +1079,7 @@ func findPackageDirByPathSuffix(root string, suffix []string) string {
 		}
 		for _, e := range entries {
 			path := filepath.Join(dir, e.Name())
-
-			isDir := e.IsDir()
-			if !isDir {
-				if info, err := os.Stat(path); err == nil {
-					isDir = info.IsDir()
-				}
-			}
-			if !isDir {
-				continue
-			}
-			if skipDirs[e.Name()] {
+			if !entryIsDir(path, e) || skipDirs[e.Name()] {
 				continue
 			}
 			if e.Name() == pkgName && matchesSuffix(path) && hasGalaFiles(path) {
@@ -1118,21 +1116,7 @@ func findPackageDirByName(root, pkgName string) string {
 		}
 		for _, e := range entries {
 			path := filepath.Join(dir, e.Name())
-
-			// Resolve symlinks/junctions to determine if this is a directory.
-			// On Windows, os.ReadDir may not detect symlinks or junctions via
-			// ModeSymlink, so always fall back to os.Stat when IsDir is false.
-			isDir := e.IsDir()
-			if !isDir {
-				if info, err := os.Stat(path); err == nil {
-					isDir = info.IsDir()
-				}
-			}
-
-			if !isDir {
-				continue
-			}
-			if skipDirs[e.Name()] {
+			if !entryIsDir(path, e) || skipDirs[e.Name()] {
 				continue
 			}
 			if e.Name() == pkgName && hasGalaFiles(path) {
@@ -1147,6 +1131,25 @@ func findPackageDirByName(root, pkgName string) string {
 	}
 
 	return walk(root)
+}
+
+// entryIsDir reports whether a directory entry is, or links to, a directory.
+// The recursive package searches follow links on purpose (Bazel's execroot
+// symlinks source directories to the workspace), so a link has to be resolved
+// with os.Stat — on Windows a junction is reported as an irregular entry rather
+// than as a symlink, which is why any non-regular type is resolved, not just
+// ModeSymlink. A regular file is never a directory, and resolving every one of
+// them made a "package not found" search stat each file in the tree: seconds
+// per missing import on a repository-sized root.
+func entryIsDir(path string, e fs.DirEntry) bool {
+	if e.IsDir() {
+		return true
+	}
+	if e.Type().IsRegular() {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // hasGalaFiles checks if a directory contains at least one .gala file.
@@ -1220,4 +1223,27 @@ func DeclaredModulePath(dir string) string {
 		}
 	}
 	return ""
+}
+
+// PackageImportPathForDir returns the import path of the package in directory
+// dir: the path declared by the nearest enclosing module (gala.mod, or failing
+// that go.mod, at dir or any ancestor) joined with dir's slash-separated path
+// relative to that module's root. It returns "" when no enclosing module
+// declares a path. It is path arithmetic over module files, never a
+// filesystem path.
+func PackageImportPathForDir(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	for root := abs; ; {
+		if modPath := DeclaredModulePath(root); modPath != "" {
+			return moduleImportPath(modPath, root, abs)
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return ""
+		}
+		root = parent
+	}
 }

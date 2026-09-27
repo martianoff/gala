@@ -172,9 +172,11 @@ func (t *galaASTTransformer) unknownMethodError(
 }
 
 // receiverTypeIsConcrete reports whether every type parameter of the receiver's
-// type is bound to a real type argument. A single upper-case letter is how an
-// unresolved parameter shows up here, matching the existing convention in
-// transformRegularMethodCall.
+// type is bound to a real type argument, as opposed to a type parameter (see
+// isActiveTypeParam). Unlike transformRegularMethodCall, which only cares about
+// a callee's unbound placeholder, a parameter the enclosing declaration binds
+// counts as not concrete too, so no unknown-method error is raised inside a
+// generic body.
 func (t *galaASTTransformer) receiverTypeIsConcrete(typeMeta *transpiler.TypeMetadata, recvType transpiler.Type) bool {
 	if len(typeMeta.TypeParams) == 0 {
 		return true
@@ -184,7 +186,7 @@ func (t *galaASTTransformer) receiverTypeIsConcrete(typeMeta *transpiler.TypeMet
 		return false
 	}
 	for _, a := range args {
-		if a == "" || (len(a) == 1 && a[0] >= 'A' && a[0] <= 'Z') {
+		if a == "" || t.isActiveTypeParam(a) {
 			return false
 		}
 	}

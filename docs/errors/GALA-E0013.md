@@ -22,6 +22,7 @@ func create(a int = 5, b int) int = a + b
 **Fix.** Reorder the parameters so all defaults come last, or give the
 follower a default too:
 
+<!-- doc-check: fragment -->
 ```gala
 func create(b int, a int = 5) int = a + b
 // or

@@ -27,6 +27,12 @@ func writeSourceTree(t *testing.T) []string {
 	return []string{main, galaMod}
 }
 
+// toolchainWith is a fixed toolchain differing only in the given version and
+// stdlib fingerprint.
+func toolchainWith(version, stdlibFingerprint string) toolchainKey {
+	return toolchainKey{GalaVersion: version, Transpiler: "t", GoSDK: "go", Stdlib: stdlibFingerprint}
+}
+
 // TestComputeSourceHash_TracksStdlibFingerprint verifies that the transpile
 // cache key follows the standard library the sources are compiled against.
 //
@@ -38,51 +44,45 @@ func writeSourceTree(t *testing.T) []string {
 func TestComputeSourceHash_TracksStdlibFingerprint(t *testing.T) {
 	files := writeSourceTree(t)
 
-	base := computeSourceHash(files, "dev", "fingerprint-a", "")
+	base := computeSourceHash(files, toolchainWith("dev", "fingerprint-a"), "", "")
 	require.NotEmpty(t, base)
 
 	t.Run("stable for an unchanged stdlib", func(t *testing.T) {
-		require.Equal(t, base, computeSourceHash(files, "dev", "fingerprint-a", ""),
+		require.Equal(t, base, computeSourceHash(files, toolchainWith("dev", "fingerprint-a"), "", ""),
 			"identical inputs must not force a needless re-transpile")
 	})
 
 	t.Run("changes when the stdlib changes", func(t *testing.T) {
-		require.NotEqual(t, base, computeSourceHash(files, "dev", "fingerprint-b", ""),
+		require.NotEqual(t, base, computeSourceHash(files, toolchainWith("dev", "fingerprint-b"), "", ""),
 			"a different stdlib snapshot must invalidate the cached transpile")
 	})
 
-	t.Run("changes for an unstamped build too", func(t *testing.T) {
-		// "dev" == "dev" for every unstamped revision, so the version string
-		// carries no information here — the fingerprint is the only thing that
-		// can distinguish the two.
-		require.NotEqual(t,
-			computeSourceHash(files, "dev", "fingerprint-a", ""),
-			computeSourceHash(files, "dev", "fingerprint-b", ""))
-	})
-
 	t.Run("still tracks the version and the sources", func(t *testing.T) {
-		require.NotEqual(t, base, computeSourceHash(files, "0.71.0", "fingerprint-a", ""))
+		require.NotEqual(t, base, computeSourceHash(files, toolchainWith("0.71.0", "fingerprint-a"), "", ""))
 
 		require.NoError(t, os.WriteFile(files[0], []byte("fun main(): Unit = Println(\"bye\")\n"), 0644))
-		require.NotEqual(t, base, computeSourceHash(files, "dev", "fingerprint-a", ""))
+		require.NotEqual(t, base, computeSourceHash(files, toolchainWith("dev", "fingerprint-a"), "", ""))
 	})
 }
 
-// TestComputeSourceHash_UsesRealEmbeddedFingerprint verifies the value the
-// production call sites pass is usable as a key: non-empty, and distinguishable
-// from the empty string that would silently degrade the key back to
-// sources-plus-version.
-//
-// It does not, and cannot here, prove that transpile() passes it: the embedded
-// fingerprint is a single memoized value for the process, so there is no second
-// snapshot to build against. That wiring is a one-line call read by review.
-func TestComputeSourceHash_UsesRealEmbeddedFingerprint(t *testing.T) {
+// TestCurrentToolchain_UsesRealEmbeddedFingerprint verifies the value the
+// production key uses is the embedded stdlib fingerprint, and that it is
+// usable as a key: non-empty, and distinguishable from the empty string that
+// would silently degrade the key back to sources-plus-version.
+func TestCurrentToolchain_UsesRealEmbeddedFingerprint(t *testing.T) {
 	files := writeSourceTree(t)
 
+	tc := currentToolchain("dev")
 	require.NotEmpty(t, stdlib.Fingerprint())
+	require.Equal(t, stdlib.Fingerprint(), tc.Stdlib)
+	require.NotEmpty(t, tc.Transpiler)
+	require.NotEmpty(t, tc.GoSDK)
+
+	withoutStdlib := tc
+	withoutStdlib.Stdlib = ""
 	require.NotEqual(t,
-		computeSourceHash(files, "dev", stdlib.Fingerprint(), ""),
-		computeSourceHash(files, "dev", "", ""))
+		computeSourceHash(files, tc, "", ""),
+		computeSourceHash(files, withoutStdlib, "", ""))
 }
 
 // TestComputeSourceHash_MissingFileForcesRetranspile documents the existing
@@ -92,7 +92,7 @@ func TestComputeSourceHash_UsesRealEmbeddedFingerprint(t *testing.T) {
 func TestComputeSourceHash_MissingFileForcesRetranspile(t *testing.T) {
 	files := writeSourceTree(t)
 	require.Empty(t, computeSourceHash(append(files, filepath.Join(t.TempDir(), "absent.gala")),
-		"dev", stdlib.Fingerprint(), ""))
+		toolchainWith("dev", stdlib.Fingerprint()), "", ""))
 }
 
 // TestComputeDepsHash_TracksStdlibFingerprint verifies the sibling cache key
@@ -107,14 +107,14 @@ func TestComputeDepsHash_TracksStdlibFingerprint(t *testing.T) {
 		New: mod.ModuleVersion{Path: "../lib"},
 	}}
 
-	base := computeDepsHash(requires, replaces, "fingerprint-a")
+	base := computeDepsHash(requires, replaces, toolchainWith("dev", "fingerprint-a"), nil)
 	require.NotEmpty(t, base)
 
-	require.Equal(t, base, computeDepsHash(requires, replaces, "fingerprint-a"))
-	require.NotEqual(t, base, computeDepsHash(requires, replaces, "fingerprint-b"))
+	require.Equal(t, base, computeDepsHash(requires, replaces, toolchainWith("dev", "fingerprint-a"), nil))
+	require.NotEqual(t, base, computeDepsHash(requires, replaces, toolchainWith("dev", "fingerprint-b"), nil))
 
 	// The pre-existing inputs must keep invalidating the key.
 	other := []mod.Require{{Path: "github.com/example/lib", Version: "1.2.4"}}
-	require.NotEqual(t, base, computeDepsHash(other, replaces, "fingerprint-a"))
-	require.NotEqual(t, base, computeDepsHash(requires, nil, "fingerprint-a"))
+	require.NotEqual(t, base, computeDepsHash(other, replaces, toolchainWith("dev", "fingerprint-a"), nil))
+	require.NotEqual(t, base, computeDepsHash(requires, nil, toolchainWith("dev", "fingerprint-a"), nil))
 }

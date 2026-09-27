@@ -101,6 +101,8 @@ func buildSyntheticCache() *CachedRichAST {
 	r.GoTypeInfo = transpiler.NewGoTypeInfo()
 	r.GoTypeInfo.Variables["pkg.X"] = transpiler.BasicType{Name: "int"}
 	r.GoTypeInfo.Constants["pkg.K"] = transpiler.BasicType{Name: "string"}
+	r.GoTypeInfo.Constants["pkg.Max"] = transpiler.BasicType{Name: "int"}
+	r.GoTypeInfo.UntypedConstants["pkg.Max"] = true
 	r.GoTypeInfo.TypeAliases["pkg.Alias"] = transpiler.NamedType{Package: "std", Name: "Other"}
 	r.GoTypeInfo.Functions["pkg.F"] = &transpiler.GoFuncSignature{
 		Params:  []transpiler.GoParam{{Name: "x", Type: transpiler.BasicType{Name: "int"}}},

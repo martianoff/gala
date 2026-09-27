@@ -56,6 +56,7 @@ Delete one declaration, merge their fields into one type, or rename one so both 
 ```gala
 // b.gala
 package main
+
 type UserContact struct { Email string }
 ```
 

@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/module"
 )
 
 // goImporter is a cached importer that tries multiple strategies.
@@ -28,9 +29,23 @@ var (
 // goImporterAvailable tracks whether we have a working Go importer.
 var goImporterAvailable bool
 
+var (
+	goSDKRootOnce sync.Once
+	goSDKRoot     string
+)
+
+// GoSDKRoot returns the root of the Go SDK the analyzer reads Go package types
+// from, or "" when none is found. It is resolved once per process, and the
+// importer is built from the same value, so a caller keying a cache on it names
+// exactly the SDK the analysis used.
+func GoSDKRoot() string {
+	goSDKRootOnce.Do(func() { goSDKRoot = findGOROOT() })
+	return goSDKRoot
+}
+
 func getGoImporter() types.Importer {
 	goImporterOnce.Do(func() {
-		goroot := findGOROOT()
+		goroot := GoSDKRoot()
 		if goroot == "" {
 			goImporterAvailable = false
 			fmt.Fprintf(os.Stderr, "Warning: Go SDK not found — Go type inference disabled. Set GOROOT, pass --goroot, or ensure 'go' is on PATH.\n")
@@ -60,7 +75,27 @@ func getGoImporter() types.Importer {
 		goImporterAvailable = false
 		fmt.Fprintf(os.Stderr, "Warning: Go SDK found at %s but importers failed — Go type inference disabled.\n", goroot)
 	})
-	return goImporterInst
+	if goImporterInst == nil {
+		return nil
+	}
+	return serialImporter{imp: goImporterInst}
+}
+
+// goImporterMu serializes every use of the shared importer. Neither go/importer
+// implementation is safe for concurrent use (the source importer keeps its
+// packages in an unguarded map), and one process can analyze several files at
+// once: the LSP, the build worker, a test running transpilers in parallel.
+var goImporterMu sync.Mutex
+
+// serialImporter is the shared importer behind goImporterMu.
+type serialImporter struct{ imp types.Importer }
+
+var _ types.Importer = serialImporter{}
+
+func (s serialImporter) Import(path string) (*types.Package, error) {
+	goImporterMu.Lock()
+	defer goImporterMu.Unlock()
+	return s.imp.Import(path)
 }
 
 // GoImporterAvailable returns whether the Go type importer is available.
@@ -321,31 +356,46 @@ var goFilesCache = struct {
 // Generated .gen.go files are skipped — their metadata comes from analyzing the
 // originating .gala source.
 //
-// Results are memoized per dirPath for the lifetime of the process. Within one
-// Bazel build the .go files in a package directory don't change, so the
-// parse + type-check work happens at most once per directory per worker.
-func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
+// importPath is the package's Go import path: every type declared in it
+// records it (NamedType.ImportPath), and code generation imports the type by
+// it. An empty or invalid one — a directory, say, which would be emitted as
+// `import "C:\\…"` — is replaced by the path derived from the enclosing module,
+// or by "" when there is none, so the types resolve by package name through
+// the importing file's imports.
+//
+// Results are memoized per (dirPath, importPath) for the lifetime of the
+// process. Within one Bazel build the .go files in a package directory don't
+// change, so the parse + type-check work happens at most once per directory
+// per worker.
+func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
+	importPath = goFilesImportPath(dirPath, importPath)
+	cacheKey := dirPath + "\x00" + importPath
+
 	goFilesCache.mu.Lock()
-	if cached, ok := goFilesCache.cache[dirPath]; ok {
-		goFilesCache.mu.Unlock()
+	cached, ok := goFilesCache.cache[cacheKey]
+	goFilesCache.mu.Unlock()
+	if ok {
 		return cached
 	}
-	goFilesCache.mu.Unlock()
 
+	info := analyzeGoFiles(dirPath, importPath)
+	goFilesCache.mu.Lock()
+	goFilesCache.cache[cacheKey] = info
+	goFilesCache.mu.Unlock()
+	return info
+}
+
+// analyzeGoFiles is AnalyzeGoFiles without the memo.
+func analyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 	info := transpiler.NewGoTypeInfo()
 
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		goFilesCache.mu.Lock()
-		goFilesCache.cache[dirPath] = info
-		goFilesCache.mu.Unlock()
 		return info
 	}
 
 	fset := token.NewFileSet()
 	var files []*ast.File
-	hasGoFiles := false
-
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -354,7 +404,6 @@ func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".gen.go") {
 			continue
 		}
-		hasGoFiles = true
 		fullPath := filepath.Join(dirPath, name)
 		f, err := parser.ParseFile(fset, fullPath, nil, 0)
 		if err != nil {
@@ -363,10 +412,7 @@ func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
 		files = append(files, f)
 	}
 
-	if !hasGoFiles || len(files) == 0 {
-		goFilesCache.mu.Lock()
-		goFilesCache.cache[dirPath] = info
-		goFilesCache.mu.Unlock()
+	if len(files) == 0 {
 		return info
 	}
 
@@ -381,23 +427,42 @@ func AnalyzeGoFiles(dirPath string) *transpiler.GoTypeInfo {
 		Uses:  make(map[*ast.Ident]types.Object),
 	}
 
-	pkg, _ := conf.Check(dirPath, fset, files, typesInfo)
+	pkg, _ := conf.Check(importPath, fset, files, typesInfo)
 	if pkg == nil {
 		// Even if type-checking fails, try to extract what we can from AST
 		extractFromAST(files, info)
-		goFilesCache.mu.Lock()
-		goFilesCache.cache[dirPath] = info
-		goFilesCache.mu.Unlock()
 		return info
 	}
 
 	extractPackageInfo(pkg, info)
 	repairUnresolvedSignatures(files, pkg.Name(), info)
-	goFilesCache.mu.Lock()
-	goFilesCache.cache[dirPath] = info
-	goFilesCache.mu.Unlock()
 	return info
 }
+
+// goFilesImportPath is the import path AnalyzeGoFiles records for the package
+// in dirPath when its caller names importPath: importPath itself when it is a
+// valid Go import path, else the path derived from the enclosing module, else
+// "" (unknown).
+func goFilesImportPath(dirPath, importPath string) string {
+	if transpiler.IsValidGoImportPath(importPath) {
+		return importPath
+	}
+	if cached, ok := derivedImportPaths.Load(dirPath); ok {
+		return cached.(string)
+	}
+	derived := module.PackageImportPathForDir(dirPath)
+	if !transpiler.IsValidGoImportPath(derived) {
+		derived = ""
+	}
+	derivedImportPaths.Store(dirPath, derived)
+	return derived
+}
+
+// derivedImportPaths memoizes, per directory, the import path derived from
+// the enclosing module: deriving it reads a module file at every ancestor,
+// and every file of a package asks. Like goFilesCache it lives for the
+// process, over which module files do not move.
+var derivedImportPaths sync.Map // dirPath -> string
 
 // repairUnresolvedSignatures recovers signature slots go/types could not resolve
 // from the type as it is WRITTEN in the source.
@@ -684,6 +749,12 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 
 		case *types.Const:
 			info.Constants[qualName] = goTypeToTranspilerType(obj.Type())
+			if basic, ok := obj.Type().(*types.Basic); ok && basic.Info()&types.IsUntyped != 0 {
+				if info.UntypedConstants == nil {
+					info.UntypedConstants = make(map[string]bool)
+				}
+				info.UntypedConstants[qualName] = true
+			}
 		}
 	}
 }

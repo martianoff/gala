@@ -73,3 +73,22 @@ func TestLastPathSegment(t *testing.T) {
 	assert.Equal(t, "v1", LastPathSegment("k8s.io/api/core/v1"))
 	assert.Equal(t, "strings", LastPathSegment("strings"))
 }
+
+// TestIsValidGoImportPath accepts what a Go import declaration can name and
+// rejects filesystem paths.
+func TestIsValidGoImportPath(t *testing.T) {
+	for _, p := range []string{
+		"strings", "math/rand/v2", "gopkg.in/yaml.v3", "github.com/mattn/go-sqlite3",
+		"example.com/gosubpkg/box", "martianoff/gala/std", "k8s.io/api/core/v1", "C",
+		"example.com/a_b/c~d/e+f",
+	} {
+		assert.True(t, IsValidGoImportPath(p), p)
+	}
+	for _, p := range []string{
+		"", `C:\Users\me\proj\box`, "C:/Users/me/proj/box", "/home/me/proj/box",
+		"./box", "../box", "example.com//box", "example.com/box/", `example.com\box`,
+		"example.com/b ox", "example.com/.hidden/x", "example.com/x./y",
+	} {
+		assert.False(t, IsValidGoImportPath(p), p)
+	}
+}

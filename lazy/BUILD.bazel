@@ -1,4 +1,5 @@
 load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files(["lazy.gala"])
 
@@ -36,3 +37,6 @@ filegroup(
     ),
     visibility = ["//visibility:public"],
 )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()

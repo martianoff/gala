@@ -5,6 +5,10 @@ primitive or a plain struct) has no default branch. Unlike sealed matches,
 the compiler cannot prove exhaustiveness for open types, so a default is
 mandatory.
 
+A default is any unguarded arm that matches every value: `case _`, a plain
+binding such as `case other`, or a tuple pattern whose every element is one of
+those (or a nested such tuple) — `case (_, _, err)` over a `Tuple3`.
+
 **Minimal repro.** (`main.gala`)
 
 ```gala
@@ -68,10 +72,9 @@ the generated Go code would be forced to synthesize one (usually a runtime
 panic), hiding the missing-branch bug from the author. Requiring the default
 to be written explicitly surfaces the decision at the call site.
 
-**Note on wording.** Two places in the transformer lower a `match` — one for
-expression position, one for statement position. They now emit identical text
-for this code; if you are reading an older build, the expression-position
-lowering appended a redundant `(case _ => ...)` to the message.
+**Note on wording.** If you are reading an older build, the message may end
+with a redundant `(case _ => ...)`; current builds put the remediation in the
+hint only.
 
 **Related work.** Sealed types get GALA-E0002 instead; GALA-E0003 is the
 open-type counterpart.
