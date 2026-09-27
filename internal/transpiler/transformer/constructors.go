@@ -256,7 +256,7 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" {
 		return t.typeToExpr(target)
 	}
-	defaultName, ok := untypedNumericConstDefault(value)
+	defaultName, ok := t.untypedNumericConstExprDefault(value)
 	if !ok || !t.isNumericSlotType(target) {
 		return nil
 	}
@@ -353,6 +353,46 @@ func (t *galaASTTransformer) typeArgTypes(subst map[string]ast.Expr) map[string]
 // anything that is not built purely from numeric literals. Constant arithmetic
 // stays untyped in Go, so `60 * 1000` is classified like a bare literal.
 func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
+	return untypedNumericConstDefaultWith(expr, nil)
+}
+
+// untypedNumericConstExprDefault is untypedNumericConstDefault that also knows
+// the untyped constants Go packages declare: `math.MinInt8`, `math.Pi`, and
+// constant expressions built from them (`math.MaxInt8 - 1`) are untyped in Go
+// exactly as literals are, so they take the type of the slot they land in.
+func (t *galaASTTransformer) untypedNumericConstExprDefault(expr ast.Expr) (string, bool) {
+	return untypedNumericConstDefaultWith(expr, t.goUntypedNumericConstDefault)
+}
+
+// goUntypedNumericConstDefault reports the default type of a reference to an
+// untyped numeric constant of an imported Go package (`math.MaxInt8` → int).
+func (t *galaASTTransformer) goUntypedNumericConstDefault(expr ast.Expr) (string, bool) {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok || t.goTypeInfo == nil {
+		return "", false
+	}
+	qualifier, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	entry, isGala, ok := t.importForQualifier(qualifier.Name)
+	if !ok || isGala {
+		return "", false
+	}
+	key := entry.PkgName + "." + sel.Sel.Name
+	if !t.goTypeInfo.UntypedConstants[key] {
+		return "", false
+	}
+	basic, ok := t.goTypeInfo.Constants[key].(transpiler.BasicType)
+	if !ok || numericConstRank(basic.Name) < 0 {
+		return "", false
+	}
+	return basic.Name, true
+}
+
+// untypedNumericConstDefaultWith is the shared walk; named, when non-nil,
+// classifies a leaf that is not a literal (a named constant reference).
+func untypedNumericConstDefaultWith(expr ast.Expr, named func(ast.Expr) (string, bool)) (string, bool) {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
 		switch e.Kind {
@@ -364,21 +404,21 @@ func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
 			return "rune", true
 		}
 	case *ast.ParenExpr:
-		return untypedNumericConstDefault(e.X)
+		return untypedNumericConstDefaultWith(e.X, named)
 	case *ast.UnaryExpr:
 		switch e.Op {
 		case token.ADD, token.SUB, token.XOR:
-			return untypedNumericConstDefault(e.X)
+			return untypedNumericConstDefaultWith(e.X, named)
 		}
 	case *ast.BinaryExpr:
 		switch e.Op {
 		case token.SHL, token.SHR:
 			// The shift count does not influence the result's default type.
-			return untypedNumericConstDefault(e.X)
+			return untypedNumericConstDefaultWith(e.X, named)
 		case token.ADD, token.SUB, token.MUL, token.QUO, token.REM,
 			token.AND, token.OR, token.XOR, token.AND_NOT:
-			left, okLeft := untypedNumericConstDefault(e.X)
-			right, okRight := untypedNumericConstDefault(e.Y)
+			left, okLeft := untypedNumericConstDefaultWith(e.X, named)
+			right, okRight := untypedNumericConstDefaultWith(e.Y, named)
 			if !okLeft || !okRight {
 				return "", false
 			}
@@ -386,6 +426,10 @@ func untypedNumericConstDefault(expr ast.Expr) (string, bool) {
 				return right, true
 			}
 			return left, true
+		}
+	case *ast.SelectorExpr:
+		if named != nil {
+			return named(e)
 		}
 	}
 	return "", false

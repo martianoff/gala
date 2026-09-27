@@ -715,6 +715,12 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 
 		case *types.Const:
 			info.Constants[qualName] = goTypeToTranspilerType(obj.Type())
+			if basic, ok := obj.Type().(*types.Basic); ok && basic.Info()&types.IsUntyped != 0 {
+				if info.UntypedConstants == nil {
+					info.UntypedConstants = make(map[string]bool)
+				}
+				info.UntypedConstants[qualName] = true
+			}
 		}
 	}
 }

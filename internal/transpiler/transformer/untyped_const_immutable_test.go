@@ -120,6 +120,40 @@ func triple() Tuple3[int8, Millis, float64] = (1, 2, 3)`,
 			},
 		},
 		{
+			// A Go package's untyped constant is untyped in Go exactly as a
+			// literal is, and so is constant arithmetic over it.
+			name: "Go untyped constants at every site",
+			extra: `import (
+    "math"
+    "time"
+)
+
+struct Lim(name string, lo int8 = math.MinInt8)
+struct Wait(d time.Duration)
+func limits() Tuple[int8, float32] = (math.MinInt8, math.Pi)`,
+			body: `val a = Nums(math.MinInt8, math.MaxInt64, math.MaxUint32, math.Pi, math.MaxInt32, math.E)
+    val b = a.Copy(i8 = math.MaxInt8 - 1, f32 = math.Pi / 2)
+    val l = Lim("x")
+    val w = Wait(time.Second)
+    Println(b.i8 + l.lo)
+    Println(limits().V1)
+    Println(w.d)`,
+			contains: []string{
+				"i8: std.NewImmutable[int8](math.MinInt8)",
+				"i64: std.NewImmutable[int64](math.MaxInt64)",
+				"u32: std.NewImmutable[uint32](math.MaxUint32)",
+				"f32: std.NewImmutable[float32](math.Pi)",
+				"ms: std.NewImmutable[Millis](math.MaxInt32)",
+				"r: std.NewImmutable[Ratio](math.E)",
+				"i8: std.NewImmutable[int8](math.MaxInt8 - 1)",
+				"f32: std.NewImmutable[float32](math.Pi / 2)",
+				"lo: std.NewImmutable[int8](math.MinInt8)",
+				"std.Tuple[int8, float32]{V1: std.NewImmutable[int8](math.MinInt8), V2: std.NewImmutable[float32](math.Pi)}",
+				// time.Second is a typed constant: its own type already fits.
+				"d: std.NewImmutable(time.Second)",
+			},
+		},
+		{
 			// Negative: a field genuinely typed `int`, and a tuple with no
 			// expected type, keep the inferred wrapper.
 			name: "int slot and untyped tuple keep the inferred form",

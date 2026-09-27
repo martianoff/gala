@@ -793,7 +793,7 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 				// (`(1, 2)` into Tuple[int64, float32]) exactly as Go would
 				// convert it on assignment, instead of freezing its default
 				// type (`int`) into the tuple's type arguments.
-				if _, untyped := untypedNumericConstDefault(expr); untyped && !transpiler.IsUnusable(expected) && t.isNumericSlotType(expected) {
+				if _, untyped := t.untypedNumericConstExprDefault(expr); untyped && !transpiler.IsUnusable(expected) && t.isNumericSlotType(expected) {
 					typeParams = append(typeParams, t.typeToExpr(expected))
 					slotTypes[i] = expected
 					continue

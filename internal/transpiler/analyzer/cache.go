@@ -51,7 +51,11 @@ import (
 // carry the position of their first token (transpiler.DefaultExpr). A v6
 // payload holds whitespace-stripped text, which re-parses `(a int) => a` as a
 // lambda with one parameter named `aint`.
-const CacheVersion = "v7"
+//
+// v8: GoTypeInfo records which Go constants are untyped (UntypedConstants).
+// A v7 payload has none, so `math.MinInt8` stored in an int8 slot would be
+// wrapped with its default type again and fail to compile.
+const CacheVersion = "v8"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -255,6 +259,11 @@ func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg string) *transpiler.GoTypeIn
 		if strings.HasPrefix(k, prefix) {
 			out.Constants[k] = v
 			any = true
+		}
+	}
+	for k, v := range g.UntypedConstants {
+		if strings.HasPrefix(k, prefix) {
+			out.UntypedConstants[k] = v
 		}
 	}
 	for k, v := range g.TypeAliases {

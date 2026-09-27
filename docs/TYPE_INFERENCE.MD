@@ -642,6 +642,12 @@ wraps a value for a slot whose type it knows goes through one helper,
 `newImmutableFor` (`transformer/constructors.go`), which spells the slot type
 (`std.NewImmutable[int64](0)`) whenever that default differs.
 
+A Go package's untyped constant is untyped in Go exactly as a literal is, so
+`math.MinInt8`, `math.Pi` and constant arithmetic over them (`math.MaxInt8 -
+1`) follow the same rule; the analyzer records which Go constants are untyped
+(`GoTypeInfo.UntypedConstants`). A typed constant such as `time.Second` keeps
+its own type.
+
 A slot counts as numeric when its type is a predeclared numeric type, a GALA
 type declared over one (`type Millis int64`, through alias chains, including
 one declared further down the file), or a Go named numeric type

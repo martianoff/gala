@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+    "math"
+    "time"
+)
 
 // An untyped numeric constant adopts the type of the immutable slot it lands
 // in, at every site that wraps it for one. `val` fields, tuple elements and
@@ -39,6 +42,11 @@ struct Span(t Tuple[int64, int64])
 func pair() Tuple[int64, float32] = (1, 2)
 
 func triple() Tuple3[int8, Millis, float64] = (3, 4, 5)
+
+// Go's untyped constants behave like literals.
+struct Limits(lo int8 = math.MinInt8, hi uint32 = math.MaxUint32)
+
+func bounds() Tuple[int8, float32] = (math.MaxInt8, math.Pi)
 
 func sum(t Tuple[int64, float32]) string = s"${t.V1} ${t.V2}"
 
@@ -100,6 +108,15 @@ func main() {
     Println(describe(Count(1)))
     Println(describe(Elapsed(2)))
     Println(describe(Scale(0.5)))
+
+    // Go untyped constants: constructor, default, Copy, tuple.
+    val lim = Limits()
+    Println(s"${lim.lo} ${lim.hi}")
+    Println(show(Nums(math.MinInt8, math.MinInt16, math.MinInt32, math.MinInt64, math.MaxUint32, math.MaxUint8, math.MaxUint16, math.MaxUint32, math.MaxUint64, math.Pi, math.E, math.MaxInt32, math.Pi)))
+    Println(lim.Copy(lo = math.MaxInt8 - 1).lo)
+    val b = bounds()
+    Println(s"${b.V1} ${b.V2}")
+    Println(Wait(time.Second).d)
 
     // Negative case: a tuple with no expected type keeps its default types.
     val plain = (1, 2.5)
