@@ -73,6 +73,81 @@ func must(n int) int {
 `,
 			contains: []string{`panic("no")`},
 		},
+		{
+			name: "qualified go_builtins Panic under an alias diverges",
+			body: `
+import gb "martianoff/gala/go_builtins"
+
+func must(n int) int {
+    if (n > 0) {
+        return n
+    }
+    gb.Panic("no")
+}
+`,
+			contains: []string{`panic("no")`},
+		},
+		{
+			name: "a user method named Panic is an ordinary value",
+			body: `
+struct Engine(code int)
+
+func (e Engine) Panic(msg string) int = e.code
+
+func (e Engine) Fail() int {
+    Println("failing")
+    e.Panic("x")
+}
+`,
+			contains: []string{`return e.Panic("x")`},
+		},
+		{
+			name: "a user method named Panic is a match arm value",
+			body: `
+struct Engine(code int)
+
+func (e Engine) Panic(msg string) int = e.code
+
+func pick(e Engine, n int) int = n match {
+    case 0 => e.Panic("zero")
+    case _ => n
+}
+`,
+			contains: []string{`return e.Panic("zero")`},
+		},
+		{
+			name: "a trailing explicit return is unchanged",
+			body: `
+func twice(n int) int {
+    val d = n * 2
+    return d
+}
+`,
+			contains: []string{"return d.Get()"},
+		},
+		{
+			name: "early returns work alongside an implicit trailing value",
+			body: `
+func classify(n int) string {
+    if (n < 0) {
+        return "negative"
+    }
+    var i = 1
+    for i < 4 {
+        if (i == n) {
+            return "member"
+        }
+        i = i + 1
+    }
+    n match {
+        case 0 => { return "zero" }
+        case _ => { Println("other") }
+    }
+    "positive"
+}
+`,
+			contains: []string{`return "negative"`, `return "member"`, `return "zero"`, `return "positive"`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +199,71 @@ func (b Box) Pos() int {
     }
 }
 `,
-			wantErr: "function Pos returns int, but its body can finish without a value",
+			wantErr: "function Box.Pos returns int, but its body can finish without a value",
+		},
+		{
+			name: "a generic method is named as written, not by its lowered name",
+			body: `
+struct Box(n int)
+
+func (b Box) Pick[T any](x T) T {
+    if (b.n > 0) {
+        x
+    }
+}
+`,
+			wantErr: "function Box.Pick returns T, but its body can finish without a value",
+		},
+		{
+			name: "if with no else at the tail of a value-returning lambda",
+			body: `
+func each(f func(int) int) int = f(1)
+
+func v() int = each((x) => {
+    if (x > 0) {
+        x
+    }
+})
+`,
+			wantErr: "`x` is evaluated but not used",
+		},
+		{
+			name: "if/else at the tail of a lambda with no value expected",
+			body: `
+func v() {
+    val f = (x int) => {
+        if (x > 0) { x } else { 0 }
+    }
+    f(1)
+}
+`,
+			wantErr: "`x` is evaluated but not used",
+		},
+		{
+			name: "bare value at the tail of a lambda with no value expected",
+			body: `
+func v() {
+    val f = (x int) => {
+        Println(x)
+        x
+    }
+    f(1)
+}
+`,
+			wantErr: "`x` is evaluated but not used",
+		},
+		{
+			name: "if/else with a non-value branch at the tail of a match arm",
+			body: `
+func v(n int) int = n match {
+    case 0 => 1
+    case _ => {
+        var y = 0
+        if (n > 1) { n } else { y = 2 }
+    }
+}
+`,
+			wantErr: "`n` is evaluated but not used",
 		},
 		{
 			name: "empty body of a value-returning function",

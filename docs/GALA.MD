@@ -190,7 +190,9 @@ func sign(n int) string {
 }
 ```
 
-The body must end in a value, a `return`, or a diverging call such as `Panic(...)`. A
+Prefer the implicit trailing value. `return` stays valid, both at the end and for early
+exits such as `if (n < 0) { return None() }`. The body must end in a value, a `return`, or
+a diverging call such as `Panic(...)`. A
 body that can finish without a value — a trailing `Println(...)`, an assignment, an `if`
 with no `else` — is a compile error. A value computed only to be thrown away (a bare
 name, literal or operator expression as a statement, including the trailing statement

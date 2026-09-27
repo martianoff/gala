@@ -743,7 +743,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			return nil, err
 		}
 		if hasResult && !isTerminatingStmt(b) {
-			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), name, funcSlot.typ)
+			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), t.sourceFunctionName(ctx, receiverTypeName), funcSlot.typ)
 		}
 		body = b
 	} else if ctx.Expression() != nil {

@@ -166,22 +166,48 @@ func (t *galaASTTransformer) isSealedExhaustive(matchedType transpiler.Type, pat
 // arm, the transformer must emit it as a bare statement and rely on Go's
 // terminating-statement analysis (panic does not fall through) so the
 // surrounding IIFE still type-checks.
-func isNoReturnCallExpr(expr ast.Expr) bool {
+//
+// The diverging calls are Go's builtin `panic` and the go_builtins `Panic`
+// wrapper (see isPanicWrapperCall). Any other function or method named
+// `Panic` is an ordinary call that may well return a value.
+func (t *galaASTTransformer) isNoReturnCallExpr(expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return false
 	}
-	if ident, ok := call.Fun.(*ast.Ident); ok {
-		// Bare `panic` (the Go builtin) or the dot-imported `Panic` wrapper from
-		// go_builtins, which std/examples use in place of the forbidden builtin.
-		return ident.Name == "panic" || ident.Name == "Panic"
+	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "panic" {
+		// The Go builtin. GALA source cannot spell it (GALA-E0035), so it is
+		// always the transpiler's own lowering of the wrapper.
+		return true
 	}
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		// Qualified `go_builtins.Panic(...)`.
-		return sel.Sel.Name == "Panic"
+	return t.isPanicWrapperCall(call)
+}
+
+// isPanicWrapperCall reports whether call calls the go_builtins `Panic`
+// wrapper, which std and user code use in place of the forbidden builtin. A
+// bare `Panic` is the wrapper (reached by dot-import, directly or through
+// std) unless it names a GALA function or a local binding. A qualified
+// `q.Panic` is the wrapper only when q is an import of the go_builtins
+// package — whatever its alias — and not a value: `e.Panic(x)` on a receiver
+// is an ordinary method call.
+func (t *galaASTTransformer) isPanicWrapperCall(call *ast.CallExpr) bool {
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return fun.Name == "Panic" && t.getFunction(fun.Name) == nil && t.getType(fun.Name).IsNil()
+	case *ast.SelectorExpr:
+		q, ok := fun.X.(*ast.Ident)
+		if !ok || fun.Sel.Name != "Panic" || !t.getType(q.Name).IsNil() {
+			return false
+		}
+		entry, ok := t.importManager.GetByAlias(q.Name)
+		return ok && !entry.IsDot && entry.PkgName == goBuiltinsPkgName
 	}
 	return false
 }
+
+// goBuiltinsPkgName is the package name of martianoff/gala/go_builtins, whose
+// `Panic` wrapper diverges.
+const goBuiltinsPkgName = "go_builtins"
 
 // lowerMatchArmTailExpr classifies a tail expression in a match arm and
 // returns the statement that should appear in its place along with the
@@ -195,8 +221,8 @@ func isNoReturnCallExpr(expr ast.Expr) bool {
 //   - For any other expression, return a `return <expr>` statement and
 //     report the expression's inferred type.
 func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, transpiler.Type) {
-	if isNoReturnCallExpr(expr) {
-		return &ast.ExprStmt{X: lowerPanicWrapperToBuiltin(expr)}, transpiler.NilType{}
+	if t.isNoReturnCallExpr(expr) {
+		return &ast.ExprStmt{X: t.lowerPanicWrapperToBuiltin(expr)}, transpiler.NilType{}
 	}
 	return t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{expr}}), t.inferResultType(expr)
 }
@@ -211,21 +237,9 @@ func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, tra
 // counterpart of the `.Size()` sugar's `len()` emission — GALA source never
 // spells bare `panic`, but the transpiler emits it where Go requires it. A bare
 // Go `panic(...)` (already the builtin) passes through unchanged.
-func lowerPanicWrapperToBuiltin(expr ast.Expr) ast.Expr {
+func (t *galaASTTransformer) lowerPanicWrapperToBuiltin(expr ast.Expr) ast.Expr {
 	call, ok := expr.(*ast.CallExpr)
-	if !ok {
-		return expr
-	}
-	isWrapper := false
-	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "Panic" {
-		isWrapper = true // bare `Panic` via `import . "…/go_builtins"`
-	}
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Panic" {
-		if x, ok := sel.X.(*ast.Ident); ok && x.Name == "go_builtins" {
-			isWrapper = true // qualified `go_builtins.Panic`
-		}
-	}
-	if !isWrapper {
+	if !ok || !t.isPanicWrapperCall(call) {
 		return expr
 	}
 	return &ast.CallExpr{Fun: ast.NewIdent("panic"), Args: call.Args, Ellipsis: call.Ellipsis}
@@ -1278,7 +1292,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					// A trailing if/else is the arm's value too, carried by its
 					// branches. Every branch yields the same type, so the first
 					// one gives the arm's result type.
-					if promoted, ok := promoteIfBranchValues(ifStmt, t.armReturn); ok {
+					if promoted, ok := t.promoteIfBranchValues(ifStmt, t.armReturn); ok {
 						body[len(body)-1] = promoted
 						if result := firstBranchResult(promoted); result != nil {
 							resultType = t.inferResultType(result)

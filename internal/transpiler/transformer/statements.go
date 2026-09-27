@@ -8,6 +8,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"strings"
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
@@ -424,13 +425,21 @@ const (
 	// function or lambda body. A bare value there is unused.
 	tailDiscarded blockTail = iota
 	// tailBranch: a branch of the trailing if-statement of a tailValue block.
-	// The enclosing lambda or match arm promotes the branch's trailing
-	// expression afterwards (see promoteIfBranchValues), so it is lowered as
-	// a statement but is not unused.
+	// Its trailing expression is lowered as a statement; the tailValue block
+	// checks it once it knows whether the chain will be promoted (see
+	// checkUnpromotedBranchTails).
 	tailBranch
-	// tailValue: the trailing expression is the block's value — a
-	// value-returning lambda body, a match arm or partial-function body.
+	// tailValue: the trailing expression is the block's value, and so is a
+	// trailing if/else chain, whose branches the consumer promotes with
+	// promoteIfBranchValues — a value-returning lambda body or a match arm.
 	tailValue
+	// tailExpr: the trailing expression is the block's value, but a trailing
+	// if-statement is not promoted — a partial-function arm body.
+	tailExpr
+	// tailIIFE: only a trailing match or if-expression (lowered to an IIFE)
+	// is known to produce the value; any other trailing statement is
+	// discarded — a block lambda with no value expected of it.
+	tailIIFE
 	// tailReturn: the block is the body of a function declared with a result
 	// type, or a branch of such a body's trailing if-statement. Its trailing
 	// expression is the function's implicit return value, lowered exactly
@@ -444,8 +453,8 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 	return t.transformBlockWithTail(ctx, tailDiscarded, slot{})
 }
 
-// transformValueBlock lowers a block whose trailing expression is its value
-// (a value-returning lambda body, a match arm or partial-function body). s is
+// transformValueBlock lowers a block whose trailing expression, or trailing
+// if/else chain, is its value (a value-returning lambda body or a match arm). s is
 // the slot that value fills, zero when unknown: a lambda, if or match tail is
 // lowered against it (see lowerAgainst).
 func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
@@ -462,7 +471,9 @@ func (t *galaASTTransformer) transformFunctionBody(ctx *grammar.BlockContext) (*
 // this block's trailing statement only; they are parameters, not transformer
 // state, so nested and sibling blocks cannot inherit them.
 func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
-	lastStmtIsValue := tail == tailValue || tail == tailReturn
+	// A match or if-expression at the tail of every value-carrying block is
+	// value-consumed, not statement-position.
+	lastStmtIsValue := tail != tailDiscarded && tail != tailBranch
 	t.pushScope()
 	defer t.popScope()
 
@@ -544,10 +555,14 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		var stmt ast.Stmt
 		var err error
 		valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext))
+		// The trailing value of a lambda whose result type is not known yet
+		// is one of its result values, like a `return` value.
+		fillsPendingSlot := isTrailing && lastStmtIsValue && valueExpr != nil && ctx == t.returnSlot.body && t.returnSlotPending()
+		ifCtx := ifStatementOf(stmtCtx.(*grammar.StatementContext))
 		if isTrailing && tail == tailReturn && valueExpr != nil {
 			// The function's implicit return value.
 			stmt, err = t.lowerFunctionTail(valueExpr)
-		} else if ifCtx := ifStatementOf(stmtCtx.(*grammar.StatementContext)); isTrailing && tail != tailDiscarded && ifCtx != nil {
+		} else if isTrailing && ifCtx != nil && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
 			// A trailing if/else carries the block's value in its branches,
 			// and so does an if/else nested at the tail of such a branch.
 			branchTail := tailBranch
@@ -555,6 +570,13 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				branchTail = tailReturn
 			}
 			stmt, err = t.transformIfStatementWithTail(ifCtx, branchTail)
+			if ifStmt, ok := stmt.(*ast.IfStmt); ok && err == nil && tail == tailValue {
+				// The consumer promotes the chain only when every branch
+				// ends in a value; otherwise its branch tails are discarded.
+				if _, promotes := t.promoteIfBranchValues(ifStmt, plainReturn); !promotes {
+					err = t.checkUnpromotedBranchTails(ifCtx, ifStmt)
+				}
+			}
 		} else if isTrailing && lastStmtIsValue &&
 			!transpiler.IsUnusable(lastValueExpected.typ) && t.needsExpectedType(valueExpr) {
 			// The block's value fills a typed slot: a lambda, if or match tail is
@@ -563,9 +585,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
-		} else if isTrailing && lastStmtIsValue && valueExpr != nil && ctx == t.returnSlot.body && t.returnSlotPending() {
-			// The trailing value of a lambda whose result type is not known
-			// yet is one of its result values, like a `return` value.
+		} else if fillsPendingSlot {
 			if err = t.checkForbiddenStatementKeyword(valueExpr); err == nil {
 				stmt = &ast.ExprStmt{X: t.lowerFillingValue(valueExpr, false)}
 			}
@@ -589,7 +609,13 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			t.pendingMatchStmtBlock = nil
 			continue
 		}
-		if (!isTrailing || tail == tailDiscarded) && valueExpr != nil {
+		// A value is discarded by every statement but the trailing one of a
+		// value-carrying block. At the tail of a tailIIFE block only a match
+		// or if-expression carries the value — even when it fills a pending
+		// slot, any other value is never promoted to the lambda's return.
+		discarded := !isTrailing || tail == tailDiscarded ||
+			(tail == tailIIFE && !t.needsExpectedType(valueExpr))
+		if discarded && valueExpr != nil {
 			if err := t.checkValueUsed(valueExpr, stmt); err != nil {
 				return nil, err
 			}
@@ -713,8 +739,8 @@ func (t *galaASTTransformer) lowerFunctionTail(exprCtx grammar.IExpressionContex
 		return nil, err
 	}
 	value := ret.Results[0]
-	if isNoReturnCallExpr(value) {
-		return &ast.ExprStmt{X: lowerPanicWrapperToBuiltin(value)}, nil
+	if t.isNoReturnCallExpr(value) {
+		return &ast.ExprStmt{X: t.lowerPanicWrapperToBuiltin(value)}, nil
 	}
 	if _, void := t.getExprTypeName(value).(transpiler.VoidType); void || isVoidIIFE(value) {
 		return nil, t.semanticErrorAt(exprCtx, fmt.Sprintf(
@@ -722,6 +748,18 @@ func (t *galaASTTransformer) lowerFunctionTail(exprCtx grammar.IExpressionContex
 			t.returnSlot.typ, exprCtx.GetText()))
 	}
 	return ret, nil
+}
+
+// sourceFunctionName is the name a diagnostic gives a function declaration:
+// `Name`, or `Type.Name` for a method. It is the GALA spelling, never the
+// standalone `Type_Name` a generic method is lowered to. receiverTypeName is
+// the receiver's resolved base type name, "" for a plain function.
+func (t *galaASTTransformer) sourceFunctionName(ctx *grammar.FunctionDeclarationContext, receiverTypeName string) string {
+	name := ctx.Identifier().GetText()
+	if receiverTypeName == "" {
+		return name
+	}
+	return strings.TrimPrefix(receiverTypeName, t.packageName+".") + "." + name
 }
 
 // missingReturnError reports a function body that can finish without the value
@@ -771,6 +809,44 @@ func isTerminatingStmt(s ast.Stmt) bool {
 		return true
 	}
 	return false
+}
+
+// checkUnpromotedBranchTails runs checkValueUsed on the trailing statement of
+// every branch of an if/else chain lowered with tailBranch, once it is known
+// the chain will not be promoted: its branch tails are then discarded like
+// any other statement. ifCtx is the GALA chain and stmt its lowering.
+func (t *galaASTTransformer) checkUnpromotedBranchTails(ifCtx *grammar.IfStatementContext, stmt *ast.IfStmt) error {
+	checkBlock := func(blockCtx grammar.IBlockContext, blk *ast.BlockStmt) error {
+		stmts := blockCtx.(*grammar.BlockContext).AllStatement()
+		if len(stmts) == 0 || blk == nil || len(blk.List) == 0 {
+			return nil
+		}
+		last := stmts[len(stmts)-1].(*grammar.StatementContext)
+		lowered := blk.List[len(blk.List)-1]
+		if inner, ok := lowered.(*ast.IfStmt); ok {
+			if innerCtx := ifStatementOf(last); innerCtx != nil {
+				return t.checkUnpromotedBranchTails(innerCtx, inner)
+			}
+		}
+		if valueExpr := trailingValueExpression(last); valueExpr != nil {
+			return t.checkValueUsed(valueExpr, lowered)
+		}
+		return nil
+	}
+	if err := checkBlock(ifCtx.Block(0), stmt.Body); err != nil {
+		return err
+	}
+	switch e := stmt.Else.(type) {
+	case *ast.BlockStmt:
+		if ifCtx.Block(1) != nil {
+			return checkBlock(ifCtx.Block(1), e)
+		}
+	case *ast.IfStmt:
+		if elseIf, ok := ifCtx.IfStatement().(*grammar.IfStatementContext); ok && elseIf != nil {
+			return t.checkUnpromotedBranchTails(elseIf, e)
+		}
+	}
+	return nil
 }
 
 // checkValueUsed rejects an expression statement whose value is discarded

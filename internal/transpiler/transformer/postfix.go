@@ -550,7 +550,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 						// A trailing if/else is the arm's value too, carried by
 						// its branches. Every branch yields the same type, so
 						// the first one gives the arm's result type.
-						if promoted, ok := promoteIfBranchValues(ifStmt, t.armReturn); ok {
+						if promoted, ok := t.promoteIfBranchValues(ifStmt, t.armReturn); ok {
 							defaultBody[len(defaultBody)-1] = promoted
 							if result := firstBranchResult(promoted); result != nil {
 								resultTypes = append(resultTypes, t.inferResultType(result))
