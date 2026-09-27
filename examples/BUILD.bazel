@@ -2678,6 +2678,7 @@ gala_exec_test(
     name = "try_val_destructure",
     src = "try_val_destructure.gala",
     expected = "try_val_destructure.out",
+    deps = ["//go_interop"],
 )
 
 # Match branch sealed type inference: None() infers type params from match subject

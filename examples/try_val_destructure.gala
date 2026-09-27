@@ -3,6 +3,8 @@ package main
 import (
     "os"
     "path/filepath"
+
+    . "martianoff/gala/go_interop"
 )
 
 // A Go call returning (T, error) is a Try[T] when used as a value: `.Get()`
@@ -15,7 +17,7 @@ func main() {
     f.Close()
 
     os.ReadFile(path) match {
-        case Success(data) => Println(string(data))
+        case Success(data) => Println(ToString(data))
         case Failure(err) => Println(s"read failed: $err")
     }
 
