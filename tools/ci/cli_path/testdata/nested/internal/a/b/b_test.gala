@@ -1,0 +1,5 @@
+package b
+
+import . "martianoff/gala/test"
+
+func TestSquare(t T) T = Eq(t, Square(4), 16)

@@ -1,0 +1,9 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A single package main at the module root: the layout `gala new` produces.
+func main() {
+    Println(s"layout: ${ArrayOf("root", "main").MkString("/")}")
+    Println(s"sum: ${ArrayOf(1, 2, 3).FoldLeft(0, (acc, x) => acc + x)}")
+}

@@ -1,0 +1,12 @@
+package main
+
+import acp "github.com/martianoff/gala-acp"
+
+// A published GALA module fetched by the CLI into an empty GALA_HOME.
+func main() {
+    val first = acp.ContentHash("alice", "bob", "note", "hello", 1)
+    val again = acp.ContentHash("alice", "bob", "note", "hello", 1)
+    val other = acp.ContentHash("alice", "bob", "note", "hello", 2)
+    Println(s"stable: ${first == again}")
+    Println(s"epoch-sensitive: ${first != other}")
+}

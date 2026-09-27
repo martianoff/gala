@@ -1,0 +1,7 @@
+package main
+
+import "example.com/cmdapp"
+
+func main() {
+    Println(cmdapp.Greet("cmd/app"))
+}

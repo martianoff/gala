@@ -1,0 +1,13 @@
+package libonly
+
+// A module with no package main: `gala build` compile-checks it and
+// `gala test` runs its tests.
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(W int, H int)
+}
+
+func Area(s Shape) int = s match {
+    case Circle(r) => 3 * r * r
+    case Rect(w, h) => w * h
+}

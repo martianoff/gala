@@ -1,0 +1,7 @@
+﻿package a
+
+import "example.com/nested/internal/a/b"
+
+// This file starts with a UTF-8 byte-order mark, as editors on Windows
+// commonly write it, and carries non-ASCII text through to the output.
+func Describe(n int) string = s"nested: $n squared is ${b.Square(n)} (ünïcödé ✓)"

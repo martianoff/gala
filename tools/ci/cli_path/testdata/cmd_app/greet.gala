@@ -1,0 +1,4 @@
+package cmdapp
+
+// The module root is a library; the executable lives under cmd/app.
+func Greet(name string) string = s"hello, $name"
