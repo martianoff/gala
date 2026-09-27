@@ -1,5 +1,6 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_gala//gala:defs.bzl", "gala_binary", "gala_bootstrap_transpile", "gala_library", "gala_test")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files([
     "list.gala",
@@ -171,3 +172,6 @@ go_binary(
 #     srcs = ["go_native_perf_test.go"],
 #     embed = [":collection_mutable_lib"],
 # )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()

@@ -1,4 +1,5 @@
 load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files(["io.gala"])
 
@@ -29,3 +30,6 @@ gala_test(
     srcs = ["io_test.gala"],
     deps = [":io"],
 )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()

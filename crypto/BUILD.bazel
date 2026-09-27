@@ -1,4 +1,5 @@
 load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files(["crypto.gala"])
 
@@ -37,3 +38,6 @@ gala_test(
         "//go_interop",
     ],
 )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()

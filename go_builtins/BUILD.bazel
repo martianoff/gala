@@ -1,4 +1,5 @@
 load("@rules_go//go:def.bzl", "go_library")
+load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files(["builtins.go"])
 
@@ -8,3 +9,6 @@ go_library(
     importpath = "martianoff/gala/go_builtins",
     visibility = ["//visibility:public"],
 )
+
+# Declares :shipped_sources for the stdlib embed completeness test.
+stdlib_shipped_sources()
