@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"sort"
+	"strconv"
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -37,6 +38,9 @@ type galaScope struct {
 	// declares, plus the package's own hand-written Go declarations. A name
 	// that is also a Go symbol is never hidden.
 	goNames map[string]bool
+	// paths maps a loaded GALA package name to its import path(s), for the
+	// hint.
+	paths map[string][]string
 }
 
 func (a *galaAnalyzer) buildGalaScope(imports []fileImport, rich *transpiler.RichAST, filePath string) galaScope {
@@ -45,6 +49,12 @@ func (a *galaAnalyzer) buildGalaScope(imports []fileImport, rich *transpiler.Ric
 		visible:   map[string]bool{registry.StdPackageName: true, rich.PackageName: true},
 		named:     make(map[string]string),
 		goNames:   make(map[string]bool),
+		paths:     make(map[string][]string),
+	}
+	for path, pkg := range rich.Packages {
+		if pkg != "" {
+			s.paths[pkg] = append(s.paths[pkg], path)
+		}
 	}
 	for _, imp := range imports {
 		if !a.isGalaImport(imp.Path) {
@@ -155,6 +165,25 @@ func (s galaScope) namedImportQualifier(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// declaringImportPaths returns the import paths of the loaded GALA packages
+// that declare name, for the hint.
+func (s galaScope) declaringImportPaths(name string) []string {
+	var out []string
+	for _, p := range s.declarers[name] {
+		out = append(out, s.paths[p]...)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func quoteAll(ss []string) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = strconv.Quote(s)
+	}
+	return out
 }
 
 func lastDotIndex(s string) int {

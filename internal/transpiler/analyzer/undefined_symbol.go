@@ -1030,6 +1030,15 @@ func (c *undefChecker) hintFor(name string) string {
 	candidates := galaPackagesDeclaring(name, c.hints, c.importResolves)
 	switch len(candidates) {
 	case 0:
+		// Not on the search roots, but the compilation loaded a package that
+		// declares it (typically another package of this module, reached
+		// through the import graph): name its import path.
+		if paths := c.scope.declaringImportPaths(name); len(paths) > 0 {
+			return fmt.Sprintf(
+				"%s is declared in %s, which this file does not import. "+
+					"Add `import . \"<path>\"` to use it unqualified, or import it plainly and qualify the call.",
+				name, strings.Join(quoteAll(paths), ", "))
+		}
 		return "check the spelling, add the import that introduces this name, or declare it — " +
 			"every identifier must resolve to a binding, a declaration in this package, or an imported symbol"
 	case 1:
