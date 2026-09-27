@@ -1,0 +1,41 @@
+package main
+
+// A user-defined `Get()` method on a generic receiver, called from generic code
+// where the receiver's type argument is still a type parameter. The result of
+// `b.Get()` is `T` — not the receiver type — for both pointer and value
+// receivers, so it flows into `Some(v)`, arithmetic and string interpolation
+// with its real type.
+
+struct Box[T any](Value T)
+
+func (b *Box[T]) Get() T = b.Value
+
+struct Cell[T any](Value T)
+
+func (c Cell[T]) Get() T = c.Value
+
+struct Slot[T any](Value T)
+
+func (s *Slot[T]) Get() Option[T] = Some(s.Value)
+
+func viaPointer[T any](b *Box[T], fallback T) T {
+    val v = b.Get()
+    return Some(v).GetOrElse(fallback)
+}
+
+func viaValue[T any](c Cell[T], fallback T) T {
+    val v = c.Get()
+    return Some(v).GetOrElse(fallback)
+}
+
+func viaPointerOption[T any](s *Slot[T]) string = s.Get().Map((v) => s"slot holds $v").GetOrElse("empty slot")
+
+func main() {
+    var b = Box(41)
+    Println(viaPointer(&b, 0) + 1)
+
+    Println(viaValue(Cell("cell"), "fallback"))
+
+    var s = Slot(true)
+    Println(viaPointerOption(&s))
+}

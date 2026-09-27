@@ -699,9 +699,17 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 			return gen.Params[0]
 		}
 	}
-	// For other types, use generic method lookup via typeMetas
-	// This handles Array[T].Get() -> T, List[T].Get() -> T, etc.
-	if genType, ok := xType.(transpiler.GenericType); ok {
+	// For other generic types, use generic method lookup via typeMetas. This
+	// handles Array[T].Get() -> T, List[T].Get() -> T, *Future[A].Get() -> A,
+	// etc. A pointer receiver is looked up through its element type, whose
+	// name the methods are registered under. The receiver's type arguments are
+	// substituted as they are — including a type parameter of the enclosing
+	// generic function (`b *Box[T]` → `T`), which is the correct result there.
+	recvElem := xType
+	if ptrType, ok := xType.(transpiler.PointerType); ok {
+		recvElem = ptrType.Elem
+	}
+	if genType, ok := recvElem.(transpiler.GenericType); ok {
 		baseTypeName := genType.Base.String()
 		if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
 			if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
@@ -709,25 +717,9 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 			}
 		}
 	}
-	// Handle pointer-wrapped generic types (e.g., *Future[Array[int]].Get())
-	// Only when all type params are concrete (not unresolved like *List[T])
-	if ptrType, ok := xType.(transpiler.PointerType); ok {
-		if genType, ok := ptrType.Elem.(transpiler.GenericType); ok && !t.hasTypeParams(genType) {
-			baseTypeName := genType.Base.String()
-			if typeMeta := t.getTypeMeta(baseTypeName); typeMeta != nil {
-				if methodMeta, ok := typeMeta.Methods[sel.Sel.Name]; ok {
-					return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, genType.Params)
-				}
-			}
-		}
-	}
 	// For a non-generic named type that declares its own method (e.g. a user type
 	// with a real `Get() Option[T]` accessor), return the method's declared return
-	// type. Without this, the fallback below returns the receiver type itself,
-	// erasing the real return type — which silently breaks downstream inference such
-	// as a chained `Option.FlatMap`/`Map` on the result (it would be keyed off the
-	// receiver type instead of Option, producing an undefined monomorphized helper).
-	// The generic-type branches above already handle generic receivers with
+	// type. The generic-type branch above already handles generic receivers with
 	// substitution, so this only fills the non-generic named-type gap.
 	// Pointer receivers: methods are registered under the element type's name,
 	// so *T's methods are looked up via T.
@@ -742,9 +734,10 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 			return result
 		}
 	}
-	if xType == nil {
-		return transpiler.NilType{}
-	}
-	return xType
+	// No Get() method could be resolved. Report the type as unknown rather than
+	// guessing: returning the receiver type here typed `b.Get()` as `b` itself,
+	// which silently mis-typed everything downstream (e.g. `Some(v)` became
+	// `Some[*Box[T]]`) instead of surfacing the gap.
+	return transpiler.NilType{}
 }
 
