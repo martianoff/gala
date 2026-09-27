@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -363,4 +364,71 @@ func TestCache_ListVersions_IgnoresStaging(t *testing.T) {
 	versions, err := cache.ListVersions("github.com/test/lib")
 	require.NoError(t, err)
 	assert.Empty(t, versions)
+}
+
+// Concurrent stores over an incomplete module (what every entry cached by a
+// gala without the marker looks like) all succeed and publish one complete
+// copy: none of them deletes a copy another one just published.
+func TestCache_Store_ConcurrentOverIncompleteModule(t *testing.T) {
+	cache, sourceDir := newStoreFixture(t)
+	modPath := cache.Config().ModulePath("github.com/test/lib", "v1.0.0")
+	require.NoError(t, os.MkdirAll(modPath, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(modPath, "leftover.gala"), []byte("package lib\n"), 0644))
+
+	const n = 8
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = cache.Store("github.com/test/lib", "v1.0.0", sourceDir)
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+
+	assert.True(t, cache.Config().IsCached("github.com/test/lib", "v1.0.0"))
+	assert.FileExists(t, filepath.Join(modPath, "lib.gala"))
+	assert.FileExists(t, filepath.Join(modPath, "sub", "sub.gala"))
+	assert.NoFileExists(t, filepath.Join(modPath, "leftover.gala"))
+	assertNoStagingLeft(t, modPath)
+}
+
+// The dependency graph reads a module's gala.mod through GetGalaMod; a partial
+// module must not answer, so the graph builder fetches it again.
+func TestCache_GetGalaMod_IgnoresIncompleteModule(t *testing.T) {
+	cache, sourceDir := newStoreFixture(t)
+	modPath := cache.Config().ModulePath("github.com/test/lib", "v1.0.0")
+	require.NoError(t, os.MkdirAll(modPath, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(modPath, "gala.mod"), []byte("module github.com/test/lib\n"), 0644))
+
+	_, err := cache.GetGalaMod("github.com/test/lib", "v1.0.0")
+	require.Error(t, err)
+
+	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
+	_, err = cache.GetGalaMod("github.com/test/lib", "v1.0.0")
+	require.NoError(t, err)
+}
+
+// Staging trees a killed process left behind are removed by a later store once
+// they are old enough to belong to nobody; a recent one may be a live store.
+func TestCache_Store_SweepsAbandonedStaging(t *testing.T) {
+	cache, sourceDir := newStoreFixture(t)
+	modPath := cache.Config().ModulePath("github.com/test/lib", "v1.0.0")
+	require.NoError(t, os.MkdirAll(filepath.Dir(modPath), 0755))
+
+	abandoned, err := os.MkdirTemp(filepath.Dir(modPath), siblingPrefix(modPath, stagingTag))
+	require.NoError(t, err)
+	old := time.Now().Add(-2 * abandonedAfter)
+	require.NoError(t, os.Chtimes(abandoned, old, old))
+	recent, err := os.MkdirTemp(filepath.Dir(modPath), siblingPrefix(modPath, stagingTag))
+	require.NoError(t, err)
+
+	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
+
+	assert.NoDirExists(t, abandoned)
+	assert.DirExists(t, recent)
 }
