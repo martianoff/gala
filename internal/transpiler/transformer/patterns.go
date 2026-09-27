@@ -5,8 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -282,22 +280,21 @@ func bareVariantBindingError(name string, variant *transpiler.SealedVariant, par
 	)
 }
 
-// isStableIdentifierPattern reports whether a bare identifier in pattern
-// position is a stable identifier — a capitalized name that refers to an
-// in-scope value — rather than a fresh binding. Following Scala, such a pattern
-// compares the subject for equality with that value. Binding it instead would
-// shadow the value and match everything, so `case Development =>` would
-// silently become a catch-all. The value may be a local or package-level
-// val/var, a parameter, a binding of an enclosing case arm, or a const/var
-// declared in a hand-written Go file of the same (non-main) package.
-// Lowercase identifiers always bind (and may shadow an outer value), and a
-// name bound earlier in the same pattern is not a value in scope: `case (X, X)`
-// is a repeated binding, rejected by transformSimpleBindingOrLiteral.
+// isStableIdentifierPattern reports whether a bare identifier in a pattern is a
+// stable identifier, compared with == rather than bound (as in Scala): a
+// capitalized name of a value in scope that was not bound earlier in this same
+// pattern, or of a const/var in a hand-written Go file of the package.
 func (t *galaASTTransformer) isStableIdentifierPattern(name string) bool {
-	if first, _ := utf8.DecodeRuneInString(name); !unicode.IsUpper(first) {
+	return t.isStableIdentifierIn(name, t.bindingScope(name))
+}
+
+// isStableIdentifierIn is isStableIdentifierPattern for a name already
+// resolved to s (nil when unbound).
+func (t *galaASTTransformer) isStableIdentifierIn(name string, s *scope) bool {
+	if !ast.IsExported(name) {
 		return false
 	}
-	if s := t.bindingScope(name); s != nil {
+	if s != nil {
 		return !t.boundInCurrentPattern(s)
 	}
 	// Same-package Go declarations are keyed by the package name, which an
@@ -320,6 +317,12 @@ func (t *galaASTTransformer) isStableIdentifierPattern(name string) bool {
 	return ok
 }
 
+// isPatternBinding reports whether a sub-pattern's text is a plain name that
+// binds a new variable, rather than a stable identifier compared by ==.
+func (t *galaASTTransformer) isPatternBinding(text string) bool {
+	return t.isSimpleIdentifier(text) && !t.isStableIdentifierPattern(text)
+}
+
 // boundInCurrentPattern reports whether s, the scope a name resolved to, is
 // the scope of the case arm whose pattern is being lowered — i.e. the name was
 // bound earlier in this same pattern.
@@ -332,7 +335,7 @@ func (t *galaASTTransformer) boundInCurrentPattern(s *scope) bool {
 // or an operator expression — all of which compare by equality.
 func patternIdentifier(ctx grammar.IExpressionContext) string {
 	postfix := LeadingPostfixExpr(ctx, true)
-	if postfix == nil || len(postfix.AllPostfixSuffix()) > 0 || len(postfix.AllCaseClause()) > 0 {
+	if postfix == nil || postfix.PostfixSuffix(0) != nil || postfix.CaseClause(0) != nil {
 		return ""
 	}
 	if p := PrimaryOf(postfix); p != nil && p.Identifier() != nil {
@@ -389,14 +392,15 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 
 		// A name bound earlier in this same pattern is neither a fresh binding
 		// (Go would reject the redeclaration) nor a value to compare against.
-		if s := t.bindingScope(name); s != nil && t.boundInCurrentPattern(s) {
+		s := t.bindingScope(name)
+		if s != nil && t.boundInCurrentPattern(s) {
 			err := galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 				fmt.Sprintf("'%s' is bound more than once in this pattern", name))
 			err.Hint = "bind each part to its own name and compare them in a guard: `case (a, b) if a == b =>`"
 			return nil, nil, err
 		}
 
-		if !t.isStableIdentifierPattern(name) {
+		if !t.isStableIdentifierIn(name, s) {
 			t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
 			// Set the type of the bound variable to the matched type
 			if matchedType != nil && !matchedType.IsNil() {
@@ -1795,7 +1799,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			}
 
 			// Check if this is a simple identifier binding
-			if t.isSimpleIdentifier(patternText) && !t.isStableIdentifierPattern(patternText) {
+			if t.isPatternBinding(patternText) {
 				varName := patternText
 				t.currentScope.vals[varName] = false
 				if elemType != nil && !elemType.IsNil() {
@@ -2055,7 +2059,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 				elemExpr = ast.NewIdent(innerName)
 			}
 
-			if t.isSimpleIdentifier(patternText) && !t.isStableIdentifierPattern(patternText) {
+			if t.isPatternBinding(patternText) {
 				varName := patternText
 				t.currentScope.vals[varName] = false
 				if elemType != nil && !elemType.IsNil() {

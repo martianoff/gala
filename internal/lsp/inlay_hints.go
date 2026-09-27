@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/owenrumney/go-lsp/lsp"
 
@@ -226,7 +224,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 // stable identifier rather than a binding: a capitalized name of one of the
 // package's vals/vars, which the pattern compares against instead of binding.
 func isStablePatternName(name string, richAST *transpiler.RichAST) bool {
-	if first, _ := utf8.DecodeRuneInString(name); !unicode.IsUpper(first) || richAST == nil {
+	if !isExported(name) || richAST == nil {
 		return false
 	}
 	_, ok := richAST.PackageVals[name]
