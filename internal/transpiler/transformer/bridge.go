@@ -80,6 +80,14 @@ func (t *galaASTTransformer) toInferTypeMemoized(typ transpiler.Type, normalized
 		} else {
 			res = &infer.TypeConst{Name: "unit"}
 		}
+		// A zero-parameter function takes `unit`, matching how toInferExpr
+		// encodes a zero-argument call (applied to a `unit` literal). Encoding
+		// it as its bare result would make `func() int` indistinguishable from
+		// `int`: an if-expression choosing between `() => 3` and `() => 4`
+		// would be typed `int`.
+		if len(v.Params) == 0 {
+			return &infer.TypeApp{Name: "->", Args: []infer.Type{&infer.TypeConst{Name: "unit"}, res}}
+		}
 		for i := len(v.Params) - 1; i >= 0; i-- {
 			res = &infer.TypeApp{Name: "->", Args: []infer.Type{
 				t.toInferTypeMemoized(v.Params[i], normalizedNames),
@@ -112,6 +120,10 @@ func (t *galaASTTransformer) fromInferType(typ infer.Type) transpiler.Type {
 		return transpiler.NilType{}
 	case *infer.TypeApp:
 		if v.Name == "->" {
+			// `unit -> R` is a zero-parameter function (see toInferType).
+			if c, ok := v.Args[0].(*infer.TypeConst); ok && c.Name == "unit" {
+				return transpiler.FuncType{Results: []transpiler.Type{t.fromInferType(v.Args[1])}}
+			}
 			// This is more complex because it's curried
 			params := []transpiler.Type{t.fromInferType(v.Args[0])}
 			curr := v.Args[1]

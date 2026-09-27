@@ -835,7 +835,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
-				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt())
+				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), nil)
 				if err != nil {
 					return nil, nil, nil, err
 				}
@@ -846,7 +846,7 @@ func (t *galaASTTransformer) transformMatchClauses(ctx grammar.IExpressionContex
 			continue
 		}
 
-		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType)
+		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, nil)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1521,8 +1521,9 @@ func collectReferencedIdents(nodes []ast.Node) map[string]bool {
 	return refs
 }
 
-// transformCaseClauseWithType transforms a case clause and returns its result type
-func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
+// transformCaseClauseWithType transforms a case clause and returns its result
+// type. armExpected is the match's expected value type (see transformCaseBodyStmt).
+func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType, armExpected transpiler.Type) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
 	defer t.popScope()
 
@@ -1553,6 +1554,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		// The case body's block last expression becomes the arm's value, so
 		// it is value-consumed (not statement-position).
 		t.blockLastStmtIsValue = true
+		t.blockLastValueExpected = armExpected
 		b, err := t.transformBlock(ctx.GetBodyBlock().(*grammar.BlockContext))
 		if err != nil {
 			return nil, nil, err
@@ -1589,7 +1591,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 			resultType = transpiler.VoidType{}
 		}
 	} else if ctx.GetBodyStmt() != nil {
-		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt())
+		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armExpected)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1640,10 +1642,12 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 // transformCaseBodyStmt transforms a simpleStatement case body.
 // Returns (stmts, resultType, error) where stmts are the Go statements for the body,
 // and resultType is the type (VoidType for assignments/incDec, or the expression type).
-func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext) ([]ast.Stmt, transpiler.Type, error) {
+// armExpected is the match's expected value type (nil when unknown); an
+// expression body is lowered against it (see transformBranchValue).
+func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armExpected transpiler.Type) ([]ast.Stmt, transpiler.Type, error) {
 	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
-		expr, err := t.transformExpression(exprCtx)
+		expr, err := t.transformBranchValue(exprCtx, armExpected)
 		if err != nil {
 			return nil, nil, err
 		}

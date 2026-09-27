@@ -884,6 +884,15 @@ func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.I
 		}
 	}
 
+	// if-expression or match choosing between lambdas for a function-typed
+	// result: lower the branches against that type.
+	if expr == nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
+		expr, _, err = t.transformBranchingInSlot(exprCtx, t.astTypeToTranspilerType(funcType.Results.List[0].Type))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// if-expression with expected return type.
 	if expr == nil {
 		ifExprCtx := t.findIfExpressionInExpression(exprCtx)

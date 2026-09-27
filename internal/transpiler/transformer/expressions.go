@@ -661,15 +661,21 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 	// the declared signature into each branch's lambda. The bare lambda consumes
 	// the hint (transformLambda), so re-establish it before each branch.
 	branchParams, branchRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+	// The if-expression's expected type is also each branch's: a branch that
+	// is a lambda (or a nested if/match of lambdas) is lowered against it.
+	var branchExpected transpiler.Type
+	if t.expectedIfExprType != nil {
+		branchExpected = t.astTypeToTranspilerType(t.expectedIfExprType)
+	}
 
 	branches := ctx.AllIfExprBranch()
 	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
-	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext))
+	thenStmts, thenExpr, thenTerminates, err := t.transformIfExprBranch(branches[0].(*grammar.IfExprBranchContext), branchExpected)
 	if err != nil {
 		return nil, err
 	}
 	t.expectedLambdaParamTypes, t.expectedLambdaRetType = branchParams, branchRet
-	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext))
+	elseStmts, elseExpr, elseTerminates, err := t.transformIfExprBranch(branches[1].(*grammar.IfExprBranchContext), branchExpected)
 	if err != nil {
 		return nil, err
 	}
@@ -704,8 +710,11 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 	}
 
 	retTypeExpr := t.typeToExpr(retType)
-	// If type inference failed and we have an expected type from the enclosing function, use it
-	if retType.IsNil() && t.expectedIfExprType != nil {
+	// If type inference failed and we have an expected type from the enclosing
+	// function, use it. A function-typed slot always fixes the result type: the
+	// branches were lowered against it, and the slot's own spelling (a named
+	// function type, say) is what the value must be assignable to.
+	if t.expectedIfExprType != nil && (retType.IsNil() || t.resolveTranspilerTypeAsFuncType(branchExpected) != nil) {
 		retTypeExpr = t.expectedIfExprType
 	}
 
@@ -872,9 +881,12 @@ func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpre
 // (its last statement is an explicit `return`); when true, the caller must
 // not append a synthesized `return <expr>` to the branch body, since that
 // would be unreachable dead code with a placeholder expression.
-func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext) ([]ast.Stmt, ast.Expr, bool, error) {
+//
+// expected is the if-expression's expected type (nil when unknown); the
+// branch's value expression is lowered against it (see transformBranchValue).
+func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, expected transpiler.Type) ([]ast.Stmt, ast.Expr, bool, error) {
 	if exprCtx := ctx.Expression(); exprCtx != nil {
-		expr, err := t.transformExpression(exprCtx)
+		expr, err := t.transformBranchValue(exprCtx, expected)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -901,16 +913,12 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	// Try to extract expression from the last statement:
 	// statement → declaration → simpleStatement → expression
 	lastStmtCtx := stmts[len(stmts)-1].(*grammar.StatementContext)
-	if declCtx := lastStmtCtx.Declaration(); declCtx != nil {
-		if simpleCtx := declCtx.SimpleStatement(); simpleCtx != nil {
-			if exprCtx := simpleCtx.Expression(); exprCtx != nil {
-				expr, err := t.transformExpression(exprCtx)
-				if err != nil {
-					return nil, nil, false, err
-				}
-				return preceding, expr, false, nil
-			}
+	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
+		expr, err := t.transformBranchValue(exprCtx, expected)
+		if err != nil {
+			return nil, nil, false, err
 		}
+		return preceding, expr, false, nil
 	}
 
 	// If the last statement isn't a bare expression, transform it normally
@@ -933,6 +941,65 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		return preceding, branchExpr, true, nil
 	}
 	return preceding, ast.NewIdent("nil"), false, nil
+}
+
+// transformBranchValue lowers the value expression of an if-expression branch
+// or a match arm against the branching expression's expected type: a lambda
+// takes its parameter and result types from it, and a nested if-expression or
+// match passes it on to its own branches. Without an expected function type the
+// expression is lowered as usual.
+func (t *galaASTTransformer) transformBranchValue(exprCtx grammar.IExpressionContext, expected transpiler.Type) (ast.Expr, error) {
+	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
+		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(expected); ok {
+			// This lambda is the one a bare-lambda hint (typed val) was meant
+			// for; hide the hint so a lambda inside its body cannot take it.
+			prevParams, prevRet := t.expectedLambdaParamTypes, t.expectedLambdaRetType
+			t.expectedLambdaParamTypes, t.expectedLambdaRetType = nil, nil
+			defer func() { t.expectedLambdaParamTypes, t.expectedLambdaRetType = prevParams, prevRet }()
+			return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, true)
+		}
+	}
+	if expr, handled, err := t.transformBranchingInSlot(exprCtx, expected); handled {
+		return expr, err
+	}
+	return t.transformExpression(exprCtx)
+}
+
+// branchValueUsesExpected reports whether transformBranchValue lowers exprCtx
+// differently from transformExpression: expected is a function type and
+// exprCtx is a lambda, an if-expression, or a match.
+func (t *galaASTTransformer) branchValueUsesExpected(exprCtx grammar.IExpressionContext, expected transpiler.Type) bool {
+	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(expected) != nil &&
+		(t.findLambdaInExpression(exprCtx) != nil || t.findIfExpressionInExpression(exprCtx) != nil || t.expressionIsBareMatch(exprCtx))
+}
+
+// transformBranchingInSlot lowers exprCtx when it is an if-expression or a
+// match standing in a slot of function type expected (a struct field or
+// function argument, a typed val, a return, a branch of an enclosing
+// if/match): the if-expression takes expected as its IIFE result type, and
+// either form lowers each branch value against it, so `if (c) (x) => x + 1
+// else (x) => x - 1` types its lambdas from the slot. handled is false for any
+// other expression, and when expected is not a function type.
+func (t *galaASTTransformer) transformBranchingInSlot(exprCtx grammar.IExpressionContext, expected transpiler.Type) (expr ast.Expr, handled bool, err error) {
+	if exprCtx == nil || t.resolveTranspilerTypeAsFuncType(expected) == nil {
+		return nil, false, nil
+	}
+	if ifCtx := t.findIfExpressionInExpression(exprCtx); ifCtx != nil {
+		prev := t.expectedIfExprType
+		t.expectedIfExprType = t.typeToExpr(expected)
+		defer func() { t.expectedIfExprType = prev }()
+		expr, err = t.transformIfExpression(ifCtx)
+		return expr, true, err
+	}
+	if t.expressionIsBareMatch(exprCtx) {
+		// The match takes its arms' expected type from the top of
+		// expectedArgTypes (see buildMatchExpressionFromClauses).
+		release := t.expectedArgTypes.push(expected)
+		defer release()
+		expr, err = t.transformExpression(exprCtx)
+		return expr, true, err
+	}
+	return nil, false, nil
 }
 
 // unwrapImmutable is the single canonical unwrap helper for val-wrapped

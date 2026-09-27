@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 )
 
 // NOTE (deferred forms): this slice detects tail self-calls on the ANTLR parse
@@ -254,7 +255,11 @@ func (t *galaASTTransformer) buildTailBranch(
 	// Block branch: reuse the shared branch transform and append a terminal
 	// return when it does not already terminate. Tail self-calls hidden inside
 	// block branches are not detected in this slice.
-	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx)
+	var branchExpected transpiler.Type
+	if tc.retType != nil {
+		branchExpected = t.astTypeToTranspilerType(tc.retType)
+	}
+	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, branchExpected)
 	if err != nil {
 		return nil, false, err
 	}

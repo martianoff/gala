@@ -1,0 +1,17 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/cross_pkg_generic_ctor_lambda/lib"
+)
+
+// A lambda passed to a generic struct from another package takes the type
+// arguments the constructor's other arguments determine.
+func main() {
+    val named = lib.Cell(Value = 5, Map = (v) => v * 3)
+    val positional = lib.Cell(7, (v) => v - 1)
+    val bag = lib.Bag(Items = ArrayOf(1, 2), Step = (v) => v + 10)
+    Println(named.Map(named.Value))
+    Println(positional.Map(positional.Value))
+    Println(bag.Items.Map(bag.Step))
+}

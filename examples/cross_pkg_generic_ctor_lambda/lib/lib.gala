@@ -1,0 +1,9 @@
+package lib
+
+import . "martianoff/gala/collection_immutable"
+
+// Cell holds a value and a function over its type.
+struct Cell[T any](Value T, Map func(T) T)
+
+// Bag holds items and a step applied to each; T is reached only through Array[T].
+struct Bag[T any](Items Array[T], Step func(T) T)

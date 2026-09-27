@@ -1,0 +1,72 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A lambda takes its parameter and result types from the slot it fills.
+// This covers two slots that used to lose that type:
+//   - a field of a generic struct built without explicit type arguments, whose
+//     type arguments come from the other arguments (or the lambda's own body);
+//   - an if-expression or match whose branches are lambdas.
+
+struct Cell[T any](Value T, Map func(T) T)
+
+struct Conv[A any, B any](From A, Fn func(A) B)
+
+struct Bag[T any](Items Array[T], Step func(T) T)
+
+struct Gen[T any](Make func() T)
+
+struct Box(N int, F func() int)
+
+struct Op(F func(int) int)
+
+func apply(f func(int) int, x int) int = f(x)
+
+func pickIf(up bool) func(int) int {
+    return if (up) (x) => x + 1 else (x) => x - 1
+}
+
+func pickMatch(up bool) func(int) int = up match {
+    case true => (x) => x * 10
+    case _ => (x) => x * 20
+}
+
+func main() {
+    // Generic struct constructors
+    val named = Cell(Value = 5, Map = (v) => v * 3)
+    val positional = Cell(7, (v) => v - 1)
+    val conv = Conv(From = 2, Fn = (a) => s"n=$a")
+    val bag = Bag(Items = ArrayOf(1, 2, 3), Step = (v) => v + 10)
+    val gen = Gen(Make = () => 42)
+    Println(named.Map(named.Value))
+    Println(positional.Map(positional.Value))
+    Println(conv.Fn(conv.From))
+    Println(bag.Items.Map(bag.Step))
+    Println(gen.Make())
+
+    // Branches that are lambdas
+    val up = true
+    val box = Box(N = 1, F = if (up) () => 3 else () => 4)
+    val chain = Op(F = if (!up) (x) => x else if (up) (x) => x * 2 else (x) => x * 3)
+    val blocks = Op(F = if (up) { (x) => x + 7 } else { (x) => x + 8 })
+    val arms = Op(F = up match {
+        case true => (x) => x + 100
+        case _ => (x) => x + 200
+    })
+    val blockArms = Op(F = up match {
+        case true => { (x) => x + 300 }
+        case _ => { (x) => x + 400 }
+    })
+    val typed func(int) int = if (up) (x) => x + 50 else (x) => x + 60
+    val step = Cell(Value = 2, Map = if (up) (v) => v * v else (v) => v)
+    Println(box.F())
+    Println(chain.F(1))
+    Println(blocks.F(1))
+    Println(arms.F(1))
+    Println(blockArms.F(1))
+    Println(typed(1))
+    Println(step.Map(step.Value))
+    Println(apply(if (up) (x) => x * 5 else (x) => x * 6, 1))
+    Println(pickIf(false)(1))
+    Println(pickMatch(false)(1))
+}

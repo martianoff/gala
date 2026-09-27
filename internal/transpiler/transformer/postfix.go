@@ -447,8 +447,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// transformers; consume the top hint (so subsequent unrelated calls
 	// don't see it) and stash on currentFuncReturnType for the duration of
 	// arm processing (B1).
+	// The same slot type is each arm's expected value type, so an arm that is
+	// a lambda is lowered against it (see transformBranchValue).
+	var armExpected transpiler.Type
 	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 		t.expectedArgTypes.consume()
+		armExpected = pending
 		prevReturn := t.currentFuncReturnType
 		t.currentFuncReturnType = pending
 		defer func() { t.currentFuncReturnType = prevReturn }()
@@ -529,6 +533,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				// The default arm's block-body last expression becomes the
 				// arm's value, so it is value-consumed.
 				t.blockLastStmtIsValue = true
+				t.blockLastValueExpected = armExpected
 				b, err := t.transformBlock(ccCtx.GetBodyBlock().(*grammar.BlockContext))
 				if err != nil {
 					return nil, err
@@ -558,7 +563,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					}
 				}
 			} else if ccCtx.GetBodyStmt() != nil {
-				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt())
+				bodyStmts, bodyType, err := t.transformCaseBodyStmt(ccCtx.GetBodyStmt(), armExpected)
 				if err != nil {
 					return nil, err
 				}
@@ -569,7 +574,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			continue
 		}
 
-		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType)
+		clause, resultType, err := t.transformCaseClauseWithType(ccCtx, paramName, matchedType, armExpected)
 		if err != nil {
 			return nil, err
 		}

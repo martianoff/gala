@@ -181,6 +181,11 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 					expr, err = t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParams, false)
 				}
 			}
+			// An if-expression or match choosing between lambdas for a
+			// function-typed result lowers its branches against that type.
+			if expr == nil && err == nil {
+				expr, _, err = t.transformBranchingInSlot(retCtx.Expression(), t.currentFuncReturnType)
+			}
 			if expr == nil && err == nil {
 				if ifExprCtx != nil && t.currentFuncReturnType != nil && !t.currentFuncReturnType.IsNil() {
 					oldExpected := t.expectedIfExprType
@@ -459,6 +464,9 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 	lastStmtIsValue := t.blockLastStmtIsValue
 	t.blockLastStmtIsValue = false
 	defer func() { t.blockLastStmtIsValue = lastStmtIsValue }()
+	lastValueExpected := t.blockLastValueExpected
+	t.blockLastValueExpected = nil
+	defer func() { t.blockLastValueExpected = lastValueExpected }()
 
 	block := &ast.BlockStmt{}
 	allStmts := ctx.AllStatement()
@@ -525,7 +533,19 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 		if discardsValue && stmtIsBareMatchExpression(stmtCtx.(*grammar.StatementContext), t) {
 			t.matchInStatementPos = true
 		}
-		stmt, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		var stmt ast.Stmt
+		var err error
+		if valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext)); isTrailing && lastStmtIsValue && valueExpr != nil &&
+			t.branchValueUsesExpected(valueExpr, lastValueExpected) {
+			// The block's value flows into a typed slot: lower it against
+			// that type, exactly like an if-expression branch's value.
+			var expr ast.Expr
+			if expr, err = t.transformBranchValue(valueExpr, lastValueExpected); err == nil {
+				stmt = &ast.ExprStmt{X: expr}
+			}
+		} else {
+			stmt, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
+		}
 		t.matchInStatementPos = prev
 		if err != nil {
 			return nil, err
@@ -612,30 +632,26 @@ func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclaration
 // declaration / simpleStatement → expression to reach the match check.
 // The transformer is passed for access to expressionIsBareMatch.
 func stmtIsBareMatchExpression(ctx *grammar.StatementContext, t *galaASTTransformer) bool {
+	exprCtx := trailingValueExpression(ctx)
+	return exprCtx != nil && t.expressionIsBareMatch(exprCtx)
+}
+
+// trailingValueExpression returns the expression of an expression statement
+// (statement → declaration → simpleStatement → expression), or nil when the
+// statement is anything else.
+func trailingValueExpression(ctx *grammar.StatementContext) grammar.IExpressionContext {
 	if ctx == nil {
-		return false
+		return nil
 	}
-	declCtx := ctx.Declaration()
-	if declCtx == nil {
-		return false
+	dc, ok := ctx.Declaration().(*grammar.DeclarationContext)
+	if !ok || dc == nil {
+		return nil
 	}
-	dc, ok := declCtx.(*grammar.DeclarationContext)
-	if !ok {
-		return false
+	sc, ok := dc.SimpleStatement().(*grammar.SimpleStatementContext)
+	if !ok || sc == nil {
+		return nil
 	}
-	simpleCtx := dc.SimpleStatement()
-	if simpleCtx == nil {
-		return false
-	}
-	sc, ok := simpleCtx.(*grammar.SimpleStatementContext)
-	if !ok {
-		return false
-	}
-	exprCtx := sc.Expression()
-	if exprCtx == nil {
-		return false
-	}
-	return t.expressionIsBareMatch(exprCtx)
+	return sc.Expression()
 }
 
 func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {

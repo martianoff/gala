@@ -539,7 +539,7 @@ func (t *galaASTTransformer) transformCaseClause(ctx *grammar.CaseClauseContext,
 			}
 		}
 	} else if bodyStmtCtx != nil {
-		bodyStmts, _, err := t.transformCaseBodyStmt(bodyStmtCtx)
+		bodyStmts, _, err := t.transformCaseBodyStmt(bodyStmtCtx, nil)
 		if err != nil {
 			return nil, err
 		}
