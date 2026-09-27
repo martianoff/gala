@@ -276,8 +276,13 @@ func (t *galaASTTransformer) lookupBinding(pkg, name string) (binding, bool) {
 func (t *galaASTTransformer) bindingRef(expr ast.Expr) (binding, bool) {
 	switch e := expr.(type) {
 	case *ast.CallExpr:
+		// Only a `.Get()` directly on the reference is the val's unwrap; in
+		// `v.Get().Get()` the outer call is a method of the unwrapped value.
 		get, ok := e.Fun.(*ast.SelectorExpr)
 		if !ok || get.Sel.Name != transpiler.MethodGet || len(e.Args) != 0 {
+			return binding{}, false
+		}
+		if _, nested := get.X.(*ast.CallExpr); nested {
 			return binding{}, false
 		}
 		b, ok := t.bindingRef(get.X)

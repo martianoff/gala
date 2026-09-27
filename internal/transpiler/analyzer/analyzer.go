@@ -4485,20 +4485,27 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		if len(meta.TypeParams) > 0 {
 			return transpiler.NilType{}
 		}
-		// Mirror the transformer's constructor dispatch: a struct whose field
-		// count matches the arguments is built as a literal, otherwise an Apply
-		// (a sealed case's companion, or the struct's own) is called.
+		// Mirror the transformer's constructor dispatch
+		// (tryTransformCompanionApplyOrStructCtor): a positional struct literal
+		// when the arguments match the fields — unless the type is a sealed
+		// parent with an Apply, or those fields are private to another package —
+		// and otherwise its Apply (a sealed case's companion, or the struct's
+		// own). Without an Apply, private fields leave the call unlowered.
 		apply := meta.Methods["Apply"]
 		fields := len(meta.FieldNames)
+		private := transformer.PositionalCtorUnavailable(meta.Package, pkgName, meta.FieldNames, args)
+		literal := fields > 0 && args > 0 && args == fields && !(meta.IsSealed && apply != nil) && !private
 		switch {
-		case fields > 0 && (apply == nil || args == fields) && !(meta.IsSealed && apply != nil),
-			fields == 0 && apply == nil && args == 0:
+		case apply != nil && !literal:
+			if len(apply.TypeParams) > 0 {
+				return transpiler.NilType{}
+			}
+			return knownType(apply.ReturnType)
+		case apply != nil || (!private && (fields > 0 || args == 0)):
 			if pkg != "" {
 				return transpiler.NamedType{Package: pkg, Name: name}
 			}
 			return a.resolveTypeWithParams(name, pkgName, nil)
-		case apply != nil && len(apply.TypeParams) == 0:
-			return knownType(apply.ReturnType)
 		}
 		return transpiler.NilType{}
 	}

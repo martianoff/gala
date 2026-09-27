@@ -33,6 +33,29 @@ func TestTypelessBindingLookup(t *testing.T) {
 	}
 }
 
+// TestBindingRefOnlyFirstGet: only a `.Get()` directly on a val is its
+// Immutable unwrap. In `opt.Get().Get()` the outer call is Option's own Get,
+// so the expression does not read the binding `opt` any more.
+func TestBindingRefOnlyFirstGet(t *testing.T) {
+	tr := NewGalaASTTransformer().(*galaASTTransformer)
+	tr.pushScope()
+	defer tr.popScope()
+	tr.addVal("opt", transpiler.GenericType{
+		Base:   transpiler.NamedType{Package: "std", Name: "Option"},
+		Params: []transpiler.Type{transpiler.NamedType{Name: "Box"}},
+	})
+	get := func(x ast.Expr) ast.Expr {
+		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: x, Sel: ast.NewIdent("Get")}}
+	}
+
+	if b, ok := tr.bindingRef(get(ast.NewIdent("opt"))); !ok || b.name != "opt" {
+		t.Fatalf("opt.Get() should read the val opt, got (%+v, %v)", b, ok)
+	}
+	if b, ok := tr.bindingRef(get(get(ast.NewIdent("opt")))); ok {
+		t.Fatalf("opt.Get().Get() is Option.Get on the unwrapped value, not a read of opt; got %+v", b)
+	}
+}
+
 // TestScopeLookupShadowing: the innermost binding decides val-ness and type,
 // and the per-scope flags follow the same binding.
 func TestScopeLookupShadowing(t *testing.T) {

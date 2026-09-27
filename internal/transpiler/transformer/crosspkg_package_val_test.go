@@ -70,6 +70,20 @@ val Dark = c.Theme("dark", c.Red())
 	// by its own file's pass, whichever file is analyzed first.
 	write("split/a.gala", "package split\n\nval Base = 3\n")
 	write("split/b.gala", "package split\n\nval Derived = Base\n")
+	// Another package's struct with private fields cannot be built positionally
+	// from here, so `mail.Email("x")` calls its Apply — an Option[Email].
+	write("mail/mail.gala", `package mail
+
+struct Email(value string)
+
+func (e Email) Apply(s string) Option[Email] = When(s != "", Email(s))
+`)
+	write("users/users.gala", `package users
+
+import "example.com/xpkg/mail"
+
+val Admin = mail.Email("root")
+`)
 	// A void initializer has no type, and must not record a nil one.
 	write("voids/voids.gala", "package voids\n\nfunc setup() {\n}\n\nval Done = setup()\n")
 	return root
@@ -250,11 +264,12 @@ import (
     "example.com/xpkg/colors"
     "example.com/xpkg/split"
     "example.com/xpkg/theme"
+    "example.com/xpkg/users"
     "example.com/xpkg/voids"
 )
 
 func main() {
-    Println(colors.ToSgr(colors.Green), theme.Dark.Name, split.Derived, voids.Done)
+    Println(colors.ToSgr(colors.Green), theme.Dark.Name, split.Derived, voids.Done, users.Admin)
 }`
 	p := transpiler.NewAntlrGalaParser()
 	tree, _, err := p.Parse(src)
@@ -290,6 +305,10 @@ func main() {
 	require.NotNil(t, richAST.ImportedVals[colorsPath]["Silent"])
 	assert.NotEqual(t, "string", richAST.ImportedVals[colorsPath]["Silent"].Type.String())
 	assert.NotContains(t, richAST.ImportedVals[colorsPath], "secret", "unexported bindings are not importable")
+	admin := richAST.ImportedVals["example.com/xpkg/users"]["Admin"]
+	require.NotNil(t, admin)
+	assert.Equal(t, "std.Option[mail.Email]", admin.Type.String(),
+		"private fields send mail.Email(\"root\") to Apply, as the transformer lowers it")
 	done := richAST.ImportedVals["example.com/xpkg/voids"]["Done"]
 	require.NotNil(t, done)
 	require.NotNil(t, done.Type, "a void initializer must record NilType, not a nil interface")
