@@ -39,6 +39,7 @@ go_test(
         "cache_test.go",
         "concurrent_sibling_parse_test.go",
         "cross_file_method_import_test.go",
+        "default_source_test.go",
         "doc_metadata_test.go",
         "go_qualifier_import_test.go",
         "go_sdk_bazel_test.go",

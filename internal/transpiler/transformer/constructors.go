@@ -216,8 +216,20 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 // typeArgs maps the struct's type-parameter names to the type arguments of the
 // literal being built, so a field declared with a type parameter resolves to the
 // type it is instantiated with at this construction site.
+//
+// A bare `nil` has no type of its own at all, so Go cannot infer anything from
+// it ("cannot infer T"); it always takes the field's declared type
+// (`std.NewImmutable[func(int) int](nil)`).
 func (t *galaASTTransformer) wrapImmutableFieldValue(value ast.Expr, fieldType transpiler.Type, typeArgs map[string]ast.Expr) ast.Expr {
-	if typeArg := immutableFieldTypeArg(value, fieldType, typeArgs); typeArg != nil {
+	typeArg := immutableFieldTypeArg(value, fieldType, typeArgs)
+	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" && !transpiler.IsUnusable(fieldType) {
+		paramMap := make(map[string]transpiler.Type, len(typeArgs))
+		for name, arg := range typeArgs {
+			paramMap[name] = t.astTypeToTranspilerType(arg)
+		}
+		typeArg = t.typeToExpr(t.substituteInType(fieldType, paramMap))
+	}
+	if typeArg != nil {
 		return &ast.CallExpr{
 			Fun:  &ast.IndexExpr{X: t.stdIdent(transpiler.FuncNewImmutable), Index: typeArg},
 			Args: []ast.Expr{value},

@@ -321,11 +321,27 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
 			if funcMeta := t.getFunction(funcName); funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
-				filled, err := t.fillDefaultArgs(nil, funcMeta, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+				filled, err := t.fillDefaultArgs(nil, funcMeta, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
 				}
 				return &ast.CallExpr{Fun: base, Args: filled}, nil
+			}
+		}
+
+		// Zero-argument method call — the same injection for a method whose
+		// parameters all have defaults (`box.Scale()`). The argument-carrying
+		// dispatcher fills defaults for under-filled calls, but a call with no
+		// argument list never reaches it.
+		if sel, ok := base.(*ast.SelectorExpr); ok && zeroArgLookupBase != "" {
+			if typeMeta := t.getTypeMeta(zeroArgLookupBase); typeMeta != nil {
+				if methodMeta := typeMeta.Methods[sel.Sel.Name]; methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
+					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType.BaseName(), nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+					if err != nil {
+						return nil, err
+					}
+					return &ast.CallExpr{Fun: base, Args: filled}, nil
+				}
 			}
 		}
 
@@ -702,9 +718,13 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		return view
 	}
+	var argListLine, argListCol int
+	if argListCtx != nil {
+		argListLine, argListCol = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+	}
 	for i, arg := range slots {
 		if arg == nil {
-			expr, derr := t.methodDefaultArg(methodMeta, i, receiver, recvType.BaseName())
+			expr, derr := t.methodDefaultArg(methodMeta, i, receiver, recvType.BaseName(), typeSubst, argListLine, argListCol)
 			if derr != nil {
 				return true, nil, derr
 			}
@@ -856,9 +876,19 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, methodMeta *tr
 }
 
 // methodDefaultArg is the default value of a method's i-th parameter at a call
-// on callSiteReceiver.
-func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvTypeName string) (ast.Expr, error) {
-	expr, err := t.transformDefaultExpr(methodMeta.DefaultExprs[i])
+// on callSiteReceiver, at line/col. typeSubst (may be nil) carries the type
+// arguments the call has bound so far; a declared parameter type that still
+// mentions an unbound type parameter is not threaded into the default.
+func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvTypeName string, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+	var declared transpiler.Type
+	if i < len(methodMeta.ParamTypes) {
+		declared = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+	}
+	typeParams := methodMeta.TypeParams
+	if recvMeta := t.getTypeMeta(t.resolveStructTypeName(recvTypeName)); recvMeta != nil && len(recvMeta.TypeParams) > 0 {
+		typeParams = append(slices.Clone(recvMeta.TypeParams), typeParams...)
+	}
+	expr, err := t.transformDefaultExpr(methodDefault(methodMeta, i), declared, typeParams, line, col)
 	if err != nil {
 		return nil, err
 	}
@@ -1151,10 +1181,10 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
 	recvTypeName := recvType.BaseName()
 	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
-		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvTypeName, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 	if len(methodMeta.DefaultExprs) > 0 && len(mArgs) < len(methodMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		filled, err := t.fillDefaultArgsMethod(receiver, mArgs, methodMeta, recvTypeName, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -2039,14 +2069,14 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
-			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 
 	// --- Section 8: Default-arg injection for under-filled positional calls ---
 	if callCtx.funcMeta != nil && len(callCtx.funcMeta.DefaultExprs) > 0 && len(args) < len(callCtx.funcMeta.ParamTypes) {
-		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		filled, err := t.fillDefaultArgs(args, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -2831,29 +2861,20 @@ func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected 
 	return &ast.IndexListExpr{X: fun, Indices: typeArgs}, true
 }
 
-// parseDefaultExpr parses a GALA expression string (from a default parameter value)
-// into an ANTLR expression context that can be transformed by the normal pipeline.
-func (t *galaASTTransformer) parseDefaultExpr(exprText string) (grammar.IExpressionContext, error) {
-	input := antlr.NewInputStream(exprText)
-	lexer := grammar.NewgalaLexer(input)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
-	p := grammar.NewgalaParser(stream)
-	p.RemoveErrorListeners()
-	return p.Expression(), nil
-}
-
-// transformDefaultExpr parses and transforms a default expression string into a Go AST expression.
-func (t *galaASTTransformer) transformDefaultExpr(exprText string) (ast.Expr, error) {
-	exprCtx, err := t.parseDefaultExpr(exprText)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse default expression %q: %w", exprText, err)
+// funcDefaultArg is the default value of a function's i-th parameter at a call
+// at line/col. typeSubst (may be nil) carries the type arguments the call binds,
+// explicitly or by inference from the arguments it does pass.
+func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadata, i int, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+	var declared transpiler.Type
+	if i < len(funcMeta.ParamTypes) {
+		declared = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[i], typeSubst)
 	}
-	return t.transformExpression(exprCtx)
+	return t.transformDefaultExpr(funcDefault(funcMeta, i), declared, funcMeta.TypeParams, line, col)
 }
 
 // fillDefaultArgs fills missing positional arguments with default values from function metadata.
 // Called when a function has defaults and fewer args were provided than parameters.
-func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, line, col int) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, typeSubst map[string]string, line, col int) ([]ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 
@@ -2862,13 +2883,12 @@ func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpil
 
 	// Fill missing positions with defaults
 	for i := len(args); i < totalParams; i++ {
-		defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
-		if !hasDefault {
+		if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"missing required argument %q (parameter %d) in call to %s",
 				funcMeta.ParamNames[i], i+1, funcMeta.Name))
 		}
-		expr, err := t.transformDefaultExpr(defaultExprText)
+		expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -2885,6 +2905,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
 	funcMeta *transpiler.FunctionMetadata,
+	typeSubst map[string]string,
 	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
@@ -2924,8 +2945,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	// Fill remaining gaps with defaults
 	for i, slot := range result {
 		if slot == nil {
-			defaultExprText, hasDefault := funcMeta.DefaultExprs[i]
-			if !hasDefault {
+			if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
 				paramName := ""
 				if i < len(funcMeta.ParamNames) {
 					paramName = funcMeta.ParamNames[i]
@@ -2934,7 +2954,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 					"missing required argument %q (parameter %d) in call to %s",
 					paramName, i+1, funcMeta.Name))
 			}
-			expr, err := t.transformDefaultExpr(defaultExprText)
+			expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 			if err != nil {
 				return nil, err
 			}
@@ -2954,6 +2974,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	namedArgs map[string]ast.Expr,
 	methodMeta *transpiler.MethodMetadata,
 	recvTypeName string,
+	typeSubst map[string]string,
 	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
@@ -2989,7 +3010,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 				}
 				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
 			}
-			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvTypeName)
+			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvTypeName, typeSubst, line, col)
 			if err != nil {
 				return nil, err
 			}
@@ -3001,7 +3022,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 
 // fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.
 // callSiteReceiver is the actual receiver expression at the call site.
-func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvTypeName string, line, col int) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvTypeName string, typeSubst map[string]string, line, col int) ([]ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 	copy(result, args)
@@ -3009,7 +3030,7 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", methodMeta.ParamNames[i], i+1, methodMeta.Name))
 		}
-		expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvTypeName)
+		expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvTypeName, typeSubst, line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -3201,6 +3222,12 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// re-wrap a valid program.
 	exprType := t.getExprTypeName(expr)
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
+		return expr, false
+	}
+	// `nil` is already a valid value of every function type — the absent
+	// function — so it is passed as is, never wrapped into `func() T { return
+	// nil }`.
+	if id, isIdent := expr.(*ast.Ident); isIdent && id.Name == "nil" {
 		return expr, false
 	}
 

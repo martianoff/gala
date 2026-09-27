@@ -335,6 +335,10 @@ type TypeMetadata struct {
 	// transformed at each construction site, so the default is evaluated per
 	// construction — matching how function parameter defaults behave.
 	FieldDefaults        map[string]string
+	// FieldDefaultPos holds the position of each FieldDefaults expression's
+	// first token in DefinedIn, so a diagnostic raised while lowering a default
+	// points at the default itself.
+	FieldDefaultPos map[string]SourcePos
 	// IsShorthand is true when the type came from the shorthand form
 	// `struct Cfg(Name string, Tries int = 3)` rather than the block form
 	// `type Cfg struct { ... }`.
@@ -392,13 +396,14 @@ type MethodMetadata struct {
 	Doc          string    // Doc comment above the declaration ("" when undocumented)
 	Pos          SourcePos // Position of the method name identifier in DefinedIn
 	ParamTypes   []Type
-	ParamNames   []string         // Parameter names (for named argument matching)
+	ParamNames   []string // Parameter names (for named argument matching)
 	ReturnType   Type
 	TypeParams   []string
-	DefaultExprs map[int]string   // Param index -> default expression source text (nil = required)
-	ReceiverName string           // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
-	IsGeneric    bool             // Force transformation to standalone function
-	DefinedIn    string           // Source file where this method was defined (for redefinition detection)
+	DefaultExprs map[int]string    // Param index -> default expression source text (nil = required)
+	DefaultPos   map[int]SourcePos // Param index -> position of the default expression's first token
+	ReceiverName string            // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
+	IsGeneric    bool              // Force transformation to standalone function
+	DefinedIn    string            // Source file where this method was defined (for redefinition detection)
 }
 
 type FunctionMetadata struct {
@@ -416,8 +421,9 @@ type FunctionMetadata struct {
 	ParamImmutFlags []bool
 	ReturnType      Type
 	TypeParams      []string
-	DefaultExprs    map[int]string // Param index -> default expression source text (nil = required)
-	DefinedIn       string         // Source file where this function was defined
+	DefaultExprs    map[int]string    // Param index -> default expression source text (nil = required)
+	DefaultPos      map[int]SourcePos // Param index -> position of the default expression's first token in DefinedIn
+	DefinedIn       string            // Source file where this function was defined
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

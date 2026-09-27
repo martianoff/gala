@@ -3,11 +3,13 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"sort"
 	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/transpiler"
 )
 
 // Shorthand struct fields may carry a default: `struct Cfg(Name string, Tries
@@ -63,9 +65,17 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	typeArgSubst map[string]ast.Expr,
 	line, col int,
 ) ([]ast.Expr, error) {
-	defaults, isShorthand := t.structFieldDefaults(resolvedTypeName)
+	meta := t.getTypeMeta(resolvedTypeName)
+	if meta == nil {
+		return nil, nil
+	}
+	defaults := meta.FieldDefaults
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
+	typeArgTypes := make(map[string]transpiler.Type, len(typeArgSubst))
+	for name, arg := range typeArgSubst {
+		typeArgTypes[name] = t.astTypeToTranspilerType(arg)
+	}
 
 	var missing []string
 	var elts []ast.Expr
@@ -81,15 +91,19 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		// Re-parsed and re-transformed per construction site, so a default like
 		// `time.Now()` is evaluated at each construction rather than once at
 		// declaration — the same contract function parameter defaults have.
-		val, err := t.transformDefaultExpr(defaultText)
+		// The field's declared type is the expected type, as it is for a value
+		// passed explicitly.
+		src := defaultSource{text: defaultText, pos: meta.FieldDefaultPos[fieldName], file: meta.DefinedIn}
+		declared := t.substituteInType(fieldTypes[fieldName], typeArgTypes)
+		val, err := t.transformDefaultExpr(src, declared, meta.TypeParams, line, col)
 		if err != nil {
 			return nil, err
 		}
 		// The expression was resolved in THIS package's scope; names it borrows
 		// from the declaring package need qualifying. See qualifyDefaultExpr.
-		val, err = t.qualifyDefaultExpr(val, t.declaringPackageOf(resolvedTypeName))
+		val, err = t.qualifyDefaultExpr(val, meta.Package)
 		if err != nil {
-			return nil, err
+			return nil, placeForeignDefaultError(err, src, line, col)
 		}
 		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
 			val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
@@ -99,7 +113,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 
 	// Only the shorthand form can declare a field optional, so only it can
 	// hold a call site to supplying the rest.
-	if len(missing) > 0 && isShorthand {
+	if len(missing) > 0 && meta.IsShorthand {
 		return nil, missingStructFieldsError(typeName, missing, defaults, fields, line, col)
 	}
 	return elts, nil
@@ -245,9 +259,8 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, owningPkg string)
 	}
 
 	var err error
-	var walk func(ast.Expr) ast.Expr
 	rewriteIdent := func(id *ast.Ident) ast.Expr {
-		if id == nil || !t.packageDeclares(owningPkg, id.Name) {
+		if !t.packageDeclares(owningPkg, id.Name) {
 			return id
 		}
 		// An unexported name cannot be reached from another package at all, so
@@ -263,61 +276,148 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, owningPkg string)
 		}
 		return &ast.SelectorExpr{X: ast.NewIdent(owningPkg), Sel: ast.NewIdent(id.Name)}
 	}
-	walk = func(e ast.Expr) ast.Expr {
-		switch n := e.(type) {
-		case nil:
-			return nil
-		case *ast.Ident:
-			return rewriteIdent(n)
-		case *ast.CallExpr:
-			n.Fun = walk(n.Fun)
-			for i := range n.Args {
-				n.Args[i] = walk(n.Args[i])
-			}
-		case *ast.IndexExpr:
-			n.X = walk(n.X)
-			n.Index = walk(n.Index)
-		case *ast.IndexListExpr:
-			n.X = walk(n.X)
-			for i := range n.Indices {
-				n.Indices[i] = walk(n.Indices[i])
-			}
-		case *ast.SelectorExpr:
-			// Already qualified. The one thing to check is that what it names
-			// is reachable: a default that calls the declaring package's own
-			// unexported helper cannot be evaluated at a call site in another
-			// package, and emitting `lib.helper()` would just hand the author
-			// a Go visibility error about code they never wrote.
-			if base, ok := n.X.(*ast.Ident); ok && base.Name == owningPkg && !ast.IsExported(n.Sel.Name) {
+	// Names a lambda default binds itself (its parameters and locals) refer to
+	// those bindings, not to the declaring package, whatever they are called.
+	bound := boundNames(expr)
+	holder := &ast.ParenExpr{X: expr}
+	ast.Inspect(holder, func(n ast.Node) bool {
+		// Already qualified. The one thing to check is that what it names is
+		// reachable: a default that calls the declaring package's own
+		// unexported helper cannot be evaluated at a call site in another
+		// package, and emitting `lib.helper()` would just hand the author a Go
+		// visibility error about code they never wrote.
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			if base, ok := sel.X.(*ast.Ident); ok && base.Name == owningPkg && !ast.IsExported(sel.Sel.Name) {
 				err = galaerr.NewSemanticErrorAt(0, 0, fmt.Sprintf(
 					"default expression refers to %q, which is unexported in package %q — "+
 						"a default is evaluated at each construction site, so everything it names "+
 						"must be visible there; export it or use a literal default",
-					n.Sel.Name, owningPkg))
+					sel.Sel.Name, owningPkg))
 			}
-		case *ast.StarExpr:
-			n.X = walk(n.X)
-		case *ast.UnaryExpr:
-			n.X = walk(n.X)
-		case *ast.BinaryExpr:
-			n.X = walk(n.X)
-			n.Y = walk(n.Y)
-		case *ast.ParenExpr:
-			n.X = walk(n.X)
-		case *ast.CompositeLit:
-			n.Type = walk(n.Type)
-			for i := range n.Elts {
-				n.Elts[i] = walk(n.Elts[i])
-			}
-		case *ast.KeyValueExpr:
-			// The key of a struct literal is a field name, not a reference.
-			n.Value = walk(n.Value)
 		}
-		return e
-	}
+		for _, slot := range referenceSlots(n) {
+			if id, ok := (*slot).(*ast.Ident); ok && !bound[id.Name] {
+				*slot = rewriteIdent(id)
+			}
+		}
+		return true
+	})
+	return holder.X, err
+}
 
-	out := walk(expr)
-	return out, err
+// referenceSlots returns the fields of n that hold a reference — a name looked
+// up in scope — as opposed to a name being declared (parameter and variable
+// names, `:=` targets), a field or method selected from a value (`x.Sel`), or
+// a struct-literal key. A lambda default lowers to a function literal, so
+// statements and parameter types are covered as well as expressions.
+func referenceSlots(n ast.Node) []*ast.Expr {
+	var slots []*ast.Expr
+	each := func(list []ast.Expr) {
+		for i := range list {
+			slots = append(slots, &list[i])
+		}
+	}
+	switch n := n.(type) {
+	case *ast.ParenExpr:
+		slots = append(slots, &n.X)
+	case *ast.CallExpr:
+		slots = append(slots, &n.Fun)
+		each(n.Args)
+	case *ast.IndexExpr:
+		slots = append(slots, &n.X, &n.Index)
+	case *ast.IndexListExpr:
+		slots = append(slots, &n.X)
+		each(n.Indices)
+	case *ast.SelectorExpr:
+		slots = append(slots, &n.X)
+	case *ast.StarExpr:
+		slots = append(slots, &n.X)
+	case *ast.UnaryExpr:
+		slots = append(slots, &n.X)
+	case *ast.BinaryExpr:
+		slots = append(slots, &n.X, &n.Y)
+	case *ast.CompositeLit:
+		slots = append(slots, &n.Type)
+		for i, elt := range n.Elts {
+			if _, isKV := elt.(*ast.KeyValueExpr); !isKV {
+				slots = append(slots, &n.Elts[i])
+			}
+		}
+	case *ast.KeyValueExpr:
+		slots = append(slots, &n.Value)
+	case *ast.TypeAssertExpr:
+		slots = append(slots, &n.X, &n.Type)
+	case *ast.ArrayType:
+		slots = append(slots, &n.Elt)
+	case *ast.MapType:
+		slots = append(slots, &n.Key, &n.Value)
+	case *ast.Ellipsis:
+		slots = append(slots, &n.Elt)
+	case *ast.Field:
+		slots = append(slots, &n.Type)
+	case *ast.ValueSpec:
+		slots = append(slots, &n.Type)
+		each(n.Values)
+	case *ast.ExprStmt:
+		slots = append(slots, &n.X)
+	case *ast.ReturnStmt:
+		each(n.Results)
+	case *ast.AssignStmt:
+		if n.Tok != token.DEFINE {
+			each(n.Lhs)
+		}
+		each(n.Rhs)
+	case *ast.IncDecStmt:
+		slots = append(slots, &n.X)
+	case *ast.IfStmt:
+		slots = append(slots, &n.Cond)
+	case *ast.SwitchStmt:
+		slots = append(slots, &n.Tag)
+	case *ast.CaseClause:
+		each(n.List)
+	case *ast.RangeStmt:
+		slots = append(slots, &n.X)
+	case *ast.ForStmt:
+		slots = append(slots, &n.Cond)
+	}
+	return slots
+}
+
+// boundNames collects every name a lowered expression declares for itself:
+// function-literal parameters and results, `var` names, `:=` targets and range
+// variables. Scoping is ignored — a name bound anywhere in the expression is
+// never qualified — which errs toward leaving a name as written.
+func boundNames(expr ast.Expr) map[string]bool {
+	bound := map[string]bool{}
+	addIdents := func(list ...ast.Expr) {
+		for _, e := range list {
+			if id, ok := e.(*ast.Ident); ok {
+				bound[id.Name] = true
+			}
+		}
+	}
+	ast.Inspect(expr, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.Field:
+			for _, name := range n.Names {
+				bound[name.Name] = true
+			}
+		case *ast.ValueSpec:
+			for _, name := range n.Names {
+				bound[name.Name] = true
+			}
+		case *ast.AssignStmt:
+			if n.Tok == token.DEFINE {
+				addIdents(n.Lhs...)
+			}
+		case *ast.RangeStmt:
+			if n.Tok == token.DEFINE {
+				addIdents(n.Key, n.Value)
+			}
+		}
+		return true
+	})
+	return bound
 }
 
 // packageDeclares reports whether a package declares a type or function of this
@@ -330,17 +430,5 @@ func (t *galaASTTransformer) packageDeclares(pkg, name string) bool {
 	if t.typeMetas[qualified] != nil {
 		return true
 	}
-	if fns, ok := t.functions[pkg]; ok && fns != nil && fns.Name == name {
-		return true
-	}
-	return false
-}
-
-// declaringPackageOf returns the package a type was declared in, or "" when
-// that is unknown.
-func (t *galaASTTransformer) declaringPackageOf(resolvedTypeName string) string {
-	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
-		return meta.Package
-	}
-	return ""
+	return t.functions[qualified] != nil
 }

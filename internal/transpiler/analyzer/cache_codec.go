@@ -33,7 +33,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x06}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x07}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -181,6 +181,17 @@ func (e *encoder) writeStringSourcePosMap(m map[string]transpiler.SourcePos) {
 	}
 }
 
+// writeDefaultExprs emits a parameter-default table: a count, then
+// (index, source text, position) triples.
+func (e *encoder) writeDefaultExprs(exprs map[int]string, positions map[int]transpiler.SourcePos) {
+	e.writeUvarint(uint64(len(exprs)))
+	for idx, expr := range exprs {
+		e.writeInt32(int32(idx))
+		e.writeString(expr)
+		e.writeSourcePos(positions[idx])
+	}
+}
+
 // writeType emits a tagged Type. Recursive Type values are emitted via
 // the same routine so nested generic shapes (e.g. Future[Either[A, B]])
 // round-trip transparently.
@@ -265,12 +276,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeStringSlice(m.ParamNames)
 	e.writeType(m.ReturnType)
 	e.writeStringSlice(m.TypeParams)
-	// DefaultExprs is map[int]string — emit count, then (idx,string) pairs.
-	e.writeUvarint(uint64(len(m.DefaultExprs)))
-	for idx, expr := range m.DefaultExprs {
-		e.writeInt32(int32(idx))
-		e.writeString(expr)
-	}
+	e.writeDefaultExprs(m.DefaultExprs, m.DefaultPos)
 	e.writeString(m.ReceiverName)
 	e.writeBool(m.IsGeneric)
 	e.writeString(m.DefinedIn)
@@ -316,6 +322,7 @@ func (e *encoder) writeTypeMeta(t *transpiler.TypeMetadata) {
 	e.writeStringSlice(t.FieldNames)
 	e.writeStringSourcePosMap(t.FieldPositions)
 	e.writeStringStringMap(t.FieldDefaults)
+	e.writeStringSourcePosMap(t.FieldDefaultPos)
 	e.writeBool(t.IsShorthand)
 	e.writeStringSlice(t.TypeParams)
 	e.writeStringStringMap(t.TypeParamConstraints)
@@ -348,11 +355,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeBoolSlice(f.ParamImmutFlags)
 	e.writeType(f.ReturnType)
 	e.writeStringSlice(f.TypeParams)
-	e.writeUvarint(uint64(len(f.DefaultExprs)))
-	for idx, expr := range f.DefaultExprs {
-		e.writeInt32(int32(idx))
-		e.writeString(expr)
-	}
+	e.writeDefaultExprs(f.DefaultExprs, f.DefaultPos)
 	e.writeString(f.DefinedIn)
 }
 
@@ -595,6 +598,23 @@ func (d *decoder) readSourcePos() transpiler.SourcePos {
 	return transpiler.SourcePos{Line: line, Column: col}
 }
 
+// readDefaultExprs reads a table written by writeDefaultExprs. Both maps are
+// nil when the table is empty.
+func (d *decoder) readDefaultExprs() (map[int]string, map[int]transpiler.SourcePos) {
+	n := d.readUvarint()
+	if d.err != nil || n == 0 {
+		return nil, nil
+	}
+	exprs := make(map[int]string, n)
+	positions := make(map[int]transpiler.SourcePos, n)
+	for i := uint64(0); i < n; i++ {
+		idx := int(d.readInt32())
+		exprs[idx] = d.readString()
+		positions[idx] = d.readSourcePos()
+	}
+	return exprs, positions
+}
+
 func (d *decoder) readStringSourcePosMap() map[string]transpiler.SourcePos {
 	n := d.readUvarint()
 	if d.err != nil || n == 0 {
@@ -710,15 +730,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.ParamNames = d.readStringSlice()
 	m.ReturnType = d.readType()
 	m.TypeParams = d.readStringSlice()
-	// DefaultExprs.
-	dn := d.readUvarint()
-	if dn > 0 {
-		m.DefaultExprs = make(map[int]string, dn)
-		for i := uint64(0); i < dn; i++ {
-			idx := int(d.readInt32())
-			m.DefaultExprs[idx] = d.readString()
-		}
-	}
+	m.DefaultExprs, m.DefaultPos = d.readDefaultExprs()
 	m.ReceiverName = d.readString()
 	m.IsGeneric = d.readBool()
 	m.DefinedIn = d.readString()
@@ -770,6 +782,7 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t.FieldNames = d.readStringSlice()
 	t.FieldPositions = d.readStringSourcePosMap()
 	t.FieldDefaults = d.readStringStringMap()
+	t.FieldDefaultPos = d.readStringSourcePosMap()
 	t.IsShorthand = d.readBool()
 	t.TypeParams = d.readStringSlice()
 	t.TypeParamConstraints = d.readStringStringMap()
@@ -808,14 +821,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f.ParamImmutFlags = d.readBoolSlice()
 	f.ReturnType = d.readType()
 	f.TypeParams = d.readStringSlice()
-	dn := d.readUvarint()
-	if dn > 0 {
-		f.DefaultExprs = make(map[int]string, dn)
-		for i := uint64(0); i < dn; i++ {
-			idx := int(d.readInt32())
-			f.DefaultExprs[idx] = d.readString()
-		}
-	}
+	f.DefaultExprs, f.DefaultPos = d.readDefaultExprs()
 	f.DefinedIn = d.readString()
 	return f
 }

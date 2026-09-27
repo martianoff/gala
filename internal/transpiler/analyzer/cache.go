@@ -45,7 +45,13 @@ import (
 //
 // v6: PackageVals holds exported bindings only, and each entry's name is taken
 // from its map key instead of being written twice.
-const CacheVersion = "v6"
+//
+// v7: default expressions (FunctionMetadata/MethodMetadata.DefaultExprs,
+// TypeMetadata.FieldDefaults) are stored as written, whitespace included, and
+// carry the position of their first token (DefaultPos / FieldDefaultPos). A v6
+// payload holds whitespace-stripped text, which re-parses `(a int) => a` as a
+// lambda with one parameter named `aint`.
+const CacheVersion = "v7"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

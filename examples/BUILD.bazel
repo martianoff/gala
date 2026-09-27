@@ -3338,6 +3338,18 @@ gala_exec_test(
     ],
 )
 
+# Defaults of function type on struct fields and function/method parameters: a
+# lambda default takes its parameter and result types from the declared type,
+# annotated parameters keep their names, and a `nil` default takes the declared
+# type. Includes a struct from another package constructed with every hook
+# omitted.
+gala_exec_test(
+    name = "func_typed_defaults",
+    src = "func_typed_defaults.gala",
+    expected = "func_typed_defaults.out",
+    deps = ["//examples/func_defaults_lib"],
+)
+
 # Field chains through a method-call result unwrap immutable fields for
 # value- and pointer-receiver methods, including a method named Get.
 gala_exec_test(

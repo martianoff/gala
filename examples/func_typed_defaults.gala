@@ -1,0 +1,66 @@
+package main
+
+import "martianoff/gala/examples/func_defaults_lib"
+
+// Defaults of function type — on struct fields and on function and method
+// parameters. The declared type is the default's expected type, exactly as it
+// is for a value passed explicitly: an unannotated lambda takes its parameter
+// and result types from it, and `nil` takes the declared type.
+
+// Hooks covers each lambda shape: untyped, annotated, zero-argument, a void
+// block body, and nil defaults for a function and a pointer.
+struct Hooks(
+    Name   string,
+    OnOne  func(int) int       = (a) => a + 1,
+    OnTwo  func(int) int       = (a int) => a * 2,
+    Greet  func(string) string = (s string) => s + "?",
+    Done   func() int          = () => 7,
+    Report func(int, int)      = (r, c) => {
+        Println(s"report $r $c")
+    },
+    Maybe  func(int) int       = nil,
+    Target *int                = nil,
+)
+
+func greet(name string, f func(string) string = (s) => s + "!") string = f(name)
+
+func runOrZero(f func() int = nil) int = if (f == nil) 0 else f()
+
+// A type parameter in the declared type takes the type argument the call binds —
+// here inferred from `x`.
+func twice[T any](x T, combine func(T, T) T = (a, b) => a) T = combine(x, x)
+
+// Counter carries a method whose only parameter is a defaulted lambda.
+struct Counter(N int)
+
+func (c Counter) Step(by func(int) int = (n) => n + 10) int = by(c.N)
+
+func main() {
+    // Every hook omitted.
+    val h = Hooks(Name = "local")
+    Println(h.OnOne(1), h.OnTwo(3), h.Greet("why"), h.Done())
+    Println(h.Maybe == nil, h.Target == nil)
+    h.Report(1, 2)
+
+    // An explicit hook still wins.
+    Println(Hooks(Name = "set", OnOne = (a) => a - 1).OnOne(1))
+
+    // Function and method parameter defaults.
+    Println(greet("hi"))
+    Println(greet("hi", (s) => s + "."))
+    Println(runOrZero())
+    Println(runOrZero(() => 5))
+    Println(Counter(1).Step())
+    Println(Counter(1).Step((n) => n * 100))
+    Println(twice(21), twice(21, (a, b) => a + b), twice("ab", (a, b) => a + b))
+
+    // Declared in another package, constructed here with every hook omitted.
+    val b = func_defaults_lib.Backend(Name = "tui")
+    val origin = b.Origin()
+    Println(origin.V1, origin.V2)
+    b.CursorReport(3, 4)
+    Println(b.Render(func_defaults_lib.Cell("a")).Ch)
+    Println(b.Pick(Some(4)), b.Pick(None[int]()))
+    Println(b.OnClose == nil)
+    Println(func_defaults_lib.Decorate("lib"))
+}
