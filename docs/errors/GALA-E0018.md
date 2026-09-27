@@ -85,10 +85,20 @@ in those cases.
 **Fix.** Pick the form that documents intent best. Both compile:
 
 ```gala
+sealed type Box[T any] {
+    case Empty()
+    case Filled(value T)
+}
+
 val x Box[int] = Empty()   // declarative; reads as a binding, not a call
 ```
 
 ```gala
+sealed type Box[T any] {
+    case Empty()
+    case Filled(value T)
+}
+
 val x = Empty[int]()       // explicit instantiation; useful when the type param is the operative information
 ```
 

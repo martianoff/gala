@@ -59,18 +59,33 @@ The hint is built from the variant's own parent type, so it names the exact anno
 Give the parameter a home. Annotate the binding:
 
 ```gala
+sealed type Box[T any] {
+    case Empty()
+    case Filled(value T)
+}
+
 val x Box[int] = Empty()
 ```
 
 …or instantiate the constructor explicitly:
 
 ```gala
+sealed type Box[T any] {
+    case Empty()
+    case Filled(value T)
+}
+
 val x = Empty[int]()
 ```
 
 When the constructor is an arm of a `match` against a value of the parent type, or the body of a function whose declared return type is *concrete*, the signal is already present and no annotation is needed:
 
 ```gala
+sealed type Box[T any] {
+    case Empty()
+    case Filled(value T)
+}
+
 func emptyInts() Box[int] = Empty()   // the concrete return type pins T
 ```
 
