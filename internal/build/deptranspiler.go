@@ -431,61 +431,18 @@ func resolveGoModuleForImport(importPath string, goReqs []mod.Require) (string, 
 // This ensures that pure Go subpackages within a GALA module are available in the
 // transpiled output directory alongside the generated .gen.go files.
 func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
-	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			// Skip entries that can't be stat'd (e.g., Bazel junctions on Windows
-			// give "Incorrect function" when filepath.Walk tries to read them).
-			// The bazel-* directory name check below would handle these, but
-			// filepath.Walk reports the error before we can check the name.
-			return nil
-		}
-
-		// Skip the root directory itself
-		if path == srcDir {
-			return nil
-		}
-
+	// walkCopiedTree defines the tree (and the build cache key covers exactly
+	// what it visits); here only the files handled elsewhere are dropped.
+	return walkCopiedTree(srcDir, func(path string, info os.FileInfo) error {
 		relPath, err := filepath.Rel(srcDir, path)
 		if err != nil {
 			return err
 		}
 
-		// Skip symlinks entirely — Bazel creates symlinks (Linux) or junctions
-		// (Windows) that may point to nonexistent targets. filepath.Walk uses
-		// os.Lstat so it sees symlinks as entries but os.ReadFile would fail.
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		// Skip bazel directories/junctions regardless of how the OS reports them.
-		// On Windows, junctions may not have ModeDir set, so check the name
-		// before the IsDir() gate.
+		// Skip .gala files (already transpiled) and gala.mod, and go.mod and
+		// go.sum from source (we generate our own)
 		name := info.Name()
-		if strings.HasPrefix(name, "bazel-") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip hidden directories, vendor, testdata
-		if info.IsDir() {
-			if strings.HasPrefix(name, ".") || name == "vendor" ||
-				name == "testdata" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip .gala files (already transpiled), .gen.go files (stale transpiler
-		// output that may exist in the project dir), and gala.mod
-		if strings.HasSuffix(info.Name(), ".gala") || strings.HasSuffix(info.Name(), ".gen.go") ||
-			info.Name() == "gala.mod" {
-			return nil
-		}
-
-		// Skip go.mod and go.sum from source (we generate our own)
-		if info.Name() == "go.mod" || info.Name() == "go.sum" {
+		if strings.HasSuffix(name, ".gala") || name == "gala.mod" || name == "go.mod" || name == "go.sum" {
 			return nil
 		}
 

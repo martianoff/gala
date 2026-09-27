@@ -279,8 +279,12 @@ func PackageNameIn(dir string) string {
 	return ""
 }
 
-// CleanDeps removes all files from the deps directory.
+// CleanDeps removes all files from the deps directory, and the cache key that
+// described them: a key must never outlive the tree it vouches for, or a build
+// that fails half-way leaves a partial tree that the next build with the same
+// inputs trusts.
 func (w *Workspace) CleanDeps() error {
+	os.Remove(filepath.Join(w.Dir, depsStampName)) // absent is the normal case
 	// deps/ holds transpiled .go files and is open to the same "file is held by
 	// another process" failure as gen/, so it gets the same retry.
 	if err := removeWithRetry(w.DepsDir); err != nil && !os.IsNotExist(err) {
@@ -294,8 +298,10 @@ func (w *Workspace) DepModuleDir(modulePath, version string) string {
 	return filepath.Join(w.DepsDir, modulePath+"@"+version)
 }
 
-// CleanGen removes all files and subdirectories from the gen directory.
+// CleanGen removes all files and subdirectories from the gen directory, and the
+// cache key that described them (see CleanDeps).
 func (w *Workspace) CleanGen() error {
+	os.Remove(filepath.Join(w.Dir, sourceStampName)) // absent is the normal case
 	if err := removeWithRetry(w.GenDir); err != nil {
 		return fmt.Errorf(
 			"could not clear the workspace's gen directory (%s): %w\n"+
