@@ -15,6 +15,7 @@ package multifile_lib_regress
 // imports Go's. Both must resolve to their own.
 
 import gstr "martianoff/gala/strings"
+import gtime "martianoff/gala/examples/multifile_lib_regress/time_pkg"
 
 // GalaStringsUpper goes through GALA's strings package.
 func GalaStringsUpper(s string) string = gstr.ToUpper(s)
@@ -22,3 +23,19 @@ func GalaStringsUpper(s string) string = gstr.ToUpper(s)
 // GalaStringsSplitSize proves GALA's SplitN returns an Array (element count via
 // .Size()), which is exactly the signature that used to leak into the sibling.
 func GalaStringsSplitSize(s string) int = gstr.SplitN(s, ":", 2).Size()
+
+// GalaTimeNow calls a user GALA package named `time`; its default is injected.
+func GalaTimeNow() string = gtime.Now()
+
+// GalaTimeAfterFunc passes a lambda typed by that package's signature.
+func GalaTimeAfterFunc() string = gtime.AfterFunc("tick", (s) => s + "!")
+
+// Clock has a Now method with no parameters.
+struct Clock(Label string)
+
+// Now names the clock.
+func (c Clock) Now() string = s"clock:${c.Label}"
+
+// ShadowedTimeQualifier's parameter shadows the gtime import, so gtime.Now()
+// is Clock's method: the package function's default must not be injected.
+func ShadowedTimeQualifier(gtime Clock) string = gtime.Now()

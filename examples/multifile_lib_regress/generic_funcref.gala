@@ -1,0 +1,23 @@
+package multifile_lib_regress
+
+// Regression: a bare reference to a same-package GENERIC function in a NAMED
+// package. Function metadata of a named package is keyed "pkg.Name" (only
+// `main` and `test` use bare names), so a lookup by the bare identifier missed
+// it: the function's type parameter was never instantiated, Map's result type
+// parameter stayed unbound, and its sentinel leaked into the generated Go as
+// soon as the chained lambda had to write the element type down.
+
+import . "martianoff/gala/collection_immutable"
+
+func echoValue[T any](x T) T = x
+
+// MapEchoSizes passes echoValue as a value, then consumes Map's result with a
+// lambda whose parameter type must be concrete.
+func MapEchoSizes(items Array[string]) Array[int] =
+    items.Map(echoValue).Map((s) => s.Size())
+
+// FlattenSizes passes a DOT-IMPORTED generic function (collection_immutable's
+// Flatten, keyed "collection_immutable.Flatten") as a value. It must be
+// instantiated the same way as a same-package one.
+func FlattenSizes(lists Array[List[List[int]]]) Array[int] =
+    lists.Map(Flatten).Map((l) => l.Size())

@@ -355,6 +355,16 @@ func (t *galaASTTransformer) registerDotImportedVals() {
 }
 
 func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetadata {
+	// A qualified name resolves against what this file binds the qualifier to
+	// (see qualifiedFunction): Go's `time.Now()` must not pick up the defaults
+	// or parameter types of a GALA `time.Now` that a sibling file imported. A
+	// default lowered from another package was written against THAT package's
+	// imports, so it keeps the package-name lookup below.
+	if qualifier, sel, ok := strings.Cut(name, "."); ok && !t.loweringForeignDefault() {
+		if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
+			return fm
+		}
+	}
 	// Use unified resolution to find the function
 	resolved, found := t.resolveTypeName(name, func(n string) bool {
 		_, ok := t.functions[n]
@@ -374,13 +384,92 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 // "lib.DefaultClose". Type queries on the lowered default (the by-name sugar's
 // "is this already a function?", a call's result type) resolve it through
 // here; the name itself is qualified once the whole default is lowered.
+//
+// Otherwise a name bound in scope (a local, a parameter) is that binding, not
+// a function. Functions are keyed the way the analyzer keys them: bare in
+// `main`/`test`, "pkg.Name" in any other package — the current package's own,
+// then the ones a dot import brings into scope. Looking up only the bare name
+// would miss every same-package function of a named package and every
+// dot-imported one.
 func (t *galaASTTransformer) functionByName(name string) (*transpiler.FunctionMetadata, bool) {
+	if t.loweringForeignDefault() {
+		if fm, ok := t.functions[name]; ok {
+			return fm, true
+		}
+		fm, ok := t.functions[t.loweringDefault.pkg+"."+name]
+		return fm, ok
+	}
+	if t.bindingScope(name) != nil {
+		return nil, false
+	}
 	if fm, ok := t.functions[name]; ok {
 		return fm, true
 	}
-	if d := t.loweringDefault; d != nil && d.pkg != "" && d.pkg != t.packageName {
-		fm, ok := t.functions[d.pkg+"."+name]
-		return fm, ok
+	if key := ownFunctionKey(t.packageName, name); key != name {
+		if fm, ok := t.functions[key]; ok && fm != nil {
+			return fm, true
+		}
+	}
+	if t.importManager != nil {
+		for _, entry := range t.importManager.All() {
+			if !entry.IsDot || !t.galaPkgPaths[entry.Path] {
+				continue
+			}
+			if fm, ok := t.functions[entry.PkgName+"."+name]; ok && fm != nil {
+				return fm, true
+			}
+		}
 	}
 	return nil, false
+}
+
+// loweringForeignDefault reports whether a default declared in another
+// package is being lowered, so its names resolve in that package.
+func (t *galaASTTransformer) loweringForeignDefault() bool {
+	d := t.loweringDefault
+	return d != nil && d.pkg != "" && d.pkg != t.packageName
+}
+
+// ownFunctionKey is the t.functions key of function name declared in package
+// pkg, mirroring the analyzer: `main` and `test` register bare names, every
+// other package registers "pkg.Name".
+func ownFunctionKey(pkg, name string) string {
+	if pkg == "" || pkg == "main" || pkg == "test" {
+		return name
+	}
+	return pkg + "." + name
+}
+
+// qualifiedFunction resolves the selector `qualifier.name`, as written in THIS
+// file, to GALA function metadata. t.functions is keyed by package NAME and
+// merged across every file of the package, so a qualifier only reads it when
+// this file binds that qualifier to a GALA import: Go's `strings` must not
+// pick up the signatures of GALA's `strings` that a sibling imported.
+//
+// bound reports whether this file binds the qualifier at all — to a local (the
+// selector is then a method or field of that value), a Go import, or a GALA
+// import. When it does, fm is the whole answer, nil unless the qualifier is a
+// GALA import declaring name.
+func (t *galaASTTransformer) qualifiedFunction(qualifier, name string) (fm *transpiler.FunctionMetadata, bound bool) {
+	if t.bindingScope(qualifier) != nil {
+		return nil, true
+	}
+	if t.importManager == nil {
+		return nil, false
+	}
+	entry, isGala, ok := t.importForQualifier(qualifier)
+	if !ok {
+		return nil, false
+	}
+	if !isGala {
+		return nil, true
+	}
+	return t.functions[entry.PkgName+"."+name], true
+}
+
+// functionForQualifier is qualifiedFunction for callers that only need the
+// GALA function, if there is one.
+func (t *galaASTTransformer) functionForQualifier(qualifier, name string) (*transpiler.FunctionMetadata, bool) {
+	fm, _ := t.qualifiedFunction(qualifier, name)
+	return fm, fm != nil
 }
