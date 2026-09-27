@@ -68,6 +68,7 @@ go_test(
     # of the package's tests.
     size = "large",
     srcs = [
+        "aliased_go_import_types_test.go",
         "apply_test.go",
         "assignment_test.go",
         "auto_method_override_test.go",

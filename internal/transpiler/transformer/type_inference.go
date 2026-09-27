@@ -1438,6 +1438,37 @@ func (t *galaASTTransformer) instantiateGoSignatureReturns(
 	return out
 }
 
+// goTypeLookupName returns the name Go type info records typ under, pointer
+// stripped. A type written against an aliased Go import (`gostrings "strings"`)
+// is qualified by the alias — `gostrings.Builder` — while Go type info knows
+// it by its package's real name, `strings.Builder`. A Go type carries its
+// import path, so the real name is taken from that; every other type keeps its
+// printed form.
+func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
+	if ptr, ok := typ.(transpiler.PointerType); ok {
+		typ = ptr.Elem
+	}
+	if nt, ok := typ.(transpiler.NamedType); ok && t.isGoTyped(nt) {
+		return t.goPackageName(nt.ImportPath) + "." + nt.Name
+	}
+	return strings.TrimPrefix(typ.String(), "*")
+}
+
+// goPackageName returns the real package name of a Go import path: the one this
+// file's import records, else the one the loaded Go package reported, else the
+// name Go's conventions give the path.
+func (t *galaASTTransformer) goPackageName(importPath string) string {
+	if entry, ok := t.importManager.GetByPath(importPath); ok && entry.PkgName != "" {
+		return entry.PkgName
+	}
+	if t.richAST != nil {
+		if name, ok := t.richAST.GoImportNames[importPath]; ok && name != "" {
+			return name
+		}
+	}
+	return transpiler.AssumedPackageName(importPath)
+}
+
 // getGoMethodReturnType returns the first return type of a method on a Go type.
 // Handles calls like scanner.Text(), req.Header.Set(), etc.
 // The typeName may be package-qualified (e.g., "bufio.Scanner") or a pointer type.

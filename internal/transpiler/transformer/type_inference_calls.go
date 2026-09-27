@@ -38,7 +38,7 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 	}
 	// Try Go type info for struct field access and method calls on Go types
 	if !xType.IsNil() {
-		if fType := t.getGoFieldType(xTypeName, e.Sel.Name); !fType.IsNil() {
+		if fType := t.getGoFieldType(t.goTypeLookupName(xType), e.Sel.Name); !fType.IsNil() {
 			return fType
 		}
 	}
@@ -416,7 +416,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 		// Fallback: try Go type info for method calls on Go types
 		// e.g., scanner.Text() -> string, req.Header.Set() -> void
-		if retType := t.getGoMethodReturnType(xTypeName, sel.Sel.Name); !retType.IsNil() {
+		if retType := t.getGoMethodReturnType(t.goTypeLookupName(xType), sel.Sel.Name); !retType.IsNil() {
 			return retType
 		}
 	}

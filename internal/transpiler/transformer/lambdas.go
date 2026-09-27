@@ -625,9 +625,9 @@ func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, met
 	if transpiler.IsUnusable(receiverType) {
 		return nil
 	}
-	typeName := receiverType.String()
-	// Strip pointer prefix for method lookup
-	cleanType := strings.TrimPrefix(typeName, "*")
+	// Pointer stripped, and keyed by the Go package's real name even when the
+	// file imports it under an alias.
+	cleanType := t.goTypeLookupName(receiverType)
 
 	// Try direct lookup
 	if sig := t.goTypeInfo.GetMethodSignature(cleanType, methodName); sig != nil {

@@ -1,0 +1,43 @@
+package main
+
+import (
+    gostrings "strings"
+    "martianoff/gala/strings"
+    . "martianoff/gala/collection_immutable"
+)
+
+// Types that reach a lambda through a type argument keep what they are.
+//
+// A generic method's type arguments travel through the transformer in their
+// printed form. A function type printed as `func(int) int` came back as an
+// opaque name, so calling an element of Array[func(int) int] inferred nothing
+// and the lambda's result fell back to `any`. A Go type written against an
+// aliased import prints as `gostrings.Builder`, while Go type info knows it as
+// `strings.Builder`, so its methods were not found and their results fell back
+// to `any` too. Either way the generated Go failed to compile as soon as the
+// result was used as the concrete type it is.
+
+func length(s string) int = s.Size()
+
+func main() {
+    // Function-typed elements.
+    val steps = ArrayOf((x int) => x + 1, (x int) => x * 2)
+    val applied = steps.Map((f) => f(10))
+    Println(applied.FoldLeft(0, (a, b) => a + b))
+
+    val maybe = Some((x int) => x + 1)
+    Println(maybe.Map((f) => f(1)).GetOrElse(0) + 1)
+
+    // A Go type under an aliased import, beside the same-name GALA package.
+    Println(strings.ToUpper("gala"))
+    var sb gostrings.Builder
+    sb.WriteString("abc")
+    val builder = Some(&sb)
+    val text = builder.Map((b) => b.String()).GetOrElse("none")
+    Println(length(text))
+    Println(builder.Map((b) => b.Len()).GetOrElse(0) + 1)
+
+    // Both at once: a function over the aliased Go type.
+    val render = ArrayOf((b *gostrings.Builder) => b.String())
+    Println(length(render.Map((f) => f(&sb)).Head()))
+}
