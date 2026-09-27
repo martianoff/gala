@@ -105,6 +105,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0049](/docs/errors/gala-e0049/) | A Go call's Try or Tuple used as its plain value | Types |
 | [GALA-E0050](/docs/errors/gala-e0050/) | Codec field type has no encoding | Types |
 | [GALA-E0051](/docs/errors/gala-e0051/) | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | Literals |
+| [GALA-E0052](/docs/errors/gala-e0052/) | Function declared inside a function body | Declarations |
+| [GALA-E0053](/docs/errors/gala-e0053/) | Pointer method on a copy of a value that must not be copied | Immutability |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -134,7 +136,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
-**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type.
+**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body.
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
@@ -148,7 +150,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Syntax** — [E0042](/docs/errors/gala-e0042/) unparenthesized lambda parameter (`x => e`); GALA always writes `(x) => e`.
 
-**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/). See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
+**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 
 **Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/), [E0024](/docs/errors/gala-e0024/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
 

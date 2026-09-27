@@ -157,6 +157,31 @@ of a function with no result type) is rejected as evaluated but not used.
 func square(x int) int = x * x
 ```
 
+### Local Functions
+Named functions and methods are declared only at the top level of a file. A
+function local to a body is a lambda bound to a `val`; a lambda states its
+result type after the parameter list, exactly where a function does:
+
+```gala
+func report(scores Array[int]) string {
+    val clamp = (s int) int => if (s < 0) 0 else s
+    return scores.Map((s) => s"${clamp(s)}").MkString(", ")
+}
+```
+
+A recursive local helper is declared through `var` and then assigned, so the
+lambda can refer to it:
+
+```gala
+var fact func(int) int
+fact = (n int) => if (n <= 1) 1 else n * fact(n - 1)
+```
+
+A named `func` inside a body is rejected with
+[GALA-E0052](/docs/errors/gala-e0052/), whose hint spells out the equivalent
+lambda. A lambda takes no type parameters, so a generic helper stays at the top
+level.
+
 ### Parameters
 Function parameters can be marked as `val` or `var`. By default, they are `val` (immutable).
 
@@ -185,17 +210,17 @@ Named arguments work with struct construction, `Copy()` method overrides, and re
 Parameters can have default values. When a function is called without providing a defaulted argument, the default expression is injected at the call site. Default parameters must come after required parameters.
 
 ```gala
-func connect(host string, port int = 8080, tls bool = true) {
-    Println(s"Connecting to $host:$port (tls=$tls)")
-}
+func connect(host string, port int = 8080, tls bool = true) string =
+    s"$host:$port tls=$tls"
 
-connect("localhost")                    // port=8080, tls=true
-connect("localhost", 3000)              // tls=true
-connect("localhost", 3000, false)       // all explicit
+// Positional: omit trailing defaults
+Println(connect("localhost"))                    // localhost:8080 tls=true
+Println(connect("localhost", 3000))              // localhost:3000 tls=true
+Println(connect("localhost", 3000, false))       // localhost:3000 tls=false
 
 // Named arguments + defaults: skip any defaulted parameter
-connect("localhost", tls = false)       // port=8080
-connect(host = "localhost", port = 443) // tls=true
+Println(connect("localhost", tls = false))       // localhost:8080 tls=false
+Println(connect(host = "localhost", port = 443)) // localhost:443 tls=true
 ```
 
 Default expressions are evaluated at each call site (not once at definition time):
@@ -796,6 +821,30 @@ val ptr = &data  // ptr is ConstPtr[int]
 val value = *ptr // OK: read
 // *ptr = 100    // ERROR: cannot write through ConstPtr
 ```
+
+### Pointer-Receiver Methods on a `val`
+A method with a pointer receiver (a GALA `func (c *Counter) Bump()`, or Go's `url.URL.String`) can be called on a `val`, a field reached through one, a call result or a literal. Go only calls such a method on an addressable value, so it runs on a fresh copy and whatever it assigns to the receiver's own fields is lost. A `var`, a function parameter and a pattern binding are addressable, so there the method changes the variable itself.
+
+```gala
+struct Counter(var n int)
+
+func (c *Counter) Bump() int {
+    c.n = c.n + 1
+    return c.n
+}
+
+func main() {
+    val c = Counter(n = 1)
+    Println(c.Bump())  // 2 — bumped a copy
+    Println(c.n)       // 1 — the val is unchanged
+
+    var m = Counter(n = 10)
+    m.Bump()
+    Println(m.n)       // 11
+}
+```
+
+The copy is shallow: writes through a map, slice or pointer the value holds reach data the `val` shares. A value that must not be copied is rejected instead with [GALA-E0053](/docs/errors/gala-e0053/): any `sync` or `sync/atomic` type, a type whose pointer has `Lock()`/`Unlock()`, a `noCopy` marker, a struct holding one of them, `strings.Builder` and `bytes.Buffer`. Hold such a value in a `var` or behind a pointer (`&sync.Mutex{}`).
 
 ## 13. GALA Packages {#13-gala-packages}
 

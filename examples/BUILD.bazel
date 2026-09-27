@@ -3579,3 +3579,23 @@ gala_exec_test(
     src = "tuple_match_irrefutable.gala",
     expected = "tuple_match_irrefutable.out",
 )
+
+# Local functions are lambdas bound to a val; a named func inside a body is
+# GALA-E0052. Covers the shapes that diagnostic points at: expression and block
+# lambdas with a stated result type, a recursive lambda through var, and a
+# generic helper kept at the top level.
+gala_exec_test(
+    name = "local_function_lambda",
+    src = "local_function_lambda.gala",
+    expected = "local_function_lambda.out",
+    deps = ["//collection_immutable"],
+)
+
+# A pointer-receiver method (Go's url.URL.String, a GALA `func (c *Counter)`)
+# called through a val, a val's field, a call result, or a literal: Go cannot
+# address those, so the method runs on a copy and the val stays unchanged.
+gala_exec_test(
+    name = "pointer_method_on_val",
+    src = "pointer_method_on_val.gala",
+    expected = "pointer_method_on_val.out",
+)

@@ -136,6 +136,7 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | `GALA-E0043` | Type name called as a constructor: `Array(1, 2, 3)` | `ArrayOf(1, 2, 3)` |
 | `GALA-E0045` | Struct constructed without a required field | Pass the field, or give it a default in the struct declaration |
 | `GALA-E0047` | `if` with an initializer: `if v, err := f(); err == nil { ... }` | `Try(f()) match { case Success(v) => ...; case Failure(_) => ... }` |
+| `GALA-E0052` | Named `func` declared inside a function body: `func main() { func helper(x int) int = x + 1 }` | A lambda bound to a `val`: `val helper = (x int) int => x + 1`; generic helpers stay at the top level |
 
 ### 1. Immutability (HIGH priority)
 

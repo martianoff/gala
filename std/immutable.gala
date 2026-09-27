@@ -17,3 +17,9 @@ func (i Immutable[T]) GetAny() any = i.value
 
 // NewImmutable creates a new Immutable wrapper.
 func NewImmutable[T any](v T) Immutable[T] = Immutable[T](value = v)
+
+// AddrOfCopy returns a pointer to a fresh copy of v. The transpiler emits it
+// when a pointer-receiver method is called on a value Go cannot address — a
+// val's Get(), a call result, a composite literal — so the method runs on the
+// copy and the original value is left unchanged.
+func AddrOfCopy[T any](v T) *T = &v

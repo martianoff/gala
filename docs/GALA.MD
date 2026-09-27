@@ -9,6 +9,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 1. [Project Structure](#1-project-structure)
 2. [Variable Declarations](#2-variable-declarations)
 3. [Functions](#3-functions)
+   - [Local Functions](#local-functions)
    - [Named Arguments](#named-arguments)
    - [Default Parameter Values](#default-parameter-values)
 4. [Types and Structs](#4-types-and-structs)
@@ -235,6 +236,31 @@ func square(x int) int = x * x
 > }
 > ```
 
+### Local Functions
+Named functions and methods are declared only at the top level of a file. A
+function local to a body is a [lambda](#lambda-expressions) bound to a `val`; a
+lambda states its result type after the parameter list, exactly where a
+function does:
+
+```gala
+func report(scores Array[int]) string {
+    val clamp = (s int) int => if (s < 0) 0 else s
+    return scores.Map((s) => s"${clamp(s)}").MkString(", ")
+}
+```
+
+A recursive local helper is declared through `var` and then assigned, so the
+lambda can refer to it:
+
+```gala
+var fact func(int) int
+fact = (n int) => if (n <= 1) 1 else n * fact(n - 1)
+```
+
+A named `func` inside a body is rejected with
+[GALA-E0052](errors/GALA-E0052.md), whose hint spells out the equivalent lambda.
+A lambda takes no type parameters, so a generic helper stays at the top level.
+
 ### Parameters
 Function parameters can be explicitly marked as `val` or `var`. By default, they are `val` (immutable).
 
@@ -286,18 +312,17 @@ Parameters can have default values. When a function is called without providing 
 
 <!-- doc-check: fragment -->
 ```gala
-func connect(host string, port int = 8080, tls bool = true) Connection {
-    // ...
-}
+func connect(host string, port int = 8080, tls bool = true) string =
+    s"$host:$port tls=$tls"
 
 // Positional: omit trailing defaults
-connect("localhost")                    // port=8080, tls=true
-connect("localhost", 3000)              // tls=true
-connect("localhost", 3000, false)       // all explicit
+Println(connect("localhost"))                    // localhost:8080 tls=true
+Println(connect("localhost", 3000))              // localhost:3000 tls=true
+Println(connect("localhost", 3000, false))       // localhost:3000 tls=false
 
 // Named arguments + defaults: skip any defaulted parameter
-connect("localhost", tls = false)       // port=8080
-connect(host = "localhost", port = 443) // tls=true
+Println(connect("localhost", tls = false))       // localhost:8080 tls=false
+Println(connect(host = "localhost", port = 443)) // localhost:443 tls=true
 ```
 
 Default expressions are evaluated at each call site (not once at definition time):
@@ -3423,6 +3448,54 @@ val name = getPersonName(&alice)  // OK: &val returns ConstPtr
 
 // incrementAge(&alice)  // Would need explicit conversion or var binding
 ```
+
+#### Pointer-Receiver Methods on a `val`
+
+A method with a pointer receiver — a GALA `func (c *Counter) Bump()` or a Go
+one such as `url.URL.String` — can be called on a `val`, on a field reached
+through one, on a call result, or on a literal. Go can only call such a method
+on an addressable value, so the method runs on a fresh copy (`std.AddrOfCopy`),
+and whatever it assigns to the receiver's own fields is lost when the call
+returns. A `var`, a function parameter and a pattern binding are addressable
+Go variables, so there the method works on the variable itself.
+
+```gala
+package main
+
+import "net/url"
+
+struct Counter(var n int)
+
+func (c *Counter) Bump() int {
+    c.n = c.n + 1
+    return c.n
+}
+
+func main() {
+    val u = url.URL(Scheme = "https", Host = "example.com")
+    Println(u.String())  // https://example.com
+
+    val c = Counter(n = 1)
+    Println(c.Bump())    // 2 — bumped a copy
+    Println(c.n)         // 1 — the val is unchanged
+
+    var m = Counter(n = 10)
+    m.Bump()
+    Println(m.n)         // 11
+}
+```
+
+The copy is shallow. A method that writes through a map, slice or pointer the
+value holds (`http.Request.AddCookie` writes into the `Header` map) changes data
+the `val` shares.
+
+A value that must not be copied is rejected instead
+([GALA-E0053](errors/GALA-E0053.md)): on a copy, `mu.Lock()` would lock nothing
+and `sb.WriteString(s)` would be lost. That covers `go vet`'s copylocks set —
+any `sync` or `sync/atomic` type (`Mutex`, `WaitGroup`, `Once`, `atomic.Int64`,
+…), a type whose pointer has `Lock()`/`Unlock()`, a `noCopy` marker, and any
+struct holding one of them — plus `strings.Builder` and `bytes.Buffer`. Hold
+such a value in a `var` field or local, or behind a pointer (`&sync.Mutex{}`).
 
 #### Building Immutable Data Structures
 

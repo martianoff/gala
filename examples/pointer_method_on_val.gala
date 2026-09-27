@@ -1,0 +1,46 @@
+package main
+
+import (
+    "net/url"
+)
+
+// A pointer-receiver method needs an addressable receiver in Go. A val is read
+// through a copy, so the method runs on a fresh copy and the val never changes.
+
+struct Counter(var n int)
+
+func (c *Counter) Bump() int {
+    c.n = c.n + 1
+    return c.n
+}
+
+struct Link(target url.URL, label string)
+
+func (l Link) Render() string = s"${l.label} -> ${l.target.String()}"
+
+func home() url.URL = url.URL(Scheme = "https", Host = "gala.dev", Path = "/")
+
+func main() {
+    // Go method with a pointer receiver (url.URL.String) on a val.
+    val u = url.URL(Scheme = "https", Host = "example.com", Path = "/docs")
+    val rendered = u.String()
+    Println(rendered.Size())
+    Println(rendered)
+
+    // On a field reached through a val, a call result, and a literal.
+    val link = Link(target = u, label = "docs")
+    Println(link.target.String())
+    Println(link.Render())
+    Println(home().String())
+    Println(url.URL(Scheme = "ftp", Host = "files.example.com").String())
+
+    // GALA method with a pointer receiver: it mutates the copy, not the val.
+    val c = Counter(n = 1)
+    Println(c.Bump())
+    Println(c.n)
+
+    // A var is addressable, so the method mutates it in place.
+    var m = Counter(n = 10)
+    m.Bump()
+    Println(m.n)
+}

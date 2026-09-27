@@ -147,6 +147,7 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
 - **Block body when multi-statement** — `(x) => { val y = x*2; y + 1 }` where a value is expected (e.g. `xs.Map(...)`), the trailing expression is the result. A standalone lambda with no typed context needs the explicit `return`: `val f = (x int) => { val y = x*2; return y + 1 }`.
 - **Underscore shorthand** for trivial transforms — `nums.Map(_ * 2)`, `people.Map(_.Name)`.
 - **Explicit types only for standalone lambdas** — `val f = (x int) => x * 2`.
+- **Local helpers are lambdas, not nested `func`s** — `val clamp = (s int) int => …` inside a body; a named `func` there is [GALA-E0052](errors/GALA-E0052.md). Recursive: `var fact func(int) int` then assign. ([§3 Local Functions](GALA.MD#local-functions))
 - **Drop `() =>` for zero-arg thunk params** — where a parameter is `func() T`, pass the bare expression: `Try(parseConfig(path))`, `Future(loadFromDB(id))` instead of `Try(() => …)` / `Future(() => …)`. Keep the `() =>` only for block bodies. ([§3 By-Name Arguments](GALA.MD#by-name-arguments-thunk-sugar))
 
 ---

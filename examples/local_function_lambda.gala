@@ -1,0 +1,47 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Local functions are lambdas bound to a val. A named `func` inside a body is
+// GALA-E0052; each shape below is what that diagnostic points at instead.
+
+// A generic helper has no lambda form, so it lives at the top level.
+func firstOr[T any](xs Array[T], fallback T) T = xs.HeadOption().GetOrElse(fallback)
+
+func describe(scores Array[int]) string {
+    // Expression body, result type written where a function would write it.
+    val grade = (score int) string => score match {
+        case s if s >= 90 => "A"
+        case s if s >= 75 => "B"
+        case _ => "C"
+    }
+
+    // Block body with early returns.
+    val clamp = (score int) int => {
+        if score < 0 {
+            return 0
+        }
+        if score > 100 {
+            return 100
+        }
+        return score
+    }
+
+    // A local helper closes over the enclosing function's values.
+    val total = scores.FoldLeft(0, (acc, s) => acc + clamp(s))
+    val share = (s int) int => if (total == 0) 0 else clamp(s) * 100 / total
+
+    return scores.Map((s) => s"${clamp(s)}:${grade(clamp(s))}:${share(s)}%").MkString(", ")
+}
+
+func main() {
+    Println(describe(ArrayOf(95, 80, -5, 120)))
+
+    // Recursion: declare the function type with var, then assign the lambda.
+    var fact func(int) int
+    fact = (n int) => if (n <= 1) 1 else n * fact(n - 1)
+    Println(s"5! = ${fact(5)}")
+
+    Println(firstOr(ArrayOf("x", "y"), "none"))
+    Println(firstOr(EmptyArray[string](), "none"))
+}

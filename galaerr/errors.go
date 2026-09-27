@@ -554,6 +554,36 @@ const (
 	// transpiler error, and invalid UTF-8 was silently decoded to U+FFFD,
 	// compiling a string with a different value than the one written.
 	CodeIllegalSourceCharacter ErrorCode = "GALA-E0051"
+
+	// E0052: a named `func` was declared inside a function body, as in
+	// `func main() { func helper(x int) int = x + 1 }`. The grammar admits a
+	// function declaration wherever a statement goes, but a local named
+	// function is not part of GALA: the language reference documents
+	// functions only at the top level, and a local function is a lambda bound
+	// to a `val`. Go has no nested named functions either, so the declaration
+	// was emitted verbatim inside the enclosing body and the generated file
+	// did not parse — reported as the internal-error code E0017 with a
+	// "please file an issue" hint, for code that was simply not GALA.
+	//
+	// The hint rewrites the declaration's own signature as the equivalent
+	// lambda, `val helper = (x int) int => ...`, since a lambda states its
+	// result type in the same position. A generic function, one with a
+	// default parameter value, or a method has no lambda form, and its hint
+	// points at the top level instead.
+	CodeNestedFunctionDeclaration ErrorCode = "GALA-E0052"
+
+	// E0053: a pointer-receiver method is called on a value that must not be
+	// copied — one holding a sync.Mutex, WaitGroup, atomic value, a
+	// strings.Builder, bytes.Buffer, or a type with pointer Lock/Unlock
+	// methods — and Go cannot address the receiver (a val, a val field, a
+	// call result, a literal).
+	//
+	// Such a call runs on a copy (std.AddrOfCopy), which is harmless for
+	// `url.URL.String` but wrong for these types: a copied Mutex locks
+	// nothing and its Unlock is a fatal runtime error, and writes to a copied
+	// Builder or Buffer are lost. The value has to live in a `var` or behind a
+	// pointer.
+	CodeNoCopyReceiverCopied ErrorCode = "GALA-E0053"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

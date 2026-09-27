@@ -21,6 +21,7 @@ GALA is close enough to Scala and Kotlin to be readable on sight, and different 
 - **No bare `len`, `append`, `make`, `panic`, `recover`.** Use `.Size()` (runes/elements) or `.ByteSize()` (bytes). (`GALA-E0035`)
 - **No `defer`, no bare `go`.** Cleanup is `use` or `Using(res, (r) => ...)`; a goroutine is `go_interop.Spawn(() => f())`. (`GALA-E0036`)
 - **No slice or map literals**, and Go slice/map *types* are legal only where a type is expected. (`GALA-E0007`, `GALA-E0008`, `GALA-E0040`)
+- **No named `func` inside a function body.** A local helper is a lambda bound to a `val`: `val helper = (x int) int => x + 1`; for recursion, `var fact func(int) int` then assign. (`GALA-E0052`)
 - **`val` is immutable and is the default.** Use `var` only when reassignment is genuinely needed.
 - **Sealed matches must be exhaustive.** Adding a variant turns every incomplete match site into a compile error naming the missing case — this is the property to lean on when refactoring. (`GALA-E0002`)
 - **Prefer `Option`/`Try`/`Either` over `nil` and `(T, error)`.** Pattern-match to extract; do not call `.Get()` without checking. For a Go call returning only `error`, `Try(call)` (or `FromError(call)`) is a `Try[Void]` that fails on a non-nil error.

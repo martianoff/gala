@@ -34,7 +34,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x08}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x09}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -152,6 +152,19 @@ func (e *encoder) writeStringSlice(s []string) {
 	for _, v := range s {
 		e.writeString(v)
 	}
+}
+
+// writeStringSet emits the true-valued keys of a set, sorted so the
+// encoding is deterministic.
+func (e *encoder) writeStringSet(m map[string]bool) {
+	keys := make([]string, 0, len(m))
+	for k, v := range m {
+		if v {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	e.writeStringSlice(keys)
 }
 
 func (e *encoder) writeBoolSlice(s []bool) {
@@ -295,6 +308,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeString(m.ReceiverName)
 	e.writeBool(m.IsGeneric)
 	e.writeString(m.DefinedIn)
+	e.writeBool(m.PointerReceiver)
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -469,6 +483,8 @@ func (e *encoder) writeGoTypeData(t *transpiler.GoTypeData) {
 	e.writeStringGoFuncSigMap(t.Methods)
 	e.writeType(t.Underlying)
 	e.writeStringSlice(t.TypeParams)
+	e.writeStringSet(t.PointerMethods)
+	e.writeString(t.NoCopy)
 }
 
 func (e *encoder) writeStringGoTypeDataMap(m map[string]*transpiler.GoTypeData) {
@@ -490,14 +506,7 @@ func (e *encoder) writeGoTypeInfoPtr(g *transpiler.GoTypeInfo) {
 	e.writeStringTypeMap(g.Variables)
 	e.writeStringTypeMap(g.Constants)
 	e.writeStringTypeMap(g.TypeAliases)
-	untyped := make([]string, 0, len(g.UntypedConstants))
-	for k, v := range g.UntypedConstants {
-		if v {
-			untyped = append(untyped, k)
-		}
-	}
-	sort.Strings(untyped)
-	e.writeStringSlice(untyped)
+	e.writeStringSet(g.UntypedConstants)
 }
 
 // -------- decoder --------
@@ -584,6 +593,18 @@ func (d *decoder) readStringSlice() []string {
 	out := make([]string, n)
 	for i := range out {
 		out[i] = d.readString()
+	}
+	return out
+}
+
+func (d *decoder) readStringSet() map[string]bool {
+	keys := d.readStringSlice()
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		out[k] = true
 	}
 	return out
 }
@@ -772,6 +793,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.ReceiverName = d.readString()
 	m.IsGeneric = d.readBool()
 	m.DefinedIn = d.readString()
+	m.PointerReceiver = d.readBool()
 	return m
 }
 
@@ -991,6 +1013,8 @@ func (d *decoder) readGoTypeData() *transpiler.GoTypeData {
 	t.Methods = d.readStringGoFuncSigMap()
 	t.Underlying = d.readType()
 	t.TypeParams = d.readStringSlice()
+	t.PointerMethods = d.readStringSet()
+	t.NoCopy = d.readString()
 	return t
 }
 
@@ -1033,8 +1057,8 @@ func (d *decoder) readGoTypeInfoPtr() *transpiler.GoTypeInfo {
 	if g.TypeAliases == nil {
 		g.TypeAliases = make(map[string]transpiler.Type)
 	}
-	for _, k := range d.readStringSlice() {
-		g.UntypedConstants[k] = true
+	if untyped := d.readStringSet(); untyped != nil {
+		g.UntypedConstants = untyped
 	}
 	return g
 }

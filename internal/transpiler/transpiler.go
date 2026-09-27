@@ -67,6 +67,9 @@ const (
 	FuncCopy          = "Copy"
 	MethodGet        = "Get"
 	MethodPtr        = "Ptr"
+	// FuncAddrOfCopy gives a pointer-receiver method an addressable copy of a
+	// receiver Go cannot address (a val's Get(), a call result).
+	FuncAddrOfCopy = "AddrOfCopy"
 
 	// ConstPtr - read-only pointer wrapper for pointers to immutable values
 	TypeConstPtr    = "ConstPtr"
@@ -388,6 +391,18 @@ func PosFromToken(tok antlrToken) SourcePos {
 	return SourcePos{Line: tok.GetLine(), Column: tok.GetColumn()}
 }
 
+// SourceText returns the source characters a rule context spans, whitespace
+// included — GetText() joins the tokens, turning `(a int) int` into
+// `(aint)int`. It falls back to GetText() only when the tokens carry no input
+// stream (a tree built by hand rather than parsed).
+func SourceText(ctx antlr.ParserRuleContext) string {
+	start, stop := ctx.GetStart(), ctx.GetStop()
+	if start == nil || stop == nil || start.GetInputStream() == nil || stop.GetStop() < start.GetStart() {
+		return ctx.GetText()
+	}
+	return start.GetInputStream().GetTextFromInterval(antlr.NewInterval(start.GetStart(), stop.GetStop()))
+}
+
 // SealedVariant holds metadata about a single case in a sealed type declaration.
 type SealedVariant struct {
 	Name       string
@@ -410,6 +425,10 @@ type MethodMetadata struct {
 	ReceiverName string              // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
 	IsGeneric    bool                // Force transformation to standalone function
 	DefinedIn    string              // Source file where this method was defined (for redefinition detection)
+	// PointerReceiver is true for `func (r *T) M()`. Go calls such a method
+	// only on an addressable receiver, so a call through a val (whose Get()
+	// returns a copy) needs an addressable temporary.
+	PointerReceiver bool
 }
 
 type FunctionMetadata struct {
