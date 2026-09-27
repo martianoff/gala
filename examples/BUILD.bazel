@@ -2055,6 +2055,19 @@ gala_exec_test(
     ],
 )
 
+# A type argument that reaches a lambda keeps what it is: a function type stays
+# callable with its result type, and a Go type under an aliased import (beside
+# the same-name GALA package) keeps its methods' result types.
+gala_exec_test(
+    name = "type_arg_roundtrip",
+    src = "type_arg_roundtrip.gala",
+    expected = "type_arg_roundtrip.out",
+    deps = [
+        "//collection_immutable",
+        "//strings",
+    ],
+)
+
 # Verification: FoldLeft on Sequence.Get() result uses Array_FoldLeft
 gala_exec_test(
     name = "foldleft_on_sequence_get",

@@ -443,7 +443,7 @@ func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
 			funcName = id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(funcName)
+			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
 			if sig == nil {
 				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
 			}
@@ -498,8 +498,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	case *ast.SelectorExpr:
 		if id, ok := fun.X.(*ast.Ident); ok {
 			// Simple case: pkg.Func() or receiver.Method() where receiver is an ident
-			qualifiedName := id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(qualifiedName)
+			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
 			if sig == nil {
 				// Could be a method call on a variable — resolve its type
 				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
@@ -625,9 +624,9 @@ func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, met
 	if transpiler.IsUnusable(receiverType) {
 		return nil
 	}
-	typeName := receiverType.String()
-	// Strip pointer prefix for method lookup
-	cleanType := strings.TrimPrefix(typeName, "*")
+	// Pointer stripped, and keyed by the Go package's real name even when the
+	// file imports it under an alias.
+	cleanType := t.goTypeLookupName(receiverType)
 
 	// Try direct lookup
 	if sig := t.goTypeInfo.GetMethodSignature(cleanType, methodName); sig != nil {
