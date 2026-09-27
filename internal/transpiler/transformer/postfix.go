@@ -460,6 +460,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	var clauses []ast.Stmt
 	var defaultBody []ast.Stmt
 	foundDefault := false
+	// irrefutableTupleArm: an unguarded tuple arm whose lowered condition is
+	// constant true, so it matches every value (see armMatchesEverything).
+	irrefutableTupleArm := false
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
@@ -575,6 +578,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if err != nil {
 			return nil, err
 		}
+		if !irrefutableTupleArm && ccCtx.GetGuard() == nil && armMatchesEverything(clause) &&
+			t.isTuplePatternOfSubjectArity(patCtx, matchedType) {
+			irrefutableTupleArm = true
+		}
 		if clause != nil {
 			clauses = append(clauses, clause)
 		}
@@ -632,17 +639,17 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 		isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
 
-		// A binding pattern (e.g., `case n =>`) is a catch-all even though it's
-		// processed as a regular clause. Check for it in the exhaustiveness check.
+		// An unguarded binding (`case n =>`) already set foundDefault above.
 		hasDefault := foundDefault
-		if !hasDefault {
-			for _, cc := range caseClauses {
-				pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
-				if isBindingPattern(pat) {
-					hasDefault = true
-					break
-				}
-			}
+
+		// An unguarded irrefutable tuple arm — `case (_, _, err) =>` against a
+		// Tuple3 — matches every value, so the match is complete without a
+		// default. It lowers to an ordinary clause, so the if-chain still
+		// needs a terminating else: give it the same unreachable panic an
+		// exhaustive sealed match gets.
+		if !hasDefault && irrefutableTupleArm {
+			hasDefault = true
+			defaultBody = unreachableDefaultBody()
 		}
 
 		if !hasDefault {
@@ -662,18 +669,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					"add the missing variant cases, or add a `case _ => ...` default to cover them")
 			} else if isSealed && isExhaustive {
 				// Exhaustive sealed match — generate synthetic panic("unreachable") default
-				defaultBody = []ast.Stmt{
-					&ast.ExprStmt{X: &ast.CallExpr{
-						Fun:  ast.NewIdent("panic"),
-						Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
-					}},
-				}
+				defaultBody = unreachableDefaultBody()
 			} else if !isSealed {
-				// Message text is deliberately identical to the sibling
-				// GALA-E0003 site in match.go: the two match lowerings
-				// (expression-position here, statement-position there) are
-				// the same diagnosis to a user, and a code whose wording
-				// depends on which lowering happened to run is unsearchable.
 				// The remediation lives in the hint only — repeating
 				// `case _ => ...` in the message duplicated what the
 				// renderer already prints as the caret annotation and the

@@ -183,6 +183,7 @@ go_test(
         "tuple_callsite_inference_test.go",
         "tuple_either_test.go",
         "tuple_field_unwrap_repro_test.go",
+        "tuple_match_exhaustive_test.go",
         "tuple_positional_ctor_test.go",
         "tuple_return_arity_test.go",
         "type_as_constructor_test.go",

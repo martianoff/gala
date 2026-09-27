@@ -3485,3 +3485,11 @@ gala_exec_test(
     src = "generic_type_param_none.gala",
     expected = "generic_type_param_none.out",
 )
+
+# A tuple pattern made only of wildcards, bindings and nested such tuples is
+# irrefutable, so it closes a match without a `case _` default.
+gala_exec_test(
+    name = "tuple_match_irrefutable",
+    src = "tuple_match_irrefutable.gala",
+    expected = "tuple_match_irrefutable.out",
+)

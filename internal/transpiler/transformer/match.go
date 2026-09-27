@@ -103,6 +103,53 @@ func extractVariantName(patternText string) string {
 	return name
 }
 
+// armMatchesEverything reports whether a lowered case clause (see
+// transformCaseClauseWithType) tests nothing: its condition is the constant
+// `true`. Used for tuple arms, where it reads the lowering itself, so an
+// element that is a lowercase sealed variant, a zero-field extractor or a
+// literal counts exactly as it runs. A guard makes the condition a
+// conjunction, never the bare constant. (extractBindingDefault answers the
+// same question but builds the default body, and an empty arm reads as nil.)
+func armMatchesEverything(clause ast.Stmt) bool {
+	if block, ok := clause.(*ast.BlockStmt); ok && len(block.List) > 0 {
+		clause = block.List[len(block.List)-1]
+	}
+	ifStmt, ok := clause.(*ast.IfStmt)
+	return ok && isLiteralTrue(ifStmt.Cond)
+}
+
+// isTuplePatternOfSubjectArity reports whether a case pattern is the
+// parenthesized tuple syntax `(p1, …, pn)` and the subject is a Tuple of the
+// same arity. A tuple pattern shorter than its subject also lowers to an
+// unconditional clause (it reads only the first elements), so the arity has to
+// match before such an arm may close the match.
+func (t *galaASTTransformer) isTuplePatternOfSubjectArity(pat grammar.IPatternContext, matchedType transpiler.Type) bool {
+	exprPat, ok := pat.(*grammar.ExpressionPatternContext)
+	if !ok {
+		return false
+	}
+	p := t.getPrimaryFromExpression(exprPat.Expression())
+	if p == nil || p.TupleExpressionList() == nil {
+		return false
+	}
+	genType, ok := matchedType.(transpiler.GenericType)
+	if !ok || genType.Base == nil || !isTupleTypeName(stripStdPrefix(genType.Base.BaseName())) {
+		return false
+	}
+	return len(p.TupleExpressionList().AllExpression()) == len(genType.Params)
+}
+
+// unreachableDefaultBody is the synthetic `panic("unreachable")` else-branch
+// that closes a match whose arms already cover every value.
+func unreachableDefaultBody() []ast.Stmt {
+	return []ast.Stmt{
+		&ast.ExprStmt{X: &ast.CallExpr{
+			Fun:  ast.NewIdent("panic"),
+			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+		}},
+	}
+}
+
 // isExhaustiveMatch checks if a set of case patterns exhaustively covers all possible
 // values of the matched type. Supports booleans (true/false) and sealed types.
 // Returns (isExhaustive type, isExhaustive, missingCases).

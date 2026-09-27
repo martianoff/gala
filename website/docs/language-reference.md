@@ -340,6 +340,8 @@ val status = if (score > 50) "pass" else "fail"
 ```
 
 ### Match Expression
+A default case is required unless the arms cover every value: all variants of a sealed type, both `true` and `false`, or an unguarded arm that matches anything — `case _`, a plain binding (`case n`), or a tuple pattern made only of wildcards, bindings and nested such tuples (`case (_, _, err)`).
+
 ```gala
 val result = x match {
     case 1 => "one"
