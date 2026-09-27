@@ -6,9 +6,12 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -210,16 +213,57 @@ type fileImport struct {
 }
 
 // LocalName is how the package is referred to in source: its alias when one was
-// given, otherwise the trailing segment of its path.
+// given, otherwise the name Go assumes from its path (see assumedPackageName).
 func (fi fileImport) LocalName() string {
 	if fi.Alias != "" {
 		return fi.Alias
 	}
-	name := fi.Path
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
+	return assumedPackageName(fi.Path)
+}
+
+// LocalNames is every name the import may bind in source. An alias is
+// definite; without one the package name is only a guess from the path, and
+// a trailing `/vN` is ambiguous — `math/rand/v2` is package `rand`, while
+// `k8s.io/api/core/v1` is package `v1` — so both readings are returned.
+func (fi fileImport) LocalNames() []string {
+	if fi.Alias != "" {
+		return []string{fi.Alias}
 	}
-	return name
+	return packageNameCandidates(fi.Path)
+}
+
+// packageNameCandidates is assumedPackageName plus, when it differs, the raw
+// last path segment (see fileImport.LocalNames).
+func packageNameCandidates(importPath string) []string {
+	assumed, last := assumedPackageName(importPath), path.Base(importPath)
+	if assumed == last {
+		return []string{assumed}
+	}
+	return []string{assumed, last}
+}
+
+// assumedPackageName is the package name an unaliased import is expected to
+// bind, derived from its path by Go's naming conventions: the trailing segment,
+// skipping a `/vN` major-version segment, without a `go-` prefix, and cut at
+// the first character that cannot appear in an identifier. So
+// `gopkg.in/yaml.v3` is `yaml`, `github.com/x/foo/v2` is `foo` and
+// `github.com/mattn/go-sqlite3` is `sqlite3` — the same guess goimports makes.
+func assumedPackageName(importPath string) string {
+	base := path.Base(importPath)
+	if len(base) > 1 && base[0] == 'v' {
+		if _, err := strconv.Atoi(base[1:]); err == nil {
+			if dir := path.Dir(importPath); dir != "." {
+				base = path.Base(dir)
+			}
+		}
+	}
+	base = strings.TrimPrefix(base, "go-")
+	if i := strings.IndexFunc(base, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	}); i >= 0 {
+		base = base[:i]
+	}
+	return base
 }
 
 // scanFileImports decodes every import spec the file declares.
@@ -414,20 +458,24 @@ func (a *galaAnalyzer) fileImportsFullyLoaded(imports []fileImport, richAST *tra
 
 // goPackageContributed reports whether the analyzer learned any symbol of the
 // Go package at `importPath`. Go metadata is keyed by package name, which is
-// the path's last segment for the overwhelming majority of packages; a package
-// that renames itself simply reads as "contributed nothing", which is the safe
-// answer for the caller.
+// one of packageNameCandidates for the overwhelming majority of packages; a
+// package that renames itself simply reads as "contributed nothing", which is
+// the safe answer for the caller.
 func goPackageContributed(rich *transpiler.RichAST, importPath string) bool {
 	if rich == nil {
 		return false
 	}
-	name := importPath
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
+	for _, name := range packageNameCandidates(importPath) {
+		if name != "" && goPackageNameContributed(rich, name) {
+			return true
+		}
 	}
-	if name == "" {
-		return false
-	}
+	return false
+}
+
+// goPackageNameContributed reports whether any Go symbol is keyed under the
+// package name `name`.
+func goPackageNameContributed(rich *transpiler.RichAST, name string) bool {
 	if len(rich.GoExports[name]) > 0 {
 		return true
 	}
@@ -829,11 +877,13 @@ func collectQualifiers(imports []fileImport, rich *transpiler.RichAST) map[strin
 			addQualifierOf(q, k)
 		}
 	}
-	// This file's own imports: the alias when one is given, otherwise the
-	// trailing path segment — how a Go import is referenced.
+	// This file's own imports: the alias when one is given, otherwise every
+	// name the path may bind — how a Go import is referenced.
 	for _, imp := range imports {
-		if name := imp.LocalName(); name != "" {
-			q[name] = true
+		for _, name := range imp.LocalNames() {
+			if name != "" {
+				q[name] = true
+			}
 		}
 	}
 	return q
@@ -1312,20 +1362,27 @@ func packageClauseOf(src string) string {
 // parameter, a local declaration, or a dot-imported name.
 func (c *undefChecker) checkTypeQualifiers(sourceFile *grammar.SourceFileContext) {
 	walkTypeContexts(sourceFile, func(tc *grammar.TypeContext) {
-		qi := tc.QualifiedIdentifier()
-		if qi == nil {
+		name, _, tok, ok := typeQualifier(tc)
+		if !ok || c.qualifiers[name] {
 			return
 		}
-		ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
-		if len(ids) < 2 {
-			return // unqualified: not a package reference
-		}
-		name := ids[0].GetText()
-		if c.qualifiers[name] {
-			return
-		}
-		c.report(name, ids[0].GetStart())
+		c.report(name, tok)
 	})
+}
+
+// typeQualifier splits a package-qualified type such as `strings.Builder` into
+// its qualifier ("strings"), the member ("Builder") and the qualifier's token.
+// ok is false for an unqualified type, which is not a package reference.
+func typeQualifier(tc *grammar.TypeContext) (qualifier, member string, tok antlr.Token, ok bool) {
+	qi := tc.QualifiedIdentifier()
+	if qi == nil {
+		return "", "", nil, false
+	}
+	ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
+	if len(ids) < 2 {
+		return "", "", nil, false
+	}
+	return ids[0].GetText(), ids[1].GetText(), ids[0].GetStart(), true
 }
 
 // walkTypeContexts visits every TypeContext in the tree, including the nested

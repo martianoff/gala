@@ -496,23 +496,41 @@ func isUnresolvedType(t transpiler.Type) bool {
 	return false
 }
 
-// fileImportPaths maps the name a file refers to each import by (its alias, or the
-// last path segment) to that import's path.
+// fileImportPaths maps the name a file refers to each import by (its alias, or
+// each name the path may bind — see packageNameCandidates) to that import's path.
+// When two imports claim one name, the surer binding wins: an alias over the
+// last path segment, and the last path segment over a name derived by
+// stripping a version suffix or `go-` prefix.
 func fileImportPaths(f *ast.File) map[string]string {
+	const (
+		derived = iota + 1
+		lastSegment
+		aliased
+	)
 	out := make(map[string]string, len(f.Imports))
+	rank := make(map[string]int, len(f.Imports))
+	bind := func(name, path string, r int) {
+		if r > rank[name] {
+			out[name], rank[name] = path, r
+		}
+	}
 	for _, imp := range f.Imports {
 		if imp.Path == nil {
 			continue
 		}
 		path := strings.Trim(imp.Path.Value, `"`)
-		name := path
-		if idx := strings.LastIndex(name, "/"); idx != -1 {
-			name = name[idx+1:]
-		}
 		if imp.Name != nil && imp.Name.Name != "" && imp.Name.Name != "_" && imp.Name.Name != "." {
-			name = imp.Name.Name
+			bind(imp.Name.Name, path, aliased)
+			continue
 		}
-		out[name] = path
+		last := path[strings.LastIndex(path, "/")+1:]
+		for _, name := range packageNameCandidates(path) {
+			if name == last {
+				bind(name, path, lastSegment)
+			} else {
+				bind(name, path, derived)
+			}
+		}
 	}
 	return out
 }

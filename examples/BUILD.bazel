@@ -2126,6 +2126,25 @@ gala_exec_test(
     expected = "crossfile_package_val/crossfile_package_val.out",
 )
 
+# Verification: a Go import whose package name matches a GALA package imported
+# by a sibling file (Go `strings`/`io` beside GALA `strings`/`io`). Go types
+# written against the Go qualifier in signatures, struct fields and sealed
+# variants must not be reported as the GALA package being unimported, and a
+# generic method on GALA's Str must be emitted against the file's own alias.
+gala_exec_test(
+    name = "go_pkg_shares_gala_name",
+    srcs = [
+        "go_pkg_shares_gala_name/gala_side.gala",
+        "go_pkg_shares_gala_name/main.gala",
+    ],
+    expected = "go_pkg_shares_gala_name/go_pkg_shares_gala_name.out",
+    deps = [
+        "//go_interop",
+        "//io",
+        "//strings",
+    ],
+)
+
 # FIX-GS-011 verification: cross-file struct field auto-unwrap (library package)
 gala_library(
     name = "cross_file_unwrap_lib",

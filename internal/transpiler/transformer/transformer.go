@@ -326,6 +326,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	for path, actualPkgName := range richAST.Packages {
 		t.importManager.UpdateActualPackageName(path, actualPkgName)
 	}
+	t.importManager.ClaimGalaPackageNames(t.galaPkgPaths)
 
 	// Error on symbol clashes between dot-imported packages.
 	// Use the first import declaration's position for error reporting.
@@ -433,7 +434,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Add transitive imports needed by type inference (e.g., when lambda parameter
 	// types are inferred from a dependency's method signature and reference packages
 	// not explicitly imported in the current file).
-	t.importManager.AddTransitiveImportsToFile(file)
+	t.importManager.AddTransitiveImportsToFile(file, richAST.ImportPathMap)
 
 	// Add import "embed" when embed val declarations with EmbeddedFS type are present.
 	// For string embeds, Go requires import _ "embed" (blank import).

@@ -145,8 +145,13 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 			t.markDotImportUsed(pkg)
 			return ast.NewIdent(base)
 		}
-		// Check if we have an alias for this actual package name
-		if alias, ok := t.importManager.GetAlias(pkg); ok {
+		// Resolve the GALA package name to this file's qualifier for it. The
+		// package may come from metadata this file never imported — e.g. a
+		// generic method lowered to `collection_immutable.Array_Map` on a value
+		// another package returned — so record the import the selector needs,
+		// as the type and constructor paths do.
+		if alias, path, ok := t.importManager.Qualifier(pkg); ok {
+			t.importManager.AddTransitive(path, alias)
 			pkg = alias
 		}
 		return &ast.SelectorExpr{
@@ -155,6 +160,41 @@ func (t *galaASTTransformer) ident(name string) ast.Expr {
 		}
 	}
 	return ast.NewIdent(name)
+}
+
+// goImportForPathlessType reports the Go import this file means by the
+// package-qualified type pkg.name when the type carries no import path.
+//
+// Such a type was written in GALA source — `*strings.Builder` in a signature
+// or field — or comes from GALA metadata, and a GALA package can share the
+// name `pkg` with a Go import of this file (see
+// ImportManager.ClaimGalaPackageNames). If only one of the two packages
+// declares the type, that one is meant: a GALA `Str` stays GALA beside Go's
+// `strings`, Go's `strings.Builder` stays Go. A name both declare (`fs.FileInfo`
+// in Go's `io/fs` and GALA's `fs`) cannot be told apart without an import path:
+// it is taken as GALA when this file imports the GALA package itself, and as
+// the Go import this file wrote otherwise.
+func (t *galaASTTransformer) goImportForPathlessType(pkg, name string) (*ImportEntry, bool) {
+	entry, found := t.importManager.GetByAlias(pkg)
+	if !found || entry.IsDot || t.galaPkgPaths[entry.Path] {
+		return nil, false
+	}
+	key := pkg + "." + name
+	if _, galaDeclares := t.richAST.Types[key]; galaDeclares {
+		if t.importManager.ImportsGalaPackage(pkg) {
+			return nil, false
+		}
+		gi := t.richAST.GoTypeInfo
+		if gi == nil {
+			return nil, false
+		}
+		_, goType := gi.Types[key]
+		_, goAlias := gi.TypeAliases[key]
+		if !goType && !goAlias {
+			return nil, false
+		}
+	}
+	return entry, true
 }
 
 // qualifyTypeExpr recursively transforms a type expression to ensure std types

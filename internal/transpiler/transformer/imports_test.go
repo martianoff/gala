@@ -239,3 +239,85 @@ func TestImportManager_AddFromPackagesSkipsExistingPaths(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "mystd", entry.Alias) // First (explicit) one preserved
 }
+
+// TestImportManager_SamePathUnderTwoNames: Go allows one path to be imported
+// plainly and under an alias in the same file, and both names must resolve.
+// Only the implicit seed from AddFromPackages is replaced by an explicit import.
+func TestImportManager_SamePathUnderTwoNames(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.AddFromPackages(map[string]string{"martianoff/gala/strings": "strings"})
+	m.Add("martianoff/gala/strings", "", false, "strings")
+	m.Add("martianoff/gala/strings", "gs", false, "strings")
+
+	for _, alias := range []string{"strings", "gs"} {
+		entry, ok := m.GetByAlias(alias)
+		if assert.True(t, ok, alias) {
+			assert.Equal(t, "martianoff/gala/strings", entry.Path)
+		}
+	}
+	entry, ok := m.GetByPath("martianoff/gala/strings")
+	assert.True(t, ok)
+	assert.Equal(t, "strings", entry.Alias, "GetByPath keeps the first explicit import")
+	assert.Len(t, m.All(), 2, "the implicit seed is replaced, the two explicit imports stay")
+}
+
+// TestImportManager_GalaImportOwnsSharedName: when a GALA import and a Go
+// import share a package name, GetAlias — which maps a GALA metadata package
+// name back to this file's qualifier — must answer with the GALA import's
+// alias whatever the declaration order.
+func TestImportManager_GalaImportOwnsSharedName(t *testing.T) {
+	for _, galaFirst := range []bool{true, false} {
+		m := transformer.NewImportManager()
+		m.AddFromPackages(map[string]string{"martianoff/gala/strings": "strings"})
+		if galaFirst {
+			m.Add("martianoff/gala/strings", "gs", false, "strings")
+			m.Add("strings", "", false, "")
+		} else {
+			m.Add("strings", "", false, "")
+			m.Add("martianoff/gala/strings", "gs", false, "strings")
+		}
+		m.UpdateActualPackageName("martianoff/gala/strings", "strings")
+		m.ClaimGalaPackageNames(map[string]bool{"martianoff/gala/strings": true})
+
+		alias, ok := m.GetAlias("strings")
+		assert.True(t, ok)
+		assert.Equal(t, "gs", alias, "galaFirst=%v", galaFirst)
+		goEntry, ok := m.GetByAlias("strings")
+		if assert.True(t, ok) {
+			assert.Equal(t, "strings", goEntry.Path, "the Go import still answers to its own name")
+		}
+	}
+}
+
+// TestImportManager_ImplicitGalaPackageGetsFreeQualifier: a GALA package this
+// file does not import (it reached the file through a sibling's imports) still
+// owns its package name for GALA lookups, but its qualifier must not collide
+// with a Go import of the same name that the file does declare.
+func TestImportManager_ImplicitGalaPackageGetsFreeQualifier(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.AddFromPackages(map[string]string{"martianoff/gala/strings": "strings"})
+	m.Add("strings", "", false, "")
+	m.UpdateActualPackageName("martianoff/gala/strings", "strings")
+	m.ClaimGalaPackageNames(map[string]bool{"martianoff/gala/strings": true})
+
+	alias, path, ok := m.Qualifier("strings")
+	if assert.True(t, ok) {
+		assert.Equal(t, "martianoff/gala/strings", path)
+		assert.Equal(t, "gala_strings", alias)
+	}
+	goEntry, ok := m.GetByAlias("strings")
+	if assert.True(t, ok) {
+		assert.Equal(t, "strings", goEntry.Path)
+	}
+}
+
+// TestImportManager_TransitiveQualifier: a Go package the file does not import
+// gets its own name unless an import or another transitive import binds it.
+func TestImportManager_TransitiveQualifier(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.Add("martianoff/gala/fs", "", false, "fs")
+	assert.Equal(t, "fs2", m.TransitiveQualifier("io/fs", "fs"))
+	m.AddTransitive("io/fs", "fs2")
+	assert.Equal(t, "fs2", m.TransitiveQualifier("io/fs", "fs"), "a path keeps the qualifier chosen for it")
+	assert.Equal(t, "io", m.TransitiveQualifier("io", "io"))
+}

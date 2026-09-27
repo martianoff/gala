@@ -1,0 +1,47 @@
+package main
+
+import (
+    "io"
+    "strings"
+    . "martianoff/gala/go_interop"
+)
+
+// This file uses Go's `strings` and `io` in signatures, a struct field and a
+// sealed variant. The sibling gala_side.gala imports GALA's packages of the same
+// names; that must not change what `strings` and `io` mean in this file.
+
+// Report collects output in a Go strings.Builder.
+struct Report(out *strings.Builder)
+
+// Sink is where emit sends a line.
+sealed type Sink {
+    case ToBuilder(sb *strings.Builder)
+    case Discard()
+}
+
+func appendLine(sb *strings.Builder, line string) *strings.Builder {
+    sb.WriteString(line)
+    sb.WriteString(";")
+    return sb
+}
+
+func emit(sink Sink, line string) string = sink match {
+    case ToBuilder(sb) => appendLine(sb, line).String()
+    case Discard() => "(discarded)"
+}
+
+func readAll(r io.Reader) Try[string] = Try(io.ReadAll(r)).Map(ToString)
+
+func main() {
+    var out strings.Builder
+    val report = Report(out = &out)
+    appendLine(report.out, shout("  gala "))
+    appendLine(report.out, s"runes=${runeCount("héllo")}")
+    Println(report.out.String())
+
+    var sb strings.Builder
+    Println(emit(ToBuilder(&sb), "to builder"))
+    Println(emit(Discard(), "dropped"))
+
+    Println(readAll(strings.NewReader(s"io=${effectValue()}")).GetOrElse("read failed"))
+}

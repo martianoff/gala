@@ -80,6 +80,16 @@ func BuildLabels(n int) collection_immutable.Array[string] =
     collection_immutable.ArrayTabulate(n, (i) => s"row=$i")
 ```
 
+**Go and GALA packages with the same name.** GALA's `strings`, `io`,
+`json`, `path`, `fs`, `crypto` and `regex` share their names with Go
+packages. A type written against this file's own Go import
+(`*strings.Builder` after `import "strings"`) is a Go type, so the check
+skips it even when a sibling imports GALA's `strings`. When a *bare* name
+such as `Str` resolves to the GALA package through a sibling's dot import
+while this file's `strings` is the Go import, the error still fires, and its
+hint names the Go import and says to import the GALA package here too:
+dot-imported, or under an alias such as `gstrings`.
+
 **Rationale.** The analyzer used to fall back to "current package
 qualification" when a bare name didn't resolve. That silently
 mis-qualified cross-package types as belonging to the current package

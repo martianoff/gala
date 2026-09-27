@@ -1,0 +1,18 @@
+package main
+
+import (
+    gs "martianoff/gala/strings"
+    "martianoff/gala/io"
+    "strings"
+)
+
+// GALA's `strings` (aliased) and `io` (unaliased), whose package names match
+// the Go packages main.gala imports. This file also imports Go's `strings`
+// after the GALA one: the generic `Fold` on GALA's `Str` must still be
+// emitted against `gs`, not against Go's `strings`.
+
+func shout(s string) string = gs.ToUpper(strings.TrimSpace(s))
+
+func runeCount(s string) int = gs.S(s).Fold(0, (n, c) => n + 1)
+
+func effectValue() int = io.Of(42).UnsafeRun()

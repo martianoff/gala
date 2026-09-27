@@ -1660,7 +1660,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				knownGalaPkgs[name] = true
 			}
 		}
-		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets); len(errs) > 0 {
+		goRefs := a.collectGoQualifiedTypes(sourceFile, knownGalaPkgs, richAST.Types)
+		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets, goRefs); len(errs) > 0 {
 			return nil, errs[0]
 		}
 
@@ -1697,8 +1698,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 // previously fell back to "default to current package" qualification
 // when a bare name didn't resolve. Mirrors Go's compile-time rule that
 // every cross-package symbol needs an explicit import in the file
-// using it.
-func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool) []*galaerr.SemanticError {
+// using it. `goRefs` carries this file's Go imports, so a qualified type
+// written against one of them is not mistaken for a GALA package of the
+// same name.
+func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool, goRefs goQualifiedTypes) []*galaerr.SemanticError {
 	var errs []*galaerr.SemanticError
 	// Per-call memo: many TypeMetadata / FunctionMetadata entries share
 	// the same DefinedIn (e.g. all 100+ types declared in one .gala
@@ -1733,7 +1736,7 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 		return match
 	}
 	check := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
-		walkTypeForUnresolvedPackages(t, explicit, knownGala, &errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(t, explicit, knownGala, goRefs, &errs, pos, ctxName)
 	}
 	for fname, fm := range richAST.Functions {
 		if fm == nil || !isThisFile(fm.DefinedIn) {
@@ -1792,7 +1795,7 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 				}
 			}
 			mcheck := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
-				walkTypeForUnresolvedPackages(t, allowed, knownGala, &errs, pos, ctxName)
+				walkTypeForUnresolvedPackages(t, allowed, knownGala, goRefs, &errs, pos, ctxName)
 			}
 			for _, pt := range mm.ParamTypes {
 				mcheck(pt, mm.Pos, tname+"."+mname)
@@ -1811,44 +1814,120 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 // against CodeUnresolvedCrossPackageSymbol (GALA-E0025): GALA mirrors
 // Go's rule that every cross-package symbol needs an explicit import
 // in the file using it. Packages not in `knownGala` are treated as
-// Go-side (validated by the Go compiler) and skipped.
-func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[string]bool, errs *[]*galaerr.SemanticError, pos transpiler.SourcePos, ctxName string) {
+// Go-side (validated by the Go compiler) and skipped, as is a qualified
+// type this file writes against its own Go import (see goQualifiedTypes).
+func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[string]bool, goRefs goQualifiedTypes, errs *[]*galaerr.SemanticError, pos transpiler.SourcePos, ctxName string) {
 	if t == nil {
 		return
 	}
 	switch tt := t.(type) {
 	case transpiler.NamedType:
-		if tt.Package != "" && !explicit[tt.Package] && knownGala[tt.Package] {
+		if tt.Package != "" && !explicit[tt.Package] && knownGala[tt.Package] && !goRefs.refs[tt.Package+"."+tt.Name] {
 			msg := fmt.Sprintf("undefined: %s (used in %s) — '%s' is not imported in this file",
 				tt.Name, ctxName, tt.Package)
-			hint := fmt.Sprintf(
-				"add an explicit import to this file. For unqualified usage: `import . \"<path-ending-in-%s>\"`. "+
-					"For qualified usage: `import \"<path>\"` and call it as `%s.%s`. Sibling files' imports do not propagate.",
-				tt.Package, tt.Package, tt.Name)
+			var hint string
+			if goPath, ok := goRefs.imports[tt.Package]; ok {
+				// A bare name reached the GALA package through a sibling's dot
+				// import; "add an explicit import" would read as nonsense next
+				// to this file's own import of the same name.
+				hint = fmt.Sprintf(
+					"`%[1]s` in this file is the Go import %[2]q, which does not provide `%[3]s`. "+
+						"To use the GALA package's `%[3]s`, import it in this file too: `import . \"<path-ending-in-%[1]s>\"` for unqualified usage, "+
+						"or under an alias (`import g%[1]s \"<path>\"`) and call it as `g%[1]s.%[3]s`. Sibling files' imports do not propagate.",
+					tt.Package, goPath, tt.Name)
+			} else {
+				hint = fmt.Sprintf(
+					"add an explicit import to this file. For unqualified usage: `import . \"<path-ending-in-%s>\"`. "+
+						"For qualified usage: `import \"<path>\"` and call it as `%s.%s`. Sibling files' imports do not propagate.",
+					tt.Package, tt.Package, tt.Name)
+			}
 			*errs = append(*errs, galaerr.NewCodedSemanticError(
 				galaerr.CodeUnresolvedCrossPackageSymbol,
 				pos.Line, pos.Column, msg, hint))
 		}
 	case transpiler.GenericType:
-		walkTypeForUnresolvedPackages(tt.Base, explicit, knownGala, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Base, explicit, knownGala, goRefs, errs, pos, ctxName)
 		for _, p := range tt.Params {
-			walkTypeForUnresolvedPackages(p, explicit, knownGala, errs, pos, ctxName)
+			walkTypeForUnresolvedPackages(p, explicit, knownGala, goRefs, errs, pos, ctxName)
 		}
 	case transpiler.ArrayType:
-		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, goRefs, errs, pos, ctxName)
 	case transpiler.MapType:
-		walkTypeForUnresolvedPackages(tt.Key, explicit, knownGala, errs, pos, ctxName)
-		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Key, explicit, knownGala, goRefs, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, goRefs, errs, pos, ctxName)
 	case transpiler.PointerType:
-		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, errs, pos, ctxName)
+		walkTypeForUnresolvedPackages(tt.Elem, explicit, knownGala, goRefs, errs, pos, ctxName)
 	case transpiler.FuncType:
 		for _, pt := range tt.Params {
-			walkTypeForUnresolvedPackages(pt, explicit, knownGala, errs, pos, ctxName)
+			walkTypeForUnresolvedPackages(pt, explicit, knownGala, goRefs, errs, pos, ctxName)
 		}
 		for _, rt := range tt.Results {
-			walkTypeForUnresolvedPackages(rt, explicit, knownGala, errs, pos, ctxName)
+			walkTypeForUnresolvedPackages(rt, explicit, knownGala, goRefs, errs, pos, ctxName)
 		}
 	}
+}
+
+// goQualifiedTypes records what this file's Go imports mean to the
+// explicit-import check (GALA-E0025).
+//
+// GALA ships packages whose names collide with Go stdlib ones — strings, io,
+// path, fs, json, crypto, regex — and the check compares bare package names. A
+// file that imports Go's `strings` and writes `*strings.Builder` in a
+// signature yields NamedType{Package: "strings"}, which the metadata cannot
+// tell apart from a reference to GALA's `strings` once any sibling has loaded
+// that package. The source can: a type written with a qualifier this file
+// binds to a Go import is a Go type, whatever GALA packages the rest of the
+// package loads. A bare name that resolved to the GALA package is still
+// checked — this file's Go import does not make that name visible.
+type goQualifiedTypes struct {
+	// imports maps each qualifier this file binds to a Go import to the
+	// import's path.
+	imports map[string]string
+	// refs holds "qualifier.Name" for every qualified type this file writes
+	// against one of those qualifiers.
+	refs map[string]bool
+}
+
+// collectGoQualifiedTypes builds the goQualifiedTypes for sourceFile. Only Go
+// imports whose name is also a known GALA package can matter to the check, so
+// a file without such a clash — nearly every file — skips the source walk.
+func (a *galaAnalyzer) collectGoQualifiedTypes(sourceFile *grammar.SourceFileContext, knownGala map[string]bool, galaTypes map[string]*transpiler.TypeMetadata) goQualifiedTypes {
+	g := goQualifiedTypes{imports: make(map[string]string)}
+	for _, imp := range scanFileImports(sourceFile) {
+		if imp.IsDot || a.isGalaImport(imp.Path) {
+			continue
+		}
+		for _, name := range imp.LocalNames() {
+			if knownGala[name] {
+				g.imports[name] = imp.Path
+			}
+		}
+	}
+	if len(g.imports) == 0 {
+		return g
+	}
+	// Metadata cannot tell `fs.FileInfo` written against the Go import from a
+	// bare `FileInfo` that resolved to GALA's `fs`. When the file writes both
+	// and the GALA package declares the member, the member is left to the
+	// check; a bare name the GALA package does not declare (say, a local
+	// `Builder`) is no ambiguity.
+	g.refs = make(map[string]bool)
+	bare := make(map[string]bool)
+	walkTypeContexts(sourceFile, func(tc *grammar.TypeContext) {
+		if qualifier, member, _, ok := typeQualifier(tc); ok {
+			if g.imports[qualifier] != "" {
+				g.refs[qualifier+"."+member] = true
+			}
+		} else if qi := tc.QualifiedIdentifier(); qi != nil {
+			bare[qi.GetText()] = true
+		}
+	})
+	for ref := range g.refs {
+		if _, galaDeclares := galaTypes[ref]; galaDeclares && bare[ref[strings.Index(ref, ".")+1:]] {
+			delete(g.refs, ref)
+		}
+	}
+	return g
 }
 
 // countErrors returns the number of Error-severity warnings in the list.
@@ -4998,7 +5077,12 @@ func recordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, pctx *g
 func checkDuplicateImports(sourceFile *grammar.SourceFileContext) error {
 	seen := make(map[string]int) // path+local -> line of the first occurrence
 	for _, imp := range scanFileImports(sourceFile) {
-		local := imp.LocalName()
+		// The alias, else the path's last segment: for one path, equal keys
+		// mean the same binding repeated, whatever package name Go assigns.
+		local := imp.Alias
+		if local == "" {
+			local = imp.Path[strings.LastIndex(imp.Path, "/")+1:]
+		}
 		if imp.IsDot {
 			// A dot import binds no name of its own, but repeating one still
 			// redeclares every symbol it introduces.
