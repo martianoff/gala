@@ -1056,8 +1056,8 @@ func (s Str) IsAlpha() bool = s.NonEmpty() && toRunes(s.value).ForAll(unicode.Is
 |-------|-----------------|-----------------|
 | Nullable without Option | `func f() *T` returning nil | `func f() Option[T]` |
 | Bare `panic` for errors | `panic("error message")` — a hard error (`GALA-E0035`) | Return `Try[T]` or `Either[E, T]` |
-| `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Wrap the `(T, error)` call in `Try`: `Try(f(args))` returns `Try[T]` (the error becomes a `Failure`); compose with `.Map`/`.FlatMap`/`bind` and return the `Try` — do not `.Get()` it inside a function that returns `Try` (rule 11e) |
-| `Try` around an error-**only** Go call | `Try(os.Rename(a, b))` — wrapping a Go func that returns ONLY `error` (no value) | `FromError(os.Rename(a, b))` — `Try(...)` of an error-only call compiles to `Try[error]` that captures the error as a *value*, so `IsFailure` is ALWAYS false (silent no-op). `FromError` (from `std`) returns `Try[Void]` and fails on non-nil error; compose/return it (don't `.Get()`). Reserve `Try(call)` for `(T, error)` calls |
+| `go_builtins.Panic` to propagate an error | `val x, err = f(); if err != nil { go_builtins.Panic(err) }` (or the same inside a `Try` block) | Use the `(T, error)` call as a value: `f(args)` already is a `Try[T]` (the error is the `Failure`); compose with `.Map`/`.FlatMap`/`bind` and return the `Try` — do not `.Get()` it inside a function that returns `Try` (rule 11e) |
+| A Go `(T, error)` call's value used as `T` | `val data = os.ReadFile(p)` then `count(data)` / `string(data)` / `data.Size()` — the val is a `Try[[]byte]` (GALA-E0049) | Compose the Try (`os.ReadFile(p).Map(...)`, `match`, `.GetOrElse(...)`), or `val data, err = os.ReadFile(p)` when the raw results go back to Go; `.Get()` only at a genuine edge |
 | `.Get()` inside an enclosing `Try(() => {...})` | `Try[T](() => { val x = Try(call()).Get(); return f(x) })` — the inner `.Get()` re-raises a `Failure` as a *panic* the outer `Try` re-catches | Compose with the monadic API: `Try(call()).Map((x) => f(x))` (or `.FlatMap` / `bind`). Nesting `.Get()` inside an outer `Try` defeats `Try`'s purpose — it round-trips a value through a panic |
 | Ignored error | `result, _ := fallibleOp()` | Handle with `Try` or check error |
 | Sentinel return value | Returning `""`, `0`, `-1`, or `nil` to signal "not found" / failure | Return `Option[T]` or `Try[T]` instead |
@@ -1151,36 +1151,38 @@ func DecodeHex(s string) Try[Array[byte]] =
     Try(hex.DecodeString(s)).Map((b) => ArrayFromSlice(b))
 ```
 
-**`Try(...)` around an error-*only* Go call silently never fails.** Choose the
-wrapper by the Go function's return shape — and either way *compose and return
-the Try*, don't `.Get()` it (see the unsafe-`.Get()` rule below):
+**A Go call's value is already a `Try` (or a Tuple).** Choose by the Go
+function's return shape — and either way *compose and return the Try*, don't
+`.Get()` it (see the unsafe-`.Get()` rule below):
 
 - Returns a value *and* an error — `(T, error)` (`os.ReadFile`, `os.Open`,
-  `os.MkdirTemp`, `io.Copy`, `strconv.Atoi`, `hex.DecodeString`, …) → `Try(call)`,
-  composed with `.Map`/`.FlatMap`/`bind`. The error becomes a `Failure`. Correct.
+  `os.MkdirTemp`, `io.Copy`, `strconv.Atoi`, `hex.DecodeString`, …) → the call
+  used as a value IS a `Try[T]`; compose it with `.Map`/`.FlatMap`/`bind` or
+  `match` on it directly. `Try(call)` is the same `Try[T]` (it additionally
+  catches a panic inside the call) — flag it only as redundant noise.
+  `(A, B, error)` is a `Try[Tuple[A, B]]`; `(A, B)` / `(A, B, C)` without an
+  error are a `Tuple` / `Tuple3` — destructure with `val (a, b, c) = call`.
 - Returns **only** `error` (`os.Rename`, `os.WriteFile`, `os.MkdirAll`,
   `os.Remove`/`RemoveAll`, `os.Mkdir`, `os.Chdir`/`Chmod`/`Symlink`/`Truncate`/`Setenv`,
   `(*File).Close`, `.Sync`, `scanner.Err`, `encoder.Encode`, `filepath.WalkDir`, …)
-  → `FromError(call)` (from `std`; returns `Try[Void]`, fails on non-nil error).
-  **Do NOT use `Try(...)` here** — `Try(os.Rename(a, b))` compiles to `Try[error]`
-  that captures the error as a *value*, so `IsFailure` is ALWAYS false and the
-  failure is silently swallowed.
+  → the call is a plain `error` value. `FromError(call)` or `Try(call)` turn it
+  into a `Try[Void]` that fails on a non-nil error.
+- Flag `val x = goCall()` followed by using `x` as the plain `T` — that is
+  GALA-E0049. Fix with `.Get()` only at a genuine edge; otherwise compose the
+  Try, or bind Go-style `val x, err = goCall()` when the raw results go back to
+  Go code.
 
 ```gala
-// BAD: os.Rename returns only error → Try[error] that never reports failure
-val r = Try(os.Rename(src, dst))
-if r.IsFailure() { ... }              // dead branch — IsFailure is always false
+// GOOD: value + error → the call is a Try; compose with Map (NOT .Get()):
+func ReadText(p string) Try[string] = os.ReadFile(p).Map((b) => decode(b))
 
-// GOOD: value + error → Try, composed with Map (NOT .Get()):
-func ReadText(p string) Try[string] = Try(os.ReadFile(p)).Map((b) => decode(b))
-
-// GOOD: error-only → FromError returns Try[Void]; return/compose it, don't unwrap:
+// GOOD: error-only → FromError (or Try) returns Try[Void]; return/compose it:
 func Rename(src string, dst string) Try[Void] = FromError(os.Rename(src, dst))
 func WriteFileString(p string, s string, mode int) Try[Void] =
     FromError(os.WriteFile(p, ToBytes(s), os.FileMode(mode)))
 
 // BAD (unsafe unwrap — re-panics; caught only by an enclosing Try):
-val data = Try(os.ReadFile(p)).Get()
+val data = os.ReadFile(p).Get()
 FromError(os.Rename(a, b)).Get()
 ```
 
@@ -1191,8 +1193,7 @@ terminal code), NEVER inside a function that returns `Try` (compose with
 unsafe-`.Get()` rule (11e) below.
 
 **Verify by exercising an error path** — assert `IsFailure` on a deliberately
-bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir) so
-a never-failing `Try` can't hide.
+bad call (`os.Rename` of a missing source, `os.WriteFile` into a missing dir).
 
 **`.Get()` inside an enclosing `Try(() => {...})` defeats `Try`.** Calling
 `.Get()` on a `Try` re-raises a `Failure` as a *panic*; when that `.Get()` sits
@@ -1266,7 +1267,7 @@ catching semantics.
 |-------|-----------------|-----------------|
 | Zero-arg lambda wrapping a single expression | `Try(() => strconv.Atoi(s))` | `Try(strconv.Atoi(s))` |
 | Zero-arg lambda for a Future body | `Future(() => compute())` / `Future[int](() => compute())` | `Future(compute())` / `Future[int](compute())` |
-| Zero-arg lambda over a Go `(T, error)` call | `Try(() => os.ReadFile(p))` | `Try(os.ReadFile(p))` — the error is still caught as `Failure` |
+| Wrapper around a Go `(T, error)` call | `Try(() => os.ReadFile(p))` / `Try(os.ReadFile(p))` | `os.ReadFile(p)` — the call already is a `Try[[]byte]`; keep `Try(...)` only to also catch a panic inside the call |
 | Zero-arg lambda in any thunk param | `FutureOn(() => compute(), pool)` | `FutureOn(compute(), pool)` |
 
 **Preferred forms, most concise first:**

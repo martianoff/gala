@@ -557,7 +557,7 @@ gala mod add github.com/google/uuid@v1.6.0 --go
 gala mod tidy
 ```
 
-Third-party Go modules are first-class. GALA reads the Go SDK to infer return types, and multi-return `(T, error)` patterns are auto-wrapped into `Try[T]` at the call site.
+Third-party Go modules are first-class. GALA reads the Go SDK to infer return types, and a Go call returning several results is one GALA value: `(T, error)` is a `Try[T]`, `(A, B)` a `Tuple[A, B]`.
 
 ---
 

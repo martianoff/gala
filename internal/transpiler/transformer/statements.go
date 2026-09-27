@@ -228,6 +228,10 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	for i, r := range rhsExprs {
 		unwrappedRhs[i] = t.unwrapImmutable(r)
 	}
+	// `a, err = goCall()` takes the call's results one by one.
+	if len(unwrappedRhs) == 1 && len(lhsExprs) > 1 {
+		unwrappedRhs[0] = t.rawGoCall(unwrappedRhs[0])
+	}
 
 	op := ctx.GetChild(1).(antlr.TerminalNode).GetText()
 	var tok token.Token
@@ -291,12 +295,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		lhs = append(lhs, ast.NewIdent(name))
 
 		val := t.unwrapImmutable(rhsExprs[i])
-
-		// Auto-destructure Go functions returning (T, error)
-		val = t.wrapGoMultiReturnAsIIFE(val)
-		if err := t.checkGoMultiValueInSingleValueSlot(val, exprCtxAt(ctx.ExpressionList(), i), "a binding of one name"); err != nil {
-			return nil, err
-		}
+		t.bindGoResult(name, val)
 
 		if t.isNoneCall(val) {
 			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")
@@ -330,7 +329,7 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	rhs ast.Expr,
 	mutable bool,
 ) (ast.Stmt, error) {
-	callValue := t.unwrapImmutable(rhs)
+	callValue := t.rawGoCall(t.unwrapImmutable(rhs))
 	// Only a call yields several values. Anything else — a literal, a name, an
 	// arithmetic expression — is one value, and binding it to several names is
 	// a mismatch Go would otherwise report against the generated temporaries.

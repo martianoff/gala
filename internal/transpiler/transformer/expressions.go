@@ -46,6 +46,9 @@ func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Ex
 		if err != nil {
 			return nil, err
 		}
+		if err := t.checkGoResultOperands("||", ctx, result, right); err != nil {
+			return nil, err
+		}
 		result = t.unwrapImmutable(result)
 		right = t.unwrapImmutable(right)
 		result = &ast.BinaryExpr{X: result, Op: token.LOR, Y: right}
@@ -68,6 +71,9 @@ func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.
 	for i := 1; i < len(eqExprs); i++ {
 		right, err := t.transformEqualityExpr(eqExprs[i].(*grammar.EqualityExprContext))
 		if err != nil {
+			return nil, err
+		}
+		if err := t.checkGoResultOperands("&&", ctx, result, right); err != nil {
 			return nil, err
 		}
 		result = t.unwrapImmutable(result)
@@ -100,6 +106,9 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 		if err != nil {
 			return nil, err
 		}
+		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
+			return nil, err
+		}
 		result = t.unwrapImmutable(result)
 		right = t.unwrapImmutable(right)
 		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
@@ -126,6 +135,9 @@ func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExpr
 		}
 		right, err := t.transformAdditiveExpr(addExprs[i].(*grammar.AdditiveExprContext))
 		if err != nil {
+			return nil, err
+		}
+		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
 			return nil, err
 		}
 		result = t.unwrapImmutable(result)
@@ -156,6 +168,9 @@ func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprCont
 		if err != nil {
 			return nil, err
 		}
+		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
+			return nil, err
+		}
 		result = t.unwrapImmutable(result)
 		right = t.unwrapImmutable(right)
 		result = &ast.BinaryExpr{X: result, Op: t.getBinaryToken(opText), Y: right}
@@ -182,6 +197,9 @@ func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.Multiplica
 		}
 		right, err := t.transformUnaryExpr(unaryExprs[i].(*grammar.UnaryExprContext))
 		if err != nil {
+			return nil, err
+		}
+		if err := t.checkGoResultOperands(opText, ctx, result, right); err != nil {
 			return nil, err
 		}
 		result = t.unwrapImmutable(result)
@@ -919,9 +937,6 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		if err != nil {
 			return nil, nil, false, err
 		}
-		if err := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, slotIfBranch); err != nil {
-			return nil, nil, false, err
-		}
 		return nil, expr, false, nil
 	}
 
@@ -948,9 +963,6 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
 		expr, err := t.lowerAgainst(exprCtx, s, true)
 		if err != nil {
-			return nil, nil, false, err
-		}
-		if err := t.checkGoMultiValueInSingleValueSlot(expr, exprCtx, slotIfBranch); err != nil {
 			return nil, nil, false, err
 		}
 		return preceding, expr, false, nil
@@ -988,6 +1000,10 @@ type slot struct {
 	// TCO branch) do not. An if/match passes its slot, policy included, to its
 	// branches.
 	push bool
+	// tryThunk: the slot is the thunk parameter of Try(...), which turns an
+	// error into a Failure, so a Go call there yields its plain value and
+	// panics on the error rather than producing a Try (see tryThunkValue).
+	tryThunk bool
 	// open: typ may hold placeholders for type parameters the call left
 	// unbound (an `any` fill, see inferFuncTypeSubstFromArgs, or the generic
 	// method path's default-to-any view). An open slot type never overrides
@@ -1069,7 +1085,18 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 		release := t.expectedArgTypes.push(s.typ)
 		defer release()
 	}
-	return t.transformExpression(exprCtx)
+	expr, err := t.transformExpression(exprCtx)
+	if err != nil {
+		return nil, err
+	}
+	// A Go call converted to a Try or Tuple where its plain value is expected
+	// is named here, not left to Go's type mismatch on the generated code.
+	if !s.open && !s.tryThunk {
+		if err := t.checkGoResultAgainst(expr, s.typ, exprCtx); err != nil {
+			return nil, err
+		}
+	}
+	return expr, nil
 }
 
 // branchingResultType picks the result type of an if-expression or match from

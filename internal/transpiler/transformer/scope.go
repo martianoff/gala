@@ -24,7 +24,11 @@ type scope struct {
 	// forwarded function value: a `Sendable`-typed capture is a caller-vouched
 	// safe closure (the `Send`-style bound), so it may cross a further boundary.
 	sendable map[string]bool
-	parent   *scope
+	// goResults records the names bound to a Go call converted to one GALA
+	// value (`val data = os.ReadFile(p)`), so a misuse of the name can say
+	// where its Try came from. Allocated on first use.
+	goResults map[string]*goResult
+	parent    *scope
 }
 
 func (t *galaASTTransformer) pushScope() {

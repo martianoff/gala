@@ -5,15 +5,19 @@ import (
     "path/filepath"
 )
 
+// A Go call returning (T, error) is a Try[T] when used as a value: `.Get()`
+// takes the value and panics on the error, `match` handles both outcomes.
 func main() {
-    val tmpDir = os.MkdirTemp("", "gala-test-*")
+    val tmpDir = os.MkdirTemp("", "gala-test-*").Get()
     val path = filepath.Join(tmpDir, "test.txt")
-    val f = os.Create(path)
+    val f = os.Create(path).Get()
     f.WriteString("hello from gala")
     f.Close()
 
-    val data = os.ReadFile(path)
-    Println(string(data))
+    os.ReadFile(path) match {
+        case Success(data) => Println(string(data))
+        case Failure(err) => Println(s"read failed: $err")
+    }
 
     os.RemoveAll(tmpDir)
 }

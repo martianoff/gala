@@ -98,7 +98,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0042](/docs/errors/gala-e0042/) | Lambda parameter is not parenthesized | Syntax |
 | [GALA-E0043](/docs/errors/gala-e0043/) | Type name called as a constructor | Collections |
 | [GALA-E0044](/docs/errors/gala-e0044/) | Type has no such method | Types |
-| [GALA-E0049](/docs/errors/gala-e0049/) | Go multi-value call where one value is needed | Go surface |
+| [GALA-E0049](/docs/errors/gala-e0049/) | A Go call's Try or Tuple used as its plain value | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -126,7 +126,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
-**Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
+**Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
 **Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/).
 
@@ -136,7 +136,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility. See [Dependency Management](/docs/dependency-management/).
 
-**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression · [E0049](/docs/errors/gala-e0049/) a Go multi-value call used as one value. Each names its GALA replacement.
+**Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression. Each names its GALA replacement.
 
 **Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
 

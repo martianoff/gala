@@ -569,21 +569,32 @@ func goFuncSigString(sig *transpiler.GoFuncSignature) string {
 		b.WriteString(goTypeString(p.Type))
 	}
 	b.WriteString(")")
-	switch len(sig.Returns) {
-	case 0:
-	case 1:
-		b.WriteString(" " + goTypeString(sig.Returns[0]))
-	default:
-		b.WriteString(" (")
-		for i, r := range sig.Returns {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			b.WriteString(goTypeString(r))
-		}
-		b.WriteString(")")
+	if results := goResultsDisplay(sig.Returns); results != "" {
+		b.WriteString(" " + results)
 	}
 	return b.String()
+}
+
+// goResultsDisplay renders a Go signature's results as a GALA call of it
+// yields them: one result as itself, several as the one GALA value they
+// become — `([]byte, error)` as `Try[[]byte]`, `(string, string, bool)` as
+// `Tuple3[string, string, bool]` (see transpiler.GoResultValueOf). Results
+// whose GALA value cannot be named keep Go's `(A, B, …)` form.
+func goResultsDisplay(returns []transpiler.Type) string {
+	switch len(returns) {
+	case 0:
+		return ""
+	case 1:
+		return goTypeString(returns[0])
+	}
+	if v, ok := transpiler.GoResultValueOf(returns); ok && !v.Type.IsNil() {
+		return cleanGoTypeForDisplay(v.Type.String())
+	}
+	parts := make([]string, len(returns))
+	for i, r := range returns {
+		parts[i] = goTypeString(r)
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
 }
 
 // goTypeString renders a Go type for display, tolerating a nil type.

@@ -67,6 +67,9 @@ type galaASTTransformer struct {
 	traceTypeResolution      bool                         // when true, type resolution events are recorded
 	typeTraces               []TypeTraceEntry             // recorded type resolution events (only when tracing is enabled)
 	exprTypeCache            map[ast.Expr]transpiler.Type // cache for getExprTypeNameManual results
+	goResults                map[*ast.CallExpr]*goResult  // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
+	goSpreadArg              goSpreadArgMark              // the sole argument of a Go call that Go spreads over its parameters (see markGoSpreadArg)
+	tryThunkLambda           *grammar.LambdaExpressionContext // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
 	needsEmbedImport         bool                         // true when embed val declarations require import "embed"
 	warnTypeInference        bool                         // when true, log warnings about type inference fallbacks
 	inferenceWarnings        []string                     // collected type inference warnings
@@ -191,6 +194,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	tree := richAST.Tree
 	t.currentScope = nil
 	t.resetExprTypeCache()
+	t.goResults = nil
 	if collectLSPMetadata {
 		t.lspVarTypes = make(map[string]transpiler.Type)
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
@@ -376,6 +380,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	if err := t.checkMethodReceivers(); err != nil {
 		return nil, nil, err
 	}
+
+	// A converted Go call whose value is discarded goes back to the plain call.
+	t.dropDiscardedGoResults(file)
 
 	// Finalize codec/StructMeta declarations (generate Go AST for all collected intrinsics)
 	t.finalizeCodecs(file)

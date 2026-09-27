@@ -164,7 +164,8 @@ allocation-light and the `match` a plain integer switch.
 
 **The decision.** `Option[T]`, `Try[T]`, and `Either[E, T]` are ordinary sealed types
 with `Map`/`FlatMap`/`Filter`/recovery combinators. Go functions returning `(T, error)`
-are automatically adapted: inside a `Try` lambda, a non-nil error becomes a `Failure`.
+are automatically adapted: a call used as a value is a `Try[T]`, and a non-nil error is
+its `Failure`. Other multi-result Go calls become Tuples.
 
 **Why.** Goal 2 forbids an FFI boundary, so we can't ask the Go ecosystem to speak in
 `Either`. Instead the monads sit *on top of* `(T, error)` and convert at the edges. This
@@ -174,8 +175,9 @@ sealed types, pattern-matching their results is exhaustive — error handling yo
 silently forget.
 
 **What it costs.**
-- **Two error idioms coexist.** At the boundary you still meet `(T, error)`; inside GALA
-  you work in `Try`/`Either`. The auto-unwrapping hides most of the seam, but it is a seam.
+- **Two error idioms coexist.** At the boundary you still meet `(T, error)` — a
+  multi-name binding (`val v, err = call()`) takes Go's raw results; inside GALA you work
+  in `Try`/`Either`. The automatic conversion hides most of the seam, but it is a seam.
 - **A conceptual prerequisite.** `FlatMap` and railway-oriented composition are an
   investment. For a team new to FP this is a cost before it is a benefit — called out
   honestly in [WHY_GALA.MD](WHY_GALA.MD#when-not-to-use-gala).

@@ -67,7 +67,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0046` | Package already imported | [GALA-E0046.md](GALA-E0046.md) |
 | `GALA-E0047` | `if` takes no initializer statement | [GALA-E0047.md](GALA-E0047.md) |
 | `GALA-E0048` | Method on an alias to a non-local type | [GALA-E0048.md](GALA-E0048.md) |
-| `GALA-E0049` | Go multi-value call where one value is needed | [GALA-E0049.md](GALA-E0049.md) |
+| `GALA-E0049` | A Go call's Try or Tuple used as its plain value | [GALA-E0049.md](GALA-E0049.md) |
 
 ### Retired codes
 

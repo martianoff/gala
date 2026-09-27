@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -85,6 +86,10 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 			return packageMemberHover(richAST, pkg, word)
 		}
 		return memberHover(richAST, recv, word)
+	}
+	// `pkg.Func` of an imported Go package.
+	if info := goFuncHover(richAST, text, line, char, word); info != "" {
+		return info
 	}
 
 	// A local val/var carries no metadata entry — its type comes from the
@@ -204,6 +209,89 @@ func packageMemberHover(richAST *transpiler.RichAST, pkg, name string) string {
 		return formatFuncMeta(m.Func)
 	}
 	return ""
+}
+
+// goFuncHover renders `pkg.Name` under the cursor when pkg is a Go package the
+// file imports and Name one of its functions.
+func goFuncHover(richAST *transpiler.RichAST, text string, line, char int, name string) string {
+	lines := strings.Split(text, "\n")
+	if line >= len(lines) || char > len(lines[line]) {
+		return ""
+	}
+	l := lines[line]
+	start := char
+	for start > 0 && isIdentChar(l[start-1]) {
+		start--
+	}
+	if start == 0 || l[start-1] != '.' {
+		return ""
+	}
+	qEnd := start - 1
+	qStart := qEnd
+	for qStart > 0 && isIdentChar(l[qStart-1]) {
+		qStart--
+	}
+	if qStart == qEnd || (qStart > 0 && l[qStart-1] == '.') {
+		return ""
+	}
+	qualifier := l[qStart:qEnd]
+	importPath, imported := parseGalaImports(text)[qualifier]
+	if !imported {
+		return ""
+	}
+	pkg := path.Base(importPath)
+	if real, ok := richAST.GoImportNames[importPath]; ok {
+		pkg = real
+	}
+	sig := goPackageFunc(richAST, pkg, name)
+	if sig == nil {
+		return ""
+	}
+	return formatGoFunc(qualifier, name, sig)
+}
+
+// goPackageFunc finds a function of an imported Go package.
+func goPackageFunc(richAST *transpiler.RichAST, pkg, name string) *transpiler.GoFuncSignature {
+	if richAST == nil || richAST.GoTypeInfo == nil {
+		return nil
+	}
+	return richAST.GoTypeInfo.GetFuncSignature(pkg + "." + name)
+}
+
+// formatGoFunc renders a Go package function as GALA calls it. A function
+// returning several results shows the one GALA value a call of it is, with the
+// Go results spelled out beside it, since a multi-name binding still takes
+// them one by one.
+func formatGoFunc(pkg, name string, sig *transpiler.GoFuncSignature) string {
+	var b strings.Builder
+	b.WriteString("```gala\nfunc " + name + goFuncSigString(sig) + "\n```\n")
+	if len(sig.Returns) > 1 {
+		goResults := make([]string, len(sig.Returns))
+		for i, r := range sig.Returns {
+			goResults[i] = goTypeString(r)
+		}
+		b.WriteString(fmt.Sprintf("\nGo returns `(%s)`; a call used as a value is `%s`. `val %s = %s.%s(...)` binds the results one by one.\n",
+			strings.Join(goResults, ", "), goResultsDisplay(sig.Returns), goResultNames(sig.Returns), pkg, name))
+	}
+	b.WriteString(fmt.Sprintf("\n*Package: %s (Go)*\n", pkg))
+	return b.String()
+}
+
+// goResultNames renders placeholder binding names for Go results: `v, err`,
+// `a, b, c`, `a, b, err`.
+func goResultNames(returns []transpiler.Type) string {
+	fails := len(returns) > 0 && goTypeString(returns[len(returns)-1]) == "error"
+	if fails && len(returns) == 2 {
+		return "v, err"
+	}
+	names := make([]string, len(returns))
+	for i := range names {
+		names[i] = string(rune('a' + i))
+	}
+	if fails {
+		names[len(names)-1] = "err"
+	}
+	return strings.Join(names, ", ")
 }
 
 // memberHover renders a method or field selected on a receiver of known type.

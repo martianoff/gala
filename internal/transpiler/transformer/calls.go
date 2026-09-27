@@ -1087,7 +1087,8 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentListContext, receiver ast.Expr, method string) (ast.Expr, error) {
 	var mArgs []ast.Expr
 	hasSpread := false
-	for _, argCtx := range argListCtx.AllArgument() {
+	goSig := t.lookupGoCallSignature(&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}})
+	for i, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		exprCtx, lambdaCtx, isSpread, extractErr := extractArgContent(arg)
 		if extractErr != nil {
@@ -1099,6 +1100,11 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(transpiler.NilType{}), false)
 		if err != nil {
 			return nil, err
+		}
+		if !isSpread && arg.Identifier() == nil {
+			if cerr := t.checkGoResultGoArg(goSig, i, expr, exprCtx); cerr != nil {
+				return nil, cerr
+			}
 		}
 		mArgs = append(mArgs, expr)
 	}
@@ -1512,6 +1518,13 @@ func (t *galaASTTransformer) transformFunctionArgs(
 	named = make(map[string]ast.Expr)
 	argIdx := 0
 
+	// A Go callee's parameter types, for naming a Go call's Try or Tuple
+	// passed where its plain value is expected (see checkGoResultGoArg).
+	var goSig *transpiler.GoFuncSignature
+	if callCtx.funcMeta == nil && callCtx.applyMethodMeta == nil && len(callCtx.goFuncParamTypes) > 0 {
+		goSig = t.lookupGoCallSignature(&ast.CallExpr{Fun: fun})
+	}
+
 	for _, argCtx := range argListCtx.AllArgument() {
 		arg := argCtx.(*grammar.ArgumentContext)
 		exprCtx, lambdaCtx, isSpreadAll, extractErr := extractArgContent(arg)
@@ -1543,12 +1556,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 				return nil, nil, false, cerr
 			}
 
-			expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, namedExpectedType, callCtx)
+			expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, namedExpectedType, callCtx, false)
 			if aerr != nil {
 				return nil, nil, false, aerr
-			}
-			if cerr := t.checkGoMultiValueArg(expr, exprCtx, lambdaCtx, len(argListCtx.AllArgument()), namedExpectedType); cerr != nil {
-				return nil, nil, false, cerr
 			}
 			named[argName] = expr
 			continue
@@ -1565,12 +1575,17 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			return nil, nil, false, cerr
 		}
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
-		expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, expectedType, callCtx)
+		// The sole argument of Try(...) is its thunk: a Go call's error there is
+		// the Failure itself (see tryThunkValue).
+		tryThunk := len(argListCtx.AllArgument()) == 1 && isTryThunkParam(funcCallCtx, argIdx)
+		expr, aerr := t.lowerFunctionArg(exprCtx, lambdaCtx, expectedType, callCtx, tryThunk)
 		if aerr != nil {
 			return nil, nil, false, aerr
 		}
-		if cerr := t.checkGoMultiValueArg(expr, exprCtx, lambdaCtx, len(argListCtx.AllArgument()), expectedType); cerr != nil {
-			return nil, nil, false, cerr
+		if !isSpreadAll {
+			if cerr := t.checkGoResultGoArg(goSig, argIdx, expr, exprCtx); cerr != nil {
+				return nil, nil, false, cerr
+			}
 		}
 		positional = append(positional, expr)
 		argIdx++
@@ -1588,12 +1603,13 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	lambdaCtx *grammar.LambdaExpressionContext,
 	expected transpiler.Type,
 	callCtx functionCallContext,
+	tryThunk bool,
 ) (ast.Expr, error) {
 	strict := false
 	if lambdaCtx != nil || t.needsExpectedType(exprCtx) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
-	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, push: true, open: callCtx.typeArgPlaceholders}, strict)
+	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, push: true, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -3152,10 +3168,21 @@ func (t *galaASTTransformer) lowerArg(
 	strict bool,
 ) (ast.Expr, error) {
 	if lambdaCtx != nil {
-		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(s.typ)
-		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+		return t.lowerLambdaArg(lambdaCtx, s, strict)
 	}
 	return t.transformArgument(exprCtx, s, strict)
+}
+
+// lowerLambdaArg lowers a lambda standing in argument slot s, marking it as the
+// Try thunk when the slot is one.
+func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionContext, s slot, strict bool) (ast.Expr, error) {
+	if s.tryThunk {
+		prev := t.tryThunkLambda
+		t.tryThunkLambda = lambdaCtx
+		defer func() { t.tryThunkLambda = prev }()
+	}
+	expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(s.typ)
+	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
 }
 
 // transformArgument lowers an expression standing in argument slot s.
@@ -3172,8 +3199,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// Try to find a lambda in this expression
 	if lambdaCtx := t.findLambdaInExpression(exprCtx); lambdaCtx != nil {
-		expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(expectedType)
-		return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+		return t.lowerLambdaArg(lambdaCtx, s, strict)
 	}
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
@@ -3206,7 +3232,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	// `Future(doSomething())` means `Future(() => doSomething())`. Lambdas and
 	// placeholder lambdas are handled by the earlier branches, so only bare
 	// expressions reach here.
-	if wrapped, ok := t.wrapExprAsThunkIfNeeded(expr, expectedType); ok {
+	if wrapped, ok := t.wrapExprAsThunkIfNeeded(expr, expectedType, s.tryThunk); ok {
 		expr = wrapped
 	}
 
@@ -3230,7 +3256,10 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 // is never double-wrapped. Returns ok=false — leaving `expr` unchanged — when
 // the sugar does not apply, including when the thunk's result type cannot be
 // determined (so the normal type error surfaces instead of masking it).
-func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type) (ast.Expr, bool) {
+//
+// tryThunk marks the thunk of Try(...): a Go call there runs with its error
+// turned into the panic Try catches (see tryThunkValue).
+func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType transpiler.Type, tryThunk bool) (ast.Expr, bool) {
 	if expr == nil || expectedType == nil || expectedType.IsNil() {
 		return expr, false
 	}
@@ -3264,28 +3293,24 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	resultType := ft.Results[0]
 	concreteResult := !resultType.IsNil() && !transpiler.IsUnusable(resultType) && !t.hasTypeParams(resultType)
 
-	// A Go call returning `(T, error)` (or `(A, B, error)`, …) is wrapped so the
-	// error becomes a panic, matching `() => goCall(...)`. Without this the thunk
-	// would be `func() T { return goCall(...) }`, which is not valid Go because
-	// the call yields multiple values. This is what makes `Try(strconv.Atoi(s))`
-	// behave the same as `Try(() => strconv.Atoi(s))`.
-	if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
-		var retTypeExpr ast.Expr
-		if concreteResult {
-			retTypeExpr = t.typeToExpr(resultType)
-		} else if multiRetType != nil {
-			retTypeExpr = multiRetType
+	// Try's thunk: a Go call returning `(T, error)` (or `(A, B, error)`, …, or
+	// only `error`) runs with its error turned into the panic Try catches, so
+	// `Try(strconv.Atoi(s))` is a Try[int] — the same as `Try(() =>
+	// strconv.Atoi(s))` — not a Try of the Try the call converts to.
+	if tryThunk {
+		if thunkBody, thunkType, ok := t.tryThunkValue(expr); ok {
+			retTypeExpr := thunkType
+			if concreteResult {
+				retTypeExpr = t.typeToExpr(resultType)
+			}
+			return &ast.FuncLit{
+				Type: &ast.FuncType{
+					Params:  &ast.FieldList{},
+					Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
+				},
+				Body: thunkBody,
+			}, true
 		}
-		if retTypeExpr == nil {
-			return expr, false
-		}
-		return &ast.FuncLit{
-			Type: &ast.FuncType{
-				Params:  &ast.FieldList{},
-				Results: &ast.FieldList{List: []*ast.Field{{Type: retTypeExpr}}},
-			},
-			Body: multiRetBody,
-		}, true
 	}
 
 	// Plain single-expression thunk. Determine T — prefer the concrete expected

@@ -1,0 +1,104 @@
+package main
+
+import (
+    "math"
+    "net"
+    "os"
+    "path/filepath"
+    "strconv"
+    "strings"
+)
+
+// A Go function that returns several results is one GALA value:
+//
+//   (T, error)     -> Try[T]
+//   (A, B)         -> Tuple[A, B]
+//   (A, B, C)      -> Tuple3[A, B, C]
+//   (A, B, error)  -> Try[Tuple[A, B]]
+//
+// A Go function that returns only an `error` gives that error as a value;
+// Try(...) turns a non-nil one into a Failure.
+
+// (T, error) as a match subject.
+func parsePort(text string) string = strconv.Atoi(text) match {
+    case Success(n) if n > 0 && n < 65536 => s"port $n"
+    case Success(n) => s"out of range: $n"
+    case Failure(_) => s"not a number: $text"
+}
+
+// (T, error) as a function result, and chained with Map.
+func doubled(text string) Try[int] = strconv.Atoi(text).Map((n) => n * 2)
+
+// (T, error) as an argument.
+func describe(result Try[int]) string = result match {
+    case Success(n) => s"ok $n"
+    case Failure(_) => "failed"
+}
+
+// (A, B, error) is a Try of a Tuple, so a tuple pattern applies inside Success.
+func splitAddr(addr string) string = net.SplitHostPort(addr) match {
+    case Success((host, port)) => s"host=$host port=$port"
+    case Failure(_) => s"bad address: $addr"
+}
+
+// (A, B, C) is a Tuple3; `val (...)` destructures it.
+func setting(line string) string {
+    val (key, value, found) = strings.Cut(line, "=")
+    return if (found) s"$key -> $value" else s"$key has no value"
+}
+
+// (A, B) is a Tuple.
+func parts(x float64) string {
+    val split = math.Modf(x)
+    return s"whole=${split.V1} frac=${split.V2}"
+}
+
+// A multi-name binding still takes the results one by one, Go-style.
+func goStyle(text string) string {
+    val n, err = strconv.Atoi(text)
+    return if (err == nil) s"n=$n" else "err"
+}
+
+// Several steps that can fail, sequenced with bind.
+func sum(a string, b string) Try[int] {
+    bind x = strconv.Atoi(a)
+    bind y = strconv.Atoi(b)
+    Success(x + y)
+}
+
+struct Parsed(Input string, Value Try[int])
+
+func main() {
+    Println(parsePort("8080"))
+    Println(parsePort("70000"))
+    Println(parsePort("http"))
+    Println(doubled("21"))
+    Println(describe(strconv.Atoi("5")))
+    Println(describe(strconv.Atoi("five")))
+    Println(splitAddr("localhost:8080"))
+    Println(splitAddr("localhost"))
+    Println(setting("mode=fast"))
+    Println(setting("verbose"))
+    Println(parts(3.25))
+    Println(goStyle("7"))
+    Println(sum("2", "3"))
+    Println(sum("2", "x").IsFailure())
+
+    // (T, error) bound to a name, then read with GetOrElse and Get.
+    val n = strconv.Atoi("40")
+    Println(n.GetOrElse(0) + 2)
+    Println(strconv.Atoi("oops").GetOrElse(-1))
+
+    // In an if-expression branch, a lambda body and a struct field.
+    val pick = if (n.IsSuccess()) strconv.Atoi("1") else strconv.Atoi("2")
+    val parse = (s string) => strconv.Atoi(s)
+    Println(pick, parse("9"), Parsed("12", strconv.Atoi("12")).Value)
+
+    // Try over a Go call is the same Try, not a Try inside a Try.
+    Println(Try(strconv.Atoi("3")))
+
+    // An error-only call: FromError or Try make it a Try[Void].
+    val missing = filepath.Join(os.TempDir(), "gala-go-call-results-missing")
+    Println(FromError(os.Remove(missing)).IsFailure())
+    Println(Try(os.Remove(missing)).IsFailure())
+}

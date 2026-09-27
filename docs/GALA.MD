@@ -1259,6 +1259,10 @@ func processOrder(id int) Try[Receipt] {
 `?`-style non-local return). The trailing expression must be `M[R]` — write the
 constructor (`Success`/`Some`/`Right`/`Valid`); it infers its type argument from the block.
 
+A Go call that returns `(T, error)` is already a `Try[T]` (see [Go functions that return
+several results](#go-functions-that-return-several-results)), so it can be bound directly
+inside a `Try` block: `bind n = strconv.Atoi(text)`.
+
 `also name = expr` marks an **independent** clause. A leading `bind` plus one or more
 `also` form a product group. The behavior is per type: for `Future` the group runs
 **concurrently**, for `Validated` it **accumulates all errors**, and for the fail-fast
@@ -1589,7 +1593,7 @@ val second = t.V2  // "hello"
 
 #### Multiple Return Values
 
-GALA does not support Go-style multi-value returns `(A, B, error)`. Instead, use **Tuple types** to return multiple values from a function, and **tuple destructuring** at the call site.
+GALA does not support Go-style multi-value returns `(A, B, error)`. Instead, use **Tuple types** to return multiple values from a function, and **tuple destructuring** at the call site. (Calling a *Go* function that returns several results is covered in [Go functions that return several results](#go-functions-that-return-several-results).)
 
 ```gala
 // Return two values using Tuple[A, B]
@@ -1622,40 +1626,78 @@ val result = divmod(10, 3) match {
 | 4 | `Tuple4[A, B, C, D]` | `(a, b, c, d)` |
 | 5+ | `Tuple5[...]` ... `Tuple10[...]` | `(a, b, c, d, e, ...)` |
 
-**For Go interop** with functions that return `(T, error)`, use `var` to get raw Go values:
+#### Go functions that return several results
+
+Many Go functions return more than one result — most often a value and an
+`error` that says whether the call worked. GALA expressions are always **one
+value**, so a call like that is presented as one GALA value, automatically,
+wherever it is used as a value:
+
+| The Go function returns | A call of it is a | Example | Its GALA value |
+|---|---|---|---|
+| a value and an error `(T, error)` | `Try[T]` | `os.ReadFile(path)` | `Try[[]byte]` |
+| two or more values and an error | `Try` of a Tuple | `net.SplitHostPort(addr)` | `Try[Tuple[string, string]]` |
+| two values `(A, B)` | `Tuple[A, B]` | `math.Modf(x)` | `Tuple[float64, float64]` |
+| three to ten values | `Tuple3` … `Tuple10` | `strings.Cut(s, "=")` | `Tuple3[string, string, bool]` |
+| only an `error` | the `error` itself | `os.Remove(path)` | `error` (nil when it worked) |
+
+A `Try` is `Success(value)` when the call worked and `Failure(err)` when it
+returned an error, so the usual `Try` tools apply directly:
+
 ```gala
-var data, err = goFunction()  // var avoids Immutable wrapping
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+val port = strconv.Atoi(text) match {          // Try[int]
+    case Success(n) => n
+    case Failure(_) => 8080
+}
+val size = os.ReadFile(path).Map((data) => data.Size()).GetOrElse(0)
+val (key, value, found) = strings.Cut(line, "=") // Tuple3 destructuring
 ```
 
-**A Go multi-return is not a Tuple.** A Go function returning several values is
-reached in exactly one of these ways:
+This holds in every position that takes one value: a `val`, a match subject,
+a function or method argument, a lambda or function result, an if or match
+branch, a struct field, a receiver (`strconv.Atoi(s).Map(...)`). Passed to a
+Go function such as `fmt.Println`, the GALA value is what is passed:
+`fmt.Println(strconv.Atoi("7"))` prints `Success(7)`.
 
-| Form | Meaning |
-|------|---------|
-| `val a, b = goCall()` | Bind every result by name (no parentheses) |
-| `Try(goCall())` | `(T, error)` → `Try[T]`; `(A, B, error)` → `Try[Tuple[A, B]]` |
-| `val v = goCall()` | `(T, error)` only: the value, and the error panics (same for an expression-lambda body) |
+A Go function that returns only an `error` gives you that error as a value;
+wrap the call in `Try(...)` to treat a non-nil error as a failure:
+`Try(os.Remove(path))` is a `Try[Void]`. `FromError(os.Remove(path))` means the
+same.
 
-Anywhere else — as a match subject, in `val (a, b) = goCall()` destructuring, as
-an if-expression branch, or as an argument that must be one value — the call is
-rejected with [GALA-E0049](errors/GALA-E0049.md). To match on the results, go
-through `Try`, or bind them by name and match on a Tuple built from the names:
+`Try(goCall())` is the call's own Try — the conversion is not applied twice —
+so `Try(strconv.Atoi(s))`, `Try(() => strconv.Atoi(s))` and `strconv.Atoi(s)`
+are all a `Try[int]`. Going through `Try(...)` also turns a panic inside the
+call into a `Failure`.
+
+**Taking the results one by one.** A binding of several names (no
+parentheses) still receives Go's results as they are, which is the way to hand
+them straight back to Go code:
 
 ```gala
-import "strconv"
-import "strings"
-
-val parsed = Try(strconv.Atoi("42")) match {
-    case Success(n) => s"number $n"
-    case Failure(_) => "not a number"
-}
-
-val key, value, found = strings.Cut("mode=fast", "=")
-val setting = (key, value, found) match {
-    case (k, v, true) => s"$k -> $v"
-    case _ => s"$key has no value"
-}
+val data, err = os.ReadFile(path)   // data []byte, err error
+var n, parseErr = strconv.Atoi(s)   // var: raw values, reassignable
 ```
+
+The sole argument of a Go function whose parameters take the results one for
+one is passed the same way, as Go does: `template.Must(tmpl.Parse(text))`.
+
+**Using the Try where the plain value is expected** is a compile-time error,
+[GALA-E0049](errors/GALA-E0049.md), which names the call and the ways to the
+value:
+
+```
+error[GALA-E0049]: `data` holds the result of `os.ReadFile(...)`, which can fail, so it is a `Try[[]byte]`; `[]byte` is expected here
+  = hint: take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val v, err = os.ReadFile(...)`
+```
+
+A statement whose value is not used — `sb.WriteString("x")`, `fmt.Fprintf(w, ...)`
+on its own line — calls the Go function as it is.
 
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 
@@ -1743,7 +1785,7 @@ val failure = Failure[int](NoSuchElementError(Message = "not found"))
 // is lifted into `() => expr` and run lazily inside Try — no explicit lambda:
 val result = Try(riskyDivide(10, 0))  // same as Try(() => riskyDivide(10, 0)) — Failure (catches panic)
 val safe = Try(riskyDivide(10, 2))    // Success(5)
-val parsed = Try(strconv.Atoi("42"))  // (T, error) auto-wrapped — Success(42)
+val parsed = Try(strconv.Atoi("42"))  // Success(42) — the same Try[int] as strconv.Atoi("42") itself
 
 // Function reference sugar: when the body is exactly a zero-arg call, pass the
 // function itself for the most concise form.
@@ -1815,44 +1857,47 @@ func processOrder(id int) Try[Receipt] =
 | `ToOption()` | Convert to Option |
 | `ToEither()` | Convert to Either[error, T] |
 
-#### Try with Go Multi-Return Functions
+#### Try with Go Functions
 
-Go functions that return `(T, error)` work naturally with `Try` — the transpiler automatically
-detects the error return and wraps the call so that a non-nil error becomes `Failure`:
+A Go function that returns `(T, error)` already gives a `Try[T]` when its call
+is used as a value (see [Go functions that return several
+results](#go-functions-that-return-several-results)): a non-nil error is the
+`Failure`.
 
 ```gala
 import "strconv"
 
-val result = Try(strconv.Atoi("42")) match {
+val result = strconv.Atoi("42") match {
     case Success(n) => s"Parsed: $n"
     case Failure(err) => s"Error: ${err.Error()}"
 }
 // result: "Parsed: 42"
 ```
 
-For Go functions returning more than two values like `(A, B, error)`, `Try` automatically
-wraps the non-error values in a `Tuple`:
+A Go function returning two or more values and an error gives a `Try` of a
+Tuple, which a tuple pattern takes apart:
 
 ```gala
 import "net"
 
-// net.SplitHostPort returns (string, string, error)
-// Try wraps it as Try[Tuple[string, string]]
-val result = Try(net.SplitHostPort("localhost:8080")) match {
-    case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+// net.SplitHostPort returns (string, string, error): a Try[Tuple[string, string]]
+val result = net.SplitHostPort("localhost:8080") match {
+    case Success((host, port)) => s"host=$host port=$port"
     case Failure(err) => s"Error: ${err.Error()}"
 }
 // result: "host=localhost port=8080"
 ```
 
-The transpiler automatically detects the Go function signature and generates the appropriate
-tuple wrapping. Access tuple fields via `.V1`, `.V2`, etc. Supported patterns:
+Writing `Try(...)` around such a call gives the same Try — never a Try inside
+a Try — and additionally turns a panic inside the call into a `Failure`. It is
+also how a Go function returning only an `error` becomes a `Try[Void]`:
 
-| Go Return Signature | Try Type |
-|---------------------|----------|
-| `(T, error)` | `Try[T]` |
-| `(A, B, error)` | `Try[Tuple[A, B]]` |
-| `(A, B, C, error)` | `Try[Tuple3[A, B, C]]` |
+| Go Return Signature | The call | `Try(call)` |
+|---------------------|----------|-------------|
+| `(T, error)` | `Try[T]` | `Try[T]` |
+| `(A, B, error)` | `Try[Tuple[A, B]]` | `Try[Tuple[A, B]]` |
+| `(A, B, C, error)` | `Try[Tuple3[A, B, C]]` | `Try[Tuple3[A, B, C]]` |
+| `error` | `error` | `Try[Void]` |
 
 ### Future Monad
 
@@ -2975,19 +3020,20 @@ part of GALA's statement surface. A use is a hard transpile error
 if n, err := strconv.Atoi(text); err != nil { … }
 ```
 
-A Go `(T, error)` call is the shape this form is reached for, and `Try` wraps
-exactly that shape — the pair is auto-wrapped into `Success` / `Failure`:
+A Go `(T, error)` call is the shape this form is reached for, and in GALA such
+a call already is a `Try[T]` — `Success` / `Failure` (see [Go functions that
+return several results](#go-functions-that-return-several-results)):
 
 ```gala
 func parseOr(text string, fallback int) int =
-    Try(strconv.Atoi(text)) match {
+    strconv.Atoi(text) match {
         case Success(n) => n
         case Failure(_) => fallback
     }
 
 // Or, when the failure is simply a fallback:
 func parseOr2(text string, fallback int) int =
-    Try(strconv.Atoi(text)).GetOrElse(fallback)
+    strconv.Atoi(text).GetOrElse(fallback)
 ```
 
 Only the initializer slot is rejected. A plain condition, `else`, `else if`,
@@ -3292,6 +3338,8 @@ fmt.Println(validPtr.IsNil())  // false
 
 When calling Go functions that return values, `val` wraps the result in `std.Immutable[T]`. This is fine for values used only within GALA, but causes type mismatches when passing Go values back to other Go functions.
 
+A single name bound to a Go call that returns several results gets one GALA value — `val data = os.ReadFile(path)` is a `Try[[]byte]` (see [Go functions that return several results](#go-functions-that-return-several-results)). A binding of **several names** takes Go's results one by one, as raw Go values.
+
 **Use `var` for Go multi-return values** when you need to pass the results back to Go APIs:
 
 ```gala
@@ -3322,7 +3370,8 @@ var bodyBytes, readErr = io.ReadAll(resp.Body)
 |----------|-----|-----|
 | Go value used only in GALA | `val` | Immutability safety, `.Get()` auto-unwrapped |
 | Go value passed back to Go APIs | `var` | Avoids `Immutable[T]` wrapping, stays as raw Go type |
-| Go `(value, error)` return | `var` | Both values stay as raw Go types |
+| Go `(value, error)` return handled in GALA | `val x = call` | `x` is a `Try[T]`: match on it, `.GetOrElse`, `.Map` |
+| Go `(value, error)` return passed back to Go | `var v, err = call` | Both values stay as raw Go types |
 | Go struct fields to mutate | `var` | Allows `goStruct.Field = newValue` |
 
 ## 13. GALA Packages

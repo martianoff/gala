@@ -57,41 +57,54 @@ val parts = strings.Split("a,b,c", ",")     // []string{"a","b","c"}
 val contains = strings.Contains("hello", "ell")  // true
 ```
 
-Go functions that return `(T, error)` work naturally:
+### Go functions that return several results
+
+Many Go functions return more than one result — usually a value plus an
+`error` that says whether the call worked. In GALA every expression is one
+value, so such a call becomes one GALA value automatically:
+
+| The Go function returns | In GALA the call is a | Example | Its GALA value |
+|---|---|---|---|
+| a value and an error `(T, error)` | `Try[T]` | `strconv.Atoi(s)` | `Try[int]` |
+| several values and an error | `Try` of a Tuple | `net.SplitHostPort(addr)` | `Try[Tuple[string, string]]` |
+| two or more values | a Tuple | `strings.Cut(s, "=")` | `Tuple3[string, string, bool]` |
+| only an `error` | the `error` itself | `os.Remove(path)` | `error` (nil when it worked) |
+
+A `Try` is `Success(value)` when the call worked and `Failure(err)` when it
+returned an error, so you match on it or use its methods directly:
+
+```gala
+import (
+    "os"
+    "strconv"
+    "strings"
+)
+
+val port = strconv.Atoi("8080") match {
+    case Success(n) => n
+    case Failure(_) => 80
+}
+val dir = os.Getwd().GetOrElse("/tmp")
+val (key, value, found) = strings.Cut("mode=fast", "=")
+```
+
+Using the `Try` where the plain value is expected — `val n = strconv.Atoi(s)`
+and then `n + 1` — is a compile-time error,
+[GALA-E0049](/docs/errors/gala-e0049/). Take the value with `.Get()` (panics
+on failure), `.GetOrElse(default)`, or a `match`.
+
+A Go function that returns only an `error` gives you that error. Wrap the call
+in `Try(...)` to turn a non-nil error into a `Failure`: `Try(os.Remove(path))`
+is a `Try[Void]`. Around a `(T, error)` call, `Try(...)` gives the same
+`Try[T]` and additionally catches a panic.
+
+To get Go's results one by one — for example to hand them straight back to
+other Go code — bind several names:
 
 ```gala
 import "os"
 
-val file, err = os.Open("data.txt")
-if err != nil {
-    Println(s"Error: ${err.Error()}")
-}
-```
-
-Or wrap them in `Try` for monadic error handling:
-
-```gala
-import "os"
-import . "martianoff/gala/std"
-
-val result = Try(os.Getwd())
-val dir = result.GetOrElse("/tmp")
-```
-
-A Go multi-return is not a Tuple. Bind its results by name (`val a, b = call()`)
-or go through `Try`; matching on the call directly, or destructuring it with
-`val (a, b) = call()`, is rejected as
-[GALA-E0049](/docs/errors/gala-e0049/). To match on the results, bind them and
-match on a Tuple built from the names:
-
-```gala
-import "strings"
-
-val key, value, found = strings.Cut("mode=fast", "=")
-val setting = (key, value, found) match {
-    case (k, v, true) => s"$k -> $v"
-    case _ => s"$key has no value"
-}
+val file, err = os.Open("data.txt")   // file *os.File, err error
 ```
 
 ---
@@ -121,13 +134,13 @@ func main() {
 ```
 
 A function returning `(T, error)` — like `uuid.Parse(string) (uuid.UUID, error)`
-— is consumed exactly like a stdlib error pair: as a multi-return, or wrapped in
-`Try` for pattern matching:
+— works exactly like a standard-library one: the call is a `Try[uuid.UUID]`
+you can match on directly:
 
 ```gala
 import "github.com/google/uuid"
 
-func describe(s string) string = Try(uuid.Parse(s)) match {
+func describe(s string) string = uuid.Parse(s) match {
     case Success(id) => s"valid: ${id.String()}"
     case Failure(_)  => s"invalid: $s"
 }

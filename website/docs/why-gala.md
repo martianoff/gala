@@ -209,8 +209,8 @@ val dir = Try(os.TempDir)
     .Map((d) => d + "/myapp")
     .GetOrElse("/tmp/myapp")
 
-// Try with arguments uses a lambda
-val num = Try(strconv.Atoi(input))
+// A Go call returning (T, error) is already a Try[T]
+val num = strconv.Atoi(input)
     .OnFailure((e) => { Println(s"Parse failed: ${e.Error()}") })
     .GetOrElse(0)
 
@@ -227,8 +227,8 @@ Side-effect methods (`OnSuccess`/`OnFailure`, `OnSome`/`OnNone`, `OnRight`/`OnLe
 
 ```gala
 func findBinary() Option[string] =
-    Try(exec.LookPath("gala"))
-        .OrElse(Try(exec.LookPath("gala.exe")))
+    exec.LookPath("gala")
+        .OrElse(exec.LookPath("gala.exe"))
         .OnSuccess((p) => { Println(s"Found binary: $p") })
         .OnFailure((e) => { Println("Binary not found") })
         .ToOption()
@@ -339,8 +339,8 @@ import "encoding/json"
 // Call Go functions directly
 val dir = Try(os.TempDir)
 
-// Go multi-return functions are handled automatically
-val result = Try(json.Marshal(data))
+// A Go (T, error) call is a Try[T] -- no wrapping needed
+val result = json.Marshal(data)
     .Map((bytes) => string(bytes))
     .GetOrElse("{}")
 
@@ -348,7 +348,7 @@ val result = Try(json.Marshal(data))
 struct Server(Handler http.Handler, Addr string)
 ```
 
-GALA's type inference understands Go function signatures. When you pass `os.TempDir` (a `func() string`) to `Try`, the transpiler infers `T=string` automatically -- no type annotation needed. Go functions returning `(T, error)` are automatically unwrapped inside `Try` lambdas, converting the error to a `Failure`.
+GALA's type inference understands Go function signatures. When you pass `os.TempDir` (a `func() string`) to `Try`, the transpiler infers `T=string` automatically -- no type annotation needed. A Go function returning `(T, error)` gives a `Try[T]` directly: a returned error is a `Failure`, and `.Map`, `.GetOrElse`, or a `match` work on the call itself.
 
 ### Why this matters
 

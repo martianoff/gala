@@ -216,6 +216,9 @@ func typeAtDot(text string, line, char int, richAST *transpiler.RichAST, varType
 				if receiverType != "" {
 					return resolveMemberType(richAST, receiverType, name)
 				}
+				if goType := goCallValueType(richAST, l[:i], name); goType != "" {
+					return goType
+				}
 				// Fallback: try resolving name directly
 				return resolveReceiverType(name, enclosingFunc, richAST, varTypes)
 			}
@@ -359,6 +362,9 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 			if receiverType != "" {
 				return resolveMemberType(richAST, receiverType, methodName)
 			}
+			if goType := goCallValueType(richAST, text[:dotIdx], methodName); goType != "" {
+				return goType
+			}
 		}
 		// No dot — standalone call or variable
 		return resolveReceiverType(methodName, funcScope, richAST, varTypes)
@@ -386,6 +392,29 @@ func resolveChainTypeN(text string, funcScope string, richAST *transpiler.RichAS
 	}
 
 	return resolveReceiverType(name, funcScope, richAST, varTypes)
+}
+
+// goCallValueType names the GALA value of `pkg.Name(...)` where pkg — the
+// identifier ending receiverText — is an imported Go package and Name returns
+// several results: the Try or Tuple the call is (see transpiler.GoResultValueOf).
+// It returns "" for anything else.
+func goCallValueType(richAST *transpiler.RichAST, receiverText, name string) string {
+	end := skipTrailingWhitespace(receiverText, len(receiverText)-1) + 1
+	start := end
+	for start > 0 && isIdentChar(receiverText[start-1]) {
+		start--
+	}
+	if start == end || (start > 0 && receiverText[start-1] == '.') {
+		return ""
+	}
+	sig := goPackageFunc(richAST, receiverText[start:end], name)
+	if sig == nil {
+		return ""
+	}
+	if v, ok := transpiler.GoResultValueOf(sig.Returns); ok {
+		return typeDisplayName(v.Type)
+	}
+	return ""
 }
 
 // skipTrailingWhitespace walks backward from `start` over ASCII whitespace

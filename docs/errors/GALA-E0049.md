@@ -1,19 +1,26 @@
-# GALA-E0049 — Go multi-value call where one value is needed
+# GALA-E0049 — a Go call's Try or Tuple used as its plain value
 
-**When it fires.** A call to a Go function or method that returns two or more
-values stands where GALA needs exactly one value:
+**When it fires.** A Go function that returns several results is one GALA
+value: `(T, error)` is a `Try[T]`, `(A, B)` a `Tuple[A, B]`, `(A, B, error)` a
+`Try[Tuple[A, B]]` (see [Go functions that return several
+results](../GALA.MD#go-functions-that-return-several-results)). The error fires
+when that value — the call itself, or a name bound to it — is used where the
+call's plain first result is expected:
 
 ```gala
-os.ReadFile(path) match {           // match subject
-    case (data, nil) => ...
-}
-val (n, err) = strconv.Atoi(text)   // tuple destructuring
-val c = strings.Cut(line, "=")      // one name, no error result
-val r = if (ok) strconv.Atoi(a) else strconv.Atoi(b)   // if-expression branch
-val f = () => strings.Cut(line, "=")                   // lambda body, no error result
-takesPair(strings.Cut(line, "="))                      // Tuple parameter
-twoArgs("a", strconv.Atoi(text))                       // one argument of several
+val data = os.ReadFile(path)       // data is a Try[[]byte]
+count(data)                        // count takes a []byte
+string(data)                       // conversion
+data[0]                            // index
+val n = strconv.Atoi(text)
+n + 1                              // operand
+val resp = http.Get(url)
+resp.StatusCode                    // member of the plain value
+val (data, err) = os.ReadFile(path)  // a Try is not a Tuple
 ```
+
+It also fires for a Go call returning more than ten values, which no Tuple
+holds.
 
 **Minimal repro.**
 
@@ -22,86 +29,68 @@ package main
 
 import "os"
 
-func describe(path string) string = os.ReadFile(path) match {
-    case (_, nil) => "read"
-    case _ => "failed"
-}
+func count(data []byte) int = data.Size()
 
 func main() {
-    Println(describe("missing.txt"))
+    val data = os.ReadFile("notes.txt")
+    Println(count(data))
 }
 ```
 
 **Error output.**
 
 ```
-error[GALA-E0049]: os.ReadFile returns 2 values, but a match subject takes a single value
-  --> main.gala:5:37
+error[GALA-E0049]: `data` holds the result of `os.ReadFile(...)`, which can fail, so it is a `Try[[]byte]`; `[]byte` is expected here
+  --> main.gala:9:19
   |
-5 | func describe(path string) string = os.ReadFile(path) match {
-  |                                     ^^^^^^^^^^^^^^^^^ wrap it in `Try(os.ReadFile(...))` and match on `Success(v)`…
+9 |     Println(count(data))
+  |                   ^^^^ take the value with `.Get()`
   |
-  = hint: wrap it in `Try(os.ReadFile(...))` and match on `Success(v)` / `Failure(e)`, or bind the results with `val a, b = os.ReadFile(...)`
+  = hint: take the value with `.Get()` (panics on failure), `.GetOrElse(default)`, or `match { case Success(v) => ... case Failure(e) => ... }`; or bind the results Go-style: `val v, err = os.ReadFile(...)`
 ```
 
-**Fix.** A Go multi-return is not a Tuple, and GALA has no multi-value
-expressions, so the results are reached in one of three documented ways.
-
-A `(T, error)` or `(A, B, error)` call goes through `Try`, which turns the
-error into `Failure` and carries two or more values as a Tuple:
+**Fix.** Decide what a failure means, and say it with the Try:
 
 ```gala
-func describe(path string) string = Try(os.ReadFile(path)) match {
-    case Success(_) => "read"
-    case Failure(err) => s"failed: ${err.Error()}"
+// Handle both outcomes
+val total = os.ReadFile("notes.txt") match {
+    case Success(data) => count(data)
+    case Failure(_) => 0
 }
+
+// A fallback value
+val orZero = os.ReadFile("notes.txt").Map((data) => count(data)).GetOrElse(0)
+
+// Stop the program on failure — the error is the panic
+val data = os.ReadFile("notes.txt").Get()
 ```
 
-Any multi-value call can bind its results by name — without parentheses — and
-a Tuple built from those names can then be matched:
+To handle the results the Go way, bind them by name without parentheses; each
+name gets the plain Go result:
 
 ```gala
-func setting(line string) string {
-    val key, value, found = strings.Cut(line, "=")
-    return (key, value, found) match {
-        case (k, v, true) => s"$k -> $v"
-        case _ => s"$key has no value"
-    }
-}
+val data, err = os.ReadFile("notes.txt")
 ```
 
-A single name over a `(T, error)` call takes the value and panics on the error;
-the same holds for an expression lambda whose body is such a call. Neither is
-rejected:
+For a Go call without an error result, the value is a Tuple: destructure it
+with `val (a, b, c) = strings.Cut(line, "=")`, or read `.V1`, `.V2`.
 
-```gala
-val n = strconv.Atoi("21")
-```
+**Rationale.** GALA expressions are one value. Before, a single name over a
+`(T, error)` call silently took the value and panicked on the error, and every
+other single-value position either failed in `go build` on generated code or
+typed the call as its first result. Presenting the call as a Try (or a Tuple)
+everywhere gives one meaning in every position, and makes the possibility of
+failure part of the type. Code written for the old reading fails here, at
+compile time and with the call named, wherever the plain value is needed.
 
-**Rationale.** The call was emitted verbatim and the transformer typed it as
-its first result. Matched against a tuple pattern, the subject became a
-`[]byte` with `.V1` / `.V2` fields read off it, and the failure came from the
-Go compiler, naming generated code:
+**Where it stands down.** A slot that can hold the Try or Tuple — a
+`Try[[]byte]` parameter, `any`, an interface, a type parameter — takes it as
+is: `fmt.Println(strconv.Atoi("7"))` prints `Success(7)`. The sole argument of
+a Go function whose parameters take the results one for one
+(`template.Must(tmpl.Parse(text))`) is passed as Go's raw results, and so are
+the results of a multi-name binding. A statement whose value is not used calls
+the Go function as it is.
 
-```
-main.gala:5: obj.V1 undefined (type []byte has no field or method V1)
-```
-
-Tuple destructuring, if-expression branches, lambda bodies and Tuple-typed
-arguments failed the same way, as `multiple-value ... in single-value context`
-or `too many return values`. Converting the results into a Tuple silently was
-not an option: a single name over a `(T, error)` call already means "the value,
-or panic", so the same call would have meant two different things depending on
-where it was written.
-
-**Where it stands down.** A multi-value call that is the *sole* argument of a
-call is left to Go, which spreads it over the parameters when their count
-matches (`fmt.Println(strconv.Atoi("7"))` prints `7 <nil>`) and reports the
-mismatch otherwise. `Try(call)`,
-`val a, b = call`, and a single name or expression-lambda body over a
-`(T, error)` call are the documented forms and are untouched.
-
-**Scope.** This code covers Go calls with two or more results. A Go call whose
-only result is an `error`, discarded in a void lambda, is reported separately
-with a hint naming `FromError`. The `if` initializer
-(`if n, err := strconv.Atoi(s); ...`) is [GALA-E0047](GALA-E0047.md).
+**Scope.** A Go function returning only an `error` gives that error as a
+value; wrap the call in `Try(...)` (or `FromError(...)`) to treat a non-nil
+error as a failure.

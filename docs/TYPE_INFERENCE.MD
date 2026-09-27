@@ -697,10 +697,30 @@ sealed-case constructors.
 When the Go SDK is available (via `GOROOT` or `PATH`), the transpiler can infer types from Go standard library and third-party packages:
 
 - **Function return types**: `os.TempDir()` → inferred as `string`
-- **Method return types**: `strings.NewReader("hello").Read(buf)` → inferred from Go method signature
+- **Method return types**: `strings.NewReader("hello").Len()` → inferred from Go method signature
 - **Struct field types**: `req.URL.Host` → inferred as `string`
 
 This enables seamless interop without explicit type annotations when calling Go functions.
+
+### Go calls that return several results
+
+A GALA expression is one value, so a call to a Go function with several results,
+used as a value, is inferred as one GALA type built from the Go signature:
+
+| Go results | Inferred GALA type | Example |
+|---|---|---|
+| `(T, error)` | `Try[T]` | `strconv.Atoi(s)` → `Try[int]` |
+| `(A, B, error)` … up to 10 values and an `error` | `Try[Tuple[A, B]]` … `Try[Tuple10[...]]` | `net.SplitHostPort(a)` → `Try[Tuple[string, string]]` |
+| `(A, B)` … up to 10 values | `Tuple[A, B]` … `Tuple10[...]` | `strings.Cut(s, "=")` → `Tuple3[string, string, bool]` |
+| `error` only | `error` | `os.Remove(p)` → `error` |
+
+- `Try(call)` and `Try(() => call)` over such a call infer the call's own type
+  (`Try[T]`, never `Try[Try[T]]`); over an error-only call they infer `Try[Void]`.
+- A binding of several names (`val a, err = goCall()`, `var …`, `a, err := …`)
+  gives each name the type of its Go result — `a` is `T`, `err` is `error`.
+- `val (a, b, c) = strings.Cut(...)` destructures the inferred Tuple.
+- Where the plain `T` is expected but the call's `Try[T]` or Tuple is given, the
+  transpiler reports GALA-E0049 instead of inferring `T`.
 
 Go type inference is optional — if the Go SDK is not found, transpilation still succeeds but Go type resolution is disabled (a warning is printed to stderr).
 

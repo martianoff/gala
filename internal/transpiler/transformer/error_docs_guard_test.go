@@ -531,20 +531,18 @@ func main() {
 			},
 		},
 		{
-			name: "match on a Go multi-value call",
-			code: galaerr.CodeGoMultiValueInSingleValueSlot, // GALA-E0049
+			name: "a Go call's Try used as its plain value",
+			code: galaerr.CodeGoCallResultAsValue, // GALA-E0049
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
 
 import "os"
 
-func describe(path string) string = os.ReadFile(path) match {
-    case (_, nil) => "read"
-    case _ => "failed"
-}
+func count(data []byte) int = data.Size()
 
 func main() {
-    Println(describe("missing.txt"))
+    val data = os.ReadFile("notes.txt")
+    Println(count(data))
 }
 `)
 			},
