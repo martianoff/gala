@@ -102,6 +102,6 @@ func runModVerify(cmd *cobra.Command, args []string) {
 	}
 
 	if missing > 0 {
-		fmt.Println("\nSome modules are not cached. Run 'gala mod download' to fetch them.")
+		fmt.Println("\nSome modules are not cached. Run 'gala mod tidy' (or 'gala build') to fetch them.")
 	}
 }

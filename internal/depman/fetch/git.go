@@ -18,11 +18,14 @@ import (
 // GitFetcher fetches GALA packages from Git repositories.
 type GitFetcher struct {
 	cache *Cache
+	// gitURL maps a module path to the repository to clone. Tests point it
+	// at a local repository.
+	gitURL func(modulePath string) string
 }
 
 // NewGitFetcher creates a new GitFetcher.
 func NewGitFetcher(cache *Cache) *GitFetcher {
-	return &GitFetcher{cache: cache}
+	return &GitFetcher{cache: cache, gitURL: modulePathToGitURL}
 }
 
 // Fetch downloads a module from a Git repository and stores it in the cache.
@@ -44,7 +47,7 @@ func (f *GitFetcher) Fetch(modulePath, ver string) (string, string, error) {
 	}
 
 	// Convert module path to Git URL
-	gitURL := modulePathToGitURL(modulePath)
+	gitURL := f.gitURL(modulePath)
 
 	// Create temporary directory for clone
 	tempDir, err := os.MkdirTemp("", "gala-fetch-*")
@@ -103,7 +106,7 @@ func (f *GitFetcher) FetchLatest(modulePath string) (string, string, string, err
 
 // ListVersions lists available versions for a module from the remote repository.
 func (f *GitFetcher) ListVersions(modulePath string) ([]version.Version, error) {
-	gitURL := modulePathToGitURL(modulePath)
+	gitURL := f.gitURL(modulePath)
 
 	// List remote references
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{

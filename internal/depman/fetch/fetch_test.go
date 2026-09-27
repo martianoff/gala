@@ -81,9 +81,12 @@ func TestCache_Store(t *testing.T) {
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(sourceDir, "gala.mod"), []byte("module github.com/test/lib\n"), 0644)
 	require.NoError(t, err)
-	// This file should not be copied
+	// Non-source files are module content too (a build may embed them)...
 	err = os.WriteFile(filepath.Join(sourceDir, "README.md"), []byte("# Test\n"), 0644)
 	require.NoError(t, err)
+	// ...VCS metadata is not.
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, ".git"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0644))
 
 	config := &Config{
 		CacheDir:    tmpDir,
@@ -99,7 +102,8 @@ func TestCache_Store(t *testing.T) {
 	modPath := config.ModulePath("github.com/test/lib", "v1.0.0")
 	assert.FileExists(t, filepath.Join(modPath, "lib.gala"))
 	assert.FileExists(t, filepath.Join(modPath, "gala.mod"))
-	assert.NoFileExists(t, filepath.Join(modPath, "README.md"))
+	assert.FileExists(t, filepath.Join(modPath, "README.md"))
+	assert.NoDirExists(t, filepath.Join(modPath, ".git"))
 }
 
 func TestCache_ListVersions(t *testing.T) {
@@ -158,7 +162,7 @@ func TestCache_Hash(t *testing.T) {
 	hash, err := cache.Hash("github.com/test/lib", "v1.0.0")
 	require.NoError(t, err)
 	assert.True(t, len(hash) > 3)
-	assert.True(t, hash[:3] == "h1:")
+	assert.True(t, hash[:3] == "h2:")
 }
 
 func TestCache_Remove(t *testing.T) {
@@ -411,6 +415,34 @@ func TestCache_GetGalaMod_IgnoresIncompleteModule(t *testing.T) {
 	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
 	_, err = cache.GetGalaMod("github.com/test/lib", "v1.0.0")
 	require.NoError(t, err)
+}
+
+// Symbolic links in a fetched tree are not stored: a link to a file outside
+// the module would otherwise copy that file into the cache, and a link to a
+// directory or a dangling one would fail the fetch.
+func TestCache_Store_SkipsSymlinks(t *testing.T) {
+	cache, sourceDir := newStoreFixture(t)
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	require.NoError(t, os.WriteFile(outside, []byte("secret"), 0644))
+	links := map[string]string{
+		"file-link": outside,
+		"dir-link":  filepath.Dir(outside),
+		"dangling":  filepath.Join(t.TempDir(), "missing"),
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(sourceDir, name)); err != nil {
+			t.Skipf("cannot create symlinks here: %v", err)
+		}
+	}
+
+	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
+
+	modPath := cache.Config().ModulePath("github.com/test/lib", "v1.0.0")
+	assert.FileExists(t, filepath.Join(modPath, "lib.gala"))
+	for name := range links {
+		_, err := os.Lstat(filepath.Join(modPath, name))
+		assert.True(t, os.IsNotExist(err), "%s must not be stored", name)
+	}
 }
 
 // Staging trees a killed process left behind are removed by a later store once

@@ -262,8 +262,8 @@ func (b *Builder) ensureDeps() error {
 		return nil
 	}
 
-	config := fetch.DefaultConfig()
-	cache := fetch.NewCache(config)
+	// Fetch into the directory the build reads dependencies from.
+	cache := fetch.NewCache(fetch.NewConfig(b.config.GalaPkgDir))
 	fetcher := fetch.NewGitFetcher(cache)
 
 	for _, req := range galaReqs {

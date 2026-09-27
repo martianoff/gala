@@ -62,11 +62,7 @@ func runModUpdate(cmd *cobra.Command, args []string) {
 	cache := fetch.NewCache(nil)
 	fetcher := fetch.NewGitFetcher(cache)
 
-	// Load or create gala.sum
-	galaSum, err := sum.ParseFile("gala.sum")
-	if err != nil {
-		galaSum = sum.NewFile()
-	}
+	galaSum := loadGalaSum()
 
 	updated := 0
 	for _, modulePath := range modulesToUpdate {

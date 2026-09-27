@@ -34,6 +34,7 @@ go_test(
         "apex_perf_test.go",
         "bom_test.go",
         "builder_test.go",
+        "cache_dir_test.go",
         "config_test.go",
         "contention_perf_test.go",
         "deptranspiler_test.go",
