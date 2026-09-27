@@ -232,6 +232,18 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		// .Get() handler is always definitive — it always returns a result
 		return t.inferGetMethodType(e, sel)
 	}
+	// `v.Ptr()` on a val is the Immutable wrapper's own Ptr() — emitted for
+	// `&v` as `std.NewConstPtr(v.Ptr())`. A val's stored type is already the
+	// inner type (see inferGetMethodType), so the result is a pointer to it.
+	// Without this the ConstPtr's type argument stayed unresolved (`ConstPtr[T]`)
+	// and field access / Copy through the pointer lost the pointee's type.
+	if sel.Sel.Name == transpiler.MethodPtr && len(e.Args) == 0 {
+		if id, ok := sel.X.(*ast.Ident); ok && t.isVal(id.Name) {
+			if inner := t.getType(id.Name); !transpiler.IsUnusable(inner) {
+				return transpiler.PointerType{Elem: inner}
+			}
+		}
+	}
 
 	if sel.Sel.Name == transpiler.FuncNewImmutable || sel.Sel.Name == transpiler.TypeImmutable {
 		if len(e.Args) > 0 {
@@ -390,6 +402,16 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			// pointer type, so *Buffer.StyleAt → Buffer.StyleAt lookup.
 			if result := t.resolveMethodCallType(underlyingType.String(), sel.Sel.Name, typeArgs, e.Args, -1); !result.IsNil() {
 				return result
+			}
+		}
+		// The auto-generated `Copy()` on a GALA struct is not recorded in the
+		// type's method metadata (a user-defined Copy is, and resolved above).
+		// It returns the receiver's own value type, type arguments included —
+		// `func (s Box[T]) Copy() Box[T]` — so `v.Copy().Field` still unwraps
+		// the Immutable field.
+		if nt, isNamed := underlyingType.(transpiler.NamedType); sel.Sel.Name == transpiler.FuncCopy && len(e.Args) == 0 && !(isNamed && t.isGoTyped(nt)) {
+			if _, ok := t.structFields[t.resolveStructTypeName(stripTypeNameDecorations(underlyingType.String()))]; ok {
+				return underlyingType
 			}
 		}
 		// Fallback: try Go type info for method calls on Go types

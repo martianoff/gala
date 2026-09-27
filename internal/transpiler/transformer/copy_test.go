@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCopyOverrides(t *testing.T) {
@@ -256,4 +257,109 @@ func copyStream(src string, dst string) {
 	assert.NoError(t, err)
 	assert.Contains(t, got, "io.Copy(dstF, srcF)",
 		"expected io.Copy(...) to transpile as a regular package call, not a struct-Copy override")
+}
+
+// TestCopyOverridesGenericReceiver guards the result type of an inlined
+// `recv.Copy(field = value)` on a generic struct. Copy cannot change field
+// types, so the composite literal must carry the receiver's type arguments;
+// a bare `Box{...}` is "cannot use generic type Box[T any] without
+// instantiation" in Go, and it also made if/match arms disagree ('Box' vs
+// 'Box[T]').
+func TestCopyOverridesGenericReceiver(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := transpiler.NewGalaToGoTranspiler(p, a, tr, g)
+
+	const decls = `package main
+
+struct Box[T any](Item T, N int)
+struct Entry[K comparable, V any](Key K, Value V, Hits int)
+`
+	tests := []struct {
+		name  string
+		body  string
+		wants []string
+	}{
+		{
+			name:  "concrete receiver bound to a val",
+			body:  `val c = Box[string](Item = "x", N = 1).Copy(N = 5)`,
+			wants: []string{"Box[string]{Item: std.Copy(", "N: std.NewImmutable(5)}"},
+		},
+		{
+			name:  "type-parameter receiver in a generic function",
+			body:  `func bump[T any](b Box[T]) Box[T] = b.Copy(N = b.N + 1)`,
+			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+		},
+		{
+			name:  "if-expression arm",
+			body:  `func pick[T any](b Box[T], up bool) Box[T] = if (up) b.Copy(N = b.N + 1) else b`,
+			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+		},
+		{
+			name: "match arm",
+			body: `sealed type Ev {
+    case Inc()
+    case Keep()
+}
+func step[T any](b Box[T], ev Ev) Box[T] = ev match {
+    case Inc()  => b.Copy(N = b.N + 1)
+    case Keep() => b
+}`,
+			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+		},
+		{
+			name:  "multi-parameter generic",
+			body:  `func hit[K comparable, V any](e Entry[K, V]) Entry[K, V] = e.Copy(Hits = e.Hits + 1)`,
+			wants: []string{"return Entry[K, V]{Key: std.Copy(e.Key)"},
+		},
+		{
+			name:  "pointer receiver yields the value type",
+			body:  `func viaPtr[T any](b *Box[T]) Box[T] = b.Copy(N = 0)`,
+			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+		},
+		{
+			name: "ConstPtr receiver copies through Deref",
+			body: `func main() {
+    val b = Box[int](Item = 1, N = 1)
+    val p = &b
+    val c = p.Copy(N = 2)
+}`,
+			wants: []string{"Box[int]{Item: std.Copy(p.Get().Deref().Item)"},
+		},
+		{
+			// The no-override form calls the generated Copy(); its result
+			// must still type as the receiver so the Immutable field unwraps.
+			name: "field access on a no-override Copy",
+			body: `func main() {
+    val b = Box[string](Item = "x", N = 1)
+    val n = b.Copy().N
+}`,
+			wants: []string{"b.Get().Copy().N.Get()"},
+		},
+		{
+			// `&v` on a val types as ConstPtr[Box[int]] (not ConstPtr[T]), so
+			// a field read through it still unwraps the Immutable field.
+			name: "field access through a ConstPtr to a val",
+			body: `func main() {
+    val b = Box[int](Item = 1, N = 1)
+    val p = &b
+    val n = p.N
+}`,
+			wants: []string{"p.Get().Deref().N.Get()"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.body, "")
+			require.NoError(t, err)
+			for _, want := range tt.wants {
+				assert.Contains(t, got, want)
+			}
+			assert.NotContains(t, got, "Box{")
+			assert.NotContains(t, got, "Entry{")
+		})
+	}
 }
