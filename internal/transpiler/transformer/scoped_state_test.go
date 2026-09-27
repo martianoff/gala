@@ -73,6 +73,7 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"matchInStatementPos":     func(t *galaASTTransformer) { t.matchInStatementPos = true },
 	"loweringDefault":         func(t *galaASTTransformer) { t.loweringDefault = &defaultLowering{} },
 	"pendingMatchStmtBlock":   func(t *galaASTTransformer) { t.pendingMatchStmtBlock = &ast.BlockStmt{} },
+	"unrecordedCallee":        func(t *galaASTTransformer) { t.unrecordedCallee = ast.NewIdent("f") },
 }
 
 // TestScopedStateResidueCoversEveryScopedField asserts the hand-written
