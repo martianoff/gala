@@ -75,21 +75,21 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		}
 	}
 
-	// Package-qualified constructor pattern: pkg.Ctor(args) — e.g. `case acp.Acked()`
+	// Package-qualified constructor pattern: pkg.Ctor(args) or pkg.Ctor[T](args) — e.g. `case acp.Acked()`
 	// or `case acp.OutcomeResult(x)`. Sealed-case companions and structs from a
 	// qualified import are registered under their qualified name (e.g. "acp.Acked"),
 	// so resolve that name and route through the same extractor/struct logic. This
 	// MUST come before the unqualified call-pattern check, whose two-suffix branch
 	// assumes `Ctor[T](...)` and would otherwise leave this shape to fall through to
 	// a (wrong) simple binding of the package identifier.
-	if pkgPrimaryExpr, ctorName, qArgList, ok := t.getQualifiedCallPattern(patExprCtx); ok {
+	if pkgPrimaryExpr, ctorName, qArgList, qTypeArgs, ok := t.getQualifiedCallPattern(patExprCtx); ok {
 		pkgAst, err := t.transformPrimaryExpr(pkgPrimaryExpr)
 		if err != nil {
 			return nil, nil, err
 		}
 		if pkgIdent, isIdent := pkgAst.(*ast.Ident); isIdent && t.importManager.IsPackage(pkgIdent.Name) {
 			// `case pkg.R(x)` where R is an imported extractor val/var.
-			if b, ok := t.lookupBinding(pkgIdent.Name, ctorName); ok {
+			if b, ok := t.lookupBinding(pkgIdent.Name, ctorName); ok && qTypeArgs == nil {
 				if expr, stmts, handled, err := t.tryBindingExtractorPattern(b, qArgList, objExpr, matchedType, patExprCtx); handled {
 					return expr, stmts, err
 				}
@@ -99,7 +99,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 				pkgName = actual
 			}
 			rawName := pkgName + "." + ctorName
-			return t.transformConstructorCallPattern(rawName, qArgList, nil, objExpr, matchedType, patExprCtx)
+			return t.transformConstructorCallPattern(rawName, qArgList, qTypeArgs, objExpr, matchedType, patExprCtx)
 		}
 	}
 

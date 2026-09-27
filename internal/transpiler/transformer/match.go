@@ -484,16 +484,12 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		if !ok {
 			continue
 		}
-		name := extractVariantName(pat.GetText())
-		if name == "" {
+		name, argList, isCall := t.patternCallShape(exprPat.Expression())
+		if !isCall {
 			continue
 		}
 		variant, ok := variantByName[name]
 		if !ok {
-			continue
-		}
-		argList, isCall := t.patternArgumentList(exprPat.Expression())
-		if !isCall {
 			continue
 		}
 		got := 0
@@ -515,17 +511,57 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 	return nil
 }
 
-// patternArgumentList returns the argument list of a call-shaped pattern —
-// `Ctor(...)`, `Ctor[T](...)` or `pkg.Ctor(...)` — and whether the pattern is
-// call-shaped at all. An empty call (`Ctor()`) returns a nil list.
-func (t *galaASTTransformer) patternArgumentList(expr grammar.IExpressionContext) (*grammar.ArgumentListContext, bool) {
-	if _, _, argList, ok := t.getQualifiedCallPattern(expr); ok {
-		return argList, true
+// patternCallShape reads a call-shaped pattern from its parse tree: a
+// constructor name, optionally qualified by a selector chain and optionally
+// followed by type arguments, then a call — `Ctor(...)`, `Ctor[T](...)`,
+// `pkg.Ctor(...)`, `pkg.Ctor[T](...)`, `a.b.Ctor(...)`. It returns the bare
+// constructor name (the last selector, or the primary identifier), the call's
+// argument list (nil for an empty call), and whether the pattern has that
+// shape at all.
+func (t *galaASTTransformer) patternCallShape(expr grammar.IExpressionContext) (name string, argList *grammar.ArgumentListContext, ok bool) {
+	postfix := t.getSinglePostfixExpr(expr)
+	if postfix == nil {
+		return "", nil, false
 	}
-	if primary, argList, _ := t.getCallPatternWithTypeArgsFromExpression(expr); primary != nil {
-		return argList, true
+	primary := PrimaryOf(postfix)
+	if primary == nil || primary.Identifier() == nil {
+		return "", nil, false
 	}
-	return nil, false
+	name = primary.Identifier().GetText()
+
+	suffixes := postfix.AllPostfixSuffix()
+	if len(suffixes) == 0 {
+		return "", nil, false
+	}
+	call := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
+	if suffixOpener(call) != "(" {
+		return "", nil, false
+	}
+	prefix := suffixes[:len(suffixes)-1]
+	// Optional type arguments right before the call.
+	if n := len(prefix); n > 0 && suffixOpener(prefix[n-1].(*grammar.PostfixSuffixContext)) == "[" {
+		prefix = prefix[:n-1]
+	}
+	// Everything else is a selector chain; its last member is the name.
+	for _, s := range prefix {
+		sel := s.(*grammar.PostfixSuffixContext)
+		if sel.Identifier() == nil {
+			return "", nil, false
+		}
+		name = sel.Identifier().GetText()
+	}
+	if al := call.ArgumentList(); al != nil {
+		argList = al.(*grammar.ArgumentListContext)
+	}
+	return name, argList, true
+}
+
+// suffixOpener returns the token a postfix suffix starts with: ".", "(" or "[".
+func suffixOpener(s *grammar.PostfixSuffixContext) string {
+	if s.GetChildCount() == 0 {
+		return ""
+	}
+	return s.GetChild(0).(antlr.ParseTree).GetText()
 }
 
 // inferMatchedTypeFromCases attempts to infer the sealed parent type from case pattern names.

@@ -1,6 +1,8 @@
 package transformer_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -152,4 +154,60 @@ func TestVariantArityMismatchPosition(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Arity is checked for every call-shaped variant pattern, including the
+// qualified form with explicit type arguments (`ev.Got[int](v)`), where the
+// name sits in a selector and the type arguments come before the call.
+func TestVariantArityQualifiedWithTypeArgs(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+	write("gala.mod", "module example.com/arity\n\ngala dev\n")
+	write("ev/ev.gala", `package ev
+
+sealed type Ev[T any] {
+    case Got(V T)
+    case Nothing()
+}
+`)
+	transpile := func(src string) (string, error) {
+		p := transpiler.NewAntlrGalaParser()
+		a := analyzer.NewGalaAnalyzer(p, append([]string{root}, getStdSearchPath()...), root)
+		return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).
+			Transpile(src, filepath.Join(root, "main.gala"))
+	}
+	const header = `package main
+
+import "example.com/arity/ev"
+
+`
+	t.Run("correct arity", func(t *testing.T) {
+		out, err := transpile(header + `func f(e ev.Ev[int]) int = e match {
+    case ev.Got[int](v) => v
+    case _              => 0
+}
+`)
+		require.NoError(t, err)
+		assert.Contains(t, out, "ev.Got[int]{}.Unapply(")
+	})
+	t.Run("wrong arity is reported at the pattern", func(t *testing.T) {
+		_, err := transpile(header + `func f(e ev.Ev[int]) int = e match {
+    case ev.Got[int](v, w) => v + w
+    case _                 => 0
+}
+`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `sealed variant "Got" pattern binds 2 field(s) but declares 1`)
+		var coded *galaerr.SemanticError
+		if assert.ErrorAs(t, err, &coded) {
+			assert.Equal(t, galaerr.CodeVariantArityMismatch, coded.Code)
+			assert.Equal(t, 6, coded.Line, "error line")
+			assert.Equal(t, 9, coded.Column, "error column")
+		}
+	})
 }
