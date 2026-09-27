@@ -51,7 +51,7 @@ import (
 // to build, so markers are suppressed. They are also suppressed inside a default
 // value declared in another file, whose line numbers are not this file's.
 func (t *galaASTTransformer) emitLineMarkers() bool {
-	return t.filePath != "" && !t.inForeignDefault
+	return t.filePath != "" && (t.loweringDefault == nil || !t.loweringDefault.foreign)
 }
 
 // lineMarkerStmt builds the statement-position marker for a 1-based GALA line: a

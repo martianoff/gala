@@ -26,6 +26,25 @@ type defaultSource struct {
 	pkg        string          // declaring package; names it borrows from there are qualified at a use site in another package
 	declared   transpiler.Type // the parameter's or field's declared type, type arguments substituted; nil when unknown
 	typeParams []string        // type parameters of the declaration; a declared type still mentioning one is not threaded
+
+	// A method parameter's default may use the method's receiver. It is
+	// lowered with recv bound to recvType, as in the method body, and recvExpr
+	// — the call-site receiver — is then put in its place.
+	recv     string
+	recvType transpiler.Type
+	recvExpr ast.Expr
+}
+
+// defaultLowering is set on the transformer while a declared default is being
+// lowered at a use site. A default is lowered once per use site, but it is ONE
+// declaration: nothing it binds (its lambda parameters, a method's receiver)
+// is recorded as a variable of the enclosing function, and its lambda
+// parameter hints are recorded once, from the declaration (see
+// recordDefaultLambdaHints). A foreign default's tokens carry another file's
+// positions, so no line markers are emitted for them either.
+type defaultLowering struct {
+	pkg     string // declaring package: names borrowed from it are qualified as soon as they are lowered
+	foreign bool   // declared in a file other than the one being transformed
 }
 
 // defaultTreeKey identifies one declared default's text at one position.
@@ -68,12 +87,13 @@ func (t *galaASTTransformer) defaultExprTree(src defaultSource) (grammar.IExpres
 // file, or to the use site when the declaring file is unknown.
 func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, useCol int) (ast.Expr, error) {
 	local := src.Pos.Line > 0 && src.file != "" && t.filePath != "" && filepath.Clean(src.file) == filepath.Clean(t.filePath)
-	if !local {
-		// The default's tokens do not belong to this file: keep them out of
-		// this file's line map and LSP hints.
-		prev := t.inForeignDefault
-		t.inForeignDefault = true
-		defer func() { t.inForeignDefault = prev }()
+	prev := t.loweringDefault
+	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local}
+	defer func() { t.loweringDefault = prev }()
+	if src.recv != "" {
+		t.pushScope()
+		defer t.popScope()
+		t.addVar(src.recv, src.recvType)
 	}
 
 	exprCtx, err := t.defaultExprTree(src)
@@ -84,10 +104,48 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if err == nil {
 		expr, err = t.qualifyDefaultExpr(expr, src.pkg)
 	}
-	if err != nil && !local {
-		err = placeForeignDefaultError(err, src, useLine, useCol)
+	if err != nil {
+		if !local {
+			err = placeForeignDefaultError(err, src, useLine, useCol)
+		}
+		return nil, err
 	}
-	return expr, err
+	if src.recv != "" {
+		expr = replaceReceiver(expr, src.recv, src.recvExpr)
+	}
+	return expr, nil
+}
+
+// recordDefaultLambdaHints records the LSP inlay hints for a lambda default's
+// unannotated parameters, from the declaration: each takes its type from the
+// declared parameter or field type. A default is lowered once per use site
+// that omits it — possibly with different type arguments — so hints recorded
+// there would repeat, and could disagree, on the same parameter.
+func (t *galaASTTransformer) recordDefaultLambdaHints(param *grammar.ParameterContext, declared transpiler.Type) {
+	if t.lspVarTypes == nil || param.ParamDefault() == nil {
+		return
+	}
+	lambdaCtx := t.findLambdaInExpression(param.ParamDefault().(*grammar.ParamDefaultContext).Expression())
+	if lambdaCtx == nil || lambdaCtx.Parameters().(*grammar.ParametersContext).ParameterList() == nil {
+		return
+	}
+	_, expected, ok := t.lambdaExpectation(declared)
+	if !ok {
+		return
+	}
+	for i, p := range lambdaCtx.Parameters().(*grammar.ParametersContext).ParameterList().(*grammar.ParameterListContext).AllParameter() {
+		lp := p.(*grammar.ParameterContext)
+		if lp.Type_() != nil || i >= len(expected) || transpiler.IsUnusableOrAny(expected[i]) {
+			continue
+		}
+		pos := transpiler.PosFromToken(lp.Identifier().GetStart())
+		t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
+			Line:   pos.Line,
+			Column: pos.Column,
+			Name:   lp.Identifier().GetText(),
+			Type:   expected[i],
+		})
+	}
 }
 
 // placeForeignDefaultError locates a diagnostic about a default value declared

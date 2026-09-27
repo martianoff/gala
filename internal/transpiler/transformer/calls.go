@@ -880,11 +880,18 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, methodMeta *tr
 // arguments the call has bound so far; a declared parameter type that still
 // mentions an unbound type parameter is not threaded into the default.
 func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvType transpiler.Type, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+	// A default may use the receiver (`f func(int) int = (x) => x * b.K`): it
+	// is lowered with the receiver bound as in the method body, so `b.K`
+	// resolves — and unwraps an immutable field — as it does there, and the
+	// call-site receiver is then put in its place.
 	src := defaultSource{
 		DefaultExpr: methodMeta.DefaultExprs[i],
 		file:        methodMeta.DefinedIn,
 		pkg:         methodMeta.Package,
 		typeParams:  methodMeta.TypeParams,
+		recv:        methodMeta.ReceiverName,
+		recvType:    recvType,
+		recvExpr:    callSiteReceiver,
 	}
 	// The receiver's own type arguments (`T` of a Box[int] receiver) are bound
 	// by the receiver, whichever call form reached here.
@@ -895,22 +902,7 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 	if i < len(methodMeta.ParamTypes) {
 		src.declared = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
 	}
-	recv := methodMeta.ReceiverName
-	if recv == "" {
-		return t.transformDefaultExpr(src, line, col)
-	}
-	// A default may use the receiver (`f func(int) int = (x) => x * b.K`). Lower
-	// it with the receiver bound in scope exactly as in the method body, so
-	// `b.K` resolves — and unwraps an immutable field — as it does there, then
-	// put the call-site receiver in its place.
-	t.pushScope()
-	t.addVar(recv, recvType)
-	expr, err := t.transformDefaultExpr(src, line, col)
-	t.popScope()
-	if err != nil {
-		return nil, err
-	}
-	return replaceReceiver(expr, recv, callSiteReceiver), nil
+	return t.transformDefaultExpr(src, line, col)
 }
 
 // receiverTypeSubst maps a generic receiver type's parameters to the type
@@ -3143,6 +3135,15 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	expr, err := t.transformExpression(exprCtx)
 	if err != nil {
 		return nil, err
+	}
+	// A default declared in another package names that package's functions
+	// bare. Qualify them before anything below asks what the expression is:
+	// bare, `DefaultClose` resolves to nothing here, and the thunk sugar would
+	// wrap a function reference into `func() T { return lib.DefaultClose }`.
+	if t.loweringDefault != nil {
+		if expr, err = t.qualifyDefaultExpr(expr, t.loweringDefault.pkg); err != nil {
+			return nil, err
+		}
 	}
 
 	// Lift bare T value to Immutable[T] when the expected param type is

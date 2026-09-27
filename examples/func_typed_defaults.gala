@@ -86,6 +86,6 @@ func main() {
     b.CursorReport(3, 4)
     Println(b.Render(func_defaults_lib.Cell("a")).Ch)
     Println(b.Pick(Some(4)), b.Pick(None[int]()))
-    Println(b.OnClose == nil)
-    Println(func_defaults_lib.Decorate("lib"), func_defaults_lib.Scaled(4))
+    Println(b.OnClose == nil, b.OnReset())
+    Println(func_defaults_lib.Decorate("lib"), func_defaults_lib.Scaled(4), func_defaults_lib.Applied(5))
 }

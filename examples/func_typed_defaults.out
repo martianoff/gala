@@ -14,5 +14,5 @@ hi.
 0 0
 [a!]
 4 -1
-true
-lib! 8
+true 0
+lib! 8 10

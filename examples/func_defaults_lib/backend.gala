@@ -19,6 +19,7 @@ struct Backend(
     Render       func(Cell) Cell        = (c) => Frame(Cell(c.Ch + "!")),
     Pick         func(Option[int]) int  = (o) => o.GetOrElse(-1),
     OnClose      func() int             = nil,
+    OnReset      func() int             = Zero,
 )
 
 // Decorate carries a function-typed parameter default across the package
@@ -31,3 +32,10 @@ func Twice(n int) int = n * 2
 
 // Scaled's default lambda uses this package's own function.
 func Scaled(n int, f func(int) int = (a) => Twice(a)) int = f(n)
+
+// Zero is a function-reference default: `OnReset` and `Applied` take the
+// function itself, not a thunk that returns it.
+func Zero() int = 0
+
+// Applied defaults its function parameter to a reference to Twice.
+func Applied(n int, f func(int) int = Twice) int = f(n)

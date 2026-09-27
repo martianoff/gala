@@ -11,6 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/transformer"
 )
 
 // TestFuncTypedDefaultsLowering covers defaults whose declared type is a
@@ -265,6 +268,65 @@ func main() {
 	assert.Equal(t, 23, se.Column)
 }
 
+// transformDefaultsForLSP analyzes and transforms src the way the language
+// server does, returning the variable types and lambda hints it collects.
+func transformDefaultsForLSP(t *testing.T, src string) *transpiler.TransformResult {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "main.gala")
+	require.NoError(t, os.WriteFile(path, []byte(src), 0644))
+	p := transpiler.NewAntlrGalaParser()
+	tree, docs, err := p.Parse(src)
+	require.NoError(t, err)
+	richAST, err := analyzer.NewGalaAnalyzer(p, getStdSearchPath()).Analyze(tree, docs, path)
+	require.NoError(t, err)
+	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
+	require.NoError(t, err)
+	return result
+}
+
+// TestDefaultLambdaLSPHints: a default is ONE declaration however many call
+// sites lower it. Its lambda parameters get one inlay hint each, from the
+// declared type — not one per call site, which with a generic function also
+// disagreed (`: int` at one call, `: string` at the next). And nothing a
+// lowered default binds — its lambda parameters, a method's receiver — is
+// recorded as a variable of the calling function, where it overwrote a real
+// local of the same name.
+func TestDefaultLambdaLSPHints(t *testing.T) {
+	result := transformDefaultsForLSP(t, `package main
+
+struct Gauge(K int)
+
+func (g Gauge) Read(f func(int) int = (x) => x * g.K) int = f(3)
+
+func greet(name string, f func(string) string = (s) => s + "!") string = f(name)
+
+func twice[T any](x T, combine func(T, T) T = (a, b) => a) T = combine(x, x)
+
+func main() {
+    val g = 5
+    val gauge = Gauge(2)
+    Println(greet("a"), greet("b"), twice(1), twice("x"), gauge.Read(), g)
+}
+`)
+
+	hintsOn := func(name string) []string {
+		var types []string
+		for _, h := range result.LambdaParamHints {
+			if h.Name == name {
+				types = append(types, h.Type.String())
+			}
+		}
+		return types
+	}
+	assert.Equal(t, []string{"string"}, hintsOn("s"), "one hint for the default's parameter, from its declaration")
+	assert.Equal(t, []string{"int"}, hintsOn("x"))
+	assert.Equal(t, []string{"T"}, hintsOn("a"), "a generic default is hinted with its declared type, once")
+
+	assert.Equal(t, "int", result.VarTypes["main.g"].String(), "the receiver bound while lowering Read's default overwrote the caller's local")
+	_, leaked := result.VarTypes["main.s"]
+	assert.False(t, leaked, "a default lambda's parameter was recorded as a local of the caller")
+}
+
 // funcDefaultsFixture is a module whose library declares parameter defaults
 // that use the library's own functions, for lowering at a call site in another
 // package.
@@ -291,6 +353,14 @@ func Hidden(n int, f func(int) int = (a) => helper(a)) int = f(n)
 struct Gauge(K int)
 
 func (g Gauge) Read(f func(int) int = (x) => Twice(x) + g.K) int = f(1)
+
+func DefaultClose() int = 0
+
+func Inc(n int) int = n + 1
+
+struct Backend(Name string, OnClose func() int = DefaultClose, Step func(int) int = Inc)
+
+func Run(f func() int = DefaultClose, g func(int) int = Inc) int = f() + g(1)
 `)
 	return root
 }
@@ -315,6 +385,26 @@ func main() {
 		body := out[strings.Index(out, "func main()"):]
 		assert.Contains(t, body, "return lib.Twice(a)")
 		assert.Contains(t, body, "return lib.Twice(x) + g.Get().K.Get()")
+	})
+
+	// A default that is a reference to the declaring package's function is
+	// already a function value. It must not be mistaken for a plain value and
+	// wrapped by the by-name sugar into `func() int { return lib.DefaultClose }`.
+	t.Run("function-reference defaults stay references", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/fdefs/lib"
+
+func main() {
+    val b = lib.Backend(Name = "x")
+    Println(b.OnClose(), b.Step(1), lib.Run())
+}`)
+		require.NoError(t, err)
+		body := out[strings.Index(out, "func main()"):]
+		assert.Contains(t, body, "OnClose: std.NewImmutable(lib.DefaultClose)")
+		assert.Contains(t, body, "Step: std.NewImmutable(lib.Inc)")
+		assert.Contains(t, body, "lib.Run(lib.DefaultClose, lib.Inc)")
+		assert.NotContains(t, body, "return lib.DefaultClose")
 	})
 
 	t.Run("an unexported helper is reported at the default", func(t *testing.T) {

@@ -1413,6 +1413,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 		}
 		typeName = t.astTypeToTranspilerType(typ)
 		t.isImmutableType(typeName)
+		t.recordDefaultLambdaHints(ctx, typeName)
 		if isVariadic {
 			// Variadic parameter: ...T becomes ...T in Go
 			field.Type = &ast.Ellipsis{Elt: typ}

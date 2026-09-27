@@ -60,7 +60,10 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 }
 
 func (t *galaASTTransformer) recordLSPVarType(name string, typeName transpiler.Type) {
-	if t.lspVarTypes == nil {
+	// A default lowered at a use site binds names of its own declaration (its
+	// lambda parameters, a method's receiver), not locals of the function it is
+	// lowered into; recording them would overwrite that function's real locals.
+	if t.lspVarTypes == nil || t.loweringDefault != nil {
 		return
 	}
 	key := name
