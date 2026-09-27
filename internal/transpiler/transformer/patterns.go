@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
+	"unicode"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
@@ -280,10 +281,38 @@ func bareVariantBindingError(name string, variant *transpiler.SealedVariant, par
 	)
 }
 
+// isStableIdentifierPattern reports whether a bare identifier in pattern
+// position is a stable identifier — a capitalized name that refers to an
+// in-scope value — rather than a fresh binding. Following Scala, such a pattern
+// compares the subject for equality with that value. Binding it instead would
+// shadow the value and match everything, so `case Development =>` would
+// silently become a catch-all. The value may be a local or package-level
+// val/var, or a const/var declared in a hand-written Go file of the same
+// package. Lowercase identifiers always bind (and may shadow an outer value).
+func (t *galaASTTransformer) isStableIdentifierPattern(name string) bool {
+	if name == "" || !unicode.IsUpper([]rune(name)[0]) {
+		return false
+	}
+	if t.bindingScope(name) != nil {
+		return true
+	}
+	if t.goTypeInfo != nil && t.packageName != "" {
+		qualName := t.packageName + "." + name
+		if _, ok := t.goTypeInfo.Constants[qualName]; ok {
+			return true
+		}
+		if _, ok := t.goTypeInfo.Variables[qualName]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // transformSimpleBindingOrLiteral handles the two remaining pattern shapes once a
 // pattern is known not to be a tuple/extractor/constructor call: a bare identifier
 // binds a variable (with a zero-field sealed-variant shortcut), and anything else
-// is compared for equality as a literal.
+// — a literal, or a stable identifier (see isStableIdentifierPattern) — is
+// compared for equality.
 func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	if p := t.getPrimaryFromExpression(patExprCtx); p != nil && p.Identifier() != nil {
 		name := p.Identifier().GetText()
@@ -326,26 +355,28 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 			}
 		}
 
-		t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
-		// Set the type of the bound variable to the matched type
-		if matchedType != nil && !matchedType.IsNil() {
-			t.currentScope.valTypes[name] = matchedType
-		} else {
-			// Type is unknown, explicitly set to any so type inference works correctly
-			t.currentScope.valTypes[name] = transpiler.BasicType{Name: "any"}
+		if !t.isStableIdentifierPattern(name) {
+			t.currentScope.vals[name] = false // Treat as var to avoid .Get() wrapping
+			// The bound variable has the matched type. When that type is unknown
+			// the binding stays untyped, exactly as a default-arm binding does
+			// (see transformMatchClauses): recording `any` would let inference
+			// downstream silently erase the value's real type.
+			if matchedType != nil && !matchedType.IsNil() {
+				t.currentScope.valTypes[name] = matchedType
+			}
+			// A subject declared `any` binds as `any`: that is its type. A
+			// binding that has to be hoisted out of a guard with an unknown
+			// subject type takes the bound temp's declared type or is rejected
+			// (see hoistPatternDecls).
+			var bindingType ast.Expr
+			if matchedType != nil && matchedType.IsAny() {
+				bindingType = ast.NewIdent("any")
+			} else if matchedType != nil {
+				bindingType = t.knownTypeExpr(matchedType)
+			}
+			assign := t.patternDefine([]string{name}, []ast.Expr{bindingType}, objExpr)
+			return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 		}
-		// A subject declared `any` binds as `any`: that is its type. An
-		// unknown subject type records nothing, so a binding that has to be
-		// hoisted out of a guard takes the bound temp's declared type or is
-		// rejected (see hoistPatternDecls), never silently erased to `any`.
-		var bindingType ast.Expr
-		if matchedType != nil && matchedType.IsAny() {
-			bindingType = ast.NewIdent("any")
-		} else if matchedType != nil {
-			bindingType = t.knownTypeExpr(matchedType)
-		}
-		assign := t.patternDefine([]string{name}, []ast.Expr{bindingType}, objExpr)
-		return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 	}
 
 	// Literal or other - use direct equality comparison
@@ -1723,7 +1754,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			}
 
 			// Check if this is a simple identifier binding
-			if t.isSimpleIdentifier(patternText) {
+			if t.isSimpleIdentifier(patternText) && !t.isStableIdentifierPattern(patternText) {
 				varName := patternText
 				t.currentScope.vals[varName] = false
 				if elemType != nil && !elemType.IsNil() {
@@ -1983,7 +2014,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 				elemExpr = ast.NewIdent(innerName)
 			}
 
-			if t.isSimpleIdentifier(patternText) {
+			if t.isSimpleIdentifier(patternText) && !t.isStableIdentifierPattern(patternText) {
 				varName := patternText
 				t.currentScope.vals[varName] = false
 				if elemType != nil && !elemType.IsNil() {

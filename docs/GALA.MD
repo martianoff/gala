@@ -770,7 +770,7 @@ val desc = s match {
 
 Variants with one or more fields always require parentheses (`case Rectangle(w, h)`, not `case Rectangle`). Writing the bare form for a field-bearing variant is rejected with [GALA-E0039](errors/GALA-E0039.md): a bare identifier is otherwise a variable binding, and a binding matches *every* value, so the arm would silently become a catch-all.
 
-The rule is scoped to the type being matched. A bare identifier that does not name a variant of the match subject's type is an ordinary binding, exactly as before:
+The rule is scoped to the type being matched. A bare identifier that does not name a variant of the match subject's type — and, if capitalized, does not name an in-scope value (see [Stable Identifiers](#stable-identifiers-constants-in-patterns)) — is an ordinary binding:
 
 ```gala
 val n = 42
@@ -990,6 +990,36 @@ case Some(y) => fmt.Sprintf("got %d", y)
 // OK: variable is used in guard
 case Some(y) if y > 0 => "positive"
 ```
+
+#### Stable Identifiers (Constants in Patterns)
+As in Scala, a **capitalized** bare identifier that names an in-scope value — a local `val`/`var`, a package-level `val`/`var`, or a `const`/`var` declared in a hand-written `.go` file of the same package — is a *stable identifier*: the arm compares the subject for equality with that value instead of binding a new variable.
+
+```gala
+type Environment string
+
+val Development Environment = "development"
+val Production Environment = "production"
+
+func describe(env Environment) string = env match {
+    case Development => "dev"            // env == Development
+    case Production  => "prod"           // env == Production
+    case _           => s"other: $env"
+}
+```
+
+Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`. The comparison is Go's `==`, so the value's type must be comparable with the matched type. A stable-identifier arm is conditional, so the match still needs a `case _` default.
+
+A **lowercase** identifier is always a fresh binding, even when an outer value has the same name — it shadows that value and matches everything. To compare against a lowercase value, use a guard:
+
+```gala
+val limit = 10
+val r = n match {
+    case x if x == limit => "at the limit"
+    case x               => s"bound $x"
+}
+```
+
+A capitalized identifier that names no value (and no variant or extractor) still binds, as shown in [Basic Sealed Type](#basic-sealed-type).
 
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.

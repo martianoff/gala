@@ -355,6 +355,18 @@ val desc = flag match {
 }
 ```
 
+#### Stable Identifiers (Constants in Patterns)
+A capitalized identifier that names an in-scope value compares for equality instead of binding. Lowercase identifiers always bind (use a guard to compare against them).
+```gala
+val Development Environment = "development"
+
+val mode = env match {
+    case Development     => "dev"       // env == Development
+    case x if x == limit => "limit"     // lowercase value: use a guard
+    case _               => "other"
+}
+```
+
 #### Type-Based Pattern Matching
 ```gala
 val res = x match {
