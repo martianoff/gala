@@ -1,19 +1,17 @@
 package build
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
-	"martianoff/gala/internal/stdlib"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -30,6 +28,11 @@ type Builder struct {
 	verbose        bool
 	transpiledDeps map[string]string // modulePath -> transpiled directory
 	sourceDir      string            // override source directory (for running subdir files)
+
+	// toolchainID and depsKeyValue memoize cache-key inputs; see cachekey.go.
+	// Tests set toolchainID to simulate a different transpiler or Go SDK.
+	toolchainID  *toolchainKey
+	depsKeyValue *string
 }
 
 // SetSourceDir sets an override source directory for compilation.
@@ -491,70 +494,6 @@ func (b *Builder) treeShape() string {
 	return filepath.ToSlash(rel)
 }
 
-// computeSourceHash computes a SHA256 hash of all inputs for cache invalidation.
-// Includes .gala source files, gala.mod, the gala version, and the fingerprint
-// of the standard library the sources are compiled against, so that any change
-// to sources, dependencies, or the transpiler itself triggers a rebuild.
-//
-// The stdlib fingerprint belongs in this key because the stdlib is a transpile
-// input, not just a runtime dependency: signatures declared there decide which
-// analyses run over the project's own code. A stdlib that gains (or, through a
-// stale on-disk copy, loses) a marker type on a parameter changes the
-// diagnostics the very same sources produce. Keyed on the project's files
-// alone, an already-built workspace keeps serving the result it computed
-// against the previous stdlib — so repairing the stdlib would leave every
-// project that had been built before the repair silently unchecked until one of
-// its own files happened to change.
-//
-// `shape` names the LAYOUT the transpile produces in gen/, not just its inputs.
-// One set of sources can be generated two ways — `gala build` puts the library
-// at the gen root, `gala build ./cmd/app` additionally synthesizes a consumer
-// main under gen/cmd/main — and the hash has to tell those apart. Keyed on file
-// contents alone the two are identical, so a plain build following a
-// subdirectory build found a matching hash over a non-empty gen/, skipped
-// transpilation, and compiled the consumer tree the previous command left
-// behind. See treeShape.
-func computeSourceHash(files []string, galaVersion, stdlibFingerprint, shape string) string {
-	h := sha256.New()
-	h.Write([]byte("gala:" + galaVersion + "\n"))
-	h.Write([]byte("stdlib:" + stdlibFingerprint + "\n"))
-	h.Write([]byte("shape:" + shape + "\n"))
-	sorted := make([]string, len(files))
-	copy(sorted, files)
-	sort.Strings(sorted)
-	for _, f := range sorted {
-		content, err := os.ReadFile(f)
-		if err != nil {
-			return "" // force re-transpile on error
-		}
-		h.Write([]byte(f))
-		h.Write(content)
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// computeDepsHash computes the cache key for transpiled GALA dependencies from
-// the module's requirements and any replace directives. Including replaces
-// ensures that retargeting a dep (e.g. toggling `replace X => ../localX`)
-// invalidates the cache.
-//
-// The stdlib fingerprint is part of the key for the same reason it is part of
-// computeSourceHash: dependency sources are transpiled against the stdlib, so a
-// change to it can change their generated code and the diagnostics they raise,
-// even though the requirement list is untouched.
-func computeDepsHash(requires []mod.Require, replaces []mod.Replace, stdlibFingerprint string) string {
-	h := sha256.New()
-	h.Write([]byte("stdlib:" + stdlibFingerprint + "\n"))
-	for _, req := range requires {
-		h.Write([]byte(req.Path + "@" + req.Version + "\n"))
-	}
-	for _, rep := range replaces {
-		h.Write([]byte("replace " + rep.Old.Path + "@" + rep.Old.Version +
-			"=>" + rep.New.Path + "@" + rep.New.Version + "\n"))
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 // transpile transpiles all .gala files in the project to the workspace.
 func (b *Builder) transpile() error {
 	if b.verbose {
@@ -582,19 +521,19 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("no .gala files found in %s", b.workspace.ProjectDir)
 	}
 
-	// Check if sources have changed since last transpilation
-	// Include gala.mod in hash so dep changes also invalidate the cache
-	hashFile := filepath.Join(b.workspace.Dir, ".gala-source-hash")
-	galaModFile := filepath.Join(b.workspace.ProjectDir, "gala.mod")
-	currentHash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion, stdlib.Fingerprint(), b.treeShape())
-	if currentHash != "" {
-		if oldHash, err := os.ReadFile(hashFile); err == nil && string(oldHash) == currentHash {
-			if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
-				if b.verbose {
-					fmt.Println("  Sources unchanged, skipping transpilation")
-				}
-				return nil
+	// Skip the transpile when every declared input (see cachekey.go) matches
+	// the key recorded by the build that produced gen/. The key is computed
+	// before transpiling, so an input edited while this build runs leaves a key
+	// that no longer matches — the next build re-transpiles.
+	hashFile := filepath.Join(b.workspace.Dir, sourceStampName)
+	previous, _ := readSourceStamp(hashFile)
+	currentHash := b.sourceKey(galaFiles, previous.Embeds)
+	if currentHash != "" && currentHash == previous.Key {
+		if genFiles, err := b.workspace.GenFiles(); err == nil && len(genFiles) > 0 {
+			if b.verbose {
+				fmt.Println("  Sources unchanged, skipping transpilation")
 			}
+			return nil
 		}
 	}
 
@@ -695,9 +634,17 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("rewriting project module imports: %w", err)
 	}
 
-	// Save source hash for next build
+	// Record the key for the next build, with the embed patterns this transpile
+	// emitted. When those differ from the patterns the key was computed with,
+	// the sources that declare them changed, and the key is recomputed so it
+	// covers the assets the new patterns match.
+	sort.Strings(allEmbedPatterns)
+	allEmbedPatterns = dedupe(allEmbedPatterns)
+	if !slices.Equal(allEmbedPatterns, previous.Embeds) {
+		currentHash = b.sourceKey(galaFiles, allEmbedPatterns)
+	}
 	if currentHash != "" {
-		os.WriteFile(hashFile, []byte(currentHash), 0644)
+		writeSourceStamp(hashFile, sourceStamp{Key: currentHash, Embeds: allEmbedPatterns})
 	}
 
 	return nil
@@ -913,12 +860,13 @@ func (b *Builder) recordSourceHash() {
 	if err != nil {
 		return
 	}
-	galaModFile := filepath.Join(b.workspace.ProjectDir, "gala.mod")
-	hash := computeSourceHash(append(galaFiles, galaModFile), b.stdlibVersion, stdlib.Fingerprint(), b.treeShape())
+	// No embed patterns: this path copies every project file into gen/ rather
+	// than resolving patterns, and it never consults the key it records.
+	hash := b.sourceKey(galaFiles, nil)
 	if hash == "" {
 		return
 	}
-	os.WriteFile(filepath.Join(b.workspace.Dir, ".gala-source-hash"), []byte(hash), 0644)
+	writeSourceStamp(filepath.Join(b.workspace.Dir, sourceStampName), sourceStamp{Key: hash})
 }
 
 // extractEmbedPatterns parses //go:embed directives from generated Go code
@@ -1240,7 +1188,7 @@ func (b *Builder) invalidateWorkspace(versionFile string) error {
 	if err := b.workspace.CleanDeps(); err != nil {
 		return fmt.Errorf("clearing transpiled dependencies: %w", err)
 	}
-	for _, name := range []string{".gala-source-hash", ".gala-deps-hash", "go.mod", "go.sum"} {
+	for _, name := range []string{sourceStampName, depsStampName, "go.mod", "go.sum"} {
 		os.Remove(filepath.Join(b.workspace.Dir, name)) // absent is the normal case
 	}
 	return os.WriteFile(versionFile, []byte(b.stdlibVersion), 0644)
@@ -1398,10 +1346,11 @@ func (b *Builder) transpileDeps() error {
 		return nil
 	}
 
-	depsHashFile := filepath.Join(b.workspace.Dir, ".gala-deps-hash")
-	currentHash := computeDepsHash(galaReqs, b.galaMod.Replace, stdlib.Fingerprint())
+	depsHashFile := filepath.Join(b.workspace.Dir, depsStampName)
+	// An unreadable dependency leaves the key empty: never a hit, never recorded.
+	currentHash, _ := b.depsKey()
 
-	if oldHash, err := os.ReadFile(depsHashFile); err == nil && string(oldHash) == currentHash {
+	if oldHash, err := os.ReadFile(depsHashFile); err == nil && currentHash != "" && string(oldHash) == currentHash {
 		allExist := true
 		b.transpiledDeps = make(map[string]string)
 		for _, req := range galaReqs {
@@ -1423,7 +1372,7 @@ func (b *Builder) transpileDeps() error {
 		}
 	}
 
-	// Clean deps dir before transpiling
+	// Clean deps dir (and its recorded key) before transpiling
 	if err := b.workspace.CleanDeps(); err != nil {
 		return fmt.Errorf("cleaning deps dir: %w", err)
 	}
@@ -1436,7 +1385,9 @@ func (b *Builder) transpileDeps() error {
 
 	b.transpiledDeps = transpiledDeps
 
-	os.WriteFile(depsHashFile, []byte(currentHash), 0644)
+	if currentHash != "" {
+		os.WriteFile(depsHashFile, []byte(currentHash), 0644)
+	}
 
 	return nil
 }

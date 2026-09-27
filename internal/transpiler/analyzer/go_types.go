@@ -29,9 +29,23 @@ var (
 // goImporterAvailable tracks whether we have a working Go importer.
 var goImporterAvailable bool
 
+var (
+	goSDKRootOnce sync.Once
+	goSDKRoot     string
+)
+
+// GoSDKRoot returns the root of the Go SDK the analyzer reads Go package types
+// from, or "" when none is found. It is resolved once per process, and the
+// importer is built from the same value, so a caller keying a cache on it names
+// exactly the SDK the analysis used.
+func GoSDKRoot() string {
+	goSDKRootOnce.Do(func() { goSDKRoot = findGOROOT() })
+	return goSDKRoot
+}
+
 func getGoImporter() types.Importer {
 	goImporterOnce.Do(func() {
-		goroot := findGOROOT()
+		goroot := GoSDKRoot()
 		if goroot == "" {
 			goImporterAvailable = false
 			fmt.Fprintf(os.Stderr, "Warning: Go SDK not found — Go type inference disabled. Set GOROOT, pass --goroot, or ensure 'go' is on PATH.\n")
