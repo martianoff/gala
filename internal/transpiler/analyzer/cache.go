@@ -446,6 +446,14 @@ type analysisCache struct {
 	enabled bool
 }
 
+// goSDKTag is a short hash of GoSDKIdentity for the analysis cache directory:
+// cached metadata includes the Go types of hand-written Go packages, which
+// depend on the SDK they were read from and its cgo setting.
+var goSDKTag = sync.OnceValue(func() string {
+	sum := sha256.Sum256([]byte(GoSDKIdentity()))
+	return "go" + hex.EncodeToString(sum[:])[:8]
+})
+
 // newAnalysisCache creates a cache rooted at the given project directory.
 // Returns a disabled cache if the directory can't be created.
 //
@@ -461,6 +469,7 @@ type analysisCache struct {
 //     `firstD = NewImmutable(dirs.Get().Get(0))` typed as `Array[T]` instead
 //     of `T` because `collection_immutable.Array` had been pruned from the
 //     cached `directive` package's metadata.
+//   - goSDKTag: the Go SDK and cgo setting Go package types were read with.
 func newAnalysisCache(projectRoot string) *analysisCache {
 	if projectRoot == "" {
 		return &analysisCache{enabled: false}
@@ -472,6 +481,7 @@ func newAnalysisCache(projectRoot string) *analysisCache {
 	if binaryHash != "" {
 		cacheDir = cacheDir + "-" + binaryHash[:12]
 	}
+	cacheDir = cacheDir + "-" + goSDKTag()
 	parent := filepath.Join(projectRoot, ".gala", "cache")
 	dir := filepath.Join(parent, cacheDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {

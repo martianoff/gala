@@ -2,7 +2,9 @@ package analyzer_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
@@ -533,4 +535,69 @@ func TestAnalyzeGoFiles_RecordsModuleImportPathNotDirectory(t *testing.T) {
 			assert.Equal(t, tc.want, named.ImportPath)
 		})
 	}
+}
+
+// A Go signature naming a type from a standard-library package whose source
+// uses cgo (net, and everything importing it) must resolve on a host with no C
+// compiler. Reading such a package with cgo enabled runs `go tool cgo`, which
+// fails without one — the golang:alpine image is the common case — and every
+// type from net came out unresolved.
+//
+// The check runs in a fresh copy of the test binary, for two reasons. The
+// shared importer keeps every package it has read for the life of the process,
+// so an earlier test that read net would make it pass regardless. And the host
+// must look compiler-less: the child's PATH holds only the Go SDK's bin
+// directory, CC and CGO_ENABLED are unset — which is how the go command
+// decides there is no C compiler — and GOENV=off keeps a `go env -w` setting
+// on the developer's machine out of it.
+func TestAnalyzeGoFiles_ResolvesCgoStdlibTypesWithoutACCompiler(t *testing.T) {
+	skipIfNoGoSDK(t)
+	const childEnv = "GALA_TEST_CGO_FREE_IMPORT_CHILD"
+	if os.Getenv(childEnv) == "" {
+		env := []string{childEnv + "=1", "GOENV=off", "PATH=" + filepath.Join(analyzer.GoSDKRoot(), "bin")}
+		for _, kv := range os.Environ() {
+			switch strings.ToUpper(strings.SplitN(kv, "=", 2)[0]) {
+			case "PATH", "CC", "CGO_ENABLED", "GOENV":
+				continue
+			}
+			env = append(env, kv)
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "fresh-process run failed:\n%s", out)
+		require.Contains(t, string(out), "--- PASS: "+t.Name(), "the check did not run:\n%s", out)
+		return
+	}
+
+	require.False(t, analyzer.GoCgoEnabled(), "with no C compiler on PATH, cgo is off, as the go command has it")
+	dir := t.TempDir()
+	src := "package tcp\n\n" +
+		"import (\n\t\"net\"\n\t\"net/http\"\n\t\"time\"\n)\n\n" +
+		"type Server struct{}\n\n" +
+		"func (s *Server) Serve(handler func(net.Conn), shutdownTimeout time.Duration) error { return nil }\n\n" +
+		"func Listen(addr string) (net.Listener, error) { return nil, nil }\n\n" +
+		"func Client() *http.Client { return nil }\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tcp.go"), []byte(src), 0644))
+
+	info := analyzer.AnalyzeGoFiles(dir, "example.test/tcp")
+	require.NotNil(t, info)
+
+	td := info.GetTypeData("tcp.Server")
+	require.NotNil(t, td, "tcp.Server must be registered")
+	serve := td.Methods["Serve"]
+	require.NotNil(t, serve, "Server.Serve must be registered")
+	require.Len(t, serve.Params, 2)
+	assert.Equal(t, "func(net.Conn)", serve.Params[0].Type.String())
+	assert.Equal(t, "time.Duration", serve.Params[1].Type.String())
+
+	listen := info.GetFuncSignature("tcp.Listen")
+	require.NotNil(t, listen)
+	require.Len(t, listen.Returns, 2)
+	assert.Equal(t, "net.Listener", listen.Returns[0].String())
+
+	client := info.GetFuncSignature("tcp.Client")
+	require.NotNil(t, client)
+	require.Len(t, client.Returns, 1)
+	assert.Equal(t, "*http.Client", client.Returns[0].String())
 }

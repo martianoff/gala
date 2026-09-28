@@ -3,6 +3,7 @@ package build
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -312,14 +313,16 @@ func TestTranspilerIdentity_HashesTheRunningExecutable(t *testing.T) {
 func TestGoSDKIdentity_NamesTheAnalyzerSDK(t *testing.T) {
 	root := analyzer.GoSDKRoot()
 	if root == "" {
-		require.Equal(t, "none", goSDKIdentity())
+		require.Equal(t, "none", analyzer.GoSDKIdentity())
 		return
 	}
-	id := goSDKIdentity()
+	id := analyzer.GoSDKIdentity()
 	require.True(t, strings.HasPrefix(id, root+"|"), "identity %q must name the SDK root %q", id, root)
 	if version, err := os.ReadFile(filepath.Join(root, "VERSION")); err == nil {
 		require.Contains(t, id, strings.TrimSpace(string(version)))
 	}
+	require.True(t, strings.HasSuffix(id, fmt.Sprintf("|cgo=%t", analyzer.GoCgoEnabled())),
+		"identity %q must carry the cgo setting Go packages are read with", id)
 }
 
 // The regression for an edit behind a local replace: the dependency transpile

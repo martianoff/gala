@@ -1,0 +1,19 @@
+package tcplib
+
+import "example.com/tcplib/core"
+import "net"
+import "time"
+
+// Conn hides the Go connection from callers.
+struct Conn(conn net.Conn)
+
+func (c Conn) Network() string = c.conn.RemoteAddr().Network()
+
+// ServeOn passes a lambda to a method of the module's own Go package. The
+// lambda's parameter is typed from that method's signature, func(net.Conn).
+// The explicit Try thunks mirror gala-server's ServeTCPOn, the published code
+// this fixture stands for.
+func ServeOn(handler func(Conn)) Try[bool] =
+    Try(() => core.NewServer("fixture")).FlatMap((srv) =>
+        Try(() => srv.Serve((c) => handler(Conn(c)), time.Second)).Map((_) => true)
+    )

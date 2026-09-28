@@ -201,10 +201,12 @@ func findErasedTypes(t *testing.T, name, src string) []string {
 	// it; a concrete type there would defeat the purpose.
 	//
 	// So this is narrower than "no erasure anywhere": a widened parameter or
-	// result type passes. Covering those means excluding those two shapes
-	// precisely — TypeParams field lists, and FuncDecls named Unapply — which
-	// is worth doing, but is a bigger guard than this one and belongs with
-	// whatever first needs it.
+	// result type of a declared function passes. Covering those means
+	// excluding those two shapes precisely — TypeParams field lists, and
+	// FuncDecls named Unapply — which is worth doing, but is a bigger guard
+	// than this one and belongs with whatever first needs it. A function
+	// literal's parameters are checked (see the FuncLit case): neither shape
+	// occurs there.
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.ValueSpec:
@@ -233,6 +235,16 @@ func findErasedTypes(t *testing.T, name, src string) []string {
 			// a declaration whose outer type is not itself `any`.
 			if isErased(v.Elt) {
 				note("slice/array element", v.Pos())
+			}
+		case *ast.FuncLit:
+			// A lowered lambda's parameters. Neither exempt shape above can
+			// occur on a function literal — it has no type parameters and is
+			// never an Unapply — so an `any` here is a lambda parameter whose
+			// type was not inferred, widened instead of reported.
+			for _, f := range v.Type.Params.List {
+				if isErased(f.Type) {
+					note("lambda parameter "+fieldLabel(f), f.Pos())
+				}
 			}
 		}
 		return true

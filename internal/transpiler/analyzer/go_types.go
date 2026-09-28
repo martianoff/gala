@@ -57,6 +57,9 @@ func getGoImporter() types.Importer {
 		// so we must also update it directly.
 		os.Setenv("GOROOT", goroot)
 		build.Default.GOROOT = goroot
+		// Read packages with the cgo setting the go command would build them
+		// with (see GoCgoEnabled).
+		build.Default.CgoEnabled = GoCgoEnabled()
 
 		// Try source importer first (works with Bazel Go SDK which has source but no .a files)
 		goImporterInst = importer.ForCompiler(token.NewFileSet(), "source", nil)
@@ -102,6 +105,117 @@ func (s serialImporter) Import(path string) (*types.Package, error) {
 func GoImporterAvailable() bool {
 	getGoImporter() // ensure initialized
 	return goImporterAvailable
+}
+
+// GoSDKIdentity names the Go SDK the analyzer resolves Go package types from,
+// for caches of anything derived from them: its root, the contents of its
+// VERSION file, and the cgo setting packages are read with. Upgrading Go in
+// place keeps the root and changes VERSION; switching SDKs changes the root;
+// installing or removing a C compiler can flip cgo, which selects the files
+// type-checked. "none" when there is no SDK.
+func GoSDKIdentity() string { return goSDKIdentity() }
+
+var goSDKIdentity = sync.OnceValue(func() string {
+	root := GoSDKRoot()
+	if root == "" {
+		return "none"
+	}
+	version, _ := os.ReadFile(filepath.Join(root, "VERSION"))
+	return fmt.Sprintf("%s|%s|cgo=%t", root, strings.TrimSpace(string(version)), GoCgoEnabled())
+})
+
+// GoCgoEnabled reports whether the analyzer reads Go packages with cgo enabled:
+// the value the go command would build with, resolved once per process.
+//
+// go/build enables cgo on every platform that supports it, whether or not a C
+// compiler is installed. The go command does not: with CGO_ENABLED unset it
+// turns cgo off when it cannot find the compiler. The source importer follows
+// go/build, so on a host without a C compiler (the golang:alpine image, say)
+// it ran `go tool cgo` for net, failed, and failed with it every package that
+// imports net — net/http, crypto/tls, … Every Go signature naming one of their
+// types was left unresolved, although `go build` compiles that code fine.
+func GoCgoEnabled() bool { return goCgoEnabled() }
+
+var goCgoEnabled = sync.OnceValue(func() bool {
+	return resolveCgoEnabled(goEnvValue, os.Getenv("CC") != "", exec.LookPath, build.Default.CgoEnabled)
+})
+
+// resolveCgoEnabled applies the go command's rule. CGO_ENABLED, when it is 0
+// or 1, decides. Otherwise cgo is on where the platform supports it, except
+// that with CC unset in the process environment it is off when the default C
+// compiler is not on PATH. goenv looks a variable up as the go command does
+// (see goEnvValue).
+func resolveCgoEnabled(goenv func(string) string, ccSet bool, lookPath func(string) (string, error), platformSupportsCgo bool) bool {
+	switch strings.TrimSpace(goenv("CGO_ENABLED")) {
+	case "0":
+		return false
+	case "1":
+		return true
+	}
+	if !platformSupportsCgo {
+		return false
+	}
+	if ccSet {
+		return true
+	}
+	_, err := lookPath(defaultCC())
+	return err == nil
+}
+
+// goEnvValue is a Go environment variable as the go command sees it: the
+// process environment when non-empty, else the user's go env file
+// (`go env -w`), else the SDK's $GOROOT/go.env. Reading the files rather than
+// running `go env` keeps a subprocess off the analyzer's start-up path.
+func goEnvValue(key string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return goEnvFiles()[key]
+}
+
+var goEnvFiles = sync.OnceValue(func() map[string]string {
+	var files []string
+	if root := GoSDKRoot(); root != "" {
+		files = append(files, filepath.Join(root, "go.env"))
+	}
+	userFile := os.Getenv("GOENV")
+	if userFile == "" {
+		if dir, err := os.UserConfigDir(); err == nil {
+			userFile = filepath.Join(dir, "go", "env")
+		}
+	}
+	if userFile != "" && userFile != "off" {
+		files = append(files, userFile) // read last: it overrides go.env
+	}
+	vals := make(map[string]string)
+	for _, f := range files {
+		if data, err := os.ReadFile(f); err == nil {
+			parseGoEnvFile(string(data), vals)
+		}
+	}
+	return vals
+})
+
+// parseGoEnvFile adds the KEY=VALUE lines of a go env file to vals.
+func parseGoEnvFile(data string, vals map[string]string) {
+	for _, line := range strings.Split(data, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok && k != "" {
+			vals[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+}
+
+// defaultCC is the C compiler the go command uses when CC is unset.
+func defaultCC() string {
+	switch runtime.GOOS {
+	case "darwin", "ios", "freebsd", "openbsd":
+		return "clang"
+	}
+	return "gcc"
 }
 
 // findGOROOT discovers the Go SDK root directory.
@@ -499,7 +613,7 @@ func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpi
 
 			astParams := flattenFieldTypes(fd.Type.Params)
 			for i := range sig.Params {
-				if i >= len(astParams) || !isUnresolvedType(sig.Params[i].Type) {
+				if i >= len(astParams) || !transpiler.ContainsUnusable(sig.Params[i].Type) {
 					continue
 				}
 				if rec := syntacticGoType(astParams[i], imports, pkgName, typeParams); !rec.IsNil() {
@@ -509,7 +623,7 @@ func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpi
 
 			astResults := flattenFieldTypes(fd.Type.Results)
 			for i := range sig.Returns {
-				if i >= len(astResults) || !isUnresolvedType(sig.Returns[i]) {
+				if i >= len(astResults) || !transpiler.ContainsUnusable(sig.Returns[i]) {
 					continue
 				}
 				if rec := syntacticGoType(astResults[i], imports, pkgName, typeParams); !rec.IsNil() {
@@ -518,47 +632,6 @@ func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpi
 			}
 		}
 	}
-}
-
-// isUnresolvedType reports whether a converted signature slot carries an
-// unresolved type anywhere inside it. goTypeToTranspilerType maps go/types'
-// Invalid to NilType precisely so this check has something to key on.
-//
-// The check must recurse: go/types resolves `[]box.Box[T]` to a slice whose
-// ELEMENT is Invalid, so a top-level-only test would leave `[]<nothing>` in place.
-func isUnresolvedType(t transpiler.Type) bool {
-	if t == nil || t.IsNil() {
-		return true
-	}
-	switch v := t.(type) {
-	case transpiler.ArrayType:
-		return isUnresolvedType(v.Elem)
-	case transpiler.PointerType:
-		return isUnresolvedType(v.Elem)
-	case transpiler.MapType:
-		return isUnresolvedType(v.Key) || isUnresolvedType(v.Elem)
-	case transpiler.GenericType:
-		if isUnresolvedType(v.Base) {
-			return true
-		}
-		for _, p := range v.Params {
-			if isUnresolvedType(p) {
-				return true
-			}
-		}
-	case transpiler.FuncType:
-		for _, p := range v.Params {
-			if isUnresolvedType(p) {
-				return true
-			}
-		}
-		for _, r := range v.Results {
-			if isUnresolvedType(r) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // fileImportPaths maps the names a file refers to each import by to that
