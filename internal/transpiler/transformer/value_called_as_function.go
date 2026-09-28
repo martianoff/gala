@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -84,6 +85,7 @@ func (t *galaASTTransformer) checkValueCalledAsFunction(fun ast.Expr, node antlr
 		if !exact {
 			line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
 		}
+		exact = exact && calleeSpells(node, b)
 		// A var and a parameter are both "a value": the binding does not say
 		// which it is, and the distinction does not change the fix.
 		kind := "value"
@@ -94,6 +96,31 @@ func (t *galaASTTransformer) checkValueCalledAsFunction(fun ast.Expr, node antlr
 		return notCallableError(name, kind, name, name, b.typ, line, col, exact)
 	}
 	return t.checkValFieldCalledAsFunction(fun, node)
+}
+
+// calleeSpells reports whether the call holding node is written with b's own
+// spelling, `name` or `pkg.name`, starting at the primary expression, so that a
+// caret spanning len(b.String()) from there covers exactly the callee. It is
+// not for `(Red)()`, whose primary expression is the parenthesized one.
+func calleeSpells(node antlr.Tree, b binding) bool {
+	var pe *grammar.PostfixExprContext
+	for n := node; n != nil && pe == nil; n = n.GetParent() {
+		pe, _ = n.(*grammar.PostfixExprContext)
+	}
+	if pe == nil || pe.PrimaryExpr() == nil {
+		return false
+	}
+	prim := pe.PrimaryExpr()
+	if b.pkg == "" {
+		return prim.GetText() == b.name
+	}
+	suffixes := pe.AllPostfixSuffix()
+	if prim.GetText() != b.pkg || len(suffixes) == 0 || suffixes[0].Identifier() == nil {
+		return false
+	}
+	start, member := prim.GetStart(), suffixes[0].Identifier().GetStart()
+	return member.GetText() == b.name && member.GetLine() == start.GetLine() &&
+		member.GetColumn() == start.GetColumn()+len([]rune(b.pkg))+1
 }
 
 // checkValFieldCalledAsFunction is the check for a val struct field, `p.N()`:

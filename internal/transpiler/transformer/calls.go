@@ -2063,7 +2063,13 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 	if typeMeta == nil {
 		return nil, false
 	}
-	if _, hasApply := typeMeta.Methods["Apply"]; !hasApply {
+	apply, hasApply := typeMeta.Methods["Apply"]
+	if !hasApply {
+		return nil, false
+	}
+	// An empty call, `v()`, goes through Apply only when Apply takes no
+	// parameters; otherwise it is left as written, for Go to report.
+	if len(args) == 0 && apply != nil && len(apply.ParamTypes) > 0 {
 		return nil, false
 	}
 	return &ast.CallExpr{

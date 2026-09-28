@@ -157,7 +157,10 @@ func (t *galaASTTransformer) unknownMethodError(
 	// A field holding a function is called the same way a method is; the field
 	// set is consulted so `cfg.OnEvent()` is not mistaken for a missing method.
 	// A field of a type that is not callable is the other mistake: `p.N()`
-	// for an int field N (GALA-E0054).
+	// for an int field N (GALA-E0054). It stays behind the guards above: a
+	// receiver here is only a selector, and one resolved to the wrong type —
+	// a Go `fs.FileInfo` taken for a GALA struct of that name — must not be
+	// judged by that type's fields.
 	if fieldType, isField := typeMeta.Fields[method]; isField {
 		if t.nonCallableType(fieldType, typeMeta.TypeParams) {
 			return fieldNotCallableError(typeMeta, method, fieldType, line, col, exact)

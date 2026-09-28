@@ -20,7 +20,7 @@ struct Color(N int)
 val Red = Color(1)
 
 Println(Red())     // Red is a val of type Color
-Println(Red.N())   // N is a field of type int
+Println(Red.N())   // Color.N is a field of type int
 ```
 
 This applies to a `val` or `var`, a parameter, and a struct field, whether it
