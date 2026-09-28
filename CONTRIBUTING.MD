@@ -401,7 +401,10 @@ entirely by an agent. Three things are required:
 2. **Disclose it.** Tick the AI-assistance box in the PR template, and add a
    `Co-Authored-By:` trailer naming the tool or model to commits the agent wrote, e.g.
    `Co-Authored-By: <agent name> <noreply@example.com>`. Disclosure is not a mark against a
-   PR; it tells the reviewer where to look harder.
+   PR; it tells the reviewer where to look harder. CI checks the PR description: exactly
+   one of "No AI assistance" / "AI-assisted" must be ticked, and an AI-assisted PR must tick
+   both sub-boxes. Maintainers opening their own agent PRs are exempt from the "I have
+   read and understood the whole diff" box only; their merge is the accountability.
 3. **The agent follows [AGENTS.md](AGENTS.md).** It is the single rulebook for every agent
    (Claude Code, Codex, Cursor, Copilot, Gemini CLI, …); `CLAUDE.MD`, `GEMINI.md`, and
    `.github/copilot-instructions.md` just point to it. Point any other tool at it too.
