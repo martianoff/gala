@@ -843,7 +843,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// `NilType` and downstream type inference (e.g., `ArrayFromSlice(Make())`
 	// resolving its `T` from `[]Event`) silently fails, leaving lambda
 	// parameter types as the un-substituted type-parameter name.
-	if filePath != "" && pkgName != "main" && pkgName != "test" {
+	//
+	// `main` is scanned, unlike the GALA sibling discovery above: a program
+	// package is exactly where a `main.go` beside a `main.gala` is ordinary,
+	// and Go's own co-membership rule — the package clause, in this one
+	// directory — already rules out the unrelated-program hazard that exclusion
+	// guards against. `test` keeps its exclusion, matching the treatment it
+	// gets everywhere else in the analyzer.
+	if filePath != "" && pkgName != "test" {
 		dirPath := filepath.Dir(filePath)
 		// The types declared here record this package's own import path; the
 		// transformer emits a type carrying it unqualified rather than as an

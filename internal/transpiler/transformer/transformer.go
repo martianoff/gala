@@ -785,6 +785,24 @@ func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.
 // Returns empty string if not found.
 func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
+	// A hand-written .go sibling of this file is part of THIS package, so a name
+	// it declares is in scope here under its bare spelling, ahead of every
+	// import. Without this the name reaches the shared resolver's last step,
+	// which offers an unqualified name any non-dot imported package's type of
+	// that name — so a declaration in the current package silently lost to an
+	// import of the same name, and the author's struct literal kept its own
+	// fields while the type changed underneath it. GoTypeInfo is consulted
+	// because typeMetas holds only the struct metadata synthesized for those
+	// siblings, and a `type Row int` is just as much this package's as a struct
+	// is. This is the bare-name half of what goImportForPathlessType does for
+	// the qualified spelling.
+	//
+	// The key is qualified so the caller emits the type the way it emits every
+	// other current-package type: unqualified, via OwnImportPath.
+	if !strings.Contains(typeName, ".") && t.packageName != "" &&
+		t.richAST != nil && t.richAST.GoTypeInfo.DeclaresType(t.packageName, typeName) {
+		return t.packageName + "." + typeName
+	}
 	resolved, _ := t.resolveTypeName(typeName, func(name string) bool {
 		_, ok := t.typeMetas[name]
 		return ok
