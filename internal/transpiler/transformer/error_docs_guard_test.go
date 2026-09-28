@@ -622,6 +622,42 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "val of a struct type called as a function",
+			code: galaerr.CodeValueCalledAsFunction, // GALA-E0054
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Color(N int)
+
+val Red = Color(1)
+
+func main() {
+    Println(Red())
+}
+`)
+			},
+		},
+		{
+			// The page quotes only the message line for the field form.
+			name: "field of a non-function type called as a function",
+			code: galaerr.CodeValueCalledAsFunction, // GALA-E0054
+			render: func(t *testing.T) string {
+				full := renderRepro(t, "main.gala", `package main
+
+struct Color(N int)
+
+val Red = Color(1)
+
+func main() {
+    Println(Red.N())
+}
+`)
+				line, _, found := strings.Cut(full, "\n")
+				require.True(t, found, "rendered diagnostic was a single line: %q", full)
+				return line
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

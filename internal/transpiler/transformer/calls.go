@@ -394,6 +394,15 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		if err := t.checkForbiddenGoBuiltinCall(base, bl, bc, exact); err != nil {
 			return nil, err
 		}
+		// A val whose type has a zero-argument Apply method is called through
+		// it, as section 12 of the dispatcher does for a call with arguments;
+		// any other value that is not a function is an error.
+		if expr, handled := t.tryTransformValWithApply(base, nil); handled {
+			return expr, nil
+		}
+		if err := t.checkValueCalledAsFunction(base, suffix); err != nil {
+			return nil, err
+		}
 		// Last stop for a zero-argument call: if the receiver's GALA type is
 		// known and declares no such method, say so here rather than emitting
 		// it and letting `go build` describe the generated expression.
@@ -2054,7 +2063,13 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 	if typeMeta == nil {
 		return nil, false
 	}
-	if _, hasApply := typeMeta.Methods["Apply"]; !hasApply {
+	apply, hasApply := typeMeta.Methods["Apply"]
+	if !hasApply {
+		return nil, false
+	}
+	// An empty call, `v()`, goes through Apply only when Apply takes no
+	// parameters; otherwise it is left as written, for Go to report.
+	if len(args) == 0 && apply != nil && len(apply.ParamTypes) > 0 {
 		return nil, false
 	}
 	return &ast.CallExpr{
@@ -2076,6 +2091,7 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 //	Section 3  Generic method → standalone function     — tryTransformGenericMethodAsFunction
 //	Section 4  Regular method call                      — transformRegularMethodCall
 //	Section 5  Regular function-call context gather     — collectFunctionCallContext
+//	Section 5.5 Value called as a function              — checkValueCalledAsFunction
 //	Section 6  Argument transformation                  — transformFunctionArgs
 //	Section 7  Named-args dispatch                      — handleNamedArgs(Func|)Call
 //	Section 8  Default-arg injection                    — fillDefaultArgs
@@ -2168,6 +2184,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 5: Regular function call context gathering ---
 	callCtx := t.collectFunctionCallContext(fun, argListCtx)
 	callCtx.slotType = pendingExpected
+
+	// --- Section 5.5: a value whose type is not a function, called anyway ---
+	// Checked before the arguments are transformed, so named arguments or an
+	// argument that fails to transform cannot preempt it with an error about
+	// the arguments. A type with an Apply method is left to section 12. See
+	// value_called_as_function.go.
+	if err := t.checkValueCalledAsFunction(fun, argListCtx); err != nil {
+		return nil, err
+	}
 
 	// --- Section 6: Argument transformation ---
 	// Walks the argument list, classifying each arg as positional or named,
