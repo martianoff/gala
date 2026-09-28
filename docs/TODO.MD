@@ -32,4 +32,4 @@
 - [x] Support expression syntax with match without return
 - [x] Compiler should provide better error messages, for example, "Type mismatch errors could be clearer about what the actual vs expected types are". Compiler must include line number and column number in error messages and may be code block highlighting for better readability
 - [ ] Level up Jetbrains plugin to support better syntax highlighting and code completion
-- [ ] CI job that checks the Nix-transpiled stdlib `embedded_gen.go` byte-matches Bazel's ([#530](https://github.com/martianoff/gala/issues/530))
+- [x] CI job that checks the Nix-transpiled stdlib `embedded_gen.go` byte-matches Bazel's ([#530](https://github.com/martianoff/gala/issues/530))
