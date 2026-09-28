@@ -115,10 +115,13 @@ func (c *Cache) Store(modulePath, ver, sourceDir string) error {
 	}
 	defer os.RemoveAll(staging) // no-op once the rename succeeds
 
-	if err := copyModuleFiles(sourceDir, staging); err != nil {
+	files, err := copyModuleFiles(sourceDir, staging)
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(staging, completeMarkerName), nil, 0644); err != nil {
+	sort.Strings(files)
+	manifest := strings.Join(files, "\n")
+	if err := os.WriteFile(filepath.Join(staging, completeMarkerName), []byte(manifest), 0644); err != nil {
 		return fmt.Errorf("failed to mark cached module complete: %w", err)
 	}
 	return publishModuleDir(staging, destDir)
@@ -214,19 +217,21 @@ func sweepAbandonedSiblings(destDir string) {
 }
 
 // copyModuleFiles copies the files a cached module keeps from sourceDir into
-// destDir.
-func copyModuleFiles(sourceDir, destDir string) error {
+// destDir, and returns their slash-separated paths relative to it.
+func copyModuleFiles(sourceDir, destDir string) ([]string, error) {
+	var files []string
 	// The whole module tree is kept, minus VCS metadata: a build needs more
 	// than sources — `//go:embed` assets, templates and other data files — and
 	// a module fetched without them fails to build, or builds with the data
-	// missing. sum.WalkModuleFiles also defines what sum.HashDir covers, so
-	// gala.sum verifies exactly what was stored.
+	// missing. The paths copied are returned, and recorded as the files the
+	// module hash covers (see moduleFiles).
 	//
 	// Symbolic links are not stored: following one would copy a file from
 	// outside the module (anything the link names on this machine) into the
 	// cache, where a build could embed it, and a link to a directory or a
 	// dangling link would fail the fetch.
-	return sum.WalkModuleFiles(sourceDir, func(path, rel string) error {
+	err := sum.WalkModuleFiles(sourceDir, func(path, rel string) error {
+		files = append(files, rel)
 		destPath := filepath.Join(destDir, filepath.FromSlash(rel))
 
 		// Ensure parent directory exists
@@ -241,6 +246,54 @@ func copyModuleFiles(sourceDir, destDir string) error {
 		}
 		return os.WriteFile(destPath, content, 0644)
 	})
+	return files, err
+}
+
+// moduleFiles returns the files a cached module was stored with, as its
+// completion marker lists them (see completeMarkerName).
+//
+// The module hash covers exactly these, not whatever the directory holds now.
+// Builds used to write into a cached module — generated `*.gen.go` beside each
+// package and an analysis cache in `.gala/` — and walking the directory hashed
+// those too, so `gala mod tidy` after a build recorded a gala.sum entry that a
+// clean fetch did not reproduce. Nothing writes into the cache any more, but a
+// cache shared with an older gala still may.
+func moduleFiles(modDir string) ([]string, error) {
+	manifest, err := os.ReadFile(filepath.Join(modDir, completeMarkerName))
+	if err != nil || len(manifest) == 0 {
+		return nil, fmt.Errorf("cached module %s has no file list; delete it to fetch it again", modDir)
+	}
+	return strings.Split(string(manifest), "\n"), nil
+}
+
+// isBuildArtifact reports whether rel, a file of the cached module in modDir,
+// is one an older gala's build wrote there rather than a file a build reads: a
+// file under a `.gala` directory (its analysis cache), or `x.gen.go` beside an
+// `x.gala` (its transpiled copy of that package).
+func isBuildArtifact(modDir, rel string) bool {
+	if strings.HasPrefix(rel, ".gala/") || strings.Contains(rel, "/.gala/") {
+		return true
+	}
+	stem, ok := strings.CutSuffix(rel, ".gen.go")
+	if !ok {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(modDir, filepath.FromSlash(stem+".gala")))
+	return err == nil
+}
+
+// hashModule computes the h2 hash of the cached module in modDir over the
+// files it was stored with.
+func hashModule(modDir string) (string, error) {
+	files, err := moduleFiles(modDir)
+	if err != nil {
+		return "", err
+	}
+	hash, err := sum.HashFiles(modDir, files)
+	if err != nil {
+		return "", fmt.Errorf("cached module %s is damaged (%w); delete it to fetch it again", modDir, err)
+	}
+	return hash, nil
 }
 
 // Remove removes a module version from the cache.
@@ -260,13 +313,45 @@ func (c *Cache) Hash(modulePath, ver string) (string, error) {
 	if !c.config.IsCached(modulePath, ver) {
 		return "", fmt.Errorf("module not cached: %s@%s", modulePath, ver)
 	}
-	return sum.HashDir(modDir)
+	return hashModule(modDir)
 }
 
-// Verify verifies a cached module against an expected hash.
+// Verify verifies a cached module against an expected hash. An h2 hash is
+// checked over the files the module was stored with, and a file added to the
+// module since fails verification too, since the hash cannot vouch for it —
+// except the files an older gala's build wrote there (see isBuildArtifact),
+// which no build reads. An h1 hash, from an older gala.sum, is checked as it
+// always was.
 func (c *Cache) Verify(modulePath, ver, expectedHash string) error {
 	modDir := c.config.ModulePath(modulePath, ver)
-	return sum.Verify(modDir, expectedHash)
+	if !sum.IsH2(expectedHash) {
+		return sum.Verify(modDir, expectedHash)
+	}
+	files, err := moduleFiles(modDir)
+	if err != nil {
+		return err
+	}
+	stored := make(map[string]bool, len(files))
+	for _, rel := range files {
+		stored[rel] = true
+	}
+	present, err := sum.ModuleFiles(modDir)
+	if err != nil {
+		return err
+	}
+	for _, rel := range present {
+		if !stored[rel] && !isBuildArtifact(modDir, rel) {
+			return fmt.Errorf("cached module %s@%s has a file it was not fetched with: %s", modulePath, ver, rel)
+		}
+	}
+	actual, err := hashModule(modDir)
+	if err != nil {
+		return err
+	}
+	if actual != expectedHash {
+		return &sum.HashMismatchError{Path: modDir, Expected: expectedHash, Actual: actual}
+	}
+	return nil
 }
 
 // GetGalaMod returns the gala.mod for a cached module, if present. A module

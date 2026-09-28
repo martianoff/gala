@@ -18,7 +18,6 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/module"
 	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -171,13 +170,6 @@ type galaAnalyzer struct {
 	// the work O(unique-packages) per worker process instead of
 	// O(visits-during-closure-walk).
 	pkgResultCache map[string]*pkgResultCacheEntry
-
-	// When true, ensureTranspiled is a no-op — used by the LSP, where the
-	// generated .gen.go files are never consumed (analyzePackage reads .gala
-	// directly to extract the metadata diagnostics need). The disk write is
-	// dead work in LSP context and contends heavily under parallel analyzers
-	// on Windows.
-	skipTranspileToDisk bool
 
 	// When true, the undefined-symbol check (GALA-E0023) does not run. Set for
 	// the LSP, whose contract is best-effort metadata for editor features
@@ -334,12 +326,8 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 	}
 }
 
-// NewGalaAnalyzerForLSP creates an analyzer configured for LSP use: the heavy
-// disk-writing transpile-on-import side effect (ensureTranspiled) is disabled
-// because its output (.gen.go files) is never consumed by the LSP pipeline.
-// analyzePackage produces all the metadata diagnostics need directly from
-// .gala sources. See the docstring on galaAnalyzer.skipTranspileToDisk and
-// the no-op guard in ensureTranspiled for details.
+// NewGalaAnalyzerForLSP creates an analyzer configured for LSP use, where the
+// undefined-symbol check does not run (see skipUndefinedCheck).
 func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projectRoot ...string) transpiler.Analyzer {
 	root := ""
 	if len(projectRoot) > 0 {
@@ -360,7 +348,6 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		packageLoadFailures: make(map[string]bool),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
-		skipTranspileToDisk: true,
 		skipUndefinedCheck:  true,
 	}
 }
@@ -749,14 +736,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
 					// First time analyzing this package - set placeholder to prevent infinite recursion
 					a.analyzedPkgs[path] = nil
-
-					// For external GALA packages, ensure they're transpiled
-					if isExternalGala && !isInternalGala {
-						if err := a.ensureTranspiled(path); err != nil {
-							// Log error but continue - we'll still try to analyze
-							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
-						}
-					}
 
 					importedAST, err := a.analyzePackage(relPath, path)
 					if err != nil {
@@ -2473,11 +2452,6 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 					}
 				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
 					a.analyzedPkgs[path] = nil
-					if isExternalGala && !isInternalGala {
-						if err := a.ensureTranspiled(path); err != nil {
-							fmt.Fprintf(os.Stderr, "Warning: failed to transpile dependency %s: %v\n", path, err)
-						}
-					}
 					importedAST, err := a.analyzePackage(relPath, path)
 					if err == nil {
 						a.storeAnalyzedPkg(path, importedAST)
@@ -3415,147 +3389,6 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		}
 		pkgAST.GoExports[pkg] = symbols
 	}
-}
-
-// ensureTranspiled checks if an external GALA package has been transpiled
-// and transpiles it if necessary. The transpiled .go files are written
-// to the same cache directory as the .gala source files.
-func (a *galaAnalyzer) ensureTranspiled(importPath string) error {
-	// LSP mode skips this entirely: the generated .gen.go files are never
-	// read back by the LSP pipeline (analyzePackage produces all the metadata
-	// needed for diagnostics directly from the .gala source). Performing the
-	// transpile + os.WriteFile here once per import on every DidOpen is the
-	// dominant cost of cross-package diagnostics under parallel load on
-	// Windows; skipping it brings the test from ~7s back to ~2s under the
-	// `--runs_per_test=20 --jobs=20` benchmark.
-	if a.skipTranspileToDisk {
-		return nil
-	}
-
-	// Find the package directory in the cache
-	dirPath, err := a.resolver.ResolvePackagePath(importPath)
-	if err != nil {
-		return err
-	}
-
-	// Check if any .go files already exist (indicating transpilation was done)
-	files, err := ioutil.ReadDir(dirPath)
-	if err != nil {
-		return err
-	}
-
-	hasGoFiles := false
-	var galaFiles []string
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		ext := filepath.Ext(f.Name())
-		if ext == ".go" && !strings.HasSuffix(f.Name(), "_test.go") {
-			hasGoFiles = true
-			break
-		}
-		if ext == ".gala" && !strings.HasSuffix(f.Name(), "_test.gala") {
-			galaFiles = append(galaFiles, f.Name())
-		}
-	}
-
-	// If already transpiled, nothing to do
-	if hasGoFiles {
-		return nil
-	}
-
-	// Transpile each .gala file
-	tr := transformer.NewGalaASTTransformer()
-	g := generator.NewGoCodeGenerator()
-
-	for _, galaFile := range galaFiles {
-		srcPath := filepath.Join(dirPath, galaFile)
-		content, err := ioutil.ReadFile(srcPath)
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", srcPath, err)
-		}
-
-		// Parse the file
-		tree, docs, err := a.parser.Parse(string(content))
-		if err != nil {
-			return fmt.Errorf("failed to parse %s: %w", srcPath, err)
-		}
-
-		// Child analyzer shares the parent's caches so its recursive
-		// Analyze hits already-populated entries instead of redoing
-		// std + every transitive GALA dep from scratch. Cycle safety
-		// still holds: the placeholder pattern (`analyzedPkgs[path]
-		// = nil` before recursion) breaks cycles regardless of who
-		// owns the map. parsedFileCacheMu must be the *same* mutex
-		// instance, not a fresh value-typed copy, or goroutines
-		// from parent and child would write to the shared map under
-		// different locks.
-		tempAnalyzer := &galaAnalyzer{
-			parser:             a.parser,
-			searchPaths:        a.searchPaths,
-			analyzedPkgs:       a.analyzedPkgs,
-			analyzedPkgImports: a.analyzedPkgImports,
-			checkedDirs:        a.checkedDirs,
-			siblingTreeCache:   a.siblingTreeCache,
-			parsedFileCache:    a.parsedFileCache,
-			parsedFileCacheMu:  a.parsedFileCacheMu,
-			pkgResultCache:     a.pkgResultCache,
-			resolver:           a.resolver,
-			cache:              a.cache,
-			// The undefined-symbol check's two directory caches are shared for
-			// the same reason as the rest: a dependency the child transpiles
-			// pulls in the same packages the parent already indexed.
-			localGoNames:        a.localGoNames,
-			importedNames:       a.importedNames,
-			packageLoadFailures: a.packageLoadFailures,
-		}
-
-		richAST, err := tempAnalyzer.Analyze(tree, docs, srcPath)
-		if err != nil {
-			return fmt.Errorf("failed to analyze %s: %w", srcPath, err)
-		}
-
-		// Source-mapped stack traces for imported/std GALA packages. Unlike the
-		// main Transpile() path, ensureTranspiled writes generated Go directly
-		// via Transform+Generate, so we set FilePath (which makes the transformer
-		// stamp per-statement / per-declaration line markers for THIS file) and
-		// then run the marker->`//line` rewrite ourselves below. A panic inside
-		// e.g. std/option.gala then reports option.gala:<n> rather than a
-		// generated-Go position. These two steps are atomic: FilePath emits raw
-		// `__gala_line_N` markers (undefined identifiers) that ONLY the rewrite
-		// turns into valid `//line` directives — skipping it would break the
-		// build.
-		richAST.FilePath = srcPath
-
-		// Transform to Go AST
-		fset, goAST, err := tr.Transform(richAST)
-		if err != nil {
-			return fmt.Errorf("failed to transform %s: %w", srcPath, err)
-		}
-
-		// Generate Go code
-		goCode, err := g.Generate(fset, goAST)
-		if err != nil {
-			return fmt.Errorf("failed to generate Go code for %s: %w", srcPath, err)
-		}
-
-		// Rewrite the line markers stamped above into Go `//line` directives
-		// (see the FilePath assignment). Must run whenever FilePath was set.
-		goCode, err = transpiler.InsertLineDirectives(goCode, srcPath)
-		if err != nil {
-			return fmt.Errorf("failed to insert line directives for %s: %w", srcPath, err)
-		}
-
-		// Write the Go file
-		goFileName := strings.TrimSuffix(galaFile, ".gala") + ".gen.go"
-		goPath := filepath.Join(dirPath, goFileName)
-		if err := os.WriteFile(goPath, []byte(goCode), 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", goPath, err)
-		}
-	}
-
-	return nil
 }
 
 // isPointerReceiver reports whether a method receiver is declared as a

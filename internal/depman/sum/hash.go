@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -81,7 +82,8 @@ func isHashScheme(hash string) bool {
 // WalkModuleFiles calls visit for every module-content file under dir (see
 // IsModuleContent) with its path and its slash-separated path relative to
 // dir. Symbolic links are skipped. It is the one definition of a module's
-// files: the fetch cache stores what it visits and HashDir hashes it.
+// files: the fetch cache stores what it visits, and records the list its hash
+// covers.
 func WalkModuleFiles(dir string, visit func(path, rel string) error) error {
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -107,15 +109,41 @@ func WalkModuleFiles(dir string, visit func(path, rel string) error) error {
 	})
 }
 
-// HashDir computes the h2 hash of a module directory (see hashPrefixH2).
+// IsH2 reports whether hash is an h2 module hash (see hashPrefixH2).
+func IsH2(hash string) bool {
+	return strings.HasPrefix(hash, hashPrefixH2)
+}
+
+// HashDir computes the h2 hash of a module directory (see hashPrefixH2),
+// covering every module-content file in it.
 func HashDir(dir string) (string, error) {
+	files, err := ModuleFiles(dir)
+	if err != nil {
+		return "", err
+	}
+	return HashFiles(dir, files)
+}
+
+// ModuleFiles lists the module-content files under dir (see WalkModuleFiles)
+// by slash-separated relative path, sorted.
+func ModuleFiles(dir string) ([]string, error) {
 	var files []string
 	if err := WalkModuleFiles(dir, func(_, rel string) error {
 		files = append(files, rel)
 		return nil
 	}); err != nil {
-		return "", fmt.Errorf("failed to walk directory: %w", err)
+		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// HashFiles computes the h2 hash of the files of dir named by files, which are
+// slash-separated relative paths. It is HashDir over a known file list: the
+// fetch cache records the files a module was stored with, and hashes exactly
+// those, so a file written into the cache later cannot change the hash.
+func HashFiles(dir string, files []string) (string, error) {
+	files = slices.Clone(files)
 	sort.Strings(files)
 
 	h := sha256.New()
@@ -213,7 +241,7 @@ func Verify(dir, expected string) error {
 	var actual string
 	var err error
 	switch {
-	case strings.HasPrefix(expected, hashPrefixH2):
+	case IsH2(expected):
 		actual, err = HashDir(dir)
 	case strings.HasPrefix(expected, hashPrefixH1):
 		actual, err = hashDirH1(dir)

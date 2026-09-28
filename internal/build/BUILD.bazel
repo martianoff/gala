@@ -46,6 +46,7 @@ go_test(
         "gomod_test.go",
         "main_package_test.go",
         "main_root_subpackage_test_test.go",
+        "module_cache_immutable_test.go",
         "nested_subpackage_test.go",
         "sourcehash_test.go",
         "sourcemap_stacktrace_test.go",
@@ -61,7 +62,9 @@ go_test(
     ],
     embed = [":build"],
     deps = [
+        "//internal/depman/fetch",
         "//internal/depman/mod",
+        "//internal/depman/sum",
         "//internal/stdlib",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",

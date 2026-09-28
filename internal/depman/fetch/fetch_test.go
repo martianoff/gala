@@ -60,10 +60,13 @@ func TestConfig_IsCached(t *testing.T) {
 }
 
 // markComplete stands in for a finished Store in tests that lay out a cached
-// module by hand.
+// module by hand: the marker lists the files the directory holds, as Store's
+// does.
 func markComplete(t *testing.T, modPath string) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(filepath.Join(modPath, completeMarkerName), nil, 0644))
+	files, err := sum.ModuleFiles(modPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(modPath, completeMarkerName), []byte(strings.Join(files, "\n")), 0644))
 }
 
 func TestCache_Store(t *testing.T) {
@@ -154,9 +157,9 @@ func TestCache_Hash(t *testing.T) {
 	err = os.MkdirAll(modPath, 0755)
 	require.NoError(t, err)
 
-	markComplete(t, modPath)
 	err = os.WriteFile(filepath.Join(modPath, "lib.gala"), []byte("package lib\n"), 0644)
 	require.NoError(t, err)
+	markComplete(t, modPath)
 
 	// Compute hash
 	hash, err := cache.Hash("github.com/test/lib", "v1.0.0")
@@ -181,9 +184,9 @@ func TestCache_Remove(t *testing.T) {
 	modPath := config.ModulePath("github.com/test/lib", "v1.0.0")
 	err = os.MkdirAll(modPath, 0755)
 	require.NoError(t, err)
-	markComplete(t, modPath)
 	err = os.WriteFile(filepath.Join(modPath, "lib.gala"), []byte("package lib\n"), 0644)
 	require.NoError(t, err)
+	markComplete(t, modPath)
 
 	assert.True(t, config.IsCached("github.com/test/lib", "v1.0.0"))
 
@@ -240,13 +243,13 @@ func TestCache_Info(t *testing.T) {
 	err = os.MkdirAll(modPath, 0755)
 	require.NoError(t, err)
 
-	markComplete(t, modPath)
 	err = os.WriteFile(filepath.Join(modPath, "lib.gala"), []byte("package lib\n"), 0644)
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(modPath, "utils.gala"), []byte("package lib\n"), 0644)
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(modPath, "gala.mod"), []byte("module github.com/test/lib\n"), 0644)
 	require.NoError(t, err)
+	markComplete(t, modPath)
 
 	// Get info
 	info, err := cache.Info("github.com/test/lib", "v1.0.0")

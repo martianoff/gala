@@ -34,7 +34,7 @@ func (f *GitFetcher) Fetch(modulePath, ver string) (string, string, error) {
 	// Check if already cached
 	if f.cache.config.IsCached(modulePath, ver) {
 		modPath := f.cache.config.ModulePath(modulePath, ver)
-		hash, err := sum.HashDir(modPath)
+		hash, err := hashModule(modPath)
 		if err != nil {
 			return "", "", err
 		}
@@ -77,7 +77,7 @@ func (f *GitFetcher) Fetch(modulePath, ver string) (string, string, error) {
 
 	// Compute hash
 	modPath := f.cache.config.ModulePath(modulePath, ver)
-	hash, err := sum.HashDir(modPath)
+	hash, err := hashModule(modPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to compute hash: %w", err)
 	}
