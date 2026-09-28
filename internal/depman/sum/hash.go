@@ -82,7 +82,8 @@ func isHashScheme(hash string) bool {
 // WalkModuleFiles calls visit for every module-content file under dir (see
 // IsModuleContent) with its path and its slash-separated path relative to
 // dir. Symbolic links are skipped. It is the one definition of a module's
-// files: the fetch cache stores what it visits and HashDir hashes it.
+// files: the fetch cache stores what it visits, and records the list its hash
+// covers.
 func WalkModuleFiles(dir string, visit func(path, rel string) error) error {
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {

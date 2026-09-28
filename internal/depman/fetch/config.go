@@ -130,9 +130,11 @@ func (c *Config) IsCached(modulePath, version string) bool {
 //
 // The marker's content lists the files the module was stored with, one
 // slash-separated path per line, and the module hash covers exactly those (see
-// moduleFiles). A marker written before the list existed is empty; the name is
-// unchanged so that such a tree, and gala versions that only check for the
-// marker, keep working without a refetch.
+// moduleFiles). A marker written before the list existed is empty, and its
+// tree no longer counts as complete either: builds used to write into cached
+// modules, so such a tree may hold files the module never shipped, and it is
+// fetched again once. The name is unchanged so that gala versions that only
+// check for the marker keep reading trees stored with a list.
 const completeMarkerName = ".gala-module-complete-v2"
 
 // IsCompleteModuleDir reports whether dir holds a module version a fetch
@@ -143,5 +145,5 @@ const completeMarkerName = ".gala-module-complete-v2"
 // staged tree before the rename that made the tree visible.
 func IsCompleteModuleDir(dir string) bool {
 	info, err := os.Stat(filepath.Join(dir, completeMarkerName))
-	return err == nil && !info.IsDir()
+	return err == nil && !info.IsDir() && info.Size() > 0
 }

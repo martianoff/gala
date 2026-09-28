@@ -69,6 +69,8 @@ func runModVerify(cmd *cobra.Command, args []string) {
 			if mismatch, ok := err.(*sum.HashMismatchError); ok {
 				fmt.Printf("  Expected: %s\n", mismatch.Expected)
 				fmt.Printf("  Actual:   %s\n", mismatch.Actual)
+			} else {
+				fmt.Printf("  %v\n", err)
 			}
 			errors++
 		} else {

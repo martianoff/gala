@@ -70,22 +70,24 @@ func TestCache_VerifyRejectsAddedSource(t *testing.T) {
 	assert.Contains(t, err.Error(), "extra.gala")
 }
 
-// A module stored before the completion marker listed its files, and then
-// written into by a build, still hashes as a clean fetch does: what builds
-// wrote there is left out.
-func TestCache_LegacyMarkerIgnoresBuildArtifacts(t *testing.T) {
+// A module stored before the completion marker listed its files may hold
+// files an older gala's build wrote into it, so it is not trusted: it counts
+// as not cached, and the next fetch replaces it with a clean tree.
+func TestCache_LegacyMarkerIsRefetched(t *testing.T) {
 	cache, sourceDir := newStoreFixture(t)
 	modPath := cache.Config().ModulePath("github.com/test/lib", "v1.0.0")
 	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
 	// As an older gala left it: an empty marker, and the build's files.
 	require.NoError(t, os.WriteFile(filepath.Join(modPath, completeMarkerName), nil, 0o644))
 	writeFiles(t, modPath, buildArtifacts)
-	require.True(t, cache.Config().IsCached("github.com/test/lib", "v1.0.0"), "a legacy tree stays cached")
+	require.False(t, cache.Config().IsCached("github.com/test/lib", "v1.0.0"))
 
+	require.NoError(t, cache.Store("github.com/test/lib", "v1.0.0", sourceDir))
+	require.True(t, cache.Config().IsCached("github.com/test/lib", "v1.0.0"))
+	assert.NoFileExists(t, filepath.Join(modPath, "lib.gen.go"), "the refetch must replace the old tree")
 	clean, err := sum.HashDir(sourceDir)
 	require.NoError(t, err)
 	got, err := cache.Hash("github.com/test/lib", "v1.0.0")
 	require.NoError(t, err)
 	assert.Equal(t, clean, got)
-	require.NoError(t, cache.Verify("github.com/test/lib", "v1.0.0", clean))
 }

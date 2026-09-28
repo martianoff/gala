@@ -258,38 +258,20 @@ func copyModuleFiles(sourceDir, destDir string) ([]string, error) {
 // those too, so `gala mod tidy` after a build recorded a gala.sum entry that a
 // clean fetch did not reproduce. Nothing writes into the cache any more, but a
 // cache shared with an older gala still may.
-//
-// A tree stored before markers carried the list has an empty one. Its files
-// are those in the directory minus what builds wrote there (see
-// isBuildArtifact), which for a module that ships no such files of its own is
-// the list it was stored with.
 func moduleFiles(modDir string) ([]string, error) {
 	manifest, err := os.ReadFile(filepath.Join(modDir, completeMarkerName))
-	if err != nil {
-		return nil, fmt.Errorf("cannot read the file list of cached module %s: %w", modDir, err)
+	if err != nil || len(manifest) == 0 {
+		return nil, fmt.Errorf("cached module %s has no file list; delete it to fetch it again", modDir)
 	}
-	if len(manifest) > 0 {
-		return strings.Split(string(manifest), "\n"), nil
-	}
-	all, err := sum.ModuleFiles(modDir)
-	if err != nil {
-		return nil, err
-	}
-	files := make([]string, 0, len(all))
-	for _, rel := range all {
-		if !isBuildArtifact(modDir, rel) {
-			files = append(files, rel)
-		}
-	}
-	return files, nil
+	return strings.Split(string(manifest), "\n"), nil
 }
 
 // isBuildArtifact reports whether rel, a file of the cached module in modDir,
-// is one a gala build wrote there rather than one the module shipped: a file
-// under a `.gala` directory (the analysis cache), or `x.gen.go` beside an
-// `x.gala` (the transpiled package).
+// is one an older gala's build wrote there rather than a file a build reads: a
+// file under a `.gala` directory (its analysis cache), or `x.gen.go` beside an
+// `x.gala` (its transpiled copy of that package).
 func isBuildArtifact(modDir, rel string) bool {
-	if rel == ".gala" || strings.HasPrefix(rel, ".gala/") || strings.Contains(rel, "/.gala/") {
+	if strings.HasPrefix(rel, ".gala/") || strings.Contains(rel, "/.gala/") {
 		return true
 	}
 	stem, ok := strings.CutSuffix(rel, ".gen.go")
@@ -307,7 +289,11 @@ func hashModule(modDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return sum.HashFiles(modDir, files)
+	hash, err := sum.HashFiles(modDir, files)
+	if err != nil {
+		return "", fmt.Errorf("cached module %s is damaged (%w); delete it to fetch it again", modDir, err)
+	}
+	return hash, nil
 }
 
 // Remove removes a module version from the cache.
@@ -332,9 +318,10 @@ func (c *Cache) Hash(modulePath, ver string) (string, error) {
 
 // Verify verifies a cached module against an expected hash. An h2 hash is
 // checked over the files the module was stored with, and a file added to the
-// module since — one a build would read, not a build's own output (see
-// isBuildArtifact) — fails verification too, since the hash cannot vouch for
-// it. An h1 hash, from an older gala.sum, is checked as it always was.
+// module since fails verification too, since the hash cannot vouch for it —
+// except the files an older gala's build wrote there (see isBuildArtifact),
+// which no build reads. An h1 hash, from an older gala.sum, is checked as it
+// always was.
 func (c *Cache) Verify(modulePath, ver, expectedHash string) error {
 	modDir := c.config.ModulePath(modulePath, ver)
 	if !sum.IsH2(expectedHash) {
@@ -357,7 +344,7 @@ func (c *Cache) Verify(modulePath, ver, expectedHash string) error {
 			return fmt.Errorf("cached module %s@%s has a file it was not fetched with: %s", modulePath, ver, rel)
 		}
 	}
-	actual, err := sum.HashFiles(modDir, files)
+	actual, err := hashModule(modDir)
 	if err != nil {
 		return err
 	}

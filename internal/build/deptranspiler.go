@@ -2,6 +2,7 @@ package build
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -101,12 +102,9 @@ func (dt *DepTranspiler) collectGalaDeps(f *mod.File, allDeps map[string]mod.Req
 		}
 		visited[key] = true
 
-		// Check if cached dir (or local replacement) has .gala files, in any
-		// of its packages: a module whose GALA code sits only in subpackages
-		// is a GALA module too, and has to be transpiled like one.
+		// Check if cached dir (or local replacement) is a GALA module.
 		cachedDir := dt.effectiveDepDir(req)
-		galaFiles, err := findGalaFilesRecursive(cachedDir)
-		if err != nil || len(galaFiles) == 0 {
+		if !isGalaModuleDir(cachedDir) {
 			// No .gala files — pure Go package, skip transpilation
 			continue
 		}
@@ -175,9 +173,9 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	// The analysis cache is the project's, never srcDir's: srcDir is the
-	// module cache, which a build must leave exactly as it was fetched.
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, dt.workspace.ProjectDir)
+	// The analysis cache lives beside the output, never in srcDir: srcDir is
+	// the module cache, which a build must leave exactly as it was fetched.
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, outDir)
 
 	// Process subpackages in deterministic order for stable verbose output.
 	pkgDirs := make([]string, 0, len(filesByPackageDir))
@@ -478,4 +476,41 @@ func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
 
 		return nil
 	})
+}
+
+// isGalaModuleDir reports whether the dependency in dir is a GALA module, to be
+// transpiled, rather than a Go one: it has .gala files in its root package, or
+// it declares itself one with a gala.mod and has .gala files in some package.
+//
+// The second form is a module whose GALA code sits only in subpackages. The
+// gala.mod is required for it so that a Go module that merely carries a GALA
+// example somewhere in its tree keeps being built as the Go module it is. A
+// tree that cannot be walked, with a gala.mod present, counts as GALA, so the
+// transpile reports the problem instead of the build taking it for Go.
+func isGalaModuleDir(dir string) bool {
+	if files, err := findGalaFiles(dir); err == nil && len(files) > 0 {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(dir, "gala.mod")); err != nil {
+		return false
+	}
+	found := false
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if name := d.Name(); path != dir && (strings.HasPrefix(name, ".") || name == "vendor" ||
+				name == "testdata" || strings.HasPrefix(name, "bazel-") || name == "_gala") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".gala") && !strings.HasSuffix(path, "_test.gala") {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found || err != nil
 }
