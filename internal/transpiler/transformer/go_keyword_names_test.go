@@ -89,20 +89,46 @@ func TestGoKeywordNamesAreRejected(t *testing.T) {
 // E0036's replacement hint, and every other keyword is still a name, E0055.
 func TestGoKeywordBareStatements(t *testing.T) {
 	trans := newForbiddenBuiltinTranspiler()
-	for _, kw := range goOnlyKeywords {
-		t.Run(kw, func(t *testing.T) {
-			src := "package main\n\nfunc main() {\n    for i := 0; i < 3; i++ {\n        " + kw + "\n    }\n}\n"
-			_, err := trans.Transpile(src, "go_keyword_names_test.gala")
-			switch {
-			case kw == "break" || kw == "continue":
-				require.NoError(t, err)
-			case transformer.ForbiddenStatementKeywords()[kw]:
-				require.ErrorContains(t, err, string(galaerr.CodeForbiddenStatementKeyword))
-			default:
-				require.ErrorContains(t, err, string(galaerr.CodeGoKeywordAsName))
-			}
-		})
+	shapes := []struct {
+		name string
+		src  string
+		// loopControl: break / continue compile here.
+		loopControl bool
+	}{
+		{"loop body", "package main\n\nfunc main() {\n    for i := 0; i < 3; i++ {\n        KW\n    }\n}\n", true},
+		{"match arm", "package main\n\nfunc f(n int) {\n    n match {\n        case 1 => KW\n        case _ => Println(n)\n    }\n}\n", false},
+		{"partial function arm", "package main\n\nfunc main() {\n    val pf = { case 1 => KW }\n    Println(pf)\n}\n", false},
 	}
+	for _, shape := range shapes {
+		for _, kw := range goOnlyKeywords {
+			t.Run(shape.name+"/"+kw, func(t *testing.T) {
+				src := strings.ReplaceAll(shape.src, "KW", kw)
+				_, err := trans.Transpile(src, "go_keyword_names_test.gala")
+				switch {
+				case kw == "break" || kw == "continue":
+					if shape.loopControl {
+						require.NoError(t, err)
+					}
+				case transformer.ForbiddenStatementKeywords()[kw]:
+					require.ErrorContains(t, err, string(galaerr.CodeForbiddenStatementKeyword))
+				default:
+					require.ErrorContains(t, err, string(galaerr.CodeGoKeywordAsName))
+					require.ErrorContains(t, err, `"`+kw+`" is a Go keyword and is not part of GALA`)
+				}
+			})
+		}
+	}
+}
+
+// TestGoKeywordUseKeepsReplacementHint: a statement keyword written as a call
+// (`go(work())`) is E0055, not E0036, but it still names E0036's replacement
+// rather than telling the author to rename something they never declared.
+func TestGoKeywordUseKeepsReplacementHint(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	_, err := trans.Transpile("package main\n\nfunc work() {}\n\nfunc main() {\n    go(work())\n}\n", "go_keyword_names_test.gala")
+	require.ErrorContains(t, err, string(galaerr.CodeGoKeywordAsName))
+	require.ErrorContains(t, err, `"go" is a Go keyword and is not part of GALA`)
+	require.ErrorContains(t, err, "go_interop.Spawn")
 }
 
 // markerPosition returns the 1-based line and 0-based column of the single @

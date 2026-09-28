@@ -74,6 +74,14 @@ func ForbiddenStatementKeywords() map[string]bool {
 	return out
 }
 
+// ForbiddenStatementKeywordSuggestion returns the GALA replacement GALA-E0036
+// suggests for a Go-only statement keyword, so a check that meets the keyword
+// in another shape (`go(f)`) can point at the same replacement.
+func ForbiddenStatementKeywordSuggestion(name string) (string, bool) {
+	s, ok := forbiddenStatementKeywordSuggestions[name]
+	return s, ok
+}
+
 // checkForbiddenStatementKeyword rejects a bare Go-only statement keyword
 // (`defer`, `go`, `goto`, `fallthrough`, `select`, `chan`) that the parser
 // accepted as a lone identifier expression-statement. Such statements only

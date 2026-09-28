@@ -81,13 +81,29 @@ func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
 	}
 	name := id.GetText()
 	tok := id.GetStart()
+	msg, hint := keywordUseDiagnostic(name)
+	if firstDecl != nil {
+		msg = fmt.Sprintf("%q is a Go keyword and cannot be used as a name", name)
+		hint = fmt.Sprintf("rename it; GALA compiles to Go, where %q is reserved, so nothing a GALA "+
+			"program declares can have that name", name)
+	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeGoKeywordAsName,
-		tok.GetLine(), tok.GetColumn(),
-		fmt.Sprintf("%q is a Go keyword and cannot be used as a name", name),
-		fmt.Sprintf("rename it; GALA compiles to Go, where %q is reserved, so nothing a GALA "+
-			"program declares can have that name", name),
+		tok.GetLine(), tok.GetColumn(), msg, hint,
 	).WithSpan(tok.GetColumn() + len(name))
+}
+
+// keywordUseDiagnostic words the error for a keyword used without a
+// declaration — `go(f)`, `Println(default)`, a bare `switch` — where the
+// author wrote Go rather than a name. A keyword GALA-E0036 knows keeps that
+// check's replacement hint.
+func keywordUseDiagnostic(name string) (msg, hint string) {
+	msg = fmt.Sprintf("%q is a Go keyword and is not part of GALA", name)
+	if suggestion, ok := transformer.ForbiddenStatementKeywordSuggestion(name); ok {
+		return msg, suggestion
+	}
+	return msg, fmt.Sprintf("GALA has no `%s`; if this refers to something you declared, "+
+		"rename that declaration", name)
 }
 
 // isBareStatement reports whether id is a whole statement on its own: `break`
