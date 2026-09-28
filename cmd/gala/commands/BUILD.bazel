@@ -69,6 +69,7 @@ go_test(
     srcs = [
         "doc_prose_test.go",
         "imports_test.go",
+        "mod_tidy_sum_test.go",
         "mod_tidy_test.go",
         "new_test.go",
         "project_test.go",
@@ -77,7 +78,9 @@ go_test(
     ],
     embed = [":commands"],
     deps = [
+        "//internal/depman/fetch",
         "//internal/depman/mod",
+        "//internal/depman/sum",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
