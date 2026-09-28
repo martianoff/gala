@@ -6,6 +6,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -32,6 +33,16 @@ import (
 // loop control, and a bare `defer`, `go`, `goto`, `fallthrough`, `select` or
 // `chan` statement is GALA-E0036's, which names the GALA replacement.
 
+// bareStatementKeywords are the keywords a bare statement may consist of
+// without being a name: loop control, and GALA-E0036's statement keywords.
+// Any other keyword standing alone as a statement (`switch`) is still E0055.
+var bareStatementKeywords = func() map[string]bool {
+	out := transformer.ForbiddenStatementKeywords()
+	out["break"] = true
+	out["continue"] = true
+	return out
+}()
+
 // checkGoKeywordNames reports the first identifier in sf spelled like a Go
 // keyword, preferring a declaration over a use, so a function named `go` that
 // is called above its declaration is reported where it is declared — the place
@@ -44,7 +55,8 @@ func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
 			return
 		}
 		if id, ok := node.(*grammar.IdentifierContext); ok {
-			if !token.IsKeyword(id.GetText()) || isBareStatement(id) {
+			name := id.GetText()
+			if !token.IsKeyword(name) || (bareStatementKeywords[name] && isBareStatement(id)) {
 				return
 			}
 			if declaresName(id) {
@@ -81,6 +93,9 @@ func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
 // isBareStatement reports whether id is a whole statement on its own: `break`
 // in a loop body or a match arm. The identifier's ancestors up to that
 // statement each wrap a single child, so the walk climbs while that holds.
+// A skipped `defer` / `go` / ... statement is left to GALA-E0036 (the
+// transformer's checkForbiddenStatementKeyword), which inspects statements
+// of this shape.
 func isBareStatement(id *grammar.IdentifierContext) bool {
 	var node antlr.Tree = id
 	for {

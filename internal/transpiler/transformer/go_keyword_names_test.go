@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/stretchr/testify/require"
 )
@@ -80,6 +81,27 @@ func TestGoKeywordNamesAreRejected(t *testing.T) {
 				require.Equal(t, wantCol+len(kw), se.EndColumn, "span of %v", err)
 			})
 		}
+	}
+}
+
+// TestGoKeywordBareStatements pins who reports a keyword standing alone as a
+// statement: break / continue are loop control, the E0036 keywords get
+// E0036's replacement hint, and every other keyword is still a name, E0055.
+func TestGoKeywordBareStatements(t *testing.T) {
+	trans := newForbiddenBuiltinTranspiler()
+	for _, kw := range goOnlyKeywords {
+		t.Run(kw, func(t *testing.T) {
+			src := "package main\n\nfunc main() {\n    for i := 0; i < 3; i++ {\n        " + kw + "\n    }\n}\n"
+			_, err := trans.Transpile(src, "go_keyword_names_test.gala")
+			switch {
+			case kw == "break" || kw == "continue":
+				require.NoError(t, err)
+			case transformer.ForbiddenStatementKeywords()[kw]:
+				require.ErrorContains(t, err, string(galaerr.CodeForbiddenStatementKeyword))
+			default:
+				require.ErrorContains(t, err, string(galaerr.CodeGoKeywordAsName))
+			}
+		})
 	}
 }
 
