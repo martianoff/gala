@@ -107,6 +107,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0051](/docs/errors/gala-e0051/) | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | Literals |
 | [GALA-E0052](/docs/errors/gala-e0052/) | Function declared inside a function body | Declarations |
 | [GALA-E0053](/docs/errors/gala-e0053/) | Pointer method on a copy of a value that must not be copied | Immutability |
+| [GALA-E0054](/docs/errors/gala-e0054/) | Value called as a function | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -140,7 +141,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
-**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type. See [Type Inference](/features/type-inference/).
+**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one. See [Type Inference](/features/type-inference/).
 
 **Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import. See [Dependency Management](/docs/dependency-management/).
 

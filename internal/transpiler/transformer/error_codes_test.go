@@ -669,6 +669,20 @@ func main() {
 			expectCode:     galaerr.CodeIllegalSourceCharacter,
 			expectContains: "4:16 invalid UTF-8 encoding (byte 0xE9)",
 		},
+		{
+			name: "GALA-E0054 val of a struct type called as a function",
+			input: `package main
+
+struct Color(N int)
+
+val Red = Color(1)
+
+func main() {
+    Println(Red())
+}`,
+			expectCode:     galaerr.CodeValueCalledAsFunction,
+			expectContains: "Red is a val of type Color, not a function",
+		},
 	}
 
 	for _, tc := range cases {

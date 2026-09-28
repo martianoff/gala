@@ -71,6 +71,7 @@ go_test(
         "symbols_test.go",
         "typeatpos_test.go",
         "uri_internal_test.go",
+        "value_called_as_function_test.go",
     ],
     data = [
         "//collection_immutable:gala_sources",

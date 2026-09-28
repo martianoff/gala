@@ -156,7 +156,12 @@ func (t *galaASTTransformer) unknownMethodError(
 	}
 	// A field holding a function is called the same way a method is; the field
 	// set is consulted so `cfg.OnEvent()` is not mistaken for a missing method.
-	if _, isField := typeMeta.Fields[method]; isField {
+	// A field of a type that is not callable is the other mistake: `p.N()`
+	// for an int field N (GALA-E0054).
+	if fieldType, isField := typeMeta.Fields[method]; isField {
+		if t.nonCallableType(fieldType, typeMeta.TypeParams) {
+			return fieldNotCallableError(typeMeta, method, fieldType, line, col, exact)
+		}
 		return nil
 	}
 
@@ -243,11 +248,22 @@ func nearestName(name string, candidates []string) string {
 
 // methodNameStartOf locates the `.name` suffix that precedes this argument
 // list, so the caret lands on the method name rather than on the parenthesis.
+func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
+	tok := calledMemberToken(node)
+	if tok == nil {
+		return 0, 0, false
+	}
+	return tok.GetLine(), tok.GetColumn(), true
+}
+
+// calledMemberToken returns the identifier of the `.name` suffix that
+// immediately precedes the call suffix holding node, or nil when the call is
+// not of a member — `f(x)`, or `g()(x)`, whose preceding suffix is a call.
 //
 // `postfixExpr: primaryExpr postfixSuffix*` means `xs.Sum()` carries two
 // suffixes — `.Sum` and `(...)` — and the argument list belongs to the second.
 // The method name is the identifier of the one before it.
-func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
+func calledMemberToken(node antlr.Tree) antlr.Token {
 	// Walk up to the postfixSuffix that owns this argument list.
 	var suffix *grammar.PostfixSuffixContext
 	for n := node; n != nil; n = n.GetParent() {
@@ -257,11 +273,11 @@ func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
 		}
 	}
 	if suffix == nil {
-		return 0, 0, false
+		return nil
 	}
 	pe, isPE := suffix.GetParent().(*grammar.PostfixExprContext)
 	if !isPE {
-		return 0, 0, false
+		return nil
 	}
 	all := pe.AllPostfixSuffix()
 	for i, s := range all {
@@ -269,10 +285,9 @@ func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
 			continue
 		}
 		if id := all[i-1].Identifier(); id != nil {
-			tok := id.GetStart()
-			return tok.GetLine(), tok.GetColumn(), true
+			return id.GetStart()
 		}
-		return 0, 0, false
+		return nil
 	}
-	return 0, 0, false
+	return nil
 }

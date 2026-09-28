@@ -584,6 +584,23 @@ const (
 	// Builder or Buffer are lost. The value has to live in a `var` or behind a
 	// pointer.
 	CodeNoCopyReceiverCopied ErrorCode = "GALA-E0053"
+
+	// E0054: a value was called as a function — a val, var or parameter, or a
+	// struct field, whose type is not a function type and has no Apply
+	// method, as in `val Red = Color(1)` followed by `Red()`.
+	//
+	// The call was emitted as written and left to `go build`, which reported
+	// it against the generated expression, naming the `.Get()` unwrap the
+	// transpiler inserts for a val:
+	//
+	//	invalid operation: cannot call Red.Get() (value of struct type Color): Color is not a function
+	//
+	// The check fires only when the value's type is known not to be callable:
+	// a predeclared type such as int or string, or a GALA struct or sealed
+	// type without an Apply method. A function-typed value, a type with Apply,
+	// an interface, a type parameter and any type GALA cannot see into are
+	// left alone.
+	CodeValueCalledAsFunction ErrorCode = "GALA-E0054"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
