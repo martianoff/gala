@@ -127,6 +127,12 @@ func (c *Config) IsCached(modulePath, version string) bool {
 // module, not only its sources; a tree published under an earlier marker lacks
 // the module's data files, so it no longer counts as complete and is fetched
 // again once.
+//
+// The marker's content lists the files the module was stored with, one
+// slash-separated path per line, and the module hash covers exactly those (see
+// moduleFiles). A marker written before the list existed is empty; the name is
+// unchanged so that such a tree, and gala versions that only check for the
+// marker, keep working without a refetch.
 const completeMarkerName = ".gala-module-complete-v2"
 
 // IsCompleteModuleDir reports whether dir holds a module version a fetch

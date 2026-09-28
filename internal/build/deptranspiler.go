@@ -101,9 +101,11 @@ func (dt *DepTranspiler) collectGalaDeps(f *mod.File, allDeps map[string]mod.Req
 		}
 		visited[key] = true
 
-		// Check if cached dir (or local replacement) has .gala files
+		// Check if cached dir (or local replacement) has .gala files, in any
+		// of its packages: a module whose GALA code sits only in subpackages
+		// is a GALA module too, and has to be transpiled like one.
 		cachedDir := dt.effectiveDepDir(req)
-		galaFiles, err := findGalaFiles(cachedDir)
+		galaFiles, err := findGalaFilesRecursive(cachedDir)
 		if err != nil || len(galaFiles) == 0 {
 			// No .gala files — pure Go package, skip transpilation
 			continue
@@ -173,7 +175,9 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	p := transpiler.NewAntlrGalaParser()
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, srcDir)
+	// The analysis cache is the project's, never srcDir's: srcDir is the
+	// module cache, which a build must leave exactly as it was fetched.
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, dt.workspace.ProjectDir)
 
 	// Process subpackages in deterministic order for stable verbose output.
 	pkgDirs := make([]string, 0, len(filesByPackageDir))

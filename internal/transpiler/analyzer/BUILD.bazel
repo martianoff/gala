@@ -19,7 +19,6 @@ go_library(
         "//galaerr",
         "//internal/parser/grammar",
         "//internal/transpiler",
-        "//internal/transpiler/generator",
         "//internal/transpiler/module",
         "//internal/transpiler/profiler",
         "//internal/transpiler/registry",

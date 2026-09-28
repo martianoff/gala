@@ -647,27 +647,6 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 const markerRewriteBugHint = "this is a transpiler bug, not an error in your code — " +
 	"please file an issue at https://github.com/martianoff/gala/issues with the source that triggered it"
 
-// InsertLineDirectives is the exported entry point to the source-map line-marker
-// rewrite for callers outside this package. The analyzer's per-file transpilation
-// of imported/std GALA packages (ensureTranspiled) writes generated Go directly
-// via Transform+Generate, bypassing Transpile; it uses this to apply the same
-// `//line` rewrite so panics inside an imported GALA library also report the
-// library's `.gala` source position.
-//
-// The transformer only stamps markers when the RichAST carries a FilePath, so
-// callers MUST set richAST.FilePath before Transform and pass the same path here;
-// otherwise no markers are emitted and this is a no-op. Conversely, if markers
-// WERE emitted (FilePath set) this rewrite MUST run, or the raw `__gala_line_N`
-// markers remain as undefined identifiers and the generated Go will not compile.
-//
-// That invariant is enforced rather than assumed: the rewrite returns an error
-// instead of marker-laden code whenever it cannot account for every marker (see
-// insertLineDirectives). Callers MUST propagate it — emitting the code anyway
-// ships internal markers as Go source.
-func InsertLineDirectives(code, sourceFile string) (string, error) {
-	return insertLineDirectives(code, sourceFile)
-}
-
 // describeUnparseableDump writes the Go the transpiler just produced to a temp
 // file and returns a fragment naming it, or "" if it could not be written.
 //

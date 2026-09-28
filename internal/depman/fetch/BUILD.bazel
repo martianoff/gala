@@ -25,6 +25,7 @@ go_test(
     srcs = [
         "fetch_git_test.go",
         "fetch_test.go",
+        "manifest_test.go",
     ],
     embed = [":fetch"],
     deps = [
