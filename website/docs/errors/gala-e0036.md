@@ -106,7 +106,7 @@ The remaining four keywords have no GALA equivalent by design; the table's hints
 
 A GALA program should not depend on the shape of the Go the transpiler happens to emit. The bare-keyword forms did exactly that: whether `defer` "worked" depended on gofmt re-absorbing the next statement, so adding a blank line or reordering two statements could silently change whether cleanup ran at all. Rejecting the bare form removes that coupling and points at constructs — `use`, the `resource` combinators, `Future` — that make the guarantee explicit and are checked.
 
-**Scope.** Bare identifier statements only, and the check is **resolver-aware**: like the builtin check ([GALA-E0035](/docs/errors/gala-e0035/)), a name the program itself declared is that declaration, not a leaked keyword. A user-defined function, a local `val`/`var`/parameter, or a declared type named `select` is left alone. Anything with a postfix, operator, or argument list (`x.defer()`) is an ordinary expression and is not checked.
+**Scope.** Bare identifier statements only. Unlike the builtin check ([GALA-E0035](/docs/errors/gala-e0035/)), no declaration can share these names: a val, parameter, function, type or other name spelled like a Go keyword is rejected where it is declared, with [GALA-E0055](/docs/errors/gala-e0055/). Any other use of the word — with a postfix, operator or argument list (`defer()`) — is GALA-E0055 too.
 
 ---
 

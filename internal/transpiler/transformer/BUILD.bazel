@@ -129,6 +129,7 @@ go_test(
         "get_generic_pointer_receiver_test.go",
         "go_generic_multireturn_instantiation_test.go",
         "go_generic_return_instantiation_test.go",
+        "go_keyword_names_test.go",
         "go_results_test.go",
         "go_method_func_param_test.go",
         "go_subpackage_import_path_test.go",

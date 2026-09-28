@@ -797,6 +797,20 @@ Bare Go builtins are **not** part of GALA's surface: calling one is a transpile 
 | `panic(v)` | `go_builtins.Panic(v)` — but prefer `Option` / `Try` / `Either` |
 | `recover()` | not available — `Try` captures panics |
 
+### Names That Are Go Keywords
+
+GALA reserves some of Go's keywords itself (`func`, `type`, `struct`, `interface`, `map`, `if`, `else`, `for`, `range`, `return`, `case`, `var`, `import`, `package`). The others — `break`, `chan`, `const`, `continue`, `default`, `defer`, `fallthrough`, `go`, `goto`, `select`, `switch` — are still **reserved as names**, because every name a GALA program declares is a name in the Go it compiles to. Using one as a name is a transpile error ([GALA-E0055](/docs/errors/gala-e0055/)) in every position: a `val`, `var` or `:=` binding, a parameter or lambda parameter, a pattern binding, a struct field, a function or method, a type or type parameter, the package name, and an import alias. The error points at the declaration.
+
+<!-- doc-check: error GALA-E0055 -->
+```gala
+val default = 8080          // GALA-E0055: "default" is a Go keyword
+struct Job(select bool)     // GALA-E0055
+```
+
+Pick another name, such as `defaultPort` or `selected`. GALA does not rename the identifier for you: a renamed struct field or exported function would be visible to Go code, JSON field names and reflection under a name you never wrote. A bare `break` or `continue` statement in a `for` loop is loop control and is not affected; a bare `defer`, `go`, `goto`, `fallthrough`, `select` or `chan` statement is [GALA-E0036](/docs/errors/gala-e0036/).
+
+Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max` and so on — are not keywords. A local binding may shadow one, exactly as in Go.
+
 ## 12. Immutability Under the Hood {#12-immutability-under-the-hood}
 
 ### Package-Level Bindings

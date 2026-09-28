@@ -486,6 +486,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		return nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
 	}
 
+	// GALA-E0055: a name spelled like a Go keyword cannot reach the generated
+	// Go. Checked first, so no later check reports a symptom of the same name.
+	if isTopLevel {
+		if err := checkGoKeywordNames(sourceFile); err != nil {
+			return nil, err
+		}
+	}
+
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
 	absFilePath, _ := filepath.Abs(filePath)
 

@@ -81,11 +81,9 @@ func ForbiddenStatementKeywords() map[string]bool {
 // forbiddenStatementKeywordSuggestions); GALA has native replacements, so this
 // is a hard error (GALA-E0036).
 //
-// It is resolver-aware, mirroring checkForbiddenGoBuiltinCall: the name is only
-// forbidden when it is a bare identifier that does NOT resolve to a
-// user-defined function, a local binding (val/var/param), or a declared
-// type/struct — so a program that legitimately named something after one of
-// these words is left untouched.
+// Unlike checkForbiddenGoBuiltinCall it needs no resolver guard: these are Go
+// keywords, and the analyzer rejects a declaration spelled like one
+// (GALA-E0055), so the name never refers to anything the program declared.
 func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExpressionContext) error {
 	// Only a bare identifier statement (`defer`) is the accident; anything with
 	// a postfix (`x.defer()`), operator, or arguments is a normal expression.
@@ -99,17 +97,6 @@ func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExp
 	name := pc.Identifier().GetText()
 	suggestion, isKeyword := forbiddenStatementKeywordSuggestions[name]
 	if !isKeyword {
-		return nil
-	}
-	// Resolver-aware guards: a name the author actually declared is that
-	// declaration, not the leaked Go keyword.
-	if t.getFunction(name) != nil {
-		return nil
-	}
-	if !t.getType(name).IsNil() || t.getTypeMeta(name) != nil {
-		return nil
-	}
-	if _, ok := t.structFields[name]; ok {
 		return nil
 	}
 	return galaerr.NewCodedSemanticError(
