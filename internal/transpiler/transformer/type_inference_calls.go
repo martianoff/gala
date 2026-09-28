@@ -106,6 +106,10 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 // inferCallExprType infers the return type of a call expression.
 // Extracted from getExprTypeNameManualUncached for readability.
 func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type {
+	// A Go call converted to one GALA value (see go_results.go).
+	if res := t.goResults[e]; res != nil && !res.Type.IsNil() {
+		return res.Type
+	}
 	// Handle IIFE (used by if/match expressions)
 	if fl, ok := e.Fun.(*ast.FuncLit); ok {
 		if fl.Type != nil && fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {

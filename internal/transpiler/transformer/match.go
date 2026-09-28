@@ -777,8 +777,9 @@ func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
 	}
 
 	// Check if this is a call to a known multi-return function (like fmt.Printf, fmt.Println)
-	// These should be treated as void for match statement purposes
-	if call, ok := expr.(*ast.CallExpr); ok {
+	// These should be treated as void for match statement purposes. A call
+	// converted to a Try (see go_results.go) is judged by the call itself.
+	if call, ok := t.rawGoCall(expr).(*ast.CallExpr); ok {
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 			if pkgIdent, ok := sel.X.(*ast.Ident); ok {
 				// Check specifically for known multi-return functions

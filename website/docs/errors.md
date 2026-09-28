@@ -102,6 +102,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0046](/docs/errors/gala-e0046/) | Package already imported | Packages |
 | [GALA-E0047](/docs/errors/gala-e0047/) | `if` takes no initializer statement | Go surface |
 | [GALA-E0048](/docs/errors/gala-e0048/) | Method on an alias to a non-local type | Declarations |
+| [GALA-E0049](/docs/errors/gala-e0049/) | A Go call's Try or Tuple used as its plain value | Types |
 | [GALA-E0050](/docs/errors/gala-e0050/) | Codec field type has no encoding | Types |
 | [GALA-E0051](/docs/errors/gala-e0051/) | Illegal character in source (invalid UTF-8, NUL, stray byte order mark) | Literals |
 | [GALA-E0052](/docs/errors/gala-e0052/) | Function declared inside a function body | Declarations |
@@ -133,7 +134,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
-**Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
+**Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
 **Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body.
 

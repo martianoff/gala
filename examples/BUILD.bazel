@@ -2693,11 +2693,21 @@ gala_exec_test(
     expected = "try_go_transitive_import.out",
 )
 
-# Verification: auto-destructure (T, error) Go returns in val declarations
+# Verification: a Go call returning several results is one GALA value —
+# (T, error) a Try, (A, B) a Tuple, (A, B, error) a Try of a Tuple — in every
+# single-value position; a multi-name binding still takes the raw results
+gala_exec_test(
+    name = "go_call_results",
+    src = "go_call_results.gala",
+    expected = "go_call_results.out",
+)
+
+# Verification: a (T, error) Go call used as a value is a Try[T]
 gala_exec_test(
     name = "try_val_destructure",
     src = "try_val_destructure.gala",
     expected = "try_val_destructure.out",
+    deps = ["//go_interop"],
 )
 
 # Match branch sealed type inference: None() infers type params from match subject

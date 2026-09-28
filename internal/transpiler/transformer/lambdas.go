@@ -313,6 +313,13 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 			b.List[len(b.List)-1] = &ast.ReturnStmt{Results: []ast.Expr{last.X}}
 		}
 	}
+	// The thunk of Try(...): a trailing Go call's error is the Failure (see
+	// tryThunkValue), not a Try inside the Try.
+	if ctx == t.tryThunkLambda && len(b.List) > 0 {
+		if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+			ret.Results[0] = t.tryThunkIIFE(ret.Results[0])
+		}
+	}
 	// Returns deferred until the slot was known are lowered now, before the
 	// result type is read off the body.
 	if err := t.settleReturnSlot(b); err != nil {
@@ -379,6 +386,7 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // Returns (body, inferredReturnType, error). Extracted from
 // transformLambdaWithExpectedType as part of A6.
 func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+	bodySlot.tryThunk = ctx == t.tryThunkLambda
 	expr, err := t.lowerAgainst(ctx.Expression(), bodySlot, true)
 	if err != nil {
 		return nil, nil, err
@@ -411,13 +419,16 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		}
 		return body, retType, nil
 	}
-	if multiRetBody, multiRetType := t.tryWrapGoMultiReturnWithErrorPanic(expr); multiRetBody != nil {
-		// Go function returning (T, error) or (A, B, error) in expression lambda.
-		body = multiRetBody
-		if multiRetType != nil && !isConcreteExpectedType {
-			retType = multiRetType
+	// The thunk of Try(...): a Go call's error is the Failure, so the body runs
+	// the call and panics on the error (see tryThunkValue). Anywhere else the
+	// body's value is the call converted to a Try or Tuple, like any value.
+	if ctx == t.tryThunkLambda {
+		if thunkBody, thunkType, ok := t.tryThunkValue(expr); ok {
+			if !isConcreteExpectedType {
+				retType = thunkType
+			}
+			return thunkBody, retType, nil
 		}
-		return body, retType, nil
 	}
 	body = &ast.BlockStmt{
 		List: []ast.Stmt{
@@ -430,45 +441,30 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 // goCallReturnsErrorOnly checks if expr is a call to a Go function whose sole return
 // type is `error`. Returns the function name for the error message, or "" otherwise.
 // This only catches error-only returns (e.g., Close(), ListenAndServe()), NOT multi-return
-// functions like fmt.Println() which return (int, error) — those are handled by
-// tryWrapGoMultiReturnWithErrorPanic in non-void contexts.
+// functions like fmt.Println() which return (int, error) — those are one GALA value
+// (see go_results.go), and a discarded one is dropped back to the plain call.
 func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 	if t.goTypeInfo == nil {
 		return ""
 	}
 	callExpr, ok := expr.(*ast.CallExpr)
-	if !ok {
+	if !ok || !t.isGoErrorOnlyCall(callExpr) {
 		return ""
 	}
-
-	var sig *transpiler.GoFuncSignature
-	var funcName string
-	switch fun := callExpr.Fun.(type) {
+	fun, _ := splitCallFunTypeArgs(callExpr.Fun)
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name
 	case *ast.SelectorExpr:
-		if id, ok := fun.X.(*ast.Ident); ok {
-			funcName = id.Name + "." + fun.Sel.Name
-			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
-			if sig == nil {
-				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-			}
-		} else {
-			sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-			if sel, ok := fun.X.(*ast.SelectorExpr); ok {
-				funcName = sel.Sel.Name + "." + fun.Sel.Name
-			} else {
-				funcName = fun.Sel.Name
-			}
+		switch x := f.X.(type) {
+		case *ast.Ident:
+			return x.Name + "." + f.Sel.Name
+		case *ast.SelectorExpr:
+			return x.Sel.Name + "." + f.Sel.Name
 		}
+		return f.Sel.Name
 	}
-	if sig == nil {
-		return ""
-	}
-
-	// Only reject when the sole return type is error
-	if len(sig.Returns) == 1 && sig.Returns[0] != nil && sig.Returns[0].String() == "error" {
-		return funcName
-	}
-	return ""
+	return "call"
 }
 
 // tryWrapGoMultiReturnWithErrorPanic checks if expr is a call to a Go function
@@ -485,42 +481,20 @@ func (t *galaASTTransformer) goCallReturnsErrorOnly(expr ast.Expr) string {
 // os.MkdirTemp returns (string, error) -- the error is converted to a panic
 // which Try catches as Failure.
 func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (*ast.BlockStmt, ast.Expr) {
-	if t.goTypeInfo == nil {
-		return nil, nil
-	}
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return nil, nil
 	}
 
-	// Extract the function signature from the call.
-	// Case 1: simple pkg.Func() call — look up by qualified name.
-	// Case 2: chained call like expr.Method() — resolve receiver type, then look up method.
-	var sig *transpiler.GoFuncSignature
-	funExpr, _ := splitCallFunTypeArgs(callExpr.Fun)
-	switch fun := funExpr.(type) {
-	case *ast.SelectorExpr:
-		if id, ok := fun.X.(*ast.Ident); ok {
-			// Simple case: pkg.Func() or receiver.Method() where receiver is an ident
-			sig = t.goTypeInfo.GetFuncSignature(t.goQualifiedName(id.Name, fun.Sel.Name))
-			if sig == nil {
-				// Could be a method call on a variable — resolve its type
-				sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-			}
-		} else {
-			// Chained call: e.g., exec.Command(...).Output()
-			// Resolve the type of fun.X (the receiver expression) and look up the method
-			sig = t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
-		}
-	}
-	if sig == nil || len(sig.Returns) < 2 {
+	// The callee's returns — a package function, a method on any receiver
+	// expression, or a dot-imported function. They are written into the
+	// generated func literal's result clause, so a generic callee's returns
+	// come back instantiated; otherwise the emitted Go would name the callee's
+	// own type parameters.
+	returns := t.resolveGoCallReturnTypes(callExpr)
+	if len(returns) < 2 {
 		return nil, nil
 	}
-
-	// The value types are written into the generated func literal's result
-	// clause, so a generic callee's declared returns have to be instantiated
-	// first — otherwise the emitted Go names the callee's own type parameters.
-	returns := t.instantiateGoSignatureReturns(sig, callExpr.Args, t.callSiteTypeArgs(callExpr), callExpr.Ellipsis != token.NoPos)
 
 	// Check that the LAST return is error
 	lastRet := returns[len(returns)-1]
@@ -549,7 +523,7 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 		// (A, B, error) -> return std.Tuple[A, B]{V1: _v0, V2: _v1}
 		// (A, B, C, error) -> return std.Tuple3[A, B, C]{V1: _v0, V2: _v1, V3: _v2}
 		// etc.
-		tupleName, _ := tupleArityName(valueCount)
+		tupleName, _ := transpiler.TupleArityName(valueCount)
 
 		// Build type args from the non-error return types
 		var typeArgs []ast.Expr
@@ -645,31 +619,6 @@ func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, met
 	}
 
 	return nil
-}
-
-// wrapGoMultiReturnAsIIFE wraps a Go function call returning (T, error) in an IIFE
-// that destructures the return, panics on error, and returns the non-error value.
-// If the expression is not a multi-return Go call, returns the original expression unchanged.
-//
-// Example: os.Create(path) which returns (*os.File, error) becomes:
-//
-//	func() *os.File { _v0, _err := os.Create(path); if _err != nil { panic(_err) }; return _v0 }()
-func (t *galaASTTransformer) wrapGoMultiReturnAsIIFE(expr ast.Expr) ast.Expr {
-	block, returnTypeExpr := t.tryWrapGoMultiReturnWithErrorPanic(expr)
-	if block == nil {
-		return expr
-	}
-	// Wrap in IIFE: func() T { ... }()
-	return &ast.CallExpr{
-		Fun: &ast.FuncLit{
-			Type: &ast.FuncType{
-				Results: &ast.FieldList{
-					List: []*ast.Field{{Type: returnTypeExpr}},
-				},
-			},
-			Body: block,
-		},
-	}
 }
 
 // inferBlockReturnType tries to infer the return type from a block's return statements.

@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "transpiler",
     srcs = [
+        "go_result_value.go",
         "go_type_info.go",
         "import_names.go",
         "parser.go",
@@ -15,6 +16,7 @@ go_library(
         "//galaerr",
         "//internal/parser",
         "//internal/transpiler/profiler",
+        "//internal/transpiler/registry",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )

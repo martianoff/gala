@@ -90,6 +90,10 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 		}
 		return memberHover(richAST, recv, word)
 	}
+	// `pkg.Func` of an imported Go package.
+	if info := goFuncHover(richAST, lines, line, char, word); info != "" {
+		return info
+	}
 
 	// A local val/var carries no metadata entry — its type comes from the
 	// transformer's resolved scope, the same source inlay hints read.
@@ -210,6 +214,46 @@ func packageMemberHover(richAST *transpiler.RichAST, pkg, name string) string {
 		return formatFuncMeta(m.Func)
 	}
 	return ""
+}
+
+// goFuncHover renders `pkg.Name` under the cursor when pkg is a Go package and
+// Name one of its functions. A local value named like the package never gets
+// here: typeAtDot answers for it first.
+func goFuncHover(richAST *transpiler.RichAST, lines []string, line, char int, name string) string {
+	prefix, isMember := memberAccessPrefix(lines, line, char)
+	if !isMember {
+		return ""
+	}
+	qualifier, sig := goPackageCallee(richAST, prefix, name)
+	if sig == nil {
+		return ""
+	}
+	return formatGoFunc(qualifier, name, sig)
+}
+
+// goPackageFunc finds a function of an imported Go package.
+func goPackageFunc(richAST *transpiler.RichAST, pkg, name string) *transpiler.GoFuncSignature {
+	if richAST == nil || richAST.GoTypeInfo == nil {
+		return nil
+	}
+	return richAST.GoTypeInfo.GetFuncSignature(pkg + "." + name)
+}
+
+// formatGoFunc renders a Go package function as GALA calls it. A function
+// returning several results shows the one GALA value a call of it is, with the
+// Go results spelled out beside it, since a multi-name binding still takes
+// them one by one.
+func formatGoFunc(pkg, name string, sig *transpiler.GoFuncSignature) string {
+	var b strings.Builder
+	b.WriteString("```gala\nfunc " + name + goFuncSigString(sig) + "\n```\n")
+	// Only when the GALA value can be named: an unresolved result type, or
+	// more results than a Tuple holds, has none.
+	if v, ok := transpiler.GoResultValueOf(sig.Returns); ok && !v.Type.IsNil() {
+		fmt.Fprintf(&b, "\nGo returns `%s`; a call used as a value is `%s`. `val %s = %s.%s(...)` binds the results one by one.\n",
+			goResultsTuple(sig.Returns), cleanGoTypeForDisplay(v.Type.String()), transpiler.PlaceholderNames(len(sig.Returns), v.Fails), pkg, name)
+	}
+	fmt.Fprintf(&b, "\n*Package: %s (Go)*\n", pkg)
+	return b.String()
 }
 
 // memberHover renders a method or field selected on a receiver of known type.

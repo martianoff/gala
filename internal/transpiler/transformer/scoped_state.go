@@ -56,6 +56,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"loweringDefault", t.loweringDefault != nil},
 		{"matchInStatementPos", t.matchInStatementPos},
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
+		{"tryThunkLambda", t.tryThunkLambda != nil},
 		{"unrecordedCallee", t.unrecordedCallee != nil},
 	}
 }
@@ -103,6 +104,7 @@ var accumulatedStateFields = []string{
 	"traceTypeResolution",
 	"typeTraces",
 	"exprTypeCache",
+	"goResults",
 	"patternDefineTypes",
 	"defaultTrees",
 	"warnTypeInference",

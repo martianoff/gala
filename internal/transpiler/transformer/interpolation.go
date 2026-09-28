@@ -16,23 +16,21 @@ import (
 // rewriteBuiltinPrintFuncs rewrites bare Println/Print calls to fmt.Println/fmt.Print.
 // This enables calling Println/Print without importing fmt.
 func (t *galaASTTransformer) rewriteBuiltinPrintFuncs(base ast.Expr) ast.Expr {
-	id, ok := base.(*ast.Ident)
-	if !ok {
+	if !t.isBuiltinPrint(base) {
 		return base
 	}
-	switch id.Name {
-	case "Println", "Print":
-		// Don't rewrite if it's a local variable or function parameter
-		if t.isVal(id.Name) || t.isVar(id.Name) {
-			return base
-		}
-		t.needsFmtImport = true
-		return &ast.SelectorExpr{
-			X:   ast.NewIdent("fmt"),
-			Sel: ast.NewIdent(id.Name),
-		}
+	t.needsFmtImport = true
+	return &ast.SelectorExpr{
+		X:   ast.NewIdent("fmt"),
+		Sel: ast.NewIdent(base.(*ast.Ident).Name),
 	}
-	return base
+}
+
+// isBuiltinPrint reports whether base names GALA's Println or Print builtin —
+// not a local variable or parameter of the same name.
+func (t *galaASTTransformer) isBuiltinPrint(base ast.Expr) bool {
+	id, ok := base.(*ast.Ident)
+	return ok && (id.Name == "Println" || id.Name == "Print") && !t.isVal(id.Name) && !t.isVar(id.Name)
 }
 
 // transformInterpolatedString handles s"..." string interpolation.

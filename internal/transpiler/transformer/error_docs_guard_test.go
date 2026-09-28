@@ -531,6 +531,23 @@ func main() {
 			},
 		},
 		{
+			name: "a Go call's Try used as its plain value",
+			code: galaerr.CodeGoCallResultAsValue, // GALA-E0049
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "os"
+
+func count(data []byte) int = data.Size()
+
+func main() {
+    val data = os.ReadFile("notes.txt")
+    Println(count(data))
+}
+`)
+			},
+		},
+		{
 			name: "codec requested for a struct with a function field",
 			code: galaerr.CodeUnsupportedCodecField, // GALA-E0050
 			render: func(t *testing.T) string {

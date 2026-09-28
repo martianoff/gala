@@ -59,12 +59,12 @@ func describe(p Payment) string = p match {
 
 ### Compatible — every Go library, no bindings, native binaries
 
-Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. Wrap a Go `(T, error)` call in `Try` and it becomes a `Try[T]`, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go.
+Full third-party Go interop with return types inferred **directly from the Go SDK — no declaration files to write or generate**. A Go `(T, error)` call is a `Try[T]` with no wrapping, the generated Go is clean and readable, and it builds to a single native binary inside your existing Go project. No runtime overhead beyond hand-written Go.
 
 <pre><code>import "strconv"
 
-// a Go (int, error) call, wrapped into Try[int]
-val port = Try(strconv.Atoi("8080")).GetOrElse(80)</code></pre>
+// a Go (int, error) call is a Try[int]
+val port = strconv.Atoi("8080").GetOrElse(80)</code></pre>
 
 ## GALA vs Go — A Quick Look
 

@@ -62,7 +62,7 @@ func TestTupleArityRoundTripMatrix(t *testing.T) {
 }
 
 // tupleNameForArity returns the canonical std type name for arity n.
-// Mirrors the production tupleArityName helper without importing it
+// Mirrors the production transpiler.TupleArityName helper without importing it
 // (we're in the external test package and the helper is unexported).
 func tupleNameForArity(n int) string {
 	if n == 2 {

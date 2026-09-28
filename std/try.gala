@@ -191,8 +191,10 @@ type Void struct {}
 
 // FromError converts a Go error return into a Try[Void].
 // Returns Success[Void] if err is nil, Failure[Void] otherwise.
+// `Try(goCall())` over a Go call returning only an error means the same.
 //
-// For Go functions returning (T, error), use Try(() => goCall()) instead.
+// A Go call returning (T, error) needs no conversion: used as a value it
+// already is a Try[T].
 //
 // Usage:
 //   FromError(conn.Close())                        // Try[Void]
@@ -205,3 +207,106 @@ func FromError(err error) Try[Void] {
     return Success[Void](Void())
 }
 
+
+// GoTry turns the two results of a Go call returning `(T, error)` into a
+// Try: Failure(err) when err is non-nil, Success(value) otherwise.
+//
+// A Go call used as a value is converted with it automatically, so
+// `os.ReadFile(path)` already is a `Try[[]byte]`; GoTry names that
+// conversion for code that holds the two results separately.
+func GoTry[T any](value T, err error) Try[T] {
+    if err != nil {
+        return Failure[T](err)
+    }
+    return Success[T](value)
+}
+
+// GoTry2 turns the results of a Go call returning 2 values and a
+// trailing error into a Try of a Tuple: Failure(err) when err is non-nil,
+// Success((a, b)) otherwise.
+func GoTry2[A any, B any](a A, b B, err error) Try[Tuple[A, B]] {
+    if err != nil {
+        return Failure[Tuple[A, B]](err)
+    }
+    return Success[Tuple[A, B]]((a, b))
+}
+
+// GoTry3 turns the results of a Go call returning 3 values and a
+// trailing error into a Try of a Tuple3: Failure(err) when err is non-nil,
+// Success((a, b, c)) otherwise.
+func GoTry3[A any, B any, C any](a A, b B, c C, err error) Try[Tuple3[A, B, C]] {
+    if err != nil {
+        return Failure[Tuple3[A, B, C]](err)
+    }
+    return Success[Tuple3[A, B, C]]((a, b, c))
+}
+
+// GoTry4 turns the results of a Go call returning 4 values and a
+// trailing error into a Try of a Tuple4: Failure(err) when err is non-nil,
+// Success((a, b, c, d)) otherwise.
+func GoTry4[A any, B any, C any, D any](a A, b B, c C, d D, err error) Try[Tuple4[A, B, C, D]] {
+    if err != nil {
+        return Failure[Tuple4[A, B, C, D]](err)
+    }
+    return Success[Tuple4[A, B, C, D]]((a, b, c, d))
+}
+
+// GoTry5 turns the results of a Go call returning 5 values and a
+// trailing error into a Try of a Tuple5: Failure(err) when err is non-nil,
+// Success((a, b, c, d, e)) otherwise.
+func GoTry5[A any, B any, C any, D any, E any](a A, b B, c C, d D, e E, err error) Try[Tuple5[A, B, C, D, E]] {
+    if err != nil {
+        return Failure[Tuple5[A, B, C, D, E]](err)
+    }
+    return Success[Tuple5[A, B, C, D, E]]((a, b, c, d, e))
+}
+
+// GoTry6 turns the results of a Go call returning 6 values and a
+// trailing error into a Try of a Tuple6: Failure(err) when err is non-nil,
+// Success((a, b, c, d, e, f)) otherwise.
+func GoTry6[A any, B any, C any, D any, E any, F any](a A, b B, c C, d D, e E, f F, err error) Try[Tuple6[A, B, C, D, E, F]] {
+    if err != nil {
+        return Failure[Tuple6[A, B, C, D, E, F]](err)
+    }
+    return Success[Tuple6[A, B, C, D, E, F]]((a, b, c, d, e, f))
+}
+
+// GoTry7 turns the results of a Go call returning 7 values and a
+// trailing error into a Try of a Tuple7: Failure(err) when err is non-nil,
+// Success((a, b, c, d, e, f, g)) otherwise.
+func GoTry7[A any, B any, C any, D any, E any, F any, G any](a A, b B, c C, d D, e E, f F, g G, err error) Try[Tuple7[A, B, C, D, E, F, G]] {
+    if err != nil {
+        return Failure[Tuple7[A, B, C, D, E, F, G]](err)
+    }
+    return Success[Tuple7[A, B, C, D, E, F, G]]((a, b, c, d, e, f, g))
+}
+
+// GoTry8 turns the results of a Go call returning 8 values and a
+// trailing error into a Try of a Tuple8: Failure(err) when err is non-nil,
+// Success((a, b, c, d, e, f, g, h)) otherwise.
+func GoTry8[A any, B any, C any, D any, E any, F any, G any, H any](a A, b B, c C, d D, e E, f F, g G, h H, err error) Try[Tuple8[A, B, C, D, E, F, G, H]] {
+    if err != nil {
+        return Failure[Tuple8[A, B, C, D, E, F, G, H]](err)
+    }
+    return Success[Tuple8[A, B, C, D, E, F, G, H]]((a, b, c, d, e, f, g, h))
+}
+
+// GoTry9 turns the results of a Go call returning 9 values and a
+// trailing error into a Try of a Tuple9: Failure(err) when err is non-nil,
+// Success((a, b, c, d, e, f, g, h, i)) otherwise.
+func GoTry9[A any, B any, C any, D any, E any, F any, G any, H any, I any](a A, b B, c C, d D, e E, f F, g G, h H, i I, err error) Try[Tuple9[A, B, C, D, E, F, G, H, I]] {
+    if err != nil {
+        return Failure[Tuple9[A, B, C, D, E, F, G, H, I]](err)
+    }
+    return Success[Tuple9[A, B, C, D, E, F, G, H, I]]((a, b, c, d, e, f, g, h, i))
+}
+
+// GoTry10 turns the results of a Go call returning 10 values and a
+// trailing error into a Try of a Tuple10: Failure(err) when err is non-nil,
+// Success((a, b, c, d, e, f, g, h, i, j)) otherwise.
+func GoTry10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J any](a A, b B, c C, d D, e E, f F, g G, h H, i I, j J, err error) Try[Tuple10[A, B, C, D, E, F, G, H, I, J]] {
+    if err != nil {
+        return Failure[Tuple10[A, B, C, D, E, F, G, H, I, J]](err)
+    }
+    return Success[Tuple10[A, B, C, D, E, F, G, H, I, J]]((a, b, c, d, e, f, g, h, i, j))
+}

@@ -623,6 +623,21 @@ func main() {
 			expectContains: "which names no type of its own",
 		},
 		{
+			name: "GALA-E0049 a Go call's Try used as its plain value",
+			input: `package main
+
+import "os"
+
+func count(data []byte) int = data.Size()
+
+func main() {
+    val data = os.ReadFile("notes.txt")
+    Println(count(data))
+}`,
+			expectCode:     galaerr.CodeGoCallResultAsValue,
+			expectContains: "`data` holds the result of `os.ReadFile(...)`, which can fail, so it is a `Try[[]byte]`; `[]byte` is expected here",
+		},
+		{
 			name: "GALA-E0047 single-value initializer is rejected too",
 			input: `package main
 

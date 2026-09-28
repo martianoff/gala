@@ -544,6 +544,43 @@ func main() {
 }
 ```
 
+## Go Functions That Return Several Results
+
+A Go call returning `(T, error)` is a `Try[T]`; `(A, B, error)` is a `Try` of a
+Tuple; `(A, B, C)` is a `Tuple3`. Match on them directly — no `Try(...)` needed:
+
+```gala
+package main
+
+import (
+    "net"
+    "strconv"
+    "strings"
+)
+
+func main() {
+    // (int, error) -> Try[int]
+    val intResult = strconv.Atoi("42") match {
+        case Success(n) => s"Parsed: $n"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(intResult) // Parsed: 42
+
+    // (string, string, error) -> Try[Tuple[string, string]]
+    val hostPort = net.SplitHostPort("localhost:8080") match {
+        case Success((host, port)) => s"host=$host port=$port"
+        case Failure(err) => s"Error: ${err.Error()}"
+    }
+    Println(hostPort) // host=localhost port=8080
+
+    // (string, string, bool) -> Tuple3[string, string, bool]
+    val (key, value, found) = strings.Cut("mode=fast", "=")
+    Println(s"$key -> $value ($found)") // mode -> fast (true)
+}
+```
+
+See also: [Language Reference - Go functions that return several results](/docs/language-reference/#go-functions-that-return-several-results)
+
 ## MkString - Joining Collection Elements
 
 ```gala

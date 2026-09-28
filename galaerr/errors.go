@@ -518,6 +518,22 @@ const (
 	// there the receiver base type is local and Go accepts it.
 	CodeMethodOnNonLocalAlias ErrorCode = "GALA-E0048"
 
+	// E0049: the GALA value of a Go call is used as something it is not.
+	//
+	// A Go call returning several results is one GALA value: `(T, error)` is a
+	// Try[T], `(A, B)` a Tuple[A, B], `(A, B, error)` a Try[Tuple[A, B]]. Code
+	// that expects the call's plain first result — `val data = os.ReadFile(p)`
+	// passed where a []byte is expected, `resp.StatusCode` on the Try of
+	// `http.Get(url)`, `val (data, err) = os.ReadFile(p)` — would otherwise
+	// fail in Go against generated code. The diagnostic names the call and
+	// the value it produces, and the hint lists the ways to reach the plain
+	// value (`.Get()`, `.GetOrElse(...)`, `match`, or a multi-name binding
+	// `val data, err = ...`).
+	//
+	// Also reported for a Go call returning more than ten values, which no
+	// Tuple holds.
+	CodeGoCallResultAsValue ErrorCode = "GALA-E0049"
+
 	// E0050: a codec (`json.Codec[T]`, `yaml.Codec[T]`, `StructMeta[T]()`)
 	// was requested for a struct with a field whose type has no encoding — a
 	// function, a pointer, a Go slice or map, a sealed type, a generic struct,

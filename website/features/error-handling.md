@@ -208,6 +208,37 @@ val safe = Try(riskyDivide(10, 2))       // Success(5)
 val dir = Try(os.TempDir)
 ```
 
+### Try from Go Calls
+
+A Go function that returns a value and an `error` is already a `Try` in GALA —
+no wrapping needed. A Go call becomes one GALA value like this:
+
+| The Go function returns | In GALA the call is a | Example |
+|---|---|---|
+| a value and an error `(T, error)` | `Try[T]` | `strconv.Atoi(s)` is a `Try[int]` |
+| several values and an error | `Try` of a Tuple | `net.SplitHostPort(addr)` is a `Try[Tuple[string, string]]` |
+| only an `error` | the `error` itself | `os.Remove(path)` is an `error` |
+
+```gala
+import "strconv"
+
+val port = strconv.Atoi("8080") match {
+    case Success(n) => n
+    case Failure(_) => 80
+}
+val timeout = strconv.Atoi("30s").GetOrElse(30) // not a number: 30
+```
+
+- For a call that returns **only** an `error`, write `Try(os.Remove(path))`: it is
+  a `Try[Void]` that fails when the error is non-nil.
+- `Try(...)` around a `(T, error)` call gives the same `Try[T]`, and also turns a
+  panic inside the call into a `Failure`.
+- Using the `Try` where the plain value is expected is a compile-time error
+  ([GALA-E0049](/docs/errors/gala-e0049/)): take the value with a `match`,
+  `.GetOrElse(default)`, or `.Get()` (panics on failure).
+- To keep Go's style, bind several names: `val n, err = strconv.Atoi(text)` gives
+  the raw `int` and `error`.
+
 ### Map and FlatMap
 
 Transform success values. Failures propagate untouched:
@@ -472,7 +503,7 @@ GALA's monadic types are not always the right tool. Honest trade-offs:
 
 - **Simple one-shot errors** — If a function calls one fallible operation and returns, `if err != nil` is perfectly clear. Wrapping it in `Try` adds indirection without benefit.
 - **Performance-critical paths** — `Option`, `Either`, and `Try` allocate wrapper structs. In hot loops processing millions of items, Go's zero-cost error returns may be preferable.
-- **Go library interop** — When calling Go functions that return `(T, error)`, you are already in Go's error model. Converting to `Try` at the boundary is useful; converting back and forth repeatedly is not.
+- **Go library interop** — A Go call returning `(T, error)` is a `Try[T]` by default. When the results go straight back into other Go code, bind them Go-style (`val v, err = call()`) instead of converting back and forth.
 - **Team familiarity** — If your team knows Go idioms well and the codebase is small, the learning curve of monadic patterns may not pay off.
 
 The sweet spot for monadic error handling is **multi-step pipelines** where several operations can fail, and you want to keep the code linear and composable.

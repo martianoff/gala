@@ -58,8 +58,9 @@ func main() {
 			mustHave: []string{"return func() func() int {"},
 		},
 		{
-			// Both branches void: the closure has no result and the calls are
-			// statements, not `return voidA()` from a `func() any`/`func() void`.
+			// Both branches void, in statement position: the if-expression is
+			// lowered to a plain Go `if` whose branches are statements, not
+			// `return voidA()` from a `func() any`/`func() void` closure.
 			name: "void if-expression runs its branches as statements",
 			input: `package main
 
@@ -73,8 +74,8 @@ func plain(flag bool) {
 func main() {
     plain(true)
 }`,
-			mustHave: []string{"func() {\n\t\tif flag {\n\t\t\tvoidA()\n\t\t} else {\n\t\t\tvoidB()\n\t\t}\n\t}()"},
-			mustMiss: []string{"return voidA()", "func() any", "func() void"},
+			mustHave: []string{"func plain(flag bool) {\n\tif flag {\n\t\tvoidA()\n\t} else {\n\t\tvoidB()\n\t}\n}"},
+			mustMiss: []string{"return voidA()", "func() any", "func() void", "}()"},
 		},
 		{
 			// `import "martianoff/gala/std"` written in the source was emitted

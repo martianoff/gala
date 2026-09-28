@@ -245,8 +245,9 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			tempIdents[i] = ast.NewIdent(tempNames[i])
 		}
 
-		// First spec: capture all return values in temp variables
-		callValue := t.unwrapImmutable(rhsExprs[0])
+		// First spec: capture all return values in temp variables. A Go call
+		// converted to one GALA value is read back as the call itself.
+		callValue := t.rawGoCall(t.unwrapImmutable(rhsExprs[0]))
 		tempSpec := &ast.ValueSpec{
 			Names:  tempIdents,
 			Values: []ast.Expr{callValue},
@@ -363,9 +364,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			val = &ast.IndexExpr{X: t.unwrapImmutable(rhsExprs[0]), Index: &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", i)}}
 		}
 
-		// Auto-destructure Go functions returning (T, error): wrap in IIFE that
-		// panics on error and returns only the non-error value.
-		val = t.wrapGoMultiReturnAsIIFE(val)
+		t.bindGoResult(name, val)
 
 		if t.isNoneCall(val) && ctx.Type_() == nil {
 			return nil, t.semanticErrorAt(ctx, "variable assigned to None() must have an explicit type")
@@ -430,6 +429,9 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 
 	if len(rhsExprs) != 1 {
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "tuple destructuring requires exactly one expression on the right side")
+	}
+	if err := t.checkGoResultTupleDestructure(rhsExprs[0], ctx.ExpressionList()); err != nil {
+		return nil, err
 	}
 
 	// Get the type of the tuple for type inference
@@ -511,6 +513,12 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		}
 	}
 
+	// `var a, err = goCall()`: each name takes the matching result's type.
+	var callReturns []transpiler.Type
+	if len(rhsExprs) == 1 && len(namesCtx) > 1 && ctx.Type_() == nil {
+		callReturns = t.resolveGoCallReturnTypes(t.rawGoCall(t.unwrapImmutable(rhsExprs[0])))
+	}
+
 	var idents []*ast.Ident
 	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
@@ -522,6 +530,8 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 			t.isImmutableType(typeName) // This will panic if recursive
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
+		} else if i < len(callReturns) && callReturns[i] != nil {
+			typeName = callReturns[i]
 		}
 
 		if t.isImmutableType(typeName) {
@@ -536,6 +546,9 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 
 		t.addVar(name, typeName)
 		t.markMutable(name) // genuine `var` declaration: reassignable
+		if len(rhsExprs) == len(namesCtx) {
+			t.bindGoResult(name, rhsExprs[i])
+		}
 		idents = append(idents, ast.NewIdent(name))
 	}
 
@@ -555,6 +568,10 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		unwrappedRhs := make([]ast.Expr, len(rhsExprs))
 		for i, r := range rhsExprs {
 			unwrappedRhs[i] = t.unwrapImmutable(r)
+			if len(rhsExprs) == 1 && len(namesCtx) > 1 {
+				// `var a, err = goCall()` takes the results one by one.
+				unwrappedRhs[i] = t.rawGoCall(unwrappedRhs[i])
+			}
 		}
 		spec.Values = unwrappedRhs
 	}

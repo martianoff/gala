@@ -61,15 +61,19 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 
 func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	if suffix.Identifier() != nil {
+		name := suffix.Identifier().GetText()
+		if err := t.checkGoResultMember(base, name, suffix); err != nil {
+			return nil, err
+		}
 		id := suffix.Identifier().GetStart()
-		return t.resolveFieldAccess(base, suffix.Identifier().GetText(), id.GetLine(), id.GetColumn())
+		return t.resolveFieldAccess(base, name, id.GetLine(), id.GetColumn())
 	}
 
 	childCount := suffix.GetChildCount()
 	if childCount >= 2 {
 		firstChild := suffix.GetChild(0).(antlr.ParseTree).GetText()
 		if firstChild == "(" {
-			return t.applyCallSuffix(base, suffix)
+			return t.applyGoCallSuffix(base, suffix)
 		}
 		if firstChild == "[" {
 			return t.resolveIndexAccess(base, suffix)
@@ -77,6 +81,27 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 	}
 
 	return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "unknown postfix suffix type")
+}
+
+// applyGoCallSuffix applies a call suffix, then presents a call to a Go
+// function returning several results as one GALA value (see go_results.go).
+// GALA's own Println and Print are statements, not Go calls, and keep their
+// plain form.
+func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	isPrint := t.isBuiltinPrint(base)
+	call, err := t.applyCallSuffix(base, suffix)
+	if err != nil || isPrint {
+		return call, err
+	}
+	// A conversion to a basic type (`string(data)`) of a converted Go call.
+	if id, ok := base.(*ast.Ident); ok && transpiler.IsPrimitiveType(id.Name) && !t.isVal(id.Name) && !t.isVar(id.Name) {
+		if ce, ok := call.(*ast.CallExpr); ok && len(ce.Args) == 1 {
+			if res := t.goResultOf(ce.Args[0]); res != nil {
+				return nil, t.goResultMisuse(res, fmt.Sprintf("it cannot be converted to `%s`", id.Name), suffix)
+			}
+		}
+	}
+	return t.liftGoResults(call, suffix)
 }
 
 // resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
@@ -349,6 +374,9 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if exprList == nil {
 		return nil, galaerr.NewSemanticErrorAt(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(), "index expression requires expression list")
 	}
+	if res := t.goResultOf(base); res != nil {
+		return nil, t.goResultMisuse(res, "it cannot be indexed", suffix)
+	}
 	base = t.unwrapImmutable(base)
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
 	if err != nil {
@@ -460,6 +488,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	stmtPosition := t.matchInStatementPos
 	t.matchInStatementPos = false
 	defer func() { t.matchInStatementPos = stmtPosition }()
+	// In statement position every arm's value is discarded too, so an arm
+	// block's trailing match is itself a statement.
+	s.discarded = stmtPosition
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type, and the arms' enclosing return type for sealed-variant inference.
@@ -742,7 +773,7 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	}
 
 	// Determine tuple type name based on arity (B2 — single source of truth).
-	typeName, _ := tupleArityName(n)
+	typeName, _ := transpiler.TupleArityName(n)
 
 	// Build the per-element fallback ladder. The most-specific source —
 	// the explicit per-element expected types passed in by the caller —

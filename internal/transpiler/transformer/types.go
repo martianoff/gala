@@ -25,36 +25,6 @@ func isStdTupleIdent(ident ast.Expr) bool {
 	return false
 }
 
-// tupleArityName returns the canonical std type name for a tuple of arity n
-// (2..10): `Tuple` for n==2, `Tuple3`..`Tuple10` for n in [3, 10]. The bool
-// return is true when n is a valid tuple arity. Centralizes the encoding so
-// every callsite (`transformType`, `typeToExpr`, the positional ctor in
-// `tryTransformCompanionApplyOrStructCtor`, and `transformTupleLiteral`)
-// agrees on the mapping. (B2 — collapses 4 open-coded `Tuple%d` sites.)
-func tupleArityName(n int) (string, bool) {
-	switch n {
-	case 2:
-		return transpiler.TypeTuple, true
-	case 3:
-		return transpiler.TypeTuple3, true
-	case 4:
-		return transpiler.TypeTuple4, true
-	case 5:
-		return transpiler.TypeTuple5, true
-	case 6:
-		return transpiler.TypeTuple6, true
-	case 7:
-		return transpiler.TypeTuple7, true
-	case 8:
-		return transpiler.TypeTuple8, true
-	case 9:
-		return transpiler.TypeTuple9, true
-	case 10:
-		return transpiler.TypeTuple10, true
-	}
-	return "", false
-}
-
 // tupleTypeNames returns the canonical std tuple type names in arity order
 // (`Tuple` then `Tuple3` … `Tuple10`). Used by callers that need to iterate
 // every tuple metadata entry. (B2)
@@ -67,7 +37,7 @@ func tupleTypeNames() []string {
 }
 
 // isTupleTypeName reports whether `name` is one of the canonical std tuple
-// type names. Mirror of tupleArityName for recognition contexts (pattern
+// type names. Mirror of transpiler.TupleArityName for recognition contexts (pattern
 // matching, type unification). (B2)
 func isTupleTypeName(name string) bool {
 	for _, n := range tupleTypeNames() {
@@ -87,7 +57,7 @@ func (t *galaASTTransformer) rewriteStdTupleIdent(ident ast.Expr, n int) ast.Exp
 	if n < 3 || n > 10 || !isStdTupleIdent(ident) {
 		return ident
 	}
-	name, _ := tupleArityName(n)
+	name, _ := transpiler.TupleArityName(n)
 	return t.stdIdent(name)
 }
 

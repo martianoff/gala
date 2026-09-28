@@ -1,0 +1,21 @@
+port 8080
+out of range: 70000
+not a number: http
+Success(42)
+ok 5
+failed
+host=localhost port=8080
+bad address: localhost
+mode -> fast
+verbose has no value
+whole=3 frac=0.25
+n=7
+Success(5)
+true
+42
+-1
+Success(1) Success(9) Success(12)
+Success(3)
+true
+true
+statement if

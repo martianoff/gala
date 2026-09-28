@@ -786,37 +786,41 @@ Output:
 ok: 43
 ```
 
-## Try with Go Multi-Return Functions
+## Go Functions That Return Several Results
 
-`Try` handles Go functions returning `(T, error)` and multi-return `(A, B, error)` automatically:
+A Go call returning `(T, error)` is a `Try[T]`; `(A, B, error)` is a `Try` of a
+Tuple; `(A, B, C)` is a `Tuple3`. Match on them directly — no `Try(...)` needed:
 
 ```gala
 package main
 
-import "net"
-import "strconv"
+import (
+    "net"
+    "strconv"
+    "strings"
+)
 
 func main() {
     // (int, error) -> Try[int]
-    val intResult = Try(strconv.Atoi("42")) match {
+    val intResult = strconv.Atoi("42") match {
         case Success(n) => s"Parsed: $n"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(intResult) // Parsed: 42
 
     // (string, string, error) -> Try[Tuple[string, string]]
-    val hostPort = Try(net.SplitHostPort("localhost:8080")) match {
-        case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
+    val hostPort = net.SplitHostPort("localhost:8080") match {
+        case Success((host, port)) => s"host=$host port=$port"
         case Failure(err) => s"Error: ${err.Error()}"
     }
     Println(hostPort) // host=localhost port=8080
 
-    // Error case is caught as Failure
-    val bad = Try(net.SplitHostPort("invalid")) match {
-        case Success(hp) => s"host=${hp.V1} port=${hp.V2}"
-        case Failure(_) => "split error caught"
-    }
-    Println(bad) // split error caught
+    // A returned error is a Failure
+    Println(net.SplitHostPort("invalid").IsFailure()) // true
+
+    // (string, string, bool) -> Tuple3[string, string, bool]
+    val (key, value, found) = strings.Cut("mode=fast", "=")
+    Println(s"$key -> $value ($found)") // mode -> fast (true)
 }
 ```
 
@@ -824,7 +828,8 @@ Output:
 ```
 Parsed: 42
 host=localhost port=8080
-split error caught
+true
+mode -> fast (true)
 ```
 
 ## MkString - Joining Collection Elements
@@ -1077,7 +1082,7 @@ Side effect!
 
 ## Multiple Return Values (Using Tuples)
 
-GALA uses Tuple types instead of Go-style multi-value returns. Tuple destructuring provides clean syntax at the call site.
+GALA functions return one value; use Tuple types to return several. Tuple destructuring provides clean syntax at the call site. (A Go function that returns several results is presented as a Tuple or a `Try` — see [Go Functions That Return Several Results](#go-functions-that-return-several-results).)
 
 ```gala
 package main

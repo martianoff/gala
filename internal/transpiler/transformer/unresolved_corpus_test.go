@@ -86,7 +86,10 @@ import (
 // for the type of every call's callee. A method call is typed as a call, and
 // the call is still recorded when it fails; a method taken as a value
 // (`val get = b.Get`) still counts. See unresolved_types_test.go.
-const unresolvedBudget = 168
+//
+// Lowered 168 -> 157 when unwrapImmutable stopped asking for the type of a
+// `nil` operand (`err == nil`); see unresolved_nil_test.go.
+const unresolvedBudget = 157
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.
