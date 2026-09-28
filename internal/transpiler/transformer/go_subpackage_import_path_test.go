@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -16,6 +17,35 @@ import (
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
 )
+
+// transpileInModule writes files (slash-separated paths relative to a fresh
+// module root) and transpiles the GALA file galaFile among them, from the
+// module root as the working directory.
+func transpileInModule(t *testing.T, files map[string]string, galaFile string) (string, error) {
+	t.Helper()
+	root := t.TempDir()
+	for name, content := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0755))
+		require.NoError(t, os.WriteFile(p, []byte(content), 0644))
+	}
+
+	searchPaths := []string{root}
+	for _, sp := range getStdSearchPath() {
+		abs, err := filepath.Abs(sp)
+		require.NoError(t, err)
+		searchPaths = append(searchPaths, abs)
+	}
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(root))
+	defer func() { _ = os.Chdir(wd) }()
+
+	p := transpiler.NewAntlrGalaParser()
+	trans := newCheckedTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths),
+		transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	return trans.Transpile(files[galaFile], filepath.Join(root, filepath.FromSlash(galaFile)))
+}
 
 // TestGoSubpackageTypeImportedByModulePath covers GALA code that uses a type
 // from a hand-written Go package inside the same module, where the type only
@@ -88,35 +118,13 @@ func Pick(o Option[int]) *Box {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			for name, content := range map[string]string{
+			galaFile := path.Join(tc.galaDir, "main.gala")
+			goCode, err := transpileInModule(t, map[string]string{
 				"go.mod":     "module example.com/gosubpkg\n\ngo 1.25\n",
 				"gala.mod":   "module example.com/gosubpkg\n",
 				"box/box.go": "package box\n\ntype Box struct{ Size int }\n\nfunc New(size int) *Box { return &Box{Size: size} }\n",
-			} {
-				p := filepath.Join(root, filepath.FromSlash(name))
-				require.NoError(t, os.MkdirAll(filepath.Dir(p), 0755))
-				require.NoError(t, os.WriteFile(p, []byte(content), 0644))
-			}
-			galaFile := filepath.Join(root, tc.galaDir, "main.gala")
-			require.NoError(t, os.MkdirAll(filepath.Dir(galaFile), 0755))
-			require.NoError(t, os.WriteFile(galaFile, []byte(tc.source), 0644))
-
-			searchPaths := []string{root}
-			for _, sp := range getStdSearchPath() {
-				abs, err := filepath.Abs(sp)
-				require.NoError(t, err)
-				searchPaths = append(searchPaths, abs)
-			}
-			wd, err := os.Getwd()
-			require.NoError(t, err)
-			require.NoError(t, os.Chdir(root))
-			defer func() { _ = os.Chdir(wd) }()
-
-			p := transpiler.NewAntlrGalaParser()
-			trans := newCheckedTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths),
-				transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-			goCode, err := trans.Transpile(tc.source, galaFile)
+				galaFile:     tc.source,
+			}, galaFile)
 			require.NoError(t, err)
 
 			f, err := parser.ParseFile(token.NewFileSet(), "gen.go", goCode, parser.ImportsOnly)

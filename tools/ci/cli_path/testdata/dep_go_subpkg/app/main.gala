@@ -1,0 +1,9 @@
+package main
+
+import "example.com/tcplib"
+
+// A GALA dependency whose own Go subpackage is typed from net.
+func main() {
+    val served = tcplib.ServeOn((c) => Println(s"network: ${c.Network()}"))
+    Println(s"served: ${served.IsSuccess()}")
+}

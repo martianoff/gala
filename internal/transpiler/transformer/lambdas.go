@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -45,12 +46,42 @@ func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Exp
 	return ret, ft.Params, true
 }
 
+// lambdaArgCallee names the call a lambda is written directly as an argument
+// of — the method or function name as written, `f` in `f(…)` or `x.f(…)` — for
+// diagnostics. It is "" for any other shape (a lambda nested in a match arm or
+// a parenthesized expression, an explicitly instantiated callee), where naming
+// a call could name the wrong one.
+func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
+	arg, ok := lambda.GetParent().(*grammar.ArgumentContext)
+	if !ok {
+		return ""
+	}
+	suffix, ok := arg.GetParent().GetParent().(*grammar.PostfixSuffixContext)
+	if !ok {
+		return ""
+	}
+	postfix, ok := suffix.GetParent().(*grammar.PostfixExprContext)
+	if !ok {
+		return ""
+	}
+	suffixes := postfix.AllPostfixSuffix()
+	switch i := slices.Index(suffixes, grammar.IPostfixSuffixContext(suffix)); {
+	case i == 0:
+		return postfix.PrimaryExpr().GetText()
+	case i > 0 && suffixes[i-1].(*grammar.PostfixSuffixContext).Identifier() != nil:
+		return suffixes[i-1].(*grammar.PostfixSuffixContext).Identifier().GetText()
+	}
+	return ""
+}
+
 // transformLambdaWithExpectedType lowers a lambda, applying expectedParamTypes /
 // expectedRetType when present. requireTypedParams controls the untyped-parameter
 // policy: when true (the bare/initializer path), a parameter with no annotation
 // and no inferable type is a hard error (GALA-E0033); when false (call-argument /
 // return-position path, where param-type inference may still be incomplete), it
-// falls back to `any` to preserve best-effort lowering.
+// falls back to `any` to preserve best-effort lowering — except when the
+// expected parameter type exists but could not be resolved, which is
+// GALA-E0033 on either path.
 func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams bool) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
@@ -83,10 +114,16 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				return nil, err
 			}
 			// If param has no type annotation and we have an expected type, use it
+			var expType transpiler.Type
+			if i < len(expectedParamTypes) {
+				expType = expectedParamTypes[i]
+			}
+			// The slot names this parameter but (part of) its type could not be
+			// resolved: see the check below.
+			unresolvedSlot := expType != nil && transpiler.ContainsUnusable(expType)
 			typeApplied := false
-			if paramCtx.Type_() == nil && expectedParamTypes != nil && i < len(expectedParamTypes) {
-				expType := expectedParamTypes[i]
-				if expType != nil && !expType.IsNil() && !expType.IsAny() {
+			if paramCtx.Type_() == nil {
+				if expType != nil && !unresolvedSlot && !expType.IsAny() {
 					typeExpr := t.typeToExpr(expType)
 					name := paramCtx.Identifier().GetText()
 					isVal := paramCtx.VAL() != nil
@@ -114,14 +151,27 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// generating non-concrete Go: the author must annotate the parameter or
 			// place the lambda in a typed context. (Replaces the prior `any`+warning
 			// fallback now that typed contexts thread expected types.)
-			if requireTypedParams && paramCtx.Type_() == nil && !typeApplied {
+			//
+			// The relaxed call-argument path gets the same error when the slot
+			// does name this parameter but its type, or a type inside it (the
+			// element of *T, []T, map[K]V, G[T]), could not be resolved — a
+			// callee signature with an unresolvable type in it, such as a Go
+			// function whose declaring package did not type-check. Its `any`
+			// would reach the output unannounced and fail only in `go build`.
+			if (requireTypedParams || unresolvedSlot) && paramCtx.Type_() == nil && !typeApplied {
 				name := paramCtx.Identifier().GetText()
-				return nil, galaerr.NewCodedSemanticError(
-					galaerr.CodeUntypedLambdaParam,
-					paramCtx.GetStart().GetLine(), paramCtx.GetStart().GetColumn(),
-					fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name),
-					fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name),
-				)
+				msg := fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name)
+				hint := fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name)
+				if unresolvedSlot {
+					callee := lambdaArgCallee(ctx)
+					if callee == "" {
+						callee = "the function it is passed to"
+					}
+					msg = fmt.Sprintf("lambda parameter %q has no type: %s expects a function here whose parameter %d has a type that could not be resolved", name, callee, i+1)
+					hint = fmt.Sprintf("check that the package declaring %s type-checks — every package it imports must resolve — or annotate the parameter (e.g. `(%s T) => …`)", callee, name)
+				}
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
+					paramCtx.GetStart().GetLine(), paramCtx.GetStart().GetColumn(), msg, hint)
 			}
 			fieldList.List = append(fieldList.List, field)
 		}

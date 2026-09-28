@@ -71,7 +71,7 @@ func currentToolchain(galaVersion string) toolchainKey {
 	return toolchainKey{
 		GalaVersion: galaVersion,
 		Transpiler:  transpilerIdentity(),
-		GoSDK:       goSDKIdentity(),
+		GoSDK:       analyzer.GoSDKIdentity(),
 		Stdlib:      stdlib.Fingerprint(),
 	}
 }
@@ -94,18 +94,6 @@ var transpilerIdentity = sync.OnceValue(func() string {
 		return id
 	}
 	return fmt.Sprintf("unhashable:%d:%d", os.Getpid(), time.Now().UnixNano())
-})
-
-// goSDKIdentity names the Go SDK the analyzer resolves Go package types from:
-// its root and the contents of its VERSION file. Upgrading Go in place keeps the
-// root and changes VERSION; switching SDKs changes the root.
-var goSDKIdentity = sync.OnceValue(func() string {
-	root := analyzer.GoSDKRoot()
-	if root == "" {
-		return "none"
-	}
-	version, _ := os.ReadFile(filepath.Join(root, "VERSION"))
-	return root + "|" + strings.TrimSpace(string(version))
 })
 
 // computeSourceHash computes the transpile key over the declared input set

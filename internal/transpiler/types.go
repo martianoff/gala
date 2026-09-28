@@ -1,6 +1,7 @@
 package transpiler
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -31,6 +32,29 @@ type Type interface {
 // that impossible.
 func IsUnusable(t Type) bool {
 	return t == nil || t.IsNil()
+}
+
+// ContainsUnusable reports whether t is unusable or holds an unusable type
+// anywhere inside it: go/types resolves `[]box.Box` whose package failed to
+// load to a slice whose ELEMENT is unresolved, so a top-level check alone
+// would let `[]<nothing>` through.
+func ContainsUnusable(t Type) bool {
+	if IsUnusable(t) {
+		return true
+	}
+	switch v := t.(type) {
+	case ArrayType:
+		return ContainsUnusable(v.Elem)
+	case PointerType:
+		return ContainsUnusable(v.Elem)
+	case MapType:
+		return ContainsUnusable(v.Key) || ContainsUnusable(v.Elem)
+	case GenericType:
+		return ContainsUnusable(v.Base) || slices.ContainsFunc(v.Params, ContainsUnusable)
+	case FuncType:
+		return slices.ContainsFunc(v.Params, ContainsUnusable) || slices.ContainsFunc(v.Results, ContainsUnusable)
+	}
+	return false
 }
 
 // IsUnusableOrAny extends IsUnusable to also reject the unparametrized

@@ -129,6 +129,7 @@ go_test(
         "go_generic_multireturn_instantiation_test.go",
         "go_generic_return_instantiation_test.go",
         "go_results_test.go",
+        "go_method_func_param_test.go",
         "go_subpackage_import_path_test.go",
         "immutable_test.go",
         "immutable_unwrap_matrix_test.go",
