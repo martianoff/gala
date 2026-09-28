@@ -66,7 +66,7 @@ func (f *GitFetcher) Fetch(modulePath, ver string) (string, string, error) {
 	}
 
 	// Checkout the specific version
-	if err := f.checkoutVersion(repo, tempDir, ver); err != nil {
+	if err := checkoutVersion(repo, ver); err != nil {
 		return "", "", fmt.Errorf("failed to checkout version %s: %w", ver, err)
 	}
 
@@ -138,42 +138,53 @@ func (f *GitFetcher) ListVersions(modulePath string) ([]version.Version, error) 
 	return versions, nil
 }
 
-// checkoutVersion checks out a specific version in the repository.
-func (f *GitFetcher) checkoutVersion(repo *git.Repository, repoDir, ver string) error {
+// checkoutVersion checks out a specific version in a clone the fetcher owns.
+// It discards anything in the clone's worktree, so repo must be a clone
+// made for this fetch (see cloneForVersion), never a checkout someone edits.
+func checkoutVersion(repo *git.Repository, ver string) error {
+	hash, err := resolveVersion(repo, ver)
+	if err != nil {
+		return err
+	}
 	worktree, err := repo.Worktree()
 	if err != nil {
 		return err
 	}
+	// Force: there are no local changes to protect, so the worktree is not
+	// compared against the index at all. Without it go-git refuses to check
+	// out over any "unstaged changes" it sees, and on Windows it sees one in
+	// every checked-out file the repository records as executable (mode
+	// 100755), since the filesystem has no exec bit to match. File modes do
+	// not matter here: the cache stores every file as 0644 (see
+	// copyModuleFiles).
+	return worktree.Checkout(&git.CheckoutOptions{Hash: hash, Force: true})
+}
 
-	// Try tag first (with and without v prefix)
-	for _, tagName := range []string{ver, strings.TrimPrefix(ver, "v")} {
-		tagRef := plumbing.NewTagReferenceName(tagName)
-		hash, err := repo.ResolveRevision(plumbing.Revision(tagRef))
-		if err == nil {
-			return worktree.Checkout(&git.CheckoutOptions{
-				Hash: *hash,
-			})
+// versionTagNames returns the tag names ver may be published under: as
+// written, and without its v prefix.
+func versionTagNames(ver string) []string {
+	if trimmed, ok := strings.CutPrefix(ver, "v"); ok {
+		return []string{ver, trimmed}
+	}
+	return []string{ver}
+}
+
+// resolveVersion resolves ver as a tag, then a branch, then a commit hash.
+func resolveVersion(repo *git.Repository, ver string) (plumbing.Hash, error) {
+	var candidates []plumbing.Revision
+	for _, tagName := range versionTagNames(ver) {
+		candidates = append(candidates, plumbing.Revision(plumbing.NewTagReferenceName(tagName)))
+	}
+	candidates = append(candidates,
+		plumbing.Revision(plumbing.NewBranchReferenceName(ver)),
+		plumbing.Revision(ver),
+	)
+	for _, rev := range candidates {
+		if hash, err := repo.ResolveRevision(rev); err == nil {
+			return *hash, nil
 		}
 	}
-
-	// Try branch
-	branchRef := plumbing.NewBranchReferenceName(ver)
-	hash, err := repo.ResolveRevision(plumbing.Revision(branchRef))
-	if err == nil {
-		return worktree.Checkout(&git.CheckoutOptions{
-			Hash: *hash,
-		})
-	}
-
-	// Try as commit hash
-	hash, err = repo.ResolveRevision(plumbing.Revision(ver))
-	if err == nil {
-		return worktree.Checkout(&git.CheckoutOptions{
-			Hash: *hash,
-		})
-	}
-
-	return fmt.Errorf("version not found: %s", ver)
+	return plumbing.ZeroHash, fmt.Errorf("version not found: %s", ver)
 }
 
 // modulePathToGitURL converts a module path to a Git URL.
@@ -204,15 +215,19 @@ func modulePathToGitURL(modulePath string) string {
 // directly (fast: fetches only one commit). If that fails — because the tag
 // name doesn't match any remote ref, or the server doesn't support the
 // upload-pack request — it falls back to a full clone with all tags.
+//
+// The clone checks nothing out, so checkoutVersion writes the version's files
+// once rather than over a checkout of the clone's HEAD.
 func cloneForVersion(dir, gitURL, ver string) (*git.Repository, error) {
-	// Try each candidate tag name (with and without v prefix) as a direct
-	// shallow clone. This is the fast path: depth=1 with a specific ref.
-	for _, tagName := range []string{ver, strings.TrimPrefix(ver, "v")} {
+	// Try each candidate tag name as a direct shallow clone. This is the fast
+	// path: depth=1 with a specific ref.
+	for _, tagName := range versionTagNames(ver) {
 		repo, err := git.PlainClone(dir, false, &git.CloneOptions{
 			URL:           gitURL,
 			ReferenceName: plumbing.NewTagReferenceName(tagName),
 			Depth:         1,
 			Tags:          git.NoTags,
+			NoCheckout:    true,
 		})
 		if err == nil {
 			return repo, nil
@@ -224,8 +239,9 @@ func cloneForVersion(dir, gitURL, ver string) (*git.Repository, error) {
 
 	// Fallback: full clone with all tags — always correct.
 	return git.PlainClone(dir, false, &git.CloneOptions{
-		URL:  gitURL,
-		Tags: git.AllTags,
+		URL:        gitURL,
+		Tags:       git.AllTags,
+		NoCheckout: true,
 	})
 }
 

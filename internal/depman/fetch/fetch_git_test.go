@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,11 +17,22 @@ import (
 )
 
 // newModuleRepo creates a local git repository holding files, committed and
-// tagged ver. It stands in for a module's remote.
-func newModuleRepo(t *testing.T, files map[string]string, ver string) string {
+// tagged ver (see commitVersion). It stands in for a module's remote.
+func newModuleRepo(t *testing.T, files map[string]string, ver string, executable ...string) string {
 	t.Helper()
 	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
+	_, err := git.PlainInit(dir, false)
+	require.NoError(t, err)
+	commitVersion(t, dir, files, ver, executable...)
+	return dir
+}
+
+// commitVersion writes files into the repository at dir, commits them and
+// tags the commit ver. The files named in executable are committed as mode
+// 100755, whatever the host filesystem can record.
+func commitVersion(t *testing.T, dir string, files map[string]string, ver string, executable ...string) {
+	t.Helper()
+	repo, err := git.PlainOpen(dir)
 	require.NoError(t, err)
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
@@ -31,13 +43,22 @@ func newModuleRepo(t *testing.T, files map[string]string, ver string) string {
 		_, err := wt.Add(rel)
 		require.NoError(t, err)
 	}
-	head, err := wt.Commit("module fixture", &git.CommitOptions{
+	if len(executable) > 0 {
+		idx, err := repo.Storer.Index()
+		require.NoError(t, err)
+		for _, rel := range executable {
+			e, err := idx.Entry(rel)
+			require.NoError(t, err)
+			e.Mode = filemode.Executable
+		}
+		require.NoError(t, repo.Storer.SetIndex(idx))
+	}
+	head, err := wt.Commit("module fixture "+ver, &git.CommitOptions{
 		Author: &object.Signature{Name: "fixture", Email: "fixture@example.com", When: time.Unix(0, 0)},
 	})
 	require.NoError(t, err)
 	_, err = repo.CreateTag(ver, head, nil)
 	require.NoError(t, err)
-	return dir
 }
 
 // newLocalFetcher returns a fetcher over a fresh cache that clones every
@@ -111,4 +132,45 @@ func TestGitFetcher_Fetch_RefetchesSourceOnlyCacheEntry(t *testing.T) {
 	_, _, err := fetcher.Fetch("example.com/assets", "v1.0.0")
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(modDir, "data", "greeting.txt"))
+}
+
+// scriptModuleFiles is a module that ships a script committed as 100755.
+var scriptModuleFiles = map[string]string{
+	"gala.mod":         "module example.com/tool\n",
+	"tool.gala":        "package tool\n",
+	"scripts/build.sh": "#!/bin/sh\necho build\n",
+}
+
+// A module whose repository commits a file as 100755 is fetched like any
+// other. Windows filesystems have no exec bit, so go-git saw every such file
+// in the fresh clone as modified and refused the checkout with "worktree
+// contains unstaged changes". This test only fails on such a filesystem;
+// TestGitFetcher_CheckoutVersion_IgnoresLostExecBit reproduces the state on
+// any platform.
+func TestGitFetcher_Fetch_ModuleWithExecutableFile(t *testing.T) {
+	repo := newModuleRepo(t, scriptModuleFiles, "v1.0.0", "scripts/build.sh")
+	fetcher, _ := newLocalFetcher(t, repo)
+
+	modDir, _, err := fetcher.Fetch("example.com/tool", "v1.0.0")
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(modDir, "scripts", "build.sh"))
+}
+
+// Checking out a version succeeds when the clone's executable files lost their
+// exec bit on disk, as every one does on Windows. Clearing the bit by hand
+// reproduces that state on any platform.
+func TestGitFetcher_CheckoutVersion_IgnoresLostExecBit(t *testing.T) {
+	repoDir := newModuleRepo(t, scriptModuleFiles, "v1.0.0", "scripts/build.sh")
+
+	// A second version, so the checkout has to move the clone off HEAD.
+	commitVersion(t, repoDir, map[string]string{"extra.gala": "package tool\n"}, "v1.1.0")
+
+	// A clone that checked HEAD out, then lost the exec bit.
+	cloneDir := t.TempDir()
+	repo, err := git.PlainClone(cloneDir, false, &git.CloneOptions{URL: repoDir, Tags: git.AllTags})
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(filepath.Join(cloneDir, "scripts", "build.sh"), 0644))
+
+	require.NoError(t, checkoutVersion(repo, "v1.0.0"))
+	assert.NoFileExists(t, filepath.Join(cloneDir, "extra.gala"), "the clone is at v1.0.0")
 }
