@@ -1,16 +1,19 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/graph"
 	"martianoff/gala/internal/depman/mod"
@@ -219,25 +222,80 @@ func syncGoModForBazel(galaMod *mod.File) error {
 		return nil
 	}
 
-	// Remove all GALA-generated sections from existing content
-	markers := []struct{ start, end string }{
-		{"// GALA-managed Go dependencies below. DO NOT EDIT.", "// End GALA-managed dependencies."},
+	goMod, updated := renderBazelGoMod(existingContent, galaMod.Module.Path, goDeps)
+	if err := os.WriteFile(goModPath, []byte(goMod), 0644); err != nil {
+		return err
+	}
+	for _, u := range updated {
+		fmt.Printf("go.mod: %s (the version gala.mod requires)\n", u)
+	}
+
+	fmt.Println("Generated go.mod for Bazel (Go dependencies only)")
+
+	// Generate go.sum by running 'go mod download -json' to get checksums
+	if len(goDeps) > 0 {
+		if err := generateGoSum(goSumPath); err != nil {
+			return fmt.Errorf("generating go.sum: %w", err)
+		}
+		fmt.Println("Generated go.sum for Bazel")
+	}
+
+	return nil
+}
+
+// goModManagedMarker is the start and end line of the go.mod section gala
+// writes.
+type goModManagedMarker struct{ start, end string }
+
+// The first and last line of the section gala writes today.
+const (
+	managedGoModStart = "// GALA-managed Go dependencies below. DO NOT EDIT."
+	managedGoModEnd   = "// End GALA-managed dependencies."
+)
+
+// goModManagedMarkers returns every spelling of the managed section: today's
+// first, then those older gala versions wrote, which are still removed so a
+// go.mod written by an earlier gala is cleaned up.
+func goModManagedMarkers() []goModManagedMarker {
+	return []goModManagedMarker{
+		{managedGoModStart, managedGoModEnd},
 		{"// GALA package dependencies below. DO NOT EDIT.", "// End GALA package dependencies."},
 		{"// GALA stdlib dependencies below. DO NOT EDIT.", "// End GALA stdlib dependencies."},
 		{"// GALA dependencies below. DO NOT EDIT.", "// End GALA dependencies."},
 	}
+}
 
-	for _, m := range markers {
+// renderBazelGoMod returns the go.mod for a Bazel project: existing (the
+// current go.mod, possibly hand-written, possibly "") with every section gala
+// manages replaced by one section requiring goDeps.
+//
+// A module the rest of the file already requires is not required again in the
+// managed section. A hand-written go.mod — one maintained with `go get` —
+// already requires the Go dependencies its code imports, and a second
+// requirement of the same module is one the go command either reports twice
+// (`go mod download -json` lists it once per requirement, which put its go.sum
+// lines in twice) or, at a different version, refuses ("updates to go.mod
+// needed"). Instead, that requirement is set to the version gala.mod requires;
+// updated describes each one changed.
+//
+// The line endings of existing are kept. The result depends only on the
+// requirements, not on what gala wrote before, so rendering its own output
+// again returns it unchanged.
+func renderBazelGoMod(existing, modulePath string, goDeps []mod.Require) (goMod string, updated []string) {
+	crlf := strings.Contains(existing, "\r\n")
+	existing = strings.ReplaceAll(existing, "\r\n", "\n")
+
+	for _, m := range goModManagedMarkers() {
 		for {
-			startIdx := strings.Index(existingContent, m.start)
+			startIdx := strings.Index(existing, m.start)
 			if startIdx == -1 {
 				break
 			}
-			endIdx := strings.Index(existingContent[startIdx:], m.end)
+			endIdx := strings.Index(existing[startIdx:], m.end)
 			if endIdx == -1 {
 				break
 			}
-			existingContent = existingContent[:startIdx] + existingContent[startIdx+endIdx+len(m.end):]
+			existing = existing[:startIdx] + existing[startIdx+endIdx+len(m.end):]
 		}
 	}
 
@@ -245,67 +303,74 @@ func syncGoModForBazel(galaMod *mod.File) error {
 	// For Bazel projects, GALA deps are handled by the bzlmod extension,
 	// so go.mod should not have replace directives pointing to local cache paths.
 	// For non-Bazel projects, gala build generates these in a temp workspace.
-	{
-		lines := strings.Split(existingContent, "\n")
-		var cleanedLines []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			// Strip GALA stdlib replace directives
-			if strings.HasPrefix(trimmed, "replace martianoff/gala/") {
-				continue
-			}
-			// Strip GALA stdlib require entries (inside or outside require blocks)
-			if strings.Contains(trimmed, "martianoff/gala/") &&
-				!strings.HasPrefix(trimmed, "module ") &&
-				!strings.HasPrefix(trimmed, "//") {
-				continue
-			}
-			cleanedLines = append(cleanedLines, line)
+	var cleanedLines []string
+	for _, line := range strings.Split(existing, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Strip GALA stdlib replace directives
+		if strings.HasPrefix(trimmed, "replace martianoff/gala/") {
+			continue
 		}
-		existingContent = strings.Join(cleanedLines, "\n")
+		// Strip GALA stdlib require entries (inside or outside require blocks)
+		if strings.Contains(trimmed, "martianoff/gala/") &&
+			!strings.HasPrefix(trimmed, "module ") &&
+			!strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		cleanedLines = append(cleanedLines, line)
 	}
+	existing = strings.Join(cleanedLines, "\n")
 
 	// Clean up empty require/replace blocks left after stripping
-	existingContent = cleanEmptyGoModBlocks(existingContent)
-	existingContent = strings.TrimSpace(existingContent)
-	if existingContent == "" {
-		existingContent = fmt.Sprintf("module %s\n\ngo 1.22", galaMod.Module.Path)
+	existing = strings.TrimSpace(cleanEmptyGoModBlocks(existing))
+	if existing == "" {
+		existing = fmt.Sprintf("module %s\n\ngo 1.22", modulePath)
 	}
 
-	// Build new content
-	var sb strings.Builder
-	sb.WriteString(existingContent)
+	// Requirements the file already has are set to gala.mod's version in place.
+	want := make(map[string]string, len(goDeps))
+	for _, dep := range goDeps {
+		want[dep.Path] = dep.Version
+	}
+	lines := strings.Split(existing, "\n")
+	required := make(map[string]bool)
+	for _, r := range build.ParseGoModRequireLines(existing) {
+		required[r.Path] = true
+		ver, managed := want[r.Path]
+		if !managed || ver == r.Version {
+			continue
+		}
+		line := lines[r.Line]
+		at := strings.Index(line, r.Path) + len(r.Path)
+		lines[r.Line] = line[:at] + strings.Replace(line[at:], r.Version, ver, 1)
+		updated = append(updated, fmt.Sprintf("%s %s -> %s", r.Path, r.Version, ver))
+	}
 
-	// Add Go dependencies if any
-	if len(goDeps) > 0 {
+	var sb strings.Builder
+	sb.WriteString(strings.Join(lines, "\n"))
+	var managed []mod.Require
+	for _, dep := range goDeps {
+		if !required[dep.Path] {
+			managed = append(managed, dep)
+		}
+	}
+	if len(managed) > 0 {
 		sb.WriteString("\n\n")
-		sb.WriteString("// GALA-managed Go dependencies below. DO NOT EDIT.\n")
+		sb.WriteString(managedGoModStart + "\n")
 		sb.WriteString("// Generated by 'gala mod tidy'. Use 'gala build' or 'bazel build' to compile.\n")
 		sb.WriteString("require (\n")
-		for _, dep := range goDeps {
+		for _, dep := range managed {
 			sb.WriteString(fmt.Sprintf("\t%s %s\n", dep.Path, dep.Version))
 		}
 		sb.WriteString(")\n")
-		sb.WriteString("// End GALA-managed dependencies.\n")
+		sb.WriteString(managedGoModEnd + "\n")
 	}
-
 	sb.WriteString("\n")
 
-	if err := os.WriteFile(goModPath, []byte(sb.String()), 0644); err != nil {
-		return err
+	goMod = sb.String()
+	if crlf {
+		goMod = strings.ReplaceAll(goMod, "\n", "\r\n")
 	}
-
-	fmt.Println("Generated go.mod for Bazel (Go dependencies only)")
-
-	// Generate go.sum by running 'go mod download -json' to get checksums
-	if len(goDeps) > 0 {
-		if err := generateGoSum(goSumPath, goDeps); err != nil {
-			return fmt.Errorf("generating go.sum: %w", err)
-		}
-		fmt.Println("Generated go.sum for Bazel")
-	}
-
-	return nil
+	return goMod, updated
 }
 
 // cleanEmptyGoModBlocks removes empty require() and replace() blocks from go.mod content.
@@ -330,7 +395,7 @@ func cleanEmptyGoModBlocks(content string) string {
 }
 
 // generateGoSum generates go.sum file by downloading Go modules and getting their checksums.
-func generateGoSum(goSumPath string, goDeps []mod.Require) error {
+func generateGoSum(goSumPath string) error {
 	// Run 'go mod download -json' to get module info with checksums
 	cmd := exec.Command("go", "mod", "download", "-json")
 	output, err := cmd.Output()
@@ -344,37 +409,69 @@ func generateGoSum(goSumPath string, goDeps []mod.Require) error {
 		return nil
 	}
 
-	// Parse JSON output to build go.sum entries
-	var sumEntries []string
-	decoder := json.NewDecoder(strings.NewReader(string(output)))
-	for decoder.More() {
-		var info struct {
-			Path    string `json:"Path"`
-			Version string `json:"Version"`
-			Sum     string `json:"Sum"`
-			GoMod   string `json:"GoMod"`
-			GoModSum string `json:"GoModSum"`
-		}
-		if err := decoder.Decode(&info); err != nil {
-			continue
-		}
-		if info.Sum != "" {
-			sumEntries = append(sumEntries, fmt.Sprintf("%s %s %s", info.Path, info.Version, info.Sum))
-		}
-		if info.GoModSum != "" {
-			sumEntries = append(sumEntries, fmt.Sprintf("%s %s/go.mod %s", info.Path, info.Version, info.GoModSum))
-		}
+	downloaded, err := goSumLinesFromDownload(output)
+	if err != nil {
+		return err
 	}
-
-	if len(sumEntries) == 0 {
+	if len(downloaded) == 0 {
 		// If no entries from JSON, run go mod tidy to generate go.sum
 		tidyCmd := exec.Command("go", "mod", "tidy")
 		return tidyCmd.Run()
 	}
 
-	// Write go.sum
-	sumContent := strings.Join(sumEntries, "\n") + "\n"
-	return os.WriteFile(goSumPath, []byte(sumContent), 0644)
+	var existing string
+	if content, err := os.ReadFile(goSumPath); err == nil {
+		existing = string(content)
+	}
+	return os.WriteFile(goSumPath, []byte(mergeGoSum(existing, downloaded)), 0644)
+}
+
+// goSumLinesFromDownload turns the output of `go mod download -json` into
+// go.sum lines, one module record at a time.
+func goSumLinesFromDownload(downloadJSON []byte) ([]string, error) {
+	var lines []string
+	decoder := json.NewDecoder(bytes.NewReader(downloadJSON))
+	for decoder.More() {
+		var info struct {
+			Path     string `json:"Path"`
+			Version  string `json:"Version"`
+			Sum      string `json:"Sum"`
+			GoModSum string `json:"GoModSum"`
+		}
+		if err := decoder.Decode(&info); err != nil {
+			return nil, fmt.Errorf("reading `go mod download -json` output: %w", err)
+		}
+		if info.Sum != "" {
+			lines = append(lines, fmt.Sprintf("%s %s %s", info.Path, info.Version, info.Sum))
+		}
+		if info.GoModSum != "" {
+			lines = append(lines, fmt.Sprintf("%s %s/go.mod %s", info.Path, info.Version, info.GoModSum))
+		}
+	}
+	return lines, nil
+}
+
+// mergeGoSum returns the go.sum holding the lines of existing (the current
+// go.sum) and downloaded, each once and in sorted order.
+//
+// The existing lines are kept: `go mod download` reports only the modules in
+// the build list, while a go.sum maintained with `go get` also holds the go.mod
+// hashes of the rest of the module graph, which the go command needs. And each
+// line is written once: the download output has one record per requirement,
+// and the existing file may already hold a line — both of which used to repeat
+// lines in go.sum.
+func mergeGoSum(existing string, downloaded []string) string {
+	seen := make(map[string]bool)
+	var lines []string
+	for _, line := range append(strings.Split(existing, "\n"), downloaded...) {
+		line = strings.TrimSpace(line)
+		if line != "" && !seen[line] {
+			seen[line] = true
+			lines = append(lines, line)
+		}
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // scanImports scans all .gala files in the directory tree for import statements.
