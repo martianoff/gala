@@ -314,7 +314,7 @@ func (g *GoModGenerator) collectTransitiveDepsRecursive(galaMod *mod.File, req m
 	// Also try go.mod for Go dependencies
 	goModPath := filepath.Join(pkgDir, "go.mod")
 	if content, err := os.ReadFile(goModPath); err == nil {
-		parsedDeps := parseGoModRequires(string(content))
+		parsedDeps := ParseGoModRequires(string(content))
 		for path, version := range parsedDeps {
 			// Skip GALA stdlib
 			if strings.HasPrefix(path, "martianoff/gala/") {
@@ -325,46 +325,48 @@ func (g *GoModGenerator) collectTransitiveDepsRecursive(galaMod *mod.File, req m
 	}
 }
 
-// parseGoModRequires extracts require statements from go.mod content.
-func parseGoModRequires(content string) map[string]string {
-	deps := make(map[string]string)
-	lines := strings.Split(content, "\n")
-	inRequireBlock := false
+// GoModRequire is one requirement of a go.mod: the module path and version,
+// and the index of the line that holds them.
+type GoModRequire struct {
+	Line    int
+	Path    string
+	Version string
+}
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-
-		if line == "require (" {
-			inRequireBlock = true
-			continue
+// ParseGoModRequireLines returns the requirements in go.mod content, both the
+// single-line form (`require path version`) and the entries of require blocks
+// (`require (`, also spelled `require(`), in file order. Comments are ignored,
+// including one after a block opener or a requirement.
+func ParseGoModRequireLines(content string) []GoModRequire {
+	var reqs []GoModRequire
+	inBlock := false
+	for i, line := range strings.Split(content, "\n") {
+		if idx := strings.Index(line, "//"); idx >= 0 {
+			line = line[:idx]
 		}
-		if inRequireBlock && line == ")" {
-			inRequireBlock = false
-			continue
-		}
-
-		// Single-line require
-		if strings.HasPrefix(line, "require ") && !strings.Contains(line, "(") {
-			parts := strings.Fields(line[8:])
-			if len(parts) >= 2 {
-				deps[parts[0]] = parts[1]
-			}
-			continue
-		}
-
-		// Inside require block
-		if inRequireBlock {
-			// Remove comments
-			if idx := strings.Index(line, "//"); idx >= 0 {
-				line = strings.TrimSpace(line[:idx])
-			}
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				deps[parts[0]] = parts[1]
-			}
+		fields := strings.Fields(strings.Replace(line, "require(", "require (", 1))
+		switch {
+		case len(fields) == 0:
+		case inBlock && fields[0] == ")":
+			inBlock = false
+		case inBlock && len(fields) >= 2:
+			reqs = append(reqs, GoModRequire{Line: i, Path: fields[0], Version: fields[1]})
+		case fields[0] == "require" && len(fields) >= 2 && fields[1] == "(":
+			inBlock = true
+		case fields[0] == "require" && len(fields) >= 3:
+			reqs = append(reqs, GoModRequire{Line: i, Path: fields[1], Version: fields[2]})
 		}
 	}
+	return reqs
+}
 
+// ParseGoModRequires extracts require statements from go.mod content, as a
+// module path -> version map.
+func ParseGoModRequires(content string) map[string]string {
+	deps := make(map[string]string)
+	for _, r := range ParseGoModRequireLines(content) {
+		deps[r.Path] = r.Version
+	}
 	return deps
 }
 
