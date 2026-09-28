@@ -85,13 +85,17 @@ jobs:
     #
     # Update these deliberately, when the gala_tui or gala_team API surface
     # intentionally changes — a red run after a bump is then real semantic
-    # drift, attributable to the bump. gala_tui has no tag past its GALA 0.79
-    # migration, so it is pinned by commit until one is cut.
+    # drift, attributable to the bump. gala_tui is pinned to the release
+    # gala_team's MODULE.bazel requires, so the override matches what
+    # gala_team is written against.
     env:
-      GALA_TUI_REF: cd234574bdd942e789c93c6c91048b10c2517aa2
-      # Pinned past the struct-field-default adoption (#136): 0.12.0 predates it
-      # and constructs ClaudeChunk/Policy partially, which GALA-E0045 now rejects.
-      GALA_TEAM_REF: "6bea25c3a765987bec3571fa3c6eaf80b1aa15e8"
+      # gala_tui 0.12.0 — the version gala_team requires; it provides
+      # ModalOver, which gala_team's UI uses.
+      GALA_TUI_REF: 0ffa8738910555dc2e93124b8a39cbd532a02573
+      # Pinned past the commit that imports app/view in app/ui/update.gala:
+      # GALA-E0023 rejects a name whose package the file does not import, and
+      # earlier commits used SidebarRowCount without that import.
+      GALA_TEAM_REF: "a17d1463f52797f23b7938ead8ce1c74c4b11449"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 

@@ -192,10 +192,12 @@ jobs:
         # goflags: gala-tui's root package peaks at ~10 GB RSS while compiling,
         # so its packages are compiled one at a time, as its own CI does.
         include:
-          # gala-tui main after its fix for the GALA-E0045 required-field check.
+          # gala-tui main after it imports time_utils in every file that uses
+          # it: GALA-E0023 rejects a name whose package the file does not
+          # import.
           - name: gala-tui
             repo: martianoff/gala-tui
-            ref: 2ad65e1650cfac290c94367b8393b65e55a9efa5
+            ref: dfbf62c1c9e78498fffdfff54d75cc793a411871
             commands: test
             goflags: -p=1
           # gala-server (martianoff/gala-server, `commands: build test`) is not
