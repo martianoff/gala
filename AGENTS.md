@@ -238,7 +238,8 @@ EVERY pull request MUST go through all of these before it is considered ready:
 5. [ ] The PR description matches the actual diff: every claim is true, every notable
        change (including breaking changes) is mentioned
 6. [ ] AI assistance is disclosed (see [CONTRIBUTING.MD](CONTRIBUTING.MD#ai-assisted-contributions)):
-       tick the PR-template box, and add a `Co-Authored-By:` trailer naming the agent
+       tick the PR-template boxes, and add a `Co-Authored-By:` trailer naming the agent
+       *(The boxes are CI-enforced.)*
 7. [ ] **CI is all green on the final commit.** This is the last gate. Re-check after every
        push. "No checks reported" usually means the branch conflicts with `master`, not
        that it passed — rebase and wait for the checks to run.
