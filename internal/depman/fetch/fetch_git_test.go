@@ -144,7 +144,9 @@ var scriptModuleFiles = map[string]string{
 // A module whose repository commits a file as 100755 is fetched like any
 // other. Windows filesystems have no exec bit, so go-git saw every such file
 // in the fresh clone as modified and refused the checkout with "worktree
-// contains unstaged changes".
+// contains unstaged changes". This test only fails on such a filesystem;
+// TestGitFetcher_CheckoutVersion_IgnoresLostExecBit reproduces the state on
+// any platform.
 func TestGitFetcher_Fetch_ModuleWithExecutableFile(t *testing.T) {
 	repo := newModuleRepo(t, scriptModuleFiles, "v1.0.0", "scripts/build.sh")
 	fetcher, _ := newLocalFetcher(t, repo)

@@ -139,6 +139,8 @@ func (f *GitFetcher) ListVersions(modulePath string) ([]version.Version, error) 
 }
 
 // checkoutVersion checks out a specific version in a clone the fetcher owns.
+// It discards anything in the clone's worktree, so repo must be a clone
+// made for this fetch (see cloneForVersion), never a checkout someone edits.
 func checkoutVersion(repo *git.Repository, ver string) error {
 	hash, err := resolveVersion(repo, ver)
 	if err != nil {
@@ -148,12 +150,13 @@ func checkoutVersion(repo *git.Repository, ver string) error {
 	if err != nil {
 		return err
 	}
-	// Force: the clone is a fresh temporary directory nobody else writes to,
-	// so there are no local changes to protect. Without it go-git refuses to
-	// check out over any "unstaged changes" it sees, and on Windows it sees
-	// one in every file the repository records as executable (mode 100755),
-	// since the filesystem has no exec bit to match. The cache drops file
-	// modes anyway (see copyModuleFiles).
+	// Force: there are no local changes to protect, so the worktree is not
+	// compared against the index at all. Without it go-git refuses to check
+	// out over any "unstaged changes" it sees, and on Windows it sees one in
+	// every checked-out file the repository records as executable (mode
+	// 100755), since the filesystem has no exec bit to match. File modes do
+	// not matter here: the cache stores every file as 0644 (see
+	// copyModuleFiles).
 	return worktree.Checkout(&git.CheckoutOptions{Hash: hash, Force: true})
 }
 
@@ -213,8 +216,8 @@ func modulePathToGitURL(modulePath string) string {
 // name doesn't match any remote ref, or the server doesn't support the
 // upload-pack request — it falls back to a full clone with all tags.
 //
-// The clone checks nothing out: checkoutVersion writes the version's files
-// once, into an empty worktree.
+// The clone checks nothing out, so checkoutVersion writes the version's files
+// once rather than over a checkout of the clone's HEAD.
 func cloneForVersion(dir, gitURL, ver string) (*git.Repository, error) {
 	// Try each candidate tag name as a direct shallow clone. This is the fast
 	// path: depth=1 with a specific ref.
