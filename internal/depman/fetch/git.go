@@ -268,13 +268,14 @@ func (f *GitFetcher) FetchWithInfo(modulePath, ver string) (*FetchResult, error)
 		Hash:       hash,
 	}
 
-	// Try to compute gala.mod hash
+	// Hash the module's gala.mod, when it has one.
 	galaModPath := filepath.Join(cachePath, "gala.mod")
 	if _, err := os.Stat(galaModPath); err == nil {
 		galaModHash, err := sum.HashFile(galaModPath)
-		if err == nil {
-			result.GalaModHash = galaModHash
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash %s: %w", galaModPath, err)
 		}
+		result.GalaModHash = galaModHash
 	}
 
 	return result, nil
