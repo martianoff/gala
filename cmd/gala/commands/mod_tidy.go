@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -127,12 +128,17 @@ func runModTidy(cmd *cobra.Command, args []string) {
 
 	// Build dependency graph and resolve versions with MVS
 	if err := resolveModuleGraph(galaMod, requiredPaths, cache, fetcher); err != nil {
+		var cycle *graph.CycleError
+		if errors.As(err, &cycle) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
 
 	// Compute gala.sum before writing anything, so a module that cannot be
 	// recorded leaves both files as they were.
-	galaSum, err := galaSumFor(galaMod, cache, fetcher)
+	galaSum, err := galaSumFor(galaMod, loadGalaSum(), cache, fetcher)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -572,7 +578,8 @@ func filterExternalImports(imports map[string]bool, modulePath string, requires 
 // resolveModuleGraph builds the module graph of galaMod and applies Minimal
 // Version Selection to it: each requirement in galaMod is set to its selected
 // version, and one no source file imports (requiredPaths) is marked indirect.
-// galaMod is left as it was when the graph cannot be built.
+// It fails, leaving galaMod as it was, when the graph cannot be built or has a
+// cycle (a *graph.CycleError).
 func resolveModuleGraph(galaMod *mod.File, requiredPaths map[string]bool, cache *fetch.Cache, fetcher *fetch.GitFetcher) error {
 	if len(galaMod.Require) == 0 {
 		return nil
@@ -581,10 +588,8 @@ func resolveModuleGraph(galaMod *mod.File, requiredPaths map[string]bool, cache 
 	if err != nil {
 		return fmt.Errorf("failed to build dependency graph: %w", err)
 	}
-	// Check for cycles
-	if cycleErr := g.DetectCycles(); cycleErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", cycleErr)
-		os.Exit(1)
+	if err := g.DetectCycles(); err != nil {
+		return err
 	}
 
 	// Apply MVS
@@ -616,32 +621,56 @@ func resolveModuleGraph(galaMod *mod.File, requiredPaths map[string]bool, cache 
 
 // galaSumFor returns the gala.sum for galaMod as tidy leaves it: the content
 // hash, and the gala.mod hash when there is one, of each module galaMod
-// requires, at the version it requires. Nothing from the previous gala.sum
-// carries over, so an entry for a version no longer required, or a module no
-// longer required, is dropped.
+// requires, at the version it requires. Only what the requirements name is
+// kept, so an entry for a version no longer required, or a module no longer
+// required, is dropped.
 //
 // A GALA module that is not cached is fetched, and one that cannot be is an
 // error: a gala.sum without it would not describe the build. Tidy used to leave
 // such a module out without a word, which is how gala.sum fell behind gala.mod.
-// A Go module (`// go`) is recorded when it is cached, as before; it is not
-// fetched for gala.sum, because its checksum is go.sum's to keep and its path
-// need not name a Git repository (golang.org/x/...).
-func galaSumFor(galaMod *mod.File, cache *fetch.Cache, fetcher *fetch.GitFetcher) (*sum.File, error) {
+//
+// As in go.sum, a requirement replaced by a local directory has no entry, and
+// one replaced by another module is recorded as that module.
+//
+// A Go module (`// go`) is not fetched for gala.sum: its checksum is go.sum's
+// to keep, and its path need not name a Git repository (golang.org/x/...). It
+// is recorded when it is cached, and otherwise keeps the entries previous (the
+// gala.sum being replaced) has for it.
+func galaSumFor(galaMod *mod.File, previous *sum.File, cache *fetch.Cache, fetcher *fetch.GitFetcher) (*sum.File, error) {
 	f := sum.NewFile()
 	for _, req := range galaMod.Require {
-		if req.Go && !cache.Config().IsCached(req.Path, req.Version) {
+		path, ver := req.Path, req.Version
+		if rep := replacementFor(galaMod, req); rep != nil {
+			if rep.New.IsLocal() {
+				continue
+			}
+			path, ver = rep.New.Path, rep.New.Version
+		}
+		if req.Go && !cache.Config().IsCached(path, ver) {
+			f.Entries = append(f.Entries, previous.GetModuleEntries(path, ver)...)
 			continue
 		}
-		info, err := fetcher.FetchWithInfo(req.Path, req.Version)
+		info, err := fetcher.FetchWithInfo(path, ver)
 		if err != nil {
-			return nil, fmt.Errorf("cannot record %s@%s in gala.sum: %w", req.Path, req.Version, err)
+			return nil, fmt.Errorf("cannot record %s@%s in gala.sum: %w", path, ver, err)
 		}
-		f.Add(req.Path, req.Version, "", info.Hash)
+		f.Add(path, ver, "", info.Hash)
 		if info.GalaModHash != "" {
-			f.Add(req.Path, req.Version, "/gala.mod", info.GalaModHash)
+			f.Add(path, ver, "/gala.mod", info.GalaModHash)
 		}
 	}
 	return f, nil
+}
+
+// replacementFor returns the replace directive of galaMod that applies to req:
+// one for its path at its version, or for its path at any version.
+func replacementFor(galaMod *mod.File, req mod.Require) *mod.Replace {
+	for i, rep := range galaMod.Replace {
+		if rep.Old.Path == req.Path && (rep.Old.Version == "" || rep.Old.Version == req.Version) {
+			return &galaMod.Replace[i]
+		}
+	}
+	return nil
 }
 
 // Helper to check if a version string is valid
