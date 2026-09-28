@@ -1,0 +1,177 @@
+name: Stdlib parity — Nix transpile vs Bazel generate_embedded
+
+# Do the two stdlib builds agree, byte for byte?
+#
+# `gala` packs its stdlib into internal/stdlib/embedded_gen.go, and two
+# different builds produce that file:
+#
+#   - Bazel runs //cmd/stdlib_gen over the generate_embedded srcs, with
+#     cmd/stdlib_gen built from the working tree;
+#   - Nix (nix/gala.nix) transpiles the stdlib with a *downloaded release
+#     binary* and packs the result with the same generator.
+#
+# Nothing compared them, so a codegen change that genuinely moves stdlib
+# output would leave the Nix build succeeding with a stale embedded stdlib and
+# no signal at all. Several inputs are also copied by hand and go stale
+# quietly: galaReleaseVersion and its four hashes, galaVendorHash, the ANTLR
+# version and hash, and the awk scrape of generate_embedded's srcs.
+#
+# #561 exposed the transpiled input set as packages.<system>.gala-stdlib
+# (nix/gala.nix's passthru.localTranspiled, already consumed by the
+# stdlib-source-priority check in nix/checks.nix), which is what makes the
+# comparison below short. Tracked in docs/TODO.MD.
+#
+# Posture, matching downstream-drift.yml:
+#
+#   - schedule and manual dispatch only, never pull_request
+#   - not a required status check, so it gates nothing
+#   - no timing budget — the question is "do they agree", not "how fast"
+#
+# A red run means the two builds disagree, which is either a real codegen
+# divergence or a stale hand-copied value. The notice below says which
+# things are worth looking at first.
+on:
+  workflow_dispatch:
+  schedule:
+    # 06:17 UTC nightly — an hour after downstream-drift (05:17) and two after
+    # the perf lane (04:17), so a Nix build does not contend for runners or
+    # for either lane's disk-cache key.
+    - cron: "17 6 * * *"
+
+# Checkouts and builds only; the token never needs to write.
+permissions:
+  contents: read
+
+jobs:
+  stdlib-parity:
+    name: Nix stdlib byte-matches Bazel
+    runs-on: ubuntu-latest
+    # Generous. This lane has no budget to enforce, and the Nix side is the
+    # slow half: it downloads a release binary, resolves a Go module vendor
+    # hash, and transpiles the whole stdlib from cold on every run. There is
+    # no Nix binary cache configured, so /nix/store does not persist between
+    # runs — a cold run is the normal case, not the exception.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout gala (master)
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          # GOCACHE is aimed at a tmpdir below; sharing the actions cache
+          # would mix this lane's artifacts with the other lanes'.
+          cache: false
+
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
+      - name: Setup Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          # A key of its own, for the same reason downstream-drift and the
+          # perf lane each have one: a shared key lets one lane's artifacts
+          # influence what another measures.
+          disk-cache: stdlib-parity-${{ steps.setup-go.outputs.go-version }}
+          repository-cache: true
+
+      - name: Record what was actually compared
+        run: |
+          set -euo pipefail
+          # A parity failure is only actionable if the report names the inputs
+          # that produced it. Two builds agreeing or disagreeing is not a fact
+          # about "the stdlib" in the abstract; it is a fact about one release
+          # binary and one tree.
+          echo "gala commit        $(git rev-parse HEAD)"
+          echo "galaReleaseVersion $(sed -n 's/.*galaReleaseVersion ? "\(.*\)".*/\1/p' nix/gala.nix)"
+          echo "bazel pin          $(cat .bazelversion)"
+          echo "labels in scrape   $(awk '/name = "generate_embedded"/,/outs = \["embedded_gen.go"\]/' internal/stdlib/BUILD.bazel | grep -c '//')"
+
+      - name: Build the Nix stdlib inputs
+        run: |
+          set -euo pipefail
+          nix build .#gala-stdlib --print-build-logs
+          # The staged set mirrors generate_embedded's srcs. Counting it here
+          # gives the cheapest possible diagnosis when the diff below fails:
+          # Entry counts on both sides, because a count mismatch means an input
+          # was dropped on one side only. Bazel's genrule takes every src; the
+          # Nix awk scrape keeps only labels containing a `:`, so a src added
+          # without one is transpiled by nobody and staged by neither. That
+          # one-sided drop is exactly what the diff below catches.
+          echo "nix staged files:    $(find result/files -type f | wc -l)"
+          echo "nix staged packages: $(find result/files -type f -printf '%h\n' | sort -u | wc -l)"
+
+      - name: Build the Bazel stdlib
+        run: |
+          set -euo pipefail
+          bazel build //internal/stdlib:generate_embedded //cmd/stdlib_gen
+          echo "bazel embedded_gen: $(wc -c < bazel-bin/internal/stdlib/embedded_gen.go) bytes"
+
+      - name: Compare
+        id: compare
+        run: |
+          set -euo pipefail
+          # stdlib_gen groups its inputs into maps keyed by package and then
+          # sorts both levels before writing, so the order of the file list
+          # below cannot change the output. `sort` is still applied so the
+          # command line in a log is reproducible.
+          mapfile -t nix_files < <(find result/files -type f | sort)
+          echo "comparing ${#nix_files[@]} Nix inputs against Bazel's generate_embedded srcs"
+
+          ./bazel-bin/cmd/stdlib_gen/stdlib_gen_/stdlib_gen \
+            -output "$RUNNER_TEMP/nix_embedded_gen.go" "${nix_files[@]}"
+
+          if diff -u "$RUNNER_TEMP/nix_embedded_gen.go" \
+                    bazel-bin/internal/stdlib/embedded_gen.go > "$RUNNER_TEMP/parity.diff"; then
+            echo "stdlib parity holds: Nix and Bazel produced identical embedded_gen.go"
+          else
+            echo "::error::Nix and Bazel disagree on internal/stdlib/embedded_gen.go"
+            echo "diff lines: $(wc -l < "$RUNNER_TEMP/parity.diff")"
+            # Entry counts on both sides. A mismatch means an input was dropped
+            # on one side only -- Bazel's genrule takes every src, the Nix awk
+            # scrape keeps only labels containing a colon -- so this separates
+            # "an input went missing" from "an input was transpiled
+            # differently" without reading the diff. Equal counts with a
+            # non-empty diff is a codegen divergence.
+            echo "packed entries: nix=$(grep -c $'^\t\t"' "$RUNNER_TEMP/nix_embedded_gen.go")" \
+                 "bazel=$(grep -c $'^\t\t"' bazel-bin/internal/stdlib/embedded_gen.go)"
+            # A whole added or removed package block is the signature of a
+            # dropped input; a changed line inside a package is the signature
+            # of a codegen divergence. Print the first few hunks either way,
+            # because a generated file diffs into thousands of lines otherwise.
+            head -60 "$RUNNER_TEMP/parity.diff"
+            exit 1
+          fi
+
+      - name: Explain a failure
+        # Scoped to the Compare step on purpose. A Nix or Bazel build failure
+        # reaches this point too, and "the two disagree" would be the wrong
+        # thing to tell someone whose build did not finish.
+        if: failure() && steps.compare.outcome == 'failure'
+        run: |
+          echo "::notice::The Nix-transpiled stdlib and Bazel's generate_embedded disagree."
+          echo "::notice::This lane gates nothing — no PR is blocked by this run."
+          echo "::notice::Read the packed entry counts printed above first: unequal means an"
+          echo "::notice::input was dropped, equal means the contents diverged."
+          echo "::notice::A drop is the awk scrape of internal/stdlib/BUILD.bazel, which keeps"
+          echo "::notice::only labels containing a colon. Bazel's genrule takes every src, so a"
+          echo "::notice::label added without one is transpiled by nobody and staged by neither."
+          echo "::notice::Then check the hand-copied values this derivation actually reads:"
+          echo "::notice::galaReleaseVersion and the four per-platform release hashes, plus the"
+          echo "::notice::awk scrape itself. A stale or wrong release binary is the usual cause"
+          echo "::notice::of equal counts with differing contents."
+          echo "::notice::Note what this lane does NOT cover: galaVendorHash and the ANTLR"
+          echo "::notice::jar feed the 'gala' derivation, not localTranspiled, so drift in"
+          echo "::notice::either cannot move this diff. Vendor-hash drift is invisible here by"
+          echo "::notice::construction."
+          echo "::notice::If the contents differ with equal counts, that is a real codegen"
+          echo "::notice::divergence between the release binary and the tree —"
+          echo "::notice::nix build .#gala-local uses cmd/gala_bootstrap from this tree and is"
+          echo "::notice::the escape hatch while that is investigated."
