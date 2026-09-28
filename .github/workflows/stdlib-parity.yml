@@ -92,8 +92,7 @@ jobs:
           echo "gala commit        $(git rev-parse HEAD)"
           echo "galaReleaseVersion $(sed -n 's/.*galaReleaseVersion ? "\(.*\)".*/\1/p' nix/gala.nix)"
           echo "bazel pin          $(cat .bazelversion)"
-          echo "antlr (MODULE)     $(grep -o 'antlr-[0-9.]*-complete.jar' MODULE.bazel | head -1)"
-          echo "antlr (nix)        $(grep -o 'antlr-[0-9.]*-complete.jar' nix/gala.nix | head -1)"
+          echo "labels in scrape   $(awk '/name = "generate_embedded"/,/outs = \["embedded_gen.go"\]/' internal/stdlib/BUILD.bazel | grep -c '//')"
 
       - name: Build the Nix stdlib inputs
         run: |
@@ -101,9 +100,11 @@ jobs:
           nix build .#gala-stdlib --print-build-logs
           # The staged set mirrors generate_embedded's srcs. Counting it here
           # gives the cheapest possible diagnosis when the diff below fails:
-          # a count mismatch means an input was dropped rather than
-          # transpiled differently, which is the awk scrape losing a label
-          # (it keeps only labels containing a `:`), not a codegen change.
+          # Entry counts on both sides, because a count mismatch means an input
+          # was dropped on one side only. Bazel's genrule takes every src; the
+          # Nix awk scrape keeps only labels containing a `:`, so a src added
+          # without one is transpiled by nobody and staged by neither. That
+          # one-sided drop is exactly what the diff below catches.
           echo "nix staged files:    $(find result/files -type f | wc -l)"
           echo "nix staged packages: $(find result/files -type f -printf '%h\n' | sort -u | wc -l)"
 
@@ -133,6 +134,14 @@ jobs:
           else
             echo "::error::Nix and Bazel disagree on internal/stdlib/embedded_gen.go"
             echo "diff lines: $(wc -l < "$RUNNER_TEMP/parity.diff")"
+            # Entry counts on both sides. A mismatch means an input was dropped
+            # on one side only -- Bazel's genrule takes every src, the Nix awk
+            # scrape keeps only labels containing a colon -- so this separates
+            # "an input went missing" from "an input was transpiled
+            # differently" without reading the diff. Equal counts with a
+            # non-empty diff is a codegen divergence.
+            echo "packed entries: nix=$(grep -c $'^\t\t"' "$RUNNER_TEMP/nix_embedded_gen.go")" \
+                 "bazel=$(grep -c $'^\t\t"' bazel-bin/internal/stdlib/embedded_gen.go)"
             # A whole added or removed package block is the signature of a
             # dropped input; a changed line inside a package is the signature
             # of a codegen divergence. Print the first few hunks either way,
@@ -149,13 +158,20 @@ jobs:
         run: |
           echo "::notice::The Nix-transpiled stdlib and Bazel's generate_embedded disagree."
           echo "::notice::This lane gates nothing — no PR is blocked by this run."
-          echo "::notice::Check the hand-copiled values in nix/gala.nix first:"
-          echo "::notice::  galaReleaseVersion + the four release hashes, galaVendorHash,"
-          echo "::notice::  and the ANTLR version/hash against MODULE.bazel's @antlr4_tool."
-          echo "::notice::Then check the awk scrape of internal/stdlib/BUILD.bazel: it keeps"
-          echo "::notice::only labels containing a `:`, so a src added without one is staged"
-          echo "::notice::by neither build and shows up here as a package-count mismatch."
-          echo "::notice::If the file counts match and only contents differ, that is a real"
-          echo "::notice::codegen divergence between the release binary and the tree —"
+          echo "::notice::Read the packed entry counts printed above first: unequal means an"
+          echo "::notice::input was dropped, equal means the contents diverged."
+          echo "::notice::A drop is the awk scrape of internal/stdlib/BUILD.bazel, which keeps"
+          echo "::notice::only labels containing a colon. Bazel's genrule takes every src, so a"
+          echo "::notice::label added without one is transpiled by nobody and staged by neither."
+          echo "::notice::Then check the hand-copied values this derivation actually reads:"
+          echo "::notice::galaReleaseVersion and the four per-platform release hashes, plus the"
+          echo "::notice::awk scrape itself. A stale or wrong release binary is the usual cause"
+          echo "::notice::of equal counts with differing contents."
+          echo "::notice::Note what this lane does NOT cover: galaVendorHash and the ANTLR"
+          echo "::notice::jar feed the 'gala' derivation, not localTranspiled, so drift in"
+          echo "::notice::either cannot move this diff. Vendor-hash drift is invisible here by"
+          echo "::notice::construction."
+          echo "::notice::If the contents differ with equal counts, that is a real codegen"
+          echo "::notice::divergence between the release binary and the tree —"
           echo "::notice::nix build .#gala-local uses cmd/gala_bootstrap from this tree and is"
           echo "::notice::the escape hatch while that is investigated."
