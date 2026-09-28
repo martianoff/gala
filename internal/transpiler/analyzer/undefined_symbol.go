@@ -84,12 +84,18 @@ import (
 //
 //   - Type compatibility. This is an *existence* check only; whether
 //     `add(1, "two")` type-checks is not its business.
-//   - Import discipline. Resolution is deliberately permissive about *which*
-//     package a name came from: any symbol present in the merged metadata
-//     counts. Requiring the current file's own import is GALA-E0025's job
-//     (validateExplicitImports), which is unchanged by this pass. So a name
-//     visible only because a sibling file imported its package is accepted
-//     here and rejected there — one concern, one code.
+//   - Import discipline for Go names and for signature types. A bare Go name
+//     is accepted if any Go package in the compilation declares it (the Go
+//     compiler has the last word), and a signature type whose package this
+//     file did not import is GALA-E0025's job (validateExplicitImports).
+//
+//     Bare GALA names are the exception, because the metadata holds every
+//     package the import graph reached, not just this file's imports: a name
+//     declared only by GALA packages this file neither belongs to nor
+//     dot-imports (std counts as dot-imported) is reported here, in value and
+//     in type position. Without that, a file importing only `strings` could
+//     call `ArrayOf` unqualified and the transformer would bind it to
+//     whichever collection package it found. See galaScope.
 //   - Selectors. In `x.foo().bar`, only `x` is checked. Field and method
 //     names need the receiver's type, which is inference territory.
 //   - Type references (`func f(x Foo)`, `val v Foo = ...`, `Foo{}`). The
@@ -277,6 +283,13 @@ type undefChecker struct {
 	// synthesized methods — see isGeneratedMethodForm.
 	declaredTypes map[string]bool
 
+	// scope says which GALA packages this file can name a symbol of without
+	// a qualifier. `declared` spans every package whose metadata reached the
+	// compilation — including packages that arrived only because an import
+	// imports them — so a name found there is checked against scope before
+	// it counts. See galaScope.
+	scope galaScope
+
 	// qualifiers holds names usable as a package qualifier (`pkg.Symbol`):
 	// GALA package names, import aliases, and the trailing segment of this
 	// file's Go import paths.
@@ -304,11 +317,16 @@ type undefChecker struct {
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
-// the collected errors in source order.
+// the collected errors in source order. fileDotImportSets maps each file of
+// the package (by canonical path) to the GALA package names it dot-imports; a
+// method whose receiver type lives in another file may use that file's dot
+// imports in its signature, the bare-name form of the allowance GALA-E0025
+// makes.
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
 	richAST *transpiler.RichAST,
 	filePath string,
+	fileDotImportSets map[string]map[string]bool,
 ) []*galaerr.SemanticError {
 	imports := scanFileImports(sourceFile)
 	declared := indexDeclaredSymbols(richAST)
@@ -322,6 +340,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		rich:           richAST,
 		declared:       declared,
 		declaredTypes:  indexDeclaredTypeNames(richAST),
+		scope:          a.buildGalaScope(imports, richAST, filePath),
 		qualifiers:     collectQualifiers(imports, richAST),
 		hintRoots:      a.hintRoots,
 		importResolves: a.importPathResolvesTo,
@@ -337,7 +356,9 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	// search root to build its hint, so the dedupe is worth real work. It runs
 	// under this function's eligibility guards, which is why it lives here
 	// rather than standing alone. See checkTypeQualifiers.
-	c.checkTypeQualifiers(sourceFile)
+	c.checkTypeQualifiers(sourceFile, func(recvType string) map[string]bool {
+		return receiverFileImports(richAST, recvType, filePath, fileDotImportSets)
+	})
 
 	sort.SliceStable(c.errs, func(i, j int) bool {
 		if c.errs[i].Line != c.errs[j].Line {
@@ -502,6 +523,12 @@ func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bo
 	for _, imp := range imports {
 		if !a.isGalaImport(imp.Path) {
 			continue // Go package — its symbols come from GoTypeInfo
+		}
+		// Only a dot import puts a package's names in scope unqualified; a
+		// named import is reached through its qualifier, which is checked
+		// separately.
+		if !imp.IsDot {
+			continue
 		}
 		for name := range a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix)) {
 			out[name] = true
@@ -933,7 +960,7 @@ func (c *undefChecker) resolves(name string) bool {
 		return true
 	}
 	if c.declared[name] {
-		return true
+		return !c.scope.hides(name)
 	}
 	return c.isGeneratedMethodForm(name)
 }
@@ -990,12 +1017,29 @@ func (c *undefChecker) report(name string, tok antlr.Token) {
 // declared by GALA packages the search paths can see, it names the import(s)
 // that would bring it into scope; otherwise it falls back to generic guidance.
 func (c *undefChecker) hintFor(name string) string {
+	// The file imports a package that declares the name, but by name rather
+	// than with a dot, so the name is reached through its qualifier.
+	if qualifier, ok := c.scope.namedImportQualifier(name); ok {
+		return fmt.Sprintf(
+			"%s is declared in a package this file imports by name; call it as `%s.%s`, "+
+				"or dot-import that package to use it unqualified.",
+			name, qualifier, name)
+	}
 	if c.hints == nil {
 		c.hints = newHintIndex(c.hintRoots())
 	}
 	candidates := galaPackagesDeclaring(name, c.hints, c.importResolves)
 	switch len(candidates) {
 	case 0:
+		// Not on the search roots, but the compilation loaded a package that
+		// declares it (typically another package of this module, reached
+		// through the import graph): name its import path.
+		if paths := c.scope.declaringImportPaths(name); len(paths) > 0 {
+			return fmt.Sprintf(
+				"%s is declared in %s, which this file does not import. "+
+					"Add `import . \"<path>\"` to use it unqualified, or import it plainly and qualify the call.",
+				name, strings.Join(quoteAll(paths), ", "))
+		}
 		return "check the spelling, add the import that introduces this name, or declare it — " +
 			"every identifier must resolve to a binding, a declaration in this package, or an imported symbol"
 	case 1:
@@ -1363,38 +1407,152 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 // qualifier is unambiguously a package name, while resolving the member would
 // need the full type surface of every imported Go package and would misfire
 // whenever that surface is incomplete (no Go SDK, an unanalyzed package).
-// Unqualified type names are left alone entirely: a bare `Foo` may be a type
-// parameter, a local declaration, or a dot-imported name.
-func (c *undefChecker) checkTypeQualifiers(sourceFile *grammar.SourceFileContext) {
-	walkTypeContexts(sourceFile, func(tc *grammar.TypeContext) {
-		qi := tc.QualifiedIdentifier()
-		if qi == nil {
+//
+// An unqualified type name is checked only against galaScope: it is reported
+// when every package declaring it is a GALA package this file neither is nor
+// dot-imports — `func total(xs Array[int])` in a file whose only import is
+// `strings`, which loads the collection packages for its own use. Any other
+// bare name is left alone: it may be a type parameter, a local declaration, a
+// dot-imported name, or a Go type the analyzer only partly knows. Type
+// parameters are recognised file-wide rather than per scope, which can only
+// suppress a report, never invent one.
+//
+// In the signature of a method whose receiver type is declared in another
+// file of the package, the packages that file dot-imports count as well — the
+// allowance GALA-E0025 makes for method signatures. receiverImports returns
+// them. The method body gets no allowance, for type and value names alike.
+func (c *undefChecker) checkTypeQualifiers(sourceFile *grammar.SourceFileContext, receiverImports func(recvType string) map[string]bool) {
+	typeParams := collectTypeParameterNames(sourceFile)
+	var walk func(n antlr.Tree, extra map[string]bool)
+	walk = func(n antlr.Tree, extra map[string]bool) {
+		if fd, ok := n.(*grammar.FunctionDeclarationContext); ok && fd.Receiver() != nil {
+			var sigExtra map[string]bool
+			if rc, ok := fd.Receiver().(*grammar.ReceiverContext); ok && rc.Type_() != nil {
+				sigExtra = receiverImports(receiverBaseTypeName(rc.Type_().GetText()))
+			}
+			for i := 0; i < n.GetChildCount(); i++ {
+				switch child := n.GetChild(i).(type) {
+				case *grammar.BlockContext, *grammar.ExpressionContext:
+					walk(child, nil)
+				case antlr.ParserRuleContext:
+					walk(child, sigExtra)
+				}
+			}
 			return
 		}
-		ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
-		if len(ids) < 2 {
-			return // unqualified: not a package reference
+		// Nested TypeContexts are visited too: `map[string]strings.Builder`
+		// and `[]pkg.T` carry their named type below an outer TypeContext.
+		if tc, ok := n.(*grammar.TypeContext); ok {
+			c.checkTypeName(tc, typeParams, extra)
 		}
-		name := ids[0].GetText()
-		if c.qualifiers[name] {
-			return
+		// Only a parser rule can contain a TypeContext; terminals are skipped.
+		for i := 0; i < n.GetChildCount(); i++ {
+			if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok {
+				walk(child, extra)
+			}
 		}
-		c.report(name, ids[0].GetStart())
-	})
+	}
+	walk(sourceFile, nil)
 }
 
-// walkTypeContexts visits every TypeContext in the tree, including the nested
-// ones a composite type holds — `map[string]strings.Builder` and `[]pkg.T` both
-// carry their qualified type below an outer TypeContext.
-func walkTypeContexts(node antlr.Tree, visit func(*grammar.TypeContext)) {
-	if tc, ok := node.(*grammar.TypeContext); ok {
-		visit(tc)
+// checkTypeName checks the type name a single TypeContext spells, if any.
+func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra map[string]bool) {
+	qi := tc.QualifiedIdentifier()
+	if qi == nil {
+		return
 	}
-	for i := 0; i < node.GetChildCount(); i++ {
-		// Only a parser rule can contain a TypeContext; descending into
-		// terminals would pay a type assertion per token for nothing.
-		if child, ok := node.GetChild(i).(antlr.ParserRuleContext); ok {
-			walkTypeContexts(child, visit)
+	ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
+	name := ids[0].GetText()
+	if len(ids) < 2 {
+		if !typeParams[name] && c.scope.hidesFrom(name, extra) {
+			c.report(name, ids[0].GetStart())
+		}
+		return
+	}
+	if c.qualifiers[name] {
+		return
+	}
+	c.report(name, ids[0].GetStart())
+}
+
+// receiverBaseTypeName reduces a receiver's type text (`*Box[T]`) to the bare
+// type name (`Box`).
+func receiverBaseTypeName(text string) string {
+	text = strings.TrimLeft(text, "*")
+	if i := strings.IndexByte(text, '['); i >= 0 {
+		text = text[:i]
+	}
+	return text
+}
+
+// receiverFileImports returns the GALA package names imported by the file
+// that declares recvType, when that is a different file from filePath.
+func receiverFileImports(rich *transpiler.RichAST, recvType, filePath string, fileImportSets map[string]map[string]bool) map[string]bool {
+	tm := rich.Types[recvType]
+	if tm == nil {
+		tm = rich.Types[rich.PackageName+"."+recvType]
+	}
+	if tm == nil || tm.DefinedIn == "" {
+		return nil
+	}
+	declaring := canonicalPath(tm.DefinedIn)
+	if declaring == canonicalPath(filePath) {
+		return nil
+	}
+	return fileImportSets[declaring]
+}
+
+// collectReceiverTypeArgs adds the names a receiver type's arguments bind:
+// `Box[K, V]` and `*Box[T]` bind K, V and T.
+func collectReceiverTypeArgs(n antlr.Tree, out map[string]bool) {
+	if ta, ok := n.(*grammar.TypeArgumentsContext); ok {
+		tl, ok := ta.TypeList().(*grammar.TypeListContext)
+		if !ok {
+			return
+		}
+		for _, t := range tl.AllType_() {
+			tc, ok := t.(*grammar.TypeContext)
+			if !ok || tc.QualifiedIdentifier() == nil {
+				continue
+			}
+			if ids := tc.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier(); len(ids) == 1 {
+				out[ids[0].GetText()] = true
+			}
+		}
+		return
+	}
+	for i := 0; i < n.GetChildCount(); i++ {
+		if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok {
+			collectReceiverTypeArgs(child, out)
 		}
 	}
+}
+
+// collectTypeParameterNames returns every type-parameter name the file
+// declares, on any function, method or type — including the names a method
+// receiver binds (`func (b Box[T]) ...` binds T).
+func collectTypeParameterNames(node antlr.Tree) map[string]bool {
+	out := make(map[string]bool)
+	var walk func(antlr.Tree)
+	walk = func(n antlr.Tree) {
+		if tp, ok := n.(*grammar.TypeParameterContext); ok {
+			if ids := tp.AllIdentifier(); len(ids) > 0 {
+				out[ids[0].GetText()] = true
+			}
+			return
+		}
+		if rc, ok := n.(*grammar.ReceiverContext); ok {
+			if rt, ok := rc.Type_().(*grammar.TypeContext); ok {
+				collectReceiverTypeArgs(rt, out)
+			}
+			return
+		}
+		for i := 0; i < n.GetChildCount(); i++ {
+			if child, ok := n.GetChild(i).(antlr.ParserRuleContext); ok {
+				walk(child)
+			}
+		}
+	}
+	walk(node)
+	return out
 }

@@ -5,8 +5,9 @@ read, a call target, a bare function reference — resolves to nothing.
 The analyzer walks each file with a scope chain and checks every such
 identifier against the complete symbol table it built for that file:
 enclosing bindings, the current package's declarations (including
-sibling files'), every imported package's exports, the implicitly
-dot-imported `std` prelude, package qualifiers, and the language
+sibling files'), the exports of the packages this file dot-imports, the
+implicitly dot-imported `std` prelude, package qualifiers (a package
+imported by name is reached through its qualifier), and the language
 builtins. A name that matches none of them is rejected here rather than
 being deferred to the Go compiler.
 
@@ -53,10 +54,10 @@ Go compiler, pointed at generated code rather than the `.gala` line the
 author wrote.
 
 This check closes both outcomes for a name in **value position**,
-including inside an interpolated string. In **type position** it closes
-them for the *package qualifier* only — `strings.Builder` asks whether
-`strings` is in scope — and not for the type name itself; see the first
-entry under *Not covered*.
+including inside an interpolated string. In **type position** it checks
+the *package qualifier* — `strings.Builder` asks whether `strings` is in
+scope — and an unqualified type name only against the scope rule below;
+see the first entry under *Not covered*.
 
 **Scope.** Analyzer post-pass, run once per top-level file after all
 metadata for the file, its siblings and its imports has been collected
@@ -71,24 +72,55 @@ Identifiers inside interpolated strings (`s"…$x…"`, `f"${x + y}"`) **are**
 checked. Such a literal is a single lexer token, so the walker
 re-parses each embedded expression and walks it in the enclosing scope.
 
-The two import-related codes divide as follows. E0023 asks whether the
-compilation knows the name **at all**: a symbol whose package reached
-the compilation — including via a sibling file's import — satisfies it.
-[GALA-E0025](GALA-E0025.md) then asks the stricter question of whether
-**this** file declared the import, for the signature types it covers.
-So a bare `ArrayTabulate` in a file whose package never imports
-`collection_immutable` is E0023 (the name is nowhere in the symbol
-table); the same call in a file whose *sibling* imports it passes E0023
-and is caught by E0025 on the signature that mentions `Array`.
+**A bare GALA name must be in this file's scope.** The symbol table
+holds every package the import graph reached, not only this file's
+imports: the GALA `strings` package imports the collection packages for
+its own use, so a file importing only `strings` still loads them. A bare
+name that only such packages declare is reported. It must come from
+this file's own package (any file of it), a package this file
+dot-imports, or the `std` prelude. The same rule applies in type
+position, so `func total(xs Array[int])` in that file is reported at
+`Array`. A package imported by name is reached through its qualifier,
+and the hint says so:
+
+```gala
+package main
+
+import "martianoff/gala/collection_immutable"
+
+func main() {
+    Println(ArrayOf(1, 2))
+}
+```
+
+```
+[SemanticError GALA-E0023] line 6:12 undefined: ArrayOf (hint: ArrayOf is declared in a package this file imports by name; call it as `collection_immutable.ArrayOf`, or dot-import that package to use it unqualified.)
+```
+
+A sibling file's dot import does not carry over. The one allowance is
+the bare-name form of the one [GALA-E0025](GALA-E0025.md) makes: the
+signature of a method whose receiver type is declared in another file
+may use names that file dot-imports. The method body gets no allowance,
+and neither does that file's named imports. Bare *Go* names are not held
+to this rule, because the Go compiler rejects one that no dot import
+provides.
+
+[GALA-E0025](GALA-E0025.md) covers the remaining import question: a
+signature type that resolved to a package this file never imported.
 
 Not covered. Each of these is a deliberate trade of a missed detection
 for a guaranteed absence of false positives:
 
-- **Unqualified type names.** `func f(x Foo)`, `val v Foo = ...` and
-  `Foo{}` are skipped, because the analyzer's type resolution is lossy
-  enough (Go generics, constraints, `map[K]V`, func types) that flagging
-  here would produce false positives. A bare `Foo` may also be a type
-  parameter or a dot-imported name.
+- **Unqualified type names that no GALA package declares.** `func f(x
+  Foo)`, `val v Foo = ...` and `Foo{}` are checked only against the
+  scope rule above, which reports a name when every package that
+  declares it is out of this file's scope. A name declared nowhere is
+  skipped, because the analyzer's type resolution is lossy enough (Go
+  generics, constraints, `map[K]V`, func types) that flagging it would
+  produce false positives. A bare `Foo` may also be a type parameter.
+  Type parameters, including the names a method receiver binds
+  (`func (b Box[T]) ...`), are recognised file-wide, which can only
+  suppress a report.
 
   The **qualifier** of a qualified type *is* checked: `var sb
   strings.Builder` in a file that never imports `strings` is reported
@@ -105,8 +137,9 @@ for a guaranteed absence of false positives:
   import this file omitted; it does **not** cover a type name nothing
   in the compilation declares, because it works from the resolved
   metadata such a name never produces. So `func total(xs Array[int])`
-  in a package that imports `collection_immutable` nowhere is caught
-  by neither code: it transpiles, erases the body's lambda to
+  in a compilation where nothing loads `collection_immutable` at all is
+  caught by neither code (when something does load it, the scope rule
+  above reports it): it transpiles, erases the body's lambda to
   `func(acc any, x any) any`, and fails at `go build` with
   `undefined: Array`. Closing that needs a check that can distinguish
   an unresolvable type name from a merely lossy one; widening this one
