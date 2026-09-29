@@ -168,15 +168,23 @@ func Unused() int {
 }
 `,
 			contains: []string{
-				// The parameter keeps its type parameter, which is the thing
-				// that broke: the lambda is monomorphic rather than any-typed.
-				"func Twice(l list.List[int]) list.List[int]",
-				"func(x int) int { return x * 2 }",
+				// The parameter keeps its type parameter - the thing that broke.
+				// The current package's own type is emitted unqualified, per
+				// OwnImportPath, so this is `List[int]`, not `list.List[int]`.
+				"func Twice(l List[int]) List[int]",
+				// And the lambda stays monomorphic. Asserted on the signature
+				// rather than the whole body: gofmt breaks the return onto its
+				// own line, and an over-specified string here fails on
+				// formatting while the bug it guards goes unnoticed. It did,
+				// once - the first version of this assertion expected
+				// `func(x int) int { return x * 2 }` and failed on a fix that
+				// was working correctly.
+				"func(x int) int",
 			},
 			notContains: []string{
 				"func(x any) any",
 				"func(x interface{}) interface{}",
-				"list.List[int]) list.List[any]",
+				"List[any]",
 			},
 		},
 	}

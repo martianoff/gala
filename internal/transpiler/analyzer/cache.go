@@ -241,9 +241,9 @@ func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []str
 		TypeAliases:          r.TypeAliases, // small; alias entries originate from this package's source
 		ImportPathMap:        r.ImportPathMap,
 		PackageVals:          r.PackageVals, // own by construction: Merge never widens it across packages
-		DepsHash:              depsHash,
-		DirectImports:         directImports,
-		GoLocalDeclaredTypes:  r.GoLocalDeclaredTypes,
+		DepsHash:             depsHash,
+		DirectImports:        directImports,
+		GoLocalDeclaredTypes: r.GoLocalDeclaredTypes,
 	}
 }
 
@@ -441,18 +441,18 @@ func fromCachedRichAST(c *CachedRichAST) *transpiler.RichAST {
 	// already warm. It is not filtered the way GoTypeInfo is, because it is only
 	// ever filled from this package's own sibling scan.
 	return &transpiler.RichAST{
-		PackageName:           c.PackageName,
-		PackageDoc:            c.PackageDoc,
-		Types:                 c.Types,
-		Functions:             c.Functions,
-		Packages:              c.Packages,
-		CompanionObjects:      c.CompanionObjects,
-		GoExports:             c.GoExports,
-		GoTypeInfo:            c.GoTypeInfo,
-		TypeAliases:           c.TypeAliases,
-		ImportPathMap:         c.ImportPathMap,
-		PackageVals:           c.PackageVals,
-		GoLocalDeclaredTypes:  c.GoLocalDeclaredTypes,
+		PackageName:          c.PackageName,
+		PackageDoc:           c.PackageDoc,
+		Types:                c.Types,
+		Functions:            c.Functions,
+		Packages:             c.Packages,
+		CompanionObjects:     c.CompanionObjects,
+		GoExports:            c.GoExports,
+		GoTypeInfo:           c.GoTypeInfo,
+		TypeAliases:          c.TypeAliases,
+		ImportPathMap:        c.ImportPathMap,
+		PackageVals:          c.PackageVals,
+		GoLocalDeclaredTypes: c.GoLocalDeclaredTypes,
 	}
 }
 
