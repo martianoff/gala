@@ -26,6 +26,11 @@ import (
 // so a bare name cannot mean the imported type through it: the declaration in
 // the current package is the one meant, and the qualified name is how the
 // author reaches the import.
+//
+// The last case is the one that needs no .go sibling: a GALA package named after
+// the Go package it imports. That is what rules out GoTypeInfo as the oracle —
+// it holds every imported Go package and is keyed by package name, so it cannot
+// distinguish a local declaration from an import of the same name.
 func TestLocalTypeShadowsImport(t *testing.T) {
 	// Hand-written .go files beside each .gala source, declaring an `Array` that
 	// collides with the imported collection_immutable.Array. A localGo body of
@@ -101,10 +106,11 @@ func main() {
 			notContains: []string{"collection_immutable.Array{"},
 		},
 		{
-			// A non-struct local declaration, which no type-metadata
-			// synthesis can turn into an entry — the collision is settled by
-			// resolution itself refusing the import, not by the local type
-			// becoming visible.
+			// A non-struct local declaration, which no type-metadata synthesis
+			// can turn into an entry. What settles it is that the local type is
+			// found through the package's own Go declarations, not through
+			// typeMetas — which is why this case is not redundant with the two
+			// above.
 			name:     "local non-struct type in a go sibling",
 			pkgName:  "cmds",
 			galaName: "use.gala",
@@ -130,6 +136,49 @@ func Describe() int {
 			},
 			notContains: []string{"collection_immutable.Array)", "a collection_immutable.Array"},
 		},
+		{
+			// A GALA package named after the Go package it imports, with NO
+			// hand-written .go sibling at all. This is the case where consulting
+			// GoTypeInfo is wrong for a structural reason: every imported Go
+			// package is merged into it and it is keyed by package *name*, so
+			// DeclaresType("list", "List") is satisfied by container/list and
+			// cannot tell that apart from a local declaration. The bare `List`
+			// resolved to list.List, the lambda lost its parameter types, and the
+			// generated Go did not compile — while `checkGeneratedGo` did not
+			// catch it, because the failure is in the types, not the syntax.
+			name:     "gala package named after an imported go package",
+			pkgName:  "list",
+			galaName: "list.gala",
+			src: `package list
+
+import (
+	golist "container/list"
+	. "martianoff/gala/collection_immutable"
+)
+
+func Twice(l List[int]) List[int] {
+	val m = l.Map((x) => x * 2)
+	return m
+}
+
+func Unused() int {
+	var l = golist.New()
+	Println(l.Len())
+	return 1
+}
+`,
+			contains: []string{
+				// The parameter keeps its type parameter, which is the thing
+				// that broke: the lambda is monomorphic rather than any-typed.
+				"func Twice(l list.List[int]) list.List[int]",
+				"func(x int) int { return x * 2 }",
+			},
+			notContains: []string{
+				"func(x any) any",
+				"func(x interface{}) interface{}",
+				"list.List[int]) list.List[any]",
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -137,7 +186,12 @@ func Describe() int {
 			tmp := t.TempDir()
 			galaPath := filepath.Join(tmp, tc.galaName)
 			require.NoError(t, os.WriteFile(galaPath, []byte(tc.src), 0644))
-			require.NoError(t, os.WriteFile(filepath.Join(tmp, "local.go"), []byte(tc.localGo), 0644))
+			// Only the cases that model a hand-written sibling write one. The
+			// package-name collision needs none, and writing an empty local.go
+			// would give it a Go file it does not have.
+			if tc.localGo != "" {
+				require.NoError(t, os.WriteFile(filepath.Join(tmp, "local.go"), []byte(tc.localGo), 0644))
+			}
 
 			p := transpiler.NewAntlrGalaParser()
 			tree, _, err := p.Parse(tc.src)

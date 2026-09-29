@@ -153,3 +153,33 @@ func TestPreferPackageVal(t *testing.T) {
 		})
 	}
 }
+
+// TestMergeDoesNotAdoptGoLocalDeclaredTypes pins the one field Merge must not
+// carry across packages.
+//
+// GoTypeInfo is merged, and it is keyed by package name with every imported Go
+// package folded in, so it cannot answer "what does this package declare".
+// GoLocalDeclaredTypes exists to answer exactly that, and it is only ever
+// correct for the package that filled it. Inheriting another package's set
+// would reintroduce the very bug the field was added to remove: a type name
+// appearing declared here because some unrelated package declares it.
+func TestMergeDoesNotAdoptGoLocalDeclaredTypes(t *testing.T) {
+	mine := &RichAST{
+		PackageName:          "list",
+		GoLocalDeclaredTypes: map[string]bool{"List": true},
+	}
+	theirs := &RichAST{
+		PackageName:          "other",
+		GoLocalDeclaredTypes: map[string]bool{"Widget": true},
+	}
+
+	mine.Merge(theirs)
+
+	if mine.GoLocalDeclaredTypes["Widget"] {
+		t.Error("Merge adopted another package's GoLocalDeclaredTypes; " +
+			"a name would appear declared here because an unrelated package declares it")
+	}
+	if !mine.GoLocalDeclaredTypes["List"] {
+		t.Error("Merge dropped this package's own declarations")
+	}
+}

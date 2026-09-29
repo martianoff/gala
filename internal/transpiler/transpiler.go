@@ -142,9 +142,27 @@ type RichAST struct {
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
 	PackageDoc       string                              // doc comment above the `package` clause
+	// GoLocalDeclaredTypes names the Go types THIS package declares, found by
+	// the local .go sibling scan, keyed "pkgName.TypeName".
+	//
+	// It exists because GoTypeInfo cannot answer that question. Every imported
+	// Go package is merged into the same GoTypeInfo, and it is keyed by package
+	// *name*, so a GALA package that wraps one of the same name — `list` around
+	// `container/list` is ordinary — finds the imported package's types under
+	// its own package name and concludes it declares them. This set is filled
+	// only from the local scan, so membership means "declared here" and nothing
+	// else.
+	GoLocalDeclaredTypes map[string]bool
 }
 
 // Merge combines metadata from another RichAST into this one.
+//
+// GoLocalDeclaredTypes is deliberately NOT copied, and that is the whole point
+// of the field. It answers "what does *this* package declare", so inheriting
+// another package's answers would make the set wrong in exactly the way
+// GoTypeInfo already is: a name would appear declared here because something
+// unrelated to this package declares it. GoTypeInfo is merged below; this is
+// not.
 //
 // Pure read on `other`. When a key collides we copy `existing` before
 // adding fields/methods, so neither `r` nor `other` ever observes a

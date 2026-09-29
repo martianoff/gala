@@ -791,16 +791,25 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 	// which offers an unqualified name any non-dot imported package's type of
 	// that name — so a declaration in the current package silently lost to an
 	// import of the same name, and the author's struct literal kept its own
-	// fields while the type changed underneath it. GoTypeInfo is consulted
-	// because typeMetas holds only the struct metadata synthesized for those
-	// siblings, and a `type Row int` is just as much this package's as a struct
-	// is. This is the bare-name half of what goImportForPathlessType does for
-	// the qualified spelling.
+	// fields while the type changed underneath it. This is the bare-name half of
+	// what goImportForPathlessType does for the qualified spelling.
+	//
+	// The oracle is GoLocalDeclaredTypes, filled by the local .go sibling scan
+	// alone, and not GoTypeInfo. GoTypeInfo is keyed by package *name* and has
+	// every imported Go package merged into it, so asking it
+	// DeclaresType(t.packageName, X) cannot distinguish a declaration in this
+	// package from an imported package that happens to share the name. A GALA
+	// package that wraps one — `list` around `container/list`, which is an
+	// ordinary layout — matched on the import, and the bare `List` resolved to
+	// list.List, taking the lambda's parameter types down to `any` with it. The
+	// package's own Go declarations are consulted rather than typeMetas because
+	// the latter holds only the struct metadata synthesized for those siblings,
+	// and a `type Row int` is just as much this package's as a struct is.
 	//
 	// The key is qualified so the caller emits the type the way it emits every
 	// other current-package type: unqualified, via OwnImportPath.
-	if !strings.Contains(typeName, ".") && t.packageName != "" &&
-		t.richAST != nil && t.richAST.GoTypeInfo.DeclaresType(t.packageName, typeName) {
+	if !strings.Contains(typeName, ".") && t.packageName != "" && t.richAST != nil &&
+		t.richAST.GoLocalDeclaredTypes[typeName] {
 		return t.packageName + "." + typeName
 	}
 	resolved, _ := t.resolveTypeName(typeName, func(name string) bool {
