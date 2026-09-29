@@ -142,8 +142,8 @@ type RichAST struct {
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
 	PackageDoc       string                              // doc comment above the `package` clause
-	// GoLocalDeclaredTypes names the Go types THIS package declares, found by
-	// the local .go sibling scan, keyed "pkgName.TypeName".
+	// GoLocalDeclaredTypes holds the BARE names of the Go types THIS package
+	// declares, found by the local .go sibling scan.
 	//
 	// It exists because GoTypeInfo cannot answer that question. Every imported
 	// Go package is merged into the same GoTypeInfo, and it is keyed by package

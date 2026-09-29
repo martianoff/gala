@@ -126,9 +126,9 @@ type CachedRichAST struct {
 	PackageVals      map[string]*transpiler.PackageValMetadata // this package's own exported package-level val/var bindings
 	DepsHash         string                                    // hash of transitive dependency content (for invalidation)
 	DirectImports    []string                                  // GALA import paths this package directly imports (for re-merge on load)
-	// GoLocalDeclaredTypes: bare names of Go types this package declares, from
-	// the local .go sibling scan. Cached because resolveTypeMetaName needs it
-	// and a cache hit skips the analyzer entirely - without it a warm build
+	// GoLocalDeclaredTypes: bare names of the Go types this package declares,
+	// from the local .go sibling scan. Cached because resolveTypeMetaName needs
+	// it and a cache hit skips the analyzer entirely - without it a warm build
 	// would quietly lose the fix.
 	GoLocalDeclaredTypes map[string]bool
 }
