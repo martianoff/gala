@@ -843,7 +843,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// `NilType` and downstream type inference (e.g., `ArrayFromSlice(Make())`
 	// resolving its `T` from `[]Event`) silently fails, leaving lambda
 	// parameter types as the un-substituted type-parameter name.
-	if filePath != "" && pkgName != "main" && pkgName != "test" {
+	//
+	// `main` is scanned, unlike the GALA sibling discovery above: a program
+	// package is exactly where a `main.go` beside a `main.gala` is ordinary,
+	// and Go's own co-membership rule — the package clause, in this one
+	// directory — already rules out the unrelated-program hazard that exclusion
+	// guards against. `test` keeps its exclusion, matching the treatment it
+	// gets everywhere else in the analyzer.
+	if filePath != "" && pkgName != "test" {
 		dirPath := filepath.Dir(filePath)
 		// The types declared here record this package's own import path; the
 		// transformer emits a type carrying it unqualified rather than as an
@@ -858,7 +865,30 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 			}
+			if richAST.GoLocalDeclaredTypes == nil {
+				richAST.GoLocalDeclaredTypes = make(map[string]bool)
+			}
 			richAST.GoTypeInfo.Merge(goInfo)
+			// Record what THIS package declares, from this scan only, before any
+			// import is merged in above. GoTypeInfo is keyed by package name and
+			// holds every imported Go package too, so a query of the form
+			// DeclaresType(myPkgName, X) cannot tell a local declaration from an
+			// imported package that happens to share the name.
+			//
+			// Bare names, not qualified keys: GoTypeInfo's keys are prefixed with
+			// the Go package name, and matching that against the GALA package
+			// clause is a comparison this layer should not have to make. A bare
+			// name is what the question is actually about.
+			for key := range goInfo.Types {
+				if dot := strings.IndexByte(key, '.'); dot >= 0 {
+					richAST.GoLocalDeclaredTypes[key[dot+1:]] = true
+				}
+			}
+			for key := range goInfo.TypeAliases {
+				if dot := strings.IndexByte(key, '.'); dot >= 0 {
+					richAST.GoLocalDeclaredTypes[key[dot+1:]] = true
+				}
+			}
 		}
 	}
 

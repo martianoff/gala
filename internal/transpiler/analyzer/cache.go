@@ -59,7 +59,7 @@ import (
 // v9: MethodMetadata.PointerReceiver and GoTypeData.PointerMethods record
 // which methods need an addressable receiver, and GoTypeData.NoCopy which
 // Go types must not be copied (GALA-E0053).
-const CacheVersion = "v9"
+const CacheVersion = "v10"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -126,6 +126,11 @@ type CachedRichAST struct {
 	PackageVals      map[string]*transpiler.PackageValMetadata // this package's own exported package-level val/var bindings
 	DepsHash         string                                    // hash of transitive dependency content (for invalidation)
 	DirectImports    []string                                  // GALA import paths this package directly imports (for re-merge on load)
+	// GoLocalDeclaredTypes: bare names of the Go types this package declares,
+	// from the local .go sibling scan. Cached because resolveTypeMetaName needs
+	// it and a cache hit skips the analyzer entirely - without it a warm build
+	// would quietly lose the fix.
+	GoLocalDeclaredTypes map[string]bool
 }
 
 // belongsToPkg reports whether a fully-qualified key like "pkgName.SymName"
@@ -221,20 +226,24 @@ func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []str
 		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg)
 	}
 
+	// GoLocalDeclaredTypes needs no filtering, unlike GoTypeInfo above: it is
+	// filled only by the local sibling scan for this package and is never merged
+	// across packages, so every entry in it is already this package's.
 	return &CachedRichAST{
-		PackageName:      r.PackageName,
-		PackageDoc:       r.PackageDoc,
-		Types:            ownTypes,
-		Functions:        ownFuncs,
-		Packages:         nil, // reconstructed at load time from DirectImports
-		CompanionObjects: ownCos,
-		GoExports:        ownGoExports,
-		GoTypeInfo:       ownGoTypeInfo,
-		TypeAliases:      r.TypeAliases, // small; alias entries originate from this package's source
-		ImportPathMap:    r.ImportPathMap,
-		PackageVals:      r.PackageVals, // own by construction: Merge never widens it across packages
-		DepsHash:         depsHash,
-		DirectImports:    directImports,
+		PackageName:          r.PackageName,
+		PackageDoc:           r.PackageDoc,
+		Types:                ownTypes,
+		Functions:            ownFuncs,
+		Packages:             nil, // reconstructed at load time from DirectImports
+		CompanionObjects:     ownCos,
+		GoExports:            ownGoExports,
+		GoTypeInfo:           ownGoTypeInfo,
+		TypeAliases:          r.TypeAliases, // small; alias entries originate from this package's source
+		ImportPathMap:        r.ImportPathMap,
+		PackageVals:          r.PackageVals, // own by construction: Merge never widens it across packages
+		DepsHash:             depsHash,
+		DirectImports:        directImports,
+		GoLocalDeclaredTypes: r.GoLocalDeclaredTypes,
 	}
 }
 
@@ -425,18 +434,25 @@ func fromCachedRichAST(c *CachedRichAST) *transpiler.RichAST {
 	if c == nil {
 		return nil
 	}
+	// GoLocalDeclaredTypes is carried, not recomputed: a cache hit skips the
+	// analyzer entirely, so dropping it here would leave the set nil on a warm
+	// build and resolveTypeMetaName would silently fall back to the old, wrong
+	// lookup - the fix appearing to do nothing on exactly the builds that are
+	// already warm. It is not filtered the way GoTypeInfo is, because it is only
+	// ever filled from this package's own sibling scan.
 	return &transpiler.RichAST{
-		PackageName:      c.PackageName,
-		PackageDoc:       c.PackageDoc,
-		Types:            c.Types,
-		Functions:        c.Functions,
-		Packages:         c.Packages,
-		CompanionObjects: c.CompanionObjects,
-		GoExports:        c.GoExports,
-		GoTypeInfo:       c.GoTypeInfo,
-		TypeAliases:      c.TypeAliases,
-		ImportPathMap:    c.ImportPathMap,
-		PackageVals:      c.PackageVals,
+		PackageName:          c.PackageName,
+		PackageDoc:           c.PackageDoc,
+		Types:                c.Types,
+		Functions:            c.Functions,
+		Packages:             c.Packages,
+		CompanionObjects:     c.CompanionObjects,
+		GoExports:            c.GoExports,
+		GoTypeInfo:           c.GoTypeInfo,
+		TypeAliases:          c.TypeAliases,
+		ImportPathMap:        c.ImportPathMap,
+		PackageVals:          c.PackageVals,
+		GoLocalDeclaredTypes: c.GoLocalDeclaredTypes,
 	}
 }
 

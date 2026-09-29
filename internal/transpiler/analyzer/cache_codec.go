@@ -34,7 +34,7 @@ import (
 
 // codecMagic identifies a binary cache blob. The trailing byte is the
 // format version; bump alongside CacheVersion when the layout changes.
-var codecMagic = [4]byte{'G', 'A', 'C', 0x09}
+var codecMagic = [4]byte{'G', 'A', 'C', 0x0A}
 
 const (
 	typeTagNil     uint8 = 0 // nil interface
@@ -73,6 +73,10 @@ func encodeCachedRichAST(c *CachedRichAST) ([]byte, error) {
 	e.writeStringPackageValMap(c.PackageVals)
 	e.writeString(c.DepsHash)
 	e.writeStringSlice(c.DirectImports)
+	// Appended at the end so a blob written by an older codec still decodes
+	// field-for-field up to this point; a reader that reaches EOF reads nil,
+	// which is the correct empty value.
+	e.writeStringSet(c.GoLocalDeclaredTypes)
 	if e.err != nil {
 		return nil, e.err
 	}
@@ -107,6 +111,7 @@ func decodeCachedRichAST(data []byte) (*CachedRichAST, error) {
 	out.PackageVals = d.readStringPackageValMap()
 	out.DepsHash = d.readString()
 	out.DirectImports = d.readStringSlice()
+	out.GoLocalDeclaredTypes = d.readStringSet()
 	if d.err != nil {
 		return nil, d.err
 	}
