@@ -51,6 +51,7 @@ go_test(
         "definition_sibling_function_test.go",
         "docsplit_test.go",
         "error_lines_test.go",
+        "go_keyword_name_test.go",
         "go_results_test.go",
         "hover_chain_test.go",
         "hover_coverage_test.go",

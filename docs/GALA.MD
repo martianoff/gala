@@ -3176,8 +3176,45 @@ undocumented, fragile artifact GALA removes. The replacements:
 | `go f()` | `go_interop.Spawn(() => f())` |
 | `goto`, `fallthrough`, `select`, `chan` | structured control flow / pattern matching; `go_interop` channel helpers |
 
-Like the builtin check, this is **resolver-aware**: a symbol the program itself
-declared is left alone.
+Unlike the builtin check, no declaration can share these names: every Go
+keyword is reserved as a name (see [Names that are Go
+keywords](#names-that-are-go-keywords)).
+
+### Names that are Go keywords
+
+GALA reserves some of Go's keywords itself (`func`, `type`, `struct`,
+`interface`, `map`, `if`, `else`, `for`, `range`, `return`, `case`, `var`,
+`import`, `package`). The others — `break`, `chan`, `const`, `continue`,
+`default`, `defer`, `fallthrough`, `go`, `goto`, `select`, `switch` — are not
+GALA keywords, but they are still **reserved as names**, because every name a
+GALA program declares is a name in the Go it compiles to. Using one as a name is
+a hard transpile error (**GALA-E0055**) in every position: a `val`, `var` or
+`:=` binding, a parameter or lambda parameter, a pattern binding (`case go =>`,
+`Some(go)`, `val (go, b) = …`), a struct field, a function or method, a type or
+type parameter, the package name, and an import alias. The error points at the
+declaration.
+
+<!-- doc-check: fragment -->
+```gala
+val default = 8080          // GALA-E0055: "default" is a Go keyword
+func go(task string) = …    // GALA-E0055
+struct Job(select bool)     // GALA-E0055
+```
+
+Pick another name — `defaultPort`, `start`, `selected`. GALA does not rename the
+identifier behind your back: a renamed struct field or exported function would
+be visible to Go code, JSON field names and reflection under a name you never
+wrote.
+
+Two uses of these words are not names and are not affected: a bare `break` or
+`continue` statement inside a `for` loop is loop control, and a bare `defer`,
+`go`, `goto`, `fallthrough`, `select` or `chan` statement is GALA-E0036 (above).
+
+Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max`,
+`copy` and so on — are not keywords. A local binding may shadow one
+(`val min = m.PopMinEntry()`), exactly as in Go; after that, the name means the
+binding for the rest of its scope, so `val string = "a"` followed by a lambda
+parameter typed `string` in the same scope does not compile.
 
 ### The `if` initializer statement is forbidden
 

@@ -338,8 +338,8 @@ const (
 	// re-absorbing the following statement (e.g. `defer` + `f.Close()` gluing
 	// into a Go DeferStmt). GALA expresses cleanup with the `resource`
 	// combinators (Using/Bracket/WithLock, or a `use` binding) and goroutines
-	// with go_interop.Spawn, so the bare keywords are a hard error. The check is
-	// resolver-aware: a user binding of the same name is left untouched.
+	// with go_interop.Spawn, so the bare keywords are a hard error. No binding
+	// can share the name: declaring one is GALA-E0055.
 	CodeForbiddenStatementKeyword ErrorCode = "GALA-E0036"
 
 	// E0038: a string, rune, interpolated (`s"…"`) or format (`f"…"`) literal
@@ -601,6 +601,18 @@ const (
 	// an interface, a type parameter and any type GALA cannot see into are
 	// left alone.
 	CodeValueCalledAsFunction ErrorCode = "GALA-E0054"
+
+	// E0055: a name is spelled like a Go keyword the GALA grammar does not
+	// reserve itself — break, chan, const, continue, default, defer,
+	// fallthrough, go, goto, select, switch — as in `val go = 1`. GALA emits
+	// names as written, so the generated Go did not parse and the author got
+	// the internal GALA-E0017. The name is rejected wherever it appears (a
+	// val, var, parameter, lambda parameter, pattern binding, struct field,
+	// function, method, type, type parameter, package name or import alias),
+	// pointing at the declaration when there is one. A bare `break` /
+	// `continue` statement is loop control, and the other bare statement
+	// keywords stay with E0036.
+	CodeGoKeywordAsName ErrorCode = "GALA-E0055"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

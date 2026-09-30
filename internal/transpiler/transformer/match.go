@@ -1563,6 +1563,9 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
 	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
+		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+			return nil, nil, err
+		}
 		expr, err := t.lowerAgainst(exprCtx, armSlot, true)
 		if err != nil {
 			return nil, nil, err

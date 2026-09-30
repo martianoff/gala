@@ -658,6 +658,36 @@ func main() {
 				return line
 			},
 		},
+		{
+			name: "val named like a Go keyword",
+			code: galaerr.CodeGoKeywordAsName, // GALA-E0055
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val default = 8080
+    Println(s"listening on ${default}")
+}
+`)
+			},
+		},
+		{
+			// Reported at the declaration although the call comes first.
+			name: "function named like a Go keyword, called above its declaration",
+			code: galaerr.CodeGoKeywordAsName, // GALA-E0055
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    go("build")
+}
+
+func go(task string) {
+    Println(s"running ${task}")
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

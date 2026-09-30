@@ -683,6 +683,17 @@ func main() {
 			expectCode:     galaerr.CodeValueCalledAsFunction,
 			expectContains: "Red is a val of type Color, not a function",
 		},
+		{
+			name: "GALA-E0055 val named like a Go keyword",
+			input: `package main
+
+func main() {
+    val default = 8080
+    Println(default)
+}`,
+			expectCode:     galaerr.CodeGoKeywordAsName,
+			expectContains: `"default" is a Go keyword and cannot be used as a name`,
+		},
 	}
 
 	for _, tc := range cases {

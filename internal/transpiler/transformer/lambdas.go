@@ -1359,6 +1359,9 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 		}
 	} else if ctx.GetBodyStmt() != nil {
 		if exprCtx := ctx.GetBodyStmt().Expression(); exprCtx != nil {
+			if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+				return nil, nil, err
+			}
 			expr, err := t.transformExpression(exprCtx)
 			if err != nil {
 				return nil, nil, err

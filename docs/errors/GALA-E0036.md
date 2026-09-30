@@ -107,9 +107,9 @@ ran at all. Rejecting the bare form removes that coupling and points at
 constructs — `use`, the `resource` combinators, `Future` — that make the
 guarantee explicit and are checked.
 
-**Scope.** Bare identifier statements only, and the check is **resolver-aware**:
-like the builtin check ([GALA-E0035](GALA-E0035.md)), a name the program itself
-declared is that declaration, not a leaked keyword — a user-defined function, a
-local `val`/`var`/parameter, or a declared type named `select` is left alone.
-Anything with a postfix, operator, or argument list (`x.defer()`) is an ordinary
-expression and is not checked.
+**Scope.** Bare identifier statements only. Unlike the builtin check
+([GALA-E0035](GALA-E0035.md)), no declaration can share these names: a val,
+parameter, function, type or other name spelled like a Go keyword is rejected
+where it is declared, with [GALA-E0055](GALA-E0055.md). Any other use of the
+word — with a postfix, operator or argument list (`defer()`) — is GALA-E0055
+too.
