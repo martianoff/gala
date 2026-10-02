@@ -230,6 +230,7 @@ func describe(n int) = n match {
     case _ => Println(n)
 }
 `,
+			contains: []string{`fmt.Println("zero")`, "fmt.Println(n)"},
 			excludes: []string{"return fmt.Println", "return func"},
 		},
 		{

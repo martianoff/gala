@@ -229,8 +229,8 @@ func describe(n int) = n match {
 func answer() int = 42      // returns 42
 ```
 
-> **Note:** Expression-bodied functions do not support `return` statements. The expression
-> after `=` is implicitly the return value. This includes match arms — use expression arms
+> **Note:** Expression-bodied functions do not support `return` statements. In a function
+> with a result type, the expression after `=` is implicitly the return value. This includes match arms — use expression arms
 > (the value itself), not `return` statements:
 >
 > ```gala

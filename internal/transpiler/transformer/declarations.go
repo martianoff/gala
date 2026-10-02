@@ -748,7 +748,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr)),
 		funcName:   t.sourceFunctionName(ctx, receiverTypeName),
 	}
-	if funcType.Results != nil && len(funcType.Results.List) > 0 {
+	hasResult := funcType.Results != nil && len(funcType.Results.List) > 0
+	if hasResult {
 		funcSlot.typ = t.astTypeToTranspilerType(funcType.Results.List[0].Type)
 	}
 	defer t.enterReturnSlot(funcSlot)()
@@ -761,7 +762,6 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// here rather than left to Go's "missing return".
 		var b *ast.BlockStmt
 		var err error
-		hasResult := funcType.Results != nil && len(funcType.Results.List) > 0
 		if hasResult {
 			b, err = t.transformFunctionBody(ctx.Block().(*grammar.BlockContext))
 		} else {
@@ -774,17 +774,17 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), funcSlot.funcName, funcSlot.typ)
 		}
 		body = b
+	} else if ctx.Expression() != nil && !hasResult {
+		// A function with no result type is void: GALA does not infer one, so
+		// `func F() = <expr>` is `func F() { <expr> }`.
+		b, err := t.transformVoidExpressionBody(ctx.Expression())
+		if err != nil {
+			return nil, err
+		}
+		body = b
 	} else if ctx.Expression() != nil {
 		var exprBody *ast.BlockStmt
-		if funcType.Results == nil || len(funcType.Results.List) == 0 {
-			// A function with no result type is void: GALA does not infer
-			// one, so `func F() = <expr>` is `func F() { <expr> }`.
-			b, err := t.transformVoidExpressionBody(ctx.Expression())
-			if err != nil {
-				return nil, err
-			}
-			exprBody = b
-		} else if ctx.Receiver() == nil {
+		if ctx.Receiver() == nil {
 			// Guaranteed self-tail-call optimization: rewrite direct self-tail
 			// recursion in an if-expression body into a `for {}` loop so deep
 			// recursion runs in constant stack space. Restricted to plain
@@ -799,7 +799,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			}
 		}
 		if exprBody == nil {
-			b, err := t.transformExpressionBodiedFunction(ctx.Expression(), funcType)
+			b, err := t.transformExpressionBodiedFunction(ctx.Expression(), funcType.Results.List[0].Type)
 			if err != nil {
 				return nil, err
 			}
@@ -858,9 +858,6 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 	}
 }
 
-// transformExpressionBodiedFunction handles the `func foo() T = expr` form by
-// transforming the expression into a single-return block body. A lambda,
-// if-expression or match body is lowered against the declared return type.
 // transformVoidExpressionBody lowers the body of `func F() = <expr>`, a
 // function with no result type, as the block `{ <expr> }` would lower its one
 // statement: a call is made and its result discarded, a match or if-expression
@@ -880,18 +877,17 @@ func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpres
 	return &ast.BlockStmt{List: []ast.Stmt{stmt}}, nil
 }
 
-func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, funcType *ast.FuncType) (*ast.BlockStmt, error) {
-	var result slot
-	if funcType.Results != nil && len(funcType.Results.List) > 0 {
-		result = resultSlot(t.astTypeToTranspilerType(funcType.Results.List[0].Type))
-	}
-	expr, err := t.lowerAgainst(exprCtx, result, false)
+// transformExpressionBodiedFunction handles the `func foo() T = expr` form by
+// transforming the expression into a single-return block body. A lambda,
+// if-expression or match body is lowered against the declared return type.
+// retType is the declared result type; a void function's body is
+// transformVoidExpressionBody's.
+func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, retType ast.Expr) (*ast.BlockStmt, error) {
+	expr, err := t.lowerAgainst(exprCtx, resultSlot(t.astTypeToTranspilerType(retType)), false)
 	if err != nil {
 		return nil, err
 	}
-	if funcType.Results != nil && len(funcType.Results.List) > 0 {
-		expr = t.wrapWithAssertion(expr, funcType.Results.List[0].Type)
-	}
+	expr = t.wrapWithAssertion(expr, retType)
 	return &ast.BlockStmt{
 		List: []ast.Stmt{
 			&ast.ReturnStmt{Results: []ast.Expr{expr}},
