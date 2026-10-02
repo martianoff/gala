@@ -1167,9 +1167,11 @@ func isArray(v any) bool = v match {
 func main() {
     Println(isArray(1))
 }`},
-		{name: "prelude types, including the Sendable marker", src: `package main
+		{name: "prelude types, including the Sendable marker and Go-defined EmbeddedFS", src: `package main
 
 func run(body Sendable[func() int]) Option[Try[int]] = Some(Success(body()))
+
+func read(files EmbeddedFS) Try[string] = files.ReadString("a.txt")
 
 func main() {
     Println(run(() => 1))

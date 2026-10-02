@@ -1550,9 +1550,16 @@ func tupleDestructureType(n antlr.Tree) antlr.Tree {
 // and types declared inside function bodies are bound by the caller.
 func (c *undefChecker) typeNameExists(name string) bool {
 	// `_` is the wildcard type argument of a type pattern: `case a: Array[_]`.
-	// `Sendable[F]` is the language's concurrency-boundary marker, erased to F;
-	// no package declares it.
-	return name == "_" || name == transpiler.TypeSendable || isGoPredeclaredTypeName(name) || c.typeNames[name]
+	if name == "_" || isGoPredeclaredTypeName(name) || c.typeNames[name] {
+		return true
+	}
+	// A prelude package registers its type surface, which includes types its
+	// .gala sources do not declare: the `Sendable[F]` marker, which nothing
+	// declares, and Go-defined ones such as std's `EmbeddedFS`, whose Go type
+	// info is not always loaded. The transformer resolves prelude types from
+	// the same registry.
+	_, ok := registry.Global.IsPreludeType(name)
+	return ok
 }
 
 // indexTypeNames returns the unqualified names that may denote a type in this
