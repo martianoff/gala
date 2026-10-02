@@ -1122,6 +1122,33 @@ func main() {
 		assert.Contains(t, err.Error(), "undefined: Map")
 	})
 
+	t.Run("hint qualifies a Go type with the name of the package the file imports", func(t *testing.T) {
+		err := analyzeSources(t, `package main
+
+import "strings"
+
+func wait(b Builder) int = 1
+
+func main() {
+    Println(strings.ToUpper("a"))
+}`, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined: Builder")
+		assert.Contains(t, err.Error(), "`strings.Builder`")
+
+		err = analyzeSources(t, `package main
+
+import "time"
+
+func wait(d Duration) int = 1
+
+func main() {
+    Println(time.Now())
+}`, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "`time.Duration`")
+	})
+
 	t.Run("hint qualifies a Go type with the file's own qualifier", func(t *testing.T) {
 		err := analyzeSources(t, `package main
 

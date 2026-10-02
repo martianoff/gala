@@ -132,8 +132,9 @@ an alias target (`type Coord Point`), a type parameter's constraint
   through a qualifier: under `import "time"`, `func wait(d Duration)` is
   reported, and the hint says to write `time.Duration`. The wildcard
   `_` (`case a: Array[_]`, `(x _) => x`) is left to the transpiler.
-  A GALA type must also pass the scope rule above. The name is reported
-  at its first use in the file, whether that use is a type or a value.
+  A GALA type must also pass the scope rule above. A name undefined in
+  both a type and a value position is reported once, at the type position
+  when that comes first in the file.
   When a GALA package on the search paths declares it, the hint names
   the import:
 
