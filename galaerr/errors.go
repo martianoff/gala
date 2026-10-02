@@ -636,11 +636,11 @@ const (
 
 	// E0058: GALA source names a type the transpiler generates for a codec —
 	// `StructMeta_X`, `_StructMeta_X` or `_ValueMeta_X`, qualified or not. A
-	// package's StructMeta reads and builds its structs' private fields, so
-	// calling its DecodeFields directly would build a value no constructor or
-	// Validate method checked, and its EncodeFields would read fields the
-	// package keeps to itself. Codecs reach it through `Codec[T]` and
-	// `StructMeta[T]()`, which check that the struct may be decoded. The names
+	// package's StructMeta reads and builds its structs' private fields.
+	// Codecs reach it through `Codec[T]` and `StructMeta[T]()`, which check at
+	// build time that the struct may be decoded; named directly, it skips that
+	// check (a struct without Validate fails only at run time), and its
+	// EncodeFields hands out fields the package keeps to itself. The names
 	// are reserved for declarations too, where one could collide with what
 	// the transpiler emits.
 	CodeGeneratedCodecName ErrorCode = "GALA-E0058"

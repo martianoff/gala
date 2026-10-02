@@ -417,7 +417,7 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 	// decodes to it. An empty value that runs a Validate method (a struct with
 	// private fields, at any depth) is built only when the field turns out to
 	// be absent: Validate may reject it, and a present field never needs it.
-	seen := make(map[int]*ast.Ident)
+	seen := make([]*ast.Ident, len(meta.FieldNames))
 	var absent []ast.Stmt
 	for i, fieldName := range meta.FieldNames {
 		fieldType := meta.Fields[fieldName]
@@ -433,7 +433,7 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 		switch {
 		case empty == nil:
 			stmts = append(stmts, seqVarDecl("_"+fieldName, goType))
-		case t.codecEmptyChecked(valueType, config.pkg):
+		case t.codecEmptyKind(valueType, config.pkg) == emptyValidated:
 			flag := g.fresh("seen")
 			seen[i] = flag
 			stmts = append(stmts, seqVarDecl("_"+fieldName, goType), seqVarDecl(flag.Name, ast.NewIdent("bool")))
@@ -694,7 +694,7 @@ func (g *codecGen) emptyValue(ty transpiler.Type) (ast.Expr, error) {
 		}
 		return &ast.CallExpr{Fun: &ast.IndexExpr{X: g.t.collectionIdent("EmptyList"), Index: elemType}}, nil
 	case "":
-		if config, err := g.t.codecStructMeta(ty, g.pkg); err == nil && g.t.structNeedsEmptyInit(config) {
+		if config, err := g.t.codecStructMeta(ty, g.pkg); err == nil && g.t.structEmptyKind(config) >= emptyNeedsInit {
 			return &ast.CallExpr{Fun: &ast.SelectorExpr{
 				X:   &ast.CompositeLit{Type: g.t.structMetaRef(config)},
 				Sel: ast.NewIdent("Empty"),
@@ -704,55 +704,58 @@ func (g *codecGen) emptyValue(ty transpiler.Type) (ast.Expr, error) {
 	return nil, nil
 }
 
-// codecNeedsEmptyInit reports whether the empty value of ty differs from Go's
-// zero value (see emptyValue). pkg is the package declaring the field ty came
-// from ("" for this one).
-func (t *galaASTTransformer) codecNeedsEmptyInit(ty transpiler.Type, pkg string) bool {
-	ty = t.codecUnalias(ty, pkg)
-	switch kind, params := codecContainer(ty); kind {
-	case "Immutable":
-		return t.codecNeedsEmptyInit(params[0], pkg)
-	case "Option", "List":
-		return true
-	case "":
-		// A scalar, or anything else that is not a struct, has no StructMeta:
-		// its zero value is its empty value.
-		config, err := t.codecStructMeta(ty, pkg)
-		return err == nil && t.structNeedsEmptyInit(config)
-	}
-	return false
-}
-
-// emptyInitState is whether a struct's empty value differs from Go's zero
-// value, once structNeedsEmptyInit has worked it out.
+// emptyInitState is how a value's empty value (see emptyValue) is built. The
+// states are ordered, so a struct's state is the greatest of its fields'.
 type emptyInitState uint8
 
 const (
 	emptyInitUnknown emptyInitState = iota
+	// emptyIsZero: Go's zero value is the empty value.
 	emptyIsZero
+	// emptyNeedsInit: the empty value is spelled out (None, an empty List).
 	emptyNeedsInit
+	// emptyValidated: the empty value runs a Validate method — a struct with
+	// private fields, at any depth. DecodeFields builds it only when the
+	// field is absent, since Validate may reject it.
+	emptyValidated
 )
 
-// structNeedsEmptyInit reports whether any field of config's struct needs an
-// explicit empty value, memoized on config. A struct cannot contain itself
-// except through an Option or a collection, so the recursion ends.
-func (t *galaASTTransformer) structNeedsEmptyInit(config *structMetaConfig) bool {
+// codecEmptyKind is how the empty value of ty is built. pkg is the package
+// declaring the field ty came from ("" for this one).
+func (t *galaASTTransformer) codecEmptyKind(ty transpiler.Type, pkg string) emptyInitState {
+	ty = t.codecUnalias(ty, pkg)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable":
+		return t.codecEmptyKind(params[0], pkg)
+	case "Option", "List":
+		return emptyNeedsInit
+	case "":
+		// A scalar, or anything else that is not a struct, has no StructMeta:
+		// its zero value is its empty value.
+		if config, err := t.codecStructMeta(ty, pkg); err == nil {
+			return t.structEmptyKind(config)
+		}
+	}
+	return emptyIsZero
+}
+
+// structEmptyKind is how the empty value of config's struct is built,
+// memoized on config. A struct cannot contain itself except through an Option
+// or a collection, so the recursion ends.
+func (t *galaASTTransformer) structEmptyKind(config *structMetaConfig) emptyInitState {
 	if config.emptyInit == emptyInitUnknown {
 		config.emptyInit = emptyIsZero
-		if t.structEmptyChecked(config) {
+		if structDecodeMode(config.typeMetadata) != decodeRaw {
 			// Go's zero value never went through Validate.
-			config.emptyInit = emptyNeedsInit
-			return true
-		}
-		meta := config.typeMetadata
-		for _, fieldName := range meta.FieldNames {
-			if t.codecNeedsEmptyInit(unwrapGalaType(meta.Fields[fieldName]), config.pkg) {
-				config.emptyInit = emptyNeedsInit
-				break
+			config.emptyInit = emptyValidated
+		} else {
+			meta := config.typeMetadata
+			for _, fieldName := range meta.FieldNames {
+				config.emptyInit = max(config.emptyInit, t.codecEmptyKind(unwrapGalaType(meta.Fields[fieldName]), config.pkg))
 			}
 		}
 	}
-	return config.emptyInit == emptyNeedsInit
+	return config.emptyInit
 }
 
 // codecImmutField reports whether field i of config's struct is a val field,

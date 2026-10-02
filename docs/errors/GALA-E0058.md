@@ -43,14 +43,14 @@ func main() {
 ```
 
 **Rationale.** A package's `StructMeta_X` reads and builds the struct's
-unexported fields: that is what lets another package encode it. Called
-directly, its `DecodeFields` would build a value that neither the package's
-constructor nor its `Validate` method checked, and its `EncodeFields` would
-hand any caller the fields the package keeps to itself. `Codec[T]` and
-`StructMeta[T]()` reach the same metadata but first check that a struct with
-private fields declares `Validate` ([GALA-E0050](GALA-E0050.md),
-[GALA-E0057](GALA-E0057.md)). A declaration of such a name is rejected too,
-since it could collide with the type the transpiler emits.
+unexported fields: that is what lets another package encode it. `Codec[T]`
+and `StructMeta[T]()` reach the same metadata but first check, while building,
+that a struct with private fields declares `Validate`
+([GALA-E0050](GALA-E0050.md), [GALA-E0057](GALA-E0057.md)). Named directly,
+the metadata skips that check — decoding a struct without `Validate` would
+fail only when the program runs — and its `EncodeFields` hands any caller the
+fields the package keeps to itself. A declaration of such a name is rejected
+too, since it could collide with the type the transpiler emits.
 
 **Scope.** Generated Go code and hand-written Go siblings are not GALA source
 and are not checked. See

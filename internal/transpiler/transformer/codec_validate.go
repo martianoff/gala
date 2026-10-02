@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -33,13 +32,12 @@ import (
 	"martianoff/gala/internal/transpiler/registry"
 )
 
-// decodeMode is how DecodeFields builds a struct, memoized on its config.
+// decodeMode is how DecodeFields builds a struct.
 type decodeMode uint8
 
 const (
-	decodeUnknown decodeMode = iota
 	// decodeRaw: every field is exported, so the decoded value is the struct.
-	decodeRaw
+	decodeRaw decodeMode = iota
 	// decodeValidated: a private field and a Validate() Try[T]; the decoded
 	// value is raw.Validate().Get().
 	decodeValidated
@@ -51,20 +49,15 @@ const (
 // decodable.
 const validateMethod = "Validate"
 
-// structDecodeMode classifies config's struct (see decodeMode).
-func (t *galaASTTransformer) structDecodeMode(config *structMetaConfig) decodeMode {
-	if config.decode == decodeUnknown {
-		meta := config.typeMetadata
-		switch {
-		case !slices.ContainsFunc(meta.FieldNames, func(name string) bool { return !token.IsExported(name) }):
-			config.decode = decodeRaw
-		case isValidateMethod(meta, meta.Methods[validateMethod]):
-			config.decode = decodeValidated
-		default:
-			config.decode = decodeRejected
-		}
+// structDecodeMode classifies the struct meta describes (see decodeMode).
+func structDecodeMode(meta *transpiler.TypeMetadata) decodeMode {
+	switch {
+	case !slices.ContainsFunc(meta.FieldNames, func(name string) bool { return !token.IsExported(name) }):
+		return decodeRaw
+	case isValidateMethod(meta, meta.Methods[validateMethod]):
+		return decodeValidated
 	}
-	return config.decode
+	return decodeRejected
 }
 
 // isValidateMethod reports whether m is `func (x T) Validate() Try[T]` for
@@ -143,44 +136,11 @@ func declaredSignature(meta *transpiler.TypeMetadata, m *transpiler.MethodMetada
 // galaTypeSpelling renders ty as the package declaring meta's struct spells
 // it: std types and that package's own types unqualified.
 func galaTypeSpelling(meta *transpiler.TypeMetadata, ty transpiler.Type) string {
-	s := stdQualifier.ReplaceAllString(ty.String(), "")
+	s := displayType(ty)
 	if meta.Package == "" {
 		return s
 	}
-	return regexp.MustCompile(`\b` + regexp.QuoteMeta(meta.Package) + `\.`).ReplaceAllString(s, "")
-}
-
-// structEmptyChecked reports whether building config's struct as the value
-// of an absent field runs a Validate method — its own, or one of a struct it
-// holds directly. Such an empty value is built only when the field is absent,
-// since Validate may reject it. Memoized on config; a struct cannot contain
-// itself except through an Option or a collection, so the recursion ends.
-func (t *galaASTTransformer) structEmptyChecked(config *structMetaConfig) bool {
-	if config.emptyChecked == emptyInitUnknown {
-		config.emptyChecked = emptyIsZero
-		if t.structDecodeMode(config) != decodeRaw || slices.ContainsFunc(config.typeMetadata.FieldNames, func(name string) bool {
-			return t.codecEmptyChecked(unwrapGalaType(config.typeMetadata.Fields[name]), config.pkg)
-		}) {
-			config.emptyChecked = emptyNeedsInit
-		}
-	}
-	return config.emptyChecked == emptyNeedsInit
-}
-
-// codecEmptyChecked reports whether the empty value of ty, a field of a
-// struct declared in pkg ("" for this one), runs a Validate method. An empty
-// Option or collection holds no struct, so only a struct reached through
-// Immutable or an alias does.
-func (t *galaASTTransformer) codecEmptyChecked(ty transpiler.Type, pkg string) bool {
-	ty = t.codecUnalias(ty, pkg)
-	switch kind, params := codecContainer(ty); kind {
-	case "Immutable":
-		return t.codecEmptyChecked(params[0], pkg)
-	case "":
-		config, err := t.codecStructMeta(ty, pkg)
-		return err == nil && t.structEmptyChecked(config)
-	}
-	return false
+	return strings.ReplaceAll(s, meta.Package+".", "")
 }
 
 // decodedValue returns the statements that end DecodeFields or Empty for
@@ -188,8 +148,10 @@ func (t *galaASTTransformer) codecEmptyChecked(ty transpiler.Type, pkg string) b
 // itself, the value through Validate, or — for a struct that is not
 // decodable — a panic ahead of the body, which only Go code calling the
 // metadata directly can reach, since every codec that would is rejected.
+// The body stays behind the panic: dropping it would leave unused the
+// imports its field reads already registered.
 func (t *galaASTTransformer) decodedValue(config *structMetaConfig, body []ast.Stmt, raw ast.Expr) []ast.Stmt {
-	switch t.structDecodeMode(config) {
+	switch structDecodeMode(config.typeMetadata) {
 	case decodeValidated:
 		raw = &ast.CallExpr{Fun: &ast.SelectorExpr{
 			X:   &ast.CallExpr{Fun: &ast.SelectorExpr{X: raw, Sel: ast.NewIdent(validateMethod)}},

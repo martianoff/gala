@@ -158,7 +158,7 @@ func (t *galaASTTransformer) autoInjectValueMeta(args []ast.Expr, typeArg ast.Ex
 // already taken.
 func (t *galaASTTransformer) valueMetaName(key string) string {
 	var sb strings.Builder
-	sb.WriteString("_ValueMeta_")
+	sb.WriteString(valueMetaPrefix)
 	for _, r := range key {
 		switch {
 		case r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9':
