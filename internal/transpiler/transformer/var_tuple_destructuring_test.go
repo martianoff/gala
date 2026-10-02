@@ -146,11 +146,11 @@ func main() {
 	for _, want := range []string{
 		"__tuple_a.V1", "__tuple_c.V2.Get()", "var _ = std.", "__tuple_1.V1",
 		`__val_n_0, __val_n_1 = strconv.Atoi("1")`, `_, __val_e2_1 = strconv.Atoi("2")`,
-		`_tmp_`,
 	} {
 		assert.Contains(t, got, want)
 	}
 	assert.NotContains(t, got, "__tuple_2")
 	assert.NotContains(t, got, "_ = __tuple")
 	assert.NotContains(t, got, "_ = std.NewImmutable(_)")
+	assert.Regexp(t, `_tmp_[0-9]+, _tmp_[0-9]+ = strconv\.Atoi\("3"\)`, got)
 }

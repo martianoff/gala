@@ -238,14 +238,17 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	//   )
 	//
 	// At package level the temps are __val_data_0, __val_data_1 (see
-	// packageTempAnchor). A `_` name takes its value into `_` and binds nothing.
+	// packageTempAnchor). Without a type annotation, a `_` name takes its value
+	// into `_` and binds nothing; with one, it still goes through a temp so its
+	// value is checked against the annotation.
 	if isMultiReturnFromSingleExpr {
 		anchor := packageTempAnchor(ctx, namesCtx)
+		blankDiscards := ctx.Type_() == nil
 		tempNames := make([]string, len(namesCtx))
 		tempIdents := make([]*ast.Ident, len(namesCtx))
 		for i, idCtx := range namesCtx {
 			switch {
-			case idCtx.GetText() == "_":
+			case blankDiscards && idCtx.GetText() == "_":
 				tempNames[i] = "_"
 			case anchor != "":
 				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
@@ -281,7 +284,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		// Create specs for each named variable, wrapping the temp in NewImmutable
 		for i, idCtx := range namesCtx {
 			name := idCtx.GetText()
-			if name == "_" {
+			if tempNames[i] == "_" {
 				continue
 			}
 			var typeName transpiler.Type = transpiler.NilType{}
@@ -568,12 +571,17 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 // after: the first name other than `_` it binds. Every file of a package
 // shares one Go scope and each file's temp counter starts over, so a counter
 // would name the same temp in two files; the bound name is declared once per
-// package. It is "" inside a body, where the counter is function-scoped, and
-// when the declaration binds only `_`.
+// package. It is "" inside a body, where a temp is function-local and the
+// file-wide counter cannot clash, and when the declaration binds only `_`.
 func packageTempAnchor(decl antlr.ParserRuleContext, names []grammar.IIdentifierContext) string {
 	if _, topLevel := decl.GetParent().(*grammar.TopLevelDeclarationContext); !topLevel {
 		return ""
 	}
+	return firstBoundName(names)
+}
+
+// firstBoundName is the first of names other than `_`, or "" if none is.
+func firstBoundName(names []grammar.IIdentifierContext) string {
 	for _, idCtx := range names {
 		if name := idCtx.GetText(); name != "_" {
 			return name
@@ -585,15 +593,13 @@ func packageTempAnchor(decl antlr.ParserRuleContext, names []grammar.IIdentifier
 // tupleTempName names the temp that holds a destructured tuple: `_` when the
 // declaration binds only `_`, as it then needs no temp.
 func (t *galaASTTransformer) tupleTempName(decl tupleDeclaration, names []grammar.IIdentifierContext) string {
+	if firstBoundName(names) == "" {
+		return "_"
+	}
 	if anchor := packageTempAnchor(decl, names); anchor != "" {
 		return "__tuple_" + anchor
 	}
-	for _, idCtx := range names {
-		if idCtx.GetText() != "_" {
-			return fmt.Sprintf("__tuple_%d", t.nextTupleID())
-		}
-	}
-	return "_"
+	return fmt.Sprintf("__tuple_%d", t.nextTupleID())
 }
 
 // tupleDeclaration is what `val` and `var` declarations share: a tuple
