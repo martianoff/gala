@@ -1681,6 +1681,18 @@ type Box[T any] struct {
 }
 ```
 
+Type arguments are usually left to inference. A call that writes only its
+leading type arguments binds those as written and infers the rest from the
+arguments — for a generic function, a generic struct constructor (positional or
+named) and a companion `Apply` alike. A type parameter the arguments leave
+undetermined is an error naming it.
+
+```gala
+struct Pair[A any, B any](First A, Second B)
+
+val p = Pair[int64](1, "one")   // Pair[int64, string]
+```
+
 ## 9. Standard Library Types
 
 GALA provides several built-in types in the `std` package for common patterns.

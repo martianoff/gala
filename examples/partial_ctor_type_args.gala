@@ -1,0 +1,24 @@
+package main
+
+// A generic constructor called with only its leading type arguments binds
+// those as written and infers the rest from the arguments, as a generic
+// function call does.
+
+struct Pair[A any, B any](First A, Second B)
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+type Make[A any, B any] struct {}
+
+func (m Make[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
+
+func main() {
+    val positional = Pair[int64](1, "one")
+    val named = Pair[float64](Second = true, First = 2)
+    val step = Step[int](3, (x) => s"#${x}")
+    val made = Make[int](4, "four")
+    Println(s"${positional.First} ${positional.Second}")
+    Println(s"${named.First} ${named.Second}")
+    Println(step.Run(step.In))
+    Println(s"${made.First} ${made.Second}")
+}

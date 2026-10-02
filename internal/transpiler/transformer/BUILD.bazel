@@ -180,6 +180,7 @@ go_test(
         "oracle_findings_test.go",
         "oracle_test.go",
         "panic_audit_test.go",
+        "partial_ctor_type_args_test.go",
         "phantom_reexport_funconly_test.go",
         "placeholder_field_immutable_test.go",
         "placeholder_void_context_test.go",

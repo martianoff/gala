@@ -415,7 +415,12 @@ val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred a
    leading type arguments binds those as written and infers the rest from the
    other arguments and the lambda's body, as Go does for the emitted call:
    `resource.Using[Res](open(p), (r) => r.Name())` types `r` as `Res`, and the
-   lambda's result comes from its body.
+   lambda's result comes from its body. A generic struct constructor and a
+   companion `Apply` do the same: `Pair[int](1, "a")` for
+   `struct Pair[A any, B any](First A, Second B)` is a `Pair[int, string]`,
+   positionally or by name, and `Make[int](1, "a")` calls
+   `Make[int, string]{}.Apply`. A type parameter the arguments leave
+   undetermined is an error naming it, never a partial list in the output.
 
 6. **Conversion to a named function type** — for `type Handler func(int) int`,
    `Handler((x) => x + 1)` types the lambda by `Handler`'s signature. So does a
