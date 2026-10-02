@@ -672,13 +672,18 @@ func (a *galaAnalyzer) undefinedSymbolLocalGoNames(filePath string) map[string]b
 	if filePath == "" {
 		return nil
 	}
-	dir := canonicalPath(filepath.Dir(filePath))
-	if cached, ok := a.localGoNames[dir]; ok {
+	// A test file may also use the package's Go test helpers.
+	withTests := strings.HasSuffix(filePath, "_test.gala")
+	key := canonicalPath(filepath.Dir(filePath))
+	if withTests {
+		key += "\x00test"
+	}
+	if cached, ok := a.localGoNames[key]; ok {
 		return cached
 	}
-	names := parseLocalGoDeclNames(filepath.Dir(filePath))
+	names := parseLocalGoDeclNames(filepath.Dir(filePath), withTests)
 	if a.localGoNames != nil {
-		a.localGoNames[dir] = names
+		a.localGoNames[key] = names
 	}
 	return names
 }
@@ -686,10 +691,9 @@ func (a *galaAnalyzer) undefinedSymbolLocalGoNames(filePath string) map[string]b
 // parseLocalGoDeclNames parses `dir`'s hand-written .go files and returns the
 // names their top-level declarations introduce. The transpiler's own output
 // is excluded, since it restates what the .gala sources contribute; a .gen.go
-// another generator wrote is kept. So are in-package test files, whose
-// helpers a _test.gala file may use: the names serve an existence check, and
-// one too many can only hide a report.
-func parseLocalGoDeclNames(dir string) map[string]bool {
+// another generator wrote is kept. In-package test files count only
+// withTests.
+func parseLocalGoDeclNames(dir string, withTests bool) map[string]bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -707,11 +711,20 @@ func parseLocalGoDeclNames(dir string) map[string]bool {
 	fset := token.NewFileSet()
 	for _, e := range entries {
 		n := e.Name()
-		if e.IsDir() || !strings.HasSuffix(n, ".go") {
+		if e.IsDir() || !strings.HasSuffix(n, ".go") || (!withTests && strings.HasSuffix(n, "_test.go")) {
 			continue
 		}
-		f, perr := parser.ParseFile(fset, filepath.Join(dir, n), nil, parser.SkipObjectResolution|parser.ParseComments)
-		if perr != nil || f == nil || writtenByGala(f) || strings.HasSuffix(f.Name.Name, "_test") {
+		path := filepath.Join(dir, n)
+		// A .gen.go is usually the transpiler's own, which its header says;
+		// read just that before parsing the rest.
+		if strings.HasSuffix(n, ".gen.go") {
+			head, herr := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly|parser.ParseComments)
+			if herr != nil || head == nil || writtenByGala(head) {
+				continue
+			}
+		}
+		f, perr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if perr != nil || f == nil || strings.HasSuffix(f.Name.Name, "_test") {
 			continue
 		}
 		for _, decl := range f.Decls {
@@ -1546,7 +1559,7 @@ func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typePara
 		if hint := c.goTypeHint(name); hint != "" {
 			// Only a Go package this file does not dot-import declares it.
 			c.reportWith(name, id.GetStart(), "", hint)
-		} else if c.scope.declaresVisibly(name, extra) || c.types.localGo[name] {
+		} else if c.scope.declaresVisibly(name, extra) {
 			// A function or value this file can name: say so rather than
 			// suggest an import the file may already have.
 			c.reportWith(name, id.GetStart(), fmt.Sprintf("%s is not a type", name),
@@ -1611,7 +1624,7 @@ func tupleDestructureType(n antlr.Tree) antlr.Tree {
 // caller. extra holds the packages a method signature may also use, as for
 // galaScope.hidesFrom.
 func (c *undefChecker) typeNameExists(name string, extra map[string]bool) bool {
-	if isGoPredeclaredTypeName(name) || c.sourceTypes[name] || c.types.has(name, extra) {
+	if isGoPredeclaredTypeName(name) || c.types.has(name, extra) {
 		return true
 	}
 	// A prelude package registers its type surface, which includes types its

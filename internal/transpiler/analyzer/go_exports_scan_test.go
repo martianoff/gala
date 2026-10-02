@@ -38,10 +38,9 @@ func TestExportedGoNames(t *testing.T) {
 	assert.Equal(t, []string{"Plain", "Alias", "Box", "Grouped", "Pair", "Make", "One", "Two", "Max"}, names)
 }
 
-// A file no build configuration builds exports nothing; one built only for
-// some platforms, only without cgo, only at a feature level or only under a
-// custom tag is kept, whatever the host. A .gen.go is left out of a package
-// with GALA sources.
+// Build constraints do not filter the export scan, whatever platform, cgo
+// setting or tag a file needs. A .gen.go is left out of a package with GALA
+// sources.
 func TestExtractGoFileExportsFileSelection(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
@@ -63,5 +62,5 @@ func TestExtractGoFileExportsFileSelection(t *testing.T) {
 	}
 	rich := &transpiler.RichAST{PackageName: "dep"}
 	(&galaAnalyzer{}).extractGoFileExports(infos, dir, "dep", rich, false)
-	assert.Equal(t, []string{"Real", "Droid", "Fast", "Handle", "Hasher", "Termios"}, rich.GoExports["dep"])
+	assert.Equal(t, []string{"Real", "Droid", "Fast", "Template", "Handle", "Hasher", "Termios"}, rich.GoExports["dep"])
 }

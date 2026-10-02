@@ -606,22 +606,6 @@ var (
 // on a generator, a custom tag nothing sets. A file built only for some
 // platforms is kept: the transpiler serves every target, not just its host.
 func neverBuilt(f *ast.File) bool {
-	return constraintNeverHolds(f, []bool{true}, false)
-}
-
-// neverBuiltAnyConfig is neverBuilt for any build configuration: cgo on or
-// off, and any custom tag (`purego`, `netgo`) set except `ignore`, the
-// conventional tag of a file nothing builds.
-func neverBuiltAnyConfig(f *ast.File) bool {
-	return constraintNeverHolds(f, []bool{true, false}, true)
-}
-
-// constraintNeverHolds reports whether f's `//go:build` constraint holds for
-// no GOOS/GOARCH pair and cgo setting, with Go's implied tags (android sets
-// linux, ios darwin, illumos solaris), every architecture feature level
-// (`amd64.v1`) and every Go release on. With customTags, every other tag but
-// `ignore` is on too.
-func constraintNeverHolds(f *ast.File, cgoSettings []bool, customTags bool) bool {
 	var expr constraint.Expr
 	for _, group := range f.Comments {
 		if group.Pos() >= f.Package {
@@ -639,31 +623,14 @@ func constraintNeverHolds(f *ast.File, cgoSettings []bool, customTags bool) bool
 		return false
 	}
 	unix := map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "illumos": true, "ios": true, "linux": true, "netbsd": true, "openbsd": true, "solaris": true}
-	implied := map[string]string{"android": "linux", "ios": "darwin", "illumos": "solaris"}
-	known := map[string]bool{"cgo": true, "gc": true, "gccgo": true, "unix": true, "ignore": true}
-	for _, name := range goosList {
-		known[name] = true
-	}
-	for _, name := range goarchList {
-		known[name] = true
-	}
 	for _, goos := range goosList {
 		for _, goarch := range goarchList {
-			for _, cgo := range cgoSettings {
-				ok := expr.Eval(func(tag string) bool {
-					switch {
-					case tag == goos || tag == goarch || tag == implied[goos] || tag == "gc",
-						strings.HasPrefix(tag, goarch+"."), // GOAMD64-style feature levels
-						tag == "cgo" && cgo,
-						tag == "unix" && unix[goos],
-						strings.HasPrefix(tag, "go1."):
-						return true
-					}
-					return customTags && !known[tag] && !strings.Contains(tag, ".")
-				})
-				if ok {
-					return false
-				}
+			ok := expr.Eval(func(tag string) bool {
+				return tag == goos || tag == goarch || tag == "cgo" || tag == "gc" ||
+					(tag == "unix" && unix[goos]) || strings.HasPrefix(tag, "go1.")
+			})
+			if ok {
+				return false
 			}
 		}
 	}

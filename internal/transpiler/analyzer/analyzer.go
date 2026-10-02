@@ -3335,12 +3335,12 @@ func canonicalPath(path string) string {
 // exported names its package-level declarations introduce: functions (not
 // methods), types and aliases, vars and consts, in any form — plain, generic
 // or grouped. It parses the source, so text in comments or strings does not
-// count. A file no GOOS/GOARCH builds (`//go:build ignore`) exports nothing;
-// one built only for some platforms, or only with or only without cgo, is
-// kept, as the transpiler serves every target, not just its host.
+// count. Build constraints are not consulted: every file counts, as it did
+// for the line scan this replaced, whatever platform, cgo setting or tag it
+// needs.
 func exportedGoNames(src string) (pkg string, names []string) {
-	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution|goparser.ParseComments)
-	if f == nil || f.Name == nil || neverBuiltAnyConfig(f) {
+	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution)
+	if f == nil || f.Name == nil {
 		return "", nil
 	}
 	add := func(id *ast.Ident) {
