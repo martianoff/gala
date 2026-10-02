@@ -80,7 +80,7 @@ func main() {
     Println(Codec[User](SnakeCase()).Encode(User("x", billing.Email("a@b"), billing.NewSecret("k"))).Get())
 }`,
 			contains: []string{
-				"type _StructMeta_User struct",
+				"type _StructMeta_User" + metaSuffix("main.gala") + " struct",
 				"billing.StructMeta_Email{}.EncodeFields(w, t.Mail.Get()",
 				"billing.StructMeta_Secret{}.EncodeFields(w, t.Sec.Get()",
 				"_Mail = billing.StructMeta_Email{}.DecodeFields(r",
@@ -164,7 +164,7 @@ struct User(Mail Email)
 func main() {
     Println(Codec[User](SnakeCase()).Encode(User(Email("a@b"))).Get())
 }`,
-			contains:    []string{"StructMeta_Email{}.EncodeFields", "type _StructMeta_User struct"},
+			contains:    []string{"StructMeta_Email{}.EncodeFields", "type _StructMeta_User" + metaSuffix("main.gala") + " struct"},
 			notContains: []string{"_StructMeta_Email", "billing.StructMeta_Email"},
 		},
 		{
@@ -184,8 +184,8 @@ func main() {
     Println(Codec[User](SnakeCase()).Encode(User(Email(1), billing.Email("a@b"))).Get())
 }`,
 			contains: []string{
-				"type _StructMeta_Email struct",
-				"_StructMeta_Email{}.EncodeFields(w, t.Mine.Get()",
+				"type _StructMeta_Email" + metaSuffix("main.gala") + " struct",
+				"_StructMeta_Email" + metaSuffix("main.gala") + "{}.EncodeFields(w, t.Mine.Get()",
 				"billing.StructMeta_Email{}.EncodeFields(w, t.Theirs.Get()",
 			},
 		},

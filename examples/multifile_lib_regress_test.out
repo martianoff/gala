@@ -131,3 +131,5 @@ true
 true
 clock:wall
 Array(2, 1)
+{"x":1,"y":2} 3
+4 [{"X":5,"Y":6}] 7

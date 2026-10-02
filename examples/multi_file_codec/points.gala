@@ -1,0 +1,17 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+)
+
+// Point is encoded from both files of the package.
+struct Point(X int, Y int)
+
+// encodeElsewhere uses the same codecs as main.gala.
+func encodeElsewhere() string {
+    val p = json.Codec[Point](json.SnakeCase()).Decode("{\"x\":4,\"y\":5}").Map(_.Y).GetOrElse(-1)
+    val n = json.Value[int]().Encode(6).GetOrElse("<failure>")
+    val ps = json.Value[Array[Point]]().Encode(ArrayOf(Point(7, 8))).GetOrElse("<failure>")
+    s"$p $n $ps"
+}

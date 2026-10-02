@@ -2128,6 +2128,8 @@ val decoded = codec.Decode(jsonStr)
 decoded.ForEach((p) => Println(s"Name: ${p.FirstName}"))
 ```
 
+A JSON document is exactly one value: content after it, such as `{"age":1} x`, makes `Decode` a `Failure`.
+
 #### Pattern Matching
 
 Codec instances work as pattern matching extractors via `Unapply`:
@@ -2254,7 +2256,7 @@ val msg = yamlStr match {
 }
 ```
 
-Builder methods (`Naming`, `Omit`, `Rename`, `OmitEmpty`), naming strategies (`AsIs`, `CamelCase`, `SnakeCase`, `KebabCase`), nested struct collections, root arrays (`.Array()` / `.List()` → `YamlArrayEncoder[T]` / `YamlListEncoder[T]`), root values of any shape (`Value[T]()` → `YamlValueEncoder[T]`), and the silent-drop behaviour for unknown fields all match the JSON codec — see the [Json](#json) section for details. There is no `EncodePretty` for YAML; block-style output is already readable.
+Builder methods (`Naming`, `Omit`, `Rename`), naming strategies (`AsIs`, `CamelCase`, `SnakeCase`, `KebabCase`), nested struct collections, root arrays (`.Array()` / `.List()` → `YamlArrayEncoder[T]` / `YamlListEncoder[T]`), root values of any shape (`Value[T]()` → `YamlValueEncoder[T]`), and the silent-drop behaviour for unknown fields all match the JSON codec — see the [Json](#json) section for details. There is no `EncodePretty` for YAML; block-style output is already readable.
 
 ```gala
 import (
@@ -2370,6 +2372,8 @@ type ValueMeta[T any] interface {
 ```
 
 It is auto-injected the same way: a generic type whose `Apply` declares `ValueMeta[T]` as its first parameter receives a generated `_ValueMeta_X{}` value, so `Value[Array[int]]()` becomes `Value[Array[int]]{}.Apply(_ValueMeta_Array_int{})`. When the meta is `Apply`'s only parameter, the call takes no arguments. The generated methods hold the same typed dispatch a field of type `T` gets, so a root value and a field never encode differently, and a `T` with no encoding is [GALA-E0050](errors/GALA-E0050.md) at the call site.
+
+A parameter is injected because of its type's shape, not its name: an interface whose methods are exactly those of `StructMeta[T]` or `ValueMeta[T]`. A type of your own that happens to be called `ValueMeta` is an ordinary parameter. The metadata describes the receiver's type argument that the parameter names, so `Apply(meta ValueMeta[V])` on `Pair[K, V]` describes `V`. Metadata generated on demand — every `_ValueMeta_X`, and a `main` package `_StructMeta_X` — is declared by each file that uses it, under a file-specific name (the name above plus a suffix), so two files of one package can use the same codec. A library struct's `StructMeta_X` is declared once, by the file that declares the struct.
 
 ### Regex
 

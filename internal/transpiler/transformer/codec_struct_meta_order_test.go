@@ -45,7 +45,8 @@ func main() {
 			}
 			// Alpha is reached only through Delta's field, so this also
 			// covers the nested registrations.
-			require.Equal(t, []string{"_StructMeta_Alpha", "_StructMeta_Bravo", "_StructMeta_Charlie", "_StructMeta_Delta"}, names)
+			sfx := metaSuffix("codec_order.gala")
+			require.Equal(t, []string{"_StructMeta_Alpha" + sfx, "_StructMeta_Bravo" + sfx, "_StructMeta_Charlie" + sfx, "_StructMeta_Delta" + sfx}, names)
 			continue
 		}
 		require.Equal(t, first, out, "run %d produced different Go", run)

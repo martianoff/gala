@@ -146,8 +146,6 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				if methodMeta, hasApply := typeMeta.Methods["Apply"]; hasApply {
 					// Check if Apply takes zero arguments (zero-arg Apply method like None[T]())
 					if len(methodMeta.ParamTypes) == 0 {
-						// Check if the base expression is a type (not a variable)
-						isType := false
 						baseExpr := base
 						if idx, ok := base.(*ast.IndexExpr); ok {
 							baseExpr = idx.X
@@ -155,22 +153,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 							baseExpr = idxList.X
 						}
 
-						if id, ok := baseExpr.(*ast.Ident); ok {
-							if !t.isVal(id.Name) && !t.isVar(id.Name) {
-								if !t.lookupTypeName(id.Name).IsNil() {
-									isType = true
-								}
-							}
-						} else if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
-							if id, ok := sel.X.(*ast.Ident); ok {
-								// Check if it's an explicitly imported package OR the std package
-								if t.importManager.IsPackage(id.Name) || id.Name == registry.StdPackageName {
-									isType = true
-								}
-							}
-						}
-
-						if isType {
+						// The base must be a type, not a variable.
+						if t.isTypeBaseExpr(base) {
 							// Zero-argument Apply method: TypeName[T]{}.Apply()
 							receiverType := base
 							// Downward inference: a sealed-variant zero-arg constructor
@@ -242,7 +226,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								Args: nil,
 							}, nil
 						}
-					} else if len(methodMeta.ParamTypes) == 1 && isInjectedMetaParam(methodMeta.ParamTypes[0]) && t.isTypeBaseExpr(base) {
+					} else if len(methodMeta.ParamTypes) == 1 && t.injectedMetaParam(methodMeta.ParamTypes[0]) != noInjectedMeta {
 						// An Apply that takes nothing but an auto-injected
 						// metadata parameter (StructMeta[T] / ValueMeta[T]) is
 						// called with no arguments of its own:
@@ -1451,23 +1435,32 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}
 
 	// Auto-inject StructMeta[T] when first Apply param is StructMeta[T] (the
-	// Option-C typed interface from std/meta.gala) or the legacy StructMetaOps
-	// (the pre-migration non-generic shim in json/helpers.gala).
+	// typed interface from std/meta.gala).
 	// Codec[Person](SnakeCase()) → prepend _StructMeta_Person{} before SnakeCase()
 	// ValueMeta[T] is injected the same way for a value of any codec shape:
 	// Value[Array[int]]() → prepend _ValueMeta_Array_int{}.
-	if hasTypeArgs && len(methodMeta.ParamTypes) > 0 && isInjectedMetaParam(methodMeta.ParamTypes[0]) {
-		var injected []ast.Expr
-		var err error
-		if isValueMetaParam(methodMeta.ParamTypes[0]) {
-			injected, err = t.autoInjectValueMeta(args, typeArgs, line, col)
-		} else {
-			injected, err = t.autoInjectStructMeta(args, methodMeta, typeArgs, line, col)
+	if len(methodMeta.ParamTypes) > 0 {
+		if kind := t.injectedMetaParam(methodMeta.ParamTypes[0]); kind != noInjectedMeta {
+			if !hasTypeArgs {
+				// No metadata can be generated for a type nobody named.
+				return true, nil, t.codecError(&structMetaConfig{rootName: origTypeName, line: line, col: col},
+					fmt.Sprintf("the type argument of %s is not given; write %s[T](...)", origTypeName, origTypeName))
+			}
+			metaArg, err := t.injectedMetaTypeArg(methodMeta.ParamTypes[0], typeMeta, typeArgs, origTypeName, line, col)
+			if err != nil {
+				return true, nil, err
+			}
+			var injected []ast.Expr
+			if kind == injectedValueMeta {
+				injected, err = t.autoInjectValueMeta(args, metaArg, line, col)
+			} else {
+				injected, err = t.autoInjectStructMeta(args, methodMeta, []ast.Expr{metaArg}, line, col)
+			}
+			if err != nil {
+				return true, nil, err
+			}
+			args = injected
 		}
-		if err != nil {
-			return true, nil, err
-		}
-		args = injected
 	}
 
 	if isGeneric {

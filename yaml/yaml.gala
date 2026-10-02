@@ -3,6 +3,7 @@ package yaml
 import (
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
 )
 
 // Codec[T] is a type-safe, zero-reflection YAML codec.
@@ -88,7 +89,7 @@ func omitFnFromKeys(keys Array[string]) func(int) bool =
 
 // namingFn is the codec's naming strategy as the key converter StructMeta
 // threads into nested structs.
-func namingFn(n Naming) func(string) string = (name string) => ApplyNaming(name, n)
+func namingFn(n Naming) func(string) string = (name) => ApplyNaming(name, n)
 
 // writer returns the function that writes one T as a YAML mapping, with the
 // codec's Naming/Rename/Omit applied. Array() and List() call it per element.
@@ -96,7 +97,7 @@ func (c YamlEncoder[T]) writer() func(FieldEncoder, T) {
     val nameFn = nameFnFromKeys(c.Keys.Keys)
     val omitFn = omitFnFromKeys(c.Keys.Keys)
     val naming = namingFn(c.Config.NamingStrategy)
-    return (w FieldEncoder, v T) => c.Meta.EncodeFields(w, v, nameFn, omitFn, naming)
+    (w, v) => c.Meta.EncodeFields(w, v, nameFn, omitFn, naming)
 }
 
 // reader returns the function that reads one T from a YAML mapping. The key
@@ -104,7 +105,7 @@ func (c YamlEncoder[T]) writer() func(FieldEncoder, T) {
 func (c YamlEncoder[T]) reader() func(FieldDecoder) T {
     val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
     val naming = namingFn(c.Config.NamingStrategy)
-    return (r FieldDecoder) => c.Meta.DecodeFields(r, lookup, naming)
+    (r) => c.Meta.DecodeFields(r, lookup, naming)
 }
 
 // encodeYaml runs write against a fresh encoder and returns the document.
@@ -121,13 +122,17 @@ func decodeYaml[V any](s string, read func(FieldDecoder) V) Try[V] = Try(() => r
 // Encode serializes a value to a YAML string (block-style, zero-reflection).
 func (c YamlEncoder[T]) Encode(v T) Try[string] {
     val write = c.writer()
-    return encodeYaml((w) => write(w, v))
+    encodeYaml((w) => write(w, v))
 }
 
 // Decode deserializes a YAML string into Try[T] (zero-reflection).
 // DecodeFields panics on malformed input; Try() catches the panic and
 // surfaces it as a Failure.
-func (c YamlEncoder[T]) Decode(s string) Try[T] = decodeYaml(s, c.reader())
+func (c YamlEncoder[T]) Decode(s string) Try[T] = decodeYaml(s, (r) => {
+    // Built inside the Try: a codec without metadata fails, not panics.
+    val read = c.reader()
+    read(r)
+})
 
 // Unapply attempts to decode a YAML string using the codec's naming config.
 // Returns Option[T] for pattern matching support.
@@ -146,32 +151,38 @@ type YamlArrayEncoder[T any] struct {
     Elem YamlEncoder[T]
 }
 
-// Encode serializes the elements as a block-style sequence (`[]` when empty).
-func (c YamlArrayEncoder[T]) Encode(vs Array[T]) Try[string] {
-    val write = c.Elem.writer()
-    return encodeYaml((w) => {
+// encodeElems writes the elements as a YAML sequence.
+func (c YamlEncoder[T]) encodeElems(vs Traversable[T]) Try[string] {
+    val write = c.writer()
+    encodeYaml((w) => {
         w.WriteStartArray()
         vs.ForEach((v) => write(w, v))
         w.WriteEndArray()
     })
 }
 
+// readElems reads a YAML sequence of mappings, in order. Like the generated
+// decoder of an Array or List field, it collects into a Go slice and builds
+// the collection once, instead of a persistent Append per element.
+func readElems[T any](r FieldDecoder, read func(FieldDecoder) T) []T {
+    r.StartArray()
+    // A pull parser: the element count is unknown until the decoder reports
+    // the end of the sequence, so there is no combinator to fold over.
+    var buf = go_interop.SliceEmpty[T]()
+    for r.HasMoreElements() {
+        buf = go_interop.SliceAppend(buf, read(r))
+    }
+    r.EndArray()
+    buf
+}
+
+// Encode serializes the elements as a block-style sequence (`[]` when empty).
+func (c YamlArrayEncoder[T]) Encode(vs Array[T]) Try[string] = c.Elem.encodeElems(vs)
+
 // Decode reads a sequence of mappings. Anything else at the root — a
 // mapping, a scalar — is a Failure.
-func (c YamlArrayEncoder[T]) Decode(s string) Try[Array[T]] {
-    val read = c.Elem.reader()
-    return decodeYaml(s, (r) => {
-        r.StartArray()
-        // A pull parser: the element count is unknown until the decoder
-        // reports the end of the array, so there is no combinator to fold over.
-        var out = EmptyArray[T]()
-        for r.HasMoreElements() {
-            out = out.Append(read(r))
-        }
-        r.EndArray()
-        out
-    })
-}
+func (c YamlArrayEncoder[T]) Decode(s string) Try[Array[T]] =
+    decodeYaml(s, (r) => ArrayFromSlice(readElems(r, c.Elem.reader())))
 
 // Unapply decodes for pattern matching.
 func (c YamlArrayEncoder[T]) Unapply(s string) Option[Array[T]] = c.Decode(s).ToOption()
@@ -183,10 +194,11 @@ type YamlListEncoder[T any] struct {
 }
 
 // Encode serializes the elements as a block-style sequence.
-func (c YamlListEncoder[T]) Encode(vs List[T]) Try[string] = c.Elem.Array().Encode(vs.ToArray())
+func (c YamlListEncoder[T]) Encode(vs List[T]) Try[string] = c.Elem.encodeElems(vs)
 
 // Decode reads a sequence of mappings into a List.
-func (c YamlListEncoder[T]) Decode(s string) Try[List[T]] = c.Elem.Array().Decode(s).Map((a) => a.ToList())
+func (c YamlListEncoder[T]) Decode(s string) Try[List[T]] =
+    decodeYaml(s, (r) => ListFromSlice(readElems(r, c.Elem.reader())))
 
 // Unapply decodes for pattern matching.
 func (c YamlListEncoder[T]) Unapply(s string) Option[List[T]] = c.Decode(s).ToOption()
@@ -215,17 +227,13 @@ type YamlValueEncoder[T any] struct {
 func (c YamlValueEncoder[T]) Naming(n Naming) YamlValueEncoder[T] = c.Copy(NamingStrategy = n)
 
 // Encode serializes the value to YAML.
-func (c YamlValueEncoder[T]) Encode(v T) Try[string] {
-    val naming = namingFn(c.NamingStrategy)
-    return encodeYaml((w) => c.Meta.EncodeValue(w, v, naming))
-}
+func (c YamlValueEncoder[T]) Encode(v T) Try[string] =
+    encodeYaml((w) => c.Meta.EncodeValue(w, v, namingFn(c.NamingStrategy)))
 
 // Decode reads a YAML document of T's shape. A document of another shape, or
 // a number outside T's range, is a Failure.
-func (c YamlValueEncoder[T]) Decode(s string) Try[T] {
-    val naming = namingFn(c.NamingStrategy)
-    return decodeYaml(s, (r) => c.Meta.DecodeValue(r, naming))
-}
+func (c YamlValueEncoder[T]) Decode(s string) Try[T] =
+    decodeYaml(s, (r) => c.Meta.DecodeValue(r, namingFn(c.NamingStrategy)))
 
 // Unapply decodes for pattern matching.
 func (c YamlValueEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()

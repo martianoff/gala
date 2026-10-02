@@ -503,4 +503,8 @@ func main() {
     Println(multifile_lib_regress.ShadowedTimeQualifier(multifile_lib_regress.Clock("wall")))
     // A dot-imported GENERIC function passed as a value in a named package.
     Println(multifile_lib_regress.FlattenSizes(ArrayOf(ListOf(ListOf(1, 2)), ListOf(ListOf(3)))).String())
+    // Two files of the package use the same codecs; each declares its own
+    // codec metadata types.
+    Println(multifile_lib_regress.CodecMetaA())
+    Println(multifile_lib_regress.CodecMetaB())
 }

@@ -1,0 +1,14 @@
+package main
+
+// Two files of the main package use the same codecs. Each declares the
+// metadata it generates on demand (_StructMeta_Point, _ValueMeta_int) under a
+// file-specific name; with shared names the package did not compile
+// ("redeclared in this block").
+
+import "martianoff/gala/json"
+
+func main() {
+    Println(json.Codec[Point](json.SnakeCase()).Encode(Point(1, 2)))
+    Println(json.Value[int]().Decode("3"))
+    Println(encodeElsewhere())
+}

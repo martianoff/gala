@@ -1799,6 +1799,20 @@ gala_exec_test(
     expected = "multi_file/multi_file.out",
 )
 
+# Multi-file main package where both files use the same codecs
+gala_exec_test(
+    name = "multi_file_codec",
+    srcs = [
+        "multi_file_codec/main.gala",
+        "multi_file_codec/points.gala",
+    ],
+    expected = "multi_file_codec/multi_file_codec.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+    ],
+)
+
 # Multi-file with cross-file types: structs, sealed types, pattern matching
 gala_exec_test(
     name = "multi_file_types",
@@ -3306,6 +3320,8 @@ gala_library(
     name = "multifile_lib_regress",
     srcs = [
         "multifile_lib_regress/bare_variant.gala",
+        "multifile_lib_regress/codec_meta_a.gala",
+        "multifile_lib_regress/codec_meta_b.gala",
         "multifile_lib_regress/consult_end.gala",
         "multifile_lib_regress/cross_file_methods.gala",
         "multifile_lib_regress/cross_file_methods_ext.gala",
@@ -3338,6 +3354,7 @@ gala_library(
         "//collection_immutable",
         "//examples/go_struct_bridge",
         "//go_interop",
+        "//json",
         "//strings",
     ],
 )

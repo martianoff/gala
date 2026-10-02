@@ -260,7 +260,7 @@ No reflection at runtime. Field names, types, and access patterns are all resolv
 
 A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested.
 
-`Value[T]()` works the same way with `ValueMeta[T]`, the intrinsic for a whole value of any codec shape: the transpiler generates `_ValueMeta_X` with typed `EncodeValue` / `DecodeValue` methods and injects it, so `Value[int]()` takes no arguments of its own.
+`Value[T]()` works the same way with `ValueMeta[T]`, the intrinsic for a whole value of any codec shape: the transpiler generates `_ValueMeta_X` with typed `EncodeValue` / `DecodeValue` methods and injects it, so `Value[int]()` takes no arguments of its own. Metadata generated on demand — a `_ValueMeta_X`, or a `main` package `_StructMeta_X` — gets a file-specific name, so two files of one package can use the same codec.
 
 ---
 
