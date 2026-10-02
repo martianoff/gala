@@ -111,6 +111,17 @@ func TestLambdaArityMismatchNamesIt(t *testing.T) {
 	assert.Contains(t, err.Error(), "takes 2 parameters where a function of 1 is expected")
 }
 
+// TestLambdaArgOfLocalFuncBinding covers a lambda passed to a local binding of
+// function type whose parameter types name the enclosing declaration's type
+// parameter: it is typed by them (`func(v T)`), not left without a type.
+func TestLambdaArgOfLocalFuncBinding(t *testing.T) {
+	files, galaFile := samePackageModule(".", "package main\n",
+		"package main\n\nfunc each[T any](forEach func(func(T)), g func(T)) {\n    forEach((v) => g(v))\n}\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "forEach(func(v T) {")
+}
+
 // TestConversionToGoNamedFuncType covers a conversion to an imported Go
 // named function type: the lambda is typed by its signature.
 func TestConversionToGoNamedFuncType(t *testing.T) {

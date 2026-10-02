@@ -1918,6 +1918,17 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 		}
 	}
 
+	// A call of a local binding of function type (`forEach((v) => g(v))` for
+	// a parameter `forEach func(func(T))`) takes its parameter types from the
+	// binding's type, type parameters of the enclosing declaration included.
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
+		if id, isIdent := fun.(*ast.Ident); isIdent && t.bindingScope(id.Name) != nil {
+			if ft := t.resolveTranspilerTypeAsFuncType(t.getValType(id.Name)); ft != nil {
+				ctx.goFuncParamTypes = ft.Params
+			}
+		}
+	}
+
 	// Struct construction context: collect field types so lambdas passed
 	// as positional struct args can infer their parameter types.
 	if funcName := t.extractFuncName(fun); funcName != "" {
