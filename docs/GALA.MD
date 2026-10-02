@@ -3448,9 +3448,8 @@ colors.Hits = colors.Hits + 1        // OK: a var
 
 A shorthand struct field is a `val` field, stored as a `std.Immutable[T]`. One declared `Immutable[T]` is stored as that `Immutable[T]` rather than wrapped twice, so it is the same field as one declared `T`: it takes a `T` positionally, by name, as a `Copy` override or as its default, and reading it yields a `T`. A `var` field declared `Immutable[T]`, one written with an explicit `val`, or a block-form (`type ... struct { }`) field, holds the `Immutable[T]` it names, so its value is that `Immutable[T]`.
 
-<!-- doc-check: fragment -->
 ```gala
-struct Counter(Hits Immutable[int64] = 1, Label string)
+struct Counter(Label string, Hits Immutable[int64] = 1)
 
 val c = Counter(Hits = 3, Label = "named")
 Println(c.Hits + 1)              // 4: Hits reads as an int64

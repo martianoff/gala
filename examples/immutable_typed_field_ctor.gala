@@ -4,14 +4,14 @@ package main
 // positionally, by name, as a Copy override or as its default. The value is
 // wrapped once. A var field declared Immutable[T] takes the Immutable[T].
 
-struct Counter(Hits Immutable[int64] = 1, Label string)
+struct Counter(Label string, Hits Immutable[int64] = 1)
 
 struct Cell(var Stored Immutable[int])
 
 struct Holder[T any](Inner Immutable[T], Spare T)
 
 func main() {
-    val positional = Counter(2, "positional")
+    val positional = Counter("positional", 2)
     val named = Counter(Hits = 3, Label = "named")
     val defaulted = Counter(Label = "defaulted")
     val copied = named.Copy(Hits = 4)
