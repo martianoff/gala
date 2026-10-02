@@ -1074,6 +1074,30 @@ func f(xs ArrayOf) int = 1
 func main() {
     Println(1)
 }`, "ArrayOf is not a type"},
+		{"GALA type out of scope, Go type of the same name not dot-imported", `package main
+
+import (
+    "container/list"
+    gs "martianoff/gala/strings"
+)
+
+func f(xs List[int]) int = 1
+
+func main() {
+    Println(list.New().Len(), gs.S("a"))
+}`, "undefined: List"},
+		{"Go type of a Go package sharing a dot-imported GALA package's name", `package main
+
+import (
+    . "martianoff/gala/io"
+    goio "io"
+)
+
+func f(r Reader) int = 1
+
+func main() {
+    Println(goio.EOF)
+}`, "undefined: Reader"},
 	}
 	for _, tc := range reported {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1083,6 +1107,20 @@ func main() {
 			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
+
+	t.Run("a receiver file's Go dot import does not reach a method signature", func(t *testing.T) {
+		// Go scopes a dot import to its file: the generated method would not
+		// compile either.
+		err := analyzeSources(t, `package main
+
+func (c Clock) Wait(d Duration) Clock = c
+
+func main() {
+    Println(1)
+}`, map[string]string{"clock.gala": "package main\n\nimport . \"time\"\n\nstruct Clock(D Duration)\n"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined: Duration")
+	})
 
 	t.Run("reported at the first use, type or value", func(t *testing.T) {
 		err := analyzeSources(t, `package main

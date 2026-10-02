@@ -3,6 +3,9 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
+	goparser "go/parser"
+	"go/token"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -940,7 +943,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	fileImportSets[canonicalPath(filePath)] = explicitImportPkgs
 	// The GALA packages each file dot-imports. GALA-E0023's version of the
 	// receiver-file allowance needs these alone: a bare name can come from
-	// the receiver file's dot imports, never from its named imports.
+	// the receiver file's dot imports, never from its named imports. A Go dot
+	// import gives no such allowance: Go scopes it to its own file.
 	dotPkgsForFile := func(q fileQualifiers) map[string]bool {
 		set := make(map[string]bool)
 		for _, b := range q.dots {
@@ -3333,29 +3337,25 @@ func canonicalPath(path string) string {
 // Only matches top-level functions, not methods (which have a receiver before the name).
 var goExportedFuncRe = regexp.MustCompile(`(?m)^func\s+([A-Z]\w*)\s*[\[(]`)
 
-// goExportedTypeRe matches exported type declarations in Go files.
-// Covers plain `type Name struct { ... }`, generic `type Name[T any] ...` and
-// the alias form `type Name = other.Name`.
-var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)(\s+|\s*=|\[)`)
-
-// goTypeGroupRe matches a grouped `type ( ... )` declaration, and
-// goGroupedTypeRe an exported spec in its body: one indented by a single tab,
-// as gofmt lays it out, so a nested struct's fields are not taken for types.
-var (
-	goTypeGroupRe   = regexp.MustCompile(`(?ms)^type\s*\(\s*$(.*?)^\)`)
-	goGroupedTypeRe = regexp.MustCompile(`(?m)^\t([A-Z]\w*)(\s+|\s*=|\[)`)
-)
-
-// exportedGoTypeNames returns the exported type names a Go source declares,
-// standalone or in a grouped `type ( ... )` block.
+// exportedGoTypeNames returns the exported type and alias names a Go source
+// declares at package level, in any form: plain, generic or grouped. It
+// parses the source, so declarations in comments or strings do not count; a
+// source that does not parse yields what was parsed before the error.
 func exportedGoTypeNames(src string) []string {
-	var out []string
-	for _, m := range goExportedTypeRe.FindAllStringSubmatch(src, -1) {
-		out = append(out, m[1])
+	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution)
+	if f == nil {
+		return nil
 	}
-	for _, g := range goTypeGroupRe.FindAllStringSubmatch(src, -1) {
-		for _, m := range goGroupedTypeRe.FindAllStringSubmatch(g[1], -1) {
-			out = append(out, m[1])
+	var out []string
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.IsExported() {
+				out = append(out, ts.Name.Name)
+			}
 		}
 	}
 	return out
@@ -3392,6 +3392,11 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 
 	for _, f := range files {
 		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
+			continue
+		}
+		// A file Go would not build here — `//go:build ignore`, another
+		// GOOS/GOARCH — exports nothing.
+		if ok, err := build.Default.MatchFile(dirPath, f.Name()); err == nil && !ok {
 			continue
 		}
 		if !includeGenerated && strings.HasSuffix(f.Name(), ".gen.go") {
