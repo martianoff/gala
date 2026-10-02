@@ -778,7 +778,7 @@ func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type, pkg string) (*s
 			if config, ok := t.structMetas[resolved]; ok {
 				return config, nil
 			}
-			if reason := describableReason(name, meta); reason != "" {
+			if reason := t.describableReason(name, meta); reason != "" {
 				return nil, unsupportedShape("%s", reason)
 			}
 		}

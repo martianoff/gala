@@ -348,3 +348,47 @@ func main() {
 	}
 	assert.NotContains(t, out, "_StructMeta_Stamp", "generated:\n%s", out)
 }
+
+// TestCodecLibraryStructWithGoStructField: a library struct whose field is a
+// struct of a plain Go package. The analyzer describes that Go struct with
+// the same metadata as a GALA one, but no Go package declares a StructMeta,
+// so the library must not reference one. It used to emit StructMeta_Conf
+// calling box.StructMeta_Box, which does not compile; a codec asking for a
+// struct with such a field is GALA-E0050 instead.
+func TestCodecLibraryStructWithGoStructField(t *testing.T) {
+	files := map[string]string{
+		"go.mod":     "module example.com/gostructfield\n\ngo 1.25\n",
+		"gala.mod":   "module example.com/gostructfield\n",
+		"box/box.go": "package box\n\ntype Box struct{ Size int }\n",
+		"lib/main.gala": `package lib
+
+import "example.com/gostructfield/box"
+
+struct Conf(Name string, B box.Box)
+
+struct Plain(Name string)
+`,
+	}
+	out, err := transpileInModule(t, files, "lib/main.gala")
+	require.NoError(t, err)
+	assert.NotContains(t, out, "StructMeta_Box", "generated:\n%s", out)
+	assert.NotContains(t, out, "StructMeta_Conf", "generated:\n%s", out)
+	assert.Contains(t, out, "type StructMeta_Plain struct", "generated:\n%s", out)
+
+	files["main.gala"] = `package main
+
+import (
+    . "martianoff/gala/json"
+    "example.com/gostructfield/box"
+)
+
+struct Wrap(B box.Box)
+
+func main() {
+    Println(Codec[Wrap](SnakeCase()).Encode(Wrap(box.Box(Size = 1))).Get())
+}
+`
+	_, err = transpileInModule(t, files, "main.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), string(galaerr.CodeUnsupportedCodecField))
+}

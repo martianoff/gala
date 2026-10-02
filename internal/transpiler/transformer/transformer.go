@@ -79,7 +79,7 @@ type galaASTTransformer struct {
 	unresolvedSeen          map[ast.Expr]bool                             // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
 	unrecordedCallee        ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
 	diagPackageNames        map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
-	structMetas             map[string]*structMetaConfig                  // generated StructMeta structs (keyed by generated name)
+	structMetas             map[string]*structMetaConfig                  // StructMeta configs, keyed by the resolved name of their struct
 	valueMetas              map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames  map[string]string                             // type name -> actual generated interface name (for collision avoidance)
 	defaultTrees            map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
@@ -228,7 +228,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.cachedTypeResolver = nil
 	t.cachedTypeResolverRev = 0
 	t.typeAliases = make(map[string]transpiler.Type)
-	// Load type aliases from sibling files (extracted by analyzer)
+	// Load type aliases from sibling files, and imported packages' under
+	// their qualified names (extracted by analyzer)
 	for name, underlyingType := range richAST.TypeAliases {
 		t.typeAliases[name] = underlyingType
 	}

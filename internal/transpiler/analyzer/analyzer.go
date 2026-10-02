@@ -1531,10 +1531,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	// Resolved here, while this file's imports are in effect: a target such
 	// as `Array[Millis]` needs them.
-	addQualifiedTypeAliases(richAST, pkgName, a.fileTypeAliases(sourceFile, pkgName))
+	ownAliases := a.fileTypeAliases(sourceFile, pkgName)
+	addQualifiedTypeAliases(richAST, pkgName, ownAliases)
 
 	if len(pendingDefaultChecks) > 0 {
-		underlying := a.declaredTypeUnderlying(sourceFile, pkgName, richAST)
+		underlying := a.declaredTypeUnderlying(ownAliases, pkgName, richAST)
 		for _, check := range pendingDefaultChecks {
 			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
 				return nil, err
@@ -3045,9 +3046,10 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 // struct through them — the codec, for one, has to see that a `Millis` field
 // is an int64. The bare keys cannot serve: they hold only the sibling files'
 // aliases, so a one-file package would export none, and a bare key would
-// clash with an importer's own alias of the same name.
+// clash with an importer's own alias of the same name. main cannot be
+// imported, so its aliases are not recorded.
 func addQualifiedTypeAliases(richAST *transpiler.RichAST, pkgName string, aliases map[string]transpiler.Type) {
-	if pkgName == "" || len(aliases) == 0 {
+	if pkgName == "" || pkgName == "main" || len(aliases) == 0 {
 		return
 	}
 	if richAST.TypeAliases == nil {
@@ -4215,11 +4217,10 @@ func (a *galaAnalyzer) fileTypeAliases(sourceFile *grammar.SourceFileContext, pk
 // declaredTypeUnderlying returns a resolver that follows a named type to the
 // type it is declared over: a `type Millis int64` of this file or a sibling
 // (through alias chains), or a Go named type such as `time.Duration`. Types it
-// cannot see through are returned unchanged.
-func (a *galaAnalyzer) declaredTypeUnderlying(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) transpiler.Type {
-	// This file's own type declarations are not in richAST.TypeAliases (only
-	// siblings' are), so read their targets here.
-	local := a.fileTypeAliases(sourceFile, pkgName)
+// cannot see through are returned unchanged. local holds this file's own
+// aliases (fileTypeAliases): richAST.TypeAliases keys them only by qualified
+// name, and holds the siblings' under their bare names.
+func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) transpiler.Type {
 	declared := func(name string) (transpiler.Type, bool) {
 		if next, ok := local[name]; ok {
 			return next, true

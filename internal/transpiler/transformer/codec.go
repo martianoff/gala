@@ -81,12 +81,8 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 		return nil, err
 	}
 
-	typeMeta, _ := t.getTypeMetaResolved(typeName)
-	if typeMeta == nil {
+	if typeMeta, _ := t.getTypeMetaResolved(typeName); typeMeta == nil {
 		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("StructMeta[%s]: type %q not found", typeName, typeName))
-	}
-	if len(typeMeta.FieldNames) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("StructMeta[%s]: type %q has no fields", typeName, typeName))
 	}
 	site := &structMetaConfig{rootName: typeName, line: line, col: col}
 	config, reason := t.registerStructMeta(typeName, site)
@@ -107,13 +103,14 @@ func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaCon
 	if meta == nil {
 		return nil, notCodecTypeReason(name)
 	}
-	if reason := describableReason(name, meta); reason != "" {
+	if reason := t.describableReason(name, meta); reason != "" {
 		return nil, reason
 	}
 	if config, ok := t.structMetas[resolved]; ok {
 		if config.auto && !site.auto {
 			config.auto = false
 			config.rootName, config.line, config.col = site.rootName, site.line, site.col
+			t.registerStructMetaTypeMeta(config)
 		}
 		return config, ""
 	}
@@ -142,9 +139,13 @@ func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaCon
 }
 
 // describableReason says why the named type has no StructMeta, or "" when it
-// can have one.
-func describableReason(name string, meta *transpiler.TypeMetadata) string {
+// can have one. A struct of a Go package has none: the analyzer describes it
+// with the same metadata as a GALA struct, but only a GALA package declares
+// StructMeta_X for its structs.
+func (t *galaASTTransformer) describableReason(name string, meta *transpiler.TypeMetadata) string {
 	switch {
+	case meta.Package != "" && meta.Package != t.packageName && !t.declaresStructMeta(meta):
+		return fmt.Sprintf("%s is a Go struct; the codec describes GALA structs only", name)
 	case meta.IsSealed:
 		return sealedReason(name)
 	case len(meta.TypeParams) > 0:
@@ -153,6 +154,15 @@ func describableReason(name string, meta *transpiler.TypeMetadata) string {
 		return noFieldsReason(name)
 	}
 	return ""
+}
+
+// declaresStructMeta reports whether the package declaring the imported
+// struct meta emits its StructMeta_X: it is GALA source (the analyzer records
+// where it was defined), or Go — a precompiled GALA package — that declares
+// the StructMeta itself. Package membership cannot tell: a Go directory
+// inside the module is analyzed like a GALA package.
+func (t *galaASTTransformer) declaresStructMeta(meta *transpiler.TypeMetadata) bool {
+	return meta.DefinedIn != "" || t.typeMetas[meta.Package+".StructMeta_"+meta.Name] != nil
 }
 
 // notCodecTypeReason explains that the named type is none of the shapes the
@@ -257,7 +267,6 @@ func (t *galaASTTransformer) generateStructMetas() ([]ast.Decl, bool, error) {
 	}
 	return out, dropped, nil
 }
-
 
 // snapshotCodecImports records the import state that generating a StructMeta
 // changes, and returns a function that puts it back. Code that is generated
