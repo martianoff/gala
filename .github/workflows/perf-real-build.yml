@@ -89,13 +89,13 @@ jobs:
     # gala_team's MODULE.bazel requires, so the override matches what
     # gala_team is written against.
     env:
-      # gala_tui 0.12.0 — the version gala_team requires; it provides
-      # ModalOver, which gala_team's UI uses.
-      GALA_TUI_REF: 0ffa8738910555dc2e93124b8a39cbd532a02573
-      # Pinned past the commit that imports app/view in app/ui/update.gala:
-      # GALA-E0023 rejects a name whose package the file does not import, and
-      # earlier commits used SidebarRowCount without that import.
-      GALA_TEAM_REF: "a17d1463f52797f23b7938ead8ce1c74c4b11449"
+      # gala_tui 0.15.2 (the commit its 0.15.2 tag points at) — the release
+      # gala_team's MODULE.bazel requires at GALA_TEAM_REF. Move the two pins
+      # together: older gala_tui releases contain code that newer GALA checks
+      # correctly reject.
+      GALA_TUI_REF: 2eee2712727152e0064daf52ab226d0f8d5da82f
+      # gala_team master at its 0.13.0 version bump (#141).
+      GALA_TEAM_REF: "3f1acdab5ce738cc2cd525527aa1bca266626cc2"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 
