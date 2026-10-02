@@ -8,7 +8,7 @@ struct Pair[A any, B any](First A, Second B)
 
 struct Step[A any, B any](In A, Run func(A) B)
 
-type Make[A any, B any] struct {}
+struct Make[A any, B any]()
 
 func (m Make[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
 

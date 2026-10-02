@@ -24,10 +24,9 @@ func (m Mk[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
 
 `
 	tests := []struct {
-		name        string
-		body        string
-		contains    []string
-		notContains []string
+		name     string
+		body     string
+		contains []string
 	}{
 		{
 			name:     "positional struct constructor",
@@ -57,7 +56,7 @@ func (m Mk[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertTranspiled(t, prelude+tt.body, tt.contains, append(tt.notContains, "Pair[int]{", "Pair[int64]{", "Mk[int]{"))
+			assertTranspiled(t, prelude+tt.body, tt.contains, []string{"Pair[int]{", "Pair[int64]{", "Mk[int]{"})
 		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 	"slices"
 	"strings"
 
@@ -1350,19 +1351,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}
 
 	// Apply path: verify the base expression is a type (not a variable).
-	baseExpr := fun
-	hasTypeArgs := false
-	var typeArgs []ast.Expr
-
-	if idx, ok := fun.(*ast.IndexExpr); ok {
-		baseExpr = idx.X
-		hasTypeArgs = true
-		typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
-	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
-		baseExpr = idxList.X
-		hasTypeArgs = true
-		typeArgs = t.qualifyTypeExprs(idxList.Indices)
-	}
+	baseExpr, written := splitCallFunTypeArgs(fun)
+	typeArgs := t.qualifyTypeExprs(written)
 
 	isType := false
 	if id, ok := baseExpr.(*ast.Ident); ok {
@@ -1388,7 +1378,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Infer type args from argument types and enclosing return type. A partial
 	// list (`Mk[int](2, "c")` for `Mk[A, B]`) binds its leading type
 	// parameters as written and has the rest inferred the same way.
-	if partial := len(typeArgs) < len(typeMeta.TypeParams); partial {
+	if len(typeArgs) < len(typeMeta.TypeParams) {
 		inferredMap := t.writtenTypeArgs(typeMeta.TypeParams, typeArgs)
 		// Step 1: infer from Apply method arguments.
 		for i, arg := range args {
@@ -1411,23 +1401,13 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				}
 			}
 		}
-		if all := t.orderedTypeArgExprs(typeMeta.TypeParams, inferredMap); all != nil {
-			copy(all, typeArgs) // the written arguments keep their own spelling
-			typeArgs = all
-			hasTypeArgs = true
-			fun = withTypeArgs(baseExpr, typeArgs)
-		} else if hasTypeArgs {
+		if instantiated, missing := t.completeTypeArgs(baseExpr, typeMeta.TypeParams, typeArgs, inferredMap); missing == nil {
+			fun = instantiated
+			_, typeArgs = splitCallFunTypeArgs(fun)
+		} else if len(typeArgs) > 0 {
 			// Emitting the partial list would leave Go a type parameter
 			// with no argument.
-			var missing []string
-			for _, tp := range typeMeta.TypeParams[len(typeArgs):] {
-				if typ, ok := inferredMap[tp]; !ok || transpiler.IsUnusable(typ) {
-					missing = append(missing, tp)
-				}
-			}
-			return true, nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-				"cannot infer type argument %s of %s from its arguments; write it explicitly, e.g. `%s[%s](...)`",
-				strings.Join(missing, ", "), origTypeName, origTypeName, strings.Join(typeMeta.TypeParams, ", ")))
+			return true, nil, uninferredTypeArgError(line, col, origTypeName, "its arguments", origTypeName, typeMeta.TypeParams, missing)
 		}
 	}
 
@@ -1438,7 +1418,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Value[Array[int]]() → prepend _ValueMeta_Array_int{}.
 	if len(methodMeta.ParamTypes) > 0 {
 		if kind := t.injectedMetaParam(methodMeta.ParamTypes[0]); kind != noInjectedMeta {
-			if !hasTypeArgs {
+			if len(typeArgs) == 0 {
 				// No metadata can be generated for a type nobody named.
 				return true, nil, t.codecError(&structMetaConfig{rootName: origTypeName, line: line, col: col},
 					fmt.Sprintf("the type argument of %s is not given; write %s[T](...)", origTypeName, origTypeName))
@@ -1474,18 +1454,9 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		} else {
 			funExpr = t.ident(fullName)
 		}
-		if len(typeArgs) == 1 {
-			funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
-		} else if len(typeArgs) > 1 {
-			funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
-		}
-		receiver := &ast.CompositeLit{Type: baseExpr}
-		if hasTypeArgs {
-			receiver = &ast.CompositeLit{Type: fun}
-		}
 		return true, &ast.CallExpr{
-			Fun:  funExpr,
-			Args: append([]ast.Expr{receiver}, args...),
+			Fun:  withTypeArgs(funExpr, typeArgs),
+			Args: append([]ast.Expr{&ast.CompositeLit{Type: fun}}, args...),
 		}, nil
 	}
 
@@ -1703,17 +1674,13 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
 					if rawType, ok := fieldTypes[argName]; ok && rawType != nil && !rawType.IsNil() {
 						// Generic struct: substitute the known type arguments.
-						// A field type still naming a type parameter the call
-						// has not bound is not passed down, as for a positional
-						// argument (resolveExpectedFuncArgType): a value lowered
-						// against it would spell that parameter's bare name.
-						// A function or tuple type is, for its lambda or tuple
-						// literal (genericCtorLambdaExpectation masks a lambda's).
+						// As for a positional argument (resolveExpectedFuncArgType),
+						// a field type still naming a type parameter the call
+						// has not bound is passed down only for a lambda or
+						// tuple literal; any other value lowered against it
+						// would spell that parameter's bare name.
 						slotType := t.substituteTranspilerTypeParams(rawType, callCtx.structTypeSubst)
-						_, isFunc := slotType.(transpiler.FuncType)
-						gt, isGeneric := slotType.(transpiler.GenericType)
-						if isFunc || (isGeneric && t.isTupleTypeName(gt.Base.String())) ||
-							!typeMentionsTypeParam(slotType, callCtx.unboundStructTypeParams()) {
+						if t.isFuncOrTupleType(slotType) || !typeMentionsTypeParam(slotType, callCtx.unboundStructTypeParams()) {
 							return slotType, nil
 						}
 						return transpiler.NilType{}, nil
@@ -2572,15 +2539,7 @@ func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.S
 			t.unifyFieldArgForInference(sv.FieldTypes[i], val, parent.TypeParams, inferred)
 		}
 	}
-	typeArgs := t.orderedTypeArgExprs(parent.TypeParams, inferred)
-	switch len(typeArgs) {
-	case 0:
-		return fun
-	case 1:
-		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-	default:
-		return &ast.IndexListExpr{X: fun, Indices: typeArgs}
-	}
+	return withTypeArgs(fun, t.orderedTypeArgExprs(parent.TypeParams, inferred))
 }
 
 // buildSealedVariantApplyCall generates `VariantName{}.Apply(args...)`
@@ -2739,7 +2698,7 @@ func (t *galaASTTransformer) structLiteralType(
 	line, col int,
 	bind func(typeParams []string, inferred map[string]transpiler.Type),
 ) (ast.Expr, error) {
-	base, written := splitTypeArgs(fun)
+	base, written := splitCallFunTypeArgs(fun)
 	switch base.(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
@@ -2766,33 +2725,38 @@ func (t *galaASTTransformer) structLiteralType(
 		}
 	}
 
-	typeArgs := t.orderedTypeArgExprs(typeMeta.TypeParams, inferred)
+	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
+	if missing != nil {
+		return nil, uninferredTypeArgError(line, col, "generic struct "+typeName, "its fields", typeName, typeMeta.TypeParams, missing)
+	}
+	return instantiated, nil
+}
+
+// completeTypeArgs instantiates base with a type argument for every one of
+// typeParams: those written at the call site, which keep their own spelling,
+// then the inferred ones. It returns the type parameters left without one
+// instead when inference did not determine them all.
+func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string, written []ast.Expr, inferred map[string]transpiler.Type) (ast.Expr, []string) {
+	typeArgs := t.orderedTypeArgExprs(typeParams, inferred)
 	if typeArgs == nil {
 		var missing []string
-		for _, tp := range typeMeta.TypeParams {
+		for _, tp := range typeParams {
 			if typ, ok := inferred[tp]; !ok || transpiler.IsUnusable(typ) {
 				missing = append(missing, tp)
 			}
 		}
-		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-			"cannot infer type argument %s of generic struct %s from its fields; write it explicitly, e.g. `%s[%s](...)`",
-			strings.Join(missing, ", "), typeName, typeName, strings.Join(typeMeta.TypeParams, ", ")))
+		return nil, missing
 	}
-	// The written arguments keep their own spelling.
 	copy(typeArgs, written)
 	return withTypeArgs(base, typeArgs), nil
 }
 
-// splitTypeArgs splits a call target into its base and the type arguments
-// written on it: `Pair[int, string]` into `Pair` and [int, string].
-func splitTypeArgs(fun ast.Expr) (base ast.Expr, typeArgs []ast.Expr) {
-	switch f := fun.(type) {
-	case *ast.IndexExpr:
-		return f.X, []ast.Expr{f.Index}
-	case *ast.IndexListExpr:
-		return f.X, f.Indices
-	}
-	return fun, nil
+// uninferredTypeArgError reports the type parameters of what (`generic struct
+// Pair`) that from (`its fields`) left without a type argument.
+func uninferredTypeArgError(line, col int, what, from, typeName string, typeParams, missing []string) error {
+	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"cannot infer type argument %s of %s from %s; write it explicitly, e.g. `%s[%s](...)`",
+		strings.Join(missing, ", "), what, from, typeName, strings.Join(typeParams, ", ")))
 }
 
 // withTypeArgs instantiates base with typeArgs (none leaves it as is).
@@ -2807,13 +2771,12 @@ func withTypeArgs(base ast.Expr, typeArgs []ast.Expr) ast.Expr {
 }
 
 // writtenTypeArgs binds the leading typeParams to the type arguments written
-// at a call site, for inference to complete a partial list.
+// at a call site (fewer than typeParams), seeding inference to complete a
+// partial list; completeTypeArgs then emits them as written.
 func (t *galaASTTransformer) writtenTypeArgs(typeParams []string, written []ast.Expr) map[string]transpiler.Type {
 	bound := make(map[string]transpiler.Type, len(typeParams))
 	for i, arg := range written {
-		if i < len(typeParams) {
-			bound[typeParams[i]] = t.astTypeToTranspilerType(arg)
-		}
+		bound[typeParams[i]] = t.astTypeToTranspilerType(arg)
 	}
 	return bound
 }
@@ -4097,12 +4060,10 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	// A partial explicit list binds its leading type parameters; the
 	// arguments determine the rest.
 	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
-	for tp, written := range explicit {
-		if inferred == nil {
-			inferred = make(map[string]string, len(typeParams))
-		}
-		inferred[tp] = written
+	if inferred == nil {
+		return explicit
 	}
+	maps.Copy(inferred, explicit)
 	return inferred
 }
 

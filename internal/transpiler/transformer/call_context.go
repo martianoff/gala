@@ -299,12 +299,9 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 	// none of the struct's still-unbound type params.
 	if expectedType.IsNil() && argIdx < len(ctx.structFields) {
 		ft := ctx.structFields[argIdx]
-		_, isFunc := ft.(transpiler.FuncType)
-		gt, isGeneric := ft.(transpiler.GenericType)
-		isTuple := isGeneric && t.isTupleTypeName(gt.Base.String())
 		switch {
 		case ft == nil || ft.IsNil():
-		case isFunc || isTuple, ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
+		case t.isFuncOrTupleType(ft), ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
 			// The field's recorded type is its value's type
 			// (see transpiler.ShorthandFieldType).
 			expectedType = ft
