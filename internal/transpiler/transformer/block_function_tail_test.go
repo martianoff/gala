@@ -234,6 +234,27 @@ func describe(n int) = n match {
 			excludes: []string{"return fmt.Println", "return func"},
 		},
 		{
+			name: "match arm that returns early is inlined",
+			body: `
+func describe(n int) = n match {
+    case 0 => {
+        Println("zero")
+        return
+    }
+    case _ => Println(n)
+}
+`,
+			contains: []string{`fmt.Println("zero")`, "fmt.Println(n)"},
+			excludes: []string{"return func"},
+		},
+		{
+			name: "explicit Get call on an Option is a call",
+			body: `
+func force(o Option[int]) = o.Get()
+`,
+			contains: []string{"o.Get()"},
+		},
+		{
 			name: "if-expression is an if statement",
 			body: `
 func sign(n int) = if (n < 0) Println("negative") else Println("non-negative")
@@ -468,6 +489,17 @@ func v() {
 			name:    "parameter body of a function with no result type",
 			body:    "\nfunc s(x int) = x\n",
 			wantErr: "`x` is evaluated but not used; declare the function's result type",
+		},
+		{
+			name:    "val field read as the body of a method with no result type",
+			body:    "\nstruct Box(n int)\n\nfunc (b Box) N() = b.n\n",
+			wantErr: "`b.n` is evaluated but not used; declare the function's result type",
+		},
+		{
+			// Not a statement here, so the analyzer reports it as a keyword.
+			name:    "loop control as the body of a function with no result type",
+			body:    "\nfunc f() = continue\n",
+			wantErr: "\"continue\" is a Go keyword and is not part of GALA",
 		},
 		{
 			name:    "lambda body of a function with no result type",

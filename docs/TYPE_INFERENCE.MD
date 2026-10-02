@@ -448,6 +448,15 @@ The lift is purely additive — passing a bare `T` where a `func() T` is expecte
 is otherwise a type error — and an argument whose own type is already a function
 is passed through untouched, so an existing thunk is never double-wrapped.
 
+### Function Result Type (never inferred)
+
+A named function's result type is the one its signature declares; it is never
+inferred from the body. `func f() int = 42` returns an `int`. `func f() = 42`
+has no result type, so it is void: its body is a statement, as in
+`func f() { 42 }`, and a value nothing uses is rejected as evaluated but not used.
+A call body (`func greet() = Println("hi")`) is made and its result discarded.
+Only lambdas take a result type from their body (below).
+
 ### Lambda Result Type (the Return Slot)
 
 A lambda has its own return slot (`returnSlot` in

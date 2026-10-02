@@ -782,7 +782,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			return nil, err
 		}
 		body = b
-	} else if ctx.Expression() != nil {
+	} else if ctx.Expression() != nil { // hasResult
 		var exprBody *ast.BlockStmt
 		if ctx.Receiver() == nil {
 			// Guaranteed self-tail-call optimization: rewrite direct self-tail
@@ -871,10 +871,43 @@ func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpres
 	if err := t.checkValueUsedHint(exprCtx, stmt, expressionFunctionDiscardHint); err != nil {
 		return nil, err
 	}
+	if es, ok := stmt.(*ast.ExprStmt); ok {
+		// checkValueUsedHint lets a val field read (`= b.n`) through: it
+		// lowers to a `.Get()` call although no call was written.
+		if isZeroArgGetCall(es.X) && !t.endsInCall(exprCtx) {
+			return nil, t.semanticErrorAt(exprCtx, fmt.Sprintf(
+				"`%s` is evaluated but not used; %s", exprCtx.GetText(), expressionFunctionDiscardHint))
+		}
+	}
 	if block, ok := stmt.(*ast.BlockStmt); ok {
 		return block, nil
 	}
 	return &ast.BlockStmt{List: []ast.Stmt{stmt}}, nil
+}
+
+// isZeroArgGetCall reports whether e is `x.Get()`, the lowering of a val read.
+func isZeroArgGetCall(e ast.Expr) bool {
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == transpiler.MethodGet
+}
+
+// endsInCall reports whether the GALA expression is written as a call: a
+// postfix chain whose last suffix is an argument list.
+func (t *galaASTTransformer) endsInCall(exprCtx grammar.IExpressionContext) bool {
+	postfix := t.getSinglePostfixExpr(exprCtx)
+	if postfix == nil {
+		return false
+	}
+	suffixes := postfix.AllPostfixSuffix()
+	if len(suffixes) == 0 {
+		return false
+	}
+	last := suffixes[len(suffixes)-1]
+	return last.GetChildCount() > 0 && last.GetChild(0).(antlr.ParseTree).GetText() == "("
 }
 
 // transformExpressionBodiedFunction handles the `func foo() T = expr` form by
