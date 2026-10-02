@@ -70,7 +70,12 @@ import (
 // (`func (b Box[U]) Map(f func(U) U) Box[U]` in a library package) is recorded
 // as the type parameter `U`, no longer as a type `lib.U` of the package, so
 // the receiver's type arguments can be substituted for it.
-const CacheVersion = "v12"
+//
+// v13: those methods move from GoTypeInfo.Types to GoTypeInfo.GalaTypeMethods,
+// so a record of them no longer collides with a Go type of the same key (a
+// GALA package `fs` beside Go's `io/fs`). A v12 payload keeps them in Types,
+// where they would hide such a Go type again.
+const CacheVersion = "v13"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -291,6 +296,12 @@ func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg string) *transpiler.GoTypeIn
 	for k, v := range g.TypeAliases {
 		if strings.HasPrefix(k, prefix) {
 			out.TypeAliases[k] = v
+			any = true
+		}
+	}
+	for k, v := range g.GalaTypeMethods {
+		if strings.HasPrefix(k, prefix) {
+			out.GalaTypeMethods[k] = v
 			any = true
 		}
 	}

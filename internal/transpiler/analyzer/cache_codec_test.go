@@ -104,6 +104,13 @@ func buildSyntheticCache() *CachedRichAST {
 	r.GoTypeInfo.Constants["pkg.Max"] = transpiler.BasicType{Name: "int"}
 	r.GoTypeInfo.UntypedConstants["pkg.Max"] = true
 	r.GoTypeInfo.TypeAliases["pkg.Alias"] = transpiler.NamedType{Package: "std", Name: "Other"}
+	r.GoTypeInfo.GalaTypeMethods["pkg.Repo"] = &transpiler.GoTypeData{
+		Kind: transpiler.GoKindMethodsOnly,
+		Methods: map[string]*transpiler.GoFuncSignature{
+			"Save": {Returns: []transpiler.Type{transpiler.BasicType{Name: "error"}}},
+		},
+		PointerMethods: map[string]bool{"Save": true},
+	}
 	r.GoTypeInfo.Functions["pkg.F"] = &transpiler.GoFuncSignature{
 		Params:  []transpiler.GoParam{{Name: "x", Type: transpiler.BasicType{Name: "int"}}},
 		Returns: []transpiler.Type{transpiler.BasicType{Name: "string"}},

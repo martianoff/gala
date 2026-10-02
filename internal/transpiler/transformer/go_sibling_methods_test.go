@@ -125,3 +125,30 @@ func (b Box[Reader]) Open(s string) *strings.Reader { return strings.NewReader(s
 	assert.Contains(t, out, "r.Each(func(s string) int {")
 	assert.Contains(t, out, `std.Some[int]{}.Apply(b.Open("x").Len())`)
 }
+
+// TestGoSiblingMethodsBesideSameNamedGoType covers a GALA package named like
+// a Go package (GALA `fs`, Go `io/fs`) whose Go sibling declares methods on a
+// GALA type named like one of the Go package's types (FileInfo), with both
+// packages imported by one file. Both types are filed under "fs.FileInfo"
+// (see GoTypeInfo.GalaTypeMethods); each keeps its own methods, including one
+// both declare with different results. TestBuild_GoSiblingMethodsBesideSameNamedGoType
+// in internal/build covers the two imports in different files of a package.
+func TestGoSiblingMethodsBesideSameNamedGoType(t *testing.T) {
+	files, _ := samePackageModule("fs",
+		"package fs\n\nfunc (f FileInfo) Upper() string { return f.Label }\n"+
+			"func (f FileInfo) Size() string { return f.Label }\n",
+		"package fs\n\nstruct FileInfo(var Label string)\n")
+	files["main.gala"] = "package main\n\nimport (\n    \"io/fs\"\n    gfs \"example.com/sibs/fs\"\n)\n\n" +
+		"func shout(f gfs.FileInfo) Option[string] = Some(f.Upper())\n\n" +
+		"func label(f gfs.FileInfo) Option[string] = Some(f.Size())\n\n" +
+		"func size(info fs.FileInfo) Option[int64] = Some(info.Size())\n\n" +
+		"func isDir(info fs.FileInfo) Option[bool] = Some(info.IsDir())\n\n" +
+		"func main() {}\n"
+
+	out, err := transpileInModule(t, files, "main.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "std.Some[string]{}.Apply(f.Upper())")
+	assert.Contains(t, out, "std.Some[string]{}.Apply(f.Size())")
+	assert.Contains(t, out, "std.Some[int64]{}.Apply(info.Size())")
+	assert.Contains(t, out, "std.Some[bool]{}.Apply(info.IsDir())")
+}

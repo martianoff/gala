@@ -21,6 +21,13 @@ type GoTypeInfo struct {
 	// TypeAliases maps "pkg.AliasName" -> underlying type
 	// Go type aliases (type X = Y) are resolved to their underlying type.
 	TypeAliases map[string]Type
+	// GalaTypeMethods maps "pkg.TypeName" of a GALA type -> the methods
+	// hand-written .go files of its package declare on it (Kind
+	// GoKindMethodsOnly). It is apart from Types because the two key spaces
+	// overlap: a GALA package is keyed by its name, and a Go package of the
+	// same name (GALA `fs` beside Go `io/fs`) may declare a type of the same
+	// name, so one map would let either record overwrite the other.
+	GalaTypeMethods map[string]*GoTypeData
 }
 
 // GoFuncSignature describes a Go function's type signature.
@@ -48,7 +55,8 @@ type GoParam struct {
 
 // GoKindMethodsOnly is the GoTypeData.Kind of a type that hand-written Go only
 // declares methods on: the type itself is declared elsewhere in the package (a
-// GALA struct, say), so only Methods and PointerMethods are filled in.
+// GALA struct, say), so only Methods and PointerMethods are filled in. Such a
+// record is filed in GoTypeInfo.GalaTypeMethods, never in Types.
 //
 // The type's method set is thereby split between its GALA TypeMetadata and
 // this record, and a check of "does T have method M" consults both (GALA-E0044,
@@ -85,14 +93,15 @@ func NewGoTypeInfo() *GoTypeInfo {
 		Constants:        make(map[string]Type),
 		UntypedConstants: make(map[string]bool),
 		TypeAliases:      make(map[string]Type),
+		GalaTypeMethods:  make(map[string]*GoTypeData),
 	}
 }
 
 // IsEmpty reports whether g declares nothing: no functions, types, variables,
-// constants or type aliases.
+// constants, type aliases or methods on GALA types.
 func (g *GoTypeInfo) IsEmpty() bool {
 	return len(g.Functions) == 0 && len(g.Types) == 0 && len(g.Variables) == 0 &&
-		len(g.Constants) == 0 && len(g.TypeAliases) == 0
+		len(g.Constants) == 0 && len(g.TypeAliases) == 0 && len(g.GalaTypeMethods) == 0
 }
 
 // Merge combines another GoTypeInfo into this one.
@@ -121,6 +130,21 @@ func (g *GoTypeInfo) Merge(other *GoTypeInfo) {
 	for k, v := range other.TypeAliases {
 		g.TypeAliases[k] = v
 	}
+	if len(other.GalaTypeMethods) > 0 && g.GalaTypeMethods == nil {
+		g.GalaTypeMethods = make(map[string]*GoTypeData, len(other.GalaTypeMethods))
+	}
+	for k, v := range other.GalaTypeMethods {
+		g.GalaTypeMethods[k] = v
+	}
+}
+
+// GetGalaTypeMethods returns the methods hand-written .go files declare on the
+// GALA type keyed "pkg.TypeName", or nil.
+func (g *GoTypeInfo) GetGalaTypeMethods(qualifiedName string) *GoTypeData {
+	if g == nil {
+		return nil
+	}
+	return g.GalaTypeMethods[qualifiedName]
 }
 
 // GetFuncReturnType returns the first return type of a Go function, or nil if unknown.
@@ -150,9 +174,9 @@ func (g *GoTypeInfo) DeclaresType(pkgName, name string) bool {
 		return false
 	}
 	key := pkgName + "." + name
-	td, isType := g.Types[key]
+	_, isType := g.Types[key]
 	_, isAlias := g.TypeAliases[key]
-	return (isType && (td == nil || td.Kind != GoKindMethodsOnly)) || isAlias
+	return isType || isAlias
 }
 
 // GetTypeData returns type metadata for a Go type, or nil if unknown.

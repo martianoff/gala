@@ -189,11 +189,47 @@ func (t *galaASTTransformer) unknownMethodError(
 // goMethodsOnGalaType returns the methods hand-written .go files of its package
 // declare on the GALA type typeMeta describes (see GoKindMethodsOnly), or nil.
 func (t *galaASTTransformer) goMethodsOnGalaType(typeMeta *transpiler.TypeMetadata) map[string]*transpiler.GoFuncSignature {
-	td := t.goTypeInfo.GetTypeData(typeMeta.Package + "." + typeMeta.Name)
-	if td == nil || td.Kind != transpiler.GoKindMethodsOnly {
-		return nil
+	if rec := t.galaTypeGoMethods(typeMeta); rec != nil {
+		return rec.Methods
 	}
-	return td.Methods
+	return nil
+}
+
+// galaTypeGoMethods returns the record of the methods hand-written .go files
+// of its package declare on the GALA type typeMeta describes, or nil. It is
+// keyed the way GALA metadata keys the type, apart from Go types: a Go type of
+// the same key (io/fs's `fs.FileInfo` beside GALA's `fs.FileInfo`) is a
+// different type.
+func (t *galaASTTransformer) galaTypeGoMethods(typeMeta *transpiler.TypeMetadata) *transpiler.GoTypeData {
+	return t.goTypeInfo.GetGalaTypeMethods(typeMeta.Package + "." + typeMeta.Name)
+}
+
+// siblingMethodSignature looks method up among those hand-written .go files
+// declare on the GALA type of a value of type recv (or of an instantiation of
+// it), for goMethodSignature, which has stripped a pointer and checked recv
+// and Go type info. declared reports whether they declare it; the
+// caller then must not consult a Go type of the same key, which is another
+// type. sig is the signature as declared: a generic type's method still names
+// the receiver's type parameters (see goMethodSignature, which instantiates
+// it).
+func (t *galaASTTransformer) siblingMethodSignature(recv transpiler.Type, method string) (sig *transpiler.GoFuncSignature, declared bool) {
+	if len(t.goTypeInfo.GalaTypeMethods) == 0 {
+		return nil, false
+	}
+	base := receiverBase(recv)
+	if named, ok := base.(transpiler.NamedType); ok && t.isGoTyped(named) {
+		return nil, false
+	}
+	meta := t.getTypeMeta(base.BaseName())
+	if meta == nil {
+		return nil, false
+	}
+	rec := t.galaTypeGoMethods(meta)
+	if rec == nil {
+		return nil, false
+	}
+	sig, declared = rec.Methods[method]
+	return sig, declared
 }
 
 // receiverTypeIsConcrete reports whether every type parameter of the receiver's
