@@ -370,6 +370,15 @@ func (d *JsonDecoderImpl) Skip() {
     }
 }
 
+// End checks that only whitespace follows the decoded value: a document is
+// one value, so `42 43` or `[1]]` is malformed rather than a prefix to keep.
+func (d *JsonDecoderImpl) End() {
+    d.skipWs()
+    if d.pos < d.data.Size() {
+        go_builtins.Panic(s"json at pos ${d.pos}: unexpected content after the document")
+    }
+}
+
 // --- decoder internal helpers ---
 
 func (d *JsonDecoderImpl) skipWs() {

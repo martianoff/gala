@@ -1,0 +1,16 @@
+package multifile_lib_regress
+
+// The second file of the codec_meta_a.gala pair: the same metadata again.
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+)
+
+// CodecMetaB decodes an int and encodes an array of Points.
+func CodecMetaB() string {
+    val n = json.Value[int]().Decode("4").GetOrElse(-1)
+    val ps = json.Value[Array[Point]]().Encode(ArrayOf(Point(5, 6))).GetOrElse("<failure>")
+    val p = json.Codec[Point](json.SnakeCase()).Decode("{\"x\":7,\"y\":8}").Map(_.X).GetOrElse(-1)
+    s"$n $ps $p"
+}

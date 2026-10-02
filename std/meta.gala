@@ -91,3 +91,21 @@ type StructMeta[T any] interface {
     EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)
     DecodeFields(r FieldDecoder, lookup func(string) int, naming func(string) string) T
 }
+
+// ValueMeta[T] is the generic interface every transpiler-emitted
+// _ValueMeta_X type satisfies. Where StructMeta[T] describes the fields of a
+// struct, ValueMeta[T] describes a whole value of any shape a codec field can
+// have: a scalar kind (or an alias / Go named type over one), a struct, or an
+// Option, Array, List or HashMap[string, _] of those, nested to any depth. It
+// is what lets a codec read and write a document whose root is not an object
+// — `[1,2,3]`, `[{"id":1}]`, `42`, `"abc"`.
+//
+// It is auto-injected exactly like StructMeta[T]: a generic Apply method that
+// declares ValueMeta[T] as its first parameter receives a generated
+// _ValueMeta_X{} value. The encoding is the one a field of type T gets, so a
+// value and a field never disagree. `naming` converts GALA field names to
+// serialized keys for any struct reached inside the value.
+type ValueMeta[T any] interface {
+    EncodeValue(w FieldEncoder, v T, naming func(string) string)
+    DecodeValue(r FieldDecoder, naming func(string) string) T
+}

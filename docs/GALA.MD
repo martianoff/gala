@@ -2128,6 +2128,8 @@ val decoded = codec.Decode(jsonStr)
 decoded.ForEach((p) => Println(s"Name: ${p.FirstName}"))
 ```
 
+A JSON document is exactly one value: content after it, such as `{"age":1} x`, makes `Decode` a `Failure`.
+
 #### Pattern Matching
 
 Codec instances work as pattern matching extractors via `Unapply`:
@@ -2171,6 +2173,39 @@ val codec = json.Codec[Person](json.SnakeCase())
 | `.EncodePretty(v)` | `T → Try[string]` | Pretty-printed JSON |
 | `.Decode(s)` | `string → Try[T]` | Deserialize from JSON |
 | `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |
+| `.Array()` | `→ JsonArrayEncoder[T]` | Codec for a root array of `T` (`Encode(Array[T])`, `Decode → Try[Array[T]]`) |
+| `.List()` | `→ JsonListEncoder[T]` | Codec for a root array of `T` as a `List[T]` |
+| `Value[T]()` | `→ JsonValueEncoder[T]` | Codec for a root value of any codec shape (ValueMeta auto-injected) |
+
+#### Root Arrays and Other Root Values
+
+`Codec[T]` reads and writes a document whose root is a `T` object. Two entry points cover the other root shapes a REST or interop payload takes:
+
+- `.Array()` / `.List()` on a configured codec give a codec for a root **array of structs** — `[{"id":1},{"id":2}]`, as returned by a typical `GET /users`. The element codec's `Naming`, `Rename` and `Omit` apply to every element.
+- `Value[T]()` gives a codec for a root of **any shape a codec field can have**: a scalar (`42`, `"abc"`, `true`, `1.5`), an alias or Go named type over one, an `Option` (`None` is `null`), an `Array` or `List` (`[1,2,3]`), a `HashMap[string, _]`, a struct, nested to any depth. `.Naming(n)` sets the key naming for structs inside the value; it has no `Rename` / `Omit` — configure a struct element with `Codec[T](naming).Array()` instead.
+
+```gala
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/json"
+)
+
+struct User(UserId int, FullName string, Password string)
+
+func main() {
+    val users = Codec[User](SnakeCase()).Omit("Password").Rename("UserId", "id").Array()
+    val body = users.Encode(ArrayOf(User(1, "Ann", "x"), User(2, "Bo", "y"))).Get()
+    // => [{"id":1,"full_name":"Ann"},{"id":2,"full_name":"Bo"}]
+    Println(users.Decode(body))                             // Success(Array(...)): Try[Array[User]]
+
+    Println(Value[Array[int]]().Encode(ArrayOf(1, 2, 3)))   // Success([1,2,3])
+    Println(Value[int8]().Decode("42"))                     // Success(42)
+    Println(Value[int8]().Decode("300"))                    // Failure: out of range for int8
+    Println(Value[Option[string]]().Decode("null"))         // Success(None())
+}
+```
+
+Decoding checks the root shape: an object where an array is expected, an array where a number is expected, or anything after the document (`[1]]`, `1 2`) is a `Failure`. Sized integers and `float32` are range-checked exactly as struct fields are.
 
 #### Nested Structures and Unknown Fields
 
@@ -2221,11 +2256,33 @@ val msg = yamlStr match {
 }
 ```
 
-Builder methods (`Naming`, `Omit`, `Rename`, `OmitEmpty`), naming strategies (`AsIs`, `CamelCase`, `SnakeCase`, `KebabCase`), nested struct collections, and the silent-drop behaviour for unknown fields all match the JSON codec — see the [Json](#json) section for details. There is no `EncodePretty` for YAML; block-style output is already readable.
+Builder methods (`Naming`, `Omit`, `Rename`), naming strategies (`AsIs`, `CamelCase`, `SnakeCase`, `KebabCase`), nested struct collections, root arrays (`.Array()` / `.List()` → `YamlArrayEncoder[T]` / `YamlListEncoder[T]`), root values of any shape (`Value[T]()` → `YamlValueEncoder[T]`), and the silent-drop behaviour for unknown fields all match the JSON codec — see the [Json](#json) section for details. There is no `EncodePretty` for YAML; block-style output is already readable.
+
+```gala
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/yaml"
+)
+
+struct Tag(Key string, TagColor string)
+
+func main() {
+    val tags = Codec[Tag](SnakeCase()).Array()
+    Println(tags.Encode(ArrayOf(Tag("a", "red"), Tag("b", "blue"))).Get())
+    // - key: a
+    //   tag_color: red
+    // - key: b
+    //   tag_color: blue
+    Println(Value[Array[int]]().Decode("- 1\n- 2"))   // Success(Array(1, 2))
+    Println(Value[int]().Encode(42))                  // Success(42)
+}
+```
+
+A root scalar is written on its own line (`42`, `abc`, a quoted `"true"` for a string that would otherwise read as a bool), and an empty root array as `[]`.
 
 #### Supported YAML Subset
 
-The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`), comments, and nested structures. Out of scope: anchors, aliases, flow style, custom tags.
+The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`), comments, nested structures, and a document that is a single scalar or an empty `[]` / `{}`. Out of scope: anchors, aliases, flow style, custom tags.
 
 See the website [Yaml docs](https://martianov.dev/docs/yaml/) for the long-form treatment.
 
@@ -2302,6 +2359,21 @@ Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the
 | `FieldName` | `(i int) string` | Name of field at index i |
 | `EncodeFields` | `(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)` | Typed serialise of a T via the writer interface; `naming` propagates into nested struct dispatch |
 | `DecodeFields` | `(r FieldDecoder, lookup func(string) int, naming func(string) string) T` | Typed construct of a T via the reader interface; `naming` propagates into nested struct dispatch |
+
+#### ValueMeta — Values of Any Codec Shape
+
+`StructMeta[T]` describes the fields of a struct. `ValueMeta[T]` (also in `std/meta.gala`) describes a whole value of any shape a codec field can have — a scalar kind, an alias or Go named type over one, a struct, or an `Option`, `Array`, `List` or `HashMap[string, _]` of those, nested to any depth. It is what lets a codec handle a document whose root is not a struct:
+
+```gala
+type ValueMeta[T any] interface {
+    EncodeValue(w FieldEncoder, v T, naming func(string) string)
+    DecodeValue(r FieldDecoder, naming func(string) string) T
+}
+```
+
+It is auto-injected the same way: a generic type whose `Apply` declares `ValueMeta[T]` as its first parameter receives a generated `_ValueMeta_X{}` value, so `Value[Array[int]]()` becomes `Value[Array[int]]{}.Apply(_ValueMeta_Array_int{})`. When the meta is `Apply`'s only parameter, the call takes no arguments. The generated methods hold the same typed dispatch a field of type `T` gets, so a root value and a field never encode differently, and a `T` with no encoding is [GALA-E0050](errors/GALA-E0050.md) at the call site.
+
+A parameter is injected because of its type's shape, not its name: an interface whose methods are exactly those of `StructMeta[T]` or `ValueMeta[T]`. A type of your own that happens to be called `ValueMeta` is an ordinary parameter. The metadata describes the receiver's type argument that the parameter names, so `Apply(meta ValueMeta[V])` on `Pair[K, V]` describes `V`. Metadata generated on demand — every `_ValueMeta_X`, and a `main` package `_StructMeta_X` — is declared by each file that uses it, under a file-specific name (the name above plus a suffix), so two files of one package can use the same codec. A library struct's `StructMeta_X` is declared once, by the file that declares the struct.
 
 ### Regex
 

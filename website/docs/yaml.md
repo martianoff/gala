@@ -4,7 +4,7 @@ title: "Yaml in GALA — Zero-Reflection YAML Codec with Builder Pattern"
 description: "GALA's yaml package provides zero-reflection, compile-time YAML serialization with builder pattern configuration, naming strategies, and pattern matching support."
 keywords: "gala yaml, golang yaml alternative, go type safe yaml, gala yaml codec, gala yaml pattern matching, go yaml serialization, zero reflection yaml"
 permalink: /docs/yaml/
-last_modified_at: 2026-04-30
+last_modified_at: 2026-10-01
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Yaml</p>
@@ -158,6 +158,36 @@ The same applies to `HashMap[string, Tag]`, `List[Tag]`, and `Array[Array[Tag]]`
 
 ---
 
+## Root Sequences and Other Root Values
+
+As in the [Json](/docs/json/) codec, `.Array()` / `.List()` on a configured codec read and write a document whose root is a sequence of structs, with `Naming`, `Rename` and `Omit` applied to every element, and `Value[T]()` reads and writes a root of any shape a codec field can have — a scalar, an `Option` (`None` is `null`), an `Array` / `List`, a `HashMap[string, _]`, a struct:
+
+```gala
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/yaml"
+)
+
+struct Tag(Key string, TagColor string)
+
+func main() {
+    val tags = Codec[Tag](SnakeCase()).Array()
+    Println(tags.Encode(ArrayOf(Tag("a", "red"), Tag("b", "blue"))).Get())
+    // - key: a
+    //   tag_color: red
+    // - key: b
+    //   tag_color: blue
+
+    Println(Value[Array[int]]().Decode("- 1\n- 2"))   // Success(Array(1, 2))
+    Println(Value[int]().Encode(42))                  // Success(42)
+    Println(Value[string]().Encode("true"))           // Success("true") — quoted, so it reads back as a string
+}
+```
+
+A root scalar is written on its own line, and an empty root sequence as `[]`. Decoding a mapping where a sequence is expected, or a sequence where a scalar is expected, is a `Failure`; sized integers are range-checked.
+
+---
+
 ## Unknown Fields
 
 The decoder silently drops any field in the input that is not declared on the target struct. This is the default and only behaviour today — there is no strict mode or unknown-field error.
@@ -220,6 +250,7 @@ The codec emits and parses a focused, predictable subset of YAML:
 - comments
 - nested structures
 - the flow-style empty containers `[]` and `{}`, which the encoder writes for an empty `Array`, `List` or `HashMap` so it reads back as empty rather than `null`
+- a document that is a single scalar (`42`, `abc`, `null`) or an empty `[]` / `{}`
 
 Struct fields follow the same rules as the JSON codec: every int, uint and float kind, aliases and Go named types over them, structs, and `Option` / `Array` / `List` / `HashMap[string, V]` of those; any other field type is a compile error ([GALA-E0050](/docs/errors/gala-e0050/)). Out-of-range numbers are decode errors.
 
@@ -239,6 +270,9 @@ Out of scope: anchors, aliases, other flow-style collections, custom tags. If yo
 | `.Encode(v)` | `T → Try[string]` | Serialize to block-style YAML |
 | `.Decode(s)` | `string → Try[T]` | Deserialize from YAML string |
 | `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |
+| `.Array()` | `→ YamlArrayEncoder[T]` | Codec for a root sequence of `T`: `Encode(Array[T])`, `Decode → Try[Array[T]]`, `Unapply` |
+| `.List()` | `→ YamlListEncoder[T]` | The same over `List[T]` |
+| `Value[T]()` | `→ YamlValueEncoder[T]` | Codec for a root value of any codec shape (ValueMeta auto-injected): `.Naming`, `Encode`, `Decode`, `Unapply` |
 
 ---
 

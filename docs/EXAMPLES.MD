@@ -987,6 +987,43 @@ Output:
 Matched: alice, urgent
 ```
 
+## JSON Root Arrays and Scalars
+
+`Codec[T](naming).Array()` reads and writes a root array of structs with the element config applied; `Value[T]()` covers any other root shape — a scalar, an `Option`, an array of scalars.
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/json"
+)
+
+struct User(UserId int, FullName string, Password string)
+
+func main() {
+    val users = Codec[User](SnakeCase()).Omit("Password").Rename("UserId", "id").Array()
+    val body = users.Encode(ArrayOf(User(1, "Ann", "x"), User(2, "Bo", "y"))).Get()
+    Println(body)
+    Println(users.Decode(body).Map((us) => us.Map((u) => u.FullName)))
+
+    Println(Value[Array[int]]().Encode(ArrayOf(1, 2, 3)))
+    Println(Value[int]().Decode("42"))
+    Println(Value[Option[string]]().Decode("null"))
+    Println(Value[int8]().Decode("300").IsFailure())
+}
+```
+
+Output:
+```
+[{"id":1,"full_name":"Ann"},{"id":2,"full_name":"Bo"}]
+Success(Array(Ann, Bo))
+Success([1,2,3])
+Success(42)
+Success(None())
+true
+```
+
 ## YAML Serialization
 
 ```gala

@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"hash/fnv"
+	"path/filepath"
 	"sort"
 
 	"martianoff/gala/galaerr"
@@ -36,7 +38,9 @@ import (
 //     struct with unexported fields be encoded outside its package: only the
 //     declaring package can read and construct those fields.
 //   - The main package cannot be imported, so it keeps emitting _StructMeta_X
-//     on demand, in the file whose Codec / StructMeta use asked for it.
+//     on demand, in the file whose Codec / StructMeta use asked for it. The
+//     name carries a per-file suffix (codecFileSuffix), so two files of the
+//     package that both use Codec[X] do not both declare _StructMeta_X.
 type structMetaConfig struct {
 	// typeName is the struct as diagnostics name it: X for a struct of this
 	// package, pkg.X for an imported one.
@@ -124,7 +128,7 @@ func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaCon
 		config.pkg = meta.Package
 		config.typeName = meta.Package + "." + meta.Name
 	case t.packageName == mainPackageName:
-		config.generatedName = "_StructMeta_" + meta.Name
+		config.generatedName = "_StructMeta_" + meta.Name + t.codecFileSuffix()
 		config.emit = true
 	}
 	t.structMetas[resolved] = config
@@ -171,7 +175,7 @@ func (t *galaASTTransformer) structMetaRef(config *structMetaConfig) ast.Expr {
 
 // ---- code generation ----
 
-// finalizeCodecs generates all StructMeta Go declarations.
+// finalizeCodecs generates all StructMeta and ValueMeta Go declarations.
 //
 // Before codegen runs we close over the set of nested struct types
 // reachable from the registered top-level metas — every field whose
@@ -208,7 +212,11 @@ func (t *galaASTTransformer) finalizeCodecs(file *ast.File) error {
 			return err
 		}
 		if !dropped {
-			file.Decls = append(file.Decls, decls...)
+			valueDecls, err := t.generateValueMetaDecls()
+			if err != nil {
+				return err
+			}
+			file.Decls = append(append(file.Decls, decls...), valueDecls...)
 			return nil
 		}
 		restore()
@@ -523,9 +531,12 @@ func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *t
 	case *ast.SelectorExpr:
 		typeArgName = types.ExprString(arg)
 	case *ast.IndexExpr, *ast.IndexListExpr:
-		root := types.ExprString(arg)
-		return nil, t.codecError(&structMetaConfig{rootName: root, line: line, col: col},
-			fmt.Sprintf("generic type %s has no codec encoding", root))
+		root := codecSpelling(arg)
+		site := &structMetaConfig{rootName: root, line: line, col: col}
+		if kind, _ := codecContainer(t.astTypeToTranspilerType(arg)); kind != "" {
+			return nil, t.codecError(site, notAStructReason(root))
+		}
+		return nil, t.codecError(site, fmt.Sprintf("generic type %s has no codec encoding", root))
 	}
 	if typeArgName == "" {
 		return args, nil
@@ -534,11 +545,42 @@ func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *t
 	site := &structMetaConfig{rootName: typeArgName, line: line, col: col}
 	config := t.registerStructMeta(typeArgName, site)
 	if config == nil {
+		// A scalar root (Codec[int]), a collection or an alias of one is not a
+		// struct at all: say so, and name what does describe it.
+		ty := t.codecUnalias(t.astTypeToTranspilerType(typeArgs[0]))
+		_, _, _, isScalar := t.codecScalarOf(ty)
+		if container, _ := codecContainer(ty); isScalar || container != "" {
+			return nil, t.codecError(site, notAStructReason(typeArgName))
+		}
 		return nil, t.codecError(site, t.notDescribableReason(typeArgName))
 	}
 
 	// Prepend StructMeta before existing args
 	return append([]ast.Expr{&ast.CompositeLit{Type: t.structMetaRef(config)}}, args...), nil
+}
+
+// notAStructReason explains that a StructMeta-based codec was asked for a
+// root that is not a struct, and names the mechanism that does cover it.
+func notAStructReason(name string) string {
+	return fmt.Sprintf("%s is not a struct: StructMeta[T] describes the fields of a struct; "+
+		"a root of another shape needs a codec built on ValueMeta[T]", name)
+}
+
+// codecFileSuffix tells apart the metadata types generated on demand by
+// different files of one package — a main-package _StructMeta_X, and every
+// _ValueMeta_X, which describes a value shape no single file declares. Each
+// file is transpiled on its own and declares what it uses, so two files that
+// both use Codec[X] (in main) or Value[int] would otherwise both declare the
+// same type and the package would not compile. The suffix is a hash of the
+// file's name, so it is stable across builds; it is empty when there is no
+// file name.
+func (t *galaASTTransformer) codecFileSuffix() string {
+	if t.filePath == "" {
+		return ""
+	}
+	h := fnv.New32a()
+	h.Write([]byte(filepath.Base(t.filePath)))
+	return fmt.Sprintf("_%08x", h.Sum32())
 }
 
 func buildFieldAccess(receiver ast.Expr, fieldName string, isImmut bool) ast.Expr {

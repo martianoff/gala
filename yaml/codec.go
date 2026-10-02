@@ -50,7 +50,7 @@ type YamlEncoderImpl struct {
 	depth int    // current indent level (each level = 2 spaces)
 	stack []byte // frame kinds: 'r' root, 'o' mapping, 'a' sequence
 	// emptyMarks parallels stack: the buffer length just after each open
-	// container's header ("key:", "- ", "-"), or -1 for a root container.
+	// container's header ("key:", "- ", "-"); 0 for the document root.
 	// A container that closes with the buffer still at its mark (plus the
 	// header's newline) wrote no children, and is rewritten in flow style
 	// ("key: []", "- {}") — block style has no spelling for an empty
@@ -108,13 +108,14 @@ func (e *YamlEncoderImpl) emitKeyHeader(key string) {
 // indent so the new container's children render at the right depth.
 //
 // It returns the buffer length just after the header, before any newline the
-// header ends with, or -1 for the document root (see emptyMarks).
+// header ends with; 0 for the document root, so an empty root container
+// is written "[]" or "{}" (see emptyMarks).
 func (e *YamlEncoderImpl) startContainerPrelude(isObject bool) int {
 	parent := e.topFrame()
 	if parent == 'r' && !e.startedDoc {
 		// Document root — no prelude, depth stays 0.
 		e.startedDoc = true
-		return -1
+		return 0
 	}
 	if e.hasKey {
 		// We're a value of a mapping pair: emit "key:\n", then indent children.
@@ -156,7 +157,7 @@ func (e *YamlEncoderImpl) endContainer(kind byte, flow string) {
 	mark := e.emptyMarks[len(e.emptyMarks)-1]
 	e.stack = e.stack[:len(e.stack)-1]
 	e.emptyMarks = e.emptyMarks[:len(e.emptyMarks)-1]
-	if mark >= 0 && e.buf.Len() <= mark+1 {
+	if e.buf.Len() <= mark+1 {
 		e.buf.Truncate(mark)
 		if e.buf.Len() > 0 && e.buf.Bytes()[e.buf.Len()-1] != ' ' {
 			e.buf.WriteByte(' ')
@@ -275,7 +276,8 @@ func isPlainSafe(s string) bool {
 	if s[0] == ' ' || s[0] == '\t' {
 		return false
 	}
-	if s[len(s)-1] == ' ' || s[len(s)-1] == '\t' {
+	// A trailing ':' would read back as "key:" — a mapping, not a string.
+	if s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == ':' {
 		return false
 	}
 	switch s[0] {
@@ -652,7 +654,7 @@ func (d *YamlDecoderImpl) ReadRune() rune {
 
 func (d *YamlDecoderImpl) IsNull() bool {
 	if len(d.stack) == 0 {
-		return d.root == nil || (d.root.kind == yScalar && d.root.nullish)
+		return d.root == nil || d.root.nullish
 	}
 	n := d.peekChild()
 	return n == nil || (n.kind == yScalar && n.nullish)
@@ -661,6 +663,11 @@ func (d *YamlDecoderImpl) IsNull() bool {
 func (d *YamlDecoderImpl) ReadNull() {
 	if !d.IsNull() {
 		panic("yaml: expected null")
+	}
+	if len(d.stack) == 0 {
+		// A null document root — `null`, or an empty document — is the
+		// whole value; there is nothing to step past.
+		return
 	}
 	_, _ = d.readScalarText()
 }
@@ -710,7 +717,17 @@ type pLine struct {
 func parseYAML(input string) *yNode {
 	lines := splitSignificantLines(input)
 	if len(lines) == 0 {
-		return &yNode{kind: yMap}
+		// An empty document is null, and reads as an empty mapping where a
+		// struct is expected.
+		return &yNode{kind: yMap, nullish: true}
+	}
+	// A one-line document that is neither a sequence item nor a "key: value"
+	// pair is a bare scalar ("42", "abc", null) or an empty flow container
+	// ("[]", "{}") — the forms the encoder writes for a non-struct root.
+	if len(lines) == 1 && !isSequenceLine(lines[0].raw) {
+		if _, _, isPair := tryParseKeyValue(lines[0].raw); !isPair {
+			return parseInlineScalar(withoutComment(lines[0].raw))
+		}
 	}
 	node, pos := parseBlock(lines, 0, lines[0].indent)
 	if pos != len(lines) {
@@ -884,7 +901,7 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		if !isSequenceLine(line.raw) {
 			break
 		}
-		itemPart := strings.TrimSpace(line.raw[1:])
+		itemPart := withoutComment(strings.TrimSpace(line.raw[1:]))
 		if itemPart == "" {
 			// Bare "-" — value lives on subsequent indented lines.
 			if i+1 >= len(lines) || lines[i+1].indent <= indent {
@@ -981,12 +998,18 @@ func tryParseKeyValue(line string) (string, string, bool) {
 	key := strings.TrimSpace(line[:ci])
 	value := ""
 	if ci+1 < len(line) {
-		value = strings.TrimSpace(line[ci+1:])
-		if hi := findUnquotedHash(value); hi >= 0 {
-			value = strings.TrimSpace(value[:hi])
-		}
+		value = withoutComment(strings.TrimSpace(line[ci+1:]))
 	}
 	return key, value, true
+}
+
+// withoutComment drops a trailing comment (" # ...", outside quotes) from a
+// scalar's text.
+func withoutComment(s string) string {
+	if hi := findUnquotedHash(s); hi >= 0 {
+		return strings.TrimSpace(s[:hi])
+	}
+	return s
 }
 
 // findUnquotedColon returns the index of the first ':' followed by whitespace

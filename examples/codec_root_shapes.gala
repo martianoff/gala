@@ -1,0 +1,59 @@
+package main
+
+// Documents whose root is not a single struct: a root array of structs via
+// Codec[T](naming).Array() / .List(), and a root of any other codec shape —
+// scalar, Option, array of scalars — via Value[T](). JSON and YAML alike.
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+struct Tag(Key string, TagColor string)
+struct User(UserId int, FullName string, Password string, Tags Array[Tag])
+
+func main() {
+    val users = ArrayOf(
+        User(1, "Ann Lee", "secret", ArrayOf(Tag("urgent", "red"))),
+        User(2, "Bo", "hunter2", EmptyArray[Tag]()),
+    )
+
+    // A root array of structs, element config applied to every element.
+    val jsonUsers = json.Codec[User](json.SnakeCase()).Omit("Password").Rename("UserId", "id").Array()
+    val body = jsonUsers.Encode(users).Get()
+    Println(body)
+    val names = jsonUsers.Decode(body).Map((us) => us.Map(_.FullName))
+    Println(names)
+    Println(jsonUsers.Encode(EmptyArray[User]()))
+    Println(jsonUsers.Decode("{\"id\":1}").IsFailure())
+
+    val userList = json.Codec[User](json.SnakeCase()).Rename("UserId", "id").List()
+    val listed = "[{\"id\":9,\"full_name\":\"Cy\",\"tags\":[]}]" match {
+        case userList(us) => s"list of ${us.Size()}: ${us.Head().FullName}"
+        case _ => "no match"
+    }
+    Println(listed)
+
+    // Any other root value.
+    Println(json.Value[Array[int]]().Encode(ArrayOf(1, 2, 3)))
+    Println(json.Value[Array[string]]().Decode("[\"a\",\"b\"]"))
+    Println(json.Value[int]().Decode("42"))
+    Println(json.Value[string]().Encode("abc"))
+    Println(json.Value[bool]().Decode("true"))
+    Println(json.Value[float64]().Decode("1.5"))
+    Println(json.Value[Option[int]]().Decode("null"))
+    Println(json.Value[int8]().Decode("300").IsFailure())
+    Println(json.Value[int]().Decode("[1]").IsFailure())
+
+    // YAML: same API.
+    val yamlUsers = yaml.Codec[User](yaml.SnakeCase()).Omit("Password").Rename("UserId", "id").Array()
+    val doc = yamlUsers.Encode(users).Get()
+    Println(doc)
+    Println(yamlUsers.Decode(doc).Map(_.Size()))
+    Println(yaml.Value[Array[int]]().Encode(ArrayOf(1, 2)))
+    Println(yaml.Value[int]().Decode("42"))
+    Println(yaml.Value[string]().Encode("true"))
+    Println(yaml.Value[Array[int]]().Encode(EmptyArray[int]()))
+    Println(yaml.Value[int]().Decode("a: 1").IsFailure())
+}

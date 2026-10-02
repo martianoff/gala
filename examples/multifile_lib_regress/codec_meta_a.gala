@@ -1,0 +1,23 @@
+package multifile_lib_regress
+
+// This file and codec_meta_b.gala use the same codecs. Point's StructMeta is
+// declared once, here, where Point is; a ValueMeta describes a value shape no
+// file declares, so each file declares the one it uses under a file-specific
+// name — with shared names both declared _ValueMeta_int and the package did
+// not compile ("redeclared in this block").
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+)
+
+// Point is encoded by both files: directly through Codec[Point] here, and
+// as an element of Value[Array[Point]] in codec_meta_b.gala.
+struct Point(X int, Y int)
+
+// CodecMetaA encodes a Point and an int.
+func CodecMetaA() string {
+    val p = json.Codec[Point](json.SnakeCase()).Encode(Point(1, 2)).GetOrElse("<failure>")
+    val n = json.Value[int]().Encode(3).GetOrElse("<failure>")
+    s"$p $n"
+}

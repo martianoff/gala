@@ -117,6 +117,8 @@ func TestEncoder_QuotesReservedAndNumeric(t *testing.T) {
 		{"trailing space ", `"trailing space "`},
 		{"line1\nline2", `"line1\nline2"`},
 		{"#comment", `"#comment"`},
+		// A trailing colon would read back as a mapping key.
+		{"key:", `"key:"`},
 		{"normal text", "normal text"},
 	}
 	for _, c := range cases {
@@ -322,5 +324,78 @@ func TestEncoderDecoder_QuotedStringRoundTrip(t *testing.T) {
 			t.Errorf("round trip of %q through %q = %q", s, e.String(), got)
 		}
 		d.EndObject()
+	}
+}
+
+// ----- Document roots and comments -------------------------------------------
+
+// A key ending in ':' is quoted, so it reads back as the same key rather than
+// as a nested mapping.
+func TestEncoderDecoder_KeyWithTrailingColon(t *testing.T) {
+	e := NewYamlEncoder()
+	e.WriteStartObject()
+	e.WriteKey("key:")
+	e.WriteString("v")
+	e.WriteEndObject()
+
+	d := NewYamlDecoder(e.String())
+	d.StartObject()
+	if k := d.ReadKey(); k != "key:" {
+		t.Fatalf("key = %q, document:\n%s", k, e.String())
+	}
+	if s := d.ReadString(); s != "v" {
+		t.Fatalf("value = %q", s)
+	}
+	d.EndObject()
+}
+
+// A one-line document is a scalar, and a trailing comment is not part of it,
+// as for a mapping value.
+func TestDecoder_RootScalarComment(t *testing.T) {
+	if s := NewYamlDecoder("abc # note").ReadString(); s != "abc" {
+		t.Errorf("ReadString = %q, want %q", s, "abc")
+	}
+	if n := NewYamlDecoder("42 # answer").ReadInt(); n != 42 {
+		t.Errorf("ReadInt = %d, want 42", n)
+	}
+	if s := NewYamlDecoder(`"a # b"`).ReadString(); s != "a # b" {
+		t.Errorf("quoted ReadString = %q, want %q", s, "a # b")
+	}
+}
+
+func TestDecoder_SequenceItemComment(t *testing.T) {
+	d := NewYamlDecoder("- abc # note\n- 2 # two")
+	d.StartArray()
+	if s := d.ReadString(); s != "abc" {
+		t.Errorf("item 0 = %q, want %q", s, "abc")
+	}
+	if n := d.ReadInt(); n != 2 {
+		t.Errorf("item 1 = %d, want 2", n)
+	}
+	if d.HasMoreElements() {
+		t.Fatalf("expected no more elements")
+	}
+	d.EndArray()
+}
+
+// An empty document is null — an Option root decodes it as None — and still
+// reads as an empty mapping where a struct is expected.
+func TestDecoder_EmptyDocumentIsNull(t *testing.T) {
+	for _, src := range []string{"", "# only a comment\n"} {
+		d := NewYamlDecoder(src)
+		if !d.IsNull() {
+			t.Fatalf("IsNull(%q) = false", src)
+		}
+		d.ReadNull()
+
+		d = NewYamlDecoder(src)
+		d.StartObject()
+		if d.HasMoreFields() {
+			t.Fatalf("empty document %q has fields", src)
+		}
+		d.EndObject()
+	}
+	if NewYamlDecoder("{}").IsNull() {
+		t.Fatalf(`IsNull("{}") = true`)
 	}
 }

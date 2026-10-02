@@ -11,6 +11,8 @@ the shapes below:
   nor a GALA struct
 - a `HashMap` whose key is not a string (or an alias of `string`)
 - an `Option` inside an `Option` (also through `Immutable`)
+- for `json.Codec[T]` / `yaml.Codec[T]`, a `T` that is not a struct at all — a scalar
+  (`Codec[int]`) or a collection (`Codec[Array[User]]`)
 
 **Minimal repro.**
 
@@ -49,7 +51,9 @@ struct Job(Name string, Command string)
 For the other shapes: store the value instead of a pointer; use `Array`,
 `List` or `HashMap[string, V]` instead of a Go slice or map; key a map by the
 string form of its key; and flatten `Option[Option[T]]` into a sealed status
-you encode as a string field.
+you encode as a string field. For a document whose root is not a struct, use
+`Codec[User](naming).Array()` for an array of structs and `Value[T]()` for any
+other shape (`Value[int]()`, `Value[Array[string]]()`).
 
 **What the codec does support.** Every scalar kind — `string`, `bool`,
 `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`,

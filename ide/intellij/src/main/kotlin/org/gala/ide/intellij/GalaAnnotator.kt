@@ -97,7 +97,7 @@ class GalaAnnotator : Annotator {
             // Traits / interfaces
             "Traversable", "Iterable", "Seq", "Hashable", "Ordered",
             // Errors and reflection-free metadata (JSON codec)
-            "NoSuchElementError", "StructMeta", "FieldEncoder", "FieldDecoder"
+            "NoSuchElementError", "StructMeta", "ValueMeta", "FieldEncoder", "FieldDecoder"
         )
     }
 

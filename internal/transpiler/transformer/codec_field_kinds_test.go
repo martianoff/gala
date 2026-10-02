@@ -89,11 +89,11 @@ func main() {
 		"w.WriteInt64(int64(t.N.Get()))",
 		"_N = time.Duration(r.ReadInt64())",
 		"_O = ArrayFromSlice(",
-		"_StructMeta_Inner{}.EncodeFields(w, t.P.Get()",
+		"_StructMeta_Inner" + metaSuffix("codec_kinds.gala") + "{}.EncodeFields(w, t.P.Get()",
 		"_I = byte(r.ReadUintN(8))",
 		"_M = uintptr(r.ReadUintN(0))",
 		// Option of a struct dispatches to the nested meta instead of null.
-		"_StructMeta_Inner{}.EncodeFields(w, t.J.Get().Get()",
+		"_StructMeta_Inner" + metaSuffix("codec_kinds.gala") + "{}.EncodeFields(w, t.J.Get().Get()",
 		"Some[Inner]{}.Apply(",
 		"_X = int16(r.ReadIntN(16))",
 	} {
@@ -224,11 +224,43 @@ func TestCodecFieldKinds_UnsupportedRoot(t *testing.T) {
 			use:      "Marker",
 			contains: "cannot generate a codec for Marker: Marker has no fields",
 		},
+		{
+			// Used to reference a _StructMeta_int that was never generated
+			// and fail in the Go compiler.
+			name:     "scalar",
+			use:      "int",
+			contains: "cannot generate a codec for int: int is not a struct",
+		},
+		{
+			name:     "collection",
+			use:      "Array[int]",
+			contains: "Array[int] is not a struct: StructMeta[T] describes the fields of a struct",
+		},
+		{
+			name:     "named collection",
+			decls:    "type Tags Array[string]",
+			use:      "Tags",
+			contains: "cannot generate a codec for Tags: Tags is not a struct",
+		},
+		{
+			// Used to reference a _StructMeta_T that was never generated.
+			name:     "type parameter",
+			decls:    "func wrap[T any]() json.JsonEncoder[T] = json.Codec[T](json.AsIs())",
+			use:      "int",
+			contains: "cannot generate a codec for T: T is neither a scalar nor a GALA struct the codec can describe",
+		},
+		{
+			// A std type is named as the source spells it, without the
+			// std qualifier the generated Go carries.
+			name:     "std generic",
+			use:      "Option[int]",
+			contains: "cannot generate a codec for Option[int]: Option[int] is not a struct",
+		},
 	}
 	trans := newCodecTestTranspiler()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			src := "package main\n\nimport \"martianoff/gala/json\"\n\n" + tc.decls +
+			src := "package main\n\nimport (\n    . \"martianoff/gala/collection_immutable\"\n    \"martianoff/gala/json\"\n)\n\n" + tc.decls +
 				"\n\nfunc main() {\n    val c = json.Codec[" + tc.use + "](json.AsIs())\n    Println(c)\n}\n"
 			_, err := trans.Transpile(src, "codec_unsupported_root.gala")
 			require.Error(t, err)

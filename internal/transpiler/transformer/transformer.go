@@ -80,6 +80,7 @@ type galaASTTransformer struct {
 	unrecordedCallee        ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
 	diagPackageNames        map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas             map[string]*structMetaConfig                  // generated StructMeta structs (keyed by generated name)
+	valueMetas              map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames  map[string]string                             // type name -> actual generated interface name (for collision avoidance)
 	defaultTrees            map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
 	loweringDefault         *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
@@ -134,6 +135,7 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		typeAliases:       make(map[string]transpiler.Type, 16),
 		exprTypeCache:     make(map[ast.Expr]transpiler.Type, 256),
 		structMetas:       make(map[string]*structMetaConfig, 16),
+		valueMetas:        make(map[string]*valueMetaConfig, 4),
 	}
 }
 
@@ -239,6 +241,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
 	t.structMetas = make(map[string]*structMetaConfig)
+	t.valueMetas = make(map[string]*valueMetaConfig)
 	t.defaultTrees = nil
 	t.richAST = richAST
 	t.traceTypeResolution = os.Getenv("GALA_TRACE_TYPES") == "1"

@@ -77,5 +77,15 @@ gala_test(
     ],
 )
 
+gala_test(
+    name = "codec_root_shapes_test",
+    srcs = ["codec_root_shapes_test.gala"],
+    deps = [
+        ":json",
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
 # Declares :shipped_sources for the stdlib embed completeness test.
 stdlib_shipped_sources()

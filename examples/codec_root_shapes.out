@@ -1,0 +1,29 @@
+[{"id":1,"full_name":"Ann Lee","tags":[{"key":"urgent","tag_color":"red"}]},{"id":2,"full_name":"Bo","tags":[]}]
+Success(Array(Ann Lee, Bo))
+Success([])
+true
+list of 1: Cy
+Success([1,2,3])
+Success(Array(a, b))
+Success(42)
+Success("abc")
+Success(true)
+Success(1.5)
+Success(None())
+true
+true
+- id: 1
+  full_name: Ann Lee
+  tags:
+    - key: urgent
+      tag_color: red
+- id: 2
+  full_name: Bo
+  tags: []
+Success(2)
+Success(- 1
+- 2)
+Success(42)
+Success("true")
+Success([])
+true
