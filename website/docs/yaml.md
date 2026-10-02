@@ -53,6 +53,8 @@ val codec = Codec[Person](SnakeCase())
 
 Each builder method returns a new immutable codec instance — safe to share across goroutines.
 
+`.OmitEmpty(field)` leaves the field out of the encoded output whenever its value is empty: `""` for a string kind, `0` for a numeric kind (`rune` included, and a float `-0.0`, which decodes back as `0`), `false` for `bool`, `None` for an `Option`, and no elements for an `Array`, `List` or `HashMap`. A nested struct is never empty: an all-zero struct is still written. The test runs per value at encode time, so the elements of a root sequence each keep or drop the field on their own. `Omit` wins over `OmitEmpty`. Decoding a document without the field gives the field that empty value, so an omitted field round-trips. Like `Omit` and `Rename`, `OmitEmpty` names a field of `T` itself; the fields of a nested struct are always written.
+
 ### Naming Strategies
 
 | Strategy | Input | Output |
@@ -232,7 +234,7 @@ val codec = Codec[Person](SnakeCase())
 
 The transpiler:
 1. Detects that `Codec[T].Apply` expects `StructMeta[T]` as first parameter
-2. Auto-generates `_StructMeta_Person` with typed `EncodeFields` / `DecodeFields` methods
+2. Auto-generates `_StructMeta_Person` with typed `EncodeFields` / `DecodeFields` / `FieldIsEmpty` methods
 3. Injects it as the first argument: `Codec[Person]{}.Apply(_StructMeta_Person{}, SnakeCase())`
 
 No reflection at runtime. Field names, types, and access patterns are all resolved at compile time. The same `StructMeta[T]` machinery powers both the JSON and YAML codecs — only the underlying `FieldEncoder` / `FieldDecoder` implementation differs.
@@ -266,7 +268,7 @@ Out of scope: anchors, aliases, other flow-style collections, custom tags. If yo
 | `.Naming(n)` | `Naming → YamlEncoder[T]` | Set naming strategy |
 | `.Omit(field)` | `string → YamlEncoder[T]` | Exclude field from serialization |
 | `.Rename(field, key)` | `string, string → YamlEncoder[T]` | Map field to custom YAML key |
-| `.OmitEmpty(field)` | `string → YamlEncoder[T]` | Skip field when value is zero |
+| `.OmitEmpty(field)` | `string → YamlEncoder[T]` | Skip field when its value is empty (`""`, `0`, `false`, `None`, no elements) |
 | `.Encode(v)` | `T → Try[string]` | Serialize to block-style YAML |
 | `.Decode(s)` | `string → Try[T]` | Deserialize from YAML string |
 | `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |

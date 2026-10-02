@@ -85,11 +85,18 @@ type FieldDecoder interface {
 // FieldName.  This propagates the naming convention into nested decodes
 // without giving the std interface a dependency on json/yaml's `Naming`
 // sealed type.
+//
+// FieldIsEmpty reports whether field i of t holds its empty value — the test
+// behind a codec's OmitEmpty. Empty is: "" for a string kind, 0 for a numeric
+// kind (rune included), false for bool, None for an Option, and no elements
+// for an Array, List or HashMap. A nested struct is never empty (as in Go's
+// encoding/json). An index out of range is not empty.
 type StructMeta[T any] interface {
     NumFields() int
     FieldName(i int) string
     EncodeFields(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)
     DecodeFields(r FieldDecoder, lookup func(string) int, naming func(string) string) T
+    FieldIsEmpty(t T, i int) bool
 }
 
 // ValueMeta[T] is the generic interface every transpiler-emitted

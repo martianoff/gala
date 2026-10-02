@@ -31,30 +31,37 @@ func (c KeyConfig) WithOmit(field string) KeyConfig =
 func (c KeyConfig) WithOmitEmpty(field string) KeyConfig =
     c.Copy(OmitEmpties = c.OmitEmpties.Put(field, true))
 
-// KeysConfig holds the computed key arrays for WriteTo/ReadFrom.
+// KeysConfig holds the computed per-field encoding plan: Keys(i) is field i's
+// serialized key ("" when the field is omitted), and OmitIfEmpty(i) says
+// whether field i is left out of the output when its value is empty (never
+// true for an omitted field).
 type KeysConfig struct {
     Keys        Array[string]
     ReverseKeys HashMap[string, string]
+    OmitIfEmpty Array[bool]
 }
 
 // BuildKeys computes serialization keys from metadata, naming, and config.
 func BuildKeys(numFields int, fieldName func(int) string, naming Naming, config KeyConfig) KeysConfig {
     var keys = EmptyArray[string]()
     var reverseKeys = EmptyHashMap[string, string]()
+    var omitIfEmpty = EmptyArray[bool]()
     var i = 0
     for i < numFields {
         val name = fieldName(i)
         if config.Omits.Contains(name) {
             keys = keys.Append("")
+            omitIfEmpty = omitIfEmpty.Append(false)
         } else {
             val renamed = config.Renames.Get(name)
             val key = renamed.GetOrElse(ApplyNaming(name, naming))
             keys = keys.Append(key)
             reverseKeys = reverseKeys.Put(key, name)
+            omitIfEmpty = omitIfEmpty.Append(config.OmitEmpties.Contains(name))
         }
         i = i + 1
     }
-    return KeysConfig(Keys = keys, ReverseKeys = reverseKeys)
+    KeysConfig(Keys = keys, ReverseKeys = reverseKeys, OmitIfEmpty = omitIfEmpty)
 }
 
 // BuildKeysSimple computes keys with a naming strategy and no overrides.

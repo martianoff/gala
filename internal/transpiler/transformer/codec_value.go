@@ -56,7 +56,7 @@ const (
 // Matching the shape rather than a name keeps a user's own type that happens
 // to be called ValueMeta or StructMeta an ordinary parameter.
 var (
-	structMetaMethods = map[string]int{"NumFields": 0, "FieldName": 1, "EncodeFields": 5, "DecodeFields": 3}
+	structMetaMethods = map[string]int{"NumFields": 0, "FieldName": 1, "EncodeFields": 5, "DecodeFields": 3, "FieldIsEmpty": 2}
 	valueMetaMethods  = map[string]int{"EncodeValue": 3, "DecodeValue": 2}
 )
 

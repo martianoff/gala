@@ -46,6 +46,7 @@ var synthesizedMethodNames = map[string]bool{
 	"FieldName":    true,
 	"EncodeFields": true,
 	"DecodeFields": true,
+	"FieldIsEmpty": true,
 }
 
 // isSynthesizedMethodName reports whether name is generated rather than

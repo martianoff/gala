@@ -1,0 +1,193 @@
+package main
+
+// OmitEmpty on the StructMeta codecs, through both JSON and YAML.
+//
+// A field marked OmitEmpty is left out of the output when its value is empty:
+// "" for a string kind, 0 for a numeric kind, false for bool, None for an
+// Option, no elements for an Array, List or HashMap. A nested struct is never
+// empty. Decoding a document without the field gives it that empty value.
+
+import (
+    "time"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/test"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+type Ticks int64
+type Handle string
+
+struct Inner(N int)
+
+struct Profile(
+    S string,
+    I int,
+    I8 int8,
+    U uint32,
+    F float64,
+    F32 float32,
+    B bool,
+    R rune,
+    M Ticks,
+    D time.Duration,
+    L Handle,
+    O Option[string],
+    A Array[int],
+    Li List[string],
+    H HashMap[string, int],
+    In Inner,
+)
+
+val fields = ArrayOf("S", "I", "I8", "U", "F", "F32", "B", "R", "M", "D", "L", "O", "A", "Li", "H", "In")
+
+val emptyProfile = Profile(
+    S = "",
+    I = 0,
+    I8 = 0,
+    U = 0,
+    F = 0.0,
+    F32 = 0.0,
+    B = false,
+    R = 0,
+    M = 0,
+    D = 0,
+    L = "",
+    O = None(),
+    A = EmptyArray[int](),
+    Li = EmptyList[string](),
+    H = EmptyHashMap[string, int](),
+    In = Inner(0),
+)
+
+val fullProfile = Profile(
+    S = "s",
+    I = -1,
+    I8 = 1,
+    U = 2,
+    F = 0.5,
+    F32 = 1.5,
+    B = true,
+    R = 'r',
+    M = 3,
+    D = time.Second,
+    L = "l",
+    O = Some(""),
+    A = ArrayOf(0),
+    Li = ListOf(""),
+    H = EmptyHashMap[string, int]().Put("k", 0),
+    In = Inner(1),
+)
+
+// jsonKey and yamlKey are how a top-level key appears in each format's output.
+func jsonKey(f string) string = s"\"${f}\":"
+
+func yamlKey(f string) string = s"\n${f}:"
+
+// checkKey asserts that key f is (or is not) in both encodings of p under a
+// codec that marks only f OmitEmpty.
+func checkKey(t T, p Profile, f string, present bool) T {
+    val j = json.Codec[Profile](json.AsIs()).OmitEmpty(f).Encode(p).GetOrElse("<failure>")
+    val y = "\n" + yaml.Codec[Profile](yaml.AsIs()).OmitEmpty(f).Encode(p).GetOrElse("<failure>")
+    if (present) Contains(Contains(t, j, jsonKey(f)), y, yamlKey(f))
+    else NotContains(NotContains(t, j, jsonKey(f)), y, yamlKey(f))
+}
+
+// Every kind: an empty value is omitted, except a nested struct, which is
+// never empty.
+func TestOmitEmpty_EmptyValueOfEachKindIsOmitted(t T) T =
+    fields.FoldLeft(t, (acc, f) => checkKey(acc, emptyProfile, f, f == "In"))
+
+// A non-empty value of every kind is written — including the values that are
+// "zero-ish" inside a container: Some(""), an Array holding 0, a List holding
+// "", a HashMap holding 0.
+func TestOmitEmpty_NonEmptyValueOfEachKindIsWritten(t T) T =
+    fields.FoldLeft(t, (acc, f) => checkKey(acc, fullProfile, f, true))
+
+// Without OmitEmpty, an empty field is written as usual.
+func TestOmitEmpty_UnmarkedFieldsAreWritten(t T) T {
+    val j = json.Codec[Profile](json.AsIs()).OmitEmpty("S").Encode(emptyProfile).GetOrElse("<failure>")
+    val t1 = Contains(t, j, "\"I\":0")
+    val t2 = Contains(t1, j, "\"O\":null")
+    NotContains(t2, j, jsonKey("S"))
+}
+
+func allOmitEmptyJson() json.JsonEncoder[Profile] =
+    fields.FoldLeft(json.Codec[Profile](json.AsIs()), (c, f) => c.OmitEmpty(f))
+
+func allOmitEmptyYaml() yaml.YamlEncoder[Profile] =
+    fields.FoldLeft(yaml.Codec[Profile](yaml.AsIs()), (c, f) => c.OmitEmpty(f))
+
+func TestOmitEmpty_AllFieldsExactOutput(t T) T {
+    val t1 = Eq(t, allOmitEmptyJson().Encode(emptyProfile).GetOrElse("<failure>"), "{\"In\":{\"N\":0}}")
+    Eq(t1, allOmitEmptyYaml().Encode(emptyProfile).GetOrElse("<failure>"), "In:\n  N: 0")
+}
+
+// An omitted field decodes to its empty value, so both profiles round-trip.
+func TestOmitEmpty_RoundTrip(t T) T {
+    val j = allOmitEmptyJson()
+    val y = allOmitEmptyYaml()
+    ArrayOf(emptyProfile, fullProfile).FoldLeft(t, (acc, p) => {
+        val t1 = EqMsg(acc, j.Encode(p).FlatMap((s) => j.Decode(s)).ToOption(), Some(p), "json")
+        EqMsg(t1, y.Encode(p).FlatMap((s) => y.Decode(s)).ToOption(), Some(p), "yaml")
+    })
+}
+
+struct Address(Street string, Zip Option[string])
+struct Member(Id int, FullName string, Nickname Option[string], Home Address)
+
+val bare = Member(1, "", None(), Address("", None()))
+val named = Member(2, "Bo Li", Some("bo"), Address("Main St", Some("123")))
+
+// OmitEmpty names the GALA field; the key it hides is the one Naming or Rename
+// gives it.
+func TestOmitEmpty_WithNamingAndRename(t T) T {
+    val j = json.Codec[Member](json.SnakeCase()).OmitEmpty("FullName").OmitEmpty("Nickname").Rename("Nickname", "nick")
+    val y = yaml.Codec[Member](yaml.SnakeCase()).OmitEmpty("FullName").OmitEmpty("Nickname").Rename("Nickname", "nick")
+    val t1 = Eq(t, j.Encode(bare).GetOrElse("<failure>"), "{\"id\":1,\"home\":{\"street\":\"\",\"zip\":null}}")
+    val t2 = Eq(t1, j.Encode(named).GetOrElse("<failure>"),
+        "{\"id\":2,\"full_name\":\"Bo Li\",\"nick\":\"bo\",\"home\":{\"street\":\"Main St\",\"zip\":\"123\"}}")
+    val t3 = Eq(t2, y.Encode(bare).GetOrElse("<failure>"), "id: 1\nhome:\n  street: \"\"\n  zip: null")
+    val t4 = EqMsg(t3, j.Encode(bare).FlatMap((s) => j.Decode(s)).ToOption(), Some(bare), "json")
+    EqMsg(t4, y.Encode(named).FlatMap((s) => y.Decode(s)).ToOption(), Some(named), "yaml")
+}
+
+// Omit wins over OmitEmpty: the field is never written, empty or not.
+func TestOmitEmpty_OmitWins(t T) T {
+    val j = json.Codec[Member](json.SnakeCase()).OmitEmpty("FullName").Omit("FullName")
+    Eq(t, j.Encode(named).GetOrElse("<failure>"),
+        "{\"id\":2,\"nickname\":\"bo\",\"home\":{\"street\":\"Main St\",\"zip\":\"123\"}}")
+}
+
+// OmitEmpty is decided per value: each element of a root array keeps or drops
+// the field on its own.
+func TestOmitEmpty_PerElementOfRootArray(t T) T {
+    val j = json.Codec[Member](json.SnakeCase()).Omit("Home").Omit("Nickname").OmitEmpty("FullName").Array()
+    val y = yaml.Codec[Member](yaml.SnakeCase()).Omit("Home").Omit("Nickname").OmitEmpty("FullName").Array()
+    val accounts = ArrayOf(bare, named)
+    val t1 = Eq(t, j.Encode(accounts).GetOrElse("<failure>"), "[{\"id\":1},{\"id\":2,\"full_name\":\"Bo Li\"}]")
+    Eq(t1, y.Encode(accounts).GetOrElse("<failure>"), "- id: 1\n- id: 2\n  full_name: Bo Li")
+}
+
+struct Pouch(Coins List[int], Tag Option[string])
+struct Bag(Id int, Nick Option[string], Items List[int], P Pouch)
+
+// A field absent from the document — what OmitEmpty leaves out — decodes to
+// its empty value: None for an Option, an empty List, and for a nested struct
+// that struct with every field empty. None of them is Go's zero value, which
+// for an Option is a Some.
+func TestDecode_AbsentFieldIsEmpty(t T) T {
+    val j = json.Codec[Bag](json.AsIs())
+    val y = yaml.Codec[Bag](yaml.AsIs())
+    val want = Some(Bag(1, None(), EmptyList[int](), Pouch(EmptyList[int](), None())))
+    val t1 = EqMsg(t, j.Decode("{\"Id\":1}").ToOption(), want, "json")
+    val t2 = EqMsg(t1, y.Decode("Id: 1").ToOption(), want, "yaml")
+    Eq(t2, j.Decode("{\"Id\":1}").FlatMap((b) => j.Encode(b)).GetOrElse("<failure>"),
+        "{\"Id\":1,\"Nick\":null,\"Items\":[],\"P\":{\"Coins\":[],\"Tag\":null}}")
+}
+
+// A field name the struct does not declare is ignored, as with Omit and Rename.
+func TestOmitEmpty_UnknownFieldIsIgnored(t T) T {
+    val j = json.Codec[Member](json.SnakeCase()).Omit("Home").OmitEmpty("Nope")
+    Eq(t, j.Encode(bare).GetOrElse("<failure>"), "{\"id\":1,\"full_name\":\"\",\"nickname\":null}")
+}
