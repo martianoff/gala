@@ -103,3 +103,25 @@ func (b Box[U]) Map(f func(U) U) Box[U] { return Box[U]{V: f(b.V)} }
 	require.NoError(t, err)
 	assert.Contains(t, out, "std.Some[string]{}.Apply(b.Map(func(s string) string {")
 }
+
+// TestGoSiblingMethodSignatureTypes covers how a Go-declared method's
+// signature types its call: a lambda argument of a non-generic one takes its
+// parameter types from the Go parameter, and a package-qualified type that
+// shares its name with a receiver type parameter (strings.Reader beside the
+// receiver's Reader) is not substituted.
+func TestGoSiblingMethodSignatureTypes(t *testing.T) {
+	const goMethods = `
+import "strings"
+
+func (r Repo) Each(f func(string) int) int           { return f(r.Name.Get()) }
+func (b Box[Reader]) Open(s string) *strings.Reader { return strings.NewReader(s) }
+`
+	files, galaFile := samePackageModule(".", "package main\n"+goMethods,
+		"package main\n\nstruct Repo(Name string)\n\nstruct Box[T any](var V T)\n\n"+
+			"func each(r Repo) int = r.Each((s) => s.Size())\n\n"+
+			"func open(b Box[int]) Option[int] = Some(b.Open(\"x\").Len())\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "r.Each(func(s string) int {")
+	assert.Contains(t, out, `std.Some[int]{}.Apply(b.Open("x").Len())`)
+}

@@ -425,7 +425,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 		// Fallback: try Go type info for method calls on Go types
 		// e.g., scanner.Text() -> string, req.Header.Set() -> void
-		if sig := t.goMethodSignature(xType, sel.Sel.Name); sig != nil && len(sig.Returns) > 0 && sig.Returns[0] != nil {
+		if sig := t.goMethodSignature(xType, sel.Sel.Name); sig != nil && len(sig.Returns) > 0 && sig.Returns[0] != nil && !sig.Returns[0].IsNil() {
 			return sig.Returns[0]
 		}
 	}

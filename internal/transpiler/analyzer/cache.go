@@ -65,7 +65,12 @@ import (
 // v11: GoTypeInfo records the methods a package's hand-written .go files
 // declare on its GALA types (GoKindMethodsOnly). A v10 payload has none, so a
 // call of one from an importing package would be GALA-E0044 again.
-const CacheVersion = "v11"
+//
+// v12: a receiver type parameter in a recovered signature of such a method
+// (`func (b Box[U]) Map(f func(U) U) Box[U]` in a library package) is recorded
+// as the type parameter `U`, no longer as a type `lib.U` of the package, so
+// the receiver's type arguments can be substituted for it.
+const CacheVersion = "v12"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

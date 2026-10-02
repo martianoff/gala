@@ -4229,7 +4229,9 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 				return sig
 			}
 		}
-		return t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
+		// A method of the receiver's type, whatever expression yields it
+		// (`exec.Command(...).Output()`).
+		return t.goMethodSignature(t.getExprTypeNameManual(fun.X), fun.Sel.Name)
 	case *ast.Ident:
 		for _, entry := range t.importManager.dotImports {
 			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
