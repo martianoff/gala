@@ -1212,7 +1212,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
 						}
-						meta.Fields[fieldName] = a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
+						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
+							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 						if meta.FieldPositions == nil {
@@ -3218,10 +3219,20 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 		// in comparisons like `t.Field == x` inserts the required `.Get()`.
 		// Without this, cross-package access through a Go-only metadata
 		// source emits `Immutable[T] == T` and Go rejects the comparison.
+		// Such a field's recorded type is its value's type, T, as for one
+		// read from GALA source: the literal wraps the value, and a read
+		// unwraps it.
 		immutFlags := make([]bool, len(fieldNames))
+		fields := make(map[string]transpiler.Type, len(td.Fields))
+		for fName, fType := range td.Fields {
+			fields[fName] = fType
+		}
 		for i, fName := range fieldNames {
-			if fType, ok := td.Fields[fName]; ok && isGoFieldImmutable(fType) {
+			if fType, ok := td.Fields[fName]; ok && transpiler.IsImmutableType(fType) {
 				immutFlags[i] = true
+				if gt, isGeneric := fType.(transpiler.GenericType); isGeneric && len(gt.Params) == 1 {
+					fields[fName] = gt.Params[0]
+				}
 			}
 		}
 
@@ -3229,26 +3240,12 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 			Name:       simpleName,
 			Package:    pkgName,
 			Methods:    methods,
-			Fields:     td.Fields,
+			Fields:     fields,
 			FieldNames: fieldNames,
 			ImmutFlags: immutFlags,
 			TypeParams: td.TypeParams,
 		}
 	}
-}
-
-// isGoFieldImmutable reports whether a field type extracted from a Go
-// source is std.Immutable[T] — i.e. the wrapper that GALA codegen emits
-// for `val` (immutable) struct fields. Used by synthesizeTypeMetadataFromGo
-// to populate ImmutFlags so downstream auto-unwrap fires on cross-package
-// access of types whose only metadata source is the generated .gen.go.
-func isGoFieldImmutable(typ transpiler.Type) bool {
-	if transpiler.IsUnusable(typ) {
-		return false
-	}
-	base := typ.BaseName()
-	return base == transpiler.TypeImmutable ||
-		strings.HasSuffix(base, "."+transpiler.TypeImmutable)
 }
 
 // hasTypeDefinition returns true if the TypeMetadata represents a full type definition
@@ -3824,7 +3821,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
 						}
-						meta.Fields[fieldName] = a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
+						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
+							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 						if meta.FieldPositions == nil {

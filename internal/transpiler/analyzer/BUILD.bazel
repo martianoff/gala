@@ -58,6 +58,7 @@ go_test(
         "parsedfile_cache_test.go",
         "prelude_selfanalysis_test.go",
         "redefinition_cross_file_test.go",
+        "shorthand_field_type_test.go",
         "test_exports_test.go",
         "test_helper_test.go",
         "undefined_symbol_scope_test.go",

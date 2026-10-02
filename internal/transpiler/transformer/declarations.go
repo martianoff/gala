@@ -1144,18 +1144,11 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			}
 
 			if isVal {
-				// Only wrap if it's not already wrapped by transformParameter (e.g. if 'val' was explicit)
-				alreadyWrapped := false
-				if idxExpr, ok := field.Type.(*ast.IndexExpr); ok {
-					if sel, ok := idxExpr.X.(*ast.SelectorExpr); ok {
-						// Check if it's std.Immutable or any package's Immutable
-						if sel.Sel.Name == transpiler.TypeImmutable {
-							alreadyWrapped = true
-						}
-					}
-				}
-
-				if !alreadyWrapped {
+				// Only wrap if it's not already wrapped by transformParameter (an
+				// explicit 'val') or declared Immutable[T]. The same check
+				// (transpiler.IsImmutableType) has ShorthandFieldType record the
+				// latter as T, so the layout and the recorded type agree.
+				if !transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type)) {
 					field.Type = &ast.IndexExpr{
 						X:     t.stdIdent("Immutable"),
 						Index: field.Type,
@@ -1192,7 +1185,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			var pType transpiler.Type = transpiler.NilType{}
 			if param.Type_() != nil {
 				typeExpr, _ := t.transformType(param.Type_())
-				pType = t.astTypeToTranspilerType(typeExpr)
+				pType = transpiler.ShorthandFieldType(t.astTypeToTranspilerType(typeExpr), param.VAL() != nil || param.VAR() != nil)
 			}
 			t.structFieldTypes[name][pName] = pType
 		}

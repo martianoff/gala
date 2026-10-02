@@ -3444,6 +3444,18 @@ colors.Hits = colors.Hits + 1        // OK: a var
 // colors.Green = NamedColor(3)      // ERROR: cannot assign to immutable variable colors.Green
 ```
 
+### Struct Fields Declared `Immutable[T]`
+
+A shorthand struct field is a `val` field, stored as a `std.Immutable[T]`. One declared `Immutable[T]` is stored as that `Immutable[T]` rather than wrapped twice, so it is the same field as one declared `T`: it takes a `T` positionally, by name, as a `Copy` override or as its default, and reading it yields a `T`. A `var` field declared `Immutable[T]`, one written with an explicit `val`, or a block-form (`type ... struct { }`) field, holds the `Immutable[T]` it names, so its value is that `Immutable[T]`.
+
+```gala
+struct Counter(Label string, Hits Immutable[int64] = 1)
+
+val c = Counter(Hits = 3, Label = "named")
+Println(c.Hits + 1)              // 4: Hits reads as an int64
+Println(c.Copy(Hits = 5).Hits)   // 5
+```
+
 ### Pointer Types and Immutability
 
 GALA distinguishes between **pointer binding immutability** (whether the pointer itself can be reassigned) and **pointed-to data mutability** (whether the target data can be modified through the pointer).

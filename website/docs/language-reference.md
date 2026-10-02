@@ -838,6 +838,16 @@ colors.Hits = colors.Hits + 1        // OK: a var
 // colors.Green = NamedColor(3)      // ERROR: cannot assign to immutable variable colors.Green
 ```
 
+### Struct Fields Declared `Immutable[T]`
+A shorthand struct field declared `Immutable[T]` is the same field as one declared `T`: it takes a `T` (positionally, by name, as a `Copy` override or as its default), wrapped once, and reads as a `T`. A `var` field, an explicit `val` field or a block-form field declared `Immutable[T]` holds the `Immutable[T]` it names.
+
+```gala
+struct Counter(Label string, Hits Immutable[int64] = 1)
+
+val c = Counter(Hits = 3, Label = "named")
+Println(c.Hits + 1)              // 4: Hits reads as an int64
+```
+
 ### Pointer Types and Immutability
 ```gala
 var data = 42

@@ -304,12 +304,10 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		isTuple := isGeneric && t.isTupleTypeName(gt.Base.String())
 		switch {
 		case ft == nil || ft.IsNil():
-		case isFunc || isTuple:
+		case isFunc || isTuple, ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
+			// The field's recorded type is its value's type
+			// (see transpiler.ShorthandFieldType).
 			expectedType = ft
-		case ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
-			// The literal wraps a val field's value in Immutable itself
-			// (buildStructLiteral), so a field declared Immutable[T] takes a T.
-			expectedType = unwrapGalaType(ft)
 		}
 	}
 
