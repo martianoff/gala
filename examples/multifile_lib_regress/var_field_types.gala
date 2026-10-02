@@ -1,0 +1,7 @@
+package multifile_lib_regress
+
+// A struct mixing a `var` field (a plain Go field) with a non-`var` one (a
+// std.Immutable[T]). It is matched in var_field_match.gala, a sibling file, so
+// the pattern lowering has to read each field's mutability from package
+// metadata rather than from the declaration in the file being transformed.
+struct Caret(var Line int, Col int)

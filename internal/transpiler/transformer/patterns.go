@@ -788,17 +788,13 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			}
 		}
 
-		// Generate direct field access: baseExpr.FieldName.Get()
-		// Struct fields are stored as Immutable[T], so we need to call .Get().
+		// Generate direct field access: baseExpr.FieldName, unwrapped with
+		// .Get() only when the field is stored as Immutable[T]. A `var` field
+		// is a plain Go field and is read as is.
 		// baseExpr is the type-asserted castVar for `any` subjects, else objExpr.
-		elemExpr := &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X: &ast.SelectorExpr{
-					X:   baseExpr,
-					Sel: ast.NewIdent(fieldName),
-				},
-				Sel: ast.NewIdent("Get"),
-			},
+		var elemExpr ast.Expr = &ast.SelectorExpr{X: baseExpr, Sel: ast.NewIdent(fieldName)}
+		if immut := t.structImmutFields[structName]; i < len(immut) && immut[i] {
+			elemExpr = &ast.CallExpr{Fun: &ast.SelectorExpr{X: elemExpr, Sel: ast.NewIdent("Get")}}
 		}
 
 		// A binding (`name := obj.Field.Get()`) or a nested pattern such as

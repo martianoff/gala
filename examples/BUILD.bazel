@@ -485,6 +485,15 @@ gala_exec_test(
     deps = ["//go_builtins"],
 )
 
+# A struct pattern over `var` fields reads them as plain Go fields; only
+# non-`var` (Immutable) fields are unwrapped with `.Get()`. Covers mixed
+# structs, nested, generic, literal sub-patterns, guards and typed patterns.
+gala_exec_test(
+    name = "match_var_fields",
+    src = "match_var_fields.gala",
+    expected = "match_var_fields.out",
+)
+
 gala_exec_test(
     name = "tuple",
     src = "tuple.gala",
@@ -3279,6 +3288,8 @@ gala_library(
         "multifile_lib_regress/symbol_scope.gala",
         "multifile_lib_regress/team_lookup.gala",
         "multifile_lib_regress/types.gala",
+        "multifile_lib_regress/var_field_match.gala",
+        "multifile_lib_regress/var_field_types.gala",
     ],
     go_srcs = [
         "multifile_lib_regress/events.go",

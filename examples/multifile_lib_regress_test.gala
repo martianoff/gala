@@ -464,6 +464,17 @@ func main() {
         case Off    => Println("flag-off")
         case On(lb) => Println(s"flag-on $lb")
     }
+    // A struct pattern over `var` fields reads them as plain Go fields, both
+    // for a struct declared in a sibling file and for one dot-imported from
+    // another package; only the non-`var` fields are unwrapped.
+    Println(multifile_lib_regress.DescribeCaret(multifile_lib_regress.CaretAt(0, 4)))
+    Println(multifile_lib_regress.DescribeCaret(multifile_lib_regress.CaretAt(2, 2)))
+    Println(multifile_lib_regress.DescribeCaret(multifile_lib_regress.CaretAt(3, 8)))
+    MakePin(1, 2, "home") match {
+        case Pin(0, _, name) => Println(s"pin-top $name")
+        case Pin(row, col, name) => Println(s"pin $name at $row,$col")
+        case _ => Println("pin-unreachable")
+    }
     // --- Regression: a GALA package imported by one file of a package must not
     // rebind that package name for its siblings. pkg_name_collision.gala imports
     // GALA's strings; pkg_name_collision_go.gala imports Go's. Each must resolve

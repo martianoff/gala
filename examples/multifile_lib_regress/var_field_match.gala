@@ -1,0 +1,12 @@
+package multifile_lib_regress
+
+// Matches Caret, declared in var_field_types.gala: only the non-`var` Col may
+// be unwrapped with `.Get()`; the `var` Line is read as a plain field.
+func DescribeCaret(c Caret) string = c match {
+    case Caret(0, col) => s"caret-top col $col"
+    case Caret(line, col) if line == col => s"caret-diagonal $line"
+    case Caret(line, col) => s"caret $line:$col"
+    case _ => "caret-unreachable"
+}
+
+func CaretAt(line int, col int) Caret = Caret(line, col)
