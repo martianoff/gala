@@ -3334,8 +3334,32 @@ func canonicalPath(path string) string {
 var goExportedFuncRe = regexp.MustCompile(`(?m)^func\s+([A-Z]\w*)\s*[\[(]`)
 
 // goExportedTypeRe matches exported type declarations in Go files.
-// Covers plain `type Name struct { ... }` as well as alias form `type Name = other.Name`.
-var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)(\s+|\s*=)`)
+// Covers plain `type Name struct { ... }`, generic `type Name[T any] ...` and
+// the alias form `type Name = other.Name`.
+var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)(\s+|\s*=|\[)`)
+
+// goTypeGroupRe matches a grouped `type ( ... )` declaration, and
+// goGroupedTypeRe an exported spec in its body: one indented by a single tab,
+// as gofmt lays it out, so a nested struct's fields are not taken for types.
+var (
+	goTypeGroupRe   = regexp.MustCompile(`(?ms)^type\s*\(\s*$(.*?)^\)`)
+	goGroupedTypeRe = regexp.MustCompile(`(?m)^\t([A-Z]\w*)(\s+|\s*=|\[)`)
+)
+
+// exportedGoTypeNames returns the exported type names a Go source declares,
+// standalone or in a grouped `type ( ... )` block.
+func exportedGoTypeNames(src string) []string {
+	var out []string
+	for _, m := range goExportedTypeRe.FindAllStringSubmatch(src, -1) {
+		out = append(out, m[1])
+	}
+	for _, g := range goTypeGroupRe.FindAllStringSubmatch(src, -1) {
+		for _, m := range goGroupedTypeRe.FindAllStringSubmatch(g[1], -1) {
+			out = append(out, m[1])
+		}
+	}
+	return out
+}
 
 // goExportedVarRe matches exported package-level variable declarations in Go files.
 // Captures forms like `var GlobalEC = go_interop.GlobalEC`, which act as function-valued
@@ -3395,10 +3419,10 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		}
 
 		// Extract exported type names (including `type X = ...` aliases).
-		for _, m := range goExportedTypeRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
+		for _, name := range exportedGoTypeNames(src) {
+			if !seen[name] {
+				seen[name] = true
+				symbols = append(symbols, name)
 			}
 		}
 

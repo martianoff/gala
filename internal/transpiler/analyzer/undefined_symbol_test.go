@@ -977,7 +977,7 @@ func main() {
 // resolve.
 func TestUnresolvedTypeName(t *testing.T) {
 	reported := []struct {
-		name, src, symbol string
+		name, src, want string
 	}{
 		{"parameter", `package main
 
@@ -985,35 +985,35 @@ func f(w Widget) int = 1
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"result", `package main
 
 func f() Widget = 1
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"collection parameter without its import", `package main
 
 func total(xs Array[int]) int = xs.FoldLeft(0, (acc, x) => acc + x)
 
 func main() {
     Println(1)
-}`, "Array"},
+}`, "undefined: Array"},
 		{"type argument", `package main
 
 func f(xs Option[Widget]) int = 1
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"struct shorthand field", `package main
 
 struct Holder(Item Widget)
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"struct field", `package main
 
 type Holder struct {
@@ -1022,40 +1022,40 @@ type Holder struct {
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"val annotation", `package main
 
 func main() {
     val w Widget = 1
     Println(w)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"lambda parameter", `package main
 
 func main() {
     val f = (w Widget) => 1
     Println(f)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"alias target", `package main
 
 type Coord Widget
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"type parameter constraint", `package main
 
 func f[T Widget](x T) T = x
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"unnamed parameter of a function type", `package main
 
 func apply(f func(Widget) int) int = 1
 
 func main() {
     Println(1)
-}`, "Widget"},
+}`, "undefined: Widget"},
 		{"Go type reached only through its qualifier", `package main
 
 import "time"
@@ -1064,7 +1064,7 @@ func wait(d Duration) Duration = d
 
 func main() {
     Println(time.Second)
-}`, "Duration"},
+}`, "undefined: Duration"},
 		{"function name used as a type", `package main
 
 import . "martianoff/gala/collection_immutable"
@@ -1073,14 +1073,14 @@ func f(xs ArrayOf) int = 1
 
 func main() {
     Println(1)
-}`, "ArrayOf"},
+}`, "ArrayOf is not a type"},
 	}
 	for _, tc := range reported {
 		t.Run(tc.name, func(t *testing.T) {
 			err := analyzeSources(t, tc.src, nil)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0023")
-			assert.Contains(t, err.Error(), "undefined: "+tc.symbol)
+			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
 
@@ -1192,6 +1192,39 @@ func origin() Point = Point(0, 0)
 func main() {
     Println(origin().X)
 }`, siblings: map[string]string{"types.gala": "package main\n\nstruct Point(X int, Y int)\n"}},
+		{name: "alias declared below its use and in a sibling file", src: `package main
+
+func later(m Millis, s Seconds) Millis = m
+
+type Millis int64
+
+func main() {
+    Println(later(1, 2))
+}`, siblings: map[string]string{"units.gala": "package main\n\ntype Seconds int64\n"}},
+		{name: "wildcard lambda parameter type", src: `package main
+
+func apply(f func(int, int) int) int = f(1, 2)
+
+func main() {
+    Println(apply((x _, y _) => x + y))
+}`},
+		{name: "type parameters in nested function literals", src: `package main
+
+func compose[A any, B any, C any](f func(A) B, g func(B) C) func(A) C = (a A) => {
+    val h = (b B) => g(b)
+    h(f(a))
+}
+
+func main() {
+    Println(compose((x int) => x + 1, (y int) => y * 2)(3))
+}`},
+		{name: "Go-defined type a method signature takes from the receiver file's dot import", src: `package main
+
+func (w Worker) Run(ec ExecutionContext) int = w.N
+
+func main() {
+    Println(Worker(1).N)
+}`, siblings: map[string]string{"worker.gala": "package main\n\nimport . \"martianoff/gala/concurrent\"\n\nstruct Worker(N int)\n\nfunc keep(ec ExecutionContext) ExecutionContext = ec\n"}},
 	}
 	for _, tc := range resolved {
 		t.Run(tc.name, func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -306,9 +307,9 @@ type undefChecker struct {
 	// its error's index in errs.
 	reported map[string]int
 
-	// typeNames holds the unqualified names that denote a type here — see
+	// types answers whether an unqualified name denotes a type — see
 	// typeNameExists.
-	typeNames map[string]bool
+	types typeIndex
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
@@ -331,16 +332,17 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	for name := range a.importedTopLevelNames(imports) {
 		declared[name] = true
 	}
+	scope := a.buildGalaScope(imports, richAST, filePath)
 	c := &undefChecker{
 		rich:           richAST,
 		declared:       declared,
 		declaredTypes:  indexDeclaredTypeNames(richAST),
-		scope:          a.buildGalaScope(imports, richAST, filePath),
+		scope:          scope,
 		qualifiers:     collectQualifiers(imports, richAST),
 		hintRoots:      a.hintRoots,
 		importResolves: a.importPathResolvesTo,
 		reported:       make(map[string]int),
-		typeNames:      a.indexTypeNames(imports, richAST, filePath),
+		types:          a.indexTypes(imports, richAST, filePath, scope),
 	}
 	c.walker = scopewalk.New(c, undefWalkOptions())
 	c.walkSourceFile(sourceFile)
@@ -990,16 +992,14 @@ func (c *undefChecker) isGeneratedMethodForm(name string) bool {
 }
 
 func (c *undefChecker) report(name string, tok antlr.Token) {
+	c.reportWith(name, tok, "", "")
+}
+
+// reportWith reports name at tok with msg and hint, or, when msg is empty, as
+// `undefined: name` with hintFor's hint.
+func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string) {
 	if tok == nil {
 		return
-	}
-	idx, seen := c.reported[name]
-	if seen {
-		// The value and type passes each meet a name in their own order, so a
-		// later report may sit earlier in the file. Point at the first use.
-		if prev := c.errs[idx]; tok.GetLine() > prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() >= prev.Column) {
-			return
-		}
 	}
 	// The span covers the reported token, which is normally the identifier
 	// itself. For a name found inside an interpolated string the token is the
@@ -1007,22 +1007,24 @@ func (c *undefChecker) report(name string, tok antlr.Token) {
 	// deriving the span from the token's text underlines the literal rather
 	// than a name-length slice of it.
 	span := tok.GetColumn() + len([]rune(tok.GetText()))
-	hint := ""
-	if seen {
-		hint = c.errs[idx].Hint
-	} else {
-		hint = c.hintFor(name)
+	if idx, seen := c.reported[name]; seen {
+		// The value and type passes each meet a name in their own order, so a
+		// later report may sit earlier in the file. Point at the first use.
+		prev := c.errs[idx]
+		if tok.GetLine() < prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() < prev.Column) {
+			moved := *prev
+			moved.Line, moved.Column = tok.GetLine(), tok.GetColumn()
+			c.errs[idx] = moved.WithSpan(span)
+		}
+		return
+	}
+	if msg == "" {
+		msg, hint = fmt.Sprintf("undefined: %s", name), c.hintFor(name)
 	}
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUndefinedVariable,
-		tok.GetLine(), tok.GetColumn(),
-		fmt.Sprintf("undefined: %s", name),
-		hint,
+		tok.GetLine(), tok.GetColumn(), msg, hint,
 	).WithSpan(span)
-	if seen {
-		c.errs[idx] = err
-		return
-	}
 	c.reported[name] = len(c.errs)
 	c.errs = append(c.errs, err)
 }
@@ -1492,10 +1494,30 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 // and an unnamed parameter of a function type (`func(Widget) int`).
 func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typeParams, extra map[string]bool) {
 	name := id.GetText()
-	if !typeParams[name] && (c.scope.hidesFrom(name, extra) || !c.typeNameExists(name)) {
+	switch {
+	case typeParams[name]:
+	case name == "_":
+		// `_` is a wildcard the transformer gives its meaning to: any type
+		// argument in a type pattern (`case a: Array[_]`), an inferred lambda
+		// parameter type (`(x _) => x`), and its own errors elsewhere.
+	case c.scope.hidesFrom(name, extra):
+		c.report(name, id.GetStart())
+	case c.typeNameExists(name, extra):
+	case len(c.types.goOwners[name]) > 0:
+		owner := slices.Min(c.types.goOwners[name])
+		c.reportWith(name, id.GetStart(), fmt.Sprintf("undefined: %s", name),
+			fmt.Sprintf("%s is a type of the Go package %s, which this file does not dot-import; qualify it as `%s.%s`",
+				name, owner, owner, name))
+	case c.declared[name]:
+		// Declared, but as a function or value: say so rather than suggest an
+		// import the file may already have.
+		c.reportWith(name, id.GetStart(), fmt.Sprintf("%s is not a type", name),
+			fmt.Sprintf("%s names a function or value; a type position needs a type", name))
+	default:
 		c.report(name, id.GetStart())
 	}
 }
+
 
 // checkBareTypePositions checks the bare-identifier type positions n holds
 // directly; see checkBareTypeName.
@@ -1546,11 +1568,12 @@ func tupleDestructureType(n antlr.Tree) antlr.Tree {
 }
 
 // typeNameExists reports whether an unqualified type name denotes a type: a Go
-// predeclared one, or one in typeNames (see indexTypeNames). Type parameters
-// and types declared inside function bodies are bound by the caller.
-func (c *undefChecker) typeNameExists(name string) bool {
-	// `_` is the wildcard type argument of a type pattern: `case a: Array[_]`.
-	if name == "_" || isGoPredeclaredTypeName(name) || c.typeNames[name] {
+// predeclared one, one of typeIndex's, or one the prelude registers. Type
+// parameters and types declared inside function bodies are bound by the
+// caller. extra holds the packages a method signature may also use, as for
+// galaScope.hidesFrom.
+func (c *undefChecker) typeNameExists(name string, extra map[string]bool) bool {
+	if isGoPredeclaredTypeName(name) || c.types.has(name, extra) {
 		return true
 	}
 	// A prelude package registers its type surface, which includes types its
@@ -1562,73 +1585,89 @@ func (c *undefChecker) typeNameExists(name string) bool {
 	return ok
 }
 
-// indexTypeNames returns the unqualified names that may denote a type in this
-// file:
-//
-//   - every GALA type, alias and companion the compilation loaded — whether
-//     this file may name one unqualified is galaScope's question, which also
-//     gives the better hint;
-//   - the declarations of this package's hand-written Go files;
-//   - the types and aliases of the Go packages this file can name
-//     unqualified: the ones it dot-imports, and the Go side of this package,
-//     of its dot-imported GALA packages and of the prelude.
-//
-// Unlike the value check's table it leaves out functions and values, and Go
-// types reached only through a qualifier, so `func f(d Duration)` under a
-// plain `import "time"` is reported.
-func (a *galaAnalyzer) indexTypeNames(imports []fileImport, rich *transpiler.RichAST, filePath string) map[string]bool {
-	out := make(map[string]bool)
-	for _, keys := range [][]string{mapKeys(rich.Types), mapKeys(rich.TypeAliases), mapKeys(rich.CompanionObjects)} {
-		for _, k := range keys {
-			out[simpleNameOf(k)] = true
+// typeIndex holds what may denote a type in one file. Unlike the value check's
+// table it leaves out functions and values, and Go types this file reaches
+// only through a qualifier, so `func f(d Duration)` under a plain
+// `import "time"` is reported.
+type typeIndex struct {
+	// names are the GALA types, aliases and companions the compilation loaded
+	// — whether this file may name one unqualified is galaScope's question,
+	// which also gives the better hint — and the declarations of this
+	// package's hand-written Go files.
+	names map[string]bool
+	// goOwners maps a Go type or alias name to the packages declaring it.
+	goOwners map[string][]string
+	// goVisible holds the packages whose Go types this file names
+	// unqualified: galaScope's visible set (this package, the prelude and its
+	// dot-imported GALA packages) plus the Go packages it dot-imports.
+	goVisible map[string]bool
+}
+
+// has reports whether name is a type here, with the packages in extra also
+// visible.
+func (ti typeIndex) has(name string, extra map[string]bool) bool {
+	if ti.names[name] {
+		return true
+	}
+	for _, pkg := range ti.goOwners[name] {
+		if ti.goVisible[pkg] || extra[pkg] {
+			return true
 		}
+	}
+	return false
+}
+
+func (a *galaAnalyzer) indexTypes(imports []fileImport, rich *transpiler.RichAST, filePath string, scope galaScope) typeIndex {
+	ti := typeIndex{
+		names:     make(map[string]bool),
+		goOwners:  make(map[string][]string),
+		goVisible: make(map[string]bool, len(scope.visible)),
+	}
+	for k := range rich.Types {
+		ti.names[simpleNameOf(k)] = true
+	}
+	for k := range rich.TypeAliases {
+		ti.names[simpleNameOf(k)] = true
+	}
+	for k := range rich.CompanionObjects {
+		ti.names[simpleNameOf(k)] = true
 	}
 	for name := range a.undefinedSymbolLocalGoNames(filePath) {
-		out[name] = true
+		ti.names[name] = true
 	}
-	visible := map[string]bool{rich.PackageName: true}
-	for _, p := range registry.Global.PreludePackages() {
-		visible[p.Name] = true
+	for pkg := range scope.visible {
+		ti.goVisible[pkg] = true
 	}
 	for _, imp := range imports {
-		if !imp.IsDot {
-			continue
+		if imp.IsDot && !a.isGalaImport(imp.Path) {
+			for _, n := range transpiler.ImportNames(imp.Path, "", rich.GoImportNames[imp.Path]) {
+				ti.goVisible[n.Name] = true
+			}
 		}
-		pkgName := rich.GoImportNames[imp.Path]
-		if pkgName == "" {
-			pkgName = rich.Packages[imp.Path]
-		}
-		for _, n := range transpiler.ImportNames(imp.Path, "", pkgName) {
-			visible[n.Name] = true
+	}
+	addGo := func(key string) {
+		if dot := strings.LastIndexByte(key, '.'); dot > 0 {
+			ti.goOwners[key[dot+1:]] = append(ti.goOwners[key[dot+1:]], key[:dot])
 		}
 	}
 	if gi := rich.GoTypeInfo; gi != nil {
-		for _, keys := range [][]string{mapKeys(gi.Types), mapKeys(gi.TypeAliases)} {
-			for _, k := range keys {
-				if dot := strings.LastIndexByte(k, '.'); dot > 0 && visible[k[:dot]] {
-					out[k[dot+1:]] = true
-				}
-			}
+		for k := range gi.Types {
+			addGo(k)
+		}
+		for k := range gi.TypeAliases {
+			addGo(k)
 		}
 	}
+	// GoExports is the fallback for a package whose Go type info was not
+	// loaded; it lists values as well as types, which can only hide a report.
 	for pkg, symbols := range rich.GoExports {
-		if visible[pkg] {
-			for _, s := range symbols {
-				out[s] = true
-			}
+		for _, s := range symbols {
+			addGo(pkg + "." + s)
 		}
 	}
-	return out
+	return ti
 }
 
-// mapKeys returns m's keys.
-func mapKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
-}
 
 // receiverBaseTypeName reduces a receiver's type text (`*Box[T]`) to the bare
 // type name (`Box`).

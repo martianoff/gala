@@ -127,12 +127,15 @@ an alias target (`type Coord Point`), a type parameter's constraint
   - a package this file dot-imports, GALA or Go;
   - the `std` prelude.
 
-  A function or value of the same name does not count. Neither does a
-  Go type this file reaches only through a qualifier: under `import
-  "time"`, `func wait(d Duration)` is reported. A GALA type must also
-  pass the scope rule above. The name is reported at its first use in
-  the file, whether that use is a type or a value. When a GALA package
-  on the search paths declares it, the hint names the import:
+  A function or value of the same name does not count; it is reported as
+  `ArrayOf is not a type`. Neither does a Go type this file reaches only
+  through a qualifier: under `import "time"`, `func wait(d Duration)` is
+  reported, and the hint says to write `time.Duration`. The wildcard
+  `_` (`case a: Array[_]`, `(x _) => x`) is left to the transpiler.
+  A GALA type must also pass the scope rule above. The name is reported
+  at its first use in the file, whether that use is a type or a value.
+  When a GALA package on the search paths declares it, the hint names
+  the import:
 
 ```gala
 package main
