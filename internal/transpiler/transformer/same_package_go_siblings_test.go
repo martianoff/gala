@@ -14,10 +14,10 @@ import (
 func samePackageModule(dir, goSrc, galaSrc string) (map[string]string, string) {
 	galaFile := path.Join(dir, "program.gala")
 	return map[string]string{
-		"go.mod":                     "module example.com/sibs\n\ngo 1.25\n",
-		"gala.mod":                   "module example.com/sibs\n",
+		"go.mod":                       "module example.com/sibs\n\ngo 1.25\n",
+		"gala.mod":                     "module example.com/sibs\n",
 		path.Join(dir, "sibling.go"): goSrc,
-		galaFile:                     galaSrc,
+		galaFile:                       galaSrc,
 	}, galaFile
 }
 

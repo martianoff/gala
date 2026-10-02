@@ -121,12 +121,12 @@ func TestLambdaArgOfLocalFuncBinding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "forEach(func(v T) {")
 
-	// The binding shadows a package-level function of the same name.
-	files[galaFile] = "package main\n\nfunc visit(f func(int)) = f(1)\n\n" +
-		"func run(visit func(func(string))) = visit((s) => Println(s))\n"
-	out, err = transpileInModule(t, files, galaFile)
-	require.NoError(t, err)
-	assert.Contains(t, out, "visit(func(s string) {")
+	// A binding of a generic alias with type arguments is not typed by the
+	// alias's uninstantiated signature.
+	files[galaFile] = "package main\n\ntype Visitor[T any] func(func(T))\n\n" +
+		"func run(visit Visitor[int]) = visit((v) => Println(v))\n"
+	out, _ = transpileInModule(t, files, galaFile)
+	assert.NotContains(t, out, "func(v T)")
 }
 
 // TestConversionToGoNamedFuncType covers a conversion to an imported Go

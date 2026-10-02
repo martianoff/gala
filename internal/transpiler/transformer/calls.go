@@ -1894,30 +1894,16 @@ type functionCallContext struct {
 func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx *grammar.ArgumentListContext) functionCallContext {
 	var ctx functionCallContext
 
-	// A call of a local binding of function type (`forEach((v) => g(v))` for
-	// a parameter `forEach func(func(T))`) takes its parameter types from the
-	// binding's type, type parameters of the enclosing declaration included.
-	// The binding shadows any package-level function of the same name, so it
-	// is consulted first.
-	localFunc := false
-	if id, isIdent := fun.(*ast.Ident); isIdent {
-		if typ, _, bound := t.scopeLookup(id.Name); bound {
-			if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
-				ctx.goFuncParamTypes, localFunc = ft.Params, true
-			}
-		}
-	}
-
 	// Look up GALA function metadata for expected parameter types
 	// (enables void lambda detection and type-param inference).
-	if funcName := t.extractFuncName(fun); funcName != "" && !localFunc {
+	if funcName := t.extractFuncName(fun); funcName != "" {
 		ctx.funcMeta = t.getFunction(funcName)
 	}
 
 	// When GALA function metadata is not available, try Go type
 	// info. Handles Go-defined functions and variables with function types
 	// (e.g., concurrent.Spawn) called via dot-imports or qualified references.
-	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && t.goTypeInfo != nil {
+	if ctx.funcMeta == nil && t.goTypeInfo != nil {
 		if funcName := t.extractFuncName(fun); funcName != "" {
 			ctx.goFuncParamTypes = t.resolveGoFuncParamTypes(funcName)
 		}
@@ -1932,6 +1918,23 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && len(t.extractFuncCallTypeArgs(fun)) == 0 {
 		if ft := t.conversionFuncType(t.extractFuncName(fun)); ft != nil {
 			ctx.goFuncParamTypes = []transpiler.Type{*ft}
+		}
+	}
+
+	// A call of a local binding of function type (`forEach((v) => g(v))` for
+	// a parameter `forEach func(func(T))`) takes its parameter types from the
+	// binding's type, type parameters of the enclosing declaration included.
+	// A binding of a generic alias instantiated with type arguments is left
+	// alone: the alias's signature would need them substituted.
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
+		if id, isIdent := fun.(*ast.Ident); isIdent {
+			if typ, _, bound := t.scopeLookup(id.Name); bound {
+				if _, generic := typ.(transpiler.GenericType); !generic {
+					if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
+						ctx.goFuncParamTypes = ft.Params
+					}
+				}
+			}
 		}
 	}
 
