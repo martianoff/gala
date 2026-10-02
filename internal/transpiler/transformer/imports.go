@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -451,6 +452,19 @@ func (m *ImportManager) ForEachDotImport(fn func(pkgName string)) {
 // during transformation. This is used by PruneUnused to decide which dot imports to keep.
 func (m *ImportManager) MarkDotImportUsed(pkgName string) {
 	m.usedDotImports[pkgName] = true
+}
+
+// snapshotUsage records which dot imports are marked used and which
+// transitive imports are recorded, and returns a function that restores both.
+// It lets a caller generate code it may throw away without leaving the file
+// importing what the discarded code referenced.
+func (m *ImportManager) snapshotUsage() func() {
+	used := maps.Clone(m.usedDotImports)
+	transitive := maps.Clone(m.transitiveImports)
+	return func() {
+		m.usedDotImports = used
+		m.transitiveImports = transitive
+	}
 }
 
 // AddTransitive records a transitive import needed by type inference.

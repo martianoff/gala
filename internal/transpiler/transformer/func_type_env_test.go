@@ -191,7 +191,7 @@ func TestFunctionTypeEnvIsRebuiltByTheSitesThatInvalidateIt(t *testing.T) {
 
 	t.Run("registerStructMetaTypeMeta", func(t *testing.T) {
 		tr, before := prime(t)
-		tr.registerStructMetaTypeMeta("_StructMeta_Person", "main.Person")
+		tr.registerStructMetaTypeMeta(&structMetaConfig{generatedName: "_StructMeta_Person"})
 		require.Contains(t, tr.typeMetas, "_StructMeta_Person", "setup: the metadata was not registered")
 		requireRebuilt(t, tr, before, "registerStructMetaTypeMeta")
 	})

@@ -87,6 +87,7 @@ go_test(
         "bridge_func_type_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
+        "codec_cross_pkg_test.go",
         "codec_field_kinds_test.go",
         "codec_struct_meta_order_test.go",
         "collect_partial_function_test.go",

@@ -2243,6 +2243,26 @@ meta.FieldName(0)    // "FirstName"
 
 The transpiler generates a specialised struct (`_StructMeta_Person`) that satisfies the generic `StructMeta[Person]` interface from `std/meta.gala`. Every dispatch method is typed end to end — no `any`, no reflection, no runtime type assertions on user data.
 
+#### Structs From Other Packages
+
+A struct declared in a library package (any package but `main`) gets its metadata from that package: the transpiler emits an exported `StructMeta_X` next to every struct `X` the codec can describe, and every other file and package that encodes `X` — directly, as a field, or inside an `Option`, `Array`, `List` or `HashMap` — references it. Only the declaring package can read and construct unexported fields, so this is what lets a struct like `billing.Secret` below round-trip from another package:
+
+```gala
+// package billing
+struct Email(V string)
+struct Secret(token string, uses int)
+```
+
+<!-- doc-check: fragment -->
+```gala
+// package main
+struct User(Mail billing.Email, Key billing.Secret)
+
+val codec = Codec[User](SnakeCase())   // also Codec[billing.Secret](SnakeCase())
+```
+
+A struct whose fields have no encoding gets no `StructMeta_X`; asking for its codec from any package fails with [GALA-E0050](errors/GALA-E0050.md), naming the field. Structs of the `main` package, which cannot be imported, keep the on-demand `_StructMeta_X` form.
+
 #### Auto-Injection
 
 When a generic type's `Apply` method declares its first parameter as `StructMeta[T]` (the typed interface in `std/meta.gala`), the transpiler auto-generates and injects the appropriate `_StructMeta_T{}` value. This is how `Codec[Person](SnakeCase())` works — the user never needs to write `StructMeta[Person]()` explicitly. `Codec[T]` itself is implemented as a pure GALA library (`json/json.gala`, with the `yaml` package as its YAML twin) built on top of the neutral `FieldEncoder` / `FieldDecoder` interfaces from `std/meta.gala`; the transpiler carries no format-specific knowledge.

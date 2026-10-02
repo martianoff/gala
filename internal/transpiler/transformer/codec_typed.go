@@ -85,10 +85,12 @@ func unsupportedShape(format string, args ...any) error {
 }
 
 // codecGen carries the per-struct state of one EncodeFields/DecodeFields
-// emission: the transformer (for type resolution and imports) and a counter
-// that keeps the temporaries of nested reads distinct.
+// emission: the transformer (for type resolution and imports), the package
+// declaring the struct ("" for this one), and a counter that keeps the
+// temporaries of nested reads distinct.
 type codecGen struct {
 	t   *galaASTTransformer
+	pkg string
 	seq int
 }
 
@@ -143,7 +145,7 @@ func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) (*ast.Fun
 	meta := config.typeMetadata
 	resolvedName := t.resolveStructTypeName(config.typeName)
 	immutFlags := t.structImmutFields[resolvedName]
-	g := &codecGen{t: t}
+	g := &codecGen{t: t, pkg: config.pkg}
 
 	stmts := []ast.Stmt{exprStmt(methodCall("w", "WriteStartObject"))}
 
@@ -269,11 +271,11 @@ func (g *codecGen) write(access ast.Expr, ty transpiler.Type) ([]ast.Stmt, error
 		return []ast.Stmt{exprStmt(methodCall("w", sc.write, arg))}, nil
 	}
 
-	genName, err := g.t.codecStructMeta(ty)
+	config, err := g.t.codecStructMeta(ty, g.pkg)
 	if err != nil {
 		return nil, err
 	}
-	return genNestedStructWrite(genName, access), nil
+	return genNestedStructWrite(func() ast.Expr { return g.t.structMetaRef(config) }, access), nil
 }
 
 func errNestedOption() error {
@@ -282,8 +284,9 @@ func errNestedOption() error {
 
 // genNestedStructWrite emits the call to _StructMeta_Inner{}.EncodeFields
 // with fresh per-type nameFn/omitFn closures that derive their key from the
-// inherited `naming` mapping and the inner StructMeta's FieldName.
-func genNestedStructWrite(genName string, access ast.Expr) []ast.Stmt {
+// inherited `naming` mapping and the inner StructMeta's FieldName. metaType
+// names the inner StructMeta type; it is called once per use.
+func genNestedStructWrite(metaType func() ast.Expr, access ast.Expr) []ast.Stmt {
 	innerNameFn := &ast.FuncLit{
 		Type: &ast.FuncType{
 			Params:  &ast.FieldList{List: []*ast.Field{{Names: idents("i"), Type: ast.NewIdent("int")}}},
@@ -294,7 +297,7 @@ func genNestedStructWrite(genName string, access ast.Expr) []ast.Stmt {
 				Fun: ast.NewIdent("naming"),
 				Args: []ast.Expr{&ast.CallExpr{
 					Fun: &ast.SelectorExpr{
-						X:   &ast.CompositeLit{Type: ast.NewIdent(genName)},
+						X:   &ast.CompositeLit{Type: metaType()},
 						Sel: ast.NewIdent("FieldName"),
 					},
 					Args: []ast.Expr{ast.NewIdent("i")},
@@ -319,7 +322,7 @@ func genNestedStructWrite(genName string, access ast.Expr) []ast.Stmt {
 	}
 	return []ast.Stmt{exprStmt(&ast.CallExpr{
 		Fun: &ast.SelectorExpr{
-			X:   &ast.CompositeLit{Type: ast.NewIdent(genName)},
+			X:   &ast.CompositeLit{Type: metaType()},
 			Sel: ast.NewIdent("EncodeFields"),
 		},
 		Args: []ast.Expr{
@@ -338,7 +341,7 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 	meta := config.typeMetadata
 	resolvedName := t.resolveStructTypeName(config.typeName)
 	immutFlags := t.structImmutFields[resolvedName]
-	g := &codecGen{t: t}
+	g := &codecGen{t: t, pkg: config.pkg}
 
 	var stmts []ast.Stmt
 
@@ -555,16 +558,17 @@ func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error)
 		return []ast.Stmt{assign(value)}, nil
 	}
 
-	genName, err := g.t.codecStructMeta(ty)
+	config, err := g.t.codecStructMeta(ty, g.pkg)
 	if err != nil {
 		return nil, err
 	}
+	metaType := func() ast.Expr { return g.t.structMetaRef(config) }
 	return []ast.Stmt{assign(&ast.CallExpr{
 		Fun: &ast.SelectorExpr{
-			X:   &ast.CompositeLit{Type: ast.NewIdent(genName)},
+			X:   &ast.CompositeLit{Type: metaType()},
 			Sel: ast.NewIdent("DecodeFields"),
 		},
-		Args: []ast.Expr{ast.NewIdent("r"), genNestedStructLookup(genName), ast.NewIdent("naming")},
+		Args: []ast.Expr{ast.NewIdent("r"), genNestedStructLookup(metaType), ast.NewIdent("naming")},
 	})}, nil
 }
 
@@ -573,7 +577,7 @@ func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error)
 // mapping.  We bind the meta to a local so its composite-literal use does
 // not collide with for-clause syntax (Go treats `_StructMeta_T{` in a for
 // header as the start of a composite-literal block, which is a parse error).
-func genNestedStructLookup(genName string) ast.Expr {
+func genNestedStructLookup(metaType func() ast.Expr) ast.Expr {
 	// _meta := _StructMeta_Inner{}
 	// n := _meta.NumFields()
 	// for i := 0; i < n; i++ {
@@ -584,7 +588,7 @@ func genNestedStructLookup(genName string) ast.Expr {
 		&ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent("_meta")},
 			Tok: token.DEFINE,
-			Rhs: []ast.Expr{&ast.CompositeLit{Type: ast.NewIdent(genName)}},
+			Rhs: []ast.Expr{&ast.CompositeLit{Type: metaType()}},
 		},
 		&ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent("n")},
@@ -744,37 +748,34 @@ func simpleTypeName(ty transpiler.Type) (string, string, bool) {
 	return "", "", false
 }
 
-// codecStructMeta returns the generated _StructMeta_X name for a struct-typed
-// value, or an unsupported-shape error explaining why ty has no encoding.
-func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type) (string, error) {
-	name := codecStructName(ty)
-	if name != "" {
-		if _, ok := t.structMetas["_StructMeta_"+name]; ok {
-			return "_StructMeta_" + name, nil
-		}
-		if meta, _ := t.getTypeMetaResolved(name); meta != nil {
-			if meta.IsSealed {
-				return "", unsupportedShape("%s", sealedReason(name))
+// codecStructMeta returns the registered StructMeta for a struct-typed value
+// of a field declared in package pkg ("" for this one), or an
+// unsupported-shape error explaining why ty has no encoding.
+func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type, pkg string) (*structMetaConfig, error) {
+	if name := t.codecStructName(ty, pkg); name != "" {
+		if meta, resolved := t.getTypeMetaResolved(name); meta != nil {
+			if config, ok := t.structMetas[resolved]; ok {
+				return config, nil
 			}
-			if len(meta.FieldNames) == 0 {
-				return "", unsupportedShape("%s", noFieldsReason(name))
+			if reason := describableReason(name, meta); reason != "" {
+				return nil, unsupportedShape("%s", reason)
 			}
 		}
 	}
 	switch ty.(type) {
 	case transpiler.FuncType:
-		return "", unsupportedShape("functions have no serialized form")
+		return nil, unsupportedShape("functions have no serialized form")
 	case transpiler.PointerType:
-		return "", unsupportedShape("pointers are not encoded; store the value itself")
+		return nil, unsupportedShape("pointers are not encoded; store the value itself")
 	case transpiler.ArrayType, transpiler.MapType:
-		return "", unsupportedShape("Go slices and maps are not encoded; use Array, List or HashMap")
+		return nil, unsupportedShape("Go slices and maps are not encoded; use Array, List or HashMap")
 	case transpiler.GenericType:
-		return "", unsupportedShape("generic type %s has no codec encoding", ty.String())
+		return nil, unsupportedShape("generic type %s has no codec encoding", ty.String())
 	}
 	if named, ok := ty.(transpiler.NamedType); ok && named.Package != "" && named.Package != t.packageName && t.goTypeInfo == nil {
-		return "", unsupportedShape("the underlying kind of %s is unknown because Go type information is unavailable (is the Go SDK on PATH or GOROOT set?)", ty.String())
+		return nil, unsupportedShape("the underlying kind of %s is unknown because Go type information is unavailable (is the Go SDK on PATH or GOROOT set?)", ty.String())
 	}
-	return "", unsupportedShape("%s is neither a scalar nor a GALA struct the codec can describe", ty.String())
+	return nil, unsupportedShape("%s is neither a scalar nor a GALA struct the codec can describe", ty.String())
 }
 
 // sealedReason and noFieldsReason explain why a named type has no codec
@@ -787,18 +788,26 @@ func noFieldsReason(name string) string {
 	return fmt.Sprintf("%s has no fields, so the codec has nothing to describe", name)
 }
 
-// codecStructName is the name the StructMeta for a struct-typed value is
-// registered under (callers resolve aliases first). Returns "" for anything
-// but a basic or named type: generic user structs are not described by
-// StructMeta.
-func codecStructName(ty transpiler.Type) string {
-	switch v := ty.(type) {
-	case transpiler.BasicType:
-		return v.Name
-	case transpiler.NamedType:
-		return v.Name
+// codecStructName is the name to look a struct-typed value's StructMeta up by
+// (callers resolve aliases first): qualified when the struct belongs to
+// another package, so an imported Email never resolves to a local one. pkg is
+// the package declaring the field ty came from ("" for this one); an
+// unqualified name there is that package's. Returns "" for anything but a
+// basic or named type: generic user structs are not described by StructMeta.
+func (t *galaASTTransformer) codecStructName(ty transpiler.Type, pkg string) string {
+	name, owner, ok := simpleTypeName(ty)
+	if !ok {
+		return ""
 	}
-	return ""
+	if owner == "" && pkg != "" {
+		if meta, _ := t.getTypeMetaResolved(pkg + "." + name); meta != nil {
+			owner = pkg
+		}
+	}
+	if owner == "" || owner == t.packageName {
+		return name
+	}
+	return owner + "." + name
 }
 
 // mapKey checks that a HashMap key type is string-shaped — JSON and YAML
@@ -847,7 +856,7 @@ func (g *codecGen) goType(ty transpiler.Type) (ast.Expr, error) {
 	if _, declared, _, ok := g.t.codecScalarOf(ty); ok {
 		return declared, nil
 	}
-	if _, err := g.t.codecStructMeta(ty); err != nil {
+	if _, err := g.t.codecStructMeta(ty, g.pkg); err != nil {
 		return nil, err
 	}
 	return g.t.codecTypeExpr(ty), nil
