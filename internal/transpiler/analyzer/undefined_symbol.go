@@ -313,6 +313,12 @@ type undefChecker struct {
 
 	// imports are this file's imports, for goTypeHint.
 	imports []fileImport
+
+	// sourceOnly holds the names of the file's dot-imported packages (std
+	// included) that only importedTopLevelNames' source scan found. The
+	// metadata did not model them, so it cannot say they are not types, and
+	// the type check accepts them.
+	sourceOnly map[string]bool
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
@@ -332,7 +338,13 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	for name := range a.undefinedSymbolLocalGoNames(filePath) {
 		declared[name] = true
 	}
+	// Names only the source scan of the imported packages knows, which the
+	// metadata did not model; the type check accepts these too.
+	sourceOnly := make(map[string]bool)
 	for name := range a.importedTopLevelNames(imports) {
+		if !declared[name] {
+			sourceOnly[name] = true
+		}
 		declared[name] = true
 	}
 	scope := a.buildGalaScope(imports, richAST, filePath)
@@ -347,6 +359,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		reported:       make(map[string]int),
 		types:          a.indexTypes(imports, richAST, filePath, scope),
 		imports:        imports,
+		sourceOnly:     sourceOnly,
 	}
 	c.walker = scopewalk.New(c, undefWalkOptions())
 	c.walkSourceFile(sourceFile)
@@ -1513,16 +1526,18 @@ func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typePara
 	case c.typeNameExists(name, extra):
 	case len(c.types.galaOwners[name]) > 0:
 		c.report(name, id.GetStart())
-	case c.goTypeHint(name) != "":
-		// Only a Go package this file does not dot-import declares it.
-		c.reportWith(name, id.GetStart(), "", c.goTypeHint(name))
-	case c.declared[name]:
-		// Declared, but as a function or value: say so rather than suggest an
-		// import the file may already have.
-		c.reportWith(name, id.GetStart(), fmt.Sprintf("%s is not a type", name),
-			fmt.Sprintf("%s names a function or value; a type position needs a type", name))
 	default:
-		c.report(name, id.GetStart())
+		if hint := c.goTypeHint(name); hint != "" {
+			// Only a Go package this file does not dot-import declares it.
+			c.reportWith(name, id.GetStart(), "", hint)
+		} else if c.declared[name] {
+			// Declared, but as a function or value: say so rather than
+			// suggest an import the file may already have.
+			c.reportWith(name, id.GetStart(), fmt.Sprintf("%s is not a type", name),
+				fmt.Sprintf("%s names a function or value; a type position needs a type", name))
+		} else {
+			c.report(name, id.GetStart())
+		}
 	}
 }
 
@@ -1580,7 +1595,7 @@ func tupleDestructureType(n antlr.Tree) antlr.Tree {
 // caller. extra holds the packages a method signature may also use, as for
 // galaScope.hidesFrom.
 func (c *undefChecker) typeNameExists(name string, extra map[string]bool) bool {
-	if isGoPredeclaredTypeName(name) || c.types.has(name, extra) {
+	if isGoPredeclaredTypeName(name) || c.sourceOnly[name] || c.types.has(name, extra) {
 		return true
 	}
 	// A prelude package registers its type surface, which includes types its
@@ -1609,19 +1624,14 @@ type typeIndex struct {
 	// goVisible holds the names the Go packages this file dot-imports are
 	// filed under in GoTypeInfo.
 	goVisible map[string]bool
-	// goDotsLoaded is false when a Go package this file dot-imports did not
-	// load its own type info. GoTypeInfo may then hold only the few of its
-	// types other packages mention, so a name it lacks may still be one of
-	// that package's, and is not reported.
-	goDotsLoaded bool
-	goInfo       *transpiler.GoTypeInfo
+	goInfo    *transpiler.GoTypeInfo
 }
 
 // has reports whether name is a type here. extra adds the GALA packages a
 // method signature may also use; a Go dot import is scoped to its own file, in
 // Go as here, so it gives no such allowance.
 func (ti typeIndex) has(name string, extra map[string]bool) bool {
-	if ti.localGo[name] || !ti.goDotsLoaded {
+	if ti.localGo[name] {
 		return true
 	}
 	for _, pkg := range ti.galaOwners[name] {
@@ -1639,17 +1649,21 @@ func (ti typeIndex) has(name string, extra map[string]bool) bool {
 			}
 		}
 	}
-	return false
+	// A Go package's type info comes from the host's build context, which
+	// lacks the types only another platform's files declare, and, when the
+	// package itself did not load, holds just the types other packages
+	// mention. So in a file that dot-imports a Go package, a name no GALA
+	// package declares may still be one of its types, and is not reported.
+	return len(ti.goVisible) > 0 && len(ti.galaOwners[name]) == 0
 }
 
 func (a *galaAnalyzer) indexTypes(imports []fileImport, rich *transpiler.RichAST, filePath string, scope galaScope) typeIndex {
 	ti := typeIndex{
-		localGo:      a.undefinedSymbolLocalGoNames(filePath),
-		galaOwners:   make(map[string][]string),
-		galaVisible:  scope.visible,
-		goVisible:    make(map[string]bool),
-		goDotsLoaded: true,
-		goInfo:       rich.GoTypeInfo,
+		localGo:     a.undefinedSymbolLocalGoNames(filePath),
+		galaOwners:  make(map[string][]string),
+		galaVisible: scope.visible,
+		goVisible:   make(map[string]bool),
+		goInfo:      rich.GoTypeInfo,
 	}
 	addGala := func(key, pkg string) {
 		name := simpleNameOf(key)
@@ -1682,9 +1696,6 @@ func (a *galaAnalyzer) indexTypes(imports []fileImport, rich *transpiler.RichAST
 	for _, imp := range imports {
 		if !imp.IsDot || a.isGalaImport(imp.Path) {
 			continue
-		}
-		if rich.GoImportNames[imp.Path] == "" {
-			ti.goDotsLoaded = false
 		}
 		for _, n := range transpiler.ImportNames(imp.Path, "", rich.GoImportNames[imp.Path]) {
 			ti.goVisible[n.Name] = true

@@ -161,6 +161,14 @@ for a guaranteed absence of false positives:
 
 - **The member of a qualified type.** `strings.Builderr` is checked only
   at `strings`; see *Type names* above.
+- **An unqualified type name in a file that dot-imports a Go package,**
+  when no GALA package declares it. Go type information comes from the
+  host's build context, so it lacks the types only another platform's
+  files declare (`Termios` under `import . "syscall"` on Windows), and
+  the name may be one of those.
+- **A Go function or value used as a type,** when it comes from the
+  hand-written Go of this package or of a dot-imported GALA package: the
+  scan of those files records names without telling types apart.
 - **Selectors.** In `x.foo().bar`, only `x` is checked — field and
   method names require the receiver's type.
 - **Constructor names in `match` / `case` patterns.** A pattern's

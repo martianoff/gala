@@ -1263,6 +1263,15 @@ type Millis int64
 func main() {
     Println(later(1, 2))
 }`, siblings: map[string]string{"units.gala": "package main\n\ntype Seconds int64\n"}},
+		{name: "a type another platform's files of a dot-imported Go package declare", src: `package main
+
+import . "syscall"
+
+func raw(t *Termios) int = 1
+
+func main() {
+    Println(1)
+}`},
 		{name: "wildcard lambda parameter type", src: `package main
 
 func apply(f func(int, int) int) int = f(1, 2)

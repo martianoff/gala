@@ -3337,10 +3337,11 @@ func canonicalPath(path string) string {
 // or grouped. It parses the source, so text in comments or strings does not
 // count. A file no GOOS/GOARCH builds (`//go:build ignore`) exports nothing;
 // one built only for some platforms is kept, as the transpiler serves every
-// target, not just its host (see neverBuilt).
-func exportedGoNames(src string) (pkg string, names []string) {
+// target, not just its host (see neverBuilt). With skipGalaOutput, the
+// transpiler's own output exports nothing either.
+func exportedGoNames(src string, skipGalaOutput bool) (pkg string, names []string) {
 	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution|goparser.ParseComments)
-	if f == nil || f.Name == nil || neverBuilt(f) {
+	if f == nil || f.Name == nil || neverBuilt(f) || (skipGalaOutput && writtenByGala(f)) {
 		return "", nil
 	}
 	add := func(id *ast.Ident) {
@@ -3375,13 +3376,14 @@ func exportedGoNames(src string) (pkg string, names []string) {
 // don't interfere with type resolution). Used for dot-import clash detection,
 // and as the Go side of a GALA package's type surface.
 //
-// includeGenerated controls whether auto-generated `.gen.go` files contribute
+// includeGenerated controls whether the transpiler's own output contributes
 // to the result. Pass true only when the package is consumed without GALA
-// source (cross-module compiled artifacts); when false, .gen.go files are
-// skipped because their contents are duplicates of the .gala source already
-// reflected in pkgAST.Types/Functions, and a stale .gen.go (left behind
-// after its .gala counterpart was moved) would otherwise pollute GoExports
-// with phantom symbols that the dot-import collision check would then flag.
+// source (cross-module compiled artifacts); when false, that output is
+// skipped because its contents are duplicates of the .gala source already
+// reflected in pkgAST.Types/Functions, and a stale one (left behind after its
+// .gala counterpart was moved) would otherwise pollute GoExports with phantom
+// symbols that the dot-import collision check would then flag. A .gen.go
+// another generator wrote is the package's own Go and always counts.
 func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPath string, pkgAST *transpiler.RichAST, includeGenerated bool) {
 	var symbols []string
 	seen := make(map[string]bool)
@@ -3390,14 +3392,11 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
 			continue
 		}
-		if !includeGenerated && strings.HasSuffix(f.Name(), ".gen.go") {
-			continue
-		}
 		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
 		if err != nil {
 			continue
 		}
-		pkg, names := exportedGoNames(string(content))
+		pkg, names := exportedGoNames(string(content), !includeGenerated)
 		if pkgAST.PackageName == "" && pkg != "" {
 			pkgAST.PackageName = pkg
 		}
