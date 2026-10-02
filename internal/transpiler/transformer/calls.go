@@ -1910,11 +1910,9 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// then `Handler((x) => x)`) takes one argument of that function type, so
 	// a lambda converted this way is typed by it.
 	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
-		if funcName := t.extractFuncName(fun); funcName != "" {
-			if target, isAlias := t.lookupTypeAlias(funcName); isAlias {
-				if ft, isFunc := t.followAliasChain(target).(transpiler.FuncType); isFunc {
-					ctx.goFuncParamTypes = []transpiler.Type{ft}
-				}
+		if target, isAlias := t.lookupTypeAlias(t.extractFuncName(fun)); isAlias {
+			if ft, isFunc := t.followAliasChain(target).(transpiler.FuncType); isFunc {
+				ctx.goFuncParamTypes = []transpiler.Type{ft}
 			}
 		}
 	}
@@ -1951,31 +1949,14 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// Iterate(1, (x) => x * 2)), pre-scan non-lambda arguments to infer
 	// type params so that lambda params get concrete types.
 	if ctx.funcMeta != nil && len(ctx.funcMeta.TypeParams) > 0 {
-		if explicit := explicitTypeArgSubst(ctx.funcMeta.TypeParams, t.extractFuncCallTypeArgs(fun)); explicit != nil {
+		explicit := explicitTypeArgSubst(ctx.funcMeta.TypeParams, t.extractFuncCallTypeArgs(fun))
+		if len(explicit) == len(ctx.funcMeta.TypeParams) {
 			ctx.inferredTypeSubst = explicit
-			// A partial list (`Using[Res](r, (x) => …)`) binds the leading type
-			// parameters; Go infers the rest, as it would with none written.
-			// They are inferred here the same way, so no lambda is lowered
-			// against a bare type-parameter name.
-			if len(explicit) < len(ctx.funcMeta.TypeParams) {
-				inferred, _ := t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
-				placeholders := false
-				for _, tp := range ctx.funcMeta.TypeParams {
-					if _, bound := explicit[tp]; bound {
-						continue
-					}
-					if v, ok := inferred[tp]; ok {
-						explicit[tp] = v
-					} else {
-						explicit[tp] = "any"
-						placeholders = true
-					}
-				}
-				ctx.typeArgPlaceholders = placeholders
-			}
 		} else {
-			// No explicit type args — infer from non-lambda arguments.
-			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
+			// None or only some written (`Using[Res](r, (x) => …)`): Go infers
+			// the rest from the arguments, and so does this, so no lambda is
+			// lowered against a bare type-parameter name.
+			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx, explicit)
 		}
 	}
 
@@ -3758,23 +3739,30 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 // to infer type parameter substitutions. For example, in Iterate(1, (x) => x * 2),
 // it infers T = int from the first argument (1), enabling the lambda param x to be typed as int.
 // placeholders reports that some type parameter was filled with `any`.
-func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext) (subst map[string]string, placeholders bool) {
-	inferredMap := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames))
-	if len(inferredMap) == 0 {
+// preset holds the type arguments the call writes explicitly — a leading
+// part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset map[string]string) (subst map[string]string, placeholders bool) {
+	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames)))
+	if len(inferred) == 0 && len(preset) == 0 {
 		return nil, false
 	}
 
-	// Type params no non-lambda argument binds (e.g. `A` in `body func(R) A`)
-	// become `any`, so the bound ones (`R`) still reach the lambda. An `any`
-	// expected result means "infer from the body", and in the emitted call Go
-	// infers the real type argument itself.
+	// Type params neither written nor bound by a non-lambda argument (e.g. `A`
+	// in `body func(R) A`) become `any`, so the bound ones (`R`) still reach
+	// the lambda. An `any` expected result means "infer from the body", and in
+	// the emitted call Go infers the real type argument itself.
+	subst = make(map[string]string, len(funcMeta.TypeParams))
 	for _, tp := range funcMeta.TypeParams {
-		if _, ok := inferredMap[tp]; !ok {
-			inferredMap[tp] = transpiler.BasicType{Name: "any"}
+		if v, ok := preset[tp]; ok {
+			subst[tp] = v
+		} else if v, ok := inferred[tp]; ok {
+			subst[tp] = v
+		} else {
+			subst[tp] = "any"
 			placeholders = true
 		}
 	}
-	return typeSubstStrings(inferredMap), placeholders
+	return subst, placeholders
 }
 
 // callArg is one argument of a call: its expression (nil for a direct lambda),

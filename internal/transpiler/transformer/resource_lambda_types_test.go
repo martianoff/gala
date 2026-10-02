@@ -55,7 +55,6 @@ func TestPartialExplicitTypeArgs(t *testing.T) {
 			gala: "func pick[A any, B any](a A, f func(A) B) B = f(a)\n\n" +
 				"func twice() int = pick[int](1, (x) => x * 2)\n",
 			want:   []string{"pick[int](1, func(x int) int"},
-			absent: []string{"pick[int](1, func(x int) B"},
 		},
 	}
 	for _, tc := range cases {

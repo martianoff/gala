@@ -426,7 +426,9 @@ transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than
 defaulting the parameter to `any`. Annotate the parameter (`(x int) => …`) or
 place the lambda in one of the typed contexts above. A call-argument lambda gets
 the same error when the callee's signature is unknown, so its slot has no type
-at all; only a parameter whose slot the callee types `any` is lowered to `any`.
+at all. A parameter whose slot is typed `any` is still lowered to `any`: as the
+callee declares it, or because no argument of the call determines a type
+parameter the slot names.
 
 ### By-Name Argument Lifting (Thunk Sugar)
 

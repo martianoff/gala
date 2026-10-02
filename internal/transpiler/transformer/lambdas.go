@@ -152,13 +152,14 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// place the lambda in a typed context. (Replaces the prior `any`+warning
 			// fallback now that typed contexts thread expected types.)
 			//
-			// The relaxed call-argument path gets the same error when the slot
-			// does name this parameter but its type, or a type inside it (the
-			// element of *T, []T, map[K]V, G[T]), could not be resolved — a
-			// callee signature with an unresolvable type in it, such as a Go
-			// function whose declaring package did not type-check. Its `any`
-			// would reach the output unannounced and fail only in `go build`.
-			if (requireTypedParams || unresolvedSlot || expType == nil) && paramCtx.Type_() == nil && !typeApplied {
+			// The relaxed call-argument path gets the same error unless the slot
+			// is typed `any`: a slot with no type (the callee's signature is
+			// unknown), or one whose type or a type inside it (the element of
+			// *T, []T, map[K]V, G[T]) could not be resolved — a Go function whose
+			// declaring package did not type-check, say. Its `any` would reach
+			// the output unannounced and fail only in `go build`.
+			anySlot := expType != nil && !unresolvedSlot && expType.IsAny()
+			if paramCtx.Type_() == nil && !typeApplied && (requireTypedParams || !anySlot) {
 				name := paramCtx.Identifier().GetText()
 				msg := fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name)
 				hint := fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name)
