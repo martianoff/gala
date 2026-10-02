@@ -789,7 +789,10 @@ func (t *galaASTTransformer) isOwnGoType(name string) bool {
 }
 
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.
-// Returns empty string if not found.
+// Returns empty string if not found. A bare name the package's own .go files
+// declare resolves to its `pkg.Name` key though typeMetas has no entry for it:
+// the name is taken, so no other type — an import's, through the fallbacks
+// of getTypeMeta — may answer for it.
 func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 	// A bare name the package's own hand-written .go files declare is that
 	// type, whatever an import also exports under the name: Go resolves it in

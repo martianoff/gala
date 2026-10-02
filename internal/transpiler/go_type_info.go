@@ -1,7 +1,5 @@
 package transpiler
 
-import "strings"
-
 // GoTypeInfo holds type information extracted from Go source files and packages.
 // It bridges the gap between Go's type system and GALA's transpiler type system,
 // enabling type inference for Go function calls, struct field access, and method calls.
@@ -143,27 +141,6 @@ func (g *GoTypeInfo) DeclaresType(pkgName, name string) bool {
 	_, isType := g.Types[key]
 	_, isAlias := g.TypeAliases[key]
 	return isType || isAlias
-}
-
-// DeclaredTypeNames returns the bare names of the types and type aliases g
-// files under pkgName.
-func (g *GoTypeInfo) DeclaredTypeNames(pkgName string) map[string]bool {
-	names := map[string]bool{}
-	if g == nil {
-		return names
-	}
-	prefix := pkgName + "."
-	for key := range g.Types {
-		if name, ok := strings.CutPrefix(key, prefix); ok {
-			names[name] = true
-		}
-	}
-	for key := range g.TypeAliases {
-		if name, ok := strings.CutPrefix(key, prefix); ok {
-			names[name] = true
-		}
-	}
-	return names
 }
 
 // GetTypeData returns type metadata for a Go type, or nil if unknown.

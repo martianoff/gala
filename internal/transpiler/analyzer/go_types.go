@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/build"
+	"go/build/constraint"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -462,8 +463,17 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 // transitive Go-stdlib graph reachable via go/importer) on every visit.
 var goFilesCache = struct {
 	mu    sync.Mutex
-	cache map[string]*transpiler.GoTypeInfo
-}{cache: make(map[string]*transpiler.GoTypeInfo)}
+	cache map[string]goFilesResult
+}{cache: make(map[string]goFilesResult)}
+
+// goFilesResult is what one scan of a directory's .go files yields: their type
+// info, and the bare names of the types they declare themselves. Type info
+// cannot tell the second apart, since it is keyed by package name and also
+// files types of other packages a signature mentions.
+type goFilesResult struct {
+	info     *transpiler.GoTypeInfo
+	ownTypes map[string]bool
+}
 
 // AnalyzeGoFiles parses and type-checks local .go files and extracts type info.
 // This handles Go source files that live alongside GALA files or in Go-only packages.
@@ -482,16 +492,20 @@ var goFilesCache = struct {
 // change, so the parse + type-check work happens at most once per directory
 // per worker.
 func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
-	return AnalyzeOwnGoFiles(dirPath, importPath, "")
+	return analyzeGoFilesMemo(dirPath, importPath, "").info
 }
 
 // AnalyzeOwnGoFiles is AnalyzeGoFiles for the hand-written .go files of the
-// package being compiled, named pkgName. Only the files `go build` would
-// compile into that package take part: the package clause must name pkgName
-// and the file's build constraints must hold. A directory of several programs,
-// or a `//go:build ignore` generator next to the package, therefore leaks
-// nothing into it. An empty pkgName reads every file, as AnalyzeGoFiles does.
-func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
+// package being compiled, named pkgName. Only the files of that package take
+// part — the package clause must name pkgName — and the package's unexported
+// declarations are recorded too. It also returns the bare names of the types
+// those files declare.
+func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) (*transpiler.GoTypeInfo, map[string]bool) {
+	r := analyzeGoFilesMemo(dirPath, importPath, pkgName)
+	return r.info, r.ownTypes
+}
+
+func analyzeGoFilesMemo(dirPath, importPath, pkgName string) goFilesResult {
 	importPath = goFilesImportPath(dirPath, importPath)
 	cacheKey := dirPath + "\x00" + importPath + "\x00" + pkgName
 
@@ -502,21 +516,27 @@ func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeIn
 		return cached
 	}
 
-	info := analyzeGoFiles(dirPath, importPath, pkgName)
+	r := analyzeGoFiles(dirPath, importPath, pkgName)
 	goFilesCache.mu.Lock()
-	goFilesCache.cache[cacheKey] = info
+	goFilesCache.cache[cacheKey] = r
 	goFilesCache.mu.Unlock()
-	return info
+	return r
 }
 
 // analyzeGoFiles is AnalyzeGoFiles without the memo. A non-empty pkgName
 // keeps only the files of that package (see AnalyzeOwnGoFiles).
-func analyzeGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
+//
+// Whatever the caller, a file no build configuration compiles (`//go:build
+// ignore`, say, on a generator) and a file the GALA transpiler wrote (an old
+// `gala transpile -o main.go`) are left out: neither is hand-written source of
+// the package.
+func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	info := transpiler.NewGoTypeInfo()
+	result := goFilesResult{info: info}
 
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return info
+		return result
 	}
 
 	fset := token.NewFileSet()
@@ -529,24 +549,19 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo 
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".gen.go") {
 			continue
 		}
-		if pkgName != "" {
-			if match, err := build.Default.MatchFile(dirPath, name); err != nil || !match {
-				continue
-			}
-		}
 		fullPath := filepath.Join(dirPath, name)
-		f, err := parser.ParseFile(fset, fullPath, nil, 0)
+		f, err := parser.ParseFile(fset, fullPath, nil, parser.ParseComments)
 		if err != nil {
 			continue
 		}
-		if pkgName != "" && f.Name.Name != pkgName {
+		if (pkgName != "" && f.Name.Name != pkgName) || neverBuilt(f) || writtenByGala(f) {
 			continue
 		}
 		files = append(files, f)
 	}
 
 	if len(files) == 0 {
-		return info
+		return result
 	}
 
 	// Type-check the parsed files
@@ -564,12 +579,78 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo 
 	if pkg == nil {
 		// Even if type-checking fails, try to extract what we can from AST
 		extractFromAST(files, info)
-		return info
+		return result
 	}
 
-	extractPackageInfo(pkg, info, pkgName != "")
+	own := pkgName != ""
+	extractPackageInfo(pkg, info, own)
 	repairUnresolvedSignatures(files, pkg.Name(), info)
-	return info
+	result.ownTypes = make(map[string]bool)
+	for _, name := range pkg.Scope().Names() {
+		if tn, ok := pkg.Scope().Lookup(name).(*types.TypeName); ok && (own || tn.Exported()) {
+			result.ownTypes[name] = true
+		}
+	}
+	return result
+}
+
+// goosList and goarchList are the configurations neverBuilt tries.
+var (
+	goosList   = []string{"aix", "android", "darwin", "dragonfly", "freebsd", "illumos", "ios", "js", "linux", "netbsd", "openbsd", "plan9", "solaris", "wasip1", "windows"}
+	goarchList = []string{"386", "amd64", "arm", "arm64", "loong64", "mips", "mips64", "mips64le", "mipsle", "ppc64", "ppc64le", "riscv64", "s390x", "wasm"}
+)
+
+// neverBuilt reports whether f's `//go:build` constraint holds for no
+// GOOS/GOARCH pair, with cgo and every Go release on — `//go:build ignore`
+// on a generator, a custom tag nothing sets. A file built only for some
+// platforms is kept: the transpiler serves every target, not just its host.
+func neverBuilt(f *ast.File) bool {
+	var expr constraint.Expr
+	for _, group := range f.Comments {
+		if group.Pos() >= f.Package {
+			break
+		}
+		for _, c := range group.List {
+			if constraint.IsGoBuild(c.Text) {
+				if e, err := constraint.Parse(c.Text); err == nil {
+					expr = e
+				}
+			}
+		}
+	}
+	if expr == nil {
+		return false
+	}
+	unix := map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "illumos": true, "ios": true, "linux": true, "netbsd": true, "openbsd": true, "solaris": true}
+	for _, goos := range goosList {
+		for _, goarch := range goarchList {
+			ok := expr.Eval(func(tag string) bool {
+				return tag == goos || tag == goarch || tag == "cgo" || tag == "gc" ||
+					(tag == "unix" && unix[goos]) || strings.HasPrefix(tag, "go1.")
+			})
+			if ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// writtenByGala reports whether f is output of the GALA transpiler — its
+// metadata comes from the .gala source it was transpiled from.
+func writtenByGala(f *ast.File) bool {
+	if !ast.IsGenerated(f) {
+		return false
+	}
+	for _, group := range f.Comments {
+		if group.Pos() >= f.Package {
+			break
+		}
+		if strings.Contains(group.Text(), "Code generated by GALA transpiler") {
+			return true
+		}
+	}
+	return false
 }
 
 // goFilesImportPath is the import path AnalyzeGoFiles records for the package

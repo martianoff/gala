@@ -854,8 +854,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	//
 	// `package main` is no exception: a program's hand-written .go files are
 	// as much a part of it as a library's. Only the files of this package are
-	// read (see AnalyzeOwnGoFiles), so a directory holding other programs'
-	// .go files, or a `//go:build ignore` generator, contributes nothing.
+	// read (see AnalyzeOwnGoFiles), so .go files of another package in the
+	// directory, a `//go:build ignore` generator, or the output of an earlier
+	// `gala transpile -o main.go` contribute nothing.
 	if filePath != "" && pkgName != "" {
 		dirPath := filepath.Dir(filePath)
 		// The types declared here record this package's own import path; the
@@ -866,13 +867,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ownImportPath = a.resolver.PackageImportPath(filePath)
 		}
 		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
-		goInfo := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
+		goInfo, ownTypes := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
 		if !goInfo.IsEmpty() {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 			}
 			richAST.GoTypeInfo.Merge(goInfo)
-			richAST.OwnGoTypes = goInfo.DeclaredTypeNames(pkgName)
+			richAST.OwnGoTypes = ownTypes
 		}
 	}
 

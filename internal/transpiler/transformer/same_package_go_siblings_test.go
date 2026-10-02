@@ -81,6 +81,8 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 			absent: []string{".Size()"},
 		},
 		{
+			// The check is that it transpiles at all: without the subject's
+			// type this was "cannot infer type of matched expression".
 			name: "a literal match on a Go-declared named scalar infers its type",
 			goSrc: "type Status int\n\n" +
 				"const Active Status = 1\n\n" +
