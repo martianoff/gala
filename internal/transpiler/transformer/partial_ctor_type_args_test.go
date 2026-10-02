@@ -73,6 +73,11 @@ sealed type Res[T any, E any] {
 			contains: []string{"Err[int, string]{}.Apply(\"x\")"},
 		},
 		{
+			name:     "named arguments, a field declared Immutable[T] over the written type argument",
+			body:     "struct Held[A any, B any](X Immutable[A], Y B)\n\nfunc main() { Println(Held[int64](X = 1, Y = \"s\").X) }\n",
+			contains: []string{"Held[int64, string]{X: std.NewImmutable[int64](1), Y: std.NewImmutable(\"s\")}"},
+		},
+		{
 			name:     "sealed case, positional argument",
 			body:     "func main() { Println(Err[int](\"y\")) }\n",
 			contains: []string{"Err[int, string]{}.Apply(\"y\")"},
@@ -97,6 +102,13 @@ func TestPartialConstructorTypeArgsUninferable(t *testing.T) {
 			name: "companion Apply",
 			body: "type Mk[A any, B any] struct {}\n\nfunc (m Mk[A, B]) Apply(a A) int = 1\n\nfunc main() { Println(Mk[int](2)) }\n",
 			want: "cannot infer type argument B of Mk",
+		},
+		{
+			// The misnamed field is reported, not the type parameter it was
+			// meant to bind.
+			name: "struct constructor, a named argument naming no field",
+			body: "struct Pair[A any, B any](First A, Second B)\n\nfunc main() { Println(Pair[int](First = 1, Secnd = \"a\").First) }\n",
+			want: `GALA-E0045`,
 		},
 		{
 			name: "sealed case, named argument, a type parameter no field names",
