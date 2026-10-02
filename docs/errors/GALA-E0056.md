@@ -7,6 +7,7 @@ but a destructuring cannot use:
 - a type annotation: `var (a, b) Tuple[int, int] = pair`
 - no initializer: `var (a, b)`
 - more than one expression on the right: `var (a, b) = x, y`
+- a name count that differs from the tuple's: `var (a, b, c) = (1, 2)`
 
 **Minimal repro.**
 

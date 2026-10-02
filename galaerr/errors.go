@@ -619,7 +619,8 @@ const (
 	// a type annotation (`var (a, b) Tuple[int, int] = pair`), or more than one
 	// expression on the right. The grammar shares these slots with an ordinary
 	// declaration, but a destructuring takes each name's type from the one
-	// tuple it splits, so none of them has a meaning here.
+	// tuple it splits, so none of them has a meaning here. It also covers a
+	// name count that differs from the tuple's arity (`var (a, b, c) = (1, 2)`).
 	CodeMalformedTupleDestructure ErrorCode = "GALA-E0056"
 )
 

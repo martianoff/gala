@@ -11,7 +11,7 @@ last_modified_at: 2026-10-01
 
 # GALA-E0056 — Malformed tuple destructuring
 
-**What it means.** A tuple destructuring declaration, `val (a, b) = pair` or `var (a, b) = pair`, has a type annotation, has no initializer, or has more than one expression on the right. A destructuring takes every name's type from the one tuple it splits, so none of these has a meaning.
+**What it means.** A tuple destructuring declaration, `val (a, b) = pair` or `var (a, b) = pair`, has a type annotation, has no initializer, has more than one expression on the right, or binds a different number of names than the tuple has components. A destructuring takes every name's type from the one tuple it splits, one name per component.
 
 ---
 
