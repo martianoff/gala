@@ -61,7 +61,11 @@ import (
 // Go types must not be copied (GALA-E0053).
 // v10: PackageVals records the names a package-level tuple destructuring
 // (`val (a, b) = ...` / `var (a, b) = ...`) binds.
-const CacheVersion = "v10"
+//
+// v11: GoTypeInfo records the methods a package's hand-written .go files
+// declare on its GALA types (GoKindMethodsOnly). A v10 payload has none, so a
+// call of one from an importing package would be GALA-E0044 again.
+const CacheVersion = "v11"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

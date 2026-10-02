@@ -137,6 +137,7 @@ go_test(
         "go_keyword_names_test.go",
         "go_method_func_param_test.go",
         "go_results_test.go",
+        "go_sibling_methods_test.go",
         "go_subpackage_import_path_test.go",
         "immutable_test.go",
         "immutable_unwrap_matrix_test.go",

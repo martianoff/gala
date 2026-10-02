@@ -101,6 +101,28 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 				"func encode(e Event) string = json.Codec[Event](json.SnakeCase()).Encode(e).GetOrElse(\"\")\n",
 			want: []string{"Millis("},
 		},
+		// The declarations-in-GALA, implementations-in-Go split: methods a Go
+		// file declares on a GALA struct are part of its method set, so
+		// GALA-E0044 does not reject them (#615), and a call of one is typed
+		// and lowered like any other Go method call.
+		{
+			name:    "a Go-declared method on a GALA struct is callable (#615)",
+			goSrc:   goSiblingMethods,
+			galaSrc: "struct Repo(Name string)\n\nfunc save(r Repo) error = r.Save()\n",
+			want:    []string{"r.Save()"},
+		},
+		{
+			name:    "a Go-declared method on a GALA struct has a typed result",
+			goSrc:   goSiblingMethods,
+			galaSrc: "struct Repo(Name string)\n\nfunc count(r Repo) int = r.Names().Size()\n",
+			want:    []string{"len(r.Names())"},
+		},
+		{
+			name:    "a Go-declared pointer method on a GALA struct through a val runs on a copy",
+			goSrc:   goSiblingMethods,
+			galaSrc: "struct Repo(Name string)\n\nfunc touch() {\n    val r = Repo(\"x\")\n    r.Touch()\n}\n",
+			want:    []string{"std.AddrOfCopy(r.Get()).Touch()"},
+		},
 	}
 	layouts := []struct {
 		name, dir, pkg string

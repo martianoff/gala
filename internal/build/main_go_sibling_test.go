@@ -16,7 +16,8 @@ import (
 // library's would be: `.Size()` on a field of a Go struct (#613), a
 // pointer-receiver method through a val (#614), a type name an import also
 // exports (#616), resource.Using over a Go constructor (#618), and a literal
-// match, a stable identifier and a codec field over a Go named scalar.
+// match, a stable identifier and a codec field over a Go named scalar; and
+// methods declared in Go on a struct declared in GALA (#615).
 func TestBuild_MainPackageGoSibling(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
@@ -62,6 +63,9 @@ const Two Status = 2
 func Current() Status { return Two }
 
 type Millis int64
+
+func (r Repo) Save() string { return "saved " + r.Name }
+func (r *Repo) Touch()      {}
 `,
 		"main.gala": `package main
 
@@ -73,6 +77,9 @@ import (
 )
 
 struct Event(Name string, At Millis)
+
+// Declared here; its methods are declared in sibling.go.
+struct Repo(var Name string)
 
 func size(r Response) int = r.Extra
 
@@ -100,6 +107,10 @@ func main() {
     })
 
     Println(json.Codec[Event](json.SnakeCase()).Encode(Event("e", Millis(5))).GetOrElse("failed"))
+
+    val repo = Repo("x")
+    repo.Touch()
+    Println(repo.Save())
 }
 `,
 	} {
@@ -131,5 +142,6 @@ func main() {
 		"two",
 		"stable two",
 		`{"name":"e","at":5}`,
+		"saved x",
 	}, "\n"), strings.TrimSpace(strings.ReplaceAll(out, "\r\n", "\n")))
 }
