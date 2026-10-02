@@ -163,6 +163,12 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				name := paramCtx.Identifier().GetText()
 				msg := fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name)
 				hint := fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name)
+				if len(expectedParamTypes) > 0 && i >= len(expectedParamTypes) {
+					// The slot is a function of fewer parameters: annotating
+					// this one would only move the error to go build.
+					msg = fmt.Sprintf("lambda parameter %q has no type: the lambda takes %d parameters where a function of %d is expected", name, len(allParams), len(expectedParamTypes))
+					hint = fmt.Sprintf("give the lambda %d parameters", len(expectedParamTypes))
+				}
 				if unresolvedSlot {
 					callee := lambdaArgCallee(ctx)
 					if callee == "" {

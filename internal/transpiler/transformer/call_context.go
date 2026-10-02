@@ -266,8 +266,14 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 
 	// Fall back to Go type info for lambda expected types
 	if expectedType.IsNil() && ctx.goParamTypes != nil && argIdx < len(ctx.goParamTypes) {
-		if ft, ok := ctx.goParamTypes[argIdx].(transpiler.FuncType); ok {
-			expectedType = ft
+		switch pt := ctx.goParamTypes[argIdx].(type) {
+		case transpiler.FuncType:
+			expectedType = pt
+		case transpiler.BasicType:
+			// `func Register(h any)`: a lambda here is lowered as declared.
+			if pt.IsAny() || pt.Name == "interface{}" {
+				expectedType = pt
+			}
 		}
 	}
 

@@ -89,6 +89,39 @@ func TestLambdaParamWithUnknownSlotIsAnError(t *testing.T) {
 	assert.Contains(t, err.Error(), `lambda parameter "r"`)
 }
 
+// TestLambdaParamSlotTypedAny covers a call-argument lambda whose slot the
+// callee types `any`: it is lowered as declared, not rejected.
+func TestLambdaParamSlotTypedAny(t *testing.T) {
+	files, galaFile := samePackageModule(".", "package main\n\nfunc Register(h any) {}\n",
+		"package main\n\nfunc reg() = Register((a, b) => a)\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "func(a any, b any)")
+}
+
+// TestLambdaArityMismatchNamesIt covers a lambda with more parameters than
+// the function type it stands for: the diagnostic names the mismatch rather
+// than asking for an annotation that would not help.
+func TestLambdaArityMismatchNamesIt(t *testing.T) {
+	files, galaFile := samePackageModule(".", "package main\n\nfunc RunWith(f func(int)) {}\n",
+		"package main\n\nfunc run() = RunWith((x, y) => Println(x))\n")
+	_, err := transpileInModule(t, files, galaFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0033")
+	assert.Contains(t, err.Error(), "takes 2 parameters where a function of 1 is expected")
+}
+
+// TestConversionToGoNamedFuncType covers a conversion to an imported Go
+// named function type: the lambda is typed by its signature.
+func TestConversionToGoNamedFuncType(t *testing.T) {
+	files, galaFile := samePackageModule(".", "package main\n",
+		"package main\n\nimport \"net/http\"\n\n"+
+			"func h() http.Handler = http.HandlerFunc((w, r) => w.WriteHeader(204))\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "func(w http.ResponseWriter, r *http.Request)")
+}
+
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for
 // `type Handler func(int) int`: the conversion's one argument has the
 // function type, so the lambda is typed by it rather than left without a type.

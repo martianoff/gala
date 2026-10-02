@@ -58,5 +58,6 @@ whose package does not type-check because one of its imports cannot be found:
 
 Fix the callee's package so it type-checks, or annotate the parameter. A
 parameter whose slot is typed `any` is still lowered to `any`: as the callee
-declares it, or because no argument of the call determines a type parameter the
-slot names.
+declares it, or because the slot names a type parameter no argument determines
+while the call's arguments determine others. When they determine none, the
+parameter has no type and this error fires.

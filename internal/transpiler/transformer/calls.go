@@ -1908,12 +1908,13 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 
 	// A conversion to a named function type (`type Handler func(int) int`,
 	// then `Handler((x) => x)`) takes one argument of that function type, so
-	// a lambda converted this way is typed by it.
-	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
-		if target, isAlias := t.lookupTypeAlias(t.extractFuncName(fun)); isAlias {
-			if ft, isFunc := t.followAliasChain(target).(transpiler.FuncType); isFunc {
-				ctx.goFuncParamTypes = []transpiler.Type{ft}
-			}
+	// a lambda converted this way is typed by it. So is one converted to a Go
+	// named function type (`http.HandlerFunc((w, r) => …)`). A generic one
+	// written with type arguments is left alone: its signature would need them
+	// substituted.
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && len(t.extractFuncCallTypeArgs(fun)) == 0 {
+		if ft := t.conversionFuncType(t.extractFuncName(fun)); ft != nil {
+			ctx.goFuncParamTypes = []transpiler.Type{*ft}
 		}
 	}
 
@@ -3257,8 +3258,45 @@ func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionC
 		t.tryThunkLambda = lambdaCtx
 		defer func() { t.tryThunkLambda = prev }()
 	}
-	expectedRetType, expectedParamTypes, _ := t.lambdaExpectation(s.typ)
+	expectedRetType, expectedParamTypes, isFunc := t.lambdaExpectation(s.typ)
+	if !isFunc && s.typ != nil && (s.typ.IsAny() || s.typ.String() == "interface{}") {
+		// A slot typed `any` (a Go `func Register(h any)`) takes the lambda as
+		// it is: each parameter is `any`, as the callee declares.
+		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, lambdaParamCount(lambdaCtx))
+	}
 	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+}
+
+// conversionFuncType returns the function type a call of name converts to
+// when name is a named function type rather than a function: a GALA alias
+// (through a chain of them), a Go type of the package's own .go files, or an
+// imported Go one (`http.HandlerFunc`). It returns nil otherwise.
+func (t *galaASTTransformer) conversionFuncType(name string) *transpiler.FuncType {
+	if name == "" {
+		return nil
+	}
+	if _, isAlias := t.typeAliases[name]; isAlias {
+		return t.resolveTranspilerTypeAsFuncType(transpiler.NamedType{Name: name})
+	}
+	key := t.ownGoTypeKey(name)
+	if qualifier, bare, ok := strings.Cut(name, "."); ok {
+		key = t.goQualifiedName(qualifier, bare)
+	}
+	if td := t.goTypeInfo.GetTypeData(key); td != nil && td.Kind == "named" {
+		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
+			return &ft
+		}
+	}
+	return nil
+}
+
+// lambdaParamCount is the number of parameters lambda declares.
+func lambdaParamCount(lambda *grammar.LambdaExpressionContext) int {
+	params, ok := lambda.Parameters().(*grammar.ParametersContext)
+	if !ok || params.ParameterList() == nil {
+		return 0
+	}
+	return len(params.ParameterList().(*grammar.ParameterListContext).AllParameter())
 }
 
 // transformArgument lowers an expression standing in argument slot s.
@@ -3744,6 +3782,8 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset map[string]string) (subst map[string]string, placeholders bool) {
 	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames)))
 	if len(inferred) == 0 && len(preset) == 0 {
+		// Nothing determines any type parameter: a lambda over them has no
+		// type to take, which is GALA-E0033 rather than an all-`any` guess.
 		return nil, false
 	}
 
@@ -3908,9 +3948,17 @@ func (t *galaASTTransformer) resolveGoFuncParamTypes(funcName string) []transpil
 		}
 	}
 
-	// For bare names, try each dot-imported package as qualifier
+	// For bare names, try the package being compiled — a function of its own
+	// hand-written .go files — then each dot-imported package as qualifier.
+	qualifiers := make([]string, 0, len(t.importManager.dotImports)+1)
+	if t.packageName != "" && !strings.Contains(funcName, ".") {
+		qualifiers = append(qualifiers, t.packageName)
+	}
 	for _, entry := range t.importManager.dotImports {
-		qualName := entry.PkgName + "." + funcName
+		qualifiers = append(qualifiers, entry.PkgName)
+	}
+	for _, qualifier := range qualifiers {
+		qualName := qualifier + "." + funcName
 		if sig := t.goTypeInfo.GetFuncSignature(qualName); sig != nil {
 			return sigToParams(sig)
 		}
