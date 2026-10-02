@@ -2889,10 +2889,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// (e.g. concurrent re-exporting go_interop's helpers) silently collide
 	// at Go compile time instead of producing a clean GALA-level error.
 	//
-	// In mixed GALA+Go packages we deliberately *exclude* the transpiler's
-	// own .gen.go output from this scan (another generator's .gen.go is the
-	// package's Go and is scanned): that output is a derivative of the .gala
-	// source and contributes the exact same symbols that already entered
+	// In mixed GALA+Go packages we deliberately *exclude* .gen.go files from
+	// this scan: those files are auto-generated derivatives of the .gala
+	// source and contribute the exact same symbols that already entered
 	// pkgAST.Types/Functions through the GALA analyzer above. Re-extracting
 	// them here is at best redundant and at worst actively harmful — a stale
 	// .gen.go left behind after its .gala counterpart was moved/renamed
@@ -3338,11 +3337,10 @@ func canonicalPath(path string) string {
 // or grouped. It parses the source, so text in comments or strings does not
 // count. A file no GOOS/GOARCH builds (`//go:build ignore`) exports nothing;
 // one built only for some platforms, or only with or only without cgo, is
-// kept, as the transpiler serves every target, not just its host. With
-// skipGalaOutput, the transpiler's own output exports nothing either.
-func exportedGoNames(src string, skipGalaOutput bool) (pkg string, names []string) {
+// kept, as the transpiler serves every target, not just its host.
+func exportedGoNames(src string) (pkg string, names []string) {
 	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution|goparser.ParseComments)
-	if f == nil || f.Name == nil || neverBuiltWithOrWithoutCgo(f) || (skipGalaOutput && writtenByGala(f)) {
+	if f == nil || f.Name == nil || neverBuiltWithOrWithoutCgo(f) {
 		return "", nil
 	}
 	add := func(id *ast.Ident) {
@@ -3377,14 +3375,13 @@ func exportedGoNames(src string, skipGalaOutput bool) (pkg string, names []strin
 // don't interfere with type resolution). Used for dot-import clash detection,
 // and as the Go side of a GALA package's type surface.
 //
-// includeGenerated controls whether the transpiler's own output contributes
+// includeGenerated controls whether auto-generated `.gen.go` files contribute
 // to the result. Pass true only when the package is consumed without GALA
-// source (cross-module compiled artifacts); when false, that output is
-// skipped because its contents are duplicates of the .gala source already
-// reflected in pkgAST.Types/Functions, and a stale one (left behind after its
-// .gala counterpart was moved) would otherwise pollute GoExports with phantom
-// symbols that the dot-import collision check would then flag. A .gen.go
-// another generator wrote is the package's own Go and always counts.
+// source (cross-module compiled artifacts); when false, .gen.go files are
+// skipped because their contents are duplicates of the .gala source already
+// reflected in pkgAST.Types/Functions, and a stale .gen.go (left behind
+// after its .gala counterpart was moved) would otherwise pollute GoExports
+// with phantom symbols that the dot-import collision check would then flag.
 func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPath string, pkgAST *transpiler.RichAST, includeGenerated bool) {
 	var symbols []string
 	seen := make(map[string]bool)
@@ -3393,11 +3390,14 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
 			continue
 		}
+		if !includeGenerated && strings.HasSuffix(f.Name(), ".gen.go") {
+			continue
+		}
 		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
 		if err != nil {
 			continue
 		}
-		pkg, names := exportedGoNames(string(content), !includeGenerated)
+		pkg, names := exportedGoNames(string(content))
 		if pkgAST.PackageName == "" && pkg != "" {
 			pkgAST.PackageName = pkg
 		}

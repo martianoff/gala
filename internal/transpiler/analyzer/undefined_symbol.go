@@ -314,11 +314,10 @@ type undefChecker struct {
 	// imports are this file's imports, for goTypeHint.
 	imports []fileImport
 
-	// sourceOnly holds the names of the file's dot-imported packages (std
-	// included) that only importedTopLevelNames' source scan found. The
-	// metadata did not model them, so it cannot say they are not types, and
-	// the type check accepts them.
-	sourceOnly map[string]bool
+	// sourceTypes holds the types importedTopLevelNames' source scan found in
+	// the file's dot-imported packages and std, which the type check accepts
+	// even where the metadata did not model them.
+	sourceTypes map[string]bool
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
@@ -338,14 +337,12 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	for name := range a.undefinedSymbolLocalGoNames(filePath) {
 		declared[name] = true
 	}
-	// Names only the source scan of the imported packages knows, which the
-	// metadata did not model; the type check accepts these too.
-	sourceOnly := make(map[string]bool)
-	for name := range a.importedTopLevelNames(imports) {
-		if !declared[name] {
-			sourceOnly[name] = true
-		}
+	sourceTypes := make(map[string]bool)
+	for name, isType := range a.importedTopLevelNames(imports) {
 		declared[name] = true
+		if isType {
+			sourceTypes[name] = true
+		}
 	}
 	scope := a.buildGalaScope(imports, richAST, filePath)
 	c := &undefChecker{
@@ -359,7 +356,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		reported:       make(map[string]int),
 		types:          a.indexTypes(imports, richAST, filePath, scope),
 		imports:        imports,
-		sourceOnly:     sourceOnly,
+		sourceTypes:    sourceTypes,
 	}
 	c.walker = scopewalk.New(c, undefWalkOptions())
 	c.walkSourceFile(sourceFile)
@@ -545,14 +542,14 @@ func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bo
 		if !imp.IsDot {
 			continue
 		}
-		for name := range a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix)) {
-			out[name] = true
+		for name, isType := range a.packageTopLevelNames(strings.TrimPrefix(imp.Path, inRepoGalaImportPrefix)) {
+			out[name] = out[name] || isType
 		}
 	}
 	// The implicit prelude is subject to the same treatment as any written
 	// import — it resolves through the ordinary package path, not a bypass.
-	for name := range a.packageTopLevelNames(registry.StdPackageName) {
-		out[name] = true
+	for name, isType := range a.packageTopLevelNames(registry.StdPackageName) {
+		out[name] = out[name] || isType
 	}
 	return out
 }
@@ -599,9 +596,15 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 // collectTopLevelDeclaredNames records into `out` every name the file's
 // top-level declarations introduce: free functions, types, struct shorthands,
 // sealed types and their case variants, package vals/vars (including
-// tuple-pattern destructuring), and embed bindings.
+// tuple-pattern destructuring), and embed bindings. A name's value is true
+// when it names a type.
 func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]bool) {
 	record := func(id grammar.IIdentifierContext) {
+		if id != nil && !out[id.GetText()] {
+			out[id.GetText()] = false
+		}
+	}
+	recordType := func(id grammar.IIdentifierContext) {
 		if id != nil {
 			out[id.GetText()] = true
 		}
@@ -622,14 +625,14 @@ func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]
 				record(fc.Identifier())
 			}
 		case topDecl.TypeDeclaration() != nil:
-			record(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier())
+			recordType(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier())
 		case topDecl.StructShorthandDeclaration() != nil:
-			record(topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext).Identifier())
+			recordType(topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext).Identifier())
 		case topDecl.SealedTypeDeclaration() != nil:
 			sc := topDecl.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
-			record(sc.Identifier())
+			recordType(sc.Identifier())
 			for _, cc := range sc.AllSealedCase() {
-				record(cc.(*grammar.SealedCaseContext).Identifier())
+				recordType(cc.(*grammar.SealedCaseContext).Identifier())
 			}
 		case topDecl.ValDeclaration() != nil:
 			vc := topDecl.ValDeclaration().(*grammar.ValDeclarationContext)
@@ -707,8 +710,14 @@ func parseLocalGoDeclNames(dir string) map[string]bool {
 		if e.IsDir() || !strings.HasSuffix(n, ".go") {
 			continue
 		}
-		f, perr := parser.ParseFile(fset, filepath.Join(dir, n), nil, parser.SkipObjectResolution|parser.ParseComments)
-		if perr != nil || f == nil || writtenByGala(f) || strings.HasSuffix(f.Name.Name, "_test") {
+		path := filepath.Join(dir, n)
+		// The header settles whether the file counts before the body is read.
+		head, herr := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly|parser.ParseComments)
+		if herr != nil || head == nil || writtenByGala(head) || strings.HasSuffix(head.Name.Name, "_test") {
+			continue
+		}
+		f, perr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if perr != nil || f == nil {
 			continue
 		}
 		for _, decl := range f.Decls {
@@ -1595,7 +1604,7 @@ func tupleDestructureType(n antlr.Tree) antlr.Tree {
 // caller. extra holds the packages a method signature may also use, as for
 // galaScope.hidesFrom.
 func (c *undefChecker) typeNameExists(name string, extra map[string]bool) bool {
-	if isGoPredeclaredTypeName(name) || c.sourceOnly[name] || c.types.has(name, extra) {
+	if isGoPredeclaredTypeName(name) || c.sourceTypes[name] || c.types.has(name, extra) {
 		return true
 	}
 	// A prelude package registers its type surface, which includes types its
@@ -1652,9 +1661,9 @@ func (ti typeIndex) has(name string, extra map[string]bool) bool {
 	// A Go package's type info comes from the host's build context, which
 	// lacks the types only another platform's files declare, and, when the
 	// package itself did not load, holds just the types other packages
-	// mention. So in a file that dot-imports a Go package, a name no GALA
-	// package declares may still be one of its types, and is not reported.
-	return len(ti.goVisible) > 0 && len(ti.galaOwners[name]) == 0
+	// mention. So in a file that dot-imports a Go package, a name not found
+	// may still be one of its types, and is not reported.
+	return len(ti.goVisible) > 0
 }
 
 func (a *galaAnalyzer) indexTypes(imports []fileImport, rich *transpiler.RichAST, filePath string, scope galaScope) typeIndex {
