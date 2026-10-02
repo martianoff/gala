@@ -14,7 +14,7 @@ sealed type Mode {
     case Append()
 }
 
-func observeLiteralTail(m Mode) int {
+func observeSeen(m Mode) int {
     var seen = 0
     m match {
         case Read() => {
@@ -27,10 +27,10 @@ func observeLiteralTail(m Mode) int {
             seen = 3
         }
     }
-    return seen
+    seen
 }
 
-func observeIdentTail(m Mode, label string) string {
+func observePicked(m Mode) string {
     var picked = ""
     m match {
         case Read() => {
@@ -43,14 +43,14 @@ func observeIdentTail(m Mode, label string) string {
             picked = "a"
         }
     }
-    return picked
+    picked
 }
 
 func main() {
-    Println(observeLiteralTail(Read()))
-    Println(observeLiteralTail(Write()))
-    Println(observeLiteralTail(Append()))
-    Println(observeIdentTail(Read(), "x"))
-    Println(observeIdentTail(Write(), "x"))
-    Println(observeIdentTail(Append(), "x"))
+    Println(observeSeen(Read()))
+    Println(observeSeen(Write()))
+    Println(observeSeen(Append()))
+    Println(observePicked(Read()))
+    Println(observePicked(Write()))
+    Println(observePicked(Append()))
 }
