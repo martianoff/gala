@@ -550,6 +550,17 @@ func v() {
 			wantErr: "is evaluated but not used",
 		},
 		{
+			// A val field read lowers to a `.Get()` call no one wrote.
+			name:    "val field read as an if-expression branch",
+			body:    "\nstruct Box(n int)\n\nfunc f(b Box, c bool) {\n    if (c) b.n else Println(\"x\")\n}\n",
+			wantErr: "`b.n` is evaluated but not used",
+		},
+		{
+			name:    "if-expression body of a function with no result type names the result type",
+			body:    "\nfunc f(c bool) = if (c) 1 else 2\n",
+			wantErr: "declare the function's result type to return it",
+		},
+		{
 			name:    "if-expression in an expression arm of a statement match",
 			body:    "\nfunc f(n int) {\n    n match {\n        case 0 => if (n > 0) 1 else Println(\"no\")\n        case _ => Println(n)\n    }\n}\n",
 			wantErr: "`1` is evaluated but not used",

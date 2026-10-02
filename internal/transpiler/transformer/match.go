@@ -1597,7 +1597,6 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 // armSlot is the slot the match fills (zero when none); an
 // expression body is lowered against it (see lowerAgainst).
 func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
-	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
 		// `case x => break` runs loop control; the arm has no value.
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
@@ -1608,12 +1607,13 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		// if-expression runs as a statement (its own arms may hold loop
 		// control), and a plain value is evaluated but not used.
 		if armSlot.discarded {
-			stmt, err := t.lowerExpressionStatement(exprCtx)
+			stmt, err := t.lowerExpressionStatement(exprCtx, functionDiscardHint)
 			if err != nil {
 				return nil, nil, err
 			}
 			return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
 		}
+		// Otherwise the body is the arm's value: wrap it in a return.
 		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 			return nil, nil, err
 		}
@@ -1632,17 +1632,6 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		return nil, nil, err
 	}
 	return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
-}
-
-// isBareLoopControl reports whether exprCtx is a bare `break` or `continue`.
-// Loop control is not a value, so it is not this check's to reject; it keeps
-// the arm lowering it has.
-func isBareLoopControl(exprCtx grammar.IExpressionContext) bool {
-	start, stop := exprCtx.GetStart(), exprCtx.GetStop()
-	if start == nil || stop == nil || start.GetTokenIndex() != stop.GetTokenIndex() {
-		return false
-	}
-	return start.GetText() == "break" || start.GetText() == "continue"
 }
 
 // Pattern transformation functions moved to patterns.go

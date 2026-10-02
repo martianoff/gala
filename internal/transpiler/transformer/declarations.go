@@ -1011,20 +1011,9 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 // is a statement, and a value nothing uses is rejected as evaluated but not
 // used.
 func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpressionContext) (*ast.BlockStmt, error) {
-	stmt, err := t.lowerDiscardedExpression(exprCtx)
+	stmt, err := t.lowerExpressionStatement(exprCtx, expressionFunctionDiscardHint)
 	if err != nil {
 		return nil, err
-	}
-	if err := t.checkValueUsedHint(exprCtx, stmt, expressionFunctionDiscardHint); err != nil {
-		return nil, err
-	}
-	if es, ok := stmt.(*ast.ExprStmt); ok {
-		// checkValueUsedHint lets a val field read (`= b.n`) through: it
-		// lowers to a `.Get()` call although no call was written.
-		if isZeroArgGetCall(es.X) && !t.endsInCall(exprCtx) {
-			return nil, t.semanticErrorAt(exprCtx, fmt.Sprintf(
-				"`%s` is evaluated but not used; %s", exprCtx.GetText(), expressionFunctionDiscardHint))
-		}
 	}
 	if block, ok := stmt.(*ast.BlockStmt); ok {
 		return block, nil
