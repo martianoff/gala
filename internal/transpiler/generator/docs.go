@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"strings"
 )
 
 // Doc comments on a synthetic AST
@@ -109,32 +108,23 @@ func spliceFieldDocs(src []byte, docs []fieldDoc) []byte {
 		return src
 	}
 
-	lines := strings.Split(string(src), "\n")
-	var out strings.Builder
+	var out bytes.Buffer
 	out.Grow(len(src))
-	for i, line := range lines {
+	for i, line := range bytes.SplitAfter(src, []byte("\n")) {
 		if doc := insert[i+1]; doc != nil {
-			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			for _, c := range doc.List {
-				out.WriteString(indent)
-				out.WriteString(c.Text)
-				out.WriteByte('\n')
-			}
+			writeComment(&out, line[:len(line)-len(bytes.TrimLeft(line, " \t"))], doc)
 		}
-		out.WriteString(line)
-		if i < len(lines)-1 {
-			out.WriteByte('\n')
-		}
+		out.Write(line)
 	}
-	return []byte(out.String())
+	return out.Bytes()
 }
 
-// commentText renders a comment group as source lines, one comment per line.
-func commentText(g *ast.CommentGroup) []byte {
-	var buf bytes.Buffer
+// writeComment writes a comment group as source lines, one comment per line,
+// each prefixed by indent.
+func writeComment(buf *bytes.Buffer, indent []byte, g *ast.CommentGroup) {
 	for _, c := range g.List {
+		buf.Write(indent)
 		buf.WriteString(c.Text)
 		buf.WriteByte('\n')
 	}
-	return buf.Bytes()
 }

@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -783,13 +784,12 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 	type marker struct {
 		galaLine int  // the encoded GALA source line the directive maps to
 		isDecl   bool // top-level var marker (drops the following gofmt blank)
-		hoisted  bool // the directive goes above the marker's doc comment instead
+		// docLines, when nonzero, is the length of the doc comment directly
+		// above a top-level marker: the directive goes above that doc instead.
+		docLines int
 	}
 	// Keyed by 1-based physical line number of the marker node in `code`.
 	markers := make(map[int]marker)
-	// Directives hoisted above a documented declaration's doc comment, keyed by
-	// the doc's first line; the value is the GALA line the directive names.
-	hoistedAt := make(map[int]int)
 
 	// Every marker identifier in the file must land in one of the two shapes
 	// below. Counting both totals lets the reconciliation check below catch any
@@ -830,10 +830,9 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 						line := fset.Position(node.Pos()).Line
 						if node.Doc != nil {
 							// See the doc comment above for this layout.
-							docStart := fset.Position(node.Doc.Pos()).Line
-							if mapped := galaLine - 1 - (line - docStart); mapped >= 1 {
-								hoistedAt[docStart] = mapped
-								m.hoisted = true
+							docLines := line - fset.Position(node.Doc.Pos()).Line
+							if galaLine-1-docLines >= 1 {
+								m.docLines = docLines
 							}
 						}
 						markers[line] = m
@@ -867,11 +866,13 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 	result := make([]string, 0, len(lines))
 
 	for i := 0; i < len(lines); i++ {
-		if galaLine, ok := hoistedAt[i+1]; ok {
-			result = append(result, fmt.Sprintf("//line %s:%d", slashPath, galaLine), "")
-		}
 		if m, ok := markers[i+1]; ok {
-			if !m.hoisted {
+			if m.docLines > 0 {
+				// The doc is already in result; slot the directive and a blank
+				// line in above it.
+				directive := fmt.Sprintf("//line %s:%d", slashPath, m.galaLine-1-m.docLines)
+				result = slices.Insert(result, len(result)-m.docLines, directive, "")
+			} else {
 				result = append(result, fmt.Sprintf("//line %s:%d", slashPath, m.galaLine))
 			}
 			// For a top-level marker, drop the single gofmt-inserted blank line

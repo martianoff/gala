@@ -2,6 +2,7 @@ package transformer_test
 
 import (
 	"go/ast"
+	"go/build/constraint"
 	"go/doc"
 	"go/parser"
 	"go/token"
@@ -68,6 +69,18 @@ func undocumented() int {
 	// BODY_COMMENT inside a function body is not carried.
 	return 1 // TRAILING_COMMENT is not carried.
 }
+
+// Box is a documented generic struct.
+type Box[T any] struct {
+	// Value is a documented generic field.
+	Value T
+}
+
+// Size shares a field name with Point.
+type Size struct {
+	// X is the width, not Point's X.
+	X int
+}
 `
 
 // docCommentDecls maps each documented Go declaration to its doc text (as
@@ -79,7 +92,7 @@ var docCommentDecls = []struct {
 }{
 	{"Add", "Add returns the sum of a and b. @Summary Adds two numbers @Router /add [get]", 9},
 	{"Config", "Config is a block-commented struct.", 12},
-	{"Describe", "Describe is a documented method.", 19},
+	{"Config.Describe", "Describe is a documented method.", 19},
 	{"Shape", "Shape is a documented sealed type.", 22},
 	{"Circle", "Circle is a documented case.", 0}, // a companion type, not line-mapped
 	{"Greeter", "Greeter is a documented interface.", 29},
@@ -87,6 +100,8 @@ var docCommentDecls = []struct {
 	{"Millis", "Millis is a documented type.", 42},
 	{"Limit", "Limit is a documented val.", 45},
 	{"Counter", "Counter is a documented var.", 48},
+	{"Box", "Box is a documented generic struct.", 56},
+	{"Size", "Size shares a field name with Point.", 62},
 }
 
 // TestDocComments_GeneratedGo checks that every documented GALA declaration's
@@ -135,6 +150,8 @@ func TestDocComments_GeneratedGo(t *testing.T) {
 			assertFieldDoc(t, file, "Point", "X", "X is a documented field.")
 			assertFieldDoc(t, file, "Greeter", "Greet", "Greet is a documented interface method.")
 			assertFieldDoc(t, file, "Point", "Y", "")
+			assertFieldDoc(t, file, "Box", "Value", "Value is a documented generic field.")
+			assertFieldDoc(t, file, "Size", "X", "X is the width, not Point's X.")
 
 			pkg, err := doc.NewFromFiles(fset, []*ast.File{file}, "example.com/docs", doc.PreserveAST)
 			require.NoError(t, err)
@@ -150,7 +167,7 @@ func TestDocComments_GeneratedGo(t *testing.T) {
 			for _, typ := range pkg.Types {
 				got[typ.Name] = typ.Doc
 				for _, m := range typ.Methods {
-					got[m.Name] = m.Doc
+					got[typ.Name+"."+m.Name] = m.Doc
 				}
 				for _, f := range typ.Funcs {
 					got[f.Name] = f.Doc
@@ -161,7 +178,9 @@ func TestDocComments_GeneratedGo(t *testing.T) {
 					"go/doc must attach the doc comment of %s", want.name)
 			}
 			assert.Empty(t, got["Square"], "an undocumented case gets no doc")
-			assert.Empty(t, got["Copy"], "generated helpers get no doc")
+			for _, typ := range []string{"Config", "Shape", "Point", "Box", "Size"} {
+				assert.Empty(t, got[typ+".Copy"], "generated helper %s.Copy gets no doc", typ)
+			}
 		})
 	}
 }
@@ -172,7 +191,7 @@ func declPosition(fset *token.FileSet, file *ast.File, name string) (token.Posit
 	for _, d := range file.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
-			if d.Name.Name == name {
+			if funcDeclName(d) == name {
 				return fset.Position(d.Pos()), true
 			}
 		case *ast.GenDecl:
@@ -225,4 +244,100 @@ func assertFieldDoc(t *testing.T, file *ast.File, typeName, fieldName, want stri
 		t.Fatalf("%s.%s not found", typeName, fieldName)
 	}
 	t.Fatalf("type %s not found", typeName)
+}
+
+// funcDeclName names a function `F` and a method `Recv.M`.
+func funcDeclName(d *ast.FuncDecl) string {
+	if d.Recv == nil || len(d.Recv.List) == 0 {
+		return d.Name.Name
+	}
+	recv := d.Recv.List[0].Type
+	if star, ok := recv.(*ast.StarExpr); ok {
+		recv = star.X
+	}
+	switch r := recv.(type) {
+	case *ast.IndexExpr:
+		recv = r.X
+	case *ast.IndexListExpr:
+		recv = r.X
+	}
+	if id, ok := recv.(*ast.Ident); ok {
+		return id.Name + "." + d.Name.Name
+	}
+	return d.Name.Name
+}
+
+// TestDocComments_BuildConstraintNotEmitted pins that a `+build` line in a doc
+// comment never reaches the generated Go. gofmt collects a `// +build` line
+// from anywhere in a file and writes a matching `//go:build` header, so one in
+// a doc would silently drop the whole generated file from the build.
+func TestDocComments_BuildConstraintNotEmitted(t *testing.T) {
+	const src = `// Package constrained is documented.
+// +build ignore
+package constrained
+
+// Run runs.
+// +build ignore
+func Run() int = 1
+
+// Opts holds options.
+type Opts struct {
+	// Level is a level.
+	// +build ignore
+	Level int
+	/* Mode is a mode.
+	+build ignore */
+	Mode int
+}
+`
+	for _, filePath := range []string{"constrained.gala", ""} {
+		goCode, err := newLineDirectiveTranspiler().Transpile(src, filePath)
+		require.NoError(t, err)
+		assert.NotContains(t, goCode, "+build", "no +build line may be emitted\n%s", goCode)
+		assert.NotContains(t, goCode, "go:build", "no build constraint may be synthesized\n%s", goCode)
+
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "constrained.gen.go", goCode, parser.ParseComments)
+		require.NoError(t, err)
+		for _, g := range file.Comments {
+			for _, c := range g.List {
+				assert.False(t, constraint.IsGoBuild(c.Text) || constraint.IsPlusBuild(c.Text),
+					"build constraint %q in generated Go", c.Text)
+			}
+		}
+		assert.Equal(t, "Package constrained is documented.\n", file.Doc.Text())
+		assertFieldDoc(t, file, "Opts", "Level", "Level is a level.")
+		assertFieldDoc(t, file, "Opts", "Mode", "Mode is a mode.")
+	}
+}
+
+// TestDocComments_ControlCharactersStripped pins that control characters in a
+// doc comment are dropped from the generated Go and the file still parses.
+// NUL, a stray byte-order mark and invalid UTF-8 never get this far: the parser
+// rejects them in any GALA source, which the last case pins.
+func TestDocComments_ControlCharactersStripped(t *testing.T) {
+	src := "package odd\n\n// Run\x01 runs\x1b fast\x7f.\nfunc Run() int = 1\n\n" +
+		"// Opts\x07 holds options.\ntype Opts struct {\n\t// Level\x08 is a level.\n\tLevel int\n}\n"
+	for _, filePath := range []string{"odd.gala", ""} {
+		goCode, err := newLineDirectiveTranspiler().Transpile(src, filePath)
+		require.NoError(t, err)
+
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "odd.gen.go", goCode, parser.ParseComments)
+		require.NoError(t, err, "generated Go must parse:\n%s", goCode)
+		pkg, err := doc.NewFromFiles(fset, []*ast.File{file}, "example.com/odd", doc.PreserveAST)
+		require.NoError(t, err)
+		require.Len(t, pkg.Funcs, 1)
+		assert.Equal(t, "Run runs fast.\n", pkg.Funcs[0].Doc)
+		require.Len(t, pkg.Types, 1)
+		assert.Equal(t, "Opts holds options.\n", pkg.Types[0].Doc)
+		assertFieldDoc(t, file, "Opts", "Level", "Level is a level.")
+		assert.NotContains(t, goCode, "\x01")
+		assert.NotContains(t, goCode, "\x07")
+	}
+
+	for _, bad := range []string{"\x00", "\xef\xbb\xbf", "\xff"} {
+		_, err := newLineDirectiveTranspiler().Transpile("package odd\n\n// Run"+bad+" runs.\nfunc Run() int = 1\n", "odd.gala")
+		assert.ErrorContains(t, err, "GALA-E0051", "%q in a doc comment must be rejected at parse", bad)
+	}
 }

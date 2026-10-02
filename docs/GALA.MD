@@ -4817,7 +4817,7 @@ func (o Option[T]) GetOrElse(defaultValue T) T {
   ```
 - A blank `//` line is a **paragraph break**. Indented lines are preserved, so an
   indented run reads as a code sample.
-- `//go:` and `//line` are **directives**, not prose. They contribute nothing to
+- `//go:`, `//line` and `// +build` are **directives**, not prose. They contribute nothing to
   the text but do not break a run that continues past them.
 - Comment syntax inside a string is not a comment — `val s = "// not a comment"`
   is a string, and the declaration below it is undocumented.
@@ -4891,7 +4891,7 @@ is kept in order.
 Only declaration documentation is carried. Comments inside function bodies,
 trailing comments, and comments that document nothing (separated from the next
 declaration by a blank line) do not appear in the generated Go. Neither do
-`//go:` and `//line` lines: they are directives, not documentation, so a
+`//go:`, `//line` and `// +build` lines: they are directives, not documentation, so a
 `//go:noinline` written in GALA has no effect on the generated Go.
 
 ## 20. IDE Support

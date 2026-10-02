@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"go/ast"
+	"go/build/constraint"
 	"go/token"
 	"strings"
 
@@ -36,6 +37,15 @@ import (
 
 // docCommentGroup renders harvested doc prose as a `//` comment group, or nil
 // for an empty doc.
+//
+// Two kinds of line cannot be copied through verbatim. A `+build` line is a
+// build constraint wherever it sits in a Go file — gofmt lifts it into a
+// `//go:build` header, which can silently exclude the whole file — so it is
+// dropped. (The parser already treats it as a directive; this also covers a
+// `+build` line inside a block comment.) And control characters are removed:
+// they have no place in rendered documentation, and the characters Go rejects
+// outright are removed with them, so a doc can never make the generated file
+// unparseable.
 func docCommentGroup(doc string) *ast.CommentGroup {
 	if doc == "" {
 		return nil
@@ -44,18 +54,38 @@ func docCommentGroup(doc string) *ast.CommentGroup {
 	g := &ast.CommentGroup{List: make([]*ast.Comment, 0, len(lines))}
 	for _, line := range lines {
 		text := "//"
-		if line != "" {
+		if line = sanitizeDocLine(line); line != "" {
 			text += " " + line
 		}
+		if constraint.IsPlusBuild(text) {
+			continue
+		}
 		g.List = append(g.List, &ast.Comment{Text: text})
+	}
+	if len(g.List) == 0 {
+		return nil
 	}
 	return g
 }
 
+// sanitizeDocLine removes C0 and DEL control characters other than tab from
+// one doc line, along with what Go source may not hold at all: invalid UTF-8
+// and the byte-order mark. (The parser already rejects those two, and NUL, in
+// any GALA source; removing them here keeps that guarantee local.)
+func sanitizeDocLine(line string) string {
+	line = strings.ToValidUTF8(line, "")
+	return strings.Map(func(r rune) rune {
+		if r == 0xFEFF || (r < 0x20 && r != '\t') || r == 0x7F {
+			return -1
+		}
+		return r
+	}, line)
+}
+
 // docFor returns the doc comment group for the declaration whose first token is
-// start, or nil when it is undocumented.
+// start, or nil when it is undocumented. The caller has checked t.richAST.
 func (t *galaASTTransformer) docFor(start antlr.Token) *ast.CommentGroup {
-	if t.richAST == nil || start == nil {
+	if start == nil {
 		return nil
 	}
 	return docCommentGroup(t.richAST.Docs[start.GetStart()])

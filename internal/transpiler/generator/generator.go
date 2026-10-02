@@ -69,15 +69,15 @@ func (g *goCodeGenerator) Generate(fset *token.FileSet, file *ast.File) (string,
 	}
 
 	var buf bytes.Buffer
+	if pkgDoc != nil {
+		writeComment(&buf, nil, pkgDoc)
+	}
 	if err := format.Node(&buf, fset, file); err != nil {
 		return "", err
 	}
 	src := buf.Bytes()
 	if len(fieldDocs) > 0 {
 		src = spliceFieldDocs(src, fieldDocs)
-	}
-	if pkgDoc != nil {
-		src = append(commentText(pkgDoc), src...)
 	}
 	if canonical, err := format.Source(src); err == nil {
 		return generatedHeader + string(canonical), nil
