@@ -318,6 +318,9 @@ type undefChecker struct {
 	// the file's dot-imported packages and std, which the type check accepts
 	// even where the metadata did not model them.
 	sourceTypes map[string]bool
+
+	// inTypePass is set while checkTypeNames runs; see reportWith.
+	inTypePass bool
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
@@ -1048,10 +1051,10 @@ func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string
 	// than a name-length slice of it.
 	span := tok.GetColumn() + len([]rune(tok.GetText()))
 	if idx, seen := c.reported[name]; seen {
-		// The value and type passes each meet a name in their own order, so a
-		// later report may sit earlier in the file. Point at the first use.
+		// The type pass runs after the value pass, so a name both report may
+		// first be used in a type position earlier in the file: point there.
 		prev := c.errs[idx]
-		if tok.GetLine() < prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() < prev.Column) {
+		if c.inTypePass && (tok.GetLine() < prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() < prev.Column)) {
 			moved := *prev
 			moved.Line, moved.Column = tok.GetLine(), tok.GetColumn()
 			c.errs[idx] = moved.WithSpan(span)
@@ -1480,6 +1483,8 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 // allowance GALA-E0025 makes for method signatures. receiverImports returns
 // them. The method body gets no allowance, for type and value names alike.
 func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext, receiverImports func(recvType string) map[string]bool) {
+	c.inTypePass = true
+	defer func() { c.inTypePass = false }()
 	typeParams := collectFileTypeBinders(sourceFile)
 	var walk func(n antlr.Tree, extra map[string]bool)
 	walk = func(n antlr.Tree, extra map[string]bool) {
@@ -1644,8 +1649,8 @@ type typeIndex struct {
 	// localGo holds the declarations of this package's own Go files.
 	localGo map[string]bool
 	// galaOwners maps a name to the GALA packages declaring it as a type,
-	// alias or companion, in GALA or in their own Go files (GoExports, which
-	// holds the scanned Go files of GALA packages only).
+	// alias or companion, or in their own Go files (GoExports, which holds the
+	// scanned Go files of GALA packages only, without telling types apart).
 	galaOwners map[string][]string
 	// galaVisible is galaScope's visible set: this package, the prelude and
 	// the GALA packages this file dot-imports.
@@ -1770,7 +1775,7 @@ func (c *undefChecker) goTypeHint(name string) string {
 		return ""
 	}
 	owner := slices.Min(owners)
-	return fmt.Sprintf("%s is a type of the Go package %s, which this file does not import; import it and write `%s.%s`",
+	return fmt.Sprintf("%s is a type of the Go package %s, which this file does not import; import the package that declares it and write `%s.%s`",
 		name, owner, owner, name)
 }
 
