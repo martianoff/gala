@@ -305,10 +305,8 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		switch {
 		case ft == nil || ft.IsNil():
 		case isFunc || isTuple, ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
-			// The field's recorded type is its value's type: a shorthand val
-			// field declared Immutable[T] is recorded as T
-			// (transpiler.ShorthandFieldType), while a var field, or a block
-			// form val field, declared Immutable[T] holds an Immutable[T].
+			// The field's recorded type is its value's type
+			// (see transpiler.ShorthandFieldType).
 			expectedType = ft
 		}
 	}

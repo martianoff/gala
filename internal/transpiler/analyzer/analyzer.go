@@ -3244,12 +3244,7 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 // to populate ImmutFlags so downstream auto-unwrap fires on cross-package
 // access of types whose only metadata source is the generated .gen.go.
 func isGoFieldImmutable(typ transpiler.Type) bool {
-	if transpiler.IsUnusable(typ) {
-		return false
-	}
-	base := typ.BaseName()
-	return base == transpiler.TypeImmutable ||
-		strings.HasSuffix(base, "."+transpiler.TypeImmutable)
+	return transpiler.IsImmutableType(typ)
 }
 
 // hasTypeDefinition returns true if the TypeMetadata represents a full type definition

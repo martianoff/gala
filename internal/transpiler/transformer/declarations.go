@@ -1145,6 +1145,8 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 
 			if isVal {
 				// Only wrap if it's not already wrapped by transformParameter (e.g. if 'val' was explicit)
+				// or declared Immutable[T]. The field's recorded type must agree:
+				// transpiler.ShorthandFieldType records the latter as T.
 				alreadyWrapped := false
 				if idxExpr, ok := field.Type.(*ast.IndexExpr); ok {
 					if sel, ok := idxExpr.X.(*ast.SelectorExpr); ok {
