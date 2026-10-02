@@ -1114,9 +1114,10 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 			hasSpread = true
 		}
 		positional := !isSpread && arg.Identifier() == nil
-		// A lambda takes its parameter types from the Go method's parameter.
+		// A lambda takes its parameter types from the Go method's parameter,
+		// once the signature is instantiated (see goMethodSignature).
 		expected := transpiler.Type(transpiler.NilType{})
-		if positional && lambdaCtx != nil {
+		if positional && lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) == 0 {
 			expected = goSigParamType(goSig, i)
 		}
 		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expected), false)
@@ -1139,10 +1140,11 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 }
 
 // goSigParamType is the type of the parameter the i-th positional argument of
-// a call of sig fills, or NilType when there is none. A signature that still declares type parameters
-// is not instantiated, so its parameter types are not used.
+// a call of sig fills, or NilType when there is none (sig may be nil). Every
+// argument past the last parameter of a variadic signature fills that one,
+// whose type is recorded element-wise: `...string` as string.
 func goSigParamType(sig *transpiler.GoFuncSignature, i int) transpiler.Type {
-	if sig == nil || len(sig.TypeParams) > 0 || len(sig.Params) == 0 {
+	if sig == nil || len(sig.Params) == 0 {
 		return transpiler.NilType{}
 	}
 	if i >= len(sig.Params) {

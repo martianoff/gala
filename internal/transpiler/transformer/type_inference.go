@@ -1387,17 +1387,8 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 	}
 
 	for i, arg := range args {
-		var paramType transpiler.Type
-		switch {
-		case i < len(sig.Params):
-			paramType = sig.Params[i].Type
-		case sig.IsVariadic && len(sig.Params) > 0:
-			// Every trailing argument matches the variadic parameter. Its type
-			// is already stored element-wise (convertSignature unwraps `...T`
-			// to T), so no further unwrapping is needed here.
-			paramType = sig.Params[len(sig.Params)-1].Type
-		}
-		if paramType == nil || paramType.IsNil() {
+		paramType := goSigParamType(sig, i)
+		if paramType.IsNil() {
 			continue
 		}
 
@@ -1460,12 +1451,17 @@ func (t *galaASTTransformer) instantiateGoSignatureReturns(
 	if len(subst) == 0 {
 		return sig.Returns
 	}
-	out := make([]transpiler.Type, len(sig.Returns))
-	for i, ret := range sig.Returns {
-		if ret == nil {
-			continue
+	return t.substituteInTypes(sig.Returns, subst)
+}
+
+// substituteInTypes is substituteInType over each of types, into a new slice;
+// a nil entry stays nil.
+func (t *galaASTTransformer) substituteInTypes(types []transpiler.Type, subst map[string]transpiler.Type) []transpiler.Type {
+	out := make([]transpiler.Type, len(types))
+	for i, typ := range types {
+		if typ != nil {
+			out[i] = t.substituteInType(typ, subst)
 		}
-		out[i] = t.substituteInType(ret, subst)
 	}
 	return out
 }
@@ -1588,15 +1584,13 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 	}
 	inst := &transpiler.GoFuncSignature{
 		Params:     make([]transpiler.GoParam, len(sig.Params)),
-		Returns:    make([]transpiler.Type, len(sig.Returns)),
+		Returns:    t.substituteInTypes(sig.Returns, subst),
 		IsVariadic: sig.IsVariadic,
 	}
 	for i, p := range sig.Params {
-		inst.Params[i] = transpiler.GoParam{Name: p.Name, Type: t.substituteInType(p.Type, subst)}
-	}
-	for i, r := range sig.Returns {
-		if r != nil {
-			inst.Returns[i] = t.substituteInType(r, subst)
+		inst.Params[i] = transpiler.GoParam{Name: p.Name, Type: p.Type}
+		if p.Type != nil {
+			inst.Params[i].Type = t.substituteInType(p.Type, subst)
 		}
 	}
 	return inst

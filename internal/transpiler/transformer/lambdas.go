@@ -652,9 +652,6 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 // the method signature on that type. This handles chained calls like exec.Command(...).Output()
 // where the receiver is a CallExpr rather than a simple Ident.
 func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, methodName string) *transpiler.GoFuncSignature {
-	if t.goTypeInfo == nil {
-		return nil
-	}
 	return t.goMethodSignature(t.getExprTypeNameManual(receiver), methodName)
 }
 
