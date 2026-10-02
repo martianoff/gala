@@ -22,6 +22,15 @@ type Mk[A any, B any] struct {}
 
 func (m Mk[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
 
+type Via[A any, B any] struct {}
+
+func (v Via[A, B]) Apply(a A, f func(A) B) Pair[A, B] = Pair[A, B](a, f(a))
+
+sealed type Res[T any, E any] {
+    case Ok(V T)
+    case Err(Msg E)
+}
+
 `
 	tests := []struct {
 		name     string
@@ -53,6 +62,21 @@ func (m Mk[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
 			body:     "func main() { Println(Mk[int](2, \"c\").Second) }\n",
 			contains: []string{"Mk[int, string]{}.Apply(2, \"c\")"},
 		},
+		{
+			name:     "companion Apply, a lambda over the written type argument",
+			body:     "func main() { Println(Via[int](2, (x) => s\"${x}\").Second) }\n",
+			contains: []string{"Via[int, string]{}.Apply(2, func(x int) string {"},
+		},
+		{
+			name:     "sealed case, named argument",
+			body:     "func main() { Println(Err[int](Msg = \"x\")) }\n",
+			contains: []string{"Err[int, string]{}.Apply(\"x\")"},
+		},
+		{
+			name:     "sealed case, positional argument",
+			body:     "func main() { Println(Err[int](\"y\")) }\n",
+			contains: []string{"Err[int, string]{}.Apply(\"y\")"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,6 +97,11 @@ func TestPartialConstructorTypeArgsUninferable(t *testing.T) {
 			name: "companion Apply",
 			body: "type Mk[A any, B any] struct {}\n\nfunc (m Mk[A, B]) Apply(a A) int = 1\n\nfunc main() { Println(Mk[int](2)) }\n",
 			want: "cannot infer type argument B of Mk",
+		},
+		{
+			name: "sealed case, named argument, a type parameter no field names",
+			body: "sealed type Res[T any, E any] {\n    case Ok(V T)\n    case Err(Msg E)\n}\n\nfunc main() { Println(Ok[int](V = 1)) }\n",
+			want: "cannot infer type argument E of Ok",
 		},
 		{
 			name: "struct constructor, a type parameter no field names",

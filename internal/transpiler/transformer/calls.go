@@ -1378,7 +1378,10 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Infer type args from argument types and enclosing return type. A partial
 	// list (`Mk[int](2, "c")` for `Mk[A, B]`) binds its leading type
 	// parameters as written and has the rest inferred the same way.
-	if len(typeArgs) < len(typeMeta.TypeParams) {
+	// A generic alias's written arguments are its own, not the leading ones of
+	// the type it names, so they are left as written.
+	_, viaAlias := t.lookupTypeAlias(origTypeName)
+	if len(typeArgs) < len(typeMeta.TypeParams) && !(viaAlias && len(typeArgs) > 0) {
 		inferredMap := t.writtenTypeArgs(typeMeta.TypeParams, typeArgs)
 		// Step 1: infer from Apply method arguments.
 		for i, arg := range args {
@@ -2021,6 +2024,16 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 					ctx.applyMethodMeta = applyMeta
 					ctx.applyTypeParams = typeMeta.TypeParams
 					ctx.applyTypeSubst = explicitTypeArgSubst(typeMeta.TypeParams, t.extractFuncCallTypeArgs(fun))
+					// A partial list (`Mk[int](2, (x) => …)`) is completed
+					// from the arguments as a generic function call's is, so
+					// no argument is lowered against a bare type-parameter name.
+					if n := len(ctx.applyTypeSubst); n > 0 && n < len(typeMeta.TypeParams) && argListCtx != nil {
+						ctx.applyTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(&transpiler.FunctionMetadata{
+							TypeParams: typeMeta.TypeParams,
+							ParamTypes: applyMeta.ParamTypes,
+							ParamNames: applyMeta.ParamNames,
+						}, argListCtx, ctx.applyTypeSubst)
+					}
 				}
 			}
 		}
@@ -2387,7 +2400,11 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return nil, ferr
 			}
 			if found {
-				return buildSealedVariantApplyCall(t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs), variantFieldNames, namedArgs), nil
+				variantFun, err := t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs, line, col)
+				if err != nil {
+					return nil, err
+				}
+				return buildSealedVariantApplyCall(variantFun, variantFieldNames, namedArgs), nil
 			}
 		}
 		// 3. Regular GALA struct construction with named args. A named
@@ -2521,25 +2538,35 @@ func decodeGenericBase(x ast.Expr) (string, string) {
 }
 
 // inferVariantTypeArgs adds type arguments to a generic sealed variant built
-// with named arguments and no explicit type arguments, inferred from the
-// argument values against the variant's field types. It returns fun unchanged
-// when inference does not apply or cannot bind every type parameter.
-func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.SealedVariant, parent *transpiler.TypeMetadata, namedArgs map[string]ast.Expr) ast.Expr {
-	switch fun.(type) {
+// with named arguments and none or only its leading type arguments written,
+// inferred from the argument values against the variant's field types. With
+// none written it returns fun unchanged when inference cannot bind every type
+// parameter; a partial list that cannot be completed is an error.
+func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.SealedVariant, parent *transpiler.TypeMetadata, namedArgs map[string]ast.Expr, line, col int) (ast.Expr, error) {
+	base, written := splitCallFunTypeArgs(fun)
+	switch base.(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
-		return fun
+		return fun, nil
 	}
-	if sv == nil || parent == nil || len(parent.TypeParams) == 0 {
-		return fun
+	if sv == nil || parent == nil || len(written) >= len(parent.TypeParams) {
+		return fun, nil
 	}
-	inferred := make(map[string]transpiler.Type, len(parent.TypeParams))
+	inferred := t.writtenTypeArgs(parent.TypeParams, written)
 	for i, fieldName := range sv.FieldNames {
 		if val, ok := namedArgs[fieldName]; ok && i < len(sv.FieldTypes) {
 			t.unifyFieldArgForInference(sv.FieldTypes[i], val, parent.TypeParams, inferred)
 		}
 	}
-	return withTypeArgs(fun, t.orderedTypeArgExprs(parent.TypeParams, inferred))
+	instantiated, missing := t.completeTypeArgs(base, parent.TypeParams, written, inferred)
+	switch {
+	case missing == nil:
+		return instantiated, nil
+	case len(written) > 0:
+		name, _ := extractTypeNameFromExpr(base)
+		return nil, uninferredTypeArgError(line, col, name, "its fields", name, parent.TypeParams, missing)
+	}
+	return fun, nil
 }
 
 // buildSealedVariantApplyCall generates `VariantName{}.Apply(args...)`
@@ -2737,17 +2764,18 @@ func (t *galaASTTransformer) structLiteralType(
 // then the inferred ones. It returns the type parameters left without one
 // instead when inference did not determine them all.
 func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string, written []ast.Expr, inferred map[string]transpiler.Type) (ast.Expr, []string) {
-	typeArgs := t.orderedTypeArgExprs(typeParams, inferred)
-	if typeArgs == nil {
-		var missing []string
-		for _, tp := range typeParams {
-			if typ, ok := inferred[tp]; !ok || transpiler.IsUnusable(typ) {
-				missing = append(missing, tp)
-			}
+	typeArgs := slices.Clone(written)
+	var missing []string
+	for _, tp := range typeParams[len(written):] {
+		if typ, ok := inferred[tp]; ok && !transpiler.IsUnusable(typ) {
+			typeArgs = append(typeArgs, t.typeToExpr(typ))
+		} else {
+			missing = append(missing, tp)
 		}
+	}
+	if missing != nil {
 		return nil, missing
 	}
-	copy(typeArgs, written)
 	return withTypeArgs(base, typeArgs), nil
 }
 
