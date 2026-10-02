@@ -411,13 +411,30 @@ val branched func(int) int = if (c) { (x) => x } else { (x) => x * 2 }
 val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred as int
 ```
 
+5. **Partial explicit type arguments** — a generic call that writes only its
+   leading type arguments binds those as written and infers the rest from the
+   other arguments and the lambda's body, as Go does for the emitted call:
+   `resource.Using[Res](open(p), (r) => r.Name())` types `r` as `Res`, and the
+   lambda's result comes from its body.
+
+6. **Conversion to a named function type** — for `type Handler func(int) int`,
+   `Handler((x) => x + 1)` types the lambda by `Handler`'s signature. So does a
+   conversion to a Go named function type: `http.HandlerFunc((w, r) => …)`.
+
+7. **A Go function of the package's own `.go` files** — a lambda passed to it
+   is typed by its signature, as for an imported Go function.
+
 When a lambda parameter has no annotation **and** no expected type can be
 inferred — e.g. a bare `val f = (x) => x + 1` with no declared type — the
 transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than
 defaulting the parameter to `any`. Annotate the parameter (`(x int) => …`) or
-place the lambda in one of the typed contexts above. (Call-argument lambdas
-whose parameter types cannot yet be inferred still fall back to `any`; that is a
-separate inference-completeness concern, not a hard error.)
+place the lambda in one of the typed contexts above. A call-argument lambda gets
+the same error when the callee's signature is unknown, so its slot has no type
+at all. A parameter whose slot is typed `any` is still lowered to `any`: as the
+callee declares it, or because the slot names a type parameter no argument
+determines while the call's arguments determine others (when they determine
+none, the parameter has no type: GALA-E0033). A lambda with more parameters than
+the function type it stands for is GALA-E0033 naming the mismatch.
 
 ### By-Name Argument Lifting (Thunk Sugar)
 

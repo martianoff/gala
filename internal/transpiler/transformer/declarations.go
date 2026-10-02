@@ -1048,12 +1048,10 @@ func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type)
 		return &ft
 	}
 
-	// Try resolving via type alias
-	typeName := tp.BaseName()
-	if underlyingType, ok := t.typeAliases[typeName]; ok {
-		if ft, ok := underlyingType.(transpiler.FuncType); ok {
-			return &ft
-		}
+	// Try resolving via type alias, through a chain of them
+	// (`type A func(int) int; type B A`).
+	if ft, ok := t.followAliasChain(tp).(transpiler.FuncType); ok {
+		return &ft
 	}
 
 	return nil

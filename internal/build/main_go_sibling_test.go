@@ -15,9 +15,10 @@ import (
 // the program, and the GALA code must be typed against them exactly as a
 // library's would be: `.Size()` on a field of a Go struct (#613), a
 // pointer-receiver method through a val (#614), a type name an import also
-// exports (#616), resource.Using over a Go constructor (#618), and a literal
-// match, a stable identifier and a codec field over a Go named scalar; and
-// methods declared in Go on a struct declared in GALA (#615).
+// exports (#616), resource.Using over a Go constructor, with and without a
+// partial type-argument list (#618), a literal match, a stable identifier and
+// a codec field over a Go named scalar; and methods declared in Go on a struct
+// declared in GALA (#615).
 func TestBuild_MainPackageGoSibling(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
@@ -92,6 +93,7 @@ func main() {
     Println(g.Hello())
 
     Println(resource.Using(OpenRes("res"), (r) => r.Name().Size()))
+    Println(resource.Using[Res](OpenRes("res2"), (r) => r.Name().Size()))
 
     Println(s"${size(Response{Status: 1, Extra: 2})} ${collide.Response(Status = 3).Status}")
 
@@ -138,6 +140,7 @@ func main() {
 		// The val is not renamed: the pointer method runs on a copy.
 		"hello world",
 		"3",
+		"4",
 		"2 3",
 		"two",
 		"stable two",

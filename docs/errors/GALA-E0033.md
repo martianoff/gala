@@ -47,16 +47,17 @@ to keep generated Go concrete. Previously such a parameter defaulted to `any`
 with a warning; the error surfaces the problem at its source instead of
 deferring it to a confusing downstream Go compile error (or a silent `any`).
 
-**Scope.** Lambda parameters in contexts that supply no expected type, and
-call-argument lambdas whose callee declares the parameter with a type that
-could not be resolved — for example a Go function whose package does not
-type-check because one of its imports cannot be found:
+**Scope.** Any unannotated lambda parameter whose type cannot be inferred: no
+expected type, a callee whose signature the transpiler does not know, or a
+callee parameter type that could not be resolved — for example a Go function
+whose package does not type-check because one of its imports cannot be found:
 
 ```
 [SemanticError GALA-E0033] lib.gala:5:50 lambda parameter "c" has no type: Serve expects a function here whose parameter 1 has a type that could not be resolved (hint: check that the package declaring Serve type-checks — every package it imports must resolve — or annotate the parameter (e.g. `(c T) => …`))
 ```
 
-Fix the callee's package so it type-checks, or annotate the parameter. Other
-call-argument lambdas whose parameter types the transpiler cannot yet infer
-still fall back to `any` (a separate inference-completeness concern), so this
-error does not fire there.
+Fix the callee's package so it type-checks, or annotate the parameter. A
+parameter whose slot is typed `any` is still lowered to `any`: as the callee
+declares it, or because the slot names a type parameter no argument determines
+while the call's arguments determine others. When they determine none, the
+parameter has no type and this error fires.

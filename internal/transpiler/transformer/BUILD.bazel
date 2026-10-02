@@ -184,6 +184,7 @@ go_test(
         "qualified_namedarg_shadow_test.go",
         "recursive_immutable_test.go",
         "resource_inference_test.go",
+        "resource_lambda_types_test.go",
         "rich_diagnostics_test.go",
         "same_name_import_test.go",
         "same_package_go_siblings_test.go",
