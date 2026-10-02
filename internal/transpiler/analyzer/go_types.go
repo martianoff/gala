@@ -677,7 +677,6 @@ func extractMethodsOnForeignTypes(files []*ast.File, typesInfo *types.Info, pkg 
 			if data == nil {
 				data = &transpiler.GoTypeData{
 					Kind:    transpiler.GoKindMethodsOnly,
-					Fields:  make(map[string]transpiler.Type),
 					Methods: make(map[string]*transpiler.GoFuncSignature),
 				}
 				info.Types[key] = data

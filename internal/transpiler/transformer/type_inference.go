@@ -1486,8 +1486,14 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 		typ = ptr.Elem
 	}
 	nt, ok := typ.(transpiler.NamedType)
-	if !ok || nt.Package == "" {
-		return t.ownGoTypeKey(typ.String())
+	if !ok {
+		if basic, isBasic := typ.(transpiler.BasicType); isBasic {
+			return t.ownGoTypeKey(basic.Name)
+		}
+		return typ.String()
+	}
+	if nt.Package == "" {
+		return t.ownGoTypeKey(nt.Name)
 	}
 	if t.isGoTyped(nt) {
 		if name, ok := t.goImportRealName(nt.ImportPath); ok {

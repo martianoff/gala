@@ -49,6 +49,13 @@ type GoParam struct {
 // GoKindMethodsOnly is the GoTypeData.Kind of a type that hand-written Go only
 // declares methods on: the type itself is declared elsewhere in the package (a
 // GALA struct, say), so only Methods and PointerMethods are filled in.
+//
+// The type's method set is thereby split between its GALA TypeMetadata and
+// this record, and a check of "does T have method M" consults both (GALA-E0044,
+// Go method-call typing, the addressable-receiver check). Folding these methods
+// into TypeMetadata.Methods would cover every reader at once, but would route
+// them through GALA method lowering and lose their multi-result signatures, so
+// they stay on the Go side.
 const GoKindMethodsOnly = "methods-only"
 
 // GoTypeData describes a Go type (struct, interface, or named type).

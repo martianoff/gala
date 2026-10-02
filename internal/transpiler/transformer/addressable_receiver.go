@@ -79,12 +79,7 @@ func (t *galaASTTransformer) receiverTypeInfo(typ transpiler.Type) (base transpi
 	if !isNamed || !t.isGoTyped(named) {
 		meta = t.getTypeMeta(base.BaseName())
 	}
-	if isNamed && named.Package != "" {
-		goData = t.goTypeInfo.GetTypeData(named.Package + "." + named.Name)
-	} else if key := t.ownGoTypeKey(base.String()); key != base.String() {
-		// A type of the package being compiled, written unqualified.
-		goData = t.goTypeInfo.GetTypeData(key)
-	}
+	goData = t.goTypeInfo.GetTypeData(t.goTypeLookupName(base))
 	return base, meta, goData, true
 }
 
