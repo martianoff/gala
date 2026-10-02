@@ -556,9 +556,14 @@ func v() {
 			wantErr: "`b.n` is evaluated but not used",
 		},
 		{
-			name:    "if-expression body of a function with no result type names the result type",
-			body:    "\nfunc f(c bool) = if (c) 1 else 2\n",
-			wantErr: "declare the function's result type to return it",
+			name:    "match body of a void expression lambda",
+			body:    "\nfunc each(f func(int)) = f(0)\n\nfunc g() {\n    each((n) => n match {\n        case 0 => 1\n        case _ => Println(n)\n    })\n}\n",
+			wantErr: "`1` is evaluated but not used",
+		},
+		{
+			name:    "if-expression body of a void expression lambda",
+			body:    "\nfunc each(f func(int)) = f(0)\n\nfunc g() {\n    each((n) => if (n == 0) 1 else Println(n))\n}\n",
+			wantErr: "`1` is evaluated but not used",
 		},
 		{
 			name:    "if-expression in an expression arm of a statement match",
@@ -592,6 +597,8 @@ func TestVoidContextBranchesThatRunStatements(t *testing.T) {
 		{"value-returning call in a statement branch", "\nfunc g() int = 1\n\nfunc f(c bool) {\n    if (c) g() else Println(\"b\")\n}\n"},
 		{"assignment and empty arms", "\nfunc f(n int) int {\n    var seen = 0\n    n match {\n        case 0 => { seen = 1 }\n        case _ => {}\n    }\n    seen\n}\n"},
 		{"value if-expression keeps its values", "\nfunc f(c bool) int = if (c) 1 else 2\n"},
+		{"call and match arms of a void expression lambda", "\nfunc each(f func(int)) = f(0)\n\nfunc g() {\n    each((n) => n match {\n        case 0 => Println(\"zero\")\n        case _ => Println(n)\n    })\n    each((n) => if (n == 0) Println(\"z\") else Println(n))\n}\n"},
+		{"parenthesized call as a statement", "\nfunc mk() Option[int] = Some(1)\n\nfunc f() {\n    (mk().Get())\n}\n"},
 		{"value match keeps its values", "\nfunc f(n int) string = n match {\n    case 0 => \"zero\"\n    case _ => \"other\"\n}\n"},
 	}
 	for _, tt := range tests {

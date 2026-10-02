@@ -987,6 +987,20 @@ c match {
 When the match's value *is* used (assigned to a `val`, returned, passed as an
 argument), all arms must still unify to one type.
 
+Each arm of a statement match is itself a statement. An arm may make a call,
+assign or do nothing, but an arm that is — or, in braces, ends in — a plain
+value (a literal, name, operator expression or lambda) is rejected as evaluated
+but not used, since nothing could read it:
+
+<!-- doc-check: fragment -->
+```gala
+mode match {
+    case Read() => { seen = 1 }      // fine: an assignment
+    case Write() => { seen = 2; true } // error: `true` is evaluated but not used
+    case _ => Println("other")         // fine: a call
+}
+```
+
 #### Standard Library Sealed Types
 The `std` package defines `Option[T]`, `Either[A, B]`, and `Try[T]` as sealed types. See [Standard Library Types](#9-standard-library-types) for details.
 

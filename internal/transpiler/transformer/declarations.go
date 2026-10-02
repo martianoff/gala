@@ -1046,6 +1046,13 @@ func (t *galaASTTransformer) endsInCall(exprCtx grammar.IExpressionContext) bool
 	return last.GetChildCount() > 0 && last.GetChild(0).(antlr.ParseTree).GetText() == "("
 }
 
+// startsWithName reports whether the GALA expression is a postfix chain whose
+// primary is a name (`x`, `b.n`), not a parenthesized or literal expression.
+func (t *galaASTTransformer) startsWithName(exprCtx grammar.IExpressionContext) bool {
+	pc := PrimaryOf(t.getSinglePostfixExpr(exprCtx))
+	return pc != nil && pc.Identifier() != nil
+}
+
 // transformExpressionBodiedFunction handles the `func foo() T = expr` form by
 // transforming the expression into a single-return block body. A lambda,
 // if-expression or match body is lowered against the declared return type.

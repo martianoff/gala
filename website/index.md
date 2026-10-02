@@ -206,7 +206,7 @@ val decoded = codec.Decode(jsonStr)</code></pre>
 <pre><code>val date = regex.MustCompile(
     "(\\d{4})-(\\d{2})-(\\d{2})")
 
-input match {
+val shown = input match {
     case date(Array(y, m, d)) =&gt;
         s"$y/$m/$d"
     case _ =&gt; "not a date"

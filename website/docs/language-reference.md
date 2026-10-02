@@ -421,6 +421,8 @@ val desc = flag match {
 }
 ```
 
+A `match` used as a statement (its value discarded) is side-effect dispatch: its arms need not share a type, and each arm is a statement. An arm may make a call, assign or do nothing, but an arm that is, or in braces ends in, a plain value (a literal, name, operator expression or lambda) is rejected as evaluated but not used.
+
 #### Stable Identifiers (Constants in Patterns)
 A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. Lowercase identifiers always bind, so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
 ```gala

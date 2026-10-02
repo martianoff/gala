@@ -444,6 +444,19 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformLambdaWithExpectedType as part of A6.
 func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	bodySlot.tryThunk = ctx == t.tryThunkLambda
+	// A lambda that returns nothing runs a match or if-expression body as a
+	// statement, as a void function does: its branches are statements, and a
+	// plain value in one is evaluated but not used.
+	if isVoidExpected && (t.expressionIsBareMatch(ctx.Expression()) || t.findIfExpressionInExpression(ctx.Expression()) != nil) {
+		stmt, err := t.lowerExpressionStatement(ctx.Expression(), functionDiscardHint)
+		if err != nil {
+			return nil, nil, err
+		}
+		if block, ok := stmt.(*ast.BlockStmt); ok {
+			return block, nil, nil
+		}
+		return &ast.BlockStmt{List: []ast.Stmt{stmt}}, nil, nil
+	}
 	expr, err := t.lowerAgainst(ctx.Expression(), bodySlot, true)
 	if err != nil {
 		return nil, nil, err
