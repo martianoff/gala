@@ -1,13 +1,15 @@
 package transformer
 
 import (
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"hash/fnv"
+	"maps"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -47,7 +49,6 @@ type structMetaConfig struct {
 	typeName      string
 	typeMetadata  *transpiler.TypeMetadata
 	generatedName string
-	resolvedName  string
 	// pkg is the declaring package when it is not this one, "" otherwise.
 	pkg string
 	// emit is true when this file declares the StructMeta. Otherwise the file
@@ -80,44 +81,43 @@ func (t *galaASTTransformer) transformStructMetaConstruction(fun ast.Expr, line,
 		return nil, err
 	}
 
-	typeMeta, _ := t.getTypeMetaResolved(typeName)
-	if typeMeta == nil {
+	if typeMeta, _ := t.getTypeMetaResolved(typeName); typeMeta == nil {
 		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("StructMeta[%s]: type %q not found", typeName, typeName))
 	}
-	if len(typeMeta.FieldNames) == 0 {
-		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("StructMeta[%s]: type %q has no fields", typeName, typeName))
-	}
 	site := &structMetaConfig{rootName: typeName, line: line, col: col}
-	config := t.registerStructMeta(typeName, site)
+	config, reason := t.registerStructMeta(typeName, site)
 	if config == nil {
-		return nil, t.codecError(site, t.notDescribableReason(typeName))
+		return nil, t.codecError(site, reason)
 	}
 	return &ast.CompositeLit{Type: t.structMetaRef(config)}, nil
 }
 
 // registerStructMeta returns the StructMeta config for the struct named name,
-// registering it on first use, or nil when name is not a struct the codec can
-// describe (unknown, sealed, generic, or without fields). site carries the
-// use site and whether the request is an auto one. A codec asking for a
-// struct that so far was only auto-registered takes it over, so a field
-// without an encoding is reported rather than dropped.
-func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaConfig) *structMetaConfig {
+// registering it on first use. When name is not a struct the codec can
+// describe (unknown, sealed, generic, or without fields) it returns nil and
+// the reason. site carries the use site and whether the request is an auto
+// one. A codec asking for a struct that so far was only auto-registered takes
+// it over, so a field without an encoding is reported rather than dropped.
+func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaConfig) (*structMetaConfig, string) {
 	meta, resolved := t.getTypeMetaResolved(name)
-	if meta == nil || describableReason(name, meta) != "" {
-		return nil
+	if meta == nil {
+		return nil, notCodecTypeReason(name)
+	}
+	if reason := t.describableReason(name, meta); reason != "" {
+		return nil, reason
 	}
 	if config, ok := t.structMetas[resolved]; ok {
 		if config.auto && !site.auto {
 			config.auto = false
 			config.rootName, config.line, config.col = site.rootName, site.line, site.col
+			t.registerStructMetaTypeMeta(config)
 		}
-		return config
+		return config, ""
 	}
 	config := &structMetaConfig{
 		typeName:      meta.Name,
 		typeMetadata:  meta,
 		generatedName: "StructMeta_" + meta.Name,
-		resolvedName:  resolved,
 		auto:          site.auto,
 		rootName:      site.rootName,
 		line:          site.line,
@@ -135,13 +135,17 @@ func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaCon
 	if !site.auto {
 		t.registerStructMetaTypeMeta(config)
 	}
-	return config
+	return config, ""
 }
 
 // describableReason says why the named type has no StructMeta, or "" when it
-// can have one.
-func describableReason(name string, meta *transpiler.TypeMetadata) string {
+// can have one. A struct of a Go package has none: the analyzer describes it
+// with the same metadata as a GALA struct, but only a GALA package declares
+// StructMeta_X for its structs.
+func (t *galaASTTransformer) describableReason(name string, meta *transpiler.TypeMetadata) string {
 	switch {
+	case meta.Package != "" && meta.Package != t.packageName && !t.declaresStructMeta(meta):
+		return fmt.Sprintf("%s is a Go struct; the codec describes GALA structs only", name)
 	case meta.IsSealed:
 		return sealedReason(name)
 	case len(meta.TypeParams) > 0:
@@ -152,14 +156,18 @@ func describableReason(name string, meta *transpiler.TypeMetadata) string {
 	return ""
 }
 
-// notDescribableReason explains why registerStructMeta found no StructMeta
-// for the named type.
-func (t *galaASTTransformer) notDescribableReason(name string) string {
-	if meta, _ := t.getTypeMetaResolved(name); meta != nil {
-		if reason := describableReason(name, meta); reason != "" {
-			return reason
-		}
-	}
+// declaresStructMeta reports whether the package declaring the imported
+// struct meta emits its StructMeta_X: it is GALA source (the analyzer records
+// where it was defined), or Go — a precompiled GALA package — that declares
+// the StructMeta itself. Package membership cannot tell: a Go directory
+// inside the module is analyzed like a GALA package.
+func (t *galaASTTransformer) declaresStructMeta(meta *transpiler.TypeMetadata) bool {
+	return meta.DefinedIn != "" || t.typeMetas[meta.Package+".StructMeta_"+meta.Name] != nil
+}
+
+// notCodecTypeReason explains that the named type is none of the shapes the
+// codec encodes.
+func notCodecTypeReason(name string) string {
 	return fmt.Sprintf("%s is neither a scalar nor a GALA struct the codec can describe", name)
 }
 
@@ -230,9 +238,8 @@ func (t *galaASTTransformer) generateStructMetas() ([]ast.Decl, bool, error) {
 	// Emit in name order: structMetas is a map, and ranging over it directly
 	// made the declaration order — and so the generated file — differ from
 	// one run to the next for any program with more than one codec'd struct.
-	keys := sortedStructMetaKeys(t.structMetas)
-	sort.SliceStable(keys, func(i, j int) bool {
-		return t.structMetas[keys[i]].generatedName < t.structMetas[keys[j]].generatedName
+	keys := slices.SortedFunc(maps.Keys(t.structMetas), func(a, b string) int {
+		return cmp.Or(cmp.Compare(t.structMetas[a].generatedName, t.structMetas[b].generatedName), cmp.Compare(a, b))
 	})
 	var out []ast.Decl
 	dropped := false
@@ -259,15 +266,6 @@ func (t *galaASTTransformer) generateStructMetas() ([]ast.Decl, bool, error) {
 		out = append(out, decls...)
 	}
 	return out, dropped, nil
-}
-
-func sortedStructMetaKeys(metas map[string]*structMetaConfig) []string {
-	keys := make([]string, 0, len(metas))
-	for key := range metas {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // snapshotCodecImports records the import state that generating a StructMeta
@@ -312,7 +310,7 @@ func (t *galaASTTransformer) expandNestedStructMetas() {
 	// Seed in name order: a nested struct inherits its use site from whichever
 	// parent reaches it first, and that must not depend on map iteration.
 	var worklist []*structMetaConfig
-	for _, key := range sortedStructMetaKeys(t.structMetas) {
+	for _, key := range slices.Sorted(maps.Keys(t.structMetas)) {
 		worklist = append(worklist, t.structMetas[key])
 	}
 	walked := make(map[*structMetaConfig]bool, len(worklist))
@@ -342,7 +340,7 @@ func (t *galaASTTransformer) expandNestedStructMetas() {
 func (t *galaASTTransformer) registerNestedStructMetaForType(ty transpiler.Type, parent *structMetaConfig) []*structMetaConfig {
 	var nested []*structMetaConfig
 	t.collectNestedStructTypeNames(ty, parent.pkg, func(name string) {
-		if config := t.registerStructMeta(name, parent); config != nil {
+		if config, _ := t.registerStructMeta(name, parent); config != nil {
 			nested = append(nested, config)
 		}
 	})
@@ -357,7 +355,7 @@ func (t *galaASTTransformer) collectNestedStructTypeNames(ty transpiler.Type, pk
 	if ty == nil {
 		return
 	}
-	ty = t.codecUnalias(ty)
+	ty = t.codecUnalias(ty, pkg)
 	switch kind, params := codecContainer(ty); kind {
 	case "Immutable", "Option", "Array", "List":
 		t.collectNestedStructTypeNames(params[0], pkg, cb)
@@ -374,18 +372,11 @@ func (t *galaASTTransformer) collectNestedStructTypeNames(ty transpiler.Type, pk
 // collectionIdent returns a qualified reference to a collection_immutable type.
 // Adds the import automatically.
 func (t *galaASTTransformer) collectionIdent(name string) ast.Expr {
-	if t.packageName == "collection_immutable" {
-		return ast.NewIdent(name)
+	ref := t.ident("collection_immutable." + name)
+	if sel, ok := ref.(*ast.SelectorExpr); ok && sel.X.(*ast.Ident).Name == "collection_immutable" {
+		t.importManager.AddTransitive("martianoff/gala/collection_immutable", "collection_immutable")
 	}
-	if t.importManager.IsDotImported("collection_immutable") {
-		t.markDotImportUsed("collection_immutable")
-		return ast.NewIdent(name)
-	}
-	t.importManager.AddTransitive("martianoff/gala/collection_immutable", "collection_immutable")
-	return &ast.SelectorExpr{
-		X:   ast.NewIdent("collection_immutable"),
-		Sel: ast.NewIdent(name),
-	}
+	return ref
 }
 
 func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) ([]ast.Decl, error) {
@@ -543,16 +534,16 @@ func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *t
 	}
 
 	site := &structMetaConfig{rootName: typeArgName, line: line, col: col}
-	config := t.registerStructMeta(typeArgName, site)
+	config, reason := t.registerStructMeta(typeArgName, site)
 	if config == nil {
 		// A scalar root (Codec[int]), a collection or an alias of one is not a
 		// struct at all: say so, and name what does describe it.
-		ty := t.codecUnalias(t.astTypeToTranspilerType(typeArgs[0]))
+		ty := t.codecUnalias(t.astTypeToTranspilerType(typeArgs[0]), "")
 		_, _, _, isScalar := t.codecScalarOf(ty)
 		if container, _ := codecContainer(ty); isScalar || container != "" {
 			return nil, t.codecError(site, notAStructReason(typeArgName))
 		}
-		return nil, t.codecError(site, t.notDescribableReason(typeArgName))
+		return nil, t.codecError(site, reason)
 	}
 
 	// Prepend StructMeta before existing args

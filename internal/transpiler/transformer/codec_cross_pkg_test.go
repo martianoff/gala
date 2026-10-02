@@ -18,7 +18,8 @@ import (
 // codecCrossPkgFixture is a module whose billing package declares structs
 // that another package encodes: one with exported fields, one with unexported
 // fields (which only billing can read or construct), one nesting an
-// unexported struct type, and one with a field that has no encoding.
+// unexported struct type, and one with a field that has no encoding — and
+// whose clock package declares structs with fields typed by its own aliases.
 func codecCrossPkgFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -48,6 +49,24 @@ struct Box[T any](Item T)
 func NewSecret(v string) Secret = Secret(v, 3)
 
 func NewLedger(owner Email) Ledger = Ledger(owner, ArrayOf(entry("k")))
+`)
+	write("clock/clock.gala", `package clock
+
+import . "martianoff/gala/collection_immutable"
+
+type Millis int64
+
+struct Zone(Name string)
+
+type Where Zone
+
+type Laps Array[Millis]
+
+struct Stamp(at Millis, Zone Where, laps Laps)
+
+func NewStamp(ms int64) Stamp = Stamp(Millis(ms), Zone("utc"), ArrayOf(Millis(1)))
+
+func NoLaps() Laps = EmptyArray[Millis]()
 `)
 	return root
 }
@@ -286,4 +305,90 @@ func transpileCrossPkgFile(t *testing.T, root, src, path string) (string, error)
 	a := analyzer.NewGalaAnalyzer(p, append([]string{root}, getStdSearchPath()...), root)
 	return newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).
 		Transpile(src, path)
+}
+
+// TestCodecImportedStructWithAliasedFields: a struct whose fields name its
+// own package's aliases (`type Millis int64`, an alias of a struct, an alias
+// of a collection) is encoded from another package. The consumer checks the
+// fields of the StructMeta it references; it used to look those alias names
+// up in its own package, find nothing, and report GALA-E0050 for a struct its
+// declaring package had described without complaint.
+func TestCodecImportedStructWithAliasedFields(t *testing.T) {
+	root := codecCrossPkgFixture(t)
+	lib, err := os.ReadFile(filepath.Join(root, "clock", "clock.gala"))
+	require.NoError(t, err)
+	libOut, err := transpileCrossPkgFile(t, root, string(lib), filepath.Join(root, "clock", "clock.gala"))
+	require.NoError(t, err)
+	assert.Contains(t, libOut, "type StructMeta_Stamp struct", "generated:\n%s", libOut)
+
+	out, err := transpileCrossPkg(t, root, `package main
+
+import (
+    . "martianoff/gala/json"
+    "example.com/codecx/clock"
+)
+
+type Millis bool
+
+struct Event(Name string, At clock.Stamp, Took clock.Millis, Laps clock.Laps, Where clock.Where, Mine Millis)
+
+func main() {
+    val s = clock.NewStamp(5)
+    Println(Codec[Event](SnakeCase()).Encode(Event("e", s, clock.Millis(2), clock.NoLaps(), clock.Zone("z"), true)).Get())
+    Println(Codec[clock.Stamp](SnakeCase()).Encode(clock.NewStamp(6)).Get())
+}`)
+	require.NoError(t, err)
+	for _, want := range []string{
+		"clock.StructMeta_Stamp{}.EncodeFields(w, t.At.Get()",
+		"clock.StructMeta_Zone{}.EncodeFields(w, t.Where.Get()",
+		"w.WriteInt64(t.Took.Get())",
+		"w.WriteBool(t.Mine.Get())",
+	} {
+		assert.Contains(t, out, want, "generated:\n%s", out)
+	}
+	assert.NotContains(t, out, "_StructMeta_Stamp", "generated:\n%s", out)
+}
+
+// TestCodecLibraryStructWithGoStructField: a library struct whose field is a
+// struct of a plain Go package. The analyzer describes that Go struct with
+// the same metadata as a GALA one, but no Go package declares a StructMeta,
+// so the library must not reference one. It used to emit StructMeta_Conf
+// calling box.StructMeta_Box, which does not compile; a codec asking for a
+// struct with such a field is GALA-E0050 instead.
+func TestCodecLibraryStructWithGoStructField(t *testing.T) {
+	files := map[string]string{
+		"go.mod":     "module example.com/gostructfield\n\ngo 1.25\n",
+		"gala.mod":   "module example.com/gostructfield\n",
+		"box/box.go": "package box\n\ntype Box struct{ Size int }\n",
+		"lib/main.gala": `package lib
+
+import "example.com/gostructfield/box"
+
+struct Conf(Name string, B box.Box)
+
+struct Plain(Name string)
+`,
+	}
+	out, err := transpileInModule(t, files, "lib/main.gala")
+	require.NoError(t, err)
+	assert.NotContains(t, out, "StructMeta_Box", "generated:\n%s", out)
+	assert.NotContains(t, out, "StructMeta_Conf", "generated:\n%s", out)
+	assert.Contains(t, out, "type StructMeta_Plain struct", "generated:\n%s", out)
+
+	files["main.gala"] = `package main
+
+import (
+    . "martianoff/gala/json"
+    "example.com/gostructfield/box"
+)
+
+struct Wrap(B box.Box)
+
+func main() {
+    Println(Codec[Wrap](SnakeCase()).Encode(Wrap(box.Box(Size = 1))).Get())
+}
+`
+	_, err = transpileInModule(t, files, "main.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), string(galaerr.CodeUnsupportedCodecField))
 }

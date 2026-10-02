@@ -103,9 +103,6 @@ func (g *codecGen) fresh(prefix string) *ast.Ident {
 // A field whose type has no encoding fails the whole codec with GALA-E0050,
 // positioned at the Codec / StructMeta use site that asked for it.
 func (t *galaASTTransformer) genStructMetaMethods(config *structMetaConfig) (*ast.FuncDecl, *ast.FuncDecl, error) {
-	if config.typeMetadata.IsSealed {
-		return nil, nil, t.codecError(config, sealedReason(config.typeName))
-	}
 	enc, err := t.genEncodeFields(config)
 	if err != nil {
 		return nil, nil, err
@@ -194,12 +191,12 @@ func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) (*ast.Fun
 // through the FieldEncoder `w`. The caller has already written the key (or is
 // inside an array).
 func (g *codecGen) write(access ast.Expr, ty transpiler.Type) ([]ast.Stmt, error) {
-	ty = g.t.codecUnalias(ty)
+	ty = g.t.codecUnalias(ty, g.pkg)
 	switch kind, params := codecContainer(ty); kind {
 	case "Immutable":
 		return g.write(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")}}, params[0])
 	case "Option":
-		if g.t.codecNullable(params[0]) {
+		if g.t.codecNullable(params[0], g.pkg) {
 			return nil, errNestedOption()
 		}
 		body, err := g.write(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")}}, params[0])
@@ -427,7 +424,7 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 // FieldDecoder `r` and assign it to target (an already-declared variable of
 // ty's Go type).
 func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error) {
-	ty = g.t.codecUnalias(ty)
+	ty = g.t.codecUnalias(ty, g.pkg)
 	assign := func(value ast.Expr) ast.Stmt {
 		return &ast.AssignStmt{Lhs: []ast.Expr{target}, Tok: token.ASSIGN, Rhs: []ast.Expr{value}}
 	}
@@ -447,7 +444,7 @@ func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error)
 		stmts = append(stmts, assign(&ast.CallExpr{Fun: g.t.stdIdent("NewImmutable"), Args: []ast.Expr{tmp}}))
 		return []ast.Stmt{&ast.BlockStmt{List: stmts}}, nil
 	case "Option":
-		if g.t.codecNullable(params[0]) {
+		if g.t.codecNullable(params[0], g.pkg) {
 			return nil, errNestedOption()
 		}
 		innerType, err := g.goType(params[0])
@@ -700,30 +697,48 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 	return codecScalar{}, nil, false, false
 }
 
-// codecUnalias resolves a local alias to the type it names, so an alias of a
+// codecUnalias resolves an alias to the type it names, so an alias of a
 // scalar (`type Millis int64`), of a Go named type (`type Wait time.Duration`)
 // or of a container (`type Tags Array[string]`) classifies like its target.
 // GALA aliases lower to Go aliases (`type Millis = int64`), so the generated
-// code may name either side. Only unqualified names are looked up: the alias
-// table is keyed by simple name, so a qualified name could otherwise match an
-// unrelated local alias.
-func (t *galaASTTransformer) codecUnalias(ty transpiler.Type) transpiler.Type {
-	name, pkg, ok := simpleTypeName(ty)
-	if !ok || (pkg != "" && pkg != t.packageName) {
-		return ty
+// code may name either side. pkg is the package whose declaration ty comes
+// from ("" for this one): an unqualified name there is that package's. This
+// package's aliases are keyed by simple name and another's by qualified name,
+// so an imported struct's `Millis` field never resolves through an unrelated
+// local alias of the same name.
+//
+// The hop count bounds a chain that refers back to itself.
+func (t *galaASTTransformer) codecUnalias(ty transpiler.Type, pkg string) transpiler.Type {
+	for hop := 0; hop <= len(t.typeAliases); hop++ {
+		name, owner, ok := simpleTypeName(ty)
+		if !ok {
+			return ty
+		}
+		if owner == "" {
+			owner = pkg
+		}
+		if owner == "" || owner == t.packageName {
+			if _, isAlias := t.typeAliases[name]; !isAlias {
+				return ty
+			}
+			return t.followAliasChain(transpiler.NamedType{Name: name})
+		}
+		target, isAlias := t.typeAliases[owner+"."+name]
+		if !isAlias || target.IsNil() {
+			return ty
+		}
+		// The target is written in owner's terms, so it resolves there in turn.
+		ty, pkg = target, owner
 	}
-	if _, isAlias := t.typeAliases[name]; !isAlias {
-		return ty
-	}
-	return t.followAliasChain(transpiler.NamedType{Name: name})
+	return ty
 }
 
 // codecNullable reports whether ty can encode as null: an Option, possibly
 // behind Immutable layers or aliases. Such a type inside an Option would make
-// None and Some(None) indistinguishable.
-func (t *galaASTTransformer) codecNullable(ty transpiler.Type) bool {
+// None and Some(None) indistinguishable. pkg is as for codecUnalias.
+func (t *galaASTTransformer) codecNullable(ty transpiler.Type, pkg string) bool {
 	for {
-		switch kind, params := codecContainer(t.codecUnalias(ty)); kind {
+		switch kind, params := codecContainer(t.codecUnalias(ty, pkg)); kind {
 		case "Option":
 			return true
 		case "Immutable":
@@ -763,7 +778,7 @@ func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type, pkg string) (*s
 			if config, ok := t.structMetas[resolved]; ok {
 				return config, nil
 			}
-			if reason := describableReason(name, meta); reason != "" {
+			if reason := t.describableReason(name, meta); reason != "" {
 				return nil, unsupportedShape("%s", reason)
 			}
 		}
@@ -781,7 +796,7 @@ func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type, pkg string) (*s
 	if named, ok := ty.(transpiler.NamedType); ok && named.Package != "" && named.Package != t.packageName && t.goTypeInfo == nil {
 		return nil, unsupportedShape("the underlying kind of %s is unknown because Go type information is unavailable (is the Go SDK on PATH or GOROOT set?)", ty.String())
 	}
-	return nil, unsupportedShape("%s is neither a scalar nor a GALA struct the codec can describe", ty.String())
+	return nil, unsupportedShape("%s", notCodecTypeReason(ty.String()))
 }
 
 // sealedReason and noFieldsReason explain why a named type has no codec
@@ -820,7 +835,7 @@ func (t *galaASTTransformer) codecStructName(ty transpiler.Type, pkg string) str
 // object keys are text — and returns its Go type and whether it is exactly
 // `string` (so no conversion is needed).
 func (g *codecGen) mapKey(ty transpiler.Type) (ast.Expr, bool, error) {
-	ty = g.t.codecUnalias(ty)
+	ty = g.t.codecUnalias(ty, g.pkg)
 	sc, declared, isWireType, ok := g.t.codecScalarOf(ty)
 	if !ok || sc.goType != "string" {
 		return nil, false, unsupportedShape("HashMap keys must be strings (or an alias of string): object keys are text, and %s is not", ty.String())
@@ -831,14 +846,14 @@ func (g *codecGen) mapKey(ty transpiler.Type) (ast.Expr, bool, error) {
 // goType returns the Go type expression for a codec-supported value type, or
 // an unsupported-shape error.
 func (g *codecGen) goType(ty transpiler.Type) (ast.Expr, error) {
-	ty = g.t.codecUnalias(ty)
+	ty = g.t.codecUnalias(ty, g.pkg)
 	switch kind, params := codecContainer(ty); kind {
 	case "Immutable", "Option":
 		inner, err := g.goType(params[0])
 		if err != nil {
 			return nil, err
 		}
-		if kind == "Option" && g.t.codecNullable(params[0]) {
+		if kind == "Option" && g.t.codecNullable(params[0], g.pkg) {
 			return nil, errNestedOption()
 		}
 		return &ast.IndexExpr{X: g.t.stdIdent(kind), Index: inner}, nil

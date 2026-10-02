@@ -26,11 +26,11 @@ struct Account(
 )
 
 func describe(a Account) string {
-    val keys = a.Keys.Map((k) => k.Describe()).MkString(",")
-    val labelled = a.ByLabel.Get("ci").Map((k) => k.Describe()).GetOrElse("-")
-    val backup = a.Backup.Map((e) => e.V).GetOrElse("-")
-    val others = a.Others.Map((e) => e.V).MkString(",")
-    return s"${a.Owner.Name} <${a.Owner.Mail.V}> key=${a.Owner.Key.Describe()} backup=$backup others=$others keys=$keys ci=$labelled bill=${a.Bill.Describe()}"
+    val keys = a.Keys.Map(_.Describe()).MkString(",")
+    val labelled = a.ByLabel.Get("ci").Map(_.Describe()).GetOrElse("-")
+    val backup = a.Backup.Map(_.V).GetOrElse("-")
+    val others = a.Others.Map(_.V).MkString(",")
+    s"${a.Owner.Name} <${a.Owner.Mail.V}> key=${a.Owner.Key.Describe()} backup=$backup others=$others keys=$keys ci=$labelled bill=${a.Bill.Describe()}"
 }
 
 func main() {

@@ -12,8 +12,12 @@ import (
 // Email has an exported field.
 struct Email(V string)
 
-// Secret has only unexported fields.
-struct Secret(token string, uses int)
+// Uses counts how often a Secret was used. An importer encoding a Secret has
+// to see through this alias to the int it names.
+type Uses int
+
+// Secret has only unexported fields, one of them typed by an alias.
+struct Secret(token string, uses Uses)
 
 // line is an unexported struct type, reached through Invoice.
 struct line(Sku string, qty int)
@@ -22,15 +26,19 @@ struct line(Sku string, qty int)
 // an unexported struct type.
 struct Invoice(Number int, To Email, lines Array[line])
 
-func ParseEmail(s string) Option[Email] =
-    if (strings.Contains(s, "@")) Some(Email(s)) else None[Email]()
+// ParseEmail returns s as an Email when it contains an "@".
+func ParseEmail(s string) Option[Email] = When(strings.Contains(s, "@"), Email(s))
 
-func NewSecret(token string, uses int) Secret = Secret(token, uses)
+// NewSecret builds a Secret, whose fields only this package can set.
+func NewSecret(token string, uses int) Secret = Secret(token, Uses(uses))
 
+// Describe renders the secret's token and use count.
 func (s Secret) Describe() string = s"${s.token}x${s.uses}"
 
+// NewInvoice builds an invoice to `to` with two fixed lines.
 func NewInvoice(number int, to Email) Invoice =
     Invoice(number, to, ArrayOf(line("pen", 2), line("ink", 1)))
 
+// Describe renders the invoice number, recipient and lines.
 func (i Invoice) Describe() string =
     s"#${i.Number} to ${i.To.V}: " + i.lines.Map((l) => s"${l.Sku}x${l.qty}").MkString(", ")

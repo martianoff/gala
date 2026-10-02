@@ -2345,7 +2345,7 @@ struct User(Mail billing.Email, Key billing.Secret)
 val codec = Codec[User](SnakeCase())   // also Codec[billing.Secret](SnakeCase())
 ```
 
-A struct whose fields have no encoding gets no `StructMeta_X`; asking for its codec from any package fails with [GALA-E0050](errors/GALA-E0050.md), naming the field. Structs of the `main` package, which cannot be imported, keep the on-demand `_StructMeta_X` form.
+A field may be typed by an alias the struct's package declares (`type Millis int64`); the importer sees through it as the declaring package does. A struct whose fields have no encoding gets no `StructMeta_X`, and neither does a struct of a Go package; asking for its codec from any package fails with [GALA-E0050](errors/GALA-E0050.md), naming the field. Structs of the `main` package, which cannot be imported, keep the on-demand `_StructMeta_X` form.
 
 #### Auto-Injection
 
