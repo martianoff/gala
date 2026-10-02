@@ -119,6 +119,10 @@ func appendDocLines(dst []string, raw string) []string {
 		if star, ok := strings.CutPrefix(strings.TrimLeft(line, " \t"), "*"); ok {
 			line = star
 		}
+		// A `+build` line is a directive here too (see isPragmaBody).
+		if constraint.IsPlusBuild("//" + line) {
+			continue
+		}
 		dst = append(dst, line)
 	}
 	// Remove the indentation the whole block shares, rather than trimming each

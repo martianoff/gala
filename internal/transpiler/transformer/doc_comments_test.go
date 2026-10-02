@@ -6,11 +6,18 @@ import (
 	"go/doc"
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/transformer"
 )
 
 // docCommentsSource documents one declaration of every kind GALA has. Line
@@ -126,6 +133,10 @@ func TestDocComments_GeneratedGo(t *testing.T) {
 			assert.Contains(t, goCode,
 				"// Add returns the sum of a and b.\n// @Summary Adds two numbers\n// @Router /add [get]\nfunc Add(",
 				"annotation lines must sit directly above the declaration\n%s", goCode)
+			// No //line may join a comment group: above a declaration it would
+			// detach the doc for tools built with Go before 1.25, which compare
+			// remapped lines when attaching docs.
+			assert.NotRegexp(t, `(?m)^//.*\n//line `, goCode, "a //line directive inside a comment group")
 			assert.NotContains(t, goCode, "BODY_COMMENT", "body comments are out of scope")
 			assert.NotContains(t, goCode, "TRAILING_COMMENT", "trailing comments are out of scope")
 
@@ -329,8 +340,16 @@ func TestDocComments_ControlCharactersStripped(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, pkg.Funcs, 1)
 		assert.Equal(t, "Run runs fast.\n", pkg.Funcs[0].Doc)
-		require.Len(t, pkg.Types, 1)
-		assert.Equal(t, "Opts holds options.\n", pkg.Types[0].Doc)
+		// Look Opts up by name: the transpiler also emits generated types
+		// beside it (such as its StructMeta), which carry no doc.
+		var opts *doc.Type
+		for _, typ := range pkg.Types {
+			if typ.Name == "Opts" {
+				opts = typ
+			}
+		}
+		require.NotNil(t, opts, "type Opts missing from:\n%s", goCode)
+		assert.Equal(t, "Opts holds options.\n", opts.Doc)
 		assertFieldDoc(t, file, "Opts", "Level", "Level is a level.")
 		assert.NotContains(t, goCode, "\x01")
 		assert.NotContains(t, goCode, "\x07")
@@ -340,4 +359,26 @@ func TestDocComments_ControlCharactersStripped(t *testing.T) {
 		_, err := newLineDirectiveTranspiler().Transpile("package odd\n\n// Run"+bad+" runs.\nfunc Run() int = 1\n", "odd.gala")
 		assert.ErrorContains(t, err, "GALA-E0051", "%q in a doc comment must be rejected at parse", bad)
 	}
+}
+
+// TestDocComments_PackageDocStaysInItsFile pins that a package doc is emitted
+// only in the generated file of the GALA file that wrote it. RichAST.PackageDoc
+// is package-level metadata for hover and `gala doc` (RichAST.Merge copies a
+// same-package doc across), so codegen reads the per-file doc table instead and
+// a doc can never be stamped onto every file of the package.
+func TestDocComments_PackageDocStaysInItsFile(t *testing.T) {
+	dir := t.TempDir()
+	siblingPath := filepath.Join(dir, "doc.gala")
+	require.NoError(t, os.WriteFile(siblingPath, []byte("// Package multi is documented here.\npackage multi\n\nfunc Helper() int = 1\n"), 0o644))
+	mainPath := filepath.Join(dir, "main.gala")
+	mainSrc := "package multi\n\nfunc Use() int = Helper()\n"
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o644))
+
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{siblingPath})
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+
+	goCode, err := trans.Transpile(mainSrc, mainPath)
+	require.NoError(t, err)
+	assert.NotContains(t, goCode, "Package multi", "a sibling's package doc must not be emitted here\n%s", goCode)
 }

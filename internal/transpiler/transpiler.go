@@ -716,11 +716,13 @@ func describeUnparseableDump(code, sourceFile string) string {
 //
 // A documented declaration needs a different layout. The transformer puts the
 // doc comment on the declaration's marker, and a directive placed between that
-// doc and the declaration would break `go doc`: go/parser attaches a comment
-// group as documentation only when the group's last line, after //line
-// remapping, is the line just above the declaration's, and a directive as the
-// last line puts the two in different files. (gofmt also moves any directive in
-// a doc comment to its end, so the directive cannot lead the group either.) The
+// doc and the declaration detaches the doc for tools built with Go before 1.25:
+// their go/parser attaches a comment group as documentation only when the
+// group's last line, after //line remapping, is the line just above the
+// declaration's, and a directive as the last line puts the two in different
+// files. (Go 1.25 groups by physical line, but `go doc`, gopls, swag and pkgsite
+// run with whatever Go they were built with.) gofmt also moves any directive in
+// a doc comment to its end, so the directive cannot lead the group either. The
 // directive therefore goes above the doc instead, as its own comment group
 // separated by a blank line, numbered so that the remapping lands the
 // declaration on its GALA line:
@@ -733,8 +735,8 @@ func describeUnparseableDump(code, sourceFile string) string {
 // The doc lines map to the GALA lines above the declaration. Should that put
 // the directive below line 1 — only possible when gofmt has grown the doc to
 // more lines than precede the declaration in GALA — the directive stays between
-// doc and declaration: the line mapping is exact and only `go doc` loses that
-// declaration's prose.
+// doc and declaration: the line mapping is exact, and only tools built with Go
+// before 1.25 lose that declaration's prose.
 //
 // After rewriting, the source is re-run through gofmt (format.Source) to
 // canonicalize blank lines between top-level declarations — gofmt separates
@@ -782,10 +784,11 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 
 	// marker records how to rewrite one physical source line.
 	type marker struct {
-		galaLine int  // the encoded GALA source line the directive maps to
+		galaLine int  // the line number the directive names
 		isDecl   bool // top-level var marker (drops the following gofmt blank)
 		// docLines, when nonzero, is the length of the doc comment directly
-		// above a top-level marker: the directive goes above that doc instead.
+		// above a top-level marker: the directive goes above that doc instead,
+		// and galaLine is already adjusted for it.
 		docLines int
 	}
 	// Keyed by 1-based physical line number of the marker node in `code`.
@@ -831,8 +834,8 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 						if node.Doc != nil {
 							// See the doc comment above for this layout.
 							docLines := line - fset.Position(node.Doc.Pos()).Line
-							if galaLine-1-docLines >= 1 {
-								m.docLines = docLines
+							if hoisted := galaLine - 1 - docLines; hoisted >= 1 {
+								m.galaLine, m.docLines = hoisted, docLines
 							}
 						}
 						markers[line] = m
@@ -867,13 +870,13 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 
 	for i := 0; i < len(lines); i++ {
 		if m, ok := markers[i+1]; ok {
+			directive := fmt.Sprintf("//line %s:%d", slashPath, m.galaLine)
 			if m.docLines > 0 {
 				// The doc is already in result; slot the directive and a blank
 				// line in above it.
-				directive := fmt.Sprintf("//line %s:%d", slashPath, m.galaLine-1-m.docLines)
 				result = slices.Insert(result, len(result)-m.docLines, directive, "")
 			} else {
-				result = append(result, fmt.Sprintf("//line %s:%d", slashPath, m.galaLine))
+				result = append(result, directive)
 			}
 			// For a top-level marker, drop the single gofmt-inserted blank line
 			// that separates it from its declaration so the directive stays

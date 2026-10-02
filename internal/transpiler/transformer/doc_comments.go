@@ -30,10 +30,8 @@ import (
 // and `//line` directive lines dropped — re-emitted as `//` lines. A block
 // comment therefore comes out as a `//` run with the same text.
 //
-// Struct-field and interface-method docs cannot be printed by go/printer on a
-// position-less AST; the generator places those (see
-// generator.Generate). Package docs likewise go through File.Doc to the
-// generator.
+// Package, struct-field and interface-method docs are placed by the generator
+// (see generator/docs.go).
 
 // docCommentGroup renders harvested doc prose as a `//` comment group, or nil
 // for an empty doc.
@@ -41,8 +39,8 @@ import (
 // Two kinds of line cannot be copied through verbatim. A `+build` line is a
 // build constraint wherever it sits in a Go file — gofmt lifts it into a
 // `//go:build` header, which can silently exclude the whole file — so it is
-// dropped. (The parser already treats it as a directive; this also covers a
-// `+build` line inside a block comment.) And control characters are removed:
+// dropped. (The parser already drops it from the doc table; this keeps the
+// guarantee at the point of emission.) And control characters are removed:
 // they have no place in rendered documentation, and the characters Go rejects
 // outright are removed with them, so a doc can never make the generated file
 // unparseable.
@@ -68,12 +66,11 @@ func docCommentGroup(doc string) *ast.CommentGroup {
 	return g
 }
 
-// sanitizeDocLine removes C0 and DEL control characters other than tab from
-// one doc line, along with what Go source may not hold at all: invalid UTF-8
-// and the byte-order mark. (The parser already rejects those two, and NUL, in
-// any GALA source; removing them here keeps that guarantee local.)
+// sanitizeDocLine removes C0 and DEL control characters other than tab, and the
+// byte-order mark Go rejects outside a file's start, from one doc line.
+// strings.Map also re-encodes any invalid UTF-8 as U+FFFD. (The parser already
+// rejects NUL, a stray BOM and invalid UTF-8 in any GALA source.)
 func sanitizeDocLine(line string) string {
-	line = strings.ToValidUTF8(line, "")
 	return strings.Map(func(r rune) rune {
 		if r == 0xFEFF || (r < 0x20 && r != '\t') || r == 0x7F {
 			return -1
@@ -103,7 +100,7 @@ func (t *galaASTTransformer) attachDocComments(ctx grammar.ITopLevelDeclarationC
 	switch {
 	case ctx.FunctionDeclaration() != nil, ctx.ValDeclaration() != nil, ctx.VarDeclaration() != nil:
 		// Each lowers to exactly one Go declaration.
-		setDeclDoc(decls[0], doc)
+		*declDoc(decls[0]) = doc
 
 	case ctx.EmbedDeclaration() != nil:
 		// An EmbeddedFS embed adds a hidden `_embed_<name>` var ahead of the
@@ -193,26 +190,15 @@ func (t *galaASTTransformer) attachFieldDoc(spec *ast.TypeSpec, name string, sta
 	}
 }
 
-// setDeclDoc sets the doc comment of a top-level Go declaration.
-func setDeclDoc(d ast.Decl, doc *ast.CommentGroup) {
+// declDoc returns the Doc field of a top-level Go declaration.
+func declDoc(d ast.Decl) **ast.CommentGroup {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
-		d.Doc = doc
+		return &d.Doc
 	case *ast.GenDecl:
-		d.Doc = doc
+		return &d.Doc
 	}
-}
-
-// takeDeclDoc removes and returns the doc comment of a top-level Go declaration.
-func takeDeclDoc(d ast.Decl) *ast.CommentGroup {
-	var doc *ast.CommentGroup
-	switch d := d.(type) {
-	case *ast.FuncDecl:
-		doc, d.Doc = d.Doc, nil
-	case *ast.GenDecl:
-		doc, d.Doc = d.Doc, nil
-	}
-	return doc
+	return new(*ast.CommentGroup) // *ast.BadDecl: nowhere to put a doc
 }
 
 // findTypeSpec returns the type declaration among decls that declares name.

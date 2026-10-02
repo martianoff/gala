@@ -964,7 +964,7 @@ func main() {
 - **Prefer `s"..."` over `fmt.Sprintf`** - `s"Hello $name"` not `fmt.Sprintf("Hello %s", name)`
 - **Prefer GALA collections over Go slices** - Use `Array` or `List` from `collection_immutable`
 - **Use `Option[T]`** for nullable values, **`Try[T]`** for operations that may fail
-- **Document exported declarations** with a `//` run directly above them - hover and `gala doc` show it, and it is carried into the generated Go, so `go doc`, gopls, pkg.go.dev and annotation tools such as `swag` read it too. Only declaration docs are carried: comments inside function bodies, trailing comments and `//go:` directives are not
+- **Document exported declarations** with a `//` run directly above them - hover and `gala doc` show it, and it is carried into the generated Go, so `go doc`, gopls, pkg.go.dev and annotation tools such as `swag` read it too. Only declaration docs are carried: comments inside function bodies, trailing comments and `//go:`, `//line` and `// +build` directives are not
 
 ## 17. Dependency Management {#17-dependency-management}
 
