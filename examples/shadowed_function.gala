@@ -1,0 +1,25 @@
+package main
+
+// A local binding named like a package-level function shadows it, as in Go:
+// the call is to the binding and is typed from the binding.
+
+func label(n int) int = n + 1
+
+func apply(g func(int) int) int = g(1)
+
+func shout(label func(string) string) string = label("param")
+
+func twice(apply func(func(string) string) string) string = apply((s) => s + s)
+
+func main() {
+    val viaLambda = (label func(string) string) => label("lambda")
+    Println(viaLambda((s string) => s + "!"))
+    Println(shout((s) => s + "?"))
+    Println(twice((h) => h("ab")))
+    if true {
+        val label = (b bool) => !b
+        Println(label(true))
+    }
+    Println(label(41))
+    Println(apply((n) => n * 10))
+}

@@ -368,9 +368,18 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 	// or parameter types of a GALA `time.Now` that a sibling file imported. A
 	// default lowered from another package was written against THAT package's
 	// imports, so it keeps the package-name lookup below.
-	if qualifier, sel, ok := strings.Cut(name, "."); ok && !t.loweringForeignDefault() {
-		if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
-			return fm
+	qualifier, sel, qualified := strings.Cut(name, ".")
+	if !t.loweringForeignDefault() {
+		if qualified {
+			if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
+				return fm
+			}
+		} else if t.bindingScope(name) != nil {
+			// A bare name bound in scope (a val, var, parameter or lambda
+			// parameter) shadows a package-level function of that name, as in
+			// Go: the call is to the binding, so its result and argument types
+			// must not come from the function's signature.
+			return nil
 		}
 	}
 	// Use unified resolution to find the function

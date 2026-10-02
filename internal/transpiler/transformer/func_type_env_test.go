@@ -318,20 +318,25 @@ func TestFunctionTypeEnvStaysReusedWithoutShadowing(t *testing.T) {
 	require.True(t, sameTypeEnv(before, tr.functionTypeEnv()))
 }
 
-func TestBuildTypeEnvLetsFunctionNamesWinOverLocalBindings(t *testing.T) {
+func TestBuildTypeEnvLetsLocalBindingsShadowFunctionNames(t *testing.T) {
 	tr := funcTypeEnvFixture(t)
-	// A local binding that collides with a function name. The function half
-	// is written second and used to overwrite the scope half; that order is
-	// load-bearing, because the two halves are now built separately and
-	// merged.
-	tr.currentScope.valTypes["plain"] = transpiler.BasicType{Name: "bool"}
 	tr.invalidateTypeEnv()
+	require.True(t, sameScheme(tr.functionTypeEnv()["plain"], tr.buildTypeEnv()["plain"]),
+		"an unshadowed function name must be in the environment")
 
-	env := tr.buildTypeEnv()
-	// plain: (string) int from the function table, not bool from the scope.
-	require.True(t, sameScheme(tr.funcTypeEnv["plain"], env["plain"]),
-		"a function name must win over a same-named local binding")
-	require.Equal(t, "string", asTypeConst(t, asTypeApp(t, tr.funcTypeEnv["plain"].Type).Args[0]).Name)
+	// A local binding that collides with a function name shadows it, as in
+	// Go: plain is bool from the scope, not (string) int from the function
+	// table.
+	tr.pushScope()
+	tr.currentScope.valTypes["plain"] = transpiler.BasicType{Name: "bool"}
+	require.Equal(t, "bool", asTypeConst(t, tr.buildTypeEnv()["plain"].Type).Name,
+		"a local binding must shadow a same-named function")
+
+	// A binding whose type is unknown still hides the function.
+	tr.pushScope()
+	tr.currentScope.vals["plain"] = false
+	require.NotContains(t, tr.buildTypeEnv(), "plain",
+		"a typeless local binding must not let the function's type through")
 }
 
 // The name memo outlives a single inference, since normalization does not read

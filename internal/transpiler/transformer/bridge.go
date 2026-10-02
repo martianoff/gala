@@ -324,32 +324,43 @@ func (t *galaASTTransformer) inferIfType(cond, then, elseExpr ast.Expr) (transpi
 // holds a handful of bindings against a file that may declare hundreds of
 // functions.
 //
-// Function names win over same-named local bindings, as they did when both
-// halves were written into one map by two consecutive loops.
+// A local binding shadows a package-level function of the same name, as in
+// Go (see getFunction): the scope half is written first, innermost binding
+// first, and a function fills only the names no scope binds. A binding with
+// no recorded type still hides the function, so the name is unknown to
+// inference rather than typed from the wrong declaration.
 func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 	fnEnv := t.functionTypeEnv()
 
 	memo := t.sharedTypeNameMemo()
 
-	// A function of the same name is about to overwrite the entry anyway,
-	// so skip the conversion instead of allocating a scheme to discard.
 	// The operator entries are sized in too: every caller adds them
 	// immediately after, and letting ten more keys land in a map sized to
 	// the rest is a rehash per inference.
 	env := make(infer.TypeEnv, len(fnEnv)+len(builtinTypeEnv)+t.scopeBindingCount())
+	var untyped map[string]bool // typeless bindings that hide a function
 	for s := t.currentScope; s != nil; s = s.parent {
 		for name, typ := range s.valTypes {
-			if _, shadowedByFunction := fnEnv[name]; shadowedByFunction {
-				continue
-			}
-			if _, bound := env[name]; !bound {
+			if _, bound := env[name]; !bound && !untyped[name] {
 				env[name] = &infer.Scheme{Type: t.toInferTypeMemoized(typ, memo)}
+			}
+		}
+		for name := range s.vals {
+			_, typed := s.valTypes[name]
+			_, bound := env[name]
+			if _, isFunction := fnEnv[name]; isFunction && !typed && !bound {
+				if untyped == nil {
+					untyped = make(map[string]bool)
+				}
+				untyped[name] = true
 			}
 		}
 	}
 
 	for name, scheme := range fnEnv {
-		env[name] = scheme
+		if _, local := env[name]; !local && !untyped[name] {
+			env[name] = scheme
+		}
 	}
 
 	return env
