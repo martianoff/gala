@@ -507,4 +507,8 @@ func main() {
     // codec metadata types.
     Println(multifile_lib_regress.CodecMetaA())
     Println(multifile_lib_regress.CodecMetaB())
+    // Package-level tuple destructuring in two files of the package.
+    multifile_lib_regress.TupleRecordHit()
+    Println(multifile_lib_regress.TupleAddress())
+    Println(multifile_lib_regress.TupleCuts())
 }

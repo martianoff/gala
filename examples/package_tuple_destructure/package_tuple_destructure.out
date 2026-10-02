@@ -1,0 +1,6 @@
+gala v1
+retries=4 timeout=30
+localhost:8080
+info
+mode -> fast (true)
+https (true)

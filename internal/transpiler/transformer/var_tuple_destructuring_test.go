@@ -68,7 +68,7 @@ func main() {
     Println(s"$hits $misses")
 }
 `,
-			contains: []string{"__tuple_1.V1.Get()", "hits = hits + 1"},
+			contains: []string{"__tuple_hits.V1.Get()", "hits = hits + 1"},
 		},
 		{
 			name: "val destructuring keeps the Immutable field",
@@ -119,4 +119,38 @@ func TestTupleDestructuringChecks(t *testing.T) {
 		require.Error(t, err, kw)
 		assert.Contains(t, err.Error(), "cannot be destructured with `"+kw+" (...)`", kw)
 	}
+}
+
+// A package-level temp is named after the first name bound, not a per-file
+// counter that would repeat across the package's files; a `_` takes its value
+// directly, so a declaration binding only `_` needs no temp at all.
+func TestPackageLevelDeclarationTempNames(t *testing.T) {
+	got, err := newBindTranspiler().Transpile(`package main
+
+import "strconv"
+
+val (a, b) = (1, 2)
+var (_, c) = (3, 4)
+val (_, _) = (5, 6)
+val n, e = strconv.Atoi("1")
+val _, e2 = strconv.Atoi("2")
+
+func main() {
+    val (d, f) = (a, c)
+    var (_, _) = (7, 8)
+    val m, g = strconv.Atoi("3")
+    Println(b + d + f, n, e, e2, m, g)
+}
+`, "")
+	require.NoError(t, err)
+	for _, want := range []string{
+		"__tuple_a.V1", "__tuple_c.V2.Get()", "var _ = std.", "__tuple_1.V1",
+		`__val_n_0, __val_n_1 = strconv.Atoi("1")`, `_, __val_e2_1 = strconv.Atoi("2")`,
+	} {
+		assert.Contains(t, got, want)
+	}
+	assert.NotContains(t, got, "__tuple_2")
+	assert.NotContains(t, got, "_ = __tuple")
+	assert.NotContains(t, got, "_ = std.NewImmutable(_)")
+	assert.Regexp(t, `_tmp_[0-9]+, _tmp_[0-9]+ = strconv\.Atoi\("3"\)`, got)
 }

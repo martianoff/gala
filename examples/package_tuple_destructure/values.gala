@@ -1,0 +1,9 @@
+package main
+
+import "strings"
+
+val (host, port) = ("localhost", 8080)
+
+var (_, level) = (0, "debug")
+
+val scheme, _, hasScheme = strings.Cut("https://gala.dev", "://")

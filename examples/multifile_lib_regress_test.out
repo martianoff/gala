@@ -133,3 +133,5 @@ clock:wall
 Array(2, 1)
 {"x":1,"y":2} 3
 4 [{"X":5,"Y":6}] 7
+http://localhost:8080/api hits=1 misses=0
+mode=fast true db true

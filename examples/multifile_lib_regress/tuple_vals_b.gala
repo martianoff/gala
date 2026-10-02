@@ -1,0 +1,10 @@
+package multifile_lib_regress
+
+// The second file of the tuple_vals_a.gala pair.
+
+import "strings"
+
+// TupleScheme and TuplePath are the scheme and path of the address.
+val (TupleScheme, _, TuplePath) = ("http", 0, "/api")
+
+val cutHost, _, cutHostFound = strings.Cut("db:5432", ":")
