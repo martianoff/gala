@@ -710,14 +710,8 @@ func parseLocalGoDeclNames(dir string) map[string]bool {
 		if e.IsDir() || !strings.HasSuffix(n, ".go") {
 			continue
 		}
-		path := filepath.Join(dir, n)
-		// The header settles whether the file counts before the body is read.
-		head, herr := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly|parser.ParseComments)
-		if herr != nil || head == nil || writtenByGala(head) || strings.HasSuffix(head.Name.Name, "_test") {
-			continue
-		}
-		f, perr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
-		if perr != nil || f == nil {
+		f, perr := parser.ParseFile(fset, filepath.Join(dir, n), nil, parser.SkipObjectResolution|parser.ParseComments)
+		if perr != nil || f == nil || writtenByGala(f) || strings.HasSuffix(f.Name.Name, "_test") {
 			continue
 		}
 		for _, decl := range f.Decls {
@@ -1020,6 +1014,12 @@ func (c *undefChecker) isGeneratedMethodForm(name string) bool {
 
 func (c *undefChecker) report(name string, tok antlr.Token) {
 	c.reportWith(name, tok, "", "")
+}
+
+// isReported reports whether name already has an error.
+func (c *undefChecker) isReported(name string) bool {
+	_, seen := c.reported[name]
+	return seen
 }
 
 // reportWith reports name at tok with msg and hint. An empty msg means
@@ -1530,17 +1530,24 @@ func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typePara
 		// `_` is a wildcard the transformer gives its meaning to: any type
 		// argument in a type pattern (`case a: Array[_]`), an inferred lambda
 		// parameter type (`(x _) => x`), and its own errors elsewhere.
+	case c.sourceTypes[name]:
+		// The source of a package this file dot-imports declares it as a type,
+		// whatever the metadata recorded.
 	case c.scope.hidesFrom(name, extra):
 		c.report(name, id.GetStart())
 	case c.typeNameExists(name, extra):
 	case len(c.types.galaOwners[name]) > 0:
 		c.report(name, id.GetStart())
+	case c.isReported(name):
+		// report moves the existing error to the first use; the hint below
+		// would be thrown away.
+		c.report(name, id.GetStart())
 	default:
 		if hint := c.goTypeHint(name); hint != "" {
 			// Only a Go package this file does not dot-import declares it.
 			c.reportWith(name, id.GetStart(), "", hint)
-		} else if c.declared[name] {
-			// Declared, but as a function or value: say so rather than
+		} else if c.scope.declaresVisibly(name, extra) || c.types.localGo[name] {
+			// A function or value this file can name: say so rather than
 			// suggest an import the file may already have.
 			c.reportWith(name, id.GetStart(), fmt.Sprintf("%s is not a type", name),
 				fmt.Sprintf("%s names a function or value; a type position needs a type", name))

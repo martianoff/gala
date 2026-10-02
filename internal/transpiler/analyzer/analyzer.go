@@ -3340,7 +3340,7 @@ func canonicalPath(path string) string {
 // kept, as the transpiler serves every target, not just its host.
 func exportedGoNames(src string) (pkg string, names []string) {
 	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution|goparser.ParseComments)
-	if f == nil || f.Name == nil || neverBuiltWithOrWithoutCgo(f) {
+	if f == nil || f.Name == nil || neverBuiltAnyConfig(f) {
 		return "", nil
 	}
 	add := func(id *ast.Ident) {

@@ -1108,6 +1108,20 @@ func main() {
 		})
 	}
 
+	t.Run("a Go function elsewhere does not make a missing type 'not a type'", func(t *testing.T) {
+		err := analyzeSources(t, `package main
+
+import "strings"
+
+func f(m Map[string, int]) int = 1
+
+func main() {
+    Println(strings.ToUpper("a"))
+}`, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined: Map")
+	})
+
 	t.Run("hint qualifies a Go type with the file's own qualifier", func(t *testing.T) {
 		err := analyzeSources(t, `package main
 
