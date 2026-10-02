@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -35,19 +37,6 @@ import (
 // collection_immutable set two of four fields and mean the rest to be zero.
 // The shorthand's field list is a constructor signature; a block struct is a
 // layout.
-
-// structFieldDefaults returns the field-name → declared-default map for
-// a struct, or nil when the type declares no defaults. resolvedTypeName is the
-// key already resolved by resolveStructTypeName; getTypeMeta re-resolves it
-// against the metadata tables and falls back to the RichAST for types added
-// after the initial copy.
-func (t *galaASTTransformer) structFieldDefaults(resolvedTypeName string) (defaults map[string]transpiler.DefaultExpr, isShorthand bool) {
-	meta := t.getTypeMeta(resolvedTypeName)
-	if meta == nil {
-		return nil, false
-	}
-	return meta.FieldDefaults, meta.IsShorthand
-}
 
 // fillOmittedStructFields returns the extra KeyValueExprs a constructor call
 // needs for the fields it did not supply, and reports the first required field
@@ -186,27 +175,23 @@ func quoteJoin(names []string) string {
 }
 
 // checkUnknownStructFields reports named arguments that match no field of the
-// struct. Shorthand-only, for the same reason the required-field check is: a
-// block-form struct is a Go-shaped layout, and its construction is checked by
-// the Go compiler against the real field set.
-func (t *galaASTTransformer) checkUnknownStructFields(
-	typeName, resolvedTypeName string,
-	fields []string,
-	namedArgs map[string]ast.Expr,
-	line, col int,
-) error {
-	if _, isShorthand := t.structFieldDefaults(resolvedTypeName); !isShorthand {
-		return nil
-	}
-	known := make(map[string]bool, len(fields))
-	for _, f := range fields {
-		known[f] = true
-	}
+// struct being constructed: a shorthand or block-form GALA struct, or a Go
+// struct. Unlike the required-field check it applies to every struct, because
+// the literal is built from the named arguments that match a field, so one
+// matching none would never reach the Go compiler; it would be dropped. The
+// diagnostic points at the first such argument.
+func checkUnknownStructFields(typeName string, fields []string, argListCtx *grammar.ArgumentListContext) error {
 	var unknown []string
-	for name := range namedArgs {
-		if !known[name] {
-			unknown = append(unknown, name)
+	var line, col int
+	for _, argCtx := range argListCtx.AllArgument() {
+		id := argCtx.(*grammar.ArgumentContext).Identifier()
+		if id == nil || slices.Contains(fields, id.GetText()) {
+			continue
 		}
+		if len(unknown) == 0 {
+			line, col = id.GetStart().GetLine(), id.GetStart().GetColumn()
+		}
+		unknown = append(unknown, id.GetText())
 	}
 	if len(unknown) == 0 {
 		return nil

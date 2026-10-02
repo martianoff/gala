@@ -1,0 +1,8 @@
+package go_struct_named_arg_regress
+
+// Shelf is a Go struct of this package's own shelf.go. Named arguments build
+// it as a Go composite literal: plain fields, an unexported one included, and
+// a lambda typed by its func field.
+func MakeShelf(label string) Shelf = Shelf(Label = label, Scale = (n) => n * 10, count = 2)
+
+func ShelfString(label string) string = MakeShelf(label).String()

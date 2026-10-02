@@ -81,8 +81,8 @@ field optional, because the field was already optional. And since a zero-valued
 the zero value mean "default" by hand, which is the boilerplate the default
 existed to remove.
 
-**Where it stands down.** This code fires for **shorthand-declared GALA structs
-constructed with call syntax**, and nowhere else. Everything that is or mirrors a
+**Where it stands down.** The required-field check fires for **shorthand-declared
+GALA structs constructed with call syntax**, and nowhere else. Everything that is or mirrors a
 Go struct keeps Go's partial-literal semantics, because Go's zero-value contract
 is what the Go boundary runs on.
 
@@ -111,11 +111,47 @@ The shorthand form is the one place GALA declares a *constructor* rather than a
 *layout*, so it is the one place the language can promise a fully-initialized
 value — which is why it is the one place this check applies.
 
+**A named argument that names no field.** The same code reports a named
+argument matching no field of the struct being built. This half applies to
+*every* struct called with call syntax — shorthand, block form, and a Go struct
+(imported, or declared in a hand-written `.go` file of the package itself) —
+because the literal is built from the arguments that name a field, so one
+naming none would be dropped before the Go compiler could reject it.
+
+```gala
+package main
+
+type Cfg struct {
+    Name string
+    Tries int
+}
+
+func main() {
+    val c = Cfg(Name = "a", Retries = 2)
+    Println(c.Tries)
+}
+```
+
+```
+error[GALA-E0045]: unknown field "Retries" in construction of "Cfg"
+  --> main.gala:9:29
+  |
+9 |     val c = Cfg(Name = "a", Retries = 2)
+  |                             ^^^^^^^ Cfg declares: Name, Tries
+  |
+  = hint: Cfg declares: Name, Tries
+```
+
+Fix the name to one the hint lists. For a Go struct the hint lists the fields
+the package may set: its exported ones, and the unexported ones too when the
+struct is declared in the package's own `.go` files.
+
 **Evaluation.** A field default is re-evaluated at each construction, not once
 at declaration — the same contract function parameter defaults have. A field
 declared `At time.Time = time.Now()` records the time of each construction.
 
-**Scope.** This code covers an omitted field in shorthand struct construction.
+**Scope.** This code covers an omitted field in shorthand struct construction,
+and a named argument naming no field in any struct construction.
 A missing argument to an ordinary function or method is reported separately, and
 a type name called where it constructs nothing is
 [GALA-E0043](GALA-E0043.md).

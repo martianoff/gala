@@ -1711,6 +1711,17 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 		}
 	}
 
+	// Step 1b: a Go struct's function-typed field, so a lambda passed for it
+	// gets its parameter types. Only for a non-generic struct, whose field
+	// types need no type arguments substituted.
+	if callCtx.structFieldExpectedTypes == nil && callCtx.funcMeta == nil {
+		if td := t.goStructTypeData(fun); td != nil && len(td.TypeParams) == 0 {
+			if ft, isFunc := td.Fields[argName].(transpiler.FuncType); isFunc {
+				return ft, nil
+			}
+		}
+	}
+
 	// Step 2: function metadata lookup — handles lambdas passed as named
 	// function-call args when the function has named parameters. Returns the
 	// declared param type with the call's type arguments substituted, as for a
@@ -2274,7 +2285,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
 			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		}
-		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, argListCtx)
 	}
 
 	// --- Section 8: Default-arg injection for under-filled positional calls ---
@@ -2352,13 +2363,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 //  1. extractTypeNameFromExpr — decode `fun` into (typeName, qualifiedName)
 //  2. findSealedVariantFields → buildSealedVariantApplyCall (fields=[])
 //  3. buildStructLiteralWithNamedArgs (registered GALA struct)
-//  4. buildGoCompositeLiteralWithNamedArgs (Go-imported or dot-imported type)
+//  4. buildGoCompositeLiteralWithNamedArgs (a Go struct of the package's own
+//     .go files or of an imported Go package, checked against its fields;
+//     else a Go-imported or dot-imported type with no type info)
 //  5. fallthrough → coded semantic error
 //
 // Keeping the body a dispatcher matches the established A1 pattern for
 // `transformCallWithArgsCtx` in this file: the numbered sections map to
 // the helpers below and are easy to navigate.
-func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, callCtx functionCallContext, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, namedArgs map[string]ast.Expr, callCtx functionCallContext, argListCtx *grammar.ArgumentListContext) (ast.Expr, error) {
+	line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
 	// 1. Extract the type name for struct field lookup.
 	typeName, qualifiedName := extractTypeNameFromExpr(fun)
 
@@ -2385,11 +2399,28 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return buildSealedVariantApplyCall(t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs), variantFieldNames, namedArgs), nil
 			}
 		}
-		// 3. Regular GALA struct construction with named args.
+		// 3. Regular GALA struct construction with named args. A named
+		// argument matching no field is reported as itself: before the
+		// missing-field check, which would otherwise name the field the author
+		// thought they had just written, and before type-argument inference,
+		// which would blame the type argument that field was to bind.
+		if err := checkUnknownStructFields(qualifiedName, fields, argListCtx); err != nil {
+			return nil, err
+		}
 		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, callCtx.slotType, line, col)
 	}
 
-	// 4. Go-imported type (direct or dot-imported).
+	// 4. A Go struct the Go type info describes: one the package's own
+	// hand-written .go files declare, or one from an imported Go package. Its
+	// fields are plain Go fields, never Immutable-wrapped, so the named
+	// arguments become a Go composite literal as they are.
+	if td := t.goStructTypeData(fun); td != nil {
+		if err := checkUnknownStructFields(qualifiedName, td.FieldOrder, argListCtx); err != nil {
+			return nil, err
+		}
+		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
+	}
+	// Otherwise a Go-imported type with no type info (direct or dot-imported).
 	if t.isGoImportedType(fun) {
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
@@ -2520,14 +2551,6 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 	immutFlags := t.structImmutFields[resolvedTypeName]
 	fieldTypes := t.structFieldTypes[resolvedTypeName]
 
-	// A named argument matching no field was silently dropped, so the slip
-	// surfaced only as the missing field it was meant to supply. Report it as
-	// itself — before the missing-field check, which would otherwise name the
-	// field the author thought they had just written, and before type-argument
-	// inference, which would blame the type argument that field was to bind.
-	if err := t.checkUnknownStructFields(typeName, resolvedTypeName, fields, namedArgs, line, col); err != nil {
-		return nil, err
-	}
 	provided := func(_ int, fieldName string) bool { _, ok := namedArgs[fieldName]; return ok }
 	typeExpr, err := t.inferTypeArgsFromNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, slotType, line, col)
 	if err != nil {
@@ -2755,6 +2778,43 @@ func unwrapToBaseIdent(expr ast.Expr) *ast.Ident {
 			return nil
 		}
 	}
+}
+
+// goStructTypeData returns the Go type info of the Go struct a call target
+// names (`Bag`, `pkg.Bag`, `pkg.Box[int]`): a type the package's own
+// hand-written .go files declare, or one an imported Go package does. It
+// returns nil for anything else, including a type the Go type info does not
+// describe.
+func (t *galaASTTransformer) goStructTypeData(fun ast.Expr) *transpiler.GoTypeData {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	for {
+		if idx, ok := fun.(*ast.IndexExpr); ok {
+			fun = idx.X
+		} else if idx, ok := fun.(*ast.IndexListExpr); ok {
+			fun = idx.X
+		} else {
+			break
+		}
+	}
+	var key string
+	switch e := fun.(type) {
+	case *ast.Ident:
+		key = t.ownGoTypeKey(e.Name)
+	case *ast.SelectorExpr:
+		pkg, ok := e.X.(*ast.Ident)
+		if !ok || !t.importManager.IsPackage(pkg.Name) {
+			return nil
+		}
+		key = t.goQualifiedName(pkg.Name, e.Sel.Name)
+	default:
+		return nil
+	}
+	if td := t.goTypeInfo.GetTypeData(key); td != nil && td.Kind == "struct" {
+		return td
+	}
+	return nil
 }
 
 // isGoImportedType checks if an expression refers to a Go-imported type (not a GALA struct).

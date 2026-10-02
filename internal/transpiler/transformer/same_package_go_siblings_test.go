@@ -101,6 +101,14 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 				"func encode(e Event) string = json.Codec[Event](json.SnakeCase()).Encode(e).GetOrElse(\"\")\n",
 			want: []string{"Millis("},
 		},
+		{
+			name: "a Go-declared struct is built with named arguments as a Go composite literal",
+			goSrc: "type Bag struct {\n\tItems []string\n\tText  string\n\tScore func(int) int\n\tsize  int\n}\n",
+			galaSrc: "import \"martianoff/gala/go_interop\"\n\n" +
+				"func pack() Bag = Bag(Items = go_interop.SliceOf(\"a\"), Text = \"t\", Score = (n) => n * 2, size = 1)\n",
+			want: []string{"Bag{Items: go_interop.SliceOf(\"a\"), Score: func(n int) int {", "Text: \"t\", size: 1}"},
+			absent: []string{"NewImmutable"},
+		},
 		// The declarations-in-GALA, implementations-in-Go split: methods a Go
 		// file declares on a GALA struct are part of its method set, so
 		// GALA-E0044 does not reject them (#615), and a call of one is typed
@@ -165,6 +173,65 @@ func TestSamePackageGoSiblingNoCopyReceiver(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GALA-E0053")
 	assert.Contains(t, err.Error(), "sync.Mutex")
+}
+
+// TestGoStructUnknownNamedArgument covers a named argument that names no field
+// of a Go struct: one of the package's own .go files, in `package main` and in
+// a library, and one of an imported Go package, pure Go or mixed with GALA.
+// The literal is built from the named arguments, so it used to be dropped (an
+// imported struct) or the call rejected as not a construction (an own one).
+// It is GALA-E0045, naming the argument and listing the struct's fields.
+func TestGoStructUnknownNamedArgument(t *testing.T) {
+	const goStruct = "type Response struct {\n\tStatus int\n\tBody   string\n}\n"
+	cases := []struct {
+		name     string
+		files    map[string]string
+		galaFile string
+		typeName string
+	}{
+		{
+			name:     "own .go file, package main",
+			files:    map[string]string{"sibling.go": "package main\n\n" + goStruct, "program.gala": "package main\n\nfunc main() { Println(Response(Status = 1, Extra = 2).Status) }\n"},
+			galaFile: "program.gala",
+			typeName: "Response",
+		},
+		{
+			name:     "own .go file, library package",
+			files:    map[string]string{"lib/sibling.go": "package lib\n\n" + goStruct, "lib/program.gala": "package lib\n\nfunc Make() int = Response(Status = 1, Extra = 2).Status\n"},
+			galaFile: "lib/program.gala",
+			typeName: "Response",
+		},
+		{
+			name: "imported pure Go package",
+			files: map[string]string{
+				"collide/collide.go": "package collide\n\n" + goStruct,
+				"program.gala":       "package main\n\nimport \"example.com/sibs/collide\"\n\nfunc main() { Println(collide.Response(Status = 1, Extra = 2).Status) }\n",
+			},
+			galaFile: "program.gala",
+			typeName: "collide.Response",
+		},
+		{
+			name: "imported package mixing GALA and Go",
+			files: map[string]string{
+				"mixed/types.go":    "package mixed\n\n" + goStruct,
+				"mixed/mixed.gala":  "package mixed\n\nfunc Ok() int = 1\n",
+				"program.gala":      "package main\n\nimport \"example.com/sibs/mixed\"\n\nfunc main() { Println(mixed.Response(Status = 1, Extra = 2).Status) }\n",
+			},
+			galaFile: "program.gala",
+			typeName: "mixed.Response",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.files["go.mod"] = "module example.com/sibs\n\ngo 1.25\n"
+			tc.files["gala.mod"] = "module example.com/sibs\n"
+			_, err := transpileInModule(t, tc.files, tc.galaFile)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0045")
+			assert.Contains(t, err.Error(), `unknown field "Extra" in construction of "`+tc.typeName+`"`)
+			assert.Contains(t, err.Error(), tc.typeName+" declares: Status, Body")
+		})
+	}
 }
 
 // TestSamePackageGoSiblingScanReadsOnlyThePackage covers the files the scan
