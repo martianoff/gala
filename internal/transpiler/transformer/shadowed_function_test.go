@@ -59,6 +59,19 @@ func TestLocalBindingShadowsPackageFunction(t *testing.T) {
 			want: []string{`std.Some[string]{}.Apply(f.Get()("hi"))`, "std.Some[int]{}.Apply(f(1))"},
 		},
 		{
+			// An interface method's parameter names bind only within that
+			// method's signature.
+			name: "interface method parameter does not shadow a later function",
+			decl: `type Labeler interface {
+    Label(f int, dflt string) string
+}
+
+func dflt(n int = 3) int = n
+
+func Run() Option[int] = Some(f(dflt()))`,
+			want: []string{"std.Some[int]{}.Apply(f(dflt(3)))"},
+		},
+		{
 			name: "parameter shadows a generic function",
 			decl: `func Run(id func(string) int) Option[int] = Some(id("x"))`,
 			want: []string{`std.Some[int]{}.Apply(id("x"))`},

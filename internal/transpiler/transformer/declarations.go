@@ -1753,7 +1753,12 @@ func (t *galaASTTransformer) transformInterfaceType(ctx *grammar.InterfaceTypeCo
 			}
 		}
 
+		// The parameter names bind only within the method's signature; left
+		// in the file's scope, they would shadow same-named package
+		// functions for the rest of the file.
+		t.pushScope()
 		funcType, err := t.transformSignature(sig, typeParams)
+		t.popScope()
 		if err != nil {
 			return nil, err
 		}

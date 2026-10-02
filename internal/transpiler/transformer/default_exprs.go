@@ -45,6 +45,10 @@ type defaultSource struct {
 type defaultLowering struct {
 	pkg     string // declaring package: bare function names resolve there (functionByName); they are qualified once the whole default is lowered
 	foreign bool   // declared in a file other than the one being transformed
+	// useScope is the use site's scope. Its bindings, and those of every
+	// scope around it, were not in scope where the default was written, so
+	// they do not shadow the functions the default names (see shadowingScope).
+	useScope *scope
 }
 
 // defaultTreeKey identifies one declared default's text at one position.
@@ -88,7 +92,7 @@ func (t *galaASTTransformer) defaultExprTree(src defaultSource) (grammar.IExpres
 func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, useCol int) (ast.Expr, error) {
 	local := src.Pos.Line > 0 && src.file != "" && t.filePath != "" && filepath.Clean(src.file) == filepath.Clean(t.filePath)
 	prev := t.loweringDefault
-	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local}
+	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local, useScope: t.currentScope}
 	defer func() { t.loweringDefault = prev }()
 	if src.recv != "" {
 		t.pushScope()

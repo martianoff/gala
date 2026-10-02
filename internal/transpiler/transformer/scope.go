@@ -369,18 +369,17 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 	// default lowered from another package was written against THAT package's
 	// imports, so it keeps the package-name lookup below.
 	qualifier, sel, qualified := strings.Cut(name, ".")
-	if !t.loweringForeignDefault() {
-		if qualified {
-			if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
-				return fm
-			}
-		} else if t.bindingScope(name) != nil {
-			// A bare name bound in scope (a val, var, parameter or lambda
-			// parameter) shadows a package-level function of that name, as in
-			// Go: the call is to the binding, so its result and argument types
-			// must not come from the function's signature.
-			return nil
+	if qualified && !t.loweringForeignDefault() {
+		if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
+			return fm
 		}
+	}
+	// A bare name bound in scope (a val, var, parameter or lambda parameter)
+	// shadows a package-level function of that name, as in Go: the call is to
+	// the binding, so its result and argument types must not come from the
+	// function's signature.
+	if !qualified && t.shadowingScope(name) != nil {
+		return nil
 	}
 	// Use unified resolution to find the function
 	resolved, found := t.resolveTypeName(name, func(n string) bool {
@@ -390,8 +389,26 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 	if found {
 		return t.functions[resolved]
 	}
-	fm, _ := t.functionByName(name)
+	fm, _ := t.unshadowedFunctionByName(name)
 	return fm
+}
+
+// shadowingScope returns the innermost scope whose binding of name shadows a
+// package-level function of that name, or nil. While a declared default is
+// being lowered at a use site, only the scopes the default opens itself (its
+// receiver, its lambdas' parameters) count: the use site's locals were not in
+// scope where the default was written.
+func (t *galaASTTransformer) shadowingScope(name string) *scope {
+	var useScope *scope
+	if t.loweringDefault != nil {
+		useScope = t.loweringDefault.useScope
+	}
+	for s := t.currentScope; s != nil && s != useScope; s = s.parent {
+		if _, ok := s.vals[name]; ok {
+			return s
+		}
+	}
+	return nil
 }
 
 // functionByName looks up a GALA function referenced by a bare name. While a
@@ -402,22 +419,28 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 // "is this already a function?", a call's result type) resolve it through
 // here; the name itself is qualified once the whole default is lowered.
 //
-// Otherwise a name bound in scope (a local, a parameter) is that binding, not
-// a function. Functions are keyed the way the analyzer keys them: bare in
-// `main`/`test`, "pkg.Name" in any other package — the current package's own,
-// then the ones a dot import brings into scope. Looking up only the bare name
-// would miss every same-package function of a named package and every
-// dot-imported one.
+// A name bound in scope (a local, a parameter; see shadowingScope) is that
+// binding, not a function. Functions are keyed the way the analyzer keys
+// them: bare in `main`/`test`, "pkg.Name" in any other package — the current
+// package's own, then the ones a dot import brings into scope. Looking up only
+// the bare name would miss every same-package function of a named package and
+// every dot-imported one.
 func (t *galaASTTransformer) functionByName(name string) (*transpiler.FunctionMetadata, bool) {
+	if t.shadowingScope(name) != nil {
+		return nil, false
+	}
+	return t.unshadowedFunctionByName(name)
+}
+
+// unshadowedFunctionByName is functionByName for a name already known not to
+// be shadowed by a local binding.
+func (t *galaASTTransformer) unshadowedFunctionByName(name string) (*transpiler.FunctionMetadata, bool) {
 	if t.loweringForeignDefault() {
 		if fm, ok := t.functions[name]; ok {
 			return fm, true
 		}
 		fm, ok := t.functions[t.loweringDefault.pkg+"."+name]
 		return fm, ok
-	}
-	if t.bindingScope(name) != nil {
-		return nil, false
 	}
 	if fm, ok := t.functions[name]; ok {
 		return fm, true

@@ -44,7 +44,7 @@ func funcTypeEnvFixture(t testing.TB) *galaASTTransformer {
 		},
 	}
 	tr.pushScope()
-	tr.currentScope.valTypes["x"] = transpiler.BasicType{Name: "string"}
+	tr.addVal("x", transpiler.BasicType{Name: "string"})
 	return tr
 }
 
@@ -263,7 +263,7 @@ func TestFunctionTypeEnvIgnoresLocalBindingNamedLikeAType(t *testing.T) {
 	tr.functions["takesThing"] = sig
 	tr.invalidateTypeEnv()
 	first := tr.functionTypeEnv()
-	tr.currentScope.valTypes["Thing"] = transpiler.BasicType{Name: "bool"}
+	tr.addVal("Thing", transpiler.BasicType{Name: "bool"})
 	again := tr.functionTypeEnv()
 	require.True(t, sameTypeEnv(first, again), "a local binding named like a type rebuilt the environment")
 	require.Equal(t, want, paramName(again))
@@ -272,7 +272,7 @@ func TestFunctionTypeEnvIgnoresLocalBindingNamedLikeAType(t *testing.T) {
 	shadowed := funcTypeEnvFixture(t)
 	shadowed.functions["takesThing"] = sig
 	shadowed.invalidateTypeEnv()
-	shadowed.currentScope.valTypes["Thing"] = transpiler.BasicType{Name: "bool"}
+	shadowed.addVal("Thing", transpiler.BasicType{Name: "bool"})
 	require.Equal(t, want, paramName(shadowed.functionTypeEnv()),
 		"a local binding named like a type answered for the type in a signature")
 }
@@ -312,7 +312,7 @@ func TestFunctionTypeEnvStaysReusedWithoutShadowing(t *testing.T) {
 	// buildTypeEnv runs once per expression inference.
 	tr.pushScope()
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
-		tr.currentScope.valTypes[name] = transpiler.BasicType{Name: "int"}
+		tr.addVal(name, transpiler.BasicType{Name: "int"})
 	}
 	before := tr.functionTypeEnv()
 	require.True(t, sameTypeEnv(before, tr.functionTypeEnv()))
@@ -328,7 +328,7 @@ func TestBuildTypeEnvLetsLocalBindingsShadowFunctionNames(t *testing.T) {
 	// Go: plain is bool from the scope, not (string) int from the function
 	// table.
 	tr.pushScope()
-	tr.currentScope.valTypes["plain"] = transpiler.BasicType{Name: "bool"}
+	tr.addVal("plain", transpiler.BasicType{Name: "bool"})
 	require.Equal(t, "bool", asTypeConst(t, tr.buildTypeEnv()["plain"].Type).Name,
 		"a local binding must shadow a same-named function")
 
@@ -344,7 +344,7 @@ func TestBuildTypeEnvLetsLocalBindingsShadowFunctionNames(t *testing.T) {
 // announced write (typeEnvEpoch) or an import change (the manager's revision).
 func TestSharedTypeNameMemoKeptUntilTypeStateChanges(t *testing.T) {
 	tr := funcTypeEnvFixture(t)
-	tr.currentScope.valTypes["y"] = transpiler.NamedType{Name: "Thing"}
+	tr.addVal("y", transpiler.NamedType{Name: "Thing"})
 	tr.buildTypeEnv()
 	require.Contains(t, tr.typeNameCache.resolved, "Thing")
 
@@ -369,7 +369,7 @@ func TestBuildTypeEnvKeepsDistinctScopesDistinct(t *testing.T) {
 	outer["only-outer"] = &infer.Scheme{Type: &infer.TypeConst{Name: "marker"}}
 
 	tr.pushScope()
-	tr.currentScope.valTypes["x"] = transpiler.BasicType{Name: "int"}
+	tr.addVal("x", transpiler.BasicType{Name: "int"})
 	inner := tr.buildTypeEnv()
 
 	// The scope half is rebuilt per call, so a binding added after the
