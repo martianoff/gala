@@ -209,6 +209,8 @@ The transpiler:
 
 No reflection at runtime. Field names, types, and access patterns are all resolved at compile time.
 
+A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested.
+
 ---
 
 ## API Reference

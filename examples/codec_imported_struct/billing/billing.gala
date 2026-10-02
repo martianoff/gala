@@ -1,0 +1,36 @@
+package billing
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "strings"
+)
+
+// Structs another package encodes. Their codec metadata is emitted here, in
+// the package that declares them: only this package can read and construct
+// unexported fields.
+
+// Email has an exported field.
+struct Email(V string)
+
+// Secret has only unexported fields.
+struct Secret(token string, uses int)
+
+// line is an unexported struct type, reached through Invoice.
+struct line(Sku string, qty int)
+
+// Invoice mixes exported and unexported fields, one of them a collection of
+// an unexported struct type.
+struct Invoice(Number int, To Email, lines Array[line])
+
+func ParseEmail(s string) Option[Email] =
+    if (strings.Contains(s, "@")) Some(Email(s)) else None[Email]()
+
+func NewSecret(token string, uses int) Secret = Secret(token, uses)
+
+func (s Secret) Describe() string = s"${s.token}x${s.uses}"
+
+func NewInvoice(number int, to Email) Invoice =
+    Invoice(number, to, ArrayOf(line("pen", 2), line("ink", 1)))
+
+func (i Invoice) Describe() string =
+    s"#${i.Number} to ${i.To.V}: " + i.lines.Map((l) => s"${l.Sku}x${l.qty}").MkString(", ")

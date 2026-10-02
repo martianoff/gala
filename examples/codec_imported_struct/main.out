@@ -1,0 +1,9 @@
+Ada <ada@example.com> key=s3cr3tx3 backup=backup@example.com others=a@x,b@x keys=k1x1,k2x2 ci=ci-tokenx9 bill=#7 to ada@example.com: penx2, inkx1
+{"owner":{"name":"Ada","mail":{"v":"ada@example.com"},"key":{"token":"s3cr3t","uses":3}},"backup":{"v":"backup@example.com"},"others":[{"v":"a@x"},{"v":"b@x"}],"keys":[{"token":"k1","uses":1},{"token":"k2","uses":2}],"by_label":{"ci":{"token":"ci-token","uses":9}},"bill":{"number":7,"to":{"v":"ada@example.com"},"lines":[{"sku":"pen","qty":2},{"sku":"ink","qty":1}]}}
+Ada <ada@example.com> key=s3cr3tx3 backup=backup@example.com others=a@x,b@x keys=k1x1,k2x2 ci=ci-tokenx9 bill=#7 to ada@example.com: penx2, inkx1
+json round-trip equal: true
+Ada <ada@example.com> key=s3cr3tx3 backup=backup@example.com others=a@x,b@x keys=k1x1,k2x2 ci=ci-tokenx9 bill=#7 to ada@example.com: penx2, inkx1
+yaml round-trip equal: true
+{"token":"root","uses":5}
+rootx5
+#8 to ada@example.com: penx2, inkx1

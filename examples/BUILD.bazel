@@ -1026,6 +1026,29 @@ gala_exec_test(
     ],
 )
 
+# Codec for structs whose fields are structs of another package imported by
+# name, including ones with unexported fields: their StructMeta is emitted by
+# the declaring package and referenced from here.
+gala_library(
+    name = "codec_imported_struct_billing",
+    srcs = ["codec_imported_struct/billing/billing.gala"],
+    importpath = "martianoff/gala/examples/codec_imported_struct/billing",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "codec_imported_struct",
+    src = "codec_imported_struct/main.gala",
+    expected = "codec_imported_struct/main.out",
+    gala_deps = [":codec_imported_struct_billing"],
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)
+
 # Temporarily enabled for debugging
 gala_exec_test(
     name = "try_recovery",

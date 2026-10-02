@@ -1,0 +1,68 @@
+package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+    "martianoff/gala/examples/codec_imported_struct/billing"
+)
+
+// Encodes and decodes structs whose fields are structs declared in another
+// package, imported by name: one with exported fields, one with only
+// unexported fields, and one nesting an unexported struct type. Each must
+// round-trip through JSON and YAML, nested directly, inside Option, Array,
+// List and HashMap, and as the codec's root type.
+
+struct User(Name string, Mail billing.Email, Key billing.Secret)
+
+struct Account(
+    Owner User,
+    Backup Option[billing.Email],
+    Others Array[billing.Email],
+    Keys List[billing.Secret],
+    ByLabel HashMap[string, billing.Secret],
+    Bill billing.Invoice,
+)
+
+func describe(a Account) string {
+    val keys = a.Keys.Map((k) => k.Describe()).MkString(",")
+    val labelled = a.ByLabel.Get("ci").Map((k) => k.Describe()).GetOrElse("-")
+    val backup = a.Backup.Map((e) => e.V).GetOrElse("-")
+    val others = a.Others.Map((e) => e.V).MkString(",")
+    return s"${a.Owner.Name} <${a.Owner.Mail.V}> key=${a.Owner.Key.Describe()} backup=$backup others=$others keys=$keys ci=$labelled bill=${a.Bill.Describe()}"
+}
+
+func main() {
+    val mail = billing.ParseEmail("ada@example.com").Get()
+    val account = Account(
+        User("Ada", mail, billing.NewSecret("s3cr3t", 3)),
+        billing.ParseEmail("backup@example.com"),
+        ArrayOf(billing.Email("a@x"), billing.Email("b@x")),
+        ListOf(billing.NewSecret("k1", 1), billing.NewSecret("k2", 2)),
+        EmptyHashMap[string, billing.Secret]().Put("ci", billing.NewSecret("ci-token", 9)),
+        billing.NewInvoice(7, mail),
+    )
+    Println(describe(account))
+
+    val jsonCodec = json.Codec[Account](json.SnakeCase())
+    val encoded = jsonCodec.Encode(account).Get()
+    Println(encoded)
+    val fromJson = jsonCodec.Decode(encoded).Get()
+    Println(describe(fromJson))
+    Println(s"json round-trip equal: ${fromJson.Equal(account)}")
+
+    val yamlCodec = yaml.Codec[Account](yaml.SnakeCase())
+    val fromYaml = yamlCodec.Decode(yamlCodec.Encode(account).Get()).Get()
+    Println(describe(fromYaml))
+    Println(s"yaml round-trip equal: ${fromYaml.Equal(account)}")
+
+    // An imported struct with unexported fields as the codec root.
+    val secretCodec = json.Codec[billing.Secret](json.CamelCase())
+    val secretJson = secretCodec.Encode(billing.NewSecret("root", 5)).Get()
+    Println(secretJson)
+    Println(secretCodec.Decode(secretJson).Get().Describe())
+
+    val invoiceCodec = yaml.Codec[billing.Invoice](yaml.AsIs())
+    Println(invoiceCodec.Decode(invoiceCodec.Encode(billing.NewInvoice(8, mail)).Get()).Get().Describe())
+}
