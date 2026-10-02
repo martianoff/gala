@@ -434,7 +434,11 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 		keyword = "var"
 	}
 	if typeCtx != nil {
-		if typeCtx.GetStart().GetLine() == tuplePattern.GetStop().GetLine() {
+		// The grammar ignores newlines, so in `var (a, b)` followed by
+		// `Println(a)` on the next line `Println` parses as a type: the
+		// declaration as written has no initializer. A val always has one, so
+		// its type is an annotation wherever it is.
+		if !mutable || typeCtx.GetStart().GetLine() == tuplePattern.GetStop().GetLine() {
 			hint := "remove the type; each name takes its type from the tuple"
 			if listCtx == nil {
 				// `var (a, b) int`: several variables of one type.
@@ -443,9 +447,6 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 			return nil, malformedTupleDestructure(typeCtx, typeCtx,
 				fmt.Sprintf("a tuple destructuring `%s (...)` takes no type annotation", keyword), hint)
 		}
-		// The grammar ignores newlines, so in `var (a, b)` followed by
-		// `Println(a)` on the next line `Println` parses as a type: the
-		// declaration as written has no initializer.
 		listCtx = nil
 	}
 	if listCtx == nil {
@@ -469,16 +470,24 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 	}
 
 	// Get the type of the tuple for type inference
+	// Get the type of the tuple the temp holds: the initializer's, with a val's
+	// Immutable wrapper removed as unwrapImmutable removes it from the value.
 	tupleType := t.getExprTypeName(rhsExprs[0])
+	if gen, ok := tupleType.(transpiler.GenericType); ok && t.isImmutableType(tupleType) && len(gen.Params) > 0 {
+		tupleType = gen.Params[0]
+	}
 	tupleGenericType, isGeneric := tupleType.(transpiler.GenericType)
 	if isGeneric && t.isTupleTypeName(tupleGenericType.Base.String()) && len(tupleGenericType.Params) != len(namesCtx) {
-		noun := "names"
+		noun, hint := "names", "remove the extra names"
 		if len(namesCtx) == 1 {
 			noun = "name"
 		}
+		if len(namesCtx) < len(tupleGenericType.Params) {
+			hint = "bind one name per component; write `_` for a component you do not need"
+		}
 		return nil, malformedTupleDestructure(tuplePattern, tuplePattern,
 			fmt.Sprintf("`%s (...)` binds %d %s, but the tuple has %d components", keyword, len(namesCtx), noun, len(tupleGenericType.Params)),
-			"bind one name per component; write `_` for a component you do not need")
+			hint)
 	}
 
 	// Generate unique temp variable name

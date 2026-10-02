@@ -785,7 +785,8 @@ used as a value, is inferred as one GALA type built from the Go signature:
   (`Try[T]`, never `Try[Try[T]]`); over an error-only call they infer `Try[Void]`.
 - A binding of several names (`val a, err = goCall()`, `var …`, `a, err := …`)
   gives each name the type of its Go result — `a` is `T`, `err` is `error`.
-- `val (a, b, c) = strings.Cut(...)` destructures the inferred Tuple.
+- `val (a, b, c) = strings.Cut(...)` destructures the inferred Tuple; each name
+  takes its component's type (`var (a, b, c)` likewise, as reassignable variables).
 - Where the plain `T` is expected but the call's `Try[T]` or Tuple is given, the
   transpiler reports GALA-E0049 instead of inferring `T`.
 

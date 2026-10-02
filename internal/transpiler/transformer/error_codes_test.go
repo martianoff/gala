@@ -762,6 +762,20 @@ func main() {
 			expectContains: "`var (...)` binds 3 names, but the tuple has 2 components",
 		},
 		{
+			// A val always has an initializer, so a type on the next line is
+			// still an annotation, not a missing initializer.
+			name: "GALA-E0056 val tuple destructuring with a type annotation on the next line",
+			input: `package main
+
+func main() {
+    val (a, b)
+        Tuple[int, int] = (1, 2)
+    Println(a + b)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "a tuple destructuring `val (...)` takes no type annotation",
+		},
+		{
 			name: "GALA-E0056 tuple destructuring with fewer names than components",
 			input: `package main
 

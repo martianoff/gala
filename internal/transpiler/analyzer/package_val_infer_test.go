@@ -32,6 +32,7 @@ val Void = setup()
 var VoidVar = setup()
 val (TupA, TupB) = (1, "b")
 var (TupC, TupD) = (2, "d")
+val (_, TupE) = (3, "e")
 `
 
 // TestPackageValInitTypes: the element type a package-level binding records
@@ -104,7 +105,10 @@ func TestVoidPackageValSurvivesCache(t *testing.T) {
 // of the package unwraps a val's Immutable and leaves a var as it is.
 func TestPackageTupleDestructuringIsRecorded(t *testing.T) {
 	rich := analyzeSrc(t, packageValSrc)
-	for name, isVal := range map[string]bool{"TupA": true, "TupB": true, "TupC": false, "TupD": false} {
+	if _, ok := rich.PackageVals["_"]; ok {
+		t.Errorf("the blank identifier is recorded as a package val")
+	}
+	for name, isVal := range map[string]bool{"TupA": true, "TupB": true, "TupC": false, "TupD": false, "TupE": true} {
 		pv := rich.PackageVals[name]
 		if pv == nil {
 			t.Fatalf("PackageVals missing %s", name)
