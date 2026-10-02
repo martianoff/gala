@@ -826,6 +826,9 @@ Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max`
 ### Package-Level Bindings
 A package-level `val` is a `std.Immutable[T]` in the generated Go but reads as a plain `T` everywhere — its own file, sibling files, and other packages (qualified, aliased, or dot-imported). A package-level `var` stays a plain, reassignable variable.
 
+### Struct Fields Declared `Immutable[T]`
+A shorthand struct field declared `Immutable[T]` is the same field as one declared `T`: it takes a `T` (positionally, by name, as a `Copy` override or as its default), wrapped once, and reads as a `T`. A `var` field, an explicit `val` field or a block-form field declared `Immutable[T]` holds the `Immutable[T]` it names.
+
 <!-- doc-check: fragment -->
 ```gala
 // package colors

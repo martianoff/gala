@@ -143,6 +143,7 @@ go_test(
         "go_results_test.go",
         "go_sibling_methods_test.go",
         "go_subpackage_import_path_test.go",
+        "immutable_field_slot_test.go",
         "immutable_test.go",
         "immutable_unwrap_matrix_test.go",
         "immutable_unwrapping_test.go",

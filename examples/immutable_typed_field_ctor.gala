@@ -1,0 +1,28 @@
+package main
+
+// A field declared Immutable[T] takes a T however its value is supplied:
+// positionally, by name, as a Copy override or as its default. The value is
+// wrapped once. A var field declared Immutable[T] takes the Immutable[T].
+
+struct Counter(Hits Immutable[int64] = 1, Label string)
+
+struct Cell(var Stored Immutable[int])
+
+struct Holder[T any](Inner Immutable[T], Spare T)
+
+func main() {
+    val positional = Counter(2, "positional")
+    val named = Counter(Hits = 3, Label = "named")
+    val defaulted = Counter(Label = "defaulted")
+    val copied = named.Copy(Hits = 4)
+    Println(s"${positional.Label} ${positional.Hits}")
+    Println(s"${named.Label} ${named.Hits}")
+    Println(s"${defaulted.Label} ${defaulted.Hits}")
+    Println(s"${copied.Label} ${copied.Hits}")
+
+    Println(Cell(5).Stored.Get() + Cell(Stored = 6).Stored.Get())
+
+    val inferred = Holder(Inner = "in", Spare = "spare")
+    val explicit = Holder[int](Inner = 7, Spare = 8)
+    Println(s"${inferred.Inner} ${explicit.Inner + explicit.Spare}")
+}

@@ -624,8 +624,11 @@ Five contexts feed the expected type:
   `take2(None(), "x")`). Methods, generic methods and named arguments
   resolve their parameter types the same way. A positional argument of a
   struct constructor takes its field's type as the slot
-  (`Pin(None(), 1)` for `struct Pin(D Option[Drag], N int)`); a field
-  declared `Immutable[T]` takes a `T`, which the literal wraps. A field
+  (`Pin(None(), 1)` for `struct Pin(D Option[Drag], N int)`), as a named
+  argument does. A shorthand field declared `Immutable[T]` with no
+  `val`/`var` keyword is recorded as `T`, so it takes a `T`, which the
+  literal wraps once; a `var`, explicit `val` or block-form field declared
+  `Immutable[T]` takes the `Immutable[T]`. A field
   type naming one of a generic struct's type parameters is used once that
   parameter is bound: by explicit type arguments
   (`Slot[string](None(), "x")`), or by the arguments when one of them

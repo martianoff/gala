@@ -383,6 +383,24 @@ type DefaultExpr struct {
 	Pos  SourcePos
 }
 
+// ShorthandFieldType is the type recorded for a field of the shorthand form
+// `struct Box(X T)`, given its declared type and whether it carries a `val` or
+// `var` keyword. A field with no keyword is a val field, stored as
+// Immutable[T]; one declared Immutable[T] is stored as that Immutable[T]
+// rather than wrapped a second time, so it is the same field as one declared
+// T, and is recorded as T. Its value is a T and reading it yields a T.
+func ShorthandFieldType(declared Type, hasKeyword bool) Type {
+	if hasKeyword {
+		return declared
+	}
+	if gt, ok := declared.(GenericType); ok && len(gt.Params) == 1 && gt.Base != nil {
+		if base := gt.Base.BaseName(); base == TypeImmutable || strings.HasSuffix(base, "."+TypeImmutable) {
+			return gt.Params[0]
+		}
+	}
+	return declared
+}
+
 // SourcePos is a 1-based line, 0-based column (ANTLR convention) position in a source file.
 type SourcePos struct {
 	Line   int

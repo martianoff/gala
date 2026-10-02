@@ -1212,7 +1212,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
 						}
-						meta.Fields[fieldName] = a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
+						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
+							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 						if meta.FieldPositions == nil {
@@ -3824,7 +3825,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						if pctx.Type_() != nil {
 							fieldType = pctx.Type_().GetText()
 						}
-						meta.Fields[fieldName] = a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
+						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
+							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 						if meta.FieldPositions == nil {

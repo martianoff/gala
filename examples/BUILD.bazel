@@ -3709,6 +3709,14 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A field declared Immutable[T] takes a T, wrapped once, whether it is supplied
+# positionally, by name, as a Copy override or as its default.
+gala_exec_test(
+    name = "immutable_typed_field_ctor",
+    src = "immutable_typed_field_ctor.gala",
+    expected = "immutable_typed_field_ctor.out",
+)
+
 # A bare `None()` match arm or if/else branch takes the match's or if's result
 # type — the expected type, or else the type of the other arms — never the
 # matched value's type.
