@@ -648,35 +648,6 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	}, returnTypeExpr
 }
 
-// resolveMethodSignatureOnExpr resolves the type of an arbitrary expression, then looks up
-// the method signature on that type. This handles chained calls like exec.Command(...).Output()
-// where the receiver is a CallExpr rather than a simple Ident.
-func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, methodName string) *transpiler.GoFuncSignature {
-	if t.goTypeInfo == nil {
-		return nil
-	}
-	receiverType := t.getExprTypeNameManual(receiver)
-	if transpiler.IsUnusable(receiverType) {
-		return nil
-	}
-	// Pointer stripped, and keyed by the Go package's real name even when the
-	// file imports it under an alias.
-	cleanType := t.goTypeLookupName(receiverType)
-
-	// Try direct lookup
-	if sig := t.goTypeInfo.GetMethodSignature(cleanType, methodName); sig != nil {
-		return sig
-	}
-
-	// If the type is a Go type alias, resolve and try the underlying type's methods
-	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
-		if sig := t.goTypeInfo.GetMethodSignature(aliasedType.String(), methodName); sig != nil {
-			return sig
-		}
-	}
-
-	return nil
-}
 
 // inferBlockReturnType tries to infer the return type from a block's return statements.
 // Returns nil if no concrete type can be inferred.

@@ -834,13 +834,32 @@ func fileImportPaths(f *ast.File) map[string]string {
 // funcDeclTypeParams returns the declaration's type-parameter names as a set, so
 // syntactic recovery can tell `V` (a type parameter) from a local type name.
 func funcDeclTypeParams(fd *ast.FuncDecl) map[string]bool {
-	if fd.Type == nil || fd.Type.TypeParams == nil {
-		return nil
-	}
 	out := make(map[string]bool)
-	for _, field := range fd.Type.TypeParams.List {
-		for _, name := range field.Names {
-			out[name.Name] = true
+	if fd.Type != nil && fd.Type.TypeParams != nil {
+		for _, field := range fd.Type.TypeParams.List {
+			for _, name := range field.Names {
+				out[name.Name] = true
+			}
+		}
+	}
+	// A method's receiver declares the type parameters of its generic type
+	// (`func (b Box[T]) Get() T`); they are in scope in the signature too.
+	if fd.Recv != nil && len(fd.Recv.List) == 1 {
+		recv := fd.Recv.List[0].Type
+		if star, ok := recv.(*ast.StarExpr); ok {
+			recv = star.X
+		}
+		var indices []ast.Expr
+		switch e := recv.(type) {
+		case *ast.IndexExpr:
+			indices = []ast.Expr{e.Index}
+		case *ast.IndexListExpr:
+			indices = e.Indices
+		}
+		for _, idx := range indices {
+			if id, ok := idx.(*ast.Ident); ok {
+				out[id.Name] = true
+			}
 		}
 	}
 	return out

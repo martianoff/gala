@@ -97,7 +97,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	// Defensive backstop: Type-returning functions are contractually required to
 	// return transpiler.NilType{} rather than a nil interface. This guard catches
 	// any contract violation and prevents downstream .IsNil() panics. Callees
-	// known to have returned nil (getGoFuncReturnTypeForCall, getGoMethodReturnType,
+	// known to have returned nil (getGoFuncReturnTypeForCall,
 	// getGoFieldType) have been fixed; leave this guard as defense-in-depth.
 	if result == nil {
 		return transpiler.NilType{}
@@ -1070,15 +1070,24 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 
 // substituteInType recursively substitutes type parameters in a type
 func (t *galaASTTransformer) substituteInType(typ transpiler.Type, paramMap map[string]transpiler.Type) transpiler.Type {
-	return t.substituteInTypeDepth(typ, paramMap, 0)
+	return t.substituteInTypeDepth(typ, paramMap, 0, true)
+}
+
+// substituteGoTypeParams is substituteInType for a Go signature, where a type
+// parameter is never package-qualified: `testing.T` in
+// `func (b Box[T]) Run(f func(*testing.T))` is not the receiver's T.
+func (t *galaASTTransformer) substituteGoTypeParams(typ transpiler.Type, paramMap map[string]transpiler.Type) transpiler.Type {
+	return t.substituteInTypeDepth(typ, paramMap, 0, false)
 }
 
 // substituteInTypeDepth is the depth-tracked implementation of substituteInType.
+// qualifiedToo also substitutes a package-qualified NamedType whose bare name
+// is a key of paramMap.
 // It guards against pathological cycles (e.g., a type map that maps T -> Foo[T])
 // by bailing out past maxTypeSubstDepth levels and returning the un-substituted
 // subterm. A runtime-visible panic would mask the root cause; the defensive
 // return surfaces via failed type checks in the caller.
-func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap map[string]transpiler.Type, depth int) transpiler.Type {
+func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap map[string]transpiler.Type, depth int, qualifiedToo bool) transpiler.Type {
 	if transpiler.IsUnusable(typ) {
 		return typ
 	}
@@ -1098,16 +1107,16 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 		}
 		return v
 	case transpiler.NamedType:
-		if concrete, ok := paramMap[v.Name]; ok {
+		if concrete, ok := paramMap[v.Name]; ok && (qualifiedToo || v.Package == "") {
 			return concrete
 		}
 		return v
 	case transpiler.GenericType:
 		newParams := make([]transpiler.Type, len(v.Params))
 		for i, param := range v.Params {
-			newParams[i] = t.substituteInTypeDepth(param, paramMap, depth)
+			newParams[i] = t.substituteInTypeDepth(param, paramMap, depth, qualifiedToo)
 		}
-		newBase := t.substituteInTypeDepth(v.Base, paramMap, depth)
+		newBase := t.substituteInTypeDepth(v.Base, paramMap, depth, qualifiedToo)
 		if namedBase, ok := newBase.(transpiler.NamedType); ok {
 			return transpiler.GenericType{
 				Base:   namedBase,
@@ -1119,22 +1128,22 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 			Params: newParams,
 		}
 	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth)}
+		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
 	case transpiler.PointerType:
-		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth)}
+		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
 	case transpiler.MapType:
 		return transpiler.MapType{
-			Key:  t.substituteInTypeDepth(v.Key, paramMap, depth),
-			Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth),
+			Key:  t.substituteInTypeDepth(v.Key, paramMap, depth, qualifiedToo),
+			Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo),
 		}
 	case transpiler.FuncType:
 		newParams := make([]transpiler.Type, len(v.Params))
 		for i, p := range v.Params {
-			newParams[i] = t.substituteInTypeDepth(p, paramMap, depth)
+			newParams[i] = t.substituteInTypeDepth(p, paramMap, depth, qualifiedToo)
 		}
 		newResults := make([]transpiler.Type, len(v.Results))
 		for i, r := range v.Results {
-			newResults[i] = t.substituteInTypeDepth(r, paramMap, depth)
+			newResults[i] = t.substituteInTypeDepth(r, paramMap, depth, qualifiedToo)
 		}
 		return transpiler.FuncType{Params: newParams, Results: newResults}
 	default:
@@ -1387,17 +1396,8 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 	}
 
 	for i, arg := range args {
-		var paramType transpiler.Type
-		switch {
-		case i < len(sig.Params):
-			paramType = sig.Params[i].Type
-		case sig.IsVariadic && len(sig.Params) > 0:
-			// Every trailing argument matches the variadic parameter. Its type
-			// is already stored element-wise (convertSignature unwraps `...T`
-			// to T), so no further unwrapping is needed here.
-			paramType = sig.Params[len(sig.Params)-1].Type
-		}
-		if paramType == nil || paramType.IsNil() {
+		paramType := goSigParamType(sig, i)
+		if paramType.IsNil() {
 			continue
 		}
 
@@ -1440,7 +1440,7 @@ func (t *galaASTTransformer) instantiateGoSignatureReturn(
 	if len(subst) == 0 {
 		return ret
 	}
-	return t.substituteInType(ret, subst)
+	return t.substituteGoTypeParams(ret, subst)
 }
 
 // instantiateGoSignatureReturns is the multi-value counterpart of
@@ -1460,12 +1460,17 @@ func (t *galaASTTransformer) instantiateGoSignatureReturns(
 	if len(subst) == 0 {
 		return sig.Returns
 	}
-	out := make([]transpiler.Type, len(sig.Returns))
-	for i, ret := range sig.Returns {
-		if ret == nil {
-			continue
+	return t.substituteGoTypeParamsIn(sig.Returns, subst)
+}
+
+// substituteGoTypeParamsIn is substituteGoTypeParams over each of types, into
+// a new slice; a nil entry stays nil.
+func (t *galaASTTransformer) substituteGoTypeParamsIn(types []transpiler.Type, subst map[string]transpiler.Type) []transpiler.Type {
+	out := make([]transpiler.Type, len(types))
+	for i, typ := range types {
+		if typ != nil {
+			out[i] = t.substituteGoTypeParams(typ, subst)
 		}
-		out[i] = t.substituteInType(ret, subst)
 	}
 	return out
 }
@@ -1548,30 +1553,57 @@ func (t *galaASTTransformer) goImportRealName(importPath string) (string, bool) 
 	return entry.PkgName, true
 }
 
-// getGoMethodReturnType returns the first return type of a method on a Go type.
-// Handles calls like scanner.Text(), req.Header.Set(), etc.
-// The typeName may be package-qualified (e.g., "bufio.Scanner") or a pointer type.
-func (t *galaASTTransformer) getGoMethodReturnType(typeName, methodName string) transpiler.Type {
-	if t.goTypeInfo == nil {
-		return transpiler.NilType{}
+// goMethodSignature returns the Go type info signature of method on a value of
+// type recv (one pointer level stripped), or nil: a method of a Go type
+// (`scanner.Text()`), through a Go type alias too, or one a hand-written .go
+// file of the package declares on a GALA type (GoKindMethodsOnly).
+//
+// A generic receiver (`Box[int]`) is looked up under its base type, and its
+// type arguments are substituted for the type parameters the method's
+// receiver declares: `func (b Box[T]) Get() T` called on a Box[int] returns
+// int. Go methods declare no type parameters of their own, so the signature's
+// type parameters are exactly the receiver's; when their count does not match
+// the type arguments, the signature cannot be instantiated and nil is returned
+// rather than a signature naming type parameters that mean nothing here.
+func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method string) *transpiler.GoFuncSignature {
+	if t.goTypeInfo == nil || transpiler.IsUnusable(recv) {
+		return nil
 	}
-	// Strip pointer prefix
-	cleanType := strings.TrimPrefix(typeName, "*")
-
-	// Try direct lookup
-	if retType := t.goTypeInfo.GetMethodReturnType(cleanType, methodName); retType != nil {
-		return retType
+	if ptr, ok := recv.(transpiler.PointerType); ok {
+		recv = ptr.Elem
 	}
-
-	// If the type is a Go type alias, resolve and try the underlying type's methods
-	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
-		aliasedName := aliasedType.String()
-		if retType := t.goTypeInfo.GetMethodReturnType(aliasedName, methodName); retType != nil {
-			return retType
+	gen, isGeneric := recv.(transpiler.GenericType)
+	if !isGeneric {
+		key := t.goTypeLookupName(recv)
+		if sig := t.goTypeInfo.GetMethodSignature(key, method); sig != nil {
+			return sig
+		}
+		// An alias may name an instantiation (`= atomic.Pointer[int]`).
+		if aliased := t.goTypeInfo.ResolveTypeAlias(key); aliased != nil {
+			return t.goMethodSignature(aliased, method)
+		}
+		return nil
+	}
+	sig := t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(gen.Base), method)
+	if sig == nil || len(sig.TypeParams) != len(gen.Params) {
+		return nil
+	}
+	subst := make(map[string]transpiler.Type, len(gen.Params))
+	for i, name := range sig.TypeParams {
+		subst[name] = gen.Params[i]
+	}
+	inst := &transpiler.GoFuncSignature{
+		Params:     make([]transpiler.GoParam, len(sig.Params)),
+		Returns:    t.substituteGoTypeParamsIn(sig.Returns, subst),
+		IsVariadic: sig.IsVariadic,
+	}
+	for i, p := range sig.Params {
+		inst.Params[i] = transpiler.GoParam{Name: p.Name, Type: p.Type}
+		if p.Type != nil {
+			inst.Params[i].Type = t.substituteGoTypeParams(p.Type, subst)
 		}
 	}
-
-	return transpiler.NilType{}
+	return inst
 }
 
 // getGoFieldType returns the type of a field on a Go struct type.

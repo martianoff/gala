@@ -460,15 +460,10 @@ func (t *galaASTTransformer) checkGoResultAgainst(expr ast.Expr, expected transp
 // function or method, whose parameter types come from its Go signature rather
 // than from a slot (sig may be nil: nothing is checked).
 func (t *galaASTTransformer) checkGoResultGoArg(sig *transpiler.GoFuncSignature, i int, expr ast.Expr, ctx antlr.ParserRuleContext) error {
-	if sig == nil || len(sig.Params) == 0 {
+	param := goSigParamType(sig, i)
+	if param.IsNil() {
 		return nil
 	}
-	last := len(sig.Params) - 1
-	param := sig.Params[min(i, last)].Type
-	if i > last && !sig.IsVariadic {
-		return nil
-	}
-	// A variadic parameter is recorded element-wise: `...string` as string.
 	return t.checkGoResultAgainst(expr, param, ctx)
 }
 

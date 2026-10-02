@@ -1113,11 +1113,18 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		if isSpread {
 			hasSpread = true
 		}
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(transpiler.NilType{}), false)
+		positional := !isSpread && arg.Identifier() == nil
+		// A lambda takes its parameter types from the Go method's parameter,
+		// once the signature is instantiated (see goMethodSignature).
+		expected := transpiler.Type(transpiler.NilType{})
+		if positional && lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) == 0 {
+			expected = goSigParamType(goSig, i)
+		}
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}
-		if !isSpread && arg.Identifier() == nil {
+		if positional {
 			expr = t.spreadGoResultArg(goSig, len(args), expr)
 			if cerr := t.checkGoResultGoArg(goSig, i, expr, exprCtx); cerr != nil {
 				return nil, cerr
@@ -1130,6 +1137,26 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		Args:     mArgs,
 		Ellipsis: ellipsisPos(hasSpread),
 	}, nil
+}
+
+// goSigParamType is the type of the parameter the i-th positional argument of
+// a call of sig fills, or NilType when there is none (sig may be nil). Every
+// argument past the last parameter of a variadic signature fills that one,
+// whose type is recorded element-wise: `...string` as string.
+func goSigParamType(sig *transpiler.GoFuncSignature, i int) transpiler.Type {
+	if sig == nil || len(sig.Params) == 0 {
+		return transpiler.NilType{}
+	}
+	if i >= len(sig.Params) {
+		if !sig.IsVariadic {
+			return transpiler.NilType{}
+		}
+		i = len(sig.Params) - 1 // stored as the element type
+	}
+	if typ := sig.Params[i].Type; typ != nil {
+		return typ
+	}
+	return transpiler.NilType{}
 }
 
 // emitMethodCallWithVoidLambdaHint handles the unresolved-receiver-type-params
@@ -4202,7 +4229,9 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 				return sig
 			}
 		}
-		return t.resolveMethodSignatureOnExpr(fun.X, fun.Sel.Name)
+		// A method of the receiver's type, whatever expression yields it
+		// (`exec.Command(...).Output()`).
+		return t.goMethodSignature(t.getExprTypeNameManual(fun.X), fun.Sel.Name)
 	case *ast.Ident:
 		for _, entry := range t.importManager.dotImports {
 			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
