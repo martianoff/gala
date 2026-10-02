@@ -1706,10 +1706,19 @@ val msg = t match {
 val (a, b) = t         // a = 1, b = "hello"
 val (x, y, z) = triple // x = 1, y = "hello", z = true
 
+// `var` destructures the same way, into mutable variables
+var (lo, hi) = (3, 9)
+lo = lo * 2            // lo = 6
+hi += 1                // hi = 10
+
 // Accessing fields directly
 val first = t.V1   // 1
 val second = t.V2  // "hello"
 ```
+
+A destructuring declaration takes each name's type from the tuple, so it has exactly one
+initializer and no type annotation: `var (a, b)` with no `= tuple`, or
+`val (a, b) Tuple[int, int] = t`, is rejected with [GALA-E0056](errors/GALA-E0056.md).
 
 #### Multiple Return Values
 

@@ -613,6 +613,15 @@ const (
 	// `continue` statement is loop control, and the other bare statement
 	// keywords stay with E0036.
 	CodeGoKeywordAsName ErrorCode = "GALA-E0055"
+
+	// E0056: a tuple destructuring declaration — `val (a, b) = pair` or
+	// `var (a, b) = pair` — is malformed: it has no initializer (`var (a, b)`),
+	// a type annotation (`var (a, b) Tuple[int, int] = pair`), or more than one
+	// expression on the right. The grammar shares these slots with an ordinary
+	// declaration, but a destructuring takes each name's type from the one
+	// tuple it splits, so none of them has a meaning here. It also covers a
+	// name count that differs from the tuple's arity (`var (a, b, c) = (1, 2)`).
+	CodeMalformedTupleDestructure ErrorCode = "GALA-E0056"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

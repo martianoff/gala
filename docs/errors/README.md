@@ -74,6 +74,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0053` | Pointer method on a copy of a value that must not be copied | [GALA-E0053.md](GALA-E0053.md) |
 | `GALA-E0054` | Value called as a function | [GALA-E0054.md](GALA-E0054.md) |
 | `GALA-E0055` | Go keyword used as a name | [GALA-E0055.md](GALA-E0055.md) |
+| `GALA-E0056` | Malformed tuple destructuring | [GALA-E0056.md](GALA-E0056.md) |
 
 ### Retired codes
 

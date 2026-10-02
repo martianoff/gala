@@ -694,6 +694,108 @@ func main() {
 			expectCode:     galaerr.CodeGoKeywordAsName,
 			expectContains: `"default" is a Go keyword and cannot be used as a name`,
 		},
+		{
+			name: "GALA-E0056 var tuple destructuring without an initializer",
+			input: `package main
+
+func main() {
+    var (a, b)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "a tuple destructuring `var (...)` needs an initializer",
+		},
+		{
+			// The grammar ignores newlines, so the next line's call parses as
+			// the declaration's type; it is still a missing initializer.
+			name: "GALA-E0056 var tuple destructuring without an initializer, statement on the next line",
+			input: `package main
+
+func main() {
+    var (a, b)
+    Println(a)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "a tuple destructuring `var (...)` needs an initializer",
+		},
+		{
+			name: "GALA-E0056 var tuple destructuring with a type annotation",
+			input: `package main
+
+func main() {
+    var (a, b) Tuple[int, int] = (1, 2)
+    Println(a + b)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "a tuple destructuring `var (...)` takes no type annotation",
+		},
+		{
+			name: "GALA-E0056 val tuple destructuring with a type annotation",
+			input: `package main
+
+func main() {
+    val (a, b) Tuple[int, int] = (1, 2)
+    Println(a + b)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "a tuple destructuring `val (...)` takes no type annotation",
+		},
+		{
+			name: "GALA-E0056 tuple destructuring of two expressions",
+			input: `package main
+
+func main() {
+    var (a, b) = (1, 2), (3, 4)
+    Println(a)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "tuple destructuring requires exactly one expression on the right side",
+		},
+		{
+			name: "GALA-E0056 tuple destructuring with more names than components",
+			input: `package main
+
+func main() {
+    var (a, b, c) = (1, 2)
+    Println(a)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "`var (...)` binds 3 names, but the tuple has 2 components",
+		},
+		{
+			// A val always has an initializer, so a type on the next line is
+			// still an annotation, not a missing initializer.
+			name: "GALA-E0056 val tuple destructuring with a type annotation on the next line",
+			input: `package main
+
+func main() {
+    val (a, b)
+        Tuple[int, int] = (1, 2)
+    Println(a + b)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "a tuple destructuring `val (...)` takes no type annotation",
+		},
+		{
+			name: "GALA-E0056 tuple destructuring with fewer names than components",
+			input: `package main
+
+func main() {
+    val (a) = (1, 2)
+    Println(a)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "`val (...)` binds 1 name, but the tuple has 2 components",
+		},
+		{
+			name: "GALA-E0056 annotated var tuple without an initializer suggests a plain declaration",
+			input: `package main
+
+func main() {
+    var (a, b) int
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "drop the parentheses: `var a, b T`",
+		},
 	}
 
 	for _, tc := range cases {

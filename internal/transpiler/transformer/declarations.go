@@ -195,7 +195,7 @@ func (t *galaASTTransformer) transformEmbedDeclaration(ctx *grammar.EmbedDeclara
 func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
 	// Handle tuple pattern: val (a, b) = tuple
 	if ctx.TuplePattern() != nil {
-		return t.transformValTuplePattern(ctx)
+		return t.transformTupleDestructure(ctx, false)
 	}
 
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
@@ -410,33 +410,85 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	}, nil
 }
 
-// transformValTuplePattern handles val declarations with tuple destructuring: val (a, b) = tuple
-// It generates:
+// transformTupleDestructure lowers tuple destructuring, `val (a, b) = tuple`
+// or `var (a, b) = tuple` (mutable). It generates:
 //
 //	var (
 //	    __tuple_N = tuple
-//	    a = NewImmutable(__tuple_N.V1)
-//	    b = NewImmutable(__tuple_N.V2)
+//	    a = __tuple_N.V1        // val: the field, already an Immutable[T]
+//	    b = __tuple_N.V2.Get()  // var: the field's value, a plain Go variable
 //	)
-func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclarationContext) (ast.Decl, error) {
-	tupleCtx := ctx.TuplePattern().(*grammar.TuplePatternContext)
-	namesCtx := tupleCtx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+//
+// The grammar lets the declaration carry a type annotation and, for var, omit
+// the initializer; neither has a meaning here (GALA-E0056).
+func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mutable bool) (ast.Decl, error) {
+	tuplePattern, typeCtx, listCtx := decl.TuplePattern(), decl.Type_(), decl.ExpressionList()
+	namesCtx := tuplePattern.(*grammar.TuplePatternContext).IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	for _, idCtx := range namesCtx {
+		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
+			return nil, err
+		}
+	}
+	keyword := "val"
+	if mutable {
+		keyword = "var"
+	}
+	if typeCtx != nil {
+		// The grammar ignores newlines, so in `var (a, b)` followed by
+		// `Println(a)` on the next line `Println` parses as a type: the
+		// declaration as written has no initializer. A val always has one, so
+		// its type is an annotation wherever it is.
+		if !mutable || typeCtx.GetStart().GetLine() == tuplePattern.GetStop().GetLine() {
+			hint := "remove the type; each name takes its type from the tuple"
+			if listCtx == nil {
+				// `var (a, b) int`: several variables of one type.
+				hint = fmt.Sprintf("to declare several variables of one type, drop the parentheses: `%s a, b T`", keyword)
+			}
+			return nil, malformedTupleDestructure(typeCtx, typeCtx,
+				fmt.Sprintf("a tuple destructuring `%s (...)` takes no type annotation", keyword), hint)
+		}
+		listCtx = nil
+	}
+	if listCtx == nil {
+		return nil, malformedTupleDestructure(decl, tuplePattern,
+			fmt.Sprintf("a tuple destructuring `%s (...)` needs an initializer", keyword),
+			"add the tuple to split: `= pair`; a variable with no value declares its own type instead, as in `var a int`")
+	}
+	list := listCtx.(*grammar.ExpressionListContext)
+	if len(list.AllExpression()) != 1 {
+		return nil, malformedTupleDestructure(decl, listCtx,
+			"tuple destructuring requires exactly one expression on the right side",
+			fmt.Sprintf("destructure one tuple; to bind several values, write them as one: `%s (a, b) = (x, y)`", keyword))
+	}
 
-	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+	rhsExprs, err := t.transformExpressionList(list)
 	if err != nil {
 		return nil, err
 	}
-
-	if len(rhsExprs) != 1 {
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "tuple destructuring requires exactly one expression on the right side")
-	}
-	if err := t.checkGoResultTupleDestructure(rhsExprs[0], ctx.ExpressionList()); err != nil {
+	if err := t.checkGoResultTupleDestructure(rhsExprs[0], keyword, listCtx); err != nil {
 		return nil, err
 	}
 
 	// Get the type of the tuple for type inference
+	// Get the type of the tuple the temp holds: the initializer's, with a val's
+	// Immutable wrapper removed as unwrapImmutable removes it from the value.
 	tupleType := t.getExprTypeName(rhsExprs[0])
+	if gen, ok := tupleType.(transpiler.GenericType); ok && t.isImmutableType(tupleType) && len(gen.Params) > 0 {
+		tupleType = gen.Params[0]
+	}
 	tupleGenericType, isGeneric := tupleType.(transpiler.GenericType)
+	if isGeneric && t.isTupleTypeName(tupleGenericType.Base.String()) && len(tupleGenericType.Params) != len(namesCtx) {
+		noun, hint := "names", "remove the extra names"
+		if len(namesCtx) == 1 {
+			noun = "name"
+		}
+		if len(namesCtx) < len(tupleGenericType.Params) {
+			hint = "bind one name per component; write `_` for a component you do not need"
+		}
+		return nil, malformedTupleDestructure(tuplePattern, tuplePattern,
+			fmt.Sprintf("`%s (...)` binds %d %s, but the tuple has %d components", keyword, len(namesCtx), noun, len(tupleGenericType.Params)),
+			hint)
+	}
 
 	// Generate unique temp variable name
 	tempName := fmt.Sprintf("__tuple_%d", t.nextTupleID())
@@ -464,18 +516,28 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 			}
 		}
 
-		t.addVal(name, componentType)
-
 		// Access tuple field: __tuple_N.V1, __tuple_N.V2, etc.
-		// Tuple fields are already Immutable[T], so no additional wrapping needed
-		fieldAccess := &ast.SelectorExpr{
+		// Tuple fields are already Immutable[T], so a val takes the field as
+		// it is and a var takes its value.
+		var value ast.Expr = &ast.SelectorExpr{
 			X:   ast.NewIdent(tempName),
 			Sel: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
+		}
+		if mutable {
+			// As transformVarDeclaration registers a var's type.
+			if qName := t.lookupTypeName(componentType.String()); !qName.IsNil() {
+				componentType = qName
+			}
+			t.addVar(name, componentType)
+			t.markMutable(name)
+			value = &ast.CallExpr{Fun: &ast.SelectorExpr{X: value, Sel: ast.NewIdent(transpiler.MethodGet)}}
+		} else {
+			t.addVal(name, componentType)
 		}
 
 		spec := &ast.ValueSpec{
 			Names:  []*ast.Ident{ast.NewIdent(name)},
-			Values: []ast.Expr{fieldAccess},
+			Values: []ast.Expr{value},
 		}
 
 		specs = append(specs, spec)
@@ -487,7 +549,36 @@ func (t *galaASTTransformer) transformValTuplePattern(ctx *grammar.ValDeclaratio
 	}, nil
 }
 
+// tupleDeclaration is what `val` and `var` declarations share: a tuple
+// pattern, an optional type and an optional initializer.
+type tupleDeclaration interface {
+	antlr.ParserRuleContext
+	TuplePattern() grammar.ITuplePatternContext
+	Type_() grammar.ITypeContext
+	ExpressionList() grammar.IExpressionListContext
+}
+
+var (
+	_ tupleDeclaration = (*grammar.ValDeclarationContext)(nil)
+	_ tupleDeclaration = (*grammar.VarDeclarationContext)(nil)
+)
+
+// malformedTupleDestructure is the GALA-E0056 diagnostic, underlining from the
+// start of from to the end of to when both are on one line.
+func malformedTupleDestructure(from, to antlr.ParserRuleContext, msg, hint string) error {
+	start, stop := from.GetStart(), to.GetStop()
+	err := galaerr.NewCodedSemanticError(galaerr.CodeMalformedTupleDestructure, start.GetLine(), start.GetColumn(), msg, hint)
+	if stop.GetLine() == start.GetLine() {
+		err = err.WithSpan(stop.GetColumn() + len([]rune(stop.GetText())))
+	}
+	return err
+}
+
 func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclarationContext) (ast.Decl, error) {
+	// Handle tuple pattern: var (a, b) = tuple
+	if ctx.TuplePattern() != nil {
+		return t.transformTupleDestructure(ctx, true)
+	}
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
 	for _, idCtx := range namesCtx {
 		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {

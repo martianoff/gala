@@ -561,14 +561,14 @@ func (t *galaASTTransformer) checkGoResultOperands(op string, ctx antlr.ParserRu
 	return nil
 }
 
-// checkGoResultTupleDestructure reports `val (a, b) = goCall()` over a Go call
+// checkGoResultTupleDestructure reports `val (a, b) = goCall()` (or `var`) over a Go call
 // that can fail: its value is a Try, not a Tuple.
-func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, ctx antlr.ParserRuleContext) error {
+func (t *galaASTTransformer) checkGoResultTupleDestructure(expr ast.Expr, keyword string, ctx antlr.ParserRuleContext) error {
 	res := t.goResultOf(expr)
 	if res == nil || !res.Fails {
 		return nil
 	}
-	return t.goResultMisuse(res, "a Try is not a Tuple, so it cannot be destructured with `val (...)`", ctx)
+	return t.goResultMisuse(res, fmt.Sprintf("a Try is not a Tuple, so it cannot be destructured with `%s (...)`", keyword), ctx)
 }
 
 // goResultMisuse builds the GALA-E0049 diagnostic for a converted Go call used

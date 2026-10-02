@@ -4254,27 +4254,28 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			exprList grammar.IExpressionListContext
 			isVal    bool
 		)
+		var tp grammar.ITuplePatternContext
 		switch {
 		case topDecl.ValDeclaration() != nil:
 			vc := topDecl.ValDeclaration().(*grammar.ValDeclarationContext)
-			idList = vc.IdentifierList()
-			typeCtx = vc.Type_()
-			exprList = vc.ExpressionList()
+			idList, typeCtx, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
 			isVal = true
 		case topDecl.VarDeclaration() != nil:
 			vc := topDecl.VarDeclaration().(*grammar.VarDeclarationContext)
-			idList = vc.IdentifierList()
-			typeCtx = vc.Type_()
-			exprList = vc.ExpressionList()
+			idList, typeCtx, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
 			isVal = false
 		default:
 			continue
 		}
+		if tp != nil {
+			// A tuple destructuring (`val (a, b) = pair`) records its names
+			// with no type: each is one component of the initializer, which
+			// the cross-file unwrap does not need to infer, since it needs
+			// only the val/var classification.
+			idList, typeCtx, exprList = tp.(*grammar.TuplePatternContext).IdentifierList(), nil, nil
+		}
 		if idList == nil {
-			// Tuple-pattern destructuring (`val (a, b) = ...`) — names still
-			// reach the same Immutable lowering, but inferring each element's
-			// type here is more than the cross-file unwrap requires, so skip.
-			continue
+			continue // parse-error recovery
 		}
 
 		names := idList.(*grammar.IdentifierListContext).AllIdentifier()
@@ -4285,6 +4286,9 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 
 		for i, idCtx := range names {
 			name := idCtx.GetText()
+			if name == "_" {
+				continue // the blank identifier binds nothing
+			}
 			var valType transpiler.Type = transpiler.NilType{}
 			if typeCtx != nil {
 				valType = a.resolveTypeWithParams(typeCtx.GetText(), pkgName, nil)

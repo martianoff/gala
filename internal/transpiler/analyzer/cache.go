@@ -59,7 +59,9 @@ import (
 // v9: MethodMetadata.PointerReceiver and GoTypeData.PointerMethods record
 // which methods need an addressable receiver, and GoTypeData.NoCopy which
 // Go types must not be copied (GALA-E0053).
-const CacheVersion = "v9"
+// v10: PackageVals records the names a package-level tuple destructuring
+// (`val (a, b) = ...` / `var (a, b) = ...`) binds.
+const CacheVersion = "v10"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

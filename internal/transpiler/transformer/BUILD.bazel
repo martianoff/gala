@@ -227,6 +227,7 @@ go_test(
         "use_binding_test.go",
         "user_get_method_test.go",
         "value_called_as_function_test.go",
+        "var_tuple_destructuring_test.go",
         "variables_test.go",
         "zero_field_struct_ctor_test.go",
     ],

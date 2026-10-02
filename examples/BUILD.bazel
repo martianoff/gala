@@ -1333,6 +1333,13 @@ gala_exec_test(
     expected = "tuple_destructuring.out",
 )
 
+# Mutable tuple destructuring: var (a, b) = tuple, then reassign a and b
+gala_exec_test(
+    name = "var_tuple_destructuring",
+    src = "var_tuple_destructuring.gala",
+    expected = "var_tuple_destructuring.out",
+)
+
 # Nested tuple destructuring: val (left, right) = ((1, 2), (3, 4))
 gala_exec_test(
     name = "nested_tuple_destruct",
