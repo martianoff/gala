@@ -1,16 +1,6 @@
 package transformer_test
 
-import (
-	"testing"
-
-	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
-	"martianoff/gala/internal/transpiler/transformer"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
+import "testing"
 
 // A struct pattern reads each field directly off the matched value. A `var`
 // field is a plain Go field, so it must be read as is; only a non-`var` field
@@ -63,7 +53,25 @@ func axis(p Point) string = p match {
     case _ => "none"
 }
 `,
+			contains:   []string{"y := obj.Y", "x := obj.X"},
 			notContain: []string{"obj.X.Get()", "obj.Y.Get()"},
+		},
+		{
+			name: "brace-body struct declaration",
+			input: `package main
+
+type Cell struct {
+    var Row int
+    Label string
+}
+
+func show(c Cell) string = c match {
+    case Cell(r, l) => s"$l $r"
+    case _ => "none"
+}
+`,
+			contains:   []string{"r := obj.Row", "l := obj.Label.Get()"},
+			notContain: []string{"obj.Row.Get()"},
 		},
 		{
 			name: "nested pattern through a var field",
@@ -105,24 +113,14 @@ func typed(v any) string = v match {
     case _ => "none"
 }
 `,
-			contains:   []string{"obj.(Point)"},
+			contains:   []string{"obj.(Point)", "std.As[int](", ".X)", ".Y\n"},
 			notContain: []string{".X.Get()", ".Y.Get()"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := transpiler.NewAntlrGalaParser()
-			a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-			tr := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-			got, err := tr.Transpile(tt.input, "")
-			require.NoError(t, err)
-			for _, want := range tt.contains {
-				assert.Contains(t, got, want)
-			}
-			for _, unwanted := range tt.notContain {
-				assert.NotContains(t, got, unwanted)
-			}
+			assertTranspiled(t, tt.input, tt.contains, tt.notContain)
 		})
 	}
 }
