@@ -1,7 +1,6 @@
 package build
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -104,9 +103,7 @@ func main() {
 }
 `,
 	} {
-		p := filepath.Join(projectDir, filepath.FromSlash(name))
-		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
-		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
 	}
 
 	isolateUserState(t)

@@ -785,7 +785,7 @@ func (t *galaASTTransformer) resolveStructTypeName(typeName string) string {
 // isOwnGoType reports whether name is a bare type name declared by a
 // hand-written .go file of the package being compiled.
 func (t *galaASTTransformer) isOwnGoType(name string) bool {
-	return t.richAST != nil && t.packageName != "" && !strings.Contains(name, ".") && t.richAST.OwnGoTypes[name]
+	return t.richAST != nil && t.richAST.OwnGoTypes[name]
 }
 
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.

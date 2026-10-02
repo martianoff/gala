@@ -482,7 +482,7 @@ var goFilesCache = struct {
 // change, so the parse + type-check work happens at most once per directory
 // per worker.
 func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
-	return analyzeGoFilesMemo(dirPath, importPath, "")
+	return AnalyzeOwnGoFiles(dirPath, importPath, "")
 }
 
 // AnalyzeOwnGoFiles is AnalyzeGoFiles for the hand-written .go files of the
@@ -490,12 +490,8 @@ func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 // compile into that package take part: the package clause must name pkgName
 // and the file's build constraints must hold. A directory of several programs,
 // or a `//go:build ignore` generator next to the package, therefore leaks
-// nothing into it.
+// nothing into it. An empty pkgName reads every file, as AnalyzeGoFiles does.
 func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
-	return analyzeGoFilesMemo(dirPath, importPath, pkgName)
-}
-
-func analyzeGoFilesMemo(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
 	importPath = goFilesImportPath(dirPath, importPath)
 	cacheKey := dirPath + "\x00" + importPath + "\x00" + pkgName
 

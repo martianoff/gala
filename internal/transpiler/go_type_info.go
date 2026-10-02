@@ -146,26 +146,22 @@ func (g *GoTypeInfo) DeclaresType(pkgName, name string) bool {
 }
 
 // DeclaredTypeNames returns the bare names of the types and type aliases g
-// files under pkgName, or nil when there are none.
+// files under pkgName.
 func (g *GoTypeInfo) DeclaredTypeNames(pkgName string) map[string]bool {
+	names := map[string]bool{}
 	if g == nil {
-		return nil
+		return names
 	}
-	var names map[string]bool
 	prefix := pkgName + "."
-	add := func(key string) {
+	for key := range g.Types {
 		if name, ok := strings.CutPrefix(key, prefix); ok {
-			if names == nil {
-				names = make(map[string]bool)
-			}
 			names[name] = true
 		}
 	}
-	for key := range g.Types {
-		add(key)
-	}
 	for key := range g.TypeAliases {
-		add(key)
+		if name, ok := strings.CutPrefix(key, prefix); ok {
+			names[name] = true
+		}
 	}
 	return names
 }

@@ -1,25 +1,24 @@
 package transformer_test
 
 import (
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// samePackageModule is a module whose package holds a GALA file next to a
-// hand-written Go file, in package pkg at directory dir ("." for the root).
+// samePackageModule is a module whose directory dir ("." for the root) holds
+// a GALA file next to a hand-written Go file. It returns the files and the
+// GALA file's path.
 func samePackageModule(dir, goSrc, galaSrc string) (map[string]string, string) {
-	prefix := ""
-	if dir != "." {
-		prefix = dir + "/"
-	}
+	galaFile := path.Join(dir, "program.gala")
 	return map[string]string{
-		"go.mod":                "module example.com/sibs\n\ngo 1.25\n",
-		"gala.mod":              "module example.com/sibs\n",
-		prefix + "sibling.go":   goSrc,
-		prefix + "program.gala": galaSrc,
-	}, prefix + "program.gala"
+		"go.mod":                       "module example.com/sibs\n\ngo 1.25\n",
+		"gala.mod":                     "module example.com/sibs\n",
+		path.Join(dir, "sibling.go"): goSrc,
+		galaFile:                       galaSrc,
+	}, galaFile
 }
 
 // TestSamePackageGoSiblingDeclarations covers declarations made in a
@@ -149,28 +148,22 @@ func TestSamePackageGoSiblingNoCopyReceiver(t *testing.T) {
 // whose build constraints exclude it. Neither is part of the package `go build`
 // compiles, so neither may lend it a declaration.
 func TestSamePackageGoSiblingScanReadsOnlyThePackage(t *testing.T) {
-	files := map[string]string{
-		"go.mod":   "module example.com/sibs\n\ngo 1.25\n",
-		"gala.mod": "module example.com/sibs\n",
-		// The package's own sibling: Bag is a struct with a slice field.
-		"bag.go": "package main\n\ntype Bag struct{ Items []string }\n",
-		// A generator excluded by its build constraint, declaring a Bag of
-		// its own whose Items is a string.
-		"gen.go": "//go:build ignore\n\npackage main\n\ntype Other struct{ Items string }\n\nfunc MakeOther() Other { return Other{} }\n",
-		// A file of another package in the same directory.
-		"tool.go": "package tool\n\nfunc ToolOnly() []string { return nil }\n",
-		"program.gala": "package main\n\n" +
-			"func count(b Bag) int = b.Items.Size()\n",
-	}
-	out, err := transpileInModule(t, files, "program.gala")
+	files, galaFile := samePackageModule(".",
+		"package main\n\ntype Bag struct{ Items []string }\n",
+		"package main\n\nfunc count(b Bag) int = b.Items.Size()\n")
+	// A generator in package main, excluded by its build constraint.
+	files["gen.go"] = "//go:build ignore\n\npackage main\n\ntype Other struct{ Items string }\n\nfunc MakeOther() Other { return Other{} }\n"
+	// A file of another package in the same directory.
+	files["tool.go"] = "package tool\n\nfunc ToolOnly() []string { return nil }\n"
+	out, err := transpileInModule(t, files, galaFile)
 	require.NoError(t, err)
 	assert.Contains(t, out, "len(b.Items)")
 
 	// Were either result typed, `.Size()` on it would be lowered; unknown to
 	// the transpiler, it is passed through as written.
 	for _, call := range []string{"MakeOther().Items", "ToolOnly()"} {
-		files["program.gala"] = "package main\n\nfunc f() int = " + call + ".Size()\n"
-		out, err := transpileInModule(t, files, "program.gala")
+		files[galaFile] = "package main\n\nfunc f() int = " + call + ".Size()\n"
+		out, err := transpileInModule(t, files, galaFile)
 		require.NoError(t, err)
 		assert.Contains(t, out, call+".Size()", "%s is not declared in package main and must not be typed", call)
 	}
