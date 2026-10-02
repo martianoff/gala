@@ -1064,7 +1064,7 @@ As in Scala, a **capitalized** bare identifier in a `case` pattern that names a 
 - a local `val`/`var` or a function parameter,
 - a package-level `val`/`var` from any file of the package,
 - a name bound by an enclosing `case` arm,
-- a `const`/`var` declared in a hand-written `.go` file of the same package. This works in library packages only, not in `package main`, and not when the file imports a package with the same name as its own (such as GALA's `fs` importing Go's `io/fs`): the Go declarations of the two cannot be told apart, so the name binds.
+- a `const`/`var` declared in a hand-written `.go` file of the same package. This does not work when the file imports a package with the same name as its own (such as GALA's `fs` importing Go's `io/fs`): the Go declarations of the two cannot be told apart, so the name binds.
 
 ```gala
 type Environment string

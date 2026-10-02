@@ -444,7 +444,7 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 		return info
 	}
 
-	extractPackageInfo(pkg, info)
+	extractPackageInfo(pkg, info, false)
 
 	goPackageCache.mu.Lock()
 	goPackageCache.cache[importPath] = info
@@ -482,8 +482,22 @@ var goFilesCache = struct {
 // change, so the parse + type-check work happens at most once per directory
 // per worker.
 func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
+	return analyzeGoFilesMemo(dirPath, importPath, "")
+}
+
+// AnalyzeOwnGoFiles is AnalyzeGoFiles for the hand-written .go files of the
+// package being compiled, named pkgName. Only the files `go build` would
+// compile into that package take part: the package clause must name pkgName
+// and the file's build constraints must hold. A directory of several programs,
+// or a `//go:build ignore` generator next to the package, therefore leaks
+// nothing into it.
+func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
+	return analyzeGoFilesMemo(dirPath, importPath, pkgName)
+}
+
+func analyzeGoFilesMemo(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
 	importPath = goFilesImportPath(dirPath, importPath)
-	cacheKey := dirPath + "\x00" + importPath
+	cacheKey := dirPath + "\x00" + importPath + "\x00" + pkgName
 
 	goFilesCache.mu.Lock()
 	cached, ok := goFilesCache.cache[cacheKey]
@@ -492,15 +506,16 @@ func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 		return cached
 	}
 
-	info := analyzeGoFiles(dirPath, importPath)
+	info := analyzeGoFiles(dirPath, importPath, pkgName)
 	goFilesCache.mu.Lock()
 	goFilesCache.cache[cacheKey] = info
 	goFilesCache.mu.Unlock()
 	return info
 }
 
-// analyzeGoFiles is AnalyzeGoFiles without the memo.
-func analyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
+// analyzeGoFiles is AnalyzeGoFiles without the memo. A non-empty pkgName
+// keeps only the files of that package (see AnalyzeOwnGoFiles).
+func analyzeGoFiles(dirPath, importPath, pkgName string) *transpiler.GoTypeInfo {
 	info := transpiler.NewGoTypeInfo()
 
 	entries, err := os.ReadDir(dirPath)
@@ -518,9 +533,17 @@ func analyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".gen.go") {
 			continue
 		}
+		if pkgName != "" {
+			if match, err := build.Default.MatchFile(dirPath, name); err != nil || !match {
+				continue
+			}
+		}
 		fullPath := filepath.Join(dirPath, name)
 		f, err := parser.ParseFile(fset, fullPath, nil, 0)
 		if err != nil {
+			continue
+		}
+		if pkgName != "" && f.Name.Name != pkgName {
 			continue
 		}
 		files = append(files, f)
@@ -548,7 +571,7 @@ func analyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 		return info
 	}
 
-	extractPackageInfo(pkg, info)
+	extractPackageInfo(pkg, info, pkgName != "")
 	repairUnresolvedSignatures(files, pkg.Name(), info)
 	return info
 }
@@ -770,13 +793,15 @@ func syntacticGenericType(base ast.Expr, args []ast.Expr, imports map[string]str
 }
 
 // extractPackageInfo extracts all exported type information from a types.Package.
-func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
+// For the package being compiled (own), which sees its unexported declarations
+// as well, it extracts those too.
+func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo, own bool) {
 	pkgName := pkg.Name()
 	scope := pkg.Scope()
 
 	for _, name := range scope.Names() {
 		obj := scope.Lookup(name)
-		if !obj.Exported() {
+		if !obj.Exported() && !own {
 			continue
 		}
 
@@ -801,7 +826,7 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 				info.TypeAliases[qualName] = underlying
 				// Also create type data so methods can be looked up on the alias
 				// name (e.g. "os.DirEntry").
-				info.Types[qualName] = extractTypeData(obj, "alias")
+				info.Types[qualName] = extractTypeData(obj, "alias", own)
 				// When the alias re-exports a *named* type from another package
 				// (e.g. `os.DirEntry = io/fs.DirEntry`), also register the target
 				// under its own canonical "pkgName.TypeName" key. Go signatures
@@ -814,7 +839,7 @@ func extractPackageInfo(pkg *types.Package, info *transpiler.GoTypeInfo) {
 				registerAliasTargetType(obj.Type(), qualName, info)
 			} else {
 				// Go type definition: type X struct{...} or type X int
-				info.Types[qualName] = extractTypeData(obj, "")
+				info.Types[qualName] = extractTypeData(obj, "", own)
 			}
 
 		case *types.Var:
@@ -856,7 +881,7 @@ func registerAliasTargetType(aliasType types.Type, aliasQualName string, info *t
 	if _, exists := info.Types[canonical]; exists {
 		return
 	}
-	info.Types[canonical] = extractTypeData(tn, "")
+	info.Types[canonical] = extractTypeData(tn, "", false)
 }
 
 // registerReturnNamedTypes records, for each of a function's return values, the
@@ -904,7 +929,7 @@ func registerNamedTypeClosure(t types.Type, info *transpiler.GoTypeInfo) {
 		if _, exists := info.Types[canonical]; exists {
 			return
 		}
-		info.Types[canonical] = extractTypeData(tn, "")
+		info.Types[canonical] = extractTypeData(tn, "", false)
 	}
 }
 
@@ -928,8 +953,13 @@ func GoPackageSourceDir(importPath string) string {
 	return ""
 }
 
-// extractTypeData creates GoTypeData for a types.TypeName.
-func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeData {
+// extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
+// and methods are recorded and, when own (the type belongs to the package being
+// compiled), the unexported ones that package declares as well.
+func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler.GoTypeData {
+	visible := func(o types.Object) bool {
+		return o.Exported() || (own && o.Pkg() == tn.Pkg())
+	}
 	data := &transpiler.GoTypeData{
 		Fields:  make(map[string]transpiler.Type),
 		Methods: make(map[string]*transpiler.GoFuncSignature),
@@ -963,7 +993,7 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 	if s, ok := typ.Underlying().(*types.Struct); ok {
 		for i := 0; i < s.NumFields(); i++ {
 			f := s.Field(i)
-			if f.Exported() {
+			if visible(f) {
 				data.Fields[f.Name()] = goTypeToTranspilerType(f.Type())
 				data.FieldOrder = append(data.FieldOrder, f.Name())
 			}
@@ -987,7 +1017,7 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 	for i := 0; i < mset.Len(); i++ {
 		sel := mset.At(i)
 		fn := sel.Obj().(*types.Func)
-		if !fn.Exported() {
+		if !visible(fn) {
 			continue
 		}
 		sig := fn.Type().(*types.Signature)
@@ -1000,7 +1030,7 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 	for i := 0; i < mset.Len(); i++ {
 		sel := mset.At(i)
 		fn := sel.Obj().(*types.Func)
-		if !fn.Exported() {
+		if !visible(fn) {
 			continue
 		}
 		valueMethods[fn.Name()] = true
@@ -1035,7 +1065,7 @@ func extractTypeData(tn *types.TypeName, forceKind string) *transpiler.GoTypeDat
 	if named, ok := typ.(*types.Named); ok && named.TypeParams() != nil {
 		for i := 0; i < named.NumMethods(); i++ {
 			fn := named.Method(i)
-			if !fn.Exported() {
+			if !visible(fn) {
 				continue
 			}
 			if _, exists := data.Methods[fn.Name()]; exists {
