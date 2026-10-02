@@ -1,0 +1,15 @@
+origin
+on y-axis at 7
+diagonal 4
+point 3,5
+named heavy, weight 90
+feather weighs nothing
+stone weighs 12
+from origin to 2,3
+vertical at 1 from 2 to 9
+starts at 5,6
+pinned 42
+shelf holds tea
+typed x 11
+not a point
+point 9,1

@@ -1,0 +1,73 @@
+package main
+
+// A struct pattern reads each field straight off the matched value. A `var`
+// field is a plain Go field, and a non-`var` field is a `std.Immutable[T]`, so
+// only the latter may be unwrapped with `.Get()`. Every shape below mixes the
+// two kinds so that a wrong unwrap in either direction fails to build.
+
+struct Point(var X int, var Y int)
+
+struct Labeled(var Name string, Weight int)
+
+struct Segment(From Point, var To Point)
+
+struct Box[T any](var Item T, Tag string)
+
+func describePoint(p Point) string = p match {
+    case Point(0, 0) => "origin"
+    case Point(0, y) => s"on y-axis at $y"
+    case Point(x, y) if x == y => s"diagonal $x"
+    case Point(x, y) => s"point $x,$y"
+    case _ => "unreachable"
+}
+
+func describeLabeled(l Labeled) string = l match {
+    case Labeled("heavy", w) => s"named heavy, weight $w"
+    case Labeled(n, 0) => s"$n weighs nothing"
+    case Labeled(n, w) => s"$n weighs $w"
+    case _ => "unreachable"
+}
+
+func describeSegment(s Segment) string = s match {
+    case Segment(Point(0, 0), Point(x, y)) => s"from origin to $x,$y"
+    case Segment(Point(a, b), Point(c, d)) if a == c => s"vertical at $a from $b to $d"
+    case Segment(Point(a, b), _) => s"starts at $a,$b"
+    case _ => "unreachable"
+}
+
+func describeBox[T any](b Box[T]) string = b match {
+    case Box(item, "pinned") => s"pinned $item"
+    case Box(item, tag) => s"$tag holds $item"
+    case _ => "unreachable"
+}
+
+func typedX(v any) string = v match {
+    case Point(x: int, _) => s"typed x $x"
+    case _ => "not a point"
+}
+
+func main() {
+    Println(describePoint(Point(0, 0)))
+    Println(describePoint(Point(0, 7)))
+    Println(describePoint(Point(4, 4)))
+    Println(describePoint(Point(3, 5)))
+
+    Println(describeLabeled(Labeled("heavy", 90)))
+    Println(describeLabeled(Labeled("feather", 0)))
+    Println(describeLabeled(Labeled("stone", 12)))
+
+    Println(describeSegment(Segment(Point(0, 0), Point(2, 3))))
+    Println(describeSegment(Segment(Point(1, 2), Point(1, 9))))
+    Println(describeSegment(Segment(Point(5, 6), Point(7, 8))))
+
+    Println(describeBox(Box(42, "pinned")))
+    Println(describeBox(Box("tea", "shelf")))
+
+    Println(typedX(Point(11, 12)))
+    Println(typedX("text"))
+
+    // A `var` field stays reassignable, and the match sees the new value.
+    var moving = Point(1, 1)
+    moving.X = 9
+    Println(describePoint(moving))
+}

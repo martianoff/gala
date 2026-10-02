@@ -112,6 +112,10 @@ slot-holds q
 slot-vacant
 flag-on lit
 flag-off
+caret-top col 4
+caret-diagonal 2
+caret 3:8
+pin home at 1,2
 GALA
 2
 header=X-Api-Key

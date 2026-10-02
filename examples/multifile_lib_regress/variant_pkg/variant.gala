@@ -27,3 +27,10 @@ func MakeFlag(on bool) Flag = on match {
     case true  => On("lit")
     case false => Off()
 }
+
+// A struct with `var` fields, matched from the consumer: its plain Go fields
+// must not be unwrapped with `.Get()`, while the non-`var` Name must be. The
+// mutability reaches the consumer through cross-package metadata.
+struct Pin(var Row int, var Col int, Name string)
+
+func MakePin(row int, col int, name string) Pin = Pin(row, col, name)
