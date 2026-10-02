@@ -113,6 +113,7 @@ var accumulatedStateFields = []string{
 	"unresolvedSeen",
 	"diagPackageNames",
 	"structMetas",
+	"valueMetas",
 	"instanceInterfaceNames",
 	"synthesizedReturns",
 	"methodReceivers",

@@ -171,7 +171,7 @@ func (t *galaASTTransformer) structMetaRef(config *structMetaConfig) ast.Expr {
 
 // ---- code generation ----
 
-// finalizeCodecs generates all StructMeta Go declarations.
+// finalizeCodecs generates all StructMeta and ValueMeta Go declarations.
 //
 // Before codegen runs we close over the set of nested struct types
 // reachable from the registered top-level metas — every field whose
@@ -208,7 +208,11 @@ func (t *galaASTTransformer) finalizeCodecs(file *ast.File) error {
 			return err
 		}
 		if !dropped {
-			file.Decls = append(file.Decls, decls...)
+			valueDecls, err := t.generateValueMetaDecls()
+			if err != nil {
+				return err
+			}
+			file.Decls = append(append(file.Decls, decls...), valueDecls...)
 			return nil
 		}
 		restore()
@@ -524,8 +528,11 @@ func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *t
 		typeArgName = types.ExprString(arg)
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		root := types.ExprString(arg)
-		return nil, t.codecError(&structMetaConfig{rootName: root, line: line, col: col},
-			fmt.Sprintf("generic type %s has no codec encoding", root))
+		site := &structMetaConfig{rootName: root, line: line, col: col}
+		if kind, _ := codecContainer(t.astTypeToTranspilerType(arg)); kind != "" {
+			return nil, t.codecError(site, notAStructReason(root))
+		}
+		return nil, t.codecError(site, fmt.Sprintf("generic type %s has no codec encoding", root))
 	}
 	if typeArgName == "" {
 		return args, nil
@@ -534,11 +541,25 @@ func (t *galaASTTransformer) autoInjectStructMeta(args []ast.Expr, methodMeta *t
 	site := &structMetaConfig{rootName: typeArgName, line: line, col: col}
 	config := t.registerStructMeta(typeArgName, site)
 	if config == nil {
+		// A scalar root (Codec[int]), a collection or an alias of one is not a
+		// struct at all: say so, and name what does describe it.
+		ty := t.codecUnalias(t.astTypeToTranspilerType(typeArgs[0]))
+		_, _, _, isScalar := t.codecScalarOf(ty)
+		if container, _ := codecContainer(ty); isScalar || container != "" {
+			return nil, t.codecError(site, notAStructReason(typeArgName))
+		}
 		return nil, t.codecError(site, t.notDescribableReason(typeArgName))
 	}
 
 	// Prepend StructMeta before existing args
 	return append([]ast.Expr{&ast.CompositeLit{Type: t.structMetaRef(config)}}, args...), nil
+}
+
+// notAStructReason explains that a StructMeta-based codec was asked for a
+// root that is not a struct, and names the mechanism that does cover it.
+func notAStructReason(name string) string {
+	return fmt.Sprintf("%s is not a struct: StructMeta[T] describes the fields of a struct; "+
+		"a root of another shape needs a ValueMeta[T]-based codec, such as Value[T]()", name)
 }
 
 func buildFieldAccess(receiver ast.Expr, fieldName string, isImmut bool) ast.Expr {

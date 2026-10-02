@@ -1,0 +1,223 @@
+package main
+
+// Documents whose root is not a single struct: an array of structs
+// (Codec[T].Array() / .List()), and any other value shape — a scalar, an
+// Option, an array of scalars — through Value[T](). Every behaviour is checked
+// for JSON and YAML alike.
+
+import (
+    "time"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/test"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+type Millis int64
+
+struct Tag(Key string, TagColor string)
+struct Account(UserId int, FullName string, Password string, Tags Array[Tag], Groups Array[Array[Tag]])
+
+val red = Tag("urgent", "red")
+val blue = Tag("later", "blue")
+
+val accounts = ArrayOf(
+    Account(1, "Ann Lee", "secret", ArrayOf(red), ArrayOf(ArrayOf(red, blue), EmptyArray[Tag]())),
+    Account(2, "Bo", "hunter2", EmptyArray[Tag](), EmptyArray[Array[Tag]]()),
+)
+
+// The password is never written, so it reads back empty.
+val accountsNoPassword = accounts.Map((a) => a.Copy(Password = ""))
+
+val jsonAccounts = json.Codec[Account](json.SnakeCase()).Omit("Password").Rename("UserId", "id")
+val yamlAccounts = yaml.Codec[Account](yaml.SnakeCase()).Omit("Password").Rename("UserId", "id")
+
+// both checks that v encodes to the given JSON and YAML text and decodes back
+// to v through each format.
+func both[V any](t T, j json.JsonValueEncoder[V], y yaml.YamlValueEncoder[V], v V, wantJson string, wantYaml string) T {
+    val t1 = EqMsg(t, j.Encode(v).GetOrElse("<failure>"), wantJson, "json encode")
+    val t2 = EqMsg(t1, y.Encode(v).GetOrElse("<failure>"), wantYaml, "yaml encode")
+    val t3 = EqMsg(t2, j.Decode(wantJson).ToOption(), Some(v), "json decode")
+    return EqMsg(t3, y.Decode(wantYaml).ToOption(), Some(v), "yaml decode")
+}
+
+// --- root array of structs ---
+
+func TestStructArray_JsonEncodeAppliesElementConfig(t T) T {
+    val want = "[" +
+        "{\"id\":1,\"full_name\":\"Ann Lee\",\"tags\":[{\"key\":\"urgent\",\"tag_color\":\"red\"}]," +
+        "\"groups\":[[{\"key\":\"urgent\",\"tag_color\":\"red\"},{\"key\":\"later\",\"tag_color\":\"blue\"}],[]]}," +
+        "{\"id\":2,\"full_name\":\"Bo\",\"tags\":[],\"groups\":[]}" +
+        "]"
+    return Eq(t, jsonAccounts.Array().Encode(accounts).GetOrElse("<failure>"), want)
+}
+
+func TestStructArray_YamlEncodeAppliesElementConfig(t T) T {
+    val want = "- id: 1\n" +
+        "  full_name: Ann Lee\n" +
+        "  tags:\n" +
+        "    - key: urgent\n" +
+        "      tag_color: red\n" +
+        "  groups:\n" +
+        "    -\n" +
+        "      - key: urgent\n" +
+        "        tag_color: red\n" +
+        "      - key: later\n" +
+        "        tag_color: blue\n" +
+        "    - []\n" +
+        "- id: 2\n" +
+        "  full_name: Bo\n" +
+        "  tags: []\n" +
+        "  groups: []"
+    return Eq(t, yamlAccounts.Array().Encode(accounts).GetOrElse("<failure>"), want)
+}
+
+func TestStructArray_RoundTrip(t T) T {
+    val j = jsonAccounts.Array()
+    val y = yamlAccounts.Array()
+    val t1 = EqMsg(t, j.Encode(accounts).FlatMap((s) => j.Decode(s)).ToOption(), Some(accountsNoPassword), "json")
+    return EqMsg(t1, y.Encode(accounts).FlatMap((s) => y.Decode(s)).ToOption(), Some(accountsNoPassword), "yaml")
+}
+
+func TestStructList_RoundTrip(t T) T {
+    val list = accounts.ToList()
+    val want = Some(accountsNoPassword.ToList())
+    val j = jsonAccounts.List()
+    val y = yamlAccounts.List()
+    val t1 = EqMsg(t, j.Encode(list).FlatMap((s) => j.Decode(s)).ToOption(), want, "json")
+    return EqMsg(t1, y.Encode(list).FlatMap((s) => y.Decode(s)).ToOption(), want, "yaml")
+}
+
+// A third-party payload: keys follow the element codec's naming, unknown keys
+// are dropped, and whitespace around the array is allowed.
+func TestStructArray_DecodeThirdPartyPayload(t T) T {
+    val payload = " [ {\"id\": 7, \"full_name\": \"Cy\", \"extra\": {\"x\": [1]}, \"tags\": [{\"key\": \"k\", \"tag_color\": \"c\"}]} ]\n"
+    val want = ArrayOf(Account(7, "Cy", "", ArrayOf(Tag("k", "c")), EmptyArray[Array[Tag]]()))
+    return Eq(t, jsonAccounts.Array().Decode(payload).ToOption(), Some(want))
+}
+
+func TestStructArray_Empty(t T) T {
+    val empty = EmptyArray[Account]()
+    val t1 = Eq(t, jsonAccounts.Array().Encode(empty).GetOrElse("<failure>"), "[]")
+    val t2 = Eq(t1, yamlAccounts.Array().Encode(empty).GetOrElse("<failure>"), "[]")
+    val t3 = Eq(t2, jsonAccounts.Array().Decode("[]").ToOption(), Some(empty))
+    return Eq(t3, yamlAccounts.Array().Decode("[]").ToOption(), Some(empty))
+}
+
+func TestStructArray_WrongShapeFails(t T) T {
+    val j = jsonAccounts.Array()
+    val y = yamlAccounts.Array()
+    val cases = ArrayOf(
+        ("json object", j.Decode("{\"id\":1}")),
+        ("json scalar", j.Decode("42")),
+        ("json null", j.Decode("null")),
+        ("json array of scalars", j.Decode("[1,2]")),
+        ("json trailing content", j.Decode("[]]")),
+        ("json unterminated", j.Decode("[{\"id\":1}")),
+        ("yaml mapping", y.Decode("id: 1")),
+        ("yaml scalar", y.Decode("42")),
+        ("yaml sequence of scalars", y.Decode("- 1\n- 2")),
+    )
+    return cases.FoldLeft(t, (acc, c) => EqMsg(acc, c.V2.IsFailure(), true, c.V1))
+}
+
+func TestStructArray_UnapplyMatches(t T) T {
+    val j = jsonAccounts.Array()
+    val count = "[{\"id\":1},{\"id\":2}]" match {
+        case j(as) => as.Size()
+        case _ => -1
+    }
+    return Eq(t, count, 2)
+}
+
+// Value[Array[T]] covers a struct array too: naming applies to every element,
+// but there is no Rename/Omit — that is what Codec[T].Array() is for.
+func TestValue_StructArrayUsesNaming(t T) T {
+    val tags = ArrayOf(red)
+    val t1 = Eq(t, json.Value[Array[Tag]]().Naming(json.KebabCase()).Encode(tags).GetOrElse("<failure>"), "[{\"key\":\"urgent\",\"tag-color\":\"red\"}]")
+    return Eq(t1, yaml.Value[Array[Tag]]().Naming(yaml.KebabCase()).Encode(tags).GetOrElse("<failure>"), "- key: urgent\n  tag-color: red")
+}
+
+// --- root array of scalars ---
+
+func TestScalarArrays(t T) T {
+    val t1 = both(t, json.Value[Array[int]](), yaml.Value[Array[int]](), ArrayOf(1, 2, 3), "[1,2,3]", "- 1\n- 2\n- 3")
+    val t2 = both(t1, json.Value[Array[string]](), yaml.Value[Array[string]](), ArrayOf("a", "b c", "42"), "[\"a\",\"b c\",\"42\"]", "- a\n- b c\n- \"42\"")
+    val t3 = both(t2, json.Value[List[float64]](), yaml.Value[List[float64]](), ListOf(1.5, -2.0), "[1.5,-2]", "- 1.5\n- -2")
+    val t4 = both(t3, json.Value[Array[Option[int]]](), yaml.Value[Array[Option[int]]](), ArrayOf(Some(1), None[int]()), "[1,null]", "- 1\n- null")
+    val t5 = both(t4, json.Value[Array[Array[int]]](), yaml.Value[Array[Array[int]]](), ArrayOf(ArrayOf(1), EmptyArray[int]()), "[[1],[]]", "-\n  - 1\n- []")
+    return both(t5, json.Value[Array[bool]](), yaml.Value[Array[bool]](), EmptyArray[bool](), "[]", "[]")
+}
+
+// --- bare scalar documents ---
+
+func TestScalarDocuments(t T) T {
+    val t1 = both(t, json.Value[int](), yaml.Value[int](), 42, "42", "42")
+    val t2 = both(t1, json.Value[string](), yaml.Value[string](), "abc", "\"abc\"", "abc")
+    val t3 = both(t2, json.Value[string](), yaml.Value[string](), "", "\"\"", "\"\"")
+    // Strings YAML would otherwise read as another type, or as a mapping.
+    val t4 = both(t3, json.Value[string](), yaml.Value[string](), "true", "\"true\"", "\"true\"")
+    val t5 = both(t4, json.Value[string](), yaml.Value[string](), "key:", "\"key:\"", "\"key:\"")
+    val t6 = both(t5, json.Value[bool](), yaml.Value[bool](), true, "true", "true")
+    val t7 = both(t6, json.Value[float64](), yaml.Value[float64](), 1.5, "1.5", "1.5")
+    val t8 = both(t7, json.Value[float32](), yaml.Value[float32](), float32(0.1), "0.1", "0.1")
+    val t9 = both(t8, json.Value[rune](), yaml.Value[rune](), 'x', "\"x\"", "x")
+    val t10 = both(t9, json.Value[int8](), yaml.Value[int8](), int8(-128), "-128", "-128")
+    val t11 = both(t10, json.Value[uint64](), yaml.Value[uint64](), uint64(18446744073709551615), "18446744073709551615", "18446744073709551615")
+    val t12 = both(t11, json.Value[byte](), yaml.Value[byte](), byte(255), "255", "255")
+    val t13 = both(t12, json.Value[Millis](), yaml.Value[Millis](), Millis(1500), "1500", "1500")
+    return both(t13, json.Value[time.Duration](), yaml.Value[time.Duration](), time.Second, "1000000000", "1000000000")
+}
+
+func TestOptionDocuments(t T) T {
+    val t1 = both(t, json.Value[Option[int]](), yaml.Value[Option[int]](), None[int](), "null", "null")
+    return both(t1, json.Value[Option[int]](), yaml.Value[Option[int]](), Some(7), "7", "7")
+}
+
+func TestStructValue(t T) T =
+    both(t, json.Value[Tag](), yaml.Value[Tag](), red, "{\"Key\":\"urgent\",\"TagColor\":\"red\"}", "Key: urgent\nTagColor: red")
+
+// Sized kinds are range-checked exactly as struct fields are.
+func TestScalarDocuments_OutOfRangeFails(t T) T {
+    val cases = ArrayOf(
+        ("json int8 above max", json.Value[int8]().Decode("128").IsFailure()),
+        ("json uint8 negative", json.Value[uint8]().Decode("-1").IsFailure()),
+        ("json uint16 in array", json.Value[Array[uint16]]().Decode("[1,65536]").IsFailure()),
+        ("json float32 overflow", json.Value[float32]().Decode("1e39").IsFailure()),
+        ("yaml int8 above max", yaml.Value[int8]().Decode("128").IsFailure()),
+        ("yaml uint8 negative", yaml.Value[uint8]().Decode("-1").IsFailure()),
+        ("yaml uint16 in array", yaml.Value[Array[uint16]]().Decode("- 1\n- 65536").IsFailure()),
+        ("json int8 max", json.Value[int8]().Decode("127").IsSuccess()),
+        ("yaml int8 max", yaml.Value[int8]().Decode("127").IsSuccess()),
+    )
+    return cases.FoldLeft(t, (acc, c) => EqMsg(acc, c.V2, true, c.V1))
+}
+
+func TestScalarDocuments_WrongShapeFails(t T) T {
+    val cases = ArrayOf(
+        ("json string as int", json.Value[int]().Decode("\"1\"")),
+        ("json array as int", json.Value[int]().Decode("[1]")),
+        ("json object as int", json.Value[int]().Decode("{}")),
+        ("json fraction as int", json.Value[int]().Decode("1.5")),
+        ("json two values", json.Value[int]().Decode("1 2")),
+        ("json empty document", json.Value[int]().Decode("")),
+        ("json null as int", json.Value[int]().Decode("null")),
+        ("yaml mapping as int", yaml.Value[int]().Decode("a: 1")),
+        ("yaml sequence as int", yaml.Value[int]().Decode("- 1")),
+        ("yaml word as int", yaml.Value[int]().Decode("abc")),
+    )
+    val t1 = cases.FoldLeft(t, (acc, c) => EqMsg(acc, c.V2.IsFailure(), true, c.V1))
+    val t2 = IsFailure(t1, json.Value[Array[int]]().Decode("{\"a\":1}"))
+    val t3 = IsFailure(t2, yaml.Value[Array[int]]().Decode("a: 1"))
+    val t4 = IsFailure(t3, json.Value[string]().Decode("1"))
+    return IsFailure(t4, json.Value[bool]().Decode("truex"))
+}
+
+func TestValue_UnapplyMatches(t T) T {
+    val ints = json.Value[Array[int]]()
+    val total = "[1,2,3]" match {
+        case ints(xs) => xs.FoldLeft(0, (acc, x) => acc + x)
+        case _ => -1
+    }
+    return Eq(t, total, 6)
+}

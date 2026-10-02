@@ -1005,6 +1005,17 @@ gala_exec_test(
     ],
 )
 
+gala_exec_test(
+    name = "codec_root_shapes",
+    src = "codec_root_shapes.gala",
+    expected = "codec_root_shapes.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)
+
 # Cross-package nested struct codec: parent in main, inner struct in a
 # sibling package — exercises the recursive _StructMeta_X{} lookup
 # across module boundaries.

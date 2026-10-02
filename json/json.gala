@@ -89,20 +89,49 @@ func nameFnFromKeys(keys Array[string]) func(int) string =
 func omitFnFromKeys(keys Array[string]) func(int) bool =
     (i int) => keys.GetOption(i).GetOrElse("") == ""
 
+// namingFn is the codec's naming strategy as the key converter StructMeta
+// threads into nested structs.
+func namingFn(n Naming) func(string) string = (name string) => ApplyNaming(name, n)
+
+// writer returns the function that writes one T as a JSON object, with the
+// codec's Naming/Rename/Omit applied. Array() and List() call it per element.
+func (c JsonEncoder[T]) writer() func(FieldEncoder, T) {
+    val nameFn = nameFnFromKeys(c.Keys.Keys)
+    val omitFn = omitFnFromKeys(c.Keys.Keys)
+    val naming = namingFn(c.Config.NamingStrategy)
+    return (w FieldEncoder, v T) => c.Meta.EncodeFields(w, v, nameFn, omitFn, naming)
+}
+
+// reader returns the function that reads one T from a JSON object. The key
+// lookup is built once, so decoding an array of T pays for it once.
+func (c JsonEncoder[T]) reader() func(FieldDecoder) T {
+    val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
+    val naming = namingFn(c.Config.NamingStrategy)
+    return (r FieldDecoder) => c.Meta.DecodeFields(r, lookup, naming)
+}
+
+// encodeJson runs write against a fresh encoder and returns the document. An
+// encoder panic (NaN, say) becomes a Failure.
+func encodeJson(write func(FieldEncoder)) Try[string] = Try(() => {
+    val w = NewJsonEncoder()
+    write(w)
+    w.String()
+})
+
+// decodeJson runs read over the whole of s: the read must consume the
+// document, so trailing content is an error. A decoder panic (malformed
+// input, wrong shape, out-of-range number) becomes a Failure.
+func decodeJson[V any](s string, read func(FieldDecoder) V) Try[V] = Try(() => {
+    val r = NewJsonDecoder(s)
+    val v = read(r)
+    r.End()
+    v
+})
+
 // Encode serializes a value to a compact JSON string (zero-reflection).
 func (c JsonEncoder[T]) Encode(v T) Try[string] {
-    return Try[string](() => {
-        val w = NewJsonEncoder()
-        val naming = c.Config.NamingStrategy
-        c.Meta.EncodeFields(
-            w,
-            v,
-            nameFnFromKeys(c.Keys.Keys),
-            omitFnFromKeys(c.Keys.Keys),
-            (name string) => ApplyNaming(name, naming),
-        )
-        return w.String()
-    })
+    val write = c.writer()
+    return encodeJson((w) => write(w, v))
 }
 
 // EncodePretty serializes a value to a pretty-printed JSON string.
@@ -112,18 +141,127 @@ func (c JsonEncoder[T]) EncodePretty(v T) Try[string] =
 // Decode deserializes a JSON string into Try[T] (zero-reflection).
 // DecodeFields panics on malformed input; Try() catches the panic and
 // surfaces it as a Failure.
-func (c JsonEncoder[T]) Decode(s string) Try[T] {
-    return Try[T](() => {
-        val r = NewJsonDecoder(s)
-        val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
-        val naming = c.Config.NamingStrategy
-        return c.Meta.DecodeFields(r, lookup, (name string) => ApplyNaming(name, naming))
-    })
-}
+func (c JsonEncoder[T]) Decode(s string) Try[T] = decodeJson(s, c.reader())
 
 // Unapply attempts to decode a JSON string using the codec's naming config.
 // Returns Option[T] for pattern matching support.
 func (c JsonEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
+
+// Array returns a codec for a JSON document whose root is an array of T —
+// `[{"id":1},{"id":2}]` — with this codec's Naming/Rename/Omit applied to
+// every element.
+func (c JsonEncoder[T]) Array() JsonArrayEncoder[T] = JsonArrayEncoder[T](Elem = c)
+
+// List is Array for a List[T].
+func (c JsonEncoder[T]) List() JsonListEncoder[T] = JsonListEncoder[T](Elem = c)
+
+// JsonArrayEncoder[T] encodes and decodes a root JSON array of T objects.
+// Created by Codec[T](naming).Array(); configure the element codec first.
+type JsonArrayEncoder[T any] struct {
+    Elem JsonEncoder[T]
+}
+
+// Encode serializes the elements as a compact JSON array.
+func (c JsonArrayEncoder[T]) Encode(vs Array[T]) Try[string] {
+    val write = c.Elem.writer()
+    return encodeJson((w) => {
+        w.WriteStartArray()
+        vs.ForEach((v) => write(w, v))
+        w.WriteEndArray()
+    })
+}
+
+// EncodePretty serializes the elements as a pretty-printed JSON array.
+func (c JsonArrayEncoder[T]) EncodePretty(vs Array[T]) Try[string] =
+    c.Encode(vs).FlatMap((s) => PrettyIndent(s, "  "))
+
+// Decode reads a JSON array of objects. Anything else at the root — an
+// object, a scalar, null — is a Failure.
+func (c JsonArrayEncoder[T]) Decode(s string) Try[Array[T]] {
+    val read = c.Elem.reader()
+    return decodeJson(s, (r) => {
+        r.StartArray()
+        // A pull parser: the element count is unknown until the decoder
+        // reports the end of the array, so there is no combinator to fold over.
+        var out = EmptyArray[T]()
+        for r.HasMoreElements() {
+            out = out.Append(read(r))
+        }
+        r.EndArray()
+        out
+    })
+}
+
+// Unapply decodes for pattern matching.
+func (c JsonArrayEncoder[T]) Unapply(s string) Option[Array[T]] = c.Decode(s).ToOption()
+
+// JsonListEncoder[T] is JsonArrayEncoder[T] over List[T].
+// Created by Codec[T](naming).List().
+type JsonListEncoder[T any] struct {
+    Elem JsonEncoder[T]
+}
+
+// Encode serializes the elements as a compact JSON array.
+func (c JsonListEncoder[T]) Encode(vs List[T]) Try[string] = c.Elem.Array().Encode(vs.ToArray())
+
+// EncodePretty serializes the elements as a pretty-printed JSON array.
+func (c JsonListEncoder[T]) EncodePretty(vs List[T]) Try[string] = c.Elem.Array().EncodePretty(vs.ToArray())
+
+// Decode reads a JSON array of objects into a List.
+func (c JsonListEncoder[T]) Decode(s string) Try[List[T]] = c.Elem.Array().Decode(s).Map((a) => a.ToList())
+
+// Unapply decodes for pattern matching.
+func (c JsonListEncoder[T]) Unapply(s string) Option[List[T]] = c.Decode(s).ToOption()
+
+// Value[T] is a codec for a JSON document of any shape a codec field can
+// have — a scalar (`42`, `"abc"`, `true`), an Option (None is `null`), an
+// Array or List (`[1,2,3]`), a HashMap[string, _], a struct, nested to any
+// depth. The transpiler auto-injects ValueMeta[T]:
+//
+//     Value[Array[int]]()  →  Value[Array[int]]{}.Apply(_ValueMeta_Array_int{})
+//
+// Usage:
+//   Value[int]().Decode("42")                     // Success(42)
+//   Value[Array[string]]().Encode(ArrayOf("a"))   // Success(["a"])
+//   Value[Array[User]]().Naming(SnakeCase())      // structs inside the value
+//
+// To Rename or Omit fields of a struct element, use Codec[T](naming).Array().
+type Value[T any] struct {}
+
+// Apply creates a JsonValueEncoder[T]. The meta parameter is auto-injected by
+// the transpiler when the user calls Value[T]().
+func (c Value[T]) Apply(meta ValueMeta[T]) JsonValueEncoder[T] =
+    JsonValueEncoder[T](Meta = meta, NamingStrategy = AsIs())
+
+// JsonValueEncoder[T] is a fully typed JSON codec for a value of any codec
+// shape. Created by Value[T](); immutable.
+type JsonValueEncoder[T any] struct {
+    Meta           ValueMeta[T]
+    NamingStrategy Naming
+}
+
+// Naming sets the key naming for structs reached inside the value.
+func (c JsonValueEncoder[T]) Naming(n Naming) JsonValueEncoder[T] = c.Copy(NamingStrategy = n)
+
+// Encode serializes the value to compact JSON.
+func (c JsonValueEncoder[T]) Encode(v T) Try[string] {
+    val naming = namingFn(c.NamingStrategy)
+    return encodeJson((w) => c.Meta.EncodeValue(w, v, naming))
+}
+
+// EncodePretty serializes the value to pretty-printed JSON.
+func (c JsonValueEncoder[T]) EncodePretty(v T) Try[string] =
+    c.Encode(v).FlatMap((s) => PrettyIndent(s, "  "))
+
+// Decode reads a JSON document of T's shape. A document of another shape, or
+// a number outside T's range, is a Failure.
+func (c JsonValueEncoder[T]) Decode(s string) Try[T] {
+    val naming = namingFn(c.NamingStrategy)
+    return decodeJson(s, (r) => c.Meta.DecodeValue(r, naming))
+}
+
+// Unapply decodes for pattern matching.
+func (c JsonValueEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
 
 // buildLookup turns the precomputed reverseKeys map (serialized key → GALA
 // field name) into the index-lookup function DecodeFields expects.

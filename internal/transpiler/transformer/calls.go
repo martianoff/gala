@@ -242,6 +242,19 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								Args: nil,
 							}, nil
 						}
+					} else if len(methodMeta.ParamTypes) == 1 && isInjectedMetaParam(methodMeta.ParamTypes[0]) && t.isTypeBaseExpr(base) {
+						// An Apply that takes nothing but an auto-injected
+						// metadata parameter (StructMeta[T] / ValueMeta[T]) is
+						// called with no arguments of its own:
+						// `Value[Array[int]]()`. Route it through the same
+						// companion-Apply path as a call with arguments, which
+						// injects the metadata; otherwise it would read as
+						// constructing the empty struct.
+						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, nil,
+							suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+						if err != nil || handled {
+							return expr, err
+						}
 					}
 				}
 			}
@@ -1441,17 +1454,20 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Option-C typed interface from std/meta.gala) or the legacy StructMetaOps
 	// (the pre-migration non-generic shim in json/helpers.gala).
 	// Codec[Person](SnakeCase()) → prepend _StructMeta_Person{} before SnakeCase()
-	if hasTypeArgs && len(methodMeta.ParamTypes) > 0 {
-		firstParamType := methodMeta.ParamTypes[0].BaseName()
-		switch firstParamType {
-		case "StructMeta", "std.StructMeta",
-			"StructMetaOps", "json.StructMetaOps":
-			injected, err := t.autoInjectStructMeta(args, methodMeta, typeArgs, line, col)
-			if err != nil {
-				return true, nil, err
-			}
-			args = injected
+	// ValueMeta[T] is injected the same way for a value of any codec shape:
+	// Value[Array[int]]() → prepend _ValueMeta_Array_int{}.
+	if hasTypeArgs && len(methodMeta.ParamTypes) > 0 && isInjectedMetaParam(methodMeta.ParamTypes[0]) {
+		var injected []ast.Expr
+		var err error
+		if isValueMetaParam(methodMeta.ParamTypes[0]) {
+			injected, err = t.autoInjectValueMeta(args, typeArgs, line, col)
+		} else {
+			injected, err = t.autoInjectStructMeta(args, methodMeta, typeArgs, line, col)
 		}
+		if err != nil {
+			return true, nil, err
+		}
+		args = injected
 	}
 
 	if isGeneric {

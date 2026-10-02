@@ -224,11 +224,23 @@ func TestCodecFieldKinds_UnsupportedRoot(t *testing.T) {
 			use:      "Marker",
 			contains: "cannot generate a codec for Marker: Marker has no fields",
 		},
+		{
+			// Used to reference a _StructMeta_int that was never generated
+			// and fail in the Go compiler.
+			name:     "scalar",
+			use:      "int",
+			contains: "cannot generate a codec for int: int is not a struct",
+		},
+		{
+			name:     "collection",
+			use:      "Array[int]",
+			contains: "Array[int] is not a struct: StructMeta[T] describes the fields of a struct",
+		},
 	}
 	trans := newCodecTestTranspiler()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			src := "package main\n\nimport \"martianoff/gala/json\"\n\n" + tc.decls +
+			src := "package main\n\nimport (\n    . \"martianoff/gala/collection_immutable\"\n    \"martianoff/gala/json\"\n)\n\n" + tc.decls +
 				"\n\nfunc main() {\n    val c = json.Codec[" + tc.use + "](json.AsIs())\n    Println(c)\n}\n"
 			_, err := trans.Transpile(src, "codec_unsupported_root.gala")
 			require.Error(t, err)

@@ -86,37 +86,149 @@ func nameFnFromKeys(keys Array[string]) func(int) string =
 func omitFnFromKeys(keys Array[string]) func(int) bool =
     (i int) => keys.GetOption(i).GetOrElse("") == ""
 
+// namingFn is the codec's naming strategy as the key converter StructMeta
+// threads into nested structs.
+func namingFn(n Naming) func(string) string = (name string) => ApplyNaming(name, n)
+
+// writer returns the function that writes one T as a YAML mapping, with the
+// codec's Naming/Rename/Omit applied. Array() and List() call it per element.
+func (c YamlEncoder[T]) writer() func(FieldEncoder, T) {
+    val nameFn = nameFnFromKeys(c.Keys.Keys)
+    val omitFn = omitFnFromKeys(c.Keys.Keys)
+    val naming = namingFn(c.Config.NamingStrategy)
+    return (w FieldEncoder, v T) => c.Meta.EncodeFields(w, v, nameFn, omitFn, naming)
+}
+
+// reader returns the function that reads one T from a YAML mapping. The key
+// lookup is built once, so decoding a sequence of T pays for it once.
+func (c YamlEncoder[T]) reader() func(FieldDecoder) T {
+    val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
+    val naming = namingFn(c.Config.NamingStrategy)
+    return (r FieldDecoder) => c.Meta.DecodeFields(r, lookup, naming)
+}
+
+// encodeYaml runs write against a fresh encoder and returns the document.
+func encodeYaml(write func(FieldEncoder)) Try[string] = Try(() => {
+    val w = NewYamlEncoder()
+    write(w)
+    w.String()
+})
+
+// decodeYaml parses s and runs read over it. A parser or decoder panic
+// (malformed input, wrong shape, out-of-range number) becomes a Failure.
+func decodeYaml[V any](s string, read func(FieldDecoder) V) Try[V] = Try(() => read(NewYamlDecoder(s)))
+
 // Encode serializes a value to a YAML string (block-style, zero-reflection).
 func (c YamlEncoder[T]) Encode(v T) Try[string] {
-    return Try[string](() => {
-        val w = NewYamlEncoder()
-        val naming = c.Config.NamingStrategy
-        c.Meta.EncodeFields(
-            w,
-            v,
-            nameFnFromKeys(c.Keys.Keys),
-            omitFnFromKeys(c.Keys.Keys),
-            (name string) => ApplyNaming(name, naming),
-        )
-        return w.String()
-    })
+    val write = c.writer()
+    return encodeYaml((w) => write(w, v))
 }
 
 // Decode deserializes a YAML string into Try[T] (zero-reflection).
 // DecodeFields panics on malformed input; Try() catches the panic and
 // surfaces it as a Failure.
-func (c YamlEncoder[T]) Decode(s string) Try[T] {
-    return Try[T](() => {
-        val r = NewYamlDecoder(s)
-        val lookup = buildLookup(c.Keys.ReverseKeys, c.Meta.NumFields(), c.Meta.FieldName)
-        val naming = c.Config.NamingStrategy
-        return c.Meta.DecodeFields(r, lookup, (name string) => ApplyNaming(name, naming))
-    })
-}
+func (c YamlEncoder[T]) Decode(s string) Try[T] = decodeYaml(s, c.reader())
 
 // Unapply attempts to decode a YAML string using the codec's naming config.
 // Returns Option[T] for pattern matching support.
 func (c YamlEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
+
+// Array returns a codec for a YAML document whose root is a sequence of T
+// mappings, with this codec's Naming/Rename/Omit applied to every element.
+func (c YamlEncoder[T]) Array() YamlArrayEncoder[T] = YamlArrayEncoder[T](Elem = c)
+
+// List is Array for a List[T].
+func (c YamlEncoder[T]) List() YamlListEncoder[T] = YamlListEncoder[T](Elem = c)
+
+// YamlArrayEncoder[T] encodes and decodes a root YAML sequence of T mappings.
+// Created by Codec[T](naming).Array(); configure the element codec first.
+type YamlArrayEncoder[T any] struct {
+    Elem YamlEncoder[T]
+}
+
+// Encode serializes the elements as a block-style sequence (`[]` when empty).
+func (c YamlArrayEncoder[T]) Encode(vs Array[T]) Try[string] {
+    val write = c.Elem.writer()
+    return encodeYaml((w) => {
+        w.WriteStartArray()
+        vs.ForEach((v) => write(w, v))
+        w.WriteEndArray()
+    })
+}
+
+// Decode reads a sequence of mappings. Anything else at the root — a
+// mapping, a scalar — is a Failure.
+func (c YamlArrayEncoder[T]) Decode(s string) Try[Array[T]] {
+    val read = c.Elem.reader()
+    return decodeYaml(s, (r) => {
+        r.StartArray()
+        // A pull parser: the element count is unknown until the decoder
+        // reports the end of the array, so there is no combinator to fold over.
+        var out = EmptyArray[T]()
+        for r.HasMoreElements() {
+            out = out.Append(read(r))
+        }
+        r.EndArray()
+        out
+    })
+}
+
+// Unapply decodes for pattern matching.
+func (c YamlArrayEncoder[T]) Unapply(s string) Option[Array[T]] = c.Decode(s).ToOption()
+
+// YamlListEncoder[T] is YamlArrayEncoder[T] over List[T].
+// Created by Codec[T](naming).List().
+type YamlListEncoder[T any] struct {
+    Elem YamlEncoder[T]
+}
+
+// Encode serializes the elements as a block-style sequence.
+func (c YamlListEncoder[T]) Encode(vs List[T]) Try[string] = c.Elem.Array().Encode(vs.ToArray())
+
+// Decode reads a sequence of mappings into a List.
+func (c YamlListEncoder[T]) Decode(s string) Try[List[T]] = c.Elem.Array().Decode(s).Map((a) => a.ToList())
+
+// Unapply decodes for pattern matching.
+func (c YamlListEncoder[T]) Unapply(s string) Option[List[T]] = c.Decode(s).ToOption()
+
+// Value[T] is a codec for a YAML document of any shape a codec field can
+// have — a scalar (`42`, `abc`, `true`), an Option (None is `null`), an Array
+// or List (a block sequence), a HashMap[string, _], a struct, nested to any
+// depth. Mirrors json.Value[T]; the transpiler auto-injects ValueMeta[T].
+//
+// To Rename or Omit fields of a struct element, use Codec[T](naming).Array().
+type Value[T any] struct {}
+
+// Apply creates a YamlValueEncoder[T]. The meta parameter is auto-injected by
+// the transpiler when the user calls Value[T]().
+func (c Value[T]) Apply(meta ValueMeta[T]) YamlValueEncoder[T] =
+    YamlValueEncoder[T](Meta = meta, NamingStrategy = AsIs())
+
+// YamlValueEncoder[T] is a fully typed YAML codec for a value of any codec
+// shape. Created by Value[T](); immutable.
+type YamlValueEncoder[T any] struct {
+    Meta           ValueMeta[T]
+    NamingStrategy Naming
+}
+
+// Naming sets the key naming for structs reached inside the value.
+func (c YamlValueEncoder[T]) Naming(n Naming) YamlValueEncoder[T] = c.Copy(NamingStrategy = n)
+
+// Encode serializes the value to YAML.
+func (c YamlValueEncoder[T]) Encode(v T) Try[string] {
+    val naming = namingFn(c.NamingStrategy)
+    return encodeYaml((w) => c.Meta.EncodeValue(w, v, naming))
+}
+
+// Decode reads a YAML document of T's shape. A document of another shape, or
+// a number outside T's range, is a Failure.
+func (c YamlValueEncoder[T]) Decode(s string) Try[T] {
+    val naming = namingFn(c.NamingStrategy)
+    return decodeYaml(s, (r) => c.Meta.DecodeValue(r, naming))
+}
+
+// Unapply decodes for pattern matching.
+func (c YamlValueEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
 
 // buildLookup turns the precomputed reverseKeys map (serialized key → GALA
 // field name) into the index-lookup function DecodeFields expects.

@@ -4,7 +4,7 @@ title: "Json in GALA — Zero-Reflection JSON Codec with Builder Pattern"
 description: "GALA's json package provides zero-reflection, compile-time JSON serialization with builder pattern configuration, naming strategies, and pattern matching support."
 keywords: "gala json, golang json alternative, go type safe json, gala json codec, gala json pattern matching, go json serialization, zero reflection json"
 permalink: /docs/json/
-last_modified_at: 2026-04-30
+last_modified_at: 2026-10-01
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Json</p>
@@ -160,6 +160,55 @@ Decoding checks ranges: `300` into an `int8`, `-1` into a `uint`, or `1e39` into
 
 ---
 
+## Root Arrays and Other Root Values
+
+`Codec[T]` reads and writes a document whose root is a `T` object. Plenty of payloads are not shaped like that — a `GET /users` returns `[{"id":1},{"id":2}]`, a counter endpoint returns `42`. Two entry points cover them.
+
+**A root array of structs.** Configure the element codec as usual, then call `.Array()` (or `.List()`). `Naming`, `Rename` and `Omit` apply to every element:
+
+```gala
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/json"
+)
+
+struct User(UserId int, FullName string, Password string)
+
+func main() {
+    val users = Codec[User](SnakeCase()).Omit("Password").Rename("UserId", "id").Array()
+
+    val body = users.Encode(ArrayOf(User(1, "Ann", "x"), User(2, "Bo", "y"))).Get()
+    Println(body)
+    // => [{"id":1,"full_name":"Ann"},{"id":2,"full_name":"Bo"}]
+
+    users.Decode("[{\"id\":3,\"full_name\":\"Cy\"}]").ForEach((us) => Println(us.Get(0).FullName))
+    // => Cy
+}
+```
+
+**Any other root value.** `Value[T]()` takes any shape a codec field can have — a scalar, an alias or Go named type over one, an `Option` (`None` is `null`), an `Array` / `List`, a `HashMap[string, _]`, a struct — nested to any depth:
+
+```gala
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/json"
+)
+
+func main() {
+    Println(Value[Array[int]]().Encode(ArrayOf(1, 2, 3)))   // Success([1,2,3])
+    Println(Value[Array[string]]().Decode("[\"a\",\"b\"]"))  // Success(Array(a, b))
+    Println(Value[float64]().Decode("1.5"))                 // Success(1.5)
+    Println(Value[Option[int]]().Decode("null"))            // Success(None())
+    Println(Value[uint8]().Decode("256"))                   // Failure: out of range for uint8
+}
+```
+
+`Value[T]()` has a `.Naming(n)` builder for structs inside the value; it has no `Rename` / `Omit` — for those, use `Codec[T](naming).Array()`.
+
+Decoding checks the root shape: an object where an array is expected, a string where a number is expected, or anything after the document (`[1]]`, `1 2`) is a `Failure`.
+
+---
+
 ## Unknown Fields
 
 The decoder silently drops any field in the input that is not declared on the target struct. This is the default and only behaviour today — there is no strict mode or unknown-field error.
@@ -211,6 +260,8 @@ No reflection at runtime. Field names, types, and access patterns are all resolv
 
 A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested.
 
+`Value[T]()` works the same way with `ValueMeta[T]`, the intrinsic for a whole value of any codec shape: the transpiler generates `_ValueMeta_X` with typed `EncodeValue` / `DecodeValue` methods and injects it, so `Value[int]()` takes no arguments of its own.
+
 ---
 
 ## API Reference
@@ -226,6 +277,9 @@ A struct declared in a library package carries its own metadata: that package em
 | `.EncodePretty(v)` | `T → Try[string]` | Serialize to pretty-printed JSON |
 | `.Decode(s)` | `string → Try[T]` | Deserialize from JSON string |
 | `.Unapply(s)` | `string → Option[T]` | Pattern matching extractor |
+| `.Array()` | `→ JsonArrayEncoder[T]` | Codec for a root array of `T`: `Encode(Array[T])`, `EncodePretty`, `Decode → Try[Array[T]]`, `Unapply` |
+| `.List()` | `→ JsonListEncoder[T]` | The same over `List[T]` |
+| `Value[T]()` | `→ JsonValueEncoder[T]` | Codec for a root value of any codec shape (ValueMeta auto-injected): `.Naming`, `Encode`, `EncodePretty`, `Decode`, `Unapply` |
 
 ---
 

@@ -50,7 +50,7 @@ type YamlEncoderImpl struct {
 	depth int    // current indent level (each level = 2 spaces)
 	stack []byte // frame kinds: 'r' root, 'o' mapping, 'a' sequence
 	// emptyMarks parallels stack: the buffer length just after each open
-	// container's header ("key:", "- ", "-"), or -1 for a root container.
+	// container's header ("key:", "- ", "-"); 0 for the document root.
 	// A container that closes with the buffer still at its mark (plus the
 	// header's newline) wrote no children, and is rewritten in flow style
 	// ("key: []", "- {}") — block style has no spelling for an empty
@@ -108,13 +108,14 @@ func (e *YamlEncoderImpl) emitKeyHeader(key string) {
 // indent so the new container's children render at the right depth.
 //
 // It returns the buffer length just after the header, before any newline the
-// header ends with, or -1 for the document root (see emptyMarks).
+// header ends with; 0 for the document root, so an empty root container
+// is written "[]" or "{}" (see emptyMarks).
 func (e *YamlEncoderImpl) startContainerPrelude(isObject bool) int {
 	parent := e.topFrame()
 	if parent == 'r' && !e.startedDoc {
 		// Document root — no prelude, depth stays 0.
 		e.startedDoc = true
-		return -1
+		return 0
 	}
 	if e.hasKey {
 		// We're a value of a mapping pair: emit "key:\n", then indent children.
@@ -156,7 +157,7 @@ func (e *YamlEncoderImpl) endContainer(kind byte, flow string) {
 	mark := e.emptyMarks[len(e.emptyMarks)-1]
 	e.stack = e.stack[:len(e.stack)-1]
 	e.emptyMarks = e.emptyMarks[:len(e.emptyMarks)-1]
-	if mark >= 0 && e.buf.Len() <= mark+1 {
+	if e.buf.Len() <= mark+1 {
 		e.buf.Truncate(mark)
 		if e.buf.Len() > 0 && e.buf.Bytes()[e.buf.Len()-1] != ' ' {
 			e.buf.WriteByte(' ')
@@ -275,7 +276,8 @@ func isPlainSafe(s string) bool {
 	if s[0] == ' ' || s[0] == '\t' {
 		return false
 	}
-	if s[len(s)-1] == ' ' || s[len(s)-1] == '\t' {
+	// A trailing ':' would read back as "key:" — a mapping, not a string.
+	if s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == ':' {
 		return false
 	}
 	switch s[0] {
@@ -711,6 +713,14 @@ func parseYAML(input string) *yNode {
 	lines := splitSignificantLines(input)
 	if len(lines) == 0 {
 		return &yNode{kind: yMap}
+	}
+	// A one-line document that is neither a sequence item nor a "key: value"
+	// pair is a bare scalar ("42", "abc", null) or an empty flow container
+	// ("[]", "{}") — the forms the encoder writes for a non-struct root.
+	if len(lines) == 1 && !isSequenceLine(lines[0].raw) {
+		if _, _, isPair := tryParseKeyValue(lines[0].raw); !isPair {
+			return parseInlineScalar(lines[0].raw)
+		}
 	}
 	node, pos := parseBlock(lines, 0, lines[0].indent)
 	if pos != len(lines) {

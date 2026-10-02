@@ -4,7 +4,7 @@ title: "GALA-E0050 — Codec Field Type Has No Encoding"
 description: "GALA-E0050 rejects a json or yaml Codec for a struct with a field the codec cannot serialize — a function, pointer, Go slice or map, sealed type or non-string map key — instead of silently writing null."
 keywords: "gala-e0050, gala json codec, gala yaml codec, gala codec unsupported field, gala structmeta, gala serialization"
 permalink: /docs/errors/gala-e0050/
-last_modified_at: 2026-09-27
+last_modified_at: 2026-10-01
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0050</p>
@@ -22,6 +22,8 @@ the shapes below:
   nor a GALA struct
 - a `HashMap` whose key is not a string (or an alias of `string`)
 - an `Option` inside an `Option` (also through `Immutable`)
+- for `json.Codec[T]` / `yaml.Codec[T]`, a `T` that is not a struct at all — a scalar
+  (`Codec[int]`) or a collection (`Codec[Array[User]]`)
 
 **Minimal repro.**
 
@@ -60,7 +62,9 @@ struct Job(Name string, Command string)
 For the other shapes: store the value instead of a pointer; use `Array`,
 `List` or `HashMap[string, V]` instead of a Go slice or map; key a map by the
 string form of its key; and flatten `Option[Option[T]]` into a sealed status
-you encode as a string field.
+you encode as a string field. For a document whose root is not a struct, use
+`Codec[User](naming).Array()` for an array of structs and `Value[T]()` for any
+other shape (`Value[int]()`, `Value[Array[string]]()`).
 
 **What the codec does support.** Every scalar kind — `string`, `bool`,
 `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`,
