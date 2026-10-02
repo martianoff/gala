@@ -608,6 +608,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 	}
 
+	// Loop control in an arm decides the lowering: a statement match is
+	// inlined so the loop sees it, and a match whose value is used rejects it
+	// before its arms are unified (an arm ending in `break` has no value).
+	loopControl := t.escapingLoopControl(clauses, defaultBody)
+	if loopControl != nil && !stmtPosition {
+		return nil, t.loopControlInValueError("a match", loopControl)
+	}
+
 	// Infer common result type from all branches. In statement position the
 	// value is discarded, so arms need not unify (see inferCommonResultType).
 	resultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx, stmtPosition)
@@ -711,7 +719,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// genuine Go returns from the enclosing function. Synthesized arm-tail
 	// returns (added to feed the IIFE's value channel) are stripped, since
 	// the value would have been discarded anyway.
-	if stmtPosition && t.containsUserReturnInClauses(clauses, defaultBody) {
+	//
+	// A `break` / `continue` in an arm is inlined for the same reason: in the
+	// IIFE it would name no loop, and the enclosing loop must see it.
+	if stmtPosition && (loopControl != nil || t.containsUserReturnInClauses(clauses, defaultBody)) {
 		body := t.buildMatchBodyForInline(clauses, defaultBody)
 		t.pendingMatchStmtBlock = t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
 		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock

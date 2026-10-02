@@ -29,8 +29,9 @@ import (
 // so a binding of that name could never be referred to unambiguously. A rename
 // the author chooses keeps every position consistent with no hidden mapping.
 //
-// Two uses are left to other checks: a bare `break` / `continue` statement is
-// loop control, and a bare `defer`, `go`, `goto`, `fallthrough`, `select` or
+// Two uses are left to other checks: any use of `break` / `continue` other
+// than as a declared name is loop control, which the transformer checks
+// (GALA-E0059 where it cannot reach a loop), and a bare `defer`, `go`, `goto`, `fallthrough`, `select` or
 // `chan` statement is GALA-E0036's, which names the GALA replacement.
 
 // bareStatementKeywords are the keywords a bare statement may consist of
@@ -59,7 +60,14 @@ func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
 			if !token.IsKeyword(name) || (bareStatementKeywords[name] && isBareStatement(id)) {
 				return
 			}
-			if declaresName(id) {
+			isDecl := declaresName(id)
+			if !isDecl && (name == "break" || name == "continue") && !inPattern(id) {
+				// Loop control in any other position (`val x = break`, an
+				// if-expression branch) is the transformer's GALA-E0059,
+				// which knows whether a loop can be reached from there.
+				return
+			}
+			if isDecl {
 				firstDecl = id
 			} else if firstUse == nil {
 				firstUse = id
@@ -104,6 +112,21 @@ func keywordUseDiagnostic(name string) (msg, hint string) {
 	}
 	return msg, fmt.Sprintf("GALA has no `%s`; if this refers to something you declared, "+
 		"rename that declaration", name)
+}
+
+// inPattern reports whether id is part of a case pattern, where a name is a
+// binding (`case break =>`, `case Some(break) =>`), never loop control. Call
+// arguments are patterns in the grammar too, so only the pattern of a case
+// clause counts.
+func inPattern(id *grammar.IdentifierContext) bool {
+	var prev antlr.Tree = id
+	for node := id.GetParent(); node != nil; prev, node = node, node.GetParent() {
+		if _, ok := node.(*grammar.CaseClauseContext); ok {
+			_, viaPattern := prev.(grammar.IPatternContext)
+			return viaPattern
+		}
+	}
+	return false
 }
 
 // isBareStatement reports whether id is a whole statement on its own: `break`

@@ -496,10 +496,10 @@ func v() {
 			wantErr: "`b.n` is evaluated but not used; declare the function's result type",
 		},
 		{
-			// Not a statement here, so the analyzer reports it as a keyword.
+			// The body of a void function is a statement; no loop surrounds it.
 			name:    "loop control as the body of a function with no result type",
 			body:    "\nfunc f() = continue\n",
-			wantErr: "\"continue\" is a Go keyword and is not part of GALA",
+			wantErr: "`continue` is not inside a `for` loop",
 		},
 		{
 			name:    "lambda body of a function with no result type",

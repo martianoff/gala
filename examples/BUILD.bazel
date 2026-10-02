@@ -3743,3 +3743,13 @@ gala_exec_test(
     src = "shadowed_function.gala",
     expected = "shadowed_function.out",
 )
+
+# `break` / `continue` in an arm of a statement match control the enclosing
+# loop (for-clause, condition and range loops, nested matches); a loop inside a
+# value match arm keeps its own `break`.
+gala_exec_test(
+    name = "match_arm_loop_control",
+    src = "match_arm_loop_control.gala",
+    expected = "match_arm_loop_control.out",
+    deps = ["//collection_immutable"],
+)

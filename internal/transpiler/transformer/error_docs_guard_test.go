@@ -790,6 +790,64 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "break in an arm of a match whose value is used",
+			code: galaerr.CodeLoopControlOutsideLoop, // GALA-E0059
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    for i := 0; i < 5; i++ {
+        val label = i match {
+            case 3 => break
+            case n => s"item $n"
+        }
+        Println(label)
+    }
+}
+`)
+			},
+		},
+		{
+			name: "continue in a lambda inside a loop",
+			code: galaerr.CodeLoopControlOutsideLoop, // GALA-E0059
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    for i := 0; i < 3; i++ {
+        ArrayOf(1, 2, 3).ForEach((x) => {
+            if x == i {
+                continue
+            }
+            Println(x)
+        })
+    }
+}
+`)
+			},
+		},
+		{
+			name: "break outside a loop",
+			code: galaerr.CodeLoopControlOutsideLoop, // GALA-E0059
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func check(n int) {
+    n match {
+        case 0 => break
+        case _ => Println(n)
+    }
+}
+
+func main() {
+    check(1)
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

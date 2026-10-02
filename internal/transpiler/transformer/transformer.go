@@ -87,6 +87,8 @@ type galaASTTransformer struct {
 	expectedArgTypes        expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
 	matchInStatementPos     bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
 	methodReceivers         []methodReceiver                              // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
+	loopControlSites        map[*ast.BranchStmt]loopControlSite           // source position of each `break` / `continue` lowered from source, checked by checkLoopControl once the file is complete
+	userLoops               map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)
 	synthesizedReturns      map[*ast.ReturnStmt]bool                      // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
 	pendingMatchStmtBlock   *ast.BlockStmt                                // side-channel: when buildMatchExpressionFromClauses detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
 	lspVarTypes             map[string]transpiler.Type                    // LSP: collects all resolved var types during transformation
@@ -200,6 +202,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.currentScope = nil
 	t.resetExprTypeCache()
 	t.goResults = nil
+	t.loopControlSites = nil
+	t.userLoops = nil
 	if collectLSPMetadata {
 		t.lspVarTypes = make(map[string]transpiler.Type)
 		t.lspLambdaParamHints = t.lspLambdaParamHints[:0]
@@ -409,6 +413,12 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// above its own alias would otherwise see an empty table and escape the
 	// check. By this point every alias in the file is registered.
 	if err := t.checkMethodReceivers(); err != nil {
+		return nil, nil, err
+	}
+
+	// Every source `break` / `continue` must reach a source loop in its own
+	// Go function; only the finished file shows which function each sits in.
+	if err := t.checkLoopControl(file); err != nil {
 		return nil, nil, err
 	}
 

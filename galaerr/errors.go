@@ -644,6 +644,15 @@ const (
 	// are reserved for declarations too, where one could collide with what
 	// the transpiler emits.
 	CodeGeneratedCodecName ErrorCode = "GALA-E0058"
+
+	// E0059: a `break` or `continue` cannot reach the loop it is meant to
+	// control: it is not inside a `for` loop at all, it sits in a lambda
+	// inside the loop (the lambda is a separate function), it sits in an arm
+	// of a match or a branch of an if-expression whose value is used (that
+	// construct is a value, so it must produce one), or it is used as a
+	// value itself (`val x = break`). A `break` or `continue` in an arm of a
+	// match used as a statement inside a loop is fine and controls that loop.
+	CodeLoopControlOutsideLoop ErrorCode = "GALA-E0059"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

@@ -1,0 +1,108 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// `break` and `continue` in an arm of a match used as a statement control the
+// enclosing `for` loop, in every loop form and through nested matches.
+
+sealed type Cmd {
+    case Skip()
+    case Stop()
+    case Say(Text string)
+}
+
+func forClause() {
+    for i := 0; i < 6; i++ {
+        i match {
+            case 1 => continue
+            case 4 => { break }
+            case _ => Println(s"for-clause $i")
+        }
+        Println(s"after $i")
+    }
+}
+
+func condition() {
+    var n = 0
+    for n < 10 {
+        n++
+        (n % 3) match {
+            case 0 => {
+                Println(s"skip $n")
+                continue
+            }
+            case _ => Println(s"keep $n")
+        }
+        if n > 6 {
+            break
+        }
+    }
+}
+
+func rangeLoop(cmds Array[Cmd]) {
+    for _, c := range cmds.ToGoSlice() {
+        c match {
+            case Skip() => continue
+            case Stop() => break
+            case Say(t) => Println(s"say $t")
+        }
+        Println("next")
+    }
+}
+
+func nested() {
+    for i := 0; i < 3; i++ {
+        for j := 0; j < 3; j++ {
+            (i, j) match {
+                case (_, 1) => continue
+                case (2, _) => break
+                case (a, b) => {
+                    a match {
+                        case 1 => { if b == 2 { break } }
+                        case _ => Println(s"pair $a $b")
+                    }
+                }
+            }
+            Println(s"inner $i $j")
+        }
+    }
+}
+
+// A bare `return` in an arm leaves the function, not just the match.
+func scanUntilNegative(xs Array[int]) {
+    for _, x := range xs.ToGoSlice() {
+        (x < 0) match {
+            case true => { return }
+            case _ => Println(s"scan $x")
+        }
+    }
+    Println("no negative")
+}
+
+// A loop inside an arm of a match whose value is used keeps its own `break`.
+func innerLoop() int {
+    var total = 0
+    for i := 0; i < 3; i++ {
+        val v = i match {
+            case 1 => {
+                for k := 0; k < 10; k++ {
+                    if k == 3 { break }
+                    total += k
+                }
+                100
+            }
+            case n => n
+        }
+        total += v
+    }
+    total
+}
+
+func main() {
+    forClause()
+    condition()
+    rangeLoop(ArrayOf[Cmd](Say("a"), Skip(), Say("b"), Stop(), Say("c")))
+    nested()
+    scanUntilNegative(ArrayOf(1, 2, -3, 4))
+    Println(s"inner loop total ${innerLoop()}")
+}

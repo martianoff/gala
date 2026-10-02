@@ -725,6 +725,9 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	if err := t.lowerBranches(2, s, siblingTyped, lowerBranch); err != nil {
 		return nil, err
 	}
+	if err := t.checkNoLoopControlInValue("an if-expression", lowered[0].stmts, lowered[1].stmts); err != nil {
+		return nil, err
+	}
 	thenStmts, thenExpr, thenTerminates := lowered[0].stmts, lowered[0].expr, lowered[0].terminates
 	elseStmts, elseExpr, elseTerminates := lowered[1].stmts, lowered[1].expr, lowered[1].terminates
 
@@ -961,6 +964,9 @@ func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpre
 // against it (see lowerAgainst).
 func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, s slot) ([]ast.Stmt, ast.Expr, bool, error) {
 	if exprCtx := ctx.Expression(); exprCtx != nil {
+		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+			return nil, nil, false, t.loopControlInValueError("an if-expression", bs)
+		}
 		expr, err := t.lowerAgainst(exprCtx, s, true)
 		if err != nil {
 			return nil, nil, false, err
@@ -989,6 +995,10 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	// statement → declaration → simpleStatement → expression
 	lastStmtCtx := stmts[len(stmts)-1].(*grammar.StatementContext)
 	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
+		// The branch's value is its trailing expression; loop control has none.
+		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+			return nil, nil, false, t.loopControlInValueError("an if-expression", bs)
+		}
 		expr, err := t.lowerAgainst(exprCtx, s, true)
 		if err != nil {
 			return nil, nil, false, err

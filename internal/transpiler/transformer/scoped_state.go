@@ -116,6 +116,8 @@ var accumulatedStateFields = []string{
 	"valueMetas",
 	"instanceInterfaceNames",
 	"synthesizedReturns",
+	"loopControlSites",
+	"userLoops",
 	"methodReceivers",
 	"lspVarTypes",
 	"lspCurrentFunc",

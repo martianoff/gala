@@ -1518,6 +1518,33 @@ for i := 0; i < 6; i++ {
 }
 ```
 
+`break` and `continue` also work in an arm of a `match` used as a statement
+inside the loop — the arm leaves or advances the enclosing loop, exactly as an
+`if` would:
+
+```gala
+for i := 0; i < 6; i++ {
+    i match {
+        case 1 => continue      // skips the rest of this iteration
+        case 4 => { break }     // leaves the loop
+        case _ => fmt.Println(i)
+    }
+}
+// Prints 0, 2, 3
+```
+
+A `return` in such an arm likewise returns from the enclosing function.
+
+They must reach a loop written around them in the same function. Each of these
+is an error, [GALA-E0059](errors/GALA-E0059.md):
+
+- outside any `for` loop;
+- inside a lambda, even one written in a loop — a lambda is a separate function;
+- inside an arm of a `match`, or a branch of an if-expression, whose value is
+  used (`val x = i match { case 2 => break ... }`) — such a construct has to
+  produce a value on every path;
+- used as a value itself (`val x = if (c) { break } else 1`).
+
 #### Increment and Decrement Operators
 GALA supports `++` and `--` operators for incrementing and decrementing mutable variables:
 

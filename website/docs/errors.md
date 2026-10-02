@@ -112,6 +112,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0056](/docs/errors/gala-e0056/) | Malformed tuple destructuring | Declarations |
 | [GALA-E0057](/docs/errors/gala-e0057/) | Validate method with the wrong signature on a struct a codec decodes | Types |
 | [GALA-E0058](/docs/errors/gala-e0058/) | Generated codec metadata named in GALA code | Types |
+| [GALA-E0059](/docs/errors/gala-e0059/) | `break` or `continue` cannot reach its loop | Control flow |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -154,6 +155,8 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 **Literals** — [E0038](/docs/errors/gala-e0038/) invalid string escape · [E0051](/docs/errors/gala-e0051/) illegal source character · [E0019](/docs/errors/gala-e0019/) empty `()` used as a value.
 
 **Syntax** — [E0042](/docs/errors/gala-e0042/) unparenthesized lambda parameter (`x => e`); GALA always writes `(x) => e`.
+
+**Control flow** — [E0015](/docs/errors/gala-e0015/) bare `return` in a match whose value is used · [E0059](/docs/errors/gala-e0059/) `break` or `continue` that cannot reach its loop (outside a loop, in a lambda, or in a match or if-expression whose value is used).
 
 **Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 

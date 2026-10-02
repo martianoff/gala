@@ -521,6 +521,25 @@ for _, v := range items {
 }
 ```
 
+### Break and Continue
+
+`break` leaves the innermost enclosing `for` loop and `continue` advances it, as in Go. Both also work in an arm of a `match` used as a statement inside the loop:
+
+```gala
+for i := 0; i < 6; i++ {
+    i match {
+        case 1 => continue      // skips the rest of this iteration
+        case 4 => { break }     // leaves the loop
+        case _ => Println(i)
+    }
+}
+// Prints 0, 2, 3
+```
+
+A `return` in such an arm likewise returns from the enclosing function.
+
+They must reach a loop written around them in the same function. Outside any loop, inside a lambda (a separate function, even when written in a loop), inside an arm of a `match` or a branch of an if-expression whose value is used, or used as a value, `break` and `continue` are an error: [GALA-E0059](/docs/errors/gala-e0059/).
+
 ## 7. Functional Features {#7-functional-features}
 
 ### Lambda Expressions
