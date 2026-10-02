@@ -302,8 +302,13 @@ type undefChecker struct {
 
 	errs []*galaerr.SemanticError
 	// reported dedupes by name, so one misspelling used in twenty places
-	// produces one actionable error rather than twenty.
-	reported map[string]bool
+	// produces one actionable error rather than twenty. It maps the name to
+	// its error's index in errs.
+	reported map[string]int
+
+	// typeNames holds the unqualified names that denote a type here — see
+	// typeNameExists.
+	typeNames map[string]bool
 }
 
 // checkUndefinedSymbols runs the existence check over `sourceFile` and returns
@@ -334,7 +339,8 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		qualifiers:     collectQualifiers(imports, richAST),
 		hintRoots:      a.hintRoots,
 		importResolves: a.importPathResolvesTo,
-		reported:       make(map[string]bool),
+		reported:       make(map[string]int),
+		typeNames:      a.indexTypeNames(imports, richAST, filePath),
 	}
 	c.walker = scopewalk.New(c, undefWalkOptions())
 	c.walkSourceFile(sourceFile)
@@ -984,22 +990,40 @@ func (c *undefChecker) isGeneratedMethodForm(name string) bool {
 }
 
 func (c *undefChecker) report(name string, tok antlr.Token) {
-	if tok == nil || c.reported[name] {
+	if tok == nil {
 		return
 	}
-	c.reported[name] = true
+	idx, seen := c.reported[name]
+	if seen {
+		// The value and type passes each meet a name in their own order, so a
+		// later report may sit earlier in the file. Point at the first use.
+		if prev := c.errs[idx]; tok.GetLine() > prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() >= prev.Column) {
+			return
+		}
+	}
 	// The span covers the reported token, which is normally the identifier
 	// itself. For a name found inside an interpolated string the token is the
 	// whole literal (a re-parsed fragment has no file position of its own), so
 	// deriving the span from the token's text underlines the literal rather
 	// than a name-length slice of it.
 	span := tok.GetColumn() + len([]rune(tok.GetText()))
+	hint := ""
+	if seen {
+		hint = c.errs[idx].Hint
+	} else {
+		hint = c.hintFor(name)
+	}
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUndefinedVariable,
 		tok.GetLine(), tok.GetColumn(),
 		fmt.Sprintf("undefined: %s", name),
-		c.hintFor(name),
+		hint,
 	).WithSpan(span)
+	if seen {
+		c.errs[idx] = err
+		return
+	}
+	c.reported[name] = len(c.errs)
 	c.errs = append(c.errs, err)
 }
 
@@ -1434,6 +1458,7 @@ func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext, rec
 		if tc, ok := n.(*grammar.TypeContext); ok {
 			c.checkTypeName(tc, typeParams, extra)
 		}
+		c.checkBareTypePositions(n, typeParams, extra)
 		skip := tupleDestructureType(n)
 		// Only a parser rule can contain a TypeContext; terminals are skipped.
 		for i := 0; i < n.GetChildCount(); i++ {
@@ -1452,17 +1477,53 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 		return
 	}
 	ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
-	name := ids[0].GetText()
 	if len(ids) < 2 {
-		if !typeParams[name] && (c.scope.hidesFrom(name, extra) || !c.typeNameExists(name)) {
-			c.report(name, ids[0].GetStart())
+		c.checkBareTypeName(ids[0], typeParams, extra)
+		return
+	}
+	if name := ids[0].GetText(); !c.qualifiers[name] {
+		c.report(name, ids[0].GetStart())
+	}
+}
+
+// checkBareTypeName checks an unqualified type name. Besides a TypeContext's,
+// the grammar spells three type positions as a bare identifier: an alias
+// target (`type Coord Point`), a type parameter's constraint (`[T Number]`)
+// and an unnamed parameter of a function type (`func(Widget) int`).
+func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typeParams, extra map[string]bool) {
+	name := id.GetText()
+	if !typeParams[name] && (c.scope.hidesFrom(name, extra) || !c.typeNameExists(name)) {
+		c.report(name, id.GetStart())
+	}
+}
+
+// checkBareTypePositions checks the bare-identifier type positions n holds
+// directly; see checkBareTypeName.
+func (c *undefChecker) checkBareTypePositions(n antlr.Tree, typeParams, extra map[string]bool) {
+	switch ctx := n.(type) {
+	case *grammar.TypeAliasContext:
+		if id := ctx.Identifier(); id != nil {
+			c.checkBareTypeName(id, typeParams, extra)
 		}
-		return
+	case *grammar.TypeParameterContext:
+		if ids := ctx.AllIdentifier(); len(ids) == 2 {
+			c.checkBareTypeName(ids[1], typeParams, extra)
+		}
+	case *grammar.TypeContext:
+		sig, ok := ctx.Signature().(*grammar.SignatureContext)
+		if !ok {
+			return
+		}
+		params, ok := sig.Parameters().(*grammar.ParametersContext)
+		if !ok || params.ParameterList() == nil {
+			return
+		}
+		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			if pc, ok := p.(*grammar.ParameterContext); ok && pc.Identifier() != nil && pc.Type_() == nil {
+				c.checkBareTypeName(pc.Identifier(), typeParams, extra)
+			}
+		}
 	}
-	if c.qualifiers[name] {
-		return
-	}
-	c.report(name, ids[0].GetStart())
 }
 
 // tupleDestructureType returns the type a `val (a, b)` / `var (a, b)`
@@ -1471,28 +1532,95 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 // newlines, so for `var (a, b)` the first identifier of the next line parses as
 // this type: checking it as a type name would report that identifier instead.
 func tupleDestructureType(n antlr.Tree) antlr.Tree {
-	d, ok := n.(interface {
-		TuplePattern() grammar.ITuplePatternContext
-		Type_() grammar.ITypeContext
-	})
-	if !ok || d.TuplePattern() == nil || d.Type_() == nil {
-		return nil
+	switch d := n.(type) {
+	case *grammar.ValDeclarationContext:
+		if d.TuplePattern() != nil && d.Type_() != nil {
+			return d.Type_()
+		}
+	case *grammar.VarDeclarationContext:
+		if d.TuplePattern() != nil && d.Type_() != nil {
+			return d.Type_()
+		}
 	}
-	return d.Type_()
+	return nil
 }
 
-// typeNameExists reports whether an unqualified type name denotes anything
-// the compilation knows: a Go predeclared type, or a symbol of this package
-// (any file, including its hand-written Go files), of a package it dot-imports,
-// of the std prelude, or of any Go package whose metadata was loaded. Type
-// parameters and types declared inside function bodies are bound by the
-// caller. Like resolves, it is permissive about which package a name comes
-// from; galaScope polices that.
+// typeNameExists reports whether an unqualified type name denotes a type: a Go
+// predeclared one, or one in typeNames (see indexTypeNames). Type parameters
+// and types declared inside function bodies are bound by the caller.
 func (c *undefChecker) typeNameExists(name string) bool {
 	// `_` is the wildcard type argument of a type pattern: `case a: Array[_]`.
 	// `Sendable[F]` is the language's concurrency-boundary marker, erased to F;
 	// no package declares it.
-	return name == "_" || name == transpiler.TypeSendable || isGoPredeclaredTypeName(name) || c.declared[name]
+	return name == "_" || name == transpiler.TypeSendable || isGoPredeclaredTypeName(name) || c.typeNames[name]
+}
+
+// indexTypeNames returns the unqualified names that may denote a type in this
+// file:
+//
+//   - every GALA type, alias and companion the compilation loaded — whether
+//     this file may name one unqualified is galaScope's question, which also
+//     gives the better hint;
+//   - the declarations of this package's hand-written Go files;
+//   - the types and aliases of the Go packages this file can name
+//     unqualified: the ones it dot-imports, and the Go side of this package,
+//     of its dot-imported GALA packages and of the prelude.
+//
+// Unlike the value check's table it leaves out functions and values, and Go
+// types reached only through a qualifier, so `func f(d Duration)` under a
+// plain `import "time"` is reported.
+func (a *galaAnalyzer) indexTypeNames(imports []fileImport, rich *transpiler.RichAST, filePath string) map[string]bool {
+	out := make(map[string]bool)
+	for _, keys := range [][]string{mapKeys(rich.Types), mapKeys(rich.TypeAliases), mapKeys(rich.CompanionObjects)} {
+		for _, k := range keys {
+			out[simpleNameOf(k)] = true
+		}
+	}
+	for name := range a.undefinedSymbolLocalGoNames(filePath) {
+		out[name] = true
+	}
+	visible := map[string]bool{rich.PackageName: true}
+	for _, p := range registry.Global.PreludePackages() {
+		visible[p.Name] = true
+	}
+	for _, imp := range imports {
+		if !imp.IsDot {
+			continue
+		}
+		pkgName := rich.GoImportNames[imp.Path]
+		if pkgName == "" {
+			pkgName = rich.Packages[imp.Path]
+		}
+		for _, n := range transpiler.ImportNames(imp.Path, "", pkgName) {
+			visible[n.Name] = true
+		}
+	}
+	if gi := rich.GoTypeInfo; gi != nil {
+		for _, keys := range [][]string{mapKeys(gi.Types), mapKeys(gi.TypeAliases)} {
+			for _, k := range keys {
+				if dot := strings.LastIndexByte(k, '.'); dot > 0 && visible[k[:dot]] {
+					out[k[dot+1:]] = true
+				}
+			}
+		}
+	}
+	for pkg, symbols := range rich.GoExports {
+		if visible[pkg] {
+			for _, s := range symbols {
+				out[s] = true
+			}
+		}
+	}
+	return out
+}
+
+// mapKeys returns m's keys.
+func mapKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // receiverBaseTypeName reduces a receiver's type text (`*Box[T]`) to the bare

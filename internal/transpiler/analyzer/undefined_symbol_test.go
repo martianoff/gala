@@ -1035,6 +1035,45 @@ func main() {
     val f = (w Widget) => 1
     Println(f)
 }`, "Widget"},
+		{"alias target", `package main
+
+type Coord Widget
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"type parameter constraint", `package main
+
+func f[T Widget](x T) T = x
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"unnamed parameter of a function type", `package main
+
+func apply(f func(Widget) int) int = 1
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"Go type reached only through its qualifier", `package main
+
+import "time"
+
+func wait(d Duration) Duration = d
+
+func main() {
+    Println(time.Second)
+}`, "Duration"},
+		{"function name used as a type", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func f(xs ArrayOf) int = 1
+
+func main() {
+    Println(1)
+}`, "ArrayOf"},
 	}
 	for _, tc := range reported {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1044,6 +1083,18 @@ func main() {
 			assert.Contains(t, err.Error(), "undefined: "+tc.symbol)
 		})
 	}
+
+	t.Run("reported at the first use, type or value", func(t *testing.T) {
+		err := analyzeSources(t, `package main
+
+func f(w Widget) int = 1
+
+func main() {
+    Println(Widget(2))
+}`, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "3:9 undefined: Widget")
+	})
 
 	t.Run("hint names the package that declares it", func(t *testing.T) {
 		err := analyzeInModule(t, "main.gala", map[string]string{
@@ -1088,6 +1139,21 @@ func later(m Millis, e error, a any, r rune, b byte) Millis = m
 
 func main() {
     Println(area(Circle(1.0)))
+}`},
+		{name: "bare-identifier type positions", src: `package main
+
+type Number interface {
+    Value() int
+}
+
+type Size int
+
+type Count Size
+
+func sum[T Number, K comparable](xs func(int, T) K, ys func(n int) Size) Count = 0
+
+func main() {
+    Println(1)
 }`},
 		{name: "wildcard type argument in a type pattern", src: `package main
 

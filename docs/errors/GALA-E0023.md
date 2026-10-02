@@ -107,9 +107,11 @@ provides.
 [GALA-E0025](GALA-E0025.md) covers the remaining import question: a
 signature type that resolved to a package this file never imported.
 
-**Type names.** A type written in a parameter, result, struct field,
-type argument, lambda parameter or `val`/`var` annotation is checked
-too.
+**Type names.** Type names are checked too: in a parameter, result,
+struct field, type argument, lambda parameter or `val`/`var` annotation,
+an alias target (`type Coord Point`), a type parameter's constraint
+(`[T Number]`) and an unnamed parameter of a function type
+(`func(Point) int`).
 
 - A **qualified** type is checked at its qualifier: `var sb
   strings.Builder` in a file that never imports `strings` is reported
@@ -118,16 +120,19 @@ too.
 - An **unqualified** type name must exist. It resolves when it is a Go
   predeclared type (`int`, `error`, `any`, …) or a type parameter the
   file declares, including the names a method receiver binds
-  (`func (b Box[T]) ...`). It also resolves when it is declared by any of
-  these:
+  (`func (b Box[T]) ...`). It also resolves when it is a type declared by
+  any of these:
   - this package, in any of its `.gala` files or hand-written `.go`
     files, or inside a function body;
   - a package this file dot-imports, GALA or Go;
   - the `std` prelude.
 
-  It must also pass the scope rule above. A name declared nowhere is
-  reported at the name. When a GALA package on the search paths declares
-  it, the hint names the import:
+  A function or value of the same name does not count. Neither does a
+  Go type this file reaches only through a qualifier: under `import
+  "time"`, `func wait(d Duration)` is reported. A GALA type must also
+  pass the scope rule above. The name is reported at its first use in
+  the file, whether that use is a type or a value. When a GALA package
+  on the search paths declares it, the hint names the import:
 
 ```gala
 package main
@@ -150,6 +155,9 @@ create one.
 
 Not covered. Each of these is a deliberate trade of a missed detection
 for a guaranteed absence of false positives:
+
+- **The member of a qualified type.** `strings.Builderr` is checked only
+  at `strings`; see *Type names* above.
 - **Selectors.** In `x.foo().bar`, only `x` is checked — field and
   method names require the receiver's type.
 - **Constructor names in `match` / `case` patterns.** A pattern's
