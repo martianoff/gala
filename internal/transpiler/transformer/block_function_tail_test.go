@@ -178,6 +178,113 @@ func classify(n int) string {
 	}
 }
 
+// An expression-bodied function with no result type is void: GALA does not
+// infer a result type, so `func f() = <expr>` lowers as `func f() { <expr> }`.
+// The generated-Go oracle type-checks each output, which rejects a `return`
+// of a value from a void Go function.
+func TestVoidExpressionFunction(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		contains []string
+		excludes []string
+	}{
+		{
+			name: "call returning a value is a call statement",
+			body: `
+func fortyTwo() int = 42
+
+func r() = fortyTwo()
+`,
+			contains: []string{"func r() {\n\tfortyTwo()\n}"},
+		},
+		{
+			name: "Go call with several results is a call statement",
+			body: `
+func greet(name string) = Println(s"hello $name")
+`,
+			contains: []string{"func greet(name string) {\n\tfmt.Println("},
+			excludes: []string{"return"},
+		},
+		{
+			name: "void call",
+			body: `
+func each(f func(int)) = f(1)
+`,
+			contains: []string{"func each(f func(int)) {\n\tf(1)\n}"},
+		},
+		{
+			name: "method",
+			body: `
+struct Box(n int)
+
+func (b Box) Show() = Println(b.n)
+`,
+			contains: []string{"func (b Box) Show() {\n\tfmt.Println(b.n.Get())\n}"},
+		},
+		{
+			name: "match runs its arms as statements",
+			body: `
+func describe(n int) = n match {
+    case 0 => Println("zero")
+    case _ => Println(n)
+}
+`,
+			contains: []string{`fmt.Println("zero")`, "fmt.Println(n)"},
+			excludes: []string{"return fmt.Println", "return func"},
+		},
+		{
+			name: "match arm that returns early is inlined",
+			body: `
+func describe(n int) = n match {
+    case 0 => {
+        Println("zero")
+        return
+    }
+    case _ => Println(n)
+}
+`,
+			contains: []string{`fmt.Println("zero")`, "fmt.Println(n)"},
+			excludes: []string{"return func"},
+		},
+		{
+			name: "explicit Get call on an Option is a call",
+			body: `
+func force(o Option[int]) = o.Get()
+`,
+			contains: []string{"o.Get()"},
+		},
+		{
+			name: "if-expression is an if statement",
+			body: `
+func sign(n int) = if (n < 0) Println("negative") else Println("non-negative")
+`,
+			contains: []string{"if n < 0 {"},
+			excludes: []string{"return"},
+		},
+		{
+			name: "self-recursive if-expression is ordinary recursion",
+			body: `
+func countdown(n int) = if (n == 0) Println("liftoff") else countdown(n - 1)
+`,
+			contains: []string{"countdown(n - 1)"},
+			excludes: []string{"return"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := newBindTranspiler().Transpile("package main\n"+tt.body, "")
+			require.NoError(t, err)
+			for _, want := range tt.contains {
+				assert.Contains(t, got, want)
+			}
+			for _, unwanted := range tt.excludes {
+				assert.NotContains(t, got, unwanted)
+			}
+		})
+	}
+}
+
 // A body that cannot produce its function's value, and a value computed only
 // to be discarded, are GALA errors rather than Go "missing return" or
 // "is not used" errors.
@@ -367,6 +474,37 @@ func v() {
 }
 `,
 			wantErr: "`x` is evaluated but not used",
+		},
+		{
+			name:    "literal body of a function with no result type",
+			body:    "\nfunc s() = 42\n",
+			wantErr: "`42` is evaluated but not used; declare the function's result type to return it, as in `func f() int = 42`",
+		},
+		{
+			name:    "operator body of a function with no result type",
+			body:    "\nfunc s(x int) = x + 1\n",
+			wantErr: "`x+1` is evaluated but not used; declare the function's result type",
+		},
+		{
+			name:    "parameter body of a function with no result type",
+			body:    "\nfunc s(x int) = x\n",
+			wantErr: "`x` is evaluated but not used; declare the function's result type",
+		},
+		{
+			name:    "val field read as the body of a method with no result type",
+			body:    "\nstruct Box(n int)\n\nfunc (b Box) N() = b.n\n",
+			wantErr: "`b.n` is evaluated but not used; declare the function's result type",
+		},
+		{
+			// Not a statement here, so the analyzer reports it as a keyword.
+			name:    "loop control as the body of a function with no result type",
+			body:    "\nfunc f() = continue\n",
+			wantErr: "\"continue\" is a Go keyword and is not part of GALA",
+		},
+		{
+			name:    "lambda body of a function with no result type",
+			body:    "\nfunc s() = (x int) => x + 1\n",
+			wantErr: "is evaluated but not used; declare the function's result type",
 		},
 	}
 	for _, tt := range tests {

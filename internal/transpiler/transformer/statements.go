@@ -803,6 +803,18 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(ctx *grammar.IfExpressio
 // match, a bare if-expression an if statement, and a plain value is dropped
 // (see dropValue).
 func (t *galaASTTransformer) lowerExpressionStatement(exprCtx grammar.IExpressionContext) (ast.Stmt, error) {
+	stmt, err := t.lowerDiscardedExpression(exprCtx)
+	if err != nil {
+		return nil, err
+	}
+	return t.dropValue(exprCtx, stmt), nil
+}
+
+// lowerDiscardedExpression lowers an expression whose value nothing reads as
+// a statement: a bare match is a statement-position match and a bare
+// if-expression an if statement. A plain value is left as an expression
+// statement for the caller to drop or reject.
+func (t *galaASTTransformer) lowerDiscardedExpression(exprCtx grammar.IExpressionContext) (ast.Stmt, error) {
 	if ifExpr := t.findIfExpressionInExpression(exprCtx); ifExpr != nil {
 		return t.lowerIfExpressionStatement(ifExpr)
 	}
@@ -820,7 +832,7 @@ func (t *galaASTTransformer) lowerExpressionStatement(exprCtx grammar.IExpressio
 		t.pendingMatchStmtBlock = nil
 		return block, nil
 	}
-	return t.dropValue(exprCtx, &ast.ExprStmt{X: expr}), nil
+	return &ast.ExprStmt{X: expr}, nil
 }
 
 // dropValue returns stmt, the statement lowered from exprCtx, with a bare value
@@ -1043,6 +1055,10 @@ const (
 	// value expected of it, which a declared result type or a `return` makes
 	// the lambda's result.
 	lambdaDiscardHint = "remove it, or make it the lambda's result: declare a result type, as in `(x int) int => { ... }`, or write `return` before it"
+	// expressionFunctionDiscardHint is for the body of `func F() = <expr>`:
+	// a function with no result type returns nothing, and GALA does not
+	// infer one.
+	expressionFunctionDiscardHint = "declare the function's result type to return it, as in `func f() int = 42`; a function with no result type returns nothing"
 )
 
 // checkValueUsedHint is checkValueUsed with the diagnostic's hint given.
