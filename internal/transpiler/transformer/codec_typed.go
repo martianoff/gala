@@ -682,7 +682,13 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 		if sc, ok := codecScalars[name]; ok {
 			return sc, ast.NewIdent(name), name == sc.goType, true
 		}
-		return codecScalar{}, nil, false, false
+		// A named type the package's own hand-written .go files declare
+		// (`type Millis int64` in a sibling .go) is a Go named type like any
+		// imported one, only unqualified.
+		if !t.isOwnGoType(name) {
+			return codecScalar{}, nil, false, false
+		}
+		ty = transpiler.NamedType{Package: t.packageName, Name: name}
 	}
 	if underlying, ok := t.goNamedUnderlying(ty); ok {
 		if uname, upkg, ok := simpleTypeName(underlying); ok && upkg == "" {

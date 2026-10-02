@@ -851,7 +851,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// `NilType` and downstream type inference (e.g., `ArrayFromSlice(Make())`
 	// resolving its `T` from `[]Event`) silently fails, leaving lambda
 	// parameter types as the un-substituted type-parameter name.
-	if filePath != "" && pkgName != "main" && pkgName != "test" {
+	//
+	// `package main` is no exception: a program's hand-written .go files are
+	// as much a part of it as a library's. Only the files of this package are
+	// read (see AnalyzeOwnGoFiles), so .go files of another package in the
+	// directory, a `//go:build ignore` generator, or the output of an earlier
+	// `gala transpile -o main.go` contribute nothing.
+	if filePath != "" && pkgName != "" {
 		dirPath := filepath.Dir(filePath)
 		// The types declared here record this package's own import path; the
 		// transformer emits a type carrying it unqualified rather than as an
@@ -861,12 +867,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ownImportPath = a.resolver.PackageImportPath(filePath)
 		}
 		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
-		goInfo := AnalyzeGoFiles(dirPath, richAST.OwnImportPath)
+		goInfo, ownTypes := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
 		if !goInfo.IsEmpty() {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 			}
 			richAST.GoTypeInfo.Merge(goInfo)
+			richAST.OwnGoTypes = ownTypes
 		}
 	}
 

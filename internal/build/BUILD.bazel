@@ -44,6 +44,7 @@ go_test(
         "go_subpackage_test.go",
         "go_toolchain_test.go",
         "gomod_test.go",
+        "main_go_sibling_test.go",
         "main_package_test.go",
         "main_root_subpackage_test_test.go",
         "module_cache_immutable_test.go",

@@ -142,6 +142,13 @@ type RichAST struct {
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
 	PackageDoc       string                              // doc comment above the `package` clause
+
+	// OwnGoTypes holds the bare names of the types (and type aliases) the
+	// package's own hand-written .go files declare. GoTypeInfo cannot answer
+	// this: it is keyed by package NAME and also holds every imported Go
+	// package, so `list.List` from container/list and a `List` declared by a
+	// package named list share a key.
+	OwnGoTypes map[string]bool
 }
 
 // Merge combines metadata from another RichAST into this one.
