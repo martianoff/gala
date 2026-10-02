@@ -956,22 +956,6 @@ func main() {
 }`,
 			expectErr: false,
 		},
-		{
-			// The control for the unqualified half: a declared generic type
-			// and its type parameters resolve. TestUnresolvedTypeName covers
-			// the rest.
-			name: "declared unqualified type name and type parameters resolve",
-			main: `package main
-
-struct Box[T any](Value T)
-
-func wrap[T any](v T) Box[T] = Box(Value = v)
-
-func main() {
-    Println(wrap(1).Value)
-}`,
-			expectErr: false,
-		},
 	}
 
 	for _, tc := range cases {
@@ -989,9 +973,8 @@ func main() {
 }
 
 // TestUnresolvedTypeName covers an unqualified type name that nothing in the
-// compilation declares. It used to transpile and fail at `go build` with
-// `undefined: Widget` against the generated code, or, for a collection type
-// whose package nothing loaded, erase the body's lambdas to `any` first.
+// compilation declares, in each type position, and the names that must still
+// resolve.
 func TestUnresolvedTypeName(t *testing.T) {
 	reported := []struct {
 		name, src, symbol string

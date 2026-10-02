@@ -1372,7 +1372,7 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 	return pkg, names
 }
 
-// --- type-position qualifiers ------------------------------------------------
+// --- type-position names -----------------------------------------------------
 
 // checkTypeNames checks the type names written in TYPE positions. It reports a
 // package qualifier that no import brings into scope, so `var sb
@@ -1401,16 +1401,10 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 // whenever that surface is incomplete (no Go SDK, an unanalyzed package).
 //
 // An unqualified type name is reported when nothing declares it (see
-// typeNameExists), or when every package declaring it is a GALA package this
-// file neither is nor dot-imports — `func total(xs Array[int])` in a file
-// whose only import is `strings`, which loads the collection packages for its
-// own use (galaScope). Before the first half existed, a name nothing declared
-// reached `go build` as `undefined: Array`, after the body's lambdas had been
-// erased to `any`. A name the file binds itself — a type parameter, or a type
-// declared inside a function body — is recognised file-wide rather than per
-// scope, which can only suppress a report, never invent one. Existence is
-// checked against the same symbol table as value names, so it stands down
-// under the same conditions (see fileImportsFullyLoaded).
+// typeNameExists), or when only GALA packages out of this file's scope do
+// (see galaScope), unless the file binds it itself (see
+// collectFileTypeBinders). It uses the value check's symbol table, so it
+// stands down under the same conditions (see fileImportsFullyLoaded).
 //
 // In the signature of a method whose receiver type is declared in another
 // file of the package, the packages that file dot-imports count as well — the
@@ -1477,17 +1471,14 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 // newlines, so for `var (a, b)` the first identifier of the next line parses as
 // this type: checking it as a type name would report that identifier instead.
 func tupleDestructureType(n antlr.Tree) antlr.Tree {
-	switch d := n.(type) {
-	case *grammar.ValDeclarationContext:
-		if d.TuplePattern() != nil && d.Type_() != nil {
-			return d.Type_()
-		}
-	case *grammar.VarDeclarationContext:
-		if d.TuplePattern() != nil && d.Type_() != nil {
-			return d.Type_()
-		}
+	d, ok := n.(interface {
+		TuplePattern() grammar.ITuplePatternContext
+		Type_() grammar.ITypeContext
+	})
+	if !ok || d.TuplePattern() == nil || d.Type_() == nil {
+		return nil
 	}
-	return nil
+	return d.Type_()
 }
 
 // typeNameExists reports whether an unqualified type name denotes anything
@@ -1499,14 +1490,9 @@ func tupleDestructureType(n antlr.Tree) antlr.Tree {
 // from; galaScope polices that.
 func (c *undefChecker) typeNameExists(name string) bool {
 	// `_` is the wildcard type argument of a type pattern: `case a: Array[_]`.
-	if name == "_" || isGoPredeclaredTypeName(name) || c.declared[name] {
-		return true
-	}
-	// A prelude package's registered types include ones with no declaration in
-	// its sources, such as the transparent `Sendable[F]` marker, which the
-	// transpiler erases to F.
-	_, ok := registry.Global.IsPreludeType(name)
-	return ok
+	// `Sendable[F]` is the language's concurrency-boundary marker, erased to F;
+	// no package declares it.
+	return name == "_" || name == transpiler.TypeSendable || isGoPredeclaredTypeName(name) || c.declared[name]
 }
 
 // receiverBaseTypeName reduces a receiver's type text (`*Box[T]`) to the bare

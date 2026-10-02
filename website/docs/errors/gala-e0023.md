@@ -69,7 +69,7 @@ val xs = ArrayOf(1, 2)                       // GALA-E0023
 val ys = collection_immutable.ArrayOf(1, 2)  // ok
 ```
 
-Type names are checked the same way. A name written as a parameter, result, struct field, type argument or `val` annotation must be a predeclared Go type, a type parameter, or a type that this package, a dot-imported package or the `std` prelude declares. Without the import, `func total(xs Array[int])` is reported at `Array`, and the hint names the packages that declare it. It used to compile as far as `go build` and fail there.
+Type names are checked the same way. A name written as a parameter, result, struct field, type argument or `val` annotation must be a predeclared Go type, a type parameter, or a type that this package, a dot-imported package or the `std` prelude declares. Without the import, `func total(xs Array[int])` is reported at `Array`, and the hint names the packages that declare it.
 
 ---
 
