@@ -51,6 +51,8 @@ type structMetaConfig struct {
 	generatedName string
 	// pkg is the declaring package when it is not this one, "" otherwise.
 	pkg string
+	// emptyInit memoizes structNeedsEmptyInit.
+	emptyInit emptyInitState
 	// emit is true when this file declares the StructMeta. Otherwise the file
 	// only references it, and generating its methods just checks that every
 	// field has an encoding, so a missing one is still reported at the use.
@@ -401,9 +403,9 @@ func (t *galaASTTransformer) generateStructMetaDecls(config *structMetaConfig) (
 
 	decls = append(decls, t.genNumFields(genName, len(meta.FieldNames)))
 	decls = append(decls, t.genFieldName(genName, meta.FieldNames))
-	// The only typed serialisation methods. EncodeFields / DecodeFields live
-	// in codec_typed.go.
-	decls = append(decls, encode, decode)
+	// The typed serialisation methods. EncodeFields / DecodeFields /
+	// FieldIsEmpty / Empty live in codec_typed.go.
+	decls = append(decls, encode, decode, t.genFieldIsEmpty(config), t.genEmpty(config))
 
 	return decls, nil
 }

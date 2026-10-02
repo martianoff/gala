@@ -95,6 +95,48 @@ func (c Cell[T]) Or(d Option[T]) T = d.GetOrElse(c.V)
 			contains: []string{"std.None[string]{}.Apply()"},
 		},
 		{
+			name:     "positional struct constructor",
+			body:     "struct Pin(D Option[Drag], N int)\n\nfunc main() { Println(Pin(None(), 1)) }\n",
+			contains: []string{"std.None[Drag]{}.Apply()"},
+		},
+		{
+			name:     "positional struct constructor, nested",
+			body:     "struct Pin(D Option[Drag], N int)\n\nstruct Two(A Pin, B Option[int])\n\nfunc main() { Println(Two(Pin(None(), 1), None())) }\n",
+			contains: []string{"std.None[Drag]{}.Apply()", "std.None[int]{}.Apply()"},
+		},
+		{
+			name:     "positional struct constructor of a struct with a companion Apply",
+			body:     "struct Cfg(Name Option[string], Port int)\n\nfunc (c Cfg) Apply(p Option[int]) Cfg = Cfg(None[string](), p.GetOrElse(0))\n\nfunc main() { Println(Cfg(None(), 1)) }\n",
+			contains: []string{"Cfg{Name: std.NewImmutable(std.None[string]{}.Apply())"},
+		},
+		{
+			name:        "a call that goes to the companion Apply does not take a field's type",
+			body:        "struct Cfg(Name Option[string], Port int)\n\nfunc (c Cfg) Apply(p Option[int]) Cfg = Cfg(None[string](), p.GetOrElse(0))\n\nfunc main() { Println(Cfg(Some(8080))) }\n",
+			contains:    []string{"Cfg{}.Apply(std.Some[int]{}.Apply(8080))"},
+			notContains: []string{"Some[string]"},
+		},
+		{
+			name:     "positional sealed case constructor",
+			body:     "sealed type Ev {\n    case Move(D Option[Drag])\n    case Stop()\n}\n\nfunc main() { Println(Move(None())) }\n",
+			contains: []string{"std.None[Drag]{}.Apply()"},
+		},
+		{
+			name:     "generic struct built with the enclosing function's same-named type parameter",
+			body:     "struct Slot[T any](D Option[T], V T)\n\nfunc mk[T any](x T) Slot[T] = Slot[T](None(), x)\n\nfunc main() { Println(mk(1)) }\n",
+			contains: []string{"std.None[T]{}.Apply()"},
+		},
+		{
+			name:        "a field declared Immutable[T] takes a T, wrapped once",
+			body:        "struct Held(X Immutable[int])\n\nfunc main() { Println(Held(5)) }\n",
+			contains:    []string{"Held{X: std.NewImmutable(5)}"},
+			notContains: []string{"NewImmutable(std.NewImmutable"},
+		},
+		{
+			name:     "positional generic struct constructor, field mentions T",
+			body:     "struct Slot[T any](D Option[T], V T)\n\nfunc main() { Println(Slot[string](None(), \"x\")) }\n",
+			contains: []string{"std.None[string]{}.Apply()"},
+		},
+		{
 			name:        "the argument's parameter wins over the enclosing result type",
 			body:        "func f() Option[int] = Some(take(None(), 1))\n\nfunc main() { Println(f()) }\n",
 			contains:    []string{"std.None[Drag]{}.Apply()"},

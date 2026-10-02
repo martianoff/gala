@@ -2137,6 +2137,8 @@ val codec = Codec[Person](SnakeCase())
     .OmitEmpty("Bio")
 ```
 
+`.OmitEmpty(field)` leaves the field out of the encoded output whenever its value is empty: `""` for a string kind, `0` for a numeric kind (`rune` included, and a float `-0.0`, which decodes back as `0`), `false` for `bool`, `None` for an `Option`, and no elements for an `Array`, `List` or `HashMap`. A nested struct is never empty: as in Go's `encoding/json`, an all-zero struct is still written. The test runs per value at encode time, so the elements of a root array each keep or drop the field on their own. `Omit` wins over `OmitEmpty`. Decoding a document without the field gives the field that empty value, so an omitted field round-trips. Like `Omit` and `Rename`, `OmitEmpty` names a field of `T` itself; the fields of a nested struct are always written.
+
 #### Encode and Decode
 
 All operations return `Try[T]` for safe error handling:
@@ -2197,7 +2199,7 @@ val codec = json.Codec[Person](json.SnakeCase())
 | `.Naming(n)` | `Naming → JsonEncoder[T]` | Set naming strategy |
 | `.Omit(field)` | `string → JsonEncoder[T]` | Exclude field |
 | `.Rename(field, key)` | `string, string → JsonEncoder[T]` | Custom key |
-| `.OmitEmpty(field)` | `string → JsonEncoder[T]` | Skip zero-value field |
+| `.OmitEmpty(field)` | `string → JsonEncoder[T]` | Skip field when its value is empty (`""`, `0`, `false`, `None`, no elements) |
 | `.Encode(v)` | `T → Try[string]` | Serialize to JSON |
 | `.EncodePretty(v)` | `T → Try[string]` | Pretty-printed JSON |
 | `.Decode(s)` | `string → Try[T]` | Deserialize from JSON |
@@ -2387,7 +2389,8 @@ Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the
 | `NumFields` | `() int` | Number of fields in the struct |
 | `FieldName` | `(i int) string` | Name of field at index i |
 | `EncodeFields` | `(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)` | Typed serialise of a T via the writer interface; `naming` propagates into nested struct dispatch |
-| `DecodeFields` | `(r FieldDecoder, lookup func(string) int, naming func(string) string) T` | Typed construct of a T via the reader interface; `naming` propagates into nested struct dispatch |
+| `DecodeFields` | `(r FieldDecoder, lookup func(string) int, naming func(string) string) T` | Typed construct of a T via the reader interface; `naming` propagates into nested struct dispatch. A field absent from the input gets its empty value (`None` for an `Option`, an empty `List`, ...) |
+| `FieldIsEmpty` | `(t T, i int) bool` | Whether field i of t holds its empty value — the test behind `OmitEmpty`. A nested struct is never empty |
 
 #### ValueMeta — Values of Any Codec Shape
 

@@ -78,6 +78,16 @@ gala_test(
 )
 
 gala_test(
+    name = "codec_omit_empty_test",
+    srcs = ["codec_omit_empty_test.gala"],
+    deps = [
+        ":json",
+        "//collection_immutable",
+        "//yaml",
+    ],
+)
+
+gala_test(
     name = "codec_root_shapes_test",
     srcs = ["codec_root_shapes_test.gala"],
     deps = [

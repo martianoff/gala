@@ -91,6 +91,7 @@ go_test(
         "codec_boundary_test.go",
         "codec_cross_pkg_test.go",
         "codec_field_kinds_test.go",
+        "codec_omit_empty_test.go",
         "codec_struct_meta_order_test.go",
         "codec_value_test.go",
         "collect_partial_function_test.go",

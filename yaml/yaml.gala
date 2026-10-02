@@ -70,7 +70,11 @@ func (c YamlEncoder[T]) Omit(field string) YamlEncoder[T] =
 func (c YamlEncoder[T]) Rename(field string, key string) YamlEncoder[T] =
     rebuildEncoder[T](c.Meta, c.Config.WithRename(field, key))
 
-// OmitEmpty excludes a field when its value is zero.
+// OmitEmpty leaves a field out of the encoded output whenever its value is
+// empty: "" for a string kind, 0 for a numeric kind, false for bool, None for
+// an Option, and no elements for an Array, List or HashMap. A nested struct is
+// never empty. Decoding a document without the field gives it that empty
+// value, so an omitted field round-trips.
 func (c YamlEncoder[T]) OmitEmpty(field string) YamlEncoder[T] =
     rebuildEncoder[T](c.Meta, c.Config.WithOmitEmpty(field))
 
@@ -92,12 +96,21 @@ func omitFnFromKeys(keys Array[string]) func(int) bool =
 func namingFn(n Naming) func(string) string = (name) => ApplyNaming(name, n)
 
 // writer returns the function that writes one T as a YAML mapping, with the
-// codec's Naming/Rename/Omit applied. Array() and List() call it per element.
+// codec's Naming/Rename/Omit/OmitEmpty applied. Array() and List() call it per
+// element. Omit is settled once per codec; OmitEmpty depends on the value, so
+// it is tested per value written.
 func (c YamlEncoder[T]) writer() func(FieldEncoder, T) {
     val nameFn = nameFnFromKeys(c.Keys.Keys)
     val omitFn = omitFnFromKeys(c.Keys.Keys)
     val naming = namingFn(c.Config.NamingStrategy)
-    (w, v) => c.Meta.EncodeFields(w, v, nameFn, omitFn, naming)
+    val omitIfEmpty = c.Keys.OmitIfEmpty
+    if !omitIfEmpty.Exists((b) => b) {
+        return (w, v) => c.Meta.EncodeFields(w, v, nameFn, omitFn, naming)
+    }
+    (w, v) => {
+        val omitValueFn = (i int) => omitFn(i) || (omitIfEmpty.Get(i) && c.Meta.FieldIsEmpty(v, i))
+        c.Meta.EncodeFields(w, v, nameFn, omitValueFn, naming)
+    }
 }
 
 // reader returns the function that reads one T from a YAML mapping. The key
@@ -139,7 +152,7 @@ func (c YamlEncoder[T]) Decode(s string) Try[T] = decodeYaml(s, (r) => {
 func (c YamlEncoder[T]) Unapply(s string) Option[T] = c.Decode(s).ToOption()
 
 // Array returns a codec for a YAML document whose root is a sequence of T
-// mappings, with this codec's Naming/Rename/Omit applied to every element.
+// mappings, with this codec's Naming/Rename/Omit/OmitEmpty applied to every element.
 func (c YamlEncoder[T]) Array() YamlArrayEncoder[T] = YamlArrayEncoder[T](Elem = c)
 
 // List is Array for a List[T].

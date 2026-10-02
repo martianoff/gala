@@ -1253,14 +1253,15 @@ func (t *galaASTTransformer) emitNonRestBindings(
 
 // seqVarDecl builds `var name T` as a DeclStmt for seq-pattern bindings.
 // Helper used by emitNonRestBindings.
-func seqVarDecl(name string, typeExpr ast.Expr) ast.Stmt {
+func seqVarDecl(name string, typeExpr ast.Expr, value ...ast.Expr) ast.Stmt {
 	return &ast.DeclStmt{
 		Decl: &ast.GenDecl{
 			Tok: token.VAR,
 			Specs: []ast.Spec{
 				&ast.ValueSpec{
-					Names: []*ast.Ident{ast.NewIdent(name)},
-					Type:  typeExpr,
+					Names:  []*ast.Ident{ast.NewIdent(name)},
+					Type:   typeExpr,
+					Values: value,
 				},
 			},
 		},

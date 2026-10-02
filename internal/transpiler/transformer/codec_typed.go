@@ -2,8 +2,8 @@ package transformer
 
 // Typed StructMeta codegen.
 //
-// This file produces the `EncodeFields` / `DecodeFields` methods on every
-// `_StructMeta_T` type. The methods are fully typed end-to-end: no `any`, no
+// This file produces the `EncodeFields` / `DecodeFields` / `FieldIsEmpty`
+// methods on every `_StructMeta_T` type. The methods are fully typed end-to-end: no `any`, no
 // runtime type assertions, no boxing in the hot path. They delegate
 // formatting to a `FieldEncoder` / `FieldDecoder` implementation provided by
 // the caller (defined in `std/meta.gala`).
@@ -140,8 +140,7 @@ func (t *galaASTTransformer) fieldShapeError(config *structMetaConfig, fieldName
 
 func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) (*ast.FuncDecl, error) {
 	meta := config.typeMetadata
-	resolvedName := t.resolveStructTypeName(config.typeName)
-	immutFlags := t.structImmutFields[resolvedName]
+	isImmut := t.codecImmutField(config)
 	g := &codecGen{t: t, pkg: config.pkg}
 
 	stmts := []ast.Stmt{exprStmt(methodCall("w", "WriteStartObject"))}
@@ -149,8 +148,7 @@ func (t *galaASTTransformer) genEncodeFields(config *structMetaConfig) (*ast.Fun
 	// Per-field: if !omitFn(i) { w.WriteKey(nameFn(i)); <typed write> }
 	for i, fieldName := range meta.FieldNames {
 		fieldType := meta.Fields[fieldName]
-		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
-		fieldAccess := buildFieldAccess(ast.NewIdent("t"), fieldName, isImmut)
+		fieldAccess := buildFieldAccess(ast.NewIdent("t"), fieldName, isImmut(i))
 
 		valueStmts, err := g.write(fieldAccess, unwrapGalaType(fieldType))
 		if err != nil {
@@ -332,25 +330,107 @@ func genNestedStructWrite(metaType func() ast.Expr, access ast.Expr) []ast.Stmt 
 	})}
 }
 
+// --- FieldIsEmpty(t T, i int) bool ---
+
+// genFieldIsEmpty emits the per-field emptiness test a codec's OmitEmpty
+// consults at encode time:
+//
+//	switch i { case 0: return t.Name == ""; case 1: return t.Tags.IsEmpty(); ... }
+//	return false
+//
+// A field that can never be empty (a nested struct) gets no case. The field
+// shapes were already validated by genEncodeFields.
+func (t *galaASTTransformer) genFieldIsEmpty(config *structMetaConfig) *ast.FuncDecl {
+	meta := config.typeMetadata
+	isImmut := t.codecImmutField(config)
+
+	var cases []ast.Stmt
+	for i, fieldName := range meta.FieldNames {
+		access := buildFieldAccess(ast.NewIdent("t"), fieldName, isImmut(i))
+		if empty := t.codecIsEmpty(access, unwrapGalaType(meta.Fields[fieldName]), config.pkg); empty != nil {
+			cases = append(cases, &ast.CaseClause{
+				List: []ast.Expr{intLit(i)},
+				Body: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{empty}}},
+			})
+		}
+	}
+
+	var body []ast.Stmt
+	if len(cases) > 0 {
+		body = append(body, &ast.SwitchStmt{Tag: ast.NewIdent("i"), Body: &ast.BlockStmt{List: cases}})
+	}
+	body = append(body, &ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("false")}})
+
+	return &ast.FuncDecl{
+		Recv: blankRecv(config.generatedName),
+		Name: ast.NewIdent("FieldIsEmpty"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{List: []*ast.Field{
+				{Names: idents("t"), Type: ast.NewIdent(config.typeName)},
+				{Names: idents("i"), Type: ast.NewIdent("int")},
+			}},
+			Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent("bool")}}},
+		},
+		Body: &ast.BlockStmt{List: body},
+	}
+}
+
+// codecIsEmpty returns the boolean expression that tests whether the value
+// `access` of type ty is empty, or nil when a value of ty is never empty.
+// Empty is: "" for a string kind, 0 for a numeric kind (rune included), false
+// for bool, None for an Option, and no elements for an Array, List or HashMap.
+// A struct is never empty, as in Go's encoding/json: an all-zero struct is
+// still a value worth writing. Immutable and aliases are looked through. pkg
+// is the package declaring the field ty came from ("" for this one).
+func (t *galaASTTransformer) codecIsEmpty(access ast.Expr, ty transpiler.Type, pkg string) ast.Expr {
+	ty = t.codecUnalias(ty, pkg)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable":
+		return t.codecIsEmpty(&ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("Get")}}, params[0], pkg)
+	case "Option", "Array", "List", "HashMap":
+		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("IsEmpty")}}
+	}
+	sc, _, _, ok := t.codecScalarOf(ty)
+	if !ok {
+		return nil
+	}
+	switch sc.goType {
+	case "bool":
+		return &ast.UnaryExpr{Op: token.NOT, X: access}
+	case "string":
+		return &ast.BinaryExpr{X: access, Op: token.EQL, Y: stringLit("")}
+	}
+	return &ast.BinaryExpr{X: access, Op: token.EQL, Y: intLit(0)}
+}
+
 // --- DecodeFields(r FieldDecoder, lookup func(string) int, naming) T ---
 
 func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.FuncDecl, error) {
 	meta := config.typeMetadata
-	resolvedName := t.resolveStructTypeName(config.typeName)
-	immutFlags := t.structImmutFields[resolvedName]
+	isImmut := t.codecImmutField(config)
 	g := &codecGen{t: t, pkg: config.pkg}
 
 	var stmts []ast.Stmt
 
-	// Per-field locals of the field's Go type. A field absent from the input
-	// keeps its zero value (None for Option fields).
+	// Per-field locals of the field's Go type, holding the field's empty value:
+	// a field absent from the input — one an OmitEmpty encoder left out, say —
+	// decodes to it.
 	for _, fieldName := range meta.FieldNames {
 		fieldType := meta.Fields[fieldName]
-		goType, err := g.goType(unwrapGalaType(fieldType))
+		valueType := unwrapGalaType(fieldType)
+		goType, err := g.goType(valueType)
 		if err != nil {
 			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
 		}
-		stmts = append(stmts, seqVarDecl("_"+fieldName, goType))
+		empty, err := g.emptyValue(valueType)
+		if err != nil {
+			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
+		}
+		if empty != nil {
+			stmts = append(stmts, seqVarDecl("_"+fieldName, goType, empty))
+		} else {
+			stmts = append(stmts, seqVarDecl("_"+fieldName, goType))
+		}
 	}
 
 	stmts = append(stmts, exprStmt(methodCall("r", "StartObject")))
@@ -394,10 +474,9 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 	// return T{FieldName: _FieldName, ...}  (wrap Immutable fields)
 	var compositeElts []ast.Expr
 	for i, fieldName := range meta.FieldNames {
-		isImmut := immutFlags != nil && i < len(immutFlags) && immutFlags[i]
 		var value ast.Expr = ast.NewIdent("_" + fieldName)
-		if isImmut {
-			value = &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{value}}
+		if isImmut(i) {
+			value = t.newImmutable(value)
 		}
 		compositeElts = append(compositeElts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: value})
 	}
@@ -441,7 +520,7 @@ func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error)
 			return nil, err
 		}
 		stmts := append([]ast.Stmt{seqVarDecl(tmp.Name, innerType)}, body...)
-		stmts = append(stmts, assign(&ast.CallExpr{Fun: g.t.stdIdent("NewImmutable"), Args: []ast.Expr{tmp}}))
+		stmts = append(stmts, assign(g.t.newImmutable(tmp)))
 		return []ast.Stmt{&ast.BlockStmt{List: stmts}}, nil
 	case "Option":
 		if g.t.codecNullable(params[0], g.pkg) {
@@ -456,22 +535,13 @@ func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error)
 		if err != nil {
 			return nil, err
 		}
-		ctor := func(name string, args ...ast.Expr) ast.Expr {
-			return &ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   &ast.CompositeLit{Type: &ast.IndexExpr{X: g.t.stdIdent(name), Index: innerType}},
-					Sel: ast.NewIdent("Apply"),
-				},
-				Args: args,
-			}
-		}
 		someStmts := append([]ast.Stmt{seqVarDecl(tmp.Name, innerType)}, body...)
-		someStmts = append(someStmts, assign(ctor("Some", tmp)))
+		someStmts = append(someStmts, assign(applyCtor(g.t.buildSomeType(innerType), tmp)))
 		return []ast.Stmt{&ast.IfStmt{
 			Cond: methodCall("r", "IsNull"),
 			Body: &ast.BlockStmt{List: []ast.Stmt{
 				exprStmt(methodCall("r", "ReadNull")),
-				assign(ctor("None")),
+				assign(applyCtor(g.t.buildNoneType(innerType))),
 			}},
 			Else: &ast.BlockStmt{List: someStmts},
 		}}, nil
@@ -567,6 +637,151 @@ func (g *codecGen) read(target ast.Expr, ty transpiler.Type) ([]ast.Stmt, error)
 		},
 		Args: []ast.Expr{ast.NewIdent("r"), genNestedStructLookup(metaType), ast.NewIdent("naming")},
 	})}, nil
+}
+
+// applyCtor builds `<ctorType>{}.Apply(args...)` — a sealed-case constructor
+// call such as `Some[T]{}.Apply(x)` or `None[T]{}.Apply()`.
+func applyCtor(ctorType ast.Expr, args ...ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: ctorType}, Sel: ast.NewIdent("Apply")},
+		Args: args,
+	}
+}
+
+// emptyValue returns the expression for the empty value of ty (see
+// codecIsEmpty) where Go's zero value is not it, or nil where it is. Go's zero
+// Option is a Some holding the zero element, and Go's zero List is not a valid
+// empty list, so both are spelled out; the zero Array and HashMap are already
+// empty, and so is every scalar's zero. A struct with such a field, at any
+// depth, is built by its StructMeta's Empty method.
+func (g *codecGen) emptyValue(ty transpiler.Type) (ast.Expr, error) {
+	ty = g.t.codecUnalias(ty, g.pkg)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable":
+		inner, err := g.emptyValue(params[0])
+		if inner == nil || err != nil {
+			return nil, err
+		}
+		return g.t.newImmutable(inner), nil
+	case "Option":
+		elemType, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		return applyCtor(g.t.buildNoneType(elemType)), nil
+	case "List":
+		elemType, err := g.goType(params[0])
+		if err != nil {
+			return nil, err
+		}
+		return &ast.CallExpr{Fun: &ast.IndexExpr{X: g.t.collectionIdent("EmptyList"), Index: elemType}}, nil
+	case "":
+		if config, err := g.t.codecStructMeta(ty, g.pkg); err == nil && g.t.structNeedsEmptyInit(config) {
+			return &ast.CallExpr{Fun: &ast.SelectorExpr{
+				X:   &ast.CompositeLit{Type: g.t.structMetaRef(config)},
+				Sel: ast.NewIdent("Empty"),
+			}}, nil
+		}
+	}
+	return nil, nil
+}
+
+// codecNeedsEmptyInit reports whether the empty value of ty differs from Go's
+// zero value (see emptyValue). pkg is the package declaring the field ty came
+// from ("" for this one).
+func (t *galaASTTransformer) codecNeedsEmptyInit(ty transpiler.Type, pkg string) bool {
+	ty = t.codecUnalias(ty, pkg)
+	switch kind, params := codecContainer(ty); kind {
+	case "Immutable":
+		return t.codecNeedsEmptyInit(params[0], pkg)
+	case "Option", "List":
+		return true
+	case "":
+		// A scalar, or anything else that is not a struct, has no StructMeta:
+		// its zero value is its empty value.
+		config, err := t.codecStructMeta(ty, pkg)
+		return err == nil && t.structNeedsEmptyInit(config)
+	}
+	return false
+}
+
+// emptyInitState is whether a struct's empty value differs from Go's zero
+// value, once structNeedsEmptyInit has worked it out.
+type emptyInitState uint8
+
+const (
+	emptyInitUnknown emptyInitState = iota
+	emptyIsZero
+	emptyNeedsInit
+)
+
+// structNeedsEmptyInit reports whether any field of config's struct needs an
+// explicit empty value, memoized on config. A struct cannot contain itself
+// except through an Option or a collection, so the recursion ends.
+func (t *galaASTTransformer) structNeedsEmptyInit(config *structMetaConfig) bool {
+	if config.emptyInit == emptyInitUnknown {
+		config.emptyInit = emptyIsZero
+		meta := config.typeMetadata
+		for _, fieldName := range meta.FieldNames {
+			if t.codecNeedsEmptyInit(unwrapGalaType(meta.Fields[fieldName]), config.pkg) {
+				config.emptyInit = emptyNeedsInit
+				break
+			}
+		}
+	}
+	return config.emptyInit == emptyNeedsInit
+}
+
+// codecImmutField reports whether field i of config's struct is a val field,
+// stored as Immutable[T] and read through Get().
+func (t *galaASTTransformer) codecImmutField(config *structMetaConfig) func(int) bool {
+	flags := t.structImmutFields[t.resolveStructTypeName(config.typeName)]
+	return func(i int) bool { return i < len(flags) && flags[i] }
+}
+
+// newImmutable wraps x in std.NewImmutable, as a val field stores it.
+func (t *galaASTTransformer) newImmutable(x ast.Expr) ast.Expr {
+	return &ast.CallExpr{Fun: t.stdIdent("NewImmutable"), Args: []ast.Expr{x}}
+}
+
+// --- Empty() T ---
+
+// genEmpty emits the struct's empty value — every field holding the value an
+// absent field decodes to (see emptyValue):
+//
+//	func (_ _StructMeta_T) Empty() T { return T{Tags: NewImmutable(EmptyList[string]())} }
+//
+// It is a method of the generated type rather than an inline literal so a
+// struct of another package, whose fields only that package can set, still
+// has one. DecodeFields of an enclosing struct calls it for a nested struct
+// field that is absent from the input.
+//
+// The field shapes were already validated by genDecodeFields, which builds
+// the same empty values.
+func (t *galaASTTransformer) genEmpty(config *structMetaConfig) *ast.FuncDecl {
+	meta := config.typeMetadata
+	isImmut := t.codecImmutField(config)
+	g := &codecGen{t: t, pkg: config.pkg}
+
+	var elts []ast.Expr
+	for i, fieldName := range meta.FieldNames {
+		empty, _ := g.emptyValue(unwrapGalaType(meta.Fields[fieldName]))
+		if empty == nil {
+			continue
+		}
+		if isImmut(i) {
+			empty = t.newImmutable(empty)
+		}
+		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: empty})
+	}
+	return &ast.FuncDecl{
+		Recv: blankRecv(config.generatedName),
+		Name: ast.NewIdent("Empty"),
+		Type: &ast.FuncType{Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent(config.typeName)}}}},
+		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{
+			&ast.CompositeLit{Type: ast.NewIdent(config.typeName), Elts: elts},
+		}}}},
+	}
 }
 
 // genNestedStructLookup emits a closure: func(key string) int that looks up

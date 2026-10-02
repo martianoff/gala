@@ -3685,6 +3685,15 @@ gala_exec_test(
     expected = "none_generic_call_arg.out",
 )
 
+# A bare `None()` passed positionally to a struct constructor takes the field's
+# type, as a named or function argument does.
+gala_exec_test(
+    name = "none_positional_struct_arg",
+    src = "none_positional_struct_arg.gala",
+    expected = "none_positional_struct_arg.out",
+    deps = ["//collection_immutable"],
+)
+
 # A bare `None()` match arm or if/else branch takes the match's or if's result
 # type — the expected type, or else the type of the other arms — never the
 # matched value's type.
