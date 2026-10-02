@@ -24,8 +24,11 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -49,8 +52,9 @@ const (
 // decodable.
 const validateMethod = "Validate"
 
-// structDecodeMode classifies the struct meta describes (see decodeMode).
-func structDecodeMode(meta *transpiler.TypeMetadata) decodeMode {
+// structDecodeMode classifies config's struct (see decodeMode).
+func (t *galaASTTransformer) structDecodeMode(config *structMetaConfig) decodeMode {
+	meta := config.typeMetadata
 	switch {
 	case !slices.ContainsFunc(meta.FieldNames, func(name string) bool { return !token.IsExported(name) }):
 		return decodeRaw
@@ -61,10 +65,11 @@ func structDecodeMode(meta *transpiler.TypeMetadata) decodeMode {
 }
 
 // isValidateMethod reports whether m is `func (x T) Validate() Try[T]` for
-// meta's struct T: a value receiver, no parameters or type parameters, and a
-// Try of the struct itself.
+// meta's struct T: a value receiver, no parameters or type parameters, and
+// a Try of the struct itself, spelled as such: an alias of it is a distinct
+// Go type with no Get method, so decoding could not call it.
 func isValidateMethod(meta *transpiler.TypeMetadata, m *transpiler.MethodMetadata) bool {
-	if m == nil || m.PointerReceiver || len(m.ParamTypes) != 0 || len(m.TypeParams) != 0 {
+	if m == nil || m.PointerReceiver || len(m.ParamTypes) != 0 || len(m.TypeParams) != 0 || m.ReturnType == nil {
 		return false
 	}
 	ret, ok := m.ReturnType.(transpiler.GenericType)
@@ -100,7 +105,8 @@ func (t *galaASTTransformer) undecodableError(config *structMetaConfig) error {
 // validateSignature is the Validate method meta's struct needs, as GALA
 // spells it.
 func validateSignature(meta *transpiler.TypeMetadata) string {
-	recv := strings.ToLower(meta.Name[:1])
+	first, _ := utf8.DecodeRuneInString(meta.Name)
+	recv := string(unicode.ToLower(first))
 	return fmt.Sprintf("func (%s %s) Validate() Try[%s]", recv, meta.Name, meta.Name)
 }
 
@@ -140,7 +146,8 @@ func galaTypeSpelling(meta *transpiler.TypeMetadata, ty transpiler.Type) string 
 	if meta.Package == "" {
 		return s
 	}
-	return strings.ReplaceAll(s, meta.Package+".", "")
+	// Only a whole qualifier: `vault.` must not match inside `myvault.`.
+	return regexp.MustCompile(`\b`+regexp.QuoteMeta(meta.Package)+`\.`).ReplaceAllString(s, "")
 }
 
 // decodedValue returns the statements that end DecodeFields or Empty for
@@ -151,7 +158,7 @@ func galaTypeSpelling(meta *transpiler.TypeMetadata, ty transpiler.Type) string 
 // The body stays behind the panic: dropping it would leave unused the
 // imports its field reads already registered.
 func (t *galaASTTransformer) decodedValue(config *structMetaConfig, body []ast.Stmt, raw ast.Expr) []ast.Stmt {
-	switch structDecodeMode(config.typeMetadata) {
+	switch t.structDecodeMode(config) {
 	case decodeValidated:
 		raw = &ast.CallExpr{Fun: &ast.SelectorExpr{
 			X:   &ast.CallExpr{Fun: &ast.SelectorExpr{X: raw, Sel: ast.NewIdent(validateMethod)}},

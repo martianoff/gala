@@ -258,7 +258,7 @@ func (t *galaASTTransformer) generateStructMetas() ([]ast.Decl, bool, error) {
 		// A codec that would decode a struct with private fields needs its
 		// Validate method. An auto StructMeta is emitted regardless, and its
 		// DecodeFields refuses (see codec_validate.go).
-		if !config.auto && structDecodeMode(config.typeMetadata) == decodeRejected {
+		if !config.auto && t.structDecodeMode(config) == decodeRejected {
 			return nil, false, t.undecodableError(config)
 		}
 		var decls []ast.Decl

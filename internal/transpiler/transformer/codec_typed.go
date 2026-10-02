@@ -745,7 +745,7 @@ func (t *galaASTTransformer) codecEmptyKind(ty transpiler.Type, pkg string) empt
 func (t *galaASTTransformer) structEmptyKind(config *structMetaConfig) emptyInitState {
 	if config.emptyInit == emptyInitUnknown {
 		config.emptyInit = emptyIsZero
-		if structDecodeMode(config.typeMetadata) != decodeRaw {
+		if t.structDecodeMode(config) != decodeRaw {
 			// Go's zero value never went through Validate.
 			config.emptyInit = emptyValidated
 		} else {
