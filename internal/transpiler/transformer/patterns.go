@@ -704,8 +704,8 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 
 // generateDirectStructFieldMatch generates direct field access code for struct patterns.
 // For example, Person(name, age) matching against Person{Name: "Alice", Age: 25}
-// generates: name := obj.Name; age := obj.Age
-// The condition is always true since we're just extracting fields.
+// generates: name := obj.Name.Get(); age := obj.Age.Get() — `.Get()` only for
+// non-`var` fields, which are stored as Immutable[T].
 func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, fields []string, structName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
 	var stmts []ast.Stmt
 	var conds []ast.Expr
@@ -754,6 +754,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	// generic struct they mention its type parameters: substitute the matched
 	// type's arguments (Box[int] turns `Md Mode[T]` into Mode[int]).
 	fieldTypes := t.structFieldTypes[structName]
+	immutFlags := t.structImmutFields[structName]
 	substituteFieldType := func(ft transpiler.Type) transpiler.Type { return ft }
 	if meta := t.getTypeMeta(structName); meta != nil && len(meta.TypeParams) > 0 {
 		subject := matchedType
@@ -788,18 +789,20 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			}
 		}
 
-		// Generate direct field access: baseExpr.FieldName, unwrapped with
-		// .Get() only when the field is stored as Immutable[T]. A `var` field
-		// is a plain Go field and is read as is.
+		// baseExpr.FieldName, unwrapped with .Get() only for a non-`var`
+		// (Immutable[T]) field; a `var` field is a plain Go field.
 		// baseExpr is the type-asserted castVar for `any` subjects, else objExpr.
-		var elemExpr ast.Expr = &ast.SelectorExpr{X: baseExpr, Sel: ast.NewIdent(fieldName)}
-		if immut := t.structImmutFields[structName]; i < len(immut) && immut[i] {
-			elemExpr = &ast.CallExpr{Fun: &ast.SelectorExpr{X: elemExpr, Sel: ast.NewIdent("Get")}}
+		// Metadata synthesized from Go source records an immutable field's
+		// type as Immutable[T]; the unwrapped read is a T.
+		isImmut := i < len(immutFlags) && immutFlags[i]
+		elemExpr := buildFieldAccess(baseExpr, fieldName, isImmut)
+		if isImmut {
+			fieldType = unwrapGalaType(fieldType)
 		}
 
-		// A binding (`name := obj.Field.Get()`) or a nested pattern such as
-		// `Circle(r)`, both lowered by the general dispatcher against the
-		// field's type.
+		// A binding (`name := obj.Field`, `.Get()` added when immutable) or a
+		// nested pattern such as `Circle(r)`, both lowered by the general
+		// dispatcher against the field's type.
 		patCtx := arg.Pattern()
 		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
 			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, fieldType)
@@ -824,7 +827,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			t.currentScope.vals[varName] = false
 			t.currentScope.valTypes[varName] = expectedType
 
-			// Generate: varName, okN := std.As[ExpectedType](field.Get())
+			// Generate: varName, okN := std.As[ExpectedType](elemExpr)
 			okName := t.nextTempVar()
 			asCall := &ast.CallExpr{
 				Fun: &ast.IndexExpr{
