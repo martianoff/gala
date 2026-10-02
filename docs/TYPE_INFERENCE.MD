@@ -622,7 +622,21 @@ Five contexts feed the expected type:
   call's type arguments substituted, once explicit type arguments or
   the other arguments fix them (`take2[int](None(), 1)`,
   `take2(None(), "x")`). Methods, generic methods and named arguments
-  resolve their parameter types the same way.
+  resolve their parameter types the same way. A positional argument of a
+  struct constructor takes its field's type as the slot
+  (`Pin(None(), 1)` for `struct Pin(D Option[Drag], N int)`); a field
+  declared `Immutable[T]` takes a `T`, which the literal wraps. A field
+  type naming one of a generic struct's type parameters is used once that
+  parameter is bound: by explicit type arguments
+  (`Slot[string](None(), "x")`), or by the arguments when one of them
+  fills a function-typed field (the pre-pass that types lambda
+  arguments). Otherwise the other arguments do not bind it, unlike a
+  function call's, so `Slot(None(), "x")` still needs `None[string]()`.
+  A call that goes to the struct's companion `Apply` instead of building
+  a literal (the argument count differs from the field count) takes
+  `Apply`'s parameter types, and a case constructor
+  (`Move(None())` for `case Move(D Option[Drag])`) its fields', when
+  they name none of the type's type parameters.
 - For **tuple elements** (context 4 / context 2 with tuple return),
   `transformPrimary` inspects the enclosing `returnSlot.typ`
   for a Tuple-shaped expected type and pushes each per-slot type

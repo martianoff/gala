@@ -17,9 +17,11 @@ type callContext struct {
 	typeSubst       map[string]string            // generic type param substitutions (type param name -> concrete type string)
 	typeSubstTypes  map[string]transpiler.Type   // ImportPath-preserving overrides for typeSubst (receiver type args); wins over the string form so a foreign type whose package name collides with the current package stays qualified
 
-	goParamTypes    []transpiler.Type            // Go type info fallback param types (for Go-defined functions)
-	structFields    []transpiler.Type            // struct construction fallback field types
-	unresolvedTP    bool                         // if true, only pass void FuncTypes through (unresolved type params)
+	goParamTypes            []transpiler.Type // Go type info fallback param types (for Go-defined functions)
+	structFields            []transpiler.Type // struct construction fallback field types
+	unboundStructTypeParams []string          // type params of the struct (or sealed parent) being constructed that the call has not bound; a field type naming one is not passed down
+	structLiteral           bool              // the positional arguments build a struct literal, so each fills a field
+	unresolvedTP            bool              // if true, only pass void FuncTypes through (unresolved type params)
 }
 
 // buildMethodCallContext creates a callContext for a method call with resolved type params.
@@ -193,6 +195,15 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 				Results: maskTypeParamResults(ft.Results, ctx.applyTypeParams),
 			}
 		}
+		// A parameter naming none of the type's type parameters is known
+		// whatever the type arguments are (a case constructor's
+		// `Move(d Option[Drag])`), so a zero-arg case constructor like `None()`
+		// resolves against it, as for a function parameter. Not when the call
+		// builds a struct literal instead: then the fields are the slots.
+		if _, isFunc := paramType.(transpiler.FuncType); !isFunc && !ctx.structLiteral &&
+			!paramType.IsNil() && !typeMentionsTypeParam(paramType, ctx.applyTypeParams) {
+			return paramType
+		}
 	}
 
 	// Function call path
@@ -277,19 +288,28 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 		}
 	}
 
-	// If this is struct construction and we have field type info, use it as fallback
-	if expectedType.IsNil() && ctx.structFields != nil && argIdx < len(ctx.structFields) {
-		switch ft := ctx.structFields[argIdx].(type) {
-		case transpiler.FuncType:
+	// If this is struct construction and we have field type info, use it as
+	// fallback, as a named argument does: a function-typed field gives a lambda
+	// its parameter types, a tuple-typed field gives a tuple literal its
+	// element types (`Span((5, 6))`; for a generic struct, with the call's type
+	// arguments substituted), and any other field type lets a zero-arg case
+	// constructor like `None()` resolve against it. Such a field type is passed
+	// down only when the call builds a struct literal (not when it goes to a
+	// companion Apply, whose parameters are not the fields) and the type names
+	// none of the struct's still-unbound type params.
+	if expectedType.IsNil() && argIdx < len(ctx.structFields) {
+		ft := ctx.structFields[argIdx]
+		_, isFunc := ft.(transpiler.FuncType)
+		gt, isGeneric := ft.(transpiler.GenericType)
+		isTuple := isGeneric && t.isTupleTypeName(gt.Base.String())
+		switch {
+		case ft == nil || ft.IsNil():
+		case isFunc || isTuple:
 			expectedType = ft
-		case transpiler.GenericType:
-			// A tuple-typed field gives a tuple literal argument its element
-			// types, so `Span((5, 6))` builds a Tuple[int64, int64] for a
-			// field declared that way — or, for a generic struct, with the
-			// call's type arguments substituted, as for a named argument.
-			if t.isTupleTypeName(ft.Base.String()) {
-				expectedType = ft
-			}
+		case ctx.structLiteral && !typeMentionsTypeParam(ft, ctx.unboundStructTypeParams):
+			// The literal wraps a val field's value in Immutable itself
+			// (buildStructLiteral), so a field declared Immutable[T] takes a T.
+			expectedType = unwrapGalaType(ft)
 		}
 	}
 

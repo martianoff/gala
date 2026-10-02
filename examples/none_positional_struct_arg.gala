@@ -1,0 +1,28 @@
+package main
+
+// A bare None() passed positionally to a struct constructor takes its type
+// from the field it fills, as it does for a named argument or a function
+// argument.
+
+import . "martianoff/gala/collection_immutable"
+
+struct Address(Street string, Zip Option[string])
+
+struct Member(Id int, Nickname Option[string], Tags List[string], Home Address)
+
+struct Slot[T any](Value Option[T], Fallback T)
+
+func describe(m Member) string {
+    val nick = m.Nickname.GetOrElse("-")
+    val zip = m.Home.Zip.GetOrElse("-")
+    s"${m.Id} ${nick} ${m.Tags.Size()} ${m.Home.Street} ${zip}"
+}
+
+func main() {
+    val bare = Member(1, None(), EmptyList[string](), Address("", None()))
+    val named = Member(2, Some("bo"), ListOf("a"), Address("Main St", Some("123")))
+    Println(describe(bare))
+    Println(describe(named))
+    val slot = Slot[string](None(), "fallback")
+    Println(slot.Value.GetOrElse(slot.Fallback))
+}

@@ -1312,9 +1312,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// synthetic field count (e.g. `Future[T](() => x, ec)` where the parent has
 	// `state` + `_variant`) silently miscompiles into a wrong struct literal
 	// instead of dispatching to Apply.
-	sealedWithApply := typeMeta.IsSealed && hasApply
-	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) > 0 && len(args) == len(fields) && !sealedWithApply &&
-		!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
+	if fields, structOk := t.structFields[resolvedTypeName]; structOk && len(args) == len(fields) &&
+		t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args)) {
 		// Infer type args from positional arg types when the call site omitted
 		// them. Without this, a generic struct like `Tuple(a, b)` emits
 		// `Tuple{V1: a, V2: b}` — Go rejects the bare generic type.
@@ -1339,8 +1338,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// while there are at least as many fields as arguments. A call with
 		// more arguments than fields is left unhandled and reported by the
 		// type-used-as-constructor check rather than dropping the surplus.
-		if fields, ok := t.structFields[resolvedTypeName]; ok && len(args) > 0 && len(args) <= len(fields) &&
-			!t.positionalCtorIsUnavailable(typeMeta.Package, fields, len(args)) {
+		if fields, ok := t.structFields[resolvedTypeName]; ok && t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args)) {
 			typedFun, err := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args, slotType, line, col)
 			if err != nil {
 				return true, nil, t.preferMissingFieldError(err, typeName, resolvedTypeName, fields, func(i int, _ string) bool { return i < len(args) }, line, col)
@@ -1503,6 +1501,24 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}, nil
 }
 
+// positionalCallBuildsStructLiteral reports whether a call of the struct type
+// with nargs positional arguments builds a struct literal rather than going
+// to the companion Apply (or being rejected). A full call does, unless the
+// type is sealed and has an Apply: a sealed parent's layout is synthetic. A
+// call with fewer arguments than fields does only when there is no Apply, and
+// then takes the omitted fields' defaults. Neither does when the fields are
+// private to another package.
+func (t *galaASTTransformer) positionalCallBuildsStructLiteral(typeMeta *transpiler.TypeMetadata, fields []string, nargs int) bool {
+	if nargs == 0 || nargs > len(fields) || t.positionalCtorIsUnavailable(typeMeta.Package, fields, nargs) {
+		return false
+	}
+	_, hasApply := typeMeta.Methods["Apply"]
+	if nargs == len(fields) {
+		return !(typeMeta.IsSealed && hasApply)
+	}
+	return !hasApply
+}
+
 // buildStructLiteral emits a struct composite literal from positional args,
 // wrapping immutable fields with NewImmutable as needed. When `truncate` is
 // true, excess args are silently dropped (used when the arg count exceeds the
@@ -1614,6 +1630,8 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		funcCallCtx.applyMethodMeta = callCtx.applyMethodMeta
 		funcCallCtx.applyTypeSubst = callCtx.applyTypeSubst
 		funcCallCtx.applyTypeParams = callCtx.applyTypeParams
+		funcCallCtx.unboundStructTypeParams = callCtx.unboundStructTypeParams()
+		funcCallCtx.structLiteral = callCtx.structLiteral
 		// Concurrency boundary: enforce capture-safety when this positional
 		// parameter is a Sendable[F].
 		if cerr := t.checkSendableArg(funcCallCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
@@ -1864,6 +1882,9 @@ type functionCallContext struct {
 	// type arguments known before its lambdas are lowered (structCtorTypeSubst).
 	structTypeParams []string
 	structTypeSubst  map[string]string
+	// structLiteral: the call's positional arguments build a struct literal
+	// (see positionalCallBuildsStructLiteral), so each fills a field.
+	structLiteral bool
 	// The sealed variant the call constructs and its parent (nil otherwise),
 	// and the lookup's ambiguity error, reported for a named argument.
 	variant       *transpiler.SealedVariant
@@ -1946,6 +1967,8 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 			resolved := t.resolveStructTypeName(resolvedTypeName)
 			if fields, ok := t.structFields[resolved]; ok {
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
+					ctx.structLiteral = argListCtx != nil &&
+						t.positionalCallBuildsStructLiteral(typeMeta, fields, len(argListCtx.AllArgument()))
 					ctx.structFieldExpectedTypes = make([]transpiler.Type, len(fields))
 					for i, fieldName := range fields {
 						if ft, ok := fieldTypes[fieldName]; ok {
@@ -3916,18 +3939,25 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	return typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
 }
 
+// unboundStructTypeParams returns the constructed struct's (or sealed
+// parent's) type parameters that structCtorTypeSubst left unbound.
+func (c functionCallContext) unboundStructTypeParams() []string {
+	var unbound []string
+	for _, tp := range c.structTypeParams {
+		if _, ok := c.structTypeSubst[tp]; !ok {
+			unbound = append(unbound, tp)
+		}
+	}
+	return unbound
+}
+
 // genericCtorLambdaExpectation masks the type parameters structCtorTypeSubst
 // left unbound out of a lambda argument's expected type. A masked result is
 // inferred from the lambda's body (`Gen(Make = () => 5)` is `Gen[int]`); a
 // masked parameter makes strict true, so an unannotated lambda parameter only
 // that type parameter could type is GALA-E0033, not Go's "undefined: T".
 func (t *galaASTTransformer) genericCtorLambdaExpectation(expected transpiler.Type, callCtx functionCallContext) (adjusted transpiler.Type, strict bool) {
-	var unbound []string
-	for _, tp := range callCtx.structTypeParams {
-		if _, ok := callCtx.structTypeSubst[tp]; !ok {
-			unbound = append(unbound, tp)
-		}
-	}
+	unbound := callCtx.unboundStructTypeParams()
 	ft := t.resolveTranspilerTypeAsFuncType(expected)
 	if len(unbound) == 0 || ft == nil {
 		return expected, false
