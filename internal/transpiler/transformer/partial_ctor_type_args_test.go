@@ -1,0 +1,137 @@
+package transformer_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// A generic struct constructor or companion Apply called with only its leading
+// type arguments binds those as written and infers the rest from the
+// arguments, as a generic function call does. It never emits the partial list,
+// which leaves Go a type parameter with no argument.
+func TestPartialConstructorTypeArgs(t *testing.T) {
+	const prelude = `package main
+
+struct Pair[A any, B any](First A, Second B)
+
+struct Fn[A any, B any](In A, Run func(A) B)
+
+type Mk[A any, B any] struct {}
+
+func (m Mk[A, B]) Apply(a A, b B) Pair[A, B] = Pair[A, B](a, b)
+
+type Via[A any, B any] struct {}
+
+func (v Via[A, B]) Apply(a A, f func(A) B) Pair[A, B] = Pair[A, B](a, f(a))
+
+sealed type Res[T any, E any] {
+    case Ok(V T)
+    case Err(Msg E)
+}
+
+`
+	tests := []struct {
+		name     string
+		body     string
+		contains []string
+	}{
+		{
+			name:     "positional struct constructor",
+			body:     "func main() { Println(Pair[int](1, \"a\").Second) }\n",
+			contains: []string{"Pair[int, string]{First: std.NewImmutable(1), Second: std.NewImmutable(\"a\")}"},
+		},
+		{
+			name:     "named struct constructor",
+			body:     "func main() { Println(Pair[int64](Second = \"b\", First = 1).Second) }\n",
+			contains: []string{"Pair[int64, string]{First: std.NewImmutable[int64](1), Second: std.NewImmutable(\"b\")}"},
+		},
+		{
+			name:     "the written type argument wins over the argument's own type",
+			body:     "func main() { Println(Pair[float64](1, true).First) }\n",
+			contains: []string{"Pair[float64, bool]{"},
+		},
+		{
+			name:     "a lambda typed by a field over the written type argument",
+			body:     "func main() { Println(Fn[int](1, (x) => s\"${x}\").In) }\n",
+			contains: []string{"Fn[int, string]{", "func(x int) string"},
+		},
+		{
+			name:     "companion Apply",
+			body:     "func main() { Println(Mk[int](2, \"c\").Second) }\n",
+			contains: []string{"Mk[int, string]{}.Apply(2, \"c\")"},
+		},
+		{
+			name:     "companion Apply, a lambda over the written type argument",
+			body:     "func main() { Println(Via[int](2, (x) => s\"${x}\").Second) }\n",
+			contains: []string{"Via[int, string]{}.Apply(2, func(x int) string {"},
+		},
+		{
+			name:     "sealed case, named argument",
+			body:     "func main() { Println(Err[int](Msg = \"x\")) }\n",
+			contains: []string{"Err[int, string]{}.Apply(\"x\")"},
+		},
+		{
+			name:     "named arguments, a field declared Immutable[T] over the written type argument",
+			body:     "struct Held[A any, B any](X Immutable[A], Y B)\n\nfunc main() { Println(Held[int64](X = 1, Y = \"s\").X) }\n",
+			contains: []string{"Held[int64, string]{X: std.NewImmutable[int64](1), Y: std.NewImmutable(\"s\")}"},
+		},
+		{
+			name:     "sealed case, positional argument",
+			body:     "func main() { Println(Err[int](\"y\")) }\n",
+			contains: []string{"Err[int, string]{}.Apply(\"y\")"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTranspiled(t, prelude+tt.body, tt.contains, []string{"Pair[int]{", "Pair[int64]{", "Mk[int]{"})
+		})
+	}
+}
+
+// A partial list the arguments cannot complete is reported, naming the type
+// parameter left without an argument.
+func TestPartialConstructorTypeArgsUninferable(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "companion Apply",
+			body: "type Mk[A any, B any] struct {}\n\nfunc (m Mk[A, B]) Apply(a A) int = 1\n\nfunc main() { Println(Mk[int](2)) }\n",
+			want: "cannot infer type argument B of Mk",
+		},
+		{
+			// The misnamed field is reported, not the type parameter it was
+			// meant to bind.
+			name: "struct constructor, a named argument naming no field",
+			body: "struct Pair[A any, B any](First A, Second B)\n\nfunc main() { Println(Pair[int](First = 1, Secnd = \"a\").First) }\n",
+			want: `GALA-E0045`,
+		},
+		{
+			name: "sealed case, named argument, a type parameter no field names",
+			body: "sealed type Res[T any, E any] {\n    case Ok(V T)\n    case Err(Msg E)\n}\n\nfunc main() { Println(Ok[int](V = 1)) }\n",
+			want: "cannot infer type argument E of Ok",
+		},
+		{
+			name: "struct constructor, a type parameter no field names",
+			body: "struct Holder[A any, B any](First A)\n\nfunc main() { Println(Holder[int](First = 1).First) }\n",
+			want: "cannot infer type argument B of generic struct Holder",
+		},
+		{
+			name: "struct constructor",
+			body: "struct Holder[A any, B any](First A, Rest Option[B])\n\nfunc main() { Println(Holder[int](First = 1, Rest = None()).First) }\n",
+			// None() takes no type from a field whose type names the unbound B.
+			want: "GALA-E0018",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := newBindTranspiler().Transpile("package main\n\n"+tt.body, "")
+			require.Error(t, err, out)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}

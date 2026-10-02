@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 	"slices"
 	"strings"
 
@@ -1377,19 +1378,8 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}
 
 	// Apply path: verify the base expression is a type (not a variable).
-	baseExpr := fun
-	hasTypeArgs := false
-	var typeArgs []ast.Expr
-
-	if idx, ok := fun.(*ast.IndexExpr); ok {
-		baseExpr = idx.X
-		hasTypeArgs = true
-		typeArgs = []ast.Expr{t.qualifyTypeExpr(idx.Index)}
-	} else if idxList, ok := fun.(*ast.IndexListExpr); ok {
-		baseExpr = idxList.X
-		hasTypeArgs = true
-		typeArgs = t.qualifyTypeExprs(idxList.Indices)
-	}
+	baseExpr, written := splitCallFunTypeArgs(fun)
+	typeArgs := t.qualifyTypeExprs(written)
 
 	isType := false
 	if id, ok := baseExpr.(*ast.Ident); ok {
@@ -1412,9 +1402,14 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 
 	isGeneric := methodMeta.IsGeneric || len(methodMeta.TypeParams) > 0
 
-	// Infer type args from argument types and enclosing return type.
-	if !hasTypeArgs && len(typeMeta.TypeParams) > 0 {
-		inferredMap := make(map[string]transpiler.Type)
+	// Infer type args from argument types and enclosing return type. A partial
+	// list (`Mk[int](2, "c")` for `Mk[A, B]`) binds its leading type
+	// parameters as written and has the rest inferred the same way.
+	// A generic alias's written arguments are its own, not the leading ones of
+	// the type it names, so they are left as written.
+	_, viaAlias := t.lookupTypeAlias(origTypeName)
+	if len(typeArgs) < len(typeMeta.TypeParams) && !(viaAlias && len(typeArgs) > 0) {
+		inferredMap := t.writtenTypeArgs(typeMeta.TypeParams, typeArgs)
 		// Step 1: infer from Apply method arguments.
 		for i, arg := range args {
 			if i < len(methodMeta.ParamTypes) {
@@ -1436,26 +1431,13 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				}
 			}
 		}
-		if len(inferredMap) == len(typeMeta.TypeParams) {
-			inferredTypeArgs := make([]ast.Expr, len(typeMeta.TypeParams))
-			allResolved := true
-			for i, tp := range typeMeta.TypeParams {
-				if inferred, ok := inferredMap[tp]; ok {
-					inferredTypeArgs[i] = t.typeToExpr(inferred)
-				} else {
-					allResolved = false
-					break
-				}
-			}
-			if allResolved {
-				typeArgs = inferredTypeArgs
-				hasTypeArgs = true
-				if len(typeArgs) == 1 {
-					fun = &ast.IndexExpr{X: baseExpr, Index: typeArgs[0]}
-				} else if len(typeArgs) > 1 {
-					fun = &ast.IndexListExpr{X: baseExpr, Indices: typeArgs}
-				}
-			}
+		if instantiated, missing := t.completeTypeArgs(baseExpr, typeMeta.TypeParams, typeArgs, inferredMap); missing == nil {
+			fun = instantiated
+			_, typeArgs = splitCallFunTypeArgs(fun)
+		} else if len(typeArgs) > 0 {
+			// Emitting the partial list would leave Go a type parameter
+			// with no argument.
+			return true, nil, uninferredTypeArgError(line, col, origTypeName, "its arguments", origTypeName, typeMeta.TypeParams, missing)
 		}
 	}
 
@@ -1466,7 +1448,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// Value[Array[int]]() → prepend _ValueMeta_Array_int{}.
 	if len(methodMeta.ParamTypes) > 0 {
 		if kind := t.injectedMetaParam(methodMeta.ParamTypes[0]); kind != noInjectedMeta {
-			if !hasTypeArgs {
+			if len(typeArgs) == 0 {
 				// No metadata can be generated for a type nobody named.
 				return true, nil, t.codecError(&structMetaConfig{rootName: origTypeName, line: line, col: col},
 					fmt.Sprintf("the type argument of %s is not given; write %s[T](...)", origTypeName, origTypeName))
@@ -1502,18 +1484,9 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		} else {
 			funExpr = t.ident(fullName)
 		}
-		if len(typeArgs) == 1 {
-			funExpr = &ast.IndexExpr{X: funExpr, Index: typeArgs[0]}
-		} else if len(typeArgs) > 1 {
-			funExpr = &ast.IndexListExpr{X: funExpr, Indices: typeArgs}
-		}
-		receiver := &ast.CompositeLit{Type: baseExpr}
-		if hasTypeArgs {
-			receiver = &ast.CompositeLit{Type: fun}
-		}
 		return true, &ast.CallExpr{
-			Fun:  funExpr,
-			Args: append([]ast.Expr{receiver}, args...),
+			Fun:  withTypeArgs(funExpr, typeArgs),
+			Args: append([]ast.Expr{&ast.CompositeLit{Type: fun}}, args...),
 		}, nil
 	}
 
@@ -1731,7 +1704,16 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
 					if rawType, ok := fieldTypes[argName]; ok && rawType != nil && !rawType.IsNil() {
 						// Generic struct: substitute the known type arguments.
-						return t.substituteTranspilerTypeParams(rawType, callCtx.structTypeSubst), nil
+						// As for a positional argument (resolveExpectedFuncArgType),
+						// a field type still naming a type parameter the call
+						// has not bound is passed down only for a lambda or
+						// tuple literal; any other value lowered against it
+						// would spell that parameter's bare name.
+						slotType := t.substituteTranspilerTypeParams(rawType, callCtx.structTypeSubst)
+						if t.isFuncOrTupleType(slotType) || !typeMentionsTypeParam(slotType, callCtx.unboundStructTypeParams()) {
+							return slotType, nil
+						}
+						return transpiler.NilType{}, nil
 					}
 				}
 			}
@@ -2069,6 +2051,16 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 					ctx.applyMethodMeta = applyMeta
 					ctx.applyTypeParams = typeMeta.TypeParams
 					ctx.applyTypeSubst = explicitTypeArgSubst(typeMeta.TypeParams, t.extractFuncCallTypeArgs(fun))
+					// A partial list (`Mk[int](2, (x) => …)`) is completed
+					// from the arguments as a generic function call's is, so
+					// no argument is lowered against a bare type-parameter name.
+					if n := len(ctx.applyTypeSubst); n > 0 && n < len(typeMeta.TypeParams) && argListCtx != nil {
+						ctx.applyTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(&transpiler.FunctionMetadata{
+							TypeParams: typeMeta.TypeParams,
+							ParamTypes: applyMeta.ParamTypes,
+							ParamNames: applyMeta.ParamNames,
+						}, argListCtx, ctx.applyTypeSubst)
+					}
 				}
 			}
 		}
@@ -2435,7 +2427,11 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return nil, ferr
 			}
 			if found {
-				return buildSealedVariantApplyCall(t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs), variantFieldNames, namedArgs), nil
+				variantFun, err := t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs, line, col)
+				if err != nil {
+					return nil, err
+				}
+				return buildSealedVariantApplyCall(variantFun, variantFieldNames, namedArgs), nil
 			}
 		}
 		// 3. Regular GALA struct construction with named args. A named
@@ -2569,33 +2565,35 @@ func decodeGenericBase(x ast.Expr) (string, string) {
 }
 
 // inferVariantTypeArgs adds type arguments to a generic sealed variant built
-// with named arguments and no explicit type arguments, inferred from the
-// argument values against the variant's field types. It returns fun unchanged
-// when inference does not apply or cannot bind every type parameter.
-func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.SealedVariant, parent *transpiler.TypeMetadata, namedArgs map[string]ast.Expr) ast.Expr {
-	switch fun.(type) {
+// with named arguments and none or only its leading type arguments written,
+// inferred from the argument values against the variant's field types. With
+// none written it returns fun unchanged when inference cannot bind every type
+// parameter; a partial list that cannot be completed is an error.
+func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.SealedVariant, parent *transpiler.TypeMetadata, namedArgs map[string]ast.Expr, line, col int) (ast.Expr, error) {
+	base, written := splitCallFunTypeArgs(fun)
+	switch base.(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
-		return fun
+		return fun, nil
 	}
-	if sv == nil || parent == nil || len(parent.TypeParams) == 0 {
-		return fun
+	if sv == nil || parent == nil || len(written) >= len(parent.TypeParams) {
+		return fun, nil
 	}
-	inferred := make(map[string]transpiler.Type, len(parent.TypeParams))
+	inferred := t.writtenTypeArgs(parent.TypeParams, written)
 	for i, fieldName := range sv.FieldNames {
 		if val, ok := namedArgs[fieldName]; ok && i < len(sv.FieldTypes) {
 			t.unifyFieldArgForInference(sv.FieldTypes[i], val, parent.TypeParams, inferred)
 		}
 	}
-	typeArgs := t.orderedTypeArgExprs(parent.TypeParams, inferred)
-	switch len(typeArgs) {
-	case 0:
-		return fun
-	case 1:
-		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-	default:
-		return &ast.IndexListExpr{X: fun, Indices: typeArgs}
+	instantiated, missing := t.completeTypeArgs(base, parent.TypeParams, written, inferred)
+	switch {
+	case missing == nil:
+		return instantiated, nil
+	case len(written) > 0:
+		name, _ := extractTypeNameFromExpr(base)
+		return nil, uninferredTypeArgError(line, col, name, "its fields", name, parent.TypeParams, missing)
 	}
+	return fun, nil
 }
 
 // buildSealedVariantApplyCall generates `VariantName{}.Apply(args...)`
@@ -2754,20 +2752,23 @@ func (t *galaASTTransformer) structLiteralType(
 	line, col int,
 	bind func(typeParams []string, inferred map[string]transpiler.Type),
 ) (ast.Expr, error) {
-	switch fun.(type) {
+	base, written := splitCallFunTypeArgs(fun)
+	switch base.(type) {
 	case *ast.Ident, *ast.SelectorExpr:
 	default:
 		return fun, nil
 	}
 	typeMeta := t.getTypeMeta(resolvedTypeName)
-	if typeMeta == nil || len(typeMeta.TypeParams) == 0 {
+	if typeMeta == nil || len(written) >= len(typeMeta.TypeParams) {
 		return fun, nil
 	}
 	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
 		return fun, nil
 	}
 
-	inferred := make(map[string]transpiler.Type, len(typeMeta.TypeParams))
+	// A partial list (`Pair[int](1, "a")` for `Pair[A, B]`) binds its leading
+	// type parameters as written; the rest are inferred, as for a function.
+	inferred := t.writtenTypeArgs(typeMeta.TypeParams, written)
 	bind(typeMeta.TypeParams, inferred)
 	if gen, ok := slotType.(transpiler.GenericType); ok && len(gen.Params) == len(typeMeta.TypeParams) &&
 		t.resolveStructTypeName(gen.Base.String()) == resolvedTypeName {
@@ -2778,22 +2779,61 @@ func (t *galaASTTransformer) structLiteralType(
 		}
 	}
 
-	typeArgs := t.orderedTypeArgExprs(typeMeta.TypeParams, inferred)
-	if typeArgs == nil {
-		var missing []string
-		for _, tp := range typeMeta.TypeParams {
-			if typ, ok := inferred[tp]; !ok || transpiler.IsUnusable(typ) {
-				missing = append(missing, tp)
-			}
+	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
+	if missing != nil {
+		return nil, uninferredTypeArgError(line, col, "generic struct "+typeName, "its fields", typeName, typeMeta.TypeParams, missing)
+	}
+	return instantiated, nil
+}
+
+// completeTypeArgs instantiates base with a type argument for every one of
+// typeParams: those written at the call site, which keep their own spelling,
+// then the inferred ones. It returns the type parameters left without one
+// instead when inference did not determine them all.
+func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string, written []ast.Expr, inferred map[string]transpiler.Type) (ast.Expr, []string) {
+	typeArgs := slices.Clone(written)
+	var missing []string
+	for _, tp := range typeParams[len(written):] {
+		if typ, ok := inferred[tp]; ok && !transpiler.IsUnusable(typ) {
+			typeArgs = append(typeArgs, t.typeToExpr(typ))
+		} else {
+			missing = append(missing, tp)
 		}
-		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-			"cannot infer type argument %s of generic struct %s from its fields; write it explicitly, e.g. `%s[%s](...)`",
-			strings.Join(missing, ", "), typeName, typeName, strings.Join(typeMeta.TypeParams, ", ")))
 	}
-	if len(typeArgs) == 1 {
-		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}, nil
+	if missing != nil {
+		return nil, missing
 	}
-	return &ast.IndexListExpr{X: fun, Indices: typeArgs}, nil
+	return withTypeArgs(base, typeArgs), nil
+}
+
+// uninferredTypeArgError reports the type parameters of what (`generic struct
+// Pair`) that from (`its fields`) left without a type argument.
+func uninferredTypeArgError(line, col int, what, from, typeName string, typeParams, missing []string) error {
+	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"cannot infer type argument %s of %s from %s; write it explicitly, e.g. `%s[%s](...)`",
+		strings.Join(missing, ", "), what, from, typeName, strings.Join(typeParams, ", ")))
+}
+
+// withTypeArgs instantiates base with typeArgs (none leaves it as is).
+func withTypeArgs(base ast.Expr, typeArgs []ast.Expr) ast.Expr {
+	switch len(typeArgs) {
+	case 0:
+		return base
+	case 1:
+		return &ast.IndexExpr{X: base, Index: typeArgs[0]}
+	}
+	return &ast.IndexListExpr{X: base, Indices: typeArgs}
+}
+
+// writtenTypeArgs binds the leading typeParams to the type arguments written
+// at a call site (fewer than typeParams), seeding inference to complete a
+// partial list; completeTypeArgs then emits them as written.
+func (t *galaASTTransformer) writtenTypeArgs(typeParams []string, written []ast.Expr) map[string]transpiler.Type {
+	bound := make(map[string]transpiler.Type, len(typeParams))
+	for i, arg := range written {
+		bound[typeParams[i]] = t.astTypeToTranspilerType(arg)
+	}
+	return bound
 }
 
 // unifyFieldArgForInference binds the struct type parameters that the value
@@ -4059,11 +4099,9 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	fieldTypes []transpiler.Type,
 	argListCtx grammar.IArgumentListContext,
 ) map[string]string {
-	if explicit := explicitTypeArgSubst(typeParams, t.extractFuncCallTypeArgs(fun)); explicit != nil {
+	explicit := explicitTypeArgSubst(typeParams, t.extractFuncCallTypeArgs(fun))
+	if len(explicit) == len(typeParams) || argListCtx == nil {
 		return explicit
-	}
-	if argListCtx == nil {
-		return nil
 	}
 	// The pre-pass lowers the non-lambda arguments an extra time: run it only
 	// when some argument's lowering depends on a generic function-typed slot.
@@ -4072,9 +4110,16 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 		return (a.lambda != nil || t.needsExpectedType(a.expr)) && a.slot >= 0 && a.slot < len(fieldTypes) &&
 			t.resolveTranspilerTypeAsFuncType(fieldTypes[a.slot]) != nil && typeMentionsTypeParam(fieldTypes[a.slot], typeParams)
 	}) {
-		return nil
+		return explicit
 	}
-	return typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
+	// A partial explicit list binds its leading type parameters; the
+	// arguments determine the rest.
+	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
+	if inferred == nil {
+		return explicit
+	}
+	maps.Copy(inferred, explicit)
+	return inferred
 }
 
 // unboundStructTypeParams returns the constructed struct's (or sealed

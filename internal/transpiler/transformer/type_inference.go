@@ -1151,6 +1151,17 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 	}
 }
 
+// isFuncOrTupleType reports whether typ is a function type (directly or through
+// a named function type) or a tuple type: the constructor-argument slots a
+// lambda or a tuple literal is typed by even while the struct's type arguments
+// are only partly known.
+func (t *galaASTTransformer) isFuncOrTupleType(typ transpiler.Type) bool {
+	if gt, ok := typ.(transpiler.GenericType); ok && t.isTupleTypeName(gt.Base.String()) {
+		return true
+	}
+	return t.resolveTranspilerTypeAsFuncType(typ) != nil
+}
+
 // isTupleTypeName checks if a name is exactly a TupleN type name
 // Handles both prefixed (std.Tuple3) and unprefixed (Tuple3) names
 func (t *galaASTTransformer) isTupleTypeName(name string) bool {

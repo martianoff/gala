@@ -3719,6 +3719,14 @@ gala_exec_test(
     expected = "immutable_typed_field_ctor.out",
 )
 
+# A generic struct constructor or companion Apply given only its leading type
+# arguments infers the rest from the arguments.
+gala_exec_test(
+    name = "partial_ctor_type_args",
+    src = "partial_ctor_type_args.gala",
+    expected = "partial_ctor_type_args.out",
+)
+
 # A bare `None()` match arm or if/else branch takes the match's or if's result
 # type — the expected type, or else the type of the other arms — never the
 # matched value's type.

@@ -556,6 +556,8 @@ func identity[T any](x T) T = x
 type Box[T any] struct { Value T }
 ```
 
+A call that writes only its leading type arguments infers the rest from the arguments — for a generic function, a generic struct constructor and a companion `Apply` alike: `Pair[int64](1, "one")` is a `Pair[int64, string]`. A type parameter the arguments leave undetermined is an error naming it.
+
 ## 9. Standard Library Types {#9-standard-library-types}
 
 ### Option Monad

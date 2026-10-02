@@ -491,6 +491,22 @@ func main() {
 }
 ```
 
+### Partial Type Arguments
+
+Writing only the leading type arguments of a generic constructor binds those and infers the rest:
+
+```gala
+package main
+
+struct Pair[A any, B any](First A, Second B)
+
+func main() {
+    val p = Pair[int64](1, "one")             // Pair[int64, string]
+    val q = Pair[float64](Second = true, First = 2)
+    Println(s"${p.First} ${p.Second} ${q.First} ${q.Second}")
+}
+```
+
 ## Boolean Exhaustive Match
 
 Boolean pattern matching is exhaustive when both `true` and `false` cases are covered:
