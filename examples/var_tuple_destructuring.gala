@@ -1,0 +1,45 @@
+package main
+
+// `var (a, b) = tuple` destructures like `val (a, b) = tuple`, but each name
+// is a mutable variable that can be reassigned afterwards.
+
+var (hits, misses) = (0, 0)
+
+func record(hit bool) {
+    if (hit) {
+        hits = hits + 1
+    } else {
+        misses = misses + 1
+    }
+}
+
+func divmod(a int, b int) Tuple[int, int] = (a / b, a % b)
+
+func main() {
+    var (lo, hi) = (3, 9)
+    Println(s"lo=$lo hi=$hi")
+    lo = lo * 2
+    hi += 1
+    Println(s"lo=$lo hi=$hi")
+
+    // Swap through the destructuring itself.
+    var (left, right) = ("a", "b")
+    val swapped = (right, left)
+    left = swapped.V1
+    right = swapped.V2
+    Println(s"left=$left right=$right")
+
+    // From a function result; the bindings take its component types.
+    var (q, r) = divmod(17, 5)
+    for r < 5 {
+        r += 5
+        q -= 1
+    }
+    Println(s"q=$q r=$r")
+
+    // Package-level bindings, reassigned from another function.
+    record(true)
+    record(true)
+    record(false)
+    Println(s"hits=$hits misses=$misses")
+}

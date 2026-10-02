@@ -569,7 +569,12 @@ val value = x.GetOrElse(0)
 ```gala
 val t = (1, "hello")
 val (a, b) = t         // a = 1, b = "hello"
+
+var (lo, hi) = (3, 9)  // var destructures into mutable variables
+lo = lo * 2            // lo = 6
 ```
+
+A destructuring declaration takes each name's type from the tuple, so it has exactly one initializer and no type annotation; anything else is [GALA-E0056](/docs/errors/gala-e0056/).
 
 GALA functions return one value; to return several, return a Tuple and destructure it at the call site (`val (q, r) = divmod(17, 5)`).
 

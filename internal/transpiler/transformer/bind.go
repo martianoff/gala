@@ -406,7 +406,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 	for i, p := range prepped {
 		// std tuples store their fields Immutable-wrapped (Tuple.Vi is
 		// Immutable[Ai]), so binding the field straight to a GALA `val` needs no
-		// extra wrapping — the same shape transformValTuplePattern produces for
+		// extra wrapping — the same shape transformTupleDestructure produces for
 		// `val (a, b) = tuple`. Registering the name as a val (not a raw var) is
 		// what makes reads emit `.Get()`, unwrapping the field exactly once; a raw
 		// var would leave the field Immutable-wrapped and a downstream constructor

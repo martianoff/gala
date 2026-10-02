@@ -688,6 +688,37 @@ func go(task string) {
 `)
 			},
 		},
+		{
+			name: "tuple destructuring with a type annotation",
+			code: galaerr.CodeMalformedTupleDestructure, // GALA-E0056
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func bounds() Tuple[int, int] = (3, 9)
+
+func main() {
+    var (lo, hi) Tuple[int, int] = bounds()
+    lo = lo * 2
+    Println(s"$lo..$hi")
+}
+`)
+			},
+		},
+		{
+			name: "var tuple destructuring without an initializer",
+			code: galaerr.CodeMalformedTupleDestructure, // GALA-E0056
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    var (lo, hi)
+    lo = 3
+    hi = 9
+    Println(s"$lo..$hi")
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
