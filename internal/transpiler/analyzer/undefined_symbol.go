@@ -1717,7 +1717,7 @@ func (c *undefChecker) goTypeHint(name string) string {
 		return gi.Types[pkg+"."+name] != nil || alias
 	}
 	for _, imp := range c.imports {
-		if imp.IsDot {
+		if imp.IsDot || imp.Alias == "_" {
 			continue
 		}
 		pkgName := c.rich.GoImportNames[imp.Path]

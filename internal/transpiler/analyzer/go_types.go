@@ -606,6 +606,19 @@ var (
 // on a generator, a custom tag nothing sets. A file built only for some
 // platforms is kept: the transpiler serves every target, not just its host.
 func neverBuilt(f *ast.File) bool {
+	return constraintNeverHolds(f, []bool{true})
+}
+
+// neverBuiltWithOrWithoutCgo is neverBuilt with cgo tried both on and off, so
+// a `//go:build !cgo` fallback file counts as built.
+func neverBuiltWithOrWithoutCgo(f *ast.File) bool {
+	return constraintNeverHolds(f, []bool{true, false})
+}
+
+// constraintNeverHolds reports whether f's `//go:build` constraint holds for
+// no GOOS/GOARCH pair and cgo setting, with Go's implied tags (android sets
+// linux, ios darwin, illumos solaris) and every Go release on.
+func constraintNeverHolds(f *ast.File, cgoSettings []bool) bool {
 	var expr constraint.Expr
 	for _, group := range f.Comments {
 		if group.Pos() >= f.Package {
@@ -623,14 +636,17 @@ func neverBuilt(f *ast.File) bool {
 		return false
 	}
 	unix := map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "illumos": true, "ios": true, "linux": true, "netbsd": true, "openbsd": true, "solaris": true}
+	implied := map[string]string{"android": "linux", "ios": "darwin", "illumos": "solaris"}
 	for _, goos := range goosList {
 		for _, goarch := range goarchList {
-			ok := expr.Eval(func(tag string) bool {
-				return tag == goos || tag == goarch || tag == "cgo" || tag == "gc" ||
-					(tag == "unix" && unix[goos]) || strings.HasPrefix(tag, "go1.")
-			})
-			if ok {
-				return false
+			for _, cgo := range cgoSettings {
+				ok := expr.Eval(func(tag string) bool {
+					return tag == goos || tag == goarch || tag == implied[goos] || tag == "gc" ||
+						(tag == "cgo" && cgo) || (tag == "unix" && unix[goos]) || strings.HasPrefix(tag, "go1.")
+				})
+				if ok {
+					return false
+				}
 			}
 		}
 	}

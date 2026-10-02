@@ -2889,9 +2889,10 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// (e.g. concurrent re-exporting go_interop's helpers) silently collide
 	// at Go compile time instead of producing a clean GALA-level error.
 	//
-	// In mixed GALA+Go packages we deliberately *exclude* .gen.go files from
-	// this scan: those files are auto-generated derivatives of the .gala
-	// source and contribute the exact same symbols that already entered
+	// In mixed GALA+Go packages we deliberately *exclude* the transpiler's
+	// own .gen.go output from this scan (another generator's .gen.go is the
+	// package's Go and is scanned): that output is a derivative of the .gala
+	// source and contributes the exact same symbols that already entered
 	// pkgAST.Types/Functions through the GALA analyzer above. Re-extracting
 	// them here is at best redundant and at worst actively harmful — a stale
 	// .gen.go left behind after its .gala counterpart was moved/renamed
@@ -3336,12 +3337,12 @@ func canonicalPath(path string) string {
 // methods), types and aliases, vars and consts, in any form — plain, generic
 // or grouped. It parses the source, so text in comments or strings does not
 // count. A file no GOOS/GOARCH builds (`//go:build ignore`) exports nothing;
-// one built only for some platforms is kept, as the transpiler serves every
-// target, not just its host (see neverBuilt). With skipGalaOutput, the
-// transpiler's own output exports nothing either.
+// one built only for some platforms, or only with or only without cgo, is
+// kept, as the transpiler serves every target, not just its host. With
+// skipGalaOutput, the transpiler's own output exports nothing either.
 func exportedGoNames(src string, skipGalaOutput bool) (pkg string, names []string) {
 	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution|goparser.ParseComments)
-	if f == nil || f.Name == nil || neverBuilt(f) || (skipGalaOutput && writtenByGala(f)) {
+	if f == nil || f.Name == nil || neverBuiltWithOrWithoutCgo(f) || (skipGalaOutput && writtenByGala(f)) {
 		return "", nil
 	}
 	add := func(id *ast.Ident) {
