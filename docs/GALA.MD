@@ -261,6 +261,8 @@ lambda states its result type after the parameter list, exactly where a
 function does:
 
 ```gala
+import . "martianoff/gala/collection_immutable"
+
 func report(scores Array[int]) string {
     val clamp = (s int) int => if (s < 0) 0 else s
     return scores.Map((s) => s"${clamp(s)}").MkString(", ")

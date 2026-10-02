@@ -78,10 +78,10 @@ func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
 // expectedRetType when present. requireTypedParams controls the untyped-parameter
 // policy: when true (the bare/initializer path), a parameter with no annotation
 // and no inferable type is a hard error (GALA-E0033); when false (call-argument /
-// return-position path, where param-type inference may still be incomplete), it
-// falls back to `any` to preserve best-effort lowering — except when the
-// expected parameter type exists but could not be resolved, which is
-// GALA-E0033 on either path.
+// return-position path), a parameter whose slot is typed `any` is lowered to
+// `any`, while one whose slot has no type at all — the callee's signature is
+// unknown — or whose type could not be resolved is GALA-E0033 too: its `any`
+// would reach the output unannounced and fail only in `go build`.
 func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams bool) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
@@ -158,7 +158,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// callee signature with an unresolvable type in it, such as a Go
 			// function whose declaring package did not type-check. Its `any`
 			// would reach the output unannounced and fail only in `go build`.
-			if (requireTypedParams || unresolvedSlot) && paramCtx.Type_() == nil && !typeApplied {
+			if (requireTypedParams || unresolvedSlot || expType == nil) && paramCtx.Type_() == nil && !typeApplied {
 				name := paramCtx.Identifier().GetText()
 				msg := fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name)
 				hint := fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name)

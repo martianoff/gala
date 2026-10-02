@@ -411,13 +411,22 @@ val branched func(int) int = if (c) { (x) => x } else { (x) => x * 2 }
 val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred as int
 ```
 
+5. **Partial explicit type arguments** — a generic call that writes only its
+   leading type arguments binds those as written and infers the rest from the
+   other arguments and the lambda's body, as Go does for the emitted call:
+   `resource.Using[Res](open(p), (r) => r.Name())` types `r` as `Res`, and the
+   lambda's result comes from its body.
+
+6. **Conversion to a named function type** — for `type Handler func(int) int`,
+   `Handler((x) => x + 1)` types the lambda by `Handler`'s signature.
+
 When a lambda parameter has no annotation **and** no expected type can be
 inferred — e.g. a bare `val f = (x) => x + 1` with no declared type — the
 transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than
 defaulting the parameter to `any`. Annotate the parameter (`(x int) => …`) or
-place the lambda in one of the typed contexts above. (Call-argument lambdas
-whose parameter types cannot yet be inferred still fall back to `any`; that is a
-separate inference-completeness concern, not a hard error.)
+place the lambda in one of the typed contexts above. A call-argument lambda gets
+the same error when the callee's signature is unknown, so its slot has no type
+at all; only a parameter whose slot the callee types `any` is lowered to `any`.
 
 ### By-Name Argument Lifting (Thunk Sugar)
 

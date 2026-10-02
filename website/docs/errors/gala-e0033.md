@@ -67,16 +67,18 @@ The third form is why idiomatic GALA rarely annotates lambdas: pass them straigh
 
 A lambda in a typed slot draws its parameter and return types from that slot. A bare lambda initializer has no such slot, so an annotation is the only way to keep the generated Go concrete. This parameter used to default to `any` with a warning; the error surfaces the problem at its source instead of deferring it to a confusing Go compile error — or a silent `any`.
 
-**Scope.** Lambda parameters in contexts that supply no expected type, and
-call-argument lambdas whose callee declares the parameter with a type that
-could not be resolved — for example a Go function whose package does not
-type-check because one of its imports cannot be found:
+**Scope.** Lambda parameters in contexts that supply no expected type —
+including a call argument whose callee's signature the transpiler does not
+know — and call-argument lambdas whose callee declares the parameter with a
+type that could not be resolved, for example a Go function whose package does
+not type-check because one of its imports cannot be found:
 
 ```
 [SemanticError GALA-E0033] lib.gala:5:50 lambda parameter "c" has no type: Serve expects a function here whose parameter 1 has a type that could not be resolved (hint: check that the package declaring Serve type-checks — every package it imports must resolve — or annotate the parameter (e.g. `(c T) => …`))
 ```
 
-Fix the callee's package so it type-checks, or annotate the parameter.
+Fix the callee's package so it type-checks, or annotate the parameter. A
+parameter whose slot the callee types `any` is lowered to `any`, as declared.
 
 ---
 

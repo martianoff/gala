@@ -1906,6 +1906,19 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 		}
 	}
 
+	// A conversion to a named function type (`type Handler func(int) int`,
+	// then `Handler((x) => x)`) takes one argument of that function type, so
+	// a lambda converted this way is typed by it.
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
+		if funcName := t.extractFuncName(fun); funcName != "" {
+			if target, isAlias := t.lookupTypeAlias(funcName); isAlias {
+				if ft, isFunc := t.followAliasChain(target).(transpiler.FuncType); isFunc {
+					ctx.goFuncParamTypes = []transpiler.Type{ft}
+				}
+			}
+		}
+	}
+
 	// Struct construction context: collect field types so lambdas passed
 	// as positional struct args can infer their parameter types.
 	if funcName := t.extractFuncName(fun); funcName != "" {
@@ -1940,6 +1953,26 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	if ctx.funcMeta != nil && len(ctx.funcMeta.TypeParams) > 0 {
 		if explicit := explicitTypeArgSubst(ctx.funcMeta.TypeParams, t.extractFuncCallTypeArgs(fun)); explicit != nil {
 			ctx.inferredTypeSubst = explicit
+			// A partial list (`Using[Res](r, (x) => …)`) binds the leading type
+			// parameters; Go infers the rest, as it would with none written.
+			// They are inferred here the same way, so no lambda is lowered
+			// against a bare type-parameter name.
+			if len(explicit) < len(ctx.funcMeta.TypeParams) {
+				inferred, _ := t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
+				placeholders := false
+				for _, tp := range ctx.funcMeta.TypeParams {
+					if _, bound := explicit[tp]; bound {
+						continue
+					}
+					if v, ok := inferred[tp]; ok {
+						explicit[tp] = v
+					} else {
+						explicit[tp] = "any"
+						placeholders = true
+					}
+				}
+				ctx.typeArgPlaceholders = placeholders
+			}
 		} else {
 			// No explicit type args — infer from non-lambda arguments.
 			ctx.inferredTypeSubst, ctx.typeArgPlaceholders = t.inferFuncTypeSubstFromArgs(ctx.funcMeta, argListCtx)
