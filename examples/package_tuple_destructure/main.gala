@@ -1,0 +1,24 @@
+package main
+
+// Package-level declarations that need generated temps, in two files of a
+// main package (values.gala is the other): each file's temps are named apart.
+
+import "strings"
+
+val (name, version) = ("gala", 1)
+
+// Only retries changes; the pair is a `var` to cover `var (...)` too.
+var (retries, timeout) = (3, 30)
+
+val key, value, found = strings.Cut("mode=fast", "=")
+
+func main() {
+    retries = retries + 1
+    level = "info"
+    Println(s"$name v$version")
+    Println(s"retries=$retries timeout=$timeout")
+    Println(s"$host:$port")
+    Println(level)
+    Println(s"$key -> $value ($found)")
+    Println(s"$scheme ($hasScheme)")
+}

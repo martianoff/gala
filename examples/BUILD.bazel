@@ -85,6 +85,8 @@ filegroup(
         "multifile_lib_regress/shadow_func/shadow.gala",
         "multifile_lib_regress/team_lookup.gala",
         "multipackage_subpkg/main.gala",
+        "package_tuple_destructure/main.gala",
+        "package_tuple_destructure/values.gala",
         "multipackage_subpkg/state/state.gala",
         "newimmutable_nil.gala",
         "sealed_done_state_pkg/state/helpers.gala",
@@ -1813,6 +1815,17 @@ gala_exec_test(
     expected = "multi_file/multi_file.out",
 )
 
+# Package-level tuple destructuring in two files of a main package: each
+# file's tuple temp gets its own name.
+gala_exec_test(
+    name = "package_tuple_destructure",
+    srcs = [
+        "package_tuple_destructure/main.gala",
+        "package_tuple_destructure/values.gala",
+    ],
+    expected = "package_tuple_destructure/package_tuple_destructure.out",
+)
+
 # Multi-file main package where both files use the same codecs
 gala_exec_test(
     name = "multi_file_codec",
@@ -3351,6 +3364,8 @@ gala_library(
         "multifile_lib_regress/proc_session.gala",
         "multifile_lib_regress/symbol_scope.gala",
         "multifile_lib_regress/team_lookup.gala",
+        "multifile_lib_regress/tuple_vals_a.gala",
+        "multifile_lib_regress/tuple_vals_b.gala",
         "multifile_lib_regress/types.gala",
         "multifile_lib_regress/var_field_match.gala",
         "multifile_lib_regress/var_field_types.gala",

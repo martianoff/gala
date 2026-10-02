@@ -232,16 +232,26 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	// We must capture all return values with a single call, then wrap each in NewImmutable.
 	// Generated code:
 	//   var (
-	//       __val_0, __val_1 = io.ReadAll(r.Body)
-	//       data = NewImmutable(__val_0)
-	//       err  = NewImmutable(__val_1)
+	//       _tmp_1, _tmp_2 = io.ReadAll(r.Body)
+	//       data = NewImmutable(_tmp_1)
+	//       err  = NewImmutable(_tmp_2)
 	//   )
+	//
+	// At package level the temps are __val_data_0, __val_data_1 (see
+	// packageTempAnchor). A `_` name takes its value into `_` and binds nothing.
 	if isMultiReturnFromSingleExpr {
-		// Generate temp variable names for each return value
+		anchor := packageTempAnchor(ctx, namesCtx)
 		tempNames := make([]string, len(namesCtx))
 		tempIdents := make([]*ast.Ident, len(namesCtx))
-		for i := range namesCtx {
-			tempNames[i] = t.nextTempVar()
+		for i, idCtx := range namesCtx {
+			switch {
+			case idCtx.GetText() == "_":
+				tempNames[i] = "_"
+			case anchor != "":
+				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
+			default:
+				tempNames[i] = t.nextTempVar()
+			}
 			tempIdents[i] = ast.NewIdent(tempNames[i])
 		}
 
@@ -271,6 +281,9 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		// Create specs for each named variable, wrapping the temp in NewImmutable
 		for i, idCtx := range namesCtx {
 			name := idCtx.GetText()
+			if name == "_" {
+				continue
+			}
 			var typeName transpiler.Type = transpiler.NilType{}
 			if ctx.Type_() != nil {
 				typeExpr, _ := t.transformType(ctx.Type_())
@@ -490,8 +503,7 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 			hint)
 	}
 
-	// Generate unique temp variable name
-	tempName := fmt.Sprintf("__tuple_%d", t.nextTupleID())
+	tempName := t.tupleTempName(decl, namesCtx)
 
 	// First spec: temp variable holding the tuple
 	tempSpec := &ast.ValueSpec{
@@ -501,9 +513,12 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 
 	specs := []ast.Spec{tempSpec}
 
-	// Create specs for each destructured variable
+	// Create specs for each destructured variable; a `_` component needs none.
 	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
+		if name == "_" {
+			continue
+		}
 
 		// Determine the type of this component
 		var componentType transpiler.Type = transpiler.NilType{}
@@ -547,6 +562,38 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 		Tok:   token.VAR,
 		Specs: specs,
 	}, nil
+}
+
+// packageTempAnchor is what a package-level declaration's temps are named
+// after: the first name other than `_` it binds. Every file of a package
+// shares one Go scope and each file's temp counter starts over, so a counter
+// would name the same temp in two files; the bound name is declared once per
+// package. It is "" inside a body, where the counter is function-scoped, and
+// when the declaration binds only `_`.
+func packageTempAnchor(decl antlr.ParserRuleContext, names []grammar.IIdentifierContext) string {
+	if _, topLevel := decl.GetParent().(*grammar.TopLevelDeclarationContext); !topLevel {
+		return ""
+	}
+	for _, idCtx := range names {
+		if name := idCtx.GetText(); name != "_" {
+			return name
+		}
+	}
+	return ""
+}
+
+// tupleTempName names the temp that holds a destructured tuple: `_` when the
+// declaration binds only `_`, as it then needs no temp.
+func (t *galaASTTransformer) tupleTempName(decl tupleDeclaration, names []grammar.IIdentifierContext) string {
+	if anchor := packageTempAnchor(decl, names); anchor != "" {
+		return "__tuple_" + anchor
+	}
+	for _, idCtx := range names {
+		if idCtx.GetText() != "_" {
+			return fmt.Sprintf("__tuple_%d", t.nextTupleID())
+		}
+	}
+	return "_"
 }
 
 // tupleDeclaration is what `val` and `var` declarations share: a tuple

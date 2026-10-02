@@ -1,0 +1,26 @@
+package multifile_lib_regress
+
+// Package-level declarations that need generated temps, in two files of one
+// package (tuple_vals_b.gala is the other). Each file's temps must have their
+// own names: the package is one Go scope.
+
+import "strings"
+
+// TupleHost and TuplePort are the host and port of the address.
+val (TupleHost, TuplePort) = ("localhost", 8080)
+
+// Only tupleHits changes; the pair is a `var` to cover `var (...)` too.
+var (tupleHits, tupleMisses) = (0, 0)
+
+val cutKey, cutValue, cutKeyFound = strings.Cut("mode=fast", "=")
+
+// TupleRecordHit counts a hit in the package-level `var` pair.
+func TupleRecordHit() {
+    tupleHits = tupleHits + 1
+}
+
+// TupleAddress joins the pairs destructured in both files.
+func TupleAddress() string = s"$TupleScheme://$TupleHost:$TuplePort$TuplePath hits=$tupleHits misses=$tupleMisses"
+
+// TupleCuts joins the multi-value Go results bound in both files.
+func TupleCuts() string = s"$cutKey=$cutValue $cutKeyFound $cutHost $cutHostFound"
