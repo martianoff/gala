@@ -687,8 +687,8 @@ receiver, so an omitted field keeps its current value rather than being
 re-defaulted.
 
 A named argument that names no field is an error for every form called with
-call syntax — shorthand, block form, and a Go struct alike — because the
-argument would otherwise never reach the struct:
+call syntax — shorthand, block form, and a Go struct whose fields the Go type
+info lists — and so is a field named twice:
 
 <!-- doc-check: error GALA-E0045 -->
 ```gala

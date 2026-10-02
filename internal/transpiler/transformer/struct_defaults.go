@@ -117,11 +117,16 @@ func unknownStructFieldError(typeName string, unknown, fields []string, line, co
 	if len(unknown) > 1 {
 		label = "fields"
 	}
+	hint := fmt.Sprintf("%s declares: %s", typeName, strings.Join(fields, ", "))
+	if len(fields) == 0 {
+		// A Go struct whose fields are all unexported to this package.
+		hint = fmt.Sprintf("%s has no field this package can set", typeName)
+	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeMissingStructField,
 		line, col,
 		fmt.Sprintf("unknown %s %s in construction of %q", label, quoteJoin(unknown), typeName),
-		fmt.Sprintf("%s declares: %s", typeName, strings.Join(fields, ", ")),
+		hint,
 	)
 }
 

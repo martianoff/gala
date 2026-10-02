@@ -14,10 +14,10 @@ import (
 func samePackageModule(dir, goSrc, galaSrc string) (map[string]string, string) {
 	galaFile := path.Join(dir, "program.gala")
 	return map[string]string{
-		"go.mod":                       "module example.com/sibs\n\ngo 1.25\n",
-		"gala.mod":                     "module example.com/sibs\n",
+		"go.mod":                     "module example.com/sibs\n\ngo 1.25\n",
+		"gala.mod":                   "module example.com/sibs\n",
 		path.Join(dir, "sibling.go"): goSrc,
-		galaFile:                       galaSrc,
+		galaFile:                     galaSrc,
 	}, galaFile
 }
 
@@ -102,11 +102,11 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 			want: []string{"Millis("},
 		},
 		{
-			name: "a Go-declared struct is built with named arguments as a Go composite literal",
-			goSrc: "type Bag struct {\n\tItems []string\n\tText  string\n\tScore func(int) int\n\tsize  int\n}\n",
+			name:  "a Go-declared struct is built with named arguments as a Go composite literal",
+			goSrc: "type Op func(int) int\n\ntype Bag struct {\n\tItems []string\n\tText  string\n\tScore func(int) int\n\tTwice Op\n\tsize  int\n}\n",
 			galaSrc: "import \"martianoff/gala/go_interop\"\n\n" +
-				"func pack() Bag = Bag(Items = go_interop.SliceOf(\"a\"), Text = \"t\", Score = (n) => n * 2, size = 1)\n",
-			want: []string{"Bag{Items: go_interop.SliceOf(\"a\"), Score: func(n int) int {", "Text: \"t\", size: 1}"},
+				"func pack() Bag = Bag(Items = go_interop.SliceOf(\"a\"), Text = \"t\", Score = (n) => n * 2, Twice = (m) => m + m, size = 1)\n",
+			want:   []string{"Bag{Items: go_interop.SliceOf(\"a\"), Score: func(n int) int {", "Twice: func(m int) int {", "size: 1}"},
 			absent: []string{"NewImmutable"},
 		},
 		// The declarations-in-GALA, implementations-in-Go split: methods a Go
@@ -213,9 +213,9 @@ func TestGoStructUnknownNamedArgument(t *testing.T) {
 		{
 			name: "imported package mixing GALA and Go",
 			files: map[string]string{
-				"mixed/types.go":    "package mixed\n\n" + goStruct,
-				"mixed/mixed.gala":  "package mixed\n\nfunc Ok() int = 1\n",
-				"program.gala":      "package main\n\nimport \"example.com/sibs/mixed\"\n\nfunc main() { Println(mixed.Response(Status = 1, Extra = 2).Status) }\n",
+				"mixed/types.go":   "package mixed\n\n" + goStruct,
+				"mixed/mixed.gala": "package mixed\n\nfunc Ok() int = 1\n",
+				"program.gala":     "package main\n\nimport \"example.com/sibs/mixed\"\n\nfunc main() { Println(mixed.Response(Status = 1, Extra = 2).Status) }\n",
 			},
 			galaFile: "program.gala",
 			typeName: "mixed.Response",
@@ -232,6 +232,33 @@ func TestGoStructUnknownNamedArgument(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.typeName+" declares: Status, Body")
 		})
 	}
+}
+
+// TestGoStructNamedConstructionRejects covers named-argument constructions of
+// a struct of the package's own .go files that have no Go composite literal
+// to lower to: a positional argument among the named ones, a generic struct
+// with its type arguments left out, and a field given twice.
+func TestGoStructNamedConstructionRejects(t *testing.T) {
+	const goSrc = "package main\n\ntype Bag struct {\n\tItems []string\n\tText  string\n}\n\ntype Box[T any] struct{ Value T }\n"
+	cases := []struct {
+		name, call, want string
+	}{
+		{"positional among named", `Bag("x", Text = "t")`, "Bag is a Go struct: construct it with named arguments only"},
+		{"generic without type arguments", "Box(Value = 1)", "Box is a generic Go struct: write its type arguments"},
+		{"field given twice", `Bag(Text = "a", Text = "b")`, `field "Text" is given more than once in construction of "Bag"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\nfunc main() { Println("+tc.call+") }\n")
+			_, err := transpileInModule(t, files, galaFile)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+	files, galaFile := samePackageModule(".", goSrc, "package main\n\nfunc main() { Println(Box[int](Value = 1).Value) }\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "Box[int]{Value: 1}")
 }
 
 // TestSamePackageGoSiblingScanReadsOnlyThePackage covers the files the scan

@@ -344,7 +344,7 @@ val p2 = Person("Bob", 25)                 // Positional (Functional-style)
 val p3 = Person(age = 20, name = "Charlie") // Named arguments
 ```
 
-A named argument that names no field is [GALA-E0045](/docs/errors/gala-e0045/), for a shorthand, block-form or Go struct alike. A struct declared in a hand-written `.go` file of the package itself (`package main` included) is built with named arguments as a Go composite literal, like an imported Go struct: `Bag(Items = go_interop.SliceOf("a"), Score = (n) => n * 2)`.
+A named argument that names no field is [GALA-E0045](/docs/errors/gala-e0045/), for a shorthand or block-form struct, and for a Go struct whose fields the Go type info lists. A struct declared in a hand-written `.go` file of the package itself (`package main` included) is built with named arguments as a Go composite literal, like an imported Go struct: `Bag(Items = go_interop.SliceOf("a"), Score = (n) => n * 2)`.
 
 ### Automatic Copy and Equal Methods
 

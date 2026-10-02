@@ -114,9 +114,11 @@ value — which is why it is the one place this check applies.
 **A named argument that names no field.** The same code reports a named
 argument matching no field of the struct being built. This half applies to
 *every* struct called with call syntax — shorthand, block form, and a Go struct
-(imported, or declared in a hand-written `.go` file of the package itself) —
-because the literal is built from the arguments that name a field, so one
-naming none would be dropped before the Go compiler could reject it.
+whose fields the Go type info lists (imported, or declared in a hand-written
+`.go` file of the package itself) —
+because an argument naming no field otherwise never reached the Go compiler:
+it was dropped for a GALA struct and an imported pure-Go struct, and a struct
+of the package's own `.go` files could not be built with named arguments at all.
 
 ```gala
 package main
