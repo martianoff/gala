@@ -729,11 +729,7 @@ func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 	if typ == nil || typ.IsNil() {
 		return false
 	}
-	baseName := typ.BaseName()
-	// Check if base name is Immutable (with or without package prefix)
-	isImm := baseName == transpiler.TypeImmutable ||
-		strings.HasSuffix(baseName, "."+transpiler.TypeImmutable)
-
+	isImm := transpiler.IsImmutableType(typ)
 	if isImm {
 		if gen, ok := typ.(transpiler.GenericType); ok {
 			for _, p := range gen.Params {

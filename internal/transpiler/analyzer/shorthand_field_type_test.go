@@ -28,3 +28,30 @@ struct Box(A Immutable[int64], B int64, var C Immutable[int], val D Immutable[in
 	assert.Equal(t, "std.Immutable[int]", box.Fields["D"].String())
 	assert.Equal(t, []bool{true, true, false, true}, box.ImmutFlags)
 }
+
+// TestSynthesizedValFieldRecordedAsValueType pins the same rule for metadata
+// synthesized from generated Go: a field whose Go type is std.Immutable[T] is
+// a val field holding a T, so it is flagged and recorded as T. The Go type
+// info itself keeps the Go type.
+func TestSynthesizedValFieldRecordedAsValueType(t *testing.T) {
+	immutableInt := transpiler.GenericType{
+		Base:   transpiler.NamedType{Package: "std", Name: transpiler.TypeImmutable},
+		Params: []transpiler.Type{transpiler.BasicType{Name: "int"}},
+	}
+	goInfo := transpiler.NewGoTypeInfo()
+	goInfo.Types["gen.Box"] = &transpiler.GoTypeData{
+		Kind:       "struct",
+		Fields:     map[string]transpiler.Type{"X": immutableInt, "Y": transpiler.BasicType{Name: "string"}},
+		FieldOrder: []string{"X", "Y"},
+		Methods:    map[string]*transpiler.GoFuncSignature{},
+	}
+	pkgAST := &transpiler.RichAST{}
+	synthesizeTypeMetadataFromGo(pkgAST, goInfo)
+
+	box := pkgAST.Types["gen.Box"]
+	require.NotNil(t, box)
+	assert.Equal(t, transpiler.BasicType{Name: "int"}, box.Fields["X"])
+	assert.Equal(t, transpiler.BasicType{Name: "string"}, box.Fields["Y"])
+	assert.Equal(t, []bool{true, false}, box.ImmutFlags)
+	assert.Equal(t, immutableInt, goInfo.Types["gen.Box"].Fields["X"])
+}

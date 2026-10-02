@@ -388,9 +388,9 @@ type DefaultExpr struct {
 // `var` keyword. A field with no keyword is a val field, stored as
 // Immutable[T]; one declared Immutable[T] is stored as that Immutable[T]
 // rather than wrapped a second time, so it is the same field as one declared
-// T, and is recorded as T. Its value is a T and reading it yields a T. (The
-// rule is for metadata read from GALA source; metadata synthesized from
-// generated Go records every val field as its Immutable[T].)
+// T, and is recorded as T. Its value is a T and reading it yields a T. (Metadata
+// synthesized from generated Go records a val field the same way: as the T its
+// Immutable[T] holds.)
 func ShorthandFieldType(declared Type, hasKeyword bool) Type {
 	if gt, ok := declared.(GenericType); ok && !hasKeyword && len(gt.Params) == 1 && IsImmutableType(declared) {
 		return gt.Params[0]

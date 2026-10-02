@@ -375,6 +375,22 @@ func main() {
 }
 ```
 
+## Struct Fields Declared `Immutable[T]`
+
+A shorthand field declared `Immutable[T]` is the same field as one declared `T`: it takes a `T` however it is supplied, and reads as a `T`.
+
+```gala
+package main
+
+struct Counter(Label string, Hits Immutable[int64] = 1)
+
+func main() {
+    val named = Counter(Hits = 3, Label = "named")
+    val copied = named.Copy(Hits = 4)
+    Println(s"${named.Hits} ${copied.Hits} ${Counter("d").Hits}")   // 3 4 1
+}
+```
+
 ## Using External Libraries
 
 GALA allows you to organize your code into multiple packages and import them as needed.
