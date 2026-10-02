@@ -1,6 +1,9 @@
 package transpiler
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -160,6 +163,39 @@ func TestInsertLineDirectivesHappyPath(t *testing.T) {
 	assert.Contains(t, out, "//line demo.gala:3")
 	assert.Contains(t, out, "//line demo.gala:6")
 	assert.Contains(t, out, `println("hi")`)
+}
+
+// TestInsertLineDirectivesDocumentedDecl pins the layout around a doc comment the
+// transformer put on a top-level marker: the directive is hoisted above the doc
+// as its own comment group, numbered so the declaration lands on its GALA line,
+// unless that would number it below 1 — then it stays between doc and
+// declaration, keeping the mapping exact.
+func TestInsertLineDirectivesDocumentedDecl(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		galaLine int
+		want     string
+		goDoc    bool // the layout go doc relies on: F must carry the doc
+	}{
+		{"hoisted", 9, "//line demo.gala:6\n\n// F does f.\n// More on f.\nfunc F() {}\n", true},
+		{"not enough lines above", 3, "// F does f.\n// More on f.\n//\n//line demo.gala:3\nfunc F() {}\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package main\n\n// F does f.\n// More on f.\nvar " + LineMarkerName(tc.galaLine) + " int\n\nfunc F() {}\n"
+			out, err := insertLineDirectives(src, "demo.gala")
+			require.NoError(t, err)
+			assert.Equal(t, "package main\n\n"+tc.want, out)
+
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, "demo.go", out, parser.ParseComments)
+			require.NoError(t, err)
+			fn := f.Decls[0].(*ast.FuncDecl)
+			assert.Equal(t, tc.galaLine, fset.Position(fn.Pos()).Line, "F must map to its GALA line")
+			if tc.goDoc {
+				assert.NotNil(t, fn.Doc, "go/parser must attach the doc to F")
+			}
+		})
+	}
 }
 
 // TestInsertLineDirectivesNoMarkers pins the no-op case: code with no markers is

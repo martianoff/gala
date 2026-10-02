@@ -4875,8 +4875,24 @@ transpiler already builds, so every tool reads the same source of truth:
 | Completion | documentation for the highlighted entry, fetched on demand |
 | Signature help | the callee's summary, plus each parameter's own line |
 | `gala doc` | the package's whole documented API, as text or `--json` |
+| Generated Go | the same comment directly above the Go declaration, so `go doc`, gopls, pkg.go.dev and comment-annotation tools such as `swag` read it |
 
 Nothing needs to be enabled, and no separate doc build step exists.
+
+In the generated Go, each doc comment lands on the declaration that carries the
+GALA one: the package clause, functions and methods, types, struct fields,
+interface methods, sealed types (on the generated parent type) and each sealed
+case (on its companion type), and top-level `val`/`var`/`embed val` bindings. The
+text is the captured prose, written as a `//` run and laid out the way gofmt
+lays out a Go doc comment — so a `/* */` block comes out as `//` lines, and every
+line of an annotation block such as swag's `// @Summary ...` / `// @Router ...`
+is kept in order.
+
+Only declaration documentation is carried. Comments inside function bodies,
+trailing comments, and comments that document nothing (separated from the next
+declaration by a blank line) do not appear in the generated Go. Neither do
+`//go:` and `//line` lines: they are directives, not documentation, so a
+`//go:noinline` written in GALA has no effect on the generated Go.
 
 ## 20. IDE Support
 
