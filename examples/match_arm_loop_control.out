@@ -1,0 +1,25 @@
+for-clause 0
+after 0
+for-clause 2
+after 2
+for-clause 3
+after 3
+keep 1
+keep 2
+skip 3
+keep 4
+keep 5
+skip 6
+keep 7
+say a
+next
+say b
+next
+pair 0 0
+inner 0 0
+pair 0 2
+inner 0 2
+inner 1 0
+scan 1
+scan 2
+inner loop total 105

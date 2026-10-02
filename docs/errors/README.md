@@ -77,6 +77,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0056` | Malformed tuple destructuring | [GALA-E0056.md](GALA-E0056.md) |
 | `GALA-E0057` | Validate method with the wrong signature on a struct a codec decodes | [GALA-E0057.md](GALA-E0057.md) |
 | `GALA-E0058` | Generated codec metadata named in GALA code | [GALA-E0058.md](GALA-E0058.md) |
+| `GALA-E0059` | `break` or `continue` cannot reach its loop | [GALA-E0059.md](GALA-E0059.md) |
 
 ### Retired codes
 

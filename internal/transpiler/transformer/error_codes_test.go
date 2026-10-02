@@ -796,6 +796,22 @@ func main() {
 			expectCode:     galaerr.CodeMalformedTupleDestructure,
 			expectContains: "drop the parentheses: `var a, b T`",
 		},
+		{
+			name: "GALA-E0059 break in a match whose value is used",
+			input: `package main
+
+func main() {
+    for i := 0; i < 5; i++ {
+        val x = i match {
+            case 2 => break
+            case n => n
+        }
+        Println(x)
+    }
+}`,
+			expectCode:     galaerr.CodeLoopControlOutsideLoop,
+			expectContains: "`break` inside a match whose value is used cannot reach the loop around it",
+		},
 	}
 
 	for _, tc := range cases {

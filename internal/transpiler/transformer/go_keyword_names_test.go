@@ -74,6 +74,12 @@ func TestGoKeywordNamesAreRejected(t *testing.T) {
 				require.Error(t, err)
 				var se *galaerr.SemanticError
 				require.True(t, errors.As(err, &se), "want a semantic error, got %T: %v", err, err)
+				if (kw == "break" || kw == "continue") && pos.name == "use without a declaration" {
+					// Not a name at all: loop control read as a value, GALA-E0059.
+					require.Equal(t, galaerr.CodeLoopControlOutsideLoop, se.Code, "got: %v", err)
+					require.Contains(t, se.Msg, "`"+kw+"` is a statement, not a value")
+					return
+				}
 				require.Equal(t, galaerr.CodeGoKeywordAsName, se.Code, "got: %v", err)
 				require.Contains(t, se.Msg, `"`+kw+`" is a Go keyword`)
 				require.Equal(t, wantLine, se.Line, "line of %v", err)

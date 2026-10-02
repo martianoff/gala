@@ -20,6 +20,11 @@ import (
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
 	if ctx.Identifier() != nil {
 		name := ctx.Identifier().GetText()
+		// A `break` / `continue` statement is lowered before it gets here
+		// (see lowerLoopControl); reaching it means it is read as a value.
+		if _, isLoopControl := loopControlToken(name); isLoopControl {
+			return nil, t.loopControlAsValueError(ctx, name)
+		}
 		ident := ast.NewIdent(name)
 		// First check if it's a local variable - if so, don't try to resolve as std type
 		if t.isVal(name) || t.isVar(name) {

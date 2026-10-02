@@ -32,6 +32,9 @@ func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.
 		return t.transformShortVarDeclWithMutability(shortCtx.(*grammar.ShortVarDeclContext), mutable)
 	}
 	if exprCtx := ctx.Expression(); exprCtx != nil {
+		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+			return bs, nil
+		}
 		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 			return nil, err
 		}
@@ -580,7 +583,11 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		// is one of its result values, like a `return` value.
 		fillsPendingSlot := isTrailing && lastStmtIsValue && valueExpr != nil && ctx == t.returnSlot.body && t.returnSlotPending()
 		ifCtx := ifStatementOf(stmtCtx.(*grammar.StatementContext))
-		if ifExpr := t.findIfExpressionInExpression(valueExpr); discardsValue && ifExpr != nil {
+		if bs, ok := t.lowerLoopControl(valueExpr); ok {
+			// Loop control is a statement wherever it sits, the tail of a
+			// value-carrying block included: it is never the block's value.
+			stmt = bs
+		} else if ifExpr := t.findIfExpressionInExpression(valueExpr); discardsValue && ifExpr != nil {
 			// An if-expression whose value nothing reads is an if statement.
 			stmt, err = t.lowerIfExpressionStatement(ifExpr)
 		} else if isTrailing && tail == tailReturn && valueExpr != nil {
@@ -817,6 +824,9 @@ func (t *galaASTTransformer) lowerExpressionStatement(exprCtx grammar.IExpressio
 func (t *galaASTTransformer) lowerDiscardedExpression(exprCtx grammar.IExpressionContext) (ast.Stmt, error) {
 	if ifExpr := t.findIfExpressionInExpression(exprCtx); ifExpr != nil {
 		return t.lowerIfExpressionStatement(ifExpr)
+	}
+	if bs, ok := t.lowerLoopControl(exprCtx); ok {
+		return bs, nil
 	}
 	if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 		return nil, err
@@ -1079,12 +1089,6 @@ func (t *galaASTTransformer) checkValueUsedHint(exprCtx grammar.IExpressionConte
 		}
 	case *ast.UnaryExpr:
 		if e.Op == token.ARROW {
-			return nil
-		}
-	case *ast.Ident:
-		// `break` and `continue` parse as bare names and print as the Go
-		// statements.
-		if e.Name == "break" || e.Name == "continue" {
 			return nil
 		}
 	}

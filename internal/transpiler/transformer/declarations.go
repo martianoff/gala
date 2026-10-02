@@ -88,6 +88,9 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 	}
 	if forCtx := ctx.ForStatement(); forCtx != nil {
 		stmt, err := t.transformForStatement(forCtx.(*grammar.ForStatementContext))
+		if err == nil {
+			t.markUserLoop(stmt)
+		}
 		return nil, stmt, err
 	}
 	if simpleCtx := ctx.SimpleStatement(); simpleCtx != nil {

@@ -15,8 +15,9 @@ import (
 	"martianoff/gala/internal/transpiler/registry"
 )
 
-// containsUserReturnInClauses reports whether any user-written `return X`
-// appears inside the if-else clauses or default body of a lowered match.
+// containsUserReturnInClauses reports whether any user-written `return X`, or
+// bare `return`, appears inside the if-else clauses or default body of a
+// lowered match.
 func (t *galaASTTransformer) containsUserReturnInClauses(clauses []ast.Stmt, defaultBody []ast.Stmt) bool {
 	for _, c := range clauses {
 		if t.stmtContainsUserReturn(c) {
@@ -61,13 +62,43 @@ func (t *galaASTTransformer) buildMatchBodyForInline(clauses []ast.Stmt, default
 // also contains a fresh scope so the binding does not leak.
 func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName string, matchedType transpiler.Type, body []ast.Stmt) *ast.BlockStmt {
 	stmts := make([]ast.Stmt, 0, len(body)+1)
-	stmts = append(stmts, &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(paramName)},
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{expr},
-	})
+	// The subject is evaluated either way. When no arm reads it (`case _ =>`
+	// only), binding it would be an unused Go variable, so it is discarded.
+	bind := &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []ast.Expr{expr}}
+	if readsName(body, paramName) {
+		bind.Lhs[0], bind.Tok = ast.NewIdent(paramName), token.DEFINE
+	}
+	stmts = append(stmts, bind)
 	stmts = append(stmts, body...)
 	return &ast.BlockStmt{List: stmts}
+}
+
+// readsName reports whether stmts read the identifier name. The name a `:=`
+// declares is not a read: a nested inlined match declares its own `obj`.
+func readsName(stmts []ast.Stmt, name string) bool {
+	found := false
+	var visit func(ast.Node) bool
+	visit = func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			if x.Tok == token.DEFINE {
+				for _, r := range x.Rhs {
+					ast.Inspect(r, visit)
+				}
+				return false
+			}
+		case *ast.Ident:
+			found = x.Name == name
+		}
+		return true
+	}
+	for _, s := range stmts {
+		ast.Inspect(s, visit)
+	}
+	return found
 }
 
 // extractVariantName extracts the variant/constructor name from a case pattern text.
@@ -326,7 +357,7 @@ func (t *galaASTTransformer) isSynthesizedArmReturn(ret *ast.ReturnStmt) bool {
 	return t.synthesizedReturns[ret]
 }
 
-// containsUserReturnStmt reports whether stmts contain any non-bare
+// containsUserReturnStmt reports whether stmts contain a bare `return`, or a
 // `return X` that was NOT synthesized by the match-arm tail lowering.
 // Such a return represents user intent to exit the enclosing function.
 // Like containsBareReturn, this skips constructs that establish their own
@@ -344,7 +375,12 @@ func (t *galaASTTransformer) stmtContainsUserReturn(stmt ast.Stmt) bool {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
 		if len(s.Results) == 0 {
-			return false // bare returns are handled by validateNoBareReturnsInValueMatch
+			// A source `return` in a void function: the bare returns the
+			// match lowering adds for void arms are added after this check
+			// and inside the match's function literal, which this walk does
+			// not enter. (In a match whose value is used a bare return is
+			// rejected by validateNoBareReturnsInValueMatch.)
+			return true
 		}
 		return !t.isSynthesizedArmReturn(s)
 	case *ast.BlockStmt:
@@ -1563,6 +1599,20 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
 	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
+		// `case x => break` runs loop control; the arm has no value.
+		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+			return []ast.Stmt{bs}, transpiler.VoidType{}, nil
+		}
+		// In a statement match the arm's value is discarded, so a nested match
+		// or if-expression written as the body is a statement too, exactly as
+		// at the tail of a braced arm: its own arms may hold loop control.
+		if armSlot.discarded && (t.expressionIsBareMatch(exprCtx) || t.findIfExpressionInExpression(exprCtx) != nil) {
+			stmt, err := t.lowerDiscardedExpression(exprCtx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
+		}
 		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 			return nil, nil, err
 		}
