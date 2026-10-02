@@ -97,7 +97,7 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	// Defensive backstop: Type-returning functions are contractually required to
 	// return transpiler.NilType{} rather than a nil interface. This guard catches
 	// any contract violation and prevents downstream .IsNil() panics. Callees
-	// known to have returned nil (getGoFuncReturnTypeForCall, getGoMethodReturnType,
+	// known to have returned nil (getGoFuncReturnTypeForCall, goMethodSignature,
 	// getGoFieldType) have been fixed; leave this guard as defense-in-depth.
 	if result == nil {
 		return transpiler.NilType{}
@@ -1548,30 +1548,58 @@ func (t *galaASTTransformer) goImportRealName(importPath string) (string, bool) 
 	return entry.PkgName, true
 }
 
-// getGoMethodReturnType returns the first return type of a method on a Go type.
-// Handles calls like scanner.Text(), req.Header.Set(), etc.
-// The typeName may be package-qualified (e.g., "bufio.Scanner") or a pointer type.
-func (t *galaASTTransformer) getGoMethodReturnType(typeName, methodName string) transpiler.Type {
-	if t.goTypeInfo == nil {
-		return transpiler.NilType{}
+// goMethodSignature returns the Go type info signature of method on a value of
+// type recv (one pointer level stripped), or nil: a method of a Go type
+// (`scanner.Text()`), through a Go type alias too, or one a hand-written .go
+// file of the package declares on a GALA type (GoKindMethodsOnly).
+//
+// A generic receiver (`Box[int]`) is looked up under its base type, and its
+// type arguments are substituted for the type parameters the method's
+// receiver declares: `func (b Box[T]) Get() T` called on a Box[int] returns
+// int. Go methods declare no type parameters of their own, so the signature's
+// type parameters are exactly the receiver's; when their count does not match
+// the type arguments, the signature cannot be instantiated and nil is returned
+// rather than a signature naming type parameters that mean nothing here.
+func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method string) *transpiler.GoFuncSignature {
+	if t.goTypeInfo == nil || transpiler.IsUnusable(recv) {
+		return nil
 	}
-	// Strip pointer prefix
-	cleanType := strings.TrimPrefix(typeName, "*")
-
-	// Try direct lookup
-	if retType := t.goTypeInfo.GetMethodReturnType(cleanType, methodName); retType != nil {
-		return retType
+	if ptr, ok := recv.(transpiler.PointerType); ok {
+		recv = ptr.Elem
 	}
-
-	// If the type is a Go type alias, resolve and try the underlying type's methods
-	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
-		aliasedName := aliasedType.String()
-		if retType := t.goTypeInfo.GetMethodReturnType(aliasedName, methodName); retType != nil {
-			return retType
+	gen, isGeneric := recv.(transpiler.GenericType)
+	if !isGeneric {
+		key := t.goTypeLookupName(recv)
+		if sig := t.goTypeInfo.GetMethodSignature(key, method); sig != nil {
+			return sig
+		}
+		if aliased := t.goTypeInfo.ResolveTypeAlias(key); aliased != nil {
+			return t.goTypeInfo.GetMethodSignature(aliased.String(), method)
+		}
+		return nil
+	}
+	sig := t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(gen.Base), method)
+	if sig == nil || len(sig.TypeParams) != len(gen.Params) {
+		return nil
+	}
+	subst := make(map[string]transpiler.Type, len(gen.Params))
+	for i, name := range sig.TypeParams {
+		subst[name] = gen.Params[i]
+	}
+	inst := &transpiler.GoFuncSignature{
+		Params:     make([]transpiler.GoParam, len(sig.Params)),
+		Returns:    make([]transpiler.Type, len(sig.Returns)),
+		IsVariadic: sig.IsVariadic,
+	}
+	for i, p := range sig.Params {
+		inst.Params[i] = transpiler.GoParam{Name: p.Name, Type: t.substituteInType(p.Type, subst)}
+	}
+	for i, r := range sig.Returns {
+		if r != nil {
+			inst.Returns[i] = t.substituteInType(r, subst)
 		}
 	}
-
-	return transpiler.NilType{}
+	return inst
 }
 
 // getGoFieldType returns the type of a field on a Go struct type.

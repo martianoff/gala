@@ -655,27 +655,7 @@ func (t *galaASTTransformer) resolveMethodSignatureOnExpr(receiver ast.Expr, met
 	if t.goTypeInfo == nil {
 		return nil
 	}
-	receiverType := t.getExprTypeNameManual(receiver)
-	if transpiler.IsUnusable(receiverType) {
-		return nil
-	}
-	// Pointer stripped, and keyed by the Go package's real name even when the
-	// file imports it under an alias.
-	cleanType := t.goTypeLookupName(receiverType)
-
-	// Try direct lookup
-	if sig := t.goTypeInfo.GetMethodSignature(cleanType, methodName); sig != nil {
-		return sig
-	}
-
-	// If the type is a Go type alias, resolve and try the underlying type's methods
-	if aliasedType := t.goTypeInfo.ResolveTypeAlias(cleanType); aliasedType != nil {
-		if sig := t.goTypeInfo.GetMethodSignature(aliasedType.String(), methodName); sig != nil {
-			return sig
-		}
-	}
-
-	return nil
+	return t.goMethodSignature(t.getExprTypeNameManual(receiver), methodName)
 }
 
 // inferBlockReturnType tries to infer the return type from a block's return statements.

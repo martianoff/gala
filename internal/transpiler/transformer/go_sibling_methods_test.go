@@ -76,3 +76,30 @@ func TestGoSiblingMethodsFromAnotherPackage(t *testing.T) {
 	assert.Contains(t, out, "r.Save()")
 	assert.Contains(t, out, "r.Label()")
 }
+
+// TestGoSiblingMethodsOnGenericType covers a Go-declared method on a generic
+// GALA struct, in its own package and from an importer: the receiver's type
+// arguments are substituted into the method's signature, so the result is
+// typed (Some spells it) and a lambda argument takes its parameter type from
+// the instantiated parameter.
+func TestGoSiblingMethodsOnGenericType(t *testing.T) {
+	const goMethods = `
+func (b Box[T]) Get() T                 { return b.V }
+func (b Box[U]) Map(f func(U) U) Box[U] { return Box[U]{V: f(b.V)} }
+`
+	const use = `func run(b Box[int]) Option[int] = Some(b.Map((n) => n * 2).Get())
+`
+	files, galaFile := samePackageModule(".", "package main\n"+goMethods,
+		"package main\n\nstruct Box[T any](var V T)\n\n"+use)
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "std.Some[int]{}.Apply(b.Map(func(n int) int {")
+
+	files, _ = samePackageModule("lib", "package lib\n"+goMethods,
+		"package lib\n\nstruct Box[T any](var V T)\n")
+	files["main.gala"] = "package main\n\nimport \"example.com/sibs/lib\"\n\n" +
+		"func run(b lib.Box[string]) Option[string] = Some(b.Map((s) => s + \"!\").Get())\n"
+	out, err = transpileInModule(t, files, "main.gala")
+	require.NoError(t, err)
+	assert.Contains(t, out, "std.Some[string]{}.Apply(b.Map(func(s string) string {")
+}

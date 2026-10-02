@@ -1113,11 +1113,17 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		if isSpread {
 			hasSpread = true
 		}
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(transpiler.NilType{}), false)
+		positional := !isSpread && arg.Identifier() == nil
+		// A lambda takes its parameter types from the Go method's parameter.
+		expected := transpiler.Type(transpiler.NilType{})
+		if positional && lambdaCtx != nil {
+			expected = goSigParamType(goSig, i)
+		}
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}
-		if !isSpread && arg.Identifier() == nil {
+		if positional {
 			expr = t.spreadGoResultArg(goSig, len(args), expr)
 			if cerr := t.checkGoResultGoArg(goSig, i, expr, exprCtx); cerr != nil {
 				return nil, cerr
@@ -1130,6 +1136,25 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		Args:     mArgs,
 		Ellipsis: ellipsisPos(hasSpread),
 	}, nil
+}
+
+// goSigParamType is the type of the parameter the i-th positional argument of
+// a call of sig fills, or NilType when there is none. A signature that still declares type parameters
+// is not instantiated, so its parameter types are not used.
+func goSigParamType(sig *transpiler.GoFuncSignature, i int) transpiler.Type {
+	if sig == nil || len(sig.TypeParams) > 0 || len(sig.Params) == 0 {
+		return transpiler.NilType{}
+	}
+	if i >= len(sig.Params) {
+		if !sig.IsVariadic {
+			return transpiler.NilType{}
+		}
+		i = len(sig.Params) - 1 // stored as the element type
+	}
+	if typ := sig.Params[i].Type; typ != nil {
+		return typ
+	}
+	return transpiler.NilType{}
 }
 
 // emitMethodCallWithVoidLambdaHint handles the unresolved-receiver-type-params

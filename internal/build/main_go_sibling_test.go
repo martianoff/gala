@@ -18,8 +18,10 @@ import (
 // exports (#616), resource.Using over a Go constructor, with and without a
 // partial type-argument list (#618), a literal match, a stable identifier and
 // a codec field over a Go named scalar; methods declared in Go on a struct
-// declared in GALA (#615); and a struct declared in Go built with named
-// arguments, in `package main` and in a library package.
+// declared in GALA (#615), including on a generic one, where the receiver's
+// type arguments are substituted into the method's signature; and a struct
+// declared in Go built with named arguments, in `package main` and in a
+// library package.
 func TestBuild_MainPackageGoSibling(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
@@ -75,6 +77,11 @@ type Millis int64
 
 func (r Repo) Save() string { return "saved " + r.Name }
 func (r *Repo) Touch()      {}
+
+func (b Box[T]) Get() T                     { return b.V }
+func (b Box[U]) Map(f func(U) U) Box[U]     { return Box[U]{V: f(b.V)} }
+func (b Box[T]) With(s string) Pair[T, string] { return Pair[T, string]{A: b.V, B: s} }
+func (p *Pair[A, B]) Swap() Pair[B, A]      { return Pair[B, A]{A: p.B, B: p.A} }
 `,
 		"main.gala": `package main
 
@@ -90,6 +97,11 @@ struct Event(Name string, At Millis)
 
 // Declared here; its methods are declared in sibling.go.
 struct Repo(var Name string)
+
+// Generic, with methods declared in sibling.go.
+struct Box[T any](var V T)
+
+struct Pair[A any, B any](var A A, var B B)
 
 func size(r Response) int = r.Extra
 
@@ -126,6 +138,14 @@ func main() {
     val repo = Repo("x")
     repo.Touch()
     Println(repo.Save())
+
+    // Some(...) spells its argument's type, so each result must be typed.
+    val box = Box(20)
+    val doubled = box.Map((n) => n * 2)
+    Println(Some(doubled.Get()).GetOrElse(0) + 2)
+    val pair = box.With("w")
+    val swapped = pair.Swap()
+    Println(s"${Some(swapped.A).GetOrElse("")} ${Some(swapped.B).GetOrElse(0) + 1}")
 }
 `,
 	} {
@@ -161,5 +181,7 @@ func main() {
 		"stable two",
 		`{"name":"e","at":5}`,
 		"saved x",
+		"42",
+		"w 21",
 	}, "\n"), strings.TrimSpace(strings.ReplaceAll(out, "\r\n", "\n")))
 }
