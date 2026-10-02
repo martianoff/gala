@@ -3,13 +3,11 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
-	"go/build"
 	goparser "go/parser"
 	"go/token"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -3333,51 +3331,49 @@ func canonicalPath(path string) string {
 	return real
 }
 
-// goExportedFuncRe matches exported (capitalized) standalone function declarations in Go files.
-// Only matches top-level functions, not methods (which have a receiver before the name).
-var goExportedFuncRe = regexp.MustCompile(`(?m)^func\s+([A-Z]\w*)\s*[\[(]`)
-
-// exportedGoTypeNames returns the exported type and alias names a Go source
-// declares at package level, in any form: plain, generic or grouped. It
-// parses the source, so declarations in comments or strings do not count; a
-// source that does not parse yields what was parsed before the error.
-func exportedGoTypeNames(src string) []string {
-	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution)
-	if f == nil {
-		return nil
+// exportedGoNames returns the package name a Go source declares and the
+// exported names its package-level declarations introduce: functions (not
+// methods), types and aliases, vars and consts, in any form — plain, generic
+// or grouped. It parses the source, so text in comments or strings does not
+// count. A file no GOOS/GOARCH builds (`//go:build ignore`) exports nothing;
+// one built only for some platforms is kept, as the transpiler serves every
+// target, not just its host (see neverBuilt).
+func exportedGoNames(src string) (pkg string, names []string) {
+	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution|goparser.ParseComments)
+	if f == nil || f.Name == nil || neverBuilt(f) {
+		return "", nil
 	}
-	var out []string
-	for _, decl := range f.Decls {
-		gd, ok := decl.(*ast.GenDecl)
-		if !ok || gd.Tok != token.TYPE {
-			continue
+	add := func(id *ast.Ident) {
+		if id != nil && id.IsExported() {
+			names = append(names, id.Name)
 		}
-		for _, spec := range gd.Specs {
-			if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.IsExported() {
-				out = append(out, ts.Name.Name)
+	}
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				add(d.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					add(s.Name)
+				case *ast.ValueSpec:
+					for _, id := range s.Names {
+						add(id)
+					}
+				}
 			}
 		}
 	}
-	return out
+	return f.Name.Name, names
 }
-
-// goExportedVarRe matches exported package-level variable declarations in Go files.
-// Captures forms like `var GlobalEC = go_interop.GlobalEC`, which act as function-valued
-// re-exports. Without this, facade packages that re-export callables via `var` (e.g.
-// concurrent re-exporting go_interop helpers) would silently shadow the original
-// exporter under dot-import, causing "X redeclared in this block" at Go compile time
-// rather than a clean GALA-level collision error.
-var goExportedVarRe = regexp.MustCompile(`(?m)^var\s+([A-Z]\w*)\s*(=|\w)`)
-
-// goExportedConstRe matches exported package-level constant declarations.
-var goExportedConstRe = regexp.MustCompile(`(?m)^const\s+([A-Z]\w*)\s*(=|\w)`)
-
-// goPkgNameRe matches the package declaration in Go files.
-var goPkgNameRe = regexp.MustCompile(`(?m)^package\s+(\w+)`)
 
 // extractGoFileExports scans .go files in a directory for exported symbol names
 // and stores them in pkgAST.GoExports (separate from Types/Functions so they
-// don't interfere with type resolution). Used for dot-import clash detection.
+// don't interfere with type resolution). Used for dot-import clash detection,
+// and as the Go side of a GALA package's type surface.
 //
 // includeGenerated controls whether auto-generated `.gen.go` files contribute
 // to the result. Pass true only when the package is consumed without GALA
@@ -3394,11 +3390,6 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
 			continue
 		}
-		// A file Go would not build here — `//go:build ignore`, another
-		// GOOS/GOARCH — exports nothing.
-		if ok, err := build.Default.MatchFile(dirPath, f.Name()); err == nil && !ok {
-			continue
-		}
 		if !includeGenerated && strings.HasSuffix(f.Name(), ".gen.go") {
 			continue
 		}
@@ -3406,45 +3397,14 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		if err != nil {
 			continue
 		}
-		src := string(content)
-
-		// Extract package name if not already set
-		if pkgAST.PackageName == "" {
-			if m := goPkgNameRe.FindStringSubmatch(src); len(m) > 1 {
-				pkgAST.PackageName = m[1]
-			}
+		pkg, names := exportedGoNames(string(content))
+		if pkgAST.PackageName == "" && pkg != "" {
+			pkgAST.PackageName = pkg
 		}
-
-		// Extract exported function names
-		for _, m := range goExportedFuncRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
-			}
-		}
-
-		// Extract exported type names (including `type X = ...` aliases).
-		for _, name := range exportedGoTypeNames(src) {
+		for _, name := range names {
 			if !seen[name] {
 				seen[name] = true
 				symbols = append(symbols, name)
-			}
-		}
-
-		// Extract exported package-level `var` names (facade re-exports such as
-		// `var NewSingleThreadEC = go_interop.NewSingleThreadEC`).
-		for _, m := range goExportedVarRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
-			}
-		}
-
-		// Extract exported package-level `const` names.
-		for _, m := range goExportedConstRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
 			}
 		}
 	}
