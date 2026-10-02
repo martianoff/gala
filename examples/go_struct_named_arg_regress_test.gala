@@ -8,4 +8,7 @@ func main() {
 
     // GALA struct named-arg (should wrap in Immutable — correct behavior)
     Println(go_struct_named_arg_regress.GalaCookieName("session", "abc123"))
+
+    // Go struct of the package's own .go file, built with named arguments
+    Println(go_struct_named_arg_regress.ShelfString("top"))
 }

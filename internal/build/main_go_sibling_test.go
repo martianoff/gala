@@ -17,8 +17,9 @@ import (
 // pointer-receiver method through a val (#614), a type name an import also
 // exports (#616), resource.Using over a Go constructor, with and without a
 // partial type-argument list (#618), a literal match, a stable identifier and
-// a codec field over a Go named scalar; and methods declared in Go on a struct
-// declared in GALA (#615).
+// a codec field over a Go named scalar; methods declared in Go on a struct
+// declared in GALA (#615); and a struct declared in Go built with named
+// arguments, in `package main` and in a library package.
 func TestBuild_MainPackageGoSibling(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
@@ -31,6 +32,13 @@ func TestBuild_MainPackageGoSibling(t *testing.T) {
 		"go.mod":   "module " + moduleName + "\n\ngo 1.22\n",
 		// An import that exports a type of the same name as a local one.
 		"collide/collide.go": "package collide\n\ntype Response struct{ Status int }\n",
+		// A library package whose GALA code builds a struct of its own
+		// hand-written .go file with named arguments.
+		"shelf/shelf.go": "package shelf\n\ntype Slot struct {\n\tLabel string\n\tScale func(int) int\n\tcount int\n}\n\nfunc (s Slot) Count() int { return s.count }\n",
+		"shelf/shelf.gala": `package shelf
+
+func Make(label string) Slot = Slot(Label = label, Scale = (n) => n * 10, count = 2)
+`,
 		"sibling.go": `package main
 
 type Bag struct {
@@ -72,6 +80,7 @@ func (r *Repo) Touch()      {}
 
 import (
     "example.com/mainsib/collide"
+    "example.com/mainsib/shelf"
     "martianoff/gala/go_interop"
     "martianoff/gala/json"
     "martianoff/gala/resource"
@@ -87,6 +96,10 @@ func size(r Response) int = r.Extra
 func main() {
     val b = Bag{Items: go_interop.SliceOf("a", "b"), Text: "héllo"}
     Println(s"${b.Items.Size()} ${b.Text.Size()} ${b.Text.ByteSize()}")
+    val named = Bag(Items = go_interop.SliceOf("c"), Text = "named")
+    Println(s"${named.Items.Size()} ${named.Text}")
+    val slot = shelf.Make("s")
+    Println(s"${slot.Label} ${slot.Scale(4)} ${slot.Count()}")
 
     val g = NewGreeter("world")
     g.Rename("there")
@@ -137,6 +150,8 @@ func main() {
 	require.NoError(t, runErr, "built binary failed to run; output:\n%s", out)
 	assert.Equal(t, strings.Join([]string{
 		"2 5 6",
+		"1 named",
+		"s 40 2",
 		// The val is not renamed: the pointer method runs on a copy.
 		"hello world",
 		"3",

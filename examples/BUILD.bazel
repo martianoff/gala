@@ -3255,8 +3255,10 @@ gala_library(
     name = "go_struct_named_arg_regress",
     srcs = [
         "go_struct_named_arg_regress/interop.gala",
+        "go_struct_named_arg_regress/shelf.gala",
         "go_struct_named_arg_regress/types.gala",
     ],
+    go_srcs = ["go_struct_named_arg_regress/shelf.go"],
     importpath = "martianoff/gala/examples/go_struct_named_arg_regress",
     visibility = ["//visibility:public"],
     deps = ["//examples/go_struct_bridge"],

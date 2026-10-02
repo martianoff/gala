@@ -472,6 +472,24 @@ func main() {
 			},
 		},
 		{
+			name: "named construction names no field",
+			code: galaerr.CodeMissingStructField, // GALA-E0045
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Cfg struct {
+    Name string
+    Tries int
+}
+
+func main() {
+    val c = Cfg(Name = "a", Retries = 2)
+    Println(c.Tries)
+}
+`)
+			},
+		},
+		{
 			name: "same package imported twice",
 			code: galaerr.CodeDuplicateImport, // GALA-E0046
 			render: func(t *testing.T) string {

@@ -36,19 +36,6 @@ import (
 // The shorthand's field list is a constructor signature; a block struct is a
 // layout.
 
-// structFieldDefaults returns the field-name → declared-default map for
-// a struct, or nil when the type declares no defaults. resolvedTypeName is the
-// key already resolved by resolveStructTypeName; getTypeMeta re-resolves it
-// against the metadata tables and falls back to the RichAST for types added
-// after the initial copy.
-func (t *galaASTTransformer) structFieldDefaults(resolvedTypeName string) (defaults map[string]transpiler.DefaultExpr, isShorthand bool) {
-	meta := t.getTypeMeta(resolvedTypeName)
-	if meta == nil {
-		return nil, false
-	}
-	return meta.FieldDefaults, meta.IsShorthand
-}
-
 // fillOmittedStructFields returns the extra KeyValueExprs a constructor call
 // needs for the fields it did not supply, and reports the first required field
 // it left out.
@@ -130,11 +117,16 @@ func unknownStructFieldError(typeName string, unknown, fields []string, line, co
 	if len(unknown) > 1 {
 		label = "fields"
 	}
+	hint := fmt.Sprintf("%s declares: %s", typeName, strings.Join(fields, ", "))
+	if len(fields) == 0 {
+		// A Go struct whose fields are all unexported to this package.
+		hint = fmt.Sprintf("%s has no field this package can set", typeName)
+	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeMissingStructField,
 		line, col,
 		fmt.Sprintf("unknown %s %s in construction of %q", label, quoteJoin(unknown), typeName),
-		fmt.Sprintf("%s declares: %s", typeName, strings.Join(fields, ", ")),
+		hint,
 	)
 }
 
@@ -183,35 +175,6 @@ func quoteJoin(names []string) string {
 		return strings.Join(q, "")
 	}
 	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
-}
-
-// checkUnknownStructFields reports named arguments that match no field of the
-// struct. Shorthand-only, for the same reason the required-field check is: a
-// block-form struct is a Go-shaped layout, and its construction is checked by
-// the Go compiler against the real field set.
-func (t *galaASTTransformer) checkUnknownStructFields(
-	typeName, resolvedTypeName string,
-	fields []string,
-	namedArgs map[string]ast.Expr,
-	line, col int,
-) error {
-	if _, isShorthand := t.structFieldDefaults(resolvedTypeName); !isShorthand {
-		return nil
-	}
-	known := make(map[string]bool, len(fields))
-	for _, f := range fields {
-		known[f] = true
-	}
-	var unknown []string
-	for name := range namedArgs {
-		if !known[name] {
-			unknown = append(unknown, name)
-		}
-	}
-	if len(unknown) == 0 {
-		return nil
-	}
-	return unknownStructFieldError(typeName, unknown, fields, line, col)
 }
 
 // isShorthandStruct reports whether a type came from the shorthand form and

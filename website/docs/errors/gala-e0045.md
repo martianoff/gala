@@ -73,9 +73,41 @@ A shorthand struct's field list *is* a constructor signature, and `= value` on a
 
 ---
 
+## A named argument that names no field
+
+The same code reports a named argument matching no field of the struct being built. This half applies to *every* struct called with call syntax — shorthand, block form, and a Go struct whose fields the Go type info lists (imported, or declared in a hand-written `.go` file of the package itself) — because an argument naming no field otherwise never reached the Go compiler: it was dropped for a GALA struct and an imported pure-Go struct, and a struct of the package's own `.go` files could not be built with named arguments at all.
+
+```gala
+package main
+
+type Cfg struct {
+    Name string
+    Tries int
+}
+
+func main() {
+    val c = Cfg(Name = "a", Retries = 2)
+    Println(c.Tries)
+}
+```
+
+```
+error[GALA-E0045]: unknown field "Retries" in construction of "Cfg"
+  --> main.gala:9:29
+  |
+9 |     val c = Cfg(Name = "a", Retries = 2)
+  |                             ^^^^^^^ Cfg declares: Name, Tries
+  |
+  = hint: Cfg declares: Name, Tries
+```
+
+Fix the name to one the hint lists. For a Go struct the hint lists the fields the package may set: its exported ones, and the unexported ones too when the struct is declared in the package's own `.go` files.
+
+---
+
 ## Where it stands down
 
-This code fires only for **shorthand-declared GALA structs constructed with call syntax**. Everything that is or mirrors a Go struct keeps Go's partial-literal semantics:
+The required-field check fires only for **shorthand-declared GALA structs constructed with call syntax**. Everything that is or mirrors a Go struct keeps Go's partial-literal semantics:
 
 - **Go-imported types** — `url.URL(Scheme = "x")` constructs partially and raises nothing.
 - **Go-style literals** — `Cfg{Name: "a"}` is a composite literal, not a constructor call; it stays partial.

@@ -283,3 +283,27 @@ func main() {
 	assert.Contains(t, err.Error(), `unknown field "Nmae"`)
 	assert.NotContains(t, err.Error(), "missing required field")
 }
+
+// TestUnknownBlockStructFieldReportsItself pins the same for a block-form
+// struct. Its construction stays partial, but a named argument matching no
+// field was dropped before the Go compiler could reject it.
+func TestUnknownBlockStructFieldReportsItself(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	_, err := trans.Transpile(`package main
+
+type Cfg struct {
+    Name string
+    Tries int
+}
+
+func main() {
+    val c = Cfg(Name = "a", Retries = 2)
+    Println(c.Name)
+}`, "struct_defaults_test.gala")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0045")
+	assert.Contains(t, err.Error(), `unknown field "Retries" in construction of "Cfg"`)
+	assert.Contains(t, err.Error(), "Cfg declares: Name, Tries")
+}

@@ -686,6 +686,32 @@ to meet Go.
 receiver, so an omitted field keeps its current value rather than being
 re-defaulted.
 
+A named argument that names no field is an error for every form called with
+call syntax — shorthand, block form, and a Go struct whose fields the Go type
+info lists — and so is a field named twice:
+
+<!-- doc-check: error GALA-E0045 -->
+```gala
+type Cfg struct {
+    Name string
+    Tries int
+}
+
+val c = Cfg(Name = "a", Retries = 2)
+// error[GALA-E0045]: unknown field "Retries" in construction of "Cfg"
+```
+
+A struct declared in a hand-written `.go` file of the package itself (`package
+main` included) is built with named arguments like an imported Go struct: a Go
+composite literal of plain fields, its unexported fields usable since they are
+the package's own, and a lambda passed for a function-typed field typed by it.
+
+<!-- doc-check: fragment -->
+```gala
+// sibling.go: type Bag struct { Items []string; Score func(int) int }
+val b = Bag(Items = go_interop.SliceOf("a"), Score = (n) => n * 2)
+```
+
 ### Automatic Copy and Equal Methods
 Every GALA struct automatically provides `Copy()` and `Equal(other)` methods.
 
