@@ -1714,11 +1714,9 @@ func (t *galaASTTransformer) resolveNamedArgExpectedFuncType(fun ast.Expr, argNa
 	// Step 1b: a Go struct's function-typed field, so a lambda passed for it
 	// gets its parameter types. Only for a non-generic struct, whose field
 	// types need no type arguments substituted.
-	if callCtx.structFieldExpectedTypes == nil && callCtx.funcMeta == nil {
-		if td := t.goStructTypeData(fun); td != nil && len(td.TypeParams) == 0 {
-			if ft, isFunc := td.Fields[argName].(transpiler.FuncType); isFunc {
-				return ft, nil
-			}
+	if td := callCtx.goStruct; td != nil && len(td.TypeParams) == 0 {
+		if ft, isFunc := td.Fields[argName].(transpiler.FuncType); isFunc {
+			return ft, nil
 		}
 	}
 
@@ -1896,6 +1894,9 @@ type functionCallContext struct {
 	// structLiteral: the call's positional arguments build a struct literal
 	// (see positionalCallBuildsStructLiteral), so each fills a field.
 	structLiteral bool
+	// goStruct is the Go type info of the Go struct the call names when it
+	// is not a GALA struct or function (see goStructTypeData), else nil.
+	goStruct *transpiler.GoTypeData
 	// The sealed variant the call constructs and its parent (nil otherwise),
 	// and the lookup's ambiguity error, reported for a named argument.
 	variant       *transpiler.SealedVariant
@@ -1998,6 +1999,12 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 				}
 			}
 		}
+	}
+
+	// A Go struct named-argument construction can build: one of the
+	// package's own .go files, or of an imported Go package.
+	if ctx.funcMeta == nil && ctx.structFieldExpectedTypes == nil {
+		ctx.goStruct = t.goStructTypeData(fun)
 	}
 
 	// For generic functions without explicit type args (e.g.,
@@ -2414,7 +2421,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	// hand-written .go files declare, or one from an imported Go package. Its
 	// fields are plain Go fields, never Immutable-wrapped, so the named
 	// arguments become a Go composite literal as they are.
-	if td := t.goStructTypeData(fun); td != nil {
+	if td := callCtx.goStruct; td != nil {
 		if err := checkUnknownStructFields(qualifiedName, td.FieldOrder, argListCtx); err != nil {
 			return nil, err
 		}
@@ -2443,6 +2450,32 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	// construct with them. Emit a positioned semantic error.
 	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
 }
+
+// checkUnknownStructFields reports named arguments that match no field of the
+// struct being constructed: a shorthand or block-form GALA struct, or a Go
+// struct. Unlike the required-field check it applies to every struct, because
+// the literal is built from the named arguments that match a field, so one
+// matching none would never reach the Go compiler; it would be dropped. The
+// diagnostic points at the first such argument.
+func checkUnknownStructFields(qualifiedName string, fields []string, argListCtx *grammar.ArgumentListContext) error {
+	var unknown []string
+	var line, col int
+	for _, argCtx := range argListCtx.AllArgument() {
+		id := argCtx.(*grammar.ArgumentContext).Identifier()
+		if id == nil || slices.Contains(fields, id.GetText()) {
+			continue
+		}
+		if len(unknown) == 0 {
+			line, col = id.GetStart().GetLine(), id.GetStart().GetColumn()
+		}
+		unknown = append(unknown, id.GetText())
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	return unknownStructFieldError(qualifiedName, unknown, fields, line, col)
+}
+
 
 // extractTypeNameFromExpr decodes a call target into (typeName, qualifiedName).
 // typeName is the bare identifier used for code generation; qualifiedName
@@ -2786,32 +2819,11 @@ func unwrapToBaseIdent(expr ast.Expr) *ast.Ident {
 // returns nil for anything else, including a type the Go type info does not
 // describe.
 func (t *galaASTTransformer) goStructTypeData(fun ast.Expr) *transpiler.GoTypeData {
-	if t.goTypeInfo == nil {
+	_, qualifiedName := extractTypeNameFromExpr(fun)
+	if t.goTypeInfo == nil || qualifiedName == "" {
 		return nil
 	}
-	for {
-		if idx, ok := fun.(*ast.IndexExpr); ok {
-			fun = idx.X
-		} else if idx, ok := fun.(*ast.IndexListExpr); ok {
-			fun = idx.X
-		} else {
-			break
-		}
-	}
-	var key string
-	switch e := fun.(type) {
-	case *ast.Ident:
-		key = t.ownGoTypeKey(e.Name)
-	case *ast.SelectorExpr:
-		pkg, ok := e.X.(*ast.Ident)
-		if !ok || !t.importManager.IsPackage(pkg.Name) {
-			return nil
-		}
-		key = t.goQualifiedName(pkg.Name, e.Sel.Name)
-	default:
-		return nil
-	}
-	if td := t.goTypeInfo.GetTypeData(key); td != nil && td.Kind == "struct" {
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(qualifiedName)); td != nil && td.Kind == "struct" {
 		return td
 	}
 	return nil
@@ -3370,6 +3382,15 @@ func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionC
 	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
 }
 
+// goTypeKey returns the Go type info key of a type named as written: a bare
+// name the package's own .go files declare, or `qualifier.Name` of an import.
+func (t *galaASTTransformer) goTypeKey(name string) string {
+	if qualifier, bare, ok := strings.Cut(name, "."); ok {
+		return t.goQualifiedName(qualifier, bare)
+	}
+	return t.ownGoTypeKey(name)
+}
+
 // conversionFuncType returns the function type a call of name converts to
 // when name is a named function type rather than a function: a GALA alias
 // (through a chain of them), a Go type of the package's own .go files, or an
@@ -3381,11 +3402,7 @@ func (t *galaASTTransformer) conversionFuncType(name string) *transpiler.FuncTyp
 	if _, isAlias := t.typeAliases[name]; isAlias {
 		return t.resolveTranspilerTypeAsFuncType(transpiler.NamedType{Name: name})
 	}
-	key := t.ownGoTypeKey(name)
-	if qualifier, bare, ok := strings.Cut(name, "."); ok {
-		key = t.goQualifiedName(qualifier, bare)
-	}
-	if td := t.goTypeInfo.GetTypeData(key); td != nil && td.Kind == "named" {
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
 		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
 			return &ft
 		}

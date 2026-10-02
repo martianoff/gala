@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -172,31 +170,6 @@ func quoteJoin(names []string) string {
 		return strings.Join(q, "")
 	}
 	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
-}
-
-// checkUnknownStructFields reports named arguments that match no field of the
-// struct being constructed: a shorthand or block-form GALA struct, or a Go
-// struct. Unlike the required-field check it applies to every struct, because
-// the literal is built from the named arguments that match a field, so one
-// matching none would never reach the Go compiler; it would be dropped. The
-// diagnostic points at the first such argument.
-func checkUnknownStructFields(typeName string, fields []string, argListCtx *grammar.ArgumentListContext) error {
-	var unknown []string
-	var line, col int
-	for _, argCtx := range argListCtx.AllArgument() {
-		id := argCtx.(*grammar.ArgumentContext).Identifier()
-		if id == nil || slices.Contains(fields, id.GetText()) {
-			continue
-		}
-		if len(unknown) == 0 {
-			line, col = id.GetStart().GetLine(), id.GetStart().GetColumn()
-		}
-		unknown = append(unknown, id.GetText())
-	}
-	if len(unknown) == 0 {
-		return nil
-	}
-	return unknownStructFieldError(typeName, unknown, fields, line, col)
 }
 
 // isShorthandStruct reports whether a type came from the shorthand form and
