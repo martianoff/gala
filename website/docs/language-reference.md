@@ -155,7 +155,10 @@ of a function with no result type) is rejected as evaluated but not used.
 ### Expression Functions
 ```gala
 func square(x int) int = x * x
+func greet(name string) = Println(s"hello $name")
 ```
+
+The result type is never inferred. Without one the function is void, like `func f() { <expr> }`: a call is made and its result discarded, and a `match` or `if` runs its branches as statements. A plain value (`func answer() = 42`) is rejected as evaluated but not used; write the result type to return it, `func answer() int = 42`.
 
 ### Local Functions
 Named functions and methods are declared only at the top level of a file. A

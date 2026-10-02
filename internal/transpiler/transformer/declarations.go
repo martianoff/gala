@@ -776,12 +776,20 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		body = b
 	} else if ctx.Expression() != nil {
 		var exprBody *ast.BlockStmt
-		// Guaranteed self-tail-call optimization: rewrite direct self-tail
-		// recursion in an if-expression body into a `for {}` loop so deep
-		// recursion runs in constant stack space. Restricted to plain
-		// functions (no receiver, so `name` is the un-mangled call target);
-		// receiver/generic-method forms fall through to the normal lowering.
-		if ctx.Receiver() == nil {
+		if funcType.Results == nil || len(funcType.Results.List) == 0 {
+			// A function with no result type is void: GALA does not infer
+			// one, so `func F() = <expr>` is `func F() { <expr> }`.
+			b, err := t.transformVoidExpressionBody(ctx.Expression())
+			if err != nil {
+				return nil, err
+			}
+			exprBody = b
+		} else if ctx.Receiver() == nil {
+			// Guaranteed self-tail-call optimization: rewrite direct self-tail
+			// recursion in an if-expression body into a `for {}` loop so deep
+			// recursion runs in constant stack space. Restricted to plain
+			// functions (no receiver, so `name` is the un-mangled call target);
+			// receiver/generic-method forms fall through to the normal lowering.
 			loopBody, ok, tcoErr := t.tryTransformSelfTailRecursion(ctx.Expression(), name, funcType)
 			if tcoErr != nil {
 				return nil, tcoErr
@@ -853,6 +861,25 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 // transformExpressionBodiedFunction handles the `func foo() T = expr` form by
 // transforming the expression into a single-return block body. A lambda,
 // if-expression or match body is lowered against the declared return type.
+// transformVoidExpressionBody lowers the body of `func F() = <expr>`, a
+// function with no result type, as the block `{ <expr> }` would lower its one
+// statement: a call is made and its result discarded, a match or if-expression
+// is a statement, and a value nothing uses is rejected as evaluated but not
+// used.
+func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpressionContext) (*ast.BlockStmt, error) {
+	stmt, err := t.lowerDiscardedExpression(exprCtx)
+	if err != nil {
+		return nil, err
+	}
+	if err := t.checkValueUsedHint(exprCtx, stmt, expressionFunctionDiscardHint); err != nil {
+		return nil, err
+	}
+	if block, ok := stmt.(*ast.BlockStmt); ok {
+		return block, nil
+	}
+	return &ast.BlockStmt{List: []ast.Stmt{stmt}}, nil
+}
+
 func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, funcType *ast.FuncType) (*ast.BlockStmt, error) {
 	var result slot
 	if funcType.Results != nil && len(funcType.Results.List) > 0 {

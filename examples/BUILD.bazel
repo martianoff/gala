@@ -1232,6 +1232,13 @@ gala_exec_test(
     expected = "block_function_trailing_value.out",
 )
 
+# An expression-bodied function with no result type runs its body as a statement
+gala_exec_test(
+    name = "void_expression_function",
+    src = "void_expression_function.gala",
+    expected = "void_expression_function.out",
+)
+
 # Match as last expression in function block body auto-returns
 gala_exec_test(
     name = "match_return_iife",

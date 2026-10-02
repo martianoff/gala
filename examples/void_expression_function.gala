@@ -1,0 +1,33 @@
+package main
+
+// An expression-bodied function with no result type is void: the expression
+// after `=` runs as a statement, exactly as in `func f() { <expr> }`.
+
+func fortyTwo() int {
+    Println("computing 42")
+    42
+}
+
+// A call whose result is discarded.
+func warmUp() = fortyTwo()
+
+func greet(name string) = Println(s"hello $name")
+
+func describe(n int) = n match {
+    case 0 => Println("zero")
+    case _ => Println(s"n = $n")
+}
+
+func sign(n int) = if (n < 0) Println("negative") else Println("non-negative")
+
+func countdown(n int) = if (n == 0) Println("liftoff") else countdown(n - 1)
+
+func main() {
+    warmUp()
+    greet("gala")
+    describe(0)
+    describe(5)
+    sign(-1)
+    sign(1)
+    countdown(3)
+}

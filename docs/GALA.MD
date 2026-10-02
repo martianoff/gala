@@ -211,6 +211,24 @@ For simple functions, you can use the `=` syntax.
 func square(x int) int = x * x
 ```
 
+The result type is never inferred. Without one the function is void, exactly like
+`func f() { <expr> }`: the expression is a statement, so a call is made and its result
+discarded, and a `match` or `if` runs its branches as statements. A plain value — a
+literal, name, operator expression or lambda — is rejected as evaluated but not used;
+write the result type to return it.
+
+```gala
+func greet(name string) = Println(s"hello $name")
+
+func describe(n int) = n match {
+    case 0 => Println("zero")
+    case _ => Println(s"n = $n")
+}
+
+// func answer() = 42       // error: `42` is evaluated but not used
+func answer() int = 42      // returns 42
+```
+
 > **Note:** Expression-bodied functions do not support `return` statements. The expression
 > after `=` is implicitly the return value. This includes match arms — use expression arms
 > (the value itself), not `return` statements:
