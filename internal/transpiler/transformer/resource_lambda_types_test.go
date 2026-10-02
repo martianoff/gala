@@ -54,7 +54,7 @@ func TestPartialExplicitTypeArgs(t *testing.T) {
 			goSrc: "package main\n",
 			gala: "func pick[A any, B any](a A, f func(A) B) B = f(a)\n\n" +
 				"func twice() int = pick[int](1, (x) => x * 2)\n",
-			want:   []string{"pick[int](1, func(x int) int"},
+			want: []string{"pick[int](1, func(x int) int"},
 		},
 	}
 	for _, tc := range cases {
@@ -120,6 +120,13 @@ func TestLambdaArgOfLocalFuncBinding(t *testing.T) {
 	out, err := transpileInModule(t, files, galaFile)
 	require.NoError(t, err)
 	assert.Contains(t, out, "forEach(func(v T) {")
+
+	// The binding shadows a package-level function of the same name.
+	files[galaFile] = "package main\n\nfunc visit(f func(int)) = f(1)\n\n" +
+		"func run(visit func(func(string))) = visit((s) => Println(s))\n"
+	out, err = transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "visit(func(s string) {")
 }
 
 // TestConversionToGoNamedFuncType covers a conversion to an imported Go

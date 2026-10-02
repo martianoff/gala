@@ -1849,7 +1849,10 @@ func (t *galaASTTransformer) findSealedVariant(variantName, pkgQualifier string,
 // transforming a regular (non-method) function call's arguments. All fields
 // may be nil/empty independently when the corresponding metadata is absent.
 type functionCallContext struct {
-	funcMeta                 *transpiler.FunctionMetadata
+	funcMeta *transpiler.FunctionMetadata
+	// goFuncParamTypes are the callee's parameter types when it has no GALA
+	// function metadata: a Go function or variable, a local binding of
+	// function type, or a conversion to a named function type.
 	goFuncParamTypes         []transpiler.Type
 	structFieldExpectedTypes []transpiler.Type
 	inferredTypeSubst        map[string]string
@@ -1891,16 +1894,30 @@ type functionCallContext struct {
 func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx *grammar.ArgumentListContext) functionCallContext {
 	var ctx functionCallContext
 
+	// A call of a local binding of function type (`forEach((v) => g(v))` for
+	// a parameter `forEach func(func(T))`) takes its parameter types from the
+	// binding's type, type parameters of the enclosing declaration included.
+	// The binding shadows any package-level function of the same name, so it
+	// is consulted first.
+	localFunc := false
+	if id, isIdent := fun.(*ast.Ident); isIdent {
+		if typ, _, bound := t.scopeLookup(id.Name); bound {
+			if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
+				ctx.goFuncParamTypes, localFunc = ft.Params, true
+			}
+		}
+	}
+
 	// Look up GALA function metadata for expected parameter types
 	// (enables void lambda detection and type-param inference).
-	if funcName := t.extractFuncName(fun); funcName != "" {
+	if funcName := t.extractFuncName(fun); funcName != "" && !localFunc {
 		ctx.funcMeta = t.getFunction(funcName)
 	}
 
 	// When GALA function metadata is not available, try Go type
 	// info. Handles Go-defined functions and variables with function types
 	// (e.g., concurrent.Spawn) called via dot-imports or qualified references.
-	if ctx.funcMeta == nil && t.goTypeInfo != nil {
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && t.goTypeInfo != nil {
 		if funcName := t.extractFuncName(fun); funcName != "" {
 			ctx.goFuncParamTypes = t.resolveGoFuncParamTypes(funcName)
 		}
@@ -1915,17 +1932,6 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && len(t.extractFuncCallTypeArgs(fun)) == 0 {
 		if ft := t.conversionFuncType(t.extractFuncName(fun)); ft != nil {
 			ctx.goFuncParamTypes = []transpiler.Type{*ft}
-		}
-	}
-
-	// A call of a local binding of function type (`forEach((v) => g(v))` for
-	// a parameter `forEach func(func(T))`) takes its parameter types from the
-	// binding's type, type parameters of the enclosing declaration included.
-	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
-		if id, isIdent := fun.(*ast.Ident); isIdent && t.bindingScope(id.Name) != nil {
-			if ft := t.resolveTranspilerTypeAsFuncType(t.getValType(id.Name)); ft != nil {
-				ctx.goFuncParamTypes = ft.Params
-			}
 		}
 	}
 
