@@ -1507,10 +1507,10 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 // compiled declares, given the bare name it is written with: a `package main`
 // type is not qualified by its package, while Go type info files every type
 // under one. A name the package's Go type info does not file is returned as
-// it is.
+// it is, as is a type parameter in scope that shadows such a name.
 func (t *galaASTTransformer) ownGoTypeKey(name string) string {
 	if t.packageName != "" && !strings.Contains(name, ".") {
-		if key := t.packageName + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
+		if key := t.packageName + "." + name; t.goTypeInfo.GetTypeData(key) != nil && !t.isActiveTypeParam(name) {
 			return key
 		}
 	}

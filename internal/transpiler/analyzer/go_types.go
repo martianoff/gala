@@ -662,7 +662,15 @@ func writtenByGala(f *ast.File) bool {
 // from its GALA declaration. Exported methods are recorded, and, when own (the
 // package being compiled), unexported ones too.
 func extractMethodsOnForeignTypes(files []*ast.File, typesInfo *types.Info, pkg *types.Package, info *transpiler.GoTypeInfo, own bool) {
+	// A GALA type a signature names (`func (r Repo) Renamed() Repo`) is
+	// invisible to go/types and is recovered from the source. It is qualified
+	// the way GALA metadata keys the package's types: not at all in main/test.
+	galaQualifier := pkg.Name()
+	if galaQualifier == "main" || galaQualifier == "test" {
+		galaQualifier = ""
+	}
 	for _, f := range files {
+		imports := fileImportPaths(f)
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok || fd.Recv == nil || len(fd.Recv.List) != 1 || (!own && !fd.Name.IsExported()) {
@@ -684,6 +692,7 @@ func extractMethodsOnForeignTypes(files []*ast.File, typesInfo *types.Info, pkg 
 			sig := &transpiler.GoFuncSignature{}
 			if fn, ok := typesInfo.Defs[fd.Name].(*types.Func); ok {
 				sig = convertSignature(fn.Type().(*types.Signature))
+				repairSignature(sig, fd, imports, galaQualifier)
 			}
 			data.Methods[fd.Name.Name] = sig
 			if pointer {
@@ -767,31 +776,36 @@ func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpi
 			if !ok || fd.Recv != nil || fd.Type == nil || !fd.Name.IsExported() {
 				continue
 			}
-			sig := info.Functions[pkgName+"."+fd.Name.Name]
-			if sig == nil {
-				continue
+			if sig := info.Functions[pkgName+"."+fd.Name.Name]; sig != nil {
+				repairSignature(sig, fd, imports, pkgName)
 			}
-			typeParams := funcDeclTypeParams(fd)
+		}
+	}
+}
 
-			astParams := flattenFieldTypes(fd.Type.Params)
-			for i := range sig.Params {
-				if i >= len(astParams) || !transpiler.ContainsUnusable(sig.Params[i].Type) {
-					continue
-				}
-				if rec := syntacticGoType(astParams[i], imports, pkgName, typeParams); !rec.IsNil() {
-					sig.Params[i].Type = rec
-				}
-			}
+// repairSignature recovers the slots of sig, the signature of fd, that
+// go/types could not resolve, from the types as written (see
+// repairUnresolvedSignatures).
+func repairSignature(sig *transpiler.GoFuncSignature, fd *ast.FuncDecl, imports map[string]string, pkgName string) {
+	typeParams := funcDeclTypeParams(fd)
 
-			astResults := flattenFieldTypes(fd.Type.Results)
-			for i := range sig.Returns {
-				if i >= len(astResults) || !transpiler.ContainsUnusable(sig.Returns[i]) {
-					continue
-				}
-				if rec := syntacticGoType(astResults[i], imports, pkgName, typeParams); !rec.IsNil() {
-					sig.Returns[i] = rec
-				}
-			}
+	astParams := flattenFieldTypes(fd.Type.Params)
+	for i := range sig.Params {
+		if i >= len(astParams) || !transpiler.ContainsUnusable(sig.Params[i].Type) {
+			continue
+		}
+		if rec := syntacticGoType(astParams[i], imports, pkgName, typeParams); !rec.IsNil() {
+			sig.Params[i].Type = rec
+		}
+	}
+
+	astResults := flattenFieldTypes(fd.Type.Results)
+	for i := range sig.Returns {
+		if i >= len(astResults) || !transpiler.ContainsUnusable(sig.Returns[i]) {
+			continue
+		}
+		if rec := syntacticGoType(astResults[i], imports, pkgName, typeParams); !rec.IsNil() {
+			sig.Returns[i] = rec
 		}
 	}
 }

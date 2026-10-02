@@ -864,10 +864,14 @@ func (t *galaASTTransformer) userDefinedMethodFlags(typeName string) (hasCopy, h
 	if meta == nil {
 		return false, false, false
 	}
-	_, hasCopy = meta.Methods["Copy"]
-	_, hasEqual = meta.Methods["Equal"]
-	_, hasUnapply = meta.Methods["Unapply"]
-	return
+	// A hand-written .go file of the package may declare them instead.
+	goMethods := t.goMethodsOnGalaType(meta)
+	declared := func(name string) bool {
+		_, inGala := meta.Methods[name]
+		_, inGo := goMethods[name]
+		return inGala || inGo
+	}
+	return declared("Copy"), declared("Equal"), declared("Unapply")
 }
 
 // getTypeMetaResolved returns the type metadata and the resolved (canonical) type name.

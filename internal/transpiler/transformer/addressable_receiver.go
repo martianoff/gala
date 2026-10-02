@@ -105,7 +105,7 @@ func (t *galaASTTransformer) noCopyReason(typ transpiler.Type, seen map[string]b
 		return ""
 	}
 	seen[typ.String()] = true
-	if meta.Name == "noCopy" || isPointerOnlyLocker(meta) {
+	if meta.Name == "noCopy" || isPointerOnlyLocker(meta) || isPointerOnlyGoLocker(goData) {
 		return base.String()
 	}
 	typeArgs := make(map[string]transpiler.Type, len(meta.TypeParams))
@@ -137,6 +137,23 @@ func isPointerOnlyLocker(typeMeta *transpiler.TypeMetadata) bool {
 			return false
 		}
 		pointerOnly = pointerOnly || m.PointerReceiver
+	}
+	return pointerOnly
+}
+
+// isPointerOnlyGoLocker is isPointerOnlyLocker for the Lock and Unlock a
+// hand-written .go file declares on a GALA type (GoKindMethodsOnly).
+func isPointerOnlyGoLocker(goData *transpiler.GoTypeData) bool {
+	if goData == nil || goData.Kind != transpiler.GoKindMethodsOnly {
+		return false
+	}
+	pointerOnly := false
+	for _, name := range []string{"Lock", "Unlock"} {
+		sig := goData.Methods[name]
+		if sig == nil || len(sig.Params) != 0 || len(sig.Returns) != 0 {
+			return false
+		}
+		pointerOnly = pointerOnly || goData.PointerMethods[name]
 	}
 	return pointerOnly
 }

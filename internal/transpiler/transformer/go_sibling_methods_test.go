@@ -35,6 +35,33 @@ func TestGoSiblingMethodsStillChecked(t *testing.T) {
 	assert.NotContains(t, err.Error(), "declares no methods")
 }
 
+// TestGoSiblingMethodsShapeTheType covers what else a Go-declared method on a
+// GALA struct decides: a result naming the GALA type itself is typed as it, a
+// Go-declared Equal replaces the generated one, and Go-declared pointer
+// Lock/Unlock make the struct unsafe to copy (GALA-E0053).
+func TestGoSiblingMethodsShapeTheType(t *testing.T) {
+	transpile := func(goMethods, gala string) (string, error) {
+		files, galaFile := samePackageModule(".", "package main\n"+goMethods,
+			"package main\n\nstruct Repo(Name string)\n\n"+gala)
+		return transpileInModule(t, files, galaFile)
+	}
+
+	out, err := transpile("\nfunc (r Repo) Renamed() Repo { return r }\n",
+		"func size(r Repo) int = r.Renamed().Name.Size()\n")
+	require.NoError(t, err)
+	assert.Contains(t, out, "utf8.RuneCountInString(r.Renamed().Name.Get())")
+
+	out, err = transpile("\nfunc (r Repo) Equal(o Repo) bool { return true }\n",
+		"func same(a Repo, b Repo) bool = a.Equal(b)\n")
+	require.NoError(t, err)
+	assert.NotContains(t, out, "func (s Repo) Equal(", "Equal is declared in Go; generating it too would not compile")
+
+	_, err = transpile("\nfunc (r *Repo) Lock()   {}\nfunc (r *Repo) Unlock() {}\n",
+		"func lockIt() {\n    val r = Repo(\"x\")\n    r.Lock()\n}\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0053")
+}
+
 // TestGoSiblingMethodsFromAnotherPackage covers the same split seen from an
 // importing package: lib.Repo declares a GALA method and a Go one, and both
 // are callable from main.
