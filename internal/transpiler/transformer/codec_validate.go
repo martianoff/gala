@@ -39,13 +39,14 @@ import (
 type decodeMode uint8
 
 const (
+	// decodeRejected: a private field and no usable Validate; not decodable.
+	// It is the zero value, so a mode left unset fails closed.
+	decodeRejected decodeMode = iota
 	// decodeRaw: every field is exported, so the decoded value is the struct.
-	decodeRaw decodeMode = iota
+	decodeRaw
 	// decodeValidated: a private field and a Validate() Try[T]; the decoded
 	// value is raw.Validate().Get().
 	decodeValidated
-	// decodeRejected: a private field and no usable Validate; not decodable.
-	decodeRejected
 )
 
 // validateMethod is the method a struct with private fields declares to be
@@ -58,28 +59,30 @@ func (t *galaASTTransformer) structDecodeMode(config *structMetaConfig) decodeMo
 	switch {
 	case !slices.ContainsFunc(meta.FieldNames, func(name string) bool { return !token.IsExported(name) }):
 		return decodeRaw
-	case isValidateMethod(meta, meta.Methods[validateMethod]):
+	case t.isValidateMethod(config, meta.Methods[validateMethod]):
 		return decodeValidated
 	}
 	return decodeRejected
 }
 
 // isValidateMethod reports whether m is `func (x T) Validate() Try[T]` for
-// meta's struct T: a value receiver, no parameters or type parameters, and
-// a Try of the struct itself, spelled as such: an alias of it is a distinct
-// Go type with no Get method, so decoding could not call it.
-func isValidateMethod(meta *transpiler.TypeMetadata, m *transpiler.MethodMetadata) bool {
-	if m == nil || m.PointerReceiver || len(m.ParamTypes) != 0 || len(m.TypeParams) != 0 || m.ReturnType == nil {
+// config's struct T: a value receiver, no parameters or type parameters, and
+// a Try of the struct itself. The result may be spelled through aliases of
+// the struct's package: GALA aliases are Go type aliases, so the method still
+// returns a Try with its Get.
+func (t *galaASTTransformer) isValidateMethod(config *structMetaConfig, m *transpiler.MethodMetadata) bool {
+	if m == nil || m.PointerReceiver || len(m.ParamTypes) != 0 || len(m.TypeParams) != 0 {
 		return false
 	}
-	ret, ok := m.ReturnType.(transpiler.GenericType)
+	ret, ok := t.codecUnalias(m.ReturnType, config.pkg).(transpiler.GenericType)
 	if !ok || len(ret.Params) != 1 {
 		return false
 	}
 	if name, pkg, ok := simpleTypeName(ret.Base); !ok || name != "Try" || (pkg != "" && pkg != registry.StdPackageName) {
 		return false
 	}
-	name, pkg, ok := simpleTypeName(ret.Params[0])
+	meta := config.typeMetadata
+	name, pkg, ok := simpleTypeName(t.codecUnalias(ret.Params[0], config.pkg))
 	return ok && name == meta.Name && (pkg == "" || pkg == meta.Package)
 }
 
@@ -142,11 +145,12 @@ func declaredSignature(meta *transpiler.TypeMetadata, m *transpiler.MethodMetada
 // galaTypeSpelling renders ty as the package declaring meta's struct spells
 // it: std types and that package's own types unqualified.
 func galaTypeSpelling(meta *transpiler.TypeMetadata, ty transpiler.Type) string {
-	s := displayType(ty)
+	// Only whole qualifiers: `std.` must not match inside `mystd.`, nor
+	// `vault.` inside `myvault.`.
+	s := stdQualifier.ReplaceAllString(ty.String(), "")
 	if meta.Package == "" {
 		return s
 	}
-	// Only a whole qualifier: `vault.` must not match inside `myvault.`.
 	return regexp.MustCompile(`\b`+regexp.QuoteMeta(meta.Package)+`\.`).ReplaceAllString(s, "")
 }
 

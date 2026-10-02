@@ -25,9 +25,13 @@ func privateFieldsFixture(t *testing.T) string {
 		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
 	}
 	write("gala.mod", "module example.com/vaultx\n\ngala dev\n")
+	write("myvault/myvault.gala", "package myvault\n\nstruct Cfg(N int)\n")
 	write("vault/vault.gala", `package vault
 
-import "strings"
+import (
+    "strings"
+    "example.com/vaultx/myvault"
+)
 
 // Email can only hold an address with an "@", and checks decoded ones too.
 struct Email(v string)
@@ -59,6 +63,19 @@ func (c Code) Validate() error = nil
 
 // Open has only exported fields.
 struct Open(Name string)
+
+// Ref's Validate spells its result through an alias.
+struct Ref(id int)
+
+type RefCheck Try[Ref]
+
+func (r Ref) Validate() RefCheck = Success(r)
+
+// Knob's Validate takes a parameter typed by a package whose name ends
+// in this one's.
+struct Knob(n int)
+
+func (k Knob) Validate(c myvault.Cfg) Try[Knob] = Success(k)
 `)
 	return root
 }
@@ -85,6 +102,8 @@ func TestCodecPrivateFieldsValidate(t *testing.T) {
 		// decode.
 		"panic(\"Token has private fields and no `func (t Token) Validate() Try[Token]` method, so it cannot be decoded\")",
 		"return Open{Name: std.NewImmutable(_Name)}\n",
+		// A Validate whose result is an alias of Try[Ref] counts.
+		"return Ref{id: std.NewImmutable(_id)}.Validate().Get()",
 	} {
 		assert.Contains(t, libOut, want, "generated:\n%s", libOut)
 	}
@@ -114,6 +133,7 @@ func main() {
     Println(c.Decode("{}").IsFailure())
     Println(Codec[vault.Email](SnakeCase()).Decode("{\"v\":\"junk\"}").IsFailure())
     Println(Value[Array[vault.Email]]().Decode("[]").IsSuccess())
+    Println(Codec[vault.Ref](SnakeCase()).Decode("{\"id\":1}").IsSuccess())
 }`)
 	require.NoError(t, err)
 	assert.Contains(t, out, "vault.StructMeta_Email{}.DecodeFields(r", "generated:\n%s", out)
@@ -202,6 +222,7 @@ func TestCodecValidateWrongSignature(t *testing.T) {
 	for _, tc := range []struct{ typ, declared string }{
 		{"Pin", "func (p *Pin) Validate() Try[Pin]"},
 		{"Code", "func (c Code) Validate() error"},
+		{"Knob", "func (k Knob) Validate(c myvault.Cfg) Try[Knob]"},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
 			_, err := transpileCrossPkg(t, root, `package main
