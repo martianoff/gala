@@ -13,6 +13,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // This file contains the non-codegen half of the StructMeta compiler
@@ -51,8 +52,10 @@ type structMetaConfig struct {
 	generatedName string
 	// pkg is the declaring package when it is not this one, "" otherwise.
 	pkg string
-	// emptyInit memoizes structNeedsEmptyInit.
-	emptyInit emptyInitState
+	// emptyInit memoizes structNeedsEmptyInit, emptyChecked structEmptyChecked.
+	emptyInit, emptyChecked emptyInitState
+	// decode memoizes structDecodeMode.
+	decode decodeMode
 	// emit is true when this file declares the StructMeta. Otherwise the file
 	// only references it, and generating its methods just checks that every
 	// field has an encoding, so a missing one is still reported at the use.
@@ -74,6 +77,14 @@ type structMetaConfig struct {
 const mainPackageName = "main"
 
 // ---- StructMeta interception ----
+
+// isStructMetaIntrinsic reports whether a call's base type name is the
+// StructMeta[T]() intrinsic. The base arrives std-qualified when its type
+// argument names an imported struct (`StructMeta[billing.Email]()`), which
+// used to fall through to an interface composite literal Go rejects.
+func isStructMetaIntrinsic(name string) bool {
+	return name == "StructMeta" || name == registry.StdPackageName+".StructMeta"
+}
 
 // transformStructMetaConstruction handles StructMeta[T]() calls.
 // This is the ONLY codec-related compiler intrinsic.
@@ -247,6 +258,12 @@ func (t *galaASTTransformer) generateStructMetas() ([]ast.Decl, bool, error) {
 	dropped := false
 	for _, key := range keys {
 		config := t.structMetas[key]
+		// A codec that would decode a struct with private fields needs its
+		// Validate method. An auto StructMeta is emitted regardless, and its
+		// DecodeFields refuses (see codec_validate.go).
+		if !config.auto && t.structDecodeMode(config) == decodeRejected {
+			return nil, false, t.undecodableError(config)
+		}
 		var decls []ast.Decl
 		var err error
 		if config.emit {

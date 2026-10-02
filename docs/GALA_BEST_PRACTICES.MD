@@ -200,6 +200,13 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
   }
   val o = Opts(Timeout = 5)                // Retries = 0, no error
   ```
+- **Encapsulated value = private-field struct + constructor + `Validate`.** Keep the fields unexported, hand values out through a checking constructor, and declare `func (x T) Validate() Try[T]` with the same check. A codec decodes such a struct only through `Validate`, so decoded input passes the constructor's check too; without it, a codec that decodes the struct is [GALA-E0050](errors/GALA-E0050.md). Never reach for the generated `StructMeta_X` to get at the fields — naming it is [GALA-E0058](errors/GALA-E0058.md). ([Structs With Private Fields](GALA.MD#structs-with-private-fields))
+  ```gala
+  struct Email(address string)
+  func ParseEmail(s string) Option[Email] = When(strings.Contains(s, "@"), Email(s))
+  func (e Email) Validate() Try[Email] =
+      if (strings.Contains(e.address, "@")) Success(e) else Failure(errors.New(s"not an email address: ${e.address}"))
+  ```
 - **Give a new field on a published struct a default** rather than letting existing call sites zero-fill it. That is what keeps them compiling *and* correct; before defaults were lowered, a defaulted `rune` silently became NUL at every site written before the field existed. See [Struct Field Defaults](GALA.MD#struct-field-defaults).
 
 ---

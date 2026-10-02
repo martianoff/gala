@@ -75,6 +75,8 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0054` | Value called as a function | [GALA-E0054.md](GALA-E0054.md) |
 | `GALA-E0055` | Go keyword used as a name | [GALA-E0055.md](GALA-E0055.md) |
 | `GALA-E0056` | Malformed tuple destructuring | [GALA-E0056.md](GALA-E0056.md) |
+| `GALA-E0057` | Validate method with the wrong signature on a struct a codec decodes | [GALA-E0057.md](GALA-E0057.md) |
+| `GALA-E0058` | Generated codec metadata named in GALA code | [GALA-E0058.md](GALA-E0058.md) |
 
 ### Retired codes
 

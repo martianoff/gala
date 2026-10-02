@@ -492,6 +492,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if err := checkGoKeywordNames(sourceFile); err != nil {
 			return nil, err
 		}
+		// GALA-E0058: generated codec metadata is not part of GALA's surface.
+		if err := transformer.CheckGeneratedCodecNames(sourceFile); err != nil {
+			return nil, err
+		}
 	}
 
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()

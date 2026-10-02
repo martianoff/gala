@@ -211,6 +211,37 @@ Decoding checks the root shape: an object where an array is expected, a string w
 
 ---
 
+## Structs With Private Fields
+
+A struct with an unexported field is usually an encapsulated value, handed out only by a constructor that checks it. Decoding would build it from whatever the input holds, so such a struct is decodable only when it declares `func (x T) Validate() Try[T]`:
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/json"
+    "errors"
+    "strings"
+)
+
+struct Email(address string)
+
+func (e Email) Validate() Try[Email] =
+    if (strings.Contains(e.address, "@")) Success(e) else Failure(errors.New(s"not an email address: ${e.address}"))
+
+func main() {
+    val codec = Codec[Email](CamelCase())
+    Println(codec.Decode("{\"address\":\"ada@example.com\"}").IsSuccess())   // true
+    Println(codec.Decode("{\"address\":\"junk\"}"))                          // Failure(not an email address: junk)
+}
+```
+
+`Decode` builds the raw value and returns what `Validate` returns, so a `Failure` carries your error unchanged. The check runs wherever the struct sits — the root, a nested field, inside an `Option`, `Array`, `List` or `HashMap`, under `.Array()` or `Value[T]()` — and for a field missing from the input, whose empty value is validated too.
+
+Without `Validate`, a codec that reaches such a struct is [GALA-E0050](/docs/errors/gala-e0050/) where the codec is built; a `Validate` with another signature is [GALA-E0057](/docs/errors/gala-e0057/). A codec both encodes and decodes, so encode-only use needs `Validate` as well: declare `Validate() Try[T] = Success(x)` when every value is acceptable, or encode a struct of exported fields built from it. Structs whose fields are all exported are unaffected.
+
+---
+
 ## Unknown Fields
 
 The decoder silently drops any field in the input that is not declared on the target struct. This is the default and only behaviour today — there is no strict mode or unknown-field error.
@@ -260,7 +291,7 @@ The transpiler:
 
 No reflection at runtime. Field names, types, and access patterns are all resolved at compile time.
 
-A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested.
+A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested. The generated types are not part of GALA's surface: naming one in GALA code is [GALA-E0058](/docs/errors/gala-e0058/).
 
 `Value[T]()` works the same way with `ValueMeta[T]`, the intrinsic for a whole value of any codec shape: the transpiler generates `_ValueMeta_X` with typed `EncodeValue` / `DecodeValue` methods and injects it, so `Value[int]()` takes no arguments of its own. Metadata generated on demand — a `_ValueMeta_X`, or a `main` package `_StructMeta_X` — gets a file-specific name, so two files of one package can use the same codec.
 

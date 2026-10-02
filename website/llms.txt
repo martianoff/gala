@@ -26,6 +26,7 @@ GALA is close enough to Scala and Kotlin to be readable on sight, and different 
 - **Sealed matches must be exhaustive.** Adding a variant turns every incomplete match site into a compile error naming the missing case — this is the property to lean on when refactoring. (`GALA-E0002`)
 - **Prefer `Option`/`Try`/`Either` over `nil` and `(T, error)`.** Pattern-match to extract; do not call `.Get()` without checking. For a Go call returning only `error`, `Try(call)` (or `FromError(call)`) is a `Try[Void]` that fails on a non-nil error.
 - **A Go call returning `(T, error)` is a `Try[T]`, not a `T`.** `val n = strconv.Atoi(s)` makes `n` a `Try[int]`; using it as an `int` is an error. Use `match { case Success(v) => ... case Failure(e) => ... }`, `.GetOrElse(default)`, `.Map(...)`, or `.Get()` (panics on failure); or bind Go-style with `val v, err = strconv.Atoi(s)`. Don't wrap it in `Try(...)` — that is the same `Try[int]`. A Go call returning `(A, B)` or more values is a Tuple: `val (k, v, found) = strings.Cut(s, "=")`. (`GALA-E0049`)
+- **A codec decodes a struct with an unexported (lowercase) field only through `func (x T) Validate() Try[T]`.** `json.Codec[T]` / `yaml.Codec[T]` over such a struct — as the root, a field, or inside a collection — needs that exact method, which may simply return `Success(x)`; a codec over a struct of exported fields needs nothing. (`GALA-E0050`, `GALA-E0057`)
 
 ## Shape of a program
 

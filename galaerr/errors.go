@@ -622,6 +622,28 @@ const (
 	// tuple it splits, so none of them has a meaning here. It also covers a
 	// name count that differs from the tuple's arity (`var (a, b, c) = (1, 2)`).
 	CodeMalformedTupleDestructure ErrorCode = "GALA-E0056"
+
+	// E0057: a codec (`json.Codec[T]`, `yaml.Codec[T]`, `StructMeta[T]()`,
+	// `Value[T]()`) would decode a struct with private fields whose Validate
+	// method does not have the one signature decoding calls,
+	// `func (x T) Validate() Try[T]` — a pointer receiver, a parameter, or
+	// another result such as `error`. A struct with private fields is
+	// decodable only through that method: decoding builds the raw value and
+	// returns what Validate returns, so a value its constructor would refuse
+	// is refused here too. Without any Validate method the codec is
+	// GALA-E0050.
+	CodeInvalidValidateSignature ErrorCode = "GALA-E0057"
+
+	// E0058: GALA source names a type the transpiler generates for a codec —
+	// `StructMeta_X`, `_StructMeta_X` or `_ValueMeta_X`, qualified or not. A
+	// package's StructMeta reads and builds its structs' private fields, so
+	// calling its DecodeFields directly would build a value no constructor or
+	// Validate method checked, and its EncodeFields would read fields the
+	// package keeps to itself. Codecs reach it through `Codec[T]` and
+	// `StructMeta[T]()`, which check that the struct may be decoded. The names
+	// are reserved for declarations too, where one could collide with what
+	// the transpiler emits.
+	CodeGeneratedCodecName ErrorCode = "GALA-E0058"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

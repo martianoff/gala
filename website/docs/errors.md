@@ -110,6 +110,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0054](/docs/errors/gala-e0054/) | Value called as a function | Types |
 | [GALA-E0055](/docs/errors/gala-e0055/) | Go keyword used as a name | Go surface |
 | [GALA-E0056](/docs/errors/gala-e0056/) | Malformed tuple destructuring | Declarations |
+| [GALA-E0057](/docs/errors/gala-e0057/) | Validate method with the wrong signature on a struct a codec decodes | Types |
+| [GALA-E0058](/docs/errors/gala-e0058/) | Generated codec metadata named in GALA code | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 

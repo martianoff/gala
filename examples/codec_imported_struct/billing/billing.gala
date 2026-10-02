@@ -2,12 +2,15 @@ package billing
 
 import (
     . "martianoff/gala/collection_immutable"
+    "errors"
     "strings"
 )
 
 // Structs another package encodes. Their codec metadata is emitted here, in
 // the package that declares them: only this package can read and construct
-// unexported fields.
+// unexported fields. A struct with unexported fields is decodable only through
+// its Validate method, so a decoded value passes the same check as one built
+// by its constructor.
 
 // Email has an exported field.
 struct Email(V string)
@@ -32,12 +35,24 @@ func ParseEmail(s string) Option[Email] = When(strings.Contains(s, "@"), Email(s
 // NewSecret builds a Secret, whose fields only this package can set.
 func NewSecret(token string, uses int) Secret = Secret(token, Uses(uses))
 
+// Validate accepts a decoded Secret only with a token.
+func (s Secret) Validate() Try[Secret] =
+    if (s.token == "") Failure(errors.New("billing: a secret needs a token")) else Success(s)
+
 // Describe renders the secret's token and use count.
 func (s Secret) Describe() string = s"${s.token}x${s.uses}"
+
+// Validate accepts a decoded line only with a positive quantity.
+func (l line) Validate() Try[line] =
+    if (l.qty <= 0) Failure(errors.New(s"billing: ${l.Sku} needs a positive quantity")) else Success(l)
 
 // NewInvoice builds an invoice to `to` with two fixed lines.
 func NewInvoice(number int, to Email) Invoice =
     Invoice(number, to, ArrayOf(line("pen", 2), line("ink", 1)))
+
+// Validate accepts a decoded Invoice only with at least one line.
+func (i Invoice) Validate() Try[Invoice] =
+    if (i.lines.IsEmpty()) Failure(errors.New(s"billing: invoice #${i.Number} has no lines")) else Success(i)
 
 // Describe renders the invoice number, recipient and lines.
 func (i Invoice) Describe() string =

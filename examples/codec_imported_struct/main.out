@@ -7,3 +7,11 @@ yaml round-trip equal: true
 {"token":"root","uses":5}
 rootx5
 #8 to ada@example.com: penx2, inkx1
+okx1
+rejected: billing: a secret needs a token
+rejected: billing: a secret needs a token
+rejected: billing: a secret needs a token
+rejected: billing: a secret needs a token
+rejected: billing: pen needs a positive quantity
+rejected: billing: invoice #4 has no lines
+#5 to a@x: inkx2

@@ -414,8 +414,12 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 
 	// Per-field locals of the field's Go type, holding the field's empty value:
 	// a field absent from the input — one an OmitEmpty encoder left out, say —
-	// decodes to it.
-	for _, fieldName := range meta.FieldNames {
+	// decodes to it. An empty value that runs a Validate method (a struct with
+	// private fields, at any depth) is built only when the field turns out to
+	// be absent: Validate may reject it, and a present field never needs it.
+	seen := make(map[int]*ast.Ident)
+	var absent []ast.Stmt
+	for i, fieldName := range meta.FieldNames {
 		fieldType := meta.Fields[fieldName]
 		valueType := unwrapGalaType(fieldType)
 		goType, err := g.goType(valueType)
@@ -426,10 +430,21 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 		if err != nil {
 			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
 		}
-		if empty != nil {
-			stmts = append(stmts, seqVarDecl("_"+fieldName, goType, empty))
-		} else {
+		switch {
+		case empty == nil:
 			stmts = append(stmts, seqVarDecl("_"+fieldName, goType))
+		case t.codecEmptyChecked(valueType, config.pkg):
+			flag := g.fresh("seen")
+			seen[i] = flag
+			stmts = append(stmts, seqVarDecl("_"+fieldName, goType), seqVarDecl(flag.Name, ast.NewIdent("bool")))
+			absent = append(absent, &ast.IfStmt{
+				Cond: &ast.UnaryExpr{Op: token.NOT, X: flag},
+				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent("_" + fieldName)}, Tok: token.ASSIGN, Rhs: []ast.Expr{empty},
+				}}},
+			})
+		default:
+			stmts = append(stmts, seqVarDecl("_"+fieldName, goType, empty))
 		}
 	}
 
@@ -441,6 +456,9 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 		assignStmts, err := g.read(ast.NewIdent("_"+fieldName), unwrapGalaType(fieldType))
 		if err != nil {
 			return nil, t.fieldShapeError(config, fieldName, fieldType, err)
+		}
+		if flag := seen[i]; flag != nil {
+			assignStmts = append(assignStmts, &ast.AssignStmt{Lhs: []ast.Expr{flag}, Tok: token.ASSIGN, Rhs: []ast.Expr{ast.NewIdent("true")}})
 		}
 		switchCases = append(switchCases, &ast.CaseClause{
 			List: []ast.Expr{intLit(i)},
@@ -470,8 +488,10 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 	})
 
 	stmts = append(stmts, exprStmt(methodCall("r", "EndObject")))
+	stmts = append(stmts, absent...)
 
-	// return T{FieldName: _FieldName, ...}  (wrap Immutable fields)
+	// return T{FieldName: _FieldName, ...}  (wrap Immutable fields), through
+	// Validate for a struct with private fields.
 	var compositeElts []ast.Expr
 	for i, fieldName := range meta.FieldNames {
 		var value ast.Expr = ast.NewIdent("_" + fieldName)
@@ -480,9 +500,7 @@ func (t *galaASTTransformer) genDecodeFields(config *structMetaConfig) (*ast.Fun
 		}
 		compositeElts = append(compositeElts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: value})
 	}
-	stmts = append(stmts, &ast.ReturnStmt{Results: []ast.Expr{
-		&ast.CompositeLit{Type: ast.NewIdent(config.typeName), Elts: compositeElts},
-	}})
+	stmts = t.decodedValue(config, stmts, &ast.CompositeLit{Type: ast.NewIdent(config.typeName), Elts: compositeElts})
 
 	return &ast.FuncDecl{
 		Recv: blankRecv(config.generatedName),
@@ -721,6 +739,11 @@ const (
 func (t *galaASTTransformer) structNeedsEmptyInit(config *structMetaConfig) bool {
 	if config.emptyInit == emptyInitUnknown {
 		config.emptyInit = emptyIsZero
+		if t.structEmptyChecked(config) {
+			// Go's zero value never went through Validate.
+			config.emptyInit = emptyNeedsInit
+			return true
+		}
 		meta := config.typeMetadata
 		for _, fieldName := range meta.FieldNames {
 			if t.codecNeedsEmptyInit(unwrapGalaType(meta.Fields[fieldName]), config.pkg) {
@@ -754,7 +777,8 @@ func (t *galaASTTransformer) newImmutable(x ast.Expr) ast.Expr {
 // It is a method of the generated type rather than an inline literal so a
 // struct of another package, whose fields only that package can set, still
 // has one. DecodeFields of an enclosing struct calls it for a nested struct
-// field that is absent from the input.
+// field that is absent from the input. A struct with private fields builds
+// it through its Validate method, as DecodeFields does.
 //
 // The field shapes were already validated by genDecodeFields, which builds
 // the same empty values.
@@ -778,9 +802,7 @@ func (t *galaASTTransformer) genEmpty(config *structMetaConfig) *ast.FuncDecl {
 		Recv: blankRecv(config.generatedName),
 		Name: ast.NewIdent("Empty"),
 		Type: &ast.FuncType{Results: &ast.FieldList{List: []*ast.Field{{Type: ast.NewIdent(config.typeName)}}}},
-		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{
-			&ast.CompositeLit{Type: ast.NewIdent(config.typeName), Elts: elts},
-		}}}},
+		Body: &ast.BlockStmt{List: t.decodedValue(config, nil, &ast.CompositeLit{Type: ast.NewIdent(config.typeName), Elts: elts})},
 	}
 }
 
