@@ -957,10 +957,10 @@ func main() {
 			expectErr: false,
 		},
 		{
-			// An unqualified type name stays unchecked — it may be a type
-			// parameter, a local declaration, or a dot-imported name, and
-			// flagging it would cost the zero-false-positive property.
-			name: "unqualified type name is not checked here",
+			// The control for the unqualified half: a declared generic type
+			// and its type parameters resolve. TestUnresolvedTypeName covers
+			// the rest.
+			name: "declared unqualified type name and type parameters resolve",
 			main: `package main
 
 struct Box[T any](Value T)
@@ -986,6 +986,174 @@ func main() {
 			assert.Contains(t, err.Error(), "undefined: strings")
 		})
 	}
+}
+
+// TestUnresolvedTypeName covers an unqualified type name that nothing in the
+// compilation declares. It used to transpile and fail at `go build` with
+// `undefined: Widget` against the generated code, or, for a collection type
+// whose package nothing loaded, erase the body's lambdas to `any` first.
+func TestUnresolvedTypeName(t *testing.T) {
+	reported := []struct {
+		name, src, symbol string
+	}{
+		{"parameter", `package main
+
+func f(w Widget) int = 1
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"result", `package main
+
+func f() Widget = 1
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"collection parameter without its import", `package main
+
+func total(xs Array[int]) int = xs.FoldLeft(0, (acc, x) => acc + x)
+
+func main() {
+    Println(1)
+}`, "Array"},
+		{"type argument", `package main
+
+func f(xs Option[Widget]) int = 1
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"struct shorthand field", `package main
+
+struct Holder(Item Widget)
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"struct field", `package main
+
+type Holder struct {
+    Item Widget
+}
+
+func main() {
+    Println(1)
+}`, "Widget"},
+		{"val annotation", `package main
+
+func main() {
+    val w Widget = 1
+    Println(w)
+}`, "Widget"},
+		{"lambda parameter", `package main
+
+func main() {
+    val f = (w Widget) => 1
+    Println(f)
+}`, "Widget"},
+	}
+	for _, tc := range reported {
+		t.Run(tc.name, func(t *testing.T) {
+			err := analyzeSources(t, tc.src, nil)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0023")
+			assert.Contains(t, err.Error(), "undefined: "+tc.symbol)
+		})
+	}
+
+	t.Run("hint names the package that declares it", func(t *testing.T) {
+		err := analyzeInModule(t, "main.gala", map[string]string{
+			"shapes/shapes.gala": "package shapes\n\nstruct Widget(Size int)\n",
+			"main.gala":          "package main\n\nfunc size(w Widget) int = w.Size\n\nfunc main() {\n    Println(1)\n}\n",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined: Widget")
+		assert.Contains(t, err.Error(), `import . "example.com/hints/shapes"`)
+	})
+
+	resolved := []struct {
+		name, src string
+		siblings  map[string]string
+	}{
+		{name: "type parameters of functions, methods and receivers", src: `package main
+
+struct Box[T any](Value T)
+
+func (b Box[T]) MapTo[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+
+func wrap[T any](v T) Box[T] = Box(Value = v)
+
+func main() {
+    Println(wrap(1).MapTo((v) => v * 2).Value)
+}`},
+		{name: "sealed type, alias and predeclared types", src: `package main
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+type Millis int64
+
+func area(s Shape) float64 = s match {
+    case Circle(r) => r * r
+    case _ => 0.0
+}
+
+func later(m Millis, e error, a any, r rune, b byte) Millis = m
+
+func main() {
+    Println(area(Circle(1.0)))
+}`},
+		{name: "wildcard type argument in a type pattern", src: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func isArray(v any) bool = v match {
+    case _: Array[_] => true
+    case _ => false
+}
+
+func main() {
+    Println(isArray(1))
+}`},
+		{name: "prelude types, including the Sendable marker", src: `package main
+
+func run(body Sendable[func() int]) Option[Try[int]] = Some(Success(body()))
+
+func main() {
+    Println(run(() => 1))
+}`},
+		{name: "dot-imported Go type", src: `package main
+
+import . "time"
+
+func wait(d Duration) Duration = d * 2
+
+func main() {
+    Println(wait(Second))
+}`},
+		{name: "type declared in a sibling file", src: `package main
+
+func origin() Point = Point(0, 0)
+
+func main() {
+    Println(origin().X)
+}`, siblings: map[string]string{"types.gala": "package main\n\nstruct Point(X int, Y int)\n"}},
+	}
+	for _, tc := range resolved {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, analyzeSources(t, tc.src, tc.siblings))
+		})
+	}
+
+	t.Run("type declared in a hand-written Go file of the package", func(t *testing.T) {
+		require.NoError(t, analyzeInModule(t, "main.gala", map[string]string{
+			"temp.go":   "package main\n\ntype Celsius float64\n",
+			"main.gala": "package main\n\nfunc warm(c Celsius) Celsius = c + 1\n\nfunc main() {\n    Println(warm(1))\n}\n",
+		}))
+	})
 }
 
 // TestDuplicateImportRejected covers GALA-E0046. Import declarations are

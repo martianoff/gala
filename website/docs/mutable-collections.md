@@ -420,7 +420,6 @@ func describeArray[T any](arr *Array[T]) string {
 
 ### Option Pattern Matching with Collections
 
-<!-- doc-check: fragment -->
 ```gala
 func findFirstEven(arr *Array[int]) string {
     var found = arr.Find((x) => x % 2 == 0)

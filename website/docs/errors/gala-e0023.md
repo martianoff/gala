@@ -4,7 +4,7 @@ title: "GALA-E0023 — Undefined Variable"
 description: "\"undefined: x\" — GALA-E0023 means a name has no binding: a typo, a missing import, or a reference outside the scope where it is bound. See the real compiler output and each fix."
 keywords: "gala-e0023, undefined variable, gala undefined identifier, gala unknown name, gala missing import, gala scope error, gala type inference error"
 permalink: /docs/errors/gala-e0023/
-last_modified_at: 2026-07-27
+last_modified_at: 2026-10-01
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0023</p>
@@ -68,6 +68,8 @@ import "martianoff/gala/collection_immutable"
 val xs = ArrayOf(1, 2)                       // GALA-E0023
 val ys = collection_immutable.ArrayOf(1, 2)  // ok
 ```
+
+Type names are checked the same way. A name written as a parameter, result, struct field, type argument or `val` annotation must be a predeclared Go type, a type parameter, or a type that this package, a dot-imported package or the `std` prelude declares. Without the import, `func total(xs Array[int])` is reported at `Array`, and the hint names the packages that declare it. It used to compile as far as `go build` and fail there.
 
 ---
 

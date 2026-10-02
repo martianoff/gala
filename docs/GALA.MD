@@ -774,6 +774,7 @@ type. The alias and its target are the same type and are interchangeable
 everywhere — a value of one *is* a value of the other, with no conversion and no
 separate identity.
 
+<!-- doc-check: fragment -->
 ```gala
 type MyString string
 type Millis   int64
@@ -1233,6 +1234,7 @@ type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
 
 // Generic extractor with parameterized type
+struct Wrap[T any](Value T)
 type Wrapper[T any] struct {}
 func (w Wrapper[T]) Unapply(o Wrap[T]) Option[T] = Some[T](o.Value)
 ```
@@ -3076,7 +3078,7 @@ val value = m.GetOrElseUpdate("date", () => {
 })
 
 // In-place transformations
-m.FilterInPlace((e Entry[string, int]) => e.Value > 1)
+m.FilterInPlace((k, v) => v > 1)
 m.UpdateAll((k string, v int) => v * 10)
 
 // Cloning for immutability when needed

@@ -11,16 +11,18 @@ printer downstream.
 The most common offender is a void-arm shorthand:
 
 ```gala
-func handle(code Int) Unit = code match {
-    case 0 => Println("zero")
-    case _ => ()                  // ← GALA-E0019: not allowed
+func handle(code int) {
+    code match {
+        case 0 => Println("zero")
+        case _ => ()                  // ← GALA-E0019: not allowed
+    }
 }
 ```
 
 **Error output.**
 
 ```
-[SemanticError GALA-E0019] file.gala:5:16 empty parenthesized expression "()" cannot be used as a value (hint: use a real statement (e.g. `Println("…")`) or remove the arm if it cannot occur)
+[SemanticError GALA-E0019] file.gala:6:18 empty parenthesized expression "()" cannot be used as a value (hint: use a real statement (e.g. `Println("…")`) or remove the arm if it cannot occur)
 ```
 
 **Fix.** Replace `()` with whatever the arm actually does:
