@@ -412,6 +412,9 @@ func Bump(n int, f func(int) int = (x) => {
     val name = x + 1
     name
 }) int = f(n)
+
+func Hook(f func(func(func(string) string) string) string = (Inc) => Inc((s) => s + "!")) string =
+    f((g) => g("hi"))
 `)
 	return root
 }
@@ -473,6 +476,23 @@ func main() {
 		body := out[strings.Index(out, "func main()"):]
 		assert.NotContains(t, body, "lib.name")
 		assert.Contains(t, body, "return lib.Greet(name)")
+	})
+
+	// A lambda parameter the default binds shadows the declaring package's
+	// function of the same name (lib.Inc) for typing too: the lambda passed
+	// to it takes its parameter type from the parameter, not from lib.Inc.
+	t.Run("a binding the default makes shadows a function it names", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/fdefs/lib"
+
+func main() {
+    Println(lib.Hook())
+}`)
+		require.NoError(t, err)
+		body := out[strings.Index(out, "func main()"):]
+		assert.Contains(t, body, "return Inc(func(s string) string {")
+		assert.NotContains(t, body, "lib.Inc")
 	})
 
 	t.Run("an unexported helper is reported at the default", func(t *testing.T) {

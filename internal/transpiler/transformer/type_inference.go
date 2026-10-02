@@ -837,11 +837,6 @@ func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, c
 	if name == "" {
 		return fun, nil
 	}
-	// A local binding of the same name (a parameter or val holding a function)
-	// shadows the package-level generic function; the call is to the local.
-	if id, isIdent := fun.(*ast.Ident); isIdent && t.bindingScope(id.Name) != nil {
-		return fun, nil
-	}
 	meta := t.getFunction(name)
 	if meta == nil || len(meta.TypeParams) == 0 || len(meta.ParamTypes) > 0 {
 		return fun, nil

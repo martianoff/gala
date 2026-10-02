@@ -3735,3 +3735,11 @@ gala_exec_test(
     src = "get_generic_pointer_receiver.gala",
     expected = "get_generic_pointer_receiver.out",
 )
+
+# A local binding (val, parameter, lambda parameter) named like a package
+# function shadows it: the call is typed from the binding.
+gala_exec_test(
+    name = "shadowed_function",
+    src = "shadowed_function.gala",
+    expected = "shadowed_function.out",
+)

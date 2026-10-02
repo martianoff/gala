@@ -324,32 +324,51 @@ func (t *galaASTTransformer) inferIfType(cond, then, elseExpr ast.Expr) (transpi
 // holds a handful of bindings against a file that may declare hundreds of
 // functions.
 //
-// Function names win over same-named local bindings, as they did when both
-// halves were written into one map by two consecutive loops.
+// The innermost binding of a name wins, and a local binding shadows a
+// package-level function of the same name, as in Go (see shadowingScope, which
+// also says which bindings a lowered default sees as shadowing): the scope half
+// is written first and a function fills only the names left free. A binding
+// with no recorded type still hides every outer entry of its name, so the name
+// is unknown to inference rather than typed from the wrong declaration.
 func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 	fnEnv := t.functionTypeEnv()
 
 	memo := t.sharedTypeNameMemo()
 
-	// A function of the same name is about to overwrite the entry anyway,
-	// so skip the conversion instead of allocating a scheme to discard.
+	var useScope *scope
+	if t.loweringDefault != nil {
+		useScope = t.loweringDefault.useScope
+	}
 	// The operator entries are sized in too: every caller adds them
 	// immediately after, and letting ten more keys land in a map sized to
 	// the rest is a rehash per inference.
 	env := make(infer.TypeEnv, len(fnEnv)+len(builtinTypeEnv)+t.scopeBindingCount())
+	var hidden map[string]bool // names a typeless binding hides
+	shadows := true
 	for s := t.currentScope; s != nil; s = s.parent {
-		for name, typ := range s.valTypes {
-			if _, shadowedByFunction := fnEnv[name]; shadowedByFunction {
+		shadows = shadows && s != useScope
+		for name := range s.vals {
+			if _, bound := env[name]; bound || hidden[name] {
+				continue // an inner binding of the name came first
+			}
+			if _, isFunction := fnEnv[name]; isFunction && !shadows {
 				continue
 			}
-			if _, bound := env[name]; !bound {
+			if typ := s.valTypes[name]; typ != nil {
 				env[name] = &infer.Scheme{Type: t.toInferTypeMemoized(typ, memo)}
+			} else {
+				if hidden == nil {
+					hidden = make(map[string]bool)
+				}
+				hidden[name] = true
 			}
 		}
 	}
 
 	for name, scheme := range fnEnv {
-		env[name] = scheme
+		if _, bound := env[name]; !bound && !hidden[name] {
+			env[name] = scheme
+		}
 	}
 
 	return env

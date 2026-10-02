@@ -202,6 +202,7 @@ go_test(
         "sealed_string_func_field_test.go",
         "sealed_tuple_widen_test.go",
         "sequence_pattern_nested_test.go",
+        "shadowed_function_test.go",
         "size_sugar_go_return_test.go",
         "some_wrap_sealed_case_test.go",
         "stable_identifier_pattern_test.go",
