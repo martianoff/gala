@@ -5,11 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/generator"
-	"martianoff/gala/internal/transpiler/transformer"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,13 +30,7 @@ func Shout(s string) string = s"$s!"
 
 func transpileCrossPkg(t *testing.T, root, src string) (string, error) {
 	t.Helper()
-	p := transpiler.NewAntlrGalaParser()
-	searchPaths := append([]string{root}, getStdSearchPath()...)
-	a := analyzer.NewGalaAnalyzer(p, searchPaths, root)
-	tr := transformer.NewGalaASTTransformer()
-	g := generator.NewGoCodeGenerator()
-	return newCheckedTranspiler(p, a, tr, g).
-		Transpile(src, filepath.Join(root, "main.gala"))
+	return transpileCrossPkgFile(t, root, src, filepath.Join(root, "main.gala"))
 }
 
 func TestCrossPackageFuncRef_ChainedIntoGenericMethod(t *testing.T) {
