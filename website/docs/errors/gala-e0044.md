@@ -94,7 +94,8 @@ the check only fires when the judgement is safe. It says nothing when:
 - the type declares no methods at all *and* comes from another package, where
   an empty method set may mean the metadata was loaded without it rather than
   that the type genuinely has none. A type declared in the package being
-  compiled is fully known and is still checked.
+  compiled is fully known and is still checked; its method set includes the
+  methods a hand-written `.go` file of that package declares on it.
 
 **Scope.** This code covers a method call on a known, concrete GALA type. It
 does not cover an unknown *function* ([GALA-E0023](/docs/errors/gala-e0023/)), a type name

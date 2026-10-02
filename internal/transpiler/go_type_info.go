@@ -46,9 +46,14 @@ type GoParam struct {
 	Type Type
 }
 
+// GoKindMethodsOnly is the GoTypeData.Kind of a type that hand-written Go only
+// declares methods on: the type itself is declared elsewhere in the package (a
+// GALA struct, say), so only Methods and PointerMethods are filled in.
+const GoKindMethodsOnly = "methods-only"
+
 // GoTypeData describes a Go type (struct, interface, or named type).
 type GoTypeData struct {
-	Kind       string                    // "struct", "interface", "alias", "named"
+	Kind       string                    // "struct", "interface", "alias", "named", GoKindMethodsOnly
 	Fields     map[string]Type           // struct fields (exported only)
 	FieldOrder []string                  // exported struct fields in declaration order (parallel keys to Fields)
 	Methods    map[string]*GoFuncSignature // method set (exported only)
@@ -138,9 +143,9 @@ func (g *GoTypeInfo) DeclaresType(pkgName, name string) bool {
 		return false
 	}
 	key := pkgName + "." + name
-	_, isType := g.Types[key]
+	td, isType := g.Types[key]
 	_, isAlias := g.TypeAliases[key]
-	return isType || isAlias
+	return (isType && (td == nil || td.Kind != GoKindMethodsOnly)) || isAlias
 }
 
 // GetTypeData returns type metadata for a Go type, or nil if unknown.

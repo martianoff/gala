@@ -585,6 +585,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	own := pkgName != ""
 	extractPackageInfo(pkg, info, own)
 	repairUnresolvedSignatures(files, pkg.Name(), info)
+	extractMethodsOnForeignTypes(files, typesInfo, pkg, info, own)
 	result.ownTypes = make(map[string]bool)
 	for _, name := range pkg.Scope().Names() {
 		if tn, ok := pkg.Scope().Lookup(name).(*types.TypeName); ok && (own || tn.Exported()) {
@@ -651,6 +652,68 @@ func writtenByGala(f *ast.File) bool {
 		}
 	}
 	return false
+}
+
+// extractMethodsOnForeignTypes records the methods these .go files declare on
+// a type they do not declare themselves — in a mixed package, a type declared
+// in a .gala file (`struct Repo()` there, `func (r Repo) Save() error` here).
+// Each such type is filed under its "pkg.Name" key with Kind
+// GoKindMethodsOnly: only its methods are known, the rest of the type comes
+// from its GALA declaration. Exported methods are recorded, and, when own (the
+// package being compiled), unexported ones too.
+func extractMethodsOnForeignTypes(files []*ast.File, typesInfo *types.Info, pkg *types.Package, info *transpiler.GoTypeInfo, own bool) {
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv == nil || len(fd.Recv.List) != 1 || (!own && !fd.Name.IsExported()) {
+				continue
+			}
+			recvName, pointer := receiverBaseName(fd.Recv.List[0].Type)
+			if recvName == "" || pkg.Scope().Lookup(recvName) != nil {
+				continue // a Go-declared type: extractPackageInfo has its methods
+			}
+			key := pkg.Name() + "." + recvName
+			data := info.Types[key]
+			if data == nil {
+				data = &transpiler.GoTypeData{
+					Kind:    transpiler.GoKindMethodsOnly,
+					Fields:  make(map[string]transpiler.Type),
+					Methods: make(map[string]*transpiler.GoFuncSignature),
+				}
+				info.Types[key] = data
+			}
+			sig := &transpiler.GoFuncSignature{}
+			if fn, ok := typesInfo.Defs[fd.Name].(*types.Func); ok {
+				sig = convertSignature(fn.Type().(*types.Signature))
+			}
+			data.Methods[fd.Name.Name] = sig
+			if pointer {
+				if data.PointerMethods == nil {
+					data.PointerMethods = make(map[string]bool)
+				}
+				data.PointerMethods[fd.Name.Name] = true
+			}
+		}
+	}
+}
+
+// receiverBaseName returns the name of the type a method receiver expression
+// names (`T`, `*T`, `T[A]`, `*T[A, B]`) and whether it is a pointer receiver.
+func receiverBaseName(expr ast.Expr) (string, bool) {
+	pointer := false
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr, pointer = star.X, true
+	}
+	switch e := expr.(type) {
+	case *ast.IndexExpr:
+		expr = e.X
+	case *ast.IndexListExpr:
+		expr = e.X
+	}
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name, pointer
+	}
+	return "", false
 }
 
 // goFilesImportPath is the import path AnalyzeGoFiles records for the package

@@ -151,6 +151,12 @@ func (t *galaASTTransformer) unknownMethodError(
 	if _, declared := typeMeta.Methods[method]; declared {
 		return nil
 	}
+	// A hand-written .go file of the type's package may declare methods on it
+	// too: they are part of its method set as much as the GALA ones.
+	goMethods := t.goMethodsOnGalaType(typeMeta)
+	if _, declared := goMethods[method]; declared {
+		return nil
+	}
 	if !t.receiverTypeIsConcrete(typeMeta, recvType) {
 		return nil
 	}
@@ -171,12 +177,22 @@ func (t *galaASTTransformer) unknownMethodError(
 	msg := fmt.Sprintf("%s has no method %s", typeMeta.Name, method)
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUnknownMethod, line, col, msg,
-		unknownMethodHint(typeMeta, method),
+		unknownMethodHint(typeMeta, goMethods, method),
 	)
 	if exact {
 		err = err.WithSpan(col + len([]rune(method)))
 	}
 	return err
+}
+
+// goMethodsOnGalaType returns the methods hand-written .go files of its package
+// declare on the GALA type typeMeta describes (see GoKindMethodsOnly), or nil.
+func (t *galaASTTransformer) goMethodsOnGalaType(typeMeta *transpiler.TypeMetadata) map[string]*transpiler.GoFuncSignature {
+	td := t.goTypeInfo.GetTypeData(typeMeta.Package + "." + typeMeta.Name)
+	if td == nil || td.Kind != transpiler.GoKindMethodsOnly {
+		return nil
+	}
+	return td.Methods
 }
 
 // receiverTypeIsConcrete reports whether every type parameter of the receiver's
@@ -205,10 +221,15 @@ func (t *galaASTTransformer) receiverTypeIsConcrete(typeMeta *transpiler.TypeMet
 // otherwise lists a few of the methods the type does have. Naming a method that
 // exists is the whole point: "Sum does not exist" leaves the caller to guess,
 // while "did you mean Size" or a list containing FoldLeft ends the search.
-func unknownMethodHint(typeMeta *transpiler.TypeMetadata, method string) string {
-	names := make([]string, 0, len(typeMeta.Methods))
+func unknownMethodHint(typeMeta *transpiler.TypeMetadata, goMethods map[string]*transpiler.GoFuncSignature, method string) string {
+	names := make([]string, 0, len(typeMeta.Methods)+len(goMethods))
 	for name := range typeMeta.Methods {
 		names = append(names, name)
+	}
+	for name := range goMethods {
+		if _, dup := typeMeta.Methods[name]; !dup {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 

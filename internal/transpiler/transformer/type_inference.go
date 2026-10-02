@@ -1487,7 +1487,7 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 	}
 	nt, ok := typ.(transpiler.NamedType)
 	if !ok || nt.Package == "" {
-		return typ.String()
+		return t.ownGoTypeKey(typ.String())
 	}
 	if t.isGoTyped(nt) {
 		if name, ok := t.goImportRealName(nt.ImportPath); ok {
@@ -1495,6 +1495,20 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 		}
 	}
 	return nt.Package + "." + nt.Name
+}
+
+// ownGoTypeKey returns the Go type info key of a type the package being
+// compiled declares, given the bare name it is written with: a `package main`
+// type is not qualified by its package, while Go type info files every type
+// under one. A name the package's Go type info does not file is returned as
+// it is.
+func (t *galaASTTransformer) ownGoTypeKey(name string) string {
+	if t.packageName != "" && !strings.Contains(name, ".") {
+		if key := t.packageName + "." + name; t.goTypeInfo.GetTypeData(key) != nil {
+			return key
+		}
+	}
+	return name
 }
 
 // goQualifiedName returns the name Go type info records the package-level
