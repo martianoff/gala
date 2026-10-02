@@ -94,8 +94,7 @@ jobs:
       # together: older gala_tui releases contain code that newer GALA checks
       # correctly reject.
       GALA_TUI_REF: 2eee2712727152e0064daf52ab226d0f8d5da82f
-      # gala_team master at its 0.13.0 version bump (#141), which requires
-      # gala_tui 0.15.2.
+      # gala_team master at its 0.13.0 version bump (#141).
       GALA_TEAM_REF: "3f1acdab5ce738cc2cd525527aa1bca266626cc2"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
