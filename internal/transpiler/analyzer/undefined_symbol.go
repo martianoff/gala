@@ -1165,9 +1165,10 @@ func (c *undefChecker) walkSourceFile(sf *grammar.SourceFileContext) {
 	}
 }
 
-// bindFileLevelNames registers declarations whose names are not reachable
-// through richAST metadata: tuple-pattern package vals (`val (a, b) = ...`,
-// which extractPackageVals deliberately skips) and `embed val` directives.
+// bindFileLevelNames registers this file's tuple-pattern package vals and vars
+// (`val (a, b) = ...`) from the parse tree, so they bind whatever metadata the
+// check runs against, and `embed val` directives, which no richAST metadata
+// lists.
 func (c *undefChecker) bindFileLevelNames(sf *grammar.SourceFileContext) {
 	for _, d := range c.rich.EmbedDirectives {
 		c.walker.Bind(d.VarName)

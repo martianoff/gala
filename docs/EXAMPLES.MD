@@ -1112,6 +1112,12 @@ func main() {
 
     val (q, r, status) = divmod(17, 5)
     Println(s"$q remainder $r ($status)")
+
+    // `var` destructures into variables that can be reassigned
+    var (low, high) = minMax(9, 4)
+    low = low - 1
+    high += 1
+    Println(s"widened to $low..$high")
 }
 ```
 

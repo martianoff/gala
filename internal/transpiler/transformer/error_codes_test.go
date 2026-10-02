@@ -750,6 +750,38 @@ func main() {
 			expectCode:     galaerr.CodeMalformedTupleDestructure,
 			expectContains: "tuple destructuring requires exactly one expression on the right side",
 		},
+		{
+			name: "GALA-E0056 tuple destructuring with more names than components",
+			input: `package main
+
+func main() {
+    var (a, b, c) = (1, 2)
+    Println(a)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "`var (...)` binds 3 names, but the tuple has 2 components",
+		},
+		{
+			name: "GALA-E0056 tuple destructuring with fewer names than components",
+			input: `package main
+
+func main() {
+    val (a) = (1, 2)
+    Println(a)
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "`val (...)` binds 1 name, but the tuple has 2 components",
+		},
+		{
+			name: "GALA-E0056 annotated var tuple without an initializer suggests a plain declaration",
+			input: `package main
+
+func main() {
+    var (a, b) int
+}`,
+			expectCode:     galaerr.CodeMalformedTupleDestructure,
+			expectContains: "drop the parentheses: `var a, b T`",
+		},
 	}
 
 	for _, tc := range cases {

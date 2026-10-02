@@ -30,6 +30,8 @@ val AddTen = Adder(10)
 val N = count()
 val Void = setup()
 var VoidVar = setup()
+val (TupA, TupB) = (1, "b")
+var (TupC, TupD) = (2, "d")
 `
 
 // TestPackageValInitTypes: the element type a package-level binding records
@@ -93,6 +95,25 @@ func TestVoidPackageValSurvivesCache(t *testing.T) {
 		}
 		if pv.Name != name {
 			t.Errorf("%s: decoded Name = %q", name, pv.Name)
+		}
+	}
+}
+
+// TestPackageTupleDestructuringIsRecorded: every name a package-level tuple
+// destructuring binds is a package val or var, so a reference from another file
+// of the package unwraps a val's Immutable and leaves a var as it is.
+func TestPackageTupleDestructuringIsRecorded(t *testing.T) {
+	rich := analyzeSrc(t, packageValSrc)
+	for name, isVal := range map[string]bool{"TupA": true, "TupB": true, "TupC": false, "TupD": false} {
+		pv := rich.PackageVals[name]
+		if pv == nil {
+			t.Fatalf("PackageVals missing %s", name)
+		}
+		if pv.IsVal != isVal {
+			t.Errorf("%s: IsVal = %v, want %v", name, pv.IsVal, isVal)
+		}
+		if pv.Type == nil || !pv.Type.IsNil() {
+			t.Errorf("%s: Type = %v, want NilType", name, pv.Type)
 		}
 	}
 }

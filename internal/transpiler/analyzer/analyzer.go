@@ -4250,23 +4250,26 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 		switch {
 		case topDecl.ValDeclaration() != nil:
 			vc := topDecl.ValDeclaration().(*grammar.ValDeclarationContext)
-			idList = vc.IdentifierList()
-			typeCtx = vc.Type_()
-			exprList = vc.ExpressionList()
+			idList, typeCtx, exprList = vc.IdentifierList(), vc.Type_(), vc.ExpressionList()
+			if tp := vc.TuplePattern(); tp != nil {
+				idList, typeCtx, exprList = tupleNames(tp), nil, nil
+			}
 			isVal = true
 		case topDecl.VarDeclaration() != nil:
 			vc := topDecl.VarDeclaration().(*grammar.VarDeclarationContext)
-			idList = vc.IdentifierList()
-			typeCtx = vc.Type_()
-			exprList = vc.ExpressionList()
+			idList, typeCtx, exprList = vc.IdentifierList(), vc.Type_(), vc.ExpressionList()
+			if tp := vc.TuplePattern(); tp != nil {
+				idList, typeCtx, exprList = tupleNames(tp), nil, nil
+			}
 			isVal = false
 		default:
 			continue
 		}
+		// A tuple destructuring (`val (a, b) = pair`) records its names with
+		// no type: each is one component of the initializer, which the
+		// cross-file unwrap does not need to infer, since it needs only the
+		// val/var classification.
 		if idList == nil {
-			// Tuple-pattern destructuring (`val (a, b) = ...`) — names still
-			// reach the same Immutable lowering, but inferring each element's
-			// type here is more than the cross-file unwrap requires, so skip.
 			continue
 		}
 
@@ -4308,6 +4311,11 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			}
 		}
 	}
+}
+
+// tupleNames is the identifier list a tuple pattern `(a, b)` binds.
+func tupleNames(tp grammar.ITuplePatternContext) grammar.IIdentifierListContext {
+	return tp.(*grammar.TuplePatternContext).IdentifierList()
 }
 
 // inferPackageValInitType determines the element type of a package-level

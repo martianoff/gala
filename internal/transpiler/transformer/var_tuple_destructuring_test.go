@@ -105,3 +105,18 @@ func main() {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot assign to immutable variable a")
 }
+
+// A destructured name is checked against the reserved source-map marker
+// prefix like any other declared name, and a failing Go call is named with the
+// keyword the author wrote.
+func TestTupleDestructuringChecks(t *testing.T) {
+	for _, kw := range []string{"val", "var"} {
+		_, err := newBindTranspiler().Transpile("package main\n\nfunc main() {\n    "+kw+" (__gala_line_7, b) = (1, 2)\n    Println(b)\n}\n", "")
+		require.Error(t, err, kw)
+		assert.Contains(t, err.Error(), "reserved", kw)
+
+		_, err = newBindTranspiler().Transpile("package main\n\nimport \"strconv\"\n\nfunc main() {\n    "+kw+" (n, e) = strconv.Atoi(\"1\")\n    Println(n)\n}\n", "")
+		require.Error(t, err, kw)
+		assert.Contains(t, err.Error(), "cannot be destructured with `"+kw+" (...)`", kw)
+	}
+}

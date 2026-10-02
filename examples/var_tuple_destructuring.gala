@@ -22,7 +22,7 @@ func main() {
     hi += 1
     Println(s"lo=$lo hi=$hi")
 
-    // Swap through the destructuring itself.
+    // Reassign both bindings, here swapping them through a tuple.
     var (left, right) = ("a", "b")
     val swapped = (right, left)
     left = swapped.V1
@@ -31,10 +31,8 @@ func main() {
 
     // From a function result; the bindings take its component types.
     var (q, r) = divmod(17, 5)
-    for r < 5 {
-        r += 5
-        q -= 1
-    }
+    r += 5
+    q -= 1
     Println(s"q=$q r=$r")
 
     // Package-level bindings, reassigned from another function.
