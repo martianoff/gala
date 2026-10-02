@@ -134,7 +134,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 	argList := suffix.ArgumentList()
 	if argList == nil {
 		// Check for compiler intrinsic: StructMeta[T]()
-		if t.getBaseTypeName(base) == "StructMeta" {
+		if isStructMetaIntrinsic(t.getBaseTypeName(base)) {
 			return t.transformStructMetaConstruction(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 		}
 		// Empty argument list - check for zero-argument Apply method
@@ -2288,7 +2288,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 9: StructMeta[T]() compiler intrinsic ---
 	typeName := t.getBaseTypeName(fun)
-	if typeName == "StructMeta" {
+	if isStructMetaIntrinsic(typeName) {
 		return t.transformStructMetaConstruction(fun, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
 

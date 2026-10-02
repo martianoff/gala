@@ -190,6 +190,34 @@ A root scalar is written on its own line, and an empty root sequence as `[]`. De
 
 ---
 
+## Structs With Private Fields
+
+As with the JSON codec, a struct with an unexported field is decodable only when it declares `func (x T) Validate() Try[T]`, and the decoded value is what `Validate` returns — a `Failure` carries your error:
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/yaml"
+    "errors"
+)
+
+struct Port(n int)
+
+func (p Port) Validate() Try[Port] =
+    if (p.n > 0 && p.n < 65536) Success(p) else Failure(errors.New(s"port out of range: ${p.n}"))
+
+func main() {
+    val codec = Codec[Port](AsIs())
+    Println(codec.Decode("n: 8080").IsSuccess())   // true
+    Println(codec.Decode("n: 0"))                  // Failure(port out of range: 0)
+}
+```
+
+Without `Validate`, any codec that reaches such a struct is [GALA-E0050](/docs/errors/gala-e0050/); a `Validate` with another signature is [GALA-E0057](/docs/errors/gala-e0057/). See [Structs With Private Fields](/docs/json/#structs-with-private-fields) in the JSON docs for the full rule.
+
+---
+
 ## Unknown Fields
 
 The decoder silently drops any field in the input that is not declared on the target struct. This is the default and only behaviour today — there is no strict mode or unknown-field error.
@@ -239,7 +267,7 @@ The transpiler:
 
 No reflection at runtime. Field names, types, and access patterns are all resolved at compile time. The same `StructMeta[T]` machinery powers both the JSON and YAML codecs — only the underlying `FieldEncoder` / `FieldDecoder` implementation differs.
 
-A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested.
+A struct declared in a library package carries its own metadata: that package emits an exported `StructMeta_X` for each struct `X` it declares, and any package encoding an `X` — including one with unexported fields, which only its own package can read — uses it. Structs of the `main` package get `_StructMeta_X` generated where the codec is requested. The generated types are not part of GALA's surface: naming one in GALA code is [GALA-E0058](/docs/errors/gala-e0058/).
 
 ### Supported YAML Subset
 

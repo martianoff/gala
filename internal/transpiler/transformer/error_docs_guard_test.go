@@ -719,6 +719,59 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "codec decoding a struct with private fields and no Validate",
+			code: galaerr.CodeUnsupportedCodecField, // GALA-E0050
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "martianoff/gala/json"
+
+struct Email(address string)
+
+func main() {
+    val codec = json.Codec[Email](json.AsIs())
+    Println(codec.Decode("{\"address\":\"not an address\"}"))
+}
+`)
+			},
+		},
+		{
+			name: "Validate with a result other than Try[T]",
+			code: galaerr.CodeInvalidValidateSignature, // GALA-E0057
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import (
+    "martianoff/gala/json"
+    "strings"
+)
+
+struct Email(address string)
+
+func (e Email) Validate() bool = strings.Contains(e.address, "@")
+
+func main() {
+    val codec = json.Codec[Email](json.AsIs())
+    Println(codec.Decode("{\"address\":\"not an address\"}"))
+}
+`)
+			},
+		},
+		{
+			name: "generated StructMeta named in GALA code",
+			code: galaerr.CodeGeneratedCodecName, // GALA-E0058
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Email(address string)
+
+func main() {
+    Println(_StructMeta_Email{}.NumFields())
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

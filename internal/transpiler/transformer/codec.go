@@ -51,7 +51,7 @@ type structMetaConfig struct {
 	generatedName string
 	// pkg is the declaring package when it is not this one, "" otherwise.
 	pkg string
-	// emptyInit memoizes structNeedsEmptyInit.
+	// emptyInit memoizes structEmptyKind.
 	emptyInit emptyInitState
 	// emit is true when this file declares the StructMeta. Otherwise the file
 	// only references it, and generating its methods just checks that every
@@ -74,6 +74,14 @@ type structMetaConfig struct {
 const mainPackageName = "main"
 
 // ---- StructMeta interception ----
+
+// isStructMetaIntrinsic reports whether a call's base type name is the
+// StructMeta[T]() intrinsic, spelled bare or std-qualified as transformPrimary
+// may leave it. The qualified spelling (seen with `StructMeta[billing.Email]()`)
+// used to fall through to an interface composite literal Go rejects.
+func isStructMetaIntrinsic(name string) bool {
+	return stripStdPrefix(name) == "StructMeta"
+}
 
 // transformStructMetaConstruction handles StructMeta[T]() calls.
 // This is the ONLY codec-related compiler intrinsic.
@@ -119,7 +127,7 @@ func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaCon
 	config := &structMetaConfig{
 		typeName:      meta.Name,
 		typeMetadata:  meta,
-		generatedName: "StructMeta_" + meta.Name,
+		generatedName: structMetaPrefix + meta.Name,
 		auto:          site.auto,
 		rootName:      site.rootName,
 		line:          site.line,
@@ -130,7 +138,7 @@ func (t *galaASTTransformer) registerStructMeta(name string, site *structMetaCon
 		config.pkg = meta.Package
 		config.typeName = meta.Package + "." + meta.Name
 	case t.packageName == mainPackageName:
-		config.generatedName = "_StructMeta_" + meta.Name + t.codecFileSuffix()
+		config.generatedName = mainStructMetaPrefix + meta.Name + t.codecFileSuffix()
 		config.emit = true
 	}
 	t.structMetas[resolved] = config
@@ -164,7 +172,7 @@ func (t *galaASTTransformer) describableReason(name string, meta *transpiler.Typ
 // the StructMeta itself. Package membership cannot tell: a Go directory
 // inside the module is analyzed like a GALA package.
 func (t *galaASTTransformer) declaresStructMeta(meta *transpiler.TypeMetadata) bool {
-	return meta.DefinedIn != "" || t.typeMetas[meta.Package+".StructMeta_"+meta.Name] != nil
+	return meta.DefinedIn != "" || t.typeMetas[meta.Package+"."+structMetaPrefix+meta.Name] != nil
 }
 
 // notCodecTypeReason explains that the named type is none of the shapes the
@@ -247,6 +255,12 @@ func (t *galaASTTransformer) generateStructMetas() ([]ast.Decl, bool, error) {
 	dropped := false
 	for _, key := range keys {
 		config := t.structMetas[key]
+		// A codec that would decode a struct with private fields needs its
+		// Validate method. An auto StructMeta is emitted regardless, and its
+		// DecodeFields refuses (see codec_validate.go).
+		if !config.auto && t.structDecodeMode(config) == decodeRejected {
+			return nil, false, t.undecodableError(config)
+		}
 		var decls []ast.Decl
 		var err error
 		if config.emit {

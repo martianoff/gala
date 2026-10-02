@@ -48,6 +48,10 @@ struct Box[T any](Item T)
 
 func NewSecret(v string) Secret = Secret(v, 3)
 
+func (s Secret) Validate() Try[Secret] = Success(s)
+
+func (l Ledger) Validate() Try[Ledger] = Success(l)
+
 func NewLedger(owner Email) Ledger = Ledger(owner, ArrayOf(entry("k")))
 `)
 	write("clock/clock.gala", `package clock
@@ -67,6 +71,8 @@ struct Stamp(at Millis, Zone Where, laps Laps)
 func NewStamp(ms int64) Stamp = Stamp(Millis(ms), Zone("utc"), ArrayOf(Millis(1)))
 
 func NoLaps() Laps = EmptyArray[Millis]()
+
+func (s Stamp) Validate() Try[Stamp] = Success(s)
 `)
 	return root
 }

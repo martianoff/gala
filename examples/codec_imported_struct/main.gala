@@ -12,7 +12,9 @@ import (
 // package, imported by name: one with exported fields, one with only
 // unexported fields, and one nesting an unexported struct type. Each must
 // round-trip through JSON and YAML, nested directly, inside Option, Array,
-// List and HashMap, and as the codec's root type.
+// List and HashMap, and as the codec's root type. A struct with unexported
+// fields is decoded through its Validate method, so input it rejects fails the
+// decode with the error Validate returned.
 
 struct User(Name string, Mail billing.Email, Key billing.Secret)
 
@@ -65,4 +67,38 @@ func main() {
 
     val invoiceCodec = yaml.Codec[billing.Invoice](yaml.AsIs())
     Println(invoiceCodec.Decode(invoiceCodec.Encode(billing.NewInvoice(8, mail)).Get()).Get().Describe())
+
+    decodeChecks()
+}
+
+// outcome renders a decode result: the value's description, or the error a
+// Validate method rejected the input with.
+func outcome[T any](result Try[T], describe func(T) string) string = result match {
+    case Success(v) => describe(v)
+    case Failure(err) => s"rejected: ${err.Error()}"
+}
+
+func decodeChecks() {
+    // A struct with unexported fields is decoded through its Validate method,
+    // as the root, nested, inside a collection, and under an array root.
+    val secretCodec = json.Codec[billing.Secret](json.CamelCase())
+    Println(outcome(secretCodec.Decode("{\"token\":\"ok\",\"uses\":1}"), _.Describe()))
+    Println(outcome(secretCodec.Decode("{\"token\":\"\",\"uses\":1}"), _.Describe()))
+    Println(outcome(secretCodec.Array().Decode("[{\"token\":\"a\",\"uses\":1},{\"uses\":2}]"), (ss) => ss.Map(_.Describe()).MkString(",")))
+
+    val jsonCodec = json.Codec[Account](json.SnakeCase())
+    val badKey = "{\"owner\":{\"name\":\"Ada\",\"mail\":{\"v\":\"a@x\"},\"key\":{\"token\":\"t\",\"uses\":1}}," +
+        "\"keys\":[{\"token\":\"\",\"uses\":1}]," +
+        "\"bill\":{\"number\":1,\"to\":{\"v\":\"a@x\"},\"lines\":[{\"sku\":\"pen\",\"qty\":1}]}}"
+    Println(outcome(jsonCodec.Decode(badKey), describe))
+
+    // An absent field holding such a struct is its empty value, and that is
+    // checked too: an empty Secret has no token.
+    Println(outcome(jsonCodec.Decode("{}"), describe))
+
+    // YAML: an unexported struct type inside a collection of the root.
+    val invoiceCodec = yaml.Codec[billing.Invoice](yaml.AsIs())
+    Println(outcome(invoiceCodec.Decode("Number: 3\nTo:\n  V: a@x\nlines:\n  - Sku: pen\n    qty: 0\n"), _.Describe()))
+    Println(outcome(invoiceCodec.Decode("Number: 4\nTo:\n  V: a@x\nlines: []\n"), _.Describe()))
+    Println(outcome(invoiceCodec.Decode("Number: 5\nTo:\n  V: a@x\nlines:\n  - Sku: ink\n    qty: 2\n"), _.Describe()))
 }

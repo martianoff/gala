@@ -2257,7 +2257,7 @@ The decoder silently drops fields that are not declared on the target struct —
 
 #### Field Types
 
-A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string or an alias of `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`.
+A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string or an alias of `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`. A struct with an unexported field is decodable only through its `Validate() Try[T]` method — see [Structs With Private Fields](#structs-with-private-fields).
 
 Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List` or `HashMap` in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
 
@@ -2339,6 +2339,8 @@ A struct declared in a library package (any package but `main`) gets its metadat
 // package billing
 struct Email(V string)
 struct Secret(token string, uses int)
+
+func (s Secret) Validate() Try[Secret] = Success(s)
 ```
 
 <!-- doc-check: fragment -->
@@ -2350,6 +2352,32 @@ val codec = Codec[User](SnakeCase())   // also Codec[billing.Secret](SnakeCase()
 ```
 
 A field may be typed by an alias the struct's package declares (`type Millis int64`); the importer sees through it as the declaring package does. A struct whose fields have no encoding gets no `StructMeta_X`, and neither does a struct of a Go package; asking for its codec from any package fails with [GALA-E0050](errors/GALA-E0050.md), naming the field. Structs of the `main` package, which cannot be imported, keep the on-demand `_StructMeta_X` form.
+
+The generated `StructMeta_X`, `_StructMeta_X` and `_ValueMeta_X` types are not part of GALA's surface: naming one in GALA code, qualified or not, is [GALA-E0058](errors/GALA-E0058.md). Reach the metadata through `Codec[T]` or `StructMeta[T]()`, which check the rule below.
+
+#### Structs With Private Fields
+
+A struct with an unexported field is usually an encapsulated value: its package hands out instances only through a constructor that checks them. A codec builds a struct from whatever the input holds, so a struct with **any** unexported field is decodable only when it declares a `Validate` method with exactly this signature — a value receiver, no parameters, a `Try` of the struct itself:
+
+```gala
+package billing
+
+import (
+    "errors"
+    "strings"
+)
+
+struct Email(address string)
+
+func ParseEmail(s string) Option[Email] = When(strings.Contains(s, "@"), Email(s))
+
+func (e Email) Validate() Try[Email] =
+    if (strings.Contains(e.address, "@")) Success(e) else Failure(errors.New(s"not an email address: ${e.address}"))
+```
+
+Decoding builds the raw value and returns what `Validate` returns, so a `Failure` is the `Decode` call's `Failure` and carries the author's error unchanged: `Codec[billing.Email](AsIs()).Decode("{\"address\":\"junk\"}")` is `Failure(not an email address: junk)`. The check runs wherever the struct sits — the root, a nested field, inside an `Option`, `Array`, `List` or `HashMap`, under `.Array()` / `.List()` or `Value[T]()` — and also for a field absent from the input, whose empty value goes through `Validate` like any other. A struct whose fields are all exported decodes as before.
+
+Without a `Validate` method, any codec that reaches such a struct is [GALA-E0050](errors/GALA-E0050.md) at the `Codec[T]` / `StructMeta[T]()` / `Value[T]()` call; a `Validate` with another signature (a pointer receiver, a parameter, a `bool` or `error` result) is [GALA-E0057](errors/GALA-E0057.md). The rule applies to structs of every package, `main` included. A codec value both encodes and decodes, so the check is made where the codec is built, and an encode-only use needs `Validate` too. Encoding never needs a check — every existing value is valid — so a struct whose every value is acceptable declares `func (s Secret) Validate() Try[Secret] = Success(s)`; otherwise encode a struct of exported fields built from it.
 
 #### Auto-Injection
 
@@ -2389,7 +2417,7 @@ Then create a codec type with an `Apply(meta StructMeta[T], ...)` method — the
 | `NumFields` | `() int` | Number of fields in the struct |
 | `FieldName` | `(i int) string` | Name of field at index i |
 | `EncodeFields` | `(w FieldEncoder, t T, nameFn func(int) string, omitFn func(int) bool, naming func(string) string)` | Typed serialise of a T via the writer interface; `naming` propagates into nested struct dispatch |
-| `DecodeFields` | `(r FieldDecoder, lookup func(string) int, naming func(string) string) T` | Typed construct of a T via the reader interface; `naming` propagates into nested struct dispatch. A field absent from the input gets its empty value (`None` for an `Option`, an empty `List`, ...) |
+| `DecodeFields` | `(r FieldDecoder, lookup func(string) int, naming func(string) string) T` | Typed construct of a T via the reader interface; `naming` propagates into nested struct dispatch. A field absent from the input gets its empty value (`None` for an `Option`, an empty `List`, ...). A struct with private fields is returned through its `Validate` method, whose `Failure` panics with the author's error — the codec's `Try` turns it back into a `Failure` |
 | `FieldIsEmpty` | `(t T, i int) bool` | Whether field i of t holds its empty value — the test behind `OmitEmpty`. A nested struct is never empty |
 
 #### ValueMeta — Values of Any Codec Shape

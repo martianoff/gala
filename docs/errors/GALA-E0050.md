@@ -13,6 +13,8 @@ the shapes below:
 - an `Option` inside an `Option` (also through `Immutable`)
 - for `json.Codec[T]` / `yaml.Codec[T]`, a `T` that is not a struct at all — a scalar
   (`Codec[int]`) or a collection (`Codec[Array[User]]`)
+- a struct with an unexported field and no `Validate` method — see
+  [Private fields](#private-fields) below
 
 **Minimal repro.**
 
@@ -66,6 +68,67 @@ On decode, an integer that does not fit the field's kind (`300` into an
 errors, not wrapped values. JSON has no spelling for NaN or ±Infinity, so
 encoding one fails; YAML writes them as `.nan`, `.inf` and `-.inf` and reads
 them back.
+
+### Private fields
+
+A struct with an unexported field is decodable only through a
+`func (x T) Validate() Try[T]` method. Without one, every codec that reaches
+the struct — as the root, a field, or inside an `Option` or a collection — is
+rejected:
+
+```gala
+package main
+
+import "martianoff/gala/json"
+
+struct Email(address string)
+
+func main() {
+    val codec = json.Codec[Email](json.AsIs())
+    Println(codec.Decode("{\"address\":\"not an address\"}"))
+}
+```
+
+```
+error[GALA-E0050]: cannot generate a codec for Email: Email has private fields and no Validate method, so decoding it would bypass its constructor
+  --> main.gala:8:35
+  |
+8 |     val codec = json.Codec[Email](json.AsIs())
+  |                                   ^^^^ make it decodable with a Validate method
+  |
+  = hint: make it decodable with a Validate method; declare `func (e Email) Validate() Try[Email]`
+```
+
+Declare the method the hint names. Decoding builds the raw value and returns
+what `Validate` returns, so a `Failure` rejects the input with your error:
+
+```gala
+package main
+
+import (
+    "errors"
+    "martianoff/gala/json"
+    "strings"
+)
+
+struct Email(address string)
+
+func (e Email) Validate() Try[Email] =
+    if (strings.Contains(e.address, "@")) Success(e) else Failure(errors.New(s"not an email address: ${e.address}"))
+
+func main() {
+    val codec = json.Codec[Email](json.AsIs())
+    Println(codec.Decode("{\"address\":\"not an address\"}"))
+}
+```
+
+A struct with private fields is usually an encapsulated value, built only by a
+constructor that checks it; decoding it without a check would hand out a value
+that constructor never accepted. A codec both encodes and decodes, so the
+check is made where the codec is built, and encoding alone needs `Validate` as
+well: when every value is acceptable, `Validate` can return `Success(e)`;
+otherwise encode a struct of exported fields built from the value. A
+`Validate` with another signature is [GALA-E0057](GALA-E0057.md).
 
 **Rationale.** A field the codec had no encoding for used to be written as
 `null` and skipped on decode, so `Encode` succeeded, `Decode` succeeded, and the
