@@ -97,6 +97,10 @@ func TestGoKeywordBareStatements(t *testing.T) {
 	}{
 		{"loop body", "package main\n\nfunc main() {\n    for i := 0; i < 3; i++ {\n        KW\n    }\n}\n", true},
 		{"match arm", "package main\n\nfunc f(n int) {\n    n match {\n        case 1 => KW\n        case _ => Println(n)\n    }\n}\n", false},
+		// A value-returning match lowers each arm body into a `return`, so a
+		// keyword that slipped past the check would emit `return fallthrough`.
+		{"value match arm on its own line", "package main\n\nfunc f(n int) string = n match {\n    case 1 =>\n        KW\n    case _ => \"other\"\n}\n", false},
+		{"value match default arm", "package main\n\nfunc f(n int) string = n match {\n    case 1 => \"one\"\n    case _ => KW\n}\n", false},
 		{"partial function arm", "package main\n\nfunc main() {\n    val pf = { case 1 => KW }\n    Println(pf)\n}\n", false},
 	}
 	for _, shape := range shapes {
