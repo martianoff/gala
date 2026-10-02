@@ -1603,11 +1603,12 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
 			return []ast.Stmt{bs}, transpiler.VoidType{}, nil
 		}
-		// In a statement match the arm's value is discarded, so a nested match
-		// or if-expression written as the body is a statement too, exactly as
-		// at the tail of a braced arm: its own arms may hold loop control.
-		if armSlot.discarded && (t.expressionIsBareMatch(exprCtx) || t.findIfExpressionInExpression(exprCtx) != nil) {
-			stmt, err := t.lowerDiscardedExpression(exprCtx)
+		// In a statement match the arm's value is discarded, so its body is a
+		// statement, exactly like the tail of a braced arm: a nested match or
+		// if-expression runs as a statement (its own arms may hold loop
+		// control), and a plain value is evaluated but not used.
+		if armSlot.discarded {
+			stmt, err := t.lowerExpressionStatement(exprCtx)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1631,6 +1632,17 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		return nil, nil, err
 	}
 	return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
+}
+
+// isBareLoopControl reports whether exprCtx is a bare `break` or `continue`.
+// Loop control is not a value, so it is not this check's to reject; it keeps
+// the arm lowering it has.
+func isBareLoopControl(exprCtx grammar.IExpressionContext) bool {
+	start, stop := exprCtx.GetStart(), exprCtx.GetStop()
+	if start == nil || stop == nil || start.GetTokenIndex() != stop.GetTokenIndex() {
+		return false
+	}
+	return start.GetText() == "break" || start.GetText() == "continue"
 }
 
 // Pattern transformation functions moved to patterns.go

@@ -158,7 +158,7 @@ func square(x int) int = x * x
 func greet(name string) = Println(s"hello $name")
 ```
 
-The result type is never inferred. Without one the function is void, like `func f() { <expr> }`: a call is made and its result discarded, and a `match` or `if` runs its branches as statements. A plain value (`func answer() = 42`) is rejected as evaluated but not used; write the result type to return it, `func answer() int = 42`.
+The result type is never inferred. Without one the function is void, like `func f() { <expr> }`: a call is made and its result discarded, and a `match` or `if` runs its branches as statements. A plain value (`func answer() = 42`) is rejected as evaluated but not used; write the result type to return it, `func answer() int = 42`. The same holds for each branch of that `match` or `if`, and for the branches of any `match` or if-expression used as a statement: a branch may make a call, assign or do nothing, but a plain value in one (`func pick(c bool) = if (c) 1 else 2`) is evaluated but not used.
 
 ### Local Functions
 Named functions and methods are declared only at the top level of a file. A
@@ -451,7 +451,7 @@ val res = x match {
 type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
 
-42 match {
+val parity = 42 match {
     case Even(n) => s"$n is even"
     case _       => "odd"
 }

@@ -107,8 +107,8 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
         os.Stdout.WriteString("b")
         fmt.Println("c")
     }`, []string{`os.Stdout.WriteString("b")`, `fmt.Println("c")`}, []string{"GoTry", "func() std.Try"}},
-		{"statement-position if-expression with a value branch", "    if (true) 1 else fmt.Println(\"b\")",
-			[]string{"_ = 1", `fmt.Println("b")`}, []string{"GoTry", "func() std.Try"}},
+		{"statement-position if-expression with a GALA call branch", "    if (true) Println(\"a\") else fmt.Println(\"b\")",
+			[]string{`fmt.Println("b")`}, []string{"GoTry", "func() std.Try"}},
 		{"statement-position if-expression nested in a branch", "    if (true) fmt.Println(\"a\") else if (false) fmt.Println(\"b\") else fmt.Println(\"c\")",
 			[]string{`fmt.Println("c")`}, []string{"GoTry", "func() std.Try"}},
 		// The arms of a statement-position match discard their values, and so
