@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -149,6 +150,13 @@ type RichAST struct {
 	// package, so `list.List` from container/list and a `List` declared by a
 	// package named list share a key.
 	OwnGoTypes map[string]bool
+
+	// Docs is this file's doc-comment table from the parse that produced Tree,
+	// keyed by the character offset of each documented declaration's first
+	// token (see parser.extractDocComments). The transpile pipeline sets it so
+	// the transformer can carry documentation into the generated Go; it is
+	// per-file and never merged or cached.
+	Docs map[int]string
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -609,6 +617,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// relative to the stripped text; keep the source hung off the AST in step
 	// with them rather than three bytes ahead.
 	richAST.SourceContent = galaerr.StripBOM(input)
+	richAST.Docs = docs
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)
@@ -705,6 +714,30 @@ func describeUnparseableDump(code, sourceFile string) string {
 // separation); that blank is dropped here so the directive stays adjacent to the
 // declaration and the reported line is exact.
 //
+// A documented declaration needs a different layout. The transformer puts the
+// doc comment on the declaration's marker, and a directive placed between that
+// doc and the declaration detaches the doc for tools built with Go before 1.25:
+// their go/parser attaches a comment group as documentation only when the
+// group's last line, after //line remapping, is the line just above the
+// declaration's, and a directive as the last line puts the two in different
+// files. (Go 1.25 groups by physical line, but `go doc`, gopls, swag and pkgsite
+// run with whatever Go they were built with.) gofmt also moves any directive in
+// a doc comment to its end, so the directive cannot lead the group either. The
+// directive therefore goes above the doc instead, as its own comment group
+// separated by a blank line, numbered so that the remapping lands the
+// declaration on its GALA line:
+//
+//	//line foo.gala:9
+//
+//	// Add returns the sum of a and b.
+//	func Add(a int, b int) int {   <- foo.gala:11
+//
+// The doc lines map to the GALA lines above the declaration. Should that put
+// the directive below line 1 — only possible when gofmt has grown the doc to
+// more lines than precede the declaration in GALA — the directive stays between
+// doc and declaration: the line mapping is exact, and only tools built with Go
+// before 1.25 lose that declaration's prose.
+//
 // After rewriting, the source is re-run through gofmt (format.Source) to
 // canonicalize blank lines between top-level declarations — gofmt separates
 // adjacent top-level decls with a blank line, which it inserts BEFORE the
@@ -751,8 +784,12 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 
 	// marker records how to rewrite one physical source line.
 	type marker struct {
-		galaLine int  // the encoded GALA source line the directive maps to
+		galaLine int  // the line number the directive names
 		isDecl   bool // top-level var marker (drops the following gofmt blank)
+		// docLines, when nonzero, is the length of the doc comment directly
+		// above a top-level marker: the directive goes above that doc instead,
+		// and galaLine is already adjusted for it.
+		docLines int
 	}
 	// Keyed by 1-based physical line number of the marker node in `code`.
 	markers := make(map[int]marker)
@@ -792,7 +829,16 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 				if vs, ok := node.Specs[0].(*ast.ValueSpec); ok &&
 					len(vs.Names) == 1 && len(vs.Values) == 0 {
 					if galaLine, ok := lineFromMarkerName(vs.Names[0].Name); ok {
-						markers[fset.Position(node.Pos()).Line] = marker{galaLine: galaLine, isDecl: true}
+						m := marker{galaLine: galaLine, isDecl: true}
+						line := fset.Position(node.Pos()).Line
+						if node.Doc != nil {
+							// See the doc comment above for this layout.
+							docLines := line - fset.Position(node.Doc.Pos()).Line
+							if hoisted := galaLine - 1 - docLines; hoisted >= 1 {
+								m.galaLine, m.docLines = hoisted, docLines
+							}
+						}
+						markers[line] = m
 						claimedCount++
 					}
 				}
@@ -824,7 +870,14 @@ func insertLineDirectivesWithProfiler(code, sourceFile string, prof *profiler.Pr
 
 	for i := 0; i < len(lines); i++ {
 		if m, ok := markers[i+1]; ok {
-			result = append(result, fmt.Sprintf("//line %s:%d", slashPath, m.galaLine))
+			directive := fmt.Sprintf("//line %s:%d", slashPath, m.galaLine)
+			if m.docLines > 0 {
+				// The doc is already in result; slot the directive and a blank
+				// line in above it.
+				result = slices.Insert(result, len(result)-m.docLines, directive, "")
+			} else {
+				result = append(result, directive)
+			}
 			// For a top-level marker, drop the single gofmt-inserted blank line
 			// that separates it from its declaration so the directive stays
 			// adjacent (statement markers are not blank-separated).

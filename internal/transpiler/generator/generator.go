@@ -52,14 +52,37 @@ func (g *goCodeGenerator) Generate(fset *token.FileSet, file *ast.File) (string,
 	// does not re-parse; go/printer will not parenthesize them on its own.
 	parenthesizeControlClauseLits(file)
 
+	// A synthetic AST's package and field docs are placed by text, not by the
+	// printer (see docs.go). The AST is restored afterwards so a caller that
+	// prints it again still sees its docs.
+	var pkgDoc *ast.CommentGroup
+	var fieldDocs []fieldDoc
+	if file.Comments == nil {
+		pkgDoc, file.Doc = file.Doc, nil
+		fieldDocs = detachFieldDocs(file)
+		defer func() {
+			file.Doc = pkgDoc
+			for _, d := range fieldDocs {
+				d.field.Doc = d.doc
+			}
+		}()
+	}
+
 	var buf bytes.Buffer
+	if pkgDoc != nil {
+		writeComment(&buf, nil, pkgDoc)
+	}
 	if err := format.Node(&buf, fset, file); err != nil {
 		return "", err
 	}
-	if canonical, err := format.Source(buf.Bytes()); err == nil {
+	src := buf.Bytes()
+	if len(fieldDocs) > 0 {
+		src = spliceFieldDocs(src, fieldDocs)
+	}
+	if canonical, err := format.Source(src); err == nil {
 		return generatedHeader + string(canonical), nil
 	}
-	return generatedHeader + buf.String(), nil
+	return generatedHeader + string(src), nil
 }
 
 var _ transpiler.CodeGenerator = (*goCodeGenerator)(nil)

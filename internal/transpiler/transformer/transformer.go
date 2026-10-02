@@ -327,6 +327,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
 	t.packageName = pkgName
 	file = &ast.File{
+		// This file's own package doc, from the per-file table: the merged
+		// RichAST.PackageDoc can come from a sibling file of the package.
+		Doc:  t.docFor(sourceFile.PackageClause().GetStart()),
 		Name: ast.NewIdent(pkgName),
 	}
 
@@ -382,11 +385,19 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			return nil, nil, err
 		}
 		if decls != nil {
+			t.attachDocComments(topDeclCtx, decls)
 			// Source-mapped `//line` directive: mark the declaration with its
 			// originating GALA line so panics in top-level initializers report a
 			// GALA position (see line_directives.go).
 			if t.emitLineMarkers() && topDeclCtx.GetStart() != nil {
-				file.Decls = append(file.Decls, lineMarkerDecl(topDeclCtx.GetStart().GetLine()))
+				marker := lineMarkerDecl(topDeclCtx.GetStart().GetLine())
+				// The marker turns into the `//line` directive, which has to be
+				// laid out around the first declaration's doc comment (see
+				// transpiler.insertLineDirectives). The doc moves onto the
+				// marker so the rewrite can find it next to the marker.
+				doc := declDoc(decls[0])
+				marker.Doc, *doc = *doc, nil
+				file.Decls = append(file.Decls, marker)
 			}
 			file.Decls = append(file.Decls, decls...)
 		}

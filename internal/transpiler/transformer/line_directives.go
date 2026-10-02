@@ -67,7 +67,7 @@ func lineMarkerStmt(line int) ast.Stmt {
 // (`var __gala_line_<n> int`). A bare identifier statement is not valid at file
 // scope, so top-level markers use a var declaration; insertLineDirectives
 // rewrites it (dropping gofmt's separating blank line) into a `//line` directive.
-func lineMarkerDecl(line int) ast.Decl {
+func lineMarkerDecl(line int) *ast.GenDecl {
 	return &ast.GenDecl{
 		Tok: token.VAR,
 		Specs: []ast.Spec{

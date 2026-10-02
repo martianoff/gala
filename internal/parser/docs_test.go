@@ -70,6 +70,18 @@ func TestDocComments(t *testing.T) {
 			want: "Real documentation.",
 		},
 		{
+			name: "+build constraint contributes no prose",
+			src:  "package main\n\n// Real documentation.\n// +build ignore\nfunc Constrained() int = 1\n",
+			decl: "func Constrained",
+			want: "Real documentation.",
+		},
+		{
+			name: "+build line inside a block comment contributes no prose",
+			src:  "package main\n\n/* Real documentation.\n+build ignore */\nfunc BlockConstrained() int = 1\n",
+			decl: "func BlockConstrained",
+			want: "Real documentation.",
+		},
+		{
 			name: "comment syntax inside a string is not a comment",
 			src:  "package main\n\nfunc Sneaky() string = \"// not a comment\"\nfunc After() int = 1\n",
 			decl: "func After",

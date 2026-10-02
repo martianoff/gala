@@ -249,8 +249,9 @@ func (o Option[T]) Filter(p func(T) bool) Option[T] { ... }
 ```
 
 This is not cosmetic: the comment is what hover, completion, signature help and
-`gala doc` show. An undocumented export is invisible to everyone reading your
-API from an editor.
+`gala doc` show, and it is carried into the generated Go, where `go doc`, gopls
+and pkg.go.dev read it. An undocumented export is invisible to everyone reading
+your API from an editor.
 
 ---
 

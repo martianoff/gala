@@ -1,6 +1,10 @@
 package consumer_lowering_test
 
 import (
+	"bytes"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"strings"
 	"testing"
@@ -32,7 +36,7 @@ func TestCrossModuleApplyLoweringForExternalRepoDep(t *testing.T) {
 
 	data, err := os.ReadFile(genFile)
 	require.NoError(t, err)
-	got := string(data)
+	got := withoutComments(t, data)
 	t.Logf("generated consumer_0.gen.go:\n%s", got)
 
 	// Zero-field sealed case must lower to {}.Apply(), never to a bare
@@ -92,4 +96,18 @@ func containsBareConversion(source, typeExpr string) bool {
 		}
 		idx = idx + offset + len(needle)
 	}
+}
+
+// withoutComments returns the generated Go reprinted without its comments. The
+// assertions here are about lowered code; the generated file also carries the
+// fixture's doc comments, whose prose names the broken shapes being guarded
+// against.
+func withoutComments(t *testing.T, src []byte) string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", src, parser.SkipObjectResolution)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	require.NoError(t, format.Node(&buf, fset, file))
+	return buf.String()
 }

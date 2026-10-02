@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"go/build/constraint"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -23,7 +24,7 @@ import (
 //   - A comment that begins on the same line as preceding code is a trailing
 //     comment, not documentation.
 //   - A blank line between the comment run and the declaration severs it.
-//   - //line and //go: lines are directives; they contribute no prose but do
+//   - //line, //go: and // +build lines are directives; they contribute no prose but do
 //     not sever a run that continues past them.
 //   - The run must end on the line immediately above the declaration.
 //
@@ -118,6 +119,10 @@ func appendDocLines(dst []string, raw string) []string {
 		if star, ok := strings.CutPrefix(strings.TrimLeft(line, " \t"), "*"); ok {
 			line = star
 		}
+		// A `+build` line is a directive here too (see isPragmaBody).
+		if constraint.IsPlusBuild("//" + line) {
+			continue
+		}
 		dst = append(dst, line)
 	}
 	// Remove the indentation the whole block shares, rather than trimming each
@@ -162,10 +167,14 @@ func dedentBlock(lines []string) {
 
 // isPragmaBody reports whether a `//` comment body is a compiler directive
 // rather than prose. Covers the forms the transpiler itself emits (see
-// insertLineDirectives and insertEmbedDirectives) plus Go's own `//go:` family,
-// which GALA source may carry through to the generated output.
+// insertLineDirectives and insertEmbedDirectives), Go's own `//go:` family,
+// which GALA source may carry through to the generated output, and the legacy
+// `// +build` constraint. A `+build` line is never prose: carried into the
+// generated Go as documentation, gofmt would turn it into a `//go:build` header
+// and silently drop the whole file from the build.
 func isPragmaBody(body string) bool {
 	return strings.HasPrefix(body, "go:") ||
 		body == "line" ||
-		strings.HasPrefix(body, "line ")
+		strings.HasPrefix(body, "line ") ||
+		constraint.IsPlusBuild("//"+body)
 }
