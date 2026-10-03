@@ -113,6 +113,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0057](/docs/errors/gala-e0057/) | Validate method with the wrong signature on a struct a codec decodes | Types |
 | [GALA-E0058](/docs/errors/gala-e0058/) | Generated codec metadata named in GALA code | Types |
 | [GALA-E0059](/docs/errors/gala-e0059/) | `break` or `continue` cannot reach its loop | Control flow |
+| [GALA-E0061](/docs/errors/gala-e0061/) | Sealed variant used as a type | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -138,7 +139,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 ## By category
 
-**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
+**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name, [E0061](/docs/errors/gala-e0061/) a variant used as a type. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 

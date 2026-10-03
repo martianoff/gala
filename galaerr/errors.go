@@ -653,6 +653,18 @@ const (
 	// value itself (`val x = break`). A `break` or `continue` in an arm of a
 	// match used as a statement inside a loop is fine and controls that loop.
 	CodeLoopControlOutsideLoop ErrorCode = "GALA-E0059"
+
+	// E0061: a sealed variant is named where a type is expected, as in
+	// `func radius(c Circle)` for `case Circle(R float64)` of `sealed type
+	// Shape`. A variant is a constructor and an extractor, not a type: every
+	// value it builds is a Shape. In generated Go the variant is an empty
+	// companion struct, so a parameter of that type had no fields and a
+	// Circle(...) value could not be passed to it, and a typed pattern
+	// `case c: Circle` never matched. It is rejected in every type position
+	// — parameter, result, field, val/var annotation, type argument, typed
+	// pattern, alias target and composite literal — for a variant of a local
+	// or an imported sealed type.
+	CodeSealedVariantAsType ErrorCode = "GALA-E0061"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

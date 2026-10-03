@@ -848,6 +848,40 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "sealed variant as a parameter type",
+			code: galaerr.CodeSealedVariantAsType, // GALA-E0061
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+func radius(c Circle) float64 = c.R
+
+func main() {
+    Println(radius(Circle(2.0)))
+}
+`)
+			},
+		},
+		{
+			name: "std variant as a type argument",
+			code: galaerr.CodeSealedVariantAsType, // GALA-E0061
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val found Array[Some[int]] = ArrayOf(Some(1), Some(2))
+    Println(found)
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

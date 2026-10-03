@@ -377,6 +377,9 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if res := t.goResultOf(base); res != nil {
 		return nil, t.goResultMisuse(res, "it cannot be indexed", suffix)
 	}
+	if err := t.checkVariantTypeArgs(base, exprList.AllExpression()); err != nil {
+		return nil, err
+	}
 	base = t.unwrapImmutable(base)
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
 	if err != nil {

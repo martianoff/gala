@@ -372,6 +372,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.registerDotImportedVals()
 	t.cacheTypeResolver()
 
+	if err := t.checkVariantTypeNames(sourceFile); err != nil {
+		return nil, nil, err
+	}
+
 	// t.typeAliases fills as declarations are walked, so a declaration above
 	// `type Millis int64` would not see it. Record every alias target up front
 	// for the lookups that must not depend on declaration order.
