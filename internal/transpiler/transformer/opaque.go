@@ -288,7 +288,7 @@ func (t *galaASTTransformer) opaqueCompareMethod(recvType ast.Expr, kind scalarK
 // checkOpaqueUnderlying rejects an underlying type an opaque type cannot be
 // declared over (GALA-E0062) and classifies the accepted ones.
 func (t *galaASTTransformer) checkOpaqueUnderlying(ctx *grammar.OpaqueTypeDeclarationContext, name string, declared transpiler.Type, tParams *ast.FieldList) (scalarKind, error) {
-	written := ctx.Type_().GetText()
+	written := sourceTextOf(ctx.Type_())
 	reject := func(reason, hint string) (scalarKind, error) {
 		tok := ctx.Type_().GetStart()
 		return scalarNone, galaerr.NewCodedSemanticError(galaerr.CodeInvalidOpaqueUnderlying,
@@ -482,4 +482,90 @@ func (t *galaASTTransformer) opaqueSelfType(meta *transpiler.TypeMetadata) trans
 		params[i] = transpiler.BasicType{Name: p}
 	}
 	return transpiler.GenericType{Base: self, Params: params}
+}
+
+// checkOpaqueMismatch rejects a value that would need an implicit conversion
+// to fill a slot of type expected (GALA-E0064): an opaque type where its
+// underlying type or another opaque type is expected, or the underlying type
+// where the opaque type is expected. Untyped constants mix, as in Go. Any
+// other mismatch is left to Go, which stays the backstop.
+func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
+	if expected == nil || transpiler.IsUnusable(expected) || expected.IsAny() {
+		return nil
+	}
+	expM := t.opaqueMeta(expected)
+	actual := t.getExprTypeNameManual(expr)
+	if actual == nil || transpiler.IsUnusable(actual) || actual.IsAny() {
+		return nil
+	}
+	actM := t.opaqueMeta(actual)
+	if expM == nil && actM == nil {
+		return nil
+	}
+	text := sourceTextOf(exprCtx)
+	var msg, hint string
+	switch {
+	case expM != nil && actM != nil:
+		if sameOpaque(expM, actM) {
+			return nil
+		}
+		msg = fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, t.opaqueName(actM), t.opaqueName(expM))
+		hint = fmt.Sprintf("convert through the underlying type if this is intended: %s(%s(%s))", t.opaqueName(expM), actM.Underlying.String(), text)
+	case expM != nil:
+		if isUntypedConstant(expr) || !t.sameScalar(actual, expM.Underlying) {
+			return nil
+		}
+		msg = fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, actual.String(), t.opaqueName(expM))
+		hint = fmt.Sprintf("convert explicitly: %s(%s)", t.opaqueName(expM), text)
+	default:
+		if !t.sameScalar(expected, actM.Underlying) {
+			return nil
+		}
+		msg = fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, t.opaqueName(actM), expected.String())
+		hint = fmt.Sprintf("convert explicitly: %s(%s)", expected.String(), text)
+	}
+	tok := exprCtx.GetStart()
+	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueTypeMismatch, tok.GetLine(), tok.GetColumn(), msg, hint).
+		WithSpan(tok.GetColumn() + len([]rune(text)))
+}
+
+// sameScalar reports whether a and b, followed through aliases and Go named
+// types, end at the same predeclared scalar type.
+func (t *galaASTTransformer) sameScalar(a, b transpiler.Type) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	endA, kindA, viaA := t.resolveScalar(a)
+	endB, kindB, viaB := t.resolveScalar(b)
+	return viaA == nil && viaB == nil && kindA != scalarNone && kindA == kindB &&
+		canonicalScalar(endA.String()) == canonicalScalar(endB.String())
+}
+
+// canonicalScalar maps Go's alias spellings to the type they name.
+func canonicalScalar(name string) string {
+	switch name {
+	case "rune":
+		return "int32"
+	case "byte":
+		return "uint8"
+	}
+	return name
+}
+
+// isUntypedConstant reports whether expr is a Go untyped constant expression:
+// literals, true/false, and operators applied to them.
+func isUntypedConstant(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		return true
+	case *ast.Ident:
+		return e.Name == "true" || e.Name == "false"
+	case *ast.ParenExpr:
+		return isUntypedConstant(e.X)
+	case *ast.UnaryExpr:
+		return isUntypedConstant(e.X)
+	case *ast.BinaryExpr:
+		return isUntypedConstant(e.X) && isUntypedConstant(e.Y)
+	}
+	return false
 }
