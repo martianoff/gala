@@ -153,3 +153,22 @@ func TestConversionToNamedFuncTypeTypesTheLambda(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "func(x int) int")
 }
+
+// TestConversionToGenericGoNamedFuncType covers a conversion to a generic Go
+// named function type declared in the package's own .go file. Its signature
+// is not instantiated, so the lambda gets no type from it (GALA-E0033) and is
+// never typed by the type's own parameter names (`func(x A) B`), with or
+// without type arguments.
+func TestConversionToGenericGoNamedFuncType(t *testing.T) {
+	for _, call := range []string{"Conv((x) => x)", "Conv[int, int]((x) => x)"} {
+		t.Run(call, func(t *testing.T) {
+			files, galaFile := samePackageModule(".",
+				"package main\n\ntype Conv[A any, B any] func(A) B\n",
+				"package main\n\nfunc main() {\n    val c = "+call+"\n    Println(c != nil)\n}\n")
+			out, err := transpileInModule(t, files, galaFile)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0033")
+			assert.NotContains(t, out, "x A")
+		})
+	}
+}

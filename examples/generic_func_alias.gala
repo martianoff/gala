@@ -19,7 +19,7 @@ func visitAll(visit Visitor[int]) = visit((v) => Println(s"visited $v"))
 func main() {
     Println(Step[int, string](In = 3, Run = (x) => s"$x").In)
     Println(runStep(Step(In = 4, Run = (x) => x * 10)))
-    Println(applyConv("gala", (s) => s.Size()))
+    Println(applyConv("gala", _.Size()))
 
     val shout Conv[string, string] = (s) => s + "!"
     Println(shout("hey"))

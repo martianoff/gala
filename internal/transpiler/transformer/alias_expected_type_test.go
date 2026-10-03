@@ -304,25 +304,40 @@ func TestSealedVariantWithArgsUninferred(t *testing.T) {
 	}
 }
 
-// TestGenericFuncAliasField covers a generic alias of a function type used as
-// a struct field's type. The alias is emitted as a Go generic alias, and a
-// lambda in the field's place is typed by the alias's signature with the
-// constructor's type arguments substituted, whether they are written or
-// inferred from the other fields — never the alias's own parameter names.
-func TestGenericFuncAliasField(t *testing.T) {
+// TestGenericFuncAlias covers an alias of a function type, generic or not,
+// as the type of a struct field, a parameter or a conversion. The alias is
+// emitted as a Go alias, and a lambda, placeholder lambda, partial function or
+// thunk in its place is typed by the alias's signature with the type arguments
+// substituted, whether they are written or inferred — never the alias's own
+// parameter names.
+func TestGenericFuncAlias(t *testing.T) {
 	trans := newAliasExpectedTranspiler()
 	const decls = "package main\n\ntype Conv[A any, B any] func(A) B\n\n" +
 		"struct Step[A any, B any](In A, Run Conv[A, B])\n\n"
 	tests := []struct{ name, body, want string }{
+		{"emitted as a Go generic alias", `func f() int = 1`, "type Conv[A any, B any] = func(A) B"},
 		{"explicit type arguments", `func f() int = Step[int, string](In = 3, Run = (x) => s"${x}").In`, "func(x int) string {"},
 		{"inferred type arguments", `func f() int = Step(In = 3, Run = (x) => x * 2).Run(1)`, "func(x int) int {"},
 		{"conversion to an instantiated alias", `func f() Conv[int, string] = Conv[int, string]((x) => s"${x}")`, "Conv[int, string](func(x int) string {"},
+		// A placeholder lambda is typed by an alias parameter as an explicit
+		// lambda is, generic or not.
+		{"placeholder lambda for a generic alias parameter",
+			"func apply[A any, B any](a A, f Conv[A, B]) B = f(a)\n\nfunc f() int = apply(\"gala\", _.Size())",
+			"func(__p0 string) int {"},
+		{"placeholder lambda for an alias parameter",
+			"type Measure func(string) int\n\nfunc measure(f Measure) int = f(\"gala\")\n\nfunc f() int = measure(_.Size())",
+			"func(__p0 string) int {"},
+		{"partial function for an alias field",
+			"struct Hooks(Classify Conv[int, Option[string]])\n\nfunc f() Hooks = Hooks(Classify = { case 0 => \"zero\" })",
+			"func(_pf_arg int) std.Option[string] {"},
+		{"thunk for a zero-argument generic alias parameter",
+			"type Thunk[T any] func() T\n\nfunc force[T any](t Thunk[T]) T = t()\n\nfunc f() int = force(40 + 2)",
+			"force(func() int {"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(decls+tt.body+"\n", "")
 			require.NoError(t, err)
-			assert.Contains(t, got, "type Conv[A any, B any] = func(A) B")
 			assert.Contains(t, got, tt.want)
 		})
 	}

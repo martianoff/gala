@@ -3571,7 +3571,8 @@ func (t *galaASTTransformer) goTypeKey(name string) string {
 // chain of them; a generic one instantiated as written, `Conv[int, string]`),
 // a Go type of the package's own .go files, or an imported Go one
 // (`http.HandlerFunc`). It returns nil otherwise, including for a generic
-// alias written without its type arguments, which names no type yet.
+// alias written without its type arguments, which names no type yet, and for
+// a generic Go named type, whose signature is not instantiated here.
 func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncType {
 	name := t.extractFuncName(fun)
 	if name == "" {
@@ -3580,13 +3581,7 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 	if _, isAlias := t.typeAliases[name]; isAlias {
 		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
 	}
-	switch fun.(type) {
-	case *ast.IndexExpr, *ast.IndexListExpr:
-		// A Go generic named type written with type arguments: its signature
-		// would need them substituted, which Go type info does not do here.
-		return nil
-	}
-	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" && len(td.TypeParams) == 0 {
 		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
 			return &ft
 		}
@@ -3609,6 +3604,15 @@ func lambdaParamCount(lambda *grammar.LambdaExpressionContext) int {
 // lambda parameter the type does not cover is GALA-E0033; a call argument,
 // whose expected type may still be partly inferred, passes false.
 func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
+	// A GALA alias of a function type (`f Conv[int, string]`) is a Go alias,
+	// so the slot has that function type: every lowering below that keys on
+	// a function type (lambdas, placeholders, partial functions, thunks)
+	// sees through it.
+	if _, isFunc := s.typ.(transpiler.FuncType); !isFunc {
+		if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+			s.typ = *ft
+		}
+	}
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {

@@ -70,15 +70,11 @@ func ExtractTo(destDir string) error {
 	return nil
 }
 
-// GoVersion is the Go language version every go.mod GALA generates declares:
-// the build workspace's, each transpiled dependency's, the stdlib packages'
-// and the one `gala mod tidy` starts a project with. It sets the -lang the
-// generated code compiles at, so every language feature the transpiler emits
-// must be in it: a GALA generic type alias is a Go generic alias, `type
-// Conv[A any, B any] = func(A) B`, which Go accepts from 1.24 on (1.23 has it
-// only behind GOEXPERIMENT=aliastypeparams). It is kept at the lowest version
-// that covers them, so an older toolchain is only replaced (GOTOOLCHAIN=auto)
-// when it must be.
+// GoVersion is the Go language version every go.mod GALA generates declares,
+// so it sets the -lang the generated code compiles at. It must cover every Go
+// feature the transpiler emits (a generic alias, `type Conv[A any, B any] =
+// func(A) B`, needs 1.24). It applies to every program, so it is kept at the
+// lowest version that covers them all.
 const GoVersion = "1.24"
 
 // generatePackageGoMod generates a go.mod file for a stdlib package.

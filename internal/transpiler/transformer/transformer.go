@@ -793,9 +793,9 @@ func (t *galaASTTransformer) returnShape() transpiler.Type {
 }
 
 // aliasTarget returns the type the alias typ names, one step down the chain,
-// and false when typ does not name an alias. A generic alias's target has the
-// alias's type arguments substituted: `Res[int]` for `type Res[T any] Try[T]`
-// is `Try[int]`.
+// and false when typ does not name an alias or names a generic alias without
+// its type arguments. A generic alias's target has the alias's type arguments
+// substituted: `Res[int]` for `type Res[T any] Try[T]` is `Try[int]`.
 //
 // Exact keys only. lookupTypeAlias falls back to the bare half of a qualified
 // name, which on a chain would let `geom.Point` continue through an unrelated
@@ -818,8 +818,7 @@ func (t *galaASTTransformer) aliasTarget(typ transpiler.Type) (transpiler.Type, 
 	gen, isGeneric := typ.(transpiler.GenericType)
 	if !isGeneric {
 		if meta != nil && len(meta.TypeParams) > 0 {
-			// A generic alias named without type arguments names no type
-			// yet; its target would hand its parameter names on as types.
+			// Its target would hand the parameter names on as types.
 			return nil, false
 		}
 		return next, true
