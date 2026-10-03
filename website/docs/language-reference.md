@@ -108,8 +108,8 @@ y = 30 // OK
 ```
 
 ### Discarding a value
-A declaration whose only name is `_` binds nothing, so `val _ = expr`,
-`var _ = expr` (typed or not) and `_ := expr` are an error,
+A declaration whose only name is `_` binds nothing, so `val _ = expr` and
+`var _ = expr`, with or without a type, and `_ := expr` are an error,
 [GALA-E0060](/docs/errors/gala-e0060/). Write the
 expression as a statement; if the value matters, bind it to a name and use it.
 Inside a lambda with no result, a call that returns only an `error` cannot be a

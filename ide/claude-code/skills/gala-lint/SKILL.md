@@ -1309,7 +1309,7 @@ Rationale: `val _ = ...` adds noise without expressing any intent the bare expre
 
 **Check** (**verdict**; `$FILES` as built in rule 7c):
 ```bash
-grep -nE '\b(val|var)[[:space:]]+_([[:space:]]+[[:alpha:]*[][^=]*)?[[:space:]]*=|^[[:space:]]*_[[:space:]]*:=' $FILES
+grep -nE '\b(val|var)[[:space:]]+_([[:space:]]+[[:alpha:]*[][^=]*)?[[:space:]]*=|(^|[>{;(]|\bfor)[[:space:]]*_[[:space:]]*:=' $FILES
 ```
 Every hit, typed (`val _ T =`) or not, is a HIGH 11c finding, fixed per the table
 and the void-lambda exception above. Tuple patterns (`val (_, b) = t`) do not match.

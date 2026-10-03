@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "GALA-E0060 — val _ = Binds Nothing"
-description: "\"`val _ = ...` binds nothing\" — GALA-E0060 fires when a val or var declaration binds its value to _ alone. Write the expression as a bare statement, wrap an error in FromError inside a lambda, or bind a real name."
+description: "\"`val _ = ...` binds nothing\" — GALA-E0060 fires when a val, var or := declaration binds its value to _ alone. Write the expression as a bare statement, wrap an error in FromError inside a lambda, or bind a real name."
 keywords: "gala-e0060, gala val underscore, gala val _, gala var _, gala discard value, gala blank identifier, gala bare statement, gala FromError"
 permalink: /docs/errors/gala-e0060/
 last_modified_at: 2026-10-02
@@ -43,8 +43,8 @@ error[GALA-E0060]: `val _ = ...` binds nothing
   = hint: write the expression as a bare statement; if the value matters, bind it to a name and use it
 ```
 
-Inside a lambda the hint also names `FromError`, because there a call that
-returns only an `error` cannot be a bare statement:
+Inside a lambda the hint also names `FromError`, because in a lambda with no
+result a call that returns only an `error` cannot be a bare statement:
 
 ```gala
 package main
@@ -68,7 +68,7 @@ error[GALA-E0060]: `val _ = ...` binds nothing
 10 |         val _ = os.Remove(p)
    |         ^^^^^ write the expression as a bare statement
    |
-   = hint: write the expression as a bare statement; for a call that returns only an `error`, write `FromError(call())`; if the value matters, bind it to a name and use it
+   = hint: write the expression as a bare statement; in a lambda with no result, a call that returns only an `error` becomes `FromError(call())`; if the value matters, bind it to a name and use it
 ```
 
 At package level there are no statements, so the hint points at `func init()`:
@@ -171,6 +171,10 @@ func main() {}
 - as a lambda parameter (`(_ int) => 0`), a match pattern (`case _ =>`) or a
   `for` range variable (`for _, x := range xs`);
 - in `var _ T` with no value.
+
+A typed `val _ Shape = Circle(1.0)` is rejected too. It needs no replacement as
+a conformance check: GALA already checks that a `Circle` is a `Shape` wherever
+one is used as the other.
 
 **Rationale.** `val _ =` reads as if something were kept, but nothing is.
 Writing the expression on its own says exactly what happens: it runs for its

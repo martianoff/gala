@@ -631,8 +631,8 @@ func checkBlankDeclaration(ctx tupleDeclaration, keyword string, names []grammar
 		return nil
 	}
 	form := keyword + " _ = ..."
-	if ctx.Type_() != nil {
-		form = keyword + " _ T = ..."
+	if typ := ctx.Type_(); typ != nil {
+		form = keyword + " _ " + typ.GetText() + " = ..."
 	}
 	return checkLoneBlank(ctx, names, form)
 }
@@ -643,38 +643,25 @@ func checkLoneBlank(ctx antlr.ParserRuleContext, names []grammar.IIdentifierCont
 	if len(names) != 1 || names[0].GetText() != "_" {
 		return nil
 	}
-	hint := "write the expression as a bare statement; if the value matters, bind it to a name and use it"
-	switch blankDeclarationSite(ctx) {
-	case blankAtTopLevel:
-		hint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
-	case blankInLambda:
-		hint = "write the expression as a bare statement; for a call that returns only an `error`, write `FromError(call())`; if the value matters, bind it to a name and use it"
-	}
-	return spanError(galaerr.CodeBlankValDeclaration, ctx, names[0], fmt.Sprintf("`%s` binds nothing", form), hint)
+	return spanError(galaerr.CodeBlankValDeclaration, ctx, names[0], fmt.Sprintf("`%s` binds nothing", form), blankDeclarationHint(ctx))
 }
 
-type blankSite int
-
-const (
-	blankInFunction blankSite = iota
-	blankInLambda
-	blankAtTopLevel
-)
-
-// blankDeclarationSite reports whether ctx is a package-level declaration or
-// sits, innermost, in a lambda or in a named function's body.
-func blankDeclarationSite(ctx antlr.Tree) blankSite {
+// blankDeclarationHint is GALA-E0060's hint: a package-level declaration has
+// no statement to become, and only in a lambda can a bare call returning an
+// `error` be refused (when the lambda has no result).
+func blankDeclarationHint(ctx antlr.ParserRuleContext) string {
+	if _, topLevel := ctx.GetParent().(*grammar.TopLevelDeclarationContext); topLevel {
+		return "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
+	}
 	for p := ctx.GetParent(); p != nil; p = p.GetParent() {
-		switch p.(type) {
-		case *grammar.TopLevelDeclarationContext:
-			return blankAtTopLevel
-		case *grammar.LambdaExpressionContext:
-			return blankInLambda
-		case *grammar.FunctionDeclarationContext:
-			return blankInFunction
+		if _, ok := p.(*grammar.FunctionDeclarationContext); ok {
+			break
+		}
+		if _, ok := p.(*grammar.LambdaExpressionContext); ok {
+			return "write the expression as a bare statement; in a lambda with no result, a call that returns only an `error` becomes `FromError(call())`; if the value matters, bind it to a name and use it"
 		}
 	}
-	return blankInFunction
+	return "write the expression as a bare statement; if the value matters, bind it to a name and use it"
 }
 
 // malformedTupleDestructure is the GALA-E0056 diagnostic.

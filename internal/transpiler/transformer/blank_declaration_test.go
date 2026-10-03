@@ -11,7 +11,7 @@ import (
 
 const (
 	blankFunctionHint = "write the expression as a bare statement; if the value matters, bind it to a name and use it"
-	blankLambdaHint   = "write the expression as a bare statement; for a call that returns only an `error`, write `FromError(call())`; if the value matters, bind it to a name and use it"
+	blankLambdaHint   = "write the expression as a bare statement; in a lambda with no result, a call that returns only an `error` becomes `FromError(call())`; if the value matters, bind it to a name and use it"
 	blankTopLevelHint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
 )
 
@@ -110,7 +110,59 @@ func main() {
 }
 `,
 			line: 10, col: 8, endCol: 13,
-			msg: "`var _ T = ...` binds nothing", hint: blankLambdaHint,
+			msg: "`var _ error = ...` binds nothing", hint: blankLambdaHint,
+		},
+		{
+			name: "short declaration in a lambda",
+			input: `package main
+
+func compute() int = 42
+
+func main() {
+    val f = () => {
+        _ := compute()
+    }
+    f()
+}
+`,
+			line: 7, col: 8, endCol: 9,
+			msg: "`_ := ...` binds nothing", hint: blankLambdaHint,
+		},
+		{
+			name: "typed val in a function body",
+			input: `package main
+
+func compute() int = 42
+
+func main() {
+    val _ int = compute()
+}
+`,
+			line: 6, col: 4, endCol: 9,
+			msg: "`val _ int = ...` binds nothing", hint: blankFunctionHint,
+		},
+		{
+			// Nested in a package-level initializer, the declaration is a
+			// statement of a block, where a bare expression works.
+			name: "val in a match arm of a package-level initializer",
+			input: `package main
+
+func compute() int = 42
+
+val picked = 1 match {
+    case 1 => {
+        val _ = compute()
+        1
+    }
+    case _ => 0
+}
+
+func main() {
+    Println(picked)
+}
+`,
+			line: 7, col: 8, endCol: 13,
+			msg: "`val _ = ...` binds nothing", hint: blankFunctionHint,
 		},
 		{
 			name: "val in a match arm",
@@ -173,7 +225,7 @@ val _ Shape = Circle(1.0)
 func main() {}
 `,
 			line: 11, col: 0, endCol: 5,
-			msg: "`val _ T = ...` binds nothing", hint: blankTopLevelHint,
+			msg: "`val _ Shape = ...` binds nothing", hint: blankTopLevelHint,
 		},
 	}
 	for _, tc := range cases {
