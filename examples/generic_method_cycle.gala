@@ -19,7 +19,7 @@ func emptyMyList[T any]() MyList[T] {
     return MyList[T](head = zero, tail = nilTail, isEmpty = true)
 }
 
-func consList[T any](h T, t MyList[T]) MyList[T] {
+func consList[T any](h T, var t MyList[T]) MyList[T] {
     return MyList[T](head = h, tail = &t, isEmpty = false)
 }
 

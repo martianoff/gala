@@ -3847,9 +3847,8 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	// Lift bare T value to Immutable[T] when the expected param type is
 	// Immutable[T] but the actual arg expression is a bare T (literal,
 	// arithmetic, etc.). Without this, Go rejects the bare value against
-	// the Immutable[T] parameter slot — the canonical case is calling
-	// `Eq[V](t, a, b)` where V resolves to `Immutable[string]` from one
-	// arg and the other arg is the bare string literal "notify".
+	// the Immutable[T] parameter slot — a parameter explicitly typed
+	// `Immutable[T]`, or a type parameter resolved to it from another arg.
 	if expectedType != nil && !expectedType.IsNil() && t.isImmutableType(expectedType) {
 		expr = t.liftToImmutableForArg(expr, expectedType)
 	}

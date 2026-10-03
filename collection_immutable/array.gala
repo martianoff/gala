@@ -628,7 +628,7 @@ func (a Array[T]) DropWhile(p func(T) bool) Array[T] {
 }
 
 // Slice returns a subarray from start (inclusive) to end (exclusive).
-func (a Array[T]) Slice(start int, end int) Array[T] {
+func (a Array[T]) Slice(var start int, var end int) Array[T] {
     if start < 0 {
         start = 0
     }

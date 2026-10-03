@@ -121,7 +121,7 @@ func index(bitmap uint32, bit uint32) int {
 }
 
 // popcount returns the number of set bits in a uint32.
-func popcount(x uint32) int {
+func popcount(var x uint32) int {
     var count = 0
     for x != 0 {
         count++

@@ -3904,3 +3904,14 @@ gala_exec_test(
     src = "func_value_lambda_arg.gala",
     expected = "func_value_lambda_arg.out",
 )
+
+# A `val` parameter is the same plain Go parameter as an unmarked one: calls of
+# functions, methods (value and pointer receivers), method values, generics,
+# defaults, interface methods and function-typed parameters given a lambda pass
+# their arguments unboxed.
+gala_exec_test(
+    name = "val_param_plain",
+    src = "val_param_plain.gala",
+    expected = "val_param_plain.out",
+    deps = ["//collection_immutable"],
+)

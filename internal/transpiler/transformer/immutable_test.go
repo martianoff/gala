@@ -39,16 +39,14 @@ var y = std.NewImmutable(x.Get() + 1)
 `,
 		},
 		{
-			name: "val parameter usage",
+			name: "val parameter is a plain Go parameter",
 			input: `package main
 
 func f(val x int) int = x + 1`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
-func f(x std.Immutable[int]) int {
-	return x.Get() + 1
+func f(x int) int {
+	return x + 1
 }
 `,
 		},

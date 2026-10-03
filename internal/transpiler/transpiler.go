@@ -478,16 +478,10 @@ type FunctionMetadata struct {
 	Pos        SourcePos // Position of the function name identifier in DefinedIn
 	ParamTypes []Type
 	ParamNames []string // Parameter names (for named argument matching and default injection)
-	// ParamImmutFlags[i] is true when parameter i was declared with the
-	// `val` keyword. The corresponding Go parameter is `std.Immutable[T]`
-	// rather than the bare `T` recorded in ParamTypes — call-site argument
-	// transformation needs this flag to lift bare T values (e.g. string
-	// literals) into the Immutable wrapper expected by the callee.
-	ParamImmutFlags []bool
-	ReturnType      Type
-	TypeParams      []string
-	DefaultExprs    map[int]DefaultExpr // Param index -> declared default (absent = required)
-	DefinedIn       string              // Source file where this function was defined
+	ReturnType   Type
+	TypeParams   []string
+	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
+	DefinedIn    string              // Source file where this function was defined
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used
