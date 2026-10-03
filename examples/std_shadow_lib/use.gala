@@ -1,0 +1,12 @@
+package std_shadow_lib
+
+// A sibling file sees the package's own Seq, Tuple and Either too.
+
+func Total(h Holder) int = h.Items.FoldLeft(0, (acc, x) => acc + x)
+
+func Swap(t Tuple) Tuple = Tuple(t.Second, t.First)
+
+func Pick(ok bool) Either = if (ok) Right(1) else Left("no")
+
+// std stays reachable through its other names.
+func FirstItem(s Seq) Option[int] = s.HeadOption()

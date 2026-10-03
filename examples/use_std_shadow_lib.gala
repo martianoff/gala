@@ -1,0 +1,20 @@
+package main
+
+import lib "martianoff/gala/examples/std_shadow_lib"
+
+// main declares its own Seq, shadowing std's in this package.
+struct Seq[T any](Head T, Count int)
+
+func first[T any](s Seq[T]) T = s.Head
+
+func main() {
+    val h = lib.Make()
+    Println(h.Items.Size())
+    Println(lib.Total(h))
+    Println(lib.FirstItem(h.Items).GetOrElse(0))
+    Println(lib.Sum(lib.Swap(lib.Tuple(1, 2))))
+    Println(lib.Describe(lib.Pick(true)))
+    Println(lib.Describe(lib.Pick(false)))
+    Println(first(Seq("seq", 1)))
+    Println(Some(3).GetOrElse(0))
+}

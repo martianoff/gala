@@ -1894,6 +1894,28 @@ gala_exec_test(
     deps = [":sealed_dot_import_lib"],
 )
 
+# A library whose types are named like std types (an alias Seq, a struct
+# Tuple, a sealed Either with Left/Right variants) across two files, consumed
+# by a main that declares its own generic Seq: each package's declarations
+# shadow the implicitly imported std names.
+gala_library(
+    name = "std_shadow_lib",
+    srcs = [
+        "std_shadow_lib/types.gala",
+        "std_shadow_lib/use.gala",
+    ],
+    importpath = "martianoff/gala/examples/std_shadow_lib",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "use_std_shadow_lib",
+    src = "use_std_shadow_lib.gala",
+    expected = "use_std_shadow_lib.out",
+    deps = [":std_shadow_lib"],
+)
+
 # Regression: a dot-imported sealed type whose first case is named `Done`
 # (with at least one field) must not be shadowed by an entry whose simple
 # name happens to be the sub-package name (`state`). Pattern

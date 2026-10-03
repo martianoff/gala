@@ -1,0 +1,27 @@
+package std_shadow_lib
+
+import . "martianoff/gala/collection_immutable"
+
+// Each type below is named like a std type. A package's own declarations
+// shadow the implicitly imported std names, so every bare reference in this
+// package means the declaration here.
+
+type Seq Array[int]
+
+struct Holder(Items Seq)
+
+func Make() Holder = Holder(ArrayOf(1, 2, 3))
+
+struct Tuple(First int, Second int)
+
+func Sum(t Tuple) int = t.First + t.Second
+
+sealed type Either {
+    case Left(Msg string)
+    case Right(N int)
+}
+
+func Describe(e Either) string = e match {
+    case Left(m) => s"left $m"
+    case Right(n) => s"right $n"
+}
