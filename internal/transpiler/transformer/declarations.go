@@ -635,20 +635,19 @@ func checkBlankDeclaration(ctx tupleDeclaration, keyword string, names []grammar
 	if _, topLevel := ctx.GetParent().(*grammar.TopLevelDeclarationContext); topLevel {
 		hint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
 	}
-	start, blank := ctx.GetStart(), names[0].GetStop()
-	err := galaerr.NewCodedSemanticError(galaerr.CodeBlankValDeclaration, start.GetLine(), start.GetColumn(),
-		fmt.Sprintf("`%s _ = ...` binds nothing", keyword), hint)
-	if blank.GetLine() == start.GetLine() {
-		err = err.WithSpan(blank.GetColumn() + 1)
-	}
-	return err
+	return spanError(galaerr.CodeBlankValDeclaration, ctx, names[0], fmt.Sprintf("`%s _ = ...` binds nothing", keyword), hint)
 }
 
-// malformedTupleDestructure is the GALA-E0056 diagnostic, underlining from the
-// start of from to the end of to when both are on one line.
+// malformedTupleDestructure is the GALA-E0056 diagnostic.
 func malformedTupleDestructure(from, to antlr.ParserRuleContext, msg, hint string) error {
+	return spanError(galaerr.CodeMalformedTupleDestructure, from, to, msg, hint)
+}
+
+// spanError is a coded diagnostic underlining from the start of from to the
+// end of to when both are on one line.
+func spanError(code galaerr.ErrorCode, from, to antlr.ParserRuleContext, msg, hint string) error {
 	start, stop := from.GetStart(), to.GetStop()
-	err := galaerr.NewCodedSemanticError(galaerr.CodeMalformedTupleDestructure, start.GetLine(), start.GetColumn(), msg, hint)
+	err := galaerr.NewCodedSemanticError(code, start.GetLine(), start.GetColumn(), msg, hint)
 	if stop.GetLine() == start.GetLine() {
 		err = err.WithSpan(stop.GetColumn() + len([]rune(stop.GetText())))
 	}
