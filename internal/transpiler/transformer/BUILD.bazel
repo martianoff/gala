@@ -133,6 +133,7 @@ go_test(
         "func_typed_defaults_test.go",
         "functions_test.go",
         "generated_format_test.go",
+        "generic_alias_test.go",
         "generic_field_named_like_type_test.go",
         "generic_funcref_chain_test.go",
         "generic_method_named_args_test.go",

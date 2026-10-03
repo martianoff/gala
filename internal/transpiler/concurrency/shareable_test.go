@@ -435,6 +435,56 @@ func TestGoScalarShareableNoResolver(t *testing.T) {
 	}
 }
 
+// TestAliasShareable: with an alias resolver wired, a type spelled as an alias
+// is decided as the type it names, wherever it appears — at the top level, as a
+// type argument, or behind another alias. The resolver stands in for the
+// transformer's alias table (the generic one substitutes its argument).
+func TestAliasShareable(t *testing.T) {
+	immutableArray := named("collection_immutable", "Array")
+	mutableArray := named("collection_mutable", "Array")
+	c := NewChecker(nil)
+	c.SetAliasResolver(func(a transpiler.Type) (transpiler.Type, bool) {
+		switch v := a.(type) {
+		case transpiler.BasicType:
+			switch v.Name {
+			case "IntItems":
+				return generic(immutableArray, basic("int")), true
+			case "IntBuf":
+				return generic(mutableArray, basic("int")), true
+			}
+		case transpiler.GenericType:
+			if v.Base.BaseName() == "Items" && len(v.Params) == 1 {
+				return generic(immutableArray, v.Params[0]), true
+			}
+		}
+		return nil, false
+	})
+
+	cases := []struct {
+		name string
+		typ  transpiler.Type
+		want bool
+	}{
+		{"alias of an immutable collection", basic("IntItems"), true},
+		{"alias of a mutable collection", basic("IntBuf"), false},
+		{"generic alias at a shareable argument", generic(basic("Items"), basic("string")), true},
+		{"generic alias at a mutable argument", generic(basic("Items"), generic(mutableArray, basic("int"))), false},
+		{"alias as a type argument", generic(named("std", "Option"), basic("IntItems")), true},
+		{"mutable alias as a type argument", generic(named("std", "Option"), basic("IntBuf")), false},
+		{"unresolved name stays conservative", basic("Unknown"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := c.IsShareable(tc.typ); got != tc.want {
+				t.Errorf("IsShareable(%v) = %v, want %v", tc.typ, got, tc.want)
+			}
+		})
+	}
+	if NewChecker(nil).IsShareable(basic("IntItems")) {
+		t.Errorf("an alias must stay not-shareable without an alias resolver")
+	}
+}
+
 // TestSubstitute pins the type-parameter substitution used for generic structs.
 func TestSubstitute(t *testing.T) {
 	subst := buildSubst([]string{"T"}, []transpiler.Type{basic("int")})
