@@ -119,8 +119,8 @@ func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExp
 }
 
 func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext) (ast.Stmt, error) {
-	if name := t.immutableBindingName(ctx.Expression()); name != "" {
-		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot increment/decrement immutable variable %s", name))
+	if err := t.immutableWriteError(ctx, ctx.Expression(), "increment/decrement"); err != nil {
+		return nil, err
 	}
 	expr, err := t.transformExpression(ctx.Expression())
 	if err != nil {
@@ -187,8 +187,8 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		}
 		// Only direct reassignment of a val (`v = ...`, `pkg.V = ...`) is blocked
 		// here; a field or index through a val binding is checked below or by Go.
-		if name := t.immutableBindingName(exprCtx); name != "" {
-			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("cannot assign to immutable variable %s", name))
+		if err := t.immutableWriteError(ctx, exprCtx, "assign to"); err != nil {
+			return nil, err
 		}
 		// Check for dereference assignment (*ptr = value) where ptr is ConstPtr
 		if t.isConstPtrDerefAssignment(exprCtx) {
@@ -1347,14 +1347,15 @@ func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionC
 	return postfix != nil && len(postfix.AllPostfixSuffix()) == 0
 }
 
-// immutableBindingName returns the source spelling of the val that ctx names
-// directly — `Name`, or `pkg.Name` for an imported package-level val — or ""
-// for anything else (a var, a field or index through a val, a call).
-func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) string {
+// immutableBindingName returns the source spelling of the val or the
+// parameter not declared `var` that ctx names directly — `Name`, or
+// `pkg.Name` for an imported package-level val — or "" for anything else (a
+// var, a field or index through a val, a call). isParam reports a parameter.
+func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) (name string, isParam bool) {
 	postfix := LeadingPostfixExpr(ctx, true)
 	primary := PrimaryOf(postfix)
 	if primary == nil || primary.Identifier() == nil {
-		return ""
+		return "", false
 	}
 	pkg, name := "", primary.Identifier().GetText()
 	switch suffixes := postfix.AllPostfixSuffix(); len(suffixes) {
@@ -1362,16 +1363,35 @@ func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext
 	case 1:
 		sel := suffixes[0].(*grammar.PostfixSuffixContext).Identifier()
 		if sel == nil {
-			return ""
+			return "", false
 		}
 		pkg, name = name, sel.GetText()
 	default:
-		return ""
+		return "", false
 	}
 	if b, ok := t.lookupBinding(pkg, name); ok && b.isVal {
-		return b.String()
+		return b.String(), false
 	}
-	return ""
+	if pkg == "" && t.isFixedParam(name) {
+		return name, true
+	}
+	return "", false
+}
+
+// immutableWriteError rejects writing (`verb`: "assign to", "increment/
+// decrement") the immutable binding target names directly, or returns nil.
+// A parameter not marked `var` is immutable like a val; its error says how to
+// make it reassignable.
+func (t *galaASTTransformer) immutableWriteError(ctx antlr.ParserRuleContext, target grammar.IExpressionContext, verb string) error {
+	name, isParam := t.immutableBindingName(target)
+	if name == "" {
+		return nil
+	}
+	err := t.semanticErrorAt(ctx, fmt.Sprintf("cannot %s immutable variable %s", verb, name))
+	if isParam {
+		err.Hint = fmt.Sprintf("declare it `var %s` to reassign it", name)
+	}
+	return err
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {

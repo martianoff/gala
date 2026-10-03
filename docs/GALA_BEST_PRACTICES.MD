@@ -20,6 +20,7 @@ A scannable rule list for writing idiomatic GALA — useful as both a learning c
 - **Default to `val`.** Use `var` only for accumulators and loop counters. ([§2](GALA.MD#2-variable-declarations))
 - **Updates by copy, not mutation.** `person.Copy(age = 31)` — not `person.age = 31`.
 - **`:=` is immutable** inside functions (unlike Go).
+- **Parameters are immutable.** Reassigning a parameter is a compile error; declare it `var` only when the function reassigns it. Don't write `val` on a parameter — it is the default and changes nothing. ([§3 Parameters](GALA.MD#parameters))
 - **No `val _ = expr`** (nor `var _`, typed or not, nor `_ := expr`) — it is a compile error ([GALA-E0060](errors/GALA-E0060.md)). Write the expression as a bare statement; in a lambda with no result, wrap an `error`-only call in `FromError(call())`; if the value matters, bind a real name and use it.
 
 ---

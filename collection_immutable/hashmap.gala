@@ -96,7 +96,7 @@ func hashMapIndex(bitmap uint32, bit uint32) int {
 }
 
 // hashMapPopcount returns the number of set bits in a uint32.
-func hashMapPopcount(x uint32) int {
+func hashMapPopcount(var x uint32) int {
     var count = 0
     for x != 0 {
         count++

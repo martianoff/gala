@@ -212,14 +212,27 @@ lambda. A lambda takes no type parameters, so a generic helper stays at the top
 level.
 
 ### Parameters
-Function parameters can be marked as `val` or `var`. By default, they are `val` (immutable).
+A function or method parameter is an immutable binding, like a `val`:
+reassigning it — with `=`, a compound assignment such as `+=`, or `++`/`--` —
+is a compile error, `cannot assign to immutable variable data`, whose hint is
+``declare it `var data` to reassign it``. Mark a parameter `var` to make it
+reassignable. Writing `val` is allowed but redundant: `val label string` means
+exactly the same as `label string`.
 
 ```gala
-func process(val data string, var count int) {
-    // data = "new" // Error
-    count = count + 1 // OK
+func process(data string, val label string, var count int) {
+    // data = "new"    // Error: cannot assign to immutable variable data
+    // label = "other" // Error: the same — `val` is the default
+    count = count + 1 // OK: a `var` parameter
 }
 ```
+
+Whatever its keyword, a parameter is a plain Go parameter of its declared type
+in the generated code — `func process(data string, label string, count int)`
+above — so a call passes its arguments as they are and Go code can call the
+function directly. A receiver marked `val` and a lambda parameter marked `val`
+are likewise plain Go parameters that reject reassignment; an unmarked lambda
+parameter is not checked.
 
 ### Named Arguments
 

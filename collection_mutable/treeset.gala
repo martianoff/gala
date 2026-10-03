@@ -270,7 +270,7 @@ func (s *TreeSet[T]) Add(elem T) bool {
 }
 
 // fixAfterInsert rebalances the tree after insertion.
-func (s *TreeSet[T]) fixAfterInsert(node *treeSetNode[T]) {
+func (s *TreeSet[T]) fixAfterInsert(var node *treeSetNode[T]) {
     for node != s.root && node.parent.color == mutableTreeRed {
         if node.parent == node.parent.parent.left {
             var uncle = node.parent.parent.right
@@ -396,7 +396,7 @@ func (s *TreeSet[T]) findNode(elem T) *treeSetNode[T] {
 }
 
 // deleteNode removes a node from the tree.
-func (s *TreeSet[T]) deleteNode(node *treeSetNode[T]) {
+func (s *TreeSet[T]) deleteNode(var node *treeSetNode[T]) {
     // If node has two children, replace with successor
     if node.left != nil && node.right != nil {
         var successor = s.minNode(node.right)
@@ -443,7 +443,7 @@ func (s *TreeSet[T]) deleteNode(node *treeSetNode[T]) {
 }
 
 // fixAfterDelete rebalances the tree after deletion.
-func (s *TreeSet[T]) fixAfterDelete(node *treeSetNode[T]) {
+func (s *TreeSet[T]) fixAfterDelete(var node *treeSetNode[T]) {
     for node != s.root && (node == nil || node.color == mutableTreeBlack) {
         if node == nil {
             return
@@ -549,7 +549,7 @@ func (s *TreeSet[T]) Min() T {
 }
 
 // minNode finds the node with minimum value in subtree.
-func (s *TreeSet[T]) minNode(node *treeSetNode[T]) *treeSetNode[T] {
+func (s *TreeSet[T]) minNode(var node *treeSetNode[T]) *treeSetNode[T] {
     for node.left != nil {
         node = node.left
     }
@@ -574,7 +574,7 @@ func (s *TreeSet[T]) Max() T {
 }
 
 // maxNode finds the node with maximum value in subtree.
-func (s *TreeSet[T]) maxNode(node *treeSetNode[T]) *treeSetNode[T] {
+func (s *TreeSet[T]) maxNode(var node *treeSetNode[T]) *treeSetNode[T] {
     for node.right != nil {
         node = node.right
     }

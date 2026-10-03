@@ -312,7 +312,7 @@ func (m *TreeMap[K, V]) Put(key K, value V) bool {
 }
 
 // fixAfterInsert rebalances the tree after insertion.
-func (m *TreeMap[K, V]) fixAfterInsert(node *treeMapNode[K, V]) {
+func (m *TreeMap[K, V]) fixAfterInsert(var node *treeMapNode[K, V]) {
     for node != m.root && node.parent.color == mutableTreeMapRed {
         if node.parent == node.parent.parent.left {
             var uncle = node.parent.parent.right
@@ -456,7 +456,7 @@ func (m *TreeMap[K, V]) Remove(key K) bool {
 }
 
 // deleteNode removes a node from the tree.
-func (m *TreeMap[K, V]) deleteNode(node *treeMapNode[K, V]) {
+func (m *TreeMap[K, V]) deleteNode(var node *treeMapNode[K, V]) {
     // If node has two children, replace with successor
     if node.left != nil && node.right != nil {
         var successor = m.minNode(node.right)
@@ -504,7 +504,7 @@ func (m *TreeMap[K, V]) deleteNode(node *treeMapNode[K, V]) {
 }
 
 // fixAfterDelete rebalances the tree after deletion.
-func (m *TreeMap[K, V]) fixAfterDelete(node *treeMapNode[K, V]) {
+func (m *TreeMap[K, V]) fixAfterDelete(var node *treeMapNode[K, V]) {
     for node != m.root && (node == nil || node.color == mutableTreeMapBlack) {
         if node == nil {
             return
@@ -603,7 +603,7 @@ func (m *TreeMap[K, V]) MinKey() K {
 }
 
 // minNode finds the node with minimum key in subtree.
-func (m *TreeMap[K, V]) minNode(node *treeMapNode[K, V]) *treeMapNode[K, V] {
+func (m *TreeMap[K, V]) minNode(var node *treeMapNode[K, V]) *treeMapNode[K, V] {
     for node.left != nil {
         node = node.left
     }
@@ -628,7 +628,7 @@ func (m *TreeMap[K, V]) MaxKey() K {
 }
 
 // maxNode finds the node with maximum key in subtree.
-func (m *TreeMap[K, V]) maxNode(node *treeMapNode[K, V]) *treeMapNode[K, V] {
+func (m *TreeMap[K, V]) maxNode(var node *treeMapNode[K, V]) *treeMapNode[K, V] {
     for node.right != nil {
         node = node.right
     }

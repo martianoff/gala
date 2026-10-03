@@ -399,7 +399,7 @@ func (l *List[T]) Drop(n int) *List[T] {
 }
 
 // Slice returns a new List from start (inclusive) to end (exclusive).
-func (l *List[T]) Slice(start int, end int) *List[T] {
+func (l *List[T]) Slice(var start int, var end int) *List[T] {
     if start < 0 {
         start = 0
     }
