@@ -330,9 +330,7 @@ func TestGenericFuncAliasField(t *testing.T) {
 	// A conversion to the generic alias with no type arguments has no
 	// function type to give the lambda; it is never typed by the alias's own
 	// parameter names.
-	got, err := trans.Transpile(decls+"func f() int {\n    val c = Conv((x) => x)\n    1\n}\n", "")
-	assert.NotContains(t, got, "func(x A)")
-	if err != nil {
-		assert.Contains(t, err.Error(), "GALA-E0033")
-	}
+	_, err := trans.Transpile(decls+"func f() int {\n    val c = Conv((x) => x)\n    1\n}\n", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0033")
 }

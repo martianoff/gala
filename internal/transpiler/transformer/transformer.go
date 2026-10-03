@@ -814,11 +814,16 @@ func (t *galaASTTransformer) aliasTarget(typ transpiler.Type) (transpiler.Type, 
 	if !ok || next.IsNil() {
 		return nil, false
 	}
+	meta := t.getTypeMeta(key)
 	gen, isGeneric := typ.(transpiler.GenericType)
 	if !isGeneric {
+		if meta != nil && len(meta.TypeParams) > 0 {
+			// A generic alias named without type arguments names no type
+			// yet; its target would hand its parameter names on as types.
+			return nil, false
+		}
 		return next, true
 	}
-	meta := t.getTypeMeta(key)
 	if meta == nil || len(meta.TypeParams) != len(gen.Params) {
 		// The target cannot be instantiated: returning it as declared would
 		// hand its parameter names (`T`) on as if they were types.

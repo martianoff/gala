@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	goversion "go/version"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -319,17 +318,6 @@ func renderBazelGoMod(existing, modulePath string, goDeps []mod.Require) (goMod 
 		at := strings.Index(line, r.Path) + len(r.Path)
 		lines[r.Line] = line[:at] + strings.Replace(line[at:], r.Version, ver, 1)
 		updated = append(updated, fmt.Sprintf("%s %s -> %s", r.Path, r.Version, ver))
-	}
-	// The generated Go needs at least stdlib.GoVersion (a generic alias is a
-	// Go generic alias), so a lower `go` line is raised; a higher one is kept.
-	for i, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[0] != "go" || !goversion.IsValid("go"+fields[1]) ||
-			goversion.Compare("go"+fields[1], "go"+stdlib.GoVersion) >= 0 {
-			continue
-		}
-		lines[i] = strings.Replace(line, fields[1], stdlib.GoVersion, 1)
-		updated = append(updated, fmt.Sprintf("go %s -> %s", fields[1], stdlib.GoVersion))
 	}
 
 	var sb strings.Builder

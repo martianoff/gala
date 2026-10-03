@@ -1992,7 +1992,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// converted to an instantiated generic alias (`Conv[int, string]((x) =>
 	// …)`) by the alias's signature with the type arguments substituted.
 	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
-		if ft := t.conversionFuncType(t.extractFuncName(fun), t.extractFuncCallTypeArgs(fun)); ft != nil {
+		if ft := t.conversionFuncType(fun); ft != nil {
 			ctx.goFuncParamTypes = []transpiler.Type{*ft}
 		}
 	}
@@ -3566,35 +3566,24 @@ func (t *galaASTTransformer) goTypeKey(name string) string {
 	return t.ownGoTypeKey(name)
 }
 
-// conversionFuncType returns the function type a call of name converts to
-// when name is a named function type rather than a function: a GALA alias
-// (through a chain of them), a Go type of the package's own .go files, or an
-// imported Go one (`http.HandlerFunc`). typeArgs are the type arguments the
-// call writes, which instantiate a generic alias (`Conv[int, string]`). It
-// returns nil otherwise.
-func (t *galaASTTransformer) conversionFuncType(name string, typeArgs []string) *transpiler.FuncType {
+// conversionFuncType returns the function type a call of fun converts to when
+// fun names a function type rather than a function: a GALA alias (through a
+// chain of them; a generic one instantiated as written, `Conv[int, string]`),
+// a Go type of the package's own .go files, or an imported Go one
+// (`http.HandlerFunc`). It returns nil otherwise, including for a generic
+// alias written without its type arguments, which names no type yet.
+func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncType {
+	name := t.extractFuncName(fun)
 	if name == "" {
 		return nil
 	}
 	if _, isAlias := t.typeAliases[name]; isAlias {
-		var typeParams []string
-		if meta := t.getTypeMeta(name); meta != nil {
-			typeParams = meta.TypeParams
-		}
-		// A generic alias names a function type only once instantiated: with
-		// its type arguments missing, its signature would hand its own
-		// parameter names on as types.
-		if len(typeArgs) != len(typeParams) {
-			return nil
-		}
-		if len(typeArgs) == 0 {
-			return t.resolveTranspilerTypeAsFuncType(transpiler.NamedType{Name: name})
-		}
-		return t.resolveTranspilerTypeAsFuncType(transpiler.ParseType(name + "[" + strings.Join(typeArgs, ", ") + "]"))
+		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
 	}
-	if len(typeArgs) > 0 {
-		// A Go generic named type: its signature would need the arguments
-		// substituted, which Go type info does not do here.
+	switch fun.(type) {
+	case *ast.IndexExpr, *ast.IndexListExpr:
+		// A Go generic named type written with type arguments: its signature
+		// would need them substituted, which Go type info does not do here.
 		return nil
 	}
 	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
