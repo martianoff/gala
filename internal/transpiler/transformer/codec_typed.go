@@ -396,8 +396,8 @@ func (t *galaASTTransformer) codecIsEmpty(access ast.Expr, ty transpiler.Type, p
 	}
 	switch sc.goType {
 	case "bool":
-		// `!` yields the operand's own type; a named bool (an opaque type
-		// over bool) is converted so the result is a plain bool.
+		// `!` yields the operand's own type; a named bool (an opaque or Go
+		// named type over bool) is converted so the result is a plain bool.
 		if !isWireType {
 			access = &ast.CallExpr{Fun: ast.NewIdent("bool"), Args: []ast.Expr{access}}
 		}

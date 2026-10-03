@@ -384,6 +384,15 @@ type TypeMetadata struct {
 	Underlying Type // the declared underlying type of an opaque type; nil otherwise
 }
 
+// OpaqueUnderlying returns the type an opaque type is declared over, and false
+// when m is nil, not an opaque type, or its underlying type is unknown.
+func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
+	if m == nil || !m.IsOpaque || m.Underlying == nil || m.Underlying.IsNil() {
+		return nil, false
+	}
+	return m.Underlying, true
+}
+
 // DefaultExpr is a declared default value — of a function or method parameter,
 // or of a shorthand struct field. Text is the expression exactly as written,
 // whitespace included, since it is re-parsed at every call or construction site

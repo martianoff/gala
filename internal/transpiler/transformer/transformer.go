@@ -65,6 +65,7 @@ type galaASTTransformer struct {
 	siblingTypedBranch      bool                                          // set while a match arm or if branch with no slot type is first lowered: its type comes from its siblings, so a zero-arg constructor in it takes none from the enclosing result type or the match subject (see lowerBranches)
 	typeAliases             map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets     map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
+	hasOpaque               bool                                          // some known type is an opaque type; gates every opaque-type check
 	goTypeInfo              *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
 	filePath                string                                        // source file path (for error reporting)
 	richAST                 *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
@@ -225,6 +226,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.genericMethods = make(map[string]map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
+	t.hasOpaque = anyOpaque(richAST.Types)
 	t.companionObjects = richAST.CompanionObjects
 	if t.companionObjects == nil {
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)

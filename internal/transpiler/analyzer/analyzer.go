@@ -4272,8 +4272,8 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		if pkgName != "" && pkgName != "main" && pkgName != "test" {
 			key = pkgName + "." + name
 		}
-		if meta := richAST.Types[key]; meta != nil && meta.IsOpaque && meta.Underlying != nil && !meta.Underlying.IsNil() {
-			return meta.Underlying, true
+		if u, ok := richAST.Types[key].OpaqueUnderlying(); ok {
+			return u, true
 		}
 		return nil, false
 	}
@@ -4289,8 +4289,8 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		if named.Package == "" || named.Package == pkgName {
 			return declared(named.Name)
 		}
-		if meta := richAST.Types[named.Package+"."+named.Name]; meta != nil && meta.IsOpaque && meta.Underlying != nil && !meta.Underlying.IsNil() {
-			return meta.Underlying, true
+		if u, ok := richAST.Types[named.Package+"."+named.Name].OpaqueUnderlying(); ok {
+			return u, true
 		}
 		if richAST.GoTypeInfo != nil {
 			if td := richAST.GoTypeInfo.GetTypeData(named.Package + "." + named.Name); td != nil && td.Underlying != nil {

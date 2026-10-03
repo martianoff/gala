@@ -60,7 +60,7 @@ func scalarKindOfPrimitive(name string) scalarKind {
 // opaqueMeta returns the metadata of the opaque type typ names (bare, package
 // qualified, or instantiated), or nil when typ is not an opaque type.
 func (t *galaASTTransformer) opaqueMeta(typ transpiler.Type) *transpiler.TypeMetadata {
-	if typ == nil || transpiler.IsUnusable(typ) {
+	if !t.hasOpaque || typ == nil || transpiler.IsUnusable(typ) {
 		return nil
 	}
 	var name string
@@ -80,11 +80,35 @@ func (t *galaASTTransformer) opaqueMeta(typ transpiler.Type) *transpiler.TypeMet
 	default:
 		return nil
 	}
-	meta := t.getTypeMeta(name)
-	if meta == nil || !meta.IsOpaque {
-		return nil
+	return t.opaqueMetaByName(name)
+}
+
+// opaqueMetaByName returns the metadata of the opaque type a (bare or
+// package-qualified) name resolves to, or nil.
+func (t *galaASTTransformer) opaqueMetaByName(name string) *transpiler.TypeMetadata {
+	if meta := t.getTypeMeta(name); meta != nil && meta.IsOpaque {
+		return meta
 	}
-	return meta
+	return nil
+}
+
+// anyOpaque reports whether types holds an opaque type. Every opaque-type
+// check is gated on it, so a program that declares none pays nothing.
+func anyOpaque(types map[string]*transpiler.TypeMetadata) bool {
+	for _, meta := range types {
+		if meta.IsOpaque {
+			return true
+		}
+	}
+	return false
+}
+
+// underlyingName spells an opaque type's underlying type for a hint.
+func underlyingName(meta *transpiler.TypeMetadata) string {
+	if meta.Underlying == nil || meta.Underlying.IsNil() {
+		return "the underlying type"
+	}
+	return meta.Underlying.String()
 }
 
 // opaqueName is how diagnostics spell the opaque type meta describes: bare in
@@ -106,11 +130,7 @@ func sameOpaque(a, b *transpiler.TypeMetadata) bool {
 // through the type (codec, numeric slots, Sendable/Shareable); nothing that
 // infers or looks up methods may call it.
 func (t *galaASTTransformer) opaqueUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
-	meta := t.opaqueMeta(typ)
-	if meta == nil || meta.Underlying == nil || meta.Underlying.IsNil() {
-		return nil, false
-	}
-	return meta.Underlying, true
+	return t.opaqueMeta(typ).OpaqueUnderlying()
 }
 
 // resolveScalar follows typ through local aliases and Go named types to the
@@ -129,12 +149,6 @@ func (t *galaASTTransformer) resolveScalar(typ transpiler.Type) (end transpiler.
 		if next, ok := t.aliasTarget(typ); ok && next.BaseName() != typ.BaseName() {
 			typ = next
 			continue
-		}
-		if basic, ok := typ.(transpiler.BasicType); ok {
-			if next, ok := t.typeAliases[basic.Name]; ok && !next.IsNil() && next.BaseName() != basic.Name {
-				typ = next
-				continue
-			}
 		}
 		if u, ok := t.goNamedUnderlying(typ); ok {
 			typ = u
@@ -180,7 +194,7 @@ func (t *galaASTTransformer) transformOpaqueTypeDeclaration(ctx *grammar.OpaqueT
 	}}
 
 	hasHash, hasCompare := t.userDefinedOpaqueMethods(name)
-	recvType := genericSelfType(name, tParams)
+	recvType := t.buildGenericTypeExpr(name, tParams)
 	if !hasHash {
 		decls = append(decls, t.opaqueHashMethod(recvType, kind))
 	}
@@ -207,52 +221,37 @@ func (t *galaASTTransformer) userDefinedOpaqueMethods(typeName string) (hasHash,
 	return declared("Hash"), declared("Compare")
 }
 
-// genericSelfType is `Name` or, for a generic declaration, `Name[T1, T2]`.
-func genericSelfType(name string, tParams *ast.FieldList) ast.Expr {
-	if tParams == nil {
-		return ast.NewIdent(name)
-	}
-	var indices []ast.Expr
-	for _, p := range tParams.List {
-		for _, n := range p.Names {
-			indices = append(indices, ast.NewIdent(n.Name))
-		}
-	}
-	if len(indices) == 1 {
-		return &ast.IndexExpr{X: ast.NewIdent(name), Index: indices[0]}
-	}
-	return &ast.IndexListExpr{X: ast.NewIdent(name), Indices: indices}
-}
-
-// scalarHelpers names, for each kind, the Go type a value is converted to and
-// the std helpers that hash and compare it. A float hashes through HashUint
-// of its integer conversion, the rule the collections' own type switch uses.
-func scalarHelpers(kind scalarKind) (conv, hash, compare string) {
+// scalarHelpers names, for each kind, the std helpers that hash and compare a
+// value, and the conversions applied to it first (innermost first) for each.
+// A float hashes through HashUint of its integer conversion, the rule the
+// collections' own type switch uses.
+func scalarHelpers(kind scalarKind) (hash string, hashConv []string, compare, compareConv string) {
 	switch kind {
 	case scalarInt:
-		return "int64", "HashInt", "CompareInt"
+		return "HashInt", []string{"int64"}, "CompareInt", "int64"
 	case scalarUint:
-		return "uint64", "HashUint", "CompareUint"
+		return "HashUint", []string{"uint64"}, "CompareUint", "uint64"
 	case scalarFloat:
-		return "float64", "HashUint", "CompareFloat"
+		return "HashUint", []string{"float64", "uint64"}, "CompareFloat", "float64"
 	case scalarString:
-		return "string", "HashString", "CompareString"
+		return "HashString", []string{"string"}, "CompareString", "string"
 	default:
-		return "bool", "HashBool", ""
+		return "HashBool", []string{"bool"}, "", ""
 	}
 }
 
-func convertTo(typeName string, x ast.Expr) ast.Expr {
-	return &ast.CallExpr{Fun: ast.NewIdent(typeName), Args: []ast.Expr{x}}
+// convertTo wraps x in the conversions named, innermost first.
+func convertTo(x ast.Expr, typeNames ...string) ast.Expr {
+	for _, name := range typeNames {
+		x = &ast.CallExpr{Fun: ast.NewIdent(name), Args: []ast.Expr{x}}
+	}
+	return x
 }
 
 // opaqueHashMethod is `func (s T) Hash() uint32 { return std.HashX(conv(s)) }`.
 func (t *galaASTTransformer) opaqueHashMethod(recvType ast.Expr, kind scalarKind) *ast.FuncDecl {
-	conv, hash, _ := scalarHelpers(kind)
-	arg := convertTo(conv, ast.NewIdent("s"))
-	if kind == scalarFloat {
-		arg = convertTo("uint64", convertTo("float64", ast.NewIdent("s")))
-	}
+	hash, conv, _, _ := scalarHelpers(kind)
+	arg := convertTo(ast.NewIdent("s"), conv...)
 	return &ast.FuncDecl{
 		Recv: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("s")}, Type: recvType}}},
 		Name: ast.NewIdent("Hash"),
@@ -269,7 +268,7 @@ func (t *galaASTTransformer) opaqueHashMethod(recvType ast.Expr, kind scalarKind
 // opaqueCompareMethod is `func (s T) Compare(other T) int { return
 // std.CompareX(conv(s), conv(other)) }`, which makes T an Ordered[T].
 func (t *galaASTTransformer) opaqueCompareMethod(recvType ast.Expr, kind scalarKind) *ast.FuncDecl {
-	conv, _, compare := scalarHelpers(kind)
+	_, _, compare, conv := scalarHelpers(kind)
 	return &ast.FuncDecl{
 		Recv: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("s")}, Type: recvType}}},
 		Name: ast.NewIdent("Compare"),
@@ -279,7 +278,7 @@ func (t *galaASTTransformer) opaqueCompareMethod(recvType ast.Expr, kind scalarK
 		},
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{
 			&ast.CallExpr{Fun: t.stdIdent(compare), Args: []ast.Expr{
-				convertTo(conv, ast.NewIdent("s")), convertTo(conv, ast.NewIdent("other")),
+				convertTo(ast.NewIdent("s"), conv), convertTo(ast.NewIdent("other"), conv),
 			}},
 		}}}},
 	}
@@ -288,7 +287,7 @@ func (t *galaASTTransformer) opaqueCompareMethod(recvType ast.Expr, kind scalarK
 // checkOpaqueUnderlying rejects an underlying type an opaque type cannot be
 // declared over (GALA-E0062) and classifies the accepted ones.
 func (t *galaASTTransformer) checkOpaqueUnderlying(ctx *grammar.OpaqueTypeDeclarationContext, name string, declared transpiler.Type, tParams *ast.FieldList) (scalarKind, error) {
-	written := sourceTextOf(ctx.Type_())
+	written := transpiler.SourceText(ctx.Type_())
 	reject := func(reason, hint string) (scalarKind, error) {
 		tok := ctx.Type_().GetStart()
 		return scalarNone, galaerr.NewCodedSemanticError(galaerr.CodeInvalidOpaqueUnderlying,
@@ -312,12 +311,8 @@ func (t *galaASTTransformer) checkOpaqueUnderlying(ctx *grammar.OpaqueTypeDeclar
 
 	end, kind, viaOpaque := t.resolveScalar(declared)
 	if viaOpaque != nil {
-		base := "its underlying type"
-		if viaOpaque.Underlying != nil && !viaOpaque.Underlying.IsNil() {
-			base = viaOpaque.Underlying.String()
-		}
 		return reject(fmt.Sprintf("%s is itself an opaque type, and an opaque type inherits nothing from the type it is declared over", t.opaqueName(viaOpaque)),
-			fmt.Sprintf("declare %s over %s instead", name, base))
+			fmt.Sprintf("declare %s over %s instead", name, underlyingName(viaOpaque)))
 	}
 	if kind != scalarNone {
 		return kind, nil
@@ -376,6 +371,9 @@ func (t *galaASTTransformer) nonScalarReason(typ transpiler.Type) string {
 // opaqueConversionCallee returns the metadata of the opaque type a call
 // target names when the call is a conversion `UserID(x)`, or nil.
 func (t *galaASTTransformer) opaqueConversionCallee(fun ast.Expr) *transpiler.TypeMetadata {
+	if !t.hasOpaque {
+		return nil
+	}
 	base := fun
 	switch f := fun.(type) {
 	case *ast.IndexExpr:
@@ -397,15 +395,10 @@ func (t *galaASTTransformer) opaqueConversionCallee(fun ast.Expr) *transpiler.Ty
 	default:
 		return nil
 	}
-	name := t.getBaseTypeName(fun)
-	if name == "" {
-		return nil
+	if name := t.getBaseTypeName(fun); name != "" {
+		return t.opaqueMetaByName(name)
 	}
-	meta := t.getTypeMeta(name)
-	if meta == nil || !meta.IsOpaque {
-		return nil
-	}
-	return meta
+	return nil
 }
 
 // checkOpaqueConversion rejects `OrderID(userID)`, a direct conversion of one
@@ -415,73 +408,37 @@ func (t *galaASTTransformer) checkOpaqueConversion(target *transpiler.TypeMetada
 	if from == nil || sameOpaque(from, target) {
 		return nil
 	}
-	argText := sourceTextOf(argCtx)
-	underlying := "the underlying type"
-	if from.Underlying != nil && !from.Underlying.IsNil() {
-		underlying = from.Underlying.String()
-	}
+	argText := transpiler.SourceText(argCtx)
 	tok := argCtx.GetStart()
 	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueToOpaqueConversion,
 		tok.GetLine(), tok.GetColumn(),
 		fmt.Sprintf("cannot convert %s to %s directly: they are different opaque types", t.opaqueName(from), t.opaqueName(target)),
-		fmt.Sprintf("convert through the underlying type if this is intended: %s(%s(%s))", t.opaqueName(target), underlying, argText),
+		t.throughUnderlyingHint(target, from, argText),
 	).WithSpan(tok.GetColumn() + len([]rune(argText)))
 }
 
-// sourceTextOf is ctx's source text as written, whitespace included.
-func sourceTextOf(ctx antlr.ParserRuleContext) string {
-	start, stop := ctx.GetStart(), ctx.GetStop()
-	if start == nil || stop == nil || start.GetInputStream() == nil {
-		return ctx.GetText()
-	}
-	return start.GetInputStream().GetText(start.GetStart(), stop.GetStop())
-}
-
-// synthesizedOpaqueMethod returns the signature of the Hash or Compare the
-// transformer generates on the opaque type meta describes, or nil. A
-// user-declared method of the name wins: it is in meta.Methods (GALA) or the
-// package's .go methods, and lookups consult those first.
-func (t *galaASTTransformer) synthesizedOpaqueMethod(meta *transpiler.TypeMetadata, method string) *transpiler.MethodMetadata {
-	if meta == nil || !meta.IsOpaque {
-		return nil
-	}
-	switch method {
-	case "Hash":
-		return &transpiler.MethodMetadata{Name: "Hash", Package: meta.Package, ReturnType: transpiler.BasicType{Name: "uint32"}}
-	case "Compare":
-		if _, kind, _ := t.resolveScalar(meta.Underlying); kind == scalarBool {
-			return nil
-		}
-		self := t.opaqueSelfType(meta)
-		return &transpiler.MethodMetadata{
-			Name:       "Compare",
-			Package:    meta.Package,
-			ParamNames: []string{"other"},
-			ParamTypes: []transpiler.Type{self},
-			ReturnType: transpiler.BasicType{Name: "int"},
-		}
-	}
-	return nil
+// throughUnderlyingHint is the hint for a value of opaque type from where
+// opaque type to is wanted: convert through from's underlying type.
+func (t *galaASTTransformer) throughUnderlyingHint(to, from *transpiler.TypeMetadata, text string) string {
+	return fmt.Sprintf("convert through the underlying type if this is intended: %s(%s(%s))", t.opaqueName(to), underlyingName(from), text)
 }
 
 // isSynthesizedOpaqueMethod reports whether method is a Hash or Compare the
-// transformer generates on the opaque type meta describes.
+// transformer generates on the opaque type meta describes (Compare is not
+// generated over bool). A user-declared method of the name wins: lookups
+// consult meta.Methods and the package's .go methods first.
 func (t *galaASTTransformer) isSynthesizedOpaqueMethod(meta *transpiler.TypeMetadata, method string) bool {
-	return t.synthesizedOpaqueMethod(meta, method) != nil
-}
-
-// opaqueSelfType is the type meta declares, instantiated with its own type
-// parameters when it has any.
-func (t *galaASTTransformer) opaqueSelfType(meta *transpiler.TypeMetadata) transpiler.Type {
-	var self transpiler.Type = transpiler.NamedType{Package: meta.Package, Name: meta.Name}
-	if len(meta.TypeParams) == 0 {
-		return self
+	if meta == nil || !meta.IsOpaque {
+		return false
 	}
-	params := make([]transpiler.Type, len(meta.TypeParams))
-	for i, p := range meta.TypeParams {
-		params[i] = transpiler.BasicType{Name: p}
+	switch method {
+	case "Hash":
+		return true
+	case "Compare":
+		_, kind, _ := t.resolveScalar(meta.Underlying)
+		return kind != scalarBool
 	}
-	return transpiler.GenericType{Base: self, Params: params}
+	return false
 }
 
 // checkOpaqueMismatch rejects a value that would need an implicit conversion
@@ -490,7 +447,7 @@ func (t *galaASTTransformer) opaqueSelfType(meta *transpiler.TypeMetadata) trans
 // where the opaque type is expected. Untyped constants mix, as in Go. Any
 // other mismatch is left to Go, which stays the backstop.
 func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
-	if expected == nil || transpiler.IsUnusable(expected) || expected.IsAny() {
+	if !t.hasOpaque || expected == nil || transpiler.IsUnusable(expected) || expected.IsAny() {
 		return nil
 	}
 	expM := t.opaqueMeta(expected)
@@ -508,31 +465,38 @@ func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpi
 	if expM == nil && actM == nil {
 		return nil
 	}
-	text := sourceTextOf(exprCtx)
-	var msg, hint string
+	// spell names a side of the mismatch: an opaque type as diagnostics
+	// spell it, anything else as its type.
+	spell := func(typ transpiler.Type, meta *transpiler.TypeMetadata) string {
+		if meta != nil {
+			return t.opaqueName(meta)
+		}
+		return typ.String()
+	}
 	switch {
 	case expM != nil && actM != nil:
 		if sameOpaque(expM, actM) {
 			return nil
 		}
-		msg = fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, t.opaqueName(actM), t.opaqueName(expM))
-		hint = fmt.Sprintf("convert through the underlying type if this is intended: %s(%s(%s))", t.opaqueName(expM), actM.Underlying.String(), text)
 	case expM != nil:
-		if isUntypedConstant(expr) || !t.sameScalar(actual, expM.Underlying) {
+		if isUntypedConst(expr) || !t.sameScalar(actual, expM.Underlying) {
 			return nil
 		}
-		msg = fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, actual.String(), t.opaqueName(expM))
-		hint = fmt.Sprintf("convert explicitly: %s(%s)", t.opaqueName(expM), text)
 	default:
 		if !t.sameScalar(expected, actM.Underlying) {
 			return nil
 		}
-		msg = fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, t.opaqueName(actM), expected.String())
-		hint = fmt.Sprintf("convert explicitly: %s(%s)", expected.String(), text)
+	}
+	text := transpiler.SourceText(exprCtx)
+	hint := fmt.Sprintf("convert explicitly: %s(%s)", spell(expected, expM), text)
+	if expM != nil && actM != nil {
+		hint = t.throughUnderlyingHint(expM, actM, text)
 	}
 	tok := exprCtx.GetStart()
-	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueTypeMismatch, tok.GetLine(), tok.GetColumn(), msg, hint).
-		WithSpan(tok.GetColumn() + len([]rune(text)))
+	return galaerr.NewCodedSemanticError(galaerr.CodeOpaqueTypeMismatch, tok.GetLine(), tok.GetColumn(),
+		fmt.Sprintf("cannot use %s (%s) as %s: an opaque type never converts implicitly", text, spell(actual, actM), spell(expected, expM)),
+		hint,
+	).WithSpan(tok.GetColumn() + len([]rune(text)))
 }
 
 // shareableUnderlying is the Sendable/Shareable checker's view of a named
@@ -540,10 +504,8 @@ func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpi
 // underlying type. The checker accepts either only when it is a primitive.
 func (t *galaASTTransformer) shareableUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
 	if u, ok := t.opaqueUnderlying(typ); ok {
-		if end, kind, _ := t.resolveScalar(u); kind != scalarNone {
-			return end, true
-		}
-		return u, true
+		end, _, _ := t.resolveScalar(u)
+		return end, true
 	}
 	return t.goNamedUnderlying(typ)
 }
@@ -553,31 +515,19 @@ func (t *galaASTTransformer) shareableUnderlying(typ transpiler.Type) (transpile
 // metadata: an opaque type encodes as its underlying scalar. ok is false when
 // the name is not an opaque type over a scalar the codec writes.
 func (t *galaASTTransformer) opaqueCodecScalar(name, pkg string) (codecScalar, bool) {
-	key := name
-	if pkg != "" && pkg != t.packageName {
-		key = pkg + "." + name
-	}
-	meta := t.getTypeMeta(key)
-	if meta == nil || !meta.IsOpaque || meta.Underlying == nil || meta.Underlying.IsNil() {
+	meta := t.opaqueMeta(transpiler.NamedType{Package: pkg, Name: name})
+	u, ok := meta.OpaqueUnderlying()
+	if !ok {
 		return codecScalar{}, false
 	}
 	owner := meta.Package
 	if owner == t.packageName || owner == "main" || owner == "test" {
 		owner = ""
 	}
-	u := t.codecUnalias(meta.Underlying, owner)
-	for hop := 0; hop < 16; hop++ {
-		if uname, upkg, ok := simpleTypeName(u); ok && upkg == "" {
-			sc, ok := codecScalars[uname]
-			return sc, ok
-		}
-		next, ok := t.goNamedUnderlying(u)
-		if !ok {
-			break
-		}
-		u = next
-	}
-	return codecScalar{}, false
+	// The underlying type is a scalar, an alias of one (resolved in the
+	// declaring package) or a Go named scalar, which codecScalarOf reads.
+	sc, _, _, ok := t.codecScalarOf(t.codecUnalias(u, owner))
+	return sc, ok
 }
 
 // probeExprType is expr's inferred type for a check that only judges when the
@@ -613,20 +563,14 @@ func canonicalScalar(name string) string {
 	return name
 }
 
-// isUntypedConstant reports whether expr is a Go untyped constant expression:
-// literals, true/false, and operators applied to them.
-func isUntypedConstant(expr ast.Expr) bool {
+// isUntypedConst reports whether expr is a Go untyped constant: an untyped
+// numeric or string constant (isUntypedConstExpr), or true / false.
+func isUntypedConst(expr ast.Expr) bool {
 	switch e := expr.(type) {
-	case *ast.BasicLit:
-		return true
 	case *ast.Ident:
 		return e.Name == "true" || e.Name == "false"
 	case *ast.ParenExpr:
-		return isUntypedConstant(e.X)
-	case *ast.UnaryExpr:
-		return isUntypedConstant(e.X)
-	case *ast.BinaryExpr:
-		return isUntypedConstant(e.X) && isUntypedConstant(e.Y)
+		return isUntypedConst(e.X)
 	}
-	return false
+	return isUntypedConstExpr(expr)
 }
