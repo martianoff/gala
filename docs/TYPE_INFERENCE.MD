@@ -704,6 +704,23 @@ type arguments names no function type, so a lambda converted with a bare
   (`type IntTag Tag[int]`) is followed. A type parameter neither source
   determines is an error with an annotation and an explicit-type-argument
   example (`val x Tag[int] = Tag(...)`, `Tag[int](...)`).
+- A **companion `Apply` construction** follows the same rule, with the
+  slot type matched against what `Apply` returns (`applySlotTypeArgs`):
+  `MkTag("x")` for a `MkTag[T]` whose `Apply(name string)` returns
+  `Tagged[T]` is `MkTag[int]{}.Apply("x")` as the value of a
+  `Tagged[int]` slot, and `Left("x")` takes `Either[string, int]` from
+  its slot the same way. A result slot pushes its type for such a
+  construction only when it is the value (`isConstructionOf` names a
+  construction of a value of the slot's type: the struct itself, or a
+  companion whose `Apply` returns it), so `val h = MkTag("x")` in a
+  function returning `Tagged[int]` is not a `Tagged[int]`: it is an error
+  (GALA-E0018 for a sealed variant) whose hint fills in the known type
+  arguments and a placeholder for the rest (`val x Tagged[int] =
+  MkTag(...)`, `MkTag[int](...)`). The annotation example is left out
+  when the type `Apply` returns does not carry the missing parameter, as
+  no annotation could bind it. A zero-argument variant (`None()`) still
+  falls back to the enclosing result type, which outranks the match
+  subject for it.
 - For **tuple elements** (context 4 / context 2 with tuple return),
   `transformPrimary` inspects the enclosing `returnSlot.typ`
   for a Tuple-shaped expected type and pushes each per-slot type
