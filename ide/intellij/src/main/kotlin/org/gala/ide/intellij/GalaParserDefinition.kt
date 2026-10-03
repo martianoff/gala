@@ -14,7 +14,6 @@ import org.antlr.intellij.adaptor.lexer.ANTLRLexerAdaptor
 import org.antlr.intellij.adaptor.parser.ANTLRParserAdaptor
 import org.antlr.v4.runtime.Parser
 import org.antlr.v4.runtime.tree.ParseTree
-import org.gala.ide.intellij.parser.galaLexer
 import org.gala.ide.intellij.parser.galaParser
 import org.gala.ide.intellij.psi.*
 
@@ -31,7 +30,7 @@ class GalaParserDefinition : ParserDefinition {
     }
 
     override fun createLexer(project: Project?): Lexer {
-        val lexer = galaLexer(null)
+        val lexer = GalaNewlineLexer(null)
         return ANTLRLexerAdaptor(GalaLanguage, lexer)
     }
 
@@ -39,6 +38,7 @@ class GalaParserDefinition : ParserDefinition {
         val parser = galaParser(null)
         return object : ANTLRParserAdaptor(GalaLanguage, parser) {
             override fun parse(parser: Parser, root: com.intellij.psi.tree.IElementType): ParseTree {
+                parser.errorHandler = GalaErrorStrategy()
                 return (parser as galaParser).sourceFile()
             }
         }
