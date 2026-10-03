@@ -101,7 +101,7 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 						}
 					}
 				}
-			} else if registry.IsStdType(typeName) {
+			} else if t.isKnownStdType(typeName) {
 				// Fallback: if type resolution failed but this is a known std type,
 				// qualify it with std. prefix (e.g., Tuple, Option, Either, etc.)
 				ident = t.stdIdent(typeName)
@@ -245,10 +245,11 @@ func isPrimitiveType(name string) bool {
 	return transpiler.IsPrimitiveType(name)
 }
 
-// isKnownStdType checks if a type name is a known standard library type
-// that should always be prefixed with std.
+// isKnownStdType reports whether the bare name means a std type here, so it is
+// emitted as std.Name: std exports it, and the package does not declare a type
+// of its own under the name, which would shadow std's.
 func (t *galaASTTransformer) isKnownStdType(name string) bool {
-	return registry.IsStdType(name)
+	return registry.IsStdType(name) && !t.packageDeclaresType(name)
 }
 
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {

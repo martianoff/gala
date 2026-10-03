@@ -39,11 +39,8 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			return ident, nil
 		}
 
-		// A type the package declares is this name, whatever an import also
-		// exports under it: a package-level declaration outranks every import,
-		// the implicit std import included. Without this, a struct or sealed
-		// variant named like a std type or companion (`Seq`, `Left`) was
-		// emitted as std's.
+		// A type the package declares shadows a std type or companion of the
+		// same name (`Seq`, `Left`).
 		if t.packageDeclaresType(name) {
 			return ident, nil
 		}

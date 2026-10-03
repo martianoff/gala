@@ -537,7 +537,7 @@ val result = sum(1, 2, 3, 4, 5) // result = 15
 Variadic functions can be combined with generics for flexible factory functions.
 
 ```gala
-func ListOf[T any](elements ...T) List[T] {
+func listOf[T any](elements ...T) List[T] {
     var result = EmptyList[T]()
     var i = elements.Size() - 1
     for ; i >= 0 ; {
@@ -548,8 +548,8 @@ func ListOf[T any](elements ...T) List[T] {
 }
 
 // Usage
-val numbers = ListOf(1, 2, 3)
-val names = ListOf("Alice", "Bob", "Charlie")
+val numbers = listOf(1, 2, 3)
+val names = listOf("Alice", "Bob", "Charlie")
 ```
 
 Collections are built through these named constructor functions — `ListOf`,
@@ -1864,10 +1864,10 @@ GALA provides several built-in types in the `std` package for common patterns.
 
 ```gala
 // Defined as a sealed type in std:
-sealed type Option[T any] {
-    case Some(Value T)
-    case None()
-}
+//   sealed type Option[T any] {
+//       case Some(Value T)
+//       case None()
+//   }
 
 val x = Some(10)
 val y = None[int]()
@@ -2065,10 +2065,10 @@ See [Either](#either) for typed error handling, and [Try](#try-monad) for except
 
 ```gala
 // Defined as a sealed type in std:
-sealed type Either[A any, B any] {
-    case Left(LeftValue A)
-    case Right(RightValue B)
-}
+//   sealed type Either[A any, B any] {
+//       case Left(LeftValue A)
+//       case Right(RightValue B)
+//   }
 
 val e = Right[int, string]("success")
 val msg = e match {

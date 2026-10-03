@@ -1437,7 +1437,7 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 						}
 					}
 				}
-			} else if registry.IsStdType(identName) {
+			} else if t.isKnownStdType(identName) {
 				targetType = t.stdIdent(identName)
 			}
 		}

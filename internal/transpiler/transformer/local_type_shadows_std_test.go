@@ -192,6 +192,46 @@ func Pair() int = (1, 2) match {
 			notWant: []string{"std.Option[std.Tuple]", "(t std.Tuple"},
 		},
 		{
+			name: "field typed by a std-named struct declared further down",
+			pkg:  "lib",
+			src: `struct Holder(Value Option)
+
+func Get(h Holder) int = h.Value.N
+
+struct Option(N int)`,
+			want:    []string{"Value std.Immutable[Option]", "func Get(h Holder) int"},
+			notWant: []string{"std.Option"},
+		},
+		{
+			name: "std-named struct as an explicit call type argument",
+			pkg:  "lib",
+			src: `struct Tuple(A int, B int)
+
+func keep[T any](v T) T = v
+
+func Pair() Tuple = keep[Tuple](Tuple(1, 2))`,
+			want:    []string{"keep[Tuple]("},
+			notWant: []string{"std.Tuple"},
+		},
+		{
+			name: "inferred vals and lambdas over a std-named generic struct in main",
+			pkg:  "main",
+			src: `import . "martianoff/gala/collection_immutable"
+
+struct Seq[T any](Head T, Count int)
+
+func build() Seq[int] = Seq(1, 2)
+
+func heads() Array[int] = ArrayOf(build(), build()).Map((s) => s.Head)
+
+func head() int {
+    val s = build()
+    s.Head
+}`,
+			want:    []string{"func build() Seq[int]", "func(s Seq[int]) int"},
+			notWant: []string{"std.Seq"},
+		},
+		{
 			name: "generic struct named like a std interface in main",
 			pkg:  "main",
 			src: `struct Seq[T any](Head T, Size int)

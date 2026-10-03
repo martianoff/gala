@@ -816,15 +816,15 @@ two-parameter type:
 
 ```gala
 // `A` is phantom: it appears in the return type but in no parameter.
-func InvalidOf[E any, A any](err E) Validated[E, A] = Invalid(ArrayOf(err))
+func invalidOf[E any, A any](err E) Validated[E, A] = Invalid(ArrayOf(err))
 
 func vName(s string) Validated[string, string] =
-    if (s != "") Valid(s) else InvalidOf("name required")
+    if (s != "") Valid(s) else invalidOf("name required")
 ```
 
 `E` is inferable from the argument, but `A` is not — there is no value of
 type `A` at the call site to pin it against. Go's own type inference cannot
-recover it either, so emitting the call verbatim (`InvalidOf("…")`) produces
+recover it either, so emitting the call verbatim (`invalidOf("…")`) produces
 Go that fails to compile with `cannot infer A`. That would violate the
 "generate concrete types, or fail with an error" rule by silently emitting
 un-compilable output.
@@ -850,7 +850,7 @@ the verbatim-call fallback:
    type, or unset while it is not known — never the surrounding function's).
 
 The call target is rewritten into an explicit instantiation
-(`InvalidOf[string, string]("…")`) **only when every type parameter resolves to
+(`invalidOf[string, string]("…")`) **only when every type parameter resolves to
 a concrete type**. If any remains unresolved, the target is left unchanged.
 This makes the rewrite strictly *broken-to-working or a no-op*: it never turns
 output Go already accepts into something it rejects, and it is skipped entirely

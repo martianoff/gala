@@ -279,7 +279,7 @@ func (t *galaASTTransformer) qualifyTypeExpr(expr ast.Expr) ast.Expr {
 	switch e := expr.(type) {
 	case *ast.Ident:
 		// Check if this is a std type
-		if registry.IsStdType(e.Name) {
+		if t.isKnownStdType(e.Name) {
 			return t.stdIdent(e.Name)
 		}
 		return e

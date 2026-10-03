@@ -888,6 +888,20 @@ func main() {
 			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
 			expectContains: "function ArrayOf is also exported by collection_immutable",
 		},
+		{
+			name: "GALA-E0066 package val named like a dot-imported function",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+val ArrayOf = 1
+
+func main() {
+    Println(ArrayOf)
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "package-level value ArrayOf is also exported by collection_immutable",
+		},
 	}
 
 	for _, tc := range cases {
