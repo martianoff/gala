@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"martianoff/gala/internal/transpiler/genheader"
 )
 
 // TranspileFunc turns one GALA source file into Go. filePath is the file's
@@ -158,17 +160,17 @@ func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
 			}
 			full = strings.TrimSuffix(full, ".gala") + ".gen.go"
 		case strings.HasSuffix(name, ".go"):
-			// A generated file left behind by an earlier transpile of this
-			// directory duplicates the .gala it came from.
-			if strings.HasSuffix(name, ".gen.go") {
-				continue
-			}
 			if ok, _ := build.Default.MatchFile(dir, name); !ok {
 				continue
 			}
 			raw, err := os.ReadFile(full)
 			if err != nil {
 				return nil, &PackageError{path, err}
+			}
+			// A file left behind by an earlier transpile of this directory
+			// duplicates the .gala it came from (see genheader).
+			if genheader.Stale(name, raw) {
+				continue
 			}
 			src = string(raw)
 		default:

@@ -448,6 +448,13 @@ func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
 			return nil
 		}
 
+		// x.gala is transpiled to x.gen.go, so another generator's x.gen.go
+		// beside it would be dropped from the build without a word.
+		if stem, ok := strings.CutSuffix(path, ".gen.go"); ok && fileExists(stem+".gala") {
+			return fmt.Errorf("%s has the name %s is transpiled to; rename the generated Go file",
+				path, filepath.Base(stem)+".gala")
+		}
+
 		dstPath := filepath.Join(dstDir, relPath)
 
 		// Ensure destination directory exists

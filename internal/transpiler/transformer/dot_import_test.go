@@ -275,9 +275,9 @@ func test() int {
 // and the relocated subpackage produced a false "exported by multiple
 // dot-imported packages" collision.
 //
-// The fix excludes auto-generated .gen.go files from extractGoFileExports
-// in mixed GALA+Go packages (the .gala source is the truth, the .gen.go is
-// the derivative). Cross-module consumption — where only .gen.go is
+// The fix excludes the GALA transpiler's own output, told by its header,
+// from extractGoFileExports in mixed GALA+Go packages (the .gala source is
+// the truth, the .gen.go is the derivative). Cross-module consumption — where only .gen.go is
 // available — still scans them.
 func TestDotImportPhantomReExportFromStaleGenGo(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "dot_import_phantom_reexport_test")

@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "genheader",
+    srcs = ["genheader.go"],
+    importpath = "martianoff/gala/internal/transpiler/genheader",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "genheader_test",
+    srcs = ["genheader_test.go"],
+    embed = [":genheader"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

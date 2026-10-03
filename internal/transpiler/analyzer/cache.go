@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/profiler"
 )
 
@@ -79,7 +80,12 @@ import (
 // v14: GoExports is read from a parse of each Go file, so grouped and generic
 // declarations count. GALA-E0023 checks type names against it, so a v13
 // payload would report the types it missed as undefined.
-const CacheVersion = "v14"
+//
+// v15: a .gen.go another generator wrote (oapi-codegen, stringer, …) is part
+// of its package: GoExports and GoTypeInfo include its declarations and the
+// content hash covers it. Only the GALA transpiler's own output, told by its
+// header, is left out. A v14 payload lacks those types.
+const CacheVersion = "v15"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
@@ -785,7 +791,7 @@ func pkgFingerprintForDir(dirPath string) pkgFingerprint {
 		if ext != ".gala" && ext != ".go" {
 			continue
 		}
-		if strings.HasSuffix(name, "_test.gala") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".gen.go") {
+		if strings.HasSuffix(name, "_test.gala") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		entries = append(entries, fileEntry{name: name, isGala: ext == ".gala"})
@@ -811,6 +817,12 @@ func pkgFingerprintForDir(dirPath string) pkgFingerprint {
 		content, err := ioutil.ReadFile(filepath.Join(dirPath, e.name))
 		if err != nil {
 			return pkgFingerprint{}
+		}
+		// The transpiler's own output restates the .gala source already
+		// hashed; any other Go file, a .gen.go another generator wrote
+		// included, is read by the analysis and so keys it.
+		if genheader.Stale(e.name, content) {
+			continue
 		}
 		contentH.Write([]byte(e.name))
 		contentH.Write(content)
