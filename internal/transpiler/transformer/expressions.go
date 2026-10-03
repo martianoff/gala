@@ -1164,9 +1164,12 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 		}
 	}
 	// An opaque type and its underlying type (or another opaque type) never
-	// convert implicitly; say so in GALA rather than leave it to Go.
-	if err := t.checkOpaqueMismatch(expr, s.typ, exprCtx); err != nil {
-		return nil, err
+	// convert implicitly; say so in GALA rather than leave it to Go. An open
+	// slot is not a type the value has to have.
+	if !s.open {
+		if err := t.checkOpaqueMismatch(expr, s.typ, exprCtx); err != nil {
+			return nil, err
+		}
 	}
 	return expr, nil
 }

@@ -170,7 +170,8 @@ func (t *galaASTTransformer) diagTypeName(typ transpiler.Type) string {
 	switch ty := typ.(type) {
 	case transpiler.NamedType:
 		if ty.Package != "" {
-			if actual, ok := t.importManager.ResolveAlias(ty.Package); ok {
+			// Only a qualifier as written in this file is an import alias.
+			if actual, ok := t.importManager.ResolveAlias(ty.Package); ok && ty.ImportPath != "" {
 				return t.diagQualifier(actual) + ty.Name
 			}
 			return t.diagQualifier(ty.Package) + ty.Name
@@ -188,9 +189,9 @@ func (t *galaASTTransformer) diagTypeName(typ transpiler.Type) string {
 // sameOpaqueType reports whether a and b, both opaque types (described by
 // ma and mb), are the same type — type arguments included, so the phantom
 // instantiations Id[User] and Id[Order] differ. Type arguments are compared
-// as the types they resolve to (through aliases and import aliases); one
-// that does not resolve to a known type — an open slot, a type parameter —
-// is taken to match.
+// as the types they resolve to (through aliases and import aliases); only one
+// that is still open — a type parameter of the enclosing declaration, or a
+// type inference could not determine — is taken to match.
 func (t *galaASTTransformer) sameOpaqueType(a transpiler.Type, ma *transpiler.TypeMetadata, b transpiler.Type, mb *transpiler.TypeMetadata) bool {
 	if ma.Package != mb.Package || ma.Name != mb.Name {
 		return false
@@ -201,41 +202,54 @@ func (t *galaASTTransformer) sameOpaqueType(a transpiler.Type, ma *transpiler.Ty
 		return true
 	}
 	for i := range ga.Params {
-		ka, knownA := t.typeArgKey(ga.Params[i])
-		kb, knownB := t.typeArgKey(gb.Params[i])
-		if knownA && knownB && ka != kb {
+		ka, closedA := t.typeArgKey(ga.Params[i])
+		kb, closedB := t.typeArgKey(gb.Params[i])
+		if closedA && closedB && ka != kb {
 			return false
 		}
 	}
 	return true
 }
 
-// typeArgKey is a canonical spelling of a type argument, and false when it
-// does not resolve to a known type: a type parameter, `any`, or a name GALA
-// has no metadata for.
+// typeArgKey is a canonical spelling of a type argument, and false when the
+// argument is still open: a type parameter in scope, or one inference could
+// not determine (a bare name that is no type in scope). A GALA type is
+// spelled by its declaring package, a type of the package's own .go files by
+// this package, `any` as itself.
 func (t *galaASTTransformer) typeArgKey(typ transpiler.Type) (string, bool) {
 	typ = t.followAliasChain(typ)
-	if transpiler.IsUnusable(typ) || typ.IsAny() {
+	if transpiler.IsUnusable(typ) {
 		return "", false
 	}
 	switch ty := typ.(type) {
 	case transpiler.BasicType:
-		if transpiler.IsPrimitiveType(ty.Name) {
+		switch {
+		case transpiler.IsPrimitiveType(ty.Name):
 			return canonicalScalar(ty.Name), true
-		}
-		if t.isActiveTypeParam(ty.Name) {
+		case t.isActiveTypeParam(ty.Name):
 			return "", false
+		case t.isOwnGoType(ty.Name):
+			return t.packageName + "." + ty.Name, true
 		}
-		return t.typeMetaKey(ty.Name)
+		// A bare name that is no type in scope is a type parameter of the
+		// callee, not yet bound.
+		if meta := t.getTypeMeta(ty.Name); meta != nil {
+			return meta.Package + "." + meta.Name, true
+		}
+		return "", false
 	case transpiler.NamedType:
 		pkg := ty.Package
-		if actual, ok := t.importManager.ResolveAlias(pkg); ok {
-			pkg = actual
+		// Only a qualifier as written in this file is an import alias; a
+		// package recorded in metadata is already the package's name.
+		if ty.ImportPath != "" {
+			if actual, ok := t.importManager.ResolveAlias(pkg); ok {
+				pkg = actual
+			}
 		}
 		if pkg == "" || t.isLocalPackage(pkg) {
-			return t.typeMetaKey(ty.Name)
+			return t.typeMetaKey(ty.Name, t.packageName+"."+ty.Name), true
 		}
-		return t.typeMetaKey(pkg + "." + ty.Name)
+		return t.typeMetaKey(pkg+"."+ty.Name, pkg+"."+ty.Name), true
 	case transpiler.GenericType:
 		base, ok := t.typeArgKey(ty.Base)
 		if !ok {
@@ -248,18 +262,28 @@ func (t *galaASTTransformer) typeArgKey(typ transpiler.Type) (string, bool) {
 			}
 		}
 		return base + "[" + strings.Join(args, ",") + "]", true
+	case transpiler.PointerType:
+		elem, ok := t.typeArgKey(ty.Elem)
+		return "*" + elem, ok
+	case transpiler.ArrayType:
+		elem, ok := t.typeArgKey(ty.Elem)
+		return "[]" + elem, ok
+	case transpiler.MapType:
+		key, okK := t.typeArgKey(ty.Key)
+		elem, okE := t.typeArgKey(ty.Elem)
+		return "map[" + key + "]" + elem, okK && okE
 	}
-	return "", false
+	return typ.String(), true
 }
 
-// typeMetaKey is the declaring package and name of the type name resolves
-// to, and false when it resolves to no GALA type.
-func (t *galaASTTransformer) typeMetaKey(name string) (string, bool) {
+// typeMetaKey is the declaring package and name of the GALA type name
+// resolves to, or fallback when it resolves to none (a Go type).
+func (t *galaASTTransformer) typeMetaKey(name, fallback string) string {
 	meta := t.getTypeMeta(name)
 	if meta == nil {
-		return "", false
+		return fallback
 	}
-	return meta.Package + "." + meta.Name, true
+	return meta.Package + "." + meta.Name
 }
 
 // underlyingOf is the type the opaque type meta describes is declared over,
@@ -272,7 +296,15 @@ func (t *galaASTTransformer) underlyingOf(meta *transpiler.TypeMetadata) (transp
 		return nil, false
 	}
 	if b, isBasic := u.(transpiler.BasicType); isBasic && !transpiler.IsPrimitiveType(b.Name) && !t.isLocalPackage(meta.Package) {
-		return transpiler.NamedType{Package: meta.Package, Name: b.Name}, true
+		// Qualify it only when the declaring package has the name: one it
+		// reached through a dot import stays as written.
+		q := transpiler.NamedType{Package: meta.Package, Name: b.Name}
+		if _, alias := t.aliasTarget(q); alias {
+			return q, true
+		}
+		if _, goNamed := t.goNamedUnderlying(q); goNamed {
+			return q, true
+		}
 	}
 	return u, true
 }
@@ -591,6 +623,25 @@ func (t *galaASTTransformer) isSynthesizedOpaqueMethod(meta *transpiler.TypeMeta
 	return false
 }
 
+// synthesizedMethodResultType is the result type of a method the transformer
+// generates on typeMeta's type rather than one declared on it: Equal (bool)
+// on a struct or sealed type, Hash (uint32) and Compare (int) on an opaque
+// type. NilType for any other name, or one a .go file of the package declares.
+func (t *galaASTTransformer) synthesizedMethodResultType(typeMeta *transpiler.TypeMetadata, method string) transpiler.Type {
+	if _, inGo := t.goMethodsOnGalaType(typeMeta)[method]; inGo {
+		return transpiler.NilType{}
+	}
+	switch {
+	case method == "Equal" && (typeMeta.IsSealed || typeMeta.IsShorthand || len(typeMeta.FieldNames) > 0):
+		return transpiler.BasicType{Name: "bool"}
+	case method == "Hash" && t.isSynthesizedOpaqueMethod(typeMeta, method):
+		return transpiler.BasicType{Name: "uint32"}
+	case method == "Compare" && t.isSynthesizedOpaqueMethod(typeMeta, method):
+		return transpiler.BasicType{Name: "int"}
+	}
+	return transpiler.NilType{}
+}
+
 // checkOpaqueMismatch rejects a value that would need an implicit conversion
 // to fill a slot of type expected (GALA-E0064): an opaque type where its
 // underlying type or another opaque type is expected, or the underlying type
@@ -746,10 +797,21 @@ func (t *galaASTTransformer) logicalOperandType(operands ...ast.Expr) transpiler
 	if !t.hasOpaque {
 		return nil
 	}
+	// Every operand must be that opaque type or an untyped bool: one typed
+	// as a plain bool is a mismatch Go reports, and the result is no opaque
+	// value.
+	var result transpiler.Type
+	var resultMeta *transpiler.TypeMetadata
 	for _, x := range operands {
-		if typ := t.getExprTypeNameManual(x); t.opaqueMeta(typ) != nil {
-			return typ
+		if isUntypedConst(x) {
+			continue
 		}
+		typ := t.probeExprType(x)
+		meta := t.opaqueMeta(typ)
+		if meta == nil || resultMeta != nil && !t.sameOpaqueType(result, resultMeta, typ, meta) {
+			return nil
+		}
+		result, resultMeta = typ, meta
 	}
-	return nil
+	return result
 }

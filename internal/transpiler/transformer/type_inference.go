@@ -312,7 +312,7 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	}
 	methodMeta, ok := typeMeta.Methods[methodName]
 	if !ok {
-		return transpiler.NilType{}
+		return t.synthesizedMethodResultType(typeMeta, methodName)
 	}
 
 	result := methodMeta.ReturnType

@@ -217,6 +217,31 @@ func main() {
 	assert.Contains(t, err.Error(), "GALA-E0064")
 }
 
+// TestOpaqueTypeSynthesizedMethodTypes covers the result types inference
+// gives the generated Hash, Compare and a struct's Equal.
+func TestOpaqueTypeSynthesizedMethodTypes(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type UserID int64
+
+struct Pair(A int, B int)
+
+func pick(b bool) string {
+    val h = if (b) UserID(1).Hash() else UserID(2).Hash()
+    val c = if (b) UserID(1).Compare(UserID(2)) else UserID(2).Compare(UserID(1))
+    val e = if (b) Pair(1, 2).Equal(Pair(1, 2)) else Pair(1, 2).Equal(Pair(2, 1))
+    s"$h $c $e"
+}
+
+func main() {
+    Println(pick(true))
+}`)
+	// An if-expression's IIFE spells the branches' inferred type.
+	assert.Contains(t, out, "func() uint32 {")
+	assert.Contains(t, out, "func() int {")
+	assert.Contains(t, out, "func() bool {")
+}
+
 // TestOpaqueTypePhantomInstantiationsDiffer covers phantom type parameters:
 // Id[User] and Id[Order] are different types, so a direct conversion between
 // them is GALA-E0063 and passing one for the other is GALA-E0064.
@@ -264,6 +289,28 @@ func main() {
 }`, "opaque_test.gala")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GALA-E0063")
+
+	// Composite and `any` tags are told apart as well.
+	for _, conv := range []string{
+		"Id[*Order](Id[*User](1))",
+		"Id[Array[Order]](Id[Array[User]](1))",
+		"Id[User](Id[any](1))",
+	} {
+		_, err = trans.Transpile(`package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct User(Name string)
+struct Order(Total int)
+
+opaque type Id[T any] int64
+
+func main() {
+    Println(`+conv+`)
+}`, "opaque_test.gala")
+		require.Error(t, err, conv)
+		assert.Contains(t, err.Error(), "GALA-E0063", conv)
+	}
 
 	// The same instantiation through an alias of the argument is the same type.
 	transpileOpaque(t, decls+`
