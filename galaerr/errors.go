@@ -681,6 +681,13 @@ const (
 	// that a dot import in any file of the package also brings in. The import
 	// is taken under a name, or the declaration renamed.
 	CodeDeclarationCollidesWithDotImport ErrorCode = "GALA-E0066"
+
+	// E0067: a generic type is constructed (companion Apply such as `Try(x)`,
+	// its fields, or a partial type-argument list) and nothing at the call
+	// determines one of its type parameters, so Go could not instantiate it.
+	// A common cause is an argument calling into a Go package whose types
+	// were not loaded.
+	CodeUninferredTypeArgument ErrorCode = "GALA-E0067"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
