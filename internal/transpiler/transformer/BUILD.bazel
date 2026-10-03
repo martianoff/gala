@@ -215,6 +215,7 @@ go_test(
         "stable_identifier_pattern_test.go",
         "string_escapes_test.go",
         "struct_defaults_test.go",
+        "struct_expected_type_test.go",
         "structs_test.go",
         "tco_test.go",
         "test_helper_test.go",

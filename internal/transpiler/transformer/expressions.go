@@ -1125,14 +1125,16 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	}
 	// A tuple literal filling a result slot (`func f() Tuple[int64, int64] =
 	// (1, 2)`) takes its element types from the slot, exactly as one in an
-	// argument slot does. It is the only plain expression a result slot pushes
-	// for: the literal consumes the entry itself (tupleElementExpectedTypes),
+	// argument slot does, and so does a construction of the generic struct the
+	// slot names (`func f() Tag[int] = Tag("x")`), for the type arguments its
+	// fields leave open. They are the only plain expressions a result slot
+	// pushes for: the literal or the construction consumes the entry itself,
 	// so nothing nested inside it sees the result type.
 	//
 	// The hint is the type an alias names, not the alias: the constructors and
 	// generic calls that read it match its structure (`Try[Email]` for
 	// `type Checked Try[Email]`) to bind their type arguments.
-	if hint := t.followAliasChain(s.typ); s.push || t.isTupleLiteralFor(exprCtx, hint) {
+	if hint := t.followAliasChain(s.typ); s.push || t.isTupleLiteralFor(exprCtx, hint) || t.isStructConstructionOf(exprCtx, hint) {
 		release := t.expectedArgTypes.push(hint)
 		defer release()
 	}
@@ -1216,6 +1218,56 @@ func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContex
 	}
 	list := t.parenthesizedList(exprCtx)
 	return list != nil && len(list.AllExpression()) > 1 && len(list.AllExpression()) == len(gen.Params)
+}
+
+// isStructConstructionOf reports whether exprCtx is exactly a construction of
+// the generic struct typ instantiates — `Tag("x")`, `Pair[int](1)`,
+// `geo.Tag(name = "x")` for `Tag[int]` — and not a value derived from one
+// (`Tag("x").Rename()`).
+func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
+	gen, ok := typ.(transpiler.GenericType)
+	if !ok {
+		return false
+	}
+	p := t.barePostfix(exprCtx)
+	if p == nil || t.bareMatchPostfix(exprCtx) != nil {
+		return false
+	}
+	primExpr, ok := p.PrimaryExpr().(*grammar.PrimaryExprContext)
+	if !ok {
+		return false
+	}
+	prim, ok := primExpr.Primary().(*grammar.PrimaryContext)
+	if !ok || prim.Identifier() == nil {
+		return false
+	}
+	// The callee is a (qualified) name, optionally with type arguments,
+	// followed by the one call.
+	suffixes := p.AllPostfixSuffix()
+	n := len(suffixes)
+	if n == 0 || !isCallSuffix(suffixes[n-1]) {
+		return false
+	}
+	name := prim.Identifier().GetText()
+	for i, s := range suffixes[:n-1] {
+		sc := s.(*grammar.PostfixSuffixContext)
+		switch {
+		case sc.Identifier() != nil:
+			name += "." + sc.Identifier().GetText()
+		case sc.ExpressionList() != nil && i == n-2:
+		default:
+			return false
+		}
+	}
+	resolved := t.resolveStructTypeName(name)
+	_, isStruct := t.structFields[resolved]
+	return isStruct && resolved == t.resolveStructTypeName(gen.Base.String())
+}
+
+// isCallSuffix reports whether s is an argument list `(...)`.
+func isCallSuffix(s grammar.IPostfixSuffixContext) bool {
+	sc := s.(*grammar.PostfixSuffixContext)
+	return sc.Identifier() == nil && sc.ExpressionList() == nil
 }
 
 // parenthesizedList returns the list of an expression that is exactly a
