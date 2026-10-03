@@ -951,9 +951,9 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 // The hop count bounds a chain that refers back to itself.
 func (t *galaASTTransformer) codecUnalias(ty transpiler.Type, pkg string) transpiler.Type {
 	for hop := 0; hop <= len(t.typeAliases); hop++ {
-		base, args := ty, []transpiler.Type(nil)
+		base := ty
 		if g, isGeneric := ty.(transpiler.GenericType); isGeneric {
-			base, args = g.Base, g.Params
+			base = g.Base
 		}
 		name, owner, ok := simpleTypeName(base)
 		if !ok {
@@ -966,16 +966,9 @@ func (t *galaASTTransformer) codecUnalias(ty transpiler.Type, pkg string) transp
 		if owner != "" && owner != t.packageName {
 			key = owner + "." + name
 		}
-		target, isAlias := t.typeAliases[key]
-		if !isAlias || target.IsNil() {
+		target, isAlias := t.aliasTargetByKey(key, ty)
+		if !isAlias {
 			return ty
-		}
-		if args != nil {
-			meta := t.getTypeMeta(key)
-			if meta == nil || len(meta.TypeParams) != len(args) {
-				return ty
-			}
-			target = t.substituteConcreteTypes(target, meta.TypeParams, args)
 		}
 		// The target is written in owner's terms, so it resolves there in turn.
 		ty, pkg = target, owner

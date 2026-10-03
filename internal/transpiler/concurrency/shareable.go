@@ -115,9 +115,13 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	if transpiler.IsUnusable(t) {
 		return false
 	}
-	if c.unalias != nil {
-		if target, ok := c.unalias(t); ok {
-			t = target
+	// Only a named type can spell an alias; a composite never does.
+	switch t.(type) {
+	case transpiler.BasicType, transpiler.NamedType, transpiler.GenericType:
+		if c.unalias != nil {
+			if target, ok := c.unalias(t); ok {
+				t = target
+			}
 		}
 	}
 

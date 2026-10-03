@@ -36,7 +36,7 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			return fType
 		}
 	}
-	if ft, ok := t.methodValueType(xType, resolvedTypeName, e.Sel.Name); ok {
+	if ft, ok := t.methodValueType(xType, e.Sel.Name); ok {
 		return ft
 	}
 	// Try Go type info for struct field access and method calls on Go types
@@ -113,11 +113,19 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 // and the next call in the chain leaked that parameter's internal name into
 // the generated Go. A method with type parameters of its own has no single
 // signature and is not resolved here.
-func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, resolvedTypeName, method string) (transpiler.Type, bool) {
+//
+// The receiver is resolved the way a call's is (methodReceiverType), so a
+// receiver typed by an alias finds methods declared on the alias as well as on
+// the type it names, with the alias's arguments substituted at each hop.
+func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method string) (transpiler.Type, bool) {
 	if recvType.IsNil() {
 		return nil, false
 	}
-	meta := t.getTypeMeta(resolvedTypeName)
+	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
+		recvType = ptr.Elem
+	}
+	recvType = t.methodReceiverType(recvType, method)
+	meta := t.getTypeMeta(recvType.BaseName())
 	if meta == nil {
 		return nil, false
 	}
@@ -125,17 +133,9 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, resolvedT
 	if !ok || len(mm.TypeParams) > 0 {
 		return nil, false
 	}
-	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), mm.ParamTypes...)}
-	if mm.ReturnType != nil && !mm.ReturnType.IsNil() {
-		if _, void := mm.ReturnType.(transpiler.VoidType); !void {
-			ft.Results = []transpiler.Type{mm.ReturnType}
-		}
-	}
+	ft := signatureType(mm.ParamTypes, mm.ReturnType)
 	if len(meta.TypeParams) == 0 {
 		return ft, true
-	}
-	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
-		recvType = ptr.Elem
 	}
 	gen, isGeneric := recvType.(transpiler.GenericType)
 	if !isGeneric || len(gen.Params) != len(meta.TypeParams) {

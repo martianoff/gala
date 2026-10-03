@@ -58,6 +58,38 @@ func main() {
 			want: "func(__p0 int) int",
 		},
 		{
+			name: "alias that reorders its target's arguments",
+			input: `package main
+
+struct Pair[A any, B any](First A, Second B)
+
+func (p Pair[A, B]) Pick(k int) Option[B] = if (k > 0) Some(p.Second) else None()
+
+type Flip[A any, B any] Pair[B, A]
+
+func main() {
+    val f Flip[int, string] = Pair("s", 1)
+    Println(Some(1).FlatMap(f.Pick).Map(_ + 1))
+}`,
+			want: "func(__p0 int) int",
+		},
+		{
+			name: "method declared on an alias",
+			input: `package main
+
+struct Point(X int, Y int)
+
+type Coord Point
+
+func (c Coord) Shift(n int) Option[int] = Some(c.X + n)
+
+func main() {
+    val c Coord = Coord(1, 2)
+    Println(Some(1).FlatMap(c.Shift).Map(_ * 2))
+}`,
+			want: "func(__p0 int) int",
+		},
+		{
 			name: "codec Decode passed to FlatMap",
 			input: `package main
 
