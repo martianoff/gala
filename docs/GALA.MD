@@ -215,7 +215,16 @@ The result type is never inferred. Without one the function is void, exactly lik
 `func f() { <expr> }`: the expression is a statement, so a call is made and its result
 discarded, and a `match` or `if` runs its branches as statements. A plain value — a
 literal, name, operator expression or lambda — is rejected as evaluated but not used;
-write the result type to return it.
+write the result type to return it. The same holds for each branch of that `match` or
+`if`, and for the branches of any `match` or if-expression used as a statement: a branch
+may make a call, assign or do nothing, but a plain value in one is evaluated but not used.
+
+```gala
+func welcome(name string) = if (name == "") Println("hello") else Println(s"hello $name")
+
+// func pick(c bool) = if (c) 1 else 2   // error: `1` is evaluated but not used
+func pick(c bool) int = if (c) 1 else 2  // returns 1 or 2
+```
 
 ```gala
 func greet(name string) = Println(s"hello $name")
@@ -977,6 +986,20 @@ c match {
 
 When the match's value *is* used (assigned to a `val`, returned, passed as an
 argument), all arms must still unify to one type.
+
+Each arm of a statement match is itself a statement. An arm may make a call,
+assign or do nothing, but an arm that is — or, in braces, ends in — a plain
+value (a literal, name, operator expression or lambda) is rejected as evaluated
+but not used, since nothing could read it:
+
+<!-- doc-check: fragment -->
+```gala
+mode match {
+    case Read() => { seen = 1 }      // fine: an assignment
+    case Write() => { seen = 2; true } // error: `true` is evaluated but not used
+    case _ => Println("other")         // fine: a call
+}
+```
 
 #### Standard Library Sealed Types
 The `std` package defines `Option[T]`, `Either[A, B]`, and `Try[T]` as sealed types. See [Standard Library Types](#9-standard-library-types) for details.

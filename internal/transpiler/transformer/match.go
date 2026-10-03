@@ -1597,22 +1597,23 @@ func (t *galaASTTransformer) siblingsType(types []transpiler.Type) transpiler.Ty
 // armSlot is the slot the match fills (zero when none); an
 // expression body is lowered against it (see lowerAgainst).
 func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementContext, armSlot slot) ([]ast.Stmt, transpiler.Type, error) {
-	// If the body is an expression, wrap it in a return (value-returning case)
 	if exprCtx := ctx.Expression(); exprCtx != nil {
 		// `case x => break` runs loop control; the arm has no value.
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
 			return []ast.Stmt{bs}, transpiler.VoidType{}, nil
 		}
-		// In a statement match the arm's value is discarded, so a nested match
-		// or if-expression written as the body is a statement too, exactly as
-		// at the tail of a braced arm: its own arms may hold loop control.
-		if armSlot.discarded && (t.expressionIsBareMatch(exprCtx) || t.findIfExpressionInExpression(exprCtx) != nil) {
-			stmt, err := t.lowerDiscardedExpression(exprCtx)
+		// In a statement match the arm's value is discarded, so its body is a
+		// statement, exactly like the tail of a braced arm: a nested match or
+		// if-expression runs as a statement (its own arms may hold loop
+		// control), and a plain value is evaluated but not used.
+		if armSlot.discarded {
+			stmt, err := t.lowerExpressionStatement(exprCtx, functionDiscardHint)
 			if err != nil {
 				return nil, nil, err
 			}
 			return []ast.Stmt{stmt}, transpiler.VoidType{}, nil
 		}
+		// Otherwise the body is the arm's value: wrap it in a return.
 		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 			return nil, nil, err
 		}

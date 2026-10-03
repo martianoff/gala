@@ -158,7 +158,7 @@ func square(x int) int = x * x
 func greet(name string) = Println(s"hello $name")
 ```
 
-The result type is never inferred. Without one the function is void, like `func f() { <expr> }`: a call is made and its result discarded, and a `match` or `if` runs its branches as statements. A plain value (`func answer() = 42`) is rejected as evaluated but not used; write the result type to return it, `func answer() int = 42`.
+The result type is never inferred. Without one the function is void, like `func f() { <expr> }`: a call is made and its result discarded, and a `match` or `if` runs its branches as statements. A plain value (`func answer() = 42`) is rejected as evaluated but not used; write the result type to return it, `func answer() int = 42`. The same holds for each branch of that `match` or `if`, and for the branches of any `match` or if-expression used as a statement: a branch may make a call, assign or do nothing, but a plain value in one (`func pick(c bool) = if (c) 1 else 2`) is evaluated but not used.
 
 ### Local Functions
 Named functions and methods are declared only at the top level of a file. A
@@ -421,6 +421,8 @@ val desc = flag match {
 }
 ```
 
+A `match` used as a statement (its value discarded) is side-effect dispatch: its arms need not share a type, and each arm is a statement. An arm may make a call, assign or do nothing, but an arm that is, or in braces ends in, a plain value (a literal, name, operator expression or lambda) is rejected as evaluated but not used.
+
 #### Stable Identifiers (Constants in Patterns)
 A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. Lowercase identifiers always bind, so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
 ```gala
@@ -451,7 +453,7 @@ val res = x match {
 type Even struct {}
 func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
 
-42 match {
+val parity = 42 match {
     case Even(n) => s"$n is even"
     case _       => "odd"
 }

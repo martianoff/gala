@@ -455,12 +455,6 @@ const (
 	// expression is the function's implicit return value, lowered exactly
 	// like `return expr`.
 	tailReturn
-	// tailDropped: like tailDiscarded, for an arm of a statement-position
-	// match or a branch of a statement-position if-expression, whose value
-	// nothing reads. A trailing bare value there — which the expression form
-	// allows — is evaluated and dropped rather than rejected as unused (see
-	// dropValue).
-	tailDropped
 )
 
 // transformBlock lowers a block whose trailing statement is discarded, like
@@ -476,10 +470,11 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 //
 // A block whose value is discarded (s.discarded: an arm of a statement-position
 // match) lowers its tail as a statement, so a trailing match there is a
-// statement-position match too rather than a value mixing value and void arms.
+// statement-position match too rather than a value mixing value and void arms,
+// and a trailing plain value is evaluated but not used, as in any statement.
 func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
 	if s.discarded {
-		return t.transformBlockWithTail(ctx, tailDropped, slot{})
+		return t.transformBlock(ctx)
 	}
 	return t.transformBlockWithTail(ctx, tailValue, s)
 }
@@ -497,7 +492,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 	// A match or if-expression at the tail of every value-carrying block is
 	// value-consumed, not statement-position — including a branch of a value
 	// block's trailing if, whose tail the chain promotes like a lambda's.
-	lastStmtIsValue := tail != tailDiscarded && tail != tailDropped
+	lastStmtIsValue := tail != tailDiscarded
 	t.pushScope()
 	defer t.popScope()
 
@@ -648,9 +643,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		// slot, any other value is never promoted to the lambda's return.
 		discarded := !isTrailing || tail == tailDiscarded ||
 			(tail == tailIIFE && !t.needsExpectedType(valueExpr))
-		if isTrailing && tail == tailDropped && valueExpr != nil {
-			stmt = t.dropValue(valueExpr, stmt)
-		} else if discarded && valueExpr != nil {
+		if discarded && valueExpr != nil {
 			hint := functionDiscardHint
 			if isTrailing && tail == tailIIFE {
 				hint = lambdaDiscardHint
@@ -768,7 +761,7 @@ func ifStatementOf(ctx *grammar.StatementContext) *grammar.IfStatementContext {
 // statement whose branches are statements, as an if statement's are: a Go call
 // there is made as it is rather than converted to a value, no branch has to
 // produce a value, and a `return` in a block branch returns from the enclosing
-// function.
+// function. A plain value in a branch is evaluated but not used.
 func (t *galaASTTransformer) lowerIfExpressionStatement(ctx *grammar.IfExpressionContext) (ast.Stmt, error) {
 	cond, err := t.transformExpression(ctx.Expression())
 	if err != nil {
@@ -779,9 +772,9 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(ctx *grammar.IfExpressio
 		branch := b.(*grammar.IfExprBranchContext)
 		var stmt ast.Stmt
 		if blockCtx, ok := branch.Block().(*grammar.BlockContext); ok {
-			stmt, err = t.transformBlockWithTail(blockCtx, tailDropped, slot{})
+			stmt, err = t.transformBlock(blockCtx)
 		} else {
-			stmt, err = t.lowerExpressionStatement(branch.Expression())
+			stmt, err = t.lowerExpressionStatement(branch.Expression(), functionDiscardHint)
 		}
 		if err != nil {
 			return nil, err
@@ -805,23 +798,13 @@ func (t *galaASTTransformer) lowerIfExpressionStatement(ctx *grammar.IfExpressio
 	return ifStmt, nil
 }
 
-// lowerExpressionStatement lowers an expression whose value is discarded the
+// lowerExpressionStatement lowers an expression whose value nothing reads the
 // way a block lowers such a statement: a bare match is a statement-position
-// match, a bare if-expression an if statement, and a plain value is dropped
-// (see dropValue).
-func (t *galaASTTransformer) lowerExpressionStatement(exprCtx grammar.IExpressionContext) (ast.Stmt, error) {
-	stmt, err := t.lowerDiscardedExpression(exprCtx)
-	if err != nil {
-		return nil, err
-	}
-	return t.dropValue(exprCtx, stmt), nil
-}
-
-// lowerDiscardedExpression lowers an expression whose value nothing reads as
-// a statement: a bare match is a statement-position match and a bare
-// if-expression an if statement. A plain value is left as an expression
-// statement for the caller to drop or reject.
-func (t *galaASTTransformer) lowerDiscardedExpression(exprCtx grammar.IExpressionContext) (ast.Stmt, error) {
+// match, a bare if-expression an if statement whose branches are lowered the
+// same way, and a plain value (a literal, name, operator expression or lambda)
+// is rejected as evaluated but not used, with hint. A plain value in a branch
+// gets the branch hint (functionDiscardHint) whatever encloses it.
+func (t *galaASTTransformer) lowerExpressionStatement(exprCtx grammar.IExpressionContext, hint string) (ast.Stmt, error) {
 	if ifExpr := t.findIfExpressionInExpression(exprCtx); ifExpr != nil {
 		return t.lowerIfExpressionStatement(ifExpr)
 	}
@@ -842,18 +825,11 @@ func (t *galaASTTransformer) lowerDiscardedExpression(exprCtx grammar.IExpressio
 		t.pendingMatchStmtBlock = nil
 		return block, nil
 	}
-	return &ast.ExprStmt{X: expr}, nil
-}
-
-// dropValue returns stmt, the statement lowered from exprCtx, with a bare value
-// that Go would reject as unused (`true`, `label`) assigned to `_` instead:
-// still evaluated, and dropped. A call is left as it is.
-func (t *galaASTTransformer) dropValue(exprCtx grammar.IExpressionContext, stmt ast.Stmt) ast.Stmt {
-	exprStmt, ok := stmt.(*ast.ExprStmt)
-	if !ok || t.checkValueUsedHint(exprCtx, stmt, "") == nil {
-		return stmt
+	stmt := &ast.ExprStmt{X: expr}
+	if err := t.checkValueUsedHint(exprCtx, stmt, hint); err != nil {
+		return nil, err
 	}
-	return &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent("_")}, Tok: token.ASSIGN, Rhs: []ast.Expr{exprStmt.X}}
+	return stmt, nil
 }
 
 // lowerFunctionTail lowers the trailing expression of a function declared with
@@ -1080,11 +1056,9 @@ func (t *galaASTTransformer) checkValueUsedHint(exprCtx grammar.IExpressionConte
 	x := ast.Unparen(exprStmt.X)
 	switch e := x.(type) {
 	case *ast.CallExpr:
-		if !t.isDirectVariableExpression(exprCtx) {
-			return nil
-		}
-		// A bare name that lowers to a call is a val read through `.Get()`.
-		if sel, ok := e.Fun.(*ast.SelectorExpr); !ok || sel.Sel.Name != "Get" || len(e.Args) != 0 {
+		// A call lowered from a name or field that was not written as a call
+		// is a val read through `.Get()` (`x`, `b.n`).
+		if !isZeroArgGetCall(e) || !t.isUnwrittenValRead(exprCtx) {
 			return nil
 		}
 	case *ast.UnaryExpr:

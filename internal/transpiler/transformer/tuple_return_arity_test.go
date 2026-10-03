@@ -43,8 +43,8 @@ func wrap() Option[Tuple[int, int, int]] = Some((1, 2, 3))
 
 func main() {
     wrap() match {
-        case Some(_) => "ok"
-        case _       => "none"
+        case Some(_) => Println("ok")
+        case _       => Println("none")
     }
 }`,
 			expected: []string{
@@ -68,8 +68,8 @@ func wrap() Option[Tuple[int, int, int, int]] = Some((1, 2, 3, 4))
 
 func main() {
     wrap() match {
-        case Some(_) => "ok"
-        case _       => "none"
+        case Some(_) => Println("ok")
+        case _       => Println("none")
     }
 }`,
 			expected: []string{

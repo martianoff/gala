@@ -924,7 +924,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	} else if ctx.Expression() != nil && !hasResult {
 		// A function with no result type is void: GALA does not infer one, so
 		// `func F() = <expr>` is `func F() { <expr> }`.
-		b, err := t.transformVoidExpressionBody(ctx.Expression())
+		b, err := t.transformVoidExpressionBody(ctx.Expression(), expressionFunctionDiscardHint)
 		if err != nil {
 			return nil, err
 		}
@@ -1009,22 +1009,12 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 // function with no result type, as the block `{ <expr> }` would lower its one
 // statement: a call is made and its result discarded, a match or if-expression
 // is a statement, and a value nothing uses is rejected as evaluated but not
-// used.
-func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpressionContext) (*ast.BlockStmt, error) {
-	stmt, err := t.lowerDiscardedExpression(exprCtx)
+// used, with hint. The body of an expression lambda that returns nothing is
+// lowered the same way.
+func (t *galaASTTransformer) transformVoidExpressionBody(exprCtx grammar.IExpressionContext, hint string) (*ast.BlockStmt, error) {
+	stmt, err := t.lowerExpressionStatement(exprCtx, hint)
 	if err != nil {
 		return nil, err
-	}
-	if err := t.checkValueUsedHint(exprCtx, stmt, expressionFunctionDiscardHint); err != nil {
-		return nil, err
-	}
-	if es, ok := stmt.(*ast.ExprStmt); ok {
-		// checkValueUsedHint lets a val field read (`= b.n`) through: it
-		// lowers to a `.Get()` call although no call was written.
-		if isZeroArgGetCall(es.X) && !t.endsInCall(exprCtx) {
-			return nil, t.semanticErrorAt(exprCtx, fmt.Sprintf(
-				"`%s` is evaluated but not used; %s", exprCtx.GetText(), expressionFunctionDiscardHint))
-		}
 	}
 	if block, ok := stmt.(*ast.BlockStmt); ok {
 		return block, nil
@@ -1042,19 +1032,34 @@ func isZeroArgGetCall(e ast.Expr) bool {
 	return ok && sel.Sel.Name == transpiler.MethodGet
 }
 
-// endsInCall reports whether the GALA expression is written as a call: a
-// postfix chain whose last suffix is an argument list.
-func (t *galaASTTransformer) endsInCall(exprCtx grammar.IExpressionContext) bool {
+// isUnwrittenValRead reports whether the GALA expression reads a name or a
+// field without being written as a call — `x`, `b.n`, `(x)` — so a `.Get()`
+// it lowers to is a val read, not a call the author made.
+func (t *galaASTTransformer) isUnwrittenValRead(exprCtx grammar.IExpressionContext) bool {
 	postfix := t.getSinglePostfixExpr(exprCtx)
 	if postfix == nil {
 		return false
 	}
 	suffixes := postfix.AllPostfixSuffix()
-	if len(suffixes) == 0 {
-		return false
+	if n := len(suffixes); n > 0 {
+		last := suffixes[n-1]
+		if last.GetChildCount() > 0 && last.GetChild(0).(antlr.ParseTree).GetText() == "(" {
+			return false
+		}
 	}
-	last := suffixes[len(suffixes)-1]
-	return last.GetChildCount() > 0 && last.GetChild(0).(antlr.ParseTree).GetText() == "("
+	pc := PrimaryOf(postfix)
+	switch {
+	case pc == nil:
+		return false
+	case pc.Identifier() != nil:
+		return true
+	case len(suffixes) == 0 && pc.TupleExpressionList() != nil:
+		// `(x)`: a parenthesized expression reads what it encloses.
+		if exprs := pc.TupleExpressionList().AllExpression(); len(exprs) == 1 {
+			return t.isUnwrittenValRead(exprs[0])
+		}
+	}
+	return false
 }
 
 // transformExpressionBodiedFunction handles the `func foo() T = expr` form by
