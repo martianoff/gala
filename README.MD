@@ -248,12 +248,12 @@ if err != nil {
 
 [![gala-tui demo: a build-server dashboard across eight screens](https://raw.githubusercontent.com/martianoff/gala-tui/0.15.3/docs/gala-tui-demo.gif)](https://github.com/martianoff/gala-tui)
 
-An Elm-architecture terminal UI framework — about 19,500 lines of GALA and 1,400+ tests. It is the largest GALA codebase, and it leans on the language's features to do real work:
+An Elm-architecture terminal UI framework, written from scratch in GALA. It is not a wrapper around a Go TUI library such as Bubble Tea or tview: the layout engine, differential renderer, widgets, input parsing, and async runtime are all GALA. Its only Go dependency is `golang.org/x/term`, for putting the terminal into raw mode. It is also the largest GALA codebase, and it leans on the language's features to do real work:
 
 - **Sealed types drive the architecture.** An app's messages are a `sealed type`, so `update` is an exhaustive `match`: add a message and `update` stops compiling until it handles it. Side effects are data too — `Cmd[T]` is a sealed type (`NoCmd`, `QuitCmd`, `BatchCmd`, `FutureCmd`, …) that the runtime interprets.
 - **Immutable widgets, minimal redraws.** Widgets are plain immutable values, and a differential renderer writes only the cells that changed.
 - **`Future` for async work.** `FutureCmd` and `AsyncTry` run work off the UI loop and deliver the result back as a message.
-- **Go interop without bindings.** Raw terminal mode comes from `golang.org/x/term`, imported straight into GALA.
+- **Go interop without bindings.** `golang.org/x/term` is imported straight into GALA, with no wrapper layer.
 - **Tested without a terminal.** `Snapshot` renders a widget to a string for golden-file tests; `Harness` runs the real key-decoding, update, and render loop against a fake terminal you can assert on.
 
 The demo above is a build-server dashboard: eight screens that between them show every widget, plus a fuzzy command palette, modals, toasts, mouse input, and four themes. The recording is generated from a committed script of keystrokes and clicks, not shot by hand. [Run it yourself](https://github.com/martianoff/gala-tui#quick-demo).

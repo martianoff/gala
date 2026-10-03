@@ -64,7 +64,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 
 | Project | Description |
 |---------|-------------|
-| [GALA TUI](https://github.com/martianoff/gala-tui) | Flagship. Elm-architecture TUI framework -- immutable widgets, differential renderer, async runtime, mouse, themes |
+| [GALA TUI](https://github.com/martianoff/gala-tui) | Flagship. Elm-architecture TUI framework built from scratch in GALA, not a wrapper around a Go TUI library -- immutable widgets, differential renderer, async runtime, mouse, themes |
 | [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator -- Team Lead delegates to Engineers and QAs, reviews work, hands you a PR. Its interface is a gala-tui app |
 | [GALA Server](https://github.com/martianoff/gala-server) | Immutable HTTP server library with builder-pattern configuration |
 | [GALA Playground](https://github.com/martianoff/gala-playground) | Web-based playground -- [try it live](https://gala-playground.fly.dev) |
