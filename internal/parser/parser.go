@@ -430,7 +430,7 @@ func bareLambdaParamError(recognizer antlr.Recognizer, offendingSymbol interface
 		return nil
 	}
 	prev := prevCodeToken(stream, tok.GetTokenIndex())
-	if prev == nil || prev.GetTokenType() != kinds.identifier {
+	if prev == nil || prev.GetTokenType() != kinds().identifier {
 		return nil
 	}
 

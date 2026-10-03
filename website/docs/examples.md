@@ -42,9 +42,9 @@ A `(` that starts a line, after a line ending in a name, a literal, `)`, `]` or 
 ```gala
 package main
 
-func minMax(a int, b int) Tuple[int, int] {
-    Println(s"comparing $a and $b")
-    if (a < b) (a, b) else (b, a)
+func swapped(a int, b int) Tuple[int, int] {
+    Println(s"swapping $a and $b")
+    (b, a)                          // a new statement, not `Println(...)(b, a)`
 }
 
 func scaled(a int, b int) Tuple[int, int] {
@@ -53,7 +53,7 @@ func scaled(a int, b int) Tuple[int, int] {
 }
 
 func main() {
-    Println(minMax(7, 3))
+    Println(swapped(7, 3))
     Println(scaled(1, 2))
 }
 ```

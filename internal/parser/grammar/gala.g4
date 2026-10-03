@@ -2,8 +2,10 @@ grammar gala;
 
 // NL_LPAREN is a '(' that starts a line after a token that can end an
 // expression. No lexer rule produces it: the parser driver re-types it (see
-// internal/parser/newline.go). Only a call suffix rejects it, so such a '('
-// begins a new statement; every other '(' site accepts both.
+// internal/parser/newline.go). A call suffix rejects it, so such a '(' begins a
+// new statement. Every other '(' that can follow a name, literal, ')', ']' or
+// '}' accepts both (primary, parameters, sealedCase); a '(' after a keyword
+// (receiver, tuplePattern, import, if) is never re-typed and needs only '('.
 tokens { NL_LPAREN }
 
 // Entry point
