@@ -1085,21 +1085,9 @@ func main() {
 }
 ```
 
-### Package Declarations Shadow Imported Names {#package-declarations-shadow-imported-names}
+A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
 
-A type the package declares is what its bare name means everywhere in the package, ahead of any import — std included, which every file imports implicitly. A package may declare its own `Seq`, `Hashable` or `Ordered`, and the bare name then means the package's declaration in every position; std's shadowed type stays reachable as `std.Seq` through `import "martianoff/gala/std"`. The std names the language gives built-in meaning — `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS` and the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, plus helpers such as `Copy` and `Equal` — are reserved: a `type` or `struct` declaration or a top-level function under one is an error, and a sealed variant named like a companion draws a warning.
-
-```gala
-package shapes
-
-import . "martianoff/gala/collection_immutable"
-
-type Seq Array[int]           // shadows std's Seq in this package
-
-struct Holder(Items Seq)      // the package's Seq, not std.Seq
-```
-
-A dot import is the exception: it is a Go dot import, and Go allows no package-level name that a dot import in any file of the package also brings in. Declaring `struct List(...)` beside `import . "martianoff/gala/collection_immutable"` is [GALA-E0066](/docs/errors/gala-e0066/); import the package under a name, or rename the declaration.
+A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](/docs/errors/gala-e0066/), because Go forbids it; import that package under a name, or rename the declaration.
 
 ### Package Visibility {#package-visibility}
 

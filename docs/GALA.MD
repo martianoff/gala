@@ -4137,25 +4137,9 @@ func main() {
 
 Two dot-imported packages that export the same name are rejected with [GALA-E0032](errors/GALA-E0032.md); qualify or alias one of them. This is by design for packages that deliberately re-export another's API — `concurrent` is a facade over `go_interop`'s execution-context helpers, so dot-importing both is never meaningful. See [Using `go_interop` in the same file](CONCURRENT.MD#using-go_interop-in-the-same-file).
 
-### Package Declarations Shadow Imported Names
+A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
 
-A type the package declares is what its bare name means everywhere in the package, in every file, ahead of any import. That includes std, which every file imports implicitly: a package may declare its own `Seq`, `Hashable` or `Ordered`, and the bare name then refers to the package's declaration in fields, parameters, results, `val` annotations, constructor calls, patterns and type arguments. std's other names stay in scope, and a shadowed std type is still reachable as `std.Seq` through `import "martianoff/gala/std"`. Code importing the package sees the declaration as `lib.Seq` as usual.
-
-The std names the language itself gives meaning to are reserved rather than shadowed: `Option`, `Either`, `Try`, `Immutable`, `Tuple` through `Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS` and the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure` (constructor inference, tuple syntax and `val` fields are built on them), along with the std helpers `NewImmutable`, `NewEmbeddedFS`, `Copy`, `Equal`, `FromOption` and `FromEitherError`. A `type` or `struct` declaration under one of them is an error, as is a top-level function under one; a sealed variant named like a companion draws a warning. Prefer a different name for these.
-
-```gala
-package shapes
-
-import . "martianoff/gala/collection_immutable"
-
-type Seq Array[int]           // shadows std's Seq in this package
-
-struct Holder(Items Seq)      // the package's Seq, not std.Seq
-
-func Make() Holder = Holder(ArrayOf(1, 2))
-```
-
-A dot import is the exception. GALA's `import . "path"` is a Go dot import, and Go allows no package-level name that a dot import in any file of the package also brings in, so declaring `struct List(...)` beside `import . "martianoff/gala/collection_immutable"` is rejected with [GALA-E0066](errors/GALA-E0066.md). Import the package under a name, or rename the declaration.
+A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](errors/GALA-E0066.md), because Go forbids it; import that package under a name, or rename the declaration.
 
 ### Using Symbols from Other Packages
 
