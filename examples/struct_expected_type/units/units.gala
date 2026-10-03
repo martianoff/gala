@@ -19,6 +19,7 @@ func Of(amount float64) Quantity[Seconds] = Quantity(amount)
 
 // Measure builds a Quantity through its companion Apply; the unit comes from
 // the expected type, matched against the Quantity Apply returns.
-type Measure[U any] struct {}
+struct Measure[U any]()
 
+// Apply builds a Quantity of amount in the unit U.
 func (m Measure[U]) Apply(amount float64) Quantity[U] = Quantity[U](amount)

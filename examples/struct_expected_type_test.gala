@@ -73,7 +73,7 @@ func remoteAlias(amount float64) units.Distance = units.Quantity(amount)
 // A companion Apply construction follows the same rule, matching the expected
 // type against what Apply returns. Only the construction that is the result
 // value takes the result type: the helper below writes its own.
-type MkTag[T any] struct {}
+struct MkTag[T any]()
 
 func (m MkTag[T]) Apply(name string) Tag[T] = Tag[T](name)
 
@@ -81,7 +81,7 @@ func viaApply() Tag[int] = MkTag("apply")
 
 func applyBlock(n int) Tag[bool] {
     val helper = MkTag[string](s"helper $n")
-    MkTag(helper.Name + " done")
+    MkTag(s"${helper.Name} done")
 }
 
 func variantArms(n int) Either[string, int] = n match {
