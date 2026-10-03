@@ -3397,6 +3397,8 @@ gala_library(
         "multifile_lib_regress/generic_sealed.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
+        "multifile_lib_regress/opaque_a.gala",
+        "multifile_lib_regress/opaque_b.gala",
         "multifile_lib_regress/pkg_name_collision.gala",
         "multifile_lib_regress/pkg_name_collision_go.gala",
         "multifile_lib_regress/pointer_method_field.gala",
@@ -3875,4 +3877,25 @@ gala_exec_test(
         "//json",
         "//yaml",
     ],
+)
+
+# Opaque types of a mixed GALA + Go package: a Go file adds a driver.Valuer
+# method, another declares Hash by hand, which replaces the generated one.
+gala_library(
+    name = "opaque_type_mixed_ids",
+    srcs = ["opaque_type_mixed/ids/ids.gala"],
+    go_srcs = [
+        "opaque_type_mixed/ids/hash.go",
+        "opaque_type_mixed/ids/value.go",
+    ],
+    importpath = "martianoff/gala/examples/opaque_type_mixed/ids",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "opaque_type_mixed",
+    src = "opaque_type_mixed/main.gala",
+    expected = "opaque_type_mixed/main.out",
+    gala_deps = [":opaque_type_mixed_ids"],
+    deps = ["//collection_immutable"],
 )

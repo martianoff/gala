@@ -1,0 +1,20 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/opaque_type_mixed/ids"
+)
+
+// Opaque types of a mixed GALA + Go package: a method declared in Go
+// (Value, through ids.Stored) and one declared in GALA (Label) on the same
+// type, a hand-written Hash used by HashMap, and the generated Compare used
+// by Sorted.
+
+func main() {
+    val acct = ids.AccountID(1042)
+    Println(acct.Label(), ids.Stored(acct), acct.Hash())
+    val owners = EmptyHashMap[ids.AccountID, string]().Put(acct, "ada").Put(ids.Next(acct), "bo")
+    Println(owners.Get(ids.AccountID(1043)), owners.Size())
+    Println(ArrayOf(ids.AccountID(3), ids.AccountID(1), ids.AccountID(2)).Sorted())
+    Println(HashSetOf(ids.Ticket("t-1"), ids.Ticket("t-1")).Size())
+}

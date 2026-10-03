@@ -1,0 +1,17 @@
+package multifile_lib_regress
+
+import . "martianoff/gala/collection_immutable"
+
+// Continuation of Seat (see opaque_a.gala), in a different file.
+
+func (s Seat) Label() string = s"row ${s.Row()} seat ${int(s) % 10}"
+
+// SeatOf converts a seat number.
+func SeatOf(n int) Seat = Seat(n)
+
+// SeatSummary keys a HashMap by Seat and sorts seats.
+func SeatSummary() string {
+    val taken = EmptyHashMap[Seat, string]().Put(Seat(12), "ada").Put(Seat(31), "bo")
+    val first = ArrayOf(Seat(31), Seat(12)).Sorted().Head()
+    s"${taken.Get(Seat(12)).GetOrElse("-")} ${first.Label()} ${taken.Size()}"
+}
