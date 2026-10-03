@@ -113,6 +113,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0057](/docs/errors/gala-e0057/) | Validate method with the wrong signature on a struct a codec decodes | Types |
 | [GALA-E0058](/docs/errors/gala-e0058/) | Generated codec metadata named in GALA code | Types |
 | [GALA-E0059](/docs/errors/gala-e0059/) | `break` or `continue` cannot reach its loop | Control flow |
+| [GALA-E0060](/docs/errors/gala-e0060/) | `val _ =` binds nothing | Declarations |
 | [GALA-E0061](/docs/errors/gala-e0061/) | Sealed variant used as a type | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
@@ -143,7 +144,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
-**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body, [E0056](/docs/errors/gala-e0056/) malformed tuple destructuring.
+**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body, [E0056](/docs/errors/gala-e0056/) malformed tuple destructuring, [E0060](/docs/errors/gala-e0060/) `val _ =` that binds nothing.
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 

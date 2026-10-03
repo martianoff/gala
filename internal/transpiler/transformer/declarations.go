@@ -202,6 +202,9 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	}
 
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	if err := checkBlankDeclaration(ctx, "val", namesCtx); err != nil {
+		return nil, err
+	}
 	for _, idCtx := range namesCtx {
 		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
 			return nil, err
@@ -619,6 +622,28 @@ var (
 	_ tupleDeclaration = (*grammar.VarDeclarationContext)(nil)
 )
 
+// checkBlankDeclaration rejects `val _ = expr` and `var _ = expr` with
+// GALA-E0060: a declaration whose only name is `_` binds nothing, so the
+// expression belongs on its own as a statement. A `_` among several names and
+// a typed declaration (`val _ Shape = Circle(1.0)`, a conformance check) are
+// left alone.
+func checkBlankDeclaration(ctx tupleDeclaration, keyword string, names []grammar.IIdentifierContext) error {
+	if len(names) != 1 || names[0].GetText() != "_" || ctx.Type_() != nil || ctx.ExpressionList() == nil {
+		return nil
+	}
+	hint := "write the expression as a bare statement; for an `error`-returning call inside a lambda with no result, write `FromError(call())`; if the value matters, bind it to a name and use it"
+	if _, topLevel := ctx.GetParent().(*grammar.TopLevelDeclarationContext); topLevel {
+		hint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
+	}
+	start, blank := ctx.GetStart(), names[0].GetStop()
+	err := galaerr.NewCodedSemanticError(galaerr.CodeBlankValDeclaration, start.GetLine(), start.GetColumn(),
+		fmt.Sprintf("`%s _ = ...` binds nothing", keyword), hint)
+	if blank.GetLine() == start.GetLine() {
+		err = err.WithSpan(blank.GetColumn() + 1)
+	}
+	return err
+}
+
 // malformedTupleDestructure is the GALA-E0056 diagnostic, underlining from the
 // start of from to the end of to when both are on one line.
 func malformedTupleDestructure(from, to antlr.ParserRuleContext, msg, hint string) error {
@@ -636,6 +661,9 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		return t.transformTupleDestructure(ctx, true)
 	}
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	if err := checkBlankDeclaration(ctx, "var", namesCtx); err != nil {
+		return nil, err
+	}
 	for _, idCtx := range namesCtx {
 		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
 			return nil, err

@@ -1290,9 +1290,9 @@ decide — compose with `.Map`/`.FlatMap`/`bind`, don't `.Get()`-and-panic.
 | Index-stepping loop by 2 | `var i = 0; for i < x.Size() - 1 { use(x[i], x[i+1]); i += 2 }` | `ArrayOf(x...).Grouped(2).FoldLeft(...)` |
 | Sliding window loop | Manual index loop with window | `ArrayOf(x...).Sliding(n)` |
 
-### 11c. `val _ =` is a code smell — use a bare statement (HIGH priority)
+### 11c. `val _ =` is a compile error — use a bare statement (HIGH priority)
 
-`val _ = <expr>` is **always** a smell. Whatever the right-hand side is, it should stand on its own as a statement.
+`val _ = <expr>` (and `var _ = <expr>`) is a **compiler error**, `GALA-E0060` (`gala explain GALA-E0060`); code that still has it does not build on current GALA. Flag it anyway when reviewing code pinned to an older release, and whenever the compiler output is not at hand. Whatever the right-hand side is, it should stand on its own as a statement. `_` among several names (`val n, _ = f()`, `val (_, b) = pair`) and a typed conformance check (`val _ Shape = Circle(1.0)`) are fine.
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|

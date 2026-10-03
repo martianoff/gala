@@ -815,6 +815,18 @@ func main() {
 			expectContains: "`break` inside a match whose value is used cannot reach the loop around it",
 		},
 		{
+			name: "GALA-E0060 val bound to a lone blank",
+			input: `package main
+
+func compute() int = 42
+
+func main() {
+    val _ = compute()
+}`,
+			expectCode:     galaerr.CodeBlankValDeclaration,
+			expectContains: "`val _ = ...` binds nothing",
+		},
+		{
 			name: "GALA-E0061 sealed variant as a parameter type",
 			input: `package main
 
