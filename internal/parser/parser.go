@@ -57,7 +57,7 @@ func parseSourceFileAttempt(input string, mode int) sourceFileParseResult {
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	stream := antlr.NewCommonTokenStream(newNewlineTokenSource(lexer), antlr.TokenDefaultChannel)
 	parser := grammar.NewgalaParser(stream)
 	isolateParserCaches(parser.BaseParser)
 	parser.GetInterpreter().SetPredictionMode(mode)
@@ -147,7 +147,7 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	stream := antlr.NewCommonTokenStream(newNewlineTokenSource(lexer), antlr.TokenDefaultChannel)
 	psr := grammar.NewgalaParser(stream)
 	isolateParserCaches(psr.BaseParser)
 
@@ -191,7 +191,7 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 			sim.CharPositionInLine = col
 		}
 	}
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	stream := antlr.NewCommonTokenStream(newNewlineTokenSource(lexer), antlr.TokenDefaultChannel)
 	psr := grammar.NewgalaParser(stream)
 	isolateParserCaches(psr.BaseParser)
 
@@ -403,7 +403,7 @@ func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSy
 		return
 	}
 
-	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, msg))
+	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, hideNewlineParen(msg)))
 }
 
 // bareLambdaParamError recognizes a lambda written without parentheses around

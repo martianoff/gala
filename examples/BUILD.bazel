@@ -1252,6 +1252,14 @@ gala_exec_test(
     expected = "block_function_trailing_value.out",
 )
 
+# A '(' that starts a line begins a new statement instead of calling the line before
+gala_exec_test(
+    name = "newline_paren_statement",
+    src = "newline_paren_statement.gala",
+    expected = "newline_paren_statement.out",
+    deps = ["//collection_immutable"],
+)
+
 # An expression-bodied function with no result type runs its body as a statement
 gala_exec_test(
     name = "void_expression_function",

@@ -1,0 +1,66 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A '(' that starts a line, right after a line that ends in a name, a literal,
+// ')', ']' or '}', begins a new statement. It never calls the line before, so a
+// parenthesised trailing value can follow any statement.
+
+// The trailing tuple follows a typed val: `1` and `(a, 2)` are two statements,
+// not the call `1(a, 2)`.
+func pair() Tuple[int64, int] {
+    val a int64 = 1
+    (a, 2)
+}
+
+// The trailing tuple follows a call: `Println(...)` and `(n, label)` are two
+// statements, not the call `Println(...)(n, label)`.
+func labelled(n int) Tuple[int, string] {
+    val label = s"n=$n"
+    Println(s"labelling $n")
+    (n, label)
+}
+
+// A parenthesised grouping starts the trailing value after a statement.
+func doubledSum(a int, b int) int {
+    Println(s"summing $a and $b")
+    (a + b) * 2
+}
+
+// A trailing lambda after a statement that ends in ')'.
+func adder(n int) func(int) int {
+    Println(s"adder $n")
+    (x int) => x + n
+}
+
+// The trailing tuple follows an if statement's closing '}'.
+func clamp(n int) Tuple[int, bool] {
+    var v = n
+    if (v > 10) { v = 10 }
+    (v, v != n)
+}
+
+func main() {
+    Println(pair())
+    Println(labelled(7))
+    Println(doubledSum(2, 3))
+    Println(adder(5)(1))
+    Println(clamp(42))
+
+    // What still continues across a line break: call arguments on their own
+    // lines, a method chain with leading dots, and an operator at line start.
+    val sum = Sum(
+        1,
+        (2 + 3),
+    )
+    val total = sum
+        + 10
+    val words = ArrayOf("b", "a", "c")
+        .Sorted()
+        .Map((w) => w + "!")
+        .MkString(" ")
+    Println(total)
+    Println(words)
+}
+
+func Sum(a int, b int) int = a + b

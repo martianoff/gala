@@ -1,5 +1,14 @@
 grammar gala;
 
+// NL_LPAREN is a '(' that starts a new line right after a token that can end
+// an expression (an identifier, a literal, ')', ']' or '}'). No lexer rule
+// produces it: the parser driver (internal/parser) re-types such a '(' as the
+// tokens are read. A call suffix accepts only a plain '(', so a parenthesised
+// expression on the next line begins a new statement instead of calling the
+// previous one: `Println("a")` followed by a line `(1, 2)` is two statements.
+// Every other place that opens with '(' after such a token accepts both.
+tokens { NL_LPAREN }
+
 // Entry point
 sourceFile: packageClause importDeclaration* topLevelDeclaration* EOF;
 
@@ -23,7 +32,7 @@ structShorthandDeclaration: 'struct' identifier (typeParameters)? parameters;
 sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase+ '}';
 // Parentheses are optional for zero-field variants: `case Debug` and `case Debug()` are both valid.
 // Variants with fields still require parentheses: `case Add(l Expr, r Expr)`.
-sealedCase: CASE identifier ('(' sealedCaseFieldList? ')')?;
+sealedCase: CASE identifier (('(' | NL_LPAREN) sealedCaseFieldList? ')')?;
 sealedCaseFieldList: sealedCaseField (',' sealedCaseField)* ','?;
 sealedCaseField: identifier type;
 
@@ -80,7 +89,7 @@ receiver: '(' (VAL | VAR)? identifier type ')';
 
 signature: parameters (type)?;
 
-parameters: '(' parameterList? ')';
+parameters: ('(' | NL_LPAREN) parameterList? ')';
 parameterList: parameter (',' parameter)* ','?;
 // Parameters can be:
 // - Named with type: "x int", "val x int", "x ...int"
@@ -169,6 +178,11 @@ postfixExpr
     : primaryExpr postfixSuffix* ('match' '{' caseClause+ '}')?
     ;
 
+// A call takes a plain '(' only — never NL_LPAREN — so a '(' that starts a
+// line does not continue the expression on the line before. '.' and '[' have
+// no such rule: a line starting with '.' continues a method chain, and the only
+// expression a '[' can start is a slice literal `[]T{...}`, whose empty '[]'
+// is never a valid index or type-argument suffix, so it is not ambiguous.
 postfixSuffix
     : '.' identifier
     | '(' argumentList? ')'
@@ -189,7 +203,7 @@ argument: (identifier '=')? (lambdaExpression | pattern);
 primary
     : identifier
     | literal
-    | '(' tupleExpressionList? ')'
+    | ('(' | NL_LPAREN) tupleExpressionList? ')'
     | compositeLiteral
     ;
 
