@@ -579,6 +579,19 @@ Five contexts feed the expected type:
 | 4 | Container element type | `ArrayOf[Cmd[Msg]](NoCmd(), QuitCmd())` |
 | 5 | Match arm with externally-pinned result | `val c Cmd[Msg] = m match { case Tick() => NoCmd() … }` |
 
+An expected type spelled as an [alias](GALA.MD#type-aliases) works in every
+one of these contexts as the type it names. With `type Checked Try[Email]`,
+`func f() Checked = Failure(err)` is a `Failure[Email]`, and the same holds for
+an alias of an alias, a generic alias (`type Res[T any] Try[T]`, so `Res[int]`
+is `Try[int]`) and an alias imported from another package (`lib.Checked`).
+The type the alias names is what the constructor's type arguments are read
+from: the hint is pushed as that type (`lowerAgainst`), and the readers of the
+result slot and match subject (`inferZeroArgTypeParams`, tuple literals,
+`bind`) and `unifyForInference` resolve it through `followAliasChain`. A value
+typed by an alias has the methods of the type it names, plus any declared on
+the alias itself, is matched as that type (its variants and exhaustiveness),
+and can be bound in a `bind` block.
+
 ### Propagation mechanism
 
 - A LIFO stack on the transformer, `expectedArgTypes` (see
@@ -677,7 +690,12 @@ is a sealed variant of a generic parent, the transpiler fails fast
 with [`GALA-E0018`](errors/GALA-E0018.md) at the offending call — it
 does **not** silently emit an untyped `Variant{}` literal that Go
 would later reject with an obscure deduction error far from the
-source. The sealed-variant gate (`isSealedVariantTypeName`) splits any
+source. This covers a variant called with arguments that do not carry
+the parameter too: `val x = Failure(err)` or `Left("x")` with nothing
+naming the other side (`tryTransformCompanionApplyOrStructCtor`). A
+sibling branch still types it, as for `None()`:
+`val x = if (ok) Success(1) else Failure(err)` is a `Try[int]`. The
+sealed-variant gate (`isSealedVariantTypeName`) splits any
 package qualifier off the name and passes it as the lookup scope: the
 zero-arg path derives the name from `getBaseTypeName`, which keeps the
 selector for dot-imported / std variants (`std.None`), while

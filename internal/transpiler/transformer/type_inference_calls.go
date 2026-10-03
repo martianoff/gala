@@ -382,7 +382,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		}
 	}
 
-	xType := t.getExprTypeNameManual(sel.X)
+	xType := t.methodReceiverType(t.getExprTypeNameManual(sel.X), sel.Sel.Name)
 	xTypeName := xType.String()
 	if !xType.IsNil() {
 		// Try exact type name first (non-generic types)

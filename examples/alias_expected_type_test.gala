@@ -1,0 +1,97 @@
+package main
+
+import (
+    "errors"
+    "strings"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/alias_expected_type/checks"
+)
+
+// An expected type spelled as an alias binds a constructor's type arguments
+// exactly as the type it names does: `Failure(e)` in a function returning
+// `Checked` is a `Failure[Email]`, `None()` returning `MaybePort` is a
+// `None[int]`, and so on — for local aliases, aliases of aliases, generic
+// aliases and aliases imported from another package.
+
+struct Email(Value string)
+
+type Checked Try[Email]
+type CheckedAgain Checked
+type MaybePort Option[int]
+type Parsed Either[string, int]
+type Names Array[string]
+type Res[T any] Try[T]
+
+func (e Email) Validate() Checked =
+    if (strings.Contains(e.Value, "@")) Success(e) else Failure(errors.New(s"no @ in ${e.Value}"))
+
+func revalidate(e Email) CheckedAgain = e.Validate() match {
+    case Success(v) => Success(v)
+    case Failure(_) => Failure(errors.New("rejected twice"))
+}
+
+func port(scheme string) MaybePort = scheme match {
+    case "http" => Some(80)
+    case "https" => Some(443)
+    case _ => None()
+}
+
+func parse(s string) Parsed {
+    if (s == "") {
+        return Left("empty")
+    }
+    Right(s.Size())
+}
+
+func noNames() Names = EmptyArray()
+
+func half(n int) Res[int] = if (n % 2 == 0) Success(n / 2) else Failure(errors.New(s"$n is odd"))
+
+func joined(a Email, b Email) Checked {
+    bind x = a.Validate()
+    bind y = b.Validate()
+    Success(Email(s"${x.Value},${y.Value}"))
+}
+
+func describe(c Checked) string = c match {
+    case Success(e) => s"ok ${e.Value}"
+    case Failure(err) => s"failed: $err"
+}
+
+func describeParsed(p Parsed) string = p match {
+    case Left(msg) => s"left $msg"
+    case Right(n) => s"right $n"
+}
+
+func remote(addr string) checks.Checked =
+    if (addr == "") Failure(errors.New("blank")) else checks.Email(addr).Validate()
+
+func remoteAgain(addr string) checks.CheckedAgain = remote(addr)
+
+func remoteLookup(found bool) checks.Lookup = if (found) Some(7) else None()
+
+func remoteRes(n int) checks.Res[string] = if (n > 0) Success(s"n=$n") else Failure(errors.New("not positive"))
+
+func main() {
+    Println(describe(Email("a@b").Validate()))
+    Println(describe(Email("ab").Validate()))
+    Println(describe(revalidate(Email("ab"))))
+
+    val fallback Checked = Failure(errors.New("unset"))
+    Println(fallback.GetOrElse(Email("default")).Value)
+
+    Println(s"${port("https").GetOrElse(0)} ${port("ftp").IsEmpty()}")
+    Println(describeParsed(parse("")))
+    Println(describeParsed(parse("four")))
+    Println(noNames().Size())
+    Println(s"${half(8).GetOrElse(-1)} ${half(3).IsFailure()}")
+    Println(describe(joined(Email("a@b"), Email("c@d"))))
+    Println(describe(joined(Email("a@b"), Email("cd"))))
+
+    Println(remote("x@y").GetOrElse(checks.Email("none")).Value)
+    Println(remote("").IsFailure())
+    Println(remoteAgain("xy").IsFailure())
+    Println(s"${remoteLookup(true).GetOrElse(0)} ${remoteLookup(false).IsEmpty()}")
+    Println(remoteRes(2).GetOrElse("none"))
+    Println(remoteRes(0).GetOrElse("none"))
+}

@@ -146,7 +146,7 @@ func (t *galaASTTransformer) checkValFieldCalledAsFunction(fun ast.Expr, node an
 	if id, isIdent := sel.X.(*ast.Ident); isIdent && t.importManager.IsPackage(id.Name) {
 		return nil // a package member, not a field
 	}
-	_, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X)
+	_, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
 	meta := t.getTypeMeta(lookupBaseName)
 	if meta == nil {
 		return nil

@@ -165,7 +165,7 @@ func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) (types []trans
 			return gen.Params, true
 		}
 	}
-	if gen, ok := t.returnSlot.typ.(transpiler.GenericType); ok &&
+	if gen, ok := t.returnShape().(transpiler.GenericType); ok &&
 		t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
 		return gen.Params, false
 	}

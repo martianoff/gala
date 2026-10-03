@@ -749,17 +749,76 @@ func (t *galaASTTransformer) lookupTypeAlias(name string) (transpiler.Type, bool
 //
 // The hop count bounds a chain that refers back to itself.
 func (t *galaASTTransformer) followAliasChain(typ transpiler.Type) transpiler.Type {
-	// Exact keys only. lookupTypeAlias falls back to the bare half of a
-	// qualified name, which on a chain would let `geom.Point` continue through
-	// an unrelated local alias that happens to be called `Point`.
+	return t.walkAliasChain(typ, nil)
+}
+
+// walkAliasChain is followAliasChain stopping early at the first type stop
+// accepts (a nil stop never does). The alias lookup runs first, so a type
+// that names no alias costs one map lookup and never reaches stop.
+func (t *galaASTTransformer) walkAliasChain(typ transpiler.Type, stop func(transpiler.Type) bool) transpiler.Type {
 	for hop := 0; hop < len(t.typeAliases); hop++ {
-		next, ok := t.typeAliases[typ.BaseName()]
-		if !ok || next.IsNil() || next.BaseName() == typ.BaseName() {
+		next, ok := t.aliasTarget(typ)
+		if !ok || next.BaseName() == typ.BaseName() || stop != nil && stop(typ) {
 			break
 		}
 		typ = next
 	}
 	return typ
+}
+
+// unaliased is typ followed to the end of its alias chain, and whether that
+// reached a type that is not itself an alias. A chain that loops back on
+// itself (malformed input) never does, so a caller recursing on the result
+// cannot cycle.
+func (t *galaASTTransformer) unaliased(typ transpiler.Type) (transpiler.Type, bool) {
+	end := t.followAliasChain(typ)
+	if end.BaseName() == typ.BaseName() {
+		return typ, false
+	}
+	_, stillAlias := t.aliasTarget(end)
+	return end, !stillAlias
+}
+
+// returnShape is the current result slot's type as the type an alias names,
+// for readers that match its structure. returnSlot.typ keeps the alias
+// spelling for what is emitted and reported.
+func (t *galaASTTransformer) returnShape() transpiler.Type {
+	return t.followAliasChain(t.returnSlot.typ)
+}
+
+// aliasTarget returns the type the alias typ names, one step down the chain,
+// and false when typ does not name an alias. A generic alias's target has the
+// alias's type arguments substituted: `Res[int]` for `type Res[T any] Try[T]`
+// is `Try[int]`.
+//
+// Exact keys only. lookupTypeAlias falls back to the bare half of a qualified
+// name, which on a chain would let `geom.Point` continue through an unrelated
+// local alias that happens to be called `Point`. This package's own aliases
+// are keyed by bare name, so a name qualified with this package drops the
+// qualifier.
+func (t *galaASTTransformer) aliasTarget(typ transpiler.Type) (transpiler.Type, bool) {
+	if typ == nil {
+		return nil, false
+	}
+	key := typ.BaseName()
+	if pkg := typ.GetPackage(); pkg != "" && pkg == t.packageName {
+		key = strings.TrimPrefix(key, pkg+".")
+	}
+	next, ok := t.typeAliases[key]
+	if !ok || next.IsNil() {
+		return nil, false
+	}
+	gen, isGeneric := typ.(transpiler.GenericType)
+	if !isGeneric {
+		return next, true
+	}
+	meta := t.getTypeMeta(key)
+	if meta == nil || len(meta.TypeParams) != len(gen.Params) {
+		// The target cannot be instantiated: returning it as declared would
+		// hand its parameter names (`T`) on as if they were types.
+		return nil, false
+	}
+	return t.substituteConcreteTypes(next, meta.TypeParams, gen.Params), true
 }
 
 // resolveStructTypeName resolves a type name to the key used in structFields/structImmutFields maps.

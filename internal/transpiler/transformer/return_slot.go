@@ -1,8 +1,10 @@
 package transformer
 
 import (
+	"errors"
 	"go/ast"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -215,6 +217,34 @@ func (t *galaASTTransformer) lowerOwnValue(exprCtx grammar.IExpressionContext) (
 	return t.transformExpression(exprCtx)
 }
 
+// errorAtOutermostCall reports whether err is a semantic error anchored at the
+// argument list of the call exprCtx is (`Failure(e)`), as opposed to one
+// nested inside it (`describe(Failure(e))`). A constructor call's errors are
+// anchored at its argument list, or at its `(` when it has none.
+func (t *galaASTTransformer) errorAtOutermostCall(err error, exprCtx grammar.IExpressionContext) bool {
+	var se *galaerr.SemanticError
+	p := t.barePostfix(exprCtx)
+	if !errors.As(err, &se) || p == nil || t.bareMatchPostfix(exprCtx) != nil {
+		return false
+	}
+	suffixes := p.AllPostfixSuffix()
+	if len(suffixes) == 0 {
+		return false
+	}
+	call := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
+	if call.Identifier() != nil || call.ExpressionList() != nil {
+		return false
+	}
+	anchor := call.GetStart()
+	if call.ArgumentList() != nil {
+		anchor = call.ArgumentList().GetStart()
+	}
+	return se.Line == anchor.GetLine() && se.Column == anchor.GetColumn()
+}
+
+// unresolvedLambdaResultMsg reports a lambda whose result type nothing settles.
+const unresolvedLambdaResultMsg = "cannot infer the result type of this lambda: no `return` or result value has a fully known type — annotate the lambda's result type (e.g. `(x int) Option[int] => { ... }`)"
+
 // settleReturnSlot finishes a fillable slot once the lambda body is lowered.
 // If no `return` filled it, the body's other result values (the promoted
 // trailing value, a `bind` chain) are tried. Each deferred return is then
@@ -254,12 +284,19 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	for _, d := range s.deferred {
 		t.currentScope, t.currentMatchSubjectType = d.scope, d.subject
 		expr, err := t.lowerAgainst(d.exprCtx, resultSlot(s.typ), false)
+		// A constructor with no type argument that is itself the value of an
+		// unfilled slot (`return Failure(e)`) is the lambda's missing result
+		// type, which is what the user has to annotate. One nested deeper
+		// keeps its own GALA-E0018.
 		if err != nil {
-			return err
+			if filled || !isUninferredVariantError(err) || !t.errorAtOutermostCall(err, d.exprCtx) {
+				return err
+			}
+			return t.semanticErrorAt(d.exprCtx, unresolvedLambdaResultMsg)
 		}
 		expr = t.unwrapImmutable(expr)
 		if !filled && !t.isSettledType(t.getExprTypeName(expr)) {
-			return t.semanticErrorAt(d.exprCtx, "cannot infer the result type of this lambda: no `return` or result value has a fully known type — annotate the lambda's result type (e.g. `(x int) Option[int] => { ... }`)")
+			return t.semanticErrorAt(d.exprCtx, unresolvedLambdaResultMsg)
 		}
 		settled[d.value] = expr
 	}

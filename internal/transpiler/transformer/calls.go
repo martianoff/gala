@@ -207,15 +207,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								// Go) instead. The resolved parent is both the guard and
 								// the hint's source for the annotation example, so it is
 								// looked up once here rather than twice.
-								pkgQualifier, bareName := splitPackageQualifier(typeName)
-								if parent := t.findSealedParentForVariant(bareName, pkgQualifier); parent != nil {
-									line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-									return nil, galaerr.NewCodedSemanticError(
-										galaerr.CodeSealedVariantUninferred,
-										line, col,
-										fmt.Sprintf("cannot infer type parameter for sealed variant constructor %q", bareName+"()"),
-										t.uninferredVariantHint(parent, pkgQualifier, bareName),
-									)
+								if variant := t.sealedVariantOf(typeName); variant.parent != nil {
+									return nil, t.uninferredVariantError(variant, "()", nil, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 								}
 							}
 							receiver := &ast.CompositeLit{Type: receiverType}
@@ -274,7 +267,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			// Same normalization the call dispatcher uses — resolve the
 			// receiver to its canonical form and derive the pointer-stripped
 			// registry key — rather than repeating it inline.
-			recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver)
+			recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 			zeroArgRecvType, zeroArgLookupBase = recvType, lookupBaseName
 
 			// Check if this is a generic method - try all possible package lookups
@@ -420,10 +413,12 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 // resolveReceiverTypeAndLookupKey normalizes the inferred type of a call
 // receiver into its canonical form (preserving generic type parameters when
 // present) and returns both the resolved Type and the pointer-stripped base
-// name used as a lookup key in t.genericMethods. When the receiver is nil
-// (package-qualified call) the returned type is NilType and the key is "".
+// name used as a lookup key in t.genericMethods. method is the member the call
+// selects, which decides how far an alias-typed receiver is resolved. When the
+// receiver is nil (package-qualified call) the returned type is NilType and
+// the key is "".
 // Extracted from transformCallWithArgsCtx as part of A1.
-func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr) (transpiler.Type, string) {
+func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr, method string) (transpiler.Type, string) {
 	recvType := t.getExprTypeName(receiver)
 	// Normalize through a pointer receiver (`*Array[Row]`): getType never
 	// resolves a `*`-prefixed name, so the pointee is qualified and re-wrapped.
@@ -431,6 +426,7 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr) 
 	if isPtr {
 		recvType = ptr.Elem
 	}
+	recvType = t.methodReceiverType(recvType, method)
 	if gen, ok := recvType.(transpiler.GenericType); ok {
 		if qBase := t.lookupTypeName(gen.Base.String()); !qBase.IsNil() {
 			recvType = transpiler.GenericType{Base: qBase, Params: gen.Params}
@@ -444,6 +440,20 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr) 
 	// Strip pointer prefix for genericMethods lookup since methods are
 	// registered under the base type name without the pointer marker.
 	return recvType, strings.TrimPrefix(recvType.BaseName(), "*")
+}
+
+// methodReceiverType resolves the type of a receiver selecting method. A
+// receiver typed by an alias has the methods of the type the alias names
+// (`type Checked Try[Email]` has GetOrElse) as well as those declared on the
+// alias itself (`func (c Coord) Sum()`), so the alias chain is followed until
+// a type that declares method, or to its end.
+func (t *galaASTTransformer) methodReceiverType(recv transpiler.Type, method string) transpiler.Type {
+	if ptr, ok := recv.(transpiler.PointerType); ok {
+		return transpiler.PointerType{Elem: t.methodReceiverType(ptr.Elem, method)}
+	}
+	return t.walkAliasChain(recv, func(typ transpiler.Type) bool {
+		return t.typeHasMethod(typ.BaseName(), method)
+	})
 }
 
 // splitCallTarget classifies a call expression `fun` as either:
@@ -1419,8 +1429,18 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				}
 			}
 		}
-		// Step 2: fall back to enclosing function's return type.
-		if len(inferredMap) < len(typeMeta.TypeParams) && t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
+		// Step 2: fall back to enclosing function's return type. A sealed
+		// variant in a branch typed by its siblings (see lowerBranches) does
+		// not: its type is the construct's, which the siblings give it once
+		// this attempt reports GALA-E0018.
+		// The variant lookup scans every type, so it runs only once arguments
+		// left a parameter open.
+		var variant sealedVariant
+		open := len(inferredMap) < len(typeMeta.TypeParams)
+		if open {
+			variant = t.sealedVariantOf(typeName)
+		}
+		if open && !(t.siblingTypedBranch && variant.parent != nil) && t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
 			if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
 				returnInferred := make(map[string]transpiler.Type)
 				t.unifyForInference(methodMeta.ReturnType, t.returnSlot.typ, typeMeta.TypeParams, returnInferred)
@@ -1438,6 +1458,15 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 			// Emitting the partial list would leave Go a type parameter
 			// with no argument.
 			return true, nil, uninferredTypeArgError(line, col, origTypeName, "its arguments", origTypeName, typeMeta.TypeParams, missing)
+		} else if !viaAlias {
+			// A sealed variant whose arguments do not carry the parent's type
+			// parameter (`Failure(err)`, `Left("x")`) and whose context does
+			// not name it either would be emitted as an uninstantiated
+			// `Failure{}`, which is not Go. Report it here, as for a zero-arg
+			// variant.
+			if variant.parent != nil {
+				return true, nil, t.uninferredVariantError(variant, "(...)", inferredMap, missing, line, col)
+			}
 		}
 	}
 
@@ -2267,7 +2296,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// A1: resolve the receiver type to a canonical form and compute the
 	// package-agnostic lookup key used by the generic-method registry.
-	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver)
+	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
@@ -3067,9 +3096,42 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 	}
 }
 
-// uninferredVariantHint builds the GALA-E0018 remediation hint. Every example
-// form it prints must be valid, copy-pasteable GALA at the offending call
-// site. Three things decide that:
+// uninferredVariantError is GALA-E0018 for a call at line/col to the variant
+// v. args is how the call is printed after the constructor (`()`, `(...)`);
+// inferred holds the type parameters the call does fix, and missing, when
+// known, names the ones left unbound.
+func (t *galaASTTransformer) uninferredVariantError(v sealedVariant, args string, inferred map[string]transpiler.Type, missing []string, line, col int) error {
+	params := ""
+	if len(missing) > 0 {
+		params = " " + strings.Join(missing, ", ")
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeSealedVariantUninferred,
+		line, col,
+		fmt.Sprintf("cannot infer type parameter%s for sealed variant constructor %q", params, v.bareName+args),
+		t.uninferredVariantHint(v.parent, v.pkgQualifier, v.bareName, args, inferred),
+	)
+}
+
+// sealedVariant is a call target resolved to the generic sealed type it is a
+// variant of; parent is nil when it is not one.
+type sealedVariant struct {
+	parent                 *transpiler.TypeMetadata
+	pkgQualifier, bareName string
+}
+
+// sealedVariantOf resolves typeName, as a call site spells it (`std.Failure`),
+// to the sealed type it is a variant of.
+func (t *galaASTTransformer) sealedVariantOf(typeName string) sealedVariant {
+	pkgQualifier, bareName := splitPackageQualifier(typeName)
+	return sealedVariant{t.findSealedParentForVariant(bareName, pkgQualifier), pkgQualifier, bareName}
+}
+
+// uninferredVariantHint builds the GALA-E0018 remediation hint. args is the
+// argument list the examples print after the constructor: `()` for a zero-arg
+// variant, `(...)` for one called with arguments. Every example form it prints
+// must be valid, copy-pasteable GALA at the offending call site. Three things
+// decide that:
 //
 //   - a type annotation follows the binding name with NO colon
 //     (`val x Box[int] = Empty()`);
@@ -3098,16 +3160,29 @@ func (t *galaASTTransformer) findSealedVariantFields(variantName, pkgQualifier s
 // degrades the hint to the explicit-type-args form, which still carries the
 // constructor exactly as the call site spells it — never to an example that
 // would not compile.
-func (t *galaASTTransformer) uninferredVariantHint(parent *transpiler.TypeMetadata, pkgQualifier, bareName string) string {
+func (t *galaASTTransformer) uninferredVariantHint(parent *transpiler.TypeMetadata, pkgQualifier, bareName, args string, inferred map[string]transpiler.Type) string {
 	prefix := t.callSiteQualifier(pkgQualifier)
 
-	explicit := fmt.Sprintf("pass type args explicitly (`%s%s[int]()`)", prefix, bareName)
+	// One type argument per type parameter of the parent: the one the call
+	// already fixes, or a placeholder (`Either[string, int]` for `Left("x")`).
+	typeArgs := "int"
+	if parent != nil && len(parent.TypeParams) > 0 {
+		names := make([]string, len(parent.TypeParams))
+		for i, tp := range parent.TypeParams {
+			names[i] = "int"
+			if typ, ok := inferred[tp]; ok && !transpiler.ContainsUnusable(typ) {
+				names[i] = displayType(typ)
+			}
+		}
+		typeArgs = strings.Join(names, ", ")
+	}
+	explicit := fmt.Sprintf("pass type args explicitly (`%s%s[%s]%s`)", prefix, bareName, typeArgs, args)
 
 	if parent == nil || parent.Name == "" {
 		return explicit
 	}
-	return fmt.Sprintf("annotate the binding (e.g. `val x %s%s[int] = %s%s()`) or %s",
-		prefix, parent.Name, prefix, bareName, explicit)
+	return fmt.Sprintf("annotate the binding (e.g. `val x %s%s[%s] = %s%s%s`) or %s",
+		prefix, parent.Name, typeArgs, prefix, bareName, args, explicit)
 }
 
 // callSiteQualifier returns the `pkg.` prefix that a diagnostic should print
@@ -3950,7 +4025,8 @@ func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *t
 	// Try each context source in priority order: enclosing function return type
 	// first (authoritative for value position), then match subject (proxy
 	// fallback when no return type pins the result).
-	sources := []transpiler.Type{t.returnSlot.typ, t.currentMatchSubjectType}
+	// Both are read as the type an alias names (the subject is stored that way).
+	sources := []transpiler.Type{t.returnShape(), t.currentMatchSubjectType}
 	for _, src := range sources {
 		if transpiler.IsUnusable(src) {
 			continue

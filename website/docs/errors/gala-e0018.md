@@ -1,10 +1,10 @@
 ---
 layout: default
 title: "GALA-E0018 — Cannot Infer Type Parameter for a Sealed Variant Constructor"
-description: "GALA-E0018 fires when a zero-argument sealed-variant constructor appears where its parent's type parameter cannot be pinned. See the triggering code, the compiler message, and both annotation fixes."
+description: "GALA-E0018 fires when a sealed-variant constructor appears where its parent's type parameter cannot be pinned. See the triggering code, the compiler message, and both annotation fixes."
 keywords: "gala-e0018, cannot infer type parameter, gala sealed variant constructor, gala generic sealed type, gala type inference error"
 permalink: /docs/errors/gala-e0018/
-last_modified_at: 2026-07-27
+last_modified_at: 2026-10-02
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0018</p>
@@ -18,6 +18,8 @@ last_modified_at: 2026-07-27
 3. A `val` / `var` type annotation supplying an expected type.
 
 If none of those resolve the parameter, generated Go would contain a bare `Variant{}` literal whose type argument Go cannot deduce — producing an obscure `cannot infer T` far from the GALA source.
+
+A constructor called with arguments fires it too when the arguments do not carry the parameter and nothing else names it: `val x = Failure(err)` (nothing says what `Try` it is) or `Left("x")` (nothing says the right side). The message then names the parameter and the constructor as `"Failure(...)"`. A sibling branch whose type is known supplies it: `val x = if (ok) Success(1) else Failure(err)` is a `Try[int]`.
 
 ---
 

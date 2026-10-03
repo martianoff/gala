@@ -222,9 +222,11 @@ type bindResult struct {
 // newBindResult starts a bind block whose result type is typ (nil when not
 // known yet).
 func (t *galaASTTransformer) newBindResult(typ transpiler.Type) *bindResult {
-	res := &bindResult{typ: typ}
-	if !transpiler.IsUnusable(typ) {
-		res.monad = t.monadBaseName(typ)
+	// The monad is read off the type's structure, which an alias
+	// (`type Checked Try[Email]`) names rather than spells.
+	res := &bindResult{typ: t.followAliasChain(typ)}
+	if !transpiler.IsUnusable(res.typ) {
+		res.monad = t.monadBaseName(res.typ)
 	}
 	return res
 }
@@ -253,7 +255,7 @@ func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext,
 	// the same result for fail-fast types.
 	if n := len(prepped); n >= 2 && n <= 10 {
 		zipName := "Zip" + strconv.Itoa(n)
-		if t.monadHasMethod(prepped[0].lookupBaseName, zipName) {
+		if t.typeHasMethod(prepped[0].lookupBaseName, zipName) {
 			return t.buildAlsoZip(prepped, rest, res, zipName)
 		}
 	}
@@ -266,7 +268,7 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 	if err != nil {
 		return preppedBind{}, err
 	}
-	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(recvExpr)
+	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(recvExpr, "FlatMap")
 	// Normalize a current-package-qualified key (e.g. `main.Box`) to its bare
 	// form (`Box`) so metadata lookup and the emitted `Box_FlatMap` name match.
 	// std keys keep their `std.` prefix; imported packages keep theirs.
@@ -473,9 +475,9 @@ func (t *galaASTTransformer) withElemType(monadType, elem transpiler.Type) trans
 	return monadType
 }
 
-// monadHasMethod reports whether the type resolved from lookupBaseName exposes a
+// typeHasMethod reports whether the type resolved from lookupBaseName exposes a
 // method with the given name.
-func (t *galaASTTransformer) monadHasMethod(lookupBaseName, method string) bool {
+func (t *galaASTTransformer) typeHasMethod(lookupBaseName, method string) bool {
 	typeMeta, _ := t.getTypeMetaResolved(lookupBaseName)
 	return typeMeta != nil && typeMeta.Methods[method] != nil
 }
@@ -527,7 +529,7 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	}
 	// A `return` in the chain may have filled the lambda's slot meanwhile.
 	if transpiler.IsUnusable(res.typ) {
-		res.typ = t.returnSlot.typ
+		res.typ = t.returnShape()
 	}
 	var expr ast.Expr
 	var err error
@@ -547,7 +549,7 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	}
 	expr = t.unwrapImmutable(expr)
 	if transpiler.IsUnusable(res.typ) {
-		typ := t.getExprTypeName(expr)
+		typ := t.followAliasChain(t.getExprTypeName(expr))
 		if !t.isSettledType(typ) {
 			return nil, t.semanticErrorAt(sc, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
 		}

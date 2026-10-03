@@ -1046,11 +1046,10 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 	// Check if both are generic types
 	patternGen, patternIsGen := pattern.(transpiler.GenericType)
 	concreteGen, concreteIsGen := concrete.(transpiler.GenericType)
-	if patternIsGen && concreteIsGen {
-		// Check if base types are compatible
-		if stripPackagePrefix(patternGen.Base.BaseName()) != stripPackagePrefix(concreteGen.Base.BaseName()) {
-			return false
-		}
+	// Generic types with different bases can still meet through an alias,
+	// below.
+	if patternIsGen && concreteIsGen &&
+		stripPackagePrefix(patternGen.Base.BaseName()) == stripPackagePrefix(concreteGen.Base.BaseName()) {
 		// Unify type parameters
 		for i := range patternGen.Params {
 			if i < len(concreteGen.Params) {
@@ -1065,6 +1064,16 @@ func (t *galaASTTransformer) unifyForInference(pattern, concrete transpiler.Type
 		return true
 	}
 
+	// Either side may name an alias of the shape the other spells out:
+	// `Checked` for `type Checked Try[Email]` against `Try[T]`. Unify against
+	// what the alias names. An alias unifies with itself by the name check
+	// above, without being expanded.
+	if end, ok := t.unaliased(concrete); ok {
+		return t.unifyForInference(pattern, end, typeParams, inferredMap)
+	}
+	if end, ok := t.unaliased(pattern); ok {
+		return t.unifyForInference(end, concrete, typeParams, inferredMap)
+	}
 	return false
 }
 

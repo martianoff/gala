@@ -14,6 +14,14 @@ emit a literal `Variant{}` whose type parameter Go cannot deduce —
 producing an obscure `cannot infer T` error far from the GALA source.
 This code surfaces the failure at the GALA call site instead.
 
+A constructor called with arguments fires it too when the arguments do
+not carry the parameter and nothing else names it: `val x =
+Failure(err)` (nothing says what `Try` it is) or `Left("x")` (nothing
+says the right side). The message then names the parameter and the
+constructor as `"Failure(...)"`. A sibling branch whose type is known
+supplies it: `val x = if (ok) Success(1) else Failure(err)` is a
+`Try[int]`.
+
 **Minimal repro.** (`main.gala`)
 
 ```gala
