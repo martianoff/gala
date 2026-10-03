@@ -2809,16 +2809,21 @@ func (t *galaASTTransformer) structLiteralType(
 
 	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
 	if missing != nil {
-		return nil, uninferredStructTypeArgError(line, col, typeName, typeMeta.TypeParams, inferred, missing)
+		return nil, t.uninferredStructTypeArgError(line, col, base, typeMeta.TypeParams, inferred, missing)
 	}
 	return instantiated, nil
 }
 
 // uninferredStructTypeArgError reports the type parameters of the generic
-// struct typeName that neither the construction's fields nor its expected type
-// determine. The examples it prints are valid GALA: every type argument is the
-// one the construction does fix, or a placeholder for one it leaves open.
-func uninferredStructTypeArgError(line, col int, typeName string, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
+// struct constructed by base that neither the construction's fields nor its
+// expected type determine. The examples it prints are valid GALA where the
+// call is: the struct is named as it is reachable there, and every type
+// argument is the one the construction does fix, or a placeholder for one it
+// leaves open.
+func (t *galaASTTransformer) uninferredStructTypeArgError(line, col int, base ast.Expr, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
+	_, qualified := extractTypeNameFromExpr(base)
+	pkgQualifier, bareName := splitPackageQualifier(qualified)
+	name := t.callSiteQualifier(pkgQualifier) + bareName
 	args := make([]string, len(typeParams))
 	for i, tp := range typeParams {
 		args[i] = "int"
@@ -2826,10 +2831,10 @@ func uninferredStructTypeArgError(line, col int, typeName string, typeParams []s
 			args[i] = displayType(typ)
 		}
 	}
-	typ := typeName + "[" + strings.Join(args, ", ") + "]"
+	typ := name + "[" + strings.Join(args, ", ") + "]"
 	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 		"cannot infer type argument %s of generic struct %s from its fields or the expected type; annotate the binding (e.g. `val x %s = %s(...)`) or write it explicitly (`%s(...)`)",
-		strings.Join(missing, ", "), typeName, typ, typeName, typ))
+		strings.Join(missing, ", "), name, typ, name, typ))
 }
 
 // completeTypeArgs instantiates base with a type argument for every one of

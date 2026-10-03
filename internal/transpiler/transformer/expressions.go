@@ -1259,9 +1259,11 @@ func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionC
 			return false
 		}
 	}
-	resolved := t.resolveStructTypeName(name)
-	_, isStruct := t.structFields[resolved]
-	return isStruct && resolved == t.resolveStructTypeName(gen.Base.String())
+	// Compared by their metadata keys: the field map has both a bare and a
+	// package-qualified key for a type of this package (`Q`, `units.Q`).
+	_, isStruct := t.structFields[t.resolveStructTypeName(name)]
+	resolved := t.resolveTypeMetaName(name)
+	return isStruct && resolved != "" && resolved == t.resolveTypeMetaName(gen.Base.String())
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.

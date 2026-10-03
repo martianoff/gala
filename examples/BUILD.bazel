@@ -95,6 +95,8 @@ filegroup(
         "sealed_done_state_pkg/state/state.gala",
         "slice_unwrap/main.gala",
         "slice_unwrap/model.gala",
+        "struct_expected_type/units/units.gala",
+        "struct_expected_type_test.gala",
         "struct_field_unwrap/main.gala",
         "struct_field_unwrap/types.gala",
         "try_go_transitive_import.gala",
@@ -2653,6 +2655,22 @@ gala_exec_test(
     expected = "alias_expected_type_test.out",
     gala_deps = [":alias_expected_type_checks"],
     deps = ["//collection_immutable"],
+)
+
+# A generic struct construction takes the type arguments its fields leave open
+# from its expected type, local or imported, directly or through an alias.
+gala_library(
+    name = "struct_expected_type_units",
+    srcs = ["struct_expected_type/units/units.gala"],
+    importpath = "martianoff/gala/examples/struct_expected_type/units",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "struct_expected_type_test",
+    src = "struct_expected_type_test.gala",
+    expected = "struct_expected_type_test.out",
+    gala_deps = [":struct_expected_type_units"],
 )
 
 # Package-level `val`s read from another package (qualified and dot-imported)

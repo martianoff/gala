@@ -1,0 +1,18 @@
+package units
+
+// Quantity is an amount tagged with its unit. The unit is a phantom type
+// parameter: no field names it, so a construction takes it from its expected
+// type.
+struct Quantity[U any](Amount float64)
+
+// Meters tags a Quantity measured in meters.
+struct Meters()
+
+// Seconds tags a Quantity measured in seconds.
+struct Seconds()
+
+// Distance is a Quantity of meters.
+type Distance Quantity[Meters]
+
+// Of builds a Quantity whose unit is this function's result type.
+func Of(amount float64) Quantity[Seconds] = Quantity(amount)

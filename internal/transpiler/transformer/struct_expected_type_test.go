@@ -41,6 +41,7 @@ func TestStructExpectedTypeMatrix(t *testing.T) {
 		{"Tag[int]", `Tag("x")`, "Tag[int]{"},
 		{"Tag[int]", `Tag(name = "x")`, "Tag[int]{"},
 		{"Named[int]", `Named(Name = "x")`, "Named[int]{"},
+		{"Named[int]", `Named("x")`, "Named[int]{"},
 		{"Pair[int, string]", `Pair(1)`, "Pair[int, string]{"},
 		{"Pair[int, string]", `Pair(a = 1)`, "Pair[int, string]{"},
 		{"Pair[int, string]", `Pair[int](1)`, "Pair[int, string]{"},
@@ -82,6 +83,9 @@ func TestStructExpectedTypeMatrix(t *testing.T) {
 			return "func take(v " + ty + ") " + ty + " = v\nfunc f() " + ty + " = take(" + e + ")"
 		}},
 		{"parenthesized", func(ty, e string) string { return "func f() " + ty + " = (" + e + ")" }},
+		{"var assignment", func(ty, e string) string {
+			return "func f() " + ty + " {\n    var x " + ty + " = " + e + "\n    x = " + e + "\n    x\n}"
+		}},
 	}
 	for _, pos := range positions {
 		for _, c := range ctors {
@@ -108,6 +112,37 @@ func TestStructExpectedTypeOtherPositions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(structExpectedDecls+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+}
+
+// TestStructExpectedTypeOutsideMain covers a package other than main, whose
+// own types are known by both their bare and their package-qualified names.
+// The hint names the struct as the call site can: bare, in its own package.
+func TestStructExpectedTypeOutsideMain(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	const decls = "package units\n\nstruct Q[U any](Amount float64)\nstruct Sec()\n\n"
+	tests := []struct {
+		name, input, want, wantErr string
+	}{
+		{name: "expression body", input: "func Of(a float64) Q[Sec] = Q(a)", want: "Q[Sec]{"},
+		{name: "val annotation", input: "func Of(a float64) Q[int] {\n    val x Q[int] = Q(a)\n    x\n}", want: "Q[int]{"},
+		{
+			name:    "no expected type",
+			input:   "func Of(a float64) float64 {\n    val x = Q(a)\n    x.Amount\n}",
+			wantErr: "cannot infer type argument U of generic struct Q from its fields or the expected type; annotate the binding (e.g. `val x Q[int] = Q(...)`) or write it explicitly (`Q[int](...)`)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.input+"\n", "")
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
 			require.NoError(t, err)
 			assert.Contains(t, got, tt.want)
 		})
