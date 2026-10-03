@@ -2,7 +2,9 @@
 
 **When it fires.** A method is declared on a type alias that does not resolve
 to a plain type this package declares — a built-in, a type from another
-package, an unnamed composite (slice, map, func) or an instantiated type:
+package, an unnamed composite (slice, map, func) or an instantiated type — or
+on a generic alias (`type Box[T any] Cell[T]`), which takes no methods whatever
+it names, because Go has none on a generic alias:
 
 ```gala
 type Millis int64
@@ -87,7 +89,7 @@ That names a Go rule, and a locality property of generated code, for a type the
 author declared in GALA — and it appeared only at build time, after a clean
 transpile.
 
-**Where it stands down.** An alias whose chain ends at a plain type declared in
+**Where it stands down.** A non-generic alias whose chain passes through no generic alias and ends at a plain type declared in
 **this** package is a legal receiver, because the base type is then local. That
 includes a type declared in a handwritten `.go` sibling of the same package,
 and a pointer to a local type (`type PP *Point` puts the method on `Point`).

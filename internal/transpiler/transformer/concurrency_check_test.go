@@ -119,6 +119,45 @@ func main() {
 			expectContains: "not safe to share",
 			expectCapture:  "bag",
 		},
+		{
+			// An alias is judged as the type it names, in both directions: an
+			// alias of a mutable collection stays unshareable.
+			name: "generic alias of a mutable collection",
+			input: `package main
+
+import "martianoff/gala/collection_mutable"
+
+type Buf[T any] collection_mutable.Array[T]
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val buf Buf[int] = collection_mutable.ArrayOf(1, 2)
+    Println(run(() => buf.Size()))
+}`,
+			expectContains: "not safe to share",
+			expectCapture:  "buf",
+		},
+		{
+			name: "generic alias instantiated at a mutable collection",
+			input: `package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/collection_mutable"
+)
+
+type Items[T any] Array[T]
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val nested Items[collection_mutable.Array[int]] = ArrayOf(collection_mutable.ArrayOf(1))
+    Println(run(() => nested.Size()))
+}`,
+			expectContains: "not safe to share",
+			expectCapture:  "nested",
+		},
 	}
 
 	for _, tc := range cases {
@@ -240,6 +279,56 @@ func run(body Sendable[func() int]) int = body()
 
 func main() {
     Println(run(() => helper()))
+}`,
+		},
+		{
+			name: "alias of an immutable collection",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+type IntItems Array[int]
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val xs IntItems = ArrayOf(1, 2, 3)
+    Println(run(() => xs.Size()))
+}`,
+		},
+		{
+			name: "generic alias of an immutable collection and of Option",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+type Items[T any] Array[T]
+type Maybe[T any] Option[T]
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val xs Items[string] = ArrayOf("a")
+    val m Maybe[int] = Some(1)
+    Println(run(() => xs.Size() + m.GetOrElse(0)))
+}`,
+		},
+		{
+			name: "generic alias of an alias of a struct, read by field",
+			input: `package main
+
+import "martianoff/gala/collection_mutable"
+
+struct Holder[T any](label string, items *collection_mutable.Array[T])
+
+type Held[T any] Holder[T]
+type HeldAgain[T any] Held[T]
+
+func run(body Sendable[func() int]) int = body()
+
+func main() {
+    val h HeldAgain[int] = Holder("x", collection_mutable.ArrayOf(1))
+    Println(run(() => h.label.Size()))
 }`,
 		},
 	}

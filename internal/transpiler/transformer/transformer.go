@@ -810,6 +810,14 @@ func (t *galaASTTransformer) aliasTarget(typ transpiler.Type) (transpiler.Type, 
 	if pkg := typ.GetPackage(); pkg != "" && pkg == t.packageName {
 		key = strings.TrimPrefix(key, pkg+".")
 	}
+	return t.aliasTargetByKey(key, typ)
+}
+
+// aliasTargetByKey is aliasTarget for typ looked up under the typeAliases key
+// key: a bare name for this package's aliases, `pkg.Name` for another's.
+// Callers that resolve names in a package other than this one (the codec,
+// reading an imported struct's fields) build the key themselves.
+func (t *galaASTTransformer) aliasTargetByKey(key string, typ transpiler.Type) (transpiler.Type, bool) {
 	next, ok := t.typeAliases[key]
 	if !ok || next.IsNil() {
 		return nil, false

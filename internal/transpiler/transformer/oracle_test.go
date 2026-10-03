@@ -347,10 +347,11 @@ func checkGeneratedGo(t *testing.T, src string) {
 // transpile the example corpus, which TestGeneratedGoOracleCorpus covers, or
 // they are the oracle.
 var unwrappedTranspilerFiles = map[string]string{
-	"oracle_test.go":           "the oracle's own importer transpiles imported GALA packages",
-	"corpus_shared_test.go":    "example corpus; checked by TestGeneratedGoOracleCorpus",
-	"compilation_gate_test.go": "example corpus; checked by TestGeneratedGoOracleCorpus",
-	"generated_format_test.go": "example corpus; checked by TestGeneratedGoOracleCorpus",
+	"oracle_test.go":              "the oracle's own importer transpiles imported GALA packages",
+	"corpus_shared_test.go":       "example corpus; checked by TestGeneratedGoOracleCorpus",
+	"compilation_gate_test.go":    "example corpus; checked by TestGeneratedGoOracleCorpus",
+	"generated_format_test.go":    "example corpus; checked by TestGeneratedGoOracleCorpus",
+	"generic_alias_arity_test.go": "deliberately invalid Go: a wrong type-argument count is left for the Go compiler to report",
 }
 
 // TestOracleCoversEveryTranspiler keeps new tests on the checked constructor.

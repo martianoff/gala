@@ -612,6 +612,19 @@ function (`{ case … }`) and a by-name argument for a zero-argument alias
 type arguments names no function type, so a lambda converted with a bare
 `Conv(…)` gets none.
 
+A generic alias is substituted one hop at a time (`aliasTarget`): its
+arguments replace its parameters in the target, and the result is followed
+further if it names an alias in turn, so `Again[int]` for `type Again[T any]
+Result[T]` and `type Result[T any] Either[AppError, T]` is
+`Either[AppError, int]`, and the partially applied `StrMap[int]` for `type
+StrMap[V any] HashMap[string, V]` is `HashMap[string, int]`. The checks that
+judge a type's shape outside inference resolve aliases the same way: the
+codec's field classification (`codecUnalias`, in the declaring package's terms
+for an imported struct) and the shareability check at a concurrency boundary
+(`concurrency.Checker` with an alias resolver). An alias spelled with the wrong
+number of type arguments names no instance of its target; it is left to the Go
+compiler, which reports the count.
+
 ### Propagation mechanism
 
 - A LIFO stack on the transformer, `expectedArgTypes` (see

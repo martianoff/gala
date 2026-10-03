@@ -104,6 +104,44 @@ func main() {
 	assert.NotContains(t, out, "\t\tr.Skip()\n\t\tcase", "a declared field fell back to Skip")
 }
 
+// TestCodecFieldKinds_GenericAliases pins that a field typed by a generic alias
+// is encoded as the type it names with the alias's arguments substituted, as a
+// plain alias of the same type is — through a chain of aliases, a partially
+// applied alias, and as the root of Value[T].
+func TestCodecFieldKinds_GenericAliases(t *testing.T) {
+	src := `package main
+
+import (
+    . "martianoff/gala/std"
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+)
+
+type Maybe[T any] Option[T]
+type Items[T any] Array[T]
+type MoreItems[T any] Items[T]
+type Dict[V any] HashMap[string, V]
+
+struct Order(Note Maybe[string], Lines Items[int32], More MoreItems[string], Meta Dict[uint8])
+
+func main() {
+    val m = StructMeta[Order]()
+    Println(m.NumFields())
+    Println(json.Value[Items[int]]().Encode(ArrayOf(1)))
+}`
+	out, err := newCodecTestTranspiler().Transpile(src, "codec_generic_alias.gala")
+	require.NoError(t, err)
+	for _, want := range []string{
+		"_Note = Some[string]{}.Apply(",
+		"_Lines = ArrayFromSlice(",
+		"int32(r.ReadIntN(32))",
+		"_More = ArrayFromSlice(",
+		"uint8(r.ReadUintN(8))",
+	} {
+		assert.Contains(t, out, want)
+	}
+}
+
 // TestCodecFieldKinds_Unsupported checks that a field shape with no encoding
 // is a compile-time GALA-E0050 at the codec use site, never a silent null.
 func TestCodecFieldKinds_Unsupported(t *testing.T) {
@@ -187,6 +225,22 @@ struct Evt(Name string, M Marker)`,
 struct Outer(Name string, In Array[Inner])`,
 			use:      "Outer",
 			contains: "cannot generate a codec for Outer: field Inner.F has type func(int) int",
+		},
+		{
+			// A generic alias is followed with its argument substituted, so the
+			// shape it names is judged: here an Option of an Option.
+			name: "generic alias of an option, at an option",
+			decls: `type Maybe[T any] Option[T]
+struct Opt(V Maybe[Option[int]])`,
+			use:      "Opt",
+			contains: "None and Some(None) would both be null",
+		},
+		{
+			name: "generic alias of an array of tuples",
+			decls: `type Pairs[K comparable, V any] Array[Tuple[K, V]]
+struct Ps(V Pairs[string, int])`,
+			use:      "Ps",
+			contains: "generic type std.Tuple[string, int] has no codec encoding",
 		},
 	}
 	trans := newCodecTestTranspiler()

@@ -56,6 +56,9 @@ filegroup(
         "field_named_like_type/main.gala",
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
+        "generic_alias_crosspkg/report/report.gala",
+        "generic_alias_crosspkg/shapes/shapes.gala",
+        "generic_alias_crosspkg_test.gala",
         "generic_field_named_like_type/lib/lib.gala",
         "generic_field_named_like_type/lib/types.gala",
         "generic_field_named_like_type/main.gala",
@@ -2671,6 +2674,55 @@ gala_exec_test(
     src = "struct_expected_type_test.gala",
     expected = "struct_expected_type_test.out",
     gala_deps = [":struct_expected_type_units"],
+)
+
+# Generic type aliases: declarations with constrained parameters, aliases of
+# aliases, partial application, inference, matching, methods, codecs and a
+# Future capture. Single-file, so the CLI examples lane runs it too.
+gala_exec_test(
+    name = "generic_type_alias",
+    src = "generic_type_alias.gala",
+    expected = "generic_type_alias.out",
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+        "//json",
+        "//yaml",
+    ],
+)
+
+# Generic type aliases declared in another package, used qualified and through
+# a dot import.
+gala_library(
+    name = "generic_alias_crosspkg_shapes",
+    srcs = ["generic_alias_crosspkg/shapes/shapes.gala"],
+    importpath = "martianoff/gala/examples/generic_alias_crosspkg/shapes",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_library(
+    name = "generic_alias_crosspkg_report",
+    srcs = ["generic_alias_crosspkg/report/report.gala"],
+    gala_deps = [":generic_alias_crosspkg_shapes"],
+    importpath = "martianoff/gala/examples/generic_alias_crosspkg/report",
+    visibility = ["//visibility:public"],
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "generic_alias_crosspkg_test",
+    src = "generic_alias_crosspkg_test.gala",
+    expected = "generic_alias_crosspkg_test.out",
+    gala_deps = [
+        ":generic_alias_crosspkg_report",
+        ":generic_alias_crosspkg_shapes",
+    ],
+    deps = [
+        "//collection_immutable",
+        "//concurrent",
+        "//json",
+    ],
 )
 
 # Package-level `val`s read from another package (qualified and dot-imported)

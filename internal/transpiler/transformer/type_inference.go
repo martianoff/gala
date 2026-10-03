@@ -448,13 +448,19 @@ func (t *galaASTTransformer) resolveType(name string) transpiler.Type {
 // Use this when callers need to unify the function's signature against an
 // expected param type to bind both method-level and function-level type params.
 func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) transpiler.FuncType {
-	var params []transpiler.Type
-	params = append(params, fm.ParamTypes...)
-	var results []transpiler.Type
-	if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-		results = append(results, fm.ReturnType)
+	return signatureType(fm.ParamTypes, fm.ReturnType)
+}
+
+// signatureType is the FuncType of a declaration with the given parameter
+// types and result type (nil, NilType or VoidType for none — metadata read
+// back from the cache spells "no result" as VoidType). The parameters are
+// copied.
+func signatureType(paramTypes []transpiler.Type, returnType transpiler.Type) transpiler.FuncType {
+	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...)}
+	if _, void := returnType.(transpiler.VoidType); !void && returnType != nil && !returnType.IsNil() {
+		ft.Results = []transpiler.Type{returnType}
 	}
-	return transpiler.FuncType{Params: params, Results: results}
+	return ft
 }
 
 // instantiateFuncMetaType substitutes the function's type parameters with

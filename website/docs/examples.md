@@ -741,6 +741,42 @@ Output:
 <3>
 ```
 
+A generic alias can fix some of its target's arguments. `Result[int]` is
+`Either[AppError, int]`, so `Left` and `Right` take their type arguments from
+it and a match on it sees `Either`'s variants:
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct AppError(Code int)
+
+type Result[T any] Either[AppError, T]
+type StrMap[V any] HashMap[string, V]
+
+func parse(s string) Result[int] = if (s == "") Left(AppError(1)) else Right(s.Size())
+
+func describe(r Result[int]) string = r match {
+    case Right(n) => s"ok $n"
+    case Left(e) => s"error ${e.Code}"
+}
+
+func main() {
+    Println(describe(parse("four")))
+    Println(describe(parse("")))
+    val counts StrMap[int] = HashMapOf(("a", 1))
+    Println(counts.Put("b", 2).Size())
+}
+```
+
+Output:
+```
+ok 4
+error 1
+2
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:

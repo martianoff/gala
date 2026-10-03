@@ -1,0 +1,95 @@
+package main
+
+import (
+    "errors"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/concurrent"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+// A generic type alias names every instance of a generic type at once:
+// `Result[int]` is `Either[AppError, int]`, and so on. It lowers to a Go
+// generic alias, so the alias and the type it names are one type, and the
+// alias stands for its target everywhere: constructors typed from an
+// expected type, match subjects, method calls, struct fields, collection
+// elements, codecs and concurrency boundaries.
+
+struct AppError(Code int, Msg string)
+
+type Result[T any] Either[AppError, T]
+type Res[T any] Try[T]
+type Res2[T any] Res[T]
+type Pairs[K comparable, V any] Array[Tuple[K, V]]
+type StrMap[V any] HashMap[string, V]
+type Handler[T any] func(string) Result[T]
+type Maybe[T any] Option[T]
+type Items[T any] Array[T]
+
+type Labeled interface {
+    Label() string
+}
+
+struct Tag(Name string)
+
+func (t Tag) Label() string = "#" + t.Name
+
+type Labels[L Labeled] Array[L]
+
+struct Order(Id int, Note Maybe[string], Lines Items[int], Meta StrMap[string])
+
+func parse(s string) Result[int] = if (s == "") Left(AppError(1, "empty")) else Right(s.Size())
+
+func describe(r Result[int]) string = r match {
+    case Right(v) => s"ok $v"
+    case Left(e) => s"error ${e.Code}: ${e.Msg}"
+}
+
+func half(n int) Res2[int] = if (n % 2 == 0) Success(n / 2) else Failure(errors.New(s"$n is odd"))
+
+func showRes[T any](r Res[T]) string = r match {
+    case Success(v) => s"success $v"
+    case Failure(e) => s"failure ${e.Error()}"
+}
+
+func run[T any](h Handler[T], input string) Result[T] = h(input)
+
+func labels[L Labeled](ls Labels[L]) string = ls.Map(_.Label()).MkString(" ")
+
+func noCounts() StrMap[int] = EmptyHashMap()
+
+func main() {
+    Println(describe(parse("four")))
+    Println(describe(parse("")))
+    Println(showRes(half(10)))
+    Println(showRes(half(3)))
+
+    val ps Pairs[string, int] = ArrayOf(("a", 1), ("b", 2))
+    Println(ps.Map((p) => s"${p.V1}=${p.V2}").MkString(", "))
+
+    val counts StrMap[int] = HashMapOf(("x", 1))
+    Println(s"${counts.Put("y", 2).Size()} ${noCounts().IsEmpty()}")
+
+    val results Array[Result[int]] = ArrayOf(parse("ab"), parse(""))
+    Println(results.Map(describe).MkString(" | "))
+
+    val doubled Handler[int] = (s) => parse(s + s)
+    Println(describe(run(doubled, "hello")))
+
+    val r Res[int] = Success(20)
+    Println(r.Map(_ + 1).GetOrElse(0))
+
+    Println(labels(ArrayOf(Tag("go"), Tag("gala"))))
+
+    val order = Order(7, Some("rush"), ArrayOf(3, 4), HashMapOf(("by", "web")))
+    val jsonCodec = json.Codec[Order](json.SnakeCase())
+    val body = jsonCodec.Encode(order).Get()
+    Println(body)
+    Println(jsonCodec.Decode(body).Map(_.Lines.Size()))
+    val yamlCodec = yaml.Codec[Order](yaml.SnakeCase())
+    Println(yamlCodec.Encode(order).FlatMap(yamlCodec.Decode).Map(_.Note.GetOrElse("")))
+    Println(json.Value[Items[int]]().Encode(ArrayOf(1, 2)))
+
+    val shared = Future(s"${ps.Size()} ${order.Lines.Size()}")
+    Println(shared.Get())
+}

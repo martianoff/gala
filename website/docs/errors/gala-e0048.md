@@ -11,7 +11,7 @@ last_modified_at: 2026-10-03
 
 # GALA-E0048 — method on an alias to a non-local type
 
-**What it means.** A method is declared on a type alias that does not resolve to a plain type this package declares — a built-in, a type from another package, an unnamed composite (slice, map, func) or an instantiated type. `type X Y` is an *alias*, not a new type: `X` and `Y` are one type, so the method would belong to `Y`, and Go permits methods only on types its own package declares.
+**What it means.** A method is declared on a type alias that does not resolve to a plain type this package declares — a built-in, a type from another package, an unnamed composite (slice, map, func) or an instantiated type — or on any generic alias (`type Box[T any] Cell[T]`), which Go gives no methods whatever it names. `type X Y` is an *alias*, not a new type: `X` and `Y` are one type, so the method would belong to `Y`, and Go permits methods only on types its own package declares.
 
 ---
 
@@ -67,7 +67,7 @@ func millisOf(d DateTime) int64 = int64(d)
 
 ## Where it stands down
 
-An alias whose chain ends at a plain type declared in **this** package is a legal receiver, because the base type is then local:
+A non-generic alias whose chain passes through no generic alias and ends at a plain type declared in **this** package is a legal receiver, because the base type is then local:
 
 ```gala
 struct Point(X int, Y int)

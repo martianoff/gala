@@ -43,7 +43,15 @@ type MetadataResolver func(named transpiler.Type) (*transpiler.TypeMetadata, boo
 type Checker struct {
 	resolve      MetadataResolver
 	goUnderlying GoUnderlyingResolver
+	unalias      AliasResolver
 }
+
+// AliasResolver reports the type a GALA type alias names, followed to the end
+// of its alias chain and with a generic alias's type arguments substituted
+// (`Items[int]` for `type Items[T any] Array[T]` is `Array[int]`), and false
+// when the type is not an alias. An alias is only a second name, so a value of
+// it is exactly as shareable as a value of its target.
+type AliasResolver func(t transpiler.Type) (transpiler.Type, bool)
 
 // GoUnderlyingResolver reports the underlying type of a Go named type (e.g.
 // time.Duration -> int64), or (nil, false) when the type is not a resolvable Go
@@ -70,6 +78,13 @@ func NewChecker(resolve MetadataResolver) *Checker {
 // …) as shareable. Without it, such types stay conservatively not-shareable.
 func (c *Checker) SetGoUnderlyingResolver(fn GoUnderlyingResolver) {
 	c.goUnderlying = fn
+}
+
+// SetAliasResolver wires an optional alias resolver so a type spelled as a
+// GALA alias is decided as the type it names. Without it, an alias name is an
+// unresolved named type and stays conservatively not-shareable.
+func (c *Checker) SetAliasResolver(fn AliasResolver) {
+	c.unalias = fn
 }
 
 // IsShareable reports whether a value of type t may safely cross a goroutine
@@ -99,6 +114,15 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	// conservative and never crash on a nil input.
 	if transpiler.IsUnusable(t) {
 		return false
+	}
+	if target, key, ok := c.unaliasOnce(t, visited); ok {
+		if target == nil {
+			// Re-entering an alias already being decided: like a struct's
+			// self-reference, the cycle on its own adds no mutability.
+			return true
+		}
+		defer delete(visited, key)
+		t = target
 	}
 
 	switch v := t.(type) {
@@ -151,6 +175,39 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 
 	// Unknown/unhandled kind: conservative.
 	return false
+}
+
+// unaliasOnce resolves t through the alias resolver and marks the alias, with
+// its arguments, in visited under key while its target is decided; the caller
+// deletes key when done. It reports false when t is not an alias, and a nil
+// target when t is already being decided further up the walk (a recursive
+// type that passes through the alias). Only a named type can spell an alias,
+// and a primitive never does, so other types skip the lookup.
+func (c *Checker) unaliasOnce(t transpiler.Type, visited map[string]bool) (target transpiler.Type, key string, ok bool) {
+	if c.unalias == nil {
+		return nil, "", false
+	}
+	switch v := t.(type) {
+	case transpiler.BasicType:
+		if isShareablePrimitive(v.Name) {
+			return nil, "", false
+		}
+	case transpiler.NamedType, transpiler.GenericType:
+	default:
+		return nil, "", false
+	}
+	target, ok = c.unalias(t)
+	if !ok {
+		return nil, "", false
+	}
+	// Prefixed so it cannot collide with the struct keys
+	// isNamedStructShareable records in the same set.
+	key = "alias:" + t.String()
+	if visited[key] {
+		return nil, key, true
+	}
+	visited[key] = true
+	return target, key, true
 }
 
 // isGoScalarShareable reports whether a Go named type is a scalar value type —

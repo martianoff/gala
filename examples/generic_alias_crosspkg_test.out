@@ -1,0 +1,12 @@
+ok 4
+error 1: negative
+error 3: zero
+ok 20
+ok 42
+true
+true
+2
+2
+{"id":7,"note":"rush","lines":[5,6,7]}
+Success(3)
+2 2

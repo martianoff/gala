@@ -945,26 +945,29 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 // from ("" for this one): an unqualified name there is that package's. This
 // package's aliases are keyed by simple name and another's by qualified name,
 // so an imported struct's `Millis` field never resolves through an unrelated
-// local alias of the same name.
+// local alias of the same name. A generic alias has its type arguments
+// substituted: `Items[int]` for `type Items[T any] Array[T]` is `Array[int]`.
 //
 // The hop count bounds a chain that refers back to itself.
 func (t *galaASTTransformer) codecUnalias(ty transpiler.Type, pkg string) transpiler.Type {
 	for hop := 0; hop <= len(t.typeAliases); hop++ {
-		name, owner, ok := simpleTypeName(ty)
+		base := ty
+		if g, isGeneric := ty.(transpiler.GenericType); isGeneric {
+			base = g.Base
+		}
+		name, owner, ok := simpleTypeName(base)
 		if !ok {
 			return ty
 		}
 		if owner == "" {
 			owner = pkg
 		}
-		if owner == "" || owner == t.packageName {
-			if _, isAlias := t.typeAliases[name]; !isAlias {
-				return ty
-			}
-			return t.followAliasChain(transpiler.NamedType{Name: name})
+		key := name
+		if owner != "" && owner != t.packageName {
+			key = owner + "." + name
 		}
-		target, isAlias := t.typeAliases[owner+"."+name]
-		if !isAlias || target.IsNil() {
+		target, isAlias := t.aliasTargetByKey(key, ty)
+		if !isAlias {
 			return ty
 		}
 		// The target is written in owner's terms, so it resolves there in turn.

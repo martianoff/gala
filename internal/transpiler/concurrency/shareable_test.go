@@ -221,18 +221,18 @@ var genListMeta = &transpiler.TypeMetadata{
 
 func fixtureResolver() MetadataResolver {
 	return stubResolver(map[string]*transpiler.TypeMetadata{
-		"Point":        pointMeta,
-		"Counter":      counterMeta,
-		"app.Config":   configMeta,
-		"app.Handle":   handleMeta,
-		"app.Bag":      bagMeta,
-		"app.Box":      boxMeta,
-		"app.Shape":    shapeMeta,
-		"app.Event":    eventMeta,
-		"app.IntList":  intListMeta,
-		"app.Node":     nodeMeta,
-		"app.RecNode":  recNodeMeta,
-		"app.GenList":  genListMeta,
+		"Point":       pointMeta,
+		"Counter":     counterMeta,
+		"app.Config":  configMeta,
+		"app.Handle":  handleMeta,
+		"app.Bag":     bagMeta,
+		"app.Box":     boxMeta,
+		"app.Shape":   shapeMeta,
+		"app.Event":   eventMeta,
+		"app.IntList": intListMeta,
+		"app.Node":    nodeMeta,
+		"app.RecNode": recNodeMeta,
+		"app.GenList": genListMeta,
 	})
 }
 
@@ -395,9 +395,9 @@ func TestGoScalarShareable(t *testing.T) {
 		"time.Duration": basic("int64"),
 		"os.FileMode":   basic("uint32"),
 		"mypkg.Label":   basic("string"),
-		"mypkg.Bytes":   transpiler.ArrayType{Elem: basic("byte")},   // []byte-backed
-		"mypkg.Handle":  transpiler.PointerType{Elem: basic("int")},  // pointer-backed
-		"mypkg.Rec":     named("mypkg", "recUnderlying"),             // struct-backed (non-primitive)
+		"mypkg.Bytes":   transpiler.ArrayType{Elem: basic("byte")},  // []byte-backed
+		"mypkg.Handle":  transpiler.PointerType{Elem: basic("int")}, // pointer-backed
+		"mypkg.Rec":     named("mypkg", "recUnderlying"),            // struct-backed (non-primitive)
 	}
 	c := NewChecker(nil)
 	c.SetGoUnderlyingResolver(func(nt transpiler.Type) (transpiler.Type, bool) {
@@ -432,6 +432,64 @@ func TestGoScalarShareable(t *testing.T) {
 func TestGoScalarShareableNoResolver(t *testing.T) {
 	if NewChecker(nil).IsShareable(named("time", "Duration")) {
 		t.Errorf("time.Duration must not be shareable without a Go-underlying resolver")
+	}
+}
+
+// TestAliasShareable: with an alias resolver wired, a type spelled as an alias
+// is decided as the type it names, wherever it appears — at the top level, as a
+// type argument, or behind another alias. The resolver stands in for the
+// transformer's alias table (the generic one substitutes its argument).
+func TestAliasShareable(t *testing.T) {
+	immutableArray := named("collection_immutable", "Array")
+	mutableArray := named("collection_mutable", "Array")
+	c := NewChecker(nil)
+	c.SetAliasResolver(func(a transpiler.Type) (transpiler.Type, bool) {
+		switch v := a.(type) {
+		case transpiler.BasicType:
+			switch v.Name {
+			case "IntItems":
+				return generic(immutableArray, basic("int")), true
+			case "IntBuf":
+				return generic(mutableArray, basic("int")), true
+			case "Rec":
+				return generic(named("std", "Option"), basic("Rec")), true
+			case "RecBuf":
+				return generic(named("std", "Tuple"), basic("RecBuf"), generic(mutableArray, basic("int"))), true
+			}
+		case transpiler.GenericType:
+			if v.Base.BaseName() == "Items" && len(v.Params) == 1 {
+				return generic(immutableArray, v.Params[0]), true
+			}
+		}
+		return nil, false
+	})
+
+	cases := []struct {
+		name string
+		typ  transpiler.Type
+		want bool
+	}{
+		{"alias of an immutable collection", basic("IntItems"), true},
+		{"alias of a mutable collection", basic("IntBuf"), false},
+		{"generic alias at a shareable argument", generic(basic("Items"), basic("string")), true},
+		{"generic alias at a mutable argument", generic(basic("Items"), generic(mutableArray, basic("int"))), false},
+		{"alias as a type argument", generic(named("std", "Option"), basic("IntItems")), true},
+		{"mutable alias as a type argument", generic(named("std", "Option"), basic("IntBuf")), false},
+		{"unresolved name stays conservative", basic("Unknown"), false},
+		// Re-entering an alias is decided co-inductively, as a struct's
+		// self-reference is: the cycle terminates and adds no mutability.
+		{"alias naming itself through its arguments terminates", basic("Rec"), true},
+		{"recursion through an alias of a mutable collection", basic("RecBuf"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := c.IsShareable(tc.typ); got != tc.want {
+				t.Errorf("IsShareable(%v) = %v, want %v", tc.typ, got, tc.want)
+			}
+		})
+	}
+	if NewChecker(nil).IsShareable(basic("IntItems")) {
+		t.Errorf("an alias must stay not-shareable without an alias resolver")
 	}
 }
 

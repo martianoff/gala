@@ -625,6 +625,85 @@ func main() {
 			expectContains: "which names no type of its own",
 		},
 		{
+			name: "GALA-E0048 method on a generic alias of an imported generic type",
+			input: `package main
+
+type Res[T any] Try[T]
+
+func (r Res[T]) Describe() string = "res"
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: `cannot declare a method on "Res": it resolves to std.Try[T] through a generic alias`,
+		},
+		{
+			name: "GALA-E0048 method on a generic alias of a local generic struct",
+			input: `package main
+
+struct Cell[T any](Value T)
+
+type Box[T any] Cell[T]
+
+func (b Box[T]) Show() string = "box"
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: "it resolves to Cell[T] through a generic alias",
+		},
+		{
+			name: "GALA-E0048 method on a generic alias of a local plain struct",
+			input: `package main
+
+struct Point(X int, Y int)
+
+type Tagged[T any] Point
+
+func (p Tagged[T]) Sum() int = p.X + p.Y
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: "it resolves to Point through a generic alias",
+		},
+		{
+			name: "GALA-E0048 method on a plain alias whose chain passes through a generic alias",
+			input: `package main
+
+struct Point(X int, Y int)
+
+type Tagged[T any] Point
+type IntTagged Tagged[int]
+
+func (p IntTagged) Sum() int = p.X + p.Y
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: `cannot declare a method on "IntTagged": it resolves to Point through a generic alias`,
+		},
+		{
+			name: "GALA-E0048 method on an alias of an instantiated generic struct",
+			input: `package main
+
+struct Pair[A any](First A, Second A)
+
+type IntPair Pair[int]
+
+func (p IntPair) Sum() int = p.First + p.Second
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: "it resolves to Pair[int], an instantiated type",
+		},
+		{
 			name: "GALA-E0049 a Go call's Try used as its plain value",
 			input: `package main
 

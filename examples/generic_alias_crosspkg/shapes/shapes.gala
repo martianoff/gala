@@ -1,0 +1,33 @@
+package shapes
+
+import . "martianoff/gala/collection_immutable"
+
+// AppError is the error side of Result.
+struct AppError(Code int, Msg string)
+
+// Result is a generic alias of Either with a fixed error type.
+type Result[T any] Either[AppError, T]
+
+// Again is a generic alias of a generic alias.
+type Again[T any] Result[T]
+
+// Pairs is a generic alias with a constrained parameter.
+type Pairs[K comparable, V any] Array[Tuple[K, V]]
+
+// StrMap is a partially applied generic alias of HashMap.
+type StrMap[V any] HashMap[string, V]
+
+// Maybe is a generic alias of Option.
+type Maybe[T any] Option[T]
+
+// Items is a generic alias of Array.
+type Items[T any] Array[T]
+
+// Order is encoded by a codec through its generic-alias fields.
+struct Order(Id int, Note Maybe[string], Lines Items[int])
+
+// Check fails for a negative number.
+func Check(n int) Result[int] = if (n < 0) Left(AppError(1, "negative")) else Right(n)
+
+// Count is generic over the alias's parameters.
+func Count[K comparable, V any](ps Pairs[K, V]) int = ps.Size()

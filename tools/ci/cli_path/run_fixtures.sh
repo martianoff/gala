@@ -4,7 +4,8 @@
 #   GALA=/path/to/gala tools/ci/cli_path/run_fixtures.sh <work-dir> [fixture...]
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
-# nested, lib_only, go_subpkg, gala_dep, dep_go_subpkg, sequence.
+# nested, lib_only, go_subpkg, gala_dep, dep_go_subpkg, dep_generic_alias,
+# sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
 # with the CLI, which transpiles against the stdlib snapshot embedded in the
@@ -214,6 +215,21 @@ fixture_dep_go_subpkg() {
   expect_output "gala run" expected.out run.log
 }
 
+# dep_generic_alias: a GALA dependency (a local replace, built by the
+# dependency transpiler) that declares generic type aliases, used from the main
+# module. The go.mod of both the transpiled dependency and the build workspace
+# must declare a Go version that has generic aliases.
+fixture_dep_generic_alias() {
+  local dir
+  dir=$(stage dep_generic_alias)
+  cd "$dir/app"
+  gala_ok build.log build || return 0
+  "$(exe "$dir/app/app")" >out.txt
+  expect_output "built binary" expected.out out.txt
+  gala_ok run.log run || return 0
+  expect_output "gala run" expected.out run.log
+}
+
 # sequence: the order a user actually types commands in, against one warm
 # GALA_HOME, then an edit, then the same builds from an empty GALA_HOME. Every
 # binary a warm build produced must behave exactly like the from-scratch one:
@@ -259,7 +275,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only go_subpkg gala_dep dep_go_subpkg sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg gala_dep dep_go_subpkg dep_generic_alias sequence)
 fi
 
 for name in "${fixtures[@]}"; do

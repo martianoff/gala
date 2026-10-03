@@ -174,6 +174,7 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 	// shareable via the shared Go-named-type underlying resolver; the predicate
 	// itself accepts only a primitive-scalar underlying.
 	checker.SetGoUnderlyingResolver(t.goNamedUnderlying)
+	checker.SetAliasResolver(t.unaliased)
 	for _, c := range caps {
 		typ, bound := t.lookupLocalBinding(c.Name)
 		if !bound {
@@ -262,6 +263,10 @@ func (t *galaASTTransformer) resolveFieldPathType(base transpiler.Type, path str
 func (t *galaASTTransformer) resolveStructFieldType(owner transpiler.Type, field string) (fieldType transpiler.Type, immutable bool, ok bool) {
 	if transpiler.IsUnusable(owner) {
 		return transpiler.NilType{}, false, false
+	}
+	// An alias has no fields of its own; read them off the struct it names.
+	if target, isAlias := t.unaliased(owner); isAlias {
+		owner = target
 	}
 	meta := t.getTypeMeta(owner.BaseName())
 	if meta == nil || meta.DefinedIn == "" {

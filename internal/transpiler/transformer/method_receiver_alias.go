@@ -71,8 +71,31 @@ func (t *galaASTTransformer) checkMethodReceiverAlias(recvCtx *grammar.ReceiverC
 	// Aliases chain, and Go collapses the whole chain: `type A int64; type B A`
 	// gives B the base type int64, not A. The rule applies to where the chain
 	// ends, so the walk runs before the locality test.
-	alias = t.followAliasChain(alias)
-	reason, illegal := t.illegalReceiverTarget(alias)
+	//
+	// Go takes no method through a generic alias at all, whatever it names:
+	// `type Box[T any] Point` with a local Point rejects a method on Box, and
+	// on `type B Box[int]` too, because B's chain passes through it.
+	isGeneric := func(typ transpiler.Type) bool {
+		meta := t.getTypeMeta(typ.BaseName())
+		return meta != nil && len(meta.TypeParams) > 0
+	}
+	throughGeneric := isGeneric(transpiler.NamedType{Name: recvTypeName})
+	end := t.walkAliasChain(alias, func(hop transpiler.Type) bool {
+		throughGeneric = throughGeneric || isGeneric(hop)
+		return throughGeneric
+	})
+	if throughGeneric {
+		// The walk stopped at the generic hop; the message names the end.
+		end = t.followAliasChain(end)
+	}
+	alias = end
+	var reason string
+	var illegal bool
+	if throughGeneric {
+		reason, illegal = fmt.Sprintf("%s through a generic alias", alias.String()), true
+	} else {
+		reason, illegal = t.illegalReceiverTarget(alias)
+	}
 	if !illegal {
 		return nil
 	}

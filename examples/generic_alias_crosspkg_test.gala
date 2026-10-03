@@ -1,0 +1,42 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/concurrent"
+    "martianoff/gala/json"
+    "martianoff/gala/examples/generic_alias_crosspkg/report"
+    "martianoff/gala/examples/generic_alias_crosspkg/shapes"
+)
+
+// Generic aliases declared in another package, used qualified here and
+// through a dot import in the report package: constructors typed from them,
+// matches on values of them, methods of the types they name, a codec over a
+// struct whose fields are spelled with them, and a Future capturing them.
+
+func fromZero(n int) shapes.Result[int] = if (n == 0) Left(shapes.AppError(3, "zero")) else Right(100 / n)
+
+func noNote() shapes.Maybe[string] = None()
+
+func main() {
+    Println(report.Describe(shapes.Check(4)))
+    Println(report.Describe(shapes.Check(-1)))
+    Println(report.Describe(fromZero(0)))
+    Println(report.Describe(fromZero(5)))
+    Println(report.Describe(report.Doubled(21)))
+    Println(report.Doubled(0).IsLeft())
+    Println(noNote().IsEmpty())
+
+    val ps shapes.Pairs[string, int] = ArrayOf(("a", 1), ("b", 2))
+    Println(shapes.Count(ps))
+    val totals = report.Totals()
+    Println(totals.Get("b").GetOrElse(0))
+
+    val order = shapes.Order(7, Some("rush"), ArrayOf(5, 6, 7))
+    val codec = json.Codec[shapes.Order](json.SnakeCase())
+    val body = codec.Encode(order).Get()
+    Println(body)
+    Println(codec.Decode(body).Map(_.Lines.Size()))
+
+    val sizes = Future(s"${ps.Size()} ${totals.Size()}")
+    Println(sizes.Get())
+}

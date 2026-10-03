@@ -73,6 +73,18 @@ func NewStamp(ms int64) Stamp = Stamp(Millis(ms), Zone("utc"), ArrayOf(Millis(1)
 func NoLaps() Laps = EmptyArray[Millis]()
 
 func (s Stamp) Validate() Try[Stamp] = Success(s)
+
+type Opt[T any] Option[T]
+
+type Series[T any] Array[T]
+
+type Marks Series[Millis]
+
+struct Shift(note Opt[Millis], marks Marks, zones Series[Where])
+
+func NewShift() Shift = Shift(Some(Millis(1)), EmptyArray[Millis](), EmptyArray[Zone]())
+
+func (s Shift) Validate() Try[Shift] = Success(s)
 `)
 	return root
 }
@@ -353,6 +365,46 @@ func main() {
 		assert.Contains(t, out, want, "generated:\n%s", out)
 	}
 	assert.NotContains(t, out, "_StructMeta_Stamp", "generated:\n%s", out)
+}
+
+// TestCodecImportedStructWithGenericAliasFields: generic aliases are followed
+// with their arguments substituted in the declaring package's terms, both in
+// the fields of an imported struct (Shift) and in a consumer field spelled
+// with an imported generic alias (clock.Opt[clock.Millis]).
+func TestCodecImportedStructWithGenericAliasFields(t *testing.T) {
+	root := codecCrossPkgFixture(t)
+	lib, err := os.ReadFile(filepath.Join(root, "clock", "clock.gala"))
+	require.NoError(t, err)
+	libOut, err := transpileCrossPkgFile(t, root, string(lib), filepath.Join(root, "clock", "clock.gala"))
+	require.NoError(t, err)
+	assert.Contains(t, libOut, "type StructMeta_Shift struct", "generated:\n%s", libOut)
+
+	out, err := transpileCrossPkg(t, root, `package main
+
+import (
+    . "martianoff/gala/json"
+    . "martianoff/gala/collection_immutable"
+    "example.com/codecx/clock"
+)
+
+// Ms is this package's own, passed as the argument of an imported generic alias.
+type Ms bool
+
+struct Roster(Shift clock.Shift, Next clock.Opt[clock.Millis], Spots clock.Series[clock.Where], Flags clock.Series[Ms])
+
+func main() {
+    Println(Codec[Roster](SnakeCase()).Encode(Roster(clock.NewShift(), None(), EmptyArray(), ArrayOf(Ms(true)))).Get())
+}`)
+	require.NoError(t, err)
+	for _, want := range []string{
+		"clock.StructMeta_Shift{}.EncodeFields(w, t.Shift.Get()",
+		"clock.StructMeta_Zone{}.EncodeFields(w, __elem",
+		"w.WriteBool(",
+		"w.WriteInt64(",
+	} {
+		assert.Contains(t, out, want, "generated:\n%s", out)
+	}
+	assert.NotContains(t, out, "_StructMeta_Shift", "generated:\n%s", out)
 }
 
 // TestCodecLibraryStructWithGoStructField: a library struct whose field is a

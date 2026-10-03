@@ -1,0 +1,15 @@
+ok 4
+error 1: empty
+success 5
+failure 3 is odd
+a=1, b=2
+2 true
+ok 2 | error 1: empty
+ok 10
+21
+#go #gala
+{"id":7,"note":"rush","lines":[3,4],"meta":{"by":"web"}}
+Success(2)
+Success(rush)
+Success([1,2])
+2 2
