@@ -46,8 +46,8 @@ type Checker struct {
 }
 
 // GoUnderlyingResolver reports the underlying type of a Go named type (e.g.
-// time.Duration -> int64), or (nil, false) when the type is not a resolvable Go
-// named type. It is how the checker recognises Go scalar value types — named
+// time.Duration -> int64) or of a GALA opaque type (`opaque type UserID int64`
+// -> int64), or (nil, false) when the type is neither. It is how the checker recognises Go scalar value types — named
 // types whose underlying is a primitive — as shareable. It is deliberately NOT
 // used for Go structs: Go has no immutability and auto-takes a pointer receiver
 // for `d.Method()`, so an all-value-field Go struct still cannot be proven

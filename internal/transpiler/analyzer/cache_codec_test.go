@@ -148,6 +148,16 @@ func buildSyntheticCache() *CachedRichAST {
 			},
 		}
 	}
+	r.Types["synthetic.UserID"] = &transpiler.TypeMetadata{
+		Name:       "UserID",
+		Package:    "synthetic",
+		IsOpaque:   true,
+		Underlying: transpiler.BasicType{Name: "int64"},
+		TypeParams: []string{"T"},
+		Methods: map[string]*transpiler.MethodMetadata{
+			"Label": {Name: "Label", Package: "synthetic", ReturnType: transpiler.BasicType{Name: "string"}},
+		},
+	}
 	for i := 0; i < 30; i++ {
 		name := "F" + itoa(i)
 		r.Functions["synthetic."+name] = &transpiler.FunctionMetadata{
