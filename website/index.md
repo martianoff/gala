@@ -5,7 +5,7 @@ description: "Scala on Go. A statically typed, functional-first language that tr
 keywords: "gala language, scala on go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
-last_modified_at: 2026-07-26
+last_modified_at: 2026-10-03
 ---
 
 <div class="hero">
@@ -96,6 +96,19 @@ case Point:
 </div>
 
 GALA's version is shorter, handles destructuring automatically, and produces a compile-time error if you forget a case. See the [full GALA vs Go comparison]({{ '/vs-go/' | relative_url }}) for more examples including Option handling, immutable structs, and error handling.
+
+## Built with GALA: gala-tui
+
+[![gala-tui demo: a build-server dashboard across eight screens](https://raw.githubusercontent.com/martianoff/gala-tui/0.15.3/docs/gala-tui-demo.gif)](https://github.com/martianoff/gala-tui)
+
+[gala-tui](https://github.com/martianoff/gala-tui) is an Elm-architecture terminal UI framework written in GALA — about 19,500 lines and 1,400+ tests, the largest GALA codebase. The demo above is a build-server dashboard: eight screens that between them show every widget, plus a fuzzy command palette, modals, toasts, mouse input, and four themes.
+
+- **Sealed types drive the architecture.** An app's messages are a `sealed type`, so `update` is an exhaustive `match`: add a message and `update` stops compiling until it handles it. Side effects are data too — `Cmd[T]` is a sealed type the runtime interprets.
+- **Immutable widgets, minimal redraws.** Widgets are plain immutable values, and a differential renderer writes only the cells that changed.
+- **`Future` for async work.** `FutureCmd` and `AsyncTry` run work off the UI loop and deliver the result back as a message.
+- **Go interop without bindings.** Raw terminal mode comes from `golang.org/x/term`, imported straight into GALA.
+
+[Run the demo yourself](https://github.com/martianoff/gala-tui#quick-demo), or see the other [projects built with GALA](#showcase-projects).
 
 ## Features
 
@@ -340,9 +353,7 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 
 | Project | Description |
 |---------|-------------|
-| [GALA Playground](https://github.com/martianoff/gala-playground) | Web-based playground — [try it live](https://gala-playground.fly.dev) |
-| [State Machine Example](https://github.com/martianoff/gala-state-machine-example) | State machines with sealed types and pattern matching |
-| [Log Analyzer](https://github.com/martianoff/gala-log-analyzer) | Structured log parsing with Go stdlib interop and functional pipelines |
+| [GALA TUI](https://github.com/martianoff/gala-tui) | Flagship. Elm-architecture TUI framework — immutable widgets, differential renderer, async runtime, mouse, themes |
+| [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator — Team Lead delegates to Engineers and QAs, reviews work, hands you a PR. Its interface is a gala-tui app |
 | [GALA Server](https://github.com/martianoff/gala-server) | Immutable HTTP server library with builder-pattern configuration |
-| [GALA TUI](https://github.com/martianoff/gala-tui) | Elm-architecture TUI framework — immutable widgets, differential renderer, async runtime |
-| [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator — Team Lead delegates to Engineers and QAs, reviews work, hands you a PR |
+| [GALA Playground](https://github.com/martianoff/gala-playground) | Web-based playground — [try it live](https://gala-playground.fly.dev) |

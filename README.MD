@@ -242,6 +242,34 @@ if err != nil {
 
 ---
 
+## Built with GALA
+
+### Flagship: [gala-tui](https://github.com/martianoff/gala-tui)
+
+[![gala-tui demo: a build-server dashboard across eight screens](https://raw.githubusercontent.com/martianoff/gala-tui/0.15.3/docs/gala-tui-demo.gif)](https://github.com/martianoff/gala-tui)
+
+An Elm-architecture terminal UI framework — about 19,500 lines of GALA and 1,400+ tests. It is the largest GALA codebase, and it leans on the language's features to do real work:
+
+- **Sealed types drive the architecture.** An app's messages are a `sealed type`, so `update` is an exhaustive `match`: add a message and `update` stops compiling until it handles it. Side effects are data too — `Cmd[T]` is a sealed type (`NoCmd`, `QuitCmd`, `BatchCmd`, `FutureCmd`, …) that the runtime interprets.
+- **Immutable widgets, minimal redraws.** Widgets are plain immutable values, and a differential renderer writes only the cells that changed.
+- **`Future` for async work.** `FutureCmd` and `AsyncTry` run work off the UI loop and deliver the result back as a message.
+- **Go interop without bindings.** Raw terminal mode comes from `golang.org/x/term`, imported straight into GALA.
+- **Tested without a terminal.** `Snapshot` renders a widget to a string for golden-file tests; `Harness` runs the real key-decoding, update, and render loop against a fake terminal you can assert on.
+
+The demo above is a build-server dashboard: eight screens that between them show every widget, plus a fuzzy command palette, modals, toasts, mouse input, and four themes. The recording is generated from a committed script of keystrokes and clicks, not shot by hand. [Run it yourself](https://github.com/martianoff/gala-tui#quick-demo).
+
+### More projects written in GALA
+
+| Project | Description |
+|---------|-------------|
+| [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator — a Team Lead delegates to Engineers and QAs, reviews their work, and hands you a PR for sign-off. Its interface is a gala-tui app |
+| [GALA Server](https://github.com/martianoff/gala-server) | Immutable HTTP server library with builder-pattern configuration, route groups, filters, and pattern matching |
+| [GALA Playground](https://github.com/martianoff/gala-playground) | Web playground ([live](https://gala-playground.fly.dev)) — write and run GALA in the browser |
+
+GALA is dogfooded, not just demoed: its own tooling and these projects are written in the language, which is how its ergonomics get stress-tested.
+
+---
+
 ## Monadic Binding: `bind` / `also`
 
 `Map`/`FlatMap` chains nest badly the moment a later step needs an earlier value. `bind` flattens them — every binding is a normal immutable local that stays in scope, and the block short-circuits on the first failure:
@@ -528,23 +556,6 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 `TreeMap[K,V]` is a Red-Black tree that maintains entries in sorted key order. It provides `MinKey`, `MaxKey`, `Range(from, to)`, `RangeFrom`, `RangeTo`, and conversion to `HashMap`, Go maps, or sorted arrays.
 
 Mutable variants of all collection types are available in `collection_mutable` for performance-sensitive code.
-
----
-
-## Built with GALA
-
-GALA is dogfooded, not just demoed — its own tooling and these projects are written **in the language**, which is how the ergonomics get stress-tested. Real applications written in GALA:
-
-| Project | Description |
-|---------|-------------|
-| [GALA Playground](https://github.com/martianoff/gala-playground) | Web playground ([live](https://gala-playground.fly.dev)) — write and run GALA in the browser with 9 built-in examples |
-| [State Machine Example](https://github.com/martianoff/gala-state-machine-example) | State machines with sealed types + pattern matching — order FSM, traffic light, vending machine (with Go comparison) |
-| [Log Analyzer](https://github.com/martianoff/gala-log-analyzer) | Structured log parsing with Go stdlib interop (`strings`, `strconv`, `fmt`) + functional pipelines (with Go comparison) |
-| [GALA Server](https://github.com/martianoff/gala-server) | Immutable HTTP server library with builder-pattern configuration, route groups, filters, and pattern matching |
-| [GALA TUI](https://github.com/martianoff/gala-tui) | Elm-architecture TUI framework — immutable widgets, differential renderer, async runtime, fuzzy command palette, markdown, mouse, themes |
-| [GALA Team](https://github.com/martianoff/gala-team) | Multi-agent Claude CLI orchestrator — a Team Lead delegates to Engineers and QAs, reviews their work, and hands you a PR for sign-off |
-
-All of the above are written in GALA, not just "use GALA somewhere."
 
 ---
 
