@@ -1,0 +1,71 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+    "time"
+)
+
+// A JSON or YAML codec writes an opaque type as its underlying value: as a
+// struct field, inside an Option, Array or List, and as a HashMap key or
+// value. Every shape round-trips through both formats.
+
+opaque type UserID int64
+opaque type Email string
+opaque type Score float64
+opaque type Active bool
+opaque type Wait time.Duration
+
+type Handle string
+
+opaque type Nick Handle
+
+struct Profile(
+    Id UserID,
+    Mail Email,
+    Rating Score,
+    On Active,
+    Backoff Wait,
+    Nick Nick,
+    Friends Array[UserID],
+    History List[Score],
+    Backup Option[Email],
+    Owner Option[UserID],
+    ByMail HashMap[Email, UserID],
+)
+
+func sample() Profile = Profile(
+    UserID(42), Email("ada@example.com"), Score(4.5), Active(true), Wait(5), Nick("ada"),
+    ArrayOf(UserID(1), UserID(2)),
+    ListOf(Score(3.5), Score(4.0)),
+    Some(Email("backup@example.com")),
+    None(),
+    EmptyHashMap[Email, UserID]().Put(Email("bo@example.com"), UserID(7)),
+)
+
+func main() {
+    val p = sample()
+
+    val jsonCodec = json.Codec[Profile](json.SnakeCase())
+    val encoded = jsonCodec.Encode(p).Get()
+    Println(encoded)
+    val fromJson = jsonCodec.Decode(encoded).Get()
+    Println(s"json round-trip equal: ${fromJson.Equal(p)}")
+    Println(fromJson.ByMail.Get(Email("bo@example.com")), fromJson.Friends, fromJson.Owner)
+
+    val yamlCodec = yaml.Codec[Profile](yaml.SnakeCase())
+    val yamlText = yamlCodec.Encode(p).Get()
+    Println(yamlText)
+    Println(s"yaml round-trip equal: ${yamlCodec.Decode(yamlText).Get().Equal(p)}")
+
+    // OmitEmpty treats an opaque type's zero value as empty.
+    val omit = json.Codec[Profile](json.AsIs()).OmitEmpty("Id").OmitEmpty("Mail").OmitEmpty("Rating").OmitEmpty("On").OmitEmpty("Backoff")
+    val empty = Profile(UserID(0), Email(""), Score(0), Active(false), Wait(0), Nick(""),
+        EmptyArray(), EmptyList(), None(), None(), EmptyHashMap())
+    Println(omit.Encode(empty).Get())
+
+    // Decoding reads the bare underlying value back into the opaque type.
+    val decoded = jsonCodec.Decode("{\"id\":9,\"mail\":\"x@y\",\"friends\":[3],\"by_mail\":{\"k@y\":4}}").Get()
+    Println(decoded.Id, decoded.Mail, decoded.Friends, decoded.ByMail.Get(Email("k@y")))
+}

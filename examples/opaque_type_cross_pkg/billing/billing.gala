@@ -1,0 +1,28 @@
+package billing
+
+// Opaque types another package uses: in signatures, as struct fields of its
+// own structs, as HashMap keys and through a codec.
+
+// CustomerID identifies a customer.
+opaque type CustomerID int64
+
+// Cents is an amount of money.
+opaque type Cents int64
+
+// Sku names a product.
+opaque type Sku string
+
+type Code string
+
+// Region is declared over an alias of this package; an importer encoding it
+// reads the underlying type from this package.
+opaque type Region Code
+
+// Dollars renders the amount.
+func (c Cents) Dollars() string = s"$$${int64(c) / 100}.${int64(c) % 100}"
+
+// Charge describes a charge of amount to a customer.
+func Charge(id CustomerID, amount Cents) string = s"charge #${int64(id)} ${amount.Dollars()}"
+
+// Total adds up amounts.
+func Total(a Cents, b Cents) Cents = a + b

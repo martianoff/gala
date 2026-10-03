@@ -1,0 +1,10 @@
+Some(al) None() 2
+2 true false
+2
+Array(1, 2, 3)
+Array(0.25, 0.5, 1.5)
+TreeSet(22, 8080)
+List(a@x, b@x, c@x)
+Array(3, 2, 1)
+Some(3) Some(1)
+Some(2) 1

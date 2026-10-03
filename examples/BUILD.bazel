@@ -3822,3 +3822,57 @@ gala_exec_test(
     src = "func_value_lambda_arg.gala",
     expected = "func_value_lambda_arg.out",
 )
+
+# Opaque types: a distinct type over a scalar, lowered to a Go defined type —
+# conversions, operators, untyped constants, methods, the generated Hash and
+# Compare.
+gala_exec_test(
+    name = "opaque_type_basic",
+    src = "opaque_type_basic.gala",
+    expected = "opaque_type_basic.out",
+)
+
+# Opaque types as HashMap / HashSet keys and in TreeSet, TreeMap and Sorted.
+gala_exec_test(
+    name = "opaque_type_collections",
+    src = "opaque_type_collections.gala",
+    expected = "opaque_type_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
+# Opaque types through the JSON and YAML codecs: written as the underlying
+# value in every field position.
+gala_exec_test(
+    name = "opaque_type_codec",
+    src = "opaque_type_codec.gala",
+    expected = "opaque_type_codec.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)
+
+# Opaque types declared in another package: conversions, map keys, sorting
+# and codec fields read the underlying type from the declaring package.
+gala_library(
+    name = "opaque_type_cross_pkg_billing",
+    srcs = ["opaque_type_cross_pkg/billing/billing.gala"],
+    importpath = "martianoff/gala/examples/opaque_type_cross_pkg/billing",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "opaque_type_cross_pkg",
+    src = "opaque_type_cross_pkg/main.gala",
+    expected = "opaque_type_cross_pkg/main.out",
+    gala_deps = [":opaque_type_cross_pkg_billing"],
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)
