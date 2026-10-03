@@ -12,7 +12,7 @@ func main() {
     Println(h.Items.Size())
     Println(lib.Total(h))
     Println(lib.FirstItem(h.Items).GetOrElse(0))
-    Println(lib.Sum(lib.Swap(lib.Tuple(1, 2))))
+    Println(lib.Sum(lib.Swap(lib.Void(1, 2))))
     Println(lib.Describe(lib.Pick(true)))
     Println(lib.Describe(lib.Pick(false)))
     Println(first(Seq("seq", 1)))

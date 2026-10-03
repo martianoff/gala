@@ -1070,7 +1070,7 @@ func main() {
 
 ### Package Declarations Shadow Imported Names {#package-declarations-shadow-imported-names}
 
-A type or function the package declares is what its bare name means everywhere in the package, ahead of any import — std included, which every file imports implicitly. A package may declare its own `Seq`, `Option`, `Tuple` or `Either`, or a sealed variant named `Left` or `Some`, and the bare name then means the package's declaration in every position; std's shadowed type stays reachable as `std.Seq` through `import "martianoff/gala/std"`.
+A type the package declares is what its bare name means everywhere in the package, ahead of any import — std included, which every file imports implicitly. A package may declare its own `Seq`, `Void`, `Ordered` or `Hashable`, and the bare name then means the package's declaration in every position; std's shadowed type stays reachable as `std.Seq` through `import "martianoff/gala/std"`. The std names the language gives built-in meaning — `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS` and the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure` — are reserved: declaring a type under one is an error.
 
 ```gala
 package shapes

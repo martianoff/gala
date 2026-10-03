@@ -742,7 +742,12 @@ func (t *galaASTTransformer) lookupTypeAlias(name string) (transpiler.Type, bool
 		return underlying, true
 	}
 	if dotIdx := strings.LastIndex(name, "."); dotIdx != -1 {
-		if underlying, ok := t.typeAliases[name[dotIdx+1:]]; ok {
+		bare := name[dotIdx+1:]
+		// std's type is never the package's own alias that shadows its name.
+		if name[:dotIdx] == registry.StdPackageName && t.packageDeclaresType(bare) {
+			return transpiler.NilType{}, false
+		}
+		if underlying, ok := t.typeAliases[bare]; ok {
 			return underlying, true
 		}
 	}

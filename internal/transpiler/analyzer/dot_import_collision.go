@@ -17,8 +17,13 @@ import (
 // included, but a dot import is a Go dot import, and Go allows no
 // package-level name that a dot import in any file of the package also
 // brings in. dotImports maps each dot-imported package's name to its import
-// path; the implicit std import is not a dot import and is not among them.
-func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[string]string, richAST *transpiler.RichAST) error {
+// paths; the implicit std import is not a dot import and is not among them.
+//
+// The check reads the import tables as written, before the transformer
+// prunes dot imports it finds unused, so a leftover dot import counts too:
+// whether one is kept depends on the bare names the file uses, and the
+// colliding declaration is such a name.
+func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[string][]string, richAST *transpiler.RichAST) error {
 	if len(dotImports) == 0 || richAST == nil {
 		return nil
 	}
@@ -28,7 +33,10 @@ func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[stri
 			key := pkg + "." + name
 			_, isType := richAST.Types[key]
 			_, isFunc := richAST.Functions[key]
-			_, isVal := richAST.ImportedVals[dotImports[pkg]][name]
+			isVal := slices.ContainsFunc(dotImports[pkg], func(path string) bool {
+				_, ok := richAST.ImportedVals[path][name]
+				return ok
+			})
 			if isType || isFunc || isVal || slices.Contains(richAST.GoExports[pkg], name) {
 				return pkg
 			}

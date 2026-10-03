@@ -70,38 +70,38 @@ func Count[T any](s Seq[T]) int = s.Size()`,
 		{
 			name: "struct shorthand: params, result, val annotation, constructor, pattern",
 			pkg:  "lib",
-			src: `struct Option(Value int)
+			src: `struct Ordered(Value int)
 
-func Wrap(n int) Option = Option(n)
+func Wrap(n int) Ordered = Ordered(n)
 
-func Unwrap(o Option) int = o.Value
+func Unwrap(o Ordered) int = o.Value
 
-func Both() Option {
-    val o Option = Option(1)
+func Both() Ordered {
+    val o Ordered = Ordered(1)
     o
 }
 
-func Peek(o Option) int = o match {
-    case Option(v) => v
+func Peek(o Ordered) int = o match {
+    case Ordered(v) => v
     case _ => 0
 }
 
 func Real(n int) string = Some(n).Map((v) => s"$v").GetOrElse("")`,
-			want:    []string{"func Wrap(n int) Option", "func Unwrap(o Option) int", "var o std.Immutable[Option]","func Peek(o Option) int", "std.Some"},
-			notWant: []string{"std.Option[Option]", "std.Option{", "o std.Option", ") std.Option\n"},
+			want:    []string{"func Wrap(n int) Ordered", "func Unwrap(o Ordered) int", "var o std.Immutable[Ordered]", "func Peek(o Ordered) int", "std.Some"},
+			notWant: []string{"std.Ordered"},
 		},
 		{
 			name: "std's type stays reachable through a named import of std",
 			pkg:  "lib",
 			src: `import "martianoff/gala/std"
 
-struct Option(Value int)
+struct Seq(Value int)
 
-func Mine(n int) Option = Option(n)
+func Mine(n int) Seq = Seq(n)
 
-func Real(n int) std.Option[int] = Some(n)`,
-			want:    []string{"func Mine(n int) Option", "func Real(n int) std.Option[int]"},
-			notWant: []string{"std.Option{"},
+func Real(s std.Seq[int]) int = s.Size()`,
+			want:    []string{"func Mine(n int) Seq", "func Real(s std.Seq[int]) int"},
+			notWant: []string{"std.Seq{"},
 		},
 		{
 			name: "sealed variant named like a std companion",
@@ -125,17 +125,17 @@ func Read() int = get(Build())`,
 		{
 			name: "go-style struct with a method",
 			pkg:  "lib",
-			src: `type Try struct {
+			src: `type Void struct {
     N int
 }
 
-func (t Try) Twice() int = t.N * 2
+func (v Void) Twice() int = v.N * 2
 
-func Build(n int) Try = Try{N: n}
+func Build(n int) Void = Void{N: n}
 
-func Run(t Try) int = t.Twice()`,
-			want:    []string{"func (t Try) Twice() int", "func Build(n int) Try", "Try{N: std.NewImmutable(n)}","func Run(t Try) int"},
-			notWant: []string{"std.Try"},
+func Run(v Void) int = v.Twice()`,
+			want:    []string{"func (v Void) Twice() int", "func Build(n int) Void", "Void{N: std.NewImmutable(n)}", "func Run(v Void) int"},
+			notWant: []string{"std.Void"},
 		},
 		{
 			name: "sealed type with variants named like std companions",
@@ -176,42 +176,42 @@ func UserKey() string = KeyOf(User("ada"))`,
 		{
 			name: "struct named like a std type used as a type argument",
 			pkg:  "lib",
-			src: `struct Tuple(A int, B int)
+			src: `struct Void(A int, B int)
 
-func Wrap(t Tuple) Option[Tuple] = Some(t)
+func Wrap(v Void) Option[Void] = Some(v)
 
-func Sum(o Option[Tuple]) int = o match {
-    case Some(Tuple(a, b)) => a + b
+func Sum(o Option[Void]) int = o match {
+    case Some(Void(a, b)) => a + b
     case _ => 0
 }
 
 func Pair() int = (1, 2) match {
     case (a, b) => a + b
 }`,
-			want:    []string{"func Wrap(t Tuple) std.Option[Tuple]", "func Sum(o std.Option[Tuple]) int", "std.Tuple[int, int]"},
-			notWant: []string{"std.Option[std.Tuple]", "(t std.Tuple"},
+			want:    []string{"func Wrap(v Void) std.Option[Void]", "func Sum(o std.Option[Void]) int", "std.Tuple[int, int]"},
+			notWant: []string{"std.Void"},
 		},
 		{
 			name: "field typed by a std-named struct declared further down",
 			pkg:  "lib",
-			src: `struct Holder(Value Option)
+			src: `struct Holder(Value Ordered)
 
 func Get(h Holder) int = h.Value.N
 
-struct Option(N int)`,
-			want:    []string{"Value std.Immutable[Option]", "func Get(h Holder) int"},
-			notWant: []string{"std.Option"},
+struct Ordered(N int)`,
+			want:    []string{"Value std.Immutable[Ordered]", "func Get(h Holder) int"},
+			notWant: []string{"std.Ordered"},
 		},
 		{
 			name: "std-named struct as an explicit call type argument",
 			pkg:  "lib",
-			src: `struct Tuple(A int, B int)
+			src: `struct Void(A int, B int)
 
 func keep[T any](v T) T = v
 
-func Pair() Tuple = keep[Tuple](Tuple(1, 2))`,
-			want:    []string{"keep[Tuple]("},
-			notWant: []string{"std.Tuple"},
+func Pair() Void = keep[Void](Void(1, 2))`,
+			want:    []string{"keep[Void]("},
+			notWant: []string{"std.Void"},
 		},
 		{
 			name: "inferred vals and lambdas over a std-named generic struct in main",
@@ -266,6 +266,30 @@ func none() Void = Void()`,
 			for _, w := range tc.notWant {
 				assert.NotContains(t, got, w)
 			}
+		})
+	}
+}
+
+// The std names the transpiler gives built-in meaning — constructor inference
+// for Option/Either/Try and their variants, tuple syntax for Tuple..Tuple10,
+// val fields for Immutable — stay reserved: a type declared under one is
+// rejected rather than shadowing it.
+func TestReservedStdTypeNamesAreRejected(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+
+	for _, decl := range []string{
+		"struct Option(V int)",
+		"struct Tuple(A int, B int)",
+		"type Immutable struct {\n    V int\n}",
+		"type Try int",
+		"struct Some(V int)",
+	} {
+		t.Run(decl, func(t *testing.T) {
+			_, err := trans.Transpile("package lib\n\n"+decl+"\n", "")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "conflicts with std library export")
 		})
 	}
 }

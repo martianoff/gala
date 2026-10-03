@@ -4096,7 +4096,9 @@ Two dot-imported packages that export the same name are rejected with [GALA-E003
 
 ### Package Declarations Shadow Imported Names
 
-A type or function the package declares is what its bare name means everywhere in the package, in every file, ahead of any import. That includes std, which every file imports implicitly: a package may declare its own `Seq`, `Option`, `Tuple` or `Either`, or a sealed variant named `Left` or `Some`, and the bare name then refers to the package's declaration in fields, parameters, results, `val` annotations, constructor calls, patterns and type arguments. std's other names stay in scope, and a shadowed std type is still reachable as `std.Seq` through `import "martianoff/gala/std"`. Code importing the package sees the declaration as `lib.Seq` as usual.
+A type the package declares is what its bare name means everywhere in the package, in every file, ahead of any import. That includes std, which every file imports implicitly: a package may declare its own `Seq`, `Void`, `Ordered` or `Hashable`, and the bare name then refers to the package's declaration in fields, parameters, results, `val` annotations, constructor calls, patterns and type arguments. std's other names stay in scope, and a shadowed std type is still reachable as `std.Seq` through `import "martianoff/gala/std"`. Code importing the package sees the declaration as `lib.Seq` as usual.
+
+The std names the language itself gives meaning to are reserved rather than shadowed: `Option`, `Either`, `Try`, `Immutable`, `Tuple` through `Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS` and the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure` (constructor inference, tuple syntax and `val` fields are built on them). Declaring a type under one of them is an error, and so is a top-level function named like a std function.
 
 ```gala
 package shapes

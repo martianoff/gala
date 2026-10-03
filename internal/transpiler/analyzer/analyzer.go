@@ -89,8 +89,11 @@ func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec
 }
 
 // CheckStdConflict returns an error if the given name conflicts with std library exports.
-// It guards top-level function names; a type the package declares shadows a
-// std type of the same name instead (see resolver.TypeResolver).
+// The names it guards are the ones the transpiler gives built-in meaning
+// (Option, Tuple, Immutable, Some, ...: constructor inference, tuple syntax,
+// immutability), so a declaration of one is rejected. Every other std type is
+// shadowed by a same-named declaration of the package (see
+// resolver.TypeResolver).
 //
 // This function delegates to the registry package which is the source of truth
 // for prelude package exports.
@@ -908,14 +911,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// Collect from main file AND all sibling files so that when resolving types in
 	// sibling struct fields, we correctly qualify types from their dot imports too.
 	dotImportPkgs := make(map[string]bool)
-	// Every dot import of the package, GALA or Go: package name -> path.
-	packageDotImports := make(map[string]string)
+	// Every dot import of the package, GALA or Go: package name -> paths.
+	packageDotImports := make(map[string][]string)
 	for _, q := range append([]fileQualifiers{fileQuals}, siblingQuals...) {
 		for _, b := range q.dots {
 			if b.PkgName == "" {
 				continue
 			}
-			packageDotImports[b.PkgName] = b.Path
+			packageDotImports[b.PkgName] = append(packageDotImports[b.PkgName], b.Path)
 			if b.IsGala {
 				dotImportPkgs[b.PkgName] = true
 			}
@@ -989,6 +992,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	for _, sf := range append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...) {
 		collectTopLevelDeclaredNames(sf, a.currentOwnTypes)
 	}
+	for name := range richAST.OwnGoTypes {
+		a.currentOwnTypes[name] = true
+	}
 	defer func() {
 		a.currentRichAST = nil
 		a.currentDotImportPkgs = nil
@@ -1001,6 +1007,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
 			ctx := typeDecl.(*grammar.TypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
+
+			// The std names the transpiler gives built-in meaning are reserved;
+			// any other std type is shadowed by the declaration.
+			if err := CheckStdConflict(typeName, pkgName); err != nil {
+				return nil, err
+			}
 
 			fullTypeName := typeName
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
@@ -1151,6 +1163,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
 			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
 			typeName := ctx.Identifier().GetText()
+
+			// Reserved std names: see the type declaration case above.
+			if err := CheckStdConflict(typeName, pkgName); err != nil {
+				return nil, err
+			}
 
 			fullTypeName := typeName
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
@@ -1969,6 +1986,14 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		}
 
 		variants = append(variants, vi)
+
+		// Warn if variant name collides with a std auto-imported companion name.
+		// The variant creates a companion type that could shadow std companions
+		// (e.g., Success, Failure, Some, None, Left, Right).
+		if err := registry.CheckStdConflict(variantName, pkgName); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: sealed variant '%s' in type '%s' shadows %s; this may cause ambiguous symbols in generated Go code\n",
+				variantName, typeName, err.Error())
+		}
 	}
 
 	// Detect field name conflicts: same name with different types requires prefixing

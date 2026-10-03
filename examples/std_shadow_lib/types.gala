@@ -15,20 +15,20 @@ struct Holder(Items Seq)
 // Make returns a Holder of 1, 2, 3.
 func Make() Holder = Holder(ArrayOf(1, 2, 3))
 
-// Tuple is a pair of ints; it shadows std's Tuple.
-struct Tuple(First int, Second int)
+// Void is a pair of ints; it shadows std's Void.
+struct Void(First int, Second int)
 
-// Sum adds the two halves of t.
-func Sum(t Tuple) int = t.First + t.Second
+// Sum adds the two halves of v.
+func Sum(v Void) int = v.First + v.Second
 
-// Either is a message or a number; its variants shadow std's Left and Right.
-sealed type Either {
-    case Left(Msg string)
-    case Right(N int)
+// Ordered is a message or a number; it shadows std's Ordered.
+sealed type Ordered {
+    case Less(Msg string)
+    case More(N int)
 }
 
-// Describe names the variant of e and its value.
-func Describe(e Either) string = e match {
-    case Left(m) => s"left $m"
-    case Right(n) => s"right $n"
+// Describe names the variant of o and its value.
+func Describe(o Ordered) string = o match {
+    case Less(m) => s"less $m"
+    case More(n) => s"more $n"
 }
