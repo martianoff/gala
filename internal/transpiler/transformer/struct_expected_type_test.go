@@ -55,47 +55,7 @@ func TestStructExpectedTypeMatrix(t *testing.T) {
 		{"Box[int64]", `Box(1)`, "Box[int64]{"},
 		{"Handler[int]", `Handler((x) => s"$x")`, "Handler[int]{"},
 	}
-	positions := []struct {
-		name string
-		src  func(typ, expr string) string
-	}{
-		{"expression body", func(ty, e string) string { return "func f() " + ty + " = " + e }},
-		{"block trailing value", func(ty, e string) string { return "func f() " + ty + " {\n    " + e + "\n}" }},
-		{"explicit return", func(ty, e string) string { return "func f() " + ty + " {\n    return " + e + "\n}" }},
-		{"val annotation", func(ty, e string) string {
-			return "func f() " + ty + " {\n    val x " + ty + " = " + e + "\n    x\n}"
-		}},
-		{"if-else branches", func(ty, e string) string { return "func f(b bool) " + ty + " = if (b) " + e + " else " + e }},
-		{"match arms", func(ty, e string) string {
-			return "func f(n int) " + ty + " = n match {\n    case 0 => " + e + "\n    case _ => " + e + "\n}"
-		}},
-		{"if-else block branches", func(ty, e string) string {
-			return "func f(b bool) " + ty + " = if (b) {\n    " + e + "\n} else {\n    " + e + "\n}"
-		}},
-		{"if statement tail", func(ty, e string) string {
-			return "func f(b bool) " + ty + " {\n    if (b) {\n        " + e + "\n    } else {\n        " + e + "\n    }\n}"
-		}},
-		{"match arm blocks", func(ty, e string) string {
-			return "func f(n int) " + ty + " = n match {\n    case 0 => {\n        " + e + "\n    }\n    case _ => " + e + "\n}"
-		}},
-		{"lambda expression result", func(ty, e string) string {
-			return "func apply(g func(int) " + ty + ") " + ty + " = g(1)\nfunc f() " + ty + " = apply((n) => " + e + ")"
-		}},
-		{"lambda block result", func(ty, e string) string {
-			return "func apply(g func(int) " + ty + ") " + ty + " = g(1)\nfunc f() " + ty + " = apply((n) => {\n    " + e + "\n})"
-		}},
-		{"lambda explicit return", func(ty, e string) string {
-			return "func apply(g func(int) " + ty + ") " + ty + " = g(1)\nfunc f() " + ty + " = apply((n) => {\n    return " + e + "\n})"
-		}},
-		{"argument", func(ty, e string) string {
-			return "func take(v " + ty + ") " + ty + " = v\nfunc f() " + ty + " = take(" + e + ")"
-		}},
-		{"parenthesized", func(ty, e string) string { return "func f() " + ty + " = (" + e + ")" }},
-		{"var assignment", func(ty, e string) string {
-			return "func f() " + ty + " {\n    var x " + ty + " = " + e + "\n    x = " + e + "\n    x\n}"
-		}},
-	}
-	for _, pos := range positions {
+	for _, pos := range expectedTypePositions {
 		for _, c := range ctors {
 			t.Run(pos.name+"/"+c.typ+"/"+c.expr, func(t *testing.T) {
 				got, err := trans.Transpile(structExpectedDecls+pos.src(c.typ, c.expr)+"\n", "")
@@ -104,6 +64,50 @@ func TestStructExpectedTypeMatrix(t *testing.T) {
 			})
 		}
 	}
+}
+
+// expectedTypePositions are the positions an expected type reaches a
+// construction expr of type typ from: each src is a declaration filling one
+// with it.
+var expectedTypePositions = []struct {
+	name string
+	src  func(typ, expr string) string
+}{
+	{"expression body", func(ty, e string) string { return "func f() " + ty + " = " + e }},
+	{"block trailing value", func(ty, e string) string { return "func f() " + ty + " {\n    " + e + "\n}" }},
+	{"explicit return", func(ty, e string) string { return "func f() " + ty + " {\n    return " + e + "\n}" }},
+	{"val annotation", func(ty, e string) string {
+		return "func f() " + ty + " {\n    val x " + ty + " = " + e + "\n    x\n}"
+	}},
+	{"if-else branches", func(ty, e string) string { return "func f(b bool) " + ty + " = if (b) " + e + " else " + e }},
+	{"match arms", func(ty, e string) string {
+		return "func f(n int) " + ty + " = n match {\n    case 0 => " + e + "\n    case _ => " + e + "\n}"
+	}},
+	{"if-else block branches", func(ty, e string) string {
+		return "func f(b bool) " + ty + " = if (b) {\n    " + e + "\n} else {\n    " + e + "\n}"
+	}},
+	{"if statement tail", func(ty, e string) string {
+		return "func f(b bool) " + ty + " {\n    if (b) {\n        " + e + "\n    } else {\n        " + e + "\n    }\n}"
+	}},
+	{"match arm blocks", func(ty, e string) string {
+		return "func f(n int) " + ty + " = n match {\n    case 0 => {\n        " + e + "\n    }\n    case _ => " + e + "\n}"
+	}},
+	{"lambda expression result", func(ty, e string) string {
+		return "func apply(g func(int) " + ty + ") " + ty + " = g(1)\nfunc f() " + ty + " = apply((n) => " + e + ")"
+	}},
+	{"lambda block result", func(ty, e string) string {
+		return "func apply(g func(int) " + ty + ") " + ty + " = g(1)\nfunc f() " + ty + " = apply((n) => {\n    " + e + "\n})"
+	}},
+	{"lambda explicit return", func(ty, e string) string {
+		return "func apply(g func(int) " + ty + ") " + ty + " = g(1)\nfunc f() " + ty + " = apply((n) => {\n    return " + e + "\n})"
+	}},
+	{"argument", func(ty, e string) string {
+		return "func take(v " + ty + ") " + ty + " = v\nfunc f() " + ty + " = take(" + e + ")"
+	}},
+	{"parenthesized", func(ty, e string) string { return "func f() " + ty + " = (" + e + ")" }},
+	{"var assignment", func(ty, e string) string {
+		return "func f() " + ty + " {\n    var x " + ty + " = " + e + "\n    x = " + e + "\n    x\n}"
+	}},
 }
 
 func TestStructExpectedTypeOtherPositions(t *testing.T) {
