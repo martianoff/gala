@@ -187,6 +187,12 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 			goSrc: "package main\n\ntype Visitor func(func(int))\n",
 		},
 		{
+			name:  "a Go named function type over a Go type named like a type parameter",
+			gala:  "func run(v Visitor) = v((x) => Println(x))\n",
+			want:  "v(func(x T) {",
+			goSrc: "package main\n\ntype T struct{ N int }\n\ntype Visitor func(func(T))\n",
+		},
+		{
 			name: "a var bound to a lambda",
 			gala: "func run() string {\n    var apply = (h func(string) string) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
 			want: "apply(func(s string) string {",
@@ -254,6 +260,9 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 			"func run() int = mk(1)(2)((s) => 2)\n",
 		"struct Box(N int)\n\nfunc (b Box) Maker[U any]() func(func(U) int) int = (h) => b.N\n\n" +
 			"func run() int = Box(1).Maker()((s) => 2)\n",
+		// The caller declares a type named like the callee's type parameter.
+		"struct B(X int)\n\nfunc mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
+			"func run() int = mk(1)((s) => 2)\n",
 	} {
 		files, galaFile := samePackageModule(".", "package main\n", "package main\n\n"+src)
 		_, err := transpileInModule(t, files, galaFile)

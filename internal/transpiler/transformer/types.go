@@ -782,10 +782,15 @@ func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
 
 // mentionsUnboundTypeParam reports whether typ names a type parameter the code
 // being transformed does not bind (see isUnboundTypeParam), a method's own
-// type parameter that inference left as its sentinel name included.
+// type parameter that inference left as its sentinel name included. A type of
+// the package's own .go files is a type, whatever its name.
 func (t *galaASTTransformer) mentionsUnboundTypeParam(typ transpiler.Type) bool {
 	return typeNameMatches(typ, func(name string) bool {
-		return strings.HasPrefix(name, freshMethodTypeParamPrefix) || t.isUnboundTypeParam(name)
+		_, bare := splitPackageQualifier(name)
+		if strings.HasPrefix(bare, freshMethodTypeParamPrefix) {
+			return true
+		}
+		return bare == name && !t.isOwnGoType(name) && t.isUnboundTypeParam(name)
 	})
 }
 

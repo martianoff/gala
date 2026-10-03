@@ -3613,6 +3613,7 @@ func (t *galaASTTransformer) goNamedFuncType(name string) *transpiler.FuncType {
 func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 	fun = ast.Unparen(fun)
 	var typ transpiler.Type
+	var calleeTypeParams []string
 	if b, bound := t.bindingRef(fun); bound {
 		if t.loweringDefault != nil && (b.pkg != "" || t.shadowingScope(b.name) == nil) {
 			// A default is lowered at its use site but was written in its
@@ -3620,7 +3621,7 @@ func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 			// itself is in scope; otherwise a foreign default's names are its
 			// package's, and the use site's locals were not in scope: only
 			// this package's own top-level vals type its own defaults.
-			if t.loweringForeignDefault() || b.pkg == "" && t.bindingScope(b.name).parent != nil {
+			if t.loweringForeignDefault() || b.pkg == "" && !t.isTopLevelBinding(b.name) {
 				return nil
 			}
 		}
@@ -3635,16 +3636,27 @@ func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 			// inference may still know it.
 			typ = t.getExprTypeName(fun)
 		}
-	} else if _, isCall := fun.(*ast.CallExpr); isCall {
+	} else if call, isCall := fun.(*ast.CallExpr); isCall {
 		typ = t.getExprTypeName(fun)
+		if meta := t.getFunction(t.extractFuncName(call.Fun)); meta != nil {
+			// The callee's own type parameters, which its result may still
+			// name even where the caller declares a type of that name; one
+			// the enclosing declaration also declares is that declaration's.
+			for _, tp := range meta.TypeParams {
+				if !t.activeTypeParams[tp] {
+					calleeTypeParams = append(calleeTypeParams, tp)
+				}
+			}
+		}
 	} else {
 		return nil
 	}
 	ft := t.resolveTranspilerTypeAsFuncType(typ)
-	if ft == nil && !transpiler.IsUnusable(typ) {
-		ft = t.goNamedFuncType(typ.String())
+	if named, isNamed := typ.(transpiler.NamedType); ft == nil && isNamed && !t.declaresType(named.Package, named.Name) {
+		// A Go named function type, which no GALA type of that name hides.
+		ft = t.goNamedFuncType(named.String())
 	}
-	if ft == nil {
+	if ft == nil || funcTypeParamsMentionTypeParams(ft.Params, calleeTypeParams) {
 		return nil
 	}
 	for _, p := range ft.Params {
