@@ -4,7 +4,7 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
-last_modified_at: 2026-07-30
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
@@ -380,6 +380,117 @@ val same = p1.Equal(p2)    // false
 ```
 
 A `Copy` override can be any expression, lambdas included. A lambda's parameter types come from the field's declared type, as with a named constructor argument: `calc.Copy(Op = (x) => x + 1)`.
+
+### Type Aliases {#type-aliases}
+
+`type X Y` declares an **alias**: a second name for an existing type, not a new type. The alias and its target are the same type and are interchangeable everywhere — a value of one *is* a value of the other, with no conversion and no separate identity.
+
+<!-- doc-check: fragment -->
+```gala
+type MyString string
+type Millis   int64
+type Handler  func(Request) Response
+type Coord    Point                    // Point is a struct in this package
+```
+
+Aliases transpile to Go type aliases (`type X = Y`), which is what makes them transparent: methods on the target are available through the alias, and an alias declared in one file is visible to every file in the same package.
+
+An alias can take type parameters. `Conv[int, string]` below *is* `func(int) string`, so a lambda in its place is typed by it:
+
+```gala
+type Conv[A any, B any] func(A) B
+
+struct Step[A any, B any](In A, Run Conv[A, B])
+
+func main() {
+    val step = Step(In = 3, Run = (x) => s"<$x>")   // x is int, the result string
+    Println(step.Run(step.In))
+}
+```
+
+A generic alias transpiles to a Go generic alias (`type Conv[A any, B any] = func(A) B`), which Go accepts from 1.24 on, so the `go.mod` files `gala build` generates declare `go 1.24`.
+
+#### What an alias can do {#what-an-alias-can-do}
+
+| Use | Example | Notes |
+|---|---|---|
+| Annotate a type | `val s MyString = "hello"` | The alias stands wherever the target does |
+| Convert | `Millis(v)`, `MyString(s)` | The ordinary [type conversion](#type-conversions) — `Millis(v)` *is* `int64(v)` |
+| Construct, when the target is a struct | `Coord(1, 2)` | Reaches the target's fields, so named and positional construction both work |
+| Carry a generic instantiation | `type IntPair Pair[int]` then `IntPair(1, 2)` | The alias names the instantiation; do not re-apply type arguments. It takes no methods — see below |
+| Take methods, when the target is a **plain local type** | `func (c Coord) Sum() int = c.X + c.Y` | Legal because the receiver base type `Point` is declared in this package |
+
+#### What an alias cannot do {#what-an-alias-cannot-do}
+
+**It cannot take a method unless its target is a plain type declared in this package.** The receiver base type is the *target*, and Go accepts a method only on a plain, locally declared type — so a built-in, an imported type, an unnamed composite (slice, map, func) and an instantiated type are all [GALA-E0048](/docs/errors/gala-e0048/):
+
+<!-- doc-check: fragment -->
+```gala
+type Millis int64
+func (d Millis) Value() int64 = int64(d)     // built-in target
+
+type Dur time.Duration
+func (d Dur) Ticks() int64 = 1               // imported target
+
+type Handler func(Request) Response
+func (h Handler) Name() string = "h"         // unnamed composite
+
+type IntPair Pair[int]
+func (p IntPair) First() int = p.A           // instantiated type
+```
+
+The alias chain is followed to its end, so `type A int64; type B A` makes a method on `B` illegal for the same reason. A pointer target is fine when it points at a local type — `type PP *Point` puts the method on `Point`.
+
+Wrap the value in a struct when you need methods of your own:
+
+```gala
+struct Millis(Value int64)
+
+func (m Millis) Seconds() float64 = float64(m.Value) / 1000.0
+```
+
+**It does not create a distinct type.** An alias cannot be matched, overloaded or type-switched apart from its target, and it does not make an illegal assignment illegal — `MyString` and `string` are one type. GALA has no newtype declaration; a single-field struct is the way to get a separate identity.
+
+> **Note:** Type aliases are generally not recommended. Prefer using the original type directly — it keeps code clearer and avoids indirection. Type aliases are mainly useful for Go interop scenarios where you need to bridge between GALA and existing Go type names, or when mixing `.gala` and `.go` files in the same package (where GALA type aliases avoid dot-import conflicts with Go type alias declarations).
+
+#### Alias or single-field struct {#alias-or-single-field-struct}
+
+To give a value a name of its own, choose between an alias and a struct with one field. They differ in what the compiler checks and in what a codec writes:
+
+| | `type UserID int64` | `struct UserID(Value int64)` |
+|---|---|---|
+| Distinct type | No — an `int64` is accepted where a `UserID` is expected | Yes — an `int64` is not a `UserID` |
+| Methods of its own | No — [GALA-E0048](/docs/errors/gala-e0048/) | Yes |
+| Arithmetic and ordering | Yes — `id + 1`, `a < b` | No — Go rejects `+` and `<` on a struct; use `.Value` |
+| `HashMap` key | Yes, hashed as its target | Only with a `Hash() uint32` method ([`Hashable`](/docs/immutable-collections/#hashable-interface)); without one, `Put` panics with `HashMap: type main.UserID must implement std.Hashable interface` |
+| JSON / YAML field, `SnakeCase()` | The bare value: `{"user_id":42}`, `user_id: 42` | An object: `{"user_id":{"value":42}}`, `user_id:` over a nested `value: 42` |
+
+```gala
+package main
+
+import (
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+type UserID int64
+
+struct AccountID(Value int64)
+
+struct Login(UserID UserID, AccountID AccountID)
+
+func main() {
+    val login = Login(42, AccountID(7))
+    Println(json.Codec[Login](json.SnakeCase()).Encode(login).Get())
+    // {"user_id":42,"account_id":{"value":7}}
+    Println(yaml.Codec[Login](yaml.SnakeCase()).Encode(login).Get())
+    // user_id: 42
+    // account_id:
+    //   value: 7
+}
+```
+
+Pick the alias to keep a plain value on the wire; pick the struct for a type a bare `int64` cannot pass for, or one with methods. The two encode differently, so switching breaks documents already written: `{"user_id":42}` read as the struct form is `Failure(json at pos 11: expected '{')`.
 
 ### Sealed Types (Algebraic Data Types)
 
@@ -1035,6 +1146,7 @@ func main() {
 - **Prefer `s"..."` over `fmt.Sprintf`** - `s"Hello $name"` not `fmt.Sprintf("Hello %s", name)`
 - **Prefer GALA collections over Go slices** - Use `Array` or `List` from `collection_immutable`
 - **Use `Option[T]`** for nullable values, **`Try[T]`** for operations that may fail
+- **Use a single-field struct, not an alias, for a type of its own** - `type UserID int64` is just `int64`; `struct UserID(Value int64)` is distinct but encodes as an object (see [Alias or single-field struct](#alias-or-single-field-struct))
 - **Document exported declarations** with a `//` run directly above them - hover and `gala doc` show it, and it is carried into the generated Go, so `go doc`, gopls, pkg.go.dev and annotation tools such as `swag` read it too. Only declaration docs are carried: comments inside function bodies, trailing comments and `//go:`, `//line` and `// +build` directives are not
 
 ## 17. Dependency Management {#17-dependency-management}

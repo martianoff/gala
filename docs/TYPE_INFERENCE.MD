@@ -895,7 +895,11 @@ Go discovered in steps 2–5.
 - **String-based matching**: Type checks rely heavily on string prefixes and names, which can be fragile when dealing with type aliases or complex generic types.
 - **Recursive Unwrapping**: `unwrapImmutable` currently performs only one level of unwrapping. But multiple wrapping should never happen in the first place.
 - **Partial inference**: When both layers fail, you may get `NilType` or a type with unresolved parameters. Callers must handle these cases.
-- **Type aliases**: Not fully supported yet (see `declarations.go:649`).
+- **Generic alias without type arguments**: aliases resolve to their target
+  as expected types, except a generic alias written without type arguments,
+  which names no type — a lambda converted with a bare `Conv(…)` is GALA-E0033
+  (see
+  [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)).
 
 ---
 

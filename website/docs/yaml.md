@@ -4,7 +4,7 @@ title: "Yaml in GALA — Zero-Reflection YAML Codec with Builder Pattern"
 description: "GALA's yaml package provides zero-reflection, compile-time YAML serialization with builder pattern configuration, naming strategies, and pattern matching support."
 keywords: "gala yaml, golang yaml alternative, go type safe yaml, gala yaml codec, gala yaml pattern matching, go yaml serialization, zero reflection yaml"
 permalink: /docs/yaml/
-last_modified_at: 2026-10-01
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Yaml</p>
@@ -284,7 +284,17 @@ The codec emits and parses a focused, predictable subset of YAML:
 
 Struct fields follow the same rules as the JSON codec: every int, uint and float kind, aliases and Go named types over them, structs, and `Option` / `Array` / `List` / `HashMap[string, V]` of those; any other field type is a compile error ([GALA-E0050](/docs/errors/gala-e0050/)). Out-of-range numbers are decode errors.
 
-Out of scope: anchors, aliases, other flow-style collections, custom tags. If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
+An alias field is written as its target, while a single-field struct is a nested mapping. With `type UserID int64` and `struct AccountID(Value int64)`, a struct with one field of each encodes with `SnakeCase()` as:
+
+```yaml
+user_id: 42
+account_id:
+  value: 7
+```
+
+Switching a field from one form to the other changes the document shape: `user_id: 42` read into the struct form is `Failure(yaml: expected mapping, got scalar)`. See [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct).
+
+Out of scope: YAML anchors and aliases (`&a`, `*a`), other flow-style collections, custom tags. If your input requires these, preprocess it through a richer YAML library before handing it to `Codec[T]`.
 
 ---
 
