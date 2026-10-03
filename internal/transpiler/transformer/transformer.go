@@ -882,6 +882,26 @@ func (t *galaASTTransformer) isOwnGoType(name string) bool {
 	return t.richAST != nil && t.richAST.OwnGoTypes[name]
 }
 
+// packageDeclaresType reports whether the package being compiled declares a type
+// named by the bare name, in a .gala file or a hand-written .go one. Such a
+// name is the package's own type wherever it is written unqualified: a
+// package-level declaration outranks every import, the implicit std import
+// included, so a same-named std type is reachable only as `std.Name`.
+func (t *galaASTTransformer) packageDeclaresType(name string) bool {
+	if name == "" || strings.Contains(name, ".") {
+		return false
+	}
+	if t.isOwnGoType(name) {
+		return true
+	}
+	key := name
+	if t.packageName != "" && t.packageName != "main" && t.packageName != "test" {
+		key = t.packageName + "." + name
+	}
+	meta, ok := t.typeMetas[key]
+	return ok && meta != nil && meta.Package == t.packageName
+}
+
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.
 // Returns empty string if not found. A bare name the package's own .go files
 // declare resolves to its `pkg.Name` key though typeMetas has no entry for it:

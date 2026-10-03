@@ -982,11 +982,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ctx := typeDecl.(*grammar.TypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
 
-			// Check for std library conflicts
-			if err := CheckStdConflict(typeName, pkgName); err != nil {
-				return nil, err
-			}
-
 			fullTypeName := typeName
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {
 				fullTypeName = pkgName + "." + typeName
@@ -1136,11 +1131,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
 			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
 			typeName := ctx.Identifier().GetText()
-
-			// Check for std library conflicts
-			if err := CheckStdConflict(typeName, pkgName); err != nil {
-				return nil, err
-			}
 
 			fullTypeName := typeName
 			if pkgName != "" && pkgName != "main" && pkgName != "test" {

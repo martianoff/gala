@@ -12,10 +12,17 @@ import (
 )
 
 // A type the package declares shadows a std type of the same name: std is
-// imported implicitly, and an implicit import never outranks the package's
-// own declarations. Every reference to the name — field, parameter, result,
-// val annotation, constructor call, pattern, type argument — must name the
-// package's type, never `std.<Name>`.
+// imported implicitly, and an import never outranks the package's own
+// declarations. Every reference to the name — field, parameter, result, val
+// annotation, receiver, constructor call, pattern, type argument — names the
+// package's type, never `std.<Name>`. std itself stays reachable through its
+// other names, and generated code that needs std's own type (a tuple
+// literal's `std.Tuple`, a field's `std.Immutable`) still gets it.
+//
+// The rows cover each declaration kind (alias, generic alias, struct
+// shorthand, `type X struct`, sealed type, interface) against std types of
+// each kind (interface, sealed type, struct), in library packages and in
+// package main.
 func TestLocalTypeShadowsStdType(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -29,7 +36,7 @@ func TestLocalTypeShadowsStdType(t *testing.T) {
 		notWant []string
 	}{
 		{
-			name: "alias of a collection type in a library",
+			name: "alias of a collection type",
 			pkg:  "lib",
 			src: `import . "martianoff/gala/collection_immutable"
 
@@ -37,12 +44,16 @@ type Seq Array[int]
 
 struct Holder(Items Seq)
 
-func Make() Holder = Holder(ArrayOf(1, 2))`,
-			want:    []string{"type Seq = Array[int]", "Items std.Immutable[Seq]"},
+func Make() Holder = Holder(ArrayOf(1, 2))
+
+func Count(s Seq) int = s.Size()
+
+func Items(h Holder) Seq = h.Items`,
+			want:    []string{"type Seq = Array[int]", "Items std.Immutable[Seq]", "func Count(s Seq) int", "func Items(h Holder) Seq"},
 			notWant: []string{"std.Seq"},
 		},
 		{
-			name: "generic alias in a library",
+			name: "generic alias of a collection type",
 			pkg:  "lib",
 			src: `import . "martianoff/gala/collection_immutable"
 
@@ -50,12 +61,14 @@ type Seq[T any] Array[T]
 
 struct Holder(Items Seq[int])
 
-func Make() Holder = Holder(ArrayOf(1, 2))`,
-			want:    []string{"Items std.Immutable[Seq[int]]"},
+func Make() Holder = Holder(ArrayOf(1, 2))
+
+func Count[T any](s Seq[T]) int = s.Size()`,
+			want:    []string{"Items std.Immutable[Seq[int]]", "func Count[T any](s Seq[T]) int"},
 			notWant: []string{"std.Seq"},
 		},
 		{
-			name: "struct named like a std type in a library",
+			name: "struct shorthand: params, result, val annotation, constructor, pattern",
 			pkg:  "lib",
 			src: `struct Option(Value int)
 
@@ -66,23 +79,34 @@ func Unwrap(o Option) int = o.Value
 func Both() Option {
     val o Option = Option(1)
     o
-}`,
-			want:    []string{"func Wrap(n int) Option", "func Unwrap(o Option) int", "var o Option"},
-			notWant: []string{"std.Option"},
+}
+
+func Peek(o Option) int = o match {
+    case Option(v) => v
+    case _ => 0
+}
+
+func Real(n int) string = Some(n).Map((v) => s"$v").GetOrElse("")`,
+			want:    []string{"func Wrap(n int) Option", "func Unwrap(o Option) int", "var o std.Immutable[Option]","func Peek(o Option) int", "std.Some"},
+			notWant: []string{"std.Option[Option]", "std.Option{", "o std.Option", ") std.Option\n"},
 		},
 		{
-			name: "generic struct named like a std type in main",
-			pkg:  "main",
-			src: `struct Seq[T any](Head T, Size int)
+			name: "go-style struct with a method",
+			pkg:  "lib",
+			src: `type Try struct {
+    N int
+}
 
-func first[T any](s Seq[T]) T = s.Head
+func (t Try) Twice() int = t.N * 2
 
-func make() Seq[int] = Seq(1, 2)`,
-			want:    []string{"func first[T any](s Seq[T]) T", "func make() Seq[int]"},
-			notWant: []string{"std.Seq"},
+func Build(n int) Try = Try{N: n}
+
+func Run(t Try) int = t.Twice()`,
+			want:    []string{"func (t Try) Twice() int", "func Build(n int) Try", "Try{N: std.NewImmutable(n)}","func Run(t Try) int"},
+			notWant: []string{"std.Try"},
 		},
 		{
-			name: "sealed type named like a std type in a library",
+			name: "sealed type with variants named like std companions",
 			pkg:  "lib",
 			src: `sealed type Either {
     case Left(Msg string)
@@ -94,18 +118,66 @@ func describe(e Either) string = e match {
     case Right(n) => s"$n"
 }
 
-func Pick(ok bool) Either = if (ok) Right(1) else Left("no")`,
+func Pick(ok bool) Either = if (ok) Right(1) else Left("no")
+
+func Show(ok bool) string = describe(Pick(ok))`,
 			want:    []string{"func describe(e Either) string", "func Pick(ok bool) Either"},
 			notWant: []string{"std.Either", "std.Left", "std.Right"},
+		},
+		{
+			name: "interface named like a std interface",
+			pkg:  "lib",
+			src: `type Hashable interface {
+    Key() string
+}
+
+struct User(Name string)
+
+func (u User) Key() string = u.Name
+
+func KeyOf(h Hashable) string = h.Key()
+
+func UserKey() string = KeyOf(User("ada"))`,
+			want:    []string{"type Hashable interface", "func KeyOf(h Hashable) string"},
+			notWant: []string{"std.Hashable"},
 		},
 		{
 			name: "struct named like a std type used as a type argument",
 			pkg:  "lib",
 			src: `struct Tuple(A int, B int)
 
-func Wrap(t Tuple) Option[Tuple] = Some(t)`,
-			want:    []string{"func Wrap(t Tuple) std.Option[Tuple]"},
-			notWant: []string{"std.Tuple"},
+func Wrap(t Tuple) Option[Tuple] = Some(t)
+
+func Sum(o Option[Tuple]) int = o match {
+    case Some(Tuple(a, b)) => a + b
+    case _ => 0
+}
+
+func Pair() int = (1, 2) match {
+    case (a, b) => a + b
+}`,
+			want:    []string{"func Wrap(t Tuple) std.Option[Tuple]", "func Sum(o std.Option[Tuple]) int", "std.Tuple[int, int]"},
+			notWant: []string{"std.Option[std.Tuple]", "(t std.Tuple"},
+		},
+		{
+			name: "generic struct named like a std interface in main",
+			pkg:  "main",
+			src: `struct Seq[T any](Head T, Size int)
+
+func first[T any](s Seq[T]) T = s.Head
+
+func build() Seq[int] = Seq(1, 2)`,
+			want:    []string{"func first[T any](s Seq[T]) T", "func build() Seq[int]"},
+			notWant: []string{"std.Seq"},
+		},
+		{
+			name: "empty struct named like a std struct in main",
+			pkg:  "main",
+			src: `struct Void()
+
+func none() Void = Void()`,
+			want:    []string{"func none() Void"},
+			notWant: []string{"std.Void"},
 		},
 	}
 	for _, tc := range tests {
