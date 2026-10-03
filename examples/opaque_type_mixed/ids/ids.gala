@@ -1,0 +1,19 @@
+package ids
+
+// Opaque types of a package that mixes GALA and hand-written Go. value.go
+// gives AccountID a database/sql/driver Valuer, a signature GALA cannot
+// spell; hash.go declares AccountID's Hash, so the transpiler does not
+// generate one (it would be a duplicate method). Its Compare is still
+// generated.
+
+// AccountID identifies an account.
+opaque type AccountID int64
+
+// Ticket is an opaque type with nothing hand-written in Go.
+opaque type Ticket string
+
+// Label renders the account for display.
+func (a AccountID) Label() string = s"acct-${int64(a)}"
+
+// Next is the following account number.
+func Next(a AccountID) AccountID = a + 1

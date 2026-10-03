@@ -1299,6 +1299,28 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	// 1.6 Collect opaque types
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		octx, ok := topDecl.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext)
+		if !ok || octx == nil {
+			continue
+		}
+		typeName := octx.Identifier().GetText()
+		if err := CheckStdConflict(typeName, pkgName); err != nil {
+			return nil, err
+		}
+		fullTypeName := typeName
+		if pkgName != "" && pkgName != "main" && pkgName != "test" {
+			fullTypeName = pkgName + "." + typeName
+		}
+		if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+			return nil, typeRedefinedError(typeName, pkgName,
+				octx.GetStart().GetLine(), octx.GetStart().GetColumn(),
+				existing.DefinedIn, filePath, existing.Pos)
+		}
+		a.analyzeOpaqueType(octx, pkgName, filePath, richAST, docs)
+	}
+
 	// decls remembers which file of this package declared each method and each
 	// top-level function, for the duration of this call. Section 2 below fills
 	// it from the file being analyzed; the sibling-metadata pass (section 2.5)
@@ -3295,7 +3317,7 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 // (struct with fields or sealed type with variants), as opposed to a type entry that
 // only has methods added from another file.
 func hasTypeDefinition(meta *transpiler.TypeMetadata) bool {
-	return len(meta.FieldNames) > 0 || (meta.IsSealed && len(meta.SealedVariants) > 0)
+	return len(meta.FieldNames) > 0 || (meta.IsSealed && len(meta.SealedVariants) > 0) || meta.IsOpaque
 }
 
 // isSameFile checks whether two paths refer to the same file.
@@ -3908,6 +3930,29 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		}
 	}
 
+	// 2.5 Collect opaque types
+	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
+		octx, ok := topDecl.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext)
+		if !ok || octx == nil {
+			continue
+		}
+		typeName := octx.Identifier().GetText()
+		fullTypeName := typeName
+		if pkgName != "" && pkgName != "main" && pkgName != "test" {
+			fullTypeName = pkgName + "." + typeName
+		}
+		if existing, ok := richAST.Types[fullTypeName]; ok && hasTypeDefinition(existing) {
+			if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
+				return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
+					transpiler.PosFromToken(octx.Identifier().GetStart()), decls.mainFile)
+			}
+			if existing.DefinedIn != "" {
+				continue
+			}
+		}
+		a.analyzeOpaqueType(octx, pkgName, absSibPath, richAST, docs)
+	}
+
 	// 3. Collect methods and functions
 	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
 		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
@@ -4253,6 +4298,15 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		if next, ok := richAST.TypeAliases[name]; ok && !next.IsNil() {
 			return next, true
 		}
+		// An opaque type is distinct, but an untyped constant default fits
+		// it as it fits its underlying type.
+		key := name
+		if pkgName != "" && pkgName != "main" && pkgName != "test" {
+			key = pkgName + "." + name
+		}
+		if u, ok := richAST.Types[key].OpaqueUnderlying(); ok {
+			return u, true
+		}
 		return nil, false
 	}
 	step := func(typ transpiler.Type) (transpiler.Type, bool) {
@@ -4266,6 +4320,9 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		}
 		if named.Package == "" || named.Package == pkgName {
 			return declared(named.Name)
+		}
+		if u, ok := richAST.Types[named.Package+"."+named.Name].OpaqueUnderlying(); ok {
+			return u, true
 		}
 		if richAST.GoTypeInfo != nil {
 			if td := richAST.GoTypeInfo.GetTypeData(named.Package + "." + named.Name); td != nil && td.Underlying != nil {

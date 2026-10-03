@@ -15,6 +15,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 4. [Types and Structs](#4-types-and-structs)
    - [Sealed Types (ADTs)](#sealed-types-algebraic-data-types)
    - [Type Aliases](#type-aliases)
+   - [Opaque Types](#opaque-types)
 5. [Interfaces](#5-interfaces)
 6. [Control Flow](#6-control-flow)
    - [If Statement and Expression](#if-statement-and-expression)
@@ -931,18 +932,18 @@ The alias chain is followed to its end, so `type A int64; type B A` makes a
 method on `B` illegal for the same reason. A pointer target is fine when it
 points at a local type — `type PP *Point` puts the method on `Point`.
 
-Wrap the value in a struct when you need methods of your own:
+Declare an [opaque type](#opaque-types) when you need methods of your own:
 
 ```gala
-struct Millis(Value int64)
+opaque type Millis int64
 
-func (m Millis) Seconds() float64 = float64(m.Value) / 1000.0
+func (m Millis) Seconds() float64 = float64(m) / 1000.0
 ```
 
 **It does not create a distinct type.** An alias cannot be matched, overloaded
 or type-switched apart from its target, and it does not make an illegal
-assignment illegal — `MyString` and `string` are one type. GALA has no newtype
-declaration; a single-field struct is the way to get a separate identity.
+assignment illegal — `MyString` and `string` are one type. For a separate
+identity, declare an [opaque type](#opaque-types).
 
 > **Note:** Type aliases are generally not recommended. Prefer using the original type directly — it keeps code clearer and avoids indirection. Type aliases are mainly useful for Go interop scenarios where you need to bridge between GALA and existing Go type names, or when mixing `.gala` and `.go` files in the same package (where GALA type aliases avoid dot-import conflicts with Go type alias declarations).
 
@@ -988,6 +989,137 @@ Pick the alias to keep a plain value on the wire; pick the struct for a type a
 bare `int64` cannot pass for, or one with methods. The two encode differently,
 so switching breaks documents already written: `{"user_id":42}` read as the
 struct form is `Failure(json at pos 11: expected '{')`.
+
+An [opaque type](#opaque-types) combines the two: a type a bare `int64` cannot
+pass for, with methods and operators, that is still written as the bare value.
+
+### Opaque Types
+
+`opaque type X Y` declares a **new, distinct type** whose values are
+represented exactly like values of `Y`, its *underlying type*. It transpiles to
+a Go defined type (`type X Y`), so it costs nothing at run time.
+
+```gala
+package main
+
+opaque type UserID int64
+opaque type Millis int64
+
+func (m Millis) Seconds() float64 = float64(m) / 1000.0
+
+func lookup(id UserID) string = s"user ${int64(id)}"
+
+func main() {
+    val id = UserID(42)              // construct: a conversion
+    val raw = int64(id)              // unwrap: a conversion
+    val wait = Millis(1500) + 500    // the underlying type's operators, on Millis
+    Println(lookup(id), raw, wait > Millis(1000), wait.Seconds())
+    // user 42 42 true 2
+}
+```
+
+**Distinct.** `UserID`, `int64` and another `opaque type OrderID int64` are
+three types. A value never converts implicitly between an opaque type and its
+underlying type, or between two opaque types — at an argument, a `val` / `var`
+declaration or assignment, a return, or a constructor field — and GALA reports
+[GALA-E0064](errors/GALA-E0064.md) with the conversion to write:
+
+<!-- doc-check: error GALA-E0064 -->
+```gala
+package main
+
+opaque type UserID int64
+
+func lookup(id UserID) string = s"user ${int64(id)}"
+
+func main() {
+    val raw int64 = 42
+    Println(lookup(raw))      // error: write lookup(UserID(raw))
+}
+```
+
+Untyped constants still mix, as in Go: `id == 42`, `lookup(7)`,
+`val zero Millis = 0` and `wait + 500` are all fine.
+
+**Conversion is unrestricted.** `UserID(n)` and `int64(id)` are ordinary
+conversions, legal in every package, so an opaque type keeps IDs and units
+apart but does **not** hide its representation: any caller can build a
+`UserID` from any `int64`. A value that must be impossible to build without a
+check is a struct with a private field and a constructor function (see the
+comparison below). Converting one opaque type straight into another,
+`OrderID(userID)`, is [GALA-E0063](errors/GALA-E0063.md); when the change of
+kind is intended, go through the underlying type: `OrderID(int64(userID))`.
+
+**Operators** come from the underlying type and work on the opaque type
+itself: `+`, `-`, `<`, `==` on two `Millis` give a `Millis` (or a `bool`).
+Whether `Millis * Millis` means anything is up to you.
+
+**Methods.** An opaque type starts with no methods: those of its underlying
+type are **not** inherited — `opaque type Timeout time.Duration` has no
+`.Seconds()`. Declare methods in GALA, or in a hand-written `.go` file of the
+same package (to implement a Go interface whose signature GALA cannot spell,
+such as `driver.Valuer`). A `String() string` method makes the type a
+`fmt.Stringer`, used by `Println` and string interpolation.
+
+**Hash and Compare are generated**, so an opaque type works as a `HashMap` or
+`HashSet` key and in `TreeSet`, `TreeMap` and `Sorted()`: `Hash() uint32` for
+every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`)
+for every one except those over `bool`. Each is skipped when the type already
+declares it, in GALA or in a `.go` file of the package. Equality is Go's `==`.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+opaque type UserID int64
+
+func main() {
+    val names = EmptyHashMap[UserID, string]().Put(UserID(2), "bo").Put(UserID(1), "al")
+    Println(names.Get(UserID(1)), ArrayOf(UserID(3), UserID(1), UserID(2)).Sorted())
+    // Some(al) Array(1, 2, 3)
+}
+```
+
+**Underlying types.** An opaque type is declared over a scalar; anything else
+is [GALA-E0062](errors/GALA-E0062.md):
+
+| Underlying type | Allowed |
+|---|---|
+| `bool`, `string`, every integer and floating-point kind, `rune`, `byte` | Yes |
+| An alias that names one of those | Yes |
+| A Go named scalar (`time.Duration`, `os.FileMode`) | Yes — its methods are not inherited |
+| Another opaque type | No — declare it over the underlying type instead |
+| A struct, a sealed type, a GALA collection | No — a distinct type over it loses all of its methods |
+| A Go slice, map, pointer or channel; an interface; a function type | No |
+| A bare type parameter (`opaque type Box[T any] T`) | No |
+
+**Encoding.** A JSON or YAML codec writes an opaque type as its underlying
+value — as a struct field, inside an `Option`, `Array` or `List`, and as a
+`HashMap` key (over `string`) or value — including an opaque type declared in
+another package. `struct User(Id UserID)` is `{"id":42}`.
+
+An opaque type is declared at the top level of a file; `opaque` is a keyword.
+Its zero value is the underlying zero value (`UserID(0)`); use
+`Option[UserID]` for "no ID".
+
+#### Alias, opaque type or private-field struct
+
+| | `type UserID int64` | `opaque type UserID int64` | `struct Email(v string)` |
+|---|---|---|---|
+| Distinct from the underlying type | No — it *is* `int64` | Yes ([GALA-E0064](errors/GALA-E0064.md)) | Yes |
+| Methods of its own | No ([GALA-E0048](errors/GALA-E0048.md)) | Yes | Yes |
+| Operators and ordering | Yes | Yes, on the opaque type | No |
+| Who can build one | Anyone — it is an `int64` | Anyone: `UserID(n)` in every package | Only its own package; others call the constructor function it exports |
+| Unwrapping | Nothing to unwrap | `int64(id)` | Only through a method its package exports |
+| `HashMap` key, `Sorted` | Yes | Yes (generated `Hash` / `Compare`) | Only with `Hash` / `Compare` methods |
+| JSON / YAML | The bare value | The bare value | An object, decodable only through `Validate` ([Structs With Private Fields](#structs-with-private-fields)) |
+| Run-time cost | None | None | A struct, with an `Immutable` box per field |
+
+Use an alias to give an existing type a second name (mostly for Go interop),
+an opaque type for IDs, units and other values that must not be mixed up, and
+a struct with a private field for a value that must be valid by construction —
+an email address, a non-empty name.
 
 ### Sealed Types (Algebraic Data Types)
 
@@ -2514,9 +2646,10 @@ The decoder silently drops fields that are not declared on the target struct —
 
 #### Field Types
 
-A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string or an alias of `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`. A struct with an unexported field is decodable only through its `Validate() Try[T]` method — see [Structs With Private Fields](#structs-with-private-fields).
+A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias, opaque type or Go named type over one (`type Millis int64`, `opaque type UserID int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string, or an alias or opaque type over `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`. A struct with an unexported field is decodable only through its `Validate() Try[T]` method — see [Structs With Private Fields](#structs-with-private-fields).
 
-An alias field is written as its target; a single-field struct is a nested
+An alias field and an [opaque type](#opaque-types) field are written as their
+underlying value; a single-field struct is a nested
 object — see [Alias or single-field struct](#alias-or-single-field-struct).
 
 Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List` or `HashMap` in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
@@ -2571,8 +2704,8 @@ func main() {
 
 A root scalar is written on its own line (`42`, `abc`, a quoted `"true"` for a string that would otherwise read as a bool), and an empty root array as `[]`.
 
-Field types follow the JSON [Field Types](#field-types) rules, so an alias
-field is written as its target and a single-field struct as a nested mapping.
+Field types follow the JSON [Field Types](#field-types) rules, so an alias or
+opaque type field is written as its underlying value and a single-field struct as a nested mapping.
 
 #### Supported YAML Subset
 

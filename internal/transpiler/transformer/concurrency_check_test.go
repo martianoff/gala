@@ -224,6 +224,26 @@ func main() {
 }`,
 		},
 		{
+			// An opaque type is its underlying scalar at run time, so a val of
+			// one is shareable like the scalar — including one declared over
+			// a Go named scalar.
+			name: "opaque scalar val capture",
+			input: `package main
+
+import "time"
+
+opaque type UserID int64
+opaque type Wait time.Duration
+
+func run(body Sendable[func() int64]) int64 = body()
+
+func main() {
+    val id = UserID(41)
+    val w = Wait(1)
+    Println(run(() => int64(id) + int64(w)))
+}`,
+		},
+		{
 			name: "thunk sugar with immutable capture",
 			input: `package main
 

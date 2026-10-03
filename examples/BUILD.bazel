@@ -3479,6 +3479,8 @@ gala_library(
         "multifile_lib_regress/generic_sealed.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
+        "multifile_lib_regress/opaque_a.gala",
+        "multifile_lib_regress/opaque_b.gala",
         "multifile_lib_regress/pkg_name_collision.gala",
         "multifile_lib_regress/pkg_name_collision_go.gala",
         "multifile_lib_regress/pointer_method_field.gala",
@@ -3913,5 +3915,80 @@ gala_exec_test(
     name = "val_param_plain",
     src = "val_param_plain.gala",
     expected = "val_param_plain.out",
+    deps = ["//collection_immutable"],
+)
+
+# Opaque types: a distinct type over a scalar, lowered to a Go defined type —
+# conversions, operators, untyped constants, methods, the generated Hash and
+# Compare.
+gala_exec_test(
+    name = "opaque_type_basic",
+    src = "opaque_type_basic.gala",
+    expected = "opaque_type_basic.out",
+)
+
+# Opaque types as HashMap / HashSet keys and in TreeSet, TreeMap and Sorted.
+gala_exec_test(
+    name = "opaque_type_collections",
+    src = "opaque_type_collections.gala",
+    expected = "opaque_type_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
+# Opaque types through the JSON and YAML codecs: written as the underlying
+# value in every field position.
+gala_exec_test(
+    name = "opaque_type_codec",
+    src = "opaque_type_codec.gala",
+    expected = "opaque_type_codec.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)
+
+# Opaque types declared in another package: conversions, map keys, sorting
+# and codec fields read the underlying type from the declaring package.
+gala_library(
+    name = "opaque_type_cross_pkg_billing",
+    srcs = ["opaque_type_cross_pkg/billing/billing.gala"],
+    importpath = "martianoff/gala/examples/opaque_type_cross_pkg/billing",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "opaque_type_cross_pkg",
+    src = "opaque_type_cross_pkg/main.gala",
+    expected = "opaque_type_cross_pkg/main.out",
+    gala_deps = [":opaque_type_cross_pkg_billing"],
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)
+
+# Opaque types of a mixed GALA + Go package: a Go file adds a driver.Valuer
+# method, another declares Hash by hand, which replaces the generated one.
+gala_library(
+    name = "opaque_type_mixed_ids",
+    srcs = ["opaque_type_mixed/ids/ids.gala"],
+    go_srcs = [
+        "opaque_type_mixed/ids/hash.go",
+        "opaque_type_mixed/ids/value.go",
+    ],
+    importpath = "martianoff/gala/examples/opaque_type_mixed/ids",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "opaque_type_mixed",
+    src = "opaque_type_mixed/main.gala",
+    expected = "opaque_type_mixed/main.out",
+    gala_deps = [":opaque_type_mixed_ids"],
     deps = ["//collection_immutable"],
 )

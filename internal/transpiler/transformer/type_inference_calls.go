@@ -162,6 +162,12 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 		}
 	}
 
+	// A conversion to an opaque type, `UserID(n)` or `billing.UserID(n)`, has
+	// that type.
+	if t.opaqueConversionCallee(e.Fun) != nil {
+		return t.astTypeToTranspilerType(e.Fun)
+	}
+
 	// Handle b.Get() or std.Some()
 	// Capture type arguments from generic calls like Tuple[int, string](...)
 	fun := e.Fun

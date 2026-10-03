@@ -211,7 +211,12 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 		}
 	case *ast.BinaryExpr:
 		switch e.Op {
-		case token.LOR, token.LAND, token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
+		case token.LOR, token.LAND:
+			if typ := t.logicalOperandType(e.X, e.Y); typ != nil {
+				return t.typeToExpr(typ)
+			}
+			return ast.NewIdent("bool")
+		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
 			return ast.NewIdent("bool")
 		default:
 			// Delegated rather than restated: arithmeticResultType owns the
@@ -230,6 +235,9 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 		}
 	case *ast.UnaryExpr:
 		if e.Op == token.NOT {
+			if typ := t.logicalOperandType(e.X); typ != nil {
+				return t.typeToExpr(typ)
+			}
 			return ast.NewIdent("bool")
 		}
 	}

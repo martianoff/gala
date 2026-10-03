@@ -198,6 +198,9 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 	case *ast.UnaryExpr:
 		switch e.Op {
 		case token.NOT:
+			if typ := t.logicalOperandType(e.X); typ != nil {
+				return typ
+			}
 			return transpiler.BasicType{Name: "bool"}
 		case token.AND:
 			return transpiler.PointerType{Elem: t.getExprTypeNameManual(e.X)}
@@ -212,7 +215,12 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		}
 	case *ast.BinaryExpr:
 		switch e.Op {
-		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ, token.LAND, token.LOR:
+		case token.LAND, token.LOR:
+			if typ := t.logicalOperandType(e.X, e.Y); typ != nil {
+				return typ
+			}
+			return transpiler.BasicType{Name: "bool"}
+		case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
 			return transpiler.BasicType{Name: "bool"}
 		default:
 			return t.arithmeticResultType(e)
@@ -304,7 +312,7 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 	}
 	methodMeta, ok := typeMeta.Methods[methodName]
 	if !ok {
-		return transpiler.NilType{}
+		return t.synthesizedMethodResultType(typeMeta, methodName)
 	}
 
 	result := methodMeta.ReturnType

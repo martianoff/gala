@@ -91,6 +91,7 @@ var accumulatedStateFields = []string{
 	"functions",
 	"galaPkgPaths",
 	"typeMetas",
+	"hasOpaque",
 	"companionObjects",
 	"importManager",
 	"cachedTypeResolver",

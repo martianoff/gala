@@ -24,9 +24,9 @@ produced did not.
 The check covers every place a name is introduced: a `val`, `var` or `:=`
 binding, a tuple destructuring, a parameter or lambda parameter, a pattern
 binding (`case go =>`, `Some(go)`), a struct or sealed-case field, a function or
-method, an interface method, a type, type alias, sealed type or sealed case, a
-type parameter, the package name, and an import alias. It points at the
-declaration, even when a use of the name comes first in the file. A use with no
+method, an interface method, a type, type alias, opaque type, sealed type or
+sealed case, a type parameter, the package name, and an import alias. It points
+at the declaration, even when a use of the name comes first in the file. A use with no
 declaration — `Println(default)`, `go(work())`, a bare `switch` statement — is
 reported where it stands, as `"go" is a Go keyword and is not part of GALA`; for
 `defer`, `go`, `goto`, `fallthrough`, `select` and `chan` the hint is the

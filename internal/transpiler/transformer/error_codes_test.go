@@ -1026,6 +1026,196 @@ func main() {
 			expectCode:     galaerr.CodeUninferredTypeArgument,
 			expectContains: "cannot infer type argument T of generic struct Tag from its fields or the expected type",
 		},
+		{
+			name: "GALA-E0048 method on a scalar alias suggests an opaque type",
+			input: `package main
+
+type Millis int64
+
+func (m Millis) Seconds() int64 = int64(m) / 1000
+
+func main() {
+    Println(Millis(1500).Seconds())
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: "declare `opaque type Millis int64` for a distinct type with methods",
+		},
+		{
+			name: "GALA-E0062 opaque type over another opaque type",
+			input: `package main
+
+opaque type UserID int64
+opaque type AdminID UserID
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: `cannot declare opaque type "AdminID" over UserID: UserID is itself an opaque type`,
+		},
+		{
+			name: "GALA-E0062 opaque type over a collection",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+opaque type Tags Array[string]
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: `cannot declare opaque type "Tags" over Array[string]: Array is a struct`,
+		},
+		{
+			name: "GALA-E0062 opaque type over a struct",
+			input: `package main
+
+struct Point(X int, Y int)
+
+opaque type Spot Point
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: "Point is a struct",
+		},
+		{
+			name: "GALA-E0062 opaque type over a sealed type",
+			input: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+opaque type Figure Shape
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: "Shape is a sealed type",
+		},
+		{
+			name: "GALA-E0062 opaque type over a Go slice",
+			input: `package main
+
+opaque type Bytes []byte
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: "Go slices, maps and pointers are Go-interop types",
+		},
+		{
+			name: "GALA-E0062 opaque type over a function type",
+			input: `package main
+
+opaque type Handler func(int) int
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: "a function type cannot be the underlying type",
+		},
+		{
+			name: "GALA-E0062 opaque type over an interface",
+			input: `package main
+
+opaque type Anything any
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: "an interface has no value of its own",
+		},
+		{
+			name: "GALA-E0062 opaque type over a bare type parameter",
+			input: `package main
+
+opaque type Box[T any] T
+
+func main() {}`,
+			expectCode:     galaerr.CodeInvalidOpaqueUnderlying,
+			expectContains: "a type parameter cannot be the underlying type",
+		},
+		{
+			name: "GALA-E0063 direct conversion between two opaque types",
+			input: `package main
+
+opaque type UserID int64
+opaque type OrderID int64
+
+func main() {
+    val id = UserID(1)
+    Println(OrderID(id))
+}`,
+			expectCode:     galaerr.CodeOpaqueToOpaqueConversion,
+			expectContains: "cannot convert UserID to OrderID directly",
+		},
+		{
+			name: "GALA-E0064 opaque type passed where its underlying type is expected",
+			input: `package main
+
+opaque type UserID int64
+
+func raw(n int64) int64 = n
+
+func main() {
+    Println(raw(UserID(1)))
+}`,
+			expectCode:     galaerr.CodeOpaqueTypeMismatch,
+			expectContains: "cannot use UserID(1) (UserID) as int64",
+		},
+		{
+			name: "GALA-E0064 underlying value assigned to an opaque val",
+			input: `package main
+
+opaque type UserID int64
+
+func main() {
+    val n int64 = 5
+    val id UserID = n
+    Println(id)
+}`,
+			expectCode:     galaerr.CodeOpaqueTypeMismatch,
+			expectContains: "cannot use n (int64) as UserID",
+		},
+		{
+			name: "GALA-E0064 opaque value returned as its underlying type",
+			input: `package main
+
+opaque type UserID int64
+
+func raw(id UserID) int64 = id
+
+func main() {
+    Println(raw(UserID(1)))
+}`,
+			expectCode:     galaerr.CodeOpaqueTypeMismatch,
+			expectContains: "cannot use id (UserID) as int64",
+		},
+		{
+			name: "GALA-E0064 one opaque type in a constructor field of another",
+			input: `package main
+
+opaque type UserID int64
+opaque type OrderID int64
+
+struct Order(Id OrderID)
+
+func main() {
+    Println(Order(UserID(1)))
+}`,
+			expectCode:     galaerr.CodeOpaqueTypeMismatch,
+			expectContains: "cannot use UserID(1) (UserID) as OrderID",
+		},
+		{
+			name: "GALA-E0064 underlying value reassigned to an opaque var",
+			input: `package main
+
+opaque type UserID int64
+
+func main() {
+    var cur = UserID(1)
+    val n int64 = 9
+    cur = n
+    Println(cur)
+}`,
+			expectCode:     galaerr.CodeOpaqueTypeMismatch,
+			expectContains: "cannot use n (int64) as UserID",
+		},
 	}
 
 	for _, tc := range cases {

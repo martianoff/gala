@@ -982,6 +982,85 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "opaque type over another opaque type",
+			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+opaque type UserID int64
+opaque type AdminID UserID
+
+func main() {
+    Println(AdminID(1))
+}
+`)
+			},
+		},
+		{
+			name: "opaque type over a collection",
+			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+opaque type Tags Array[string]
+
+func main() {}
+`)
+			},
+		},
+		{
+			name: "conversion between two opaque types",
+			code: galaerr.CodeOpaqueToOpaqueConversion, // GALA-E0063
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+opaque type UserID int64
+opaque type OrderID int64
+
+func orderFor(id UserID) OrderID = OrderID(id)
+
+func main() {
+    Println(orderFor(UserID(7)))
+}
+`)
+			},
+		},
+		{
+			name: "underlying value passed for an opaque parameter",
+			code: galaerr.CodeOpaqueTypeMismatch, // GALA-E0064
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+opaque type UserID int64
+
+func loadUser(id UserID) string = s"user ${int64(id)}"
+
+func main() {
+    val raw int64 = 42
+    Println(loadUser(raw))
+}
+`)
+			},
+		},
+		{
+			name: "opaque value returned as its underlying type",
+			code: galaerr.CodeOpaqueTypeMismatch, // GALA-E0064
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+opaque type Cents int64
+
+func total(a Cents, b Cents) int64 = a + b
+
+func main() {
+    Println(total(Cents(250), Cents(100)))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

@@ -95,7 +95,11 @@ import (
 // ends in (`{ val y = ...; y }`) resolved no longer once its consumer typed it.
 // The four sites were block-bodied lambdas in lambda_block_val_trailing.gala
 // and lambda_expected_type.gala; see match_arm_block_local_test.go.
-const unresolvedBudget = 153
+//
+// Lowered 153 -> 143 when calls of a struct's generated Equal (and of an
+// opaque type's generated Hash and Compare) started being typed; see
+// TestOpaqueTypeSynthesizedMethodTypes in opaque_test.go.
+const unresolvedBudget = 143
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

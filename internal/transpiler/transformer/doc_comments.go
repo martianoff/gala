@@ -148,6 +148,12 @@ func (t *galaASTTransformer) attachDocComments(ctx grammar.ITopLevelDeclarationC
 			}
 		}
 
+	case ctx.OpaqueTypeDeclaration() != nil:
+		octx := ctx.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext)
+		if decl, _ := findTypeSpec(decls, octx.Identifier().GetText()); decl != nil {
+			decl.Doc = doc
+		}
+
 	case ctx.SealedTypeDeclaration() != nil:
 		sctx := ctx.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
 		if decl, _ := findTypeSpec(decls, sctx.Identifier().GetText()); decl != nil {

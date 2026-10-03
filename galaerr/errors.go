@@ -608,9 +608,9 @@ const (
 	// names as written, so the generated Go did not parse and the author got
 	// the internal GALA-E0017. The name is rejected wherever it appears (a
 	// val, var, parameter, lambda parameter, pattern binding, struct field,
-	// function, method, type, type parameter, package name or import alias),
-	// pointing at the declaration when there is one. A bare `break` /
-	// `continue` statement is loop control, and the other bare statement
+	// function, method, type, opaque type, type parameter, package name or
+	// import alias), pointing at the declaration when there is one. A bare
+	// `break` / `continue` statement is loop control, and the other bare statement
 	// keywords stay with E0036.
 	CodeGoKeywordAsName ErrorCode = "GALA-E0055"
 
@@ -673,6 +673,29 @@ const (
 	// or an imported sealed type.
 	CodeSealedVariantAsType ErrorCode = "GALA-E0061"
 
+	// E0062: an `opaque type` is declared over a type it cannot be distinct
+	// from in a useful way. The underlying type must be a scalar: bool,
+	// string, an integer or floating-point kind (rune and byte included), an
+	// alias that names one, or a Go named scalar such as time.Duration.
+	// Another opaque type, a struct or sealed type, a GALA collection, a Go
+	// slice, map, pointer or channel, an interface, a function type and a
+	// bare type parameter are rejected, each with its own reason.
+	CodeInvalidOpaqueUnderlying ErrorCode = "GALA-E0062"
+
+	// E0063: a value of one opaque type is converted directly into another,
+	// `OrderID(userID)`. Go allows it when both share an underlying type,
+	// but turning one kind of ID into another is the mistake opaque types
+	// exist to prevent; a deliberate change of kind goes through the
+	// underlying type, `OrderID(int64(userID))`.
+	CodeOpaqueToOpaqueConversion ErrorCode = "GALA-E0063"
+
+	// E0064: an opaque type is used where its underlying type (or another
+	// opaque type) is expected, or the underlying type where the opaque type
+	// is expected — at an argument, a val/var declaration or assignment, a
+	// return, or a constructor field. An opaque type never converts
+	// implicitly in either direction; untyped constants (`42`, `"a"`) still
+	// mix, as in Go.
+	CodeOpaqueTypeMismatch ErrorCode = "GALA-E0064"
 	// E0066: the package declares a top-level type, sealed variant or
 	// function under a name that a GALA package it dot-imports also exports
 	// (`struct List(...)` beside `import . "martianoff/gala/collection_immutable"`).

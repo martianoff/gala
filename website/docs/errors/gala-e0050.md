@@ -51,7 +51,7 @@ error[GALA-E0050]: cannot generate a codec for Job: field Job.Run has type func(
 8 |     val codec = json.Codec[Job](json.AsIs())
   |                                 ^^^^ a codec field can be a string, bool, rune, int/uint/float ki…
   |
-  = hint: a codec field can be a string, bool, rune, int/uint/float kind, an alias or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those
+  = hint: a codec field can be a string, bool, rune, int/uint/float kind, an alias, opaque type or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those
 ```
 
 **Fix.** Keep only data in the struct you serialize. Store what the function
@@ -70,9 +70,11 @@ other shape (`Value[int]()`, `Value[Array[string]]()`).
 
 **What the codec does support.** Every scalar kind — `string`, `bool`,
 `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`,
-`float32`, `float64` — plus aliases and Go named types over them (`type
-Millis int64`, `time.Duration`); structs; and `Option`, `Array`, `List` and
-`HashMap[string, V]` of any of these, nested to any depth.
+`float32`, `float64` — plus aliases, opaque types and Go named types over them (`type Millis
+int64`, `opaque type UserID int64`, `time.Duration`; an opaque type encodes as
+its underlying value); structs; and `Option`, `Array`, `List` and
+`HashMap[K, V]` of any of these, nested to any depth, with `K` a string or an
+alias or opaque type over one.
 
 On decode, an integer that does not fit the field's kind (`300` into an
 `int8`, `-1` into a `uint`) and a float that overflows `float32` are decode

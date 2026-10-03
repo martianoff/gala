@@ -26,6 +26,37 @@ val x = 10`,
 			wantErr: false,
 		},
 		{
+			name: "Opaque type declaration",
+			input: `package main
+
+opaque type UserID int64
+opaque type Wait time.Duration`,
+			wantErr: false,
+		},
+		{
+			name: "Opaque type with a phantom type parameter",
+			input: `package main
+
+opaque type Id[T any] int64`,
+			wantErr: false,
+		},
+		{
+			name: "opaque is a keyword, not a name",
+			input: `package main
+
+val opaque = 1`,
+			wantErr: true,
+		},
+		{
+			name: "Opaque type inside a function body is rejected",
+			input: `package main
+
+func main() {
+    opaque type UserID int64
+}`,
+			wantErr: true,
+		},
+		{
 			name: "Basic var declaration",
 			input: `package main
 

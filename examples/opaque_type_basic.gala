@@ -1,0 +1,81 @@
+package main
+
+import "time"
+
+// Opaque types: distinct types over a scalar, lowered to Go defined types.
+// Construction and unwrapping are conversions, operators come from the
+// underlying type, untyped constants mix, and methods are declared like on
+// any other type. Nothing is inherited from the underlying type.
+
+// UserID identifies a user.
+opaque type UserID int64
+
+// Millis is a duration in milliseconds.
+opaque type Millis int64
+
+// Email is an e-mail address (not validated: see GALA.MD for private-field
+// structs when it must be).
+opaque type Email string
+
+// Enabled is a feature switch.
+opaque type Enabled bool
+
+// Label is a display label.
+type Label string
+
+// Name is declared over an alias of string.
+opaque type Name Label
+
+// Timeout is declared over a Go named scalar; it does not inherit
+// time.Duration's methods.
+opaque type Timeout time.Duration
+
+// Seconds converts the duration to seconds.
+func (m Millis) Seconds() float64 = float64(m) / 1000.0
+
+// Plus adds two durations.
+func (m Millis) Plus(other Millis) Millis = m + other
+
+// String renders the address in angle brackets.
+func (e Email) String() string = s"<${string(e)}>"
+
+// Duration converts back to the Go type it is declared over.
+func (t Timeout) Duration() time.Duration = time.Duration(t)
+
+func lookup(id UserID) string = s"user #${int64(id)}"
+
+func slowest(a Millis, b Millis) Millis = if (a > b) a else b
+
+// Session holds opaque-typed fields.
+struct Session(User UserID, Took Millis, Mail Email)
+
+func main() {
+    // Construct and unwrap.
+    val id = UserID(42)
+    val raw = int64(id)
+    Println(lookup(id), raw)
+
+    // Operators of the underlying type, on the opaque type itself.
+    val took = Millis(1500) + 500
+    Println(took, took > Millis(1000), took.Seconds(), took.Plus(Millis(250)))
+    Println(slowest(Millis(10), Millis(20)), took * 2, took / Millis(4))
+
+    // Untyped constants mix, as in Go.
+    val zero Millis = 0
+    Println(id == 42, zero, lookup(7), took - 1)
+
+    // String() makes it a fmt.Stringer, used by Println and interpolation.
+    val mail = Email("ada@example.com")
+    Println(mail, s"mail: $mail")
+
+    // Over an alias, a bool and a Go named scalar.
+    Println(Name("ada"), Enabled(true) == Enabled(false), !bool(Enabled(true)))
+    Println(Timeout(time.Second).Duration(), int64(Timeout(5)))
+
+    // A struct field of an opaque type.
+    val session = Session(id, took, mail)
+    Println(session.User, session.Took.Seconds(), session.Mail)
+
+    // The generated Hash and Compare.
+    Println(id.Hash() == UserID(42).Hash(), took.Compare(zero), zero.Compare(took), took.Compare(Millis(2000)))
+}

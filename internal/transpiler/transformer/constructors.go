@@ -264,6 +264,14 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" {
 		return t.typeToExpr(target)
 	}
+	// An untyped constant of any kind — `""`, `false`, `0`, an untyped bool —
+	// takes an opaque slot's type, as a Go assignment would: its default type
+	// (string, bool, int) is never the opaque type itself. A logical operator
+	// over operands of the opaque type already has that type, so naming it
+	// changes nothing there.
+	if isUntypedConst(value) && t.opaqueMeta(target) != nil {
+		return t.typeToExpr(target)
+	}
 	defaultName, ok := t.untypedNumericConstExprDefault(value)
 	if !ok || !t.isNumericSlotType(target) {
 		return nil
@@ -281,6 +289,12 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
 	// The hop bound stops a declaration chain that refers back to itself.
 	for hop := 0; hop < 16; hop++ {
+		// An untyped constant fits an opaque type over a numeric type, as it
+		// fits a Go defined type.
+		if u, ok := t.opaqueUnderlying(typ); ok {
+			typ = u
+			continue
+		}
 		var bareName string
 		switch ty := typ.(type) {
 		case transpiler.BasicType:

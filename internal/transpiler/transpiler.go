@@ -204,9 +204,10 @@ func (r *RichAST) Merge(other *RichAST) {
 		fieldsNeeded := len(v.FieldNames) > 0 && len(existing.FieldNames) == 0
 		typeParamsNeeded := len(v.TypeParams) > 0 && len(existing.TypeParams) == 0
 		sealedNeeded := v.IsSealed && !existing.IsSealed
+		opaqueNeeded := v.IsOpaque && !existing.IsOpaque
 		docNeeded := v.Doc != "" && existing.Doc == ""
 		fieldDocsNeeded := len(v.FieldDocs) > 0 && len(existing.FieldDocs) == 0
-		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded &&
+		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded && !opaqueNeeded &&
 			!docNeeded && !fieldDocsNeeded {
 			continue
 		}
@@ -237,6 +238,10 @@ func (r *RichAST) Merge(other *RichAST) {
 		if sealedNeeded {
 			copied.IsSealed = v.IsSealed
 			copied.SealedVariants = v.SealedVariants
+		}
+		if opaqueNeeded {
+			copied.IsOpaque = true
+			copied.Underlying = v.Underlying
 		}
 		if docNeeded {
 			copied.Doc = v.Doc
@@ -371,6 +376,21 @@ type TypeMetadata struct {
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
+	// IsOpaque is true for `opaque type UserID int64`: a distinct Go defined
+	// type whose representation is Underlying. It is never a type alias:
+	// inference, unification and method lookup never see through it. Only
+	// the codec, numeric-slot admission and the Sendable/Shareable checker do.
+	IsOpaque   bool
+	Underlying Type // the declared underlying type of an opaque type; nil otherwise
+}
+
+// OpaqueUnderlying returns the type an opaque type is declared over, and false
+// when m is nil, not an opaque type, or its underlying type is unknown.
+func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
+	if m == nil || !m.IsOpaque || m.Underlying == nil || m.Underlying.IsNil() {
+		return nil, false
+	}
+	return m.Underlying, true
 }
 
 // DefaultExpr is a declared default value — of a function or method parameter,

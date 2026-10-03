@@ -27,10 +27,11 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 9. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
 10. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
 11. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
-12. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-13. [Go Type Inference](#go-type-inference)
-14. [Limitations and Edge Cases](#limitations-and-edge-cases)
-15. [Key Files](#key-files)
+12. [Opaque Types](#opaque-types)
+13. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+14. [Go Type Inference](#go-type-inference)
+15. [Limitations and Edge Cases](#limitations-and-edge-cases)
+16. [Key Files](#key-files)
 
 ---
 
@@ -806,8 +807,8 @@ its own type.
 
 A slot counts as numeric when its type is a predeclared numeric type, a GALA
 type declared over one (`type Millis int64`, through alias chains, including
-one declared further down the file), or a Go named numeric type
-(`time.Duration`). The sites are the struct constructor (positional, named,
+one declared further down the file), an opaque type over one
+(`opaque type UserID int64`), or a Go named numeric type (`time.Duration`). The sites are the struct constructor (positional, named,
 composite literal, field defaults), Copy overrides, and tuple literals with an
 expected element type (return position, call argument, typed `val`, struct
 field). Only the slot the tuple literal itself fills counts: a local
@@ -815,8 +816,43 @@ field). Only the slot the tuple literal itself fills counts: a local
 `Tuple[int, int]`. A bare `nil` always takes the slot's declared type.
 
 Parameter defaults follow the same rule at analysis time: `func f(ms Millis =
-12)` is accepted because `Millis` is declared over `int64`, while
+12)` is accepted because `Millis` is declared over `int64` (as an alias or as
+an opaque type), while
 `ms Millis = "soon"` is still GALA-E0014.
+
+---
+
+## Opaque Types
+
+`opaque type UserID int64` declares a distinct type (see
+[Opaque Types](GALA.MD#opaque-types)). Inference treats it as a type of its
+own and never as its underlying type:
+
+- A conversion `UserID(n)` (or `billing.UserID(n)`) has type `UserID`; an
+  arithmetic expression over a `UserID` and an untyped constant (`id + 1`) has
+  type `UserID`, the governing operand's type.
+- The opaque type never enters the alias tables, so unification, method lookup
+  and the Hindley-Milner layer compare it by name: `UserID`, `int64` and
+  `OrderID` never unify. A generic call over `UserID` values instantiates its
+  type parameter with `UserID` (`ArrayOf(UserID(1))` is an `Array[UserID]`).
+- Its methods are the ones declared on it — in GALA, or in a hand-written `.go`
+  file of the package — plus the generated `Hash() uint32` and, for an ordered
+  underlying type, `Compare(other UserID) int`. Nothing is inherited from the
+  underlying type.
+- Only three consumers look through it to the underlying type: the untyped
+  constant rule above (a slot of an opaque type over a numeric type is
+  numeric), the JSON / YAML codec (which writes the underlying scalar), and
+  the Sendable/Shareable check (an opaque scalar is shareable).
+
+Where a slot's type is known — an argument, a typed `val` / `var`, an
+assignment, a return, a constructor field — a value whose type is the opaque
+type's underlying type, or another opaque type, is
+[GALA-E0064](errors/GALA-E0064.md). The check compares the slot type with the
+inferred type of the lowered expression, follows aliases and Go named types to
+the scalar at the bottom on both sides, and stands down for an untyped
+constant expression (literals and operators over them), for `any`, an
+interface or a type parameter, and wherever either type is unknown; Go's own
+assignability check stays the backstop.
 
 ---
 

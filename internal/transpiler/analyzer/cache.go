@@ -89,7 +89,10 @@ import (
 // v16: FunctionMetadata drops its per-parameter `val` flags — a `val`
 // parameter is a plain Go parameter, so call sites no longer box its
 // argument. A v15 payload carries the flags in its encoding.
-const CacheVersion = "v16"
+//
+// v17: TypeMetadata records opaque types (IsOpaque, Underlying). A v16
+// payload would present an imported opaque type as a field-less type.
+const CacheVersion = "v17"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
