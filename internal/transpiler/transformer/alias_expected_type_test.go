@@ -316,6 +316,7 @@ func TestGenericFuncAliasField(t *testing.T) {
 	tests := []struct{ name, body, want string }{
 		{"explicit type arguments", `func f() int = Step[int, string](In = 3, Run = (x) => s"${x}").In`, "func(x int) string {"},
 		{"inferred type arguments", `func f() int = Step(In = 3, Run = (x) => x * 2).Run(1)`, "func(x int) int {"},
+		{"conversion to an instantiated alias", `func f() Conv[int, string] = Conv[int, string]((x) => s"${x}")`, "Conv[int, string](func(x int) string {"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -323,7 +324,15 @@ func TestGenericFuncAliasField(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, got, "type Conv[A any, B any] = func(A) B")
 			assert.Contains(t, got, tt.want)
-			assert.NotContains(t, got, "func(x A)")
 		})
+	}
+
+	// A conversion to the generic alias with no type arguments has no
+	// function type to give the lambda; it is never typed by the alias's own
+	// parameter names.
+	got, err := trans.Transpile(decls+"func f() int {\n    val c = Conv((x) => x)\n    1\n}\n", "")
+	assert.NotContains(t, got, "func(x A)")
+	if err != nil {
+		assert.Contains(t, err.Error(), "GALA-E0033")
 	}
 }

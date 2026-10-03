@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/depman/mod"
+	"martianoff/gala/internal/stdlib"
 )
 
 // A module whose go.mod is maintained by hand already requires its Go
@@ -26,6 +27,7 @@ func TestRenderBazelGoMod(t *testing.T) {
 		wantManaged []string // requirements in the managed section; nil = no section
 		wantUpdated []string
 		wantAbsent  []string
+		wantPresent []string
 	}{
 		{
 			name:     "single-line require of the same module",
@@ -88,10 +90,27 @@ func TestRenderBazelGoMod(t *testing.T) {
 			wantAbsent:  []string{"v1.5.0", "// GALA dependencies below."},
 		},
 		{
+			// The generated Go needs stdlib.GoVersion: a generic alias is a Go
+			// generic alias, which an older language version rejects.
+			name:        "a go line below the version the generated code needs is raised",
+			existing:    "module github.com/example/acp\n\ngo 1.22 // pinned\n\nrequire github.com/google/uuid v1.6.0\n",
+			deps:        []mod.Require{uuid},
+			wantUpdated: []string{"go 1.22 -> " + stdlib.GoVersion},
+			wantPresent: []string{"go " + stdlib.GoVersion + " // pinned\n"},
+		},
+		{
+			name:     "a go line at or above that version is kept",
+			existing: header + "require github.com/google/uuid v1.6.0\n",
+			deps:     []mod.Require{uuid},
+			// header's own go line
+			wantPresent: []string{"go 1.25.5\n"},
+		},
+		{
 			name:        "no go.mod yet",
 			existing:    "",
 			deps:        []mod.Require{uuid},
 			wantManaged: []string{"github.com/google/uuid v1.6.0"},
+			wantPresent: []string{"go " + stdlib.GoVersion + "\n"},
 		},
 	}
 
@@ -110,6 +129,9 @@ func TestRenderBazelGoMod(t *testing.T) {
 			for _, dep := range tt.deps {
 				n := strings.Count(first, dep.Path+" "+dep.Version)
 				assert.Equal(t, 1, n, "%s required %d times in:\n%s", dep.Path, n, first)
+			}
+			for _, present := range tt.wantPresent {
+				assert.Contains(t, first, present)
 			}
 			for _, absent := range tt.wantAbsent {
 				assert.NotContains(t, first, absent)

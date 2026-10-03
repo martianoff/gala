@@ -592,6 +592,13 @@ typed by an alias has the methods of the type it names, plus any declared on
 the alias itself, is matched as that type (its variants and exhaustiveness),
 and can be bound in a `bind` block.
 
+The same holds for an alias of a function type, which types a lambda in its
+place. With `type Conv[A any, B any] func(A) B`, a lambda for a field `Run
+Conv[A, B]` of `Step[int, string]` is a `func(int) string`, as is one passed to
+a parameter or binding typed `Conv[int, string]`, or converted with
+`Conv[int, string]((x) => …)`. A generic alias with no type arguments names no
+function type, so a lambda converted with a bare `Conv(…)` gets none.
+
 ### Propagation mechanism
 
 - A LIFO stack on the transformer, `expectedArgTypes` (see

@@ -1988,11 +1988,11 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// A conversion to a named function type (`type Handler func(int) int`,
 	// then `Handler((x) => x)`) takes one argument of that function type, so
 	// a lambda converted this way is typed by it. So is one converted to a Go
-	// named function type (`http.HandlerFunc((w, r) => …)`). A generic one
-	// written with type arguments is left alone: its signature would need them
-	// substituted.
-	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && len(t.extractFuncCallTypeArgs(fun)) == 0 {
-		if ft := t.conversionFuncType(t.extractFuncName(fun)); ft != nil {
+	// named function type (`http.HandlerFunc((w, r) => …)`), and one
+	// converted to an instantiated generic alias (`Conv[int, string]((x) =>
+	// …)`) by the alias's signature with the type arguments substituted.
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
+		if ft := t.conversionFuncType(t.extractFuncName(fun), t.extractFuncCallTypeArgs(fun)); ft != nil {
 			ctx.goFuncParamTypes = []transpiler.Type{*ft}
 		}
 	}
@@ -3569,13 +3569,33 @@ func (t *galaASTTransformer) goTypeKey(name string) string {
 // conversionFuncType returns the function type a call of name converts to
 // when name is a named function type rather than a function: a GALA alias
 // (through a chain of them), a Go type of the package's own .go files, or an
-// imported Go one (`http.HandlerFunc`). It returns nil otherwise.
-func (t *galaASTTransformer) conversionFuncType(name string) *transpiler.FuncType {
+// imported Go one (`http.HandlerFunc`). typeArgs are the type arguments the
+// call writes, which instantiate a generic alias (`Conv[int, string]`). It
+// returns nil otherwise.
+func (t *galaASTTransformer) conversionFuncType(name string, typeArgs []string) *transpiler.FuncType {
 	if name == "" {
 		return nil
 	}
 	if _, isAlias := t.typeAliases[name]; isAlias {
-		return t.resolveTranspilerTypeAsFuncType(transpiler.NamedType{Name: name})
+		var typeParams []string
+		if meta := t.getTypeMeta(name); meta != nil {
+			typeParams = meta.TypeParams
+		}
+		// A generic alias names a function type only once instantiated: with
+		// its type arguments missing, its signature would hand its own
+		// parameter names on as types.
+		if len(typeArgs) != len(typeParams) {
+			return nil
+		}
+		if len(typeArgs) == 0 {
+			return t.resolveTranspilerTypeAsFuncType(transpiler.NamedType{Name: name})
+		}
+		return t.resolveTranspilerTypeAsFuncType(transpiler.ParseType(name + "[" + strings.Join(typeArgs, ", ") + "]"))
+	}
+	if len(typeArgs) > 0 {
+		// A Go generic named type: its signature would need the arguments
+		// substituted, which Go type info does not do here.
+		return nil
 	}
 	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
 		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
