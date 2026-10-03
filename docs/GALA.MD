@@ -901,6 +901,21 @@ This generates:
 - `Unapply` methods for pattern matching
 - `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type.
 
+A variant is a constructor and a pattern, not a type. Every value `Circle(...)` builds is a `Shape`, and GALA has no type for a single variant: narrowing to one is what a `match` arm does. Naming a variant where a type is expected — a parameter, result, field, `val`/`var` annotation, type argument (`Array[Some[int]]`, `ArrayOf[Circle](...)`), typed pattern (`case c: Circle`), receiver or alias target — is rejected with [GALA-E0061](errors/GALA-E0061.md). Take the sealed type instead and match on the variant:
+
+```gala
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+// func radius(c Circle) float64 = c.R   // GALA-E0061: Circle is a variant, not a type
+func radius(s Shape) Option[float64] = s match {
+    case Circle(r) => Some(r)
+    case _ => None()
+}
+```
+
 #### Construction and Pattern Matching
 
 <!-- doc-check: fragment -->

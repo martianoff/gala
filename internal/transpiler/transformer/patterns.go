@@ -141,6 +141,17 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 // "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
 // and struct field matches, and instance extractors, in that order.
 func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
+	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are
+	// always types, so a sealed variant among them is GALA-E0061.
+	if explicitTypeArgs != nil {
+		for _, arg := range explicitTypeArgs.AllExpression() {
+			if t.mayNameVariantType(arg) {
+				if err := t.variantTypeArgError(arg); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+	}
 	// Check if we can use direct Unapply call (no reflection)
 	// This applies to any extractor with an Unapply method - both generic and non-generic
 	// For generic extractors like Cons[T], Some[T], we infer type params from the matched type

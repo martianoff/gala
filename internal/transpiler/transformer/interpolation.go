@@ -223,6 +223,9 @@ func (t *galaASTTransformer) parseAndTransformExpr(exprText string, line, col in
 	if err := CheckGeneratedCodecNames(exprCtx); err != nil {
 		return nil, err
 	}
+	if err := t.checkVariantTypeNames(exprCtx); err != nil {
+		return nil, err
+	}
 	return t.transformExpression(exprCtx)
 }
 

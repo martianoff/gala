@@ -814,6 +814,23 @@ func main() {
 			expectCode:     galaerr.CodeLoopControlOutsideLoop,
 			expectContains: "`break` inside a match whose value is used cannot reach the loop around it",
 		},
+		{
+			name: "GALA-E0061 sealed variant as a parameter type",
+			input: `package main
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+func radius(c Circle) float64 = c.R
+
+func main() {
+    Println(radius(Circle(2.0)))
+}`,
+			expectCode:     galaerr.CodeSealedVariantAsType,
+			expectContains: "Circle is a variant of sealed type Shape, not a type",
+		},
 	}
 
 	for _, tc := range cases {

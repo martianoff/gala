@@ -78,6 +78,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0057` | Validate method with the wrong signature on a struct a codec decodes | [GALA-E0057.md](GALA-E0057.md) |
 | `GALA-E0058` | Generated codec metadata named in GALA code | [GALA-E0058.md](GALA-E0058.md) |
 | `GALA-E0059` | `break` or `continue` cannot reach its loop | [GALA-E0059.md](GALA-E0059.md) |
+| `GALA-E0061` | Sealed variant used as a type | [GALA-E0061.md](GALA-E0061.md) |
 
 ### Retired codes
 

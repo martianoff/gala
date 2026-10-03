@@ -53,6 +53,7 @@ type galaASTTransformer struct {
 	// not an import-path heuristic.
 	galaPkgPaths            map[string]bool
 	typeMetas               map[string]*transpiler.TypeMetadata
+	variantNames            map[string]bool                                // bare name of every sealed variant in typeMetas (GALA-E0061 pre-filter)
 	companionObjects        map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
 	importManager           *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
 	cachedTypeResolver      *resolver.TypeResolver
@@ -371,6 +372,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// import-derived setup step has run.
 	t.registerDotImportedVals()
 	t.cacheTypeResolver()
+
+	t.variantNames = collectVariantNames(t.typeMetas)
+	if err := t.checkVariantTypeNames(sourceFile); err != nil {
+		return nil, nil, err
+	}
 
 	// t.typeAliases fills as declarations are walked, so a declaration above
 	// `type Millis int64` would not see it. Record every alias target up front
