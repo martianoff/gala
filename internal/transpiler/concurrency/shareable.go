@@ -115,13 +115,12 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	if transpiler.IsUnusable(t) {
 		return false
 	}
-	if target, ok := c.unaliasOnce(t, visited); ok {
+	if target, key, ok := c.unaliasOnce(t, visited); ok {
 		if target == nil {
-			// The alias names itself through its own arguments
-			// (`type Rec Option[Rec]`), which no value can have.
-			return false
+			// Re-entering an alias already being decided: like a struct's
+			// self-reference, the cycle on its own adds no mutability.
+			return true
 		}
-		key := aliasVisitKey(t)
 		defer delete(visited, key)
 		t = target
 	}
@@ -178,39 +177,38 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	return false
 }
 
-// unaliasOnce resolves t through the alias resolver, marking the alias in
-// visited while its target is decided. It reports false when t is not an
-// alias, and (nil, true) when t is already being decided further up, an alias
-// that names itself through its own arguments. Only a named type can spell an
-// alias, and a primitive never does, so other types skip the lookup.
-func (c *Checker) unaliasOnce(t transpiler.Type, visited map[string]bool) (transpiler.Type, bool) {
+// unaliasOnce resolves t through the alias resolver and marks the alias, with
+// its arguments, in visited under key while its target is decided; the caller
+// deletes key when done. It reports false when t is not an alias, and a nil
+// target when t is already being decided further up the walk (a recursive
+// type that passes through the alias). Only a named type can spell an alias,
+// and a primitive never does, so other types skip the lookup.
+func (c *Checker) unaliasOnce(t transpiler.Type, visited map[string]bool) (target transpiler.Type, key string, ok bool) {
 	if c.unalias == nil {
-		return nil, false
+		return nil, "", false
 	}
 	switch v := t.(type) {
 	case transpiler.BasicType:
 		if isShareablePrimitive(v.Name) {
-			return nil, false
+			return nil, "", false
 		}
 	case transpiler.NamedType, transpiler.GenericType:
 	default:
-		return nil, false
+		return nil, "", false
 	}
-	target, ok := c.unalias(t)
+	target, ok = c.unalias(t)
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
-	key := aliasVisitKey(t)
+	// Prefixed so it cannot collide with the struct keys
+	// isNamedStructShareable records in the same set.
+	key = "alias:" + t.String()
 	if visited[key] {
-		return nil, true
+		return nil, key, true
 	}
 	visited[key] = true
-	return target, true
+	return target, key, true
 }
-
-// aliasVisitKey keys an alias with its arguments in the visited set, apart
-// from the struct keys isNamedStructShareable records there.
-func aliasVisitKey(t transpiler.Type) string { return "alias:" + t.String() }
 
 // isGoScalarShareable reports whether a Go named type is a scalar value type —
 // its underlying resolves to a primitive (time.Duration -> int64). Only a

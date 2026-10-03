@@ -452,10 +452,12 @@ func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) 
 }
 
 // signatureType is the FuncType of a declaration with the given parameter
-// types and result type (nil or NilType for none). The parameters are copied.
+// types and result type (nil, NilType or VoidType for none — metadata read
+// back from the cache spells "no result" as VoidType). The parameters are
+// copied.
 func signatureType(paramTypes []transpiler.Type, returnType transpiler.Type) transpiler.FuncType {
 	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...)}
-	if returnType != nil && !returnType.IsNil() {
+	if _, void := returnType.(transpiler.VoidType); !void && returnType != nil && !returnType.IsNil() {
 		ft.Results = []transpiler.Type{returnType}
 	}
 	return ft

@@ -864,8 +864,9 @@ structure sees the target with the arguments substituted:
 | Codecs | a struct field typed `Maybe[string]` encodes as the `Option[string]` it is |
 | Concurrency boundaries | a `val` typed `Items[int]` (an alias of an immutable `Array`) may be captured by a `Future`; an alias of a `collection_mutable` type may not ([GALA-E0037](errors/GALA-E0037.md)) |
 
-A generic alias takes no methods at all, whatever it names — Go has no methods
-on a generic alias ([GALA-E0048](errors/GALA-E0048.md)). A wrong number of type
+A generic alias takes no methods at all, whatever it names, and neither does
+an alias of one (`type IntResult Result[int]`) — Go has no methods through a
+generic alias ([GALA-E0048](errors/GALA-E0048.md)). A wrong number of type
 arguments (`Result[int, string]`) or an argument that breaks a constraint
 (`Pairs[func(), int]`, where `K` is `comparable`) is reported by the Go
 compiler, mapped to the GALA line.

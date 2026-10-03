@@ -89,7 +89,7 @@ That names a Go rule, and a locality property of generated code, for a type the
 author declared in GALA — and it appeared only at build time, after a clean
 transpile.
 
-**Where it stands down.** A non-generic alias whose chain ends at a plain type declared in
+**Where it stands down.** A non-generic alias whose chain passes through no generic alias and ends at a plain type declared in
 **this** package is a legal receiver, because the base type is then local. That
 includes a type declared in a handwritten `.go` sibling of the same package,
 and a pointer to a local type (`type PP *Point` puts the method on `Point`).

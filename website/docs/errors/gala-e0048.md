@@ -67,7 +67,7 @@ func millisOf(d DateTime) int64 = int64(d)
 
 ## Where it stands down
 
-A non-generic alias whose chain ends at a plain type declared in **this** package is a legal receiver, because the base type is then local:
+A non-generic alias whose chain passes through no generic alias and ends at a plain type declared in **this** package is a legal receiver, because the base type is then local:
 
 ```gala
 struct Point(X int, Y int)

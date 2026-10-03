@@ -80,13 +80,15 @@ func (t *galaASTTransformer) checkMethodReceiverAlias(recvCtx *grammar.ReceiverC
 		return meta != nil && len(meta.TypeParams) > 0
 	}
 	throughGeneric := isGeneric(transpiler.NamedType{Name: recvTypeName})
-	if !throughGeneric {
-		t.walkAliasChain(alias, func(hop transpiler.Type) bool {
-			throughGeneric = isGeneric(hop)
-			return throughGeneric
-		})
+	end := t.walkAliasChain(alias, func(hop transpiler.Type) bool {
+		throughGeneric = throughGeneric || isGeneric(hop)
+		return throughGeneric
+	})
+	if throughGeneric {
+		// The walk stopped at the generic hop; the message names the end.
+		end = t.followAliasChain(end)
 	}
-	alias = t.followAliasChain(alias)
+	alias = end
 	var reason string
 	var illegal bool
 	if throughGeneric {

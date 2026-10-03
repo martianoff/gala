@@ -221,18 +221,18 @@ var genListMeta = &transpiler.TypeMetadata{
 
 func fixtureResolver() MetadataResolver {
 	return stubResolver(map[string]*transpiler.TypeMetadata{
-		"Point":        pointMeta,
-		"Counter":      counterMeta,
-		"app.Config":   configMeta,
-		"app.Handle":   handleMeta,
-		"app.Bag":      bagMeta,
-		"app.Box":      boxMeta,
-		"app.Shape":    shapeMeta,
-		"app.Event":    eventMeta,
-		"app.IntList":  intListMeta,
-		"app.Node":     nodeMeta,
-		"app.RecNode":  recNodeMeta,
-		"app.GenList":  genListMeta,
+		"Point":       pointMeta,
+		"Counter":     counterMeta,
+		"app.Config":  configMeta,
+		"app.Handle":  handleMeta,
+		"app.Bag":     bagMeta,
+		"app.Box":     boxMeta,
+		"app.Shape":   shapeMeta,
+		"app.Event":   eventMeta,
+		"app.IntList": intListMeta,
+		"app.Node":    nodeMeta,
+		"app.RecNode": recNodeMeta,
+		"app.GenList": genListMeta,
 	})
 }
 
@@ -395,9 +395,9 @@ func TestGoScalarShareable(t *testing.T) {
 		"time.Duration": basic("int64"),
 		"os.FileMode":   basic("uint32"),
 		"mypkg.Label":   basic("string"),
-		"mypkg.Bytes":   transpiler.ArrayType{Elem: basic("byte")},   // []byte-backed
-		"mypkg.Handle":  transpiler.PointerType{Elem: basic("int")},  // pointer-backed
-		"mypkg.Rec":     named("mypkg", "recUnderlying"),             // struct-backed (non-primitive)
+		"mypkg.Bytes":   transpiler.ArrayType{Elem: basic("byte")},  // []byte-backed
+		"mypkg.Handle":  transpiler.PointerType{Elem: basic("int")}, // pointer-backed
+		"mypkg.Rec":     named("mypkg", "recUnderlying"),            // struct-backed (non-primitive)
 	}
 	c := NewChecker(nil)
 	c.SetGoUnderlyingResolver(func(nt transpiler.Type) (transpiler.Type, bool) {
@@ -453,6 +453,8 @@ func TestAliasShareable(t *testing.T) {
 				return generic(mutableArray, basic("int")), true
 			case "Rec":
 				return generic(named("std", "Option"), basic("Rec")), true
+			case "RecBuf":
+				return generic(named("std", "Tuple"), basic("RecBuf"), generic(mutableArray, basic("int"))), true
 			}
 		case transpiler.GenericType:
 			if v.Base.BaseName() == "Items" && len(v.Params) == 1 {
@@ -474,7 +476,10 @@ func TestAliasShareable(t *testing.T) {
 		{"alias as a type argument", generic(named("std", "Option"), basic("IntItems")), true},
 		{"mutable alias as a type argument", generic(named("std", "Option"), basic("IntBuf")), false},
 		{"unresolved name stays conservative", basic("Unknown"), false},
-		{"alias naming itself through its arguments terminates", basic("Rec"), false},
+		// Re-entering an alias is decided co-inductively, as a struct's
+		// self-reference is: the cycle terminates and adds no mutability.
+		{"alias naming itself through its arguments terminates", basic("Rec"), true},
+		{"recursion through an alias of a mutable collection", basic("RecBuf"), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

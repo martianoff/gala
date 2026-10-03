@@ -387,15 +387,19 @@ import (
     "example.com/codecx/clock"
 )
 
-struct Roster(Shift clock.Shift, Next clock.Opt[clock.Millis], Spots clock.Series[clock.Where])
+// Ms is this package's own, passed as the argument of an imported generic alias.
+type Ms bool
+
+struct Roster(Shift clock.Shift, Next clock.Opt[clock.Millis], Spots clock.Series[clock.Where], Flags clock.Series[Ms])
 
 func main() {
-    Println(Codec[Roster](SnakeCase()).Encode(Roster(clock.NewShift(), None(), EmptyArray())).Get())
+    Println(Codec[Roster](SnakeCase()).Encode(Roster(clock.NewShift(), None(), EmptyArray(), ArrayOf(Ms(true)))).Get())
 }`)
 	require.NoError(t, err)
 	for _, want := range []string{
 		"clock.StructMeta_Shift{}.EncodeFields(w, t.Shift.Get()",
 		"clock.StructMeta_Zone{}.EncodeFields(w, __elem",
+		"w.WriteBool(",
 		"w.WriteInt64(",
 	} {
 		assert.Contains(t, out, want, "generated:\n%s", out)
