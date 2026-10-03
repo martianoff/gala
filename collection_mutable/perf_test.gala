@@ -100,7 +100,7 @@ func benchArrayHead() {
         arr.Append(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = arr.Head()
+        arr.Head()
     })
     printResult("Array.Head (size=10000)", ns)
 }
@@ -112,7 +112,7 @@ func benchArrayGetFirst() {
         arr.Append(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = arr.Get(0)
+        arr.Get(0)
     })
     printResult("Array.Get(0) (size=10000)", ns)
 }
@@ -124,7 +124,7 @@ func benchArrayGetMiddle() {
         arr.Append(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = arr.Get(5000)
+        arr.Get(5000)
     })
     printResult("Array.Get(5000) (size=10000)", ns)
 }
@@ -136,7 +136,7 @@ func benchArrayGetLast() {
         arr.Append(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = arr.Get(9999)
+        arr.Get(9999)
     })
     printResult("Array.Get(9999) (size=10000)", ns)
 }
@@ -160,7 +160,7 @@ func benchArrayFilter() {
         arr.Append(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = arr.Filter((x) => x % 2 == 0)
+        arr.Filter((x) => x % 2 == 0)
     })
     printResult("Array.Filter (size=10000)", ns)
 }
@@ -172,7 +172,7 @@ func benchArrayMap() {
         arr.Append(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = arr.Map((x) => x * 2)
+        arr.Map((x) => x * 2)
     })
     printResult("Array.Map (size=10000)", ns)
 }
@@ -184,7 +184,7 @@ func benchArrayFoldLeft() {
         arr.Append(i)
     }
     val ns = measureNs(10000, () => {
-        var _ = Array_FoldLeft[int](arr, 0, (acc int, x int) => acc + x)
+        Array_FoldLeft[int](arr, 0, (acc int, x int) => acc + x)
     })
     printResult("Array.FoldLeft (size=10000)", ns)
 }
@@ -196,7 +196,7 @@ func benchArrayClone() {
         arr.Append(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = arr.Clone()
+        arr.Clone()
     })
     printResult("Array.Clone (size=10000)", ns)
 }
@@ -309,7 +309,7 @@ func benchListHead() {
         list.Append(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = list.Head()
+        list.Head()
     })
     printResult("List.Head (size=10000)", ns)
 }
@@ -321,7 +321,7 @@ func benchListLast() {
         list.Append(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = list.Last()
+        list.Last()
     })
     printResult("List.Last (size=10000)", ns)
 }
@@ -333,7 +333,7 @@ func benchListGetFirst() {
         list.Append(i)
     }
     val ns = measureNs(100000, () => {
-        var _ = list.Get(0)
+        list.Get(0)
     })
     printResult("List.Get(0) (size=10000)", ns)
 }
@@ -345,7 +345,7 @@ func benchListGetMiddle() {
         list.Append(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = list.Get(5000)
+        list.Get(5000)
     })
     printResult("List.Get(5000) (size=10000)", ns)
 }
@@ -357,7 +357,7 @@ func benchListGetLast() {
         list.Append(i)
     }
     val ns = measureNs(100000, () => {
-        var _ = list.Get(9999)
+        list.Get(9999)
     })
     printResult("List.Get(9999) (size=10000)", ns)
 }
@@ -369,7 +369,7 @@ func benchListFilter() {
         list.Append(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = list.Filter((x) => x % 2 == 0)
+        list.Filter((x) => x % 2 == 0)
     })
     printResult("List.Filter (size=10000)", ns)
 }
@@ -381,7 +381,7 @@ func benchListMap() {
         list.Append(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = list.Map((x) => x * 2)
+        list.Map((x) => x * 2)
     })
     printResult("List.Map (size=10000)", ns)
 }
@@ -393,7 +393,7 @@ func benchListFoldLeft() {
         list.Append(i)
     }
     val ns = measureNs(10000, () => {
-        var _ = List_FoldLeft[int](list, 0, (acc int, x int) => acc + x)
+        List_FoldLeft[int](list, 0, (acc int, x int) => acc + x)
     })
     printResult("List.FoldLeft (size=10000)", ns)
 }
@@ -490,7 +490,7 @@ func benchHashSetContainsHit() {
         s.Add(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = s.Contains(5000)
+        s.Contains(5000)
     })
     printResult("HashSet.Contains hit (size=10000)", ns)
 }
@@ -502,7 +502,7 @@ func benchHashSetContainsMiss() {
         s.Add(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = s.Contains(99999)
+        s.Contains(99999)
     })
     printResult("HashSet.Contains miss (size=10000)", ns)
 }
@@ -527,7 +527,7 @@ func benchHashSetFilter() {
         s.Add(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = s.Filter((x) => x % 2 == 0)
+        s.Filter((x) => x % 2 == 0)
     })
     printResult("HashSet.Filter (size=10000)", ns)
 }
@@ -541,7 +541,7 @@ func benchHashSetUnion() {
         s2.Add(i + 2500)
     }
     val ns = measureNs(100, () => {
-        var _ = s1.Union(s2)
+        s1.Union(s2)
     })
     printResult("HashSet.Union (size=5000+5000)", ns)
 }
@@ -555,7 +555,7 @@ func benchHashSetIntersect() {
         s2.Add(i + 2500)
     }
     val ns = measureNs(100, () => {
-        var _ = s1.Intersect(s2)
+        s1.Intersect(s2)
     })
     printResult("HashSet.Intersect (size=5000+5000)", ns)
 }
@@ -567,7 +567,7 @@ func benchHashSetClone() {
         s.Add(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = s.Clone()
+        s.Clone()
     })
     printResult("HashSet.Clone (size=10000)", ns)
 }
@@ -627,7 +627,7 @@ func benchTreeSetContainsHit() {
         s.Add(i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = s.Contains(5000)
+        s.Contains(5000)
     })
     printResult("TreeSet.Contains hit (size=10000)", ns)
 }
@@ -639,7 +639,7 @@ func benchTreeSetContainsMiss() {
         s.Add(i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = s.Contains(99999)
+        s.Contains(99999)
     })
     printResult("TreeSet.Contains miss (size=10000)", ns)
 }
@@ -664,7 +664,7 @@ func benchTreeSetMin() {
         s.Add(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = s.Min()
+        s.Min()
     })
     printResult("TreeSet.Min (size=10000)", ns)
 }
@@ -676,7 +676,7 @@ func benchTreeSetMax() {
         s.Add(i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = s.Max()
+        s.Max()
     })
     printResult("TreeSet.Max (size=10000)", ns)
 }
@@ -688,7 +688,7 @@ func benchTreeSetFilter() {
         s.Add(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = s.Filter((x) => x % 2 == 0)
+        s.Filter((x) => x % 2 == 0)
     })
     printResult("TreeSet.Filter (size=10000)", ns)
 }
@@ -702,7 +702,7 @@ func benchTreeSetUnion() {
         s2.Add(i + 2500)
     }
     val ns = measureNs(100, () => {
-        var _ = s1.Union(s2)
+        s1.Union(s2)
     })
     printResult("TreeSet.Union (size=5000+5000)", ns)
 }
@@ -716,7 +716,7 @@ func benchTreeSetIntersect() {
         s2.Add(i + 2500)
     }
     val ns = measureNs(100, () => {
-        var _ = s1.Intersect(s2)
+        s1.Intersect(s2)
     })
     printResult("TreeSet.Intersect (size=5000+5000)", ns)
 }
@@ -728,7 +728,7 @@ func benchTreeSetRange() {
         s.Add(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = s.Range(2500, 7500)
+        s.Range(2500, 7500)
     })
     printResult("TreeSet.Range (size=10000)", ns)
 }
@@ -740,7 +740,7 @@ func benchTreeSetClone() {
         s.Add(i)
     }
     val ns = measureNs(1000, () => {
-        var _ = s.Clone()
+        s.Clone()
     })
     printResult("TreeSet.Clone (size=10000)", ns)
 }
@@ -800,7 +800,7 @@ func benchHashMapGetHit() {
         m.Put(i, i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = m.Get(5000)
+        m.Get(5000)
     })
     printResult("HashMap.Get hit (size=10000)", ns)
 }
@@ -812,7 +812,7 @@ func benchHashMapGetMiss() {
         m.Put(i, i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = m.Get(99999)
+        m.Get(99999)
     })
     printResult("HashMap.Get miss (size=10000)", ns)
 }
@@ -824,7 +824,7 @@ func benchHashMapContainsHit() {
         m.Put(i, i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = m.Contains(5000)
+        m.Contains(5000)
     })
     printResult("HashMap.Contains hit (size=10000)", ns)
 }
@@ -836,7 +836,7 @@ func benchHashMapContainsMiss() {
         m.Put(i, i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = m.Contains(99999)
+        m.Contains(99999)
     })
     printResult("HashMap.Contains miss (size=10000)", ns)
 }
@@ -861,7 +861,7 @@ func benchHashMapFilter() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.Filter((k, v) => v % 2 == 0)
+        m.Filter((k, v) => v % 2 == 0)
     })
     printResult("HashMap.Filter (size=10000)", ns)
 }
@@ -873,7 +873,7 @@ func benchHashMapMapValues() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.MapValues[int]((v) => v * 2)
+        m.MapValues[int]((v) => v * 2)
     })
     printResult("HashMap.MapValues (size=10000)", ns)
 }
@@ -885,7 +885,7 @@ func benchHashMapClone() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.Clone()
+        m.Clone()
     })
     printResult("HashMap.Clone (size=10000)", ns)
 }
@@ -900,7 +900,7 @@ func benchHashMapStringKeys() {
         m.Put(key, i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = m.Get(keys[5000])
+        m.Get(keys[5000])
     })
     printResult("HashMap.Get string key (size=10000)", ns)
 }
@@ -960,7 +960,7 @@ func benchTreeMapGetHit() {
         m.Put(i, i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = m.Get(5000)
+        m.Get(5000)
     })
     printResult("TreeMap.Get hit (size=10000)", ns)
 }
@@ -972,7 +972,7 @@ func benchTreeMapGetMiss() {
         m.Put(i, i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = m.Get(99999)
+        m.Get(99999)
     })
     printResult("TreeMap.Get miss (size=10000)", ns)
 }
@@ -984,7 +984,7 @@ func benchTreeMapContainsHit() {
         m.Put(i, i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = m.Contains(5000)
+        m.Contains(5000)
     })
     printResult("TreeMap.Contains hit (size=10000)", ns)
 }
@@ -996,7 +996,7 @@ func benchTreeMapContainsMiss() {
         m.Put(i, i)
     }
     val ns = measureNs(1000000, () => {
-        var _ = m.Contains(99999)
+        m.Contains(99999)
     })
     printResult("TreeMap.Contains miss (size=10000)", ns)
 }
@@ -1021,7 +1021,7 @@ func benchTreeMapMinKey() {
         m.Put(i, i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = m.MinKey()
+        m.MinKey()
     })
     printResult("TreeMap.MinKey (size=10000)", ns)
 }
@@ -1033,7 +1033,7 @@ func benchTreeMapMaxKey() {
         m.Put(i, i)
     }
     val ns = measureNs(10000000, () => {
-        var _ = m.MaxKey()
+        m.MaxKey()
     })
     printResult("TreeMap.MaxKey (size=10000)", ns)
 }
@@ -1045,7 +1045,7 @@ func benchTreeMapRange() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.Range(2500, 7500)
+        m.Range(2500, 7500)
     })
     printResult("TreeMap.Range (size=10000)", ns)
 }
@@ -1057,7 +1057,7 @@ func benchTreeMapFilter() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.Filter((k, v) => v % 2 == 0)
+        m.Filter((k, v) => v % 2 == 0)
     })
     printResult("TreeMap.Filter (size=10000)", ns)
 }
@@ -1069,7 +1069,7 @@ func benchTreeMapMapValues() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.MapValues[int]((v) => v * 2)
+        m.MapValues[int]((v) => v * 2)
     })
     printResult("TreeMap.MapValues (size=10000)", ns)
 }
@@ -1096,7 +1096,7 @@ func benchTreeMapClone() {
         m.Put(i, i)
     }
     val ns = measureNs(1000, () => {
-        var _ = m.Clone()
+        m.Clone()
     })
     printResult("TreeMap.Clone (size=10000)", ns)
 }

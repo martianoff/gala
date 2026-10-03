@@ -44,14 +44,14 @@ val wordsStr = S("hello world foo bar baz qux quux corge grault garply")
 
 func benchCreation() {
     val ns = measureNs(100000, () => {
-        var _ = S(Repeat("abcdefghij", 100))
+        S(Repeat("abcdefghij", 100))
     })
     printResult("Str.S(1000)", ns)
 }
 
 func benchCreationLong() {
     val ns = measureNs(1000, () => {
-        var _ = S(Repeat("abcdefghij", 10000))
+        S(Repeat("abcdefghij", 10000))
     })
     printResult("Str.S(100000)", ns)
 }
@@ -60,7 +60,7 @@ func benchCreationLong() {
 
 func benchLength() {
     val ns = measureNs(10000000, () => {
-        var _ = mediumStr.Length()
+        mediumStr.Length()
     })
     printResult("Str.Length(1000)", ns)
 }
@@ -69,14 +69,14 @@ func benchLength() {
 
 func benchToUpper() {
     val ns = measureNs(10000, () => {
-        var _ = mediumStr.ToUpper()
+        mediumStr.ToUpper()
     })
     printResult("Str.ToUpper(1000)", ns)
 }
 
 func benchToLower() {
     val ns = measureNs(10000, () => {
-        var _ = mediumStr.ToLower()
+        mediumStr.ToLower()
     })
     printResult("Str.ToLower(1000)", ns)
 }
@@ -86,7 +86,7 @@ func benchToLower() {
 func benchTrim() {
     val padded = S("   " + Repeat("abcdefghij", 100) + "   ")
     val ns = measureNs(100000, () => {
-        var _ = padded.Trim()
+        padded.Trim()
     })
     printResult("Str.Trim(1000)", ns)
 }
@@ -95,7 +95,7 @@ func benchTrim() {
 
 func benchReplaceAll() {
     val ns = measureNs(10000, () => {
-        var _ = mediumStr.ReplaceAll("abc", "xyz")
+        mediumStr.ReplaceAll("abc", "xyz")
     })
     printResult("Str.ReplaceAll(1000)", ns)
 }
@@ -104,14 +104,14 @@ func benchReplaceAll() {
 
 func benchContains() {
     val ns = measureNs(1000000, () => {
-        var _ = mediumStr.Contains("fghij")
+        mediumStr.Contains("fghij")
     })
     printResult("Str.Contains(1000)", ns)
 }
 
 func benchIndex() {
     val ns = measureNs(1000000, () => {
-        var _ = mediumStr.IndexOf("fghij")
+        mediumStr.IndexOf("fghij")
     })
     printResult("Str.IndexOf(1000)", ns)
 }
@@ -120,7 +120,7 @@ func benchIndex() {
 
 func benchSplit() {
     val ns = measureNs(100000, () => {
-        var _ = wordsStr.Split(" ")
+        wordsStr.Split(" ")
     })
     printResult("Str.Split(10 words)", ns)
 }
@@ -128,7 +128,7 @@ func benchSplit() {
 func benchSplitLong() {
     val longWords = S(Repeat("word ", 1000))
     val ns = measureNs(1000, () => {
-        var _ = longWords.Split(" ")
+        longWords.Split(" ")
     })
     printResult("Str.Split(1000 words)", ns)
 }
@@ -137,7 +137,7 @@ func benchSplitLong() {
 
 func benchReverse() {
     val ns = measureNs(10000, () => {
-        var _ = mediumStr.Reverse()
+        mediumStr.Reverse()
     })
     printResult("Str.Reverse(1000)", ns)
 }
@@ -146,14 +146,14 @@ func benchReverse() {
 
 func benchMap() {
     val ns = measureNs(10000, () => {
-        var _ = mediumStr.Map(toUpperRune)
+        mediumStr.Map(toUpperRune)
     })
     printResult("Str.Map(1000)", ns)
 }
 
 func benchFilter() {
     val ns = measureNs(10000, () => {
-        var _ = mediumStr.Filter(isLetterRune)
+        mediumStr.Filter(isLetterRune)
     })
     printResult("Str.Filter(1000)", ns)
 }
@@ -162,7 +162,6 @@ func benchForEachCount() {
     val ns = measureNs(100000, () => {
         globalCount = 0
         mediumStr.ForEach(countIfLetter)
-        var _ = globalCount
     })
     printResult("Str.ForEach+Count(1000)", ns)
 }
@@ -172,7 +171,7 @@ func benchForEachCount() {
 func benchEquals() {
     val other = S(Repeat("abcdefghij", 100))
     val ns = measureNs(1000000, () => {
-        var _ = mediumStr.Equals(other)
+        mediumStr.Equals(other)
     })
     printResult("Str.Equals(1000)", ns)
 }
@@ -183,7 +182,7 @@ func benchConcat() {
     val a = mediumStr.Take(500)
     val b = mediumStr.Drop(500)
     val ns = measureNs(100000, () => {
-        var _ = a.Concat(b)
+        a.Concat(b)
     })
     printResult("Str.Concat(500+500)", ns)
 }
@@ -193,7 +192,7 @@ func benchConcat() {
 func benchIsAlpha() {
     val alpha = S(Repeat("abcdefghij", 100))
     val ns = measureNs(10000, () => {
-        var _ = alpha.IsAlpha()
+        alpha.IsAlpha()
     })
     printResult("Str.IsAlpha(1000)", ns)
 }
@@ -202,7 +201,7 @@ func benchIsAlpha() {
 
 func benchSubstring() {
     val ns = measureNs(100000, () => {
-        var _ = mediumStr.Substring(100, 500)
+        mediumStr.Substring(100, 500)
     })
     printResult("Str.Substring(100,500)", ns)
 }
@@ -257,7 +256,7 @@ func benchBuilderAppend100() {
         for i := 0; i < 100; i++ {
             sb.AppendString("hello")
         }
-        var _ = sb.ToString()
+        sb.ToString()
     })
     printResult("StringBuilder.Append(100x\"hello\")", ns)
 }
@@ -268,7 +267,7 @@ func benchBuilderAppend10000() {
         for i := 0; i < 10000; i++ {
             sb.AppendString("hello")
         }
-        var _ = sb.ToString()
+        sb.ToString()
     })
     printResult("StringBuilder.Append(10000x\"hello\")", ns)
 }
@@ -279,7 +278,7 @@ func benchBuilderAppendRune() {
         for i := 0; i < 10000; i++ {
             sb.AppendRune(rune(120))
         }
-        var _ = sb.ToString()
+        sb.ToString()
     })
     printResult("StringBuilder.AppendRune(10000x'x')", ns)
 }

@@ -272,6 +272,9 @@ func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclCont
 
 func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.ShortVarDeclContext, mutable bool) (ast.Stmt, error) {
 	idsCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	if err := checkLoneBlank(ctx, idsCtx, "_ := ..."); err != nil {
+		return nil, err
+	}
 	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
 	if err != nil {
 		return nil, err

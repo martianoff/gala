@@ -202,6 +202,9 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	}
 
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	if err := checkBlankDeclaration(ctx, "val", namesCtx); err != nil {
+		return nil, err
+	}
 	for _, idCtx := range namesCtx {
 		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
 			return nil, err
@@ -619,11 +622,58 @@ var (
 	_ tupleDeclaration = (*grammar.VarDeclarationContext)(nil)
 )
 
-// malformedTupleDestructure is the GALA-E0056 diagnostic, underlining from the
-// start of from to the end of to when both are on one line.
+// checkBlankDeclaration rejects `val _ = expr` and `var _ = expr`, typed or
+// not, with GALA-E0060: a declaration whose only name is `_` binds nothing, so
+// the expression belongs on its own as a statement. A `_` among several names
+// is left alone, and so is `var _ T` with no initializer.
+func checkBlankDeclaration(ctx tupleDeclaration, keyword string, names []grammar.IIdentifierContext) error {
+	if ctx.ExpressionList() == nil {
+		return nil
+	}
+	form := keyword + " _ = ..."
+	if typ := ctx.Type_(); typ != nil {
+		form = keyword + " _ " + typ.GetText() + " = ..."
+	}
+	return checkLoneBlank(ctx, names, form)
+}
+
+// checkLoneBlank is GALA-E0060 for a declaration of form whose names are
+// exactly `_`, with a hint fitted to where the declaration sits.
+func checkLoneBlank(ctx antlr.ParserRuleContext, names []grammar.IIdentifierContext, form string) error {
+	if len(names) != 1 || names[0].GetText() != "_" {
+		return nil
+	}
+	return spanError(galaerr.CodeBlankValDeclaration, ctx, names[0], fmt.Sprintf("`%s` binds nothing", form), blankDeclarationHint(ctx))
+}
+
+// blankDeclarationHint is GALA-E0060's hint: a package-level declaration has
+// no statement to become, and only in a lambda can a bare call returning an
+// `error` be refused (when the lambda has no result).
+func blankDeclarationHint(ctx antlr.ParserRuleContext) string {
+	if _, topLevel := ctx.GetParent().(*grammar.TopLevelDeclarationContext); topLevel {
+		return "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
+	}
+	for p := ctx.GetParent(); p != nil; p = p.GetParent() {
+		if _, ok := p.(*grammar.FunctionDeclarationContext); ok {
+			break
+		}
+		if _, ok := p.(*grammar.LambdaExpressionContext); ok {
+			return "write the expression as a bare statement; in a lambda with no result, a call that returns only an `error` becomes `FromError(call())`; if the value matters, bind it to a name and use it"
+		}
+	}
+	return "write the expression as a bare statement; if the value matters, bind it to a name and use it"
+}
+
+// malformedTupleDestructure is the GALA-E0056 diagnostic.
 func malformedTupleDestructure(from, to antlr.ParserRuleContext, msg, hint string) error {
+	return spanError(galaerr.CodeMalformedTupleDestructure, from, to, msg, hint)
+}
+
+// spanError is a coded diagnostic underlining from the start of from to the
+// end of to when both are on one line.
+func spanError(code galaerr.ErrorCode, from, to antlr.ParserRuleContext, msg, hint string) error {
 	start, stop := from.GetStart(), to.GetStop()
-	err := galaerr.NewCodedSemanticError(galaerr.CodeMalformedTupleDestructure, start.GetLine(), start.GetColumn(), msg, hint)
+	err := galaerr.NewCodedSemanticError(code, start.GetLine(), start.GetColumn(), msg, hint)
 	if stop.GetLine() == start.GetLine() {
 		err = err.WithSpan(stop.GetColumn() + len([]rune(stop.GetText())))
 	}
@@ -636,6 +686,9 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 		return t.transformTupleDestructure(ctx, true)
 	}
 	namesCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
+	if err := checkBlankDeclaration(ctx, "var", namesCtx); err != nil {
+		return nil, err
+	}
 	for _, idCtx := range namesCtx {
 		if err := t.checkReservedName(idCtx.GetText(), idCtx); err != nil {
 			return nil, err

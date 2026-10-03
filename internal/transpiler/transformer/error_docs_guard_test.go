@@ -849,6 +849,42 @@ func main() {
 			},
 		},
 		{
+			name: "val _ = in a function body",
+			code: galaerr.CodeBlankValDeclaration, // GALA-E0060
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func save(name string) bool {
+    Println(s"saved $name")
+    return true
+}
+
+func main() {
+    val _ = save("report")
+}
+`)
+			},
+		},
+		{
+			name: "val _ = in a lambda",
+			code: galaerr.CodeBlankValDeclaration, // GALA-E0060
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import (
+    "os"
+    . "martianoff/gala/collection_immutable"
+)
+
+func main() {
+    ArrayOf("a.tmp", "b.tmp").ForEach((p) => {
+        val _ = os.Remove(p)
+    })
+}
+`)
+			},
+		},
+		{
 			name: "sealed variant as a parameter type",
 			code: galaerr.CodeSealedVariantAsType, // GALA-E0061
 			render: func(t *testing.T) string {
@@ -864,6 +900,23 @@ func radius(c Circle) float64 = c.R
 func main() {
     Println(radius(Circle(2.0)))
 }
+`)
+			},
+		},
+		{
+			name: "var _ = at package level",
+			code: galaerr.CodeBlankValDeclaration, // GALA-E0060
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func register(name string) bool {
+    Println(s"registered $name")
+    return true
+}
+
+var _ = register("report")
+
+func main() {}
 `)
 			},
 		},
