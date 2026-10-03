@@ -158,6 +158,7 @@ go_test(
         "lambda_return_slot_test.go",
         "line_directives_test.go",
         "literals_test.go",
+        "local_type_shadows_std_test.go",
         "loop_control_test.go",
         "lsp_scope_test.go",
         "match_any_struct_pattern_test.go",

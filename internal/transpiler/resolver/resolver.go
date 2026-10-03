@@ -16,8 +16,8 @@ type PackageInfo struct {
 // TypeResolver resolves unqualified type names using a consistent precedence order.
 // The resolution order is:
 //  1. Exact match (bare name)
-//  2. std package prefix (for standard library types like Option, Tuple, etc.)
-//  3. Current package prefix
+//  2. Current package prefix (the package's own declarations shadow imports)
+//  3. std package prefix (for standard library types like Option, Tuple, etc.)
 //  4. Dot-imported packages (they bring names into scope)
 //  5. Named (non-dot) imported packages
 type TypeResolver struct {
@@ -41,16 +41,19 @@ func (r *TypeResolver) Resolve(name string, exists func(string) bool) (string, b
 		return name, true
 	}
 
-	// 2. Try std package prefix for standard library types
-	if stdName := registry.StdPackageName + "." + name; exists(stdName) {
-		return stdName, true
-	}
-
-	// 3. Try current package prefix
+	// 2. Try current package prefix. The package's own declarations come
+	// before every import, the implicit std import included: std reaches each
+	// file as an import like any other, and an import never outranks a name
+	// the package declares.
 	if r.PackageName != "" {
 		if fullName := r.PackageName + "." + name; exists(fullName) {
 			return fullName, true
 		}
+	}
+
+	// 3. Try std package prefix for standard library types
+	if stdName := registry.StdPackageName + "." + name; exists(stdName) {
+		return stdName, true
 	}
 
 	// 4. Try dot-imported packages (they bring names into the current scope,
