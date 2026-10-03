@@ -3789,3 +3789,12 @@ gala_exec_test(
     expected = "match_arm_block_local.out",
     deps = ["//collection_immutable"],
 )
+
+# A generic alias of a function type, as a struct field, a parameter, a val and
+# a called binding: emitted as a Go generic alias, which needs go >= 1.24 in the
+# generated go.mod.
+gala_exec_test(
+    name = "generic_func_alias",
+    src = "generic_func_alias.gala",
+    expected = "generic_func_alias.out",
+)

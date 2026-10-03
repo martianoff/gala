@@ -698,6 +698,27 @@ Output:
 hello
 ```
 
+An alias can take type parameters; a lambda in its place is typed by the
+instantiation:
+
+```gala
+package main
+
+type Conv[A any, B any] func(A) B
+
+struct Step[A any, B any](In A, Run Conv[A, B])
+
+func main() {
+    val step = Step(In = 3, Run = (x) => s"<$x>")
+    Println(step.Run(step.In))
+}
+```
+
+Output:
+```
+<3>
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:

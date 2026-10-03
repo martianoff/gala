@@ -795,6 +795,24 @@ Aliases transpile to Go type aliases (`type X = Y`), which is what makes them
 transparent: methods on the target are available through the alias, and an
 alias declared in one file is visible to every file in the same package.
 
+An alias can take type parameters. `Conv[int, string]` below *is*
+`func(int) string`, so a lambda in its place is typed by it:
+
+```gala
+type Conv[A any, B any] func(A) B
+
+struct Step[A any, B any](In A, Run Conv[A, B])
+
+func main() {
+    val step = Step(In = 3, Run = (x) => s"<$x>")   // x is int, the result string
+    Println(step.Run(step.In))
+}
+```
+
+A generic alias transpiles to a Go generic alias
+(`type Conv[A any, B any] = func(A) B`), which Go accepts from 1.24 on, so the
+`go.mod` files `gala build` generates declare `go 1.24`.
+
 #### What an alias can do
 
 | Use | Example | Notes |

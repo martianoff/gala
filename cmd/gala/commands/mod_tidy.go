@@ -20,6 +20,7 @@ import (
 	"martianoff/gala/internal/depman/mod"
 	"martianoff/gala/internal/depman/sum"
 	"martianoff/gala/internal/depman/version"
+	"martianoff/gala/internal/stdlib"
 )
 
 var modTidyCmd = &cobra.Command{
@@ -297,7 +298,7 @@ func renderBazelGoMod(existing, modulePath string, goDeps []mod.Require) (goMod 
 	// Clean up empty require/replace blocks left after stripping
 	existing = strings.TrimSpace(cleanEmptyGoModBlocks(existing))
 	if existing == "" {
-		existing = fmt.Sprintf("module %s\n\ngo 1.22", modulePath)
+		existing = fmt.Sprintf("module %s\n\ngo %s", modulePath, stdlib.GoVersion)
 	}
 
 	// Requirements the file already has are set to gala.mod's version in place.

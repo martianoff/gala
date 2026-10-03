@@ -121,11 +121,13 @@ func TestLambdaArgOfLocalFuncBinding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "forEach(func(v T) {")
 
-	// A binding of a generic alias with type arguments is not typed by the
-	// alias's uninstantiated signature.
+	// A binding of a generic alias with type arguments is typed by the
+	// alias's signature instantiated with them, never the declared `func(T)`.
 	files[galaFile] = "package main\n\ntype Visitor[T any] func(func(T))\n\n" +
 		"func run(visit Visitor[int]) = visit((v) => Println(v))\n"
-	out, _ = transpileInModule(t, files, galaFile)
+	out, err = transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "visit(func(v int) {")
 	assert.NotContains(t, out, "func(v T)")
 }
 

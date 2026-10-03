@@ -303,3 +303,27 @@ func TestSealedVariantWithArgsUninferred(t *testing.T) {
 		})
 	}
 }
+
+// TestGenericFuncAliasField covers a generic alias of a function type used as
+// a struct field's type. The alias is emitted as a Go generic alias, and a
+// lambda in the field's place is typed by the alias's signature with the
+// constructor's type arguments substituted, whether they are written or
+// inferred from the other fields — never the alias's own parameter names.
+func TestGenericFuncAliasField(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	const decls = "package main\n\ntype Conv[A any, B any] func(A) B\n\n" +
+		"struct Step[A any, B any](In A, Run Conv[A, B])\n\n"
+	tests := []struct{ name, body, want string }{
+		{"explicit type arguments", `func f() int = Step[int, string](In = 3, Run = (x) => s"${x}").In`, "func(x int) string {"},
+		{"inferred type arguments", `func f() int = Step(In = 3, Run = (x) => x * 2).Run(1)`, "func(x int) int {"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.body+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, "type Conv[A any, B any] = func(A) B")
+			assert.Contains(t, got, tt.want)
+			assert.NotContains(t, got, "func(x A)")
+		})
+	}
+}

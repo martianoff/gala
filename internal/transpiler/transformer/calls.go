@@ -2000,15 +2000,14 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// A call of a local binding of function type (`forEach((v) => g(v))` for
 	// a parameter `forEach func(func(T))`) takes its parameter types from the
 	// binding's type, type parameters of the enclosing declaration included.
-	// A binding of a generic alias instantiated with type arguments is left
-	// alone: the alias's signature would need them substituted.
+	// A binding of a generic alias (`visit Visitor[int]` for `type
+	// Visitor[T any] func(func(T))`) takes the alias's signature with its type
+	// arguments substituted: `func(func(int))`.
 	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
 		if id, isIdent := fun.(*ast.Ident); isIdent {
 			if typ, _, bound := t.scopeLookup(id.Name); bound {
-				if _, generic := typ.(transpiler.GenericType); !generic {
-					if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
-						ctx.goFuncParamTypes = ft.Params
-					}
+				if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
+					ctx.goFuncParamTypes = ft.Params
 				}
 			}
 		}
