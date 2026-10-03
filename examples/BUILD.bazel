@@ -3796,3 +3796,11 @@ gala_exec_test(
     src = "generic_func_alias.gala",
     expected = "generic_func_alias.out",
 )
+
+# A lambda passed to a value of function type (a val, a var, a package-level
+# val, a call's result) is typed by that value's function type.
+gala_exec_test(
+    name = "func_value_lambda_arg",
+    src = "func_value_lambda_arg.gala",
+    expected = "func_value_lambda_arg.out",
+)

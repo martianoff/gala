@@ -131,6 +131,141 @@ func TestLambdaArgOfLocalFuncBinding(t *testing.T) {
 	assert.NotContains(t, out, "func(v T)")
 }
 
+// TestLambdaArgOfFuncValuedCallee covers a lambda passed to a callee that is a
+// value of function type other than a parameter, a val read through its
+// `.Get()` unwrap included: the lambda is typed by the value's function type,
+// whatever holds it.
+func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
+	cases := []struct {
+		name, gala, want string
+		lib              string // an imported package lib, when the case needs one
+		goSrc            string // the package's own .go file, when the case needs one
+	}{
+		{
+			name: "a val bound to a lambda",
+			gala: "func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
+			want: "apply.Get()(func(s string) string {",
+		},
+		{
+			name: "a val with a declared function type",
+			gala: "func run() string {\n    val apply func(func(string) string) string = (h) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
+			want: "apply.Get()(func(s string) string {",
+		},
+		{
+			name: "a placeholder lambda",
+			gala: "func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    apply(_ + \"!\")\n}\n",
+			want: "apply.Get()(func(__p0 string) string {",
+		},
+		{
+			name: "a val shadowing a package function of the same name",
+			gala: "func apply(n int) int = n + 1\n\n" +
+				"func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
+			want: "apply.Get()(func(s string) string {",
+		},
+		{
+			name: "a val typed by a generic alias",
+			gala: "type Visitor[T any] func(func(T))\n\n" +
+				"func run(v Visitor[int]) {\n    val visit Visitor[int] = v\n    visit((n) => Println(n + 1))\n}\n",
+			want: "visit.Get()(func(n int) {",
+		},
+		{
+			name: "a generic call's result over the enclosing declaration's same-named type parameter",
+			gala: "func wrap[T any](x T) func(func(T) string) string = (h) => h(x)\n\n" +
+				"func run[T any](x T) string = wrap(x)((v) => \"a\")\n",
+			want: "(func(v T) string {",
+		},
+		{
+			name: "a parameter named like a Go function of the package",
+			gala: "func run(apply func(func(string) string) string) string = apply((s) => s + \"!\")\n",
+			want:  "apply(func(s string) string {",
+			goSrc: "package main\n\nfunc apply(h func(int) int) int { return h(1) }\n",
+		},
+		{
+			name: "a var bound to a lambda",
+			gala: "func run() string {\n    var apply = (h func(string) string) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
+			want: "apply(func(s string) string {",
+		},
+		{
+			name: "a val holding a function a call returned",
+			gala: "func mk() func(func(int) int) int = (h) => h(2)\n\n" +
+				"func run() int {\n    val apply = mk()\n    apply((n) => n * 10)\n}\n",
+			want: "apply.Get()(func(n int) int {",
+		},
+		{
+			name: "the result of a call, called directly",
+			gala: "func mk() func(func(int) int) int = (h) => h(2)\n\n" +
+				"func run() int = mk()((n) => n * 10)\n",
+			want: "mk()(func(n int) int {",
+		},
+		{
+			name: "a package-level val",
+			gala: "val top = (h func(string) string) => h(\"x\")\n\n" +
+				"func run() string = top((s) => s + \"!\")\n",
+			want: "top.Get()(func(s string) string {",
+		},
+		{
+			name: "a val over the enclosing declaration's type parameter",
+			gala: "func run[T any](x T, g func(T) string) string {\n" +
+				"    val apply = (h func(T) string) => h(x)\n    apply((v) => g(v))\n}\n",
+			want: "apply.Get()(func(v T) string {",
+		},
+		{
+			name: "a parenthesized val",
+			gala: "func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    val r = (apply)((s) => s + \"!\")\n    r\n}\n",
+			want: "(apply.Get())(func(s string) string {",
+		},
+		{
+			name: "an imported package-level val",
+			gala: "import \"example.com/sibs/lib\"\n\nfunc run() string = lib.Shout((s) => s + \"!\")\n",
+			want: "lib.Shout.Get()(func(s string) string {",
+			lib:  "package lib\n\nval Shout func(func(string) string) string = (h) => h(\"x\")\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			goSrc := tc.goSrc
+			if goSrc == "" {
+				goSrc = "package main\n"
+			}
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+tc.gala)
+			if tc.lib != "" {
+				files["lib/lib.gala"] = tc.lib
+			}
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want)
+		})
+	}
+
+	// The result of a generic function whose type arguments the call leaves
+	// undetermined still names that function's own type parameter; the lambda
+	// is not lowered against it (`func(s B)`, undefined in the caller).
+	files, galaFile := samePackageModule(".", "package main\n",
+		"package main\n\nfunc mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n"+
+			"func run() int = mk(1)((s) => 2)\n")
+	_, err := transpileInModule(t, files, galaFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0033")
+
+	// A declared default is lowered at its use site. A top-level val the
+	// default calls types its lambda there, but a use-site local of that name,
+	// which was not in scope where the default was written, never does.
+	const defaultDecls = "package main\n\nval apply = (h func(string) string) => h(\"x\")\n\n" +
+		"func greet(msg string = apply((s) => s + \"!\")) string = msg\n\n"
+	files, galaFile = samePackageModule(".", "package main\n",
+		defaultDecls+"func run() string = greet()\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "greet(apply.Get()(func(s string) string {")
+
+	files, galaFile = samePackageModule(".", "package main\n",
+		defaultDecls+"func run() string {\n    val apply = (h func(int) int) => h(1)\n    Println(apply((n) => n))\n    greet()\n}\n")
+	out, err = transpileInModule(t, files, galaFile)
+	assert.NotContains(t, out, "func(s int)")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0033")
+}
+
 // TestConversionToGoNamedFuncType covers a conversion to an imported Go
 // named function type: the lambda is typed by its signature.
 func TestConversionToGoNamedFuncType(t *testing.T) {

@@ -1662,7 +1662,7 @@ Supported unary operators: `+`, `-`, `!`, `^`, `*` (dereference), `&` (address-o
 ## 7. Functional Features
 
 ### Lambda Expressions
-Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods). The parameter list is always parenthesized, including for a single parameter — a bare `x => e` is [GALA-E0042](errors/GALA-E0042.md).
+Lambdas use the `=>` syntax. Parameter types can be omitted when inferrable from context (e.g., as arguments to typed methods, or to a val, var or parameter of function type). The parameter list is always parenthesized, including for a single parameter — a bare `x => e` is [GALA-E0042](errors/GALA-E0042.md).
 
 ```gala
 // Explicit parameter types
@@ -1676,6 +1676,10 @@ val g = (a int, b int) => {
 val opt = Some(42)
 val doubled = opt.Map((x) => x * 2)             // x inferred as int
 val filtered = opt.Filter((x) => x > 10)        // x inferred as int
+
+// Inferred from a val of function type
+val apply = (h func(string) string) => h("x")
+val shouted = apply((s) => s + "!")             // s inferred as string
 
 // Void closures (no return value)
 opt.ForEach((x) => {

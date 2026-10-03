@@ -432,6 +432,12 @@ val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred a
 7. **A Go function of the package's own `.go` files** — a lambda passed to it
    is typed by its signature, as for an imported Go function.
 
+8. **A value of function type** — a lambda passed to a val, var or parameter of
+   function type, or to the function a call returns, is typed by that value's
+   type: after `val apply = (h func(string) string) => h("x")`,
+   `apply((s) => s + "!")` types `s` as `string`, and so does
+   `makeApplier()((s) => …)` for a `makeApplier` returning that function type.
+
 When a lambda parameter has no annotation **and** no expected type can be
 inferred — e.g. a bare `val f = (x) => x + 1` with no declared type — the
 transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than

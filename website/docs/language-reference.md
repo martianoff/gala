@@ -579,6 +579,10 @@ val f = (x int) => x * x
 // Inferred parameter types
 val doubled = opt.Map((x) => x * 2)
 
+// Inferred from a val of function type
+val apply = (h func(string) string) => h("x")
+val shouted = apply((s) => s + "!")
+
 // Void closures
 opt.ForEach((x) => { Println(x) })
 ```
