@@ -1230,7 +1230,7 @@ func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionC
 		return false
 	}
 	p := t.barePostfix(exprCtx)
-	if p == nil || t.bareMatchPostfix(exprCtx) != nil {
+	if p == nil || len(p.AllCaseClause()) > 0 {
 		return false
 	}
 	primExpr, ok := p.PrimaryExpr().(*grammar.PrimaryExprContext)
@@ -1248,22 +1248,28 @@ func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionC
 	if n == 0 || !isCallSuffix(suffixes[n-1]) {
 		return false
 	}
+	nameSuffixes := suffixes[:n-1]
+	if k := len(nameSuffixes); k > 0 && nameSuffixes[k-1].(*grammar.PostfixSuffixContext).ExpressionList() != nil {
+		nameSuffixes = nameSuffixes[:k-1] // the type arguments
+	}
 	name := prim.Identifier().GetText()
-	for i, s := range suffixes[:n-1] {
-		sc := s.(*grammar.PostfixSuffixContext)
-		switch {
-		case sc.Identifier() != nil:
-			name += "." + sc.Identifier().GetText()
-		case sc.ExpressionList() != nil && i == n-2:
-		default:
+	for _, s := range nameSuffixes {
+		id := s.(*grammar.PostfixSuffixContext).Identifier()
+		if id == nil {
 			return false
 		}
+		name += "." + id.GetText()
+	}
+	// The bare names differ for nearly every other result value, which
+	// settles it before any type lookup.
+	if stripPackagePrefix(name) != stripPackagePrefix(gen.Base.BaseName()) {
+		return false
 	}
 	// Compared by their metadata keys: the field map has both a bare and a
 	// package-qualified key for a type of this package (`Q`, `units.Q`).
-	_, isStruct := t.structFields[t.resolveStructTypeName(name)]
 	resolved := t.resolveTypeMetaName(name)
-	return isStruct && resolved != "" && resolved == t.resolveTypeMetaName(gen.Base.String())
+	_, isStruct := t.structFields[resolved]
+	return isStruct && resolved == t.resolveTypeMetaName(gen.Base.String())
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.

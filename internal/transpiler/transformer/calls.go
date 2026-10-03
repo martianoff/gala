@@ -2824,17 +2824,23 @@ func (t *galaASTTransformer) uninferredStructTypeArgError(line, col int, base as
 	_, qualified := extractTypeNameFromExpr(base)
 	pkgQualifier, bareName := splitPackageQualifier(qualified)
 	name := t.callSiteQualifier(pkgQualifier) + bareName
-	args := make([]string, len(typeParams))
-	for i, tp := range typeParams {
-		args[i] = "int"
-		if typ, ok := inferred[tp]; ok && !transpiler.ContainsUnusable(typ) {
-			args[i] = displayType(typ)
-		}
-	}
-	typ := name + "[" + strings.Join(args, ", ") + "]"
+	typ := name + "[" + hintTypeArgs(typeParams, inferred) + "]"
 	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 		"cannot infer type argument %s of generic struct %s from its fields or the expected type; annotate the binding (e.g. `val x %s = %s(...)`) or write it explicitly (`%s(...)`)",
 		strings.Join(missing, ", "), name, typ, name, typ))
+}
+
+// hintTypeArgs spells a type argument list for an inference hint: per type
+// parameter, the type the call already fixes, or the placeholder `int`.
+func hintTypeArgs(typeParams []string, inferred map[string]transpiler.Type) string {
+	names := make([]string, len(typeParams))
+	for i, tp := range typeParams {
+		names[i] = "int"
+		if typ, ok := inferred[tp]; ok && !transpiler.ContainsUnusable(typ) {
+			names[i] = displayType(typ)
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // completeTypeArgs instantiates base with a type argument for every one of
@@ -3189,14 +3195,7 @@ func (t *galaASTTransformer) uninferredVariantHint(parent *transpiler.TypeMetada
 	// already fixes, or a placeholder (`Either[string, int]` for `Left("x")`).
 	typeArgs := "int"
 	if parent != nil && len(parent.TypeParams) > 0 {
-		names := make([]string, len(parent.TypeParams))
-		for i, tp := range parent.TypeParams {
-			names[i] = "int"
-			if typ, ok := inferred[tp]; ok && !transpiler.ContainsUnusable(typ) {
-				names[i] = displayType(typ)
-			}
-		}
-		typeArgs = strings.Join(names, ", ")
+		typeArgs = hintTypeArgs(parent.TypeParams, inferred)
 	}
 	explicit := fmt.Sprintf("pass type args explicitly (`%s%s[%s]%s`)", prefix, bareName, typeArgs, args)
 
