@@ -18,6 +18,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler/scopewalk"
 	"martianoff/gala/internal/transpiler/transformer"
@@ -692,10 +693,10 @@ func (a *galaAnalyzer) undefinedSymbolLocalGoNames(filePath string) map[string]b
 }
 
 // parseLocalGoDeclNames parses `dir`'s hand-written .go files and returns the
-// names their top-level declarations introduce. The transpiler's own output
-// is excluded, since it restates what the .gala sources contribute; a .gen.go
-// another generator wrote is kept. In-package test files count only
-// withTests.
+// names their top-level declarations introduce. Stale transpiler output is
+// excluded, since it restates what the .gala sources contribute; a .gen.go
+// another generator wrote is kept (see genheader). In-package test files count
+// only withTests.
 func parseLocalGoDeclNames(dir string, withTests bool) map[string]bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -718,13 +719,8 @@ func parseLocalGoDeclNames(dir string, withTests bool) map[string]bool {
 			continue
 		}
 		path := filepath.Join(dir, n)
-		// A .gen.go is usually the transpiler's own, which its header says;
-		// read just that before parsing the rest.
-		if strings.HasSuffix(n, ".gen.go") {
-			head, herr := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly|parser.ParseComments)
-			if herr != nil || head == nil || writtenByGala(head) {
-				continue
-			}
+		if genheader.StaleFile(path) {
+			continue
 		}
 		f, perr := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 		if perr != nil || f == nil || strings.HasSuffix(f.Name.Name, "_test") {
@@ -1323,14 +1319,14 @@ func (idx *hintIndex) filesUnder(i int) []hintSource {
 		switch {
 		case filepath.Ext(path) == ".gala" && !strings.HasSuffix(path, "_test.gala"):
 			keywords = galaDeclarationKeywords
-		case filepath.Ext(path) == ".go" &&
-			!strings.HasSuffix(path, "_test.go") && !strings.HasSuffix(path, ".gen.go"):
+		case filepath.Ext(path) == ".go" && !strings.HasSuffix(path, "_test.go"):
 			keywords = goDeclarationKeywords
 		default:
 			return nil
 		}
 		data, rerr := os.ReadFile(path)
-		if rerr != nil {
+		// The transpiler's own output restates a .gala file the walk reads.
+		if rerr != nil || genheader.Stale(path, data) {
 			return nil
 		}
 		pkg, names := scanHintSource(string(data), keywords)

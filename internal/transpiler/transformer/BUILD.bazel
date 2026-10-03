@@ -326,6 +326,7 @@ go_test(
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
+        "//internal/transpiler/genheader",
         "//internal/transpiler/gooracle",
         "//internal/transpiler/infer",
         "@com_github_stretchr_testify//assert",

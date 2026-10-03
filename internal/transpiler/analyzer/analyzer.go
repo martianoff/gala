@@ -19,6 +19,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/module"
 	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -2889,21 +2890,24 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	// (e.g. concurrent re-exporting go_interop's helpers) silently collide
 	// at Go compile time instead of producing a clean GALA-level error.
 	//
-	// In mixed GALA+Go packages we deliberately *exclude* .gen.go files from
-	// this scan: those files are auto-generated derivatives of the .gala
-	// source and contribute the exact same symbols that already entered
-	// pkgAST.Types/Functions through the GALA analyzer above. Re-extracting
-	// them here is at best redundant and at worst actively harmful — a stale
-	// .gen.go left behind after its .gala counterpart was moved/renamed
-	// (e.g. extracted into a subpackage) would otherwise re-introduce a
-	// phantom export under the parent package's name and trip the dot-import
-	// collision check when a sibling subpackage re-exports the same symbol.
-	// Hand-written .go (non-.gen.go) files are still scanned because that's
-	// where facade-pattern `var X = other.X` re-exports live.
+	// In mixed GALA+Go packages we deliberately *exclude* the GALA
+	// transpiler's own output (told by its header, see genheader) from this
+	// scan: those files are derivatives of the .gala source and contribute
+	// the exact same symbols that already entered pkgAST.Types/Functions
+	// through the GALA analyzer above. Re-extracting them here is at best
+	// redundant and at worst actively harmful — a stale .gen.go left behind
+	// after its .gala counterpart was moved/renamed (e.g. extracted into a
+	// subpackage) would otherwise re-introduce a phantom export under the
+	// parent package's name and trip the dot-import collision check when a
+	// sibling subpackage re-exports the same symbol. Every other .go file is
+	// scanned: hand-written ones, where facade-pattern `var X = other.X`
+	// re-exports live, and a .gen.go another generator wrote (oapi-codegen,
+	// stringer, …), whose types are the package's own.
 	//
 	// When no .gala source contributed metadata for this package (e.g., the
 	// directory only contains .gen.go from a precompiled artifact), allow
-	// .gen.go files to participate so cross-module GoExports stay populated.
+	// the transpiler's output to participate so cross-module GoExports stay
+	// populated.
 	// All four maps must be empty: a func-only or alias-only .gala package
 	// would otherwise fall through to includeGenerated=true and re-introduce
 	// the phantom-export bug PR #237 fixed (B5).
@@ -3375,13 +3379,14 @@ func exportedGoNames(src string) (pkg string, names []string) {
 // don't interfere with type resolution). Used for dot-import clash detection,
 // and as the Go side of a GALA package's type surface.
 //
-// includeGenerated controls whether auto-generated `.gen.go` files contribute
+// includeGenerated controls whether files the GALA transpiler wrote contribute
 // to the result. Pass true only when the package is consumed without GALA
-// source (cross-module compiled artifacts); when false, .gen.go files are
-// skipped because their contents are duplicates of the .gala source already
-// reflected in pkgAST.Types/Functions, and a stale .gen.go (left behind
-// after its .gala counterpart was moved) would otherwise pollute GoExports
-// with phantom symbols that the dot-import collision check would then flag.
+// source (cross-module compiled artifacts); when false, they are skipped
+// because their contents are duplicates of the .gala source already reflected
+// in pkgAST.Types/Functions, and a stale one (left behind after its .gala
+// counterpart was moved) would otherwise pollute GoExports with phantom
+// symbols that the dot-import collision check would then flag. A .gen.go
+// another generator wrote is part of the package and always counts.
 func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPath string, pkgAST *transpiler.RichAST, includeGenerated bool) {
 	var symbols []string
 	seen := make(map[string]bool)
@@ -3390,11 +3395,8 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		if f.IsDir() || filepath.Ext(f.Name()) != ".go" || strings.HasSuffix(f.Name(), "_test.go") {
 			continue
 		}
-		if !includeGenerated && strings.HasSuffix(f.Name(), ".gen.go") {
-			continue
-		}
 		content, err := ioutil.ReadFile(filepath.Join(dirPath, f.Name()))
-		if err != nil {
+		if err != nil || (!includeGenerated && genheader.Stale(f.Name(), content)) {
 			continue
 		}
 		pkg, names := exportedGoNames(string(content))

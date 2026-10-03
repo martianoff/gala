@@ -9,7 +9,10 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/transpiler/generator",
     visibility = ["//:__subpackages__"],
-    deps = ["//internal/transpiler"],
+    deps = [
+        "//internal/transpiler",
+        "//internal/transpiler/genheader",
+    ],
 )
 
 go_test(

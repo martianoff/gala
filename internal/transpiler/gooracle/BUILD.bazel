@@ -9,6 +9,7 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/transpiler/gooracle",
     visibility = ["//:__subpackages__"],
+    deps = ["//internal/transpiler/genheader"],
 )
 
 go_test(

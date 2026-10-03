@@ -15,6 +15,7 @@ import (
 
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/gooracle"
 
 	"github.com/stretchr/testify/require"
@@ -288,7 +289,7 @@ func multiFileReason(filePath string) string {
 		if n == filepath.Base(filePath) || e.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(n, "_test.go") || strings.HasSuffix(n, "_test.gala") || strings.HasSuffix(n, ".gen.go") {
+		if strings.HasSuffix(n, "_test.go") || strings.HasSuffix(n, "_test.gala") || genheader.StaleFile(filepath.Join(filepath.Dir(filePath), n)) {
 			continue
 		}
 		if strings.HasSuffix(n, ".gala") || strings.HasSuffix(n, ".go") {

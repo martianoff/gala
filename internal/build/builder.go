@@ -17,6 +17,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/transformer"
 )
@@ -440,7 +441,8 @@ func escapeGoModulePath(p string) string {
 }
 
 // dirHasGoFiles reports whether dir exists and contains at least one
-// non-test, non-generated .go source file.
+// non-test .go source file that the GALA transpiler did not write (see
+// genheader).
 func dirHasGoFiles(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -451,7 +453,10 @@ func dirHasGoFiles(dir string) bool {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") && !strings.HasSuffix(name, ".gen.go") {
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if !genheader.StaleFile(filepath.Join(dir, name)) {
 			return true
 		}
 	}
