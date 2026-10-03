@@ -2,9 +2,12 @@ package multifile_lib_regress
 
 // --- Regression: an opaque type declared in one file of a package ---
 // Seat is declared here with one method; opaque_b.gala, another file of the
-// package, gives it a second method, matches on it, keys a HashMap by it and
-// converts it. The type, its methods and its generated Hash / Compare must be
-// one declaration across the files.
+// package, gives it a second method, converts to it, sorts it and keys a
+// HashMap by it. The type, its methods and its generated Hash / Compare must
+// be one declaration across the files.
+
+// Seat is a seat number: row times ten plus the place in the row.
 opaque type Seat int
 
+// Row is the row the seat is in.
 func (s Seat) Row() int = int(s) / 10

@@ -7,11 +7,20 @@ import "time"
 // underlying type, untyped constants mix, and methods are declared like on
 // any other type. Nothing is inherited from the underlying type.
 
+// UserID identifies a user.
 opaque type UserID int64
+
+// Millis is a duration in milliseconds.
 opaque type Millis int64
+
+// Email is an e-mail address (not validated: see GALA.MD for private-field
+// structs when it must be).
 opaque type Email string
+
+// Enabled is a feature switch.
 opaque type Enabled bool
 
+// Label is a display label.
 type Label string
 
 // Name is declared over an alias of string.
@@ -21,18 +30,23 @@ opaque type Name Label
 // time.Duration's methods.
 opaque type Timeout time.Duration
 
+// Seconds converts the duration to seconds.
 func (m Millis) Seconds() float64 = float64(m) / 1000.0
 
+// Plus adds two durations.
 func (m Millis) Plus(other Millis) Millis = m + other
 
+// String renders the address in angle brackets.
 func (e Email) String() string = s"<${string(e)}>"
 
+// Duration converts back to the Go type it is declared over.
 func (t Timeout) Duration() time.Duration = time.Duration(t)
 
 func lookup(id UserID) string = s"user #${int64(id)}"
 
 func slowest(a Millis, b Millis) Millis = if (a > b) a else b
 
+// Session holds opaque-typed fields.
 struct Session(User UserID, Took Millis, Mail Email)
 
 func main() {

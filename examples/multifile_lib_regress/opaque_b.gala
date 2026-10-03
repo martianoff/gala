@@ -4,6 +4,7 @@ import . "martianoff/gala/collection_immutable"
 
 // Continuation of Seat (see opaque_a.gala), in a different file.
 
+// Label renders the seat for display.
 func (s Seat) Label() string = s"row ${s.Row()} seat ${int(s) % 10}"
 
 // SeatOf converts a seat number.

@@ -1,6 +1,6 @@
-charge #7 $13.25 7 true
+charge #7 $13.05 7 true
 Some(ada)
 Array(100, 200, 300)
-{"buyer":7,"total":1325,"lines":{"pen":300},"region":"eu"}
+{"buyer":7,"total":1305,"lines":{"pen":300},"region":"eu"}
 json round-trip equal: true
 yaml round-trip equal: true

@@ -259,6 +259,12 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	if id, isIdent := value.(*ast.Ident); isIdent && id.Name == "nil" {
 		return t.typeToExpr(target)
 	}
+	// An untyped constant of any kind — `""`, `false`, `0` — takes an opaque
+	// slot's type, as a Go assignment would: its default type (string, bool,
+	// int) is never the opaque type itself.
+	if t.opaqueMeta(target) != nil && isUntypedConstant(value) {
+		return t.typeToExpr(target)
+	}
 	defaultName, ok := t.untypedNumericConstExprDefault(value)
 	if !ok || !t.isNumericSlotType(target) {
 		return nil

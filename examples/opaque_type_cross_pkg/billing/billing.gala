@@ -19,7 +19,7 @@ type Code string
 opaque type Region Code
 
 // Dollars renders the amount.
-func (c Cents) Dollars() string = s"$$${int64(c) / 100}.${int64(c) % 100}"
+func (c Cents) Dollars() string = f"$$${float64(c) / 100.0}%.2f"
 
 // Charge describes a charge of amount to a customer.
 func Charge(id CustomerID, amount Cents) string = s"charge #${int64(id)} ${amount.Dollars()}"

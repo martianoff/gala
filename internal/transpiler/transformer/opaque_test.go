@@ -156,6 +156,32 @@ func main() {
 	assert.Contains(t, out, "sleepFor(100)")
 }
 
+// TestOpaqueTypeUntypedConstantFields covers untyped string, bool and numeric
+// constants filling Immutable slots of opaque types — a constructor field, a
+// Copy override and a typed val: NewImmutable is instantiated with the opaque
+// type, since the constant's default type (string, bool, int) is not it.
+func TestOpaqueTypeUntypedConstantFields(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type Email string
+opaque type Active bool
+opaque type UserID int64
+
+struct User(Id UserID, Mail Email, On Active)
+
+func main() {
+    val u = User(0, "", false)
+    val v = u.Copy(Mail = "a@b", On = true, Id = 7)
+    val m Email = "c@d"
+    Println(u, v, m)
+}`)
+	assert.Contains(t, out, `std.NewImmutable[Email]("")`)
+	assert.Contains(t, out, `std.NewImmutable[Active](false)`)
+	assert.Contains(t, out, `std.NewImmutable[Email]("a@b")`)
+	assert.Contains(t, out, `std.NewImmutable[Active](true)`)
+	assert.Contains(t, out, `std.NewImmutable[UserID](7)`)
+}
+
 // TestOpaqueTypeNotAnAlias covers the distinctness that separates an opaque
 // type from an alias: it is a Go defined type, not `type X = Y`, and a value
 // of it is inferred as the opaque type.

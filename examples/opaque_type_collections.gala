@@ -10,16 +10,26 @@ import (
 // Hash and Compare a HashMap key panics ("must implement std.Hashable") and
 // Sorted panics ("does not support ordering").
 
+// UserID identifies a user.
 opaque type UserID int64
+
+// Email is an e-mail address.
 opaque type Email string
+
+// Score is a rating.
 opaque type Score float64
+
+// Port is a TCP port.
 opaque type Port uint16
+
+// Flag is a feature switch.
 opaque type Flag bool
 
 // Priority declares its own Compare (highest first), which replaces the
 // generated one.
 opaque type Priority int
 
+// Compare orders higher priorities first.
 func (p Priority) Compare(other Priority) int = int(other) - int(p)
 
 func main() {

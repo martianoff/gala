@@ -10,6 +10,7 @@ import (
 // Opaque types declared in another package: converted, passed, compared,
 // used as map keys and sorted, and encoded as struct fields of this package.
 
+// Order holds opaque types declared in billing.
 struct Order(
     Buyer billing.CustomerID,
     Total billing.Cents,
@@ -19,7 +20,7 @@ struct Order(
 
 func main() {
     val buyer = billing.CustomerID(7)
-    val total = billing.Total(billing.Cents(1250), 75)
+    val total = billing.Total(billing.Cents(1250), 55)
     Println(billing.Charge(buyer, total), int64(buyer), total > billing.Cents(1000))
 
     val byCustomer = EmptyHashMap[billing.CustomerID, string]().Put(buyer, "ada")
