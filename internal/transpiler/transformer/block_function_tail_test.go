@@ -568,6 +568,21 @@ func v() {
 			wantErr: "`n*2` is evaluated but not used",
 		},
 		{
+			name:    "plain value body of a void expression lambda",
+			body:    "\nfunc each(f func(int)) = f(0)\n\nfunc g() {\n    each((n) => n + 1)\n}\n",
+			wantErr: "`n+1` is evaluated but not used",
+		},
+		{
+			name:    "parenthesized val read as a statement",
+			body:    "\nval pv = 3\n\nfunc f() {\n    (pv)\n}\n",
+			wantErr: "`(pv)` is evaluated but not used",
+		},
+		{
+			name:    "parenthesized val field read as a branch",
+			body:    "\nstruct Box(n int)\n\nfunc f(b Box, c bool) {\n    if (c) (b.n) else Println(\"x\")\n}\n",
+			wantErr: "`(b.n)` is evaluated but not used",
+		},
+		{
 			// A val field read lowers to a `.Get()` call no one wrote.
 			name:    "val field read as an if-expression branch",
 			body:    "\nstruct Box(n int)\n\nfunc f(b Box, c bool) {\n    if (c) b.n else Println(\"x\")\n}\n",

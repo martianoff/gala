@@ -444,18 +444,25 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformLambdaWithExpectedType as part of A6.
 func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	bodySlot.tryThunk = ctx == t.tryThunkLambda
-	// A lambda that returns nothing runs a match or if-expression body as a
-	// statement, as a void function does: its branches are statements, and a
-	// plain value in one is evaluated but not used.
-	if isVoidExpected && (t.expressionIsBareMatch(ctx.Expression()) || t.findIfExpressionInExpression(ctx.Expression()) != nil) {
-		stmt, err := t.lowerExpressionStatement(ctx.Expression(), functionDiscardHint)
+	// A lambda that returns nothing runs its body as a statement, as a void
+	// function does: a call is made, a match or if-expression runs its
+	// branches as statements, and a plain value is evaluated but not used.
+	if isVoidExpected {
+		body, err := t.transformVoidExpressionBody(ctx.Expression(), lambdaDiscardHint)
 		if err != nil {
 			return nil, nil, err
 		}
-		if block, ok := stmt.(*ast.BlockStmt); ok {
-			return block, nil, nil
+		// Silently dropping an error-only Go return is a bug, not a discard.
+		if len(body.List) != 1 {
+			return body, nil, nil
 		}
-		return &ast.BlockStmt{List: []ast.Stmt{stmt}}, nil, nil
+		if es, ok := body.List[0].(*ast.ExprStmt); ok {
+			if funcName := t.goCallReturnsErrorOnly(es.X); funcName != "" {
+				return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
+			}
+		}
+		return body, nil, nil
 	}
 	expr, err := t.lowerAgainst(ctx.Expression(), bodySlot, true)
 	if err != nil {
@@ -465,7 +472,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 	var retType ast.Expr
 
 	// Use expected type if concrete, otherwise infer from expression.
-	if !isConcreteExpectedType && !isVoidExpected {
+	if !isConcreteExpectedType {
 		// Expression lambda `() => nil` is treated as void.
 		if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
 			body = &ast.BlockStmt{}
@@ -476,17 +483,6 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 	}
 	if body != nil {
 		// Already set (e.g., expression lambda `() => nil` treated as void).
-		return body, retType, nil
-	}
-	if isVoidExpected {
-		// Reject expression lambdas in void context that discard error returns.
-		if funcName := t.goCallReturnsErrorOnly(expr); funcName != "" {
-			return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-				fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
-		}
-		body = &ast.BlockStmt{
-			List: []ast.Stmt{&ast.ExprStmt{X: expr}},
-		}
 		return body, retType, nil
 	}
 	// The thunk of Try(...): a Go call's error is the Failure, so the body runs

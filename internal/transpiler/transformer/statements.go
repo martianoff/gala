@@ -1058,7 +1058,7 @@ func (t *galaASTTransformer) checkValueUsedHint(exprCtx grammar.IExpressionConte
 	case *ast.CallExpr:
 		// A call lowered from a name or field that was not written as a call
 		// is a val read through `.Get()` (`x`, `b.n`).
-		if !isZeroArgGetCall(e) || t.endsInCall(exprCtx) || !t.startsWithName(exprCtx) {
+		if !isZeroArgGetCall(e) || !t.isUnwrittenValRead(exprCtx) {
 			return nil
 		}
 	case *ast.UnaryExpr:
