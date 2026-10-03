@@ -1292,7 +1292,7 @@ decide — compose with `.Map`/`.FlatMap`/`bind`, don't `.Get()`-and-panic.
 
 ### 11c. `val _ =` is a compile error — use a bare statement (HIGH priority)
 
-`val _ = <expr>` (and `var _ = <expr>`) is a **compiler error**, `GALA-E0060` (`gala explain GALA-E0060`); code that still has it does not build on current GALA. Flag it anyway when reviewing code pinned to an older release, and whenever the compiler output is not at hand. Whatever the right-hand side is, it should stand on its own as a statement. `_` among several names (`val n, _ = f()`, `val (_, b) = pair`) and a typed conformance check (`val _ Shape = Circle(1.0)`) are fine.
+`val _ = <expr>` — and `var _ = <expr>`, either one typed (`val _ T = <expr>`), and `_ := <expr>` — is a **compiler error**, `GALA-E0060` (`gala explain GALA-E0060`); code that still has it does not build on current GALA. Flag it anyway when reviewing code pinned to an older release, and whenever the compiler output is not at hand. Whatever the right-hand side is, it should stand on its own as a statement. `_` among several names (`val n, _ = f()`, `val (_, b) = pair`) is fine.
 
 | Issue | Pattern to Flag | Recommended Fix |
 |-------|-----------------|-----------------|
@@ -1309,7 +1309,7 @@ Rationale: `val _ = ...` adds noise without expressing any intent the bare expre
 
 **Check** (**verdict**; `$FILES` as built in rule 7c):
 ```bash
-grep -nE '\bval[[:space:]]+_([[:space:]]+[[:alpha:]*[][^=]*)?[[:space:]]*=' $FILES
+grep -nE '\b(val|var)[[:space:]]+_([[:space:]]+[[:alpha:]*[][^=]*)?[[:space:]]*=|^[[:space:]]*_[[:space:]]*:=' $FILES
 ```
 Every hit, typed (`val _ T =`) or not, is a HIGH 11c finding, fixed per the table
 and the void-lambda exception above. Tuple patterns (`val (_, b) = t`) do not match.

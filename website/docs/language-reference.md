@@ -108,8 +108,9 @@ y = 30 // OK
 ```
 
 ### Discarding a value
-A `val` or `var` whose only name is `_` binds nothing, so `val _ = expr` and
-`var _ = expr` are an error, [GALA-E0060](/docs/errors/gala-e0060/). Write the
+A declaration whose only name is `_` binds nothing, so `val _ = expr`,
+`var _ = expr` (typed or not) and `_ := expr` are an error,
+[GALA-E0060](/docs/errors/gala-e0060/). Write the
 expression as a statement; if the value matters, bind it to a name and use it.
 Inside a lambda with no result, a call that returns only an `error` cannot be a
 bare statement, so wrap it: `FromError(file.Close())`.
@@ -128,8 +129,7 @@ func main() {
 ```
 
 `_` among several names (`val n, _ = strconv.Atoi(s)`, `val (_, b) = pair`)
-and a typed declaration (`val _ Shape = Circle(1.0)`, which checks at compile
-time that a `Circle` is a `Shape`) are not affected.
+is not affected.
 
 ### Short Variable Declaration
 Inside functions, `:=` declares **immutable** variables.

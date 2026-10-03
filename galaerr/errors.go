@@ -654,12 +654,11 @@ const (
 	// match used as a statement inside a loop is fine and controls that loop.
 	CodeLoopControlOutsideLoop ErrorCode = "GALA-E0059"
 
-	// E0060: a `val` or `var` declaration binds its value to `_` alone —
-	// `val _ = expr` or `var _ = expr` — which binds nothing. The expression
-	// belongs on its own as a statement. A `_` among several names
-	// (`val a, _ = f()`, `val (_, b) = pair`) and a typed declaration
-	// (`val _ Shape = Circle(1.0)`, a compile-time conformance check) are
-	// not affected.
+	// E0060: a `val`, `var` or `:=` declaration binds its value to `_` alone —
+	// `val _ = expr`, `var _ T = expr`, `_ := expr` — which binds nothing.
+	// The expression belongs on its own as a statement. A `_` among several
+	// names (`val a, _ = f()`, `val (_, b) = pair`) and `var _ T` with no
+	// initializer are not affected.
 	CodeBlankValDeclaration ErrorCode = "GALA-E0060"
 
 	// E0061: a sealed variant is named where a type is expected, as in

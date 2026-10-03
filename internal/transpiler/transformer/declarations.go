@@ -622,20 +622,59 @@ var (
 	_ tupleDeclaration = (*grammar.VarDeclarationContext)(nil)
 )
 
-// checkBlankDeclaration rejects `val _ = expr` and `var _ = expr` with
-// GALA-E0060: a declaration whose only name is `_` binds nothing, so the
-// expression belongs on its own as a statement. A `_` among several names and
-// a typed declaration (`val _ Shape = Circle(1.0)`, a conformance check) are
-// left alone.
+// checkBlankDeclaration rejects `val _ = expr` and `var _ = expr`, typed or
+// not, with GALA-E0060: a declaration whose only name is `_` binds nothing, so
+// the expression belongs on its own as a statement. A `_` among several names
+// is left alone, and so is `var _ T` with no initializer.
 func checkBlankDeclaration(ctx tupleDeclaration, keyword string, names []grammar.IIdentifierContext) error {
-	if len(names) != 1 || names[0].GetText() != "_" || ctx.Type_() != nil || ctx.ExpressionList() == nil {
+	if ctx.ExpressionList() == nil {
 		return nil
 	}
-	hint := "write the expression as a bare statement; for an `error`-returning call inside a lambda with no result, write `FromError(call())`; if the value matters, bind it to a name and use it"
-	if _, topLevel := ctx.GetParent().(*grammar.TopLevelDeclarationContext); topLevel {
-		hint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
+	form := keyword + " _ = ..."
+	if ctx.Type_() != nil {
+		form = keyword + " _ T = ..."
 	}
-	return spanError(galaerr.CodeBlankValDeclaration, ctx, names[0], fmt.Sprintf("`%s _ = ...` binds nothing", keyword), hint)
+	return checkLoneBlank(ctx, names, form)
+}
+
+// checkLoneBlank is GALA-E0060 for a declaration of form whose names are
+// exactly `_`, with a hint fitted to where the declaration sits.
+func checkLoneBlank(ctx antlr.ParserRuleContext, names []grammar.IIdentifierContext, form string) error {
+	if len(names) != 1 || names[0].GetText() != "_" {
+		return nil
+	}
+	hint := "write the expression as a bare statement; if the value matters, bind it to a name and use it"
+	switch blankDeclarationSite(ctx) {
+	case blankAtTopLevel:
+		hint = "to run it for its effect, call it from `func init()`; if the value matters, bind it to a name and use it"
+	case blankInLambda:
+		hint = "write the expression as a bare statement; for a call that returns only an `error`, write `FromError(call())`; if the value matters, bind it to a name and use it"
+	}
+	return spanError(galaerr.CodeBlankValDeclaration, ctx, names[0], fmt.Sprintf("`%s` binds nothing", form), hint)
+}
+
+type blankSite int
+
+const (
+	blankInFunction blankSite = iota
+	blankInLambda
+	blankAtTopLevel
+)
+
+// blankDeclarationSite reports whether ctx is a package-level declaration or
+// sits, innermost, in a lambda or in a named function's body.
+func blankDeclarationSite(ctx antlr.Tree) blankSite {
+	for p := ctx.GetParent(); p != nil; p = p.GetParent() {
+		switch p.(type) {
+		case *grammar.TopLevelDeclarationContext:
+			return blankAtTopLevel
+		case *grammar.LambdaExpressionContext:
+			return blankInLambda
+		case *grammar.FunctionDeclarationContext:
+			return blankInFunction
+		}
+	}
+	return blankInFunction
 }
 
 // malformedTupleDestructure is the GALA-E0056 diagnostic.
