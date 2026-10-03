@@ -70,6 +70,27 @@ func remote(amount float64) units.Quantity[units.Meters] = units.Quantity(amount
 
 func remoteAlias(amount float64) units.Distance = units.Quantity(amount)
 
+// A companion Apply construction follows the same rule, matching the expected
+// type against what Apply returns. Only the construction that is the result
+// value takes the result type: the helper below writes its own.
+struct MkTag[T any]()
+
+func (m MkTag[T]) Apply(name string) Tag[T] = Tag[T](name)
+
+func viaApply() Tag[int] = MkTag("apply")
+
+func applyBlock(n int) Tag[bool] {
+    val helper = MkTag[string](s"helper $n")
+    MkTag(s"${helper.Name} done")
+}
+
+func variantArms(n int) Either[string, int] = n match {
+    case 0 => Left("zero")
+    case _ => Right(n)
+}
+
+func remoteApply(amount float64) units.Quantity[units.Meters] = units.Measure(amount)
+
 func main() {
     Println(exprBody().Describe())
     Println(blockValue(2).Describe())
@@ -94,4 +115,12 @@ func main() {
     Println(remote(3.5).Amount)
     Println(remoteAlias(2.5).Amount)
     Println(units.Of(1.5).Amount)
+
+    Println(viaApply().Describe())
+    Println(applyBlock(4).Describe())
+    Println(variantArms(0))
+    Println(variantArms(2))
+    Println(remoteApply(4.5).Amount)
+    val measured units.Quantity[units.Seconds] = units.Measure(5.5)
+    Println(measured.Amount)
 }
