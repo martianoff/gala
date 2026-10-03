@@ -104,6 +104,22 @@ func Real(s std.Seq[int]) int = s.Size()`,
 			notWant: []string{"std.Seq{"},
 		},
 		{
+			name: "local alias beside std's type of the same name",
+			pkg:  "lib",
+			src: `import "martianoff/gala/std"
+import . "martianoff/gala/collection_immutable"
+
+type Seq Array[int]
+
+func Mine() Seq = ArrayOf(1, 2)
+
+func Theirs(s std.Seq[int]) int = s.Size()
+
+func Both() int = Theirs(Mine())`,
+			want:    []string{"func Mine() Seq", "func Theirs(s std.Seq[int]) int"},
+			notWant: []string{") std.Seq\n", "Mine() std.Seq"},
+		},
+		{
 			name: "sealed variant named like a std companion",
 			pkg:  "lib",
 			src: `sealed type Maybe {

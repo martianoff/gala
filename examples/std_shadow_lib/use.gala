@@ -1,15 +1,12 @@
 package std_shadow_lib
 
-// A sibling file sees the package's own Seq, Void and Ordered too.
+// A sibling file sees the package's own Seq and Hashable too.
 
 // Total adds up the items of h.
 func Total(h Holder) int = h.Items.FoldLeft(0, (acc, x) => acc + x)
 
-// Swap exchanges the halves of v.
-func Swap(v Void) Void = Void(v.Second, v.First)
-
-// Pick returns More(1) when ok, Less("no") otherwise.
-func Pick(ok bool) Ordered = if (ok) More(1) else Less("no")
+// Rekey returns h under the key k, keeping its code.
+func Rekey(h Hashable, k string) Hashable = Hashable(k, h.Code)
 
 // FirstItem returns the first item of s; std's Option stays in scope.
 func FirstItem(s Seq) Option[int] = s.HeadOption()

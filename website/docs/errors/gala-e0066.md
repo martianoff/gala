@@ -16,7 +16,7 @@ function under a name that a package it dot-imports also exports, as in
 `struct List(...)` beside `import . "martianoff/gala/collection_immutable"`.
 
 A type the package declares shadows the same name of an import: a package
-that declares its own `Seq`, `Void` or `Ordered` means its own wherever it
+that declares its own `Seq`, `Hashable` or `Ordered` means its own wherever it
 writes the bare name, and std's stays reachable as `std.Seq` through
 `import "martianoff/gala/std"`. A dot import is the one exception. GALA's
 `import . "path"` is a Go dot import, and Go allows no package-level name

@@ -993,7 +993,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		collectTopLevelDeclaredNames(sf, a.currentOwnTypes)
 	}
 	for name := range richAST.OwnGoTypes {
-		a.currentOwnTypes[name] = true
+		// A .go file is not checked for the reserved std names, which keep
+		// their std meaning in GALA source.
+		if CheckStdConflict(name, pkgName) == nil {
+			a.currentOwnTypes[name] = true
+		}
 	}
 	defer func() {
 		a.currentRichAST = nil

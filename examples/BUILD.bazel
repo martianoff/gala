@@ -1895,7 +1895,7 @@ gala_exec_test(
 )
 
 # A library whose types are named like std types (an alias Seq, a struct
-# Void, a sealed Ordered) across two files, consumed
+# Hashable) across two files, consumed
 # by a main that declares its own generic Seq: each package's declarations
 # shadow the implicitly imported std names.
 gala_library(

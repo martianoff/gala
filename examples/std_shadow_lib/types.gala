@@ -15,20 +15,8 @@ struct Holder(Items Seq)
 // Make returns a Holder of 1, 2, 3.
 func Make() Holder = Holder(ArrayOf(1, 2, 3))
 
-// Void is a pair of ints; it shadows std's Void.
-struct Void(First int, Second int)
+// Hashable is a key with a precomputed code; it shadows std's Hashable.
+struct Hashable(Key string, Code int)
 
-// Sum adds the two halves of v.
-func Sum(v Void) int = v.First + v.Second
-
-// Ordered is a message or a number; it shadows std's Ordered.
-sealed type Ordered {
-    case Less(Msg string)
-    case More(N int)
-}
-
-// Describe names the variant of o and its value.
-func Describe(o Ordered) string = o match {
-    case Less(m) => s"less $m"
-    case More(n) => s"more $n"
-}
+// CodeOf returns the code of h.
+func CodeOf(h Hashable) int = h.Code
