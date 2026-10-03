@@ -196,6 +196,12 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 		}
 	}
 
+	// An opaque type unwraps to its single underlying value: `case UserID(n)`.
+	// No Unapply is generated for it; the pattern lowers to a conversion.
+	if meta := t.opaqueMetaByName(rawName); meta != nil {
+		return t.generateOpaquePattern(meta, rawName, argList, explicitTypeArgs, objExpr, matchedType, patExprCtx)
+	}
+
 	// Check if this is a sequence pattern (e.g., Array(first, second, rest...) or Array(a, b, c))
 	// This handles Seq types like Array and List with element extraction.
 	// Must be checked BEFORE struct field match, since Array/List are also structs
