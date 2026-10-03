@@ -1,0 +1,19 @@
+package report
+
+import (
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/examples/generic_alias_crosspkg/shapes"
+)
+
+// Describe matches a Result named through a dot import.
+func Describe(r Result[int]) string = r match {
+    case Right(v) => s"ok $v"
+    case Left(e) => s"error ${e.Code}: ${e.Msg}"
+}
+
+// Doubled takes its constructors' type arguments from an imported generic
+// alias of a generic alias.
+func Doubled(n int) Again[int] = if (n > 0) Right(n * 2) else Left(AppError(2, "not positive"))
+
+// Totals is an imported partially applied alias.
+func Totals() StrMap[int] = HashMapOf(("a", 1), ("b", 2))
