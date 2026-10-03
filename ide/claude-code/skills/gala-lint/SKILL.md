@@ -147,6 +147,8 @@ each code has a page with the full explanation (`gala explain GALA-Exxxx`).
 | Mutation instead of copy | `person.age = 31` | Use `person.Copy(age = 31)` |
 | Nil for optional fields | `var next *Node = nil` (mutable just to allow nil) | Use `val next Option[Node]` or `val next func() Option[Node]` |
 | Mutable pointer for optional | `var data *T` assigned once then read | Use `val data Option[T]` |
+| Redundant `val` parameter (LOW) | `func f(val s string)` — a parameter is immutable by default, so `val` changes nothing | Drop it: `func f(s string)` |
+| Unnecessary `var` parameter | `func f(var n int)` where `n` is never reassigned | Drop `var`: `func f(n int)` |
 
 **Check**: Search for `var ` declarations and verify each is reassigned later in the same scope.
 

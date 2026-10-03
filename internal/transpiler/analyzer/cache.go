@@ -85,7 +85,11 @@ import (
 // of its package: GoExports and GoTypeInfo include its declarations and the
 // content hash covers it. Only the GALA transpiler's own output, told by its
 // header, is left out. A v14 payload lacks those types.
-const CacheVersion = "v15"
+//
+// v16: FunctionMetadata drops its per-parameter `val` flags — a `val`
+// parameter is a plain Go parameter, so call sites no longer box its
+// argument. A v15 payload carries the flags in its encoding.
+const CacheVersion = "v16"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

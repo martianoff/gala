@@ -804,7 +804,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	// Receiver
 	var receiver *ast.FieldList
 	var receiverTypeName string
-	var originalRecvTypeExpr ast.Expr // Keep original for cycle detection
+	var originalRecvTypeExpr ast.Expr // the receiver type as written
 	if ctx.Receiver() != nil {
 		recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
 		recvName := recvCtx.Identifier().GetText()
@@ -812,7 +812,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		if err != nil {
 			return nil, err
 		}
-		originalRecvTypeExpr = recvTypeExpr // Store before potential Immutable wrapping
+		originalRecvTypeExpr = recvTypeExpr
 
 		recvBaseName := t.getBaseTypeName(recvTypeExpr)
 		t.recordMethodReceiver(recvCtx, recvBaseName)
@@ -829,16 +829,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			}
 		}
 
-		isVal := recvCtx.VAL() != nil
-		if isVal {
-			t.addVal(recvName, typeForScope)
-			recvTypeExpr = &ast.IndexExpr{
-				X:     t.stdIdent(transpiler.TypeImmutable),
-				Index: recvTypeExpr,
-			}
-		} else {
-			t.addVar(recvName, typeForScope)
-		}
+		// The receiver is a plain Go receiver whatever its keyword; an explicit
+		// `val` only forbids reassigning it, as for a parameter.
+		t.addDeclaredParam(recvName, typeForScope, recvCtx.VAL() != nil)
 
 		receiver = &ast.FieldList{
 			List: []*ast.Field{
@@ -919,7 +912,6 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		funcType.Params.List = append([]*ast.Field{receiver.List[0]}, funcType.Params.List...)
 
 		// 2. Extract type parameters from receiver type and add to typeParams
-		// Use originalRecvTypeExpr to avoid issues with Immutable-wrapped types
 		recvTypeParams := t.extractTypeParams(originalRecvTypeExpr)
 		if len(recvTypeParams) > 0 {
 			if funcType.TypeParams == nil {
@@ -1017,9 +1009,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 }
 
 // registerFunctionParametersInScope walks a function signature's parameter list
-// and registers each parameter in the current scope with the correct mutability
-// (val vs var) and wrapped type (Array[T] for variadic). Extracted from
-// transformFunctionDeclaration as part of A5.
+// and rebinds each parameter in the current scope with the function rule (only
+// an explicit `var` is reassignable; any other is a fixed parameter) and its
+// scope type (Array[T] for variadic).
 func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.SignatureContext) {
 	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
 	if paramsCtx.ParameterList() == nil {
@@ -1039,16 +1031,9 @@ func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.S
 		if param.ELLIPSIS() != nil && !paramType.IsNil() {
 			scopeType = transpiler.ArrayType{Elem: paramType}
 		}
-		if param.VAL() != nil {
-			t.addVal(paramName, scopeType)
-		} else {
-			t.addVar(paramName, scopeType)
-			// Only an explicit `var` parameter is genuinely reassignable; a plain
-			// parameter is immutable by GALA semantics (default `val`).
-			if param.VAR() != nil {
-				t.markMutable(paramName)
-			}
-		}
+		// Only an explicit `var` parameter is reassignable; an unmarked one is
+		// `val` by default, and an explicit `val` is a no-op marker for it.
+		t.addParam(paramName, scopeType, param.VAR() != nil)
 		// Remember a `Sendable[F]`-declared parameter: transformType erased the
 		// marker from scopeType, so the capture-safety check relies on this flag
 		// to accept the parameter when it is forwarded across a boundary.
@@ -1205,11 +1190,12 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			}
 
 			if isVal {
-				// Only wrap if it's not already wrapped by transformParameter (an
-				// explicit 'val') or declared Immutable[T]. The same check
-				// (transpiler.IsImmutableType) has ShorthandFieldType record the
-				// latter as T, so the layout and the recorded type agree.
-				if !transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type)) {
+				// A field declared Immutable[T] with no keyword is stored as that
+				// Immutable[T], not wrapped again. The same check
+				// (transpiler.IsImmutableType) has ShorthandFieldType record it
+				// as T, so the layout and the recorded type agree. An explicit
+				// `val` field is always wrapped, as ShorthandFieldType records.
+				if param.VAL() != nil || !transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type)) {
 					field.Type = &ast.IndexExpr{
 						X:     t.stdIdent("Immutable"),
 						Index: field.Type,
@@ -1569,7 +1555,6 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 		typeExpr, _ := t.transformType(ctx.Type_())
 		typeName = t.astTypeToTranspilerType(typeExpr)
 	}
-	isVal := ctx.VAL() != nil
 	isVariadic := ctx.ELLIPSIS() != nil
 	if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 		typeName = qName
@@ -1581,11 +1566,8 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 	if isVariadic && !typeName.IsNil() {
 		scopeType = transpiler.ArrayType{Elem: typeName}
 	}
-	if isVal {
-		t.addVal(name, scopeType)
-	} else {
-		t.addVar(name, scopeType)
-	}
+	// A parameter is a plain Go parameter whatever its keyword.
+	t.addDeclaredParam(name, scopeType, ctx.VAL() != nil)
 	// A `Sendable[F]`-annotated lambda/function parameter: record the erased
 	// marker so a forwarded function value is accepted by the capture check.
 	if typeCtxIsSendable(ctx.Type_()) {
@@ -1603,11 +1585,6 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 		if isVariadic {
 			// Variadic parameter: ...T becomes ...T in Go
 			field.Type = &ast.Ellipsis{Elt: typ}
-		} else if isVal {
-			field.Type = &ast.IndexExpr{
-				X:     t.stdIdent("Immutable"),
-				Index: typ,
-			}
 		} else {
 			field.Type = typ
 		}

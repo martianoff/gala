@@ -22,4 +22,4 @@ func NewImmutable[T any](v T) Immutable[T] = Immutable[T](value = v)
 // when a pointer-receiver method is called on a value Go cannot address — a
 // val's Get(), a call result, a composite literal — so the method runs on the
 // copy and the original value is left unchanged.
-func AddrOfCopy[T any](v T) *T = &v
+func AddrOfCopy[T any](var v T) *T = &v

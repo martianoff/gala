@@ -126,14 +126,8 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				if expType != nil && !unresolvedSlot && !expType.IsAny() {
 					typeExpr := t.typeToExpr(expType)
 					name := paramCtx.Identifier().GetText()
-					isVal := paramCtx.VAL() != nil
-					if isVal {
-						field.Type = &ast.IndexExpr{X: t.stdIdent("Immutable"), Index: typeExpr}
-						t.addVal(name, expType)
-					} else {
-						field.Type = typeExpr
-						t.addVar(name, expType)
-					}
+					field.Type = typeExpr
+					t.addDeclaredParam(name, expType, paramCtx.VAL() != nil)
 					if t.lspVarTypes != nil && t.loweringDefault == nil {
 						pos := transpiler.PosFromToken(paramCtx.Identifier().GetStart())
 						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{

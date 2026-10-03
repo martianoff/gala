@@ -1,0 +1,63 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A `val` on a parameter is a no-op marker: the parameter is the same plain
+// Go parameter as an unmarked one, so every call shape passes its argument as
+// it is — a function, a method, a pointer-receiver method, a method value, a
+// function-typed parameter given a lambda, a generic function, a default and
+// an interface method.
+
+type Conv[A any, B any] func(A) B
+
+struct Parser(Base int)
+
+func (p Parser) Parse(val s string) Try[int] = Success(s.Size() + p.Base)
+
+struct Counter(var N int)
+
+func (c *Counter) Add(val by int) int = c.N + by
+
+type Greeter interface {
+    Greet(val name string) string
+}
+
+struct English()
+
+func (e English) Greet(val name string) string = s"hi $name"
+
+func size(val s string) int = s.Size()
+
+func applyPlain(val f func(int) int) int = f(1)
+
+func applyConv(val f Conv[int, int]) int = f(10)
+
+func pick[T any](val a T, b T) T = a
+
+func greet(val name string = "world") string = s"hello $name"
+
+func greetVia(g Greeter) string = g.Greet("bob")
+
+// clamp reassigns its parameter, so the parameter is declared `var`.
+func clamp(var n int) int {
+    if (n < 0) {
+        n = 0
+    }
+    n
+}
+
+func main() {
+    val p = Parser(10)
+    Println(p.Parse("five"))
+    Println(Success("abc").FlatMap(p.Parse))
+    Println(ArrayOf("a", "bb").Map(p.Parse))
+    Println((&Counter(1)).Add(2))
+    Println(size("four"))
+    Println(applyPlain((x) => x + 2))
+    Println(applyConv((x) => x * 3))
+    Println(pick("left", "right"))
+    Println(greet())
+    Println(greet("gala"))
+    Println(greetVia(English()))
+    Println(clamp(-5))
+}

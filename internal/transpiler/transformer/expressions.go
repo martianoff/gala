@@ -223,6 +223,15 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 		if err != nil {
 			return nil, err
 		}
+		// A parameter not declared `var` is immutable like a val but is a plain
+		// Go parameter, so its address is taken directly and wrapped in
+		// ConstPtr to prevent write-through: std.NewConstPtr(&name).
+		if opText == "&" && t.isFixedParam(simpleIdentifierName(innerUnary.(*grammar.UnaryExprContext))) {
+			return &ast.CallExpr{
+				Fun:  t.stdIdent(transpiler.FuncNewConstPtr),
+				Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: expr}},
+			}, nil
+		}
 		if opText == "*" {
 			// Check if we're dereferencing a ConstPtr - if so, call Deref() instead
 			typeObj := t.getExprTypeName(expr)
@@ -275,6 +284,15 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 // is a simple identifier reference to a val variable (no suffixes).
 // Returns empty string if not a simple val identifier.
 func (t *galaASTTransformer) getSimpleValIdentifier(ctx *grammar.UnaryExprContext) string {
+	if name := simpleIdentifierName(ctx); name != "" && t.isVal(name) {
+		return name
+	}
+	return ""
+}
+
+// simpleIdentifierName returns the identifier a unary expression consists of
+// alone (no operator, no suffixes), or "" for anything else.
+func simpleIdentifierName(ctx *grammar.UnaryExprContext) string {
 	// Must not have a unary operator
 	if ctx.UnaryOp() != nil {
 		return ""
@@ -307,11 +325,7 @@ func (t *galaASTTransformer) getSimpleValIdentifier(ctx *grammar.UnaryExprContex
 	if primaryCtx.Identifier() == nil {
 		return ""
 	}
-	name := primaryCtx.Identifier().GetText()
-	if t.isVal(name) {
-		return name
-	}
-	return ""
+	return primaryCtx.Identifier().GetText()
 }
 
 // getChildOperatorText safely extracts the operator text from a parse tree child node.
