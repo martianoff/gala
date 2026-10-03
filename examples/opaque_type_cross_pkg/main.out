@@ -4,3 +4,4 @@ Array(100, 200, 300)
 {"buyer":7,"total":1305,"lines":{"pen":300},"region":"eu"}
 json round-trip equal: true
 yaml round-trip equal: true
+customer 7 guest Success("pen")

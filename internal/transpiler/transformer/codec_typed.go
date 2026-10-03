@@ -916,6 +916,16 @@ func codecContainer(ty transpiler.Type) (string, []transpiler.Type) {
 // decode), and whether ty already is the wire type so no conversion is
 // needed.
 func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast.Expr, bool, bool) {
+	// A phantom-typed opaque type, `Id[User]`, encodes as its underlying
+	// scalar like any other; the conversion names the instantiation.
+	if g, isGeneric := ty.(transpiler.GenericType); isGeneric {
+		if name, pkg, ok := simpleTypeName(g.Base); ok {
+			if sc, ok := t.opaqueCodecScalar(name, pkg); ok {
+				return sc, t.typeToExpr(ty), false, true
+			}
+		}
+		return codecScalar{}, nil, false, false
+	}
 	name, pkg, ok := simpleTypeName(ty)
 	if !ok {
 		return codecScalar{}, nil, false, false

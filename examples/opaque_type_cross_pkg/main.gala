@@ -36,4 +36,13 @@ func main() {
     Println(s"json round-trip equal: ${jsonCodec.Decode(encoded).Get().Equal(order)}")
     val yamlCodec = yaml.Codec[Order](yaml.SnakeCase())
     Println(s"yaml round-trip equal: ${yamlCodec.Decode(yamlCodec.Encode(order).Get()).Get().Equal(order)}")
+
+    // The opaque-type pattern works across the package boundary too.
+    Println(describe(buyer), describe(billing.CustomerID(0)), json.Value[billing.Sku]().Encode(billing.Sku("pen")))
+}
+
+func describe(id billing.CustomerID) string = id match {
+    case billing.CustomerID(0) => "guest"
+    case billing.CustomerID(n) => s"customer $n"
+    case _ => "unreachable"
 }
