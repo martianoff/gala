@@ -702,6 +702,7 @@ const (
 	// `case UserID(n)` binds it and `case UserID(0)` matches it; `UserID()`
 	// and `UserID(a, b)` name nothing.
 	CodeOpaquePatternArity ErrorCode = "GALA-E0065"
+
 	// E0066: the package declares a top-level type, sealed variant or
 	// function under a name that a GALA package it dot-imports also exports
 	// (`struct List(...)` beside `import . "martianoff/gala/collection_immutable"`).
