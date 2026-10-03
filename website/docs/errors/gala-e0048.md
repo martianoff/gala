@@ -4,7 +4,7 @@ title: "GALA-E0048 — Method on an Alias to a Non-Local Type"
 description: "\"cannot declare a method\" on a type alias — GALA-E0048 fires when an alias resolves to a built-in, another package's type, or a composite, which Go cannot give methods. Wrap the value in a struct instead."
 keywords: "gala-e0048, gala type alias method, gala cannot define new methods on non-local type, gala newtype, gala alias receiver, golang type alias methods"
 permalink: /docs/errors/gala-e0048/
-last_modified_at: 2026-09-27
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0048</p>
@@ -55,7 +55,7 @@ struct DateTime(Value int64)
 func (d DateTime) Millis() int64 = d.Value
 ```
 
-A plain function works too when no method is needed:
+If the value goes through a JSON or YAML codec, the struct changes its wire shape from a bare value to a nested object, so documents written with the alias no longer decode — see [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct). A plain function keeps the alias and its encoding:
 
 ```gala
 type DateTime int64
@@ -89,5 +89,5 @@ The declaration used to be emitted unchecked, so the rejection arrived from `go 
 
 ## Related
 
-- [Language Reference: Types and Structs](/docs/language-reference/#4-types-and-structs)
+- [Language Reference: Type Aliases](/docs/language-reference/#type-aliases) — what an alias can and cannot do, and [alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct)
 - [All GALA error codes](/docs/errors/)

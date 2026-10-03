@@ -4,7 +4,7 @@ title: "Json in GALA — Zero-Reflection JSON Codec with Builder Pattern"
 description: "GALA's json package provides zero-reflection, compile-time JSON serialization with builder pattern configuration, naming strategies, and pattern matching support."
 keywords: "gala json, golang json alternative, go type safe json, gala json codec, gala json pattern matching, go json serialization, zero reflection json"
 permalink: /docs/json/
-last_modified_at: 2026-10-01
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Json</p>
@@ -157,6 +157,27 @@ The same applies to `HashMap[string, Tag]`, `List[Tag]`, and `Array[Array[Tag]]`
 ### Field Types
 
 A field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (`K` a string or an alias of `string`), nested to any depth. A field of any other type — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is a compile error, [GALA-E0050](/docs/errors/gala-e0050/); a field is never silently written as `null`.
+
+A field typed by an alias is written as its target. A single-field struct used to give a value its own identity is a nested object instead:
+
+```gala
+package main
+
+import "martianoff/gala/json"
+
+type UserID int64
+
+struct AccountID(Value int64)
+
+struct Login(UserID UserID, AccountID AccountID)
+
+func main() {
+    Println(json.Codec[Login](json.SnakeCase()).Encode(Login(42, AccountID(7))).Get())
+    // {"user_id":42,"account_id":{"value":7}}
+}
+```
+
+The choice is part of the format: a document written with the alias, `{"user_id":42}`, decodes into the struct form as `Failure(json at pos 11: expected '{')`. What else each form gives and costs is in [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct).
 
 Decoding checks ranges: `300` into an `int8`, `-1` into a `uint`, or `1e39` into a `float32` makes `Decode` return a `Failure`. JSON cannot represent NaN or ±Infinity, so encoding one makes `Encode` return a `Failure`.
 

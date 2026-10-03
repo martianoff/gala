@@ -61,7 +61,7 @@ first. The resulting Go failed to compile at some unrelated line, or — when bo
 underlying types happened to be structurally compatible — compiled and did the
 wrong thing. Rejecting at the declaration keeps the failure local.
 
-**Scope.** Type aliases (`type Foo = Bar` / `type Foo func(...)`). Duplicate
+**Scope.** Type aliases (`type Foo Bar`, `type Foo func(...)`). Duplicate
 *type declarations* (structs, sealed types, interfaces) are
 [GALA-E0011](GALA-E0011.md).
 

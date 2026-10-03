@@ -45,7 +45,11 @@ struct DateTime(Value int64)
 func (d DateTime) Millis() int64 = d.Value
 ```
 
-A plain function works too when no method is needed:
+If the value goes through a JSON or YAML codec, the struct changes its wire
+shape from a bare value to a nested object, so documents written with the alias no
+longer decode — see
+[Alias or single-field struct](../GALA.MD#alias-or-single-field-struct). A
+plain function keeps the alias and its encoding:
 
 ```gala
 type DateTime int64

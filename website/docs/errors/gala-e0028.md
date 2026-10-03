@@ -4,7 +4,7 @@ title: "GALA-E0028 — Type Alias Redeclared in the Same Package"
 description: "\"type alias \"Handler\" already declared in package \"main\"\" — GALA-E0028 fires when two type aliases share a name. See the compiler output and why the silent overwrite was worse than a lost declaration."
 keywords: "gala-e0028, type alias already declared, gala duplicate type alias, gala alias redeclared, gala func type alias, gala declarations error"
 permalink: /docs/errors/gala-e0028/
-last_modified_at: 2026-07-27
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0028</p>
@@ -74,7 +74,7 @@ Note that both lambdas here are unannotated: the declared alias supplies the exp
 
 The silent overwrite was worse than a lost declaration. Because the alias table is consulted whenever a type name needs resolving, the *second* alias's underlying type would be substituted at call sites written against the first. The resulting Go either failed to compile at some unrelated line, or — when both underlying types happened to be structurally compatible — compiled and did the wrong thing. Rejecting at the declaration keeps the failure local.
 
-**Scope.** Type aliases (`type Foo = Bar` / `type Foo func(...)`). Duplicate *type declarations* — structs, sealed types, interfaces — are [GALA-E0011](/docs/errors/gala-e0011/).
+**Scope.** Type aliases (`type Foo Bar`, `type Foo func(...)`). Duplicate *type declarations* — structs, sealed types, interfaces — are [GALA-E0011](/docs/errors/gala-e0011/).
 
 ---
 

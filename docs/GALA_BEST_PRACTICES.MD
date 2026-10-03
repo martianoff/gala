@@ -208,6 +208,7 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
   func (e Email) Validate() Try[Email] =
       if (strings.Contains(e.address, "@")) Success(e) else Failure(errors.New(s"not an email address: ${e.address}"))
   ```
+- **`type X Y` is an alias, not a new type.** `type UserID int64` is `int64` under another name: it takes no methods of its own ([GALA-E0048](errors/GALA-E0048.md)) and an `int64` passes for it. For identity or methods, declare `struct UserID(Value int64)`, which a codec writes as an object (`{"user_id":{"value":42}}` with `SnakeCase()`, not `{"user_id":42}`). ([Alias or single-field struct](GALA.MD#alias-or-single-field-struct))
 - **Give a new field on a published struct a default** rather than letting existing call sites zero-fill it. That is what keeps them compiling *and* correct; before defaults were lowered, a defaulted `rune` silently became NUL at every site written before the field existed. See [Struct Field Defaults](GALA.MD#struct-field-defaults).
 
 ---

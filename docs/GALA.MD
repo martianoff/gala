@@ -889,6 +889,49 @@ declaration; a single-field struct is the way to get a separate identity.
 
 > **Note:** Type aliases are generally not recommended. Prefer using the original type directly — it keeps code clearer and avoids indirection. Type aliases are mainly useful for Go interop scenarios where you need to bridge between GALA and existing Go type names, or when mixing `.gala` and `.go` files in the same package (where GALA type aliases avoid dot-import conflicts with Go type alias declarations).
 
+#### Alias or single-field struct
+
+To give a value a name of its own, choose between an alias and a struct with
+one field. They differ in what the compiler checks and in what a codec writes:
+
+| | `type UserID int64` | `struct UserID(Value int64)` |
+|---|---|---|
+| Distinct type | No — an `int64` is accepted where a `UserID` is expected | Yes — an `int64` is not a `UserID` |
+| Methods of its own | No — [GALA-E0048](errors/GALA-E0048.md) | Yes |
+| Arithmetic and ordering | Yes — `id + 1`, `a < b` | No — Go rejects `+` and `<` on a struct; use `.Value` |
+| `HashMap` key | Yes, hashed as its target | Only with a `Hash() uint32` method ([`Hashable`](#custom-key-types)); without one, `Put` panics with `HashMap: type main.UserID must implement std.Hashable interface` |
+| JSON / YAML field, `SnakeCase()` | The bare value: `{"user_id":42}`, `user_id: 42` | An object: `{"user_id":{"value":42}}`, `user_id:` over a nested `value: 42` |
+
+```gala
+package main
+
+import (
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+type UserID int64
+
+struct AccountID(Value int64)
+
+struct Login(UserID UserID, AccountID AccountID)
+
+func main() {
+    val login = Login(42, AccountID(7))
+    Println(json.Codec[Login](json.SnakeCase()).Encode(login).Get())
+    // {"user_id":42,"account_id":{"value":7}}
+    Println(yaml.Codec[Login](yaml.SnakeCase()).Encode(login).Get())
+    // user_id: 42
+    // account_id:
+    //   value: 7
+}
+```
+
+Pick the alias to keep a plain value on the wire; pick the struct for a type a
+bare `int64` cannot pass for, or one with methods. The two encode differently,
+so switching breaks documents already written: `{"user_id":42}` read as the
+struct form is `Failure(json at pos 11: expected '{')`.
+
 ### Sealed Types (Algebraic Data Types)
 
 Sealed types define algebraic data types (ADTs) concisely. The transpiler auto-generates the parent struct, companion objects, `Apply`/`Unapply` methods, `Copy`, and `Equal`. To test which variant a value is, `match` on it — that is the idiomatic (and exhaustive) approach.
@@ -2406,6 +2449,9 @@ The decoder silently drops fields that are not declared on the target struct —
 
 A codec field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (with `K` a string or an alias of `string`), nested to any depth. Anything else — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is rejected where the codec is requested with [GALA-E0050](errors/GALA-E0050.md); a field is never silently encoded as `null`. A struct with an unexported field is decodable only through its `Validate() Try[T]` method — see [Structs With Private Fields](#structs-with-private-fields).
 
+An alias field is written as its target; a single-field struct is a nested
+object — see [Alias or single-field struct](#alias-or-single-field-struct).
+
 Decoding is range-checked: `300` into an `int8`, `-1` into a `uint` and a float that overflows `float32` make `Decode` return a `Failure`. JSON has no spelling for NaN or ±Infinity, so `Encode` of one returns a `Failure`; YAML writes them as `.nan`, `.inf` and `-.inf` and reads them back. YAML writes an empty `Array`, `List` or `HashMap` in flow style (`[]`, `{}`), so it reads back as empty rather than as `null`.
 
 ### Yaml
@@ -2458,9 +2504,12 @@ func main() {
 
 A root scalar is written on its own line (`42`, `abc`, a quoted `"true"` for a string that would otherwise read as a bool), and an empty root array as `[]`.
 
+Field types follow the JSON [Field Types](#field-types) rules, so an alias
+field is written as its target and a single-field struct as a nested mapping.
+
 #### Supported YAML Subset
 
-The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`), comments, nested structures, and a document that is a single scalar or an empty `[]` / `{}`. Out of scope: anchors, aliases, flow style, custom tags.
+The codec covers a focused subset: block-style mappings, block-style sequences, scalars (`string`, `int`, `float`, `bool`, `null`), literal block scalars (`|`), comments, nested structures, and a document that is a single scalar or an empty `[]` / `{}`. Out of scope: YAML anchors and aliases (`&a`, `*a`), flow style, custom tags.
 
 See the website [Yaml docs](https://martianov.dev/docs/yaml/) for the long-form treatment.
 
