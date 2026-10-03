@@ -160,6 +160,7 @@ func declaresName(id *grammar.IdentifierContext) bool {
 		*grammar.EmbedDeclarationContext,
 		*grammar.StructShorthandDeclarationContext,
 		*grammar.SealedTypeDeclarationContext,
+		*grammar.OpaqueTypeDeclarationContext,
 		*grammar.SealedCaseContext,
 		*grammar.SealedCaseFieldContext,
 		*grammar.TypeDeclarationContext,

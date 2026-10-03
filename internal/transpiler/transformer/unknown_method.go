@@ -138,7 +138,7 @@ func (t *galaASTTransformer) unknownMethodError(
 	line, col int,
 	exact bool,
 ) error {
-	if typeMeta == nil || isSynthesizedMethodName(method) {
+	if typeMeta == nil || isSynthesizedMethodName(method) || t.isSynthesizedOpaqueMethod(typeMeta, method) {
 		return nil
 	}
 	// An empty method set is ambiguous: it means either "this type genuinely

@@ -1060,6 +1060,44 @@ error 1
 2
 ```
 
+## Opaque Types
+
+An opaque type is a distinct type over a scalar: typed IDs and units that
+cannot be mixed up, with methods, operators, `HashMap` keys and sorting, and
+the bare value on the wire:
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+)
+
+opaque type UserID int64
+opaque type Millis int64
+
+func (m Millis) Seconds() float64 = float64(m) / 1000.0
+
+struct Visit(User UserID, Took Millis)
+
+func main() {
+    val id = UserID(7)
+    val took = Millis(1200) + 300
+    val names = EmptyHashMap[UserID, string]().Put(id, "ada")
+    Println(names.Get(id), took.Seconds(), took > Millis(1000))
+    Println(ArrayOf(UserID(3), UserID(1)).Sorted())
+    Println(json.Codec[Visit](json.SnakeCase()).Encode(Visit(id, took)).Get())
+}
+```
+
+Output:
+```
+Some(ada) 1.5 true
+Array(1, 3)
+{"user":7,"took":1500}
+```
+
 ## JSON Serialization and Pattern Matching
 
 ```gala

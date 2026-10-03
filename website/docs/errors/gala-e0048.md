@@ -40,22 +40,22 @@ error[GALA-E0048]: cannot declare a method on "DateTime": it resolves to the bui
 5 | func (d DateTime) Millis() int64 = int64(d)
   |      ^ a type alias is the same type as its target, so it takes no…
   |
-  = hint: a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function
+  = hint: a type alias is the same type as its target, so it takes no methods of its own — declare `opaque type DateTime int64` for a distinct type with methods, or write the method as a plain function
 ```
 
 ---
 
 ## How to fix it
 
-Wrap the value in a struct, which gives it an identity of its own and somewhere for the methods to live:
+Declare an opaque type, which gives the value an identity of its own and somewhere for the methods to live, and keeps its operators and its encoding:
 
 ```gala
-struct DateTime(Value int64)
+opaque type DateTime int64
 
-func (d DateTime) Millis() int64 = d.Value
+func (d DateTime) Millis() int64 = int64(d)
 ```
 
-If the value goes through a JSON or YAML codec, the struct changes its wire shape from a bare value to a nested object, so documents written with the alias no longer decode — see [Alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct). A plain function keeps the alias and its encoding:
+A JSON or YAML codec writes an opaque type as the bare value, exactly as it wrote the alias, so documents already written still decode. The opaque type is distinct, though: an `int64` no longer passes for a `DateTime` without `DateTime(n)` ([GALA-E0064](/docs/errors/gala-e0064/)) — see [Opaque Types](/docs/language-reference/#opaque-types). A plain function keeps the alias:
 
 ```gala
 type DateTime int64
@@ -89,5 +89,5 @@ The declaration used to be emitted unchecked, so the rejection arrived from `go 
 
 ## Related
 
-- [Language Reference: Type Aliases](/docs/language-reference/#type-aliases) — what an alias can and cannot do, and [alias or single-field struct](/docs/language-reference/#alias-or-single-field-struct)
+- [Language Reference: Type Aliases](/docs/language-reference/#type-aliases) — what an alias can and cannot do, and [alias, opaque type or private-field struct](/docs/language-reference/#alias-opaque-type-or-private-field-struct)
 - [All GALA error codes](/docs/errors/)

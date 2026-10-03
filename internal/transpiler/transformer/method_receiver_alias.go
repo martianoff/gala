@@ -101,11 +101,17 @@ func (t *galaASTTransformer) checkMethodReceiverAlias(recvCtx *grammar.ReceiverC
 	}
 
 	line, col := recvCtx.GetStart().GetLine(), recvCtx.GetStart().GetColumn()
+	hint := "a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function"
+	// A scalar can be given an identity of its own, with methods, as an
+	// opaque type over it.
+	if _, kind, _ := t.resolveScalar(alias); kind != scalarNone {
+		hint = fmt.Sprintf("a type alias is the same type as its target, so it takes no methods of its own — declare `opaque type %s %s` for a distinct type with methods, or write the method as a plain function", recvTypeName, alias.String())
+	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeMethodOnNonLocalAlias,
 		line, col,
 		fmt.Sprintf("cannot declare a method on %q: it resolves to %s", recvTypeName, reason),
-		"a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function",
+		hint,
 	)
 }
 

@@ -65,6 +65,7 @@ type galaASTTransformer struct {
 	siblingTypedBranch      bool                                          // set while a match arm or if branch with no slot type is first lowered: its type comes from its siblings, so a zero-arg constructor in it takes none from the enclosing result type or the match subject (see lowerBranches)
 	typeAliases             map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets     map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
+	hasOpaque               bool                                          // some known type is an opaque type; gates every opaque-type check
 	goTypeInfo              *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
 	filePath                string                                        // source file path (for error reporting)
 	richAST                 *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
@@ -225,6 +226,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.genericMethods = make(map[string]map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
+	t.hasOpaque = anyOpaque(richAST.Types)
 	t.companionObjects = richAST.CompanionObjects
 	if t.companionObjects == nil {
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)
@@ -973,18 +975,26 @@ func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetada
 // definition must take precedence — emitting both would produce a duplicate-method
 // error in the generated Go.
 func (t *galaASTTransformer) userDefinedMethodFlags(typeName string) (hasCopy, hasEqual, hasUnapply bool) {
+	declared := t.declaresMethods(typeName, "Copy", "Equal", "Unapply")
+	return declared["Copy"], declared["Equal"], declared["Unapply"]
+}
+
+// declaresMethods reports, keyed by method name, which of names the type
+// declares itself — in GALA, or in a hand-written .go file of its package — so
+// a method the transformer would synthesize is skipped instead of colliding.
+func (t *galaASTTransformer) declaresMethods(typeName string, names ...string) map[string]bool {
+	declared := make(map[string]bool, len(names))
 	meta := t.getTypeMeta(typeName)
 	if meta == nil {
-		return false, false, false
+		return declared
 	}
-	// A hand-written .go file of the package may declare them instead.
 	goMethods := t.goMethodsOnGalaType(meta)
-	declared := func(name string) bool {
+	for _, name := range names {
 		_, inGala := meta.Methods[name]
 		_, inGo := goMethods[name]
-		return inGala || inGo
+		declared[name] = inGala || inGo
 	}
-	return declared("Copy"), declared("Equal"), declared("Unapply")
+	return declared
 }
 
 // getTypeMetaResolved returns the type metadata and the resolved (canonical) type name.

@@ -209,7 +209,8 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
   func (e Email) Validate() Try[Email] =
       if (strings.Contains(e.address, "@")) Success(e) else Failure(errors.New(s"not an email address: ${e.address}"))
   ```
-- **`type X Y` is an alias, not a new type.** `type UserID int64` is `int64` under another name: it takes no methods of its own ([GALA-E0048](errors/GALA-E0048.md)) and an `int64` passes for it. For identity or methods, declare `struct UserID(Value int64)`, which a codec writes as an object (`{"user_id":{"value":42}}` with `SnakeCase()`, not `{"user_id":42}`). ([Alias or single-field struct](GALA.MD#alias-or-single-field-struct))
+- **`type X Y` is an alias, not a new type.** `type UserID int64` is `int64` under another name: it takes no methods of its own ([GALA-E0048](errors/GALA-E0048.md)) and an `int64` passes for it. For identity or methods, declare `opaque type UserID int64`: a distinct type with the operators of `int64`, written by a codec as the bare value. Conversion stays explicit (`UserID(n)`, `int64(id)`) and is allowed everywhere, so a value that must be validated is a struct with a private field instead. ([Opaque Types](GALA.MD#opaque-types))
+- **A typed ID or unit is an `opaque type`, not a one-field struct.** `struct UserID(Value int64)` boxes the value, loses `+` and `<`, needs hand-written `Hash`/`Compare` to be a `HashMap` key or sorted, and encodes as an object; `opaque type UserID int64` has none of those costs.
 - **Give a new field on a published struct a default** rather than letting existing call sites zero-fill it. That is what keeps them compiling *and* correct; before defaults were lowered, a defaulted `rune` silently became NUL at every site written before the field existed. See [Struct Field Defaults](GALA.MD#struct-field-defaults).
 
 ---

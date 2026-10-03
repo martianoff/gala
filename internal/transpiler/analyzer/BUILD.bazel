@@ -10,6 +10,7 @@ go_library(
         "go_keyword_names.go",
         "go_nocopy.go",
         "go_types.go",
+        "opaque.go",
         "qualifiers.go",
         "undefined_symbol.go",
         "undefined_symbol_scope.go",

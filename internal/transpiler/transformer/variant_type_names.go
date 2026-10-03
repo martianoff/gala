@@ -90,6 +90,8 @@ func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
 			declared[n.Identifier().GetText()] = true
 		case *grammar.SealedTypeDeclarationContext:
 			declared[n.Identifier().GetText()] = true
+		case *grammar.OpaqueTypeDeclarationContext:
+			declared[n.Identifier().GetText()] = true
 		case *grammar.TypeContext:
 			if qid, ok := n.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext); ok && qid != nil {
 				if ids := qid.AllIdentifier(); len(ids) <= 2 {

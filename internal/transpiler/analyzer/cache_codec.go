@@ -357,6 +357,8 @@ func (e *encoder) writeTypeMeta(t *transpiler.TypeMetadata) {
 	e.writeBoolSlice(t.ImmutFlags)
 	e.writeBool(t.IsSealed)
 	e.writeSealedVariantSlice(t.SealedVariants)
+	e.writeBool(t.IsOpaque)
+	e.writeType(t.Underlying)
 	e.writeString(t.DefinedIn)
 }
 
@@ -848,6 +850,8 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t.ImmutFlags = d.readBoolSlice()
 	t.IsSealed = d.readBool()
 	t.SealedVariants = d.readSealedVariantSlice()
+	t.IsOpaque = d.readBool()
+	t.Underlying = d.readType()
 	t.DefinedIn = d.readString()
 	return t
 }

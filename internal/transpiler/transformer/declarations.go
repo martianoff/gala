@@ -51,6 +51,9 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 	if sealedCtx := ctx.SealedTypeDeclaration(); sealedCtx != nil {
 		return t.transformSealedTypeDeclaration(sealedCtx.(*grammar.SealedTypeDeclarationContext))
 	}
+	if opaqueCtx := ctx.OpaqueTypeDeclaration(); opaqueCtx != nil {
+		return t.transformOpaqueTypeDeclaration(opaqueCtx.(*grammar.OpaqueTypeDeclarationContext))
+	}
 	return nil, nil
 }
 

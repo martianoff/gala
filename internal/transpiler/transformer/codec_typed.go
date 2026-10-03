@@ -123,7 +123,7 @@ func (t *galaASTTransformer) codecError(config *structMetaConfig, reason string)
 }
 
 const codecSupportedShapesHint = "a codec field can be a string, bool, rune, int/uint/float kind, " +
-	"an alias or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those"
+	"an alias, opaque type or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those"
 
 // fieldShapeError names the struct field an unsupported shape was reached
 // through. Errors that are not shape errors pass through unchanged.
@@ -390,12 +390,17 @@ func (t *galaASTTransformer) codecIsEmpty(access ast.Expr, ty transpiler.Type, p
 	case "Option", "Array", "List", "HashMap":
 		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("IsEmpty")}}
 	}
-	sc, _, _, ok := t.codecScalarOf(ty)
+	sc, _, isWireType, ok := t.codecScalarOf(ty)
 	if !ok {
 		return nil
 	}
 	switch sc.goType {
 	case "bool":
+		// `!` yields the operand's own type; a named bool (an opaque or Go
+		// named type over bool) is converted so the result is a plain bool.
+		if !isWireType {
+			access = &ast.CallExpr{Fun: ast.NewIdent("bool"), Args: []ast.Expr{access}}
+		}
 		return &ast.UnaryExpr{Op: token.NOT, X: access}
 	case "string":
 		return &ast.BinaryExpr{X: access, Op: token.EQL, Y: stringLit("")}
@@ -915,6 +920,10 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 	if !ok {
 		return codecScalar{}, nil, false, false
 	}
+	// An opaque type, local or imported, encodes as its underlying scalar.
+	if sc, ok := t.opaqueCodecScalar(name, pkg); ok {
+		return sc, t.codecTypeExpr(transpiler.NamedType{Package: pkg, Name: name}), false, true
+	}
 	if pkg == "" || pkg == t.packageName {
 		if sc, ok := codecScalars[name]; ok {
 			return sc, ast.NewIdent(name), name == sc.goType, true
@@ -1081,7 +1090,7 @@ func (g *codecGen) mapKey(ty transpiler.Type) (ast.Expr, bool, error) {
 	ty = g.t.codecUnalias(ty, g.pkg)
 	sc, declared, isWireType, ok := g.t.codecScalarOf(ty)
 	if !ok || sc.goType != "string" {
-		return nil, false, unsupportedShape("HashMap keys must be strings (or an alias of string): object keys are text, and %s is not", ty.String())
+		return nil, false, unsupportedShape("HashMap keys must be strings (or an alias or opaque type over string): object keys are text, and %s is not", ty.String())
 	}
 	return declared, isWireType, nil
 }
