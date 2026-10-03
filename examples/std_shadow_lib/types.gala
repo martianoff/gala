@@ -6,21 +6,28 @@ import . "martianoff/gala/collection_immutable"
 // shadow the implicitly imported std names, so every bare reference in this
 // package means the declaration here.
 
+// Seq is this package's sequence of ints; it shadows std's Seq.
 type Seq Array[int]
 
+// Holder carries a Seq.
 struct Holder(Items Seq)
 
+// Make returns a Holder of 1, 2, 3.
 func Make() Holder = Holder(ArrayOf(1, 2, 3))
 
+// Tuple is a pair of ints; it shadows std's Tuple.
 struct Tuple(First int, Second int)
 
+// Sum adds the two halves of t.
 func Sum(t Tuple) int = t.First + t.Second
 
+// Either is a message or a number; its variants shadow std's Left and Right.
 sealed type Either {
     case Left(Msg string)
     case Right(N int)
 }
 
+// Describe names the variant of e and its value.
 func Describe(e Either) string = e match {
     case Left(m) => s"left $m"
     case Right(n) => s"right $n"

@@ -3,14 +3,18 @@ package a
 import . "martianoff/gala/collection_immutable"
 
 // Seq and Tuple are named like std types. The package's own declarations
-// shadow the implicitly imported std names, here and in a.gala.
+// shadow the implicitly imported std names.
 
+// Seq is this package's sequence of ints; it shadows std's Seq.
 type Seq Array[int]
 
+// Tuple is a pair of ints; it shadows std's Tuple.
 struct Tuple(First int, Second int)
 
+// Holder carries a Seq and a Tuple.
 struct Holder(Items Seq, Pair Tuple)
 
+// Shadowed describes a Holder built from the package's own types.
 func Shadowed() string {
     val h = Holder(ArrayOf(1, 2, 3), Tuple(4, 5))
     s"shadowed: ${h.Items.Size()} items, pair sum ${h.Pair.First + h.Pair.Second}"
