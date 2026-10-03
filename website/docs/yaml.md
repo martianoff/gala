@@ -284,7 +284,7 @@ The codec emits and parses a focused, predictable subset of YAML:
 
 Struct fields follow the same rules as the JSON codec: every int, uint and float kind, aliases and Go named types over them, structs, and `Option` / `Array` / `List` / `HashMap[string, V]` of those; any other field type is a compile error ([GALA-E0050](/docs/errors/gala-e0050/)). Out-of-range numbers are decode errors.
 
-An alias field is written as its target, while a single-field struct is a nested mapping. With `type UserID int64` and `struct AccountID(Value int64)`, a struct with one field of each encodes with `SnakeCase()` as:
+An alias field and an [opaque type](/docs/language-reference/#opaque-types) field are written as their underlying value, while a single-field struct is a nested mapping. With `type UserID int64` and `struct AccountID(Value int64)`, a struct with one field of each encodes with `SnakeCase()` as:
 
 ```yaml
 user_id: 42

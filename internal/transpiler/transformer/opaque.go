@@ -411,7 +411,7 @@ func (t *galaASTTransformer) opaqueConversionCallee(fun ast.Expr) *transpiler.Ty
 // checkOpaqueConversion rejects `OrderID(userID)`, a direct conversion of one
 // opaque type into another (GALA-E0063).
 func (t *galaASTTransformer) checkOpaqueConversion(target *transpiler.TypeMetadata, arg ast.Expr, argCtx antlr.ParserRuleContext) error {
-	from := t.opaqueMeta(t.getExprTypeNameManual(arg))
+	from := t.opaqueMeta(t.probeExprType(arg))
 	if from == nil || sameOpaque(from, target) {
 		return nil
 	}
@@ -494,7 +494,13 @@ func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpi
 		return nil
 	}
 	expM := t.opaqueMeta(expected)
-	actual := t.getExprTypeNameManual(expr)
+	if expM == nil {
+		// Only a scalar slot can be an opaque type's underlying type.
+		if _, kind, _ := t.resolveScalar(expected); kind == scalarNone {
+			return nil
+		}
+	}
+	actual := t.probeExprType(expr)
 	if actual == nil || transpiler.IsUnusable(actual) || actual.IsAny() {
 		return nil
 	}
@@ -572,6 +578,16 @@ func (t *galaASTTransformer) opaqueCodecScalar(name, pkg string) (codecScalar, b
 		u = next
 	}
 	return codecScalar{}, false
+}
+
+// probeExprType is expr's inferred type for a check that only judges when the
+// type is known. A give-up here is not an inference failure the generated code
+// depends on, so it is kept out of the unresolved-type inventory.
+func (t *galaASTTransformer) probeExprType(expr ast.Expr) transpiler.Type {
+	warn := t.warnTypeInference
+	t.warnTypeInference = false
+	defer func() { t.warnTypeInference = warn }()
+	return t.getExprTypeNameManual(expr)
 }
 
 // sameScalar reports whether a and b, followed through aliases and Go named

@@ -33,23 +33,23 @@ error[GALA-E0048]: cannot declare a method on "DateTime": it resolves to the bui
 5 | func (d DateTime) Millis() int64 = int64(d)
   |      ^ a type alias is the same type as its target, so it takes no…
   |
-  = hint: a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function
+  = hint: a type alias is the same type as its target, so it takes no methods of its own — declare `opaque type DateTime int64` for a distinct type with methods, or write the method as a plain function
 ```
 
-**Fix.** Wrap the value in a struct, which gives it an identity of its own and
-somewhere for the methods to live:
+**Fix.** Declare an opaque type, which gives the value an identity of its own and
+somewhere for the methods to live, and keeps its operators and its encoding:
 
 ```gala
-struct DateTime(Value int64)
+opaque type DateTime int64
 
-func (d DateTime) Millis() int64 = d.Value
+func (d DateTime) Millis() int64 = int64(d)
 ```
 
-If the value goes through a JSON or YAML codec, the struct changes its wire
-shape from a bare value to a nested object, so documents written with the alias no
-longer decode — see
-[Alias or single-field struct](../GALA.MD#alias-or-single-field-struct). A
-plain function keeps the alias and its encoding:
+A JSON or YAML codec writes an opaque type as the bare value, exactly as it
+wrote the alias, so documents already written still decode. The opaque type is
+distinct, though: an `int64` no longer passes for a `DateTime` without
+`DateTime(n)` ([GALA-E0064](GALA-E0064.md)) — see
+[Opaque Types](../GALA.MD#opaque-types). A plain function keeps the alias:
 
 ```gala
 type DateTime int64
@@ -112,5 +112,5 @@ Declaration order does not matter: receivers are validated once the whole file
 has been read, so a method written above its own alias is caught too.
 
 **Scope.** This code covers methods on aliases. The alias rules as a whole are
-in [Type Aliases](../GALA.MD#type-aliases); GALA has no newtype declaration, so
-a distinct type with its own methods is a single-field struct.
+in [Type Aliases](../GALA.MD#type-aliases); a distinct type with its own
+methods is an [opaque type](../GALA.MD#opaque-types).

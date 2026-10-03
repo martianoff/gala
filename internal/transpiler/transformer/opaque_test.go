@@ -138,6 +138,24 @@ func main() {
 	assert.Contains(t, out, "return m + 500")
 }
 
+// TestOpaqueTypeDefaults covers untyped constant defaults for a parameter and
+// a shorthand struct field of an opaque type: they fit it as they fit its
+// underlying type.
+func TestOpaqueTypeDefaults(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type Millis int64
+
+struct Retry(Wait Millis = 250, Tries int = 3)
+
+func sleepFor(ms Millis = 100) Millis = ms
+
+func main() {
+    Println(sleepFor(), Retry().Wait)
+}`)
+	assert.Contains(t, out, "sleepFor(100)")
+}
+
 // TestOpaqueTypeNotAnAlias covers the distinctness that separates an opaque
 // type from an alias: it is a Go defined type, not `type X = Y`, and a value
 // of it is inferred as the opaque type.

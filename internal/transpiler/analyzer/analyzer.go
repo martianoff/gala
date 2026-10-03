@@ -4266,6 +4266,15 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		if next, ok := richAST.TypeAliases[name]; ok && !next.IsNil() {
 			return next, true
 		}
+		// An opaque type is distinct, but an untyped constant default fits
+		// it as it fits its underlying type.
+		key := name
+		if pkgName != "" && pkgName != "main" && pkgName != "test" {
+			key = pkgName + "." + name
+		}
+		if meta := richAST.Types[key]; meta != nil && meta.IsOpaque && meta.Underlying != nil && !meta.Underlying.IsNil() {
+			return meta.Underlying, true
+		}
 		return nil, false
 	}
 	step := func(typ transpiler.Type) (transpiler.Type, bool) {
@@ -4279,6 +4288,9 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		}
 		if named.Package == "" || named.Package == pkgName {
 			return declared(named.Name)
+		}
+		if meta := richAST.Types[named.Package+"."+named.Name]; meta != nil && meta.IsOpaque && meta.Underlying != nil && !meta.Underlying.IsNil() {
+			return meta.Underlying, true
 		}
 		if richAST.GoTypeInfo != nil {
 			if td := richAST.GoTypeInfo.GetTypeData(named.Package + "." + named.Name); td != nil && td.Underlying != nil {

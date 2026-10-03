@@ -156,9 +156,9 @@ The same applies to `HashMap[string, Tag]`, `List[Tag]`, and `Array[Array[Tag]]`
 
 ### Field Types
 
-A field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias or Go named type over one (`type Millis int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (`K` a string or an alias of `string`), nested to any depth. A field of any other type — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is a compile error, [GALA-E0050](/docs/errors/gala-e0050/); a field is never silently written as `null`.
+A field can be any scalar kind — `string`, `bool`, `rune`, `int`, `int8`…`int64`, `uint`, `uint8`…`uint64`, `uintptr`, `byte`, `float32`, `float64` — an alias, opaque type or Go named type over one (`type Millis int64`, `opaque type UserID int64`, `time.Duration`), a struct, an alias of any of these, or an `Option`, `Array`, `List` or `HashMap[K, V]` of any of these (`K` a string, or an alias or opaque type over `string`), nested to any depth. A field of any other type — a function, a pointer, a Go slice or map, a sealed type, a generic struct, a struct with no fields, `Option[Option[T]]` — is a compile error, [GALA-E0050](/docs/errors/gala-e0050/); a field is never silently written as `null`.
 
-A field typed by an alias is written as its target. A single-field struct used to give a value its own identity is a nested object instead:
+A field typed by an alias or an [opaque type](/docs/language-reference/#opaque-types) is written as its underlying value. A single-field struct used to give a value its own identity is a nested object instead:
 
 ```gala
 package main
@@ -209,7 +209,7 @@ func main() {
 }
 ```
 
-**Any other root value.** `Value[T]()` takes any shape a codec field can have — a scalar, an alias or Go named type over one, an `Option` (`None` is `null`), an `Array` / `List`, a `HashMap[string, _]`, a struct — nested to any depth:
+**Any other root value.** `Value[T]()` takes any shape a codec field can have — a scalar, an alias, opaque type or Go named type over one, an `Option` (`None` is `null`), an `Array` / `List`, a `HashMap[string, _]`, a struct — nested to any depth:
 
 ```gala
 import (
