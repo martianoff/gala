@@ -1212,9 +1212,9 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 // consumesSlotType reports whether exprCtx is a plain expression that takes
 // the type of a result slot it fills (see lowerAgainst), given as hint, the
 // type an alias names: a tuple literal of that tuple type, or a construction
-// of that generic struct.
+// of a value of that generic type (isConstructionOf).
 func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext, hint transpiler.Type) bool {
-	return t.isTupleLiteralFor(exprCtx, hint) || t.isStructConstructionOf(exprCtx, hint)
+	return t.isTupleLiteralFor(exprCtx, hint) || t.isConstructionOf(exprCtx, hint)
 }
 
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
@@ -1228,11 +1228,14 @@ func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContex
 	return list != nil && len(list.AllExpression()) > 1 && len(list.AllExpression()) == len(gen.Params)
 }
 
-// isStructConstructionOf reports whether exprCtx is exactly a construction of
-// the generic struct typ instantiates — `Tag("x")`, `Pair[int](1)`,
-// `geo.Tag(name = "x")` for `Tag[int]` — and not a value derived from one
+// isConstructionOf reports whether exprCtx is exactly a construction of a
+// value of the generic type typ instantiates — of that struct (`Tag("x")`,
+// `Pair[int](1)`, `geo.Tag(name = "x")` for `Tag[int]`), or through a
+// companion Apply returning it (`Mk(1)` for a `Pair[int, string]` when
+// `Mk[A, B]`'s Apply returns `Pair[A, B]`; `Left("x")` for an
+// `Either[string, int]`) — and not a value derived from one
 // (`Tag("x").Rename()`).
-func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
+func (t *galaASTTransformer) isConstructionOf(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
 	gen, ok := typ.(transpiler.GenericType)
 	if !ok {
 		return false
@@ -1250,16 +1253,22 @@ func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionC
 	} else {
 		return false
 	}
-	// The bare names differ for nearly every other result value, which
-	// settles it before any type lookup.
-	if stripPackagePrefix(name) != stripPackagePrefix(gen.Base.BaseName()) {
-		return false
-	}
 	// Compared by their metadata keys: the field map has both a bare and a
 	// package-qualified key for a type of this package (`Q`, `units.Q`).
-	resolved := t.resolveTypeMetaName(name)
-	_, isStruct := t.structFields[resolved]
-	return isStruct && resolved == t.resolveTypeMetaName(gen.Base.String())
+	want := t.resolveTypeMetaName(gen.Base.String())
+	meta, resolved := t.getTypeMetaResolved(name)
+	if want == "" || meta == nil {
+		return false
+	}
+	if _, isStruct := t.structFields[resolved]; isStruct && resolved == want {
+		return true
+	}
+	apply, hasApply := meta.Methods["Apply"]
+	if !hasApply {
+		return false
+	}
+	ret, ok := apply.ReturnType.(transpiler.GenericType)
+	return ok && t.resolveTypeMetaName(ret.Base.String()) == want
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.

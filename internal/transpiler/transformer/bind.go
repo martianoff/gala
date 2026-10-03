@@ -154,25 +154,48 @@ func (t *galaASTTransformer) checkBindGroupIndependence(group []bindEntry, prepp
 		return nil // a lone `bind` has no sibling to leak from.
 	}
 	for i := range group {
-		siblings := make(map[string]bool)
-		for j := range group {
-			if j == i {
-				continue
-			}
-			name := group[j].name
-			if name == "" || name == "_" || t.isNameInScope(name) {
-				continue
-			}
-			siblings[name] = true
-		}
-		if ref := firstReferencedName(prepped[i].recvExpr, siblings); ref != "" {
-			return t.semanticErrorAt(group[i].ctx,
-				"cannot reference `"+ref+"` here: clauses in a `bind`/`also` group are "+
-					"evaluated independently, so a binding from one clause is not in scope "+
-					"for its siblings. Move this clause to its own `bind` if it must see `"+ref+"`.")
+		if ref := firstReferencedName(prepped[i].recvExpr, t.bindSiblingNames(group, i)); ref != "" {
+			return t.bindSiblingRefError(group[i], ref)
 		}
 	}
 	return nil
+}
+
+// bindSiblingNames returns the names group's clauses other than the i-th bind
+// that are not already variables of the enclosing scope.
+func (t *galaASTTransformer) bindSiblingNames(group []bindEntry, i int) map[string]bool {
+	siblings := make(map[string]bool)
+	for j := range group {
+		if j == i {
+			continue
+		}
+		name := group[j].name
+		if name == "" || name == "_" || t.isNameInScope(name) {
+			continue
+		}
+		siblings[name] = true
+	}
+	return siblings
+}
+
+// bindSiblingRefError reports that clause e references ref, a sibling's binding.
+func (t *galaASTTransformer) bindSiblingRefError(e bindEntry, ref string) error {
+	return t.semanticErrorAt(e.ctx,
+		"cannot reference `"+ref+"` here: clauses in a `bind`/`also` group are "+
+			"evaluated independently, so a binding from one clause is not in scope "+
+			"for its siblings. Move this clause to its own `bind` if it must see `"+ref+"`.")
+}
+
+// firstReferencedGalaName is firstReferencedName over a clause's source: the
+// first bare name in exprCtx that is in names, or "".
+func firstReferencedGalaName(exprCtx antlr.Tree, names map[string]bool) string {
+	found := ""
+	walkTree(exprCtx, func(n antlr.Tree) {
+		if p, ok := n.(*grammar.PrimaryContext); ok && found == "" && p.Identifier() != nil && names[p.GetText()] {
+			found = p.GetText()
+		}
+	})
+	return found
 }
 
 // isNameInScope reports whether name resolves to a variable in the current
@@ -240,6 +263,12 @@ func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext,
 	for i, e := range group {
 		p, err := t.prepBindEntry(e, res)
 		if err != nil {
+			// A clause naming a sibling's binding may fail to lower before the
+			// independence check sees it (`also b = Success(a)` leaves
+			// Success's type argument open): the reference is the error.
+			if ref := firstReferencedGalaName(e.exprCtx, t.bindSiblingNames(group, i)); ref != "" {
+				return nil, t.bindSiblingRefError(e, ref)
+			}
 			return nil, err
 		}
 		prepped[i] = p

@@ -266,8 +266,8 @@ func TestSealedVariantWithArgsUninferred(t *testing.T) {
 		{"if-expression", "func f(b bool) {\n    val x = if (b) Failure(errors.New(\"bad\")) else Failure(errors.New(\"bad\"))\n    Println(x)\n}", `"Failure(...)"`},
 		{"match", "func f(n int) {\n    val x = n match {\n        case 0 => Left(\"x\")\n        case _ => Left(\"y\")\n    }\n    Println(x)\n}", `cannot infer type parameter B for sealed variant constructor "Left(...)"`},
 		// The hint names every type argument of the parent, the known ones as known.
-		{"hint arity", "func f() {\n    val x = Left(\"x\")\n    Println(x)\n}", "Either[string, int] = std.Left(...)"},
-		{"hint spells a known std type bare", "func f() {\n    val x = Left(Some(1))\n    Println(x)\n}", "Either[Option[int], int] = std.Left(...)"},
+		{"hint arity", "func f() {\n    val x = Left(\"x\")\n    Println(x)\n}", "Either[string, int] = Left(...)` or pass type args explicitly (`Left[string, int](...)`)"},
+		{"hint spells a known std type bare", "func f() {\n    val x = Left(Some(1))\n    Println(x)\n}", "Either[Option[int], int] = Left(...)"},
 	}
 	for _, tt := range errCases {
 		t.Run(tt.name, func(t *testing.T) {

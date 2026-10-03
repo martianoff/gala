@@ -113,7 +113,7 @@ func TestPartialConstructorTypeArgsUninferable(t *testing.T) {
 		{
 			name: "sealed case, named argument, a type parameter no field names",
 			body: "sealed type Res[T any, E any] {\n    case Ok(V T)\n    case Err(Msg E)\n}\n\nfunc main() { Println(Ok[int](V = 1)) }\n",
-			want: "cannot infer type argument E of Ok",
+			want: "cannot infer type parameter E for sealed variant constructor \"Ok(...)\"",
 		},
 		{
 			name: "struct constructor, a type parameter no field names",
