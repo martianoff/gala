@@ -91,6 +91,17 @@ func Real(n int) string = Some(n).Map((v) => s"$v").GetOrElse("")`,
 			notWant: []string{"std.Ordered"},
 		},
 		{
+			name: "opaque type named like a std type, declared further down",
+			pkg:  "lib",
+			src: `func Wrap(n int64) Ordered = Ordered(n)
+
+func Next(o Ordered) Ordered = o + 1
+
+opaque type Ordered int64`,
+			want:    []string{"type Ordered int64", "func Wrap(n int64) Ordered", "func Next(o Ordered) Ordered", "func (s Ordered) Compare(other Ordered) int"},
+			notWant: []string{"std.Ordered"},
+		},
+		{
 			name: "std's type stays reachable through a named import of std",
 			pkg:  "lib",
 			src: `import "martianoff/gala/std"
@@ -301,6 +312,7 @@ func TestReservedStdTypeNamesAreRejected(t *testing.T) {
 		"type Immutable struct {\n    V int\n}",
 		"type Try int",
 		"struct Some(V int)",
+		"opaque type Option int64",
 	} {
 		t.Run(decl, func(t *testing.T) {
 			_, err := trans.Transpile("package lib\n\n"+decl+"\n", "")
