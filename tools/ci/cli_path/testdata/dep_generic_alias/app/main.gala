@@ -1,0 +1,21 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "example.com/results"
+)
+
+// Generic aliases declared in a GALA dependency, used from the main module.
+type Local[T any] results.Result[T]
+
+func show(r Local[int]) string = r match {
+    case Right(n) => s"ok $n"
+    case Left(f) => s"fault ${f.Code}"
+}
+
+func main() {
+    Println(show(results.Parse("four")))
+    Println(show(results.Parse("")))
+    val ps results.Pairs[string, int] = ArrayOf(("a", 1))
+    Println(s"pairs: ${ps.Size()}")
+}

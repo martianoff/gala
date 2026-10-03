@@ -1,0 +1,16 @@
+package results
+
+import . "martianoff/gala/collection_immutable"
+
+// Fault is the error side of Result.
+struct Fault(Code int)
+
+// Result is a generic alias, so the module transpiled by the dependency
+// transpiler must compile at a Go version that has generic aliases.
+type Result[T any] Either[Fault, T]
+
+// Pairs is a generic alias with a constrained parameter.
+type Pairs[K comparable, V any] Array[Tuple[K, V]]
+
+// Parse fails on an empty string.
+func Parse(s string) Result[int] = if (s == "") Left(Fault(1)) else Right(s.Size())
