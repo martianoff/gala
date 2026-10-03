@@ -54,10 +54,9 @@ Go compiler, pointed at generated code rather than the `.gala` line the
 author wrote.
 
 This check closes both outcomes for a name in **value position**,
-including inside an interpolated string. In **type position** it checks
-the *package qualifier* — `strings.Builder` asks whether `strings` is in
-scope — and an unqualified type name only against the scope rule below;
-see the first entry under *Not covered*.
+including inside an interpolated string, and for a name written as a
+**type**: a parameter, result, struct field, type argument or `val`/`var`
+annotation. See *Type names* below.
 
 **Scope.** Analyzer post-pass, run once per top-level file after all
 metadata for the file, its siblings and its imports has been collected
@@ -108,42 +107,69 @@ provides.
 [GALA-E0025](GALA-E0025.md) covers the remaining import question: a
 signature type that resolved to a package this file never imported.
 
+**Type names.** Type names are checked too: in a parameter, result,
+struct field, type argument, lambda parameter or `val`/`var` annotation,
+an alias target (`type Coord Point`), a type parameter's constraint
+(`[T Number]`) and an unnamed parameter of a function type
+(`func(Point) int`).
+
+- A **qualified** type is checked at its qualifier: `var sb
+  strings.Builder` in a file that never imports `strings` is reported
+  at `strings`. The member (`Builder`) is not checked, because that
+  would need the full type surface of every imported Go package.
+- An **unqualified** type name must exist. It resolves when it is a Go
+  predeclared type (`int`, `error`, `any`, …) or a type parameter the
+  file declares, including the names a method receiver binds
+  (`func (b Box[T]) ...`). It also resolves when it is a type declared by
+  any of these:
+  - this package, in any of its `.gala` files or hand-written `.go`
+    files, or inside a function body;
+  - a package this file dot-imports, GALA or Go;
+  - the `std` prelude.
+
+  A function or value of the same name does not count; it is reported as
+  `ArrayOf is not a type`. Neither does a Go type this file reaches only
+  through a qualifier: under `import "time"`, `func wait(d Duration)` is
+  reported, and the hint says to write `time.Duration`. The wildcard
+  `_` (`case a: Array[_]`, `(x _) => x`) is left to the transpiler.
+  A GALA type must also pass the scope rule above. A name undefined in
+  both a type and a value position is reported once, at the type position
+  when that comes first in the file.
+  When a GALA package on the search paths declares it, the hint names
+  the import:
+
+```gala
+package main
+
+func total(xs Array[int]) int = xs.FoldLeft(0, (acc, x) => acc + x)
+```
+
+```
+[SemanticError GALA-E0023] line 3:14 undefined: Array (hint: Array is declared in these GALA packages, none of which this file imports: "martianoff/gala/collection_immutable", "martianoff/gala/collection_mutable". Add `import . "<the one you want>"` to use it unqualified, or import it plainly and qualify the call.)
+```
+
+Before this check, such a name transpiled and failed only at `go build`
+with `undefined: Array` against the generated code. A collection type
+was worse: the body's lambda had already been erased to
+`func(acc any, x any) any`.
+
+Type parameters and types declared in a function body are recognised
+file-wide rather than per scope. That can only hide a report, never
+create one.
+
 Not covered. Each of these is a deliberate trade of a missed detection
 for a guaranteed absence of false positives:
 
-- **Unqualified type names that no GALA package declares.** `func f(x
-  Foo)`, `val v Foo = ...` and `Foo{}` are checked only against the
-  scope rule above, which reports a name when every package that
-  declares it is out of this file's scope. A name declared nowhere is
-  skipped, because the analyzer's type resolution is lossy enough (Go
-  generics, constraints, `map[K]V`, func types) that flagging it would
-  produce false positives. A bare `Foo` may also be a type parameter.
-  Type parameters, including the names a method receiver binds
-  (`func (b Box[T]) ...`), are recognised file-wide, which can only
-  suppress a report.
-
-  The **qualifier** of a qualified type *is* checked: `var sb
-  strings.Builder` in a file that never imports `strings` is reported
-  here, at the qualifier. That half carries no false-positive risk,
-  because a qualifier is unambiguously a package name — the lossiness
-  above is entirely in resolving the *member*, which this does not
-  attempt. Before it existed, a file whose only offending use was a type
-  position got no GALA diagnostic at all: the call half of
-  `strings.Repeat(...)` was reported while `strings.Builder` fell
-  through to `go build`.
-
-  [GALA-E0025](GALA-E0025.md) covers a
-  signature type whose package reached the compilation but whose
-  import this file omitted; it does **not** cover a type name nothing
-  in the compilation declares, because it works from the resolved
-  metadata such a name never produces. So `func total(xs Array[int])`
-  in a compilation where nothing loads `collection_immutable` at all is
-  caught by neither code (when something does load it, the scope rule
-  above reports it): it transpiles, erases the body's lambda to
-  `func(acc any, x any) any`, and fails at `go build` with
-  `undefined: Array`. Closing that needs a check that can distinguish
-  an unresolvable type name from a merely lossy one; widening this one
-  would trade away the zero-false-positive property.
+- **The member of a qualified type.** `strings.Builderr` is checked only
+  at `strings`; see *Type names* above.
+- **An unqualified type name in a file that dot-imports a Go package**
+  is not checked for existence. Go type information comes from the
+  host's build context, so it lacks the types only another platform's
+  files declare (`Termios` under `import . "syscall"` on Windows), and
+  the name may be one of those. The scope rule above still applies.
+- **A Go function or value used as a type,** when it comes from the
+  hand-written Go of this package or of a dot-imported GALA package: the
+  scan of those files records names without telling types apart.
 - **Selectors.** In `x.foo().bar`, only `x` is checked — field and
   method names require the receiver's type.
 - **Constructor names in `match` / `case` patterns.** A pattern's

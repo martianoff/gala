@@ -263,9 +263,11 @@ func main() {
 			name: "GALA-E0019 empty parens in match arm",
 			input: `package main
 
-func handle(code Int) Unit = code match {
-    case 0 => Println("zero")
-    case _ => ()
+func handle(code int) {
+    code match {
+        case 0 => Println("zero")
+        case _ => ()
+    }
 }
 
 func main() {

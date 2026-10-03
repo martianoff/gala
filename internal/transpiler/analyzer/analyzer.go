@@ -3,10 +3,11 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
+	goparser "go/parser"
+	"go/token"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -940,7 +941,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	fileImportSets[canonicalPath(filePath)] = explicitImportPkgs
 	// The GALA packages each file dot-imports. GALA-E0023's version of the
 	// receiver-file allowance needs these alone: a bare name can come from
-	// the receiver file's dot imports, never from its named imports.
+	// the receiver file's dot imports, never from its named imports. A Go dot
+	// import gives no such allowance: Go scopes it to its own file.
 	dotPkgsForFile := func(q fileQualifiers) map[string]bool {
 		set := make(map[string]bool)
 		for _, b := range q.dots {
@@ -3329,31 +3331,49 @@ func canonicalPath(path string) string {
 	return real
 }
 
-// goExportedFuncRe matches exported (capitalized) standalone function declarations in Go files.
-// Only matches top-level functions, not methods (which have a receiver before the name).
-var goExportedFuncRe = regexp.MustCompile(`(?m)^func\s+([A-Z]\w*)\s*[\[(]`)
-
-// goExportedTypeRe matches exported type declarations in Go files.
-// Covers plain `type Name struct { ... }` as well as alias form `type Name = other.Name`.
-var goExportedTypeRe = regexp.MustCompile(`(?m)^type\s+([A-Z]\w*)(\s+|\s*=)`)
-
-// goExportedVarRe matches exported package-level variable declarations in Go files.
-// Captures forms like `var GlobalEC = go_interop.GlobalEC`, which act as function-valued
-// re-exports. Without this, facade packages that re-export callables via `var` (e.g.
-// concurrent re-exporting go_interop helpers) would silently shadow the original
-// exporter under dot-import, causing "X redeclared in this block" at Go compile time
-// rather than a clean GALA-level collision error.
-var goExportedVarRe = regexp.MustCompile(`(?m)^var\s+([A-Z]\w*)\s*(=|\w)`)
-
-// goExportedConstRe matches exported package-level constant declarations.
-var goExportedConstRe = regexp.MustCompile(`(?m)^const\s+([A-Z]\w*)\s*(=|\w)`)
-
-// goPkgNameRe matches the package declaration in Go files.
-var goPkgNameRe = regexp.MustCompile(`(?m)^package\s+(\w+)`)
+// exportedGoNames returns the package name a Go source declares and the
+// exported names its package-level declarations introduce: functions (not
+// methods), types and aliases, vars and consts, in any form — plain, generic
+// or grouped. It parses the source, so text in comments or strings does not
+// count. Build constraints are not consulted: every file counts, as it did
+// for the line scan this replaced, whatever platform, cgo setting or tag it
+// needs.
+func exportedGoNames(src string) (pkg string, names []string) {
+	f, _ := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution)
+	if f == nil || f.Name == nil {
+		return "", nil
+	}
+	add := func(id *ast.Ident) {
+		if id != nil && id.IsExported() {
+			names = append(names, id.Name)
+		}
+	}
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				add(d.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					add(s.Name)
+				case *ast.ValueSpec:
+					for _, id := range s.Names {
+						add(id)
+					}
+				}
+			}
+		}
+	}
+	return f.Name.Name, names
+}
 
 // extractGoFileExports scans .go files in a directory for exported symbol names
 // and stores them in pkgAST.GoExports (separate from Types/Functions so they
-// don't interfere with type resolution). Used for dot-import clash detection.
+// don't interfere with type resolution). Used for dot-import clash detection,
+// and as the Go side of a GALA package's type surface.
 //
 // includeGenerated controls whether auto-generated `.gen.go` files contribute
 // to the result. Pass true only when the package is consumed without GALA
@@ -3377,45 +3397,14 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 		if err != nil {
 			continue
 		}
-		src := string(content)
-
-		// Extract package name if not already set
-		if pkgAST.PackageName == "" {
-			if m := goPkgNameRe.FindStringSubmatch(src); len(m) > 1 {
-				pkgAST.PackageName = m[1]
-			}
+		pkg, names := exportedGoNames(string(content))
+		if pkgAST.PackageName == "" && pkg != "" {
+			pkgAST.PackageName = pkg
 		}
-
-		// Extract exported function names
-		for _, m := range goExportedFuncRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
-			}
-		}
-
-		// Extract exported type names (including `type X = ...` aliases).
-		for _, m := range goExportedTypeRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
-			}
-		}
-
-		// Extract exported package-level `var` names (facade re-exports such as
-		// `var NewSingleThreadEC = go_interop.NewSingleThreadEC`).
-		for _, m := range goExportedVarRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
-			}
-		}
-
-		// Extract exported package-level `const` names.
-		for _, m := range goExportedConstRe.FindAllStringSubmatch(src, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				symbols = append(symbols, m[1])
+		for _, name := range names {
+			if !seen[name] {
+				seen[name] = true
+				symbols = append(symbols, name)
 			}
 		}
 	}

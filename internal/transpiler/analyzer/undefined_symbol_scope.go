@@ -172,6 +172,17 @@ func (s galaScope) hidesFrom(name string, extra map[string]bool) bool {
 	return true
 }
 
+// declaresVisibly reports whether a GALA package this file can name a symbol
+// of unqualified — or one in extra — declares name.
+func (s galaScope) declaresVisibly(name string, extra map[string]bool) bool {
+	for _, p := range s.declarers[name] {
+		if s.visible[p] || extra[p] {
+			return true
+		}
+	}
+	return false
+}
+
 // namedImportQualifier returns the qualifier of a package this file imports
 // by name that declares `name`, so the hint can point at `qualifier.name`.
 func (s galaScope) namedImportQualifier(name string) (string, bool) {

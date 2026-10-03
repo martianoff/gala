@@ -44,6 +44,7 @@ go_test(
         "default_source_test.go",
         "doc_metadata_test.go",
         "go_cgo_test.go",
+        "go_exports_scan_test.go",
         "go_qualifier_import_test.go",
         "go_sdk_bazel_test.go",
         "go_src_dirs_test.go",

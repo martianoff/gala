@@ -753,7 +753,6 @@ appears only in its **return type**, never in a parameter — a *phantom*
 result-only param. The canonical case is an error-only constructor for a
 two-parameter type:
 
-<!-- doc-check: fragment -->
 ```gala
 // `A` is phantom: it appears in the return type but in no parameter.
 func InvalidOf[E any, A any](err E) Validated[E, A] = Invalid(ArrayOf(err))

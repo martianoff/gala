@@ -75,7 +75,11 @@ import (
 // so a record of them no longer collides with a Go type of the same key (a
 // GALA package `fs` beside Go's `io/fs`). A v12 payload keeps them in Types,
 // where they would hide such a Go type again.
-const CacheVersion = "v13"
+//
+// v14: GoExports is read from a parse of each Go file, so grouped and generic
+// declarations count. GALA-E0023 checks type names against it, so a v13
+// payload would report the types it missed as undefined.
+const CacheVersion = "v14"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path
