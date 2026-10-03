@@ -1988,11 +1988,11 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// A conversion to a named function type (`type Handler func(int) int`,
 	// then `Handler((x) => x)`) takes one argument of that function type, so
 	// a lambda converted this way is typed by it. So is one converted to a Go
-	// named function type (`http.HandlerFunc((w, r) => …)`). A generic one
-	// written with type arguments is left alone: its signature would need them
-	// substituted.
-	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil && len(t.extractFuncCallTypeArgs(fun)) == 0 {
-		if ft := t.conversionFuncType(t.extractFuncName(fun)); ft != nil {
+	// named function type (`http.HandlerFunc((w, r) => …)`), and one
+	// converted to an instantiated generic alias (`Conv[int, string]((x) =>
+	// …)`) by the alias's signature with the type arguments substituted.
+	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
+		if ft := t.conversionFuncType(fun); ft != nil {
 			ctx.goFuncParamTypes = []transpiler.Type{*ft}
 		}
 	}
@@ -2000,15 +2000,14 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// A call of a local binding of function type (`forEach((v) => g(v))` for
 	// a parameter `forEach func(func(T))`) takes its parameter types from the
 	// binding's type, type parameters of the enclosing declaration included.
-	// A binding of a generic alias instantiated with type arguments is left
-	// alone: the alias's signature would need them substituted.
+	// A binding of a generic alias (`visit Visitor[int]` for `type
+	// Visitor[T any] func(func(T))`) takes the alias's signature with its type
+	// arguments substituted: `func(func(int))`.
 	if ctx.funcMeta == nil && ctx.goFuncParamTypes == nil {
 		if id, isIdent := fun.(*ast.Ident); isIdent {
 			if typ, _, bound := t.scopeLookup(id.Name); bound {
-				if _, generic := typ.(transpiler.GenericType); !generic {
-					if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
-						ctx.goFuncParamTypes = ft.Params
-					}
+				if ft := t.resolveTranspilerTypeAsFuncType(typ); ft != nil {
+					ctx.goFuncParamTypes = ft.Params
 				}
 			}
 		}
@@ -3567,18 +3566,22 @@ func (t *galaASTTransformer) goTypeKey(name string) string {
 	return t.ownGoTypeKey(name)
 }
 
-// conversionFuncType returns the function type a call of name converts to
-// when name is a named function type rather than a function: a GALA alias
-// (through a chain of them), a Go type of the package's own .go files, or an
-// imported Go one (`http.HandlerFunc`). It returns nil otherwise.
-func (t *galaASTTransformer) conversionFuncType(name string) *transpiler.FuncType {
+// conversionFuncType returns the function type a call of fun converts to when
+// fun names a function type rather than a function: a GALA alias (through a
+// chain of them; a generic one instantiated as written, `Conv[int, string]`),
+// a Go type of the package's own .go files, or an imported Go one
+// (`http.HandlerFunc`). It returns nil otherwise, including for a generic
+// alias written without its type arguments, which names no type yet, and for
+// a generic Go named type, whose signature is not instantiated here.
+func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncType {
+	name := t.extractFuncName(fun)
 	if name == "" {
 		return nil
 	}
 	if _, isAlias := t.typeAliases[name]; isAlias {
-		return t.resolveTranspilerTypeAsFuncType(transpiler.NamedType{Name: name})
+		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
 	}
-	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" && len(td.TypeParams) == 0 {
 		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
 			return &ft
 		}
@@ -3601,6 +3604,15 @@ func lambdaParamCount(lambda *grammar.LambdaExpressionContext) int {
 // lambda parameter the type does not cover is GALA-E0033; a call argument,
 // whose expected type may still be partly inferred, passes false.
 func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
+	// A GALA alias of a function type (`f Conv[int, string]`) is a Go alias,
+	// so the slot has that function type: every lowering below that keys on
+	// a function type (lambdas, placeholders, partial functions, thunks)
+	// sees through it.
+	if _, isFunc := s.typ.(transpiler.FuncType); !isFunc {
+		if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+			s.typ = *ft
+		}
+	}
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {

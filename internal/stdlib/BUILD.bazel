@@ -230,6 +230,7 @@ go_test(
         "embed_completeness_test.go",
         "fingerprint_test.go",
         "source_tree_files_gen_test.go",
+        "stdlib_test.go",
     ],
     embed = [":stdlib"],
     deps = ["@com_github_stretchr_testify//require"],

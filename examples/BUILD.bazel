@@ -3789,3 +3789,10 @@ gala_exec_test(
     expected = "match_arm_block_local.out",
     deps = ["//collection_immutable"],
 )
+
+# A generic alias of a function type (a Go generic alias: go >= 1.24).
+gala_exec_test(
+    name = "generic_func_alias",
+    src = "generic_func_alias.gala",
+    expected = "generic_func_alias.out",
+)

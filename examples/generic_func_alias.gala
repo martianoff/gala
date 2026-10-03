@@ -1,0 +1,31 @@
+package main
+
+// A generic alias of a function type is a Go generic alias,
+// `type Conv[A any, B any] = func(A) B`: a struct field, a parameter, a val or
+// a binding typed `Conv[int, string]` is a `func(int) string`, and a lambda in
+// its place takes those types.
+
+type Conv[A any, B any] func(A) B
+type Visitor[T any] func(func(T))
+
+struct Step[A any, B any](In A, Run Conv[A, B])
+
+func runStep[A any, B any](s Step[A, B]) B = s.Run(s.In)
+
+func applyConv[A any, B any](a A, f Conv[A, B]) B = f(a)
+
+func visitAll(visit Visitor[int]) = visit((v) => Println(s"visited $v"))
+
+func main() {
+    Println(Step[int, string](In = 3, Run = (x) => s"$x").In)
+    Println(runStep(Step(In = 4, Run = (x) => x * 10)))
+    Println(applyConv("gala", _.Size()))
+
+    val shout Conv[string, string] = (s) => s + "!"
+    Println(shout("hey"))
+
+    visitAll((f) => {
+        f(1)
+        f(2)
+    })
+}

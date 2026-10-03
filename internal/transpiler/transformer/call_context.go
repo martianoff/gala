@@ -216,13 +216,16 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 	var expectedType transpiler.Type = transpiler.NilType{}
 
 	if ctx.funcMeta != nil && argIdx < len(ctx.funcMeta.ParamTypes) {
-		if ft, ok := ctx.funcMeta.ParamTypes[argIdx].(transpiler.FuncType); ok {
+		// A parameter typed by an alias of a function type (`t Thunk[T]` for
+		// `type Thunk[T any] func() T`) is that function type, so it takes
+		// the function-type path, type-parameter masking included.
+		if ft := t.resolveTranspilerTypeAsFuncType(ctx.funcMeta.ParamTypes[argIdx]); ft != nil {
 			if len(ctx.typeSubst) > 0 {
 				// Substitute inferred or explicit type args (both void and non-void)
-				expectedType = t.substituteTranspilerTypeParams(ctx.funcMeta.ParamTypes[argIdx], ctx.typeSubst)
+				expectedType = t.substituteTranspilerTypeParams(*ft, ctx.typeSubst)
 			} else if len(ft.Results) == 0 || len(ctx.funcMeta.TypeParams) == 0 {
 				// Void function type or non-generic function — pass as-is
-				expectedType = ft
+				expectedType = *ft
 			} else if !funcTypeParamsMentionTypeParams(ft.Params, ctx.funcMeta.TypeParams) {
 				// Generic function whose lambda Params don't reference any of the
 				// function's type parameters (only the Results do). The Params are

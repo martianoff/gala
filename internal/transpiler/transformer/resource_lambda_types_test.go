@@ -121,11 +121,13 @@ func TestLambdaArgOfLocalFuncBinding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "forEach(func(v T) {")
 
-	// A binding of a generic alias with type arguments is not typed by the
-	// alias's uninstantiated signature.
+	// A binding of a generic alias with type arguments is typed by the
+	// alias's signature instantiated with them, never the declared `func(T)`.
 	files[galaFile] = "package main\n\ntype Visitor[T any] func(func(T))\n\n" +
 		"func run(visit Visitor[int]) = visit((v) => Println(v))\n"
-	out, _ = transpileInModule(t, files, galaFile)
+	out, err = transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "visit(func(v int) {")
 	assert.NotContains(t, out, "func(v T)")
 }
 
@@ -150,4 +152,23 @@ func TestConversionToNamedFuncTypeTypesTheLambda(t *testing.T) {
 	out, err := transpileInModule(t, files, galaFile)
 	require.NoError(t, err)
 	assert.Contains(t, out, "func(x int) int")
+}
+
+// TestConversionToGenericGoNamedFuncType covers a conversion to a generic Go
+// named function type declared in the package's own .go file. Its signature
+// is not instantiated, so the lambda gets no type from it (GALA-E0033) and is
+// never typed by the type's own parameter names (`func(x A) B`), with or
+// without type arguments.
+func TestConversionToGenericGoNamedFuncType(t *testing.T) {
+	for _, call := range []string{"Conv((x) => x)", "Conv[int, int]((x) => x)"} {
+		t.Run(call, func(t *testing.T) {
+			files, galaFile := samePackageModule(".",
+				"package main\n\ntype Conv[A any, B any] func(A) B\n",
+				"package main\n\nfunc main() {\n    val c = "+call+"\n    Println(c != nil)\n}\n")
+			out, err := transpileInModule(t, files, galaFile)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0033")
+			assert.NotContains(t, out, "x A")
+		})
+	}
 }
