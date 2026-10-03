@@ -163,6 +163,13 @@ func (t *galaASTTransformer) bindingScope(name string) *scope {
 	return nil
 }
 
+// isTopLevelBinding reports whether name resolves to a package-level binding:
+// one bound in the outermost scope, not shadowed by a local.
+func (t *galaASTTransformer) isTopLevelBinding(name string) bool {
+	s := t.bindingScope(name)
+	return s != nil && s.parent == nil
+}
+
 // scopeLookup resolves name in the scope chain: its tracked type (NilType when
 // none was recorded), whether it is a val, and whether it is bound at all.
 func (t *galaASTTransformer) scopeLookup(name string) (typ transpiler.Type, isVal, bound bool) {

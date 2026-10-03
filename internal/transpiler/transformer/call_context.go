@@ -1,6 +1,9 @@
 package transformer
 
 import (
+	"slices"
+	"strings"
+
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -375,53 +378,13 @@ func (t *galaASTTransformer) resolveNamedArgExpectedType(ctx callContext, argNam
 // a generic function's parameter shape can be propagated to a lambda argument
 // before the type parameters have been inferred from sibling arguments.
 func typeMentionsTypeParam(typ transpiler.Type, typeParams []string) bool {
-	if typ == nil || typ.IsNil() || len(typeParams) == 0 {
+	if len(typeParams) == 0 {
 		return false
 	}
-	nameMatches := func(name string) bool {
-		for _, tp := range typeParams {
-			if tp == name {
-				return true
-			}
-		}
-		return false
-	}
-	switch v := typ.(type) {
-	case transpiler.BasicType:
-		return nameMatches(v.Name)
-	case transpiler.NamedType:
-		// Only bare names (no package) can be type parameters.
-		return v.Package == "" && nameMatches(v.Name)
-	case transpiler.GenericType:
-		if typeMentionsTypeParam(v.Base, typeParams) {
-			return true
-		}
-		for _, p := range v.Params {
-			if typeMentionsTypeParam(p, typeParams) {
-				return true
-			}
-		}
-		return false
-	case transpiler.ArrayType:
-		return typeMentionsTypeParam(v.Elem, typeParams)
-	case transpiler.PointerType:
-		return typeMentionsTypeParam(v.Elem, typeParams)
-	case transpiler.MapType:
-		return typeMentionsTypeParam(v.Key, typeParams) || typeMentionsTypeParam(v.Elem, typeParams)
-	case transpiler.FuncType:
-		for _, p := range v.Params {
-			if typeMentionsTypeParam(p, typeParams) {
-				return true
-			}
-		}
-		for _, r := range v.Results {
-			if typeMentionsTypeParam(r, typeParams) {
-				return true
-			}
-		}
-		return false
-	}
-	return false
+	// Only bare names (no package) can be type parameters.
+	return typeNameMatches(typ, func(name string) bool {
+		return !strings.Contains(name, ".") && slices.Contains(typeParams, name)
+	})
 }
 
 // funcTypeParamsMentionTypeParams reports whether any element of params

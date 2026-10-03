@@ -511,6 +511,10 @@ val sum = list.FoldLeft(0, (acc, x) => acc + x)
 // Non-generic wrapper methods also infer lambda param types
 val s = S("hello")
 val hasVowel = s.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
+
+// A val of function type types the lambdas passed to it
+val apply = (h func(string) string) => h("gala")
+val shouted = apply((w) => w + "!")
 ```
 
 ## Collect - Filter and Transform in One Pass

@@ -1,0 +1,31 @@
+package main
+
+// A lambda passed to a value of function type takes its parameter types from
+// that value's type, whatever holds it: a val, a var, a package-level val, a
+// val over a type parameter, or the result of a call.
+
+val shout = (h func(string) string) => h("hey")
+
+func makeApplier() func(func(int) int) int = (h) => h(2)
+
+func describeWith[T any](x T, show func(T) string) string {
+    val render = (h func(T) string) => s"<${h(x)}>"
+    render((v) => show(v))
+}
+
+func main() {
+    val apply = (h func(string) string) => h("x")
+    Println(apply((s) => s + "!"))
+
+    var step = (f func(int) int, x int) => f(x)
+    Println(step((n) => n + 1, 5))
+    step = (f func(int) int, x int) => f(f(x))
+    Println(step((n) => n + 1, 5))
+
+    val applier = makeApplier()
+    Println(applier((n) => n * 10))
+    Println(makeApplier()((n) => n + 40))
+
+    Println(shout((s) => s + "?"))
+    Println(describeWith(7, (n) => s"n=$n"))
+}

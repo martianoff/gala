@@ -675,7 +675,11 @@ func main() {
     val s = S("hello")
     val hasVowel = s.Exists((r) => r == 'a' || r == 'e' || r == 'i' || r == 'o' || r == 'u')
 
-    Println(positive, doubled, sum, hasVowel)
+    // A val of function type types the lambdas passed to it
+    val apply = (h func(string) string) => h("gala")
+    val shouted = apply((w) => w + "!")
+
+    Println(positive, doubled, sum, hasVowel, shouted)
 }
 ```
 
