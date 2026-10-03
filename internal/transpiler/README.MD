@@ -122,10 +122,10 @@ The transformer uses unified resolution with documented precedence:
 
 **Resolution Order:**
 1. Exact match
-2. std package prefix (for standard library types)
-3. Current package prefix
-4. Explicitly imported packages (non-dot)
-5. Dot-imported packages
+2. Current package prefix (a package's own declarations shadow every import, std included)
+3. std package prefix (for standard library types)
+4. Dot-imported packages
+5. Explicitly imported packages (non-dot)
 
 **Key Methods:**
 - `resolveTypeName(name, exists)` - Core resolution with callback

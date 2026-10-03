@@ -648,8 +648,8 @@ var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 //     (but NOT for external Go packages like "time", "fmt", etc.)
 //  3. Try current package prefix
 //  4. Try std package prefix
-//  5. Try all explicitly imported packages (non-dot)
-//  6. Try dot-imported packages
+//  5. Try dot-imported packages
+//  6. Try all explicitly imported packages (non-dot)
 //
 // Returns the resolved name and whether resolution succeeded.
 func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string) bool) (string, bool) {
@@ -929,10 +929,10 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 //
 // Resolution precedence:
 //  1. Exact match
-//  2. std package prefix (for standard library types)
-//  3. Current package prefix
-//  4. Explicitly imported packages
-//  5. Dot-imported packages
+//  2. Current package prefix (the package's own types shadow std's)
+//  3. std package prefix (for standard library types)
+//  4. Dot-imported packages
+//  5. Explicitly imported packages
 //
 // Returns nil if the type is not found.
 func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetadata {

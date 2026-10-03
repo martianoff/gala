@@ -4094,6 +4094,24 @@ func main() {
 
 Two dot-imported packages that export the same name are rejected with [GALA-E0032](errors/GALA-E0032.md); qualify or alias one of them. This is by design for packages that deliberately re-export another's API — `concurrent` is a facade over `go_interop`'s execution-context helpers, so dot-importing both is never meaningful. See [Using `go_interop` in the same file](CONCURRENT.MD#using-go_interop-in-the-same-file).
 
+### Package Declarations Shadow Imported Names
+
+A type or function the package declares is what its bare name means everywhere in the package, in every file, ahead of any import. That includes std, which every file imports implicitly: a package may declare its own `Seq`, `Option`, `Tuple` or `Either`, or a sealed variant named `Left` or `Some`, and the bare name then refers to the package's declaration in fields, parameters, results, `val` annotations, constructor calls, patterns and type arguments. std's other names stay in scope, and a shadowed std type is still reachable as `std.Seq` through `import "martianoff/gala/std"`. Code importing the package sees the declaration as `lib.Seq` as usual.
+
+```gala
+package shapes
+
+import . "martianoff/gala/collection_immutable"
+
+type Seq Array[int]           // shadows std's Seq in this package
+
+struct Holder(Items Seq)      // the package's Seq, not std.Seq
+
+func Make() Holder = Holder(ArrayOf(1, 2))
+```
+
+A dot import is the exception. GALA's `import . "path"` is a Go dot import, and Go allows no package-level name that a dot import in any file of the package also brings in, so declaring `struct List(...)` beside `import . "martianoff/gala/collection_immutable"` is rejected with [GALA-E0066](errors/GALA-E0066.md). Import the package under a name, or rename the declaration.
+
 ### Using Symbols from Other Packages
 
 Types and functions from other packages are accessed using the package name (or alias) followed by a dot.
