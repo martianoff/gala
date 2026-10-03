@@ -981,6 +981,51 @@ func main() {
 			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
 			expectContains: "package-level value ArrayOf is also exported by collection_immutable",
 		},
+		{
+			// The test's analyzer has no source for golang.org/x/term, as a
+			// build has none for a Go module it could not load. Try used to
+			// be emitted as an uninstantiated `std.Try{}.Apply(...)`.
+			name: "GALA-E0067 Try of a call into a Go package that was not loaded",
+			input: `package main
+
+import "golang.org/x/term"
+
+func main() {
+    Println(Try(term.MakeRaw(0)).IsSuccess())
+}`,
+			expectCode:     galaerr.CodeUninferredTypeArgument,
+			expectContains: "cannot infer type argument T of Try: the type of its argument `term.MakeRaw(...)` is unknown (hint: the type information of Go package \"golang.org/x/term\" could not be loaded",
+		},
+		{
+			// The same in a void lambda, the shape it was found in.
+			name: "GALA-E0067 Try in a void lambda",
+			input: `package main
+
+import "golang.org/x/term"
+
+func main() {
+    val f = () => {
+        Try(term.MakeRaw(0))
+        Println("raw")
+    }
+    f()
+}`,
+			expectCode:     galaerr.CodeUninferredTypeArgument,
+			expectContains: "cannot infer type argument T of Try",
+		},
+		{
+			name: "GALA-E0067 generic struct whose fields do not fix its type parameter",
+			input: `package main
+
+struct Tag[T any](Name string)
+
+func main() {
+    val t = Tag("x")
+    Println(t.Name)
+}`,
+			expectCode:     galaerr.CodeUninferredTypeArgument,
+			expectContains: "cannot infer type argument T of generic struct Tag from its fields or the expected type",
+		},
 	}
 
 	for _, tc := range cases {

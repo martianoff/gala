@@ -483,7 +483,7 @@ require (
 
 1. Go dependencies are tracked in `gala.mod` but not transpiled
 2. The transpiler generates correct Go imports for Go packages
-3. For non-Bazel builds: `gala build` downloads them via `go mod tidy`
+3. For non-Bazel builds: `gala build` and `gala test` read each Go dependency's source for its types before transpiling, downloading it first if it is not cached, and `go mod tidy` fetches it for the Go compile. A GALA library's own Go dependencies are read the same way when it is built as a dependency, so they need not be repeated in your `gala.mod`
 4. For Bazel builds: Gazelle's `go_deps` extension fetches them
 
 **Usage in GALA code:**
