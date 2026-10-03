@@ -1979,7 +1979,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	// A bare name bound in scope is that binding, as for getFunction: not a Go
 	// function or a named function type that happens to share its name.
 	shadowed := false
-	if id, isIdent := ast.Unparen(fun).(*ast.Ident); isIdent {
+	if id, isIdent := fun.(*ast.Ident); isIdent {
 		shadowed = t.shadowingScope(id.Name) != nil
 	}
 
@@ -3582,6 +3582,16 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 	if _, isAlias := t.typeAliases[name]; isAlias {
 		return t.resolveTranspilerTypeAsFuncType(t.astTypeToTranspilerType(fun))
 	}
+	return t.goNamedFuncType(name)
+}
+
+// goNamedFuncType returns the underlying function type of the non-generic Go
+// named function type name (`http.HandlerFunc`, or a type of the package's own
+// .go files), or nil.
+func (t *galaASTTransformer) goNamedFuncType(name string) *transpiler.FuncType {
+	if t.goTypeInfo == nil {
+		return nil
+	}
 	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" && len(td.TypeParams) == 0 {
 		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
 			return &ft
@@ -3594,21 +3604,23 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 // when the callee is a value rather than a declared function: a val, var or
 // parameter (the val through its `.Get()` unwrap), or the result of another
 // call, parenthesized or not. A value typed by an alias of a function type has
-// that function type, a generic alias's type arguments substituted. It returns
-// nil for any other callee, and for a value whose type is not a function type
-// it can state, such as the result of a generic function whose signature still
-// names that function's own type parameters, which no lambda may be lowered
-// against.
+// that function type, a generic alias's type arguments substituted, and one
+// typed by a Go named function type has its underlying signature. It returns
+// nil for any other callee, and for a value whose parameter types name a type
+// parameter the code being transformed does not bind, such as the result of a
+// generic function whose type arguments the call leaves undetermined: no lambda
+// may be lowered against it.
 func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 	fun = ast.Unparen(fun)
-	var calleeTypeParams []string
 	var typ transpiler.Type
 	if b, bound := t.bindingRef(fun); bound {
-		if b.pkg == "" && t.loweringDefault != nil && t.shadowingScope(b.name) == nil {
-			// A default lowered at a use site: the use site's locals were
-			// not in scope where the default was written (see shadowingScope),
-			// only this package's own top-level vals, for its own defaults.
-			if s := t.bindingScope(b.name); s == nil || s.parent != nil || t.loweringForeignDefault() {
+		if t.loweringDefault != nil && (b.pkg != "" || t.shadowingScope(b.name) == nil) {
+			// A default is lowered at its use site but was written in its
+			// own scope (see shadowingScope). A binding the default makes
+			// itself is in scope; otherwise a foreign default's names are its
+			// package's, and the use site's locals were not in scope: only
+			// this package's own top-level vals type its own defaults.
+			if t.loweringForeignDefault() || b.pkg == "" && t.bindingScope(b.name).parent != nil {
 				return nil
 			}
 		}
@@ -3623,23 +3635,22 @@ func (t *galaASTTransformer) calleeFuncType(fun ast.Expr) *transpiler.FuncType {
 			// inference may still know it.
 			typ = t.getExprTypeName(fun)
 		}
-	} else if call, isCall := fun.(*ast.CallExpr); isCall {
+	} else if _, isCall := fun.(*ast.CallExpr); isCall {
 		typ = t.getExprTypeName(fun)
-		if meta := t.getFunction(t.extractFuncName(call.Fun)); meta != nil {
-			// The callee's type parameters its result may still name; one
-			// the enclosing declaration also declares is that declaration's.
-			for _, tp := range meta.TypeParams {
-				if !t.activeTypeParams[tp] {
-					calleeTypeParams = append(calleeTypeParams, tp)
-				}
-			}
-		}
 	} else {
 		return nil
 	}
 	ft := t.resolveTranspilerTypeAsFuncType(typ)
-	if ft == nil || funcTypeParamsMentionTypeParams(ft.Params, calleeTypeParams) {
+	if ft == nil && !transpiler.IsUnusable(typ) {
+		ft = t.goNamedFuncType(typ.String())
+	}
+	if ft == nil {
 		return nil
+	}
+	for _, p := range ft.Params {
+		if t.mentionsUnboundTypeParam(p) {
+			return nil
+		}
 	}
 	return ft
 }

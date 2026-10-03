@@ -777,39 +777,54 @@ func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 }
 
 func (t *galaASTTransformer) hasTypeParams(typ transpiler.Type) bool {
+	return typeNameMatches(typ, t.isActiveTypeParam)
+}
+
+// mentionsUnboundTypeParam reports whether typ names a type parameter the code
+// being transformed does not bind (see isUnboundTypeParam), a method's own
+// type parameter that inference left as its sentinel name included.
+func (t *galaASTTransformer) mentionsUnboundTypeParam(typ transpiler.Type) bool {
+	return typeNameMatches(typ, func(name string) bool {
+		return strings.HasPrefix(name, freshMethodTypeParamPrefix) || t.isUnboundTypeParam(name)
+	})
+}
+
+// typeNameMatches reports whether typ, or any type inside it, is a name
+// (qualified as written: `testing.B` is Go's type, not a parameter B) for
+// which match holds.
+func typeNameMatches(typ transpiler.Type, match func(string) bool) bool {
 	if typ == nil || typ.IsNil() {
 		return false
 	}
 	switch v := typ.(type) {
 	case transpiler.BasicType:
-		return t.isActiveTypeParam(v.Name)
+		return match(v.Name)
 	case transpiler.NamedType:
-		// Keep the qualifier: `testing.B` is Go's type, not a parameter B.
 		if v.Package != "" {
-			return t.isActiveTypeParam(v.Package + "." + v.Name)
+			return match(v.Package + "." + v.Name)
 		}
-		return t.isActiveTypeParam(v.Name)
+		return match(v.Name)
 	case transpiler.GenericType:
 		for _, p := range v.Params {
-			if t.hasTypeParams(p) {
+			if typeNameMatches(p, match) {
 				return true
 			}
 		}
-		return t.hasTypeParams(v.Base)
+		return typeNameMatches(v.Base, match)
 	case transpiler.ArrayType:
-		return t.hasTypeParams(v.Elem)
+		return typeNameMatches(v.Elem, match)
 	case transpiler.PointerType:
-		return t.hasTypeParams(v.Elem)
+		return typeNameMatches(v.Elem, match)
 	case transpiler.MapType:
-		return t.hasTypeParams(v.Key) || t.hasTypeParams(v.Elem)
+		return typeNameMatches(v.Key, match) || typeNameMatches(v.Elem, match)
 	case transpiler.FuncType:
 		for _, p := range v.Params {
-			if t.hasTypeParams(p) {
+			if typeNameMatches(p, match) {
 				return true
 			}
 		}
 		for _, r := range v.Results {
-			if t.hasTypeParams(r) {
+			if typeNameMatches(r, match) {
 				return true
 			}
 		}

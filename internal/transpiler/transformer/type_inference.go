@@ -566,8 +566,11 @@ func (t *galaASTTransformer) substituteConcreteTypes(returnType transpiler.Type,
 // method's own type params so they stay distinct from identically-named
 // receiver type arguments during unification-based inference.
 func freshMethodTypeParamName(i int) string {
-	return "__mtp" + itoaInt(i)
+	return freshMethodTypeParamPrefix + itoaInt(i)
 }
+
+// freshMethodTypeParamPrefix starts every freshMethodTypeParamName.
+const freshMethodTypeParamPrefix = "__mtp"
 
 // itoaInt converts a small non-negative int to its decimal string without
 // pulling in strconv at every call site.

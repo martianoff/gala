@@ -175,10 +175,16 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 			want: "(func(v T) string {",
 		},
 		{
-			name: "a parameter named like a Go function of the package",
-			gala: "func run(apply func(func(string) string) string) string = apply((s) => s + \"!\")\n",
+			name:  "a parameter named like a Go function of the package",
+			gala:  "func run(apply func(func(string) string) string) string = apply((s) => s + \"!\")\n",
 			want:  "apply(func(s string) string {",
 			goSrc: "package main\n\nfunc apply(h func(int) int) int { return h(1) }\n",
+		},
+		{
+			name:  "a parameter typed by a Go named function type of the package",
+			gala:  "func run(v Visitor) = v((n) => Println(n + 1))\n",
+			want:  "v(func(n int) {",
+			goSrc: "package main\n\ntype Visitor func(func(int))\n",
 		},
 		{
 			name: "a var bound to a lambda",
@@ -237,22 +243,32 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 		})
 	}
 
-	// The result of a generic function whose type arguments the call leaves
-	// undetermined still names that function's own type parameter; the lambda
-	// is not lowered against it (`func(s B)`, undefined in the caller).
-	files, galaFile := samePackageModule(".", "package main\n",
-		"package main\n\nfunc mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n"+
-			"func run() int = mk(1)((s) => 2)\n")
-	_, err := transpileInModule(t, files, galaFile)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "GALA-E0033")
+	// The result of a generic function or method whose type arguments the
+	// call leaves undetermined still names its own type parameter, however
+	// deep the call; the lambda is not lowered against it (`func(s B)`,
+	// undefined in the caller).
+	for _, src := range []string{
+		"func mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
+			"func run() int = mk(1)((s) => 2)\n",
+		"func mk[A any, B any](a A) func(int) func(func(B) A) A = (n) => (h) => a\n\n" +
+			"func run() int = mk(1)(2)((s) => 2)\n",
+		"struct Box(N int)\n\nfunc (b Box) Maker[U any]() func(func(U) int) int = (h) => b.N\n\n" +
+			"func run() int = Box(1).Maker()((s) => 2)\n",
+	} {
+		files, galaFile := samePackageModule(".", "package main\n", "package main\n\n"+src)
+		_, err := transpileInModule(t, files, galaFile)
+		require.Error(t, err, src)
+		assert.Contains(t, err.Error(), "GALA-E0033", src)
+	}
 
 	// A declared default is lowered at its use site. A top-level val the
-	// default calls types its lambda there, but a use-site local of that name,
-	// which was not in scope where the default was written, never does.
+	// default calls types its lambda there. A use-site local of that name was
+	// not in scope where the default was written: the lowered default would
+	// read the local, so its lambda is refused (GALA-E0033) rather than typed
+	// against the local.
 	const defaultDecls = "package main\n\nval apply = (h func(string) string) => h(\"x\")\n\n" +
 		"func greet(msg string = apply((s) => s + \"!\")) string = msg\n\n"
-	files, galaFile = samePackageModule(".", "package main\n",
+	files, galaFile := samePackageModule(".", "package main\n",
 		defaultDecls+"func run() string = greet()\n")
 	out, err := transpileInModule(t, files, galaFile)
 	require.NoError(t, err)
