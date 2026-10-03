@@ -34,12 +34,15 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "after line comment", body: "Println(\"zero\") // note\n(1, 2)", stmts: 2},
 		{name: "after comment line", body: "Println(\"zero\")\n// note\n(1, 2)", stmts: 2},
 		{name: "after block comment", body: "Println(\"zero\") /* note */\n(1, 2)", stmts: 2},
+		// As in Go, a block comment that spans lines is a line break.
+		{name: "after multi-line block comment", body: "Println(\"zero\") /* a\nb */ (1, 2)", stmts: 2},
 		{name: "after multi-line raw string", body: "val s = `a\nb`\n(s, 1)", stmts: 2},
 		{name: "after string with escaped newline", body: "val s = \"a\\\nb\"\n(s, 1)", stmts: 2},
 		{name: "slice literal after call", body: "Println(\"zero\")\n[]int{1, 2}", stmts: 2},
 
 		// Everything else keeps continuing across the line break.
 		{name: "call on same line", body: "f(1)(2)", stmts: 1},
+		{name: "call after single-line block comment", body: "f /* note */ (1)", stmts: 1},
 		{name: "call after raw string on its closing line", body: "val s = f(`a\nb`)(1)", stmts: 1},
 		{name: "call after string with escaped newline", body: "val s = \"a\\\nb\"(1)", stmts: 1},
 		{name: "multi-line arguments", body: "Println(\n    1,\n    (2, 3),\n)", stmts: 1},

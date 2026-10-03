@@ -11,8 +11,8 @@ import (
 )
 
 // newlineTokenSource applies GALA's one line-break rule to the token stream:
-// a '(' that starts a new line, right after a token that can end an
-// expression, is re-typed as NL_LPAREN.
+// a '(' separated by a line break from a token that can end an expression is
+// re-typed as NL_LPAREN.
 //
 // The lexer skips whitespace, so without this the parser cannot tell
 //
@@ -22,16 +22,21 @@ import (
 // from `Println("zero")(1, 2)`, and it takes the call. The grammar's call
 // suffix accepts only a plain '(', while every construct that can begin with a
 // '(' right after such a token accepts NL_LPAREN as well, so the re-typed '('
-// starts a new statement and a '(' anywhere else parses exactly as before. The
-// tokens that end an expression are the ones Go inserts a semicolon after: an
-// identifier, a literal, ')', ']' and '}'. Hidden-channel tokens (comments) are
-// passed through and do not count as the previous token.
+// starts a new statement and a '(' anywhere else parses exactly as before.
+//
+// The tokens that end an expression are an identifier, a literal (including
+// `true`, `false`, `nil`), ')', ']' and '}'. That is Go's semicolon-insertion
+// set minus its keywords and `++`/`--`: none of those can be followed by a
+// call, and `return` is left out on purpose so that `return` with its value on
+// the next line still returns that value. A line break is a line break in the
+// source, so, as in Go, a block comment that spans lines counts as one; a
+// comment is otherwise ignored and never the previous token.
 //
 // Only '(' is affected. A line that starts with '.' continues a method chain,
-// a line that starts with a binary operator continues the expression, and
-// `return` followed by a value on the next line still returns that value.
+// and a line that starts with a binary operator continues the expression.
 type newlineTokenSource struct {
 	antlr.Lexer
+	kinds *tokenKinds
 
 	// prevEndLine is the line the previous default-channel token ends on.
 	prevEndLine int
@@ -44,7 +49,7 @@ var _ antlr.Lexer = (*newlineTokenSource)(nil)
 // newTokenStream is the token stream every parse reads: the lexer's tokens
 // with the line-break rule above applied.
 func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
-	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer}, antlr.TokenDefaultChannel)
+	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, kinds: kinds()}, antlr.TokenDefaultChannel)
 }
 
 // tokenKinds holds the token types the parser driver checks, looked up by name
@@ -60,14 +65,16 @@ type tokenKinds struct {
 // is reports whether ttype is marked in set; EOF has a negative type.
 func is(set []bool, ttype int) bool { return ttype >= 0 && ttype < len(set) && set[ttype] }
 
-// kinds is built on first use, so a binary that never parses does not pay for
-// the parser's vocabulary.
-var kinds = sync.OnceValue(func() tokenKinds {
+// kinds is derived once from the generated vocabulary and never changes, like
+// the generated static data it reads. It is built on first use, so a binary
+// that never parses does not pay for it.
+var kinds = sync.OnceValue(func() *tokenKinds {
 	// The parser's vocabulary, not the lexer's: no lexer rule produces NL_LPAREN,
 	// so only the parser knows its type.
-	vocab := grammar.NewgalaParser(nil)
+	grammar.GalaParserInit()
+	vocab := &grammar.GalaParserStaticData
 	byName := map[string]int{}
-	for _, names := range [][]string{vocab.GetSymbolicNames(), vocab.GetLiteralNames()} {
+	for _, names := range [][]string{vocab.SymbolicNames, vocab.LiteralNames} {
 		for ttype, name := range names {
 			if name != "" {
 				byName[name] = ttype
@@ -81,12 +88,12 @@ var kinds = sync.OnceValue(func() tokenKinds {
 		}
 		return ttype
 	}
-	k := tokenKinds{
+	k := &tokenKinds{
 		lparen:     mustType("'('"),
 		nlLparen:   mustType("NL_LPAREN"),
 		identifier: mustType("IDENTIFIER"),
-		endsExpr:   make([]bool, len(vocab.GetSymbolicNames())),
-		spansLines: make([]bool, len(vocab.GetSymbolicNames())),
+		endsExpr:   make([]bool, len(vocab.SymbolicNames)),
+		spansLines: make([]bool, len(vocab.SymbolicNames)),
 	}
 	quoted := []string{"STRING", "CHAR_LIT", "RAW_STRING", "INTERPOLATED_STRING", "FORMAT_STRING"}
 	for _, name := range quoted {
@@ -104,7 +111,7 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	if tok.GetChannel() != antlr.TokenDefaultChannel {
 		return tok
 	}
-	k := kinds()
+	k := s.kinds
 	ttype := tok.GetTokenType()
 	if ttype == k.lparen && s.prevEndsExpr && tok.GetLine() > s.prevEndLine {
 		tok = s.GetTokenFactory().Create(tok.GetSource(), k.nlLparen, tok.GetText(),

@@ -12,9 +12,9 @@ import org.gala.ide.intellij.parser.galaParser
 
 /**
  * The GALA lexer with the compiler's line-break rule applied, so the plugin's
- * PSI tree matches what the compiler parses: a '(' that starts a line, right
- * after a token that can end an expression (an identifier, a literal, ')', ']'
- * or '}'), is re-typed as NL_LPAREN. The grammar's call suffix rejects
+ * PSI tree matches what the compiler parses: a '(' separated by a line break
+ * from a token that can end an expression (an identifier, a literal, ')', ']'
+ * or '}') is re-typed as NL_LPAREN. The grammar's call suffix rejects
  * NL_LPAREN, so such a '(' begins a new statement instead of calling the line
  * before. Mirrors internal/parser/newline.go in the compiler.
  */
@@ -63,18 +63,34 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
 /**
  * Keeps the internal NL_LPAREN token out of syntax errors: wherever it is
  * expected a plain '(' is expected too, so it is dropped from the expected set
- * and the message reads as it did before NL_LPAREN existed.
+ * the messages print. Only the messages change; error recovery still uses the
+ * full expected set, exactly as the compiler's parser does.
  */
 class GalaErrorStrategy : DefaultErrorStrategy() {
-    override fun getExpectedTokens(recognizer: Parser): IntervalSet =
-        withoutNewlineParen(super.getExpectedTokens(recognizer))
-
     override fun reportInputMismatch(recognizer: Parser, e: InputMismatchException) {
         val msg = "mismatched input " + getTokenErrorDisplay(e.offendingToken) +
-            " expecting " + withoutNewlineParen(e.expectedTokens).toString(recognizer.vocabulary)
+            " expecting " + expectedDisplay(recognizer, e.expectedTokens)
         recognizer.notifyErrorListeners(e.offendingToken, msg, e)
     }
 
-    private fun withoutNewlineParen(set: IntervalSet): IntervalSet =
-        IntervalSet(set).apply { remove(galaParser.NL_LPAREN) }
+    override fun reportUnwantedToken(recognizer: Parser) {
+        if (inErrorRecoveryMode(recognizer)) return
+        beginErrorCondition(recognizer)
+        val t = recognizer.currentToken
+        val msg = "extraneous input " + getTokenErrorDisplay(t) +
+            " expecting " + expectedDisplay(recognizer, getExpectedTokens(recognizer))
+        recognizer.notifyErrorListeners(t, msg, null)
+    }
+
+    override fun reportMissingToken(recognizer: Parser) {
+        if (inErrorRecoveryMode(recognizer)) return
+        beginErrorCondition(recognizer)
+        val t = recognizer.currentToken
+        val msg = "missing " + expectedDisplay(recognizer, getExpectedTokens(recognizer)) +
+            " at " + getTokenErrorDisplay(t)
+        recognizer.notifyErrorListeners(t, msg, null)
+    }
+
+    private fun expectedDisplay(recognizer: Parser, set: IntervalSet): String =
+        IntervalSet(set).apply { remove(galaParser.NL_LPAREN) }.toString(recognizer.vocabulary)
 }

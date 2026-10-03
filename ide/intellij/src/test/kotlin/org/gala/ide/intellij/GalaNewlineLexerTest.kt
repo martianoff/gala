@@ -42,6 +42,8 @@ class GalaNewlineLexerTest {
         assertEquals(2, statements("Println(\"zero\")\n(1, 2)"))
         assertEquals(2, statements("val a int64 = 1\n(a, 2)"))
         assertEquals(2, statements("Println(\"zero\") // note\n(x) => x"))
+        assertEquals(2, statements("Println(\"zero\") /* a\nb */ (1, 2)"))
+        assertEquals(2, statements("val s = \"a\\\nb\"\n(s, 1)"))
     }
 
     @Test

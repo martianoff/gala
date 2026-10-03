@@ -234,8 +234,8 @@ of a function with no result type) is rejected as evaluated but not used.
 Statements are separated by line breaks (or `;`). An expression may still span several
 lines, and one rule decides where it ends: **a `(` that starts a line, right after a line
 that ends in a name, a literal, `)`, `]` or `}`, begins a new statement** — it never calls
-the expression on the line before. That is what lets a parenthesised trailing value
-follow any statement:
+the expression on the line before. (As in Go, a block comment that spans lines counts as a line
+break.) That is what lets a parenthesised trailing value follow any statement:
 
 ```gala
 func pair() Tuple[int64, int] {
@@ -259,7 +259,7 @@ Every other line break continues the expression, as it always has:
 | `(` after anything else (`=`, `=>`, `(`, `,`, an operator, `return`) | continues — e.g. a tuple argument on its own line, `return` with its value on the next line |
 | `.` | continues a method chain: `xs` then `.Map(f)` then `.Filter(g)` |
 | a binary operator (`+`, `-`, `&&`, `\|\|`, …) | continues the expression |
-| `[` | continues as an index or type arguments (`xs` then `[0]`) |
+| `[` | continues as an index or type arguments (`xs` then `[0]`); GALA has no slice literal that could start a statement ([GALA-E0007](errors/GALA-E0007.md)) |
 | `match` | continues: matches the expression on the line before |
 
 Multi-line argument lists are unaffected: inside `f(`…`)` the `(` that opens the list is on
