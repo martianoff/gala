@@ -507,6 +507,24 @@ func main() {
 }
 ```
 
+### Type Arguments From the Expected Type
+
+A generic struct construction takes the type arguments its fields leave open
+from the type it is expected to have:
+
+```gala
+package main
+
+struct Tag[T any](Name string)    // T is a phantom: no field names it
+
+func label() Tag[int] = Tag("count")
+
+func main() {
+    val t Tag[string] = Tag("name")
+    Println(s"${label().Name} ${t.Name}")
+}
+```
+
 ## Boolean Exhaustive Match
 
 Boolean pattern matching is exhaustive when both `true` and `false` cases are covered:

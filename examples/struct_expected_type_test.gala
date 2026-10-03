@@ -1,0 +1,97 @@
+package main
+
+import "martianoff/gala/examples/struct_expected_type/units"
+
+// A generic struct construction takes the type arguments its fields leave
+// open from the expected type: `Tag("x")` in a function returning `Tag[int]`
+// is a `Tag[int]`. That holds in every position an expected type reaches it
+// from, through an alias of the struct type, and for structs of another
+// package.
+
+struct Tag[T any](Name string)
+
+struct Pair[A any, B any](First A)
+
+type Field[T any] struct {
+    Label string
+}
+
+type IntTag Tag[int]
+
+func (t Tag[T]) Describe() string = s"tag ${t.Name}"
+
+func (p Pair[A, B]) Describe() string = s"pair ${p.First}"
+
+func exprBody() Tag[int] = Tag("expr")
+
+func blockValue(n int) Tag[int] {
+    val name = s"block $n"
+    Tag(name)
+}
+
+func earlyReturn(n int) Tag[int] {
+    if (n < 0) {
+        return Tag("negative")
+    }
+    Tag(Name = "non-negative")
+}
+
+func branches(flag bool) Tag[string] = if (flag) Tag("then") else Tag("else")
+
+func arms(n int) Tag[bool] = n match {
+    case 0 => Tag("zero")
+    case _ => {
+        val name = s"n=$n"
+        Tag(name)
+    }
+}
+
+func viaAlias() IntTag = Tag("alias")
+
+func partly(n int) Pair[int, string] = Pair(n)
+
+func typeStruct() Field[int] = Field(Label = "field")
+
+struct Marker[T any]()
+
+struct Boxed[T any](Value T)
+
+func marker() Marker[string] = Marker()
+
+func widened() Boxed[int64] = Boxed(1)
+
+func takeTag(t Tag[int]) string = t.Describe()
+
+func build(f func(int) Tag[int]) Tag[int] = f(7)
+
+struct Holder(Inner Tag[int])
+
+func remote(amount float64) units.Quantity[units.Meters] = units.Quantity(amount)
+
+func remoteAlias(amount float64) units.Distance = units.Quantity(amount)
+
+func main() {
+    Println(exprBody().Describe())
+    Println(blockValue(2).Describe())
+    Println(earlyReturn(-1).Describe())
+    Println(earlyReturn(1).Describe())
+    Println(branches(true).Describe())
+    Println(branches(false).Describe())
+    Println(arms(0).Describe())
+    Println(arms(3).Describe())
+    Println(viaAlias().Name)
+    Println(partly(5).Describe())
+    Println(typeStruct().Label)
+    Println(s"${marker()}")
+    Println(widened().Value)
+
+    val annotated Tag[float64] = Tag("annotated")
+    Println(annotated.Describe())
+    Println(takeTag(Tag("argument")))
+    Println(Holder(Tag("field")).Inner.Describe())
+    Println(build((n) => Tag(s"lambda $n")).Describe())
+
+    Println(remote(3.5).Amount)
+    Println(remoteAlias(2.5).Amount)
+    Println(units.Of(1.5).Amount)
+}

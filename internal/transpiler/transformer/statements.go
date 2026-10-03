@@ -608,12 +608,16 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 					}
 				}
 			}
-		} else if isTrailing && lastStmtIsValue &&
-			!transpiler.IsUnusable(lastValueExpected.typ) && t.needsExpectedType(valueExpr) {
+		} else if isTrailing && lastStmtIsValue && !transpiler.IsUnusable(lastValueExpected.typ) &&
+			(t.needsExpectedType(valueExpr) || t.consumesSlotType(valueExpr, t.followAliasChain(lastValueExpected.typ))) {
 			// The block's value fills a typed slot: a lambda, if or match tail is
-			// lowered against it. A plain tail stays an ordinary statement.
+			// lowered against it, and so is a tuple literal or generic struct
+			// construction of the slot's type, which lowerAgainst then need not
+			// recognize again. Any other plain tail stays an ordinary statement.
+			s := lastValueExpected
+			s.push = s.push || !t.needsExpectedType(valueExpr)
 			var expr ast.Expr
-			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
+			if expr, err = t.lowerAgainst(valueExpr, s, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
 		} else if fillsPendingSlot {

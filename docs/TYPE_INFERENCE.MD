@@ -681,6 +681,29 @@ type arguments names no function type, so a lambda converted with a bare
   `Apply`'s parameter types, and a case constructor
   (`Move(None())` for `case Move(D Option[Drag])`) its fields', when
   they name none of the type's type parameters.
+- For a **generic struct construction**, the slot type completes the
+  type arguments the fields leave open when it names the same struct
+  (`structLiteralType`): `Tag("x")` for `struct Tag[T any](Name string)`
+  is a `Tag[int]` as the value of a `Tag[int]` slot, and `Pair(1)` for
+  `struct Pair[A any, B any](First A)` a `Pair[int, string]` as the value
+  of a `Pair[int, string]` slot. The slot binds before the fields do, so
+  an untyped constant takes its type (`Box(1)` in a `Box[int64]` slot is
+  a `Box[int64]`), and it binds a lambda field's type parameters too
+  (`Handler((x) => s"$x")` in a `Handler[int]` slot types `x` as `int`).
+  A zero-argument construction (`Phantom()`, or `Cfg()` taking every
+  field's default) is typed the same way. A slot type argument naming a
+  type parameter nothing has bound binds nothing (`slotTypeArgs`).
+  Argument, `val` and assignment slots
+  push their type for any expression. A result slot — an expression
+  body, a block's trailing value, a `return`, the branches of an if or
+  match filling one, a lambda's result — pushes it only for a
+  construction that *is* the value (`consumesSlotType`, as for a tuple
+  literal), so a
+  construction nested in it, or one bound to an unannotated `val` in the
+  body, takes nothing from the result type. An alias of the struct
+  (`type IntTag Tag[int]`) is followed. A type parameter neither source
+  determines is an error with an annotation and an explicit-type-argument
+  example (`val x Tag[int] = Tag(...)`, `Tag[int](...)`).
 - For **tuple elements** (context 4 / context 2 with tuple return),
   `transformPrimary` inspects the enclosing `returnSlot.typ`
   for a Tuple-shaped expected type and pushes each per-slot type

@@ -231,10 +231,10 @@ func (t *galaASTTransformer) errorAtOutermostCall(err error, exprCtx grammar.IEx
 	if len(suffixes) == 0 {
 		return false
 	}
-	call := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
-	if call.Identifier() != nil || call.ExpressionList() != nil {
+	if !isCallSuffix(suffixes[len(suffixes)-1]) {
 		return false
 	}
+	call := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext)
 	anchor := call.GetStart()
 	if call.ArgumentList() != nil {
 		anchor = call.ArgumentList().GetStart()
