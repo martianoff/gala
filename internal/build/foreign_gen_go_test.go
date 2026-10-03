@@ -143,7 +143,7 @@ func main() {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestBuild_ForeignGenGoChild$", "-test.v")
 		cmd.Env = append(os.Environ(), foreignGenGoChildDir+"="+projectDir)
 		out, _ := cmd.CombinedOutput()
-		if strings.Contains(string(out), "SKIP: TestBuild_ForeignGenGoChild") {
+		if strings.Contains(string(out), "SKIP: TestBuild_ForeignGenGoChild") || isToolchainEnvError(string(out)) {
 			t.Skipf("child build skipped:\n%s", out)
 		}
 		return string(out)
@@ -166,6 +166,9 @@ func TestBuild_ForeignGenGoChild(t *testing.T) {
 	if projectDir == "" {
 		t.Skip("run by TestBuild_ForeignGenGoEditReachesNextBuild")
 	}
+	// The test binary's start-up points GOROOT at the Bazel SDK again; the
+	// PATH `go` the build runs must find its own standard library.
+	alignGorootWithPathGo(t)
 	t.Logf("OUTPUT<%s>", buildAndRun(t, projectDir))
 }
 
