@@ -87,8 +87,8 @@ Go's `switch` statement matches on values or types, but it does not destructure.
 ### GALA
 
 ```gala
-type Even struct {}
-func (e Even) Unapply(i int) Option[int] = if (i % 2 == 0) Some(i) else None[int]()
+struct Even()
+func (e Even) Unapply(i int) Option[int] = When(i % 2 == 0, i)
 
 val opt = Some(42)
 val result = opt match {
@@ -183,22 +183,21 @@ Go's `if err != nil` pattern is explicit and clear. It is also repetitive. When 
 ```gala
 import "os"
 import "strconv"
+import "strings"
 
 // Option: safe absence handling
 val name = user.FindName()
-    .Map((n) => strings.ToUpper(n))
+    .Map(strings.ToUpper)
     .GetOrElse("ANONYMOUS")
 
-// Try: railway-oriented error handling
-// Pass zero-arg functions directly -- no lambda wrapper needed
-val dir = Try(os.TempDir)
-    .OnSuccess((d) => { Println(s"Using temp dir: $d") })
+// Try: a Go call returning (T, error) is already a Try[T]
+val dir = os.Getwd()
+    .OnSuccess((d) => Println(s"Working in: $d"))
     .Map((d) => d + "/myapp")
     .GetOrElse("/tmp/myapp")
 
-// A Go call returning (T, error) is already a Try[T]
 val num = strconv.Atoi(input)
-    .OnFailure((e) => { Println(s"Parse failed: ${e.Error()}") })
+    .OnFailure((e) => Println(s"Parse failed: ${e.Error()}"))
     .GetOrElse(0)
 
 // Either: typed errors
@@ -216,8 +215,8 @@ Side-effect methods (`OnSuccess`/`OnFailure`, `OnSome`/`OnNone`, `OnRight`/`OnLe
 func findBinary() Option[string] =
     exec.LookPath("gala")
         .OrElse(exec.LookPath("gala.exe"))
-        .OnSuccess((p) => { Println(s"Found binary: $p") })
-        .OnFailure((e) => { Println("Binary not found") })
+        .OnSuccess((p) => Println(s"Found binary: $p"))
+        .OnFailure((_) => Println("Binary not found"))
         .ToOption()
 ```
 
@@ -225,15 +224,15 @@ func findBinary() Option[string] =
 
 ```go
 name := "ANONYMOUS"
-n, err := user.FindName()
-if err == nil {
-    name = strings.ToUpper(n)
+if n := user.FindName(); n != nil {
+    name = strings.ToUpper(*n)
 }
 
-dir := os.TempDir()
-fmt.Println("Using temp dir: " + dir)
-dir = dir + "/myapp"
-// No error possible here, but the pattern doesn't compose
+dir := "/tmp/myapp"
+if wd, err := os.Getwd(); err == nil {
+    fmt.Println("Working in: " + wd)
+    dir = wd + "/myapp"
+}
 
 num, err := strconv.Atoi(input)
 if err != nil {
@@ -262,12 +261,11 @@ import . "martianoff/gala/collection_immutable"
 val people = ArrayOf(
     Person("Alice", 30),
     Person("Bob", 17),
-    Person("Charlie", 65)
+    Person("Charlie", 65),
 )
 
 val adultNames = people
-    .Filter((p) => p.Age >= 18)
-    .Map((p) => p.Name)
+    .Collect({ case p if p.Age >= 18 => p.Name })
     .MkString(", ")
 // "Alice, Charlie"
 
@@ -320,20 +318,20 @@ GALA transpiles directly to Go. Every Go package is importable, every Go type is
 import "os"
 import "net/http"
 import "encoding/json"
+import . "martianoff/gala/go_interop"
 
-// Call Go functions directly
-val dir = Try(os.TempDir)
+// Call Go functions directly; a Go (T, error) call is a Try[T] -- no wrapping needed
+val host = os.Hostname().GetOrElse("localhost")
 
-// A Go (T, error) call is a Try[T] -- no wrapping needed
 val result = json.Marshal(data)
-    .Map((bytes) => string(bytes))
+    .Map((bytes) => ToString(bytes))
     .GetOrElse("{}")
 
 // Use Go types in GALA structs
 struct Server(Handler http.Handler, Addr string)
 ```
 
-GALA's type inference understands Go function signatures. When you pass `os.TempDir` (a `func() string`) to `Try`, the transpiler infers `T=string` automatically -- no type annotation needed. A Go function returning `(T, error)` gives a `Try[T]` directly: a returned error is a `Failure`, and `.Map`, `.GetOrElse`, or a `match` work on the call itself.
+GALA reads Go function signatures from the Go SDK, so Go calls need no type annotations. A Go function returning `(T, error)` gives a `Try[T]` directly, and one returning `(A, B)` gives a `Tuple[A, B]`. A returned error is a `Failure`, and `.Map`, `.GetOrElse`, or a `match` work on the call itself.
 
 ### Why this matters
 
@@ -355,12 +353,12 @@ val x = 42                    // int
 val name = "Alice"            // string
 val people = ArrayOf(         // Array[Person]
     Person("Alice", 30),
-    Person("Bob", 25)
+    Person("Bob", 25),
 )
 
 // Generic type params inferred from arguments
 val opt = Some(42)            // Option[int], not Some[int](42)
-val result = Try(os.TempDir)  // Try[string], not Try[string](os.TempDir)
+val port = strconv.Atoi("8080")    // Try[int], from Go's (int, error)
 
 // Lambda param types inferred from method signatures
 val names = people.Map((p) => p.Name)         // not (p Person) =>
@@ -395,7 +393,7 @@ Be honest with yourself about these trade-offs:
 - **Performance-critical inner loops.** GALA's immutable wrappers add a layer of indirection. For tight numerical computation, raw Go may be faster. Profile before assuming this matters -- for most application code, it does not.
 - **Large existing Go codebases.** GALA interoperates with Go libraries, but rewriting an existing Go project in GALA is rarely justified. Use GALA for new modules where the expressiveness pays off.
 - **Teams unfamiliar with functional programming.** If your team does not know what `FlatMap` does, GALA will slow them down before it speeds them up. The concepts are learnable, but they require investment.
-- **Ecosystem maturity.** GALA's tooling (IDE support, debugger integration, error messages) is less mature than Go's. You will occasionally hit rough edges that a mainstream language has long since smoothed out.
+- **Ecosystem maturity.** GALA has an IntelliJ plugin, an LSP server, and documented diagnostics, but its tooling is younger than Go's: there is no dedicated VS Code extension yet, and debugger integration is basic. You will occasionally hit rough edges that a mainstream language has long since smoothed out.
 - **You need the absolute latest Go features immediately.** Since GALA transpiles to Go, new Go features appear in GALA only after the transpiler is updated.
 
 ---
@@ -418,7 +416,7 @@ struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
     case Person(name, age) if age < 18 => s"Hey, $name!"
-    case Person(name, _)               => s"Hello, $name"
+    case _                             => s"Hello, ${p.Name}"
 }
 
 func main() {

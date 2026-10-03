@@ -29,7 +29,7 @@ func area(s Shape) string = s match {
 
 ## Safe. Ergonomic. Compatible.
 
-The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found that **sum types are the #1 most-requested missing feature** in Go. As of Go 1.25 they still don't exist. GALA delivers them — and organizes everything else around three promises.
+The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found that **sum types are the #1 most-requested missing feature** in Go, and Go still does not have them. GALA delivers them — and organizes everything else around three promises.
 
 ### Safe — Go's runtime bugs, caught by the compiler
 
@@ -125,20 +125,19 @@ GALA's version is shorter, handles destructuring automatically, and produces a c
 </div>
 
 <div class="feature-card">
-<h3>Pattern Matching</h3>
-<p>Exhaustive <strong>pattern matching</strong> with destructuring, guards, and expression results — far beyond Go's <code>switch</code>.</p>
-<pre><code>val msg = shape match {
-    case Circle(r)       =&gt; f"r=$r%.1f"
-    case Rectangle(w, h) =&gt; f"${w * h}%.2f"
-}</code></pre>
-<p><a href="{{ '/features/pattern-matching/' | relative_url }}">Learn about pattern matching</a></p>
+<h3>Built for Coding Agents</h3>
+<p>Diagnostics as JSON, every error code's reference page offline, package APIs from the terminal, and a <a href="{{ '/for-ai/' | relative_url }}">Claude Code plugin</a> that feeds GALA diagnostics back after every edit.</p>
+<pre><code>gala build --json .
+gala explain GALA-E0002
+gala doc collection_immutable.Array</code></pre>
+<p><a href="{{ '/for-ai/' | relative_url }}">GALA for AI agents</a></p>
 </div>
 
 <div class="feature-card">
 <h3>Compile-Time Data-Race Safety</h3>
 <p>Only deeply-immutable values may cross a goroutine boundary. A <code>Future</code> body that captures mutable state is a build error (<strong>GALA-E0037</strong>), not a race you find in production.</p>
 <pre><code>var counter = 0
-Future(() =&gt; counter + 1)
+Future(counter + 1)
 // GALA-E0037: captures
 // reassignable var "counter"</code></pre>
 <p><a href="{{ '/features/concurrency-safety/' | relative_url }}">Learn about data-race safety</a></p>
@@ -176,10 +175,10 @@ val updated = config.Copy(Port = 8080)</code></pre>
 <div class="feature-card">
 <h3>Monadic Error Handling</h3>
 <p><code>Option[T]</code>, <code>Either[A,B]</code>, and <code>Try[T]</code> replace nil checks and <code>if err != nil</code> with composable pipelines.</p>
-<pre><code>val result = divide(10, 2)
-    .Map((x) =&gt; x * 2)
-    .FlatMap((x) =&gt; divide(x, 3))
-    .Recover((e) =&gt; 0)</code></pre>
+<pre><code>func loadConfig(path string) Config =
+    os.ReadFile(path)
+        .FlatMap((b) =&gt; codec.Decode(ToString(b)))
+        .GetOrElse(Config(Host = "localhost"))</code></pre>
 <p><a href="{{ '/features/error-handling/' | relative_url }}">Learn about error handling</a></p>
 </div>
 
@@ -229,12 +228,13 @@ val shown = input match {
 
 <div class="feature-card">
 <h3>Full Go Interop</h3>
-<p>Use any Go library. Go imports, Go types, and Go functions work directly in GALA code. One ecosystem, zero friction.</p>
-<pre><code>import "strings"
+<p>Use any Go module — standard library or third-party — with no bindings. Types come straight from the Go SDK, and a Go call returning <code>(T, error)</code> is a <code>Try[T]</code>.</p>
+<pre><code>import "github.com/google/uuid"
 
-val name = user.Name
-    .Map((n) =&gt; strings.ToUpper(n))
-    .GetOrElse("ANONYMOUS")</code></pre>
+// uuid.Parse returns (UUID, error)
+val id = uuid.Parse(raw)
+    .Map((u) =&gt; u.String())
+    .GetOrElse("invalid")</code></pre>
 <p><a href="{{ '/features/go-interop/' | relative_url }}">Learn about Go interop</a></p>
 </div>
 
@@ -251,16 +251,15 @@ val name = user.Name
 
 ### 1. Install
 
-Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases) for Linux, macOS, or Windows. Or build from source:
-
-```bash
-git clone https://github.com/martianoff/gala.git && cd gala
-bazel build //cmd/gala:gala
-```
+Download a pre-built binary from [Releases](https://github.com/martianoff/gala/releases) for Linux, macOS, or Windows, rename it to `gala`, and put it on your `PATH`. GALA compiles through Go, so you also need [Go 1.25+](https://go.dev/dl/). Nix users can run `nix profile install github:martianoff/gala`.
 
 ### 2. Write
 
-Create `main.gala`:
+```bash
+gala new hello && cd hello
+```
+
+Then replace `main.gala` with:
 
 ```gala
 package main
@@ -280,15 +279,10 @@ func main() {
 ### 3. Run
 
 ```bash
-gala mod init example.com/hello
 gala run main.gala
 ```
 
-Or with Bazel for larger projects:
-
-```bash
-bazel run //myapp:myapp
-```
+`gala new` also writes a `.claude/settings.json` that enables the GALA plugin for Claude Code. For larger projects, GALA has first-class Bazel rules.
 
 See the full [Getting Started guide]({{ '/getting-started/' | relative_url }}) for project setup, Bazel integration, and dependency management.
 
@@ -306,7 +300,7 @@ GALA ships with a standard library of type-safe data structures and monads, all 
 | `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await`, `Cancel`, `WithTimeout` | [Concurrency]({{ '/features/concurrency/' | relative_url }}) |
 | `Sendable[F]` | Transparent concurrency-boundary marker — compile-time capture safety | [Concurrency safety]({{ '/features/concurrency-safety/' | relative_url }}) |
 | `Validated[E, A]` | Accumulating validation — `Valid` / `Invalid`, `Zip2`…`Zip10` | [Monadic binding]({{ '/features/monadic-binding/' | relative_url }}) |
-| `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax | [Language spec]({{ '/features/pattern-matching/' | relative_url }}) |
+| `Tuple[A, B]` | Tuples with `(a, b)` syntax and destructuring, up to `Tuple10` | [Language spec]({{ '/features/pattern-matching/' | relative_url }}) |
 | `ConstPtr[T]` | Read-only pointer with compile-time enforcement | [Immutability]({{ '/features/immutability/' | relative_url }}) |
 | `Codec[T]` | Zero-reflection JSON codec — `Encode`, `Decode`, `Rename`, `Omit`, pattern matching | [JSON codec]({{ '/docs/json/' | relative_url }}) |
 | `Regex` | Regular expressions with `Unapply` for pattern matching | [Regex]({{ '/docs/regex/' | relative_url }}) |

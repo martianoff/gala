@@ -95,15 +95,16 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 - Comment/uncomment
 - Color settings page
 - Keyword support for `use` (scoped-resource binding) and `bind` / `also` (do-notation), with the bound name clickable, renameable, and find-usages-aware
-- **12 live templates**: `func`, `val`, `var`, `match`, `if`, `for`, `sealed`, `struct`, `lambda`, `main`, `println`, `sinterp`
+- **13 live templates**: `func`, `val`, `var`, `match`, `if`, `ife`, `for`, `sealed`, `struct`, `lambda`, `main`, `println`, `sinterp`
 
 ### LSP features (via `gala lsp`)
 
 - **Diagnostics** — parse errors, transpilation errors, unused variables, match exhaustiveness, and the surface guardrails: bare Go builtins (**GALA-E0035**) and bare Go statement keywords such as `defer` (**GALA-E0036**)
-- **Hover** — type signatures with fields, methods, sealed cases, built-in function docs
+- **Hover** — inferred types and signatures with fields, methods and sealed cases, plus the declaration's doc comment — for your own code and the standard library
 - **Go to Definition** — cross-file (including the files of a multi-file `main` program), local declarations, pattern bindings, named arg fields, Go stdlib and third-party Go module sources, `go_interop` and other Go-only packages
 - **Find References** — usages of a name across all files of its package
-- **Completion** — type-aware dot completion (GALA *and* Go types), named arguments, sealed case patterns, keywords including `use`/`bind`/`also`, and `.Size()`/`.ByteSize()` on Go primitives
+- **Signature help** — the parameter list and documentation of the call you are typing, with the active argument highlighted
+- **Completion** — type-aware dot completion (GALA *and* Go types) with each item's documentation, named arguments, sealed case patterns, keywords including `use`/`bind`/`also`, and `.Size()`/`.ByteSize()` on Go primitives
 - **No dead ends** — the E0035-forbidden builtins (`len`, `append`, `make`, `panic`, …) are filtered out of completion against the transpiler's own authoritative list, so the editor never suggests code the compiler rejects
 - **Inlay hints** — compiler-inferred types for all `val`/`var` declarations
 - **Document symbols** — the file's own types, sealed variants, methods, functions and package-level vals, at their exact positions
@@ -122,7 +123,7 @@ The structure view displays sealed type `Shape` with its variants (`Circle`, `Re
 
 ### VS Code
 
-Add to `.vscode/settings.json`:
+There is no dedicated GALA extension yet. Use a generic LSP-client extension and register `gala lsp` for `.gala` files; the exact settings key depends on the extension you pick, for example:
 
 ```json
 {

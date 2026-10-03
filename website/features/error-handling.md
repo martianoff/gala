@@ -4,7 +4,7 @@ title: "Golang Option Type — Option, Either, and Try for Go Error Handling"
 description: "Replace Go's if-err-nil with GALA's Option[T], Either[A,B], and Try[T]. Language-level monadic error handling with Map, FlatMap, Recover, and pattern matching — cleaner than fp-go or manual nil checks."
 keywords: "golang option type, go option monad, go either type, golang error handling alternative, go try monad, golang nil alternative, go monadic error handling, golang result type, go error handling verbose, gala error handling"
 permalink: /features/error-handling/
-last_modified_at: 2026-07-10
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Error Handling</p>
@@ -45,10 +45,10 @@ Transform the contained value without unwrapping. If the Option is `None`, the o
 val opt = Some(10)
 val doubled = opt.Map((x) => x * 2)         // Some(20)
 val none = None[int]()
-val still_none = none.Map((x) => x * 2)     // None[int]
+val stillNone = none.Map((x) => x * 2)      // None[int]
 
 // FlatMap chains operations that return Option
-val result = opt.FlatMap((x) => if (x > 5) Some(x) else None[int]())
+val result = opt.FlatMap((x) => if (x > 5) Some(x) else None())
 ```
 
 ### GetOrElse and OrElse
@@ -307,12 +307,12 @@ Try enables elegant pipelines where errors short-circuit the chain:
 ```gala
 func processOrder(id int) Try[Receipt] =
     fetchOrder(id)
-        .FlatMap((o) => validateOrder(o))
-        .FlatMap((o) => chargePayment(o))
-        .FlatMap((o) => createReceipt(o))
+        .FlatMap(validateOrder)
+        .FlatMap(chargePayment)
+        .FlatMap(createReceipt)
         .RecoverWith((e) => {
             logError(e)
-            return Failure[Receipt](e)
+            Failure(e)
         })
 ```
 
@@ -345,17 +345,14 @@ GALA's `json` package integrates with `Try[T]` for safe JSON handling. A `Codec[
 ```gala
 import . "martianoff/gala/json"
 
-type Config struct {
-    var Host string
-    var Port int
-}
+struct Config(Host string, Port int)
 
 val codec = Codec[Config](AsIs())
-val config = Config{Host: "localhost", Port: 8080}
-val jsonStr = codec.Encode(config).Get()
+val config = Config(Host = "localhost", Port = 8080)
+val jsonStr = codec.Encode(config).GetOrElse("")
 // => {"Host":"localhost","Port":8080}
 
-val pretty = codec.EncodePretty(config).Get()
+val pretty = codec.EncodePretty(config).GetOrElse("")
 // => {
 //   "Host": "localhost",
 //   "Port": 8080
@@ -436,16 +433,16 @@ The GALA version reads top-to-bottom. The happy path is the main path. Error han
 
 ### The "graph" case — reuse an earlier value later
 
-The final `Receipt` needs both the original order **and** the payment, so a `FlatMap` chain must nest — each value is trapped in a closure, the accumulator type `[Receipt]` is repeated at every link, and the block ends in a pile of closing parens:
+The final `Receipt` needs both the original order **and** the payment, so a `FlatMap` chain must nest — each value is trapped in a closure and the block ends in a pile of closing parens:
 
 **Before — nested `FlatMap`** (`o` survives only via the deepening indentation):
 
 <!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] =
-    fetchOrder(id).FlatMap[Receipt]((o) =>
-    validateOrder(o).FlatMap[Receipt]((valid) =>
-    chargePayment(valid).FlatMap[Receipt]((payment) =>
+    fetchOrder(id).FlatMap((o) =>
+    validateOrder(o).FlatMap((valid) =>
+    chargePayment(valid).FlatMap((payment) =>
     Success(Receipt(o.Id, payment)))))
 ```
 
@@ -489,7 +486,7 @@ func total() Future[int] {
     bind a = compute(2)
     also b = compute(3)   // independent — all three run at once
     also c = compute(4)
-    Future[int](a + b + c)
+    Future(a + b + c)
 }
 ```
 

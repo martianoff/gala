@@ -155,9 +155,9 @@ func main() {
 
     people.ForEach((p) => {
         val status = p match {
-            case Person(name, age) if age < 18 => name + " is a minor"
-            case Person(name, age) if age > 65 => name + " is a senior"
-            case Person(name, _)               => name + " is an adult"
+            case Person(name, age) if age < 18 => s"$name is a minor"
+            case Person(name, age) if age > 65 => s"$name is a senior"
+            case Person(name, _)               => s"$name is an adult"
             case _                             => "Unknown"
         }
         Println(status)

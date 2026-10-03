@@ -4,7 +4,7 @@ title: "Golang Pattern Matching — Exhaustive Match Expressions for Go"
 description: "GALA brings real pattern matching to Go — struct destructuring, sealed type exhaustive matching, guard clauses, nested patterns, custom extractors, and sequence patterns. Beyond what Go's switch can do."
 keywords: "golang pattern matching, go pattern matching, golang match expression, go switch alternative, go exhaustive match, go destructuring, golang guard clauses, go struct pattern matching, golang case expression"
 permalink: /features/pattern-matching/
-last_modified_at: 2026-07-10
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Pattern Matching</p>
@@ -42,7 +42,6 @@ val result = x match {
     case 1 => "one"
     case 2 => "two"
     case n => s"Value is $n"   // n is bound to x
-    case _ => "other"
 }
 ```
 
@@ -80,9 +79,9 @@ val people = ArrayOf(
 
 people.ForEach((p) => {
     val status = p match {
-        case Person(name, age) if age < 18 => name + " is a minor"
-        case Person(name, age) if age > 65 => name + " is a senior"
-        case Person(name, _)               => name + " is an adult"
+        case Person(name, age) if age < 18 => s"$name is a minor"
+        case Person(name, age) if age > 65 => s"$name is a senior"
+        case Person(name, _)               => s"$name is an adult"
         case _                             => "Unknown"
     }
     Println(status)
@@ -94,7 +93,7 @@ You can match on specific field values and ignore others with `_`:
 <!-- doc-check: fragment -->
 ```gala
 val msg = p match {
-    case Person(name, 30) => name + " is 30"
+    case Person(name, 30) => s"$name is 30"
     case Person(_, age)   => s"Someone is $age"
     case _                => "Unknown"
 }
@@ -133,7 +132,7 @@ Add `if` conditions after a pattern to refine the match. Guards have access to a
 val res = x match {
     case i: int if i > 100 => "Large integer"
     case i: int if i > 0   => "Positive integer"
-    case Person(name, age) if age < 18 => name + " is a minor"
+    case Person(name, age) if age < 18 => s"$name is a minor"
     case _ => "Other"
 }
 ```
@@ -163,10 +162,10 @@ Match against specific instantiations of generic types:
 ```gala
 type Wrap[T any] struct { Value T }
 
-val w = Wrap[int](Value = 42)
+val w = Wrap(Value = 42)
 val res = w match {
     case w: Wrap[int]    => s"Wrapped int: ${w.Value}"
-    case w: Wrap[string] => "Wrapped string: " + w.Value
+    case w: Wrap[string] => s"Wrapped string: ${w.Value}"
     case _               => "Other"
 }
 ```
@@ -179,7 +178,7 @@ Use `[_]` to match any instantiation of a generic type:
 type Wrap[T any] struct { Value T }
 func (w Wrap[T]) GetValue() any = w.Value
 
-val w = Wrap[string](Value = "hello")
+val w = Wrap(Value = "hello")
 val res = w match {
     case w1: Wrap[_] => s"Matched Wrap[_]: ${w1.GetValue()}"
     case _           => "Other"
@@ -201,7 +200,6 @@ opt match {
     case Some(Even(n)) => Println("Found some even number", n)
     case Some(n)       => Println("Found some odd number", n)
     case None()        => Println("Nothing found")
-    case _             => Println("Other")
 }
 ```
 

@@ -4,7 +4,7 @@ title: "Golang Do-Notation — bind / also Monadic Binding for Go"
 description: "GALA's bind/also do-notation flattens FlatMap chains into readable blocks. Sequential bind, plus also for independent steps that accumulate errors (Validated) or run concurrently (Future) — over any monad, no HKT."
 keywords: "golang do notation, go monadic binding, golang for comprehension, go bind notation, golang applicative validation, go error accumulation, golang concurrent futures, go flatmap chain, gala bind also, golang monad syntax"
 permalink: /features/monadic-binding/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Monadic Binding</p>
@@ -112,7 +112,7 @@ func total() Future[int] {
     bind a = compute(2)
     also b = compute(3)    // these three
     also c = compute(4)    // run in parallel
-    Future[int](a + b + c)
+    Future(a + b + c)
 }
 ```
 

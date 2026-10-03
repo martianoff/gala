@@ -4,7 +4,7 @@ title: "Golang Immutable Structs — Immutability by Default for Go"
 description: "GALA makes immutability the default in Go. val bindings, immutable struct fields, auto-generated Copy with named args, structural Equal for free, and ConstPtr read-only pointers — eliminating mutation bugs."
 keywords: "golang immutable struct, go immutable, golang immutability, go const pointer, go immutable fields, golang val var, golang immutable by default, go copy struct, go structural equality, gala immutability"
 permalink: /features/immutability/
-last_modified_at: 2026-07-10
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Immutability</p>
@@ -214,14 +214,11 @@ m.Put("a", 1)    // modifies in place
 m.Put("b", 2)
 ```
 
-**Accumulators in loops** — When building up a value iteratively:
+**Accumulators** — A running total is the classic reason to reach for `var` in Go. In GALA, a fold usually carries the running value for you, so check for one before declaring a `var` and a loop:
 
 <!-- doc-check: fragment -->
 ```gala
-var total = 0
-for _, v := range items {
-    total = total + v
-}
+val total = items.FoldLeft(0, (acc, v) => acc + v)
 ```
 
 **Pointer fields in linked structures** — When a pointer must be reassigned:

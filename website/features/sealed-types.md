@@ -4,14 +4,14 @@ title: "Golang Sum Types — Sealed Types and Algebraic Data Types for Go"
 description: "GALA brings sum types to Go with sealed types. Define closed type hierarchies, get exhaustive pattern matching, auto-generated constructors, and compile-time safety — the #1 most-requested Go feature, available today."
 keywords: "golang sum types, go sum types, go algebraic data types, golang enum types, go sealed types, go discriminated union, golang ADT, go closed interface, golang variant types, gala sealed types"
 permalink: /features/sealed-types/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Sealed Types</p>
 
 # Golang Sum Types — Sealed Types and Algebraic Data Types for Go
 
-Sum types are the [#1 most-requested feature](https://go.dev/blog/survey2024-h1-results) in the Go Developer Survey, yet Go 1.25 still doesn't have them. GALA delivers sum types today through **sealed types** — algebraic data types (ADTs) that define a fixed set of variants, with the compiler enforcing that every match expression handles all of them. If you've been looking for golang sum types, discriminated unions, or closed type hierarchies, this is the answer.
+Sum types are the [#1 most-requested feature](https://go.dev/blog/survey2024-h1-results) in the Go Developer Survey, yet Go still doesn't have them. GALA delivers sum types today through **sealed types** — algebraic data types (ADTs) that define a fixed set of variants, with the compiler enforcing that every match expression handles all of them. If you've been looking for golang sum types, discriminated unions, or closed type hierarchies, this is the answer.
 
 ---
 
@@ -94,7 +94,7 @@ sealed type Result[T any] {
 }
 
 val success = Ok(42)
-val failure = Err[int](fmt.Errorf("oops"))
+val failure = Err[int](errors.New("oops"))
 ```
 
 Generic sealed types work exactly like non-generic ones — you get companion objects, `Apply`/`Unapply`, and exhaustive matching, all parameterized by the type argument.
@@ -145,7 +145,7 @@ sealed type Animal {
 }
 
 val msg = animal match {
-    case Dog(name) => "Woof! I'm " + name
+    case Dog(name) => s"Woof! I'm $name"
     case _         => "I'm not a dog"
 }
 ```

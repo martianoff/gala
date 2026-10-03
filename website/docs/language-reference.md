@@ -491,7 +491,7 @@ val parity = 42 match {
 ```gala
 val res = x match {
     case i: int if i > 100 => "Large integer"
-    case Person(name, age) if age < 18 => name + " is a minor"
+    case Person(name, age) if age < 18 => s"$name is a minor"
     case _ => "Other"
 }
 ```

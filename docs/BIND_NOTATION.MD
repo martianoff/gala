@@ -23,22 +23,21 @@ closing-paren pile); the shapes below are where it is a **structural** or **capa
 win — where the `FlatMap` form is materially worse or cannot express the behavior at all.
 
 1. **The graph shape** — a later step needs a value from *several steps back*. Each
-   intermediate is trapped in a closure, so `FlatMap` nests one level deeper per step,
-   repeats the accumulator type at every link (inference can't always flow it through the
-   lambda), and ends in a pile of closing parens. Here the final `Receipt` needs the
+   intermediate is trapped in a closure, so `FlatMap` nests one level deeper per step
+   and ends in a pile of closing parens. Here the final `Receipt` needs the
    original `o` *and* the `payment`, so `o` must stay reachable through all the nesting:
 
    ```gala
-   // FlatMap — `o` survives only via the deepening indentation; `[Receipt]` is repeated
-   // at every link and the block ends in `))))`.
-   fetchOrder(id).FlatMap[Receipt]((o) =>
-       validateOrder(o).FlatMap[Receipt]((valid) =>
-           chargePayment(valid).FlatMap[Receipt]((payment) =>
+   // FlatMap — `o` survives only via the deepening indentation, and the block
+   // ends in `))))`.
+   fetchOrder(id).FlatMap((o) =>
+       validateOrder(o).FlatMap((valid) =>
+           chargePayment(valid).FlatMap((payment) =>
                Success(Receipt(o.Id, payment)))))
    ```
 
    ```gala
-   // bind — flat, top-to-bottom, every name in scope, no repeated type arguments.
+   // bind — flat, top-to-bottom, every name in scope.
    bind o       = fetchOrder(id)
    bind valid   = validateOrder(o)
    bind payment = chargePayment(valid)

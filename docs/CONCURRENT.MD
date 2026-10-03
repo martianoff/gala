@@ -89,7 +89,7 @@ Two complementary primitives:
 - `WithTimeout(duration) Future[T]` — monadic; the returned Future fails with `TimeoutError` if the original doesn't complete in time, otherwise mirrors its result.
 
 ```gala
-val slow = Future[int](() => { Sleep(Seconds(2)); 42 })
+val slow = Future(() => { Sleep(Seconds(2)); 42 })
 
 // Monadic: stays a Future, composes with Map/Recover/etc.
 val bounded = slow.WithTimeout(Milliseconds(500))

@@ -4,7 +4,7 @@ title: "GALA Compiler DX — Framed Diagnostics, GALA Stack Traces, Guaranteed T
 description: "GALA's compiler works for you: Rust/Elm-style framed error diagnostics with a caret and a hint, runtime panics that report .gala source positions instead of generated Go, and guaranteed tail-call optimization for self-recursive if-expression functions."
 keywords: "gala compiler diagnostics, rust style error messages, golang stack trace source map, transpiler line directives, golang tail call optimization, go tco, gala error codes, compiler developer experience"
 permalink: /features/compiler-dx/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Compiler DX</p>
@@ -189,18 +189,16 @@ Both checks are **resolver-aware**: a symbol the program itself declared — a `
 
 ```gala
 // A Closeable resource that announces open/close so ordering is observable.
-type Handle struct {
-    name string
-}
+struct Handle(name string)
 
 func (h Handle) Close() error {
     Println(s"close ${h.name}")
-    return nil
+    nil
 }
 
 func open(name string) Handle {
     Println(s"open ${name}")
-    return Handle(name = name)
+    Handle(name)
 }
 
 // `a` is acquired first so it closes LAST; `b` closes FIRST.

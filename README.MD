@@ -53,22 +53,20 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 - **`bind` / `also` do-notation.** Flat monadic binding over any monad — sequential `bind`, plus `also` for independent steps that accumulate errors (`Validated`) or run concurrently (`Future`). No nested `FlatMap` staircases.
 - **Functional standard library.** `Option`, `Either`, `Try`, `Future`, `IO` with `Map` / `FlatMap` / `Recover`, plus immutable `List`, `Array`, `HashMap`, `HashSet`, `TreeSet`, `TreeMap`.
 - **Less syntax.** String interpolation (`s"…"` / `f"…"`), named arguments and default parameters, type inference everywhere, expression functions, and regex extractors that destructure capture groups directly inside `match`.
-- **Diagnostics that point at the fix.** Framed, Rust/Elm-style compile errors carrying a stable `GALA-Exxxx` code, the offending span, and a hint — and runtime panics that report *GALA* source positions (`foo.gala:12`), not generated Go.
+- **Diagnostics that point at the fix.** Framed, Rust/Elm-style compile errors carrying a stable `GALA-Exxxx` code, the offending span, and a hint — and runtime panics that report *GALA* source positions (`foo.gala:12`), not generated Go. `gala build --json` and `gala explain` hand the same diagnostics to tools and coding agents.
 
 **Compatible — every Go library, no bindings, native binaries.**
 - **Full Go third-party module interop.** Any Go package works — not just stdlib. Return types are inferred **directly from the Go SDK** (no declaration files), and `(T, error)` returns are wrapped into `Try[T]` automatically.
-- **Shipped IDE tooling.** GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for VS Code and Neovim — diagnostics, hover, go-to-definition, inlay hints, completion, across GALA *and* Go stdlib/third-party types. Batched transpilation and analysis caching keep multi-file rebuilds fast.
+- **Shipped IDE tooling.** GoLand/IntelliJ plugin, an LSP server (`gala lsp`) for VS Code and Neovim, and a Claude Code plugin — diagnostics, hover with docs, go-to-definition, inlay hints, completion, across GALA *and* Go stdlib/third-party types. Batched transpilation and analysis caching keep multi-file rebuilds fast.
 
 ### Recent highlights
 
-- **[Compile-time data-race safety](docs/CONCURRENCY_SAFETY.MD)** — closures crossing a `Future` boundary are checked for what they capture ([GALA-E0037](docs/errors/GALA-E0037.md)).
-- **[Structured concurrency](docs/CONCURRENT.MD)** — `Future` cancellation, `Race`, and `WithTimeout` that cancel the work they abandon.
-- **Guaranteed tail-call elimination** for self-tail-recursive if-expression functions — constant stack space.
-- **[GALA stack traces](docs/PERFORMANCE_DEBUGGING.MD)** — panics report `foo.gala:12`, including frames inside imported GALA packages.
-- **[Framed compile diagnostics](docs/errors/README.md)** — every error carries a stable code with its own doc page.
-- **`use` scoped-resource binding** — replaces Go's `defer x.Close()`, which is now rejected on the GALA surface.
-- **[`subprocess`](docs/SUBPROCESS.MD)** — spawn and drive child processes, with async `Future`-returning methods.
-- **IDE** — go-to-definition and completion now resolve third-party Go modules.
+- **A Go call is one GALA value** (0.84) — a Go function returning `(T, error)` is a `Try[T]`, and `(A, B)` is a `Tuple[A, B]`. `os.ReadFile(path).GetOrElse(...)` just works; no wrapping, no `if err != nil`.
+- **Blocks return their trailing value** (0.83) — a block-bodied function returns its last expression, so `return` is only for early exits.
+- **Struct field defaults** (0.81) — `struct Config(Host string, Port int = 8080)`; omit a defaulted field at the call site.
+- **A toolchain for agents and editors** (0.75–0.78) — `gala build --json` emits diagnostics as JSON, `gala explain GALA-E0002` prints a code's reference page offline, `gala doc collection_immutable.Array` lists an API from the terminal, and the LSP shows doc comments in hover, completion, and signature help.
+- **[Claude Code plugin](ide/claude-code/README.md)** (0.78) — wires Claude to `gala lsp`, so it sees GALA diagnostics after every edit; `gala new` sets it up for you.
+- **[Compile-time data-race safety](docs/CONCURRENCY_SAFETY.MD)** (0.72) — a closure crossing a `Future` boundary is checked for what it captures ([GALA-E0037](docs/errors/GALA-E0037.md)).
 
 ---
 
@@ -87,7 +85,17 @@ git clone https://github.com/martianoff/gala.git && cd gala
 bazel build //cmd/gala:gala
 ```
 
-### 2. Write `main.gala`
+### 2. Create a project
+
+```bash
+gala new hello && cd hello
+```
+
+This writes `gala.mod`, a `main.gala`, and a `.claude/settings.json` that enables the [Claude Code plugin](#claude-code).
+
+### 3. Write and run
+
+Replace `main.gala` with:
 
 ```gala
 package main
@@ -96,8 +104,7 @@ struct Person(Name string, Age int)
 
 func greet(p Person) string = p match {
     case Person(name, age) if age < 18 => s"Hey, $name!"
-    case Person(name, _)               => s"Hello, $name"
-    case _                             => "Unknown"
+    case _                             => s"Hello, ${p.Name}"
 }
 
 func main() {
@@ -105,13 +112,10 @@ func main() {
 }
 ```
 
-### 3. Run
-
 ```bash
-gala mod init example.com/hello
-gala run main.gala     # Transpile + compile + run
-gala build             # Build project to a binary
-gala test              # Run tests
+gala run main.gala     # transpile, compile, and run
+gala build             # build a native binary
+gala test              # run tests
 ```
 
 **Need help?** Ask in [GitHub Discussions](https://github.com/martianoff/gala/discussions).
@@ -163,7 +167,7 @@ case Point:
 
 ```gala
 val name = user.Name
-    .Map((n) => strings.ToUpper(n))
+    .Map(strings.ToUpper)
     .GetOrElse("ANONYMOUS")
 ```
 
@@ -209,7 +213,7 @@ updated.Port = 8080
 </tr>
 </table>
 
-### Error Handling: Try vs if-err
+### Error Handling: Go's `(T, error)` is a `Try[T]`
 
 <table>
 <tr><th>GALA</th><th>Go</th></tr>
@@ -217,28 +221,34 @@ updated.Port = 8080
 <td>
 
 ```gala
-val result = divide(10, 2)
-    .Map((x) => x * 2)
-    .FlatMap((x) => divide(x, 3))
-    .Recover((e) => 0)
+func loadConfig(path string) Config =
+    os.ReadFile(path)
+        .FlatMap((b) => codec.Decode(ToString(b)))
+        .GetOrElse(Config(Host = "localhost"))
 ```
 
 </td>
 <td>
 
 ```go
-result, err := divide(10, 2)
-if err == nil {
-    result, err = divide(result*2, 3)
-}
-if err != nil {
-    result = 0
+func loadConfig(path string) Config {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return Config{Host: "localhost", Port: 8080}
+    }
+    var cfg Config
+    if err := json.Unmarshal(data, &cfg); err != nil {
+        return Config{Host: "localhost", Port: 8080}
+    }
+    return cfg
 }
 ```
 
 </td>
 </tr>
 </table>
+
+`os.ReadFile` is Go's own function, called directly: its `([]byte, error)` result arrives as a `Try[[]byte]`, so the failure path composes instead of branching. `Config` is `struct Config(Host string, Port int = 8080)` — the field default fills in `Port`, and `codec` is a zero-reflection JSON codec (`Codec[Config](SnakeCase())`).
 
 ---
 
@@ -305,21 +315,28 @@ Over `Future`, an `also` group runs its clauses **concurrently**. And it's not s
 
 ## More Language Features
 
-**Expression functions** — single-expression bodies skip braces and `return`.
+**Expressions everywhere** — single-expression functions skip braces, `if` is an expression, and a block returns its trailing value, so `return` is only needed for an early exit.
 
 ```gala
 func square(x int) int = x * x
-func max(a int, b int) int = if (a > b) a else b
+
+func label(score int) string {
+    val grade = if (score >= 90) "A" else if (score >= 75) "B" else "C"
+    s"$score -> $grade"
+}
 ```
 
-**Named arguments** — any order; compiler reorders to match the signature.
+**Named arguments and defaults** — on functions and on struct fields. Arguments can come in any order; the compiler reorders them to match the declaration.
 
 ```gala
-func connect(host string, port int = 8080, tls bool = true) Connection
+func connect(host string, port int = 8080, tls bool = true) Connection = Connection(host, port, tls)
 
 connect("localhost")                  // port=8080, tls=true
 connect("localhost", tls = false)     // port=8080, tls=false
 connect(host = "db", port = 5432)     // tls=true
+
+struct Config(Host string, Port int = 8080, Debug bool = false)
+val cfg = Config(Host = "db", Debug = true)   // Port = 8080
 ```
 
 **Lambda type inference** — parameter types and method type parameters are inferred from context.
@@ -352,7 +369,7 @@ func work() {
 
 `use` is the replacement for Go's `defer x.Close()` — `defer`, `go`, `goto`, `fallthrough`, `select`, and `chan` are all rejected on the GALA surface (`GALA-E0036`), routed instead through `use`, the `resource` combinators (`Using` / `Bracket` / `WithLock`), and `go_interop`. Bare Go builtins are rejected the same way (`GALA-E0035`): `len(x)` becomes `x.Size()` (characters) or `x.ByteSize()` (bytes), and `append` / `make` / `new` / `delete` become `go_interop` helpers or GALA collections. Both checks are resolver-aware — a function you declared yourself that happens to share the name is left alone.
 
-**Tuples with destructuring** — up to `Tuple5`, with pattern matching.
+**Tuples with destructuring** — up to `Tuple10`, with pattern matching.
 
 ```gala
 val pair = (1, "hello")
@@ -399,7 +416,7 @@ val name = jsonStr match {
 ```gala
 val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
 
-"2024-01-15" match {
+val shown = "2024-01-15" match {
     case dateRegex(Array(year, month, day)) => s"$year/$month/$day"
     case _ => "not a date"
 }
@@ -409,20 +426,9 @@ val dateRegex = regex.MustCompile("(\\d{4})-(\\d{2})-(\\d{2})")
 
 ```gala
 val status = p match {
-    case Person(name, age) if age < 18 => name + " is a minor"
-    case Person(name, age) if age > 65 => name + " is a senior"
-    case Person(name, _)               => name + " is an adult"
-    case _                             => "Unknown"
-}
-```
-
-**Type-based pattern matching.**
-
-```gala
-val res = x match {
-    case s: string => s"string: $s"
-    case i: int    => s"int: $i"
-    case _         => "unknown"
+    case Person(name, age) if age < 18 => s"$name is a minor"
+    case Person(name, age) if age > 65 => s"$name is a senior"
+    case _                             => s"${p.Name} is an adult"
 }
 ```
 
@@ -433,7 +439,7 @@ val nums = ArrayOf(1, 2, 3, 4, 5, 6)
 val evenDoubled = nums.Collect({ case n if n % 2 == 0 => n * 2 })
 // Array(4, 8, 12)
 
-val options = ArrayOf(Some(1), None[int](), Some(2), None[int](), Some(3))
+val options = ArrayOf(Some(1), None(), Some(2), None(), Some(3))
 val values = options.Collect({ case Some(v) => v * 10 })
 // Array(10, 20, 30)
 ```
@@ -446,9 +452,9 @@ val values = options.Collect({ case Some(v) => v * 10 })
 
 ```gala
 val bounded = slow.WithTimeout(Milliseconds(500)).Recover((e) => 0)
-val winner  = Race[int](ArrayOf[Future[int]](a, b))   // first result; losers cancelled
+val winner  = Race(ArrayOf(a, b))   // first result; losers cancelled
 
-val chain = source.Map((v) => step1(v)).FlatMap((v) => step2(v))
+val chain = source.Map(step1).FlatMap(step2)
 chain.Cancel()   // pending stages fail with CancellationError
 ```
 
@@ -460,19 +466,19 @@ Sharing a value across goroutines is safe when the value is **deeply immutable**
 
 ```gala
 var counter = 0
-Future(() => counter + 1)      // GALA-E0037: captures a reassignable `var`
+Future(counter + 1)            // GALA-E0037: captures a reassignable `var`
 
 val buffer = collection_mutable.ArrayOf(1, 2, 3)
-Future(() => buffer.Size())    // GALA-E0037: a method call on a mutable value
+Future(buffer.Size())          // GALA-E0037: a method call on a mutable value
 
 val xs = collection_immutable.ArrayOf(1, 2, 3)
-Future(() => xs.Size())        // OK — deeply immutable
+Future(xs.Size())              // OK — deeply immutable
 ```
 
 The check is **field-access-sensitive**: a closure that reads only immutable (`val`) fields of shareable type is accepted even when the enclosing value is unshareable as a whole. A boundary is marked by the `Sendable[F]` type — transparent (`Sendable[func() T]` *is* `func() T` in the generated Go, no wrapper, no cost) and available to any library, not just the standard one. Application code passing closure literals never writes `Sendable`; only a reusable wrapper annotates its forwarded parameter, pushing the obligation to whoever writes the closure:
 
 ```gala
-func afterCompute(compute Sendable[func() int]) Future[int] = Future(() => compute() + 1)
+func afterCompute(compute Sendable[func() int]) Future[int] = Future(compute() + 1)
 
 val base = 41
 afterCompute(() => base).Get()   // checked here, at the closure literal
@@ -497,6 +503,14 @@ error[GALA-E0035]: bare Go builtin "len(...)" is not part of GALA's surface
 ```
 
 Codes are opaque and never change meaning, so tools and tests can pin to them, and each one has a page explaining when it fires, a minimal repro, and the fix — see the [error code index](docs/errors/README.md).
+
+The same information is available to tools and coding agents without scraping text:
+
+```bash
+gala build --json .                       # diagnostics as JSON: code, message, hint, file, line, column, docsUrl
+gala explain GALA-E0035                   # a code's full reference page, offline
+gala doc collection_immutable.Array       # every method on Array, from the terminal (add --json for tools)
+```
 
 **Panics report GALA source positions**, not generated Go:
 
@@ -524,7 +538,7 @@ This rides on Go's own `//line` directives, so there is no source-map file and n
 | `Validated[E, A]` | Error-**accumulating** validation — `Valid(a)` / `Invalid(errors)`, with `Zip2`…`Zip10` |
 | `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await`, `WithTimeout`, `Cancel` |
 | `IO[T]` | Lazy, composable effect type — `Suspend`, `Map`, `FlatMap`, `Recover` |
-| `Tuple[A, B]` | Pairs and triples with `(a, b)` syntax (up to `Tuple5`) |
+| `Tuple[A, B]` | Tuples with `(a, b)` syntax and destructuring (up to `Tuple10`) |
 | `ConstPtr[T]` | Read-only pointer with auto-deref field access |
 
 ### Serialization, Regex, IO, Processes
@@ -582,13 +596,13 @@ GALA ships with a GoLand/IntelliJ plugin and an LSP server (`gala lsp`) for edit
 2. Install plugin: GoLand > Settings > Plugins > Install from Disk > select `gala-intellij-plugin.zip` from [releases](https://github.com/martianoff/gala/releases).
 3. Restart GoLand — the LSP server starts automatically when a `.gala` file is opened.
 
-The plugin works locally (ANTLR parser, semantic highlighting, structure view, 12 live templates). The LSP server (`gala lsp`) adds real-time diagnostics including match-exhaustiveness, hover types, cross-file go-to-definition, type-aware completion, and inlay hints — for VS Code and Neovim too.
+The plugin works locally (ANTLR parser, semantic highlighting, structure view, 13 live templates). The LSP server (`gala lsp`) adds real-time diagnostics including match-exhaustiveness, hover with inferred types and doc comments, type-aware completion with documentation, signature help, cross-file go-to-definition, find references, and inlay hints — for VS Code and Neovim too.
 
 Go interop is wired end to end: completion and go-to-definition resolve Go stdlib **and third-party Go modules**, navigating into the module's cached source the same way native GALA symbols do. The `.Size()` / `.ByteSize()` sugar type-resolves and completes on Go primitives, the `use` keyword is highlighted with its binding clickable, and the forbidden-builtin / forbidden-statement rules surface inline as `GALA-E0035` / `GALA-E0036`. Full feature list: [IDE Support](https://gala.fyi/features/ide-support/).
 
 ### VS Code
 
-Add to `.vscode/settings.json`:
+There is no dedicated GALA extension yet. Use a generic LSP-client extension and register `gala lsp` for `.gala` files; the exact settings key depends on the extension you pick, for example:
 
 ```json
 {
@@ -656,6 +670,14 @@ Building from source needs [Bazelisk](https://github.com/bazelbuild/bazelisk), w
 git clone https://github.com/martianoff/gala.git
 cd gala
 bazel build //cmd/gala:gala
+```
+
+### Nix
+
+The flake builds the CLI from source and also provides an overlay and a development shell:
+
+```bash
+nix profile install github:martianoff/gala
 ```
 
 ### Using Bazel

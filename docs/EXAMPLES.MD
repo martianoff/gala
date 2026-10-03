@@ -211,9 +211,9 @@ func main() {
 
     people.ForEach((p) => {
         val status = p match {
-            case Person(name, age) if age < 18 => name + " is a minor"
-            case Person(name, age) if age > 65 => name + " is a senior"
-            case Person(name, _)               => name + " is an adult"
+            case Person(name, age) if age < 18 => s"$name is a minor"
+            case Person(name, age) if age > 65 => s"$name is a senior"
+            case Person(name, _)               => s"$name is an adult"
             case _                             => "Unknown"
         }
         Println(status)
@@ -1223,20 +1223,20 @@ min=3 max=7
 
 ### The "graph" case — a value reused several steps later (`Try`)
 
-A `FlatMap` chain has to *nest* whenever a later step needs a value from an earlier one, because each intermediate is trapped in a closure. The final `Receipt` needs the original `o` (bound first) **and** the `payment` (bound last), so `o` must survive to the bottom — and the accumulator type `[Receipt]` is repeated at every link because inference can't flow it through the lambdas:
+A `FlatMap` chain has to *nest* whenever a later step needs a value from an earlier one, because each intermediate is trapped in a closure. The final `Receipt` needs the original `o` (bound first) **and** the `payment` (bound last), so `o` must survive to the bottom:
 
-**Before — the nested `FlatMap` pyramid** (`o` survives three levels of nesting, `[Receipt]` repeated at each link, ending in a `))))` pile):
+**Before — the nested `FlatMap` pyramid** (`o` survives three levels of nesting, ending in a `))))` pile):
 
 <!-- doc-check: fragment -->
 ```gala
 func processOrder(id int) Try[Receipt] =
-    fetchOrder(id).FlatMap[Receipt]((o) =>
-    validateOrder(o).FlatMap[Receipt]((valid) =>
-    chargePayment(valid).FlatMap[Receipt]((payment) =>
+    fetchOrder(id).FlatMap((o) =>
+    validateOrder(o).FlatMap((valid) =>
+    chargePayment(valid).FlatMap((payment) =>
     Success(Receipt(o.Id, payment)))))
 ```
 
-**After — a flat `bind` block** (every value in scope, top-to-bottom, no repeated type args, no paren pile):
+**After — a flat `bind` block** (every value in scope, top-to-bottom, no paren pile):
 
 <!-- doc-check: fragment -->
 ```gala
@@ -1248,7 +1248,7 @@ func processOrder(id int) Try[Receipt] {
 }
 ```
 
-Both forms are equivalent — the `bind` block *lowers* to exactly that pyramid (see [`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala)) — but the `bind` form stays flat as the graph deepens, drops the repeated `[Receipt]`, and reads top-to-bottom. Full program: [`examples/bind_notation.gala`](../examples/bind_notation.gala).
+Both forms are equivalent — the `bind` block *lowers* to exactly that pyramid (see [`examples/bind_notation_desugared.gala`](../examples/bind_notation_desugared.gala)) — but the `bind` form stays flat as the graph deepens and reads top-to-bottom. Full program: [`examples/bind_notation.gala`](../examples/bind_notation.gala).
 
 ### Error accumulation — report ALL invalid fields (`Validated`)
 
@@ -1294,7 +1294,7 @@ func total() Future[int] {
     bind a = compute(2)
     also b = compute(3)   // b and c do not depend on a — run all three at once
     also c = compute(4)
-    Future[int](a + b + c)
+    Future(a + b + c)
 }
 ```
 
@@ -1305,18 +1305,16 @@ Full program: [`examples/bind_notation_future.gala`](../examples/bind_notation_f
 GALA has no `defer` (a bare `defer`/`go` statement is a hard error, **GALA-E0036**). Cleanup is a `use` binding: `use x = acquire` binds `x` for the rest of the block and guarantees `x.Close()` runs when the function returns, on every path. Multiple `use` bindings release **LIFO** (last acquired closes first):
 
 ```gala
-type Handle struct {
-    name string
-}
+struct Handle(name string)
 
 func (h Handle) Close() error {
     Println(s"close ${h.name}")
-    return nil
+    nil
 }
 
 func open(name string) Handle {
     Println(s"open ${name}")
-    return Handle(name = name)
+    Handle(name)
 }
 
 func work() {

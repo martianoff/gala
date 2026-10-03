@@ -530,8 +530,8 @@ module(
 )
 
 # GALA Bazel rules + language module.
-bazel_dep(name = "rules_gala", version = "0.1.1")
-bazel_dep(name = "gala", version = "0.50.0")
+bazel_dep(name = "rules_gala", version = "0.3.2")
+bazel_dep(name = "gala", version = "0.84.1")
 
 # Register the GALA toolchains shipped by the gala language module.
 # The main toolchain backs gala_library / gala_binary / gala_test; the

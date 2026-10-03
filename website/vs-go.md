@@ -300,9 +300,7 @@ Go has no default parameters. The common workaround is the "functional options" 
     host string,
     port int = 8080,
     tls bool = true,
-) Connection {
-    // ...
-}
+) Connection = Connection(host, port, tls)
 
 connect("localhost")
 connect("db", tls = false)</code></pre>
@@ -359,12 +357,13 @@ GALA uses Go libraries directly. There are no wrappers, no bindings, and no FFI 
 ```gala
 import "strings"
 import "os"
+import "strconv"
 
 val upper = strings.ToUpper("hello")
-val dir = Try(os.TempDir)
+val port = strconv.Atoi(os.Getenv("PORT")).GetOrElse(8080)   // Go's (int, error) is a Try[int]
 ```
 
-Go types, interfaces, and functions are all available. GALA adds its own type system on top -- sealed types, `Option[T]`, immutable structs -- but the underlying Go interop is seamless.
+A Go function that returns `(T, error)` arrives as a `Try[T]`, and one that returns `(A, B)` as a `Tuple[A, B]`, so Go calls compose with the rest of your code. Third-party modules work the same way as the standard library — add them with `gala mod add <module>@<version> --go`. Go types, interfaces, and functions are all available. GALA adds its own type system on top -- sealed types, `Option[T]`, immutable structs -- but the underlying Go interop is seamless.
 
 ---
 

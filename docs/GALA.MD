@@ -1007,7 +1007,7 @@ sealed type Animal {
 
 // Only match specific variants, catch rest with wildcard
 val msg = animal match {
-    case Dog(name) => "Woof! I'm " + name
+    case Dog(name) => s"Woof! I'm $name"
     case _ => "I'm not a dog"
 }
 ```
@@ -1418,7 +1418,7 @@ Similar to Scala, GALA supports additional `if` conditions in pattern match clau
 val res = x match {
     case i: int if i > 100 => "Large integer"
     case i: int if i > 0   => "Positive integer"
-    case Person(name, age) if age < 18 => name + " is a minor"
+    case Person(name, age) if age < 18 => s"$name is a minor"
     case _ => "Other"
 }
 ```
@@ -1853,7 +1853,7 @@ x.OnSome((v) => { Println(s"Found: $v") })
 | `Filter(predicate)` | Keep Some if predicate holds |
 
 ### Tuple
-`Tuple[A, B]` represents a pair of values. GALA supports concise parenthesis syntax for tuples (up to Tuple5).
+`Tuple[A, B]` represents a pair of values. GALA supports concise parenthesis syntax for tuples (up to Tuple10).
 
 ```gala
 // Concise syntax (preferred)
@@ -2136,12 +2136,12 @@ Try enables elegant error handling pipelines where errors short-circuit the chai
 ```gala
 func processOrder(id int) Try[Receipt] =
     fetchOrder(id)
-        .FlatMap[Order]((o Order) => validateOrder(o))
-        .FlatMap[Order]((o Order) => chargePayment(o))
-        .FlatMap[Receipt]((o Order) => createReceipt(o))
-        .RecoverWith((e error) => {
+        .FlatMap(validateOrder)
+        .FlatMap(chargePayment)
+        .FlatMap(createReceipt)
+        .RecoverWith((e) => {
             logError(e)
-            return Failure[Receipt](e)
+            Failure(e)
         })
 ```
 

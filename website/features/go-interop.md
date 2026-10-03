@@ -4,7 +4,7 @@ title: "GALA Go Interop — Use Any Go Library, Type, and Function"
 description: "GALA transpiles to Go and gives you full access to the Go ecosystem. Import Go packages, call Go functions, use Go types — all with GALA's cleaner syntax. Zero friction interoperability."
 keywords: "gala go interop, gala go libraries, transpile to go, gala import go, gala go types, gala go functions, gala go slices, gala go maps, gala go compatibility"
 permalink: /features/go-interop/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Go Interop</p>
@@ -174,8 +174,8 @@ type Config struct {
     var Port int
 }
 
-// Pass to any Go function expecting this struct
-val jsonBytes, _ = json.Marshal(Config{Host: "localhost", Port: 8080})
+// Pass to any Go function expecting this struct; a (T, error) result comes back as a Try
+val jsonBytes = json.Marshal(Config(Host = "localhost", Port = 8080))   // Try[[]byte]
 ```
 
 ---
@@ -273,7 +273,7 @@ var goMap = MapEmpty[string, int]()
 goMap = MapPut(goMap, "key", 42)
 
 // Query
-val value, ok = MapGet(goMap, "key")
+val (value, ok) = MapGet(goMap, "key")
 val exists = MapContains(goMap, "key")
 
 // Iterate

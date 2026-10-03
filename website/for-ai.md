@@ -4,7 +4,7 @@ title: "GALA for AI — a stricter compiler is a tighter agent loop"
 description: "Why GALA suits AI coding agents: a strict, expressive compiler turns bugs into an instant, precise, deterministic worklist — the exact feedback an agent's generate-check-fix loop converges on."
 keywords: "gala for ai, ai coding agents, llm code generation, compiler feedback loop, exhaustive pattern matching ai, sealed types refactoring, ai code correctness, agent friendly language, static types llm, go for ai agents"
 permalink: /for-ai/
-last_modified_at: 2026-09-26
+last_modified_at: 2026-10-03
 ---
 
 <div class="breadcrumb">
@@ -93,12 +93,38 @@ one precise task per build, until green:
 
 ```text
 $ gala run main.gala
-[GALA-E0002] line 13:4 non-exhaustive match: missing cases: Crypto
-  (hint: add the missing variant cases, or add a `case _ => ...` default)
+error[GALA-E0002]: non-exhaustive match: missing cases: Crypto
+  --> main.gala:11:5
+   |
+11 |     case Card(n) => "card ****" + n
+   |     ^^^^ add the missing variant cases, or add a `case _ => ...` defa…
+   |
+   = hint: add the missing variant cases, or add a `case _ => ...` default to cover them
 
-# fix label(), rebuild → line 20:4 (fee)
-# fix fee(),   rebuild → line 27:4 (requiresName)
+# fix label(), rebuild → main.gala:18:5 (fee)
+# fix fee(),   rebuild → main.gala:25:5 (requiresName)
 # fix all three         → compiles, runs
+```
+
+An agent doesn't need to parse that frame. `gala build --json` returns the same
+diagnostic as data, with a link to the code's reference page (also available
+offline through `gala explain GALA-E0002`):
+
+```json
+{
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "GALA-E0002",
+      "message": "non-exhaustive match: missing cases: Crypto",
+      "hint": "add the missing variant cases, or add a `case _ => ...` default to cover them",
+      "file": "main.gala",
+      "line": 11,
+      "column": 5,
+      "docsUrl": "https://gala.fyi/docs/errors/gala-e0002/"
+    }
+  ]
+}
 ```
 
 Go compiles the same mistake with **no error and no warning**, and

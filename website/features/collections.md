@@ -4,7 +4,7 @@ title: "Golang Immutable Collections — List, Array, HashMap, TreeMap for Go"
 description: "GALA provides immutable functional collections for Go — List, Array, HashMap, HashSet, TreeSet, TreeMap with Map, Filter, FoldLeft, Collect, SortBy, and lambda type inference. Beyond what samber/lo offers."
 keywords: "golang immutable collections, go immutable list, go immutable hashmap, golang functional collections, go map filter reduce, golang persistent data structures, go functional programming collections, golang treemap, gala collections"
 permalink: /features/collections/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Functional Collections</p>
@@ -20,8 +20,7 @@ import . "martianoff/gala/collection_immutable"
 
 val nums = ArrayOf(1, 2, 3, 4, 5)
 val result = nums
-    .Filter((x) => x % 2 == 0)
-    .Map((x) => x * 10)
+    .Collect({ case x if x % 2 == 0 => x * 10 })
     .FoldLeft(0, (acc, x) => acc + x)
 Println(result)  // 60
 ```
@@ -86,7 +85,7 @@ These operations work identically across List, Array, and other sequence types. 
 
 ```gala
 val names = ListOf("alice", "bob", "charlie")
-val upper = names.Map((s) => strings.ToUpper(s))
+val upper = names.Map(strings.ToUpper)
 // List("ALICE", "BOB", "CHARLIE")
 ```
 
@@ -160,7 +159,7 @@ Println(values)  // Array(10, 20, 30)
 
 ```gala
 val m = HashMapOf(("a", 1), ("b", 2), ("c", 3))
-val highKeys = m.Collect((k, v) => if (v > 1) Some(k) else None[string]())
+val highKeys = m.Collect((k, v) => if (v > 1) Some(k) else None())
 // Array("b", "c")
 ```
 
@@ -246,8 +245,7 @@ val people = ArrayOf(
 
 // Every lambda parameter type is inferred
 val result = people
-    .Filter((p) => p.Age > 25)
-    .Map((p) => p.Name)
+    .Collect({ case p if p.Age > 25 => p.Name })
     .SortBy((name) => name)
     .MkString(", ")
 

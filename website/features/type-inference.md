@@ -4,7 +4,7 @@ title: "Golang Type Inference — Lambda and Generic Type Inference for Go"
 description: "GALA infers lambda parameter types, generic type params, and accumulator types from context. Write list.Map((x) => x * 2) without annotations — the transpiler resolves concrete Go types."
 keywords: "golang type inference, go lambda type inference, golang generic type inference, go implicit typing, golang infer types, go generics inference, golang lambda, gala type inference"
 permalink: /features/type-inference/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Type Inference</p>
@@ -38,7 +38,7 @@ val x = 42                  // int
 val name = "Alice"          // string
 val pi = 3.14159            // float64
 val active = true           // bool
-val pair = Tuple(1, "two")  // Tuple[int, string]
+val pair = (1, "two")       // Tuple[int, string]
 val opt = Some(42)          // Option[int]
 ```
 
@@ -90,11 +90,12 @@ val upper = s.Map((r) => r - 32)             // r inferred as rune
 val hasVowel = s.Exists((r) => r == 'a')     // r inferred as rune
 ```
 
-**Free function calls** — Lambda parameters are also inferred when passed to generic free functions:
+**Free function calls** — Lambda parameters are also inferred when passed to generic free functions, as long as the function's parameter type is concrete. Here `x` is `int` from `func(int) T`, and `T` is then inferred as `int` from the lambda's body:
 
-<!-- doc-check: fragment -->
 ```gala
-val result = identity((x) => x * 2)
+func identity[T any](f func(int) T) func(int) T = f
+
+val result = identity((x) => x * 2)   // x: int, T: int
 ```
 
 ---
@@ -141,14 +142,14 @@ No explicit type annotation on the accumulator parameter, the zero value, or the
 When constructing generic types, type parameters are inferred from the arguments:
 
 ```gala
-// Inferred: Some[int]
+// Inferred: Option[int]
 val x = Some(42)
 
-// Inferred: Right[string, int]
+// Annotated: there is no Left value to infer string from
 val r = Right[string, int](42)
 
 // Inferred: Tuple[int, string]
-val t = Tuple(1, "hello")
+val t = (1, "hello")
 
 // Inferred: ListOf creates List[int]
 val list = ListOf(1, 2, 3)

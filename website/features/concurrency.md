@@ -4,7 +4,7 @@ title: "Golang Futures — Composable Async Programming for Go"
 description: "GALA's Future[T] brings composable async programming to Go — Map, FlatMap, Zip, Recover, and Await built on goroutines, plus structured concurrency: cancellation, timeouts, and Race. Functional concurrency on top of Go's runtime."
 keywords: "golang future, go future monad, golang async await, go promise, golang composable concurrency, go functional concurrency, golang goroutine future, go async pattern, golang future cancellation, go structured concurrency, gala future"
 permalink: /features/concurrency/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-10-03
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Concurrency</p>
@@ -21,8 +21,8 @@ Two things make Futures more than a callback wrapper: [structured concurrency](#
 ```gala
 import . "martianoff/gala/concurrent"
 
-val f1 = Future[int](expensiveComputation())
-val f2 = Future[string](fetchName())
+val f1 = Future(expensiveComputation())
+val f2 = Future(fetchName())
 
 val combined = f1.Zip(f2)
     .Map((pair) => s"Result: ${pair.V1} from ${pair.V2}")
@@ -42,10 +42,10 @@ import . "martianoff/gala/concurrent"
 import "errors"
 
 // Run a computation asynchronously in a goroutine
-val async = Future[int](expensiveComputation())
+val async = Future(expensiveComputation())
 
 // Already completed with a known value
-val immediate = FutureOf[int](42)
+val immediate = FutureOf(42)
 
 // Already failed
 val failed = FutureFailed[int](errors.New("oops"))
@@ -61,13 +61,13 @@ val failed = FutureFailed[int](errors.New("oops"))
 
 <!-- doc-check: fragment -->
 ```gala
-val userId = Future[int](lookupUserId("alice"))
+val userId = Future(lookupUserId("alice"))
 
 // Map: transform the result
 val greeting = userId.Map((id) => s"User #$id")
 
 // FlatMap: chain another async operation
-val profile = userId.FlatMap((id) => Future[string](fetchProfile(id)))
+val profile = userId.FlatMap((id) => Future(fetchProfile(id)))
 ```
 
 If the original Future fails, Map and FlatMap short-circuit — the error propagates through the chain without executing the transform function.
@@ -80,8 +80,8 @@ If the original Future fails, Map and FlatMap short-circuit — the error propag
 
 <!-- doc-check: fragment -->
 ```gala
-val f1 = Future[int](fetchCount())
-val f2 = Future[string](fetchLabel())
+val f1 = Future(fetchCount())
+val f2 = Future(fetchLabel())
 
 val combined = f1.Zip(f2)  // Future[Tuple[int, string]]
 val pair = combined.Get()
@@ -103,16 +103,16 @@ val total = f1.ZipWith(f2, (count, label) => s"$label = $count")
 
 <!-- doc-check: fragment -->
 ```gala
-val risky = Future[int](riskyOperation())
+val risky = Future(riskyOperation())
 
 // Recover with a default value
 val safe = risky.Recover((e) => 0)
 
 // Recover with another Future
-val retried = risky.RecoverWith((e) => Future[int](fallbackOperation()))
+val retried = risky.RecoverWith((e) => Future(fallbackOperation()))
 
 // Fallback: use another Future if this one fails
-val withFallback = risky.Fallback(FutureOf[int](0))
+val withFallback = risky.Fallback(FutureOf(0))
 ```
 
 ---
@@ -123,7 +123,7 @@ Block the current goroutine until a Future completes:
 
 <!-- doc-check: fragment -->
 ```gala
-val f = Future[int](compute())
+val f = Future(compute())
 
 // Block indefinitely, get Try[T]
 val result = f.Await()           // Try[int]
@@ -167,7 +167,7 @@ Three properties define the semantics:
 Two complementary primitives: `WithTimeout` stays monadic, `AwaitFor` blocks.
 
 ```gala
-val slow = Future[int](() => { Sleep(Seconds(2)); 42 })
+val slow = Future(() => { Sleep(Seconds(2)); 42 })
 
 // Monadic: stays a Future, composes with Map/Recover/etc.
 val bounded = slow.WithTimeout(Milliseconds(500))
@@ -183,7 +183,7 @@ When the timeout fires, `WithTimeout` also cancels the underlying Future's token
 
 <!-- doc-check: fragment -->
 ```gala
-val winner = Race[int](ArrayOf[Future[int]](a, b))  // first result, cancels losers
+val winner = Race(ArrayOf(a, b))  // first result, cancels losers
 ```
 
 `Race` is the structured-concurrency form of `FirstCompletedOf`: it completes with the first Future to finish, then cancels the losing Futures' shared tokens so their pending downstream stages short-circuit.
@@ -196,7 +196,7 @@ Register callbacks that fire when a Future completes, without blocking:
 
 <!-- doc-check: fragment -->
 ```gala
-val f = Future[int](compute())
+val f = Future(compute())
 
 f.OnSuccess((v) => Println(s"Got: $v"))
 f.OnFailure((e) => Println(s"Error: $e"))
@@ -210,7 +210,7 @@ f.OnComplete((r) => Println(s"Result: $r"))
 Futures support extractors for pattern matching. Type parameters are inferred from the Future type:
 
 ```gala
-val f = FutureOf[int](42)
+val f = FutureOf(42)
 
 val msg = f match {
     case Succeeded(v) => s"Got: $v"
@@ -241,16 +241,16 @@ Combine arrays of Futures into a single Future:
 val futures = ArrayOf(FutureOf(1), FutureOf(2), FutureOf(3))
 
 // Sequence: Array[Future[T]] -> Future[Array[T]]
-val all = Sequence[int](futures)     // Future[Array[int]]
+val all = Sequence(futures)          // Future[Array[int]]
 
 // First completed
-val first = FirstCompletedOf[int](futures)
+val first = FirstCompletedOf(futures)
 
 // Traverse: apply async function to each element
-val results = Traverse[int, string](items, (i) => fetchAsync(i))
+val results = Traverse(items, (i) => fetchAsync(i))
 
 // Fold: reduce Futures with a binary function
-val sum = Fold[int, int](futures, 0, (acc, v) => acc + v)
+val sum = Fold(futures, 0, (acc, v) => acc + v)
 ```
 
 Pattern matching on Future arrays:
@@ -288,7 +288,7 @@ import . "martianoff/gala/concurrent"
 val pool = NewFixedPoolEC(4)
 
 // Run futures on the pool
-val f1 = FutureOn[int](compute(), pool)
+val f1 = FutureOn(compute(), pool)
 
 // Derived futures inherit the parent's EC
 val f2 = f1.Map((n) => s"$n")          // also runs on pool
@@ -365,9 +365,9 @@ func fetchBalance() float64    = 12.50
 
 func main() {
     // Launch three independent async operations
-    val userF    = Future[string](fetchUser())
-    val ordersF  = Future[int](fetchOrderCount())
-    val balanceF = Future[float64](fetchBalance())
+    val userF    = Future(fetchUser())
+    val ordersF  = Future(fetchOrderCount())
+    val balanceF = Future(fetchBalance())
 
     // Combine user and orders in parallel
     val summary = userF.ZipWith(ordersF, (user, orders) =>
@@ -380,6 +380,31 @@ func main() {
     // Recover from any failure
     val safe = full.Recover((e) => s"Error: ${e.Error()}")
 
+    Println(safe.Get())
+}
+```
+
+The same fan-out reads top to bottom with [`bind` / `also`]({{ '/features/monadic-binding/' | relative_url }}). Over `Future`, each `also` clause runs concurrently with the `bind` it joins, and every bound name is in scope for the trailing value:
+
+```gala
+package main
+
+import . "martianoff/gala/concurrent"
+
+// Stand-ins for whatever your real I/O is.
+func fetchUser() Future[string]        = Future("alice")
+func fetchOrderCount() Future[int]     = Future(3)
+func fetchBalance() Future[float64]    = Future(12.50)
+
+func summary() Future[string] {
+    bind user    = fetchUser()       // the three run in parallel
+    also orders  = fetchOrderCount()
+    also balance = fetchBalance()
+    Future(f"$user has $orders orders, balance: $$$balance%.2f")
+}
+
+func main() {
+    val safe = summary().Recover((e) => s"Error: ${e.Error()}")
     Println(safe.Get())
 }
 ```

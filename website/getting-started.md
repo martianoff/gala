@@ -4,7 +4,7 @@ title: "Getting Started with GALA — Install and Write Your First Program"
 description: "Install GALA and write your first program in minutes. Pre-built binaries for Linux, macOS, and Windows. Get sum types, pattern matching, and Option types for Go in 3 steps."
 keywords: "install gala, gala getting started, gala tutorial, gala hello world, gala setup, gala quickstart, transpile gala to go, golang sum types install, go pattern matching setup"
 permalink: /getting-started/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-10-03
 ---
 
 <div class="breadcrumb">
@@ -54,15 +54,14 @@ The compiled binary will be at `bazel-bin/cmd/gala/gala_/gala`.
 ### 1. Create a project
 
 ```bash
-mkdir hello && cd hello
-gala mod init example.com/hello
+gala new hello && cd hello
 ```
 
-`gala mod init` creates a `gala.mod` file; the module path is any unique identifier you choose.
+`gala new` writes a `gala.mod` (module `example.com/hello`), a starter `main.gala`, a `.gitignore`, and a `.claude/settings.json` that enables the [GALA plugin for Claude Code]({{ '/features/ide-support/' | relative_url }}). To add GALA to an existing directory instead, run `gala mod init <module-path>`; the module path is any unique identifier you choose.
 
 ### 2. Write
 
-Create a file called `main.gala`:
+`main.gala` starts out as:
 
 ```gala
 package main
@@ -224,8 +223,8 @@ In `MODULE.bazel`:
 ```python
 module(name = "myproject", version = "0.0.1")
 
-bazel_dep(name = "rules_gala", version = "0.1.1")
-bazel_dep(name = "gala", version = "0.50.0")
+bazel_dep(name = "rules_gala", version = "0.3.2")
+bazel_dep(name = "gala", version = "0.84.1")
 bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "gazelle", version = "0.47.0")
 
