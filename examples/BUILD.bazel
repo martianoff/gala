@@ -3780,3 +3780,12 @@ gala_exec_test(
     expected = "match_arm_loop_control.out",
     deps = ["//collection_immutable"],
 )
+
+# A match arm whose block ends in a local the block declares: the arm's value
+# is typed in the block's own scope.
+gala_exec_test(
+    name = "match_arm_block_local",
+    src = "match_arm_block_local.gala",
+    expected = "match_arm_block_local.out",
+    deps = ["//collection_immutable"],
+)

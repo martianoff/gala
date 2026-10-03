@@ -654,7 +654,38 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		}
 		block.List = append(block.List, stmt)
 	}
+	if tail == tailValue || tail == tailBranch || tail == tailExpr {
+		t.typeBlockValue(block)
+	}
 	return block, nil
+}
+
+// typeBlockValue types the trailing value of a value-carrying block while the
+// block's scope is still open.
+//
+// The block's consumer — a match arm, a partial-function arm, a branch of a
+// trailing if/else — types the value only after this function returns and the
+// scope closes. A value that reads a local the block declares
+// (`{ val tag = s"item-$x"; tag }`) no longer resolves by then: it was counted
+// as unresolved, and a match whose arms were all like it was lowered as void
+// and its value used. A successful lookup is cached on the expression node, so
+// typing it here is what the consumer's later query finds.
+func (t *galaASTTransformer) typeBlockValue(block *ast.BlockStmt) {
+	if len(block.List) == 0 {
+		return
+	}
+	var value ast.Expr
+	switch last := block.List[len(block.List)-1].(type) {
+	case *ast.ExprStmt:
+		value = last.X
+	case *ast.ReturnStmt:
+		if len(last.Results) == 1 {
+			value = last.Results[0]
+		}
+	}
+	if value != nil && !t.isNoReturnCallExpr(value) {
+		t.inferResultType(value)
+	}
 }
 
 // transformUseDeclaration lowers a `use x = acquire` scoped-resource binding to
