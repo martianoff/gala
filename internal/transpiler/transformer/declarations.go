@@ -1009,9 +1009,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 }
 
 // registerFunctionParametersInScope walks a function signature's parameter list
-// and registers each parameter in the current scope with the correct mutability
-// (val vs var) and wrapped type (Array[T] for variadic). Extracted from
-// transformFunctionDeclaration as part of A5.
+// and rebinds each parameter in the current scope with the function rule (only
+// an explicit `var` is reassignable; any other is a fixed parameter) and its
+// scope type (Array[T] for variadic).
 func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.SignatureContext) {
 	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
 	if paramsCtx.ParameterList() == nil {

@@ -216,7 +216,8 @@ A function or method parameter is an immutable binding, like a `val`:
 reassigning it — with `=`, a compound assignment such as `+=`, or `++`/`--` —
 is a compile error, `cannot assign to immutable variable data`, whose hint is
 ``declare it `var data` to reassign it``. Mark a parameter `var` to make it
-reassignable. Writing `val` is allowed but redundant: `val label string` means
+reassignable. Its address (`&data`) is a read-only `ConstPtr`, as for a `val`.
+Writing `val` is allowed but redundant: `val label string` means
 exactly the same as `label string`.
 
 ```gala

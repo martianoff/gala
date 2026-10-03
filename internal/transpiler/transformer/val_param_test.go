@@ -328,3 +328,81 @@ func main() {
 		})
 	}
 }
+
+// TestParamAddressIsConstPtr checks that the address of a parameter not
+// declared `var` is a read-only ConstPtr, as for a val, so the parameter cannot
+// be changed through a pointer; a `var` parameter's address stays a plain *T.
+func TestParamAddressIsConstPtr(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	for _, kw := range []string{"", "val "} {
+		t.Run("write through the address of a "+kw+"parameter", func(t *testing.T) {
+			_, err := trans.Transpile(`package main
+
+func f(`+kw+`n int) int {
+    val p = &n
+    *p = 5
+    n
+}`, "")
+			require.Error(t, err)
+			var semErr *galaerr.SemanticError
+			require.ErrorAs(t, err, &semErr)
+			assert.Contains(t, semErr.Msg, "cannot assign through ConstPtr")
+		})
+	}
+
+	t.Run("reading through the address of a parameter", func(t *testing.T) {
+		got, err := trans.Transpile(`package main
+
+func f(n int) int {
+    val p = &n
+    *p + 1
+}
+
+func main() {
+    Println(f(1))
+}`, "")
+		require.NoError(t, err)
+		assert.Contains(t, got, "std.NewConstPtr(&n)")
+	})
+
+	t.Run("address of a var parameter", func(t *testing.T) {
+		got, err := trans.Transpile(`package main
+
+func f(var n int) int {
+    val p = &n
+    *p = 5
+    n
+}
+
+func main() {
+    Println(f(1))
+}`, "")
+		require.NoError(t, err)
+		assert.NotContains(t, got, "NewConstPtr")
+	})
+}
+
+// TestImmutableParamLiftsBareArg checks that a parameter explicitly typed
+// Immutable[T] still takes a bare T argument, lifted with NewImmutable.
+func TestImmutableParamLiftsBareArg(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	got, err := trans.Transpile(`package main
+
+func size(s Immutable[string]) int = s.Get().Size()
+
+func main() {
+    Println(size("five"))
+}`, "")
+	require.NoError(t, err)
+	assert.Contains(t, got, `size(std.NewImmutable[string]("five"))`)
+}

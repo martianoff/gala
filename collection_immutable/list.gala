@@ -32,7 +32,7 @@ func emptyList[T any]() List[T] {
 }
 
 // Internal helper to prepend element to list
-func consList[T any](head T, tail List[T]) List[T] {
+func consList[T any](head T, var tail List[T]) List[T] {
     return List[T](head = head, tail = &tail, length = tail.length + 1, isEmpty = false)
 }
 
