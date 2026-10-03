@@ -2359,6 +2359,19 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		return nil, err
 	}
 
+	// --- Section 6.5: opaque-type conversion `UserID(x)` ---
+	// A Go conversion; a direct conversion between two opaque types is
+	// rejected (opaque.go). Any other arity is left to Go, which names it.
+	if target := t.opaqueConversionCallee(fun); target != nil && len(namedArgs) == 0 && !hasSpread {
+		if len(args) == 1 {
+			argCtx := argListCtx.Argument(0).(*grammar.ArgumentContext)
+			if err := t.checkOpaqueConversion(target, args[0], argCtx); err != nil {
+				return nil, err
+			}
+		}
+		return &ast.CallExpr{Fun: fun, Args: args}, nil
+	}
+
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {

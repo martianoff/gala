@@ -30,6 +30,7 @@ go_library(
         "method_receiver_alias.go",
         "methods.go",
         "nested_function.go",
+        "opaque.go",
         "pattern_hoist.go",
         "patterns.go",
         "postfix.go",

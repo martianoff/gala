@@ -69,7 +69,7 @@ func (t *galaASTTransformer) nonCallableType(typ transpiler.Type, typeParams []s
 	}
 	// Only a struct or sealed type is known to be a data type. Metadata
 	// without fields could be an interface, whose value may be anything.
-	return meta.IsSealed || meta.IsShorthand || len(meta.FieldNames) > 0
+	return meta.IsSealed || meta.IsShorthand || meta.IsOpaque || len(meta.FieldNames) > 0
 }
 
 // checkValueCalledAsFunction rejects a call whose callee is a val, var or

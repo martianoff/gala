@@ -276,6 +276,12 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
 	// The hop bound stops a declaration chain that refers back to itself.
 	for hop := 0; hop < 16; hop++ {
+		// An untyped constant fits an opaque type over a numeric type, as it
+		// fits a Go defined type.
+		if u, ok := t.opaqueUnderlying(typ); ok {
+			typ = u
+			continue
+		}
 		var bareName string
 		switch ty := typ.(type) {
 		case transpiler.BasicType:
