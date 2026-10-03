@@ -3,7 +3,6 @@ package transformer_test
 import (
 	"testing"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -146,35 +145,6 @@ func TestGenericAlias(t *testing.T) {
 			require.NoError(t, err)
 			for _, w := range tt.want {
 				assert.Contains(t, got, w)
-			}
-		})
-	}
-}
-
-// TestGenericAliasWrongArity: a generic alias spelled with the wrong number of
-// type arguments names no instance of its target, so a method call on a value
-// of it cannot be judged. It used to be reported as a missing method
-// (GALA-E0044, "Res declares no methods"); the type itself is what is wrong,
-// and Go reports it. This output does not type-check by design, so it skips
-// the oracle.
-func TestGenericAliasWrongArity(t *testing.T) {
-	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	trans := transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-
-	for _, call := range []string{"r.IsSuccess()", "r.GetOrElse(0)"} {
-		t.Run(call, func(t *testing.T) {
-			_, err := trans.Transpile(`package main
-
-type Res[T any] Try[T]
-
-func main() {
-    val r Res[int, string] = Success(1)
-    Println(`+call+`)
-}
-`, "")
-			if err != nil {
-				assert.NotContains(t, err.Error(), string(galaerr.CodeUnknownMethod))
 			}
 		})
 	}

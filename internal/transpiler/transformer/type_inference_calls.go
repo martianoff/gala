@@ -36,6 +36,9 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 			return fType
 		}
 	}
+	if ft, ok := t.methodValueType(xType, resolvedTypeName, e.Sel.Name); ok {
+		return ft
+	}
 	// Try Go type info for struct field access and method calls on Go types
 	if !xType.IsNil() {
 		if fType := t.getGoFieldType(t.goTypeLookupName(xType), e.Sel.Name); !fType.IsNil() {
@@ -101,6 +104,44 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 		}
 	}
 	return transpiler.NilType{}
+}
+
+// methodValueType is the type of a method value — a GALA method named without
+// being called, as in `in.FlatMap(p.Parse)` — which is the method's signature
+// with the receiver's type arguments substituted. Without it the value had no
+// type, so a generic method taking it could not bind its own type parameter
+// and the next call in the chain leaked that parameter's internal name into
+// the generated Go. A method with type parameters of its own has no single
+// signature and is not resolved here.
+func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, resolvedTypeName, method string) (transpiler.Type, bool) {
+	if recvType.IsNil() {
+		return nil, false
+	}
+	meta := t.getTypeMeta(resolvedTypeName)
+	if meta == nil {
+		return nil, false
+	}
+	mm, ok := meta.Methods[method]
+	if !ok || len(mm.TypeParams) > 0 {
+		return nil, false
+	}
+	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), mm.ParamTypes...)}
+	if mm.ReturnType != nil && !mm.ReturnType.IsNil() {
+		if _, void := mm.ReturnType.(transpiler.VoidType); !void {
+			ft.Results = []transpiler.Type{mm.ReturnType}
+		}
+	}
+	if len(meta.TypeParams) == 0 {
+		return ft, true
+	}
+	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
+		recvType = ptr.Elem
+	}
+	gen, isGeneric := recvType.(transpiler.GenericType)
+	if !isGeneric || len(gen.Params) != len(meta.TypeParams) {
+		return nil, false
+	}
+	return t.substituteConcreteTypes(ft, meta.TypeParams, gen.Params), true
 }
 
 // inferCallExprType infers the return type of a call expression.
@@ -716,4 +757,3 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 	// type here would type `b.Get()` as `b`.
 	return transpiler.NilType{}
 }
-

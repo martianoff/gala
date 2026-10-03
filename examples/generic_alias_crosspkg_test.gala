@@ -35,7 +35,7 @@ func main() {
     val codec = json.Codec[shapes.Order](json.SnakeCase())
     val body = codec.Encode(order).Get()
     Println(body)
-    Println(codec.Decode(body).Map((o) => o.Lines.Size()))
+    Println(codec.Decode(body).Map(_.Lines.Size()))
 
     val sizes = Future(s"${ps.Size()} ${totals.Size()}")
     Println(sizes.Get())

@@ -319,7 +319,7 @@ func main() {
 
 import "martianoff/gala/collection_mutable"
 
-struct Holder[T any](label string, items collection_mutable.Array[T])
+struct Holder[T any](label string, items *collection_mutable.Array[T])
 
 type Held[T any] Holder[T]
 type HeldAgain[T any] Held[T]

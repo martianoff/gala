@@ -99,7 +99,9 @@ func main() {
     var b = Box(41)
     Println(viaMethodValue(&b))
 }`,
-			wantContains: []string{"b.Get"},
+			// A method value has the method's signature, with the receiver's
+			// type arguments substituted, so nothing is left unresolved.
+			wantNone: true,
 		},
 		{
 			name: "std method taken as a value",
@@ -113,7 +115,7 @@ func orElse[T any](o Option[T], fallback T) T {
 func main() {
     Println(orElse(Some(1), 0))
 }`,
-			wantContains: []string{"o.GetOrElse"},
+			wantNone: true,
 		},
 	}
 	for _, tc := range cases {

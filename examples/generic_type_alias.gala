@@ -54,7 +54,7 @@ func showRes[T any](r Res[T]) string = r match {
 
 func run[T any](h Handler[T], input string) Result[T] = h(input)
 
-func labels[L Labeled](ls Labels[L]) string = ls.Map((l) => l.Label()).MkString(" ")
+func labels[L Labeled](ls Labels[L]) string = ls.Map(_.Label()).MkString(" ")
 
 func noCounts() StrMap[int] = EmptyHashMap()
 
@@ -77,7 +77,7 @@ func main() {
     Println(describe(run(doubled, "hello")))
 
     val r Res[int] = Success(20)
-    Println(r.Map((v) => v + 1).GetOrElse(0))
+    Println(r.Map(_ + 1).GetOrElse(0))
 
     Println(labels(ArrayOf(Tag("go"), Tag("gala"))))
 
@@ -85,9 +85,9 @@ func main() {
     val jsonCodec = json.Codec[Order](json.SnakeCase())
     val body = jsonCodec.Encode(order).Get()
     Println(body)
-    Println(jsonCodec.Decode(body).Map((o) => o.Lines.Size()))
+    Println(jsonCodec.Decode(body).Map(_.Lines.Size()))
     val yamlCodec = yaml.Codec[Order](yaml.SnakeCase())
-    Println(yamlCodec.Decode(yamlCodec.Encode(order).Get()).Map((o) => o.Note.GetOrElse("")))
+    Println(yamlCodec.Encode(order).FlatMap(yamlCodec.Decode).Map(_.Note.GetOrElse("")))
     Println(json.Value[Items[int]]().Encode(ArrayOf(1, 2)))
 
     val shared = Future(s"${ps.Size()} ${order.Lines.Size()}")
