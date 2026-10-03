@@ -549,6 +549,24 @@ func v() {
 			body:    "\nfunc f(n int) {\n    n match {\n        case 0 => (x int) => x\n        case _ => Println(n)\n    }\n}\n",
 			wantErr: "is evaluated but not used",
 		},
+		// A statement match whose arms hold loop control or a bare return is
+		// inlined rather than lowered to a function literal; its other arms
+		// are statements all the same.
+		{
+			name:    "value arm next to a break arm",
+			body:    "\nfunc f() {\n    for i := 0; i < 3; i++ {\n        i match {\n            case 0 => { break }\n            case 1 => 5\n            case _ => Println(i)\n        }\n    }\n}\n",
+			wantErr: "`5` is evaluated but not used",
+		},
+		{
+			name:    "block arm ending in a value next to a continue arm",
+			body:    "\nfunc f() {\n    for i := 0; i < 3; i++ {\n        i match {\n            case 0 => continue\n            case _ => { Println(i); i }\n        }\n    }\n}\n",
+			wantErr: "`i` is evaluated but not used",
+		},
+		{
+			name:    "value arm next to a bare return arm",
+			body:    "\nfunc f(n int) {\n    n match {\n        case 0 => { return }\n        case _ => n * 2\n    }\n}\n",
+			wantErr: "`n*2` is evaluated but not used",
+		},
 		{
 			// A val field read lowers to a `.Get()` call no one wrote.
 			name:    "val field read as an if-expression branch",
@@ -598,6 +616,7 @@ func TestVoidContextBranchesThatRunStatements(t *testing.T) {
 		{"assignment and empty arms", "\nfunc f(n int) int {\n    var seen = 0\n    n match {\n        case 0 => { seen = 1 }\n        case _ => {}\n    }\n    seen\n}\n"},
 		{"value if-expression keeps its values", "\nfunc f(c bool) int = if (c) 1 else 2\n"},
 		{"call and match arms of a void expression lambda", "\nfunc each(f func(int)) = f(0)\n\nfunc g() {\n    each((n) => n match {\n        case 0 => Println(\"zero\")\n        case _ => Println(n)\n    })\n    each((n) => if (n == 0) Println(\"z\") else Println(n))\n}\n"},
+		{"loop control and call arms of an inlined statement match", "\nfunc f() {\n    for i := 0; i < 5; i++ {\n        i match {\n            case 1 => continue\n            case 3 => { break }\n            case 4 => { return }\n            case _ => Println(i)\n        }\n    }\n}\n"},
 		{"parenthesized call as a statement", "\nfunc mk() Option[int] = Some(1)\n\nfunc f() {\n    (mk().Get())\n}\n"},
 		{"value match keeps its values", "\nfunc f(n int) string = n match {\n    case 0 => \"zero\"\n    case _ => \"other\"\n}\n"},
 	}
