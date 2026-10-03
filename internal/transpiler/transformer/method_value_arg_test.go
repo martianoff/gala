@@ -106,7 +106,7 @@ func main() {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := trans.Transpile(tt.input, "")
+			got, err := trans.Transpile(tt.input, "method_value.gala")
 			require.NoError(t, err)
 			assert.NotContains(t, got, "__mtp")
 			assert.Contains(t, got, tt.want)

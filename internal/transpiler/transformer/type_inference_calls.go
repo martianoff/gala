@@ -117,20 +117,24 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 // The receiver is resolved the way a call's is (methodReceiverType), so a
 // receiver typed by an alias finds methods declared on the alias as well as on
 // the type it names, with the alias's arguments substituted at each hop.
+//
+// Only methods declared in GALA source qualify: the metadata synthesized for a
+// Go type's methods keeps a single result and no variadic marker, so it does
+// not describe the Go method value, whose type Go infers on its own.
 func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method string) (transpiler.Type, bool) {
 	if recvType.IsNil() {
 		return nil, false
 	}
+	recvType = t.methodReceiverType(recvType, method)
 	if ptr, isPtr := recvType.(transpiler.PointerType); isPtr {
 		recvType = ptr.Elem
 	}
-	recvType = t.methodReceiverType(recvType, method)
 	meta := t.getTypeMeta(recvType.BaseName())
 	if meta == nil {
 		return nil, false
 	}
 	mm, ok := meta.Methods[method]
-	if !ok || len(mm.TypeParams) > 0 {
+	if !ok || (meta.DefinedIn == "" && mm.DefinedIn == "") || mm.IsGeneric || len(mm.TypeParams) > 0 {
 		return nil, false
 	}
 	ft := signatureType(mm.ParamTypes, mm.ReturnType)

@@ -671,6 +671,39 @@ func main() {
 			expectContains: "it resolves to Point through a generic alias",
 		},
 		{
+			name: "GALA-E0048 method on a plain alias whose chain passes through a generic alias",
+			input: `package main
+
+struct Point(X int, Y int)
+
+type Tagged[T any] Point
+type IntTagged Tagged[int]
+
+func (p IntTagged) Sum() int = p.X + p.Y
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: `cannot declare a method on "IntTagged": it resolves to Point through a generic alias`,
+		},
+		{
+			name: "GALA-E0048 method on an alias of an instantiated generic struct",
+			input: `package main
+
+struct Pair[A any](First A, Second A)
+
+type IntPair Pair[int]
+
+func (p IntPair) Sum() int = p.First + p.Second
+
+func main() {
+    Println(1)
+}`,
+			expectCode:     galaerr.CodeMethodOnNonLocalAlias,
+			expectContains: "it resolves to Pair[int], an instantiated type",
+		},
+		{
 			name: "GALA-E0049 a Go call's Try used as its plain value",
 			input: `package main
 

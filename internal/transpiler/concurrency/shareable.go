@@ -115,14 +115,15 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	if transpiler.IsUnusable(t) {
 		return false
 	}
-	// Only a named type can spell an alias; a composite never does.
-	switch t.(type) {
-	case transpiler.BasicType, transpiler.NamedType, transpiler.GenericType:
-		if c.unalias != nil {
-			if target, ok := c.unalias(t); ok {
-				t = target
-			}
+	if target, ok := c.unaliasOnce(t, visited); ok {
+		if target == nil {
+			// The alias names itself through its own arguments
+			// (`type Rec Option[Rec]`), which no value can have.
+			return false
 		}
+		key := aliasVisitKey(t)
+		defer delete(visited, key)
+		t = target
 	}
 
 	switch v := t.(type) {
@@ -176,6 +177,40 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	// Unknown/unhandled kind: conservative.
 	return false
 }
+
+// unaliasOnce resolves t through the alias resolver, marking the alias in
+// visited while its target is decided. It reports false when t is not an
+// alias, and (nil, true) when t is already being decided further up, an alias
+// that names itself through its own arguments. Only a named type can spell an
+// alias, and a primitive never does, so other types skip the lookup.
+func (c *Checker) unaliasOnce(t transpiler.Type, visited map[string]bool) (transpiler.Type, bool) {
+	if c.unalias == nil {
+		return nil, false
+	}
+	switch v := t.(type) {
+	case transpiler.BasicType:
+		if isShareablePrimitive(v.Name) {
+			return nil, false
+		}
+	case transpiler.NamedType, transpiler.GenericType:
+	default:
+		return nil, false
+	}
+	target, ok := c.unalias(t)
+	if !ok {
+		return nil, false
+	}
+	key := aliasVisitKey(t)
+	if visited[key] {
+		return nil, true
+	}
+	visited[key] = true
+	return target, true
+}
+
+// aliasVisitKey keys an alias with its arguments in the visited set, apart
+// from the struct keys isNamedStructShareable records there.
+func aliasVisitKey(t transpiler.Type) string { return "alias:" + t.String() }
 
 // isGoScalarShareable reports whether a Go named type is a scalar value type —
 // its underlying resolves to a primitive (time.Duration -> int64). Only a

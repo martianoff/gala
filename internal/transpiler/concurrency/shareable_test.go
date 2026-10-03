@@ -451,6 +451,8 @@ func TestAliasShareable(t *testing.T) {
 				return generic(immutableArray, basic("int")), true
 			case "IntBuf":
 				return generic(mutableArray, basic("int")), true
+			case "Rec":
+				return generic(named("std", "Option"), basic("Rec")), true
 			}
 		case transpiler.GenericType:
 			if v.Base.BaseName() == "Items" && len(v.Params) == 1 {
@@ -472,6 +474,7 @@ func TestAliasShareable(t *testing.T) {
 		{"alias as a type argument", generic(named("std", "Option"), basic("IntItems")), true},
 		{"mutable alias as a type argument", generic(named("std", "Option"), basic("IntBuf")), false},
 		{"unresolved name stays conservative", basic("Unknown"), false},
+		{"alias naming itself through its arguments terminates", basic("Rec"), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
