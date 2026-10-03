@@ -6,6 +6,7 @@ go_library(
         "analyzer.go",
         "cache.go",
         "cache_codec.go",
+        "dot_import_collision.go",
         "go_keyword_names.go",
         "go_nocopy.go",
         "go_types.go",

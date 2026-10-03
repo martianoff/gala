@@ -672,6 +672,15 @@ const (
 	// pattern, alias target and composite literal — for a variant of a local
 	// or an imported sealed type.
 	CodeSealedVariantAsType ErrorCode = "GALA-E0061"
+
+	// E0066: the package declares a top-level type, sealed variant or
+	// function under a name that a GALA package it dot-imports also exports
+	// (`struct List(...)` beside `import . "martianoff/gala/collection_immutable"`).
+	// A package's declarations shadow its imports' names, std's included, but
+	// a dot import is a Go dot import, and Go allows no package-level name
+	// that a dot import in any file of the package also brings in. The import
+	// is taken under a name, or the declaration renamed.
+	CodeDeclarationCollidesWithDotImport ErrorCode = "GALA-E0066"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

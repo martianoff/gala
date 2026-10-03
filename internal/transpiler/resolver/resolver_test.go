@@ -74,17 +74,19 @@ func TestResolve_NotFound(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestResolve_Precedence_StdBeforeCurrentPackage(t *testing.T) {
+// std is an implicit import, and no import outranks a name the package
+// declares: a package's own `Seq` shadows std's.
+func TestResolve_Precedence_CurrentPackageBeforeStd(t *testing.T) {
 	r := &TypeResolver{PackageName: "mypackage"}
 	known := map[string]bool{
-		"std.Option":      true,
-		"mypackage.Option": true,
+		"std.Seq":       true,
+		"mypackage.Seq": true,
 	}
 	exists := func(name string) bool { return known[name] }
 
-	resolved, ok := r.Resolve("Option", exists)
+	resolved, ok := r.Resolve("Seq", exists)
 	assert.True(t, ok)
-	assert.Equal(t, "std.Option", resolved, "std should take precedence over current package")
+	assert.Equal(t, "mypackage.Seq", resolved, "the current package should take precedence over std")
 }
 
 func TestResolve_Precedence_DotImportBeforeNamedImport(t *testing.T) {

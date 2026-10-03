@@ -141,7 +141,8 @@ fixture_cmd_app() {
 }
 
 # nested: main -> internal/a -> internal/a/b, a BOM-prefixed source with
-# non-ASCII text, and a test two packages below a package-main root.
+# non-ASCII text, a test two packages below a package-main root, and library
+# types named like std types (which shadow them).
 fixture_nested() {
   local dir
   dir=$(stage nested)

@@ -1,0 +1,22 @@
+package std_shadow_lib
+
+import . "martianoff/gala/collection_immutable"
+
+// Each type below is named like a std type. A package's own declarations
+// shadow the implicitly imported std names, so every bare reference in this
+// package means the declaration here.
+
+// Seq is this package's sequence of ints; it shadows std's Seq.
+type Seq Array[int]
+
+// Holder carries a Seq.
+struct Holder(Items Seq)
+
+// Make returns a Holder of 1, 2, 3.
+func Make() Holder = Holder(ArrayOf(1, 2, 3))
+
+// Hashable is a key with a precomputed code; it shadows std's Hashable.
+struct Hashable(Key string, Code int)
+
+// CodeOf returns the code of h.
+func CodeOf(h Hashable) int = h.Code

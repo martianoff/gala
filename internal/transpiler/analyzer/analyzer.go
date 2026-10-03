@@ -89,7 +89,11 @@ func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec
 }
 
 // CheckStdConflict returns an error if the given name conflicts with std library exports.
-// This prevents user code from shadowing std types and functions.
+// The names it guards are the ones the transpiler gives built-in meaning
+// (Option, Tuple, Immutable, Some, ...: constructor inference, tuple syntax,
+// immutability), so a declaration of one is rejected. Every other std type is
+// shadowed by a same-named declaration of the package (see
+// resolver.TypeResolver).
 //
 // This function delegates to the registry package which is the source of truth
 // for prelude package exports.
@@ -121,6 +125,7 @@ type galaAnalyzer struct {
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
+	currentOwnTypes      map[string]bool                // Top-level names the package being analyzed declares (true: a type), from its source before any is registered — a type declared further down still shadows std's
 	currentDotImportPkgs map[string]bool                // Package names dot-imported by the current file OR any sibling — package-wide on purpose: sibling declarations resolve through it too, and GALA-E0025 (not this set) enforces per-file imports
 	currentQualifiers   fileQualifiers                 // Import table of the file whose declarations are being resolved (see fileQualifiers)
 	analyzeDepth int                                    // recursion depth for profiling
@@ -906,9 +911,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// Collect from main file AND all sibling files so that when resolving types in
 	// sibling struct fields, we correctly qualify types from their dot imports too.
 	dotImportPkgs := make(map[string]bool)
+	// Every dot import of the package, GALA or Go: package name -> paths.
+	packageDotImports := make(map[string][]string)
 	for _, q := range append([]fileQualifiers{fileQuals}, siblingQuals...) {
 		for _, b := range q.dots {
-			if b.IsGala && b.PkgName != "" {
+			if b.PkgName == "" {
+				continue
+			}
+			packageDotImports[b.PkgName] = append(packageDotImports[b.PkgName], b.Path)
+			if b.IsGala {
 				dotImportPkgs[b.PkgName] = true
 			}
 		}
@@ -961,6 +972,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	// GALA-E0066: a package-level name a dot import also brings in.
+	if isTopLevel {
+		if err := checkDotImportCollisions(sourceFile, packageDotImports, richAST); err != nil {
+			return nil, err
+		}
+	}
+
 	// Set currentRichAST and dot-import tracking so resolveTypeWithParams can check
 	// already-known types (from dot-imported packages) before blindly qualifying with
 	// the current package name. This prevents e.g. Array from collection_immutable
@@ -970,10 +988,22 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	a.currentRichAST = richAST
 	a.currentDotImportPkgs = dotImportPkgs
 	a.currentQualifiers = fileQuals
+	a.currentOwnTypes = make(map[string]bool)
+	for _, sf := range append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...) {
+		collectTopLevelDeclaredNames(sf, a.currentOwnTypes)
+	}
+	for name := range richAST.OwnGoTypes {
+		// A .go file is not checked for the reserved std names, which keep
+		// their std meaning in GALA source.
+		if CheckStdConflict(name, pkgName) == nil {
+			a.currentOwnTypes[name] = true
+		}
+	}
 	defer func() {
 		a.currentRichAST = nil
 		a.currentDotImportPkgs = nil
 		a.currentQualifiers = fileQualifiers{}
+		a.currentOwnTypes = nil
 	}()
 
 	// 1. Collect all types
@@ -982,7 +1012,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ctx := typeDecl.(*grammar.TypeDeclarationContext)
 			typeName := ctx.Identifier().GetText()
 
-			// Check for std library conflicts
+			// The std names the transpiler gives built-in meaning are reserved;
+			// any other std type is shadowed by the declaration.
 			if err := CheckStdConflict(typeName, pkgName); err != nil {
 				return nil, err
 			}
@@ -1137,7 +1168,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
 			typeName := ctx.Identifier().GetText()
 
-			// Check for std library conflicts
+			// Reserved std names: see the type declaration case above.
 			if err := CheckStdConflict(typeName, pkgName); err != nil {
 				return nil, err
 			}
@@ -2536,6 +2567,12 @@ func (a *galaAnalyzer) findKnownTypePackage(typeName string, currentPkg string) 
 // resolveBaseName resolves a simple (unqualified, non-generic) type name to a transpiler.Type
 // using the shared resolver.TypeResolver for consistent precedence with the transformer.
 func (a *galaAnalyzer) resolveBaseName(typeName string, pkgName string) transpiler.Type {
+	// A type the package declares shadows every import's, std's included,
+	// even while it is not registered yet (declared further down, or in a
+	// sibling file analyzed later).
+	if a.currentOwnTypes[typeName] {
+		return ownTypeRef(typeName, pkgName)
+	}
 	tr := a.buildTypeResolver(pkgName)
 	exists := func(name string) bool {
 		if a.currentRichAST == nil {
@@ -2562,7 +2599,12 @@ func (a *galaAnalyzer) resolveBaseName(typeName string, pkgName string) transpil
 		return transpiler.NamedType{Package: registry.StdPackageName, Name: typeName}
 	}
 
-	// Default to current package qualification for library packages
+	return ownTypeRef(typeName, pkgName)
+}
+
+// ownTypeRef is the type a bare name of package pkgName's own refers to:
+// qualified by the package in a library, bare in main and test.
+func ownTypeRef(typeName, pkgName string) transpiler.Type {
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {
 		return transpiler.NamedType{Package: pkgName, Name: typeName}
 	}

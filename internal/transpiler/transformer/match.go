@@ -745,6 +745,10 @@ func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionO
 	if c, ok := t.companionObjects[name]; ok {
 		return c
 	}
+	// The package's own companion (a library keys it `pkg.Name`) shadows std's.
+	if c, ok := t.companionObjects[t.packageName+"."+name]; ok && !strings.Contains(name, ".") {
+		return c
+	}
 	// Try with std prefix
 	stdName := registry.StdPackageName + "." + name
 	if c, ok := t.companionObjects[stdName]; ok {

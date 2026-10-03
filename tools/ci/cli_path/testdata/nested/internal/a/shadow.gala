@@ -1,0 +1,21 @@
+package a
+
+import . "martianoff/gala/collection_immutable"
+
+// Seq and Hashable are named like std types. The package's own declarations
+// shadow the implicitly imported std names.
+
+// Seq is this package's sequence of ints; it shadows std's Seq.
+type Seq Array[int]
+
+// Hashable is a key with a precomputed code; it shadows std's Hashable.
+struct Hashable(Key string, Code int)
+
+// Holder carries a Seq and a Hashable.
+struct Holder(Items Seq, Id Hashable)
+
+// Shadowed describes a Holder built from the package's own types.
+func Shadowed() string {
+    val h = Holder(ArrayOf(1, 2, 3), Hashable("k", 9))
+    s"shadowed: ${h.Items.Size()} items, key ${h.Id.Key} code ${h.Id.Code}"
+}

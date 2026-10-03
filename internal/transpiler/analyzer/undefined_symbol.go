@@ -603,22 +603,41 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 // tuple-pattern destructuring), and embed bindings. A name's value is true
 // when it names a type.
 func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]bool) {
-	record := func(id grammar.IIdentifierContext) {
-		if id != nil && !out[id.GetText()] {
-			out[id.GetText()] = false
+	forEachTopLevelName(sf, func(id grammar.IIdentifierContext, kind string) {
+		name := id.GetText()
+		if kind == declKindType || kind == declKindVariant {
+			out[name] = true
+		} else if !out[name] {
+			out[name] = false
 		}
-	}
-	recordType := func(id grammar.IIdentifierContext) {
+	})
+}
+
+// The kinds of top-level declaration forEachTopLevelName reports.
+const (
+	declKindFunction = "function"
+	declKindType     = "type"
+	declKindVariant  = "sealed variant"
+	declKindValue    = "package-level value"
+)
+
+// forEachTopLevelName calls visit with the identifier of every name the
+// file's top-level declarations introduce, and the kind of declaration: free
+// functions, types, struct shorthands, sealed types and their case variants,
+// package vals/vars (including tuple-pattern destructuring), and embed
+// bindings.
+func forEachTopLevelName(sf *grammar.SourceFileContext, visit func(id grammar.IIdentifierContext, kind string)) {
+	report := func(id grammar.IIdentifierContext, kind string) {
 		if id != nil {
-			out[id.GetText()] = true
+			visit(id, kind)
 		}
 	}
-	recordList := func(il grammar.IIdentifierListContext) {
+	reportList := func(il grammar.IIdentifierListContext) {
 		if il == nil {
 			return
 		}
 		for _, id := range il.(*grammar.IdentifierListContext).AllIdentifier() {
-			record(id)
+			report(id, declKindValue)
 		}
 	}
 	for _, topDecl := range sf.AllTopLevelDeclaration() {
@@ -626,32 +645,32 @@ func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]
 		case topDecl.FunctionDeclaration() != nil:
 			fc := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
 			if fc.Receiver() == nil {
-				record(fc.Identifier())
+				report(fc.Identifier(), declKindFunction)
 			}
 		case topDecl.TypeDeclaration() != nil:
-			recordType(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier())
+			report(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier(), declKindType)
 		case topDecl.StructShorthandDeclaration() != nil:
-			recordType(topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext).Identifier())
+			report(topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext).Identifier(), declKindType)
 		case topDecl.SealedTypeDeclaration() != nil:
 			sc := topDecl.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
-			recordType(sc.Identifier())
+			report(sc.Identifier(), declKindType)
 			for _, cc := range sc.AllSealedCase() {
-				recordType(cc.(*grammar.SealedCaseContext).Identifier())
+				report(cc.(*grammar.SealedCaseContext).Identifier(), declKindVariant)
 			}
 		case topDecl.ValDeclaration() != nil:
 			vc := topDecl.ValDeclaration().(*grammar.ValDeclarationContext)
-			recordList(vc.IdentifierList())
+			reportList(vc.IdentifierList())
 			if tp := vc.TuplePattern(); tp != nil {
-				recordList(tp.(*grammar.TuplePatternContext).IdentifierList())
+				reportList(tp.(*grammar.TuplePatternContext).IdentifierList())
 			}
 		case topDecl.VarDeclaration() != nil:
 			vc := topDecl.VarDeclaration().(*grammar.VarDeclarationContext)
-			recordList(vc.IdentifierList())
+			reportList(vc.IdentifierList())
 			if tp := vc.TuplePattern(); tp != nil {
-				recordList(tp.(*grammar.TuplePatternContext).IdentifierList())
+				reportList(tp.(*grammar.TuplePatternContext).IdentifierList())
 			}
 		case topDecl.EmbedDeclaration() != nil:
-			record(topDecl.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier())
+			report(topDecl.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier(), declKindValue)
 		}
 	}
 }

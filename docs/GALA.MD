@@ -537,7 +537,7 @@ val result = sum(1, 2, 3, 4, 5) // result = 15
 Variadic functions can be combined with generics for flexible factory functions.
 
 ```gala
-func ListOf[T any](elements ...T) List[T] {
+func listOf[T any](elements ...T) List[T] {
     var result = EmptyList[T]()
     var i = elements.Size() - 1
     for ; i >= 0 ; {
@@ -548,8 +548,8 @@ func ListOf[T any](elements ...T) List[T] {
 }
 
 // Usage
-val numbers = ListOf(1, 2, 3)
-val names = ListOf("Alice", "Bob", "Charlie")
+val numbers = listOf(1, 2, 3)
+val names = listOf("Alice", "Bob", "Charlie")
 ```
 
 Collections are built through these named constructor functions — `ListOf`,
@@ -1907,10 +1907,10 @@ GALA provides several built-in types in the `std` package for common patterns.
 
 ```gala
 // Defined as a sealed type in std:
-sealed type Option[T any] {
-    case Some(Value T)
-    case None()
-}
+//   sealed type Option[T any] {
+//       case Some(Value T)
+//       case None()
+//   }
 
 val x = Some(10)
 val y = None[int]()
@@ -2108,10 +2108,10 @@ See [Either](#either) for typed error handling, and [Try](#try-monad) for except
 
 ```gala
 // Defined as a sealed type in std:
-sealed type Either[A any, B any] {
-    case Left(LeftValue A)
-    case Right(RightValue B)
-}
+//   sealed type Either[A any, B any] {
+//       case Left(LeftValue A)
+//       case Right(RightValue B)
+//   }
 
 val e = Right[int, string]("success")
 val msg = e match {
@@ -4136,6 +4136,26 @@ func main() {
 > **Note:** If your package mixes `.gala` and `.go` files, dot imports may conflict with type aliases declared in `.go` files. Prefer GALA [type aliases](#type-aliases) over Go type aliases to avoid this. See the [Type Aliases](#type-aliases) section for details.
 
 Two dot-imported packages that export the same name are rejected with [GALA-E0032](errors/GALA-E0032.md); qualify or alias one of them. This is by design for packages that deliberately re-export another's API — `concurrent` is a facade over `go_interop`'s execution-context helpers, so dot-importing both is never meaningful. See [Using `go_interop` in the same file](CONCURRENT.MD#using-go_interop-in-the-same-file).
+
+### Package Declarations Shadow Imported Names
+
+A type the package declares is what its bare name means everywhere in the package, in every file, ahead of any import. That includes std, which every file imports implicitly: a package may declare its own `Seq`, `Hashable` or `Ordered`, and the bare name then refers to the package's declaration in fields, parameters, results, `val` annotations, constructor calls, patterns and type arguments. std's other names stay in scope, and a shadowed std type is still reachable as `std.Seq` through `import "martianoff/gala/std"`. Code importing the package sees the declaration as `lib.Seq` as usual.
+
+The std names the language itself gives meaning to are reserved rather than shadowed: `Option`, `Either`, `Try`, `Immutable`, `Tuple` through `Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS` and the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure` (constructor inference, tuple syntax and `val` fields are built on them), along with the std helpers `NewImmutable`, `NewEmbeddedFS`, `Copy`, `Equal`, `FromOption` and `FromEitherError`. A `type` or `struct` declaration under one of them is an error, as is a top-level function under one; a sealed variant named like a companion draws a warning. Prefer a different name for these.
+
+```gala
+package shapes
+
+import . "martianoff/gala/collection_immutable"
+
+type Seq Array[int]           // shadows std's Seq in this package
+
+struct Holder(Items Seq)      // the package's Seq, not std.Seq
+
+func Make() Holder = Holder(ArrayOf(1, 2))
+```
+
+A dot import is the exception. GALA's `import . "path"` is a Go dot import, and Go allows no package-level name that a dot import in any file of the package also brings in, so declaring `struct List(...)` beside `import . "martianoff/gala/collection_immutable"` is rejected with [GALA-E0066](errors/GALA-E0066.md). Import the package under a name, or rename the declaration.
 
 ### Using Symbols from Other Packages
 

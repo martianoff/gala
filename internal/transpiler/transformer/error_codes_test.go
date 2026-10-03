@@ -922,6 +922,65 @@ func main() {
 			expectCode:     galaerr.CodeSealedVariantAsType,
 			expectContains: "Circle is a variant of sealed type Shape, not a type",
 		},
+		{
+			name: "GALA-E0066 type named like a dot-imported type",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct List(Head int)
+
+func main() {
+    Println(List(1).Head)
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "type List is also exported by collection_immutable, which this package dot-imports",
+		},
+		{
+			name: "GALA-E0066 sealed variant named like a dot-imported function",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+sealed type Build {
+    case ArrayOf(N int)
+    case Blank()
+}
+
+func main() {
+    Println(ArrayOf(1))
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "sealed variant ArrayOf is also exported by collection_immutable",
+		},
+		{
+			name: "GALA-E0066 function named like a dot-imported function",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func ArrayOf(n int) int = n
+
+func main() {
+    Println(ArrayOf(1))
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "function ArrayOf is also exported by collection_immutable",
+		},
+		{
+			name: "GALA-E0066 package val named like a dot-imported function",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+val ArrayOf = 1
+
+func main() {
+    Println(ArrayOf)
+}`,
+			expectCode:     galaerr.CodeDeclarationCollidesWithDotImport,
+			expectContains: "package-level value ArrayOf is also exported by collection_immutable",
+		},
 	}
 
 	for _, tc := range cases {

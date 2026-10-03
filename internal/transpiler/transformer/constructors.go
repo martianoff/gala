@@ -39,6 +39,11 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			return ident, nil
 		}
 
+		// A type the package declares shadows a std type or companion of the
+		// same name (`Seq`, `Left`).
+		if t.packageDeclaresType(name) {
+			return ident, nil
+		}
 		// Check if this identifier is a std package type (not a variable with std type)
 		// Only check typeMetas directly to see if std.name exists as a type definition
 		// NOTE: Direct access is intentional here - we need exact match, not resolution

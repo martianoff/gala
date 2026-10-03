@@ -648,8 +648,8 @@ var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 //     (but NOT for external Go packages like "time", "fmt", etc.)
 //  3. Try current package prefix
 //  4. Try std package prefix
-//  5. Try all explicitly imported packages (non-dot)
-//  6. Try dot-imported packages
+//  5. Try dot-imported packages
+//  6. Try all explicitly imported packages (non-dot)
 //
 // Returns the resolved name and whether resolution succeeded.
 func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string) bool) (string, bool) {
@@ -742,7 +742,12 @@ func (t *galaASTTransformer) lookupTypeAlias(name string) (transpiler.Type, bool
 		return underlying, true
 	}
 	if dotIdx := strings.LastIndex(name, "."); dotIdx != -1 {
-		if underlying, ok := t.typeAliases[name[dotIdx+1:]]; ok {
+		bare := name[dotIdx+1:]
+		// std's type is never the package's own alias that shadows its name.
+		if name[:dotIdx] == registry.StdPackageName && t.packageDeclaresType(bare) {
+			return transpiler.NilType{}, false
+		}
+		if underlying, ok := t.typeAliases[bare]; ok {
 			return underlying, true
 		}
 	}
@@ -890,6 +895,26 @@ func (t *galaASTTransformer) isOwnGoType(name string) bool {
 	return t.richAST != nil && t.richAST.OwnGoTypes[name]
 }
 
+// packageDeclaresType reports whether the package being compiled declares a type
+// named by the bare name, in a .gala file or a hand-written .go one. Such a
+// name is the package's own type wherever it is written unqualified: a
+// package-level declaration outranks every import, the implicit std import
+// included, so a same-named std type is reachable only as `std.Name`.
+func (t *galaASTTransformer) packageDeclaresType(name string) bool {
+	if name == "" || strings.Contains(name, ".") {
+		return false
+	}
+	if t.isOwnGoType(name) {
+		return true
+	}
+	key := name
+	if t.packageName != "" && t.packageName != "main" && t.packageName != "test" {
+		key = t.packageName + "." + name
+	}
+	meta, ok := t.typeMetas[key]
+	return ok && meta != nil && meta.Package == t.packageName
+}
+
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.
 // Returns empty string if not found. A bare name the package's own .go files
 // declare resolves to its `pkg.Name` key though typeMetas has no entry for it:
@@ -917,10 +942,10 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 //
 // Resolution precedence:
 //  1. Exact match
-//  2. std package prefix (for standard library types)
-//  3. Current package prefix
-//  4. Explicitly imported packages
-//  5. Dot-imported packages
+//  2. Current package prefix (the package's own types shadow std's)
+//  3. std package prefix (for standard library types)
+//  4. Dot-imported packages
+//  5. Explicitly imported packages
 //
 // Returns nil if the type is not found.
 func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetadata {

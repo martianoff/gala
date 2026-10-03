@@ -215,7 +215,7 @@ func (t *galaASTTransformer) isImmutableField(xType transpiler.Type, selExpr *as
 	}
 
 	// Std library types: check generated field type
-	if registry.IsStdType(baseTypeName) || registry.IsStdType(strings.TrimPrefix(baseTypeName, registry.StdPackageName+".")) {
+	if t.isKnownStdType(baseTypeName) || (hasStdPrefix(baseTypeName) && registry.IsStdType(stripStdPrefix(baseTypeName))) {
 		fieldType := t.getExprTypeName(selExpr)
 		if t.isImmutableType(fieldType) {
 			return true
