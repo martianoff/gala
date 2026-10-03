@@ -529,6 +529,19 @@ func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpi
 		WithSpan(tok.GetColumn() + len([]rune(text)))
 }
 
+// shareableUnderlying is the Sendable/Shareable checker's view of a named
+// scalar: an opaque type's underlying scalar, or a Go named type's
+// underlying type. The checker accepts either only when it is a primitive.
+func (t *galaASTTransformer) shareableUnderlying(typ transpiler.Type) (transpiler.Type, bool) {
+	if u, ok := t.opaqueUnderlying(typ); ok {
+		if end, kind, _ := t.resolveScalar(u); kind != scalarNone {
+			return end, true
+		}
+		return u, true
+	}
+	return t.goNamedUnderlying(typ)
+}
+
 // opaqueCodecScalar returns the wire scalar of the opaque type name declared
 // in package pkg ("" for this one), read from the declaring package's
 // metadata: an opaque type encodes as its underlying scalar. ok is false when

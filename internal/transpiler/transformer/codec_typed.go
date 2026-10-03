@@ -123,7 +123,7 @@ func (t *galaASTTransformer) codecError(config *structMetaConfig, reason string)
 }
 
 const codecSupportedShapesHint = "a codec field can be a string, bool, rune, int/uint/float kind, " +
-	"an alias or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those"
+	"an alias, opaque type or named type over one, a struct, or an Option, Array, List or HashMap[string, _] of those"
 
 // fieldShapeError names the struct field an unsupported shape was reached
 // through. Errors that are not shape errors pass through unchanged.
@@ -1087,7 +1087,7 @@ func (g *codecGen) mapKey(ty transpiler.Type) (ast.Expr, bool, error) {
 	ty = g.t.codecUnalias(ty, g.pkg)
 	sc, declared, isWireType, ok := g.t.codecScalarOf(ty)
 	if !ok || sc.goType != "string" {
-		return nil, false, unsupportedShape("HashMap keys must be strings (or an alias of string): object keys are text, and %s is not", ty.String())
+		return nil, false, unsupportedShape("HashMap keys must be strings (or an alias or opaque type over string): object keys are text, and %s is not", ty.String())
 	}
 	return declared, isWireType, nil
 }

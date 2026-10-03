@@ -292,6 +292,12 @@ func (c *Checker) isNamedStructShareable(named transpiler.Type, typeArgs []trans
 	// (mutable) argument is checked — an unsound false negative. Including the
 	// args makes Node[int] and Node[MutableArray[int]] distinct keys, so the
 	// cycle only terminates on a genuine same-argument self-reference.
+	// An opaque type is its underlying scalar at run time: it is shareable
+	// when that scalar is, as the Go-underlying resolver reports it.
+	if meta.IsOpaque {
+		return c.isGoScalarShareable(named)
+	}
+
 	key := metaKey(meta) + instantiationKey(typeArgs)
 	if visited[key] {
 		return true

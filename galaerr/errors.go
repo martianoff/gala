@@ -608,9 +608,9 @@ const (
 	// names as written, so the generated Go did not parse and the author got
 	// the internal GALA-E0017. The name is rejected wherever it appears (a
 	// val, var, parameter, lambda parameter, pattern binding, struct field,
-	// function, method, type, type parameter, package name or import alias),
-	// pointing at the declaration when there is one. A bare `break` /
-	// `continue` statement is loop control, and the other bare statement
+	// function, method, type, opaque type, type parameter, package name or
+	// import alias), pointing at the declaration when there is one. A bare
+	// `break` / `continue` statement is loop control, and the other bare statement
 	// keywords stay with E0036.
 	CodeGoKeywordAsName ErrorCode = "GALA-E0055"
 
