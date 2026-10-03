@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import "martianoff/gala/examples/struct_expected_type/units"
 
@@ -52,6 +52,14 @@ func partly(n int) Pair[int, string] = Pair(n)
 
 func typeStruct() Field[int] = Field(Label = "field")
 
+struct Marker[T any]()
+
+struct Boxed[T any](Value T)
+
+func marker() Marker[string] = Marker()
+
+func widened() Boxed[int64] = Boxed(1)
+
 func takeTag(t Tag[int]) string = t.Describe()
 
 func build(f func(int) Tag[int]) Tag[int] = f(7)
@@ -74,6 +82,8 @@ func main() {
     Println(viaAlias().Name)
     Println(partly(5).Describe())
     Println(typeStruct().Label)
+    Println(s"${marker()}")
+    Println(widened().Value)
 
     val annotated Tag[float64] = Tag("annotated")
     Println(annotated.Describe())

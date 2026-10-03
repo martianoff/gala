@@ -1134,7 +1134,7 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// The hint is the type an alias names, not the alias: the constructors and
 	// generic calls that read it match its structure (`Try[Email]` for
 	// `type Checked Try[Email]`) to bind their type arguments.
-	if hint := t.followAliasChain(s.typ); s.push || t.isTupleLiteralFor(exprCtx, hint) || t.isStructConstructionOf(exprCtx, hint) {
+	if hint := t.followAliasChain(s.typ); s.push || t.consumesSlotType(exprCtx, hint) {
 		release := t.expectedArgTypes.push(hint)
 		defer release()
 	}
@@ -1209,6 +1209,14 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 	return list.Expression(0)
 }
 
+// consumesSlotType reports whether exprCtx is a plain expression that takes
+// the type of a result slot it fills (see lowerAgainst), given as hint, the
+// type an alias names: a tuple literal of that tuple type, or a construction
+// of that generic struct.
+func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext, hint transpiler.Type) bool {
+	return t.isTupleLiteralFor(exprCtx, hint) || t.isStructConstructionOf(exprCtx, hint)
+}
+
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
 // `(a, b, ...)` whose arity matches the tuple type typ.
 func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
@@ -1229,36 +1237,18 @@ func (t *galaASTTransformer) isStructConstructionOf(exprCtx grammar.IExpressionC
 	if !ok {
 		return false
 	}
-	p := t.barePostfix(exprCtx)
-	if p == nil || len(p.AllCaseClause()) > 0 {
+	if p := t.barePostfix(exprCtx); p == nil || len(p.AllCaseClause()) > 0 {
 		return false
 	}
-	primExpr, ok := p.PrimaryExpr().(*grammar.PrimaryExprContext)
-	if !ok {
+	// The callee is a name, optionally package-qualified and with type
+	// arguments, followed by the one call.
+	var name string
+	if prim, _, _ := t.getCallPatternWithTypeArgsFromExpression(exprCtx); prim != nil {
+		name = prim.GetText()
+	} else if pkg, ctor, _, _, ok := t.getQualifiedCallPattern(exprCtx); ok {
+		name = pkg.GetText() + "." + ctor
+	} else {
 		return false
-	}
-	prim, ok := primExpr.Primary().(*grammar.PrimaryContext)
-	if !ok || prim.Identifier() == nil {
-		return false
-	}
-	// The callee is a (qualified) name, optionally with type arguments,
-	// followed by the one call.
-	suffixes := p.AllPostfixSuffix()
-	n := len(suffixes)
-	if n == 0 || !isCallSuffix(suffixes[n-1]) {
-		return false
-	}
-	nameSuffixes := suffixes[:n-1]
-	if k := len(nameSuffixes); k > 0 && nameSuffixes[k-1].(*grammar.PostfixSuffixContext).ExpressionList() != nil {
-		nameSuffixes = nameSuffixes[:k-1] // the type arguments
-	}
-	name := prim.Identifier().GetText()
-	for _, s := range nameSuffixes {
-		id := s.(*grammar.PostfixSuffixContext).Identifier()
-		if id == nil {
-			return false
-		}
-		name += "." + id.GetText()
 	}
 	// The bare names differ for nearly every other result value, which
 	// settles it before any type lookup.

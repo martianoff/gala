@@ -9,6 +9,8 @@ tag n=3
 alias
 pair 5
 field
+{}
+1
 tag annotated
 tag argument
 tag field

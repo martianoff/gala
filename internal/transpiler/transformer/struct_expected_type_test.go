@@ -20,6 +20,10 @@ struct Pair[A any, B any](a A)
 type Named[T any] struct {
     Name string
 }
+struct Phantom[T any]()
+struct Cfg[T any](retries int = 3)
+struct Box[T any](V T)
+struct Handler[T any](F func(T) string)
 type IntTag Tag[int]
 type TagAlias Tag[int]
 
@@ -46,6 +50,10 @@ func TestStructExpectedTypeMatrix(t *testing.T) {
 		{"Pair[int, string]", `Pair(a = 1)`, "Pair[int, string]{"},
 		{"Pair[int, string]", `Pair[int](1)`, "Pair[int, string]{"},
 		{"IntTag", `Tag("x")`, "Tag[int]{"},
+		{"Phantom[int]", `Phantom()`, "Phantom[int]{}"},
+		{"Cfg[string]", `Cfg()`, "Cfg[string]{"},
+		{"Box[int64]", `Box(1)`, "Box[int64]{"},
+		{"Handler[int]", `Handler((x) => s"$x")`, "Handler[int]{"},
 	}
 	positions := []struct {
 		name string
@@ -176,6 +184,18 @@ func TestStructExpectedTypeOnlyForTheConstruction(t *testing.T) {
 			name:  "partial: the hint keeps the type argument the fields fix",
 			input: "func f() int {\n    val p = Pair(1)\n    p.a\n}",
 			want:  []string{"cannot infer type argument B of generic struct Pair", "(`Pair[int, int](...)`)"},
+		},
+		{
+			name:  "zero-arg construction with no expected type",
+			input: "func f() int {\n    val p = Phantom()\n    1\n}",
+			want:  []string{"cannot infer type argument T of generic struct Phantom", "(`Phantom[int](...)`)"},
+		},
+		{
+			// The lambda's expected result is `Pair[int, B]`: B is mk's own,
+			// still unbound, so it is no type argument for Pair.
+			name:  "an expected type naming a callee's unbound type parameter",
+			input: "func mk[A any, B any](a A, g func(A) Pair[A, B]) Pair[A, B] = g(a)\nfunc f() int {\n    val p = mk(1, (n) => Pair(n))\n    1\n}",
+			want:  []string{"cannot infer"},
 		},
 		{
 			name:  "result of another struct type",
