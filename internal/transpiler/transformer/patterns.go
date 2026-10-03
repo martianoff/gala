@@ -747,12 +747,11 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		if instantiated != nil {
 			matchedType = instantiated
 		}
-		castName := t.nextTempVar()
-		okName := t.nextTempVar()
-		stmts = append(stmts, t.patternDefine([]string{castName, okName}, []ast.Expr{assertType, ast.NewIdent("bool")},
-			&ast.TypeAssertExpr{X: objExpr, Type: assertType}))
-		conds = append(conds, ast.NewIdent(okName))
-		baseExpr = ast.NewIdent(castName)
+		var stmt ast.Stmt
+		var ok ast.Expr
+		baseExpr, stmt, ok = t.assertPatternSubject(objExpr, assertType)
+		stmts = append(stmts, stmt)
+		conds = append(conds, ok)
 	}
 
 	var args []grammar.IArgumentContext
@@ -894,9 +893,13 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 		typeArgExprs = explicitTypeArgs.AllExpression()
 	}
 	if len(typeArgExprs) != len(meta.TypeParams) {
+		kind := "struct"
+		if meta.IsOpaque {
+			kind = "opaque type"
+		}
 		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-			fmt.Sprintf("cannot match generic struct '%s' against a value of type 'any' without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
-				stripPackagePrefix(structName), len(meta.TypeParams), stripPackagePrefix(structName), strings.Join(meta.TypeParams, ", ")))
+			fmt.Sprintf("cannot match generic %s '%s' against an interface value without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
+				kind, stripPackagePrefix(structName), len(meta.TypeParams), stripPackagePrefix(structName), strings.Join(meta.TypeParams, ", ")))
 	}
 	goArgs := make([]ast.Expr, len(typeArgExprs))
 	typeArgs := make([]transpiler.Type, len(typeArgExprs))
@@ -908,13 +911,7 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 		goArgs[i] = typeAst
 		typeArgs[i] = t.astTypeToTranspilerType(typeAst)
 	}
-	var assertType ast.Expr
-	if len(goArgs) == 1 {
-		assertType = &ast.IndexExpr{X: t.ident(structName), Index: goArgs[0]}
-	} else {
-		assertType = &ast.IndexListExpr{X: t.ident(structName), Indices: goArgs}
-	}
-	return assertType, transpiler.GenericType{Base: transpiler.BasicType{Name: structName}, Params: typeArgs}, nil
+	return withTypeArgs(t.ident(structName), goArgs), transpiler.GenericType{Base: transpiler.BasicType{Name: structName}, Params: typeArgs}, nil
 }
 
 // hasRestPattern checks if any argument in the argument list is a rest pattern (ends with ...).

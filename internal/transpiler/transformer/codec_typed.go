@@ -916,23 +916,15 @@ func codecContainer(ty transpiler.Type) (string, []transpiler.Type) {
 // decode), and whether ty already is the wire type so no conversion is
 // needed.
 func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast.Expr, bool, bool) {
-	// A phantom-typed opaque type, `Id[User]`, encodes as its underlying
-	// scalar like any other; the conversion names the instantiation.
-	if g, isGeneric := ty.(transpiler.GenericType); isGeneric {
-		if name, pkg, ok := simpleTypeName(g.Base); ok {
-			if sc, ok := t.opaqueCodecScalar(name, pkg); ok {
-				return sc, t.typeToExpr(ty), false, true
-			}
-		}
-		return codecScalar{}, nil, false, false
+	// An opaque type, local or imported, encodes as its underlying scalar; a
+	// phantom-typed one (`Id[User]`) too, its conversion naming the
+	// instantiation.
+	if sc, ok := t.opaqueCodecScalar(ty); ok {
+		return sc, t.codecTypeExpr(ty), false, true
 	}
 	name, pkg, ok := simpleTypeName(ty)
 	if !ok {
 		return codecScalar{}, nil, false, false
-	}
-	// An opaque type, local or imported, encodes as its underlying scalar.
-	if sc, ok := t.opaqueCodecScalar(name, pkg); ok {
-		return sc, t.codecTypeExpr(transpiler.NamedType{Package: pkg, Name: name}), false, true
 	}
 	if pkg == "" || pkg == t.packageName {
 		if sc, ok := codecScalars[name]; ok {
@@ -1148,6 +1140,9 @@ func (g *codecGen) goType(ty transpiler.Type) (ast.Expr, error) {
 // codecTypeExpr names a basic or named type in generated Go, qualifying and
 // importing it when it belongs to another package.
 func (t *galaASTTransformer) codecTypeExpr(ty transpiler.Type) ast.Expr {
+	if _, generic := ty.(transpiler.GenericType); generic {
+		return t.typeToExpr(ty)
+	}
 	if named, ok := ty.(transpiler.NamedType); ok && named.Package != "" && named.Package != t.packageName {
 		return t.typeToExpr(ty)
 	}
