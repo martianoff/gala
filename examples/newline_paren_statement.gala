@@ -30,14 +30,14 @@ func doubledSum(a int, b int) int {
 // A trailing lambda after a statement that ends in ')'.
 func adder(n int) func(int) int {
     Println(s"adder $n")
-    (x int) => x + n
+    (x) => x + n
 }
 
 // The trailing tuple follows an if statement's closing '}'.
 func clamp(n int) Tuple[int, bool] {
-    var v = n
-    if (v > 10) { v = 10 }
-    (v, v != n)
+    val clamped = n > 10
+    if (clamped) { Println(s"clamping $n") }
+    (if (clamped) 10 else n, clamped)
 }
 
 func main() {
@@ -49,7 +49,7 @@ func main() {
 
     // What still continues across a line break: call arguments on their own
     // lines, a method chain with leading dots, and an operator at line start.
-    val sum = Sum(
+    val sum = add(
         1,
         (2 + 3),
     )
@@ -57,10 +57,10 @@ func main() {
         + 10
     val words = ArrayOf("b", "a", "c")
         .Sorted()
-        .Map((w) => w + "!")
+        .Map(_ + "!")
         .MkString(" ")
     Println(total)
     Println(words)
 }
 
-func Sum(a int, b int) int = a + b
+func add(a int, b int) int = a + b
