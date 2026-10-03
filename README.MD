@@ -1,8 +1,8 @@
 # GALA
 
-**Sum types, exhaustive pattern matching, and `Option`/`Try` — the type system Go is missing, as a language, not a library.**
+**Go, the functional way.**
 
-**Scala on Go.**
+Inspired by Scala: sum types, exhaustive pattern matching, and `Option`/`Try` — as a language that compiles to Go, not a library.
 
 [![Build](https://github.com/martianoff/gala/actions/workflows/test.yml/badge.svg)](https://github.com/martianoff/gala/actions/workflows/test.yml)
 [![Release](https://github.com/martianoff/gala/actions/workflows/release.yml/badge.svg)](https://github.com/martianoff/gala/releases)

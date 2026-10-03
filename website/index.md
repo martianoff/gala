@@ -1,15 +1,15 @@
 ---
 layout: default
-title: "GALA — Scala on Go"
-description: "Scala on Go. A statically typed, functional-first language that transpiles to Go — sealed types, pattern matching, monads, full Go interop."
-keywords: "gala language, scala on go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
+title: "GALA — Go, the functional way"
+description: "Go, the functional way. Inspired by Scala, GALA is a statically typed language that compiles to Go — sealed types, exhaustive pattern matching, monads, full Go interop."
+keywords: "gala language, functional programming go, scala-inspired language for go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
 last_modified_at: 2026-10-03
 ---
 
 <div class="hero">
-  <h1>Scala on Go.</h1>
+  <h1>Go, the functional way.</h1>
   <p class="tagline">The sum types, exhaustive pattern matching, and <code>Option</code> types Go still doesn't have — as a language, not a library. <code>Option</code>/<code>Either</code>/<code>Try</code> monads, zero-reflection JSON, first-class interop with every Go module, native binaries.</p>
   <a href="https://gala-playground.fly.dev" class="cta">Try in Playground</a>
   <a href="https://github.com/martianoff/gala" class="cta cta-secondary">View on GitHub</a>
@@ -25,7 +25,7 @@ func area(s Shape) string = s match {
 }</code></pre>
 </div>
 
-<p class="hero-aside"><em>GALA — Go Alternative LAnguage — is a statically typed, functional-first language that transpiles to Go.</em></p>
+<p class="hero-aside"><em>GALA — Go Alternative LAnguage — is a statically typed, functional-first language inspired by Scala, compiled to Go.</em></p>
 
 ## Safe. Ergonomic. Compatible.
 

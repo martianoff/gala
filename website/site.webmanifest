@@ -1,5 +1,5 @@
 {
-  "name": "GALA — Scala on Go",
+  "name": "GALA — Go, the functional way",
   "short_name": "GALA",
   "icons": [
     { "src": "/assets/images/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },

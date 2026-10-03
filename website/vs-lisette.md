@@ -2,7 +2,7 @@
 layout: default
 title: "GALA vs Lisette — Two Expressive Languages That Compile to Go"
 description: "GALA and Lisette both add sum types, pattern matching, and Option/Result to Go. The differences: GALA is Scala-flavored with declaration-free Go interop and a mature functional standard library; Lisette is Rust-flavored."
-keywords: "gala vs lisette, lisette alternative, lisette language, compile to go language, rust on go, scala on go, golang sum types, golang pattern matching, go interop language, golang option result type"
+keywords: "gala vs lisette, lisette alternative, lisette language, compile to go language, rust on go, scala-inspired language for go, golang sum types, golang pattern matching, go interop language, golang option result type"
 permalink: /vs-lisette/
 last_modified_at: 2026-07-05
 ---

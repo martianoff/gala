@@ -1,6 +1,6 @@
 title: "GALA"
-tagline: "Scala on Go."
-description: "Scala on Go. A statically typed, functional-first language that transpiles to Go — sealed types, pattern matching, monads, full Go interop."
+tagline: "Go, the functional way."
+description: "Go, the functional way. Inspired by Scala, GALA is a statically typed language that compiles to Go — sealed types, exhaustive pattern matching, monads, full Go interop."
 url: "https://gala.fyi"
 baseurl: ""
 theme: null

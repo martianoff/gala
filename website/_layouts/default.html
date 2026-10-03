@@ -17,8 +17,8 @@
 
   {%- comment -%}
     Title: append the " | GALA" brand suffix only when the page title does not
-    already carry the brand, so "GALA — Scala on Go" does not render as
-    "GALA — Scala on Go | GALA". Pages can force either behaviour with
+    already carry the brand, so "GALA — Go, the functional way" does not render as
+    "GALA — Go, the functional way | GALA". Pages can force either behaviour with
     `title_full:` (used verbatim) or `suppress_brand: true` in front matter.
   {%- endcomment -%}
   {%- assign page_title = page.title | default: site.title -%}
@@ -40,7 +40,7 @@
 
   <title>{{ head_title | escape }}</title>
   <meta name="description" content="{{ page_description | escape }}">
-  <meta name="keywords" content="{{ page.keywords | default: 'gala language, scala on go, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' | escape }}">
+  <meta name="keywords" content="{{ page.keywords | default: 'gala language, functional programming go, scala-inspired language for go, golang sum types, golang pattern matching, golang option type, transpile to go, go algebraic data types' | escape }}">
 
   <!-- Icons -->
   <link rel="icon" href="{{ '/favicon.ico' | relative_url }}" sizes="32x32">
@@ -65,14 +65,14 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   {%- endif %}
-  <meta property="og:image:alt" content="{{ page.og_image_alt | default: 'GALA — Scala on Go. Sealed types, pattern matching, monads, native Go binaries.' | escape }}">
+  <meta property="og:image:alt" content="{{ page.og_image_alt | default: 'GALA — Go, the functional way. Sealed types, pattern matching, monads, native Go binaries.' | escape }}">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ head_title | escape }}">
   <meta name="twitter:description" content="{{ page_description | escape }}">
   <meta name="twitter:image" content="{{ og_image_url }}">
-  <meta name="twitter:image:alt" content="{{ page.og_image_alt | default: 'GALA — Scala on Go. Sealed types, pattern matching, monads, native Go binaries.' | escape }}">
+  <meta name="twitter:image:alt" content="{{ page.og_image_alt | default: 'GALA — Go, the functional way. Sealed types, pattern matching, monads, native Go binaries.' | escape }}">
 
   <!-- Canonical -->
   <link rel="canonical" href="{{ page.url | absolute_url }}">

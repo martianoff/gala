@@ -2,7 +2,7 @@
 layout: default
 title: "GALA Features — Sum Types, Pattern Matching, and Monads for Go"
 description: "Every GALA language feature in one place: sealed sum types, exhaustive pattern matching, Option/Either/Try, bind do-notation, immutability by default, immutable collections, Futures, compile-time data-race safety, and full Go interop."
-keywords: "gala features, golang sum types, golang pattern matching, golang option type, go immutable collections, golang do notation, go data race compile error, golang type inference, go interop language, scala on go features"
+keywords: "gala features, golang sum types, golang pattern matching, golang option type, go immutable collections, golang do notation, go data race compile error, golang type inference, go interop language, scala-inspired language for go"
 permalink: /features/
 last_modified_at: 2026-07-26
 ---

@@ -11,7 +11,7 @@ last_modified_at: 2026-10-03
   <a href="{{ '/' | relative_url }}">Home</a> &raquo; GALA for AI
 </div>
 
-*Scala on Go — and the feedback loop an AI coding agent actually wants.*
+*Go, the functional way — and the feedback loop an AI coding agent actually wants.*
 
 # GALA for AI — the compiler is the agent's feedback loop
 
