@@ -1,0 +1,26 @@
+package checks
+
+import (
+    "errors"
+    "strings"
+)
+
+// Email is an address checked by Validate.
+struct Email(Value string)
+
+// Checked is the result of validating an Email.
+type Checked Try[Email]
+
+// CheckedAgain is an alias of an alias.
+type CheckedAgain Checked
+
+// Lookup is an optional count.
+type Lookup Option[int]
+
+// Res is a generic alias of Try.
+type Res[T any] Try[T]
+
+// Validate fails unless the address holds an `@`. Its result type is an
+// alias, so Success and Failure take their type argument from what it names.
+func (e Email) Validate() Checked =
+    if (strings.Contains(e.Value, "@")) Success(e) else Failure(errors.New(s"no @ in ${e.Value}"))

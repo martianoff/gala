@@ -28,6 +28,8 @@ filegroup(
 filegroup(
     name = "gala_sources",
     srcs = [
+        "alias_expected_type/checks/checks.gala",
+        "alias_expected_type_test.gala",
         "cross_file_unwrap/main.gala",
         "cross_file_unwrap/types.gala",
         "cross_file_unwrap_lib/ops.gala",
@@ -2633,6 +2635,23 @@ gala_exec_test(
     src = "cross_pkg_sealed_var_test.gala",
     expected = "cross_pkg_sealed_var_test.out",
     gala_deps = [":cross_pkg_sealed_var_step"],
+    deps = ["//collection_immutable"],
+)
+
+# An alias of a generic std type, local or imported, binds the type arguments
+# of the constructors in the positions it is the expected type of.
+gala_library(
+    name = "alias_expected_type_checks",
+    srcs = ["alias_expected_type/checks/checks.gala"],
+    importpath = "martianoff/gala/examples/alias_expected_type/checks",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "alias_expected_type_test",
+    src = "alias_expected_type_test.gala",
+    expected = "alias_expected_type_test.out",
+    gala_deps = [":alias_expected_type_checks"],
     deps = ["//collection_immutable"],
 )
 

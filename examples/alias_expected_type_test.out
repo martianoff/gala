@@ -1,0 +1,17 @@
+ok a@b
+failed: no @ in ab
+failed: rejected twice
+default
+443 true
+left empty
+right 4
+0
+4 true
+ok a@b,c@d
+failed: no @ in cd
+x@y
+true
+true
+7 true
+n=2
+none

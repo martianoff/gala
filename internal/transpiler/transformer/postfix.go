@@ -467,6 +467,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer type of matched expression")
 	}
+	// A subject typed by an alias (`type Checked Try[Email]`) is matched as
+	// the type the alias names: its variants, extractors and exhaustiveness.
+	// A binding of the whole subject keeps the type as written, so methods
+	// declared on the alias itself (`func (c Coord) Sum()`) stay reachable.
+	subjectType := matchedType
+	matchedType = t.followAliasChain(matchedType)
 
 	// Note: We intentionally do NOT replace types with unresolved type parameters (like Box[T])
 	// with 'any'. Keeping the original parametric type allows correct extractor type inference
@@ -474,7 +480,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	t.pushScope()
 	defer t.popScope()
-	t.addVar(paramName, matchedType)
+	t.addVar(paramName, subjectType)
 
 	// Track match subject type so branch bodies can infer type params
 	// for sealed variant constructors (e.g., None() infers None[int] from Option[int])
@@ -563,9 +569,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		var arm matchArm
 		var err error
 		if isDefault[i] {
-			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, matchedType, armSlot)
+			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, subjectType, armSlot)
 		} else {
-			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, matchedType, armSlot)
+			// A guarded binding of the whole subject (`case p if ...`) keeps
+			// the written type too; every other pattern reads the variants.
+			armType := matchedType
+			if isBindingPattern(ccCtx.Pattern().GetText()) {
+				armType = subjectType
+			}
+			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
 			arm.hasResult = arm.resultType != nil
 		}
 		if err != nil {
@@ -794,7 +806,7 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 		fallbackTypes = perElemExpected
 	}
 	if fallbackTypes == nil {
-		if retType, ok := t.returnSlot.typ.(transpiler.GenericType); ok &&
+		if retType, ok := t.returnShape().(transpiler.GenericType); ok &&
 			t.isTupleTypeName(retType.Base.String()) && len(retType.Params) == n {
 			fallbackTypes = retType.Params
 		}

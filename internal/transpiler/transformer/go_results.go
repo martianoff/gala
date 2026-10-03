@@ -185,7 +185,7 @@ func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
 		if id, ok := f.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
 			return t.getFunction(id.Name+"."+f.Sel.Name) != nil
 		}
-		_, key := t.resolveReceiverTypeAndLookupKey(f.X)
+		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
 		if meta := t.getTypeMeta(key); meta != nil {
 			_, ok := meta.Methods[f.Sel.Name]
 			return ok

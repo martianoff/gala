@@ -1128,8 +1128,12 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// argument slot does. It is the only plain expression a result slot pushes
 	// for: the literal consumes the entry itself (tupleElementExpectedTypes),
 	// so nothing nested inside it sees the result type.
-	if s.push || t.isTupleLiteralFor(exprCtx, s.typ) {
-		release := t.expectedArgTypes.push(s.typ)
+	//
+	// The hint is the type an alias names, not the alias: the constructors and
+	// generic calls that read it match its structure (`Try[Email]` for
+	// `type Checked Try[Email]`) to bind their type arguments.
+	if hint := t.followAliasChain(s.typ); s.push || t.isTupleLiteralFor(exprCtx, hint) {
+		release := t.expectedArgTypes.push(hint)
 		defer release()
 	}
 	expr, err := t.transformExpression(exprCtx)
@@ -1158,6 +1162,11 @@ func (t *galaASTTransformer) branchingResultType(inferred transpiler.Type, s slo
 		return inferred
 	}
 	if transpiler.IsUnusable(inferred) {
+		return s.typ
+	}
+	// A branch type naming a type parameter nothing bound (the `T` of
+	// `Try[T]`) is not a type the generated Go can spell; a concrete slot is.
+	if !s.open && !typeHasMaskedPart(s.typ) && t.typeMentionsUnresolvedTypeParam(inferred) {
 		return s.typ
 	}
 	if !s.open && !typeHasMaskedPart(s.typ) &&
