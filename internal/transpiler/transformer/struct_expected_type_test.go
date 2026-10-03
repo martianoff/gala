@@ -116,6 +116,13 @@ func TestStructExpectedTypeOtherPositions(t *testing.T) {
 		{"struct field", `func f() Holder = Holder(Tag("x"))`, "Tag[int]{"},
 		{"lambda result", `func f() Tag[int] = applyTag((n) => Tag("x"))`, "Tag[int]{"},
 		{"lambda block result", "func f() Tag[int] = applyTag((n) => {\n    Tag(\"x\")\n})", "Tag[int]{"},
+		{
+			// A tuple literal ending a value block takes the slot's element
+			// types, as one that is the whole arm does.
+			"tuple literal ending a match arm block",
+			"func f(n int) Tuple[int64, int64] = n match {\n    case 0 => {\n        (1, 2)\n    }\n    case _ => (3, 4)\n}",
+			"Tuple[int64, int64]{",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
