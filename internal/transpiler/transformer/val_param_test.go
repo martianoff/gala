@@ -6,11 +6,42 @@ import (
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
 	"martianoff/gala/internal/transpiler/transformer"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// goParamTypes parses generated Go and returns the type of every receiver and
+// parameter of every function declaration, literal and function type in it.
+func goParamTypes(t *testing.T, src string) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "out.go", src, 0)
+	require.NoError(t, err)
+	var paramTypes []string
+	collect := func(fields *ast.FieldList) {
+		if fields == nil {
+			return
+		}
+		for _, f := range fields.List {
+			paramTypes = append(paramTypes, types.ExprString(f.Type))
+		}
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncDecl:
+			collect(n.Recv)
+		case *ast.FuncType:
+			collect(n.Params)
+		}
+		return true
+	})
+	return paramTypes
+}
 
 // TestValParamIsPlainParam checks that an explicit `val` on a parameter is a
 // no-op marker: the parameter lowers to the same plain Go parameter as an
@@ -137,7 +168,7 @@ func main() {
 
 func main() {
     val inc = (val x int) => x + 1
-    val twice: func(int) int = (val y) => y * 2
+    val twice func(int) int = (val y) => y * 2
     Println(inc(1) + twice(2))
 }`,
 			want: []string{"func(x int) int {", "func(y int) int {"},
@@ -180,7 +211,11 @@ func main() {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(tt.input, "")
 			require.NoError(t, err)
-			assert.NotContains(t, got, "Immutable[", "a parameter must never be boxed")
+			// A `val` local or struct field is still boxed; only a receiver
+			// or parameter list must never carry std.Immutable.
+			for _, p := range goParamTypes(t, got) {
+				assert.NotContains(t, p, "Immutable[", "a parameter must never be boxed")
+			}
 			for _, w := range tt.want {
 				assert.Contains(t, got, w)
 			}
@@ -190,8 +225,8 @@ func main() {
 
 // TestParamReassignment checks that a parameter is immutable unless it is
 // declared `var`: unmarked and explicit-`val` parameters reject reassignment
-// with the same error and hint, a `var` parameter may be reassigned, and an
-// unmarked lambda parameter keeps its plain binding.
+// with the same error and hint, and a `var` parameter may be reassigned.
+// Lambda parameters and receivers are covered in lambda_param_receiver_test.go.
 func TestParamReassignment(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -308,18 +343,6 @@ func f(n int) int {
     m
 }`,
 		},
-		{
-			name: "unmarked lambda parameter",
-			input: `package main
-
-func main() {
-    val f = (x int) => {
-        x = x + 1
-        x
-    }
-    Println(f(1))
-}`,
-		},
 	}
 	for _, tt := range accepted {
 		t.Run(tt.name, func(t *testing.T) {
@@ -360,7 +383,7 @@ func f(`+kw+`n int) int {
 
 func f(n int) int {
     val p = &n
-    *p + 1
+    1 + *p
 }
 
 func main() {

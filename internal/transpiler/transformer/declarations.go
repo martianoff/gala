@@ -811,6 +811,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	if ctx.Receiver() != nil {
 		recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
 		recvName := recvCtx.Identifier().GetText()
+		if recvCtx.VAR() != nil {
+			err := t.semanticErrorAt(recvCtx, fmt.Sprintf("receiver %s cannot be declared `var`", recvName))
+			err.Hint = receiverRebindHint(recvName)
+			return nil, err
+		}
 		recvTypeExpr, err := t.transformType(recvCtx.Type_())
 		if err != nil {
 			return nil, err
@@ -832,9 +837,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			}
 		}
 
-		// The receiver is a plain Go receiver whatever its keyword; an explicit
-		// `val` only forbids reassigning it, as for a parameter.
-		t.addDeclaredParam(recvName, typeForScope, recvCtx.VAL() != nil)
+		// The receiver is a plain Go receiver that can never be rebound; an
+		// explicit `val` is a no-op marker for it.
+		t.addReceiver(recvName, typeForScope)
 
 		receiver = &ast.FieldList{
 			List: []*ast.Field{
@@ -1012,9 +1017,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 }
 
 // registerFunctionParametersInScope walks a function signature's parameter list
-// and rebinds each parameter in the current scope with the function rule (only
-// an explicit `var` is reassignable; any other is a fixed parameter) and its
-// scope type (Array[T] for variadic).
+// and rebinds each parameter in the current scope with its declared scope type
+// (Array[T] for variadic) and the parameter rule (only an explicit `var` is
+// reassignable; any other is a fixed parameter).
 func (t *galaASTTransformer) registerFunctionParametersInScope(sigCtx *grammar.SignatureContext) {
 	paramsCtx := sigCtx.Parameters().(*grammar.ParametersContext)
 	if paramsCtx.ParameterList() == nil {
@@ -1569,8 +1574,9 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 	if isVariadic && !typeName.IsNil() {
 		scopeType = transpiler.ArrayType{Elem: typeName}
 	}
-	// A parameter is a plain Go parameter whatever its keyword.
-	t.addDeclaredParam(name, scopeType, ctx.VAL() != nil)
+	// A parameter is a plain Go parameter whatever its keyword; only `var`
+	// makes it reassignable, for a function and a lambda alike.
+	t.addParam(name, scopeType, ctx.VAR() != nil)
 	// A `Sendable[F]`-annotated lambda/function parameter: record the erased
 	// marker so a forwarded function value is accepted by the capture check.
 	if typeCtxIsSendable(ctx.Type_()) {

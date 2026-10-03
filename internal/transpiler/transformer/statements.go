@@ -1142,22 +1142,6 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		// Infer key/value types from range expression
 		keyType, valueType := t.inferRangeTypes(rangeExpr)
 
-		// Set up key and value identifiers
-		var key, value ast.Expr
-		if idListCtx := rangeClause.IdentifierList(); idListCtx != nil {
-			ids := idListCtx.(*grammar.IdentifierListContext).AllIdentifier()
-			if len(ids) >= 1 {
-				keyName := ids[0].GetText()
-				t.addVar(keyName, keyType)
-				key = ast.NewIdent(keyName)
-			}
-			if len(ids) >= 2 {
-				valueName := ids[1].GetText()
-				t.addVar(valueName, valueType)
-				value = ast.NewIdent(valueName)
-			}
-		}
-
 		// Determine if using := or =
 		tok := token.DEFINE
 		if rangeClause.GetChildCount() > 1 {
@@ -1168,6 +1152,33 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 						break
 					}
 				}
+			}
+		}
+
+		// Set up key and value identifiers
+		var key, value ast.Expr
+		if idListCtx := rangeClause.IdentifierList(); idListCtx != nil {
+			ids := idListCtx.(*grammar.IdentifierListContext).AllIdentifier()
+			// `for k, v = range xs` assigns the existing bindings, so it is
+			// rejected for a val, a parameter not declared `var` or a receiver,
+			// like any other assignment. Checked before the names are rebound.
+			if tok == token.ASSIGN {
+				for _, id := range ids {
+					name, fixed := t.immutableBinding("", id.GetText())
+					if err := t.immutableNameWriteError(rangeClause, name, fixed, "assign to"); err != nil {
+						return nil, err
+					}
+				}
+			}
+			if len(ids) >= 1 {
+				keyName := ids[0].GetText()
+				t.addVar(keyName, keyType)
+				key = ast.NewIdent(keyName)
+			}
+			if len(ids) >= 2 {
+				valueName := ids[1].GetText()
+				t.addVar(valueName, valueType)
+				value = ast.NewIdent(valueName)
 			}
 		}
 
@@ -1350,12 +1361,13 @@ func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionC
 // immutableBindingName returns the source spelling of the val or the
 // parameter not declared `var` that ctx names directly — `Name`, or
 // `pkg.Name` for an imported package-level val — or "" for anything else (a
-// var, a field or index through a val, a call). isParam reports a parameter.
-func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) (name string, isParam bool) {
+// var, a field or index through a val, a call). fixed reports a parameter or
+// a receiver, and which.
+func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) (name string, fixed fixedBinding) {
 	postfix := LeadingPostfixExpr(ctx, true)
 	primary := PrimaryOf(postfix)
 	if primary == nil || primary.Identifier() == nil {
-		return "", false
+		return "", notFixed
 	}
 	pkg, name := "", primary.Identifier().GetText()
 	switch suffixes := postfix.AllPostfixSuffix(); len(suffixes) {
@@ -1363,35 +1375,63 @@ func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext
 	case 1:
 		sel := suffixes[0].(*grammar.PostfixSuffixContext).Identifier()
 		if sel == nil {
-			return "", false
+			return "", notFixed
 		}
 		pkg, name = name, sel.GetText()
 	default:
-		return "", false
+		return "", notFixed
 	}
+	return t.immutableBinding(pkg, name)
+}
+
+// immutableBinding is immutableBindingName for a name already split into its
+// package qualifier (or "") and identifier.
+func (t *galaASTTransformer) immutableBinding(pkg string, name string) (string, fixedBinding) {
 	if b, ok := t.lookupBinding(pkg, name); ok && b.isVal {
-		return b.String(), false
+		return b.String(), notFixed
 	}
-	if pkg == "" && t.isFixedParam(name) {
-		return name, true
+	// `_` is the blank identifier, never a binding: `_ = expr` is a discard even
+	// where a `_` parameter is in scope.
+	if pkg != "" || name == "_" {
+		return "", notFixed
 	}
-	return "", false
+	if fixed := t.fixedBindingOf(name); fixed != notFixed {
+		return name, fixed
+	}
+	return "", notFixed
 }
 
 // immutableWriteError rejects writing (`verb`: "assign to", "increment/
 // decrement") the immutable binding target names directly, or returns nil.
 // A parameter not marked `var` is immutable like a val; its error says how to
-// make it reassignable.
+// make it reassignable. A receiver can never be rebound.
 func (t *galaASTTransformer) immutableWriteError(ctx antlr.ParserRuleContext, target grammar.IExpressionContext, verb string) error {
-	name, isParam := t.immutableBindingName(target)
-	if name == "" {
+	name, fixed := t.immutableBindingName(target)
+	return t.immutableNameWriteError(ctx, name, fixed, verb)
+}
+
+// immutableNameWriteError builds the error for writing the immutable binding
+// name (as immutableBinding reports it), or returns nil when name is "".
+func (t *galaASTTransformer) immutableNameWriteError(ctx antlr.ParserRuleContext, name string, fixed fixedBinding, verb string) error {
+	switch {
+	case name == "":
 		return nil
+	case fixed == fixedReceiver:
+		err := t.semanticErrorAt(ctx, fmt.Sprintf("cannot %s receiver %s", verb, name))
+		err.Hint = receiverRebindHint(name)
+		return err
 	}
 	err := t.semanticErrorAt(ctx, fmt.Sprintf("cannot %s immutable variable %s", verb, name))
-	if isParam {
+	if fixed == fixedParam {
 		err.Hint = fmt.Sprintf("declare it `var %s` to reassign it", name)
 	}
 	return err
+}
+
+// receiverRebindHint is the hint for a receiver that is reassigned or
+// declared `var`: a receiver is never rebound, so a mutable copy is a local.
+func receiverRebindHint(name string) string {
+	return fmt.Sprintf("a receiver cannot be rebound; copy it into a local `var` (`var c = %s`) if you need a mutable copy", name)
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {

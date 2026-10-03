@@ -316,13 +316,14 @@ A named `func` inside a body is rejected with
 A lambda takes no type parameters, so a generic helper stays at the top level.
 
 ### Parameters
-A function or method parameter is an immutable binding, like a `val`:
+A function, method or lambda parameter is an immutable binding, like a `val`:
 reassigning it — with `=`, a compound assignment such as `+=`, or `++`/`--` —
 is a compile error, `cannot assign to immutable variable data`, whose hint is
 ``declare it `var data` to reassign it``. Mark a parameter `var` to make it
 reassignable. Its address (`&data`) is a read-only `ConstPtr`, as for a `val`.
 Writing `val` is allowed but redundant: `val label string` means
-exactly the same as `label string`.
+exactly the same as `label string`. A method's receiver is never reassignable
+(see [Receivers](#receivers)).
 
 ```gala
 func process(data string, val label string, var count int) {
@@ -335,9 +336,8 @@ func process(data string, val label string, var count int) {
 Whatever its keyword, a parameter is a plain Go parameter of its declared type
 in the generated code — `func process(data string, label string, count int)`
 above — so a call passes its arguments as they are and Go code can call the
-function directly. A receiver marked `val` and a lambda parameter marked `val`
-are likewise plain Go parameters that reject reassignment; an unmarked lambda
-parameter is not checked.
+function directly. Receivers and lambda parameters are plain Go parameters
+too.
 
 #### Multi-Line Parameters and Trailing Commas
 Parameter lists support trailing commas, enabling clean multi-line formatting:
@@ -596,6 +596,37 @@ func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value)
 func main() {
     val b = Box[int](Value = 10)
     val s = b.Transform((i int) => "Value is " + fmt.Sprintf("%d", i))
+}
+```
+
+#### Receivers
+A receiver can never be rebound. `p = ...`, a compound assignment and
+`for _, p = range ...` are compile errors, `cannot assign to receiver p`
+(`p++` is `cannot increment/decrement receiver p`), whose hint is ``a receiver cannot be rebound; copy it into a local `var` (`var c = p`) if you need a mutable copy``.
+This holds for value and pointer receivers alike; there is no `var` receiver,
+and `val` on a receiver is allowed but redundant. The address of a receiver
+(`&p`) is a read-only `ConstPtr`, as for a parameter — for a pointer receiver,
+a `ConstPtr` to the pointer.
+
+Mutation *through* the receiver is unaffected: a method may write the
+receiver's `var` fields and call its mutating methods. Through a pointer
+receiver the change reaches the caller; through a value receiver it changes
+the method's own copy.
+
+```gala
+struct Counter(var N int)
+
+func (c *Counter) Bump() {
+    c.N = c.N + 1      // OK: writes a `var` field through the receiver
+}
+
+func (c Counter) Clamped() Counter {
+    // c = Counter(0)  // Error: cannot assign to receiver c
+    var out = c        // a changing copy is a local `var`
+    if (out.N < 0) {
+        out = Counter(0)
+    }
+    out
 }
 ```
 
@@ -1916,6 +1947,23 @@ val shouted = apply((s) => s + "!")             // s inferred as string
 // Void closures (no return value)
 opt.ForEach((x) => {
     fmt.Println(x)
+})
+```
+
+A lambda parameter is immutable unless it is declared `var`, the same rule as
+for a function parameter (see [Parameters](#parameters)): reassigning it is
+`cannot assign to immutable variable x`, and `&x` is a read-only `ConstPtr`.
+
+```gala
+val clamp = (var n int) int => {
+    if (n < 0) {
+        n = 0          // OK: a `var` lambda parameter
+    }
+    n
+}
+val total = Some(5).Map((var n) => {
+    n += 10            // `var` works on an inferred parameter too
+    n
 })
 ```
 

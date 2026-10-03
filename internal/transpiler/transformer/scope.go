@@ -28,13 +28,12 @@ type scope struct {
 	// forwarded function value: a `Sendable`-typed capture is a caller-vouched
 	// safe closure (the `Send`-style bound), so it may cross a further boundary.
 	sendable map[string]bool
-	// fixedParams records parameters lowered to a plain Go parameter that GALA
-	// still forbids reassigning: every function or method parameter not marked
-	// `var`, and an explicit `val` lambda parameter or receiver. A local `val`
-	// is boxed and rejected through vals; a parameter is never boxed, so this
-	// set is how the assignment check finds it. See isFixedParam. Allocated
-	// on first use.
-	fixedParams map[string]bool
+	// fixedParams records the parameters lowered to a plain Go parameter that
+	// GALA still forbids reassigning: every function, method or lambda
+	// parameter not marked `var`, and every receiver. A local `val` is boxed
+	// and rejected through vals; a parameter is never boxed, so this set is how
+	// the assignment check finds it. See fixedBindingOf. Allocated on first use.
+	fixedParams map[string]fixedBinding
 	// goResults records the names bound to a Go call converted to one GALA
 	// value (`val data = os.ReadFile(p)`), so a misuse of the name can say
 	// where its Try came from. Allocated on first use.
@@ -227,40 +226,56 @@ func (t *galaASTTransformer) isMutableVar(name string) bool {
 	return s != nil && s.mutable[name]
 }
 
-// addParam binds a parameter. A parameter is always a plain Go parameter — an
-// explicit `val` is a no-op marker, never a std.Immutable box — so it lives in
-// the var bucket; only a reassignable (`var`) parameter is marked mutable, and
-// any other is a fixed parameter the assignment check rejects writes to.
+// fixedBinding says why a plain Go parameter may not be reassigned.
+type fixedBinding uint8
+
+const (
+	notFixed      fixedBinding = iota
+	fixedParam                 // a function, method or lambda parameter not declared `var`
+	fixedReceiver              // a method receiver, which is never reassignable
+)
+
+// addParam binds a function, method or lambda parameter. A parameter is
+// always a plain Go parameter — an explicit `val` is a no-op marker, never a
+// std.Immutable box — so it lives in the var bucket; only a reassignable
+// (`var`) parameter is marked mutable, and any other is a fixed parameter the
+// assignment check rejects writes to.
 func (t *galaASTTransformer) addParam(name string, typeName transpiler.Type, reassignable bool) {
-	t.addVar(name, typeName)
-	switch {
-	case reassignable:
-		t.markMutable(name)
-	case t.currentScope != nil:
-		if t.currentScope.fixedParams == nil {
-			t.currentScope.fixedParams = make(map[string]bool)
-		}
-		t.currentScope.fixedParams[name] = true
-	}
-}
-
-// addDeclaredParam binds a parameter by its own keyword alone: an explicit
-// `val` is fixed, any other gets a plain binding. A function's parameters are
-// then rebound with the function rule (unmarked is fixed too) by
-// registerFunctionParametersInScope.
-func (t *galaASTTransformer) addDeclaredParam(name string, typeName transpiler.Type, explicitVal bool) {
-	if explicitVal {
-		t.addParam(name, typeName, false)
-	} else {
+	if reassignable {
 		t.addVar(name, typeName)
+		t.markMutable(name)
+		return
 	}
+	t.addFixed(name, typeName, fixedParam)
 }
 
-// isFixedParam reports whether name resolves to a parameter that may not be
-// reassigned. Shadowing mirrors isMutableVar: only the innermost binding counts.
-func (t *galaASTTransformer) isFixedParam(name string) bool {
-	s := t.bindingScope(name)
-	return s != nil && s.fixedParams[name]
+// addReceiver binds a method receiver: a plain Go receiver that can never be
+// rebound, whatever its type. Mutation through it (writing a `var` field,
+// calling a mutating method) is untouched; only `recv = ...` and a writable
+// `&recv` are refused.
+func (t *galaASTTransformer) addReceiver(name string, typeName transpiler.Type) {
+	t.addFixed(name, typeName, fixedReceiver)
+}
+
+func (t *galaASTTransformer) addFixed(name string, typeName transpiler.Type, kind fixedBinding) {
+	t.addVar(name, typeName)
+	if t.currentScope == nil {
+		return
+	}
+	if t.currentScope.fixedParams == nil {
+		t.currentScope.fixedParams = make(map[string]fixedBinding)
+	}
+	t.currentScope.fixedParams[name] = kind
+}
+
+// fixedBindingOf reports whether name resolves to a parameter or receiver that
+// may not be reassigned, and which. Shadowing mirrors isMutableVar: only the
+// innermost binding counts.
+func (t *galaASTTransformer) fixedBindingOf(name string) fixedBinding {
+	if s := t.bindingScope(name); s != nil {
+		return s.fixedParams[name]
+	}
+	return notFixed
 }
 
 // markSendable flags name in the innermost scope as a binding whose declared

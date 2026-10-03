@@ -3992,3 +3992,13 @@ gala_exec_test(
     gala_deps = [":opaque_type_mixed_ids"],
     deps = ["//collection_immutable"],
 )
+
+# A lambda parameter is immutable unless declared `var`, and a receiver is never
+# rebound: a `var` lambda parameter is reassigned, a receiver's changing copy is
+# a local `var`, and `var` fields are written through value and pointer receivers.
+gala_exec_test(
+    name = "immutable_lambda_params_receivers",
+    src = "immutable_lambda_params_receivers.gala",
+    expected = "immutable_lambda_params_receivers.out",
+    deps = ["//collection_immutable"],
+)

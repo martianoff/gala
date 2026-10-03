@@ -1,0 +1,75 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A lambda parameter is immutable unless declared `var`, like a function
+// parameter, and a receiver can never be rebound. Mutation through a receiver
+// is still allowed wherever the type permits it, and a receiver that needs a
+// changing copy is copied into a local `var`.
+
+struct Counter(var N int)
+
+// A value receiver may write its own `var` fields: the change stays on the copy.
+func (c Counter) Bumped() Counter {
+    c.N = c.N + 1
+    c
+}
+
+// A pointer receiver writes through to the caller's value.
+func (c *Counter) Bump() {
+    c.N = c.N + 1
+}
+
+// Calling a mutating method through the receiver is allowed too.
+func (c *Counter) BumpTwice() {
+    c.Bump()
+    c.Bump()
+}
+
+struct Point(X int, Y int)
+
+// A receiver is never reassigned; a changing copy is a local `var`.
+func (p Point) ClampedRight(dx int) Point {
+    var q = p
+    if (dx > 0) {
+        q = Point(q.X + dx, q.Y)
+    }
+    q
+}
+
+// The address of a value receiver is a read-only ConstPtr.
+func (p Point) SumViaPtr() int {
+    val ptr = &p
+    ptr.Deref().X + ptr.Deref().Y
+}
+
+func apply[T any](v T, f func(T) T) T = f(v)
+
+func main() {
+    var c = Counter(0)
+    Println(c.Bumped().N)
+    Println(c.N)
+    c.BumpTwice()
+    Println(c.N)
+
+    val p = Point(1, 2)
+    Println(p.ClampedRight(3).X)
+    Println(p.ClampedRight(-3).X)
+    Println(p.SumViaPtr())
+
+    // A `var` lambda parameter may be reassigned.
+    val clamp = (var n int) int => {
+        if (n < 0) {
+            n = 0
+        }
+        n
+    }
+    Println(clamp(-4))
+    Println(apply(5, (var n) => {
+        n += 10
+        n
+    }))
+
+    // An unmarked lambda parameter is read-only; derive a new value instead.
+    Println(ArrayOf(1, 2, 3).Map((x) => x * 2))
+}
