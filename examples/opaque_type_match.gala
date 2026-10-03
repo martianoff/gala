@@ -57,5 +57,9 @@ func main() {
     Println(describe(UserID(0)), "|", describe(UserID(42)), "|", describe(UserID(-3)), "|", describe(UserID(7)))
     Println(levelName(Debug), levelName(Error), levelName(Level(5)))
     Println(kind(UserID(1500)), "|", kind(int64(1500)), "|", kind(Email("a@b")), "|", kind("x"))
-    Println(owner(Account(UserID(0), Email("root@x"))), "|", owner(Account(UserID(5), Email("ada@x"))), "|", owner(Account(UserID(6), Email(""))))
+    Println(
+        owner(Account(UserID(0), Email("root@x"))), "|",
+        owner(Account(UserID(5), Email("ada@x"))), "|",
+        owner(Account(UserID(6), Email(""))),
+    )
 }
