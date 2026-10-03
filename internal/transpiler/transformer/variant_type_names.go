@@ -3,7 +3,6 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
-	"regexp"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -26,11 +25,35 @@ import (
 //
 // checkVariantTypeNames walks every type the grammar parses as one —
 // parameter, result, field, val/var annotation, type argument, typed pattern,
-// alias target, composite literal — once the import set is known, so a
-// variant of an imported sealed type (`Some[int]`, `shapes.Circle`) is caught
-// too. A call's explicit type arguments (`ArrayOf[Circle](...)`) parse as an
-// index expression, so resolveIndexAccess checks them through
-// checkVariantTypeArgs, where scope tells an instantiation from an index.
+// alias target, composite literal — before the declarations are transformed,
+// so every one is checked in source order, including those a transformation
+// lowers speculatively and discards. A call's explicit type arguments
+// (`ArrayOf[Circle](...)`) parse as an index expression, so resolveIndexAccess
+// checks them through checkVariantTypeArgs, where scope tells an
+// instantiation from an index.
+
+// collectVariantNames returns the bare name of every sealed variant the
+// transform can see, so a name that is no variant anywhere costs one lookup.
+func collectVariantNames(typeMetas map[string]*transpiler.TypeMetadata) map[string]bool {
+	names := make(map[string]bool)
+	for _, meta := range typeMetas {
+		if !meta.IsSealed {
+			continue
+		}
+		for _, sv := range meta.SealedVariants {
+			names[sv.Name] = true
+		}
+	}
+	return names
+}
+
+// variantTypeRef is a type written in the source whose name is spelled like a
+// sealed variant: name (bare or `qualifier.Name`), its type arguments as
+// written, and where it starts.
+type variantTypeRef struct {
+	name, typeArgs string
+	start          antlr.Token
+}
 
 // checkVariantTypeNames reports the first type in tree that names a sealed
 // variant, or nil when there is none.
@@ -40,90 +63,83 @@ func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
 	// declared anywhere in the file is never reported, which can miss a
 	// variant but cannot reject a valid program.
 	declared := make(map[string]bool)
+	var refs []variantTypeRef
+	ref := func(name, typeArgs string, start antlr.Token) {
+		if _, bare := splitPackageQualifier(name); t.variantNames[bare] {
+			refs = append(refs, variantTypeRef{name, typeArgs, start})
+		}
+	}
 	walkTree(tree, func(node antlr.Tree) {
-		var id grammar.IIdentifierContext
 		switch n := node.(type) {
 		case *grammar.TypeDeclarationContext:
-			id = n.Identifier()
+			declared[n.Identifier().GetText()] = true
 		case *grammar.StructShorthandDeclarationContext:
-			id = n.Identifier()
+			declared[n.Identifier().GetText()] = true
 		case *grammar.SealedTypeDeclarationContext:
-			id = n.Identifier()
+			declared[n.Identifier().GetText()] = true
 		case *grammar.TypeParameterContext:
-			id = n.Identifier(0)
-		}
-		if id != nil {
-			declared[id.GetText()] = true
-		}
-	})
-	check := func(name, typeArgs string, start antlr.Token) error {
-		if declared[name] {
-			return nil
-		}
-		return t.variantTypeError(name, typeArgs, start)
-	}
-
-	var found error
-	walkTree(tree, func(node antlr.Tree) {
-		if found != nil {
-			return
-		}
-		switch n := node.(type) {
+			declared[n.Identifier(0).GetText()] = true
 		case *grammar.TypeContext:
 			if qid := n.QualifiedIdentifier(); qid != nil {
 				typeArgs := ""
 				if n.TypeArguments() != nil {
 					typeArgs = n.TypeArguments().GetText()
 				}
-				found = check(qid.GetText(), typeArgs, qid.GetStart())
-				return
+				ref(qid.GetText(), typeArgs, qid.GetStart())
 			}
+		case *grammar.ParameterContext:
 			// A function type's parameters written without names, as in
 			// `func(Circle) int`, parse as names with no type; the function
 			// type uses each name as the type.
-			sig, ok := n.Signature().(*grammar.SignatureContext)
-			if !ok || sig == nil {
-				return
-			}
-			list, ok := sig.Parameters().(*grammar.ParametersContext).ParameterList().(*grammar.ParameterListContext)
-			if !ok || list == nil {
-				return
-			}
-			for _, p := range list.AllParameter() {
-				if param := p.(*grammar.ParameterContext); param.Type_() == nil && param.Identifier() != nil && found == nil {
-					found = check(param.Identifier().GetText(), "", param.GetStart())
-				}
+			if n.Type_() == nil && n.Identifier() != nil && isFuncTypeSignature(n) {
+				ref(n.Identifier().GetText(), "", n.GetStart())
 			}
 		case *grammar.TypeAliasContext:
 			// `type C Circle` parses as the alias's bare-identifier
 			// alternative, which is not a TypeContext.
 			if id := n.Identifier(); id != nil {
-				found = check(id.GetText(), "", id.GetStart())
+				ref(id.GetText(), "", id.GetStart())
 			}
 		}
 	})
-	return found
+	for _, r := range refs {
+		if declared[r.name] {
+			continue
+		}
+		if err := t.variantTypeError(r.name, r.typeArgs, r.start); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// typeArgExprPattern matches an explicit type argument written as a name,
-// optionally package-qualified and instantiated: `Circle`, `sh.Circle`,
-// `Some[int]`.
-var typeArgExprPattern = regexp.MustCompile(`^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(\[.*\])?$`)
+// isFuncTypeSignature reports whether parameter p belongs to the signature of
+// a function type (`func(...)` in a type position) rather than of a function,
+// method or lambda, whose untyped parameters are names.
+func isFuncTypeSignature(p *grammar.ParameterContext) bool {
+	// parameter → parameterList → parameters → signature → type
+	_, ok := p.GetParent().GetParent().GetParent().GetParent().(*grammar.TypeContext)
+	return ok
+}
 
 // checkVariantTypeArgs reports a sealed variant written as an explicit type
 // argument of base, as in `ArrayOf[Circle](...)`. The grammar reads type
-// arguments as an index, so this runs only when base cannot be indexed: a
-// function, type or method rather than a value in scope.
+// arguments as an index, so a variant name is reported only when base cannot
+// be indexed: a function, type or method rather than a value in scope.
 func (t *galaASTTransformer) checkVariantTypeArgs(base ast.Expr, args []grammar.IExpressionContext) error {
-	if !t.isInstantiable(base) {
-		return nil
-	}
 	for _, arg := range args {
-		m := typeArgExprPattern.FindStringSubmatch(arg.GetText())
-		if m == nil || t.activeTypeParams[m[1]] {
+		text := arg.GetText()
+		name, typeArgs := text, ""
+		if i := strings.IndexByte(text, '['); i >= 0 {
+			name, typeArgs = text[:i], text[i:]
+		}
+		if _, bare := splitPackageQualifier(name); !t.variantNames[bare] || t.activeTypeParams[name] {
 			continue
 		}
-		if err := t.variantTypeError(m[1], m[2], arg.GetStart()); err != nil {
+		if !t.isInstantiable(base) {
+			return nil
+		}
+		if err := t.variantTypeError(name, typeArgs, arg.GetStart()); err != nil {
 			return err
 		}
 	}
@@ -167,13 +183,16 @@ func (t *galaASTTransformer) isInstantiable(base ast.Expr) bool {
 func (t *galaASTTransformer) variantTypeError(name, typeArgs string, start antlr.Token) error {
 	var parent *transpiler.TypeMetadata
 	prefix := ""
-	if qualifier, bare, qualified := strings.Cut(name, "."); qualified {
-		if pkg, ok := t.importManager.ResolveAlias(qualifier); ok {
-			parent = t.sealedParentInPackage(bare, pkg)
+	if qualifier, bare := splitPackageQualifier(name); qualifier != "" {
+		if _, imported := t.importManager.ResolveAlias(qualifier); imported {
+			parent = t.findSealedParentForVariant(bare, qualifier)
 			prefix = qualifier + "."
 		}
-	} else {
-		parent = t.sealedParentOfVariantType(name)
+	} else if meta := t.getTypeMeta(name); meta != nil && !meta.IsSealed {
+		// The name resolves as any other type name does, so std's variants
+		// and a dot-imported package's are found, and a type of this package
+		// shadows them.
+		parent = t.findSealedParentForVariant(meta.Name, meta.Package)
 	}
 	if parent == nil {
 		return nil
@@ -186,34 +205,6 @@ func (t *galaASTTransformer) variantTypeError(name, typeArgs string, start antlr
 		fmt.Sprintf("use the sealed type %s here; %s(...) builds one, and `case %s(...)` in a match reaches the variant's fields",
 			parentType, name, name),
 	).WithSpan(start.GetColumn() + len(name))
-}
-
-// sealedParentOfVariantType returns the sealed type that declares the
-// unqualified variant name, or nil. The name resolves as any other type name
-// does, so std's variants and a dot-imported package's are found, and a type
-// of this package shadows them.
-func (t *galaASTTransformer) sealedParentOfVariantType(name string) *transpiler.TypeMetadata {
-	meta := t.getTypeMeta(name)
-	if meta == nil || meta.IsSealed {
-		return nil
-	}
-	return t.sealedParentInPackage(meta.Name, meta.Package)
-}
-
-// sealedParentInPackage returns the sealed type of package pkg that declares
-// variant name, or nil.
-func (t *galaASTTransformer) sealedParentInPackage(name, pkg string) *transpiler.TypeMetadata {
-	for _, meta := range t.typeMetas {
-		if !meta.IsSealed || meta.Package != pkg {
-			continue
-		}
-		for _, sv := range meta.SealedVariants {
-			if sv.Name == name {
-				return meta
-			}
-		}
-	}
-	return nil
 }
 
 // walkTree calls visit on node and every node below it, in source order.

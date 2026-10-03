@@ -912,7 +912,7 @@ sealed type Shape {
 // func radius(c Circle) float64 = c.R   // GALA-E0061: Circle is a variant, not a type
 func radius(s Shape) Option[float64] = s match {
     case Circle(r) => Some(r)
-    case _ => None[float64]()
+    case _ => None()
 }
 ```
 

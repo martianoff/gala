@@ -73,7 +73,7 @@ sealed type Shape {
 
 func radius(s Shape) Option[float64] = s match {
     case Circle(r) => Some(r)
-    case _ => None[float64]()
+    case _ => None()
 }
 
 func main() {
