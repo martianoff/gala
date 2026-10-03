@@ -89,7 +89,13 @@ import (
 //
 // Lowered 168 -> 157 when unwrapImmutable stopped asking for the type of a
 // `nil` operand (`err == nil`); see unresolved_nil_test.go.
-const unresolvedBudget = 157
+//
+// Lowered 157 -> 153 when a value-carrying block's trailing value started
+// being typed before the block's scope closes: a local the block declares and
+// ends in (`{ val y = ...; y }`) resolved no longer once its consumer typed it.
+// The four sites were block-bodied lambdas in lambda_block_val_trailing.gala
+// and lambda_expected_type.gala; see match_arm_block_local_test.go.
+const unresolvedBudget = 153
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

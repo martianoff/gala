@@ -159,6 +159,7 @@ go_test(
         "loop_control_test.go",
         "lsp_scope_test.go",
         "match_any_struct_pattern_test.go",
+        "match_arm_block_local_test.go",
         "match_arm_dispatch_matrix_test.go",
         "match_in_lambda_void_test.go",
         "match_literal_subpattern_test.go",
