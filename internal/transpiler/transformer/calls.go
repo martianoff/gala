@@ -1456,22 +1456,30 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 				}
 			}
 		}
-		if instantiated, missing := t.completeTypeArgs(baseExpr, typeMeta.TypeParams, typeArgs, inferredMap); missing == nil {
+		instantiated, missing := t.completeTypeArgs(baseExpr, typeMeta.TypeParams, typeArgs, inferredMap)
+		// What is left open is reported here rather than left to Go when Go
+		// could not fill it either: a partial list would leave Go a type
+		// parameter with no argument; a sealed variant whose arguments do not
+		// carry the parent's type parameter (`Failure(err)`, `Left("x")`)
+		// would be emitted as an uninstantiated `Failure{}`; and a type
+		// parameter no Apply parameter names, Go cannot infer. Otherwise Go
+		// infers what is left from the arguments.
+		partialList := len(typeArgs) > 0
+		goCannotInfer := slices.ContainsFunc(missing, func(tp string) bool {
+			return !funcTypeParamsMentionTypeParams(methodMeta.ParamTypes, []string{tp})
+		})
+		switch {
+		case missing == nil:
 			fun = instantiated
 			_, typeArgs = splitCallFunTypeArgs(fun)
-		} else if len(typeArgs) > 0 || !viaAlias && (variant.parent != nil ||
-			slices.ContainsFunc(missing, func(tp string) bool { return !funcTypeParamsMentionTypeParams(methodMeta.ParamTypes, []string{tp}) })) {
-			// Reported here rather than left to Go: a partial list would leave
-			// Go a type parameter with no argument; a sealed variant whose
-			// arguments do not carry the parent's type parameter
-			// (`Failure(err)`, `Left("x")`) would be emitted as an
-			// uninstantiated `Failure{}`; and a type parameter no Apply
-			// parameter names is one Go cannot infer either. Otherwise Go
-			// infers what is left from the arguments.
-			if variant.parent != nil {
-				return true, nil, t.uninferredVariantError(variant, "(...)", inferredMap, missing, line, col)
+		case variant.parent != nil && (partialList || !viaAlias):
+			return true, nil, t.uninferredVariantError(variant, "(...)", inferredMap, missing, line, col)
+		case partialList || !viaAlias && goCannotInfer:
+			yields := methodMeta.ReturnType
+			if yields == nil {
+				yields = transpiler.NilType{}
 			}
-			return true, nil, t.uninferredTypeArgError(line, col, "", "its arguments", baseExpr, methodMeta.ReturnType, typeMeta.TypeParams, inferredMap, missing)
+			return true, nil, t.uninferredTypeArgError(line, col, baseExpr, yields, typeMeta.TypeParams, inferredMap, missing)
 		}
 	}
 
@@ -2823,7 +2831,7 @@ func (t *galaASTTransformer) structLiteralType(
 
 	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
 	if missing != nil {
-		return nil, t.uninferredTypeArgError(line, col, "generic struct ", "its fields", base, nil, typeMeta.TypeParams, inferred, missing)
+		return nil, t.uninferredTypeArgError(line, col, base, nil, typeMeta.TypeParams, inferred, missing)
 	}
 	return instantiated, nil
 }
@@ -2869,36 +2877,46 @@ func (t *galaASTTransformer) slotTypeArgUsable(p transpiler.Type) bool {
 }
 
 // uninferredTypeArgError reports the type parameters of the generic
-// construction base — of what (`generic struct `, or "" for a companion) —
-// that neither from (`its fields`, `its arguments`) nor its expected type
-// determine. yields is the type the construction's value has, over
-// typeParams (what a companion's Apply returns); nil means base's own
-// instantiation. The annotation example is offered only when that type
-// carries the missing type parameters, which is when an annotation binds them.
+// construction base that neither its fields or arguments nor its expected
+// type determine. yields is the type a companion construction's value has,
+// over typeParams (what its Apply returns); nil means base is a struct,
+// whose value is its own instantiation.
 //
 // The examples it prints are valid GALA where the call is: the constructor,
 // and a type of its package, are named as they are reachable there
 // (callSiteQualifier), and every type argument is the one the construction
 // does fix, or the placeholder `int` for one it leaves open.
-func (t *galaASTTransformer) uninferredTypeArgError(line, col int, what, from string, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
+func (t *galaASTTransformer) uninferredTypeArgError(line, col int, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
 	_, qualified := extractTypeNameFromExpr(base)
 	pkgQualifier, bareName := splitPackageQualifier(qualified)
 	prefix := t.callSiteQualifier(pkgQualifier)
 	name := prefix + bareName
 	args := hintTypeArgTypes(typeParams, inferred)
-	explicit := name + "[" + joinDisplayTypes(args) + "]"
-	remedy := fmt.Sprintf("write it explicitly (`%s(...)`)", explicit)
-	switch {
-	case yields == nil:
-		remedy = fmt.Sprintf("annotate the binding (e.g. `val x %s = %s(...)`) or %s", explicit, name, remedy)
-	case typeMentionsTypeParam(yields, missing):
-		// An annotation binds them only through the type the value has.
-		annotated := displayType(t.namedAsReached(t.substituteConcreteTypes(yields, typeParams, args), pkgQualifier, prefix))
-		remedy = fmt.Sprintf("annotate the binding (e.g. `val x %s = %s(...)`) or %s", annotated, name, remedy)
+	typeArgs := joinDisplayTypes(args)
+	what, valueType := "generic struct "+name+" from its fields", name+"["+typeArgs+"]"
+	if yields != nil {
+		what, valueType = name+" from its arguments", ""
+		// An annotation binds the missing ones only through the type the
+		// value has.
+		if typeMentionsTypeParam(yields, missing) {
+			valueType = displayType(t.namedAsReached(t.substituteConcreteTypes(yields, typeParams, args), pkgQualifier, prefix))
+		}
 	}
 	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-		"cannot infer type argument %s of %s%s from %s or the expected type; %s",
-		strings.Join(missing, ", "), what, name, from, remedy))
+		"cannot infer type argument %s of %s or the expected type; %s",
+		strings.Join(missing, ", "), what, inferenceRemedy(valueType, name, typeArgs, "(...)")))
+}
+
+// inferenceRemedy is the remedy every "cannot infer type argument" hint
+// gives for the constructor ctor, called with args (`(...)`, `()`): annotate
+// the binding with valueType — omitted when "", as no annotation binds the
+// missing type arguments — or pass typeArgs explicitly.
+func inferenceRemedy(valueType, ctor, typeArgs, args string) string {
+	explicit := fmt.Sprintf("pass type args explicitly (`%s[%s]%s`)", ctor, typeArgs, args)
+	if valueType == "" {
+		return explicit
+	}
+	return fmt.Sprintf("annotate the binding (e.g. `val x %s = %s%s`) or %s", valueType, ctor, args, explicit)
 }
 
 // namedAsReached spells typ's base, when it is a type of the package a call
@@ -2926,13 +2944,8 @@ func (t *galaASTTransformer) namedAsReached(typ transpiler.Type, pkgQualifier, p
 	return gen
 }
 
-// hintTypeArgs spells a type argument list for an inference hint: per type
+// hintTypeArgTypes is the type argument list of an inference hint: per type
 // parameter, the type the call already fixes, or the placeholder `int`.
-func hintTypeArgs(typeParams []string, inferred map[string]transpiler.Type) string {
-	return joinDisplayTypes(hintTypeArgTypes(typeParams, inferred))
-}
-
-// hintTypeArgTypes is hintTypeArgs as types.
 func hintTypeArgTypes(typeParams []string, inferred map[string]transpiler.Type) []transpiler.Type {
 	args := make([]transpiler.Type, len(typeParams))
 	for i, tp := range typeParams {
@@ -3297,15 +3310,13 @@ func (t *galaASTTransformer) uninferredVariantHint(parent *transpiler.TypeMetada
 	// already fixes, or a placeholder (`Either[string, int]` for `Left("x")`).
 	typeArgs := "int"
 	if parent != nil && len(parent.TypeParams) > 0 {
-		typeArgs = hintTypeArgs(parent.TypeParams, inferred)
+		typeArgs = joinDisplayTypes(hintTypeArgTypes(parent.TypeParams, inferred))
 	}
-	explicit := fmt.Sprintf("pass type args explicitly (`%s%s[%s]%s`)", prefix, bareName, typeArgs, args)
-
-	if parent == nil || parent.Name == "" {
-		return explicit
+	valueType := ""
+	if parent != nil && parent.Name != "" {
+		valueType = prefix + parent.Name + "[" + typeArgs + "]"
 	}
-	return fmt.Sprintf("annotate the binding (e.g. `val x %s%s[%s] = %s%s%s`) or %s",
-		prefix, parent.Name, typeArgs, prefix, bareName, args, explicit)
+	return inferenceRemedy(valueType, prefix+bareName, typeArgs, args)
 }
 
 // callSiteQualifier returns the `pkg.` prefix that a diagnostic should print

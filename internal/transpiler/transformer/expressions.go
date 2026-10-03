@@ -1253,22 +1253,31 @@ func (t *galaASTTransformer) isConstructionOf(exprCtx grammar.IExpressionContext
 	} else {
 		return false
 	}
-	// Compared by their metadata keys: the field map has both a bare and a
-	// package-qualified key for a type of this package (`Q`, `units.Q`).
-	want := t.resolveTypeMetaName(gen.Base.String())
-	meta, resolved := t.getTypeMetaResolved(name)
-	if want == "" || meta == nil {
+	// Most result values call a function, not a type: that settles it before
+	// the slot's type is resolved.
+	resolved := t.resolveTypeMetaName(name)
+	if resolved == "" {
 		return false
 	}
-	if _, isStruct := t.structFields[resolved]; isStruct && resolved == want {
-		return true
+	// Compared by their metadata keys: the field map has both a bare and a
+	// package-qualified key for a type of this package (`Q`, `units.Q`).
+	if _, isStruct := t.structFields[resolved]; isStruct && stripPackagePrefix(name) == stripPackagePrefix(gen.Base.BaseName()) {
+		return resolved == t.resolveTypeMetaName(gen.Base.String())
+	}
+	meta := t.typeMetas[resolved]
+	if meta == nil {
+		return false
 	}
 	apply, hasApply := meta.Methods["Apply"]
 	if !hasApply {
 		return false
 	}
 	ret, ok := apply.ReturnType.(transpiler.GenericType)
-	return ok && t.resolveTypeMetaName(ret.Base.String()) == want
+	if !ok {
+		return false
+	}
+	want := t.resolveTypeMetaName(gen.Base.String())
+	return want != "" && t.resolveTypeMetaName(ret.Base.String()) == want
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.
