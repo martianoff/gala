@@ -35,29 +35,6 @@ func main() {
 }
 ```
 
-## A Parenthesised Value on Its Own Line
-
-A `(` that starts a line, after a line ending in a name, a literal, `)`, `]` or `}`, begins a new statement — so a tuple or grouped expression can be the trailing value right after another statement. Method chains with leading dots and multi-line argument lists still continue across lines.
-
-```gala
-package main
-
-func swapped(a int, b int) Tuple[int, int] {
-    Println(s"swapping $a and $b")
-    (b, a)                          // a new statement, not `Println(...)(b, a)`
-}
-
-func scaled(a int, b int) Tuple[int, int] {
-    val factor = 10
-    (a * factor, b * factor)        // a new statement, not `10(a * factor, ...)`
-}
-
-func main() {
-    Println(swapped(7, 3))
-    Println(scaled(1, 2))
-}
-```
-
 ## Named Arguments
 
 Function calls support named arguments in any order. The compiler reorders them to match the function signature.
