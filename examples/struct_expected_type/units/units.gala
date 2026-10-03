@@ -16,3 +16,9 @@ type Distance Quantity[Meters]
 
 // Of builds a Quantity whose unit is this function's result type.
 func Of(amount float64) Quantity[Seconds] = Quantity(amount)
+
+// Measure builds a Quantity through its companion Apply; the unit comes from
+// the expected type, matched against the Quantity Apply returns.
+type Measure[U any] struct {}
+
+func (m Measure[U]) Apply(amount float64) Quantity[U] = Quantity[U](amount)
