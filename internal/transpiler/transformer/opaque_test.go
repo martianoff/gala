@@ -403,3 +403,51 @@ func main() {
 	assert.Contains(t, out, "UserID(")
 	assert.Contains(t, out, "!bool(t.On.Get())", "a named bool's emptiness test yields a plain bool")
 }
+
+// TestOpaqueTypePattern covers `case UserID(p)`: on a subject of the opaque
+// type it converts to the underlying value and matches p against it; on an
+// `any` subject it asserts the opaque type first. Nothing is generated on the
+// type itself.
+func TestOpaqueTypePattern(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type UserID int64
+
+func describe(id UserID) string = id match {
+    case UserID(0) => "nobody"
+    case UserID(n) => s"user $n"
+    case _ => "?"
+}
+
+func kind(v any) string = v match {
+    case UserID(n) => s"id $n"
+    case _ => "other"
+}
+
+func main() {
+    Println(describe(UserID(3)), kind(UserID(4)), kind(int64(4)))
+}`)
+	assert.Contains(t, out, "int64(obj) == 0")
+	assert.Contains(t, out, ".(UserID)")
+	assert.NotContains(t, out, "Unapply", "no extractor is generated for an opaque type")
+}
+
+// TestOpaqueTypePhantomCodec covers a codec field of a phantom-typed opaque
+// type and the root value of an opaque type: both are the bare scalar.
+func TestOpaqueTypePhantomCodec(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+import "martianoff/gala/json"
+
+struct User(Name string)
+
+opaque type Id[T any] int64
+
+struct Ref(Who Id[User])
+
+func main() {
+    Println(json.Codec[Ref](json.AsIs()).Encode(Ref(Id[User](1))), json.Value[Id[User]]().Encode(Id[User](2)))
+}`)
+	assert.Contains(t, out, "int64(t.Who.Get())")
+	assert.Contains(t, out, "Id[User](")
+}
