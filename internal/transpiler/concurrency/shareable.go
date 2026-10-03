@@ -43,7 +43,15 @@ type MetadataResolver func(named transpiler.Type) (*transpiler.TypeMetadata, boo
 type Checker struct {
 	resolve      MetadataResolver
 	goUnderlying GoUnderlyingResolver
+	unalias      AliasResolver
 }
+
+// AliasResolver reports the type a GALA type alias names, followed to the end
+// of its alias chain and with a generic alias's type arguments substituted
+// (`Items[int]` for `type Items[T any] Array[T]` is `Array[int]`), and false
+// when the type is not an alias. An alias is only a second name, so a value of
+// it is exactly as shareable as a value of its target.
+type AliasResolver func(t transpiler.Type) (transpiler.Type, bool)
 
 // GoUnderlyingResolver reports the underlying type of a Go named type (e.g.
 // time.Duration -> int64), or (nil, false) when the type is not a resolvable Go
@@ -70,6 +78,13 @@ func NewChecker(resolve MetadataResolver) *Checker {
 // …) as shareable. Without it, such types stay conservatively not-shareable.
 func (c *Checker) SetGoUnderlyingResolver(fn GoUnderlyingResolver) {
 	c.goUnderlying = fn
+}
+
+// SetAliasResolver wires an optional alias resolver so a type spelled as a
+// GALA alias is decided as the type it names. Without it, an alias name is an
+// unresolved named type and stays conservatively not-shareable.
+func (c *Checker) SetAliasResolver(fn AliasResolver) {
+	c.unalias = fn
 }
 
 // IsShareable reports whether a value of type t may safely cross a goroutine
@@ -99,6 +114,11 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 	// conservative and never crash on a nil input.
 	if transpiler.IsUnusable(t) {
 		return false
+	}
+	if c.unalias != nil {
+		if target, ok := c.unalias(t); ok {
+			t = target
+		}
 	}
 
 	switch v := t.(type) {

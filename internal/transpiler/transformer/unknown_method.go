@@ -242,8 +242,11 @@ func (t *galaASTTransformer) receiverTypeIsConcrete(typeMeta *transpiler.TypeMet
 	if len(typeMeta.TypeParams) == 0 {
 		return true
 	}
+	// A receiver spelled with the wrong number of type arguments (`Res[int,
+	// string]` for `type Res[T any] Try[T]`) names no instance of the type, so
+	// its method set cannot be judged; Go reports the type itself.
 	args := t.getReceiverTypeArgStrings(recvType)
-	if len(args) < len(typeMeta.TypeParams) {
+	if len(args) != len(typeMeta.TypeParams) {
 		return false
 	}
 	for _, a := range args {
