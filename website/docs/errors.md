@@ -115,6 +115,9 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0059](/docs/errors/gala-e0059/) | `break` or `continue` cannot reach its loop | Control flow |
 | [GALA-E0060](/docs/errors/gala-e0060/) | `val _ =` binds nothing | Declarations |
 | [GALA-E0061](/docs/errors/gala-e0061/) | Sealed variant used as a type | Types |
+| [GALA-E0062](/docs/errors/gala-e0062/) | Opaque type over a type it cannot be declared over | Types |
+| [GALA-E0063](/docs/errors/gala-e0063/) | Direct conversion between two opaque types | Types |
+| [GALA-E0064](/docs/errors/gala-e0064/) | Opaque type used without a conversion | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -149,6 +152,8 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
 **Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one. See [Type Inference](/features/type-inference/).
+
+**Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type. Start with [Opaque Types](/docs/language-reference/#opaque-types).
 
 **Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import. See [Dependency Management](/docs/dependency-management/).
 

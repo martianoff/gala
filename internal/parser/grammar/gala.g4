@@ -13,6 +13,7 @@ topLevelDeclaration
     | typeDeclaration
     | structShorthandDeclaration
     | sealedTypeDeclaration
+    | opaqueTypeDeclaration
     ;
 
 embedDeclaration: EMBED VAL identifier type? '=' embedPatterns;
@@ -26,6 +27,11 @@ sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase
 sealedCase: CASE identifier ('(' sealedCaseFieldList? ')')?;
 sealedCaseFieldList: sealedCaseField (',' sealedCaseField)* ','?;
 sealedCaseField: identifier type;
+
+// `opaque type UserID int64`, `opaque type Id[T any] int64`: a distinct type
+// whose representation is its underlying type. Which underlying types are
+// allowed is a semantic check, not a grammatical one.
+opaqueTypeDeclaration: OPAQUE 'type' identifier (typeParameters)? type;
 
 declaration
     : valDeclaration
@@ -268,6 +274,7 @@ RETURN: 'return';
 IMPORT: 'import';
 PACKAGE: 'package';
 SEALED: 'sealed';
+OPAQUE: 'opaque';
 EMBED: 'embed';
 COLON: ':';
 

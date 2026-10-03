@@ -80,6 +80,9 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0059` | `break` or `continue` cannot reach its loop | [GALA-E0059.md](GALA-E0059.md) |
 | `GALA-E0060` | `val _ =` binds nothing | [GALA-E0060.md](GALA-E0060.md) |
 | `GALA-E0061` | Sealed variant used as a type | [GALA-E0061.md](GALA-E0061.md) |
+| `GALA-E0062` | Opaque type over a type it cannot be declared over | [GALA-E0062.md](GALA-E0062.md) |
+| `GALA-E0063` | Direct conversion between two opaque types | [GALA-E0063.md](GALA-E0063.md) |
+| `GALA-E0064` | Opaque type used without a conversion | [GALA-E0064.md](GALA-E0064.md) |
 
 ### Retired codes
 

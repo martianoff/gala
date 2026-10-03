@@ -632,6 +632,8 @@ func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]
 			recordType(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier())
 		case topDecl.StructShorthandDeclaration() != nil:
 			recordType(topDecl.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext).Identifier())
+		case topDecl.OpaqueTypeDeclaration() != nil:
+			recordType(topDecl.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext).Identifier())
 		case topDecl.SealedTypeDeclaration() != nil:
 			sc := topDecl.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
 			recordType(sc.Identifier())
@@ -1872,6 +1874,8 @@ func collectFileTypeBinders(node antlr.Tree) map[string]bool {
 		case *grammar.StructShorthandDeclarationContext:
 			bind(ctx.Identifier())
 		case *grammar.SealedTypeDeclarationContext:
+			bind(ctx.Identifier())
+		case *grammar.OpaqueTypeDeclarationContext:
 			bind(ctx.Identifier())
 		case *grammar.SealedCaseContext:
 			bind(ctx.Identifier())

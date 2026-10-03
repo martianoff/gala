@@ -46,8 +46,8 @@ type Checker struct {
 }
 
 // GoUnderlyingResolver reports the underlying type of a Go named type (e.g.
-// time.Duration -> int64), or (nil, false) when the type is not a resolvable Go
-// named type. It is how the checker recognises Go scalar value types — named
+// time.Duration -> int64) or of a GALA opaque type (`opaque type UserID int64`
+// -> int64), or (nil, false) when the type is neither. It is how the checker recognises Go scalar value types — named
 // types whose underlying is a primitive — as shareable. It is deliberately NOT
 // used for Go structs: Go has no immutability and auto-takes a pointer receiver
 // for `d.Method()`, so an all-value-field Go struct still cannot be proven
@@ -292,6 +292,12 @@ func (c *Checker) isNamedStructShareable(named transpiler.Type, typeArgs []trans
 	// (mutable) argument is checked — an unsound false negative. Including the
 	// args makes Node[int] and Node[MutableArray[int]] distinct keys, so the
 	// cycle only terminates on a genuine same-argument self-reference.
+	// An opaque type is its underlying scalar at run time: it is shareable
+	// when that scalar is, as the Go-underlying resolver reports it.
+	if meta.IsOpaque {
+		return c.isGoScalarShareable(named)
+	}
+
 	key := metaKey(meta) + instantiationKey(typeArgs)
 	if visited[key] {
 		return true

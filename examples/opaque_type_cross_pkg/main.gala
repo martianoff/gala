@@ -1,0 +1,39 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+    "martianoff/gala/examples/opaque_type_cross_pkg/billing"
+)
+
+// Opaque types declared in another package: converted, passed, compared,
+// used as map keys and sorted, and encoded as struct fields of this package.
+
+// Order holds opaque types declared in billing.
+struct Order(
+    Buyer billing.CustomerID,
+    Total billing.Cents,
+    Lines HashMap[billing.Sku, billing.Cents],
+    Region billing.Region,
+)
+
+func main() {
+    val buyer = billing.CustomerID(7)
+    val total = billing.Total(billing.Cents(1250), 55)
+    Println(billing.Charge(buyer, total), int64(buyer), total > billing.Cents(1000))
+
+    val byCustomer = EmptyHashMap[billing.CustomerID, string]().Put(buyer, "ada")
+    Println(byCustomer.Get(billing.CustomerID(7)))
+    Println(ArrayOf(billing.Cents(300), billing.Cents(100), billing.Cents(200)).Sorted())
+
+    val order = Order(buyer, total,
+        EmptyHashMap[billing.Sku, billing.Cents]().Put(billing.Sku("pen"), billing.Cents(300)),
+        billing.Region("eu"))
+    val jsonCodec = json.Codec[Order](json.SnakeCase())
+    val encoded = jsonCodec.Encode(order).Get()
+    Println(encoded)
+    Println(s"json round-trip equal: ${jsonCodec.Decode(encoded).Get().Equal(order)}")
+    val yamlCodec = yaml.Codec[Order](yaml.SnakeCase())
+    Println(s"yaml round-trip equal: ${yamlCodec.Decode(yamlCodec.Encode(order).Get()).Get().Equal(order)}")
+}

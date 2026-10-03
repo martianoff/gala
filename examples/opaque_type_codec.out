@@ -1,0 +1,22 @@
+{"id":42,"mail":"ada@example.com","rating":4.5,"on":true,"backoff":5,"nick":"ada","friends":[1,2],"history":[3.5,4],"backup":"backup@example.com","owner":null,"by_mail":{"bo@example.com":7}}
+json round-trip equal: true
+Some(7) Array(1, 2) None()
+id: 42
+mail: ada@example.com
+rating: 4.5
+on: true
+backoff: 5
+nick: ada
+friends:
+  - 1
+  - 2
+history:
+  - 3.5
+  - 4
+backup: backup@example.com
+owner: null
+by_mail:
+  bo@example.com: 7
+yaml round-trip equal: true
+{"Nick":"","Friends":[],"History":[],"Backup":null,"Owner":null,"ByMail":{}}
+9 x@y Array(3) Some(4)
