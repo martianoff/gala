@@ -961,6 +961,22 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	// GALA-E0066: a package-level name a dot import in any file of the
+	// package also brings in. See dot_import_collision.go.
+	if isTopLevel {
+		packageDotPkgs := make(map[string]bool)
+		for _, q := range append([]fileQualifiers{fileQuals}, siblingQuals...) {
+			for _, b := range q.dots {
+				if b.PkgName != "" {
+					packageDotPkgs[b.PkgName] = true
+				}
+			}
+		}
+		if err := checkDotImportCollisions(sourceFile, packageDotPkgs, richAST); err != nil {
+			return nil, err
+		}
+	}
+
 	// Set currentRichAST and dot-import tracking so resolveTypeWithParams can check
 	// already-known types (from dot-imported packages) before blindly qualifying with
 	// the current package name. This prevents e.g. Array from collection_immutable
@@ -1948,15 +1964,9 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			}
 		}
 
+		// A variant named like a std companion (Some, Left, ...) shadows it in
+		// this package, as every package-level name shadows an import's.
 		variants = append(variants, vi)
-
-		// Warn if variant name collides with a std auto-imported companion name.
-		// The variant creates a companion type that could shadow std companions
-		// (e.g., Success, Failure, Some, None, Left, Right).
-		if err := registry.CheckStdConflict(variantName, pkgName); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: sealed variant '%s' in type '%s' shadows %s; this may cause ambiguous symbols in generated Go code\n",
-				variantName, typeName, err.Error())
-		}
 	}
 
 	// Detect field name conflicts: same name with different types requires prefixing

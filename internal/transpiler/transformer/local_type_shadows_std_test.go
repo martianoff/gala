@@ -91,6 +91,38 @@ func Real(n int) string = Some(n).Map((v) => s"$v").GetOrElse("")`,
 			notWant: []string{"std.Option[Option]", "std.Option{", "o std.Option", ") std.Option\n"},
 		},
 		{
+			name: "std's type stays reachable through a named import of std",
+			pkg:  "lib",
+			src: `import "martianoff/gala/std"
+
+struct Option(Value int)
+
+func Mine(n int) Option = Option(n)
+
+func Real(n int) std.Option[int] = Some(n)`,
+			want:    []string{"func Mine(n int) Option", "func Real(n int) std.Option[int]"},
+			notWant: []string{"std.Option{"},
+		},
+		{
+			name: "sealed variant named like a std companion",
+			pkg:  "lib",
+			src: `sealed type Maybe {
+    case Some(V int)
+    case Nothing()
+}
+
+func get(m Maybe) int = m match {
+    case Some(v) => v
+    case Nothing() => 0
+}
+
+func Build() Maybe = Some(1)
+
+func Read() int = get(Build())`,
+			want:    []string{"func get(m Maybe) int", "Some{}.Unapply(obj)", "func Build() Maybe {\n\treturn Some{}.Apply(1)"},
+			notWant: []string{"std.Some[int]{}.Unapply", "std.Some[int]{}.Apply(1)"},
+		},
+		{
 			name: "go-style struct with a method",
 			pkg:  "lib",
 			src: `type Try struct {

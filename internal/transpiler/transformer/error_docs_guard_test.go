@@ -904,6 +904,22 @@ func main() {
 			},
 		},
 		{
+			name: "type named like a dot-imported type",
+			code: galaerr.CodeDeclarationCollidesWithDotImport, // GALA-E0066
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct List(Head int)
+
+func main() {
+    Println(List(1).Head)
+}
+`)
+			},
+		},
+		{
 			name: "var _ = at package level",
 			code: galaerr.CodeBlankValDeclaration, // GALA-E0060
 			render: func(t *testing.T) string {
