@@ -37,11 +37,18 @@ type newlineTokenSource struct {
 	prevEndsExpr bool
 }
 
-// tokenKinds holds the token types newlineTokenSource needs, looked up by name
+// newTokenStream is the token stream every parse reads: the lexer's tokens
+// with the line-break rule above applied.
+func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
+	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer}, antlr.TokenDefaultChannel)
+}
+
+// tokenKinds holds the token types the parser driver checks, looked up by name
 // in the generated vocabulary: the generated constants are unexported.
 type tokenKinds struct {
-	lparen, nlLparen, rawString int
-	endsExpr                    map[int]bool
+	lparen, nlLparen, rawString, identifier int
+	// endsExpr is indexed by token type.
+	endsExpr []bool
 }
 
 var kinds = func() tokenKinds {
@@ -49,14 +56,11 @@ var kinds = func() tokenKinds {
 	// so only the parser knows its type.
 	vocab := grammar.NewgalaParser(nil)
 	byName := map[string]int{}
-	for ttype, name := range vocab.GetSymbolicNames() {
-		if name != "" {
-			byName[name] = ttype
-		}
-	}
-	for ttype, name := range vocab.GetLiteralNames() {
-		if name != "" {
-			byName[name] = ttype
+	for _, names := range [][]string{vocab.GetSymbolicNames(), vocab.GetLiteralNames()} {
+		for ttype, name := range names {
+			if name != "" {
+				byName[name] = ttype
+			}
 		}
 	}
 	mustType := func(name string) int {
@@ -67,10 +71,11 @@ var kinds = func() tokenKinds {
 		return ttype
 	}
 	k := tokenKinds{
-		lparen:    mustType("'('"),
-		nlLparen:  mustType("NL_LPAREN"),
-		rawString: mustType("RAW_STRING"),
-		endsExpr:  map[int]bool{},
+		lparen:     mustType("'('"),
+		nlLparen:   mustType("NL_LPAREN"),
+		rawString:  mustType("RAW_STRING"),
+		identifier: mustType("IDENTIFIER"),
+		endsExpr:   make([]bool, len(vocab.GetSymbolicNames())),
 	}
 	for _, name := range []string{
 		"IDENTIFIER", "INT_LIT", "FLOAT_LIT", "STRING", "CHAR_LIT", "RAW_STRING",
@@ -81,10 +86,6 @@ var kinds = func() tokenKinds {
 	}
 	return k
 }()
-
-func newNewlineTokenSource(lexer antlr.Lexer) *newlineTokenSource {
-	return &newlineTokenSource{Lexer: lexer}
-}
 
 func (s *newlineTokenSource) NextToken() antlr.Token {
 	tok := s.Lexer.NextToken()
@@ -97,7 +98,8 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 			tok.GetChannel(), tok.GetStart(), tok.GetStop(), tok.GetLine(), tok.GetColumn())
 		ttype = kinds.nlLparen
 	}
-	s.prevEndsExpr = kinds.endsExpr[ttype]
+	// EOF has a negative type and ends nothing.
+	s.prevEndsExpr = ttype >= 0 && ttype < len(kinds.endsExpr) && kinds.endsExpr[ttype]
 	s.prevEndLine = tok.GetLine()
 	// A raw string is the only default-channel token that can span lines.
 	if ttype == kinds.rawString {
@@ -110,11 +112,6 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 // Wherever NL_LPAREN is expected a plain '(' is expected too, so ANTLR's
 // "expecting {..., '(', ..., NL_LPAREN}" sets lose the duplicate; a set that
 // names it alone shows it as the '(' the user writes.
-func hideNewlineParen(msg string) string {
-	if !strings.Contains(msg, "NL_LPAREN") {
-		return msg
-	}
-	msg = strings.ReplaceAll(msg, ", NL_LPAREN", "")
-	msg = strings.ReplaceAll(msg, "NL_LPAREN, ", "")
-	return strings.ReplaceAll(msg, "NL_LPAREN", "'('")
-}
+var newlineParenNames = strings.NewReplacer(", NL_LPAREN", "", "NL_LPAREN, ", "", "NL_LPAREN", "'('")
+
+func hideNewlineParen(msg string) string { return newlineParenNames.Replace(msg) }

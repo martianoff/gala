@@ -1,12 +1,9 @@
 grammar gala;
 
-// NL_LPAREN is a '(' that starts a new line right after a token that can end
-// an expression (an identifier, a literal, ')', ']' or '}'). No lexer rule
-// produces it: the parser driver (internal/parser) re-types such a '(' as the
-// tokens are read. A call suffix accepts only a plain '(', so a parenthesised
-// expression on the next line begins a new statement instead of calling the
-// previous one: `Println("a")` followed by a line `(1, 2)` is two statements.
-// Every other place that opens with '(' after such a token accepts both.
+// NL_LPAREN is a '(' that starts a line after a token that can end an
+// expression. No lexer rule produces it: the parser driver re-types it (see
+// internal/parser/newline.go). Only a call suffix rejects it, so such a '('
+// begins a new statement; every other '(' site accepts both.
 tokens { NL_LPAREN }
 
 // Entry point
@@ -178,11 +175,7 @@ postfixExpr
     : primaryExpr postfixSuffix* ('match' '{' caseClause+ '}')?
     ;
 
-// A call takes a plain '(' only — never NL_LPAREN — so a '(' that starts a
-// line does not continue the expression on the line before. '.' and '[' have
-// no such rule: a line starting with '.' continues a method chain, and the only
-// expression a '[' can start is a slice literal `[]T{...}`, whose empty '[]'
-// is never a valid index or type-argument suffix, so it is not ambiguous.
+// A call takes a plain '(' only, never NL_LPAREN (see the tokens block).
 postfixSuffix
     : '.' identifier
     | '(' argumentList? ')'
