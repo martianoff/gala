@@ -2,6 +2,30 @@ package transpiler
 
 import "testing"
 
+// TestGoTypeInfoKeepsGalaTypeMethodsApart: the methods a Go sibling declares
+// on a GALA type and a Go type share a key when a GALA package is named like
+// a Go package (GALA `fs`, Go `io/fs`, both filing FileInfo as "fs.FileInfo").
+// Merging one never replaces the other, in either order.
+func TestGoTypeInfoKeepsGalaTypeMethodsApart(t *testing.T) {
+	goFS := NewGoTypeInfo()
+	goFS.Types["fs.FileInfo"] = &GoTypeData{Kind: "interface", Methods: map[string]*GoFuncSignature{"IsDir": {}}}
+	galaFS := NewGoTypeInfo()
+	galaFS.GalaTypeMethods["fs.FileInfo"] = &GoTypeData{Kind: GoKindMethodsOnly, Methods: map[string]*GoFuncSignature{"Upper": {}}}
+
+	for _, order := range [][]*GoTypeInfo{{goFS, galaFS}, {galaFS, goFS}} {
+		merged := NewGoTypeInfo()
+		for _, g := range order {
+			merged.Merge(g)
+		}
+		if !merged.DeclaresType("fs", "FileInfo") || merged.GetMethodSignature("fs.FileInfo", "IsDir") == nil {
+			t.Fatalf("the Go type fs.FileInfo was lost: %+v", merged.Types)
+		}
+		if rec := merged.GetGalaTypeMethods("fs.FileInfo"); rec == nil || rec.Methods["Upper"] == nil {
+			t.Fatalf("the GALA type's Go methods were lost: %+v", merged.GalaTypeMethods)
+		}
+	}
+}
+
 // TestMergeDoesNotMutateShared documents and pins the copy-on-write contract
 // of (*RichAST).Merge. Before the fix, a TypeMetadata pointer reachable from
 // multiple RichASTs (e.g. the analyzer's std cache, shared across every

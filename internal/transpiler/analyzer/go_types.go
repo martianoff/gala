@@ -657,7 +657,7 @@ func writtenByGala(f *ast.File) bool {
 // extractMethodsOnForeignTypes records the methods these .go files declare on
 // a type they do not declare themselves — in a mixed package, a type declared
 // in a .gala file (`struct Repo()` there, `func (r Repo) Save() error` here).
-// Each such type is filed under its "pkg.Name" key with Kind
+// Each such type is filed in GalaTypeMethods under its "pkg.Name" key with Kind
 // GoKindMethodsOnly: only its methods are known, the rest of the type comes
 // from its GALA declaration. Exported methods are recorded, and, when own (the
 // package being compiled), unexported ones too.
@@ -681,13 +681,16 @@ func extractMethodsOnForeignTypes(files []*ast.File, typesInfo *types.Info, pkg 
 				continue // a Go-declared type: extractPackageInfo has its methods
 			}
 			key := pkg.Name() + "." + recvName
-			data := info.Types[key]
+			data := info.GalaTypeMethods[key]
 			if data == nil {
 				data = &transpiler.GoTypeData{
 					Kind:    transpiler.GoKindMethodsOnly,
 					Methods: make(map[string]*transpiler.GoFuncSignature),
 				}
-				info.Types[key] = data
+				if info.GalaTypeMethods == nil {
+					info.GalaTypeMethods = make(map[string]*transpiler.GoTypeData)
+				}
+				info.GalaTypeMethods[key] = data
 			}
 			sig := &transpiler.GoFuncSignature{}
 			if fn, ok := typesInfo.Defs[fd.Name].(*types.Func); ok {

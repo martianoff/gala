@@ -1567,7 +1567,7 @@ func (t *galaASTTransformer) goImportRealName(importPath string) (string, bool) 
 // goMethodSignature returns the Go type info signature of method on a value of
 // type recv (one pointer level stripped), or nil: a method of a Go type
 // (`scanner.Text()`), through a Go type alias too, or one a hand-written .go
-// file of the package declares on a GALA type (GoKindMethodsOnly).
+// file of the package declares on a GALA type (see siblingMethodSignature).
 //
 // A generic receiver (`Box[int]`) is looked up under its base type, and its
 // type arguments are substituted for the type parameters the method's
@@ -1584,7 +1584,16 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		recv = ptr.Elem
 	}
 	gen, isGeneric := recv.(transpiler.GenericType)
+	// A method the GALA type's Go sibling declares; a Go type of the same key
+	// is another type, so it is not consulted then.
+	sig, declaredBySibling := t.siblingMethodSignature(recv, method)
 	if !isGeneric {
+		if declaredBySibling {
+			if sig != nil && len(sig.TypeParams) > 0 {
+				return nil // a generic type's method, without type arguments
+			}
+			return sig
+		}
 		key := t.goTypeLookupName(recv)
 		if sig := t.goTypeInfo.GetMethodSignature(key, method); sig != nil {
 			return sig
@@ -1595,7 +1604,9 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		}
 		return nil
 	}
-	sig := t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(gen.Base), method)
+	if !declaredBySibling {
+		sig = t.goTypeInfo.GetMethodSignature(t.goTypeLookupName(gen.Base), method)
+	}
 	if sig == nil || len(sig.TypeParams) != len(gen.Params) {
 		return nil
 	}

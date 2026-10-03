@@ -79,7 +79,14 @@ func (t *galaASTTransformer) receiverTypeInfo(typ transpiler.Type) (base transpi
 	if !isNamed || !t.isGoTyped(named) {
 		meta = t.getTypeMeta(base.BaseName())
 	}
-	goData = t.goTypeInfo.GetTypeData(t.goTypeLookupName(base))
+	// The Go-declared methods of a GALA type are filed apart from Go types,
+	// whose key they may share (see GoTypeInfo.GalaTypeMethods).
+	if meta != nil {
+		goData = t.galaTypeGoMethods(meta)
+	}
+	if goData == nil {
+		goData = t.goTypeInfo.GetTypeData(t.goTypeLookupName(base))
+	}
 	return base, meta, goData, true
 }
 

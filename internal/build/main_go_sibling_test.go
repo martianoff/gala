@@ -185,3 +185,85 @@ func main() {
 		"w 21",
 	}, "\n"), strings.TrimSpace(strings.ReplaceAll(out, "\r\n", "\n")))
 }
+
+// TestBuild_GoSiblingMethodsBesideSameNamedGoType builds a program importing
+// a GALA package named like a Go package (GALA `fs`, Go `io/fs`) whose Go
+// sibling declares methods on a GALA type named like one of the Go package's
+// types (FileInfo). Both types are filed under "fs.FileInfo". The record of
+// the sibling's methods used to replace io/fs's type, so the program's other
+// file, which uses io/fs's FileInfo, was told io/fs does not provide it. Each
+// type keeps its own methods, including Size, which both declare with
+// different results.
+func TestBuild_GoSiblingMethodsBesideSameNamedGoType(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+
+	const moduleName = "example.com/fscollide"
+	projectDir := t.TempDir()
+	for name, content := range map[string]string{
+		"gala.mod": "module " + moduleName + "\n\ngala 0.0.0\n",
+		"go.mod":   "module " + moduleName + "\n\ngo 1.22\n",
+		"fs/sibling.go": `package fs
+
+import "strings"
+
+func (f FileInfo) Upper() string { return strings.ToUpper(f.Label) }
+
+func (f FileInfo) Size() string { return "size of " + f.Label }
+`,
+		"fs/fs.gala": `package fs
+
+struct FileInfo(var Label string)
+
+func Shout(f FileInfo) string = f.Upper()
+`,
+		"main.gala": `package main
+
+import (
+    "os"
+    "example.com/fscollide/fs"
+)
+
+func main() {
+    Println(describe(os.Stat("gala.mod").Get()))
+    Println(fs.Shout(fs.FileInfo("x")))
+    Println(Some(fs.FileInfo("y").Size()).GetOrElse("") + "!")
+}
+`,
+		"describe.gala": `package main
+
+import "io/fs"
+
+func describe(info fs.FileInfo) string {
+    val dir = Some(info.IsDir())
+    val size = Some(info.Size())
+    s"${info.Name()} dir=${dir.GetOrElse(true)} sized=${size.GetOrElse(0) > 0}"
+}
+`,
+	} {
+		writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
+	}
+
+	isolateUserState(t)
+	setEnvForTest(t, "GOCACHE", filepath.Join(t.TempDir(), "gocache"))
+	alignGorootWithPathGo(t)
+	chdirForTest(t, projectDir)
+
+	b, err := NewBuilder(projectDir, "test", false)
+	require.NoError(t, err)
+	binPath, buildErr := b.Build("")
+	if buildErr != nil {
+		if isToolchainEnvError(buildErr.Error()) {
+			t.Skipf("skipping end-to-end check: Go toolchain unavailable/mismatched in this environment: %v", buildErr)
+		}
+		t.Fatalf("gala build failed: %v", buildErr)
+	}
+	out, runErr := runBuiltBinary(binPath)
+	require.NoError(t, runErr, "built binary failed to run; output:\n%s", out)
+	assert.Equal(t, strings.Join([]string{
+		"gala.mod dir=false sized=true",
+		"X",
+		"size of y!",
+	}, "\n"), strings.TrimSpace(strings.ReplaceAll(out, "\r\n", "\n")))
+}
