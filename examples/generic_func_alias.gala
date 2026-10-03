@@ -17,7 +17,7 @@ func applyConv[A any, B any](a A, f Conv[A, B]) B = f(a)
 func visitAll(visit Visitor[int]) = visit((v) => Println(s"visited $v"))
 
 func main() {
-    Println(Step[int, string](In = 3, Run = (x) => s"${x}").In)
+    Println(Step[int, string](In = 3, Run = (x) => s"$x").In)
     Println(runStep(Step(In = 4, Run = (x) => x * 10)))
     Println(applyConv("gala", (s) => s.Size()))
 
