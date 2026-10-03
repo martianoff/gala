@@ -74,6 +74,16 @@ func TestSealedVariantAsTypeIsRejected(t *testing.T) {
 			"Square is a variant"},
 		{"explicit type argument of a method", variantTypeShapeDecl + "func main() {\n    val o = Some(1)\n    Println(o.Map[@Circle]((n) => Circle(1.0)))\n}\n",
 			"Circle is a variant"},
+		{"pointer explicit type argument", variantTypeShapeDecl + "func wrap[T any](x T) Option[T] = Some(x)\n\nfunc main() {\n    Println(wrap[*@Circle](nil))\n}\n",
+			"Circle is a variant"},
+		{"explicit type argument of a method on a package val", variantTypeShapeDecl + "val origin = Some(1)\n\nfunc main() {\n    Println(origin.Map[@Circle]((n) => Circle(1.0)))\n}\n",
+			"Circle is a variant"},
+		{"explicit type argument of an extractor pattern", variantTypeShapeDecl + "func main() {\n    val o = Some(Circle(1.0))\n    val r = o match {\n        case Some[@Circle](c) => 1\n        case _ => 0\n    }\n    Println(r)\n}\n",
+			"Circle is a variant"},
+		{"type in an interpolated expression", variantTypeShapeDecl + "func main() {\n    Println(s\"${((c @Circle) => 1)(Circle(1.0))}\")\n}\n",
+			"Circle is a variant"},
+		{"outside the declaration whose type parameter shadows it", variantTypeShapeDecl + "func id[Circle any](x Circle) Circle = x\n\nfunc radius(c @Circle) float64 = 1.0\n\nfunc main() {\n    Println(id(1))\n}\n",
+			"Circle is a variant"},
 		{"declared after its use", "package main\n\nfunc radius(c @Circle) float64 = 1.0\n\nsealed type Shape {\n    case Circle(R float64)\n}\n\nfunc main() {\n    Println(1)\n}\n",
 			"Circle is a variant of sealed type Shape, not a type"},
 		{"std variant with type arguments", "package main\n\nfunc f(o @Some[int]) int = 1\n\nfunc main() {\n    Println(1)\n}\n",
@@ -181,6 +191,16 @@ sealed type Shape {
 func main() {
     val xs = ArrayOf[Shape](Circle(1.0), Square(2.0))
     Println(xs.Get(0))
+}
+`},
+		{"indexing by a value named like a variant", `package main
+
+import "os"
+
+func pick(Left int) string = os.Args[Left]
+
+func main() {
+    Println(pick(0) != "")
 }
 `},
 		{"a field named like a variant", variantTypeShapeDecl + `struct Holder(Circle Shape)

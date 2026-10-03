@@ -5,7 +5,8 @@ expected. A `case` of a sealed type declares a constructor and an extractor,
 not a type of its own: every value `Circle(...)` builds is a `Shape`. The
 check covers every type position — a parameter, a result, a struct or variant
 field, a `val` / `var` annotation, a type argument (in a type or in a call
-such as `ArrayOf[Circle](...)`), a typed pattern (`case c: Circle`), a
+such as `ArrayOf[Circle](...)` or an extractor pattern such as
+`case Some[Circle](c)`), a typed pattern (`case c: Circle`), a
 receiver and an alias target — for a variant of a sealed type declared in the
 same package, in an imported package (`shapes.Circle`), or in `std`
 (`Some[int]`, `Left[string, int]`).
