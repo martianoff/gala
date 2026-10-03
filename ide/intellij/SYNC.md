@@ -96,6 +96,14 @@ Packages with importable types:
 
 **How to verify:** Compare the list of `galaLexer.XXX` entries in the `when` block against named tokens in gala.g4. The ANTLR-generated Java lexer constants are always authoritative — if a new keyword is added to gala.g4, regenerate the Java sources and add the new constant to the highlighter.
 
+### 6b. Line-Break Rule (`NL_LPAREN`)
+
+**Plugin file:** `GalaNewlineLexer.kt` — `GalaNewlineLexer` (the parser's lexer) and `GalaErrorStrategy`
+
+**Source of truth:** `internal/parser/newline.go` — which tokens end an expression, which literals can span lines, and how `NL_LPAREN` is kept out of syntax errors
+
+**How to verify:** The token sets in `GalaNewlineLexer`'s companion object match `kinds` in `newline.go`. `GalaNewlineLexerTest` covers the same forms as `internal/parser/newline_test.go`.
+
 ## When to Sync
 
 Sync the plugin after any of these changes:

@@ -4,6 +4,7 @@ go_library(
     name = "parser",
     srcs = [
         "docs.go",
+        "newline.go",
         "parser.go",
         "source_chars.go",
     ],
@@ -25,6 +26,7 @@ go_test(
         "empty_line_unicode_test.go",
         "go_type_in_expression_test.go",
         "grammar_test.go",
+        "newline_test.go",
         "parse_expression_at_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
@@ -33,6 +35,7 @@ go_test(
     embed = [":parser"],
     deps = [
         "//galaerr",
+        "//internal/parser/grammar",
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

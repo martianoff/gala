@@ -57,7 +57,7 @@ func parseSourceFileAttempt(input string, mode int) sourceFileParseResult {
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	stream := newTokenStream(lexer)
 	parser := grammar.NewgalaParser(stream)
 	isolateParserCaches(parser.BaseParser)
 	parser.GetInterpreter().SetPredictionMode(mode)
@@ -147,7 +147,7 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	stream := newTokenStream(lexer)
 	psr := grammar.NewgalaParser(stream)
 	isolateParserCaches(psr.BaseParser)
 
@@ -191,7 +191,7 @@ func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpre
 			sim.CharPositionInLine = col
 		}
 	}
-	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	stream := newTokenStream(lexer)
 	psr := grammar.NewgalaParser(stream)
 	isolateParserCaches(psr.BaseParser)
 
@@ -403,7 +403,7 @@ func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSy
 		return
 	}
 
-	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, msg))
+	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, hideNewlineParen(msg)))
 }
 
 // bareLambdaParamError recognizes a lambda written without parentheses around
@@ -430,7 +430,7 @@ func bareLambdaParamError(recognizer antlr.Recognizer, offendingSymbol interface
 		return nil
 	}
 	prev := prevCodeToken(stream, tok.GetTokenIndex())
-	if prev == nil || symbolicTokenName(recognizer, prev) != "IDENTIFIER" {
+	if prev == nil || prev.GetTokenType() != kinds().identifier {
 		return nil
 	}
 
@@ -467,19 +467,6 @@ func prevCodeToken(stream antlr.TokenStream, idx int) antlr.Token {
 		}
 	}
 	return nil
-}
-
-// symbolicTokenName maps a token to its grammar symbol name (e.g. "IDENTIFIER")
-// via the recognizer's vocabulary. The generated token-type constants are
-// unexported, so the vocabulary is the only way to ask this from outside the
-// grammar package.
-func symbolicTokenName(recognizer antlr.Recognizer, tok antlr.Token) string {
-	names := recognizer.GetSymbolicNames()
-	tt := tok.GetTokenType()
-	if tt < 0 || tt >= len(names) {
-		return ""
-	}
-	return names[tt]
 }
 
 // currentCompositeLiteral returns the rule the parser was inside when it

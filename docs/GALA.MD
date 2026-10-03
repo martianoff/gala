@@ -9,6 +9,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
 1. [Project Structure](#1-project-structure)
 2. [Variable Declarations](#2-variable-declarations)
 3. [Functions](#3-functions)
+   - [Line Breaks Between Statements](#line-breaks-between-statements)
    - [Local Functions](#local-functions)
    - [Named Arguments](#named-arguments)
    - [Default Parameter Values](#default-parameter-values)
@@ -227,6 +228,42 @@ of a function with no result type) is rejected as evaluated but not used.
 > grouped parameters (`func add(a, b int)`); write `func add(a int, b int)`
 > instead. The same applies to struct-shorthand fields. A grouped declaration
 > is rejected with [GALA-E0034](errors/GALA-E0034.md).
+
+#### Line Breaks Between Statements
+
+Statements are separated by line breaks (or `;`). An expression may still span several
+lines, and one rule decides where it ends: **a `(` that starts a line, right after a line
+that ends in a name, a literal, `)`, `]` or `}`, begins a new statement** — it never calls
+the expression on the line before. (As in Go, a block comment that spans lines counts as a line
+break.) That is what lets a parenthesised trailing value follow any statement:
+
+```gala
+func pair() Tuple[int64, int] {
+    val a int64 = 1
+    (a, 2)                  // the trailing tuple, not the call `1(a, 2)`
+}
+
+func doubledSum(a int, b int) int {
+    Println("summing")
+    (a + b) * 2             // a new statement, not `Println("summing")(a + b) * 2`
+}
+```
+
+To call a function value, keep the `(` on the same line as the callee: `adder(5)(1)`.
+
+Every other line break continues the expression, as it always has:
+
+| Next line starts with | Meaning |
+|-----------------------|---------|
+| `(` after a name, literal, `)`, `]` or `}` | new statement |
+| `(` after anything else (`=`, `=>`, `(`, `,`, an operator, `return`) | continues — e.g. a tuple argument on its own line, `return` with its value on the next line |
+| `.` | continues a method chain: `xs` then `.Map(f)` then `.Filter(g)` |
+| a binary operator (`+`, `-`, `&&`, `\|\|`, …) | continues the expression |
+| `[` | continues as an index or type arguments (`xs` then `[0]`); GALA has no slice literal that could start a statement ([GALA-E0007](errors/GALA-E0007.md)) |
+| `match` | continues: matches the expression on the line before |
+
+Multi-line argument lists are unaffected: inside `f(`…`)` the `(` that opens the list is on
+the callee's line, and an argument that starts with `(` follows a `(` or `,`.
 
 ### Expression Functions
 For simple functions, you can use the `=` syntax.
