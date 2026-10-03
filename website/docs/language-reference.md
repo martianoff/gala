@@ -410,6 +410,20 @@ func main() {
 
 A generic alias transpiles to a Go generic alias (`type Conv[A any, B any] = func(A) B`), which Go accepts from 1.24 on, so the `go.mod` files `gala build` generates declare `go 1.24`.
 
+#### Generic aliases {#generic-aliases}
+
+A generic alias names every instance of its target at once. It can take any number of parameters, with constraints (`comparable`, an interface), fix some of the target's arguments, or name another alias:
+
+<!-- doc-check: fragment -->
+```gala
+type Result[T any] Either[AppError, T]            // fixes the error type
+type Pairs[K comparable, V any] Array[Tuple[K, V]]
+type StrMap[V any] HashMap[string, V]               // partially applied
+type Again[T any] Result[T]                         // alias of an alias
+```
+
+`Result[int]` *is* `Either[AppError, int]`: constructors take their type arguments from it (`func parse(s string) Result[int] = if (s == "") Left(AppError(1)) else Right(s.Size())`), a match on it sees `Either`'s variants, and it has `Either`'s methods, codec encoding and shareability at a concurrency boundary. A generic alias takes no methods at all, whatever it names, and neither does an alias of one (`type IntResult Result[int]`) — Go has no methods through a generic alias ([GALA-E0048](/docs/errors/gala-e0048/)). A wrong number of type arguments or an argument that breaks a constraint is reported by the Go compiler, mapped to the GALA line.
+
 #### What an alias can do {#what-an-alias-can-do}
 
 | Use | Example | Notes |
@@ -422,7 +436,7 @@ A generic alias transpiles to a Go generic alias (`type Conv[A any, B any] = fun
 
 #### What an alias cannot do {#what-an-alias-cannot-do}
 
-**It cannot take a method unless its target is a plain type declared in this package.** The receiver base type is the *target*, and Go accepts a method only on a plain, locally declared type — so a built-in, an imported type, an unnamed composite (slice, map, func) and an instantiated type are all [GALA-E0048](/docs/errors/gala-e0048/):
+**It cannot take a method unless its target is a plain type declared in this package.** The receiver base type is the *target*, and Go accepts a method only on a plain, locally declared type — so a built-in, an imported type, an unnamed composite (slice, map, func), an instantiated type and any generic alias are all [GALA-E0048](/docs/errors/gala-e0048/):
 
 <!-- doc-check: fragment -->
 ```gala
@@ -437,6 +451,9 @@ func (h Handler) Name() string = "h"         // unnamed composite
 
 type IntPair Pair[int]
 func (p IntPair) First() int = p.A           // instantiated type
+
+type Box[T any] Cell[T]
+func (b Box[T]) Show() string = "box"         // generic alias, whatever it names
 ```
 
 The alias chain is followed to its end, so `type A int64; type B A` makes a method on `B` illegal for the same reason. A pointer target is fine when it points at a local type — `type PP *Point` puts the method on `Point`.

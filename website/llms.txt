@@ -22,6 +22,7 @@ GALA is close enough to Scala and Kotlin to be readable on sight, and different 
 - **No `defer`, no bare `go`.** Cleanup is `use` or `Using(res, (r) => ...)`; a goroutine is `go_interop.Spawn(() => f())`. (`GALA-E0036`)
 - **No slice or map literals**, and Go slice/map *types* are legal only where a type is expected. (`GALA-E0007`, `GALA-E0008`, `GALA-E0040`)
 - **No named `func` inside a function body.** A local helper is a lambda bound to a `val`: `val helper = (x int) int => x + 1`; for recursion, `var fact func(int) int` then assign. (`GALA-E0052`)
+- **A type alias has no `=`.** `type Result[T any] Either[AppError, T]`, not Go's `type Result[T any] = Either[AppError, T]` (a parse error). An alias is the same type as its target, not a new type; a generic alias takes no methods, and a type that needs an identity or methods of its own is a struct. (`GALA-E0048`)
 - **`val` is immutable and is the default.** Use `var` only when reassignment is genuinely needed.
 - **No `val _ = expr`.** To drop a value, write the expression as a bare statement; in a lambda with no result, an `error`-only call becomes `FromError(call())`. (`GALA-E0060`)
 - **Sealed matches must be exhaustive.** Adding a variant turns every incomplete match site into a compile error naming the missing case — this is the property to lean on when refactoring. (`GALA-E0002`)

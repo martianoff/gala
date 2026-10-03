@@ -837,6 +837,45 @@ A generic alias transpiles to a Go generic alias
 (`type Conv[A any, B any] = func(A) B`), which Go accepts from 1.24 on, so the
 `go.mod` files `gala build` generates declare `go 1.24`.
 
+#### Generic aliases
+
+A generic alias names every instance of its target at once. It can take any
+number of parameters, with constraints (`comparable`, an interface), fix some
+of the target's arguments, or name another alias:
+
+<!-- doc-check: fragment -->
+```gala
+type Result[T any] Either[AppError, T]            // fixes the error type
+type Pairs[K comparable, V any] Array[Tuple[K, V]]
+type StrMap[V any] HashMap[string, V]               // partially applied
+type Again[T any] Result[T]                         // alias of an alias
+type Labels[L Labeled] Array[L]                     // interface constraint
+```
+
+`Result[int]` *is* `Either[AppError, int]`, so everything that reads a type's
+structure sees the target with the arguments substituted:
+
+| Use | Example |
+|---|---|
+| Parameters, results, fields, `val`s, element types | `func parse(s string) Result[int]`, `Array[Result[int]]` |
+| Constructors typed from the expected type | `func parse(s string) Result[int] = if (s == "") Left(AppError(1)) else Right(s.Size())` |
+| Matching an alias-typed value | `r match { case Right(v) => …; case Left(e) => … }` |
+| Methods of the target | `val r Res[int] = Success(2)` then `r.Map((v) => v + 1)` |
+| Codecs | a struct field typed `Maybe[string]` encodes as the `Option[string]` it is |
+| Concurrency boundaries | a `val` typed `Items[int]` (an alias of an immutable `Array`) may be captured by a `Future`; an alias of a `collection_mutable` type may not ([GALA-E0037](errors/GALA-E0037.md)) |
+
+A generic alias takes no methods at all, whatever it names — Go has no methods
+on a generic alias ([GALA-E0048](errors/GALA-E0048.md)). A wrong number of type
+arguments (`Result[int, string]`) or an argument that breaks a constraint
+(`Pairs[func(), int]`, where `K` is `comparable`) is reported by the Go
+compiler, mapped to the GALA line.
+
+An alias is only a name. It is not a struct, which is a type of its own with
+its own fields, methods and identity, and not the planned `opaque type`, which
+will hide its representation behind a distinct type. Reach for a generic alias
+to shorten a long instantiation that recurs; reach for a struct when the value
+needs an identity or methods.
+
 #### What an alias can do
 
 | Use | Example | Notes |
@@ -852,8 +891,8 @@ A generic alias transpiles to a Go generic alias
 **It cannot take a method unless its target is a plain type declared in this
 package.** The receiver base type is the *target*, and Go accepts a method only
 on a plain, locally declared type — so a built-in, an imported type, an unnamed
-composite (slice, map, func) and an instantiated type are all
-[GALA-E0048](errors/GALA-E0048.md):
+composite (slice, map, func), an instantiated type and any generic alias are
+all [GALA-E0048](errors/GALA-E0048.md):
 
 <!-- doc-check: fragment -->
 ```gala
@@ -868,6 +907,9 @@ func (h Handler) Name() string = "h"         // unnamed composite
 
 type IntPair Pair[int]
 func (p IntPair) First() int = p.A           // instantiated type
+
+type Box[T any] Cell[T]
+func (b Box[T]) Show() string = "box"         // generic alias, whatever it names
 ```
 
 The alias chain is followed to its end, so `type A int64; type B A` makes a
