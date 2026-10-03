@@ -17,7 +17,7 @@ Search for `.gala` files in the target path (or entire project), excluding build
 
 ### Step 2: Analyze each file
 
-For each `.gala` file, check all linting rules below and collect violations. Run the mechanical `grep` passes given in each rule's **Check** line (especially rule 7c, which requires every `for` to be classified) rather than relying on reading alone.
+For each `.gala` file, check all linting rules below and collect violations. Run the mechanical `grep` passes given in each rule's **Check** line (especially rule 7c, which requires every `for` to be classified) rather than relying on reading alone. Most greps list candidates to read; a Check marked **verdict** is different — every hit it reports outside a comment or string literal is a finding, never dismissed by judgment.
 
 ### Step 3: Generate report
 
@@ -1306,6 +1306,13 @@ Rationale: `val _ = ...` adds noise without expressing any intent the bare expre
 **Void-lambda exception.** Inside a lambda whose body is `func()` (no return), the analyzer rejects bare `error`-returning calls — error: "cannot discard error return from X — use FromError(X) to handle the error". Use `FromError(call())` from `std`: it returns `Try[Void]` and can itself stand as a bare statement (or chain `.OnFailure((err) => ...)`). Function-body bare calls are unaffected.
 
 **If bare-statement form does not transpile elsewhere** — that is a **transpiler bug**, not a license to keep `val _ =`. Open a repro test against the transpiler and fix the bug. Never work around a transpiler bug: report it with a minimal reproduction.
+
+**Check** (**verdict**; `$FILES` as built in rule 7c):
+```bash
+grep -nE '\bval[[:space:]]+_([[:space:]]+[[:alpha:]*[][^=]*)?[[:space:]]*=' $FILES
+```
+Every hit, typed (`val _ T =`) or not, is a HIGH 11c finding, fixed per the table
+and the void-lambda exception above. Tuple patterns (`val (_, b) = t`) do not match.
 
 ### 11d. By-Name Argument Sugar for Zero-Arg Thunks (MEDIUM priority)
 
