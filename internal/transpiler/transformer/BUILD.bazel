@@ -81,6 +81,7 @@ go_test(
     srcs = [
         "alias_expected_type_test.go",
         "aliased_go_import_types_test.go",
+        "apply_expected_type_test.go",
         "apply_test.go",
         "assignment_test.go",
         "auto_method_override_test.go",

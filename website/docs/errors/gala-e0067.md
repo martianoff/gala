@@ -34,7 +34,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0067]: cannot infer type argument T of generic struct Tag from its fields or the expected type; annotate the binding (e.g. `val x Tag[int] = Tag(...)`) or write it explicitly (`Tag[int](...)`)
+error[GALA-E0067]: cannot infer type argument T of generic struct Tag from its fields or the expected type; annotate the binding (e.g. `val x Tag[int] = Tag(...)`) or pass type args explicitly (`Tag[int](...)`)
   --> main.gala:6:17
   |
 6 |     val t = Tag("x")

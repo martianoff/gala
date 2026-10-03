@@ -191,6 +191,18 @@ func run() Try[int] {
 	assert.Contains(t, err.Error(), "`a`")
 }
 
+// A sibling reference inside an interpolated string is one too: the string's
+// expressions are parsed only when the clause is lowered.
+func TestAlsoRejectsInterpolatedSiblingReference(t *testing.T) {
+	input := "package main\n\nfunc run() Try[int] {\n    bind a = Success(1)\n    also b = Success(s\"v=$a\")\n    Success(a)\n}\n"
+	_, err := newBindTranspiler().Transpile(input, "")
+	if !assert.Error(t, err) {
+		return
+	}
+	assert.Contains(t, err.Error(), "independently")
+	assert.Contains(t, err.Error(), "`a`")
+}
+
 // The independence check must not flag a legitimate reference to a binding from
 // an EARLIER group (which is in scope): only same-group siblings are rejected.
 func TestBindAllowsCrossGroupReference(t *testing.T) {
