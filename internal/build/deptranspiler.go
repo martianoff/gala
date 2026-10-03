@@ -23,6 +23,12 @@ type DepTranspiler struct {
 	galaMod       *mod.File
 	stdlibVersion string
 	verbose       bool
+
+	// goSrcDirs is the Go module source table the analyzer types a
+	// dependency's Go calls with (Builder.goModuleSrcDirs, which covers every
+	// dependency's own Go requirements). Without it a dependency's call into a
+	// Go module its gala.mod requires had no type.
+	goSrcDirs map[string]string
 }
 
 // NewDepTranspiler creates a new dependency transpiler.
@@ -177,6 +183,7 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 	// The analysis cache lives beside the output, never in srcDir: srcDir is
 	// the module cache, which a build must leave exactly as it was fetched.
 	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, outDir)
+	batchAnalyzer.SetGoSrcDirs(dt.goSrcDirs)
 
 	// Process subpackages in deterministic order for stable verbose output.
 	pkgDirs := make([]string, 0, len(filesByPackageDir))

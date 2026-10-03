@@ -1430,6 +1430,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	// A generic alias's written arguments are its own, not the leading ones of
 	// the type it names, so they are left as written.
 	_, viaAlias := t.lookupTypeAlias(origTypeName)
+	var uninferred error
 	if len(typeArgs) < len(typeMeta.TypeParams) && !(viaAlias && len(typeArgs) > 0) {
 		inferredMap := t.writtenTypeArgs(typeMeta.TypeParams, typeArgs)
 		// Step 1: infer from Apply method arguments.
@@ -1479,6 +1480,12 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 			if variant.parent != nil {
 				return true, nil, t.uninferredVariantError(variant, "(...)", inferredMap, missing, line, col)
 			}
+			// Any other generic type would be emitted as an uninstantiated
+			// `Try{}.Apply(x)`, which Go rejects ("cannot use generic type
+			// std.Try[T any] without instantiation"). Reported after the
+			// metadata injection below, whose error for a codec call with no
+			// type argument (GALA-E0050) is the more specific one.
+			uninferred = t.uninferredApplyTypeArgError(line, col, origTypeName, typeMeta.TypeParams, missing, args)
 		}
 	}
 
@@ -1509,6 +1516,9 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 			}
 			args = injected
 		}
+	}
+	if uninferred != nil {
+		return true, nil, uninferred
 	}
 
 	if isGeneric {
@@ -2861,12 +2871,11 @@ func (t *galaASTTransformer) slotTypeArgs(slotType transpiler.Type, resolvedType
 // leaves open.
 func (t *galaASTTransformer) uninferredStructTypeArgError(line, col int, base ast.Expr, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
 	_, qualified := extractTypeNameFromExpr(base)
-	pkgQualifier, bareName := splitPackageQualifier(qualified)
-	name := t.callSiteQualifier(pkgQualifier) + bareName
+	name := t.callSiteName(qualified)
 	typ := name + "[" + hintTypeArgs(typeParams, inferred) + "]"
-	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+	return galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col, fmt.Sprintf(
 		"cannot infer type argument %s of generic struct %s from its fields or the expected type; annotate the binding (e.g. `val x %s = %s(...)`) or write it explicitly (`%s(...)`)",
-		strings.Join(missing, ", "), name, typ, name, typ))
+		strings.Join(missing, ", "), name, typ, name, typ), "")
 }
 
 // hintTypeArgs spells a type argument list for an inference hint: per type
@@ -2905,9 +2914,67 @@ func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string
 // uninferredTypeArgError reports the type parameters of what (`generic struct
 // Pair`) that from (`its fields`) left without a type argument.
 func uninferredTypeArgError(line, col int, what, from, typeName string, typeParams, missing []string) error {
-	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+	return galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col, fmt.Sprintf(
 		"cannot infer type argument %s of %s from %s; write it explicitly, e.g. `%s[%s](...)`",
-		strings.Join(missing, ", "), what, from, typeName, strings.Join(typeParams, ", ")))
+		strings.Join(missing, ", "), what, from, typeName, strings.Join(typeParams, ", ")), "")
+}
+
+// uninferredApplyTypeArgError is uninferredTypeArgError for a generic type
+// called through its companion Apply with no type arguments written. When an
+// argument is a call into a Go package whose types were not loaded — the usual
+// cause, as in `Try(term.MakeRaw(fd))` — the error names the call and the
+// package instead of asking for a type argument.
+func (t *galaASTTransformer) uninferredApplyTypeArgError(line, col int, typeName string, typeParams, missing []string, args []ast.Expr) error {
+	name := t.callSiteName(stripStdPrefix(typeName)) // `Try`, as written, not `std.Try`
+	for _, arg := range args {
+		if callee, pkgPath, ok := t.unloadedGoPackageCall(arg); ok {
+			return galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col,
+				fmt.Sprintf("cannot infer type argument %s of %s: the type of its argument `%s(...)` is unknown",
+					strings.Join(missing, ", "), name, callee),
+				fmt.Sprintf("the type information of Go package %q could not be loaded; require its module "+
+					"in gala.mod (`gala mod add --go <module>`)", pkgPath))
+		}
+	}
+	return uninferredTypeArgError(line, col, name, "its arguments", name, typeParams, missing)
+}
+
+// unloadedGoPackageCall reports whether expr is an untyped call `pkg.F(...)`
+// into an imported package this file has no type information for, returning
+// the callee as written and the package's import path.
+func (t *galaASTTransformer) unloadedGoPackageCall(expr ast.Expr) (callee, path string, ok bool) {
+	call, isCall := expr.(*ast.CallExpr)
+	if !isCall || t.richAST == nil {
+		return "", "", false
+	}
+	fun, _ := splitCallFunTypeArgs(call.Fun)
+	sel, isSel := fun.(*ast.SelectorExpr)
+	if !isSel {
+		return "", "", false
+	}
+	qualifier, isIdent := sel.X.(*ast.Ident)
+	if !isIdent {
+		return "", "", false
+	}
+	path, ok = t.importManager.PathForQualifier(qualifier.Name)
+	if !ok || t.importPackageName(path) != "" {
+		return "", "", false
+	}
+	// A standard-library package (no dot in its first element) is never
+	// required in gala.mod; its types are missing only without a Go SDK.
+	if first, _, _ := strings.Cut(path, "/"); !strings.Contains(first, ".") {
+		return "", "", false
+	}
+	if typ := t.getExprTypeName(call); typ != nil && !typ.IsNil() && !transpiler.IsUnusable(typ) {
+		return "", "", false
+	}
+	return formatExprForTrace(fun), path, true
+}
+
+// callSiteName spells a type name, as the transformer qualifies it, the way
+// the call site can write it (see callSiteQualifier).
+func (t *galaASTTransformer) callSiteName(qualified string) string {
+	pkgQualifier, bareName := splitPackageQualifier(qualified)
+	return t.callSiteQualifier(pkgQualifier) + bareName
 }
 
 // withTypeArgs instantiates base with typeArgs (none leaves it as is).

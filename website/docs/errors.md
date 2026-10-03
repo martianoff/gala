@@ -116,6 +116,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0060](/docs/errors/gala-e0060/) | `val _ =` binds nothing | Declarations |
 | [GALA-E0061](/docs/errors/gala-e0061/) | Sealed variant used as a type | Types |
 | [GALA-E0066](/docs/errors/gala-e0066/) | Declaration collides with a dot import | Declarations |
+| [GALA-E0067](/docs/errors/gala-e0067/) | Type argument cannot be inferred | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -143,7 +144,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name, [E0061](/docs/errors/gala-e0061/) a variant used as a type. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
-**Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
+**Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value, [E0067](/docs/errors/gala-e0067/) a type argument nothing determines, often a Go package whose types were not loaded. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
 **Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body, [E0056](/docs/errors/gala-e0056/) malformed tuple destructuring, [E0060](/docs/errors/gala-e0060/) `val _ =` that binds nothing, [E0066](/docs/errors/gala-e0066/) a declaration named like a dot-imported name.
 

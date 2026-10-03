@@ -14,6 +14,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/depman/fetch"
 	"martianoff/gala/internal/depman/mod"
+	"martianoff/gala/internal/depman/version"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -36,6 +37,12 @@ type Builder struct {
 	// Tests set toolchainID to simulate a different transpiler or Go SDK.
 	toolchainID  *toolchainKey
 	depsKeyValue *string
+
+	// goSrcDirs memoizes goModuleSrcDirs, which may download Go modules;
+	// goSrcDirsComplete records that every required module resolved.
+	goSrcDirs         map[string]string
+	goSrcDirsResolved bool
+	goSrcDirsComplete bool
 }
 
 // SetSourceDir sets an override source directory for compilation.
@@ -364,51 +371,163 @@ func (b *Builder) effectiveDepDir(req mod.Require) string {
 	return resolveEffectiveDepDir(b.config, b.galaMod, b.workspace.ProjectDir, req)
 }
 
-// goModuleSrcDirs maps each Go (`// go`) dependency's module path to the
-// on-disk directory holding its .go source, so the analyzer can resolve
-// third-party Go types module-aware (go/importer's source mode can't — see
-// analyzer.goSrcDirs). The source is parsed, not compiled, so either cache
-// works: GALA's own dep cache (populated by `gala mod add --go` / auto-fetch,
-// source-only) or the Go module cache (populated by `go build`). We prefer the
-// GALA cache because it is available at transpile time, which runs before the
-// `go build` step that fills GOMODCACHE. Returns nil when there are no Go deps
-// or none are cached yet (the analyzer then leaves Go resolution to the
-// importer, which is correct for stdlib-only code).
+// goModuleSrcDirs maps each Go (`// go`) module the project or any of its GALA
+// dependencies requires to the on-disk directory holding its .go source, so the
+// analyzer can resolve third-party Go types module-aware (go/importer's source
+// mode can't — see analyzer.goSrcDirs). A dependency's Go modules count because
+// the analyzer reads that dependency's sources, both to transpile it and to type
+// what the project uses from it. Resolved once per build (resolveGoModuleSrcDirs)
+// and shared by the project's and the dependencies' transpiles.
 func (b *Builder) goModuleSrcDirs() map[string]string {
-	return GoModuleSrcDirs(b.galaMod, b.config)
+	if !b.goSrcDirsResolved {
+		b.goSrcDirs, b.goSrcDirsComplete = resolveGoModuleSrcDirs(b.config, goRequiresWithDeps(b.galaMod, b.effectiveDepDir), b.verbose)
+		b.goSrcDirsResolved = true
+	}
+	return b.goSrcDirs
 }
 
-// GoModuleSrcDirs maps each Go module required by galaMod to its on-disk .go
-// source directory in the dependency cache. It checks the GALA dep cache (which
-// stores the module path verbatim) and the Go module cache (which case-escapes
-// uppercase letters). Returns nil when there are no Go requires or none resolve
-// to a directory with Go sources. Shared by the CLI builder and the LSP so both
-// resolve third-party Go types the same way.
+// goSourcesComplete reports whether every Go module the build requires
+// resolved to its source. The transpile cache keys cannot see a module that
+// was missing (offline, say), so a transpile made without one is not recorded
+// as up to date: the next build transpiles again.
+func (b *Builder) goSourcesComplete() bool {
+	b.goModuleSrcDirs()
+	return b.goSrcDirsComplete
+}
+
+// goRequiresWithDeps returns f's Go requirements followed by those of every
+// GALA module f requires, directly or transitively, read from the gala.mod in
+// the directory depDir gives for each. A module required at several versions
+// keeps the highest, the one `go build` selects.
+func goRequiresWithDeps(f *mod.File, depDir func(mod.Require) string) []mod.Require {
+	var out []mod.Require
+	index := make(map[string]int)
+	visited := make(map[string]bool)
+	var walk func(*mod.File)
+	walk = func(f *mod.File) {
+		for _, req := range f.GoRequires() {
+			i, seen := index[req.Path]
+			switch {
+			case !seen:
+				index[req.Path] = len(out)
+				out = append(out, req)
+			case newerVersion(req.Version, out[i].Version):
+				out[i] = req
+			}
+		}
+		for _, req := range f.GalaRequires() {
+			key := req.Path + "@" + req.Version
+			if visited[key] {
+				continue
+			}
+			visited[key] = true
+			if dep, err := mod.ParseFile(filepath.Join(depDir(req), "gala.mod")); err == nil {
+				walk(dep)
+			}
+		}
+	}
+	if f != nil {
+		walk(f)
+	}
+	return out
+}
+
+// newerVersion reports whether semantic version a is above b; false when
+// either does not parse.
+func newerVersion(a, b string) bool {
+	va, errA := version.Parse(a)
+	vb, errB := version.Parse(b)
+	return errA == nil && errB == nil && va.GreaterThan(vb)
+}
+
+// GoModuleSrcDirs is goModuleSrcDirs for the LSP: the Go modules galaMod and its
+// GALA dependencies in the module cache require, mapped to the cached source
+// directories, without downloading anything. Returns nil when none resolve.
 func GoModuleSrcDirs(galaMod *mod.File, config *Config) map[string]string {
 	if galaMod == nil || config == nil {
 		return nil
 	}
-	reqs := galaMod.GoRequires()
-	if len(reqs) == 0 {
-		return nil
-	}
+	reqs := goRequiresWithDeps(galaMod, func(req mod.Require) string { return config.GalaModulePath(req.Path, req.Version) })
 	dirs := make(map[string]string, len(reqs))
 	for _, req := range reqs {
-		// GALA dep cache stores the module path verbatim; the Go module
-		// cache case-escapes it (uppercase letter c -> "!"+lower(c)).
-		galaCand := filepath.Join(config.GalaPkgDir, filepath.FromSlash(req.Path)+"@"+req.Version)
-		goCand := filepath.Join(config.GoPkgDir, filepath.FromSlash(escapeGoModulePath(req.Path))+"@"+req.Version)
-		for _, cand := range []string{galaCand, goCand} {
-			if dirHasGoFiles(cand) {
-				dirs[req.Path] = cand
-				break
-			}
+		if dir, ok := goModuleSrcDir(config, req); ok {
+			dirs[req.Path] = dir
 		}
 	}
 	if len(dirs) == 0 {
 		return nil
 	}
 	return dirs
+}
+
+// goModuleSrcDir is the cached source directory of one Go module: the GALA
+// dep cache's (which stores the module path verbatim, populated by `gala mod
+// add --go`) or the Go module cache's (which case-escapes it, uppercase letter
+// c -> "!"+lower(c)). The source is parsed, not compiled, so either works. A
+// module in the Go module cache counts whether or not it has a package at its
+// root (k8s.io/api has none): Go extracts a module whole.
+func goModuleSrcDir(config *Config, req mod.Require) (string, bool) {
+	galaCand := filepath.Join(config.GalaPkgDir, filepath.FromSlash(req.Path)+"@"+req.Version)
+	if dirHasGoFiles(galaCand) {
+		return galaCand, true
+	}
+	goCand := filepath.Join(config.GoPkgDir, filepath.FromSlash(escapeGoModulePath(req.Path))+"@"+req.Version)
+	if info, err := os.Stat(goCand); err == nil && info.IsDir() {
+		return goCand, true
+	}
+	return "", false
+}
+
+// resolveGoModuleSrcDirs maps each module in reqs to its cached source
+// directory, first downloading into the Go module cache the ones neither cache
+// holds: the transpile runs before the `go mod tidy` that would otherwise fetch
+// them. The download is best effort; a module it cannot fetch (offline, a
+// private module without credentials) stays unresolved, complete is false, and
+// the transpile reports what it then cannot type (GALA-E0067).
+func resolveGoModuleSrcDirs(config *Config, reqs []mod.Require, verbose bool) (dirs map[string]string, complete bool) {
+	dirs = make(map[string]string, len(reqs))
+	var missing []mod.Require
+	for _, req := range reqs {
+		if dir, ok := goModuleSrcDir(config, req); ok {
+			dirs[req.Path] = dir
+		} else {
+			missing = append(missing, req)
+		}
+	}
+	if len(missing) > 0 {
+		downloadGoModules(config, missing, verbose)
+		for _, req := range missing {
+			if dir, ok := goModuleSrcDir(config, req); ok {
+				dirs[req.Path] = dir
+			}
+		}
+	}
+	complete = len(dirs) == len(reqs)
+	if len(dirs) == 0 {
+		return nil, complete
+	}
+	return dirs, complete
+}
+
+// downloadGoModules runs `go mod download` for reqs into the Go module cache.
+// A failure is a warning, not an error (see resolveGoModuleSrcDirs).
+func downloadGoModules(config *Config, reqs []mod.Require, verbose bool) {
+	args := []string{"mod", "download"}
+	for _, req := range reqs {
+		args = append(args, req.Path+"@"+req.Version)
+	}
+	if verbose {
+		fmt.Printf("Downloading Go module sources: %s\n", strings.Join(args[2:], ", "))
+	}
+	cmd := exec.Command("go", args...)
+	// Outside any module, so a go.mod or go.work around the working directory
+	// cannot change what is downloaded.
+	cmd.Dir = config.GoPkgDir
+	cmd.Env = append(os.Environ(), "GOMODCACHE="+config.GoPkgDir, "GOWORK=off")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not download Go module sources (%s), so their types are unknown: %v\n%s",
+			strings.Join(args[2:], ", "), err, out)
+	}
 }
 
 // escapeGoModulePath applies the Go module cache path escaping: every
@@ -658,8 +777,9 @@ func (b *Builder) transpile() error {
 	}
 
 	// Record the key for the next build, with the embed patterns this
-	// transpile emitted.
-	if currentHash != "" {
+	// transpile emitted — unless a required Go module was missing, which the
+	// key cannot see: the next build must transpile again once it is there.
+	if currentHash != "" && b.goSourcesComplete() {
 		writeSourceStamp(hashFile, sourceStamp{Key: currentHash, Embeds: allEmbedPatterns})
 	}
 
@@ -880,6 +1000,12 @@ func (b *Builder) recordSourceHash() {
 	// than resolving patterns, and it never consults the key it records.
 	hash := b.sourceKey(galaFiles, nil)
 	if hash == "" {
+		return
+	}
+	if !b.goSourcesComplete() {
+		// A required Go module was missing (see transpile): no key may
+		// describe this tree.
+		os.Remove(filepath.Join(b.workspace.Dir, sourceStampName))
 		return
 	}
 	writeSourceStamp(filepath.Join(b.workspace.Dir, sourceStampName), sourceStamp{Key: hash})
@@ -1397,6 +1523,7 @@ func (b *Builder) transpileDeps() error {
 	}
 
 	dt := NewDepTranspiler(b.config, b.workspace, b.galaMod, b.stdlibVersion, b.verbose)
+	dt.goSrcDirs = b.goModuleSrcDirs()
 	transpiledDeps, err := dt.TranspileDeps()
 	if err != nil {
 		return err
@@ -1404,7 +1531,8 @@ func (b *Builder) transpileDeps() error {
 
 	b.transpiledDeps = transpiledDeps
 
-	if currentHash != "" {
+	// Not recorded when a required Go module was missing (see transpile).
+	if currentHash != "" && b.goSourcesComplete() {
 		os.WriteFile(depsHashFile, []byte(currentHash), 0644)
 	}
 

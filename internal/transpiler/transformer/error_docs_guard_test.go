@@ -951,6 +951,37 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "generic struct whose fields do not fix its type parameter",
+			code: galaerr.CodeUninferredTypeArgument, // GALA-E0067
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Tag[T any](Name string)
+
+func main() {
+    val t = Tag("x")
+    Println(t.Name)
+}
+`)
+			},
+		},
+		{
+			// The guard's analyzer has no source for golang.org/x/term, which is
+			// the situation the page describes: a Go module that was not loaded.
+			name: "Try of a call into a Go package that was not loaded",
+			code: galaerr.CodeUninferredTypeArgument, // GALA-E0067
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import "golang.org/x/term"
+
+func main() {
+    Println(Try(term.MakeRaw(0)).IsSuccess())
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's
