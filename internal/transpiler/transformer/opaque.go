@@ -529,6 +529,38 @@ func (t *galaASTTransformer) checkOpaqueMismatch(expr ast.Expr, expected transpi
 		WithSpan(tok.GetColumn() + len([]rune(text)))
 }
 
+// opaqueCodecScalar returns the wire scalar of the opaque type name declared
+// in package pkg ("" for this one), read from the declaring package's
+// metadata: an opaque type encodes as its underlying scalar. ok is false when
+// the name is not an opaque type over a scalar the codec writes.
+func (t *galaASTTransformer) opaqueCodecScalar(name, pkg string) (codecScalar, bool) {
+	key := name
+	if pkg != "" && pkg != t.packageName {
+		key = pkg + "." + name
+	}
+	meta := t.getTypeMeta(key)
+	if meta == nil || !meta.IsOpaque || meta.Underlying == nil || meta.Underlying.IsNil() {
+		return codecScalar{}, false
+	}
+	owner := meta.Package
+	if owner == t.packageName || owner == "main" || owner == "test" {
+		owner = ""
+	}
+	u := t.codecUnalias(meta.Underlying, owner)
+	for hop := 0; hop < 16; hop++ {
+		if uname, upkg, ok := simpleTypeName(u); ok && upkg == "" {
+			sc, ok := codecScalars[uname]
+			return sc, ok
+		}
+		next, ok := t.goNamedUnderlying(u)
+		if !ok {
+			break
+		}
+		u = next
+	}
+	return codecScalar{}, false
+}
+
 // sameScalar reports whether a and b, followed through aliases and Go named
 // types, end at the same predeclared scalar type.
 func (t *galaASTTransformer) sameScalar(a, b transpiler.Type) bool {

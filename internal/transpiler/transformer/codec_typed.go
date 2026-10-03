@@ -390,12 +390,17 @@ func (t *galaASTTransformer) codecIsEmpty(access ast.Expr, ty transpiler.Type, p
 	case "Option", "Array", "List", "HashMap":
 		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: access, Sel: ast.NewIdent("IsEmpty")}}
 	}
-	sc, _, _, ok := t.codecScalarOf(ty)
+	sc, _, isWireType, ok := t.codecScalarOf(ty)
 	if !ok {
 		return nil
 	}
 	switch sc.goType {
 	case "bool":
+		// `!` yields the operand's own type; a named bool (an opaque type
+		// over bool) is converted so the result is a plain bool.
+		if !isWireType {
+			access = &ast.CallExpr{Fun: ast.NewIdent("bool"), Args: []ast.Expr{access}}
+		}
 		return &ast.UnaryExpr{Op: token.NOT, X: access}
 	case "string":
 		return &ast.BinaryExpr{X: access, Op: token.EQL, Y: stringLit("")}
@@ -914,6 +919,10 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 	name, pkg, ok := simpleTypeName(ty)
 	if !ok {
 		return codecScalar{}, nil, false, false
+	}
+	// An opaque type, local or imported, encodes as its underlying scalar.
+	if sc, ok := t.opaqueCodecScalar(name, pkg); ok {
+		return sc, t.codecTypeExpr(transpiler.NamedType{Package: pkg, Name: name}), false, true
 	}
 	if pkg == "" || pkg == t.packageName {
 		if sc, ok := codecScalars[name]; ok {
