@@ -109,18 +109,30 @@ func runBatch(inList, outList, paths []string) error {
 		summary.Report()
 	}()
 
+	// Cache each directory's sibling set: every input in the same directory
+	// gets the same package-file list.
+	siblingsByDir := make(map[string][]string)
+
 	for i, in := range inList {
 		content, err := os.ReadFile(in)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", in, err)
 		}
 
-		// Pass no explicit package files: that would replace the analyzer's
-		// directory scan rather than add to it, hiding same-directory .gala
-		// files that are not in inList. Clearing also resets checkedDirs, so
-		// each file gets a fresh scan. This matches Bazel, which passes no
-		// explicit list at all.
-		a.SetPackageFiles(nil)
+		// Provide the package's sibling .gala files explicitly. Relying on
+		// the analyzer's directory scan instead is not enough: that scan is
+		// skipped for files in a `main` or `test` package, because those may
+		// be independent programs sharing a directory. A library can be named
+		// `test` too (the shipped test framework), and its files must see one
+		// another. Passing the directory's non-test .gala files keeps the
+		// batch path's visibility equal to the single-file directory scan.
+		dir := filepath.Dir(in)
+		siblings, ok := siblingsByDir[dir]
+		if !ok {
+			siblings = packageSiblings(dir)
+			siblingsByDir[dir] = siblings
+		}
+		a.SetPackageFiles(siblings)
 
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
@@ -141,4 +153,28 @@ func runBatch(inList, outList, paths []string) error {
 		}
 	}
 	return nil
+}
+
+// packageSiblings returns the .gala files that form the package in dir: every
+// non-test .gala file, in directory order. `_test.gala` files are excluded
+// because they are transpiled separately (nix skips them when building the
+// input list, and Bazel's package_files never include them), and because a
+// test file may declare a different package than its siblings.
+//
+// On a directory-read error it returns nil, which restores the analyzer's
+// directory scan.
+func packageSiblings(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var siblings []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".gala" || strings.HasSuffix(name, "_test.gala") {
+			continue
+		}
+		siblings = append(siblings, filepath.Join(dir, name))
+	}
+	return siblings
 }
