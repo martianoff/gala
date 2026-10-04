@@ -603,7 +603,7 @@ Untyped constants still mix, as in Go: `id == 42`, `lookup(7)`, `val zero Millis
 
 **Methods.** An opaque type starts with no methods: those of its underlying type are **not** inherited — `opaque type Timeout time.Duration` has no `.Seconds()`. Declare methods in GALA, or in a hand-written `.go` file of the same package (to implement a Go interface whose signature GALA cannot spell, such as `driver.Valuer`). A `String() string` method makes the type a `fmt.Stringer`, used by `Println` and string interpolation.
 
-**Hash and Compare are generated**, so an opaque type works as a `HashMap` or `HashSet` key and in `TreeSet`, `TreeMap` and `Sorted()`: `Hash() uint32` for every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`) for every one except those over `bool`. Each is skipped when the type already declares it, in GALA or in a `.go` file of the package. Equality is Go's `==`.
+**Hash and Compare are generated**, so an opaque type works as a `HashMap` or `HashSet` key and in `TreeSet`, `TreeMap` and `Sorted()`: `Hash() uint32` for every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`) for every one except those over `bool`. Each is skipped when the type already declares it, in GALA or in a `.go` file of the package. Equality is Go's `==`. Hover, completion and `gala doc` list the generated methods, marked *synthesized*.
 
 ```gala
 package main
