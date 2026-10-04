@@ -14,9 +14,12 @@ import org.gala.ide.intellij.parser.galaParser
  * The GALA lexer with the compiler's line-break rule applied, so the plugin's
  * PSI tree matches what the compiler parses: a '(' separated by a line break
  * from a token that can end an expression (an identifier, a literal, ')', ']'
- * or '}') is re-typed as NL_LPAREN. The grammar's call suffix rejects
- * NL_LPAREN, so such a '(' begins a new statement instead of calling the line
- * before. Mirrors internal/parser/newline.go in the compiler.
+ * or '}') is re-typed as NL_LPAREN, and a '*' or '&' there written directly
+ * against its operand (`*p`, `&n`) as NL_STAR or NL_AMP. The grammar's call
+ * suffix, multiplication and bitwise and reject the re-typed tokens, so such a
+ * token begins a new statement instead of continuing the line before; `* b`
+ * with a space still continues it. Mirrors internal/parser/newline.go in the
+ * compiler.
  */
 class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     private var prevEndLine = 0
@@ -31,8 +34,13 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     override fun nextToken(): Token {
         val tok = super.nextToken()
         if (tok.channel != Token.DEFAULT_CHANNEL) return tok
-        if (tok.type == LPAREN && prevEndsExpr && tok.line > prevEndLine) {
-            (tok as WritableToken).type = galaParser.NL_LPAREN
+        val retyped = AT_LINE_START[tok.type]
+        // The lexer has just consumed the token, so LA(1) is the character
+        // after it: a '*' or '&' followed by whitespace stays binary.
+        if (retyped != null && prevEndsExpr && tok.line > prevEndLine &&
+            (tok.type == LPAREN || _input.LA(1) !in WS_CHARS)
+        ) {
+            (tok as WritableToken).type = retyped
         }
         prevEndsExpr = tok.type in ENDS_EXPR
         prevEndLine = tok.line + if (tok.type in SPANS_LINES) tok.text.count { it == '\n' } else 0
@@ -48,6 +56,16 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
 
         private val LPAREN = typeOf("'('")
 
+        // Each token the line-break rule re-types, and the token it becomes.
+        private val AT_LINE_START = mapOf(
+            LPAREN to galaParser.NL_LPAREN,
+            typeOf("'*'") to galaParser.NL_STAR,
+            typeOf("'&'") to galaParser.NL_AMP,
+        )
+
+        // The characters the grammar's WS rule skips.
+        private val WS_CHARS = setOf(' '.code, '\t'.code, '\r'.code, '\n'.code)
+
         // Literals whose text can hold a line break: a raw string, or a quoted
         // literal with an escaped newline.
         private val SPANS_LINES = setOf(
@@ -61,9 +79,9 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
 }
 
 /**
- * Keeps the internal NL_LPAREN token out of syntax errors: wherever it is
- * expected a plain '(' is expected too, so it is dropped from the expected set
- * the messages print. Only the messages change; error recovery still uses the
+ * Keeps the internal re-typed tokens out of syntax errors: wherever one is
+ * expected the token it was re-typed from is expected too, so it is dropped
+ * from the expected set the messages print. Only the messages change; error recovery still uses the
  * full expected set, exactly as the compiler's parser does.
  */
 class GalaErrorStrategy : DefaultErrorStrategy() {
@@ -92,5 +110,9 @@ class GalaErrorStrategy : DefaultErrorStrategy() {
     }
 
     private fun expectedDisplay(recognizer: Parser, set: IntervalSet): String =
-        IntervalSet(set).apply { remove(galaParser.NL_LPAREN) }.toString(recognizer.vocabulary)
+        IntervalSet(set).apply {
+            remove(galaParser.NL_LPAREN)
+            remove(galaParser.NL_STAR)
+            remove(galaParser.NL_AMP)
+        }.toString(recognizer.vocabulary)
 }

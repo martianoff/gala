@@ -1260,6 +1260,13 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A '*' or '&' against its operand that starts a line begins a new statement
+gala_exec_test(
+    name = "newline_deref_statement",
+    src = "newline_deref_statement.gala",
+    expected = "newline_deref_statement.out",
+)
+
 # An expression-bodied function with no result type runs its body as a statement
 gala_exec_test(
     name = "void_expression_function",

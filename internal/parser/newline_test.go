@@ -10,9 +10,10 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 )
 
-// A '(' that starts a line after a token that can end an expression begins a
-// new statement; every other line break parses as it did before. Each case is
-// a function body and the number of statements the body must parse into.
+// A '(', or a '*' or '&' written against its operand, that starts a line after
+// a token that can end an expression begins a new statement; every other line
+// break parses as it did before. Each case is a function body and the number
+// of statements the body must parse into.
 func TestNewlineParenStartsStatement(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -40,6 +41,16 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "after string with escaped newline", body: "val s = \"a\\\nb\"\n(s, 1)", stmts: 2},
 		{name: "slice literal after call", body: "Println(\"zero\")\n[]int{1, 2}", stmts: 2},
 
+		// So does a '*' or '&' written against its operand.
+		{name: "deref expression after val", body: "var n = 1\nval p = &n\n*p + 1", stmts: 3},
+		{name: "deref assignment after val", body: "val p = &n\n*p = 5", stmts: 2},
+		{name: "deref assignment after call", body: "f()\n*p = 5", stmts: 2},
+		{name: "deref as trailing value", body: "val x = 1\n*p", stmts: 2},
+		{name: "deref of grouping", body: "val a = b\n*(p)", stmts: 2},
+		{name: "double deref", body: "val a = b\n**pp", stmts: 2},
+		{name: "address-of as trailing value", body: "val x = 1\n&x", stmts: 2},
+		{name: "indented deref", body: "Println(\"zero\")\n        *p = 1", stmts: 2},
+
 		// Everything else keeps continuing across the line break.
 		{name: "call on same line", body: "f(1)(2)", stmts: 1},
 		{name: "call after single-line block comment", body: "f /* note */ (1)", stmts: 1},
@@ -52,6 +63,12 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "binary plus at line start", body: "val a = 1\n    + 2", stmts: 1},
 		{name: "binary minus at line start", body: "val a = b\n    - 2", stmts: 1},
 		{name: "logical operators at line start", body: "val a = b\n    && c\n    || d", stmts: 1},
+		{name: "binary star at line start", body: "val a = b\n    * c", stmts: 1},
+		{name: "binary ampersand at line start", body: "val a = b\n    & c", stmts: 1},
+		{name: "binary star before deref", body: "val a = b\n    * *p", stmts: 1},
+		{name: "binary star at line end", body: "val a = b *\n    *p", stmts: 1},
+		{name: "deref after val equals", body: "val a =\n    *p", stmts: 1},
+		{name: "deref after comma", body: "f(1,\n*p)", stmts: 1},
 		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
 		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
 		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
@@ -92,6 +109,7 @@ func TestNewlineParenInDeclarations(t *testing.T) {
 		{name: "struct shorthand fields", decl: "struct P\n(x int)"},
 		{name: "sealed case fields", decl: "sealed type S {\n    case A\n    (x int)\n    case B\n}"},
 		{name: "interface method parameters", decl: "type I interface {\n    M\n    (x int) int\n}"},
+		{name: "pointer result type", decl: "func g()\n*int = nil"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,13 +138,15 @@ func TestHideNewlineParen(t *testing.T) {
 		{in: "mismatched input '}' expecting {'(', ')', NL_LPAREN}", want: "mismatched input '}' expecting {'(', ')'}"},
 		{in: "missing {'(', NL_LPAREN} at 'x'", want: "missing '(' at 'x'"},
 		{in: "missing NL_LPAREN at 'x'", want: "missing '(' at 'x'"},
+		{in: "extraneous input '}' expecting {'*', NL_STAR, '&', NL_AMP, IDENTIFIER}", want: "extraneous input '}' expecting {'*', '&', IDENTIFIER}"},
+		{in: "missing NL_STAR at 'x'", want: "missing '*' at 'x'"},
 		{in: "extraneous input 'x' expecting '('", want: "extraneous input 'x' expecting '('"},
 		// The quoted input is the user's text and is left alone.
 		{in: "mismatched input 'NL_LPAREN' expecting {'(', NL_LPAREN}", want: "mismatched input 'NL_LPAREN' expecting '('"},
 		{in: "no viable alternative at input 'NL_LPAREN'", want: "no viable alternative at input 'NL_LPAREN'"},
 	}
 	for _, tt := range cases {
-		assert.Equal(t, tt.want, hideNewlineParen(tt.in))
+		assert.Equal(t, tt.want, hideNewlineTokens(tt.in))
 	}
 }
 
@@ -136,11 +156,12 @@ func TestNewlineParenAbsentFromSyntaxErrors(t *testing.T) {
 		"package main\n\nval f func int = g\n",
 		"package main\n\nfunc f() {\n    val x = 1\n    (\n}\n",
 		"package main\n\nsealed type S {\n    case A\n    (\n}\n",
+		"package main\n\nfunc f() {\n    val x = 1\n    *}\n",
 	} {
 		_, _, errs := NewAntlrGalaParser().ParseLenient(input)
 		require.NotEmpty(t, errs, input)
 		for _, err := range errs {
-			assert.NotContains(t, err.Error(), "NL_LPAREN", input)
+			assert.NotContains(t, err.Error(), "NL_", input)
 		}
 	}
 	_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\nval f func int = g\n")

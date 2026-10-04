@@ -1,0 +1,57 @@
+package main
+
+// A '*' or '&' that starts a line written directly against its operand
+// (`*p`, `&n`), right after a line that ends in a name, a literal, ')', ']' or
+// '}', begins a new statement. It never multiplies or bitwise-ands the line
+// before. With a space after it (`* b`) it is still a binary operator that
+// continues the line before.
+
+// A deref expression statement after a val: `&n` and `*p + 1` are two
+// statements, not `&n * p + 1`.
+func derefAfterVal() int {
+    var n = 1
+    val p = &n
+    *p + 1
+}
+
+// A deref assignment after a call.
+func derefAssignAfterCall() int {
+    var n = 1
+    val p = &n
+    Println(s"before ${*p}")
+    *p = 5
+    n
+}
+
+// A deref as the trailing value of a block, after a val.
+func derefTrailing() int {
+    var n = 7
+    val p = &n
+    val doubled = n * 2
+    Println(s"doubled $doubled")
+    *p
+}
+
+// An address-of as the trailing value of a block.
+func addressTrailing() *int {
+    var n = 9
+    val label = "addr"
+    Println(label)
+    &n
+}
+
+func main() {
+    Println(derefAfterVal())
+    Println(derefAssignAfterCall())
+    Println(derefTrailing())
+    Println(*addressTrailing())
+
+    // An operator followed by a space at line start still continues.
+    val width = 6
+    val area = width
+        * 7
+    val mask = area
+        & 15
+    Println(area)
+    Println(mask)
+}

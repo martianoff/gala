@@ -11,8 +11,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The plugin applies the compiler's line-break rule: a '(' that starts a line
- * after a name, literal, ')', ']' or '}' begins a new statement.
+ * The plugin applies the compiler's line-break rule: a '(', or a '*' or '&'
+ * written against its operand, that starts a line after a name, literal, ')',
+ * ']' or '}' begins a new statement.
  */
 class GalaNewlineLexerTest {
     private fun parse(source: String): Pair<galaParser.SourceFileContext, List<String>> {
@@ -47,7 +48,18 @@ class GalaNewlineLexerTest {
     }
 
     @Test
+    fun prefixStarOrAmpersandOnNewLineStartsStatement() {
+        assertEquals(3, statements("var n = 1\nval p = &n\n*p + 1"))
+        assertEquals(2, statements("f()\n*p = 5"))
+        assertEquals(2, statements("val x = 1\n**pp"))
+        assertEquals(2, statements("val x = 1\n&x"))
+    }
+
+    @Test
     fun otherLineBreaksContinue() {
+        assertEquals(1, statements("val a = b\n    * c"))
+        assertEquals(1, statements("val a = b\n    & c"))
+        assertEquals(1, statements("val a =\n    *p"))
         assertEquals(1, statements("f(1)(2)"))
         assertEquals(1, statements("Println(\n    1,\n    (2, 3),\n)"))
         assertEquals(1, statements("xs\n    .Map((x) => x)"))
@@ -61,5 +73,8 @@ class GalaNewlineLexerTest {
         val (_, errors) = parse("package main\n\nval f func int = g\n")
         assertTrue(errors.isNotEmpty())
         errors.forEach { assertTrue(it, !it.contains("NL_LPAREN")) }
+        val (_, starErrors) = parse("package main\n\nfunc f() {\n    val x = 1\n    *}\n")
+        assertTrue(starErrors.isNotEmpty())
+        starErrors.forEach { assertTrue(it, !it.contains("NL_")) }
     }
 }
