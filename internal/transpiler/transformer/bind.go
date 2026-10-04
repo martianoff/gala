@@ -541,11 +541,11 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 			body.List = append(body.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			return body, nil
 		}
-		stmt, err := t.transformStatement(s.(*grammar.StatementContext))
+		stmt, pre, err := t.transformStatement(s.(*grammar.StatementContext))
 		if err != nil {
 			return nil, err
 		}
-		body.List = t.spliceStmt(body.List, stmt)
+		body.List = append(append(body.List, pre...), stmt)
 	}
 	return body, nil
 }

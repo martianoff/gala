@@ -436,36 +436,47 @@ func (t *galaASTTransformer) stmtContainsUserReturn(stmt ast.Stmt) bool {
 // (the only structural nodes the match lowering produces); other compound
 // statements are returned unchanged.
 func (t *galaASTTransformer) stripSynthesizedArmReturns(stmts []ast.Stmt) []ast.Stmt {
+	return t.rewriteSynthesizedArmReturns(stmts, func(value ast.Expr) []ast.Stmt {
+		if isValidGoExprStatement(value) {
+			return []ast.Stmt{&ast.ExprStmt{X: value}}
+		}
+		// Drop entirely if not a valid expression statement; the value was
+		// the only payload and is being discarded.
+		return nil
+	})
+}
+
+// rewriteSynthesizedArmReturns replaces each synthesized arm-tail `return X`
+// in stmts (see markSynthesizedArmReturn) with replace(X), recursing through
+// BlockStmt and IfStmt, the only structural nodes the match lowering
+// produces. User-written returns and other statements are left as they are.
+func (t *galaASTTransformer) rewriteSynthesizedArmReturns(stmts []ast.Stmt, replace func(value ast.Expr) []ast.Stmt) []ast.Stmt {
 	out := make([]ast.Stmt, 0, len(stmts))
 	for _, s := range stmts {
 		switch n := s.(type) {
 		case *ast.ReturnStmt:
 			if len(n.Results) > 0 && t.isSynthesizedArmReturn(n) {
-				if isValidGoExprStatement(n.Results[0]) {
-					out = append(out, &ast.ExprStmt{X: n.Results[0]})
-				}
-				// Drop entirely if not a valid expression statement; the value
-				// was the only payload and is being discarded.
+				out = append(out, replace(n.Results[0])...)
 				continue
 			}
 			out = append(out, n)
 		case *ast.BlockStmt:
-			out = append(out, &ast.BlockStmt{List: t.stripSynthesizedArmReturns(n.List)})
+			out = append(out, &ast.BlockStmt{List: t.rewriteSynthesizedArmReturns(n.List, replace)})
 		case *ast.IfStmt:
 			newIf := &ast.IfStmt{Init: n.Init, Cond: n.Cond}
 			if n.Body != nil {
-				newIf.Body = &ast.BlockStmt{List: t.stripSynthesizedArmReturns(n.Body.List)}
+				newIf.Body = &ast.BlockStmt{List: t.rewriteSynthesizedArmReturns(n.Body.List, replace)}
 			}
 			if n.Else != nil {
 				switch e := n.Else.(type) {
 				case *ast.BlockStmt:
-					newIf.Else = &ast.BlockStmt{List: t.stripSynthesizedArmReturns(e.List)}
+					newIf.Else = &ast.BlockStmt{List: t.rewriteSynthesizedArmReturns(e.List, replace)}
 				case *ast.IfStmt:
-					stripped := t.stripSynthesizedArmReturns([]ast.Stmt{e})
-					if len(stripped) == 1 {
-						newIf.Else = stripped[0]
+					rewritten := t.rewriteSynthesizedArmReturns([]ast.Stmt{e}, replace)
+					if len(rewritten) == 1 {
+						newIf.Else = rewritten[0]
 					} else {
-						newIf.Else = &ast.BlockStmt{List: stripped}
+						newIf.Else = &ast.BlockStmt{List: rewritten}
 					}
 				default:
 					newIf.Else = n.Else
@@ -1346,7 +1357,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					stmt, typ := t.lowerMatchArmTailExpr(exprStmt.X)
 					body[len(body)-1] = stmt
 					resultType = typ
-				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 && armSlot.hoist == nil {
+				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 && armSlot.hoist == "" {
 					// In a match lowered to a function literal, a `return`
 					// yields the arm's value; in one lowered as statements it
 					// leaves the function, and the arm has no value.
@@ -1461,7 +1472,7 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 			switch lastStmt := b.List[len(b.List)-1].(type) {
 			case *ast.ReturnStmt:
 				// See transformCaseClauseWithType.
-				if len(lastStmt.Results) > 0 && armSlot.hoist == nil {
+				if len(lastStmt.Results) > 0 && armSlot.hoist == "" {
 					arm.resultType, arm.hasResult = t.inferResultType(lastStmt.Results[0]), true
 				}
 			case *ast.ExprStmt:

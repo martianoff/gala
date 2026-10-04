@@ -24,28 +24,31 @@ import (
 // A construct is lowered this way only when it needs to be: when its arms hold
 // such a statement outside any lambda (escapesConstruct). An arm whose value is
 // itself such a construct stores into the same variable. Anywhere else, a
-// `return` that would leave only the construct is GALA-E0069
-// (checkTrappedReturns), and a `break` / `continue` GALA-E0059.
-
-// hoistTarget is the variable a construct lowered as statements stores its
-// value in.
-type hoistTarget struct {
-	name string
-}
+// `return` that would leave only the construct is GALA-E0069 and a `break` /
+// `continue` GALA-E0059 (see branching_calls.go and loop_control.go).
+//
+// slot.hoist names the variable a construct lowered this way stores its value
+// in ("" when it is lowered to a function literal).
 
 // hoistedValue is a construct lowered as statements: stmts store its value, of
-// type typ, in its target.
+// type typ, in its variable.
 type hoistedValue struct {
 	stmts []ast.Stmt
 	typ   transpiler.Type
 }
 
-// escapesConstruct reports whether tree holds a `return`, `break` or
+// escapesConstruct reports whether any of trees holds a `return`, `break` or
 // `continue` outside any lambda: one that, in a construct lowered to a
 // function literal, could not reach the function or loop it is written for. A
-// `break` / `continue` inside a `for` loop of tree's own controls that loop.
-func escapesConstruct(tree antlr.Tree) bool {
-	return escapes(tree, false)
+// `break` / `continue` inside a `for` loop of the tree's own controls that
+// loop.
+func escapesConstruct[T antlr.Tree](trees ...T) bool {
+	for _, tree := range trees {
+		if escapes(tree, false) {
+			return true
+		}
+	}
+	return false
 }
 
 func escapes(tree antlr.Tree, inLoop bool) bool {
@@ -57,10 +60,8 @@ func escapes(tree antlr.Tree, inLoop bool) bool {
 	case *grammar.ForStatementContext:
 		inLoop = true
 	case antlr.TerminalNode:
-		if _, ok := loopControlToken(n.GetText()); ok && !inLoop {
-			return true
-		}
-		return false
+		_, ok := loopControlToken(n.GetText())
+		return ok && !inLoop
 	}
 	for i := 0; i < tree.GetChildCount(); i++ {
 		if escapes(tree.GetChild(i), inLoop) {
@@ -80,11 +81,7 @@ func (t *galaASTTransformer) hoistable(exprCtx grammar.IExpressionContext) bool 
 	case f.ifExpr != nil:
 		return escapesConstruct(f.ifExpr)
 	case f.match != nil:
-		for _, cc := range f.match.AllCaseClause() {
-			if escapesConstruct(cc) {
-				return true
-			}
-		}
+		return escapesConstruct(f.match.AllCaseClause()...)
 	}
 	return false
 }
@@ -102,7 +99,7 @@ func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.Expressio
 	if !local || names != 1 || len(exprs) != 1 || !t.hoistable(exprs[0]) {
 		return t.transformExpressionListAgainst(ctx, declared)
 	}
-	target := &hoistTarget{name: t.nextTempVar()}
+	target := t.nextTempVar()
 	expr, err := t.lowerAgainst(exprs[0], slot{typ: declared, hoist: target}, true)
 	if err != nil {
 		return nil, err
@@ -112,39 +109,32 @@ func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.Expressio
 		return []ast.Expr{expr}, nil
 	}
 	decl := &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{&ast.ValueSpec{
-		Names: []*ast.Ident{ast.NewIdent(target.name)},
+		Names: []*ast.Ident{ast.NewIdent(target)},
 		Type:  t.typeToExpr(hv.typ),
 	}}}}
-	t.addVar(target.name, hv.typ)
+	t.addVar(target, hv.typ)
 	t.hoistedPre = append([]ast.Stmt{decl}, hv.stmts...)
-	return []ast.Expr{ast.NewIdent(target.name)}, nil
+	return []ast.Expr{ast.NewIdent(target)}, nil
 }
 
 // hoistedResult records stmts, storing a value of type typ in target, as the
 // lowering of a construct and returns the placeholder expression that stands
-// for it until its consumer takes it (takeHoisted).
-func (t *galaASTTransformer) hoistedResult(target *hoistTarget, stmts []ast.Stmt, typ transpiler.Type) ast.Expr {
-	ph := ast.NewIdent(target.name)
+// for it until its consumer takes it (takeHoisted). The placeholder has the
+// type of the value, for the arm that holds the construct.
+func (t *galaASTTransformer) hoistedResult(target string, stmts []ast.Stmt, typ transpiler.Type) ast.Expr {
+	ph := ast.NewIdent(target)
 	if t.hoisted == nil {
 		t.hoisted = make(map[*ast.Ident]hoistedValue)
 	}
-	// The arm that holds this construct reads its value's type off the
-	// placeholder (see getExprTypeNameManual).
 	t.hoisted[ph] = hoistedValue{stmts: stmts, typ: typ}
+	t.exprTypeCache[ph] = typ
 	return ph
 }
 
 // takeHoisted returns the construct expr stands for, if it is a placeholder
 // hoistedResult returned, and forgets it.
 func (t *galaASTTransformer) takeHoisted(expr ast.Expr) (hoistedValue, bool) {
-	for {
-		p, ok := expr.(*ast.ParenExpr)
-		if !ok {
-			break
-		}
-		expr = p.X
-	}
-	ident, ok := expr.(*ast.Ident)
+	ident, ok := ast.Unparen(expr).(*ast.Ident)
 	if !ok {
 		return hoistedValue{}, false
 	}
@@ -156,74 +146,67 @@ func (t *galaASTTransformer) takeHoisted(expr ast.Expr) (hoistedValue, bool) {
 }
 
 // storeArmValues rewrites, in the lowered arms stmts of a hoisted match, each
-// synthesized arm-tail `return X` into the store of X in target: the
-// statements of X when X is itself a hoisted construct, `target = X`
-// otherwise. A user `return` is left as it is: it leaves the function.
-func (t *galaASTTransformer) storeArmValues(stmts []ast.Stmt, target *hoistTarget) []ast.Stmt {
-	out := make([]ast.Stmt, 0, len(stmts))
-	for _, s := range stmts {
-		switch n := s.(type) {
-		case *ast.ReturnStmt:
-			if len(n.Results) == 1 && t.isSynthesizedArmReturn(n) {
-				out = append(out, t.storeValue(n.Results[0], target)...)
-				continue
-			}
-			out = append(out, n)
-		case *ast.BlockStmt:
-			out = append(out, &ast.BlockStmt{List: t.storeArmValues(n.List, target)})
-		case *ast.IfStmt:
-			newIf := &ast.IfStmt{Init: n.Init, Cond: n.Cond}
-			if n.Body != nil {
-				newIf.Body = &ast.BlockStmt{List: t.storeArmValues(n.Body.List, target)}
-			}
-			switch e := n.Else.(type) {
-			case *ast.BlockStmt:
-				newIf.Else = &ast.BlockStmt{List: t.storeArmValues(e.List, target)}
-			case *ast.IfStmt:
-				newIf.Else = t.storeArmValues([]ast.Stmt{e}, target)[0]
-			default:
-				newIf.Else = n.Else
-			}
-			out = append(out, newIf)
-		default:
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// leavingValuesType is the settled type the values of the source `return`s in
-// stmts (outside function literals) share, or nil: the type of the variable a
-// construct every branch of which leaves is stored in. The declaration is never
-// reached, so the type matters only to Go, and it is the one the construct had
-// when it was lowered to a function literal its `return`s left.
-func (t *galaASTTransformer) leavingValuesType(stmts []ast.Stmt) transpiler.Type {
-	var types []transpiler.Type
-	for _, s := range stmts {
-		ast.Inspect(s, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.FuncLit:
-				return false
-			case *ast.ReturnStmt:
-				if _, user := t.userReturns[x]; user && len(x.Results) == 1 {
-					types = append(types, t.inferResultType(x.Results[0]))
-				}
-			}
-			return true
-		})
-	}
-	return t.siblingsType(types)
+// synthesized arm-tail `return X` into the store of X in target (storeValue).
+// A user `return` is left as it is: it leaves the function.
+func (t *galaASTTransformer) storeArmValues(stmts []ast.Stmt, target string) []ast.Stmt {
+	return t.rewriteSynthesizedArmReturns(stmts, func(value ast.Expr) []ast.Stmt {
+		return t.storeValue(value, target)
+	})
 }
 
 // storeValue is the store of value in target: the statements of a hoisted
 // construct, which store their own value, or `target = value`.
-func (t *galaASTTransformer) storeValue(value ast.Expr, target *hoistTarget) []ast.Stmt {
+func (t *galaASTTransformer) storeValue(value ast.Expr, target string) []ast.Stmt {
 	if hv, ok := t.takeHoisted(value); ok {
 		return []ast.Stmt{&ast.BlockStmt{List: hv.stmts}}
 	}
 	return []ast.Stmt{&ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(target.name)},
+		Lhs: []ast.Expr{ast.NewIdent(target)},
 		Tok: token.ASSIGN,
 		Rhs: []ast.Expr{value},
 	}}
+}
+
+// hoistedType is the type of the variable a construct of kind lowered as
+// statements stores its value in, from typ, the type its storing branches
+// unify to against s. When every branch leaves (allLeave) the declaration is
+// never reached, and the variable takes the type the values of the source
+// `return`s in branches share — the type the construct had when it was lowered
+// to a function literal those `return`s left. A construct with no such type
+// is GALA-E0068.
+func (t *galaASTTransformer) hoistedType(kind string, typ transpiler.Type, s slot, allLeave bool, line, col int, branches ...[]ast.Stmt) (transpiler.Type, error) {
+	if allLeave {
+		if leaving := t.leavingValuesType(branches...); leaving != nil {
+			return leaving, nil
+		}
+		return nil, leavingBranchingError(kind, line, col)
+	}
+	typ = t.branchingResultType(typ, s)
+	if transpiler.IsUnusable(typ) || typ.IsVoid() {
+		return nil, untypedBranchingError(kind, line, col)
+	}
+	return typ, nil
+}
+
+// leavingValuesType is the settled type the values of the source `return`s in
+// branches (outside function literals) share, or nil.
+func (t *galaASTTransformer) leavingValuesType(branches ...[]ast.Stmt) transpiler.Type {
+	var types []transpiler.Type
+	visit := func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			if _, user := t.userReturns[x]; user && len(x.Results) == 1 {
+				types = append(types, t.inferResultType(x.Results[0]))
+			}
+		}
+		return true
+	}
+	for _, stmts := range branches {
+		for _, s := range stmts {
+			ast.Inspect(s, visit)
+		}
+	}
+	return t.siblingsType(types)
 }

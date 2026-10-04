@@ -516,11 +516,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match whose value a local declaration stores, and whose arms hold a
 	// `return`, `break` or `continue`, is lowered as statements storing its
 	// value (see hoisted_value.go); its arms store theirs the same way.
-	hoist := s.hoist
-	if stmtPosition || !slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool { return escapesConstruct(cc) }) {
-		hoist = nil
+	if s.hoist != "" && (stmtPosition || !escapesConstruct(caseClauses...)) {
+		s.hoist = ""
 	}
-	s.hoist = hoist
+	hoist := s.hoist
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type.
@@ -530,7 +529,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// and its returns do exit the lambda, so it keeps the lambda's slot; so is
 	// a match lowered as statements.)
 	switch {
-	case hoist != nil:
+	case hoist != "":
 	case !stmtPosition:
 		defer t.enterIIFEReturnSlot(s.typ)()
 	case !transpiler.IsUnusable(s.typ):
@@ -654,7 +653,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// inlined so the loop sees it, and a match whose value is used rejects it
 	// before its arms are unified (an arm ending in `break` has no value).
 	loopControl := t.escapingLoopControl(clauses, defaultBody)
-	if loopControl != nil && !stmtPosition && hoist == nil {
+	if loopControl != nil && !stmtPosition && hoist == "" {
 		return nil, t.loopControlInValueError("a match", loopControl)
 	}
 
@@ -667,15 +666,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	resultType = t.branchingResultType(resultType, s)
 	// A match lowered as statements stores a value of its type, so it needs
 	// one.
-	if hoist != nil && (transpiler.IsUnusable(resultType) || resultType.IsVoid()) {
-		line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-		if slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool { return !escapesConstruct(cc) }) {
-			return nil, untypedBranchingError("match", line, col)
-		}
-		// Every arm leaves, so the declaration is never reached; its
-		// variable takes the type the returned values share.
-		if resultType = t.leavingValuesType(append(slices.Clone(clauses), defaultBody...)); resultType == nil {
-			return nil, leavingBranchingError("match", line, col)
+	if hoist != "" && (transpiler.IsUnusable(resultType) || resultType.IsVoid()) {
+		allLeave := !slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool { return !escapesConstruct(cc) })
+		if resultType, err = t.hoistedType("match", resultType, s, allLeave,
+			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), clauses, defaultBody); err != nil {
+			return nil, err
 		}
 	}
 
@@ -692,7 +687,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// Reject bare `return` inside a value-producing match (the IIFE would need
 	// to return a concrete type, but a bare return produces none). See GALA-E0015.
 	// A match lowered as statements has no function literal to return from.
-	if hoist == nil {
+	if hoist == "" {
 		startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 		if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
 			return nil, err
@@ -792,7 +787,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// `return`, `break` or `continue`, is lowered as statements: each arm
 	// stores its value in the declaration's variable, and its control flow
 	// acts on the enclosing function or loop (see hoisted_value.go).
-	if hoist != nil {
+	if hoist != "" {
 		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
 		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType), nil
@@ -820,7 +815,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	call := &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}
 	if !stmtPosition {
-		t.recordBranchingCall(call, "match", isVoid, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		t.recordBranchingCall(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}
 	return call, nil
 }

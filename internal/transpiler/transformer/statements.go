@@ -143,11 +143,11 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	}, nil
 }
 
-// transformStatement lowers a statement. A local declaration whose initializer
-// is lowered as statements (see hoisted_value.go) lowers to those statements
-// followed by the declaration, returned as a block the caller splices into its
-// own list (spliceStmt) so the declaration stays in the caller's scope.
-func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (ast.Stmt, error) {
+// transformStatement lowers a statement to stmt, preceded by pre: the
+// statements a local declaration whose initializer is lowered as statements
+// needs before it (see hoisted_value.go), emitted in the caller's own list so
+// the declaration stays in its scope.
+func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (stmt ast.Stmt, pre []ast.Stmt, err error) {
 	if declCtx := ctx.Declaration(); declCtx != nil {
 		prevLocal, prevPre := t.localDeclaration, t.hoistedPre
 		t.localDeclaration, t.hoistedPre = true, nil
@@ -155,49 +155,30 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 		pre := t.hoistedPre
 		t.localDeclaration, t.hoistedPre = prevLocal, prevPre
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if stmt == nil && decl != nil {
 			stmt = &ast.DeclStmt{Decl: decl}
 		}
-		if stmt != nil && len(pre) > 0 {
-			block := &ast.BlockStmt{List: append(pre, stmt)}
-			if t.spliceBlocks == nil {
-				t.spliceBlocks = make(map[*ast.BlockStmt]bool)
-			}
-			t.spliceBlocks[block] = true
-			return block, nil
-		}
-		return stmt, nil
+		return stmt, pre, nil
 	}
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
 		start := retCtx.GetStart()
 		if retCtx.Expression() == nil {
 			ret := &ast.ReturnStmt{}
 			t.recordUserReturn(ret, start.GetLine(), start.GetColumn())
-			return ret, nil
+			return ret, nil, nil
 		}
 		// A lambda, if-expression or match takes its types from the result
 		// type of the innermost enclosing function or lambda.
 		stmt, err := t.lowerReturnValue(retCtx.Expression())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		t.recordUserReturn(stmt, start.GetLine(), start.GetColumn())
-		return stmt, nil
+		return stmt, nil, nil
 	}
-	return nil, nil
-}
-
-// spliceStmt appends stmt to list: the statements of a block transformStatement
-// returned for a declaration lowered with statements before it, any other
-// statement as it is.
-func (t *galaASTTransformer) spliceStmt(list []ast.Stmt, stmt ast.Stmt) []ast.Stmt {
-	if block, ok := stmt.(*ast.BlockStmt); ok && t.spliceBlocks[block] {
-		delete(t.spliceBlocks, block)
-		return append(list, block.List...)
-	}
-	return append(list, stmt)
+	return nil, nil, nil
 }
 
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
@@ -602,6 +583,9 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			t.matchInStatementPos = true
 		}
 		var stmt ast.Stmt
+		// pre: statements a local declaration needs before it (see
+		// transformStatement).
+		var pre []ast.Stmt
 		var err error
 		valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext))
 		// The trailing value of a lambda whose result type is not known yet
@@ -641,7 +625,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 					}
 				}
 			}
-		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != nil && t.hoistable(valueExpr) {
+		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != "" && t.hoistable(valueExpr) {
 			// The value of an arm lowered as statements is stored, and so is
 			// that of a match or if-expression at its tail (see
 			// hoisted_value.go).
@@ -664,7 +648,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				stmt = &ast.ExprStmt{X: t.lowerFillingValue(valueExpr, false)}
 			}
 		} else {
-			stmt, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
+			stmt, pre, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
 		}
 		t.matchInStatementPos = prev
 		if err != nil {
@@ -698,7 +682,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				return nil, err
 			}
 		}
-		block.List = t.spliceStmt(block.List, stmt)
+		block.List = append(append(block.List, pre...), stmt)
 	}
 	if tail == tailValue || tail == tailBranch || tail == tailExpr {
 		t.typeBlockValue(block)

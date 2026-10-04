@@ -26,33 +26,28 @@ import (
 //     statements instead, so its `return` does leave the function; see
 //     hoisted_value.go.)
 
-// branchingSite is the source position and kind of a recorded call.
+// branchingSite is the source position and kind ("match" or "if-expression")
+// of a recorded call.
 type branchingSite struct {
-	line, col int
-	kind      string // "match" or "if-expression"
-	valueless bool   // the function literal has no result
-}
-
-// sourcePos is the source position of a lowered `return`.
-type sourcePos struct {
-	line, col int
+	loopControlSite
+	kind string
 }
 
 // recordBranchingCall records call, the lowering of the construct of kind at
 // line:col whose value is used.
-func (t *galaASTTransformer) recordBranchingCall(call *ast.CallExpr, kind string, valueless bool, line, col int) {
+func (t *galaASTTransformer) recordBranchingCall(call *ast.CallExpr, kind string, line, col int) {
 	if t.branchingCalls == nil {
 		t.branchingCalls = make(map[*ast.CallExpr]branchingSite)
 	}
-	t.branchingCalls[call] = branchingSite{line: line, col: col, kind: kind, valueless: valueless}
+	t.branchingCalls[call] = branchingSite{loopControlSite{line, col}, kind}
 }
 
 // recordUserReturn records ret as lowered from a source `return` at line:col.
 func (t *galaASTTransformer) recordUserReturn(ret *ast.ReturnStmt, line, col int) {
 	if t.userReturns == nil {
-		t.userReturns = make(map[*ast.ReturnStmt]sourcePos)
+		t.userReturns = make(map[*ast.ReturnStmt]loopControlSite)
 	}
-	t.userReturns[ret] = sourcePos{line: line, col: col}
+	t.userReturns[ret] = loopControlSite{line, col}
 }
 
 // checkBranchingCalls reports the first recorded call in file whose value is
@@ -77,7 +72,7 @@ func (t *galaASTTransformer) checkBranchingCalls(file *ast.File) error {
 		stack = append(stack, n)
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			if site, ok := t.branchingCalls[x]; ok && site.valueless {
+			if site, ok := t.branchingCalls[x]; ok && isVoidIIFE(x) {
 				if _, stmt := stack[len(stack)-2].(*ast.ExprStmt); !stmt {
 					found = untypedBranchingError(site.kind, site.line, site.col)
 				}
@@ -100,7 +95,8 @@ func (t *galaASTTransformer) checkBranchingCalls(file *ast.File) error {
 
 // trappingCall reports the recorded call a `return` — the top of stack, the
 // path from the file to it — leaves without leaving the enclosing function:
-// the innermost function literal around it is a recorded call's, and that
+// the innermost function literal around it is a recorded call's (stack[j] the
+// literal, stack[j-1] the call, stack[j-2] what holds the call), and that
 // call's value is neither returned nor the trailing statement of a function
 // body (where leaving it is leaving that function).
 func (t *galaASTTransformer) trappingCall(stack []ast.Node) (branchingSite, bool) {
@@ -165,30 +161,44 @@ func withArticle(kind string) string {
 	return "an " + kind
 }
 
-// leavingBranchingError is GALA-E0068 for the construct of kind at line:col
-// that initializes a declaration though every branch of it leaves with a
-// `return`, `break` or `continue`: the declaration is never reached.
-func leavingBranchingError(kind string, line, col int) error {
-	branch := "arm"
-	if kind != "match" {
-		branch = "branch"
+// branchNoun names a branch of a construct of kind: an arm of a match, a
+// branch of an if-expression.
+func branchNoun(kind string) string {
+	if kind == "match" {
+		return "arm"
 	}
+	return "branch"
+}
+
+// untypedBranchingError is GALA-E0068 for the construct of kind at line:col
+// whose value is used though no branch of it has a typed value.
+func untypedBranchingError(kind string, line, col int) error {
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeUntypedBranchingValue,
 		line, col,
-		fmt.Sprintf("this %s has no value: every %s leaves with `return`, `break` or `continue`", kind, branch),
+		fmt.Sprintf("cannot infer the type of this %s: its value is used, but no %s has a typed value", kind, branchNoun(kind)),
+		fmt.Sprintf("end each %s in the value the %s stands for (e.g. `Some(1)`, or `None[int]()` with its type spelled out), or use the %s as a statement on its own line", branchNoun(kind), kind, kind))
+}
+
+// leavingBranchingError is GALA-E0068 for the construct of kind at line:col
+// that initializes a declaration though every branch of it leaves with a
+// `break`, `continue` or a `return` with no value: the declaration is never
+// reached, and nothing gives it a type.
+func leavingBranchingError(kind string, line, col int) error {
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeUntypedBranchingValue,
+		line, col,
+		fmt.Sprintf("this %s has no value: every %s leaves with `return`, `break` or `continue`", kind, branchNoun(kind)),
 		fmt.Sprintf("use the %s as a statement on its own line; nothing after it in the block runs", kind))
 }
 
-// untypedBranchingError is GALA-E0068 for the construct of kind at line:col.
-func untypedBranchingError(kind string, line, col int) error {
-	branch := "arm"
-	if kind != "match" {
-		branch = "branch"
-	}
+// unknownBranchTypeError is GALA-E0068 for an if-expression at line:col whose
+// branches have values, but of no known type (`if (c) nil else nil`): unlike
+// a construct with no value, a declared type gives it one.
+func unknownBranchTypeError(line, col int) error {
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeUntypedBranchingValue,
 		line, col,
-		fmt.Sprintf("cannot infer the type of this %s: its value is used, but no %s has a typed value", kind, branch),
-		fmt.Sprintf("end each %s in the value the %s stands for (e.g. `Some(1)`, or `None[int]()` with its type spelled out), or use the %s as a statement on its own line", branch, kind, kind))
+		"cannot infer the type of this if-expression: no branch has a known type",
+		"declare the type its value fills (e.g. `val x Option[int] = if (...) ...`) or give a branch a typed value (e.g. `None[int]()`)")
 }
