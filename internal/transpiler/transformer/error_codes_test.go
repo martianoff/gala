@@ -1027,6 +1027,21 @@ func main() {
 			expectContains: "cannot infer type argument T of generic struct Tag from its fields or the expected type",
 		},
 		{
+			name: "GALA-E0068 match whose arms have no value bound to a val",
+			input: `package main
+
+func main() {
+    val n = 1
+    val x = n match {
+        case 1 => {}
+        case _ => {}
+    }
+    Println(x)
+}`,
+			expectCode:     galaerr.CodeUntypedBranchingValue,
+			expectContains: "cannot infer the type of this match: its value is used, but no arm has a typed value",
+		},
+		{
 			name: "GALA-E0048 method on a scalar alias suggests an opaque type",
 			input: `package main
 

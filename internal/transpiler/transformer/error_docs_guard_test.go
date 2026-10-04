@@ -983,6 +983,46 @@ func main() {
 			},
 		},
 		{
+			name: "match whose arms have no value bound to a val",
+			code: galaerr.CodeUntypedBranchingValue, // GALA-E0068
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Square(Side int)
+}
+
+func report(msg string) {
+    Println(msg)
+}
+
+func main() {
+    val s Shape = Circle(1)
+    val done = s match {
+        case Circle(_) => report("circle")
+        case Square(_) => report("square")
+    }
+    Println(done)
+}
+`)
+			},
+		},
+		{
+			name: "if-expression whose branches have no known type",
+			code: galaerr.CodeUntypedBranchingValue, // GALA-E0068
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val ok = true
+    val p = if (ok) nil else nil
+    Println(p)
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

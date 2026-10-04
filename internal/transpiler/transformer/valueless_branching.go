@@ -74,13 +74,13 @@ func (t *galaASTTransformer) checkValuelessBranching(file *ast.File) error {
 		return nil
 	}
 	site := t.valuelessSites[bad]
-	branch, aBranch := "arm", "an arm"
+	branch := "arm"
 	if site.kind != "match" {
-		branch, aBranch = "branch", "a branch"
+		branch = "branch"
 	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeUntypedBranchingValue,
 		site.line, site.col,
 		fmt.Sprintf("cannot infer the type of this %s: its value is used, but no %s has a typed value", site.kind, branch),
-		fmt.Sprintf("end %s in a typed value (e.g. `None[int]()`) or declare the type its value fills (e.g. `val x Option[int] = ...`); a %s whose %ss have no value can only stand as a statement", aBranch, site.kind, branch))
+		fmt.Sprintf("end each %s in the value the %s stands for (e.g. `Some(1)`, or `None[int]()` with its type spelled out), or use the %s as a statement on its own line", branch, site.kind, site.kind))
 }
