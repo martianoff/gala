@@ -2176,6 +2176,10 @@ func (t *galaASTTransformer) structCtorSlotArgs(fun ast.Expr, funcName, resolved
 		return typeParams, fun, nil
 	}
 	base, written := splitCallFunTypeArgs(fun)
+	if len(written) > len(typeParams) {
+		// More type arguments than the alias takes: Go reports it at the call.
+		return typeParams, fun, nil
+	}
 	fromSlot := t.aliasFixedStructArgs(named, structMeta.TypeParams, typeParams, t.writtenTypeArgs(typeParams, written))
 	for tp, typ := range t.slotTypeArgs(t.followAliasChain(slotType), resolved, structMeta.TypeParams) {
 		if _, bound := fromSlot[tp]; !bound {
@@ -2184,6 +2188,7 @@ func (t *galaASTTransformer) structCtorSlotArgs(fun ast.Expr, funcName, resolved
 	}
 	return structMeta.TypeParams, base, fromSlot
 }
+
 // explicitTypeArgSubst maps typeParams to a call's explicit type arguments, or
 // returns nil when there are none.
 func explicitTypeArgSubst(typeParams, typeArgs []string) map[string]string {
@@ -3009,15 +3014,25 @@ func (t *galaASTTransformer) aliasedStructType(target transpiler.Type, aliasPara
 // arguments (`int` of `type IntKeyed[V any] Entry[int, V]`), with the alias's
 // type arguments bound so far substituted, keyed by the struct's type
 // parameter. named is the struct type the alias names (aliasedStructType).
+// Whether an argument is fixed is read before substituting: a bound type
+// argument may itself be spelled with a type parameter of the enclosing
+// function that shares an alias parameter's name (`Fn[T]` in `func g[T any]`).
 func (t *galaASTTransformer) aliasFixedStructArgs(named transpiler.GenericType, structParams, aliasParams []string, bound map[string]transpiler.Type) map[string]transpiler.Type {
+	unbound := make([]string, 0, len(aliasParams))
+	for _, tp := range aliasParams {
+		if _, has := bound[tp]; !has {
+			unbound = append(unbound, tp)
+		}
+	}
 	fixed := make(map[string]transpiler.Type)
 	for i, tp := range structParams {
-		if p := t.substituteInType(named.Params[i], bound); !typeMentionsTypeParam(p, aliasParams) {
-			fixed[tp] = p
+		if !typeMentionsTypeParam(named.Params[i], unbound) {
+			fixed[tp] = t.substituteInType(named.Params[i], bound)
 		}
 	}
 	return fixed
 }
+
 // typeMentionsAllTypeParams reports whether typ mentions every one of typeParams.
 func typeMentionsAllTypeParams(typ transpiler.Type, typeParams []string) bool {
 	for _, tp := range typeParams {

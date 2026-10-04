@@ -272,6 +272,11 @@ func TestGenericStructAliasConstruction(t *testing.T) {
 			input: "func f() int = IntPair(9, 10).A",
 			want:  []string{"IntPair{"},
 		},
+		{
+			name:  "written type arguments spelled with the enclosing function's same-named type parameter",
+			input: "func g[U any](v U) U {\n    val f = Fn[U]((x) => x)\n    f.F(v)\n}",
+			want:  []string{"Fn[U]{", "func(x U) U {"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -291,5 +296,20 @@ func TestGenericStructAliasConstruction(t *testing.T) {
 		assert.Contains(t, err.Error(), "`Weird[int, int](...)`")
 	})
 
-
+	// More type arguments than an alias takes is Go's error at the call, never
+	// an internal transpiler panic. The output is ill-typed by design, so it
+	// is not handed to the Go type-check oracle.
+	unchecked, _ := newCorpusTranspiler()
+	for _, input := range []string{
+		"func f() int = IntPair[int](9, 10).A",
+		"func f() int = Twin[int, int](1, 2).A",
+		"func f() int = Fn[int, int]((x) => x).F(1)",
+	} {
+		t.Run(input, func(t *testing.T) {
+			_, err := unchecked.Transpile(genericStructAliasDecls+input+"\n", "")
+			if err != nil {
+				assert.NotContains(t, err.Error(), "internal transpiler panic")
+			}
+		})
+	}
 }
