@@ -104,19 +104,12 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		// type happens to resolve to nil/any.
 		elemExprs := el.AllExpression()
 		if len(elemExprs) > 1 {
-			perElemExpected, fromSlot := t.tupleElementExpectedTypes(len(elemExprs))
+			perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
 			exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
 			if err != nil {
 				return nil, err
 			}
-			// Only the literal's own slot fixes its element types; the
-			// enclosing function's return type is a hint for any tuple in the
-			// body, so an untyped constant keeps its default there.
-			var slotTypes []transpiler.Type
-			if fromSlot {
-				slotTypes = perElemExpected
-			}
-			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, slotTypes, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		}
 		exprs := make([]ast.Expr, 0, len(elemExprs))
 		for _, eCtx := range elemExprs {
@@ -147,34 +140,24 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 }
 
 // tupleElementExpectedTypes returns the per-element expected types for a
-// tuple literal of the given arity, computed from the most-specific available
-// outer context. Checks two sources, most-specific first:
-//
-//  1. The top of `expectedArgTypes` — the type of the slot the literal itself
-//     fills: a call argument, val declaration or tuple element (lowerAgainst
-//     pushes an argSlot's type), or a function or lambda result when the
-//     literal is the whole result expression (lowerAgainst pushes a result
-//     slot's type for a tuple literal only). This drives bidirectional
-//     inference for `f((a, b))` where `f`'s parameter is `Tuple[T1, T2]`.
-//  2. `returnSlot.typ` — the enclosing function's declared return type, a
-//     hint for any tuple literal in the body.
-//
-// fromSlot is true for (1). Returns nil if no Tuple-shaped expected type is
-// available. When (1) matches, the entry is consumed off the stack so that
-// nested expressions inside this tuple do not pick it up again (B1 contract).
-func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) (types []transpiler.Type, fromSlot bool) {
+// tuple literal of the given arity: those of the slot the literal itself
+// fills, the top of `expectedArgTypes` — a call argument, val declaration or
+// tuple element (lowerAgainst pushes an argSlot's type), or a function or
+// lambda result when the literal is the whole result value (see
+// consumesSlotType). This drives bidirectional inference for `f((a, b))`
+// where `f`'s parameter is `Tuple[T1, T2]`. Returns nil if that slot is not
+// a tuple of this arity. When it is, the entry is consumed off the stack so
+// that nested expressions inside this tuple do not pick it up again (B1
+// contract).
+func (t *galaASTTransformer) tupleElementExpectedTypes(arity int) []transpiler.Type {
 	if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 		if gen, ok := pending.(transpiler.GenericType); ok &&
 			t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
 			t.expectedArgTypes.consume()
-			return gen.Params, true
+			return gen.Params
 		}
 	}
-	if gen, ok := t.returnShape().(transpiler.GenericType); ok &&
-		t.isTupleTypeName(gen.Base.String()) && len(gen.Params) == arity {
-		return gen.Params, false
-	}
-	return nil, false
+	return nil
 }
 
 // transformTupleElementExpressions transforms each element of a tuple literal

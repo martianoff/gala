@@ -6,7 +6,8 @@ transpiler walks three signals before giving up:
 
 1. The enclosing `match` subject's type (e.g. `cmd match { case NoCmd() => ... }`).
 2. The declared result type of the enclosing function or lambda (a lambda's own
-   result type, never the surrounding function's).
+   result type, never the surrounding function's), for the constructor that is
+   the result value — not one bound to an unannotated `val` in the body.
 3. A local `val`/`var` annotation supplying an expected type.
 
 If none of those resolve the parameter, generated Go would have to

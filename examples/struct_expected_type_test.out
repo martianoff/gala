@@ -24,3 +24,8 @@ Left(zero)
 Right(2)
 4.5
 5.5
+tag empty
+tag call 1
+tag empty
+{} tag sibling tag empty
+{} tag other tag other

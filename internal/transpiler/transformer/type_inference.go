@@ -1,12 +1,11 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"strings"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -687,164 +686,76 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	return result
 }
 
+// phantomTypeParams classifies funcMeta's type parameters: argBound holds
+// those some parameter type mentions (Go infers them from the arguments);
+// phantom lists the others, which appear only in the result (the `A` of
+// `func InvalidOf[E, A](err E) Validated[E, A]`). Go can never infer a
+// phantom type parameter from a call.
+func (t *galaASTTransformer) phantomTypeParams(funcMeta *transpiler.FunctionMetadata) (argBound map[string]bool, phantom []string) {
+	argBound = make(map[string]bool)
+	for _, pt := range funcMeta.ParamTypes {
+		t.collectReferencedParams(pt, funcMeta.TypeParams, argBound)
+	}
+	for _, tp := range funcMeta.TypeParams {
+		if !argBound[tp] {
+			phantom = append(phantom, tp)
+		}
+	}
+	return argBound, phantom
+}
+
 // injectFuncPhantomTypeArgs wraps a generic free-function call target with
-// explicit type arguments for its *phantom* type parameters — those that appear
-// in the declared return type but in NONE of the parameter types (e.g. the `A`
-// of `func InvalidOf[E, A](err E) Validated[E, A]`). Go cannot infer a phantom
-// param from the call arguments, so emitting the call verbatim yields invalid
-// Go ("cannot infer A"). We recover the phantom params by unifying the declared
-// return type against the expected type — the call-site hint first, then the
-// enclosing function's return type — and emit `Fn[E, A](args)` with concrete
-// args.
+// explicit type arguments when it has phantom type parameters (see
+// phantomTypeParams), which Go cannot infer. They come from expected, the type
+// of the slot the call fills (pushed by lowerAgainst), matched against the
+// declared result type — as a construction takes the type arguments its
+// arguments leave open from its slot, and never from the enclosing function's
+// result type unless the call is the result value. A phantom type parameter
+// the slot does not determine is reported at line/col with the shared
+// pasteable hint (uninferredTypeArgError) rather than emitted uninstantiated.
 //
-// Restrictions that keep this regression-free:
-//
-//   - It fires ONLY when the function has at least one phantom param. A function
-//     whose every type param appears in some parameter (e.g. `ArrayFromSlice[T]
-//     (s []T)`) is left untouched: Go infers those params from the arguments,
-//     even when GALA's transform-time argument-type resolution fails, and
-//     injecting a return-type-derived guess for such a param can *contradict*
-//     the actual argument (`ArrayFromSlice[Str]` over a `[]string` argument).
-//   - Arg-bound params are resolved ONLY from the arguments, never from the
-//     return type; a phantom param's value never overwrites one an argument
-//     determines. If any arg-bound param cannot be resolved from the arguments,
-//     the call is left unchanged rather than guessed.
-//
-// The rewrite therefore only ever supplies args Go genuinely could not infer,
-// making it strictly broken-to-working or a no-op.
-func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *transpiler.FunctionMetadata, args []ast.Expr, hasSpread bool, expected transpiler.Type) ast.Expr {
+// Arg-bound params are resolved only from the arguments, never from the
+// slot: a slot-derived guess could contradict the real argument. Since Go
+// cannot infer a phantom one, the call is emitted with every type argument,
+// so an arg-bound one GALA cannot type (an argument of unknown type) is an
+// error too.
+func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *transpiler.FunctionMetadata, args []ast.Expr, hasSpread bool, expected transpiler.Type, line, col int) (ast.Expr, error) {
 	if funcMeta == nil || len(funcMeta.TypeParams) == 0 {
-		return fun
+		return fun, nil
 	}
 	// Skip when explicit type args are already present.
 	switch fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
-		return fun
+		return fun, nil
 	}
-
-	// Classify each type param: "arg-bound" if it appears in any parameter type
-	// (Go can infer it from arguments), otherwise "phantom".
-	argBound := make(map[string]bool)
-	for _, pt := range funcMeta.ParamTypes {
-		t.collectReferencedParams(pt, funcMeta.TypeParams, argBound)
-	}
-	hasPhantom := false
-	for _, tp := range funcMeta.TypeParams {
-		if !argBound[tp] {
-			hasPhantom = true
-			break
-		}
-	}
-	if !hasPhantom {
+	argBound, phantom := t.phantomTypeParams(funcMeta)
+	if len(phantom) == 0 {
 		// Every type param is determined by an argument — leave it to Go.
-		return fun
+		return fun, nil
 	}
 
-	// Resolve arg-bound params strictly from the arguments.
-	argInferred := make(map[string]transpiler.Type)
-	for i, arg := range args {
-		var paramType transpiler.Type
-		if i < len(funcMeta.ParamTypes) {
-			paramType = funcMeta.ParamTypes[i]
-		} else if len(funcMeta.ParamTypes) > 0 {
-			last := funcMeta.ParamTypes[len(funcMeta.ParamTypes)-1]
-			if arr, ok := last.(transpiler.ArrayType); ok {
-				paramType = arr.Elem
-			} else {
-				paramType = last
-			}
-		}
-		if paramType == nil {
-			continue
-		}
-		argType := t.getExprTypeNameManual(arg)
-		if transpiler.IsUnusable(argType) {
-			argType, _ = t.inferExprType(arg)
-		}
-		if transpiler.IsUnusable(argType) {
-			continue
-		}
-		if hasSpread {
-			if arr, ok := argType.(transpiler.ArrayType); ok {
-				argType = arr.Elem
-			}
-		}
-		t.unifyForInference(paramType, argType, funcMeta.TypeParams, argInferred)
-	}
-	// Every arg-bound param must be resolvable from the arguments; if not, do not
-	// guess (a return-type-derived value could contradict the real argument).
-	for _, tp := range funcMeta.TypeParams {
-		if argBound[tp] {
-			if _, ok := argInferred[tp]; !ok {
-				return fun
-			}
+	// Arg-bound params come from the arguments, phantom ones from the slot.
+	resolved := t.argTypeArgs(funcMeta, args, hasSpread)
+	for tp, typ := range t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, expected) {
+		if !argBound[tp] {
+			resolved[tp] = typ
 		}
 	}
-
-	resolved := make(map[string]transpiler.Type, len(funcMeta.TypeParams))
-	for tp, ty := range argInferred {
-		resolved[tp] = ty
+	instantiated, missing := t.completeTypeArgs(fun, funcMeta.TypeParams, nil, resolved)
+	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
+		// No slot fixes an argument whose type is unknown.
+		return nil, t.unknownArgTypeError(line, col, fun, missing, args, true)
 	}
-
-	// Fill phantom params from the expected type via return-type unification.
-	// Only phantom params are taken from here; arg-bound params keep their
-	// argument-derived value.
-	phantomUnfilled := func() bool {
-		for _, tp := range funcMeta.TypeParams {
-			if !argBound[tp] {
-				if _, ok := resolved[tp]; !ok {
-					return true
-				}
-			}
-		}
-		return false
+	if missing != nil {
+		return nil, t.uninferredCallTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing, args)
 	}
-	if funcMeta.ReturnType != nil && !funcMeta.ReturnType.IsNil() {
-		for _, exp := range []transpiler.Type{expected, t.returnSlot.typ} {
-			if !phantomUnfilled() {
-				break
-			}
-			if exp == nil || exp.IsNil() {
-				continue
-			}
-			retInferred := make(map[string]transpiler.Type)
-			t.unifyForInference(funcMeta.ReturnType, exp, funcMeta.TypeParams, retInferred)
-			for _, tp := range funcMeta.TypeParams {
-				if argBound[tp] {
-					continue
-				}
-				if _, ok := resolved[tp]; ok {
-					continue
-				}
-				if v, ok := retInferred[tp]; ok {
-					resolved[tp] = v
-				}
-			}
-		}
-	}
-
-	// Rewrite only when every type param is now resolved to a concrete type.
-	typeArgs := make([]ast.Expr, len(funcMeta.TypeParams))
-	for i, tp := range funcMeta.TypeParams {
-		got, ok := resolved[tp]
-		if !ok || transpiler.IsUnusable(got) {
-			return fun
-		}
-		typeArgs[i] = t.typeToExpr(got)
-	}
-	if len(typeArgs) == 1 {
-		return &ast.IndexExpr{X: fun, Index: typeArgs[0]}
-	}
-	return &ast.IndexListExpr{X: fun, Indices: typeArgs}
+	return instantiated, nil
 }
 
 // instantiateNullaryGenericCall gives a call to a generic GALA function that
-// takes no parameters, such as `magic[T any]() Option[T]`, its type arguments.
-// Go infers type arguments from call arguments only, so without them every
-// such call fails with "cannot infer T". They come from the expected type or
-// the enclosing function's return type, as for any phantom type parameter
-// (injectFuncPhantomTypeArgs). When neither pins them, the call is reported
-// here rather than emitted uninstantiated. line/col locate the callee.
+// takes no parameters, such as `magic[T any]() Option[T]`, its type arguments
+// from the slot the call fills (see injectFuncPhantomTypeArgs): Go infers type
+// arguments from call arguments only. line/col locate its `(`.
 func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, col int) (ast.Expr, error) {
 	switch fun.(type) {
 	case *ast.IndexExpr, *ast.IndexListExpr:
@@ -859,17 +770,11 @@ func (t *galaASTTransformer) instantiateNullaryGenericCall(fun ast.Expr, line, c
 		return fun, nil
 	}
 	pending := t.expectedArgTypes.peek()
-	if rewritten := t.injectFuncPhantomTypeArgs(fun, meta, nil, false, pending); rewritten != fun {
-		if pending != nil {
-			t.expectedArgTypes.consume()
-		}
-		return rewritten, nil
+	rewritten, err := t.injectFuncPhantomTypeArgs(fun, meta, nil, false, pending, line, col)
+	if err == nil && pending != nil {
+		t.expectedArgTypes.consume()
 	}
-	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-		"cannot infer type parameter %s of %s(): it appears only in the return type, and nothing "+
-			"here says what the call should return. Give the result a declared type "+
-			"(`val x %s = %s()`) or pass the type arguments explicitly (`%s[...]()`)",
-		strings.Join(meta.TypeParams, ", "), name, meta.ReturnType, name, name))
+	return rewritten, err
 }
 
 // collectReferencedParams records, into out, every name from params that appears
@@ -922,11 +827,26 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 	if len(fMeta.TypeParams) == 0 || len(args) == 0 {
 		return nil
 	}
+	inferredMap := t.argTypeArgs(fMeta, args, hasEllipsis)
+	if len(inferredMap) == 0 {
+		return nil
+	}
+	result := make([]transpiler.Type, len(fMeta.TypeParams))
+	for i, paramName := range fMeta.TypeParams {
+		inferredType, ok := inferredMap[paramName]
+		if !ok {
+			return nil // couldn't infer this type param
+		}
+		result[i] = inferredType
+	}
+	return result
+}
 
-	// Build a mapping from type param names to inferred concrete types
+// argTypeArgs binds fMeta's type parameters from the lowered arguments of a
+// call, unifying each parameter type with its argument's type; only those an
+// argument determines appear in the result.
+func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
-
-	// Try to infer type params from each argument
 	for i, arg := range args {
 		var paramType transpiler.Type
 		if i < len(fMeta.ParamTypes) {
@@ -966,23 +886,7 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyForInference(paramType, argType, fMeta.TypeParams, inferredMap)
 	}
-
-	// Build result in order of type params
-	if len(inferredMap) == 0 {
-		return nil
-	}
-
-	result := make([]transpiler.Type, len(fMeta.TypeParams))
-	for i, paramName := range fMeta.TypeParams {
-		if inferredType, ok := inferredMap[paramName]; ok {
-			result[i] = inferredType
-		} else {
-			// Couldn't infer this type param
-			return nil
-		}
-	}
-
-	return result
+	return inferredMap
 }
 
 // unifyForInference attempts to unify a pattern type with a concrete type to infer type parameters.

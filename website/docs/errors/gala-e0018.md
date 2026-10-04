@@ -14,7 +14,7 @@ last_modified_at: 2026-10-02
 **What it means.** A zero-argument constructor of a *generic* sealed type is used somewhere the parent type's parameter cannot be pinned. The transpiler checks three signals before giving up:
 
 1. The enclosing `match` subject's type (`cmd match { case NoCmd() => … }`).
-2. The result type of the enclosing function or lambda (a lambda's own, never the surrounding function's), when that type is *concrete* (`Box[int]`).
+2. The result type of the enclosing function or lambda (a lambda's own, never the surrounding function's), when that type is *concrete* (`Box[int]`) and the constructor is the result value — not one bound to an unannotated `val` in the body.
 3. A `val` / `var` type annotation supplying an expected type.
 
 If none of those resolve the parameter, generated Go would contain a bare `Variant{}` literal whose type argument Go cannot deduce — producing an obscure `cannot infer T` far from the GALA source.

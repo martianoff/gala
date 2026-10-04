@@ -597,8 +597,8 @@ an alias of an alias, a generic alias (`type Res[T any] Try[T]`, so `Res[int]`
 is `Try[int]`) and an alias imported from another package (`lib.Checked`).
 The type the alias names is what the constructor's type arguments are read
 from: the hint is pushed as that type (`lowerAgainst`), and the readers of the
-result slot and match subject (`inferZeroArgTypeParams`, tuple literals,
-`bind`) and `unifyForInference` resolve it through `followAliasChain`. A value
+result slot and match subject (`inferZeroArgTypeParams`, `bind`) and
+`unifyForInference` resolve it through `followAliasChain`. A value
 typed by an alias has the methods of the type it names, plus any declared on
 the alias itself, is matched as that type (its variants and exhaustiveness),
 and can be bound in a `bind` block.
@@ -641,28 +641,32 @@ compiler, which reports the count.
   via `injectSealedVariantTypeArgs`. On a successful rewrite it
   consumes the hint so deeper sub-expressions cannot pick it up. The
   hint is the type of the slot the constructor itself fills, so it wins
-  over the enclosing-return and match-subject fallbacks of
-  `inferZeroArgTypeParams`, which run only when no hint applies:
-  `take(None(), 1)` for `take[T any](d Option[Drag], v T)` inside a
-  function returning `Option[int]`, or inside an arm of a match on an
-  `Option[int]`, is `None[Drag]`.
-  `inferZeroArgTypeParams` consults `returnSlot.typ` **before**
-  `currentMatchSubjectType`: in value position the arm body's type is
-  the match *result* type, which the declared return pins, while the
-  subject is only a proxy that coincides with the result when the match
-  maps `Option[T]` to `Option[T]`. The two diverge in e.g.
+  over the match-subject fallback of `inferZeroArgTypeParams`, which
+  runs only when no hint applies: `take(None(), 1)` for
+  `take[T any](d Option[Drag], v T)` inside a function returning
+  `Option[int]`, or inside an arm of a match on an `Option[int]`, is
+  `None[Drag]`. The enclosing function's result type reaches a
+  constructor only as that hint, when the constructor is the result
+  value (see the generic struct construction rule below); `val e =
+  None()` in a function returning `Option[string]` is GALA-E0018. In
+  value position the arm body's type is the match *result* type, which
+  the declared return pins, while the subject is only a proxy that
+  coincides with the result when the match maps `Option[T]` to
+  `Option[T]`. The two diverge in e.g.
   `v.AsObject() match { case Some(fields) => …; case None() => None() }`
   inside `func firstName(v) Option[string]` — the subject is
   `Option[Array[JField]]` but the result must be `Option[string]`, so
-  the return type wins and the subject stays a fallback for the
-  no-return-type case. A context type is skipped only when it names a
-  type parameter nobody has bound yet (the `T` of a callee's
-  `Option[T]`). The type parameters of the declaration being lowered —
-  its own and its receiver's — are known types, so `return None()` in
+  the return type, pushed for the arm's value, wins and the subject
+  stays a fallback for the no-return-type case. A context type is
+  skipped only when it names a type parameter nobody has bound yet (the
+  `T` of a callee's `Option[T]`). The type parameters of the
+  declaration being lowered — its own and its receiver's — are known
+  types, so `return None()` in
   `func (b Box[T]) Pick[U any](o Option[U]) Option[U]` lowers to
   `None[U]`, and so does an early `return None()` in a lambda whose
-  slot is filled with `Option[U]`. Generic functions and generic
-  methods behave the same way.
+  slot is filled with `Option[U]`, and the lambda's trailing value once
+  a `return` has filled it. Generic functions and generic methods
+  behave the same way.
 - For the **non-zero-arg call** path, `transformCallWithArgsCtx`
   consumes the top hint at dispatcher entry and invokes the same
   rewrite.
@@ -719,26 +723,26 @@ compiler, which reports the count.
   determines is an error with an annotation and an explicit-type-argument
   example (`val x Tag[int] = Tag(...)`, `Tag[int](...)`).
 - For **tuple elements** (context 4 / context 2 with tuple return),
-  `transformPrimary` inspects the enclosing `returnSlot.typ`
-  for a Tuple-shaped expected type and pushes each per-slot type
-  onto the stack for the duration of that element's transform.
-- For **match arms** (context 5), `buildMatchExpressionFromClauses`
-  promotes a pending expected slot type to `returnSlot.typ`
-  for the IIFE's body, so each arm's expression — not just the first
-  — picks it up via the existing companion-of-sealed lookup.
+  `transformPrimary` takes the Tuple-shaped type of the slot the
+  literal itself fills and pushes each per-slot type onto the stack for
+  the duration of that element's transform.
+- For **match arms** (context 5), each arm's expression — not just the
+  first — is lowered against the slot type the match fills, as a
+  result slot's value is.
 - A **match or if-expression with no expected type** whose value is
   used (`val m = o match { … }`, `val m = if (b) Some(v) else None()`)
   has the type its arms or branches unify to, and that — not the
-  matched value's type, and not the enclosing function's result type —
-  types a bare `None()` among them. `lowerBranches` lowers each arm
-  with those two fallbacks hidden (`siblingTypedBranch`); an arm that
-  then cannot be typed on its own (`None()` fails with E0018) is
-  lowered again, after the others, against the type they unify to. So
-  inside `func pick[T any](o Option[int], v T) T`,
+  matched value's type — types a bare `None()` among them. `lowerBranches`
+  lowers each arm with that fallback hidden (`siblingTypedBranch`); an
+  arm that then cannot be typed on its own (`None()` fails with E0018; a
+  generic struct construction, companion `Apply` or generic function
+  call with E0067) is lowered again, after the others, against the type
+  they unify to. So inside `func pick[T any](o Option[int], v T) T`,
   `o match { case Some(_) => Some(v); case None() => None() }` is an
-  `Option[T]` and the arm is `None[T]`, in either arm order. When the
+  `Option[T]` and the arm is `None[T]`, in either arm order, and
+  `if (ok) Phantom[int]() else Phantom()` is a `Phantom[int]`. When the
   other arms unify to no fully known type, the arm is lowered again
-  with the fallbacks restored, as before. A body with its own result
+  with the fallback restored, as before. A body with its own result
   slot inside an arm (a lambda, a match or if with an expected type)
   is unaffected.
 
@@ -897,19 +901,22 @@ the verbatim-call fallback:
    so Go's own inference keeps producing the existing output — no explicit args
    are injected.
 2. **From the expected type.** Otherwise, unify the function's declared return
-   type against the expected type to fill the remaining (phantom) params. Two
-   expected-type sources are tried in order: the call-site hint on the
+   type against the expected type to fill the remaining (phantom) params. The
+   expected type is the type of the slot the call fills, the hint on the
    `expectedArgTypes` stack (consumed at dispatcher entry — e.g. an argument
-   slot, a `val` with a declared type, or a `bind` block's trailing value),
-   then the result type of the innermost enclosing function or lambda
-   (`returnSlot.typ`; inside a lambda this is the lambda's own result
-   type, or unset while it is not known — never the surrounding function's).
+   slot, a `val` with a declared type, or a `bind` block's trailing value). A
+   result slot pushes it only for a call that is the result value
+   (`consumesSlotType`), as for a construction: `val raw = parse()` in a
+   function returning `Option[string]` takes nothing from that result type.
 
 The call target is rewritten into an explicit instantiation
-(`invalidOf[string, string]("…")`) **only when every type parameter resolves to
-a concrete type**. If any remains unresolved, the target is left unchanged.
-This makes the rewrite strictly *broken-to-working or a no-op*: it never turns
-output Go already accepts into something it rejects, and it is skipped entirely
+(`invalidOf[string, string]("…")`) when every type parameter resolves to a
+concrete type. A phantom param the slot does not determine is
+[GALA-E0067](errors/GALA-E0067.md), with the same annotation and
+explicit-type-argument hint as a construction's, since Go could never infer
+it. An if or match branch takes it from its siblings (see above). So is an
+argument-bound param GALA cannot type (an argument whose type is unknown), as
+the call must then spell every type argument. The rewrite is skipped entirely
 when arguments alone suffice.
 
 This mirrors the sealed-variant mechanism above (`injectSealedVariantTypeArgs`)
@@ -921,7 +928,7 @@ sealed-case constructors.
 
 | File | Role |
 |------|------|
-| `transformer/type_inference.go::injectFuncPhantomTypeArgs` | Fills phantom function type params from args + expected type; wraps the target in explicit type args when all resolve |
+| `transformer/type_inference.go::injectFuncPhantomTypeArgs` | Fills phantom function type params from args + the slot type; wraps the target in explicit type args when all resolve, reports GALA-E0067 when a phantom one does not |
 | `transformer/calls.go::transformCallWithArgsCtx` | Invokes the fill just before the verbatim-call fallback, passing the consumed call-site hint |
 
 ---

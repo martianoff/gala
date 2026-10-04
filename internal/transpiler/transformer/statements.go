@@ -221,12 +221,15 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		return nil, err
 	}
 
-	// A single bare variable's type is the RHS's expected type, so
-	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`.
+	// A single target's type is the RHS's expected type, so
+	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`, and so does a
+	// field or element target: `s.cur = None()` for `cur Option[int]`.
 	rhsListCtx := ctx.GetChild(2).(*grammar.ExpressionListContext)
 	var lhsType transpiler.Type
 	if lhsName, lhsOk := t.singleAssignmentLHSName(lhsCtx); lhsOk {
 		lhsType = t.getValType(lhsName)
+	} else if len(lhsExprs) == 1 {
+		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
 	rhsExprs, err := t.transformExpressionListAgainst(rhsListCtx, lhsType)
 	if err != nil {
@@ -580,6 +583,12 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		// The trailing value of a lambda whose result type is not known yet
 		// is one of its result values, like a `return` value.
 		fillsPendingSlot := isTrailing && lastStmtIsValue && valueExpr != nil && ctx == t.returnSlot.body && t.returnSlotPending()
+		// Once an earlier `return` has filled that slot, the trailing value
+		// fills a slot of that type like any other result value.
+		if isTrailing && lastStmtIsValue && ctx == t.returnSlot.body && t.returnSlot.fillable &&
+			transpiler.IsUnusable(lastValueExpected.typ) && !transpiler.IsUnusable(t.returnSlot.typ) {
+			lastValueExpected = resultSlot(t.returnSlot.typ)
+		}
 		ifCtx := ifStatementOf(stmtCtx.(*grammar.StatementContext))
 		if bs, ok := t.lowerLoopControl(valueExpr); ok {
 			// Loop control is a statement wherever it sits, the tail of a
