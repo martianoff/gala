@@ -5,8 +5,8 @@ name: Local bootstrap — nix build .#gala-local
 # stdlib, packed by cmd/stdlib_gen, against Bazel's generate_embedded. Bazel
 # only ever runs the bootstrap per file, so no other lane exercises batch mode.
 #
-# Skipped for PRs that touch only docs, examples, the IDE plugins or other
-# workflows, none of which can move either side.
+# Runs on every PR to master: it is a required check, so it must always
+# report (a path filter would leave PRs it skips waiting forever).
 #
 # The bootstrap is a buildGoModule, so a go.mod/go.sum change also needs
 # galaVendorHash in nix/gala.nix updated, or this lane fails on the vendor hash.
@@ -15,16 +15,6 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [master]
-    paths:
-      - "**"
-      - "!docs/**"
-      - "!website/**"
-      - "!examples/**"
-      - "!ide/**"
-      - "!**/*.md"
-      - "!**/*.MD"
-      - "!.github/**"
-      - ".github/workflows/local-bootstrap.yml"
 
 # Checkouts and builds only; the token never needs to write.
 permissions:
