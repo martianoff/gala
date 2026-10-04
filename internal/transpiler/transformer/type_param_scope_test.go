@@ -19,11 +19,10 @@ import (
 // (and then it shadows a same-named package type), or when it is a callee's
 // placeholder that no visible type answers to.
 func TestTypeParamsRecognisedByScope(t *testing.T) {
-	const header = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\n"
 	cases := []typeParamCase{
 		{
 			name: "struct named T as a collection element",
-			input: header + `type T struct { N int }
+			input: typeParamHeader + `type T struct { N int }
 
 func pick(xs Array[T]) Option[T] = xs.Find((t) => t.N > 1)`,
 			mustContain: []string{"func(t T) bool"},
@@ -31,7 +30,7 @@ func pick(xs Array[T]) Option[T] = xs.Find((t) => t.N > 1)`,
 		},
 		{
 			name: "struct named A through Option",
-			input: header + `type A struct { Name string }
+			input: typeParamHeader + `type A struct { Name string }
 
 func names(o Option[A]) Option[string] = o.Filter((a) => a.Name != "").Map((a) => a.Name)`,
 			mustContain: []string{"func(a A) bool", "func(a A) string"},
@@ -39,7 +38,7 @@ func names(o Option[A]) Option[string] = o.Filter((a) => a.Name != "").Map((a) =
 		},
 		{
 			name: "sealed type named V",
-			input: header + `sealed type V {
+			input: typeParamHeader + `sealed type V {
     case Small(n int)
     case Big(n int)
 }
@@ -74,7 +73,7 @@ func pick(bs Array[*testing.B]) int {
 		},
 		{
 			name: "type parameter A shadows a package struct A",
-			input: header + `type A struct { Name string }
+			input: typeParamHeader + `type A struct { Name string }
 
 func firstOr[A any](xs Array[A], d A) A {
     val r = xs.Find((x) => true) match {
@@ -88,7 +87,7 @@ func firstOr[A any](xs Array[A], d A) A {
 		},
 		{
 			name: "multi-letter type parameter",
-			input: header + `func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Filter((x) => p(x)).Size()`,
+			input: typeParamHeader + `func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Filter((x) => p(x)).Size()`,
 			mustContain: []string{"func(x Elem) bool"},
 			mustNotHave: []string{"func(x any)"},
 		},
@@ -104,34 +103,33 @@ func firstOr[A any](xs Array[A], d A) A {
 // became `func id[Some any](x std.Some) std.Some` — which Go rejects with
 // "cannot use generic type std.Some[T any] without instantiation".
 func TestTypeParamShadowsStdName(t *testing.T) {
-	const header = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\n"
 	cases := []typeParamCase{
 		{
 			name:        "function type parameter named like a std variant",
-			input:       header + `func id[Some any](x Some) Some = x`,
+			input:       typeParamHeader + `func id[Some any](x Some) Some = x`,
 			mustContain: []string{"func id[Some any](x Some) Some {"},
 			mustNotHave: []string{"std.Some"},
 		},
 		{
 			name:        "type parameter used as a std type argument",
-			input:       header + `func wrap[Some any](x Some) Option[Some] = Some(x)`,
+			input:       typeParamHeader + `func wrap[Some any](x Some) Option[Some] = Some(x)`,
 			mustContain: []string{"func wrap[Some any](x Some) std.Option[Some] {"},
 			mustNotHave: []string{"std.Option[std.Some]"},
 		},
 		{
 			name:        "type parameters named like std types",
-			input:       header + `func pair[Option any, Try any](a Option, b Try) Tuple[Option, Try] = (a, b)`,
+			input:       typeParamHeader + `func pair[Option any, Try any](a Option, b Try) Tuple[Option, Try] = (a, b)`,
 			mustContain: []string{"func pair[Option any, Try any](a Option, b Try) std.Tuple[Option, Try] {"},
 			mustNotHave: []string{"std.Option", "std.Try"},
 		},
 		{
 			name:        "type parameter named like an imported type",
-			input:       header + `func firstOr[Array any](xs List[Array], d Array) Array = xs.HeadOption().GetOrElse(d)`,
+			input:       typeParamHeader + `func firstOr[Array any](xs List[Array], d Array) Array = xs.HeadOption().GetOrElse(d)`,
 			mustContain: []string{"func firstOr[Array any](xs List[Array], d Array) Array {"},
 		},
 		{
 			name: "struct and receiver type parameters",
-			input: header + `struct Box[Option any](V Option)
+			input: typeParamHeader + `struct Box[Option any](V Option)
 
 func (b Box[Option]) Get() Option = b.V
 
@@ -145,7 +143,7 @@ func (b Box[Option]) Map[Try any](f func(Option) Try) Box[Try] = Box(f(b.V))`,
 		},
 		{
 			name: "sealed type parameter",
-			input: header + `sealed type Res[Some any] {
+			input: typeParamHeader + `sealed type Res[Some any] {
     case Ok(V Some)
     case Err(Msg string)
 }`,
@@ -161,7 +159,7 @@ func (b Box[Option]) Map[Try any](f func(Option) Try) Box[Try] = Box(f(b.V))`,
 		},
 		{
 			name: "explicit type arguments in an expression",
-			input: header + `func wrapRight[Left any](a Left) Option[Left] = Some[Left](a)
+			input: typeParamHeader + `func wrapRight[Left any](a Left) Option[Left] = Some[Left](a)
 
 type Holder[Tuple any] struct {
     Value Tuple
@@ -174,6 +172,9 @@ func (h Holder[Tuple]) Pair() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)`,
 	}
 	runTypeParamCases(t, cases)
 }
+
+// typeParamHeader opens each typeParamCase input.
+const typeParamHeader = "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\n"
 
 // typeParamCase is a GALA source and the strings its generated Go must, and
 // must not, contain.

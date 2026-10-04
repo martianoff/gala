@@ -383,10 +383,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	base = t.unwrapImmutable(base)
 	var indices []ast.Expr
 	for _, eCtx := range exprList.AllExpression() {
-		// A type parameter is never a value, so as an index it is a type
-		// argument (`Some[Left](a)` in `func f[Left any]`), and it shadows
-		// any same-named name outside its declaration — std's included.
-		if name := eCtx.GetText(); t.activeTypeParams[name] && !t.isVal(name) && !t.isVar(name) {
+		if name := t.typeParamIndex(eCtx); name != "" {
 			indices = append(indices, ast.NewIdent(name))
 			continue
 		}

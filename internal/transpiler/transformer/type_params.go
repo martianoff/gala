@@ -78,6 +78,25 @@ func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 	}
 }
 
+// typeParamIndex returns the type parameter an index expression consists of
+// alone, or "". A type parameter is never a value, so as an index it is a type
+// argument (`Some[Left](a)` in `func f[Left any]`), and it shadows any
+// same-named name outside its declaration — std's included — unless a local
+// binding shadows it in turn.
+func (t *galaASTTransformer) typeParamIndex(ctx grammar.IExpressionContext) string {
+	if len(t.activeTypeParams) == 0 || ctx.GetStart() != ctx.GetStop() {
+		return ""
+	}
+	name := ctx.GetStart().GetText()
+	if !t.activeTypeParams[name] {
+		return ""
+	}
+	if _, _, bound := t.scopeLookup(name); bound {
+		return ""
+	}
+	return name
+}
+
 // receiverTypeParams is the type parameters a receiver type declares: the
 // type arguments of `Box[T]` or `*Pair[A, B]`, each a bare name.
 func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
