@@ -71,10 +71,10 @@ func loadSampleGobCache(tb testing.TB) *CachedRichAST {
 // avoid the per-package empty-allocation tax).
 func buildSyntheticCache() *CachedRichAST {
 	r := &CachedRichAST{
-		PackageName:   "synthetic",
-		Types:         make(map[string]*transpiler.TypeMetadata, 50),
-		Functions:     make(map[string]*transpiler.FunctionMetadata, 30),
-		Packages:      map[string]string{"std": "std", "lazy": "lazy"},
+		PackageName: "synthetic",
+		Types:       make(map[string]*transpiler.TypeMetadata, 50),
+		Functions:   make(map[string]*transpiler.FunctionMetadata, 30),
+		Packages:    map[string]string{"std": "std", "lazy": "lazy"},
 		TypeAliases: map[string]transpiler.Type{
 			"Handler": transpiler.FuncType{
 				Params:  []transpiler.Type{transpiler.NamedType{Package: "http", Name: "Request"}},
@@ -140,7 +140,7 @@ func buildSyntheticCache() *CachedRichAST {
 			Methods: map[string]*transpiler.MethodMetadata{
 				"M1": {
 					PointerReceiver: true,
-					Name: "M1", Package: "synthetic",
+					Name:            "M1", Package: "synthetic",
 					ParamTypes:   []transpiler.Type{transpiler.BasicType{Name: "int"}},
 					ReturnType:   transpiler.BasicType{Name: "string"},
 					DefaultExprs: map[int]transpiler.DefaultExpr{0: {Text: "1 + 2", Pos: transpiler.SourcePos{Line: 9, Column: 4}}},
@@ -149,11 +149,12 @@ func buildSyntheticCache() *CachedRichAST {
 		}
 	}
 	r.Types["synthetic.UserID"] = &transpiler.TypeMetadata{
-		Name:       "UserID",
-		Package:    "synthetic",
-		IsOpaque:   true,
-		Underlying: transpiler.BasicType{Name: "int64"},
-		TypeParams: []string{"T"},
+		Name:           "UserID",
+		Package:        "synthetic",
+		IsOpaque:       true,
+		Underlying:     transpiler.BasicType{Name: "int64"},
+		UnderlyingBase: transpiler.BasicType{Name: "int64"},
+		TypeParams:     []string{"T"},
 		Methods: map[string]*transpiler.MethodMetadata{
 			"Label": {Name: "Label", Package: "synthetic", ReturnType: transpiler.BasicType{Name: "string"}},
 		},

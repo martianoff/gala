@@ -58,3 +58,35 @@ func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationConte
 	}
 	richAST.Types[fullTypeName] = meta
 }
+
+// recordOpaqueBases sets UnderlyingBase on each opaque type pkgName declares:
+// its Underlying followed through aliases (resolve, from
+// declaredTypeUnderlying) and Go named types — the package's own hand-written
+// .go types included — to the type Go sees at the bottom. Tools that present
+// the type (hover, gala doc) read it to tell, for one, whether Compare is
+// generated, without re-deriving the package's alias namespace.
+func recordOpaqueBases(richAST *transpiler.RichAST, pkgName string, resolve func(transpiler.Type) transpiler.Type) {
+	for _, meta := range richAST.Types {
+		if meta == nil || !meta.IsOpaque || meta.Package != pkgName || meta.Underlying == nil {
+			continue
+		}
+		meta.UnderlyingBase = opaqueBase(richAST, pkgName, resolve, meta.Underlying)
+	}
+}
+
+func opaqueBase(richAST *transpiler.RichAST, pkgName string, resolve func(transpiler.Type) transpiler.Type, typ transpiler.Type) transpiler.Type {
+	for hop := 0; hop < 16; hop++ {
+		typ = resolve(typ)
+		basic, ok := typ.(transpiler.BasicType)
+		if !ok || transpiler.IsPrimitiveType(basic.Name) {
+			break
+		}
+		// A bare name declared by a .go file of this package.
+		td := richAST.GoTypeInfo.GetTypeData(pkgName + "." + basic.Name)
+		if td == nil || td.Underlying == nil || td.Underlying.String() == typ.String() {
+			break
+		}
+		typ = td.Underlying
+	}
+	return typ
+}

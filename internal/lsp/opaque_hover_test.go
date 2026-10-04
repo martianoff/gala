@@ -80,6 +80,22 @@ func TestHover_OpaqueType(t *testing.T) {
 		}
 	})
 
+	t.Run("no Compare over an alias of bool declared in the same file", func(t *testing.T) {
+		const src = "package main\n\ntype Switch bool\n\nopaque type Flag Switch\n\nfunc main() {\n    Println(Flag(true))\n}\n"
+		h := newHarness(t)
+		uri := openFileOnDisk(t, h, src)
+		settle(t, h, uri, src, "opaque type Flag", "Flag")
+		line, col := locate(t, src, "opaque type Flag", "Flag")
+		hover, err := h.Hover(uri, line, col)
+		if err != nil || hover == nil {
+			t.Fatalf("no hover: %v", err)
+		}
+		got := hover.Contents.Value()
+		if !strings.Contains(got, "Hash() uint32") || strings.Contains(got, "Compare") {
+			t.Errorf("want Hash and no Compare\n--- got ---\n%s", got)
+		}
+	})
+
 	t.Run("signature help on a synthesized method", func(t *testing.T) {
 		line, col := locate(t, opaqueHoverSrc, "id.Compare(id", "Compare(")
 		sh := requestSignatureHelp(t, h, uri, line, col+len("Compare(")-1)
