@@ -1294,6 +1294,11 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 	if !ok {
 		return false
 	}
+	// `Tuple(a, b, c)` constructs the std tuple of its arity, `Tuple3`
+	// (rewriteStdTupleIdent).
+	if stripPackagePrefix(name) == transpiler.TypeTuple && isTupleTypeName(stripPackagePrefix(gen.Base.BaseName())) {
+		return true
+	}
 	// Most result values call a function, not a type: that settles it before
 	// the slot's type is resolved.
 	resolved := t.resolveTypeMetaName(name)
