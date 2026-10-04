@@ -841,6 +841,46 @@ Array(1, 3)
 {"user":7,"took":1500}
 ```
 
+`case UserID(n)` unwraps an opaque value (`n` is the `int64`); on an `any`
+subject it first checks the value is a `UserID`, which a plain `int64` is not.
+A phantom type parameter gives each entity its own ID type:
+
+```gala
+package main
+
+struct Order(Total int)
+
+opaque type UserID int64
+opaque type Id[T any] int64
+
+func describe(id UserID) string = id match {
+    case UserID(0) => "nobody"
+    case UserID(n) => s"user $n"
+    case _ => "unreachable"
+}
+
+func kind(v any) string = v match {
+    case UserID(n) => s"a UserID $n"
+    case n: int64 => s"an int64 $n"
+    case _ => "other"
+}
+
+func orderTotal(id Id[Order]) int = int(id) * 10
+
+func main() {
+    Println(describe(UserID(0)), describe(UserID(7)))
+    Println(kind(UserID(5)), kind(int64(5)))
+    Println(orderTotal(Id[Order](3)))
+}
+```
+
+Output:
+```
+nobody user 7
+a UserID 5 an int64 5
+30
+```
+
 ## More Examples
 
 You can find more examples in the `examples/` directory of the project:
