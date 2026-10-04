@@ -552,6 +552,11 @@ type MethodMetadata struct {
 	// only on an addressable receiver, so a call through a val (whose Get()
 	// returns a copy) needs an addressable temporary.
 	PointerReceiver bool
+	// GoDeclared is true for a method of a type declared in a Go package,
+	// whose metadata the analyzer synthesizes from the Go type. A call of it
+	// is a Go call: several results are one GALA value (Try/Tuple), which
+	// ReturnType already records.
+	GoDeclared bool
 }
 
 type FunctionMetadata struct {

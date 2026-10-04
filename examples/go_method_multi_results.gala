@@ -1,0 +1,64 @@
+package main
+
+import "martianoff/gala/examples/warehouse_bridge"
+
+// A Go METHOD returning several results is one GALA value, exactly like a Go
+// function: (T, error) is a Try[T], (A, B) is a Tuple[A, B].
+
+// Value receiver, (T, error), as a match subject.
+func takeFrom(box warehouse_bridge.Box, qty int) string = box.Take(qty) match {
+    case Success(left) => s"took $qty, $left left"
+    case Failure(err) => s"cannot take: ${err.Error()}"
+}
+
+// Pointer receiver, (T, error), bound first and matched later.
+func reserve(inv *warehouse_bridge.Inventory, sku string, qty int) string {
+    val reserved = inv.Reserve(sku, qty)
+    reserved match {
+        case Success(left) => s"reserved $qty $sku, $left left"
+        case Failure(err) => s"cannot reserve: ${err.Error()}"
+    }
+}
+
+// Pointer receiver, (T, bool), destructured as a Tuple.
+func describe(inv *warehouse_bridge.Inventory, sku string) string {
+    val (item, found) = inv.Find(sku)
+    if (found) s"${item.SKU} x${item.Qty}" else s"$sku not stocked"
+}
+
+// Error-only method: the error itself, turned into a Try by FromError.
+func check(inv *warehouse_bridge.Inventory, sku string) string = FromError(inv.Check(sku)) match {
+    case Success(_) => s"$sku is known"
+    case Failure(err) => s"check failed: ${err.Error()}"
+}
+
+func main() {
+    val box = warehouse_bridge.Box(N = 3)
+    Println(takeFrom(box, 2))
+    Println(takeFrom(box, 5))
+
+    val inv = warehouse_bridge.New()
+    Println(reserve(inv, "apple", 2))
+    Println(reserve(inv, "pear", 4))
+    Println(reserve(inv, "plum", 1))
+
+    Println(describe(inv, "apple"))
+    Println(describe(inv, "plum"))
+
+    Println(check(inv, "pear"))
+    Println(check(inv, "plum"))
+
+    // A method chained off a constructor call.
+    val (fresh, stocked) = warehouse_bridge.New().Find("pear")
+    Println(s"fresh pear stocked=$stocked qty=${fresh.Qty}")
+
+    // A method's (T, error) used through Try's own methods.
+    Println(warehouse_bridge.New().Reserve("apple", 1).Map((left) => left * 10).GetOrElse(-1))
+
+    // (A, B) without an error, destructured.
+    val (low, high) = inv.Split("apple")
+    Println(s"split apple: $low + $high")
+
+    // The free function of the same shape, for comparison.
+    Println(warehouse_bridge.FreeReserve(4).GetOrElse(-1))
+}

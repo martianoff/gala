@@ -95,7 +95,12 @@ import (
 //
 // v18: an opaque type also records UnderlyingBase, its underlying type
 // followed through aliases and Go named types. A v17 payload lacks it.
-const CacheVersion = "v18"
+//
+// v19: a method synthesized from a Go type records that it is Go-declared
+// (MethodMetadata.GoDeclared) and, when it returns several results, their
+// GALA value (Try/Tuple) as its return type. A v18 payload records only the
+// first result, so a call of such a method would not be lifted.
+const CacheVersion = "v19"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

@@ -1,0 +1,10 @@
+count 6
+failed: negative count
+8
+99
+next 3, even true
+next 6, even false
+7
+-1
+raw 2
+raw error: negative count

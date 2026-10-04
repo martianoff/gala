@@ -1,0 +1,16 @@
+package main
+
+import "martianoff/gala/examples/own_go_func_multi_results"
+
+func main() {
+    Println(own_go_func_multi_results.Describe(3))
+    Println(own_go_func_multi_results.Describe(-1))
+    Println(own_go_func_multi_results.CountOr(4, 0))
+    Println(own_go_func_multi_results.CountOr(-4, 99))
+    Println(own_go_func_multi_results.Flagged(2))
+    Println(own_go_func_multi_results.Flagged(5))
+    Println(own_go_func_multi_results.BoxSize(7))
+    Println(own_go_func_multi_results.BoxSize(0))
+    Println(own_go_func_multi_results.RawCount(1))
+    Println(own_go_func_multi_results.RawCount(-1))
+}

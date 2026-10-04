@@ -4930,6 +4930,13 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 		// (`exec.Command(...).Output()`).
 		return t.goMethodSignature(t.getExprTypeNameManual(fun.X), fun.Sel.Name)
 	case *ast.Ident:
+		// A function of the package's own hand-written .go files, unless a
+		// local binding of the same name shadows it.
+		if t.packageName != "" && t.bindingScope(fun.Name) == nil {
+			if sig := t.goTypeInfo.GetFuncSignature(t.packageName + "." + fun.Name); sig != nil {
+				return sig
+			}
+		}
 		for _, entry := range t.importManager.dotImports {
 			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
 				return sig

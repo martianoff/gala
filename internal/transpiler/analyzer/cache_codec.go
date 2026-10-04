@@ -309,6 +309,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.IsGeneric)
 	e.writeString(m.DefinedIn)
 	e.writeBool(m.PointerReceiver)
+	e.writeBool(m.GoDeclared)
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -797,6 +798,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.IsGeneric = d.readBool()
 	m.DefinedIn = d.readString()
 	m.PointerReceiver = d.readBool()
+	m.GoDeclared = d.readBool()
 	return m
 }
 

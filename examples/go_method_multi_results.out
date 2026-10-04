@@ -1,0 +1,13 @@
+took 2, 1 left
+cannot take: box holds 3, asked for 5
+reserved 2 apple, 3 left
+cannot reserve: only 1 of pear left
+cannot reserve: unknown sku "plum"
+apple x3
+plum not stocked
+pear is known
+check failed: unknown sku "plum"
+fresh pear stocked=true qty=1
+40
+split apple: 1 + 2
+4

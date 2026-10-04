@@ -1,0 +1,8 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "warehouse_bridge",
+    srcs = ["warehouse.go"],
+    importpath = "martianoff/gala/examples/warehouse_bridge",
+    visibility = ["//visibility:public"],
+)
