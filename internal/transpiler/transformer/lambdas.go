@@ -468,8 +468,13 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 	// Use expected type if concrete, otherwise infer from expression.
 	if !isConcreteExpectedType {
 		// Expression lambda `() => nil` is treated as void.
-		if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
+		if isNilIdent(expr) {
 			body = &ast.BlockStmt{}
+		}
+		// A match or if-expression with no value makes the lambda return
+		// nothing, as it does at the tail of a block lambda.
+		if isVoidIIFE(expr) {
+			body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
 		}
 		if body == nil {
 			retType = t.getExprType(expr)

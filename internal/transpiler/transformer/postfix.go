@@ -783,7 +783,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		Body: &ast.BlockStmt{List: stmts},
 	}
 
-	return &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}, nil
+	call := &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}
+	if isVoid && !stmtPosition {
+		t.recordValueless(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	}
+	return call, nil
 }
 
 func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {

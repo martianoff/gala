@@ -718,6 +718,13 @@ const (
 	// A common cause is an argument calling into a Go package whose types
 	// were not loaded.
 	CodeUninferredTypeArgument ErrorCode = "GALA-E0067"
+
+	// E0068: the value of a match or if-expression is used — bound,
+	// passed, returned, interpolated or called a method on — but none of its
+	// branches has a typed value and nothing it fills gives it a type, so it
+	// has no type to be used as. Without the check it lowered to a function
+	// with no result, and Go rejected the use with "(no value) used as value".
+	CodeUntypedBranchingValue ErrorCode = "GALA-E0068"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

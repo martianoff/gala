@@ -54,6 +54,7 @@ go_library(
         "unresolved_types.go",
         "utils.go",
         "value_called_as_function.go",
+        "valueless_branching.go",
         "variant_type_names.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/transformer",

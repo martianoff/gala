@@ -91,6 +91,7 @@ type galaASTTransformer struct {
 	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
 	methodReceivers        []methodReceiver                              // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
 	loopControlSites       map[*ast.BranchStmt]loopControlSite           // source position of each `break` / `continue` lowered from source, checked by checkLoopControl once the file is complete
+	valuelessSites         map[*ast.CallExpr]valuelessSite               // position of each match or if-expression lowered with no value, checked by checkValuelessBranching once the file is complete
 	userLoops              map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)
 	synthesizedReturns     map[*ast.ReturnStmt]bool                      // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
 	pendingMatchStmtBlock  *ast.BlockStmt                                // side-channel: when buildMatchExpressionFromClauses detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
@@ -206,6 +207,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.resetExprTypeCache()
 	t.goResults = nil
 	t.loopControlSites = nil
+	t.valuelessSites = nil
 	t.userLoops = nil
 	if collectLSPMetadata {
 		t.lspVarTypes = make(map[string]transpiler.Type)
@@ -432,6 +434,12 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Every source `break` / `continue` must reach a source loop in its own
 	// Go function; only the finished file shows which function each sits in.
 	if err := t.checkLoopControl(file); err != nil {
+		return nil, nil, err
+	}
+
+	// So must every match or if-expression lowered with no value reach a
+	// statement: only the finished file shows whether its value is used.
+	if err := t.checkValuelessBranching(file); err != nil {
 		return nil, nil, err
 	}
 

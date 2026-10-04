@@ -773,18 +773,36 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		}
 	}
 
+	// Neither branch has a type, and nothing the if-expression fills gives it
+	// one. When every branch produces no value (`{}`, a trailing statement or
+	// a void call) it runs like the void case below; any other untyped value
+	// has no type the closure could return.
+	if transpiler.IsUnusable(t.branchingResultType(retType, s)) {
+		for i, b := range branches {
+			if !ifBranchHasNoValue(b.(*grammar.IfExprBranchContext)) && !t.getExprTypeName(lowered[i].expr).IsVoid() {
+				return nil, galaerr.NewCodedSemanticError(
+					galaerr.CodeUntypedBranchingValue,
+					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+					"cannot infer the type of this if-expression: no branch has a known type",
+					"declare the type its value fills (e.g. `val x Option[int] = if (...) ...`) or give a branch a typed value (e.g. `None[int]()`)")
+			}
+		}
+		retType = transpiler.VoidType{}
+	}
+
 	// Both branches are void calls, as in the statement `if (c) a() else b()`:
 	// there is no value to return, so the branches run as statements in a
 	// closure with no result. Returning them would emit `func() void`, which
-	// is not Go, and `return a()` of a void call, which Go rejects.
+	// is not Go, and `return a()` of a void call, which Go rejects. Such a
+	// closure can only be run as a statement (see checkValuelessBranching).
 	if _, isVoid := retType.(transpiler.VoidType); isVoid {
 		branchBody := func(stmts []ast.Stmt, last ast.Expr, terminates bool) *ast.BlockStmt {
-			if !terminates && last != nil {
+			if !terminates && last != nil && !isNilIdent(last) {
 				stmts = append(stmts, &ast.ExprStmt{X: last})
 			}
 			return &ast.BlockStmt{List: stmts}
 		}
-		return &ast.CallExpr{
+		call := &ast.CallExpr{
 			Fun: &ast.FuncLit{
 				Type: &ast.FuncType{Params: &ast.FieldList{}},
 				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.IfStmt{
@@ -793,7 +811,9 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 					Else: branchBody(elseStmts, elseExpr, elseTerminates),
 				}}},
 			},
-		}, nil
+		}
+		t.recordValueless(call, "if-expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		return call, nil
 	}
 
 	retTypeExpr := t.typeToExpr(t.branchingResultType(retType, s))
@@ -962,6 +982,29 @@ func (t *galaASTTransformer) findIfExpressionInExpression(exprCtx grammar.IExpre
 		return nil
 	}
 	return ifExpr.(*grammar.IfExpressionContext)
+}
+
+// ifBranchHasNoValue reports whether an if-expression branch produces no
+// value: an empty block, or a block that ends in a statement other than an
+// expression or a `return` (transformIfExprBranch gives it the placeholder
+// value `nil`).
+func ifBranchHasNoValue(ctx *grammar.IfExprBranchContext) bool {
+	blockCtx, ok := ctx.Block().(*grammar.BlockContext)
+	if !ok || blockCtx == nil {
+		return false
+	}
+	stmts := blockCtx.AllStatement()
+	if len(stmts) == 0 {
+		return true
+	}
+	last := stmts[len(stmts)-1].(*grammar.StatementContext)
+	return trailingValueExpression(last) == nil && last.ReturnStatement() == nil
+}
+
+// isNilIdent reports whether expr is the identifier `nil`.
+func isNilIdent(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == "nil"
 }
 
 // transformIfExprBranch transforms an if-expression branch, which can be
