@@ -312,7 +312,7 @@ func TestConversionToGoNamedFuncType(t *testing.T) {
 // GALA-E0033; a value of the type, or nil, is passed as it is, not as a thunk;
 // and a call of such a value has the type's result.
 func TestGoNamedFuncTypeSlots(t *testing.T) {
-	const goSrc = "package main\n\ntype Visitor func(int) bool\n\ntype Stop func()\n\ntype Mapper[T any] func(T) T\n"
+	const goSrc = "package main\n\ntype Visitor func(int) bool\n\ntype Stop func()\n\ntype Provider func() string\n\ntype Mapper[T any] func(T) T\n"
 	cases := []struct {
 		name string
 		gala string
@@ -359,6 +359,11 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 			name: "nil for a zero-parameter type is not a thunk",
 			gala: "func halt(s Stop) bool = s == nil\n\nfunc run() bool = halt(nil)\n",
 			want: "halt(nil)",
+		},
+		{
+			name: "nil for a type with a result is not a thunk",
+			gala: "func supply(p Provider) bool = p == nil\n\nfunc run() bool = supply(nil)\n",
+			want: "supply(nil)",
 		},
 		{
 			name: "the result of calling a value of the type",

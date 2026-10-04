@@ -3981,15 +3981,24 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	// so the slot has that function type: every lowering below that keys on
 	// a function type (lambdas, placeholders, partial functions, thunks)
 	// sees through it.
+	//
+	// A Go named function type (`fs.WalkDirFunc`) is a distinct type: a
+	// function literal written for it (a lambda, placeholder or partial
+	// function) takes its signature, but any other value keeps the slot's
+	// named type — it is never a by-name thunk.
+	funcSlot := s.typ
 	if _, isFunc := s.typ.(transpiler.FuncType); !isFunc {
-		if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+		if ft := t.aliasedFuncType(s.typ); ft != nil {
 			s.typ = *ft
+			funcSlot = *ft
+		} else if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+			funcSlot = *ft
 		}
 	}
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
-		return t.transformPartialFunctionLiteral(pfCtx, expectedType)
+		return t.transformPartialFunctionLiteral(pfCtx, funcSlot)
 	}
 
 	// Try to find a lambda in this expression
@@ -3999,7 +4008,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
 	// function type and the expression contains `_` identifiers.
-	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, expectedType); err != nil {
+	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
 		return expr, nil
@@ -4070,16 +4079,6 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// re-wrap a valid program.
 	exprType := t.getExprTypeName(expr)
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
-		return expr, false
-	}
-	// So is a value of a named function type of the slot's signature
-	// (`context.CancelFunc` for `func()`, a GALA alias of it), and nil for a
-	// result-less one — `func() { nil }` is no thunk at all, while nil for a
-	// `func() *T` is the by-name value nil.
-	if id, isIdent := expr.(*ast.Ident); isIdent && id.Name == "nil" && len(ft.Results) == 0 {
-		return expr, false
-	}
-	if named := t.resolveTranspilerTypeAsFuncType(exprType); named != nil && named.String() == ft.String() {
 		return expr, false
 	}
 

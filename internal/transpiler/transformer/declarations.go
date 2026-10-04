@@ -1165,6 +1165,21 @@ func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type)
 	return t.goNamedFuncTypeOf(end)
 }
 
+// aliasedFuncType is resolveTranspilerTypeAsFuncType without Go named function
+// types: the function type tp is, directly or through GALA aliases (which are
+// Go aliases, so a slot of one has that function type), or nil. A Go named
+// function type is a distinct type whose slot only a function literal fills
+// by its signature.
+func (t *galaASTTransformer) aliasedFuncType(tp transpiler.Type) *transpiler.FuncType {
+	if transpiler.IsUnusable(tp) {
+		return nil
+	}
+	if ft, ok := t.followAliasChain(tp).(transpiler.FuncType); ok {
+		return &ft
+	}
+	return nil
+}
+
 // goNamedFuncTypeOf returns the underlying function type of typ when typ names
 // a non-generic Go named function type with at most one result
 // (`fs.WalkDirFunc`, or a type of the package's own .go files) that no GALA
