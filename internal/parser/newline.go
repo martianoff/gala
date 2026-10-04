@@ -42,7 +42,11 @@ import (
 //
 // A '*' or '&' followed by whitespace is a binary operator continuing the line
 // before, like any other operator at line start: `* b` multiplies, `*b`
-// dereferences. A line that starts with '.' continues a method chain.
+// dereferences. '*' and '&' are re-typed because their prefix forms are
+// pointer operations a line can start with (`*p = 5`, a trailing `*p` or
+// `&n`); '+', '-' and '^' are not, so a line starting with one always
+// continues the expression. A line that starts with '.' continues a method
+// chain.
 type newlineTokenSource struct {
 	antlr.Lexer
 	kinds *tokenKinds
@@ -61,22 +65,37 @@ func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
 	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, kinds: kinds()}, antlr.TokenDefaultChannel)
 }
 
-// lineStartTokens maps each token the line-break rule re-types to the token
-// it becomes. The re-typed tokens are internal: syntax errors name the
-// original instead (see hideNewlineTokens).
-var lineStartTokens = map[string]string{
-	"'('": "NL_LPAREN",
-	"'*'": "NL_STAR",
-	"'&'": "NL_AMP",
+// lineStartToken is the token the line-break rule re-types into one of the
+// keys of lineStartTokens, and whether it is re-typed only when written
+// directly against its operand.
+type lineStartToken struct {
+	from         string
+	needsOperand bool
+}
+
+// lineStartTokens maps each re-typed token to the token it is re-typed from.
+// The re-typed tokens are internal: syntax errors name the original instead
+// (see hideNewlineTokens).
+var lineStartTokens = map[string]lineStartToken{
+	"NL_LPAREN": {from: "'('"},
+	"NL_STAR":   {from: "'*'", needsOperand: true},
+	"NL_AMP":    {from: "'&'", needsOperand: true},
+}
+
+// retype is what the line-break rule does to one token type: the type it
+// becomes (0 when it is never re-typed) and whether only against an operand.
+type retype struct {
+	to           int
+	needsOperand bool
 }
 
 // tokenKinds holds the token types the parser driver checks, looked up by name
 // in the generated vocabulary: the generated constants are unexported.
 type tokenKinds struct {
-	lparen, identifier int
-	// atLineStart is indexed by token type: the type a token is re-typed as
-	// when it starts a line after a token that can end an expression, or 0.
-	atLineStart []int
+	identifier int
+	// atLineStart is indexed by token type: how a token is re-typed when it
+	// starts a line after a token that can end an expression.
+	atLineStart []retype
 	// endsExpr and spansLines are indexed by token type. spansLines marks the
 	// literals whose text can hold a line break: a raw string, or any quoted
 	// literal with an escaped newline.
@@ -85,6 +104,14 @@ type tokenKinds struct {
 
 // is reports whether ttype is marked in set; EOF has a negative type.
 func is(set []bool, ttype int) bool { return ttype >= 0 && ttype < len(set) && set[ttype] }
+
+// retypeOf is how the line-break rule re-types ttype; EOF is never re-typed.
+func (k *tokenKinds) retypeOf(ttype int) retype {
+	if ttype < 0 || ttype >= len(k.atLineStart) {
+		return retype{}
+	}
+	return k.atLineStart[ttype]
+}
 
 // kinds is derived once from the generated vocabulary and never changes, like
 // the generated static data it reads. It is built on first use, so a binary
@@ -110,14 +137,13 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 		return ttype
 	}
 	k := &tokenKinds{
-		lparen:      mustType("'('"),
 		identifier:  mustType("IDENTIFIER"),
-		atLineStart: make([]int, len(vocab.SymbolicNames)),
+		atLineStart: make([]retype, len(vocab.SymbolicNames)),
 		endsExpr:    make([]bool, len(vocab.SymbolicNames)),
 		spansLines:  make([]bool, len(vocab.SymbolicNames)),
 	}
-	for from, to := range lineStartTokens {
-		k.atLineStart[mustType(from)] = mustType(to)
+	for to, tok := range lineStartTokens {
+		k.atLineStart[mustType(tok.from)] = retype{to: mustType(to), needsOperand: tok.needsOperand}
 	}
 	quoted := []string{"STRING", "CHAR_LIT", "RAW_STRING", "INTERPOLATED_STRING", "FORMAT_STRING"}
 	for _, name := range quoted {
@@ -137,17 +163,17 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	}
 	k := s.kinds
 	ttype := tok.GetTokenType()
-	if s.prevEndsExpr && tok.GetLine() > s.prevEndLine && ttype >= 0 && ttype < len(k.atLineStart) {
-		// The lexer has just consumed the token, so LA(1) is the character
-		// after it: a '*' or '&' followed by whitespace stays binary.
-		if to := k.atLineStart[ttype]; to != 0 && (ttype == k.lparen || !isSpace(s.GetInputStream().LA(1))) {
-			tok = s.GetTokenFactory().Create(tok.GetSource(), to, tok.GetText(),
-				tok.GetChannel(), tok.GetStart(), tok.GetStop(), tok.GetLine(), tok.GetColumn())
-			ttype = to
-		}
+	line := tok.GetLine()
+	// The lexer has just consumed the token, so LA(1) is the character after
+	// it: a '*' or '&' followed by whitespace stays binary.
+	if r := k.retypeOf(ttype); r.to != 0 && s.prevEndsExpr && line > s.prevEndLine &&
+		(!r.needsOperand || !isSpace(s.GetInputStream().LA(1))) {
+		tok = s.GetTokenFactory().Create(tok.GetSource(), r.to, tok.GetText(),
+			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
+		ttype = r.to
 	}
 	s.prevEndsExpr = is(k.endsExpr, ttype)
-	s.prevEndLine = tok.GetLine()
+	s.prevEndLine = line
 	if is(k.spansLines, ttype) {
 		s.prevEndLine += strings.Count(tok.GetText(), "\n")
 	}
@@ -180,28 +206,19 @@ func hideNewlineTokens(msg string) string {
 // printed either as one token name or as "{a, b, ...}", and unwraps a set left
 // with a single token the way ANTLR prints one.
 func withoutNewlineTokens(set string) string {
-	for from, to := range lineStartTokens {
-		if set == to {
-			return from
-		}
+	if tok, ok := lineStartTokens[set]; ok {
+		return tok.from
 	}
 	if !strings.HasPrefix(set, "{") || !strings.HasSuffix(set, "}") {
 		return set
 	}
 	inner := set[1 : len(set)-1]
-	items := slices.DeleteFunc(strings.Split(inner, ", "), isNewlineToken)
+	items := slices.DeleteFunc(strings.Split(inner, ", "), func(s string) bool {
+		_, retyped := lineStartTokens[s]
+		return retyped
+	})
 	if len(items) == 1 {
 		return items[0]
 	}
 	return "{" + strings.Join(items, ", ") + "}"
-}
-
-// isNewlineToken reports whether name is one of the re-typed tokens.
-func isNewlineToken(name string) bool {
-	for _, to := range lineStartTokens {
-		if name == to {
-			return true
-		}
-	}
-	return false
 }
