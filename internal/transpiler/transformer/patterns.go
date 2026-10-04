@@ -356,24 +356,25 @@ func (t *galaASTTransformer) isBindingPatternOf(text string, matchedType transpi
 
 // bareNameTests reports whether a bare name in pattern position tests the
 // value it is matched against instead of binding it: the name is a variant of
-// the matched sealed type, or a zero-field extractor that accepts it (see
-// transformSimpleBindingOrLiteral, which lowers it). It is decided by what the
-// name resolves to, never by its capitalization — `case endFrame =>` against a
-// sealed type that declares `case endFrame()` matches that variant.
+// the matched sealed type, or a standalone zero-field extractor (see
+// transformSimpleBindingOrLiteral, which lowers both). It is decided by what
+// the name resolves to, never by its capitalization — `case endFrame =>`
+// against a sealed type that declares `case endFrame()` matches that variant.
+// A variant of some OTHER sealed type is not a test of this value: the name
+// binds, as sealedVariantOfMatchedType documents.
 func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.Type) bool {
 	if variant, _ := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
 		return true
 	}
-	meta, _ := t.zeroFieldExtractor(name, matchedType)
-	return meta != nil
+	meta, _ := t.zeroFieldExtractor(name)
+	return meta != nil && t.findSealedParentForVariant(name, "") == nil
 }
 
 // zeroFieldExtractor returns the type a bare pattern name names, and its
-// Unapply, when that type is a zero-field extractor for a value of
-// matchedType: its Unapply returns bool (a guard extractor), it takes no type
-// parameters — precisely the shape generated for a zero-field sealed variant —
-// and it accepts matchedType (see unapplyAccepts). Otherwise it returns nils.
-func (t *galaASTTransformer) zeroFieldExtractor(name string, matchedType transpiler.Type) (*transpiler.TypeMetadata, *transpiler.MethodMetadata) {
+// Unapply, when that type is a zero-field extractor: its Unapply returns bool
+// (a guard extractor) and it takes no type parameters — precisely the shape
+// generated for a zero-field sealed variant. Otherwise it returns nils.
+func (t *galaASTTransformer) zeroFieldExtractor(name string) (*transpiler.TypeMetadata, *transpiler.MethodMetadata) {
 	meta := t.getTypeMeta(name)
 	if meta == nil || len(meta.TypeParams) > 0 {
 		return nil, nil
@@ -385,27 +386,7 @@ func (t *galaASTTransformer) zeroFieldExtractor(name string, matchedType transpi
 	if basic, ok := unapplyMeta.ReturnType.(transpiler.BasicType); !ok || basic.Name != "bool" {
 		return nil, nil
 	}
-	if !unapplyAccepts(unapplyMeta, matchedType) {
-		return nil, nil
-	}
 	return meta, unapplyMeta
-}
-
-// unapplyAccepts reports whether an extractor's Unapply can take a value of
-// matchedType. A name that happens to share its spelling with an extractor for
-// some unrelated type is an ordinary binding, as it is for a variant of an
-// unrelated sealed type (see sealedVariantOfMatchedType). A subject whose type
-// is unknown, an `any` parameter, or an Unapply whose parameter is not
-// recorded is given the benefit of the doubt: the extractor applies.
-func unapplyAccepts(unapplyMeta *transpiler.MethodMetadata, matchedType transpiler.Type) bool {
-	if matchedType == nil || transpiler.IsUnusable(matchedType) || matchedType.IsAny() || len(unapplyMeta.ParamTypes) == 0 {
-		return true
-	}
-	param := unapplyMeta.ParamTypes[0]
-	if param == nil || param.IsAny() {
-		return true
-	}
-	return stripPackagePrefix(param.BaseName()) == stripPackagePrefix(matchedType.BaseName())
 }
 
 // boundInCurrentPattern reports whether s, the scope a name resolved to, is
@@ -463,7 +444,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		// variant of the matched type — e.g. a standalone guard extractor, or a
 		// sealed variant matched against a subject whose type could not be
 		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
-		if meta, unapplyMeta := t.zeroFieldExtractor(name, matchedType); meta != nil {
+		if meta, unapplyMeta := t.zeroFieldExtractor(name); meta != nil {
 			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType)
 		}
 

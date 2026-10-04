@@ -279,7 +279,7 @@ func main() {
 
 ## Matching Against Constants (Stable Identifiers)
 
-A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name never compares — it binds, unless it names a zero-field variant or extractor — so compare against a lowercase value with a guard.
+A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name never compares with a value: it binds (unless it names a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard.
 
 ```gala
 package main

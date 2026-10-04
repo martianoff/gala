@@ -150,6 +150,21 @@ func main() {
 			wantAbsent:   []string{"endFrame{}.Unapply("},
 		},
 		{
+			// An `any` subject is no sealed type, so a variant's name binds.
+			name: "variant name against an any subject still binds",
+			src: lowercaseFrame + `func describe(v any) string = v match {
+    case 1 => "one"
+    case endFrame => s"other $endFrame"
+}
+
+func main() {
+    Println(describe(2))
+    Println(endFrame())
+}`,
+			wantContains: []string{"endFrame := obj"},
+			wantAbsent:   []string{"endFrame{}.Unapply("},
+		},
+		{
 			name: "nested inside a generic lowercase sealed type",
 			src: lowercaseFrame + `sealed type maybe[T any] {
     case just(Value T)
