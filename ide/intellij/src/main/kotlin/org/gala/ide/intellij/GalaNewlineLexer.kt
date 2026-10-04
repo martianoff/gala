@@ -15,8 +15,8 @@ import org.gala.ide.intellij.parser.galaParser
  * PSI tree matches what the compiler parses: a '(' separated by a line break
  * from a token that can end an expression (an identifier, a literal, ')', ']'
  * or '}') is re-typed as NL_LPAREN, and a '*' or '&' there as NL_STAR or
- * NL_AMP when it is directly inside a '{' and written against its operand
- * (`*p`, `&n`). The grammar's call suffix, multiplication and bitwise and
+ * NL_AMP when it is directly inside a block's '{' (not a composite literal's or
+ * one that opens case arms) and written against its operand (`*p`, `&n`). The grammar's call suffix, multiplication and bitwise and
  * reject the re-typed tokens, so such a token begins a new statement instead
  * of continuing the line before; `* b` with a space still continues it.
  * Mirrors internal/parser/newline.go in the compiler.
@@ -24,15 +24,19 @@ import org.gala.ide.intellij.parser.galaParser
 class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     private var prevEndLine = 0
     private var prevEndsExpr = false
+    private var prevType = 0
+    private var prevStop = -1
 
-    // The brackets open at this point, innermost last: true for a '{', false
-    // for a '(' or '['.
+    // The brackets open at this point, innermost last: true for a block's
+    // '{', false for any other bracket.
     private val open = ArrayDeque<Boolean>()
 
     override fun reset() {
         super.reset()
         prevEndLine = 0
         prevEndsExpr = false
+        prevType = 0
+        prevStop = -1
         open.clear()
     }
 
@@ -48,17 +52,26 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
             }
             if (retyped != null) (tok as WritableToken).type = retyped
         }
-        when (tok.type) {
-            in OPENS -> open.addLast(tok.type == LBRACE)
-            in CLOSES -> open.removeLastOrNull()
+        // A '{' opens a block unless it is written against a type name or ']'
+        // (a composite literal); a 'case' right after a '{' shows that '{'
+        // opens case arms instead.
+        when {
+            tok.type in OPENS -> open.addLast(
+                tok.type == LBRACE &&
+                    !((prevType == galaLexer.IDENTIFIER || prevType == RBRACK) && tok.startIndex == prevStop + 1),
+            )
+            tok.type in CLOSES -> open.removeLastOrNull()
+            tok.type == CASE && prevType == LBRACE && open.isNotEmpty() -> open[open.lastIndex] = false
         }
+        prevType = tok.type
+        prevStop = tok.stopIndex
         prevEndsExpr = tok.type in ENDS_EXPR
         prevEndLine = tok.line + if (tok.type in SPANS_LINES) tok.text.count { it == '\n' } else 0
         return tok
     }
 
     // Whether the '*' or '&' just consumed is a prefix operator: directly
-    // inside a '{', where a statement can begin, and followed by its operand
+    // inside a block's '{', where a statement can begin, and followed by its operand
     // rather than by whitespace the grammar's WS rule skips or a comment. The
     // lexer has just consumed it, so LA(1) is the character after it.
     private fun isPrefixOperator(): Boolean {
@@ -79,6 +92,8 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
 
         private val LPAREN = typeOf("'('")
         private val LBRACE = typeOf("'{'")
+        private val RBRACK = typeOf("']'")
+        private val CASE = typeOf("'case'")
         private val STAR = typeOf("'*'")
         private val AMP = typeOf("'&'")
 

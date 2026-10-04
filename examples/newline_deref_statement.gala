@@ -1,10 +1,11 @@
 package main
 
-// A '*' or '&' that starts a line written directly against its operand
-// (`*p`, `&n`), right after a line that ends in a name, a literal, ')', ']' or
-// '}', begins a new statement. It never multiplies or bitwise-ands the line
-// before. With a space after it (`* b`) it is still a binary operator that
-// continues the line before.
+// Inside a block, a '*' or '&' that starts a line written directly against its
+// operand (`*p`, `&n`), right after a line that ends in a name, a literal, ')',
+// ']' or '}', begins a new statement. It never multiplies or bitwise-ands the
+// line before. With a space after it (`* b`), or where no statement can begin
+// (inside '(' or '[', a composite literal, match arms, or at the top level),
+// it is still a binary operator that continues the line before.
 
 // A deref expression after a val: `&n` and `*p + 1` are two statements, not
 // `&n * p + 1`.

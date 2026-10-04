@@ -51,6 +51,8 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "address-of as trailing value", body: "val x = 1\n&x", stmts: 2},
 		{name: "indented deref", body: "Println(\"zero\")\n        *p = 1", stmts: 2},
 		{name: "deref after nested block", body: "if (a) { f(x) }\n*p = 1", stmts: 2},
+		{name: "deref after a composite literal", body: "val r = Rect{w: 1}\n*p = 1", stmts: 2},
+		{name: "deref after a match", body: "val r = x match {\n    case _ => 0\n}\n*p = 1", stmts: 2},
 
 		// Everything else keeps continuing across the line break.
 		{name: "call on same line", body: "f(1)(2)", stmts: 1},
@@ -76,6 +78,10 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "star before line comment", body: "val a = b\n    *// times\n    c", stmts: 1},
 		{name: "star before block comment", body: "val a = b\n    */* times */c", stmts: 1},
 		{name: "deref in block lambda argument", body: "xs.Map((x) => {\n    val p = &x\n    *p\n})", stmts: 1},
+		{name: "multiplication in a match arm", body: "val r = x match {\n    case Some(v) => v\n        *factor\n    case _ => 0\n}", stmts: 1},
+		{name: "multiplication in a partial function", body: "xs.Collect({\n    case v => v\n        *k\n})", stmts: 1},
+		{name: "multiplication in a composite literal", body: "val r = Rect{\n    w: width\n        *scale,\n}", stmts: 1},
+		{name: "multiplication in a generic composite literal", body: "val r = Array[int]{\n    w\n        *scale,\n}", stmts: 1},
 		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
 		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
 		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},

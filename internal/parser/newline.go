@@ -41,7 +41,9 @@ import (
 // comment is otherwise ignored and never the previous token.
 //
 // A '*' or '&' is re-typed only where a statement can begin — directly inside
-// a '{', not within a '(' or '[' or at the top level — and only when written
+// a block's '{', not within a '(' or '[', a composite literal's '{' (written
+// against its type: `Rect{`), a '{' that opens case arms (a match, a partial
+// function, a sealed type) or at the top level — and only when written
 // against its operand. Followed by whitespace or a comment it is a binary operator
 // continuing the line before, like any other operator at line start: `* b`
 // multiplies, `*b` dereferences. '*' and '&' are re-typed because their prefix
@@ -57,8 +59,11 @@ type newlineTokenSource struct {
 	prevEndLine int
 	// prevEndsExpr reports whether that token can end an expression.
 	prevEndsExpr bool
+	// prevType and prevStop are the previous default-channel token's type and
+	// the index of its last character.
+	prevType, prevStop int
 	// open holds the brackets open at this point, innermost last: true for a
-	// '{', false for a '(' or '['.
+	// block's '{', false for any other bracket.
 	open []bool
 }
 
@@ -97,11 +102,10 @@ type retype struct {
 // tokenKinds holds the token types the parser driver checks, looked up by name
 // in the generated vocabulary: the generated constants are unexported.
 type tokenKinds struct {
-	identifier int
-	// opens and closes are indexed by token type: a bracket that opens ('(',
-	// NL_LPAREN, '[', '{') or closes (')', ']', '}'). openBrace is '{'.
-	opens, closes []bool
-	openBrace     int
+	identifier, lbrace, rbrack, caseKw int
+	// bracket is indexed by token type: +1 for a bracket that opens ('(',
+	// NL_LPAREN, '[', '{'), -1 for one that closes (')', ']', '}'), else 0.
+	bracket []int8
 	// atLineStart is indexed by token type: how a token is re-typed when it
 	// starts a line after a token that can end an expression.
 	atLineStart []retype
@@ -147,18 +151,19 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 	}
 	k := &tokenKinds{
 		identifier:  mustType("IDENTIFIER"),
-		opens:       make([]bool, len(vocab.SymbolicNames)),
-		closes:      make([]bool, len(vocab.SymbolicNames)),
-		openBrace:   mustType("'{'"),
+		lbrace:      mustType("'{'"),
+		rbrack:      mustType("']'"),
+		caseKw:      mustType("'case'"),
+		bracket:     make([]int8, len(vocab.SymbolicNames)),
 		atLineStart: make([]retype, len(vocab.SymbolicNames)),
 		endsExpr:    make([]bool, len(vocab.SymbolicNames)),
 		spansLines:  make([]bool, len(vocab.SymbolicNames)),
 	}
 	for _, name := range []string{"'('", "NL_LPAREN", "'['", "'{'"} {
-		k.opens[mustType(name)] = true
+		k.bracket[mustType(name)] = 1
 	}
 	for _, name := range []string{"')'", "']'", "'}'"} {
-		k.closes[mustType(name)] = true
+		k.bracket[mustType(name)] = -1
 	}
 	for to, tok := range lineStartTokens {
 		k.atLineStart[mustType(tok.from)] = retype{to: mustType(to), needsOperand: tok.needsOperand}
@@ -188,12 +193,8 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
 		ttype = r.to
 	}
-	switch {
-	case is(k.opens, ttype):
-		s.open = append(s.open, ttype == k.openBrace)
-	case is(k.closes, ttype) && len(s.open) > 0:
-		s.open = s.open[:len(s.open)-1]
-	}
+	s.trackBrackets(tok, ttype)
+	s.prevType, s.prevStop = ttype, tok.GetStop()
 	s.prevEndsExpr = is(k.endsExpr, ttype)
 	s.prevEndLine = line
 	if is(k.spansLines, ttype) {
@@ -202,9 +203,29 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	return tok
 }
 
+// trackBrackets keeps open up to date with tok, of type ttype. A '{' opens a
+// block unless it is written against a type name or ']' (a composite literal,
+// `Rect{` or `Array[int]{`); a 'case' right after a '{' shows that '{' opens
+// case arms instead.
+func (s *newlineTokenSource) trackBrackets(tok antlr.Token, ttype int) {
+	k := s.kinds
+	switch {
+	case ttype >= 0 && ttype < len(k.bracket) && k.bracket[ttype] > 0:
+		block := ttype == k.lbrace &&
+			!((s.prevType == k.identifier || s.prevType == k.rbrack) && tok.GetStart() == s.prevStop+1)
+		s.open = append(s.open, block)
+	case ttype >= 0 && ttype < len(k.bracket) && k.bracket[ttype] < 0:
+		if len(s.open) > 0 {
+			s.open = s.open[:len(s.open)-1]
+		}
+	case ttype == k.caseKw && s.prevType == k.lbrace && len(s.open) > 0:
+		s.open[len(s.open)-1] = false
+	}
+}
+
 // atStatementLevel reports whether a statement can begin here: directly inside
-// a '{'. At the top level only declarations begin, and those start with a
-// keyword.
+// a block's '{'. At the top level only declarations begin, and those start
+// with a keyword.
 func (s *newlineTokenSource) atStatementLevel() bool {
 	return len(s.open) > 0 && s.open[len(s.open)-1]
 }

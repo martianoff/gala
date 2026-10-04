@@ -56,10 +56,12 @@ class GalaNewlineLexerTest {
         assertEquals(2, statements("val a = b\n*(p)"))
         assertEquals(2, statements("Println(\"zero\")\n        *p = 1"))
         assertEquals(2, statements("if (a) { f(x) }\n*p = 1"))
+        assertEquals(2, statements("val r = Rect{w: 1}\n*p = 1"))
+        assertEquals(2, statements("val r = x match {\n    case _ => 0\n}\n*p = 1"))
     }
 
     @Test
-    fun pointerTypesAcceptRetypedStar() {
+    fun starAtLineStartInDeclarations() {
         assertEquals(emptyList<String>(), parse("package main\n\nfunc g()\n*int = nil\n").second)
         assertEquals(emptyList<String>(), parse("package main\n\ntype I interface {\n    M()\n    *int\n}\n").second)
         assertEquals(emptyList<String>(), parse("package main\n\nval a = b\n*c\n").second)
@@ -79,6 +81,10 @@ class GalaNewlineLexerTest {
         assertEquals(1, statements("val a = b\n    *// times\n    c"))
         assertEquals(1, statements("val a = b\n    */* times */c"))
         assertEquals(1, statements("xs.Map((x) => {\n    val p = &x\n    *p\n})"))
+        assertEquals(1, statements("val r = x match {\n    case Some(v) => v\n        *factor\n    case _ => 0\n}"))
+        assertEquals(1, statements("xs.Collect({\n    case v => v\n        *k\n})"))
+        assertEquals(1, statements("val r = Rect{\n    w: width\n        *scale,\n}"))
+        assertEquals(1, statements("val r = Array[int]{\n    w\n        *scale,\n}"))
         assertEquals(1, statements("f(1)(2)"))
         assertEquals(1, statements("Println(\n    1,\n    (2, 3),\n)"))
         assertEquals(1, statements("xs\n    .Map((x) => x)"))
