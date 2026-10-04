@@ -25,7 +25,8 @@ func TestCasePatternHints_TypeParamsByScope(t *testing.T) {
 				{Name: "Dot", FieldNames: []string{"at"}, FieldTypes: []transpiler.Type{transpiler.BasicType{Name: "P"}}},
 			},
 		},
-	}}
+		"main.UserID": {Name: "UserID", IsOpaque: true, Underlying: transpiler.BasicType{Name: "int64"}},
+	}, PackageVals: map[string]*transpiler.PackageValMetadata{"Root": {}}}
 
 	cases := []struct {
 		name string
@@ -34,6 +35,10 @@ func TestCasePatternHints_TypeParamsByScope(t *testing.T) {
 	}{
 		{name: "sealed type's own type param", line: "        case Ok(v) => v", want: nil},
 		{name: "user type named P", line: "        case Dot(p) => p", want: []string{`": P"`}},
+		{name: "opaque type binds its underlying type", line: "    case UserID(n) => n", want: []string{`": int64"`}},
+		{name: "opaque type with a literal", line: "    case UserID(0) => 0", want: nil},
+		{name: "opaque type with a wildcard", line: "    case UserID(_) => 0", want: nil},
+		{name: "opaque type with a stable identifier", line: "    case UserID(Root) => 0", want: nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
