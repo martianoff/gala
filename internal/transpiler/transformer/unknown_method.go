@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"slices"
 	"sort"
 	"strings"
 
@@ -50,17 +51,22 @@ var synthesizedMethodNames = map[string]bool{
 }
 
 // isSynthesizedMethodName reports whether name is generated rather than
-// declared. The `is<Variant>` predicates are matched by shape because the
-// variant half is the user's own name (sealed.go emits `is`+variant per case).
-func isSynthesizedMethodName(name string) bool {
+// declared on a value of type meta. sealed.go emits `is`+variant per case, so
+// the `is<Variant>` predicates are recognized by the variants meta declares —
+// `isendFrame` for a lowercase `endFrame` as much as `isCircle` — and, where
+// the variants are not to hand, by the shape of a capitalized variant.
+func isSynthesizedMethodName(name string, meta *transpiler.TypeMetadata) bool {
 	if synthesizedMethodNames[name] {
 		return true
 	}
-	if strings.HasPrefix(name, "is") && len(name) > 2 {
-		r := []rune(name)[2]
-		return r >= 'A' && r <= 'Z'
+	variant, ok := strings.CutPrefix(name, "is")
+	if !ok || variant == "" {
+		return false
 	}
-	return false
+	if r := []rune(variant)[0]; r >= 'A' && r <= 'Z' {
+		return true
+	}
+	return slices.ContainsFunc(meta.SealedVariants, func(v transpiler.SealedVariant) bool { return v.Name == variant })
 }
 
 // checkUnknownMethod reports a method the receiver's GALA type does not
@@ -138,7 +144,7 @@ func (t *galaASTTransformer) unknownMethodError(
 	line, col int,
 	exact bool,
 ) error {
-	if typeMeta == nil || isSynthesizedMethodName(method) || t.isSynthesizedOpaqueMethod(typeMeta, method) {
+	if typeMeta == nil || isSynthesizedMethodName(method, typeMeta) || t.isSynthesizedOpaqueMethod(typeMeta, method) {
 		return nil
 	}
 	// An empty method set is ambiguous: it means either "this type genuinely

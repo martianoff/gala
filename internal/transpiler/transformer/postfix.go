@@ -564,7 +564,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	for i, cc := range caseClauses {
 		ccCtx := cc.(*grammar.CaseClauseContext)
 		patternText := ccCtx.Pattern().GetText()
-		if ccCtx.GetGuard() != nil || !(isWildcard(patternText) || (!hasExplicitWildcard && isBindingPattern(patternText))) {
+		if ccCtx.GetGuard() != nil || !(isWildcard(patternText) || (!hasExplicitWildcard && t.isBindingPatternOf(patternText, matchedType))) {
 			continue
 		}
 		if foundDefault {
@@ -589,7 +589,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			// A guarded binding of the whole subject (`case p if ...`) keeps
 			// the written type too; every other pattern reads the variants.
 			armType := matchedType
-			if isBindingPattern(ccCtx.Pattern().GetText()) {
+			if t.isBindingPatternOf(ccCtx.Pattern().GetText(), matchedType) {
 				armType = subjectType
 			}
 			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
@@ -686,7 +686,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		var variantPatterns []string
 		for _, cc := range caseClauses {
 			pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
-			if !isDefaultPattern(pat) {
+			if !isWildcard(pat) && !t.isBindingPatternOf(pat, matchedType) {
 				variantPatterns = append(variantPatterns, pat)
 			}
 		}

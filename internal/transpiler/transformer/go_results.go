@@ -532,7 +532,7 @@ func hasMember(meta *transpiler.TypeMetadata, member string) bool {
 	if _, ok := meta.Methods[member]; ok {
 		return true
 	}
-	if _, ok := meta.Fields[member]; ok || isSynthesizedMethodName(member) {
+	if _, ok := meta.Fields[member]; ok || isSynthesizedMethodName(member, meta) {
 		return true
 	}
 	for _, v := range meta.SealedVariants {

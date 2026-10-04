@@ -339,10 +339,52 @@ func (t *galaASTTransformer) isStableIdentifierIn(name string, s *scope) bool {
 	return ok
 }
 
-// isPatternBinding reports whether a sub-pattern's text is a plain name that
-// binds a new variable, rather than a stable identifier compared by ==.
-func (t *galaASTTransformer) isPatternBinding(text string) bool {
-	return t.isSimpleIdentifier(text) && !t.isStableIdentifierPattern(text)
+// isPatternBinding reports whether a sub-pattern's text, matched against a
+// value of matchedType, is a plain name that binds a new variable — rather
+// than a stable identifier compared by ==, or a name that tests the value
+// (see bareNameTests).
+func (t *galaASTTransformer) isPatternBinding(text string, matchedType transpiler.Type) bool {
+	return t.isSimpleIdentifier(text) && !t.isStableIdentifierPattern(text) && !t.bareNameTests(text, matchedType)
+}
+
+// isBindingPatternOf reports whether a whole case pattern is a binding that
+// catches every value of matchedType: a plain name (isBindingPattern) that
+// does not test the value (see bareNameTests).
+func (t *galaASTTransformer) isBindingPatternOf(text string, matchedType transpiler.Type) bool {
+	return isBindingPattern(text) && !t.bareNameTests(text, matchedType)
+}
+
+// bareNameTests reports whether a bare name in pattern position tests the
+// value it is matched against instead of binding it: the name is a variant of
+// the matched sealed type, or a zero-field extractor (see
+// transformSimpleBindingOrLiteral, which lowers it). It is decided by what the
+// name resolves to, never by its capitalization — `case endFrame =>` against a
+// sealed type that declares `case endFrame()` matches that variant.
+func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.Type) bool {
+	if variant, _ := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
+		return true
+	}
+	meta, _ := t.zeroFieldExtractor(name)
+	return meta != nil
+}
+
+// zeroFieldExtractor returns the type a bare pattern name names, and its
+// Unapply, when that type is a zero-field extractor: its Unapply returns bool
+// (a guard extractor) and it takes no type parameters — precisely the shape
+// generated for a zero-field sealed variant. Otherwise it returns nils.
+func (t *galaASTTransformer) zeroFieldExtractor(name string) (*transpiler.TypeMetadata, *transpiler.MethodMetadata) {
+	meta := t.getTypeMeta(name)
+	if meta == nil || len(meta.TypeParams) > 0 {
+		return nil, nil
+	}
+	unapplyMeta, ok := meta.Methods["Unapply"]
+	if !ok {
+		return nil, nil
+	}
+	if basic, ok := unapplyMeta.ReturnType.(transpiler.BasicType); !ok || basic.Name != "bool" {
+		return nil, nil
+	}
+	return meta, unapplyMeta
 }
 
 // boundInCurrentPattern reports whether s, the scope a name resolved to, is
@@ -400,16 +442,8 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		// variant of the matched type — e.g. a standalone guard extractor, or a
 		// sealed variant matched against a subject whose type could not be
 		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
-		if meta := t.getTypeMeta(name); meta != nil {
-			if unapplyMeta, hasUnapply := meta.Methods["Unapply"]; hasUnapply {
-				// Only route through the extractor path for zero-arg extractors — i.e.,
-				// Unapply returns bool (guard extractor) and the type takes no type
-				// parameters. That is precisely the shape generated for zero-field
-				// sealed variants.
-				if basic, ok := unapplyMeta.ReturnType.(transpiler.BasicType); ok && basic.Name == "bool" && len(meta.TypeParams) == 0 {
-					return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType)
-				}
-			}
+		if meta, unapplyMeta := t.zeroFieldExtractor(name); meta != nil {
+			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType)
 		}
 
 		// A name bound earlier in this same pattern is neither a fresh binding
@@ -1818,7 +1852,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			}
 
 			// Check if this is a simple identifier binding
-			if t.isPatternBinding(patternText) {
+			if t.isPatternBinding(patternText, elemType) {
 				varName := patternText
 				t.currentScope.vals[varName] = false
 				if elemType != nil && !elemType.IsNil() {
@@ -2078,7 +2112,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 				elemExpr = ast.NewIdent(innerName)
 			}
 
-			if t.isPatternBinding(patternText) {
+			if t.isPatternBinding(patternText, elemType) {
 				varName := patternText
 				t.currentScope.vals[varName] = false
 				if elemType != nil && !elemType.IsNil() {
