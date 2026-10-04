@@ -1582,15 +1582,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// — we'd rather emit code that compiles than reject the call outright.
 	paramTypes := make([]transpiler.Type, placeholderCount)
 	for i := 0; i < placeholderCount; i++ {
-		switch {
-		case i < len(ft.Params) && !ft.Params[i].IsNil():
+		if i < len(ft.Params) && !ft.Params[i].IsNil() {
 			paramTypes[i] = ft.Params[i]
-		case strict:
-			return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
-				exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
-				"placeholder `_` has no type and none can be inferred from context",
-				"bind the type parameter it stands for from another argument, write the type arguments explicitly, or use an annotated lambda (e.g. `(x int) => …`)")
-		default:
+		} else {
 			paramTypes[i] = transpiler.BasicType{Name: "any"}
 		}
 	}
@@ -1680,6 +1674,20 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		// (they were in dead or comment positions). Fall through to ordinary
 		// transformation.
 		return nil, false, nil
+	}
+
+	// Under strict, a placeholder whose slot parameter has no type (a type
+	// parameter only the callback could bind, masked out) has no type to
+	// take: GALA-E0033, never `any`.
+	if strict {
+		for i := range paramNames {
+			if i < len(ft.Params) && ft.Params[i].IsNil() {
+				return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
+					exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+					"placeholder `_` has no type and none can be inferred from context",
+					"bind the type parameter it stands for from another argument, write the type arguments explicitly, or use an annotated lambda (e.g. `(x int) => …`)")
+			}
+		}
 	}
 
 	// Build the lambda parameter list.

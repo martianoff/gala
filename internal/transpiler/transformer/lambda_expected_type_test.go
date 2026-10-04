@@ -595,6 +595,17 @@ func main() {
     val m = Mapper(Input = 3, Fn = _ * 2)
     Println(m.Fn(m.Input))
 }`,
+			contains: []string{"Mapper[int, int]{}.Apply(", "func(__p0 int) int {"},
+		},
+		{
+			name: "generic function",
+			input: `package main
+
+func apply[A any, B any](x A, f func(A) B) B = f(x)
+
+func main() {
+    Println(apply(6, _ * 7))
+}`,
 			contains: []string{"func(__p0 int) int {"},
 		},
 	}
