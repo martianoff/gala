@@ -705,6 +705,7 @@ gala_binary(
 - [Regex](https://gala.fyi/docs/regex/) — pattern matching with regex extractors
 - [IO Effect](https://gala.fyi/docs/io/) — lazy, composable side effects
 - [Go Interop](https://gala.fyi/features/go-interop/) — seamless Go library integration
+- [Go Interop Guide](docs/GO_INTEROP.MD) — mixing GALA and Go in both directions, mixed packages, builds, gotchas
 - [Concurrent](docs/CONCURRENT.MD) — Future, Promise, cancellation, and ExecutionContext
 - [Concurrency Safety](docs/CONCURRENCY_SAFETY.MD) — the shareability model and the `Sendable` boundary
 - [Subprocess](docs/SUBPROCESS.MD) — spawning and driving child processes

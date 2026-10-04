@@ -6,6 +6,7 @@ filegroup(
         "EXAMPLES.MD",
         "GALA.MD",
         "GALA_BEST_PRACTICES.MD",
+        "GO_INTEROP.MD",
         "TYPE_INFERENCE.MD",
     ],
     visibility = ["//visibility:public"],

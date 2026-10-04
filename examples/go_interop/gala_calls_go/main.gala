@@ -1,0 +1,91 @@
+package main
+
+// Calling Go from GALA: the Go standard library and a hand-written Go
+// package (examples/go_interop/warehouse). Walked through in
+// docs/GO_INTEROP.MD, part 1.
+
+import (
+    "errors"
+    "strconv"
+    "strings"
+    "time"
+
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/examples/go_interop/warehouse"
+    "martianoff/gala/go_interop"
+)
+
+// A GALA struct satisfies a Go interface the way a Go type does: by having
+// its methods. warehouse.Notifier needs Notify(string).
+struct Collector(Prefix string, var Messages Array[string])
+
+func (c *Collector) Notify(message string) {
+    c.Messages = c.Messages.Append(s"${c.Prefix}$message")
+}
+
+// (T, bool) is a Tuple; destructure it.
+func describe(inv *warehouse.Inventory, sku string) string {
+    val (item, found) = inv.Find(sku)
+    if (found) s"${item.Name} x${item.Qty}" else s"$sku: no such item"
+}
+
+// (T, error) is a Try; match on it. A guard can test the Go error.
+func reserve(inv *warehouse.Inventory, sku string, qty int) string = inv.Reserve(sku, qty) match {
+    case Success(left) => s"reserved $qty of $sku, $left left"
+    case Failure(err) if errors.Is(err, warehouse.ErrOutOfStock) => s"$sku: not enough stock for $qty"
+    case Failure(err) => s"failed: ${err.Error()}"
+}
+
+// Several fallible Go calls, sequenced with bind.
+func parseItem(line string) Try[warehouse.Item] = ArrayOf(strings.Split(line, ",")...) match {
+    case Array(sku, name, qty, price) => {
+        bind q = strconv.Atoi(qty)
+        bind p = strconv.ParseFloat(price, 64)
+        Success(warehouse.Item(SKU = sku, Name = name, Qty = q, Price = p))
+    }
+    case _ => Failure(errors.New(s"want 4 fields: $line"))
+}
+
+func main() {
+    // Go standard library calls look like Go calls.
+    Println(strings.ToUpper("gala"), strings.Repeat("-", 3), time.Duration(90) * time.Second)
+
+    // A Go constructor returning a pointer; methods work through it.
+    val inv = warehouse.New()
+    inv.Add(warehouse.Item(SKU = "A-1", Name = "Anvil", Qty = 3, Price = 99.5))
+    inv.Add(warehouse.Item(SKU = "B-2", Name = "Bolt", Qty = 120, Price = 0.25))
+
+    ArrayOf("C-3,Clamp,7,4.75", "D-4,Drill,x,80", "E-5,Epoxy").ForEach((line) => parseItem(line) match {
+        case Success(item) => inv.Add(item)
+        case Failure(err) => Println(s"skipped: ${err.Error()}")
+    })
+
+    Println(describe(inv, "A-1"))
+    Println(describe(inv, "Z-9"))
+    Println(reserve(inv, "A-1", 2))
+    Println(reserve(inv, "A-1", 5))
+    Println(reserve(inv, "Z-9", 1))
+
+    // An error-only Go call becomes a Try[Void] with FromError.
+    Println(FromError(inv.Remove("Z-9")).IsFailure())
+
+    // A Go slice result converts to an immutable Array.
+    val items = ArrayFromSlice(inv.Items())
+    Println(items.Map(_.SKU).MkString(", "))
+    Println(f"stock value: ${items.FoldLeft(0.0, (acc, i) => acc + float64(i.Qty) * i.Price)}%.2f")
+
+    // A lambda fills a Go named function type (warehouse.Predicate).
+    val cheap = ArrayFromSlice(inv.Select((i) => i.Price < 5.0))
+    Println(s"cheap: ${cheap.Map(_.Name).MkString(", ")}")
+
+    // A pointer to a GALA struct is passed where Go expects an interface.
+    var collector = Collector("ALERT ", EmptyArray[string]())
+    val reported = inv.CheckLowStock(10, &collector)
+    Println(s"reported $reported")
+    collector.Messages.ForEach((m) => Println(m))
+
+    // Back to Go: an Array becomes a Go slice for Go functions that take one.
+    val names = items.Map(_.Name).ToGoSlice()
+    Println(strings.Join(names, " | "))
+    Println(go_interop.SliceAppend(names, "Extra").Size())
+}

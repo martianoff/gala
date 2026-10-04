@@ -1,0 +1,26 @@
+package main
+
+// A module mixing GALA and Go in both directions, built with `gala build`:
+//   main.gala      GALA main, calls Go (helper.go, report) and GALA (textstats)
+//   helper.go      Go in package main, calls GALA (exclaim) and Go (report)
+//   textstats/     one package of GALA plus hand-written Go (run_fixtures.sh
+//                  copies it in from examples/go_interop/mixed/textstats)
+//   report/        plain Go importing the GALA package textstats
+//   cmd/gomain/    a Go main package calling GALA through report
+
+import (
+    "example.com/gointerop/report"
+    "example.com/gointerop/textstats"
+)
+
+func exclaim(s string) string = s"$s!"
+
+func main() {
+    Println(report.Line("one two three\nfour\n"))
+    Println(goSummary())
+    Println(shout("both ways"))
+    textstats.Summarize("") match {
+        case Success(stats) => Println(s"empty input: ${stats.Lines} lines")
+        case Failure(err) => Println(s"failed: ${err.Error()}")
+    }
+}

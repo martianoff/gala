@@ -4,7 +4,7 @@ title: "GALA Go Interop — Use Any Go Library, Type, and Function"
 description: "GALA transpiles to Go and gives you full access to the Go ecosystem. Import Go packages, call Go functions, use Go types — all with GALA's cleaner syntax. Zero friction interoperability."
 keywords: "gala go interop, gala go libraries, transpile to go, gala import go, gala go types, gala go functions, gala go slices, gala go maps, gala go compatibility"
 permalink: /features/go-interop/
-last_modified_at: 2026-10-03
+last_modified_at: 2026-10-04
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Go Interop</p>
@@ -12,6 +12,8 @@ last_modified_at: 2026-10-03
 # Full Go Interoperability
 
 GALA transpiles to Go. Every Go package, type, and function is available in GALA code with zero friction. Your existing Go modules, third-party libraries, and tooling all work out of the box.
+
+This page covers calling Go from GALA. For the other direction (Go code calling GALA), packages that mix `.gala` and `.go` files, project layout and the gotchas, see the **[Go Interop Guide](/docs/go-interop/)**.
 
 ---
 
@@ -328,6 +330,7 @@ The full table of builtins and their replacements is in the [language reference]
 
 ## Further Reading
 
+- [Go Interop Guide](/docs/go-interop/) — mixing GALA and Go in both directions: calling GALA from Go, packages with both `.gala` and `.go` files, building with `gala build` and Bazel, and the gotchas
 - [Collections](/features/collections/) — immutable Array, List, HashMap, and more
 - [Error Handling](/features/error-handling/) — Option, Either, and Try for Go error handling
 - [Concurrency](/features/concurrency/) — channels, goroutines, and Future in GALA

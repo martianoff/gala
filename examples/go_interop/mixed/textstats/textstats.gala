@@ -1,0 +1,32 @@
+package textstats
+
+// One package, two languages: this file is GALA, writer.go next to it is
+// hand-written Go. Go adds the methods GALA cannot declare (io.Writer's
+// Write and json.Marshaler's MarshalJSON both return two results), and each
+// side calls the other directly. Walked through in docs/GO_INTEROP.MD, part 3.
+
+import (
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// Counter is written to by Go's io functions through the Write method in
+// writer.go. Its fields are `var`, so Go sees plain fields; inWord carries a
+// word that one Write ends and the next continues.
+struct Counter(var Lines int, var Words int, var Bytes int, var inWord bool = false)
+
+// Stats is the immutable summary GALA code works with.
+struct Stats(Lines int, Words int, Bytes int, Longest string)
+
+// countWords is unexported GALA that writer.go calls.
+func countWords(text string) int = strings.Fields(text).Size()
+
+// longestWord is used by Summarize.
+func longestWord(text string) string =
+    ArrayOf(strings.Fields(text)...).FoldLeft("", (best, w) => if (w.Size() > best.Size()) w else best)
+
+// Summarize calls CountReader, a Go function from writer.go. It returns
+// (Counter, error), so GALA sees a Try[Counter].
+func Summarize(text string) Try[Stats] =
+    CountReader(strings.NewReader(text)).Map((c) => Stats(c.Lines, c.Words, c.Bytes, longestWord(text)))
