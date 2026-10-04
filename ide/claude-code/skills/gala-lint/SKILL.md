@@ -1462,6 +1462,86 @@ terminal edges.
 | Undocumented export | an exported declaration with no `//` comment directly above it, a comment not starting with the name, or a blank line between comment and declaration | `// Name does ...` directly above; parameters as `name: description` lines |
 | Go-style tests | `testing.T` / testify in `_test.gala` files | `martianoff/gala/test`: `func TestXxx(t T) T` with `Eq`, `IsTrue`, ...; table-driven with `RunCases` |
 
+### 14b. Typed IDs and Units: `opaque type` (MEDIUM priority)
+
+A typed ID or unit (`UserID`, `Millis`, `Cents`) is an `opaque type UserID int64`:
+a distinct type with the underlying type's operators, a generated `Hash` /
+`Compare` (so it is a `HashMap` key and sorts), and the bare value on the wire.
+Two other spellings of the same intent each lose something. Both rules below are
+about *scalars*: `bool`, `string`, the integer and floating-point kinds, `rune`,
+`byte`, an alias of one of those, or a Go named scalar such as `time.Duration`.
+
+**Rule `prefer-opaque`.** Flag a shorthand struct when ALL of these hold:
+
+1. it has exactly one field, and that field is **exported** (starts with an
+   uppercase letter);
+2. the field's type is a scalar;
+3. the field has no default (`= value`);
+4. the field name is used only to wrap and unwrap the value (`Millis(Value = n)`,
+   `m.Value`, `case Millis(v)`), never as a name with meaning of its own.
+
+**Never flag a struct whose field is private** (lowercase): `struct Email(v string)`
+plus a `ParseEmail` constructor is the encapsulation tool. Only its own package can
+build one, which is exactly what an opaque type gives up (`Email("junk")` compiles
+in every package). Also leave it alone when the type is decoded from a wire format
+already in use: the struct encodes as `{"Value":1500}`, the opaque type as `1500`,
+so the fix changes the wire shape and needs a migration, not a lint fix. Say so in
+the report instead of suggesting the rewrite.
+
+```gala
+// FLAG — one exported scalar field, no default: boxes the value, loses `+` and `<`,
+// needs hand-written Hash/Compare to be a HashMap key, encodes as an object
+struct Millis(Value int64)
+func (m Millis) Plus(other Millis) Millis = Millis(m.Value + other.Value)
+
+// FIX
+opaque type Millis int64
+func (m Millis) Plus(other Millis) Millis = m + other
+
+// NOT FLAGGED — private field: only this package can build an Email
+struct Email(v string)
+func ParseEmail(s string) Try[Email] = ...
+
+// NOT FLAGGED — a default, a second field, or a non-scalar field
+struct Retry(Tries int = 3)
+struct Money(Amount int64, Currency string)
+struct Tags(Values Array[string])
+```
+
+**Check**: `grep -nE '^struct [A-Z][A-Za-z0-9]*\([A-Z][A-Za-z0-9]* [A-Za-z0-9_.]+\)' -r --include='*.gala' .`
+lists the candidates (one exported field, no default); keep those whose field type
+is a scalar, then read how the field name is used.
+
+**Rule `alias-as-identity`.** Flag `type X Y` where `Y` is a scalar and `X` appears
+in **two or more function or method signatures that also mention `Y`** (as a
+parameter or result). That is an alias standing in for an identity: an alias *is*
+its target, so an `int64` passes wherever a `UserID` is expected and the two
+parameters can be swapped silently. Suggest `opaque type X Y`, with explicit
+conversions (`UserID(n)`, `int64(id)`) at the boundaries.
+
+```gala
+type UserID int64
+
+// FLAG — UserID and int64 side by side in two signatures: Charge(42, userID)
+// compiles, with the arguments the wrong way round
+func Charge(user UserID, cents int64) Try[Receipt] = ...
+func Refund(user UserID, cents int64) Try[Receipt] = ...
+
+// FIX
+opaque type UserID int64
+```
+
+**Check**: `grep -nE '^type [A-Z][A-Za-z0-9]* (bool|string|rune|byte|u?int(8|16|32|64)?|float(32|64)|[a-z_]+\.[A-Z][A-Za-z0-9]*)$' -r --include='*.gala' .`
+lists the scalar aliases (add any alias of an alias); for each, count the
+`func` signatures that mention both the alias and its target.
+
+Do not flag:
+- an alias over a non-scalar (`type Handler func(Request) Response`, `type Row
+  Array[string]`): it names a shape, which is what an alias is for;
+- an alias that never shares a signature with its target, or does so once;
+- an alias that exists to match a Go API's parameter type (Go interop), where the
+  Go side needs the raw type.
+
 ## Directories to Skip
 
 - `bazel-*` (build outputs)
