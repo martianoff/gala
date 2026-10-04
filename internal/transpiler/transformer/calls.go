@@ -587,6 +587,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// type binds U directly from the surrounding context, making the lambda
 	// see a concrete expected return type and emit `func(T) U` with the
 	// correct U.
+	//
+	// A method with a type parameter only its result mentions is emitted
+	// with every type argument spelled (resultOnlyMethodTypeArgs), so, as for
+	// a generic function (injectFuncPhantomTypeArgs), only those come from
+	// the slot: the arguments bind the others, and a slot type contradicting
+	// an argument is never written out.
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 &&
 		pendingExpected != nil && !pendingExpected.IsNil() && !pendingExpected.IsAny() &&
 		methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
@@ -597,8 +603,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		substitutedReturn := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypesForReturn)
 		inferredFromExpected := make(map[string]transpiler.Type)
 		t.unifyForInference(substitutedReturn, pendingExpected, methodMeta.TypeParams, inferredFromExpected)
+		argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
 		for tp, inferred := range inferredFromExpected {
-			if transpiler.IsUnusableOrAny(inferred) {
+			if transpiler.IsUnusableOrAny(inferred) || len(phantom) > 0 && argBound[tp] {
 				continue
 			}
 			if _, alreadySet := typeSubst[tp]; !alreadySet {
@@ -824,12 +831,13 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// is still visible.
 	//
 	// This is deliberately not a hard error: the cases above are valid programs
-	// that compile via Go's inference. The only shape it cannot save is a method
-	// type param Go also cannot infer (one that appears solely in the return type
-	// with nothing at the call site to bind it) — that produces a Go "cannot
-	// infer" error and needs call-site-context threading, tracked separately.
+	// that compile via Go's inference. A method type param Go cannot infer
+	// (one only the result mentions) is spelled out first instead, from the
+	// slot the call fills, or reported (resultOnlyMethodTypeArgs).
 	if methodMeta != nil && typeMeta != nil {
-		yields := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypes)
+		yields := func() transpiler.Type {
+			return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypes)
+		}
 		if typeArgs, err = t.resultOnlyMethodTypeArgs(anchor, methodMeta, typeArgs, typeSubst, yields, mArgs); err != nil {
 			return true, nil, err
 		}
@@ -1049,23 +1057,18 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
 // call of the generic method methodMeta, when the method has a type parameter
-// only its result mentions (`U` of `Convert[U any]() Option[U]`): Go infers
-// no such parameter, so the call has to spell every one of the method's type
-// arguments. typeSubst holds those its arguments and the slot the call fills
-// bound (see tryTransformGenericMethodAsFunction); yields is its result type
-// on this receiver. One left open is GALA-E0067 at anchor (the call's argument
-// list, or its `()`), as for a generic function (see
-// injectFuncPhantomTypeArgs). typeArgs is returned as is when every type
-// parameter is bound by a parameter, which Go infers from the arguments.
-func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
-	if len(typeArgs) >= len(methodMeta.TypeParams) {
-		return typeArgs, nil
-	}
-	argBound := make(map[string]bool)
-	for _, pt := range methodMeta.ParamTypes {
-		t.collectReferencedParams(pt, methodMeta.TypeParams, argBound)
-	}
-	if !slices.ContainsFunc(methodMeta.TypeParams, func(tp string) bool { return !argBound[tp] }) {
+// only its result mentions (phantom, see phantomTypeParams: the `U` of
+// `Convert[U any]() Option[U]`). Go infers no such parameter, so the call has
+// to spell every one of the method's type arguments. typeSubst holds those
+// its arguments and the slot the call fills bound (see
+// tryTransformGenericMethodAsFunction); yields gives its result type on this
+// receiver, for the hint. One left open is GALA-E0067 at anchor (the call's
+// argument list, or its `()`), as for a generic function (see
+// injectFuncPhantomTypeArgs). typeArgs is returned as is when the method has
+// no phantom type parameter: Go infers the others from the arguments.
+func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
+	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
+	if len(typeArgs) >= len(methodMeta.TypeParams) || len(phantom) == 0 {
 		return typeArgs, nil
 	}
 	full := slices.Clone(typeArgs)
@@ -1085,45 +1088,27 @@ func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleCon
 	}
 	name := methodCallName(anchor, methodMeta.Name)
 	line, col := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
-	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
-		// No slot fixes an argument whose type is unknown.
-		return nil, t.unknownArgTypeError(line, col, ast.NewIdent(name), missing, args, true)
+	// No slot fixes an argument whose type is unknown.
+	always := slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] })
+	if err := t.unknownArgTypeError(line, col, name, missing, args, always); err != nil {
+		return nil, err
 	}
-	return nil, t.uninferredTypeArgErrorNamed(line, col, name, valueYields(yields), methodMeta.TypeParams, resolved, missing)
+	return nil, t.uninferredTypeArgErrorNamed(line, col, name, valueYields(yields()), methodMeta.TypeParams, resolved, missing)
 }
 
-// methodCallName spells the callee of a method call for a diagnostic, as the
-// source writes its receiver (`Box(1).Convert`): call is a node of the call's
-// argument list suffix, from which the enclosing postfix expression is found.
-// Without one, the receiver is shown as `(...)`.
-func methodCallName(call antlr.Tree, method string) string {
-	unknown := "(...)." + method
-	for n := call; n != nil; n = n.GetParent() {
-		suffix, ok := n.(*grammar.PostfixSuffixContext)
-		if !ok {
-			continue
+// methodCallName spells the callee of a method call for a diagnostic as the
+// source writes it (`Cell(1).Convert`, see calleeText); anchor is the call's
+// argument list or its `()`. A callee too long to quote is `(...).method`.
+func methodCallName(anchor antlr.Tree, method string) string {
+	for n := anchor; n != nil; n = n.GetParent() {
+		if suffix, ok := n.(*grammar.PostfixSuffixContext); ok {
+			if text := calleeText(suffix); strings.HasSuffix(text, "."+method) {
+				return text
+			}
+			break
 		}
-		pe, ok := suffix.GetParent().(*grammar.PostfixExprContext)
-		if !ok || pe.PrimaryExpr() == nil {
-			return unknown
-		}
-		suffixes := pe.AllPostfixSuffix()
-		// The call is `.method(...)` or `.method[...](...)`: the receiver is
-		// everything before the member suffix.
-		m := slices.Index(suffixes, grammar.IPostfixSuffixContext(suffix)) - 1
-		if m >= 0 && suffixOpener(suffixes[m].(*grammar.PostfixSuffixContext)) == "[" {
-			m--
-		}
-		if m < 0 || suffixes[m].(*grammar.PostfixSuffixContext).Identifier() == nil {
-			return unknown
-		}
-		recv := pe.PrimaryExpr().GetText()
-		for _, s := range suffixes[:m] {
-			recv += s.GetText()
-		}
-		return recv + "." + method
 	}
-	return unknown
+	return "(...)." + method
 }
 
 // transformRegularMethodCall handles Section 4 of the call dispatcher: method
@@ -3298,21 +3283,26 @@ func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string
 // of asking for a type argument, with a hint (see isUninferredTypeArgError:
 // no other slot can fix it).
 func (t *galaASTTransformer) uninferredCallTypeArgError(line, col int, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string, args []ast.Expr) error {
-	if err := t.unknownArgTypeError(line, col, base, missing, args, false); err != nil {
+	if err := t.unknownArgTypeError(line, col, t.argCalleeName(base), missing, args, false); err != nil {
 		return err
 	}
 	return t.uninferredTypeArgError(line, col, base, valueYields(yields), typeParams, inferred, missing)
 }
 
-// unknownArgTypeError reports the type parameters missing of the call base,
-// which its arguments args should have determined but whose types are
-// unknown: an argument that calls into a Go package whose types were not
-// loaded is named, with that package. Otherwise it returns nil, or with
-// always, a generic form. Both carry a hint, which marks the error as one no
-// other slot can fix (see isUninferredTypeArgError).
-func (t *galaASTTransformer) unknownArgTypeError(line, col int, base ast.Expr, missing []string, args []ast.Expr, always bool) error {
+// argCalleeName spells the callee base for unknownArgTypeError: `Try`, as
+// written, not `std.Try`.
+func (t *galaASTTransformer) argCalleeName(base ast.Expr) string {
 	_, qualified := extractTypeNameFromExpr(base)
-	name := t.callSiteName(stripStdPrefix(qualified)) // `Try`, as written, not `std.Try`
+	return t.callSiteName(stripStdPrefix(qualified))
+}
+
+// unknownArgTypeError reports the type parameters missing of the callee
+// spelled name, which its arguments args should have determined but whose
+// types are unknown: an argument that calls into a Go package whose types
+// were not loaded is named, with that package. Otherwise it returns nil, or
+// with always, a generic form. Both carry a hint, which marks the error as one
+// no other slot can fix (see isUninferredTypeArgError).
+func (t *galaASTTransformer) unknownArgTypeError(line, col int, name string, missing []string, args []ast.Expr, always bool) error {
 	for _, arg := range args {
 		if callee, pkgPath, ok := t.unloadedGoPackageCall(arg); ok {
 			return galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col,

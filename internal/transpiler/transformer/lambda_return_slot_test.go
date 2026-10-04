@@ -134,7 +134,7 @@ func zeroIsNone(n int) Option[string] {
 			contains: []string{"return std.None[int]{}", "apply(func() std.Option[int] {"},
 		},
 		{
-			name: "a type guessed from the match subject never fixes the slot",
+			name: "a return is not typed from the match subject",
 			body: `
 func subjectNotResult(o Option[int]) string {
     val r = apply(() => {

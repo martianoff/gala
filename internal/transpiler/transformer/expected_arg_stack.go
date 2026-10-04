@@ -85,23 +85,16 @@ func (s *expectedArgTypeStack) consume() transpiler.Type {
 }
 
 // withhold hides the hint on top of the stack when it was pushed for owner,
-// and returns the function that puts it back; calling that again does
-// nothing. A slot types the call that is its value, never that call's
-// receiver: `parse()` in `parse().Get()` does not take the type `.Get()`
-// fills.
+// and returns the function that puts it back, to be called once. A slot
+// types the call that is its value, never that call's receiver: `parse()` in
+// `parse().Get()` does not take the type `.Get()` fills.
 func (s *expectedArgTypeStack) withhold(owner *grammar.PostfixExprContext) func() {
 	if owner == nil || len(s.stack) == 0 || s.stack[len(s.stack)-1].owner != owner {
 		return func() {}
 	}
 	top := s.stack[len(s.stack)-1]
 	s.stack = s.stack[:len(s.stack)-1]
-	restored := false
-	return func() {
-		if !restored {
-			s.stack = append(s.stack, top)
-			restored = true
-		}
-	}
+	return func() { s.stack = append(s.stack, top) }
 }
 
 // depth returns the current stack depth. Useful for invariant checks in

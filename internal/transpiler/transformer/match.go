@@ -965,8 +965,8 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 			// type, which is the type of the result value only. With no slot
 			// type either, it is a dispatch-style match used purely for side
 			// effects (all arms call void functions, recurse, or are empty
-			// `{}` blocks, with none producing a typed value): the IIFE has
-			// no return type and the result is discarded.
+			// `{}` blocks, with none producing a typed value), which the
+			// caller lowers to a void IIFE.
 			t.traceType(nil, transpiler.NilType{}, "match-result-untyped-arms")
 			return transpiler.NilType{}, nil
 		}

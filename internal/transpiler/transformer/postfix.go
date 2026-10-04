@@ -46,9 +46,9 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 	// call that is the value (see consumesSlotType), or for a bare tuple
 	// literal: never for the receiver the call is applied to.
 	suffixes := ctx.AllPostfixSuffix()
-	release := t.expectedArgTypes.withhold(ctx)
-	if len(suffixes) == 0 {
-		release()
+	release := func() {}
+	if len(suffixes) > 0 {
+		release = t.expectedArgTypes.withhold(ctx)
 	}
 	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	if err != nil {
@@ -650,16 +650,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, err
 	}
 	resultType = t.branchingResultType(resultType, s)
-	if transpiler.IsUnusable(resultType) {
-		// No arm and no slot types the match (see inferCommonResultType).
-		resultType = transpiler.VoidType{}
-	}
 
 	// Statement-position matches discard their value; force the IIFE to be
 	// void so that arms with mixed value/void payloads — e.g. one arm calling
 	// a Go method returning bool, another calling a void Go method — do not
 	// emit `return <voidCall>` (rejected by Go as "no value used as value").
-	if stmtPosition {
+	// So is a dispatch-style match no arm and no slot types (see
+	// inferCommonResultType).
+	if stmtPosition || transpiler.IsUnusable(resultType) {
 		resultType = transpiler.VoidType{}
 	}
 

@@ -43,7 +43,10 @@ type galaASTTransformer struct {
 	structFields      map[string][]string
 	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
 	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
-	functions         map[string]*transpiler.FunctionMetadata
+	// resultGenericMethods holds the name of every known method whose own
+	// type parameters its result mentions (see isResultGenericMethodCall).
+	resultGenericMethods map[string]bool
+	functions            map[string]*transpiler.FunctionMetadata
 	// galaPkgPaths is the set of import paths that are GALA packages, taken from
 	// richAST.Packages (the analyzer fills that map only inside its GALA-package
 	// branch). It lets a qualified call tell whether its qualifier names a GALA
@@ -222,6 +225,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
 	t.patternDefineTypes = nil
 	t.genericMethods = make(map[string]map[string]bool)
+	t.resultGenericMethods = make(map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
 	t.hasOpaque = anyOpaque(richAST.Types)
@@ -277,6 +281,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		for methodName, methodMeta := range meta.Methods {
 			if len(methodMeta.TypeParams) > 0 || methodMeta.IsGeneric {
 				t.genericMethods[typeName][methodName] = true
+			}
+			if len(methodMeta.TypeParams) > 0 && typeMentionsTypeParam(methodMeta.ReturnType, methodMeta.TypeParams) {
+				t.resultGenericMethods[methodName] = true
 			}
 		}
 	}

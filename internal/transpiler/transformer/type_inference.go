@@ -686,17 +686,17 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 	return result
 }
 
-// phantomTypeParams classifies funcMeta's type parameters: argBound holds
-// those some parameter type mentions (Go infers them from the arguments);
-// phantom lists the others, which appear only in the result (the `A` of
+// phantomTypeParams classifies the type parameters of a generic function or
+// method whose parameters have types paramTypes: argBound holds those some
+// parameter type mentions (Go infers them from the arguments); phantom lists the others, which appear only in the result (the `A` of
 // `func InvalidOf[E, A](err E) Validated[E, A]`). Go can never infer a
 // phantom type parameter from a call.
-func (t *galaASTTransformer) phantomTypeParams(funcMeta *transpiler.FunctionMetadata) (argBound map[string]bool, phantom []string) {
+func (t *galaASTTransformer) phantomTypeParams(typeParams []string, paramTypes []transpiler.Type) (argBound map[string]bool, phantom []string) {
 	argBound = make(map[string]bool)
-	for _, pt := range funcMeta.ParamTypes {
-		t.collectReferencedParams(pt, funcMeta.TypeParams, argBound)
+	for _, pt := range paramTypes {
+		t.collectReferencedParams(pt, typeParams, argBound)
 	}
-	for _, tp := range funcMeta.TypeParams {
+	for _, tp := range typeParams {
 		if !argBound[tp] {
 			phantom = append(phantom, tp)
 		}
@@ -728,7 +728,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	case *ast.IndexExpr, *ast.IndexListExpr:
 		return fun, nil
 	}
-	argBound, phantom := t.phantomTypeParams(funcMeta)
+	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, funcMeta.ParamTypes)
 	if len(phantom) == 0 {
 		// Every type param is determined by an argument — leave it to Go.
 		return fun, nil
@@ -744,7 +744,7 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	instantiated, missing := t.completeTypeArgs(fun, funcMeta.TypeParams, nil, resolved)
 	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
 		// No slot fixes an argument whose type is unknown.
-		return nil, t.unknownArgTypeError(line, col, fun, missing, args, true)
+		return nil, t.unknownArgTypeError(line, col, t.argCalleeName(fun), missing, args, true)
 	}
 	if missing != nil {
 		return nil, t.uninferredCallTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing, args)

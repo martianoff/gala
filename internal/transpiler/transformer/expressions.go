@@ -1043,7 +1043,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 }
 
 // slot is the type a value is lowered against (see lowerAgainst), with the
-// slot kind's policy for a plain expression.
+// way the value is lowered: an open, by-name or discarded slot.
 type slot struct {
 	typ transpiler.Type
 	// tryThunk: the slot is the thunk parameter of Try(...), which turns an
@@ -1106,8 +1106,9 @@ func (t *galaASTTransformer) needsExpectedType(exprCtx grammar.IExpressionContex
 // takes its parameter and result types from a function type (strict is
 // transformLambdaWithExpectedType's untyped-parameter policy); an if-expression
 // or match lowers each branch against the same slot (branch lambdas strictly);
-// a plain expression follows the slot's push policy. A lambda body is never
-// lowered against the outer slot: it gets typedSlot(the lambda's result type).
+// a plain expression sees the slot type only if it consumes it
+// (consumesSlotType). A lambda body is never lowered against the outer slot:
+// it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
 	if transpiler.IsUnusable(s.typ) {
 		return t.transformExpression(exprCtx)
@@ -1262,20 +1263,11 @@ func (t *galaASTTransformer) isResultGenericMethodCall(exprCtx grammar.IExpressi
 		return false
 	}
 	suffixes := p.AllPostfixSuffix()
-	if len(suffixes) < 2 || !isCallSuffix(suffixes[len(suffixes)-1]) {
+	if len(suffixes) == 0 || !isCallSuffix(suffixes[len(suffixes)-1]) {
 		return false
 	}
-	member := suffixes[len(suffixes)-2].(*grammar.PostfixSuffixContext)
-	if member.Identifier() == nil {
-		return false
-	}
-	name := member.Identifier().GetText()
-	for _, meta := range t.typeMetas {
-		if m := meta.Methods[name]; m != nil && len(m.TypeParams) > 0 && typeMentionsTypeParam(m.ReturnType, m.TypeParams) {
-			return true
-		}
-	}
-	return false
+	member := calledMemberToken(suffixes[len(suffixes)-1])
+	return member != nil && t.resultGenericMethods[member.GetText()]
 }
 
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
@@ -1362,7 +1354,7 @@ func (t *galaASTTransformer) isPhantomGenericCall(name string) bool {
 	if meta == nil {
 		return false
 	}
-	_, phantom := t.phantomTypeParams(meta)
+	_, phantom := t.phantomTypeParams(meta.TypeParams, meta.ParamTypes)
 	return len(phantom) > 0
 }
 
