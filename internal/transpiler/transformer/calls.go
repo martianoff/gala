@@ -334,7 +334,18 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				if err != nil {
 					return nil, err
 				}
-				return &ast.CallExpr{Fun: base, Args: filled}, nil
+				// A result-only type parameter comes from the slot, as for
+				// any call (`parse()` for `parse[T any](s string = "")`).
+				pending := t.expectedArgTypes.peek()
+				fun, err := t.injectFuncPhantomTypeArgs(base, funcMeta, filled, false, pending,
+					suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+				if err != nil {
+					return nil, err
+				}
+				if fun != base && pending != nil {
+					t.expectedArgTypes.consume()
+				}
+				return &ast.CallExpr{Fun: fun, Args: filled}, nil
 			}
 		}
 
@@ -2395,7 +2406,17 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 7: Named-args dispatch ---
 	if len(namedArgs) > 0 {
 		if callCtx.funcMeta != nil && len(callCtx.funcMeta.ParamNames) > 0 {
-			return t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			expr, err := t.handleNamedArgsFuncCall(fun, args, namedArgs, callCtx.funcMeta, callCtx.inferredTypeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			// A result-only type parameter comes from the slot, as for a
+			// positional call (section 12.5), over the arguments in order.
+			if call, ok := expr.(*ast.CallExpr); ok && err == nil {
+				call.Fun, err = t.injectFuncPhantomTypeArgs(call.Fun, callCtx.funcMeta, call.Args, call.Ellipsis != token.NoPos, pendingExpected,
+					argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			}
+			if err != nil {
+				return nil, err
+			}
+			return expr, nil
 		}
 		return t.handleNamedArgsCall(fun, args, namedArgs, callCtx, argListCtx)
 	}
@@ -3048,6 +3069,19 @@ func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string
 // of asking for a type argument, with a hint (see isUninferredTypeArgError:
 // no other slot can fix it).
 func (t *galaASTTransformer) uninferredCallTypeArgError(line, col int, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string, args []ast.Expr) error {
+	if err := t.unknownArgTypeError(line, col, base, missing, args, false); err != nil {
+		return err
+	}
+	return t.uninferredTypeArgError(line, col, base, valueYields(yields), typeParams, inferred, missing)
+}
+
+// unknownArgTypeError reports the type parameters missing of the call base,
+// which its arguments args should have determined but whose types are
+// unknown: an argument that calls into a Go package whose types were not
+// loaded is named, with that package. Otherwise it returns nil, or with
+// always, a generic form. Both carry a hint, which marks the error as one no
+// other slot can fix (see isUninferredTypeArgError).
+func (t *galaASTTransformer) unknownArgTypeError(line, col int, base ast.Expr, missing []string, args []ast.Expr, always bool) error {
 	_, qualified := extractTypeNameFromExpr(base)
 	name := t.callSiteName(stripStdPrefix(qualified)) // `Try`, as written, not `std.Try`
 	for _, arg := range args {
@@ -3059,7 +3093,13 @@ func (t *galaASTTransformer) uninferredCallTypeArgError(line, col int, base ast.
 					"in gala.mod (`gala mod add --go <module>`)", pkgPath))
 		}
 	}
-	return t.uninferredTypeArgError(line, col, base, valueYields(yields), typeParams, inferred, missing)
+	if !always {
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col,
+		fmt.Sprintf("cannot infer type argument %s of %s: the type of an argument it depends on is unknown",
+			strings.Join(missing, ", "), name),
+		"bind the argument to a `val` with a declared type, or pass every type argument explicitly")
 }
 
 // unloadedGoPackageCall reports whether expr is an untyped call `pkg.F(...)`

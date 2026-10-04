@@ -190,6 +190,30 @@ func TestSlotTypeArgsAssignmentTarget(t *testing.T) {
 	}
 }
 
+// TestSlotTypeArgsCallForms pins that a call with named arguments, or one that
+// leaves every argument to its default, takes its result-only type parameter
+// from the slot like a positional call.
+func TestSlotTypeArgsCallForms(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	const decls = "func parseD[T any](s string = \"d\") Option[T] = None[T]()\n\n"
+	tests := []struct {
+		name, input, want string
+	}{
+		{"named argument", "func f() Option[int] = parseS(s = \"1\")", `parseS[int]("1")`},
+		{"all defaults", "func f() Option[int] = parseD()", `parseD[int]("d")`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(slotTypeArgDecls+decls+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+	_, err := trans.Transpile(slotTypeArgDecls+decls+"func f() int {\n    val o = parseS(s = \"1\")\n    1\n}\n", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0067")
+}
+
 // TestSlotTypeArgsFunctionWithoutResult pins the hint for a generic function
 // with no result: no annotation can bind its type parameter, so only the
 // explicit type arguments are offered.

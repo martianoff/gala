@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/transpiler"
@@ -741,6 +742,10 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		}
 	}
 	instantiated, missing := t.completeTypeArgs(fun, funcMeta.TypeParams, nil, resolved)
+	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
+		// No slot fixes an argument whose type is unknown.
+		return nil, t.unknownArgTypeError(line, col, fun, missing, args, true)
+	}
 	if missing != nil {
 		return nil, t.uninferredCallTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing, args)
 	}
