@@ -496,9 +496,8 @@ Only lambdas take a result type from their body (below).
 ### Lambda Result Type (the Return Slot)
 
 A lambda has its own return slot (`returnSlot` in
-`internal/transpiler/transformer/return_slot.go`). A `return`, a `bind` block and
-the return-type fallbacks in its body use it, never the enclosing function's
-return type.
+`internal/transpiler/transformer/return_slot.go`). A `return` and a `bind` block
+in its body use it, never the enclosing function's return type.
 
 - An annotated result (`(x int) Option[int] => …`) or a concrete expected
   function type fills the slot up front.
@@ -511,14 +510,10 @@ return type.
   trailing value or a `bind` chain can also fill the slot. The deferred returns
   are then lowered again against it, so an early guard
   `if (x < 0) { return None() }` takes `Option[int]` from a later `Some(x + 1)`.
-- Only a value's own type fills the slot, never a guess. While a `return`
-  value or the body's trailing value is first lowered, the enclosing match
-  subject (which `None()` would otherwise fall back to) is hidden. A trailing
-  value that fails to lower that way is deferred like a `return`. The same holds
-  for a `bind` block's trailing value, and a `bind` type taken from the subject
-  never fills the slot.
-- If nothing fills the slot, each deferred return is lowered again with that
-  context restored. One that still has no settled type is an error: "cannot
+- Only a value's own type fills the slot, never the enclosing match subject's.
+  A trailing value that fails to lower is deferred like a `return`.
+- If nothing fills the slot, each deferred return is lowered again on its
+  own. One that still has no settled type is an error: "cannot
   infer the result type of this lambda" (or the constructor's own error, such as
   [`GALA-E0018`](errors/GALA-E0018.md)).
 
@@ -597,7 +592,7 @@ an alias of an alias, a generic alias (`type Res[T any] Try[T]`, so `Res[int]`
 is `Try[int]`) and an alias imported from another package (`lib.Checked`).
 The type the alias names is what the constructor's type arguments are read
 from: the hint is pushed as that type (`lowerAgainst`), and the readers of the
-result slot and match subject (`inferZeroArgTypeParams`, `bind`) and
+result slot (`bind`) and
 `unifyForInference` resolve it through `followAliasChain`. A value
 typed by an alias has the methods of the type it names, plus any declared on
 the alias itself, is matched as that type (its variants and exhaustiveness),
@@ -640,24 +635,22 @@ compiler, which reports the count.
   `applyCallSuffix` first peeks the top hint and rewrites the receiver
   via `injectSealedVariantTypeArgs`. On a successful rewrite it
   consumes the hint so deeper sub-expressions cannot pick it up. The
-  hint is the type of the slot the constructor itself fills, so it wins
-  over the match-subject fallback of `inferZeroArgTypeParams`, which
-  runs only when no hint applies: `take(None(), 1)` for
+  hint is the type of the slot the constructor itself fills, its only
+  source: `take(None(), 1)` for
   `take[T any](d Option[Drag], v T)` inside a function returning
   `Option[int]`, or inside an arm of a match on an `Option[int]`, is
   `None[Drag]`. The enclosing function's result type reaches a
   constructor only as that hint, when the constructor is the result
   value (see the generic struct construction rule below); `val e =
-  None()` in a function returning `Option[string]` is GALA-E0018. In
-  value position the arm body's type is the match *result* type, which
-  the declared return pins, while the subject is only a proxy that
-  coincides with the result when the match maps `Option[T]` to
-  `Option[T]`. The two diverge in e.g.
-  `v.AsObject() match { case Some(fields) => …; case None() => None() }`
+  None()` in a function returning `Option[string]` is GALA-E0018. The
+  match subject is never a source: in value position the arm body's
+  type is the match *result* type, which differs from the subject in
+  e.g. `v.AsObject() match { case Some(fields) => …; case None() => None() }`
   inside `func firstName(v) Option[string]` — the subject is
-  `Option[Array[JField]]` but the result must be `Option[string]`, so
-  the return type, pushed for the arm's value, wins and the subject
-  stays a fallback for the no-return-type case. A context type is
+  `Option[Array[JField]]` but the result must be `Option[string]`. A
+  `return` in a value-position match or if-expression with no slot type
+  takes none either, not the enclosing function's: it leaves only the
+  IIFE, whose type its sibling branches give. A context type is
   skipped only when it names a type parameter nobody has bound yet (the
   `T` of a callee's `Option[T]`). The type parameters of the
   declaration being lowered — its own and its receiver's — are known
@@ -711,14 +704,13 @@ compiler, which reports the count.
   A zero-argument construction (`Phantom()`, or `Cfg()` taking every
   field's default) is typed the same way. A slot type argument naming a
   type parameter nothing has bound binds nothing (`slotTypeArgs`).
-  Argument, `val` and assignment slots
-  push their type for any expression. A result slot — an expression
+  Every slot — an argument, a `val`, an assignment target, an expression
   body, a block's trailing value, a `return`, the branches of an if or
-  match filling one, a lambda's result — pushes it only for a
-  construction that *is* the value (`consumesSlotType`, as for a tuple
-  literal), so a
-  construction nested in it, or one bound to an unannotated `val` in the
-  body, takes nothing from the result type. An alias of the struct
+  match filling one, a lambda's result — pushes its type only for a
+  construction or call that *is* the value (`consumesSlotType`, as for a
+  tuple literal), so a construction nested in it, the receiver of a
+  method called on it, or one bound to an unannotated `val` in the
+  body, takes nothing from the slot's type. An alias of the struct
   (`type IntTag Tag[int]`) is followed. A type parameter neither source
   determines is an error with an annotation and an explicit-type-argument
   example (`val x Tag[int] = Tag(...)`, `Tag[int](...)`).
@@ -732,17 +724,17 @@ compiler, which reports the count.
 - A **match or if-expression with no expected type** whose value is
   used (`val m = o match { … }`, `val m = if (b) Some(v) else None()`)
   has the type its arms or branches unify to, and that — not the
-  matched value's type — types a bare `None()` among them. `lowerBranches`
-  lowers each arm with that fallback hidden (`siblingTypedBranch`); an
-  arm that then cannot be typed on its own (`None()` fails with E0018; a
+  matched value's type — types a bare `None()` among them. In
+  `lowerBranches`, an
+  arm that cannot be typed on its own (`None()` fails with E0018; a
   generic struct construction, companion `Apply` or generic function
   call with E0067) is lowered again, after the others, against the type
   they unify to. So inside `func pick[T any](o Option[int], v T) T`,
   `o match { case Some(_) => Some(v); case None() => None() }` is an
   `Option[T]` and the arm is `None[T]`, in either arm order, and
   `if (ok) Phantom[int]() else Phantom()` is a `Phantom[int]`. When the
-  other arms unify to no fully known type, the arm is lowered again
-  with the fallback restored, as before. A body with its own result
+  other arms unify to no fully known type, the arm's error is reported.
+  A body with its own result
   slot inside an arm (a lambda, a match or if with an expected type)
   is unaffected.
 

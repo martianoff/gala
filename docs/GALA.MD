@@ -1310,8 +1310,8 @@ val failure = Err[int](fmt.Errorf("oops"))
 When a generic sealed variant takes no fields that mention the parent's
 type parameter (e.g. `case None()` of `Option[T]`, or `case NoCmd()` of
 `Cmd[T]`), the parameter is pinned by downward inference from the
-surrounding context — match subject, `val`/`var` annotation, or
-function return. If no signal is available, the transpiler rejects the
+surrounding context — `val`/`var` annotation, parameter, function
+return, or a sibling branch. If no signal is available, the transpiler rejects the
 call with [`GALA-E0018`](errors/GALA-E0018.md). The full set of
 contexts and the propagation mechanism are described in
 [Downward Inference for Generic Sealed-Type Case Constructors](TYPE_INFERENCE.MD#downward-inference-for-generic-sealed-type-case-constructors).

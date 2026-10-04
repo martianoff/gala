@@ -27,8 +27,8 @@ import (
 //	    case _            => None()
 //	}
 //
-// Before the fix this already worked for `None()` via `inferZeroArgTypeParams`
-// (match subject + enclosing return). The companion negative case
+// Before the fix this already worked for `None()`, the result value of the
+// arm, through the enclosing return type. The companion negative case
 // (`TestErrorPathAssertions/GALA-E0018 qualified None() uninferred in lambda`)
 // covers the qualified-name guard that previously misfired.
 func TestNoneQualifiedDownwardInference(t *testing.T) {

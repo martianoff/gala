@@ -149,10 +149,9 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 
 // tupleElementExpectedTypes returns the per-element expected types for a
 // tuple literal of the given arity: those of the slot the literal itself
-// fills, the top of `expectedArgTypes` — a call argument, val declaration or
-// tuple element (lowerAgainst pushes an argSlot's type), or a function or
-// lambda result when the literal is the whole result value (see
-// consumesSlotType). This drives bidirectional inference for `f((a, b))`
+// fills, the top of `expectedArgTypes` — a call argument, val declaration,
+// tuple element, function or lambda result, pushed by lowerAgainst for the
+// literal that is the whole value (see consumesSlotType). This drives bidirectional inference for `f((a, b))`
 // where `f`'s parameter is `Tuple[T1, T2]`. Returns nil if that slot is not
 // a tuple of this arity. When it is, the entry is consumed off the stack so
 // that nested expressions inside this tuple do not pick it up again (B1
