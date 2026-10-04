@@ -1141,9 +1141,11 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// (1, 2)`) takes its element types from the slot, exactly as one in an
 	// argument slot does, and so does a construction of the generic struct the
 	// slot names (`func f() Tag[int] = Tag("x")`), for the type arguments its
-	// fields leave open. They are the only plain expressions a result slot
-	// pushes for: the literal or the construction consumes the entry itself,
-	// so nothing nested inside it sees the result type.
+	// fields leave open, and a generic call whose result-only type parameters
+	// only the slot gives (`func f() Option[int] = parse()`). They are the
+	// only plain expressions a result slot pushes for (consumesSlotType): the
+	// literal, construction or call consumes the entry itself, so nothing
+	// nested inside it sees the result type.
 	//
 	// The hint is the type an alias names, not the alias: the constructors and
 	// generic calls that read it match its structure (`Try[Email]` for
@@ -1233,10 +1235,20 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 
 // consumesSlotType reports whether exprCtx is a plain expression that takes
 // the type of a result slot it fills (see lowerAgainst), given as hint, the
-// type an alias names: a tuple literal of that tuple type, or a construction
-// of a value of that generic type (isConstructionOf).
+// type an alias names: a tuple literal of that tuple type, a construction of a
+// value of that generic type (isConstructionOf), or a call of a generic
+// function whose result-only type parameters only the slot can give
+// (isPhantomGenericCall).
+//
+// This is the one place a result type reaches a value's type arguments: a
+// construction or generic function call that is not the result value itself
+// never sees the enclosing function's result type.
 func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext, hint transpiler.Type) bool {
-	return t.isTupleLiteralFor(exprCtx, hint) || t.isConstructionOf(exprCtx, hint)
+	if t.isTupleLiteralFor(exprCtx, hint) {
+		return true
+	}
+	name, typeArgs := t.calleeOfCall(exprCtx)
+	return name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name))
 }
 
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
@@ -1250,29 +1262,16 @@ func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContex
 	return list != nil && len(list.AllExpression()) > 1 && len(list.AllExpression()) == len(gen.Params)
 }
 
-// isConstructionOf reports whether exprCtx is exactly a construction of a
-// value of the generic type typ instantiates — of that struct (`Tag("x")`,
-// `Pair[int](1)`, `geo.Tag(name = "x")` for `Tag[int]`), or through a
-// companion Apply returning it (`Mk(1)` for a `Pair[int, string]` when
-// `Mk[A, B]`'s Apply returns `Pair[A, B]`; `Left("x")` for an
-// `Either[string, int]`) — and not a value derived from one
-// (`Tag("x").Rename()`).
-func (t *galaASTTransformer) isConstructionOf(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
+// isConstructionOf reports whether a call of name (see calleeOfCall) is a
+// construction of a value of the generic type typ instantiates — of that
+// struct (`Tag("x")`, `Pair[int](1)`, `geo.Tag(name = "x")` for `Tag[int]`),
+// or through a companion Apply returning it (`Mk(1)` for a
+// `Pair[int, string]` when `Mk[A, B]`'s Apply returns `Pair[A, B]`;
+// `Left("x")` for an `Either[string, int]`). calleeOfCall rules out a value
+// derived from one (`Tag("x").Rename()`).
+func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) bool {
 	gen, ok := typ.(transpiler.GenericType)
 	if !ok {
-		return false
-	}
-	if p := t.barePostfix(exprCtx); p == nil || len(p.AllCaseClause()) > 0 {
-		return false
-	}
-	// The callee is a name, optionally package-qualified and with type
-	// arguments, followed by the one call.
-	var name string
-	if prim, _, _ := t.getCallPatternWithTypeArgsFromExpression(exprCtx); prim != nil {
-		name = prim.GetText()
-	} else if pkg, ctor, _, _, ok := t.getQualifiedCallPattern(exprCtx); ok {
-		name = pkg.GetText() + "." + ctor
-	} else {
 		return false
 	}
 	// Most result values call a function, not a type: that settles it before
@@ -1281,12 +1280,20 @@ func (t *galaASTTransformer) isConstructionOf(exprCtx grammar.IExpressionContext
 	if resolved == "" {
 		return false
 	}
+	// A generic alias of a struct (`Twin(1, 2)` for `type Twin[T any]
+	// Pair[T]`) constructs that struct: its type arguments come from the
+	// struct's (see aliasLiteralType).
+	meta := t.typeMetas[resolved]
+	if t.isGenericStructAlias(name, resolved, meta) {
+		target, _ := t.lookupTypeAlias(name)
+		want := t.resolveTypeMetaName(gen.Base.String())
+		return want != "" && t.resolveTypeMetaName(t.followAliasChain(target).BaseName()) == want
+	}
 	// Compared by their metadata keys: the field map has both a bare and a
 	// package-qualified key for a type of this package (`Q`, `units.Q`).
 	if _, isStruct := t.structFields[resolved]; isStruct && stripPackagePrefix(name) == stripPackagePrefix(gen.Base.BaseName()) {
 		return resolved == t.resolveTypeMetaName(gen.Base.String())
 	}
-	meta := t.typeMetas[resolved]
 	if meta == nil {
 		return false
 	}
@@ -1300,6 +1307,54 @@ func (t *galaASTTransformer) isConstructionOf(exprCtx grammar.IExpressionContext
 	}
 	want := t.resolveTypeMetaName(gen.Base.String())
 	return want != "" && t.resolveTypeMetaName(ret.Base.String()) == want
+}
+
+// calleeOfCall returns the callee of an expression that is exactly one call
+// of a name, optionally package-qualified and with type arguments (`Tag("x")`,
+// `geo.Tag[int](1)`, `parse()`), as written without its type arguments, and
+// whether it has any; "" for anything else.
+func (t *galaASTTransformer) calleeOfCall(exprCtx grammar.IExpressionContext) (name string, typeArgs bool) {
+	if p := t.barePostfix(exprCtx); p == nil || len(p.AllCaseClause()) > 0 {
+		return "", false
+	}
+	if prim, _, args := t.getCallPatternWithTypeArgsFromExpression(exprCtx); prim != nil {
+		return prim.GetText(), args != nil
+	}
+	if pkg, ctor, _, args, ok := t.getQualifiedCallPattern(exprCtx); ok {
+		return pkg.GetText() + "." + ctor, args != nil
+	}
+	return "", false
+}
+
+// isPhantomGenericCall reports whether name (see calleeOfCall, called without
+// type arguments) is a generic function with a type parameter only its result
+// mentions (`parse()` for `func parse[T any]() Option[T]`): the slot the call
+// fills is the only place that parameter can come from.
+func (t *galaASTTransformer) isPhantomGenericCall(name string) bool {
+	meta := t.getFunction(name)
+	if meta == nil {
+		return false
+	}
+	_, phantom := t.phantomTypeParams(meta)
+	return len(phantom) > 0
+}
+
+// isGenericStructAlias reports whether name, resolving to the typeMetas key
+// resolved with metadata meta, is a generic alias of a plain (not sealed)
+// struct — a name with fields of its own is the struct, whatever local alias
+// shares its bare name.
+func (t *galaASTTransformer) isGenericStructAlias(name, resolved string, meta *transpiler.TypeMetadata) bool {
+	if meta == nil || len(meta.TypeParams) == 0 || len(t.structFields[resolved]) > 0 {
+		return false
+	}
+	target, isAlias := t.lookupTypeAlias(name)
+	if !isAlias {
+		return false
+	}
+	end := t.followAliasChain(target).BaseName()
+	endMeta := t.getTypeMeta(t.resolveTypeMetaName(end))
+	_, isStruct := t.structFields[t.resolveStructTypeName(end)]
+	return endMeta != nil && !endMeta.IsSealed && isStruct
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.

@@ -36,4 +36,38 @@ func main() {
     Println(s"json round-trip equal: ${jsonCodec.Decode(encoded).Get().Equal(order)}")
     val yamlCodec = yaml.Codec[Order](yaml.SnakeCase())
     Println(s"yaml round-trip equal: ${yamlCodec.Decode(yamlCodec.Encode(order).Get()).Get().Equal(order)}")
+
+    // The opaque-type pattern works across the package boundary too.
+    Println(
+        describe(buyer),
+        describe(billing.CustomerID(0)),
+        json.Value[billing.Sku]().Encode(billing.Sku("pen")),
+    )
+    Println(region(billing.Region("eu")), wait(billing.Timeout(2000000000)))
+
+    // A phantom-typed opaque type of another package, as a field and a root.
+    val link = Link(billing.Ref[Order](4))
+    val linkCodec = json.Codec[Link](json.SnakeCase())
+    val linked = linkCodec.Encode(link)
+    Println(linked, linked.FlatMap((s) => linkCodec.Decode(s)).Map((l) => l.Equal(link)))
+    Println(json.Value[billing.Ref[Order]]().Decode("9"))
+}
+
+// Link refers to an order through billing's phantom-typed Ref.
+struct Link(Target billing.Ref[Order])
+
+func region(r billing.Region) string = r match {
+    case billing.Region(code) => s"region $code"
+    case _ => "unreachable"
+}
+
+func wait(t billing.Timeout) string = t match {
+    case billing.Timeout(d) => s"wait ${d.String()}"
+    case _ => "unreachable"
+}
+
+func describe(id billing.CustomerID) string = id match {
+    case billing.CustomerID(0) => "guest"
+    case billing.CustomerID(n) => s"customer $n"
+    case _ => "unreachable"
 }

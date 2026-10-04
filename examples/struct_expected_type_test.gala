@@ -91,6 +91,26 @@ func variantArms(n int) Either[string, int] = n match {
 
 func remoteApply(amount float64) units.Quantity[units.Meters] = units.Measure(amount)
 
+// A generic function whose type parameter only its result mentions takes it
+// from the slot its call fills, under the same rule.
+func emptyTag[T any]() Tag[T] = Tag[T]("empty")
+
+func namedTag[T any](name string) Tag[T] = Tag[T](name)
+
+func viaCall() Tag[int] = emptyTag()
+
+func viaCallBranches(n int) Tag[string] = if (n > 0) namedTag(s"call $n") else emptyTag()
+
+func takeBoolTag(t Tag[bool]) string = t.Describe()
+
+// A branch with no type argument of its own takes it from its siblings.
+func siblings(flag bool) string {
+    val marker = if (flag) Marker[int]() else Marker()
+    val tag = if (flag) MkTag("sibling") else Tag[bool]("other")
+    val called = if (flag) emptyTag() else Tag[int]("other")
+    s"$marker ${takeBoolTag(tag)} ${takeTag(called)}"
+}
+
 func main() {
     Println(exprBody().Describe())
     Println(blockValue(2).Describe())
@@ -123,4 +143,10 @@ func main() {
     Println(remoteApply(4.5).Amount)
     val measured units.Quantity[units.Seconds] = units.Measure(5.5)
     Println(measured.Amount)
+
+    Println(viaCall().Describe())
+    Println(viaCallBranches(1).Describe())
+    Println(viaCallBranches(0).Describe())
+    Println(siblings(true))
+    Println(siblings(false))
 }

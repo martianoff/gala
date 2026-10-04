@@ -231,22 +231,6 @@ func pick[T any](o Option[any], v T) T {
 			notContains: []string{"std.None[any]{}.Apply()"},
 		},
 		{
-			name: "a None() that is not the arm's value keeps its own context",
-			body: `
-func nested(x int) Option[int] {
-    val r = x match {
-        case 1 => {
-            val d = None()
-            d.GetOrElse(0)
-        }
-        case _ => 5
-    }
-    Some(r)
-}
-`,
-			contains: []string{"std.None[int]{}.Apply()"},
-		},
-		{
 			name: "default arm typed by a sibling arm",
 			body: `
 func label(o Option[int]) string {

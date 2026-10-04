@@ -118,6 +118,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0062](/docs/errors/gala-e0062/) | Opaque type over a type it cannot be declared over | Types |
 | [GALA-E0063](/docs/errors/gala-e0063/) | Direct conversion between two opaque types | Types |
 | [GALA-E0064](/docs/errors/gala-e0064/) | Opaque type used without a conversion | Types |
+| [GALA-E0065](/docs/errors/gala-e0065/) | Opaque-type pattern with the wrong number of sub-patterns | Types |
 | [GALA-E0066](/docs/errors/gala-e0066/) | Declaration collides with a dot import | Declarations |
 | [GALA-E0067](/docs/errors/gala-e0067/) | Type argument cannot be inferred | Types |
 
@@ -155,7 +156,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one. See [Type Inference](/features/type-inference/).
 
-**Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type. Start with [Opaque Types](/docs/language-reference/#opaque-types).
+**Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type · [E0065](/docs/errors/gala-e0065/) an opaque-type pattern with other than one sub-pattern. Start with [Opaque Types](/docs/language-reference/#opaque-types).
 
 **Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import. See [Dependency Management](/docs/dependency-management/).
 

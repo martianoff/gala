@@ -1,0 +1,57 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/json"
+    "martianoff/gala/yaml"
+)
+
+// Phantom type parameters: one `opaque type Id[T any] int64` gives every
+// entity its own ID type. Id[User] and Id[Order] are both an int64 at run
+// time, but neither passes for the other; a deliberate change of kind goes
+// through the underlying type. Each instantiation keeps the generated Hash
+// and Compare, and encodes as the bare number.
+
+// User is an account holder.
+struct User(Name string)
+
+// Order is a purchase.
+struct Order(Total int)
+
+// Id identifies an entity of type T.
+opaque type Id[T any] int64
+
+// Next is the following ID of the same kind.
+func (i Id[T]) Next() Id[T] = i + 1
+
+func userName(id Id[User], names HashMap[Id[User], string]) string = names.Get(id).GetOrElse("?")
+
+func orderTotal(id Id[Order]) int = int(id) * 10
+
+// Receipt refers to a user and an order by ID.
+struct Receipt(Buyer Id[User], Item Id[Order])
+
+func main() {
+    val ada = Id[User](1)
+    val bo = ada.Next()
+    val names = EmptyHashMap[Id[User], string]().Put(ada, "ada").Put(bo, "bo")
+    Println(userName(ada, names), userName(bo, names), userName(Id[User](9), names))
+
+    val order = Id[Order](7)
+    Println(orderTotal(order), orderTotal(order.Next()))
+
+    // Converting one kind of ID into another is explicit.
+    val reused = Id[Order](int64(ada))
+    Println(orderTotal(reused))
+
+    Println(ArrayOf(Id[User](3), ada, bo).Sorted(), TreeSetOf(order, Id[Order](2)).ToArray())
+
+    val receipt = Receipt(ada, order)
+    val codec = json.Codec[Receipt](json.SnakeCase())
+    val encoded = codec.Encode(receipt)
+    Println(encoded, encoded.FlatMap((s) => codec.Decode(s)).Map((r) => r.Equal(receipt)))
+
+    // The root value of a codec can be an opaque type too.
+    Println(json.Value[Id[User]]().Encode(ada), json.Value[Id[User]]().Decode("5"))
+    Println(yaml.Value[Array[Id[Order]]]().Encode(ArrayOf(order, Id[Order](8))))
+}

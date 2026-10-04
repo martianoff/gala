@@ -149,3 +149,167 @@ func TestGenericAlias(t *testing.T) {
 		})
 	}
 }
+
+const genericStructAliasDecls = `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Pair[T any](A T, B T)
+struct Entry[K comparable, V any](Key K, Value V)
+struct P2[A any, B any](X A, Y B)
+struct Box[T any](F func(T) T, Tags Array[T] = EmptyArray())
+struct Phantom[T any]()
+
+type Twin[T any] Pair[T]
+type Same[T any] P2[T, T]
+type Twin2[T any] Twin[T]
+type IntKeyed[V any] Entry[int, V]
+type Flipped[V any, K comparable] Entry[K, V]
+type Weird[A any, B any] Pair[A]
+type IntPair Pair[int]
+type Fn[U any] Box[U]
+type IntBox Box[int]
+type Ph[T any] Phantom[T]
+
+`
+
+// TestGenericStructAliasConstruction covers a generic alias of a generic
+// struct constructed without (all of) its type arguments. They come from the
+// struct's — the fields, the expected type — matched against the struct type
+// the alias names, never an uninstantiated `Twin{...}`, which Go rejects.
+func TestGenericStructAliasConstruction(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "positional",
+			input: "func f() int {\n    val t = Twin(1, 2)\n    t.A + t.B\n}",
+			want:  []string{"Twin[int]{"},
+		},
+		{
+			name:  "named",
+			input: `func f() string = Twin(A = "a", B = "b").A`,
+			want:  []string{"Twin[string]{"},
+		},
+		{
+			name:  "alias of an alias",
+			input: "func f() int = Twin2(5, 6).B",
+			want:  []string{"Twin2[int]{"},
+		},
+		{
+			name:  "alias fixing a type argument",
+			input: `func f() string = IntKeyed(Key = 1, Value = "one").Value`,
+			want:  []string{"IntKeyed[string]{"},
+		},
+		{
+			name:  "alias reordering the type parameters",
+			input: `func f() float64 = Flipped(Key = "x", Value = 2.5).Value`,
+			want:  []string{"Flipped[float64, string]{"},
+		},
+		{
+			name:  "expected type spelled with the alias",
+			input: "func f() Twin[int64] = Twin(3, 4)",
+			want:  []string{"Twin[int64]{"},
+		},
+		{
+			name:  "expected type spelled with the struct",
+			input: "func f() Pair[int64] = Twin(3, 4)",
+			want:  []string{"Twin[int64]{"},
+		},
+		{
+			name:  "reordering alias with an expected type and numeric fields",
+			input: `func f() Flipped[int64, string] = Flipped(Key = "k", Value = 1)`,
+			want:  []string{"Flipped[int64, string]{"},
+		},
+		{
+			name:  "fixing alias with an expected type and numeric fields",
+			input: "func f() IntKeyed[int64] = IntKeyed(Key = 1, Value = 2)",
+			want:  []string{"IntKeyed[int64]{"},
+		},
+		{
+			name:  "partly written type arguments",
+			input: `func f() float64 = Flipped[float64](Key = "x", Value = 2.5).Value`,
+			want:  []string{"Flipped[float64, string]{"},
+		},
+		{
+			name:  "written type arguments",
+			input: `func f() string = Twin[string]("p", "q").A`,
+			want:  []string{"Twin[string]{"},
+		},
+		{
+			name:  "the first binding wins, as for the struct",
+			input: "func f(n int64) int64 = Same(n, 2).Y",
+			want:  []string{"Same[int64]{"},
+		},
+		{
+			name:  "a lambda field typed through the alias",
+			input: "func f() int = Fn(F = (x) => x + 1, Tags = ArrayOf(2)).F(1)",
+			want:  []string{"Fn[int]{", "func(x int) int {"},
+		},
+		{
+			name:  "a lambda field typed by the expected type",
+			input: "func f() Fn[int] = Fn((x) => x + 1)",
+			want:  []string{"Fn[int]{", "func(x int) int {"},
+		},
+		{
+			name:  "a zero-field struct through its alias, from the expected type",
+			input: "func f() Ph[int] = Ph()",
+			want:  []string{"Ph[int]{}"},
+		},
+		{
+			name:  "a default of an alias of an instantiated generic",
+			input: "func f() int = IntBox((x) => x * 2).Tags.Size()",
+			want:  []string{"IntBox{"},
+		},
+		{
+			name:  "alias of an instantiated generic",
+			input: "func f() int = IntPair(9, 10).A",
+			want:  []string{"IntPair{"},
+		},
+		{
+			name:  "written type arguments spelled with the enclosing function's same-named type parameter",
+			input: "func g[U any](v U) U {\n    val f = Fn[U]((x) => x)\n    f.F(v)\n}",
+			want:  []string{"Fn[U]{", "func(x U) U {"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(genericStructAliasDecls+tt.input+"\n", "")
+			require.NoError(t, err)
+			for _, w := range tt.want {
+				assert.Contains(t, got, w)
+			}
+		})
+	}
+
+	t.Run("a type parameter the struct does not mention", func(t *testing.T) {
+		_, err := trans.Transpile(genericStructAliasDecls+"func f() int = Weird(1, 2).A\n", "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0067")
+		assert.Contains(t, err.Error(), "cannot infer type argument B of Weird")
+		assert.Contains(t, err.Error(), "`Weird[int, int](...)`")
+	})
+
+	// More type arguments than an alias takes is Go's error at the call, never
+	// an internal transpiler panic. The output is ill-typed by design, so it
+	// is not handed to the Go type-check oracle.
+	unchecked, _ := newCorpusTranspiler()
+	for _, input := range []string{
+		"func f() int = IntPair[int](9, 10).A",
+		"func f() int = Twin[int, int](1, 2).A",
+		"func f() int = Fn[int, int]((x) => x).F(1)",
+	} {
+		t.Run(input, func(t *testing.T) {
+			_, err := unchecked.Transpile(genericStructAliasDecls+input+"\n", "")
+			if err != nil {
+				assert.NotContains(t, err.Error(), "internal transpiler panic")
+			}
+		})
+	}
+}

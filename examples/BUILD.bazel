@@ -827,6 +827,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A placeholder lambda passed to a generic struct or sealed-variant constructor
+# takes the type arguments a sibling argument binds and infers the rest from
+# its body, as an explicit lambda does — never the declared type parameter.
+gala_exec_test(
+    name = "placeholder_generic_ctor",
+    src = "placeholder_generic_ctor.gala",
+    expected = "placeholder_generic_ctor.out",
+)
+
 # Regression: a placeholder lambda in a void position (ForEach) must lower to a
 # result-less Go func literal. Prior to the fix it emitted the non-existent Go
 # type `void` as the literal's result, so the generated file did not compile.
@@ -1258,6 +1267,13 @@ gala_exec_test(
     src = "newline_paren_statement.gala",
     expected = "newline_paren_statement.out",
     deps = ["//collection_immutable"],
+)
+
+# A '*' or '&' against its operand that starts a line begins a new statement
+gala_exec_test(
+    name = "newline_deref_statement",
+    src = "newline_deref_statement.gala",
+    expected = "newline_deref_statement.out",
 )
 
 # An expression-bodied function with no result type runs its body as a statement
@@ -2577,6 +2593,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A lambda in a slot typed by a Go named function type (fs.WalkDirFunc,
+# http.HandlerFunc) takes the type's underlying signature: a parameter, a val
+# annotation, a result, a struct field, and if-expression branches.
+gala_exec_test(
+    name = "go_named_func_type_slots",
+    src = "go_named_func_type_slots.gala",
+    expected = "go_named_func_type_slots.out",
+)
+
 gala_library(
     name = "cross_pkg_namedarg_lib",
     srcs = ["cross_pkg_namedarg/lib/lib.gala"],
@@ -2753,6 +2778,14 @@ gala_exec_test(
         "//concurrent",
         "//json",
     ],
+)
+
+# A generic alias of a generic struct constructed without type arguments takes
+# them from the fields and the expected type, as the struct does.
+gala_exec_test(
+    name = "generic_struct_alias_ctor",
+    src = "generic_struct_alias_ctor.gala",
+    expected = "generic_struct_alias_ctor.out",
 )
 
 # Package-level `val`s read from another package (qualified and dot-imported)
@@ -4010,4 +4043,25 @@ gala_exec_test(
     src = "immutable_lambda_params_receivers.gala",
     expected = "immutable_lambda_params_receivers.out",
     deps = ["//collection_immutable"],
+)
+
+# Pattern matching on opaque types: the `case UserID(n)` extractor, literal
+# and stable-identifier patterns, and type patterns on an `any` subject.
+gala_exec_test(
+    name = "opaque_type_match",
+    src = "opaque_type_match.gala",
+    expected = "opaque_type_match.out",
+)
+
+# Phantom type parameters on an opaque type: Id[User] and Id[Order] are
+# distinct; each hashes, sorts and encodes (as a field and as the root value).
+gala_exec_test(
+    name = "opaque_type_phantom",
+    src = "opaque_type_phantom.gala",
+    expected = "opaque_type_phantom.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
 )

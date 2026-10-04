@@ -1216,6 +1216,40 @@ func main() {
 			expectCode:     galaerr.CodeOpaqueTypeMismatch,
 			expectContains: "cannot use n (int64) as UserID",
 		},
+		{
+			name: "GALA-E0065 opaque-type pattern with two sub-patterns",
+			input: `package main
+
+opaque type UserID int64
+
+func f(id UserID) string = id match {
+    case UserID(a, b) => "two"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(UserID(1)))
+}`,
+			expectCode:     galaerr.CodeOpaquePatternArity,
+			expectContains: "the opaque-type pattern UserID(...) takes exactly one sub-pattern, got 2",
+		},
+		{
+			name: "GALA-E0065 opaque-type pattern with no sub-pattern",
+			input: `package main
+
+opaque type UserID int64
+
+func f(id UserID) string = id match {
+    case UserID() => "none"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(UserID(1)))
+}`,
+			expectCode:     galaerr.CodeOpaquePatternArity,
+			expectContains: "takes exactly one sub-pattern, got 0",
+		},
 	}
 
 	for _, tc := range cases {

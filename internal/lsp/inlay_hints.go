@@ -191,7 +191,7 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		}
 	}
 	if variant == nil {
-		return nil
+		return opaquePatternHint(line, lineNum, constructorName, bindings, richAST)
 	}
 
 	parenOpen := strings.Index(line, constructorName+"(")
@@ -225,6 +225,34 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		}
 	}
 	return hints
+}
+
+// opaquePatternHint is the hint for the name an opaque-type pattern binds,
+// `case UserID(n)`: the underlying type, `int64`.
+func opaquePatternHint(line string, lineNum int, typeName, bindings string, richAST *transpiler.RichAST) []lsp.InlayHint {
+	binding := strings.TrimSpace(bindings)
+	switch {
+	case binding == "_" || binding == "true" || binding == "false" || binding == "nil":
+		return nil
+	case !isIdentifier(binding) || isStablePatternName(binding, richAST):
+		return nil
+	}
+	for _, tm := range richAST.Types {
+		if !tm.IsOpaque || tm.Name != typeName {
+			continue
+		}
+		underlying, ok := tm.OpaqueUnderlying()
+		if !ok {
+			return nil
+		}
+		bindingsStart := strings.Index(line, typeName+"(") + len(typeName) + 1
+		pos := findWholeWord(line[bindingsStart:], binding)
+		if pos < 0 {
+			return nil
+		}
+		return []lsp.InlayHint{makeTypeHint(lineNum, bindingsStart+pos+len(binding), cleanGoTypeForDisplay(underlying.String()))}
+	}
+	return nil
 }
 
 // isStablePatternName reports whether name, written in a case pattern, is a

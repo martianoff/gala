@@ -54,7 +54,7 @@ func TestT1PhantomTypeParamFallback(t *testing.T) {
 		{
 			name:    "nothing pins T",
 			body:    "func main() {\n    val r = magic()\n    Println(r)\n}",
-			wantErr: "cannot infer type parameter T of magic()",
+			wantErr: "cannot infer type argument T of magic from its arguments or the expected type; annotate the binding (e.g. `val x Option[int] = magic(...)`) or pass type args explicitly (`magic[int](...)`)",
 		},
 	}
 	for _, tt := range tests {

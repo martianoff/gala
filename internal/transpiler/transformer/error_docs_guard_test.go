@@ -1061,6 +1061,25 @@ func main() {
 `)
 			},
 		},
+		{
+			name: "opaque-type pattern with two sub-patterns",
+			code: galaerr.CodeOpaquePatternArity, // GALA-E0065
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+opaque type Point int64
+
+func describe(p Point) string = p match {
+    case Point(x, y) => s"$x,$y"
+    case _ => "?"
+}
+
+func main() {
+    Println(describe(Point(3)))
+}
+`)
+			},
+		},
 		// The GALA-E0038 page also documents the rune-literal shape in prose
 		// (`'\d'`), but quotes no output for it, so there is nothing to pin.
 		// Its numeric forms (`'\x41'`) are not guardable here at all: GALA's

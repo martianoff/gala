@@ -1523,14 +1523,15 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 // siblingTyped is set for a construct whose value is used but whose slot has
 // no type. Its type is then the one its branches unify to, and a branch that
 // cannot be typed on its own takes it from its siblings: a bare `None()` arm
-// next to `Some(v)` is `None[T]`. The matched value's type and the enclosing
-// result type are not the construct's type, so a zero-arg constructor may not
-// guess from them (siblingTypedBranch): such a branch fails its first lowering
-// with GALA-E0018 and is lowered again against the type the other branches
-// unify to, in either order. When they unify to no settled type, or the
-// constructor still has none against it (it is not the branch's value, as in
-// `val d = None()` inside the branch), it is lowered again as before, guesses
-// included. Any other error is reported as it is.
+// next to `Some(v)` is `None[T]`, and `Phantom()` next to `Phantom[int]()` is
+// `Phantom[int]`. The matched value's type is not the construct's type, so a
+// zero-arg constructor may not guess from it (siblingTypedBranch): a branch
+// whose construction or generic call has no type argument fails its first
+// lowering (isUninferredTypeArgError) and is lowered again against the type
+// the other branches unify to, in either order. When they unify to no settled
+// type, or the construction still has none against it (it is not the
+// branch's value, as in `val d = None()` inside the branch), it is lowered
+// again as before, guesses included. Any other error is reported as it is.
 func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, lower func(i int, s slot) (transpiler.Type, error)) error {
 	outer := t.siblingTypedBranch
 	t.siblingTypedBranch = outer || siblingTyped
@@ -1539,7 +1540,7 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 	for i := range n {
 		typ, err := lower(i, s)
 		switch {
-		case err != nil && siblingTyped && isUninferredVariantError(err):
+		case err != nil && siblingTyped && isUninferredTypeArgError(err):
 			retry = append(retry, i)
 		case err != nil:
 			t.siblingTypedBranch = outer
@@ -1561,7 +1562,7 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 			if err == nil {
 				continue
 			}
-			if !isUninferredVariantError(err) {
+			if !isUninferredTypeArgError(err) {
 				return err
 			}
 			// The constructor that has no type is not the branch's value
@@ -1575,11 +1576,18 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 	return nil
 }
 
-// isUninferredVariantError reports whether err is GALA-E0018: a zero-arg
-// constructor of a generic sealed type found no type argument in its context.
-func isUninferredVariantError(err error) bool {
+// isUninferredTypeArgError reports whether err says a type argument has no
+// source: GALA-E0018 (a sealed variant constructor) or GALA-E0067 (a generic
+// struct, companion Apply or generic function call) found none in its
+// arguments or the slot it fills. Another slot can still give it one — unless
+// an argument's own type is unknown (the GALA-E0067 that carries a hint, see
+// uninferredCallTypeArgError), which no slot fixes.
+func isUninferredTypeArgError(err error) bool {
 	var se *galaerr.SemanticError
-	return errors.As(err, &se) && se.Code == galaerr.CodeSealedVariantUninferred
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Code == galaerr.CodeSealedVariantUninferred || se.Code == galaerr.CodeUninferredTypeArgument && se.Hint == ""
 }
 
 // siblingsType is the settled type the value types of a construct's typed

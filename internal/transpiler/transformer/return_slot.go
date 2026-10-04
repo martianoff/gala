@@ -289,7 +289,7 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 		// type, which is what the user has to annotate. One nested deeper
 		// keeps its own GALA-E0018.
 		if err != nil {
-			if filled || !isUninferredVariantError(err) || !t.errorAtOutermostCall(err, d.exprCtx) {
+			if filled || !isUninferredTypeArgError(err) || !t.errorAtOutermostCall(err, d.exprCtx) {
 				return err
 			}
 			return t.semanticErrorAt(d.exprCtx, unresolvedLambdaResultMsg)

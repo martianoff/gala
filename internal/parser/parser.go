@@ -403,7 +403,7 @@ func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSy
 		return
 	}
 
-	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, hideNewlineParen(msg)))
+	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, hideNewlineTokens(msg)))
 }
 
 // bareLambdaParamError recognizes a lambda written without parentheses around

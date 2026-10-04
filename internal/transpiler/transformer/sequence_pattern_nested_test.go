@@ -314,6 +314,6 @@ func TestGenericStructPatternOnAnySubjectNeedsTypeArgs(t *testing.T) {
     case _           => ""
 }`)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot match generic struct 'Box' against a value of type 'any'")
+	assert.Contains(t, err.Error(), "cannot match generic struct 'Box' against a value of an interface or type-parameter type")
 	assert.Contains(t, err.Error(), "case Box[T](...)")
 }

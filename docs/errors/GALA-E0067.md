@@ -1,11 +1,14 @@
 # GALA-E0067 — Type argument cannot be inferred
 
-**When it fires.** A generic type is constructed and nothing at the call
-determines one of its type parameters: not the arguments, not the binding's
-declared type, not the enclosing function's result type. It covers a generic
-struct built from its fields (`Tag("x")`), a type called through its companion
-`Apply` (`Try(x)`), and a partial type-argument list (`Mk[int](2, "c")`) whose
-remaining parameters the arguments do not fix.
+**When it fires.** A generic type is constructed, or a generic function called,
+and nothing at the call determines one of its type parameters: not the
+arguments, not the slot the value fills (the binding's declared type, a
+parameter, or the enclosing function's result type when the value is the
+result). It covers a generic struct built from its fields (`Tag("x")`), a type
+called through its companion `Apply` (`Try(x)`), a partial type-argument list
+(`Mk[int](2, "c")`) whose remaining parameters the arguments do not fix, and a
+generic function whose type parameter only its result mentions (`parse()` for
+`func parse[T any]() Option[T]`).
 
 **Minimal repro.**
 
@@ -88,6 +91,7 @@ with `cannot use generic type std.Try[T any] without instantiation`, a
 message about generated Go rather than about the GALA line that caused it.
 
 **What still works.** Any construction whose type arguments the arguments,
-the declared type of the binding or the enclosing function's result type
+the declared type of the binding, a sibling if or match branch, or the
+enclosing function's result type (for the value that is the result)
 determine: `Tag[int]("x")`, `val t Tag[int] = Tag("x")`, and
 `Try(term.MakeRaw(fd))` once `golang.org/x/term` is required.

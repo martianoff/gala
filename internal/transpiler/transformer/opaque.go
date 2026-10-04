@@ -86,6 +86,9 @@ func (t *galaASTTransformer) opaqueMeta(typ transpiler.Type) *transpiler.TypeMet
 // where a bare name is not in scope: a local alias or function sharing its
 // name with such a package's opaque type is not that type.
 func (t *galaASTTransformer) opaqueMetaByName(name string) *transpiler.TypeMetadata {
+	if !t.hasOpaque {
+		return nil
+	}
 	meta := t.getTypeMeta(name)
 	if meta == nil || !meta.IsOpaque {
 		return nil
@@ -711,12 +714,12 @@ func (t *galaASTTransformer) shareableUnderlying(typ transpiler.Type) (transpile
 	return t.goNamedUnderlying(typ)
 }
 
-// opaqueCodecScalar returns the wire scalar of the opaque type name declared
-// in package pkg ("" for this one), read from the declaring package's
-// metadata: an opaque type encodes as its underlying scalar. ok is false when
-// the name is not an opaque type over a scalar the codec writes.
-func (t *galaASTTransformer) opaqueCodecScalar(name, pkg string) (codecScalar, bool) {
-	meta := t.opaqueMeta(transpiler.NamedType{Package: pkg, Name: name})
+// opaqueCodecScalar returns the wire scalar of the opaque type ty names (bare,
+// qualified or instantiated), read from the declaring package's metadata: an
+// opaque type encodes as its underlying scalar. ok is false when ty is not an
+// opaque type over a scalar the codec writes.
+func (t *galaASTTransformer) opaqueCodecScalar(ty transpiler.Type) (codecScalar, bool) {
+	meta := t.opaqueMeta(ty)
 	u, ok := meta.OpaqueUnderlying()
 	if !ok {
 		return codecScalar{}, false
