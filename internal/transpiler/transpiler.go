@@ -394,15 +394,20 @@ func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
 }
 
 // SynthesizedOpaqueMethods describes the methods the transpiler generates on
-// an opaque type: Hash, and Compare unless the underlying type is bool (the
-// transformer's transformOpaqueTypeDeclaration is the authority). Each is
-// left out when the type declares it itself, in GALA or in a .go file of its
-// package (looked up in goInfo, which may be nil). It is for presentation
-// (hover, completion, gala doc); nil for any other type.
-func (m *TypeMetadata) SynthesizedOpaqueMethods(goInfo *GoTypeInfo) []*MethodMetadata {
+// an opaque type: Hash, and Compare unless the underlying type is bool, also
+// through an alias or a Go named type (the transformer's
+// transformOpaqueTypeDeclaration is the authority). Each is left out when the
+// type declares it itself, in GALA or in a .go file of its package. rich
+// supplies the aliases and Go type info and may be nil. It is for
+// presentation (hover, completion, gala doc); nil for any other type.
+func (m *TypeMetadata) SynthesizedOpaqueMethods(rich *RichAST) []*MethodMetadata {
 	underlying, ok := m.OpaqueUnderlying()
 	if !ok {
 		return nil
+	}
+	var goInfo *GoTypeInfo
+	if rich != nil {
+		goInfo = rich.GoTypeInfo
 	}
 	declares := func(name string) bool {
 		if _, ok := m.Methods[name]; ok {
@@ -426,7 +431,7 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods(goInfo *GoTypeInfo) []*MethodMet
 	if !declares("Hash") {
 		out = append(out, &MethodMetadata{Name: "Hash", Package: m.Package, ReturnType: BasicType{Name: "uint32"}})
 	}
-	if !declares("Compare") && underlying.String() != "bool" {
+	if !declares("Compare") && m.scalarBase(rich, underlying) != "bool" {
 		out = append(out, &MethodMetadata{
 			Name: "Compare", Package: m.Package,
 			ParamNames: []string{"other"}, ParamTypes: []Type{self},
@@ -434,6 +439,37 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods(goInfo *GoTypeInfo) []*MethodMet
 		})
 	}
 	return out
+}
+
+// scalarBase follows typ through rich's aliases and Go named types (the
+// opaque type's own package's included) to the type at the bottom, and
+// returns its name.
+func (m *TypeMetadata) scalarBase(rich *RichAST, typ Type) string {
+	if rich == nil {
+		return typ.String()
+	}
+	for hop := 0; hop < 16; hop++ {
+		name := typ.BaseName()
+		local := strings.TrimPrefix(name, m.Package+".")
+		if next, ok := rich.TypeAliases[name]; ok && next != nil && !next.IsNil() && next.BaseName() != name {
+			typ = next
+			continue
+		}
+		if next, ok := rich.TypeAliases[local]; ok && next != nil && !next.IsNil() && next.BaseName() != local {
+			typ = next
+			continue
+		}
+		td := rich.GoTypeInfo.GetTypeData(name)
+		if td == nil {
+			td = rich.GoTypeInfo.GetTypeData(m.Package + "." + local)
+		}
+		if td != nil && td.Underlying != nil && td.Underlying.BaseName() != name {
+			typ = td.Underlying
+			continue
+		}
+		break
+	}
+	return typ.String()
 }
 
 // DefaultExpr is a declared default value — of a function or method parameter,

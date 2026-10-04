@@ -277,20 +277,12 @@ func memberHover(richAST *transpiler.RichAST, recvType, name string) string {
 // synthesizedMethod returns the Hash or Compare the transpiler generates on an
 // opaque type, or nil when name is not one of them.
 func synthesizedMethod(richAST *transpiler.RichAST, tm *transpiler.TypeMetadata, name string) *transpiler.MethodMetadata {
-	for _, m := range tm.SynthesizedOpaqueMethods(goTypeInfo(richAST)) {
+	for _, m := range tm.SynthesizedOpaqueMethods(richAST) {
 		if m.Name == name {
 			return m
 		}
 	}
 	return nil
-}
-
-// goTypeInfo is richAST's Go type info, nil when there is no RichAST.
-func goTypeInfo(richAST *transpiler.RichAST) *transpiler.GoTypeInfo {
-	if richAST == nil {
-		return nil
-	}
-	return richAST.GoTypeInfo
 }
 
 // findSealedVariant locates a `case` by name, preferring one declared in
@@ -439,7 +431,7 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 			b.WriteString(fmt.Sprintf("- `%s`\n", variantSignature(&v)))
 		}
 	}
-	synthesized := meta.SynthesizedOpaqueMethods(goTypeInfo(richAST))
+	synthesized := meta.SynthesizedOpaqueMethods(richAST)
 	if len(meta.Methods) > 0 || len(synthesized) > 0 {
 		b.WriteString("\n**Methods:**\n")
 		for _, name := range slices.Sorted(maps.Keys(meta.Methods)) {

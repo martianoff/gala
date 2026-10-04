@@ -444,17 +444,8 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 
 	// Methods — show all methods (including unexported for same-package types)
 	for name, m := range tm.Methods {
-		sig := formatMethodSig(m)
-		insertText, format := callInsertText(name, m.ParamNames, m.DefaultExprs, snippets)
-		items = append(items, withRef(lsp.CompletionItem{
-			Label:            name + sig,
-			Kind:             kindPtr(lsp.CompletionItemKindMethod),
-			Detail:           sig,
-			InsertText:       insertText,
-			InsertTextFormat: format,
-			FilterText:       name,
-			SortText:         name,
-		}, completionRef{Kind: refKindMember, Key: ownerKey, Name: name}))
+		items = append(items, withRef(methodCompletion(name, m, "", snippets),
+			completionRef{Kind: refKindMember, Key: ownerKey, Name: name}))
 	}
 
 	// Fields
@@ -467,19 +458,10 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 		}, completionRef{Kind: refKindMember, Key: ownerKey, Name: fn}))
 	}
 
-	// Hash / Compare synthesized on an opaque type
-	for _, m := range tm.SynthesizedOpaqueMethods(goTypeInfo(richAST)) {
-		sig := formatMethodSig(m)
-		insertText, format := callInsertText(m.Name, m.ParamNames, nil, snippets)
-		items = append(items, lsp.CompletionItem{
-			Label:            m.Name + sig,
-			Kind:             kindPtr(lsp.CompletionItemKindMethod),
-			Detail:           sig + " (synthesized)",
-			InsertText:       insertText,
-			InsertTextFormat: format,
-			FilterText:       m.Name,
-			SortText:         m.Name,
-		})
+	// Hash / Compare synthesized on an opaque type. No resolve ref: there is
+	// no declaration, and so no doc comment, to resolve.
+	for _, m := range tm.SynthesizedOpaqueMethods(richAST) {
+		items = append(items, methodCompletion(m.Name, m, " (synthesized)", snippets))
 	}
 
 	// Sealed variant IsXxx() methods
@@ -623,6 +605,22 @@ func goTypeString(t transpiler.Type) string {
 		return "any"
 	}
 	return t.String()
+}
+
+// methodCompletion is the completion item for method name; detailSuffix is
+// appended to the signature shown beside it.
+func methodCompletion(name string, m *transpiler.MethodMetadata, detailSuffix string, snippets bool) lsp.CompletionItem {
+	sig := formatMethodSig(m)
+	insertText, format := callInsertText(name, m.ParamNames, m.DefaultExprs, snippets)
+	return lsp.CompletionItem{
+		Label:            name + sig,
+		Kind:             kindPtr(lsp.CompletionItemKindMethod),
+		Detail:           sig + detailSuffix,
+		InsertText:       insertText,
+		InsertTextFormat: format,
+		FilterText:       name,
+		SortText:         name,
+	}
 }
 
 func formatMethodSig(meta *transpiler.MethodMetadata) string {

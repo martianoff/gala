@@ -273,7 +273,7 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 			continue
 		}
 		seen[bare] = true
-		out.Types = append(out.Types, buildDocType(name, meta, rich.GoTypeInfo))
+		out.Types = append(out.Types, buildDocType(name, meta, rich))
 	}
 	for name, meta := range rich.Functions {
 		if meta == nil || !declaredBy(meta.Package, pkgName) {
@@ -297,7 +297,7 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 	return out
 }
 
-func buildDocType(name string, meta *transpiler.TypeMetadata, goInfo *transpiler.GoTypeInfo) docType {
+func buildDocType(name string, meta *transpiler.TypeMetadata, rich *transpiler.RichAST) docType {
 	dt := docType{
 		Name:       bareTypeName(name),
 		Doc:        meta.Doc,
@@ -346,7 +346,7 @@ func buildDocType(name string, meta *transpiler.TypeMetadata, goInfo *transpiler
 			Returns:    typeString(m.ReturnType),
 		})
 	}
-	for _, m := range meta.SynthesizedOpaqueMethods(goInfo) {
+	for _, m := range meta.SynthesizedOpaqueMethods(rich) {
 		dt.Methods = append(dt.Methods, docSignat{
 			Name:        m.Name,
 			Params:      namedTypes(m.ParamNames, m.ParamTypes),
@@ -450,11 +450,11 @@ func renderPackageDoc(w io.Writer, pkg *docPackage) {
 			renderProse(w, f.Doc, "        ")
 		}
 		for _, m := range t.Methods {
+			suffix := ""
 			if m.Synthesized {
-				fmt.Fprintf(w, "    %s  (synthesized)\n", formatSignature(m))
-				continue
+				suffix = "  (synthesized)"
 			}
-			fmt.Fprintf(w, "    %s\n", formatSignature(m))
+			fmt.Fprintf(w, "    %s%s\n", formatSignature(m), suffix)
 			renderProse(w, m.Doc, "        ")
 		}
 	}
