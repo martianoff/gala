@@ -623,6 +623,19 @@ func main() {
 }`,
 			contains: []string{"Step[int, string]{", "compose(func(__p0 int) int {"},
 		},
+		{
+			name: "a placeholder inside a nested call's non-function argument is the field's own",
+			input: `package main
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+func double(n int) int = n * 2
+
+func main() {
+    Println(Step(In = 4, Run = double(_)).Run(4))
+}`,
+			contains: []string{"Step[int, int]{", "func(__p0 int) int {"},
+		},
 	}
 
 	for _, tc := range cases {

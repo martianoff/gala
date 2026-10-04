@@ -1750,11 +1750,13 @@ func (t *galaASTTransformer) lowerFunctionArg(
 // isPlaceholderLambdaArg reports whether exprCtx, filling a slot of type
 // slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
 // see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
-// transformArgument, a lambda or partial function in it takes precedence. A `_`
-// only inside the arguments of a call it makes (`compose(_ + 1, show)`) is not
-// counted: that call's own function-typed slot takes it.
+// transformArgument, a lambda or partial function in it takes precedence. Its
+// `_` are counted as tryRewriteAsPlaceholderLambda counts them, nested call
+// arguments included (`double(_)`): one a nested call's own function-typed slot
+// takes (`compose(_ + 1, show)`) lowers there, and the slot's type arguments
+// then bind from the value it produces.
 func (t *galaASTTransformer) isPlaceholderLambdaArg(exprCtx grammar.IExpressionContext, slotType transpiler.Type) bool {
-	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countDirectPlaceholders(exprCtx) > 0 &&
+	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholderUnderscoresInExpr(exprCtx) > 0 &&
 		t.findPartialFunctionInExpression(exprCtx) == nil && t.findLambdaInExpression(exprCtx) == nil
 }
 

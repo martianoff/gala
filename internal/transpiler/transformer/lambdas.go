@@ -1539,30 +1539,6 @@ func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
 	return total
 }
 
-// countDirectPlaceholders is countPlaceholderUnderscoresInTree without the `_`
-// inside the argument lists of calls the expression makes: one there may be a
-// placeholder of that call's own function-typed slot (`compose(_ + 1, show)`).
-func countDirectPlaceholders(node antlr.Tree) int {
-	if _, isArgs := node.(*grammar.ArgumentListContext); isArgs {
-		return 0
-	}
-	switch node.(type) {
-	case *grammar.LambdaExpressionContext, *grammar.CaseClauseContext:
-		return 0
-	}
-	if tn, ok := node.(antlr.TerminalNode); ok {
-		if tn.GetText() == "_" {
-			return 1
-		}
-		return 0
-	}
-	total := 0
-	for i := 0; i < node.GetChildCount(); i++ {
-		total += countDirectPlaceholders(node.GetChild(i))
-	}
-	return total
-}
-
 // tryRewriteAsPlaceholderLambda is the L4 entry point called by
 // transformArgument. It returns (expr, handled, error):
 //
