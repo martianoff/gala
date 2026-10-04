@@ -4930,12 +4930,12 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 		// (`exec.Command(...).Output()`).
 		return t.goMethodSignature(t.getExprTypeNameManual(fun.X), fun.Sel.Name)
 	case *ast.Ident:
-		// A function of the package's own hand-written .go files, unless a
-		// local binding of the same name shadows it.
-		if t.packageName != "" && t.bindingScope(fun.Name) == nil {
-			if sig := t.goTypeInfo.GetFuncSignature(t.packageName + "." + fun.Name); sig != nil {
-				return sig
-			}
+		// A local binding of the name is the callee, not a Go function.
+		if t.shadowingScope(fun.Name) != nil {
+			return nil
+		}
+		if sig := t.ownGoFuncSignature(fun.Name); sig != nil {
+			return sig
 		}
 		for _, entry := range t.importManager.dotImports {
 			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
@@ -4944,6 +4944,35 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 		}
 	}
 	return nil
+}
+
+// ownGoFuncSignature finds the Go signature of a function a bare name calls in
+// the package's own hand-written .go files — the declaring package's, while a
+// default declared in another package is being lowered. Go type info is keyed
+// by short package name alone, so the lookup misses rather than guesses when
+// the name is a GALA function of the package, or when the file imports a Go
+// package of the same name, whose functions share those keys.
+func (t *galaASTTransformer) ownGoFuncSignature(name string) *transpiler.GoFuncSignature {
+	pkg := t.packageName
+	if t.loweringForeignDefault() {
+		pkg = t.loweringDefault.pkg
+	}
+	if pkg == "" {
+		return nil
+	}
+	sig := t.goTypeInfo.GetFuncSignature(pkg + "." + name)
+	if sig == nil {
+		return nil
+	}
+	if _, isGala := t.unshadowedFunctionByName(name); isGala {
+		return nil
+	}
+	for _, entry := range t.importManager.All() {
+		if entry.PkgName == pkg && !t.galaPkgPaths[entry.Path] {
+			return nil
+		}
+	}
+	return sig
 }
 
 // splitCallFunTypeArgs separates a call's function expression from any explicit
