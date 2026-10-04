@@ -29,9 +29,9 @@ func isWildcard(text string) bool {
 }
 
 // isBindingPattern checks if a pattern text has the shape of a variable
-// binding: a simple identifier that does not start with a capital letter (a
-// capitalized name is never a catch-all: as in Scala, it names a stable
-// identifier or an extractor).
+// default-arm binding: a simple identifier that does not start with a capital
+// letter. (A capitalized name is never taken as the match's default arm; when
+// it names nothing it is lowered as an ordinary binding in its own arm.)
 // Constructor calls like `Some(x)`, literals like `""` or `42`,
 // and keywords like `true`/`false`/`nil` are NOT bindings. The shape alone
 // does not make a binding: a name that resolves to a variant or zero-field

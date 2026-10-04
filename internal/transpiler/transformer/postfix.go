@@ -588,7 +588,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		var arm matchArm
 		var err error
 		if isDefault[i] {
-			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, subjectType, armSlot)
+			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, subjectType, isBinding[i], armSlot)
 		} else {
 			// A guarded binding of the whole subject (`case p if ...`) keeps
 			// the written type too; every other pattern reads the variants.

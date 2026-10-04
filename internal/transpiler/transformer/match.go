@@ -125,10 +125,16 @@ func extractVariantName(patternText string) string {
 	if dot := strings.LastIndex(name, "."); dot >= 0 {
 		name = name[dot+1:]
 	}
-	// Reject anything that is not an identifier: a literal (`42`, `"x"`), an
-	// operator expression, a typed pattern (`x: int`).
-	if !token.IsIdentifier(name) {
+	// Reject anything that is not a plain ASCII identifier — a literal (`42`,
+	// `"x"`), an operator expression, a typed pattern (`x: int`) — with the
+	// same alphabet isBindingPattern and isSimpleIdentifier use.
+	if name == "" || (name[0] >= '0' && name[0] <= '9') {
 		return ""
+	}
+	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			return ""
+		}
 	}
 	return name
 }
@@ -677,6 +683,11 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 		}
 		variantName := extractVariantName(patternText)
 		if variantName == "" {
+			continue
+		}
+		// A name bound in scope is a value — an instance extractor such as a
+		// compiled regex `re(a, b)` — not a companion naming a sealed type.
+		if _, bound := t.lookupBinding("", variantName); bound {
 			continue
 		}
 
@@ -1431,13 +1442,14 @@ type matchArm struct {
 }
 
 // lowerDefaultMatchArm lowers the default arm of a match (a wildcard, or the
-// catch-all binding pattern) against armSlot. Its body's trailing value, or
+// catch-all binding pattern, binds) against armSlot. Its body's trailing value, or
 // the value its trailing if/else carries, is the arm's value.
-func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (matchArm, error) {
+func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, binds bool, armSlot slot) (matchArm, error) {
 	var arm matchArm
 	// For binding patterns, register the variable and add assignment
 	var bindingStmts []ast.Stmt
-	if patternText := ctx.Pattern().GetText(); isBindingPattern(patternText) {
+	if binds {
+		patternText := ctx.Pattern().GetText()
 		t.currentScope.vals[patternText] = false
 		if matchedType != nil && !matchedType.IsNil() {
 			t.currentScope.valTypes[patternText] = matchedType

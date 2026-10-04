@@ -227,7 +227,7 @@ See also: [Language Reference - Extractors and Unapply](/docs/language-reference
 
 ## Matching Against Constants (Stable Identifiers)
 
-A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name always binds, so compare against a lowercase value with a guard.
+A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name never compares — it binds, unless it names a zero-field variant or extractor — so compare against a lowercase value with a guard.
 
 ```gala
 package main

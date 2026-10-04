@@ -128,6 +128,28 @@ func main() { Println(describe(lineFrame("x"))) }`,
 			wantContains: []string{"endFrame{}.Unapply(obj)", "other := obj"},
 		},
 		{
+			// A name spelled like a zero-field variant of some OTHER sealed
+			// type is an ordinary binding: the variant cannot match an int.
+			name: "variant of an unrelated type still binds",
+			src: lowercaseFrame + `func describe(n int) string = n match {
+    case 0 => "zero"
+    case endFrame => s"other $endFrame"
+}
+
+func opt(o Option[int]) string = o match {
+    case Some(endFrame) => s"some $endFrame"
+    case None => "none"
+}
+
+func main() {
+    Println(describe(3))
+    Println(opt(Some(4)))
+    Println(endFrame())
+}`,
+			wantContains: []string{"endFrame := obj"},
+			wantAbsent:   []string{"endFrame{}.Unapply("},
+		},
+		{
 			name: "nested inside a generic lowercase sealed type",
 			src: lowercaseFrame + `sealed type maybe[T any] {
     case just(Value T)
