@@ -35,6 +35,8 @@ struct Cell[T any](V T)
 
 func (c Cell[T]) Convert[U any]() Option[U] = None[U]()
 func (c Cell[T]) Cast[U any](tag string) Option[U] = None[U]()
+func (c Cell[T]) Fold[U any](z U, f func(U, T) U) U = f(z, c.V)
+func (c Cell[T]) Pick[U any, V any](v V) Tuple[Option[U], V] = (None[U](), v)
 `
 
 // TestSlotTypeArgsMatrix crosses each position a slot type reaches a value
@@ -195,6 +197,9 @@ func TestSlotTypeArgsOnlyTheValue(t *testing.T) {
 		{"method on a construction in a val", "func g() Option[bool] {\n    val c Option[bool] = Cell(2).Cast(\"y\")\n    c\n}", "Cell_Cast[bool, int]("},
 		{"explicit method type argument", "func g() Option[bool] {\n    val c = Cell(1).Convert[bool]()\n    c\n}", "Cell_Convert[bool, int]("},
 		{"explicit method type argument with arguments", "func g() Option[bool] {\n    val c = Cell(1).Cast[bool](\"y\")\n    c\n}", "Cell_Cast[bool, int]("},
+		{"an untyped constant argument takes the slot's type", "func g() int64 = Cell(1).Fold(0, (acc, v) => acc)", "func(acc int64, v int) int64"},
+		{"a typed argument binds its type parameter", "func g(z int32) int32 = Cell(1).Fold(z, (acc, v) => acc)", "func(acc int32, v int) int32"},
+		{"only the type arguments up to the last result-only one are spelled", "func g() Tuple[Option[string], int] = Cell(true).Pick(1)", "Cell_Pick[string](Cell[bool]"},
 		{
 			"match arm return typed by the match's slot",
 			"func g(n int) Option[string] {\n    val r Option[int] = n match {\n        case 1 => {\n            return None()\n        }\n        case _ => Some(n)\n    }\n    Some(s\"$r\")\n}",

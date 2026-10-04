@@ -280,17 +280,16 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
 			}
 			if len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
-				pending := t.expectedArgTypes.peek()
+				// Taken before the defaults are lowered, as a call with
+				// arguments takes it, so no default sees it.
+				pending := t.expectedArgTypes.consume()
 				handled, expr, err := t.tryTransformGenericMethodAsFunction(nil, receiver, method, typeArgs, recvType, lookupBaseName, pending,
 					suffix)
-				if err != nil {
-					return nil, err
+				if err != nil || handled {
+					return expr, err
 				}
-				if handled {
-					if pending != nil {
-						t.expectedArgTypes.consume()
-					}
-					return expr, nil
+				if pending != nil {
+					t.expectedArgTypes.push(pending) // released by whoever pushed it
 				}
 			}
 		}
@@ -298,20 +297,19 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
 			if funcMeta := t.getFunction(funcName); funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
+				// A result-only type parameter comes from the slot, as for
+				// any call (`parse()` for `parse[T any](s string = "")`).
+				// The slot type is the call's, taken before its defaults are
+				// lowered so none of them sees it.
+				pending := t.expectedArgTypes.consume()
 				filled, err := t.fillDefaultArgs(nil, funcMeta, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
 				}
-				// A result-only type parameter comes from the slot, as for
-				// any call (`parse()` for `parse[T any](s string = "")`).
-				pending := t.expectedArgTypes.peek()
 				fun, err := t.injectFuncPhantomTypeArgs(base, funcMeta, filled, false, pending,
 					suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
-				}
-				if fun != base && pending != nil {
-					t.expectedArgTypes.consume()
 				}
 				return &ast.CallExpr{Fun: fun, Args: filled}, nil
 			}
@@ -324,6 +322,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		if sel, ok := base.(*ast.SelectorExpr); ok && zeroArgLookupBase != "" {
 			if typeMeta := t.getTypeMeta(zeroArgLookupBase); typeMeta != nil {
 				if methodMeta := typeMeta.Methods[sel.Sel.Name]; methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
+					// The call takes no type from its slot; its defaults
+					// do not either.
+					t.expectedArgTypes.consume()
 					filled, err := t.fillDefaultArgsMethod(sel.X, nil, methodMeta, zeroArgRecvType, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 					if err != nil {
 						return nil, err
@@ -588,11 +589,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// see a concrete expected return type and emit `func(T) U` with the
 	// correct U.
 	//
-	// A method with a type parameter only its result mentions is emitted
-	// with every type argument spelled (resultOnlyMethodTypeArgs), so, as for
-	// a generic function (injectFuncPhantomTypeArgs), only those come from
-	// the slot: the arguments bind the others, and a slot type contradicting
-	// an argument is never written out.
+	// A non-lambda argument of a known type binds its type parameters before
+	// the slot does (FoldLeft's U is the type of its zero value, `Circle`, in
+	// a `Shape` slot), since Go infers them from it too; an untyped constant
+	// takes the slot's (`0` in an `int64` slot). The slot's bindings are
+	// therefore kept apart (fromSlot) and only fill what the arguments leave.
+	fromSlot := make(map[string]transpiler.Type)
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 &&
 		pendingExpected != nil && !pendingExpected.IsNil() && !pendingExpected.IsAny() &&
 		methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
@@ -601,17 +603,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			recvTypeArgTypesForReturn = append(recvTypeArgTypesForReturn, transpiler.ParseType(a))
 		}
 		substitutedReturn := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypesForReturn)
-		inferredFromExpected := make(map[string]transpiler.Type)
-		t.unifyForInference(substitutedReturn, pendingExpected, methodMeta.TypeParams, inferredFromExpected)
-		argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
-		for tp, inferred := range inferredFromExpected {
-			if transpiler.IsUnusableOrAny(inferred) || len(phantom) > 0 && argBound[tp] {
-				continue
-			}
-			if _, alreadySet := typeSubst[tp]; !alreadySet {
-				typeSubst[tp] = inferred.String()
-			}
-		}
+		t.unifyForInference(substitutedReturn, pendingExpected, methodMeta.TypeParams, fromSlot)
+		maps.DeleteFunc(fromSlot, func(tp string, inferred transpiler.Type) bool {
+			_, written := typeSubst[tp]
+			return written || transpiler.IsUnusableOrAny(inferred)
+		})
 	}
 
 	// The arguments in parameter order: named ones moved to their parameter,
@@ -714,11 +710,20 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 			inferredMap := make(map[string]transpiler.Type)
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
+			untyped := isUntypedConstExpr(expr)
 			for tp, inferred := range inferredMap {
+				if _, slotted := fromSlot[tp]; slotted && untyped {
+					continue
+				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {
 					typeSubst[tp] = inferred.String()
 				}
 			}
+		}
+	}
+	for tp, inferred := range fromSlot {
+		if _, alreadySet := typeSubst[tp]; !alreadySet {
+			typeSubst[tp] = inferred.String()
 		}
 	}
 	// Harvest type params from earlier lambdas to refine later ones.
@@ -1037,10 +1042,15 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 
 	// Decide whether to add type arguments:
 	// - If method has its own type params (e.g., Map[U]) and no explicit type args: let Go infer.
-	// - Otherwise: combine explicit type args with concrete receiver type args.
+	// - Otherwise: combine explicit type args with concrete receiver type args,
+	//   which follow the method's own in the function's list; a shorter
+	//   explicit list is a prefix Go completes from the arguments.
 	shouldAddTypeArgs := len(explicitTypeArgs) > 0 || (methodMeta == nil || len(methodMeta.TypeParams) == 0)
 	if shouldAddTypeArgs {
-		allTypeArgs := append(explicitTypeArgs, concreteRecvTypeArgs...)
+		allTypeArgs := explicitTypeArgs
+		if methodMeta == nil || len(explicitTypeArgs) >= len(methodMeta.TypeParams) {
+			allTypeArgs = append(slices.Clone(explicitTypeArgs), concreteRecvTypeArgs...)
+		}
 		if len(allTypeArgs) == 1 {
 			funExpr = &ast.IndexExpr{X: funExpr, Index: allTypeArgs[0]}
 		} else if len(allTypeArgs) > 1 {
@@ -1068,13 +1078,19 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 // no phantom type parameter: Go infers the others from the arguments.
 func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
 	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
-	if len(typeArgs) >= len(methodMeta.TypeParams) || len(phantom) == 0 {
+	// The call spells a prefix of the type arguments, up to the last phantom
+	// one; Go infers the rest from the arguments and the receiver.
+	end := 0
+	if len(phantom) > 0 {
+		end = slices.Index(methodMeta.TypeParams, phantom[len(phantom)-1]) + 1
+	}
+	if len(typeArgs) >= end {
 		return typeArgs, nil
 	}
 	full := slices.Clone(typeArgs)
 	resolved := t.writtenTypeArgs(methodMeta.TypeParams, typeArgs)
 	var missing []string
-	for _, tp := range methodMeta.TypeParams[len(typeArgs):] {
+	for _, tp := range methodMeta.TypeParams[len(typeArgs):end] {
 		if s, ok := typeSubst[tp]; ok {
 			typ := transpiler.ParseType(s)
 			resolved[tp] = typ

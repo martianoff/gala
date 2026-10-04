@@ -11,10 +11,11 @@ last_modified_at: 2026-10-02
 
 # GALA-E0018 — Sealed variant type parameter cannot be inferred
 
-**What it means.** A zero-argument constructor of a *generic* sealed type is used somewhere the parent type's parameter cannot be pinned. The transpiler checks two signals before giving up:
+**What it means.** A zero-argument constructor of a *generic* sealed type is used somewhere the parent type's parameter cannot be pinned. The transpiler takes it from the slot the constructor fills before giving up:
 
 1. The result type of the enclosing function or lambda (a lambda's own, never the surrounding function's), when that type is *concrete* (`Box[int]`) and the constructor is the result value — not one bound to an unannotated `val` in the body.
 2. A `val` / `var` type annotation supplying an expected type.
+3. The type of the parameter the constructor is passed for.
 
 The type of an enclosing `match` subject is not one: `None()` in an arm of a match over an `Option[int]` takes no type from it.
 

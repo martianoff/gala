@@ -1131,15 +1131,16 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	case f.match != nil:
 		return t.transformPostfixMatchExpressionAgainst(f.match, s)
 	}
-	// A tuple literal filling a result slot (`func f() Tuple[int64, int64] =
-	// (1, 2)`) takes its element types from the slot, exactly as one in an
-	// argument slot does, and so does a construction of the generic struct the
-	// slot names (`func f() Tag[int] = Tag("x")`), for the type arguments its
-	// fields leave open, and a generic call whose result-only type parameters
-	// only the slot gives (`func f() Option[int] = parse()`). They are the
-	// only plain expressions a result slot pushes for (consumesSlotType): the
-	// literal, construction or call consumes the entry itself, so nothing
-	// nested inside it sees the result type.
+	// A tuple literal filling a slot (`func f() Tuple[int64, int64] = (1, 2)`)
+	// takes its element types from it, and so does a construction of the
+	// generic struct the slot names (`func f() Tag[int] = Tag("x")`), for the
+	// type arguments its fields leave open, and a generic function or method
+	// call whose type parameters the slot can give (`func f() Option[int] =
+	// parse()`). They are the only plain expressions a slot pushes for
+	// (consumesSlotType), and only the literal or the call that is the value
+	// reads the entry: its receiver does not (expectedArgTypeStack.withhold),
+	// and the call takes it before its arguments are lowered, so nothing
+	// nested inside it sees the slot type.
 	//
 	// The hint is the type an alias names, not the alias: the constructors and
 	// generic calls that read it match its structure (`Try[Email]` for

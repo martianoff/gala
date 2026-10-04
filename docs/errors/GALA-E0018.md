@@ -2,12 +2,13 @@
 
 **When it fires.** A zero-arg sealed-variant constructor is used in a
 position where the parent sealed type's parameter cannot be pinned. The
-transpiler walks two signals before giving up:
+transpiler takes it from the slot the constructor fills before giving up:
 
 1. The declared result type of the enclosing function or lambda (a lambda's own
    result type, never the surrounding function's), for the constructor that is
    the result value — not one bound to an unannotated `val` in the body.
 2. A local `val`/`var` annotation supplying an expected type.
+3. The type of the parameter the constructor is passed for.
 
 The type of an enclosing `match` subject is not one: `None()` in an arm of a
 match over an `Option[int]` takes no type from it.
