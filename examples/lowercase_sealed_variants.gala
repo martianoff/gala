@@ -64,14 +64,14 @@ func main() {
     show(idleFrame())
     show(lineFrame(""))
 
-    Println(nested(just[frame](endFrame())))
-    Println(nested(just[frame](idleFrame())))
-    Println(nested(just[frame](lineFrame("y"))))
-    Println(nested(nothing[frame]()))
+    Println(nested(just(endFrame())))
+    Println(nested(just(idleFrame())))
+    Println(nested(just(lineFrame("y"))))
+    Println(nested(nothing()))
 
-    Println(nestedOption(Some[frame](endFrame())))
-    Println(nestedOption(Some[frame](lineFrame("z"))))
-    Println(nestedOption(None[frame]()))
+    Println(nestedOption(Some(endFrame())))
+    Println(nestedOption(Some(lineFrame("z"))))
+    Println(nestedOption(None()))
 
     // Generated equality and String for lowercase variants.
     Println(lineFrame("x") == lineFrame("x"))

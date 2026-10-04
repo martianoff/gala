@@ -10,5 +10,6 @@ func describeSignal(s signal) string = s match {
     case stop => "stop"
 }
 
+// SignalSummary describes one value of each `signal` variant.
 func SignalSummary() string =
     s"${describeSignal(tick(3))}, ${describeSignal(pause())}, ${describeSignal(stop())}"
