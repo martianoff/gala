@@ -50,6 +50,29 @@ func (t *galaASTTransformer) isActiveTypeParam(name string) bool {
 	return !t.declaresType(qualifier, bare)
 }
 
+// typeParamValue reports whether the bare name, read as a value, names a type
+// parameter of the enclosing declaration: one is bound, and no local binding
+// shadows it (see bindingScope).
+func (t *galaASTTransformer) typeParamValue(name string) bool {
+	return t.activeTypeParams[name] && t.bindingScope(name) == nil
+}
+
+// checkTypeParamConversion reports a call of name, a type parameter of the
+// enclosing declaration, that is no conversion. A conversion takes exactly one
+// value, by position, and a lambda has no type to convert from: such a call
+// meant a function the type parameter shadows, as `Try(() => 1)` inside
+// `func g[Try any]` does.
+func (t *galaASTTransformer) checkTypeParamConversion(name string, suffix *grammar.PostfixSuffixContext) error {
+	var args []grammar.IArgumentContext
+	if list := suffix.ArgumentList(); list != nil {
+		args = list.AllArgument()
+	}
+	if len(args) == 1 && args[0].Identifier() == nil && args[0].LambdaExpression() == nil {
+		return nil
+	}
+	return t.typeParamMisuseError(suffix, name, "cannot be called: a conversion to it takes exactly one value, not a lambda")
+}
+
 // isUnboundTypeParam reports whether name is a type parameter that the code
 // being transformed does not bind — a callee's placeholder that inference left
 // behind. Unlike a parameter of the enclosing declaration, it is not a type the
@@ -105,6 +128,15 @@ func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
 // receiverTypeParams is the type parameters a receiver type declares: the
 // type arguments of `Box[T]` or `*Pair[A, B]`, each a bare name.
 func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
+	var params []*ast.Field
+	for _, name := range receiverTypeParamNames(ctx) {
+		params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}})
+	}
+	return params
+}
+
+// receiverTypeParamNames is the names of receiverTypeParams.
+func receiverTypeParamNames(ctx grammar.ITypeContext) []string {
 	for ctx != nil && ctx.QualifiedIdentifier() == nil && len(ctx.AllType_()) == 1 {
 		ctx = ctx.Type_(0) // *Box[T]
 	}
@@ -116,14 +148,14 @@ func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
 	if !ok {
 		return nil
 	}
-	var params []*ast.Field
+	var names []string
 	for _, arg := range list.AllType_() {
 		// `_` is the wildcard type, not a parameter name.
 		if name := arg.GetText(); name != "_" && token.IsIdentifier(name) {
-			params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}})
+			names = append(names, name)
 		}
 	}
-	return params
+	return names
 }
 
 // fieldListOrNil returns the fields of a possibly-nil field list.

@@ -39,6 +39,20 @@ func (b Box[Option]) Get() Option = b.V
 // Map boxes f applied to the value; its own type parameter is named like Try.
 func (b Box[Option]) Map[Try any](f func(Option) Try) Box[Try] = Box(f(b.V))
 
+// Peek returns the boxed value; the receiver's type argument is a type
+// parameter too, here named like one of Either's variants.
+func (b Box[Left]) Peek() Left = b.V
+
+// convertAll converts each element to the type parameter, which types the
+// lambda's result.
+func convertAll[Wrap any](xs Array[Wrap]) Array[Wrap] = xs.Map((v) => Wrap(v))
+
+// apply's default is typed by its own A — at the call inside viaSome, by
+// viaSome's Some.
+func apply[A any](x A, f func(A) A = (a) => a) A = f(x)
+
+func viaSome[Some any](v Some) Some = apply(v)
+
 // Holder uses the block struct form, so a field type names the parameter too.
 type Holder[Tuple any] struct {
     Value Tuple
@@ -71,4 +85,7 @@ func main() {
     Println(Holder(Value = 3).Twice())
     Println(describe(Ok(1)))
     Println(describe(Err[int]("bad")))
+    Println(Box(7).Peek())
+    Println(convertAll(ArrayOf(5, 6)))
+    Println(viaSome("s"))
 }

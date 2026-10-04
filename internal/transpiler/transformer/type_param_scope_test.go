@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -86,8 +87,8 @@ func firstOr[A any](xs Array[A], d A) A {
 			mustNotHave: []string{"func(x any)", ") any {"},
 		},
 		{
-			name: "multi-letter type parameter",
-			input: typeParamHeader + `func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Filter((x) => p(x)).Size()`,
+			name:        "multi-letter type parameter",
+			input:       typeParamHeader + `func countIf[Elem any](xs Array[Elem], p func(Elem) bool) int = xs.Filter((x) => p(x)).Size()`,
 			mustContain: []string{"func(x Elem) bool"},
 			mustNotHave: []string{"func(x any)"},
 		},
@@ -208,6 +209,33 @@ func (h Holder[Tuple]) Pair() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)`,
 			mustContain: []string{"std.Some[Left]", "ArrayOf[Tuple]"},
 			mustNotHave: []string{"std.Left", "std.Tuple"},
 		},
+		{
+			// A receiver's type argument declares a type parameter, so a
+			// variant name there is no GALA-E0061.
+			name: "receiver type parameters named like std variants",
+			input: typeParamHeader + `struct Box[T any](V T)
+
+func (b Box[Left]) Get() Left = b.V
+
+func (b Box[Some]) Twice(f func(Some) Some) Some = f(f(b.V))`,
+			mustContain: []string{
+				"func (b Box[Left]) Get() Left {",
+				"func (b Box[Some]) Twice(f func(Some) Some) Some {",
+			},
+			mustNotHave: []string{"std.Left", "std.Some"},
+		},
+		{
+			// A conversion to a type parameter has the type parameter's
+			// type, so a lambda returning one is typed, not `any`.
+			name: "conversion to a type parameter in a lambda",
+			input: typeParamHeader + `struct Wrap(N int)
+
+func g[Wrap any](xs Array[Wrap]) Array[Wrap] = xs.Map((v) => Wrap(v))
+
+func h[T any](xs Array[T]) Array[T] = xs.Map((v) => T(v))`,
+			mustContain: []string{"func(v Wrap) Wrap {", "func(v T) T {"},
+			mustNotHave: []string{") any {"},
+		},
 	}
 	runTypeParamCases(t, cases)
 }
@@ -245,6 +273,24 @@ func h[Wrap any](w Wrap, x any) int = x match {
 			input: `func g[Left any](x Left) Either[int, string] = Left[int, string](1)`,
 			want:  "'Left' is a type parameter of the enclosing declaration and takes no type arguments",
 		},
+		{
+			name: "called with a lambda",
+			input: `func g[Try any](x Try) Try {
+    val t = Try(() => 1)
+    x
+}`,
+			want: "'Try' is a type parameter of the enclosing declaration and cannot be called: a conversion to it takes exactly one value, not a lambda",
+		},
+		{
+			name:  "called with two values",
+			input: `func g[Tuple any](x Tuple) Tuple = Tuple(1, 2)`,
+			want:  "'Tuple' is a type parameter of the enclosing declaration and cannot be called",
+		},
+		{
+			name:  "called with no value",
+			input: `func g[None any](x None) None = None()`,
+			want:  "'None' is a type parameter of the enclosing declaration and cannot be called",
+		},
 	}
 	trans := newForbiddenBuiltinTranspiler()
 	for _, tc := range cases {
@@ -260,23 +306,123 @@ func h[Wrap any](w Wrap, x any) int = x match {
 // at a call site inside a generic declaration, reads its names in its own
 // declaration's scope: the caller's type parameters do not shadow them.
 func TestDefaultLoweredInItsOwnScope(t *testing.T) {
-	runTypeParamCases(t, []typeParamCase{{
-		name: "default naming a std constructor",
-		input: typeParamHeader + `func f(o Option[int] = None[int]()) int = 0
+	runTypeParamCases(t, []typeParamCase{
+		{
+			name: "default naming a std constructor",
+			input: typeParamHeader + `func f(o Option[int] = None[int]()) int = 0
 
 func g[None any](y None) int = f()`,
-		mustContain: []string{"return f(std.None[int]{}.Apply())"},
-	}})
+			mustContain: []string{"return f(std.None[int]{}.Apply())"},
+		},
+		{
+			// The call binds A to the caller's None, but the default's
+			// type does not mention A: its None is still std's.
+			name: "generic callee's default naming a std constructor",
+			input: typeParamHeader + `func f[A any](x A, o Option[int] = None[int]()) int = 0
 
-	// A package-level val the use site's type parameter shadows has no
+func g[None any](y None) int = f(y)`,
+			mustContain: []string{"return f(y, std.None[int]{}.Apply())"},
+		},
+		{
+			// The call binds the default's A to the caller's Some, which
+			// the lambda's types then name: the type parameter, not std's
+			// variant.
+			name: "lambda default typed by a use-site type parameter",
+			input: typeParamHeader + `func apply[A any](x A, f func(A) A = (a) => a) A = f(x)
+
+func viaSome[Some any](v Some) Some = apply(v)`,
+			mustContain: []string{"return apply(v, func(a Some) Some {"},
+			mustNotHave: []string{"std.Some"},
+		},
+		{
+			// The call binds the default's own T to the caller's T, so
+			// spelling T in the default means that argument.
+			name: "default spelling its own type parameter bound to a same-named one",
+			input: typeParamHeader + `struct Bag[T any](V T, Items Array[T] = EmptyArray[T]())
+
+func mk[T any](v T) Bag[T] = Bag(V = v)
+
+func pick[A any](x A, o Option[A] = None[A]()) A = x
+
+func g[A any](v A) A = pick(v)`,
+			mustContain: []string{"EmptyArray[T]()", "std.None[A]"},
+		},
+		{
+			// A member spelled like the carried type parameter is no read
+			// of it.
+			name: "default selecting a member named like a carried type parameter",
+			input: typeParamHeader + `func count[A any](x A, f func(A) int = (a) => ArrayOf(1).Size()) int = f(x)
+
+func g[Size any](v Size) int = count(v)`,
+			mustContain: []string{"return count(v, func(a Size) int {"},
+		},
+		{
+			name: "struct field default typed by a use-site type parameter",
+			input: typeParamHeader + `struct Hooks[A any](V A, F func(A) A = (a) => a)
+
+func mk[Left any](v Left) Hooks[Left] = Hooks(V = v)`,
+			mustContain: []string{"func(a Left) Left {"},
+			mustNotHave: []string{"std.Left"},
+		},
+	})
+
+	// A name the use site's type parameter shadows — a package-level val,
+	// type, or one the default's own declared type is typed by — has no
 	// spelling in the generated Go there, so it is a GALA error.
-	_, err := newForbiddenBuiltinTranspiler().Transpile(typeParamHeader+`val Dflt = 3
+	cases := []struct{ name, input, shadowed string }{
+		{
+			name: "package-level val",
+			input: `val Dflt = 3
 
 func f(n int = Dflt) int = n
 
-func g[Dflt any](x Dflt) int = f()`, "")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "reads 'Dflt', which the type parameter 'Dflt' of the enclosing declaration shadows here")
+func g[Dflt any](x Dflt) int = f()`,
+			shadowed: "Dflt",
+		},
+		{
+			name: "package-level type",
+			input: `struct Wrap(N int)
+
+func f(w Wrap = Wrap(1)) int = w.N
+
+func g[Wrap any](x Wrap) int = f()`,
+			shadowed: "Wrap",
+		},
+		{
+			name: "dot-imported type",
+			input: `func f(o Option[Array[int]] = None[Array[int]]()) int = 0
+
+func g[Array any](x Array) int = f()`,
+			shadowed: "Array",
+		},
+		{
+			// Cfg's default is lowered inside f's, and emitted in g.
+			name: "nested default",
+			input: `val Lim = 3
+
+struct Cfg(N int = Lim)
+
+func f[K any](x K, c Cfg = Cfg()) int = c.N
+
+func g[Lim any](v Lim) int = f(v)`,
+			shadowed: "Lim",
+		},
+		{
+			name: "a name the declared type carries",
+			input: `func pick[A any](x A, o Option[A] = None[A]()) A = x
+
+func viaNone[None any](v None) None = pick(v)`,
+			shadowed: "None",
+		},
+	}
+	trans := newForbiddenBuiltinTranspiler()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(typeParamHeader+tc.input, "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), fmt.Sprintf("reads '%s', which the type parameter '%s' of the enclosing declaration shadows here", tc.shadowed, tc.shadowed))
+		})
+	}
 }
 
 // typeParamHeader opens each typeParamCase input.

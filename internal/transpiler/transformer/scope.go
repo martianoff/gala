@@ -168,7 +168,7 @@ func (t *galaASTTransformer) lookupTypeName(name string) transpiler.Type {
 // package-level binding of its name is not found.
 func (t *galaASTTransformer) bindingScope(name string) *scope {
 	for s := t.currentScope; s != nil; s = s.parent {
-		if s.parent == nil && t.activeTypeParams[name] {
+		if t.typeParamHides(s, name) {
 			return nil
 		}
 		if _, ok := s.vals[name]; ok {
@@ -176,6 +176,13 @@ func (t *galaASTTransformer) bindingScope(name string) *scope {
 		}
 	}
 	return nil
+}
+
+// typeParamHides reports whether a type parameter of the enclosing generic
+// declaration hides s's binding of name: s is the package scope, which the
+// type parameters sit inside of (see bindingScope).
+func (t *galaASTTransformer) typeParamHides(s *scope, name string) bool {
+	return s.parent == nil && t.activeTypeParams[name]
 }
 
 // isTopLevelBinding reports whether name resolves to a package-level binding:

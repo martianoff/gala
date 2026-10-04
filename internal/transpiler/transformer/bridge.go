@@ -354,8 +354,8 @@ func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 	for s := t.currentScope; s != nil; s = s.parent {
 		shadows = shadows && s != useScope
 		for name := range s.vals {
-			if _, bound := env[name]; bound || hidden[name] {
-				continue // an inner binding of the name came first
+			if _, bound := env[name]; bound || hidden[name] || t.typeParamHides(s, name) {
+				continue // an inner binding of the name, or a type parameter, came first
 			}
 			if _, isFunction := fnEnv[name]; isFunction && !shadows {
 				continue
@@ -371,8 +371,10 @@ func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 		}
 	}
 
+	// A type parameter hides every package-level function of its name, as it
+	// does for getFunction.
 	for name, scheme := range fnEnv {
-		if _, bound := env[name]; !bound && !hidden[name] {
+		if _, bound := env[name]; !bound && !hidden[name] && !t.activeTypeParams[name] {
 			env[name] = scheme
 		}
 	}

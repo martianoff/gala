@@ -143,7 +143,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
 	// A type parameter of the enclosing declaration shadows every extractor,
 	// variant and struct of its name, and is none of them itself.
-	if t.activeTypeParams[rawName] {
+	if t.typeParamValue(rawName) {
 		return nil, nil, t.typeParamMisuseError(patExprCtx, rawName, "cannot be matched as a pattern")
 	}
 	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are

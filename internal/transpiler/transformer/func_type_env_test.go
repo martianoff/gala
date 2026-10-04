@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"go/ast"
 	"strings"
 	"testing"
 
@@ -337,6 +338,27 @@ func TestBuildTypeEnvLetsLocalBindingsShadowFunctionNames(t *testing.T) {
 	tr.currentScope.vals["plain"] = false
 	require.NotContains(t, tr.buildTypeEnv(), "plain",
 		"a typeless local binding must not let the function's type through")
+}
+
+// A type parameter sits between the declaration's scopes and the package's,
+// as bindingScope has it: inference must not see a package-level val or
+// function its name hides where codegen sees the type parameter.
+func TestBuildTypeEnvHidesPackageNamesATypeParamBinds(t *testing.T) {
+	tr := funcTypeEnvFixture(t)
+	tr.invalidateTypeEnv()
+	require.Nil(t, tr.currentScope.parent, "the fixture's val must be package-level")
+	defer tr.bindTypeParams(
+		&ast.Field{Names: []*ast.Ident{ast.NewIdent("x")}},
+		&ast.Field{Names: []*ast.Ident{ast.NewIdent("plain")}},
+	)()
+	env := tr.buildTypeEnv()
+	require.NotContains(t, env, "x", "a package-level val the type parameter hides leaked into inference")
+	require.NotContains(t, env, "plain", "a package-level function the type parameter hides leaked into inference")
+
+	// A binding inside the declaration shadows the type parameter.
+	tr.pushScope()
+	tr.addVal("x", transpiler.BasicType{Name: "bool"})
+	require.Equal(t, "bool", asTypeConst(t, tr.buildTypeEnv()["x"].Type).Name)
 }
 
 // The name memo outlives a single inference, since normalization does not read

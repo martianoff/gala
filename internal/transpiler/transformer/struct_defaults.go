@@ -80,13 +80,14 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		// declaration — the same contract function parameter defaults have.
 		// The field's declared type is the expected type, as it is for a value
 		// passed explicitly.
-		val, err := t.transformDefaultExpr(defaultSource{
+		src := defaultSource{
 			DefaultExpr: def,
 			file:        meta.DefinedIn,
 			pkg:         meta.Package,
-			declared:    t.substituteInType(fieldTypes[fieldName], typeArgs),
 			typeParams:  meta.TypeParams,
-		}, line, col)
+		}
+		t.substituteDeclared(&src, fieldTypes[fieldName], typeArgs)
+		val, err := t.transformDefaultExpr(src, line, col)
 		if err != nil {
 			return nil, err
 		}

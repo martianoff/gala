@@ -950,7 +950,7 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 		src.typeParams = append(slices.Clone(recvMeta.TypeParams), src.typeParams...)
 	}
 	if i < len(methodMeta.ParamTypes) {
-		src.declared = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+		t.substituteDeclared(&src, methodMeta.ParamTypes[i], parseTypeSubst(typeSubst))
 	}
 	return t.transformDefaultExpr(src, line, col)
 }
@@ -3602,7 +3602,7 @@ func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadat
 		typeParams:  funcMeta.TypeParams,
 	}
 	if i < len(funcMeta.ParamTypes) {
-		src.declared = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[i], typeSubst)
+		t.substituteDeclared(&src, funcMeta.ParamTypes[i], parseTypeSubst(typeSubst))
 	}
 	return t.transformDefaultExpr(src, line, col)
 }

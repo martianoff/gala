@@ -89,6 +89,11 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 // plain form.
 func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	isPrint := t.isBuiltinPrint(base)
+	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
+		if err := t.checkTypeParamConversion(id.Name, suffix); err != nil {
+			return nil, err
+		}
+	}
 	call, err := t.applyCallSuffix(base, suffix)
 	if err != nil || isPrint {
 		return call, err
@@ -377,7 +382,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if res := t.goResultOf(base); res != nil {
 		return nil, t.goResultMisuse(res, "it cannot be indexed", suffix)
 	}
-	if id, ok := base.(*ast.Ident); ok && t.activeTypeParams[id.Name] && t.bindingScope(id.Name) == nil {
+	if id, ok := base.(*ast.Ident); ok && t.typeParamValue(id.Name) {
 		return nil, t.typeParamMisuseError(suffix, id.Name, "takes no type arguments")
 	}
 	if err := t.checkVariantTypeArgs(base, exprList.AllExpression()); err != nil {

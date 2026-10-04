@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"go/ast"
 	"path/filepath"
+	"slices"
+
+	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser"
@@ -23,10 +26,12 @@ import (
 // needs to know about its declaration.
 type defaultSource struct {
 	transpiler.DefaultExpr
-	file       string          // declaring source file; "" when unknown
-	pkg        string          // declaring package; names it borrows from there are qualified at a use site in another package
-	declared   transpiler.Type // the parameter's or field's declared type, type arguments substituted; nil when unknown
-	typeParams []string        // type parameters of the declaration; a declared type still mentioning one is not threaded
+	file        string          // declaring source file; "" when unknown
+	pkg         string          // declaring package; names it borrows from there are qualified at a use site in another package
+	declared    transpiler.Type // the parameter's or field's declared type, type arguments substituted; nil when unknown
+	typeParams  []string        // type parameters of the declaration; a declared type still mentioning one is not threaded
+	carried     []string        // the use site's type parameters the type arguments carry into declared (see carriedTypeParams)
+	unspellable []string        // those of carried the default's source must not spell (see substituteDeclared)
 
 	// A method parameter's default may use the method's receiver. It is
 	// lowered with recv bound to recvType, as in the method body, and recvExpr
@@ -50,6 +55,9 @@ type defaultLowering struct {
 	// scope around it, were not in scope where the default was written, so
 	// they do not shadow the functions the default names (see shadowingScope).
 	useScope *scope
+	// emitTypeParams is the type parameters in scope where the lowered
+	// default is emitted (see shadowedByUse).
+	emitTypeParams map[string]bool
 }
 
 // defaultTreeKey identifies one declared default's text at one position.
@@ -59,41 +67,113 @@ type defaultTreeKey struct {
 	file string
 }
 
-// shadowedByUse returns a package-level val, var or function the lowered
-// default expr reads unqualified that one of the use site's type parameters
-// shadows, or "". It runs in the default's own scope, where such a name still
-// resolves to the package's declaration.
-func (t *galaASTTransformer) shadowedByUse(expr ast.Expr, useSite map[string]bool) string {
+// shadowedByUse returns a package-level val, var, function or type — or a
+// dot-imported one — that the lowered default expr reads unqualified and one
+// of the use site's type parameters shadows, or "". It runs in the default's
+// own scope, where such a name still resolves to its declaration.
+//
+// The carried type parameters (see carriedTypeParams) are no such reads: the
+// lowered default spells them as the type parameters they are.
+func (t *galaASTTransformer) shadowedByUse(expr ast.Expr, useSite map[string]bool, carried []string) string {
 	if len(useSite) == 0 {
 		return ""
 	}
+	bound := boundNames(expr)
 	found := ""
-	ast.Inspect(expr, func(n ast.Node) bool {
-		if found != "" {
-			return false
+	ast.Inspect(&ast.ParenExpr{X: expr}, func(n ast.Node) bool {
+		for _, slot := range referenceSlots(n) {
+			id, ok := (*slot).(*ast.Ident)
+			if !ok || found != "" || !useSite[id.Name] || bound[id.Name] || slices.Contains(carried, id.Name) {
+				continue
+			}
+			if t.isTopLevelBinding(id.Name) || t.getFunction(id.Name) != nil || t.resolveTypeMetaName(id.Name) != "" {
+				found = id.Name
+			}
 		}
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			// A selector's member is never read from the use site's scope.
-			ast.Inspect(sel.X, func(x ast.Node) bool {
-				if id, ok := x.(*ast.Ident); ok && found == "" && t.packageNameShadowed(id.Name, useSite) {
-					found = id.Name
-				}
-				return found == ""
-			})
-			return false
-		}
-		if id, ok := n.(*ast.Ident); ok && t.packageNameShadowed(id.Name, useSite) {
-			found = id.Name
-		}
-		return true
+		return found == ""
 	})
 	return found
 }
 
-// packageNameShadowed reports whether name is a package-level val, var or
-// function that a type parameter in useSite shadows.
-func (t *galaASTTransformer) packageNameShadowed(name string, useSite map[string]bool) bool {
-	return useSite[name] && (t.isTopLevelBinding(name) || t.getFunction(name) != nil)
+// substituteDeclared sets src's declared type to declared with the type
+// arguments of subst substituted, and records the use site's type parameters
+// those arguments carry into it (see carriedTypeParams).
+func (t *galaASTTransformer) substituteDeclared(src *defaultSource, declared transpiler.Type, subst map[string]transpiler.Type) {
+	src.declared = t.substituteInType(declared, subst)
+	src.carried = t.carriedTypeParams(src.declared, subst)
+	for _, name := range src.carried {
+		// A default may spell its own type parameter that the call binds to
+		// the use site's type parameter of the same name: in the generated Go
+		// the name means that argument.
+		if arg, ok := subst[name]; ok && arg.String() == name && slices.Contains(src.typeParams, name) {
+			continue
+		}
+		src.unspellable = append(src.unspellable, name)
+	}
+}
+
+// carriedTypeParams returns, sorted, the use site's type parameters that the
+// type arguments of subst carry into a default's declared type. The default
+// is lowered against them — `(a) => a` for a `func(A) A` parameter, at a call
+// inside `func g[Some any]` that binds A to Some, is `func(a Some) Some` — so
+// they are bound while it is, alongside its own declaration's.
+func (t *galaASTTransformer) carriedTypeParams(declared transpiler.Type, subst map[string]transpiler.Type) []string {
+	if len(t.activeTypeParams) == 0 {
+		return nil
+	}
+	inArgs := map[string]bool{}
+	for _, arg := range subst {
+		typeNameMatches(arg, func(name string) bool {
+			inArgs[name] = t.activeTypeParams[name]
+			return false
+		})
+	}
+	var carried []string
+	typeNameMatches(declared, func(name string) bool {
+		if inArgs[name] && !slices.Contains(carried, name) {
+			carried = append(carried, name)
+		}
+		return false
+	})
+	slices.Sort(carried)
+	return carried
+}
+
+// parseTypeSubst parses the type arguments of a call's type substitution.
+func parseTypeSubst(subst map[string]string) map[string]transpiler.Type {
+	parsed := make(map[string]transpiler.Type, len(subst))
+	for name, arg := range subst {
+		parsed[name] = transpiler.ParseType(arg)
+	}
+	return parsed
+}
+
+// spellsAny returns the first of names that the default's source refers to —
+// as a value or as a type, not as a member, label or binding — or "".
+func spellsAny(tree antlr.Tree, names []string) string {
+	found := ""
+	if len(names) > 0 {
+		walkTree(tree, func(node antlr.Tree) {
+			id, ok := node.(*grammar.IdentifierContext)
+			if !ok || found != "" || !slices.Contains(names, id.GetText()) {
+				return
+			}
+			switch parent := id.GetParent().(type) {
+			case *grammar.PrimaryContext:
+				found = id.GetText()
+			case *grammar.QualifiedIdentifierContext:
+				if parent.Identifier(0) == id {
+					found = id.GetText()
+				}
+			case *grammar.ParameterContext:
+				// `func(Some) int`: an unnamed parameter's type.
+				if parent.Type_() == nil && isFuncTypeSignature(parent) {
+					found = id.GetText()
+				}
+			}
+		})
+	}
+	return found
 }
 
 // defaultExprTree parses a default's recorded text at its recorded position,
@@ -130,21 +210,42 @@ func (t *galaASTTransformer) defaultExprTree(src defaultSource) (grammar.IExpres
 func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, useCol int) (ast.Expr, error) {
 	local := src.Pos.Line > 0 && src.file != "" && t.filePath != "" && filepath.Clean(src.file) == filepath.Clean(t.filePath)
 	prev := t.loweringDefault
-	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local, useScope: t.currentScope}
+	// The type parameters in scope where the lowered Go is emitted: a default
+	// lowered inside another default's lowering is emitted where that one is.
+	useSite := t.activeTypeParams
+	if prev != nil {
+		useSite = prev.emitTypeParams
+	}
+	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local, useScope: t.currentScope, emitTypeParams: useSite}
 	defer func() { t.loweringDefault = prev }()
 	// The default is lowered in its own declaration's scope: the type
 	// parameters bound at the use site do not shadow the names it reads. In
 	// the generated Go they do, so a name the default reads unqualified that a
 	// use-site type parameter shadows cannot be spelled there (shadowedByUse).
-	useSite := t.activeTypeParams
-	defer t.onlyTypeParams(src.typeParams)()
+	// The use-site type parameters its declared type carries are the
+	// exception: they are bound, and the default must not read their names.
+	defer t.onlyTypeParams(append(slices.Clip(src.typeParams), src.carried...))()
 	if src.recv != "" {
 		t.pushScope()
 		defer t.popScope()
 		t.addReceiver(src.recv, src.recvType)
 	}
 
+	// Reported at the use site, in the file being transformed, wherever the
+	// default was declared.
+	shadowed := func(name string) error {
+		err := galaerr.NewSemanticErrorAt(useLine, useCol, fmt.Sprintf(
+			"the default value of a parameter reads '%s', which the type parameter '%s' of the enclosing declaration shadows here; pass the argument explicitly or rename the type parameter",
+			name, name))
+		err.FilePath = t.filePath
+		return err
+	}
 	exprCtx, err := t.defaultExprTree(src)
+	if err == nil {
+		if name := spellsAny(exprCtx, src.unspellable); name != "" {
+			err = shadowed(name)
+		}
+	}
 	var expr ast.Expr
 	if err == nil {
 		expr, err = t.transformWithDeclaredType(exprCtx, src.declared, src.typeParams)
@@ -153,10 +254,8 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		expr, err = t.qualifyDefaultExpr(expr, src.pkg)
 	}
 	if err == nil {
-		if name := t.shadowedByUse(expr, useSite); name != "" {
-			err = galaerr.NewSemanticErrorAt(useLine, useCol, fmt.Sprintf(
-				"the default value of a parameter reads '%s', which the type parameter '%s' of the enclosing declaration shadows here; pass the argument explicitly or rename the type parameter",
-				name, name))
+		if name := t.shadowedByUse(expr, useSite, src.carried); name != "" {
+			err = shadowed(name)
 		}
 	}
 	if err != nil {
