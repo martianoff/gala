@@ -827,6 +827,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A placeholder lambda passed to a generic struct or sealed-variant constructor
+# takes the type arguments a sibling argument binds and infers the rest from
+# its body, as an explicit lambda does — never the declared type parameter.
+gala_exec_test(
+    name = "placeholder_generic_ctor",
+    src = "placeholder_generic_ctor.gala",
+    expected = "placeholder_generic_ctor.out",
+)
+
 # Regression: a placeholder lambda in a void position (ForEach) must lower to a
 # result-less Go func literal. Prior to the fix it emitted the non-existent Go
 # type `void` as the literal's result, so the generated file did not compile.

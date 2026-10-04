@@ -523,6 +523,116 @@ func main() {
 	assert.Contains(t, err.Error(), `lambda parameter "v"`)
 }
 
+// TestGenericCtorPlaceholderLambdaTypeArgs covers placeholder lambdas (`_ * 10`)
+// passed to a generic struct or sealed-variant constructor without explicit
+// type arguments. They get the explicit lambda's treatment: the type
+// parameters a sibling argument binds type the placeholders, the ones only the
+// callback determines are inferred from its body — never the declared `A`
+// ("undefined: A").
+func TestGenericCtorPlaceholderLambdaTypeArgs(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	cases := []struct {
+		name     string
+		input    string
+		contains []string
+	}{
+		{
+			name: "named placeholder takes A from a sibling and B from its body",
+			input: `package main
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+func main() {
+    Println(Step(In = 4, Run = _ * 10).Run(4))
+}`,
+			contains: []string{"Step[int, int]{", "func(__p0 int) int {"},
+		},
+		{
+			name: "positional placeholder",
+			input: `package main
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+func main() {
+    Println(Step("go", _ + "!").Run("hi"))
+}`,
+			contains: []string{"Step[string, string]{", "func(__p0 string) string {"},
+		},
+		{
+			name: "field typed by a generic function-type alias",
+			input: `package main
+
+type Conv[A any, B any] func(A) B
+
+struct Step[A any, B any](In A, Run Conv[A, B])
+
+func main() {
+    Println(Step(In = 4, Run = _ * 10).Run(5))
+}`,
+			contains: []string{"Step[int, int]{", "func(__p0 int) int {"},
+		},
+		{
+			name: "several placeholders",
+			input: `package main
+
+struct Fold[A any](Zero A, Combine func(A, A) A)
+
+func main() {
+    Println(Fold(Zero = 0, Combine = _ + _).Combine(3, 4))
+}`,
+			contains: []string{"Fold[int]{", "func(__p0 int, __p1 int) int {"},
+		},
+		{
+			name: "sealed variant constructor",
+			input: `package main
+
+sealed type Job[A any, B any] {
+    case Mapper(Input A, Fn func(A) B)
+}
+
+func main() {
+    val m = Mapper(Input = 3, Fn = _ * 2)
+    Println(m.Fn(m.Input))
+}`,
+			contains: []string{"func(__p0 int) int {"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := trans.Transpile(tc.input, "generic_ctor_placeholder_test.gala")
+			require.NoError(t, err)
+			body := out[strings.Index(out, "func main()"):]
+			for _, want := range tc.contains {
+				assert.Contains(t, body, want)
+			}
+			assert.NotRegexp(t, `__p0 [A-Z]\)`, body, "a placeholder kept a declared type parameter")
+			assert.NotContains(t, body, "any", "a placeholder was lowered against an unresolved type")
+		})
+	}
+}
+
+// TestGenericCtorPlaceholderUninferableTypeArg pins the diagnostic for a
+// placeholder whose type only the constructor's unbound type parameter could
+// give: GALA-E0033, as for an unannotated lambda parameter, not Go's
+// "undefined: A".
+func TestGenericCtorPlaceholderUninferableTypeArg(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	_, err := trans.Transpile(`package main
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+func main() {
+    val s = Step(Run = _ * 10)
+    Println(s)
+}`, "generic_ctor_placeholder_test.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0033")
+	assert.Contains(t, err.Error(), "placeholder `_` has no type")
+}
+
 // TestBranchLambdasTakeSlotType covers an if-expression or match whose
 // branches are lambdas, standing in a function-typed slot. The IIFE that
 // lowers the branching expression returns the slot's function type (not the

@@ -1558,9 +1558,15 @@ func countPlaceholderUnderscoresInTree(node antlr.Tree) int {
 // succeeds, then walks the produced Go AST and renames each `_` ident to a
 // fresh `__pN`, finally wrapping the result in a `*ast.FuncLit` whose
 // parameter list matches the expected FuncType.
+//
+// strict is transformLambdaWithExpectedType's untyped-parameter policy: when
+// set (a generic constructor whose type parameter only the callback could
+// bind, see genericCtorLambdaExpectation), a placeholder the expected type
+// leaves untyped is GALA-E0033, as an unannotated lambda parameter is.
 func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	exprCtx grammar.IExpressionContext,
 	expectedType transpiler.Type,
+	strict bool,
 ) (ast.Expr, bool, error) {
 	ft, ok := expectedType.(transpiler.FuncType)
 	if !ok {
@@ -1576,9 +1582,15 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 	// — we'd rather emit code that compiles than reject the call outright.
 	paramTypes := make([]transpiler.Type, placeholderCount)
 	for i := 0; i < placeholderCount; i++ {
-		if i < len(ft.Params) && !ft.Params[i].IsNil() {
+		switch {
+		case i < len(ft.Params) && !ft.Params[i].IsNil():
 			paramTypes[i] = ft.Params[i]
-		} else {
+		case strict:
+			return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
+				exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+				"placeholder `_` has no type and none can be inferred from context",
+				"bind the type parameter it stands for from another argument, write the type arguments explicitly, or use an annotated lambda (e.g. `(x int) => …`)")
+		default:
 			paramTypes[i] = transpiler.BasicType{Name: "any"}
 		}
 	}

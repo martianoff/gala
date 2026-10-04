@@ -1,0 +1,40 @@
+package main
+
+// A placeholder lambda passed to a generic struct or sealed-variant
+// constructor is typed like the explicit lambda it stands for: a type
+// parameter a sibling argument binds types the placeholder, and one only the
+// callback determines is inferred from its body.
+
+type Conv[A any, B any] func(A) B
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+struct AliasStep[A any, B any](In A, Run Conv[A, B])
+
+struct Fold[A any](Zero A, Combine func(A, A) A)
+
+struct Person(Name string, Age int)
+
+sealed type Job[A any, B any] {
+    case Mapper(Input A, Fn func(A) B)
+}
+
+func main() {
+    val step = Step(In = 4, Run = _ * 10)
+    Println(step.Run(step.In))
+
+    val shout = Step("go", _ + "!")
+    Println(shout.Run(shout.In))
+
+    val aliased = AliasStep(In = 5, Run = _ * 10)
+    Println(aliased.Run(aliased.In))
+
+    val sum = Fold(Zero = 0, Combine = _ + _)
+    Println(sum.Combine(3, 4))
+
+    val name = Step(In = Person("Ann", 30), Run = _.Name)
+    Println(name.Run(name.In))
+
+    val job = Mapper(Input = 3, Fn = _ * 2)
+    Println(job.Fn(job.Input))
+}
