@@ -6,7 +6,13 @@ grammar gala;
 // new statement. Every other '(' that can follow a name, literal, ')', ']' or
 // '}' accepts both (primary, parameters, sealedCase); a '(' after a keyword
 // (receiver, tuplePattern, import, if) is never re-typed and needs only '('.
-tokens { NL_LPAREN }
+//
+// NL_STAR and NL_AMP are a '*' or '&' re-typed the same way when it starts a
+// line directly inside a block and is written against its operand (`*p`,
+// `&n`). Only unaryOp accepts them — multiplication, bitwise and and a pointer
+// type do not — so `*p = 5` or `&n` on its own line begins a new statement,
+// while `* b` with a space still continues the line before.
+tokens { NL_LPAREN, NL_STAR, NL_AMP }
 
 // Entry point
 sourceFile: packageClause importDeclaration* topLevelDeclaration* EOF;
@@ -288,7 +294,7 @@ EMBED: 'embed';
 COLON: ':';
 
 binaryOp: '||' | '&&' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '+' | '-' | '|' | '^' | '*' | '/' | '%' | '<<' | '>>' | '&' | '&^';
-unaryOp: '+' | '-' | '!' | '^' | '*' | '&' | '<-';
+unaryOp: '+' | '-' | '!' | '^' | '*' | NL_STAR | '&' | NL_AMP | '<-';
 
 INTERPOLATED_STRING: 's"' INTERP_BODY '"';
 FORMAT_STRING: 'f"' INTERP_BODY '"';
