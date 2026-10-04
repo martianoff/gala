@@ -711,6 +711,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			inferredMap := make(map[string]transpiler.Type)
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
 			untyped := isUntypedConstExpr(expr)
+			if !untyped {
+				// An untyped constant of a Go package (`math.MaxInt8`).
+				_, untyped = t.untypedNumericConstExprDefault(expr)
+			}
 			for tp, inferred := range inferredMap {
 				if _, slotted := fromSlot[tp]; slotted && untyped {
 					continue
@@ -825,8 +829,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 
 	// Record "any" for any method type param GALA could not resolve from the
 	// arguments. This entry is a placeholder, not a committed output type: the
-	// generic-method call below omits explicit type arguments (shouldAddTypeArgs
-	// is false when the method has its own type params), so Go infers the param
+	// generic-method call below spells no type argument after the last
+	// result-only one (resultOnlyMethodTypeArgs), so Go infers the param
 	// from the concrete argument. The "any" only surfaces when building the
 	// expected type for a *lambda* argument — for non-lambda callables (function
 	// references like `xs.Map(step)`, placeholder lambdas like `xs.Map(_ * 2)`,
@@ -1005,7 +1009,8 @@ func replaceReceiver(expr ast.Expr, name string, with ast.Expr) ast.Expr {
 // It is the shared emission step used both by tryTransformGenericMethodAsFunction
 // (context-driven path) and by the `bind`/`also` desugaring, which synthesizes
 // the call directly. `explicitTypeArgs` are the method-level type args (e.g. U in
-// FlatMap[U]); the receiver's concrete type args (e.g. T of Try[T]) are appended.
+// FlatMap[U]); the receiver's concrete type args (e.g. T of Try[T]) are appended
+// when they are all of them, and left to Go when they are a prefix.
 func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 	method string,
 	receiver ast.Expr,
@@ -1069,7 +1074,8 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 // call of the generic method methodMeta, when the method has a type parameter
 // only its result mentions (phantom, see phantomTypeParams: the `U` of
 // `Convert[U any]() Option[U]`). Go infers no such parameter, so the call has
-// to spell every one of the method's type arguments. typeSubst holds those
+// to spell the method's type arguments up to the last such one; Go infers
+// those after it from the arguments and the receiver. typeSubst holds those
 // its arguments and the slot the call fills bound (see
 // tryTransformGenericMethodAsFunction); yields gives its result type on this
 // receiver, for the hint. One left open is GALA-E0067 at anchor (the call's

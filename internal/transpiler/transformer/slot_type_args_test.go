@@ -340,3 +340,21 @@ func TestSlotTypeArgsLambdaTrailingValue(t *testing.T) {
 		})
 	}
 }
+
+// TestSlotTypeArgsOverGoUntypedConstant pins that an untyped constant of a Go
+// package, like a literal, leaves a method's type parameter to the slot the
+// call fills.
+func TestSlotTypeArgsOverGoUntypedConstant(t *testing.T) {
+	got, err := newAliasExpectedTranspiler().Transpile(`package main
+
+import "math"
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Fold[U any](z U, f func(U, T) U) U = f(z, c.V)
+
+func g() int64 = Cell(1).Fold(math.MaxInt8, (acc, v) => acc)
+`, "")
+	require.NoError(t, err)
+	assert.Contains(t, got, "func(acc int64, v int) int64")
+}
