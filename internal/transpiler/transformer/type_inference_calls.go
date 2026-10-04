@@ -212,6 +212,9 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 						return funcType.Results[0]
 					}
 				}
+				if funcType := t.goNamedFuncTypeOf(funType); funcType != nil && len(funcType.Results) > 0 {
+					return funcType.Results[0]
+				}
 			}
 		}
 	}
@@ -598,6 +601,13 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 				// Void function alias (no return type) — e.g., type Callback func()
 				return transpiler.VoidType{}
 			}
+		}
+		// A Go named function type (`fs.WalkDirFunc`).
+		if funcType := t.goNamedFuncTypeOf(varType); funcType != nil {
+			if len(funcType.Results) > 0 {
+				return funcType.Results[0]
+			}
+			return transpiler.VoidType{}
 		}
 	}
 

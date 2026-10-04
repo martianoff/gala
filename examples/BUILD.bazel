@@ -827,6 +827,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A placeholder lambda passed to a generic struct or sealed-variant constructor
+# takes the type arguments a sibling argument binds and infers the rest from
+# its body, as an explicit lambda does — never the declared type parameter.
+gala_exec_test(
+    name = "placeholder_generic_ctor",
+    src = "placeholder_generic_ctor.gala",
+    expected = "placeholder_generic_ctor.out",
+)
+
 # Regression: a placeholder lambda in a void position (ForEach) must lower to a
 # result-less Go func literal. Prior to the fix it emitted the non-existent Go
 # type `void` as the literal's result, so the generated file did not compile.
@@ -1258,6 +1267,13 @@ gala_exec_test(
     src = "newline_paren_statement.gala",
     expected = "newline_paren_statement.out",
     deps = ["//collection_immutable"],
+)
+
+# A '*' or '&' against its operand that starts a line begins a new statement
+gala_exec_test(
+    name = "newline_deref_statement",
+    src = "newline_deref_statement.gala",
+    expected = "newline_deref_statement.out",
 )
 
 # An expression-bodied function with no result type runs its body as a statement
@@ -2575,6 +2591,15 @@ gala_exec_test(
     src = "lambda_expected_type.gala",
     expected = "lambda_expected_type.out",
     deps = ["//collection_immutable"],
+)
+
+# A lambda in a slot typed by a Go named function type (fs.WalkDirFunc,
+# http.HandlerFunc) takes the type's underlying signature: a parameter, a val
+# annotation, a result, a struct field, and if-expression branches.
+gala_exec_test(
+    name = "go_named_func_type_slots",
+    src = "go_named_func_type_slots.gala",
+    expected = "go_named_func_type_slots.out",
 )
 
 gala_library(

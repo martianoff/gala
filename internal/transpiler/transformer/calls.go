@@ -1729,9 +1729,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 
 // lowerFunctionArg lowers one argument of a regular call (see lowerArg). For a
 // generic struct or sealed-variant constructor, an argument whose lowering
-// depends on its slot type (a lambda, or an if/match of lambdas) first has the
-// constructor's still-unbound type parameters masked out of that type (see
-// genericCtorLambdaExpectation).
+// depends on its slot type (a lambda, a placeholder lambda, or an if/match of
+// lambdas) first has the constructor's still-unbound type parameters masked out
+// of that type (see genericCtorLambdaExpectation).
 func (t *galaASTTransformer) lowerFunctionArg(
 	exprCtx grammar.IExpressionContext,
 	lambdaCtx *grammar.LambdaExpressionContext,
@@ -1740,10 +1740,24 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	tryThunk bool,
 ) (ast.Expr, error) {
 	strict := false
-	if lambdaCtx != nil || t.needsExpectedType(exprCtx) {
+	if len(callCtx.unboundStructTypeParams()) > 0 &&
+		(lambdaCtx != nil || t.needsExpectedType(exprCtx) || t.isPlaceholderLambdaArg(exprCtx, expected)) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
 	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, push: true, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
+}
+
+// isPlaceholderLambdaArg reports whether exprCtx, filling a slot of type
+// slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
+// see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
+// transformArgument, a lambda or partial function in it takes precedence. Its
+// `_` are counted as tryRewriteAsPlaceholderLambda counts them, nested call
+// arguments included (`double(_)`): one a nested call's own function-typed slot
+// takes (`compose(_ + 1, show)`) lowers there, and the slot's type arguments
+// then bind from the value it produces.
+func (t *galaASTTransformer) isPlaceholderLambdaArg(exprCtx grammar.IExpressionContext, slotType transpiler.Type) bool {
+	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholderUnderscoresInExpr(exprCtx) > 0 &&
+		t.findPartialFunctionInExpression(exprCtx) == nil && t.findLambdaInExpression(exprCtx) == nil
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -4035,15 +4049,25 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 // named function type name (`http.HandlerFunc`, or a type of the package's own
 // .go files), or nil.
 func (t *galaASTTransformer) goNamedFuncType(name string) *transpiler.FuncType {
-	if t.goTypeInfo == nil {
-		return nil
-	}
-	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" && len(td.TypeParams) == 0 {
-		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
-			return &ft
-		}
+	if ft, generic := t.goNamedFuncSignature(name); !generic {
+		return ft
 	}
 	return nil
+}
+
+// goNamedFuncSignature returns the underlying function type of the Go named
+// function type name, generic or not, and whether it is generic; nil when
+// name names no Go function type.
+func (t *galaASTTransformer) goNamedFuncSignature(name string) (*transpiler.FuncType, bool) {
+	if t.goTypeInfo == nil {
+		return nil, false
+	}
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
+		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
+			return &ft, len(td.TypeParams) > 0
+		}
+	}
+	return nil, false
 }
 
 // calleeFuncType returns the function type of the value a call's callee reads
@@ -4132,15 +4156,24 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	// so the slot has that function type: every lowering below that keys on
 	// a function type (lambdas, placeholders, partial functions, thunks)
 	// sees through it.
+	//
+	// A Go named function type (`fs.WalkDirFunc`) is a distinct type: a
+	// function literal written for it (a lambda, placeholder or partial
+	// function) takes its signature, but any other value keeps the slot's
+	// named type — it is never a by-name thunk.
+	funcSlot := s.typ
 	if _, isFunc := s.typ.(transpiler.FuncType); !isFunc {
-		if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+		if ft := t.aliasedFuncType(s.typ); ft != nil {
 			s.typ = *ft
+			funcSlot = *ft
+		} else if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+			funcSlot = *ft
 		}
 	}
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
-		return t.transformPartialFunctionLiteral(pfCtx, expectedType)
+		return t.transformPartialFunctionLiteral(pfCtx, funcSlot)
 	}
 
 	// Try to find a lambda in this expression
@@ -4150,7 +4183,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
 	// function type and the expression contains `_` identifiers.
-	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, expectedType); err != nil {
+	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
 		return expr, nil
@@ -4633,13 +4666,14 @@ func (t *galaASTTransformer) callArgs(argListCtx grammar.IArgumentListContext, p
 
 // inferTypeArgsFromNonLambdaArgs is the first phase of lowering a generic call
 // whose arguments include lambdas: it binds typeParams from the arguments that
-// are not lambdas, unifying each against the type of the slot it fills, so the
+// are not lambdas (explicit, or placeholder ones such as `_ * 2` in a
+// function-typed slot), unifying each against the type of the slot it fills, so the
 // lambdas can then be lowered against concrete types. Only type parameters an
 // argument determines appear in the result.
 func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, args []callArg) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
 	for _, a := range args {
-		if a.lambda != nil || a.slot < 0 || a.slot >= len(paramTypes) {
+		if a.lambda != nil || a.slot < 0 || a.slot >= len(paramTypes) || t.isPlaceholderLambdaArg(a.expr, paramTypes[a.slot]) {
 			continue
 		}
 		expr, err := t.transformExpression(a.expr)
@@ -4683,8 +4717,12 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	// when some argument's lowering depends on a generic function-typed slot.
 	args := t.callArgs(argListCtx, fields)
 	if !slices.ContainsFunc(args, func(a callArg) bool {
-		return (a.lambda != nil || t.needsExpectedType(a.expr)) && a.slot >= 0 && a.slot < len(fieldTypes) &&
-			t.resolveTranspilerTypeAsFuncType(fieldTypes[a.slot]) != nil && typeMentionsTypeParam(fieldTypes[a.slot], typeParams)
+		if a.slot < 0 || a.slot >= len(fieldTypes) || !typeMentionsTypeParam(fieldTypes[a.slot], typeParams) {
+			return false
+		}
+		slotType := fieldTypes[a.slot]
+		return ((a.lambda != nil || t.needsExpectedType(a.expr)) && t.resolveTranspilerTypeAsFuncType(slotType) != nil) ||
+			t.isPlaceholderLambdaArg(a.expr, slotType)
 	}) {
 		return explicit
 	}

@@ -304,6 +304,103 @@ func TestConversionToGoNamedFuncType(t *testing.T) {
 	assert.Contains(t, out, "func(w http.ResponseWriter, r *http.Request)")
 }
 
+// TestGoNamedFuncTypeSlots covers a slot typed by a Go named function type —
+// imported (`fs.WalkDirFunc`, `http.HandlerFunc`, `context.CancelFunc`) or of
+// the package's own .go files (`Visitor`, `Stop`) — beyond calling a value of
+// that type: a GALA function's parameter, a val annotation, a result, and a
+// struct field. A lambda there takes the type's underlying signature, never
+// GALA-E0033; a value of the type, or nil, is passed as it is, not as a thunk;
+// and a call of such a value has the type's result.
+func TestGoNamedFuncTypeSlots(t *testing.T) {
+	const goSrc = "package main\n\ntype Visitor func(int) bool\n\ntype Stop func()\n\ntype Provider func() string\n\ntype Mapper[T any] func(T) T\n"
+	cases := []struct {
+		name string
+		gala string
+		want string
+	}{
+		{
+			name: "a GALA function's parameter",
+			gala: "func check(v Visitor) bool = v(3)\n\nfunc run() bool = check((n) => n > 2)\n",
+			want: "check(func(n int) bool {",
+		},
+		{
+			name: "a val annotation",
+			gala: "import \"io/fs\"\n\nfunc run() error {\n    val f fs.WalkDirFunc = (path, d, err) => err\n    f(\".\", nil, nil)\n}\n",
+			want: "func(path string, d fs.DirEntry, err error) error {",
+		},
+		{
+			name: "a result",
+			gala: "import \"io/fs\"\n\nfunc run() fs.WalkDirFunc = (path, d, err) => err\n",
+			want: "func(path string, d fs.DirEntry, err error) error {",
+		},
+		{
+			name: "a struct field",
+			gala: "import \"io/fs\"\n\nstruct Walker(Fn fs.WalkDirFunc)\n\nfunc run() Walker = Walker(Fn = (path, d, err) => err)\n",
+			want: "NewImmutable[fs.WalkDirFunc](func(path string, d fs.DirEntry, err error) error {",
+		},
+		{
+			name: "a struct field given a declared function",
+			gala: "import \"io/fs\"\n\nstruct Walker(Fn fs.WalkDirFunc)\n\n" +
+				"func keep(path string, d fs.DirEntry, err error) error = err\n\nfunc run() Walker = Walker(Fn = keep)\n",
+			want: "NewImmutable[fs.WalkDirFunc](keep)",
+		},
+		{
+			name: "an imported handler type",
+			gala: "import \"net/http\"\n\nfunc run() http.HandlerFunc = (w, r) => w.WriteHeader(204)\n",
+			want: "func(w http.ResponseWriter, r *http.Request) {",
+		},
+		{
+			name: "a value of a zero-parameter type is not a thunk",
+			gala: "import \"context\"\n\nfunc stop(c context.CancelFunc) = c()\n\n" +
+				"func run() {\n    val ctx, cancel = context.WithCancel(context.Background())\n    Println(ctx.Err())\n    stop(cancel)\n}\n",
+			want: "stop(cancel.Get())",
+		},
+		{
+			name: "nil for a zero-parameter type is not a thunk",
+			gala: "func halt(s Stop) bool = s == nil\n\nfunc run() bool = halt(nil)\n",
+			want: "halt(nil)",
+		},
+		{
+			name: "nil for a type with a result is not a thunk",
+			gala: "func supply(p Provider) bool = p == nil\n\nfunc run() bool = supply(nil)\n",
+			want: "supply(nil)",
+		},
+		{
+			name: "the result of calling a value of the type",
+			gala: "import \"io/fs\"\n\nfunc run(f fs.WalkDirFunc) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
+			want: "err.Get().Error()",
+		},
+		{
+			name: "the result of calling a value of a GALA alias of the type",
+			gala: "import \"io/fs\"\n\ntype Walk fs.WalkDirFunc\n\nfunc run(f Walk) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
+			want: "err.Get().Error()",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+tc.gala)
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want)
+		})
+	}
+
+	// A generic Go named function type is not instantiated here, so a lambda
+	// in its slot still has no type to take.
+	for name, gala := range map[string]string{
+		"a generic Go named function type":                   "func apply(m Mapper[int]) int = m(1)\n\nfunc run() int = apply((x) => x)\n",
+		"a generic Go named function type in a val":          "func run() int {\n    val m Mapper[int] = (x) => x\n    m(1)\n}\n",
+		"a generic Go named function type in a struct field": "struct Box(M Mapper[int])\n\nfunc run() Box = Box(M = (x) => x)\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+gala)
+			_, err := transpileInModule(t, files, galaFile)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0033")
+		})
+	}
+}
+
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for
 // `type Handler func(int) int`: the conversion's one argument has the
 // function type, so the lambda is typed by it rather than left without a type.

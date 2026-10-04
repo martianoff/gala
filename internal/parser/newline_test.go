@@ -10,10 +10,11 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 )
 
-// A '(' that starts a line after a token that can end an expression begins a
-// new statement; every other line break parses as it did before. Each case is
-// a function body and the number of statements the body must parse into.
-func TestNewlineParenStartsStatement(t *testing.T) {
+// A '(', or a '*' or '&' written against its operand, that starts a line after
+// a token that can end an expression begins a new statement; every other line
+// break parses as it did before. Each case is a function body and the number
+// of statements the body must parse into.
+func TestLineStartTokenStartsStatement(t *testing.T) {
 	cases := []struct {
 		name  string
 		body  string
@@ -40,6 +41,20 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "after string with escaped newline", body: "val s = \"a\\\nb\"\n(s, 1)", stmts: 2},
 		{name: "slice literal after call", body: "Println(\"zero\")\n[]int{1, 2}", stmts: 2},
 
+		// So does a '*' or '&' written against its operand.
+		{name: "deref expression after val", body: "var n = 1\nval p = &n\n*p + 1", stmts: 3},
+		{name: "deref assignment after val", body: "val p = &n\n*p = 5", stmts: 2},
+		{name: "deref assignment after call", body: "f()\n*p = 5", stmts: 2},
+		{name: "deref as trailing value", body: "val x = 1\n*p", stmts: 2},
+		{name: "deref of grouping", body: "val a = b\n*(p)", stmts: 2},
+		{name: "double deref", body: "val a = b\n**pp", stmts: 2},
+		{name: "address-of as trailing value", body: "val x = 1\n&x", stmts: 2},
+		{name: "indented deref", body: "Println(\"zero\")\n        *p = 1", stmts: 2},
+		{name: "deref after nested block", body: "if (a) { f(x) }\n*p = 1", stmts: 2},
+		{name: "deref after a composite literal", body: "val r = Rect{w: 1}\n*p = 1", stmts: 2},
+		{name: "deref after a match", body: "val r = x match {\n    case _ => 0\n}\n*p = 1", stmts: 2},
+		{name: "deref after a var with no type", body: "var x\n*p = 5", stmts: 2},
+
 		// Everything else keeps continuing across the line break.
 		{name: "call on same line", body: "f(1)(2)", stmts: 1},
 		{name: "call after single-line block comment", body: "f /* note */ (1)", stmts: 1},
@@ -52,6 +67,26 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "binary plus at line start", body: "val a = 1\n    + 2", stmts: 1},
 		{name: "binary minus at line start", body: "val a = b\n    - 2", stmts: 1},
 		{name: "logical operators at line start", body: "val a = b\n    && c\n    || d", stmts: 1},
+		{name: "binary star at line start", body: "val a = b\n    * c", stmts: 1},
+		{name: "binary ampersand at line start", body: "val a = b\n    & c", stmts: 1},
+		{name: "binary star before deref", body: "val a = b\n    * *p", stmts: 1},
+		{name: "binary star at line end", body: "val a = b *\n    *p", stmts: 1},
+		{name: "deref after val equals", body: "val a =\n    *p", stmts: 1},
+		{name: "deref after comma", body: "f(1,\n*p)", stmts: 1},
+		{name: "multiplication inside arguments", body: "f(w\n    *h)", stmts: 1},
+		{name: "bitwise and inside parentheses", body: "val a = (w\n    &h)", stmts: 1},
+		{name: "multiplication inside index", body: "val a = xs[i\n    *2]", stmts: 1},
+		{name: "star before line comment", body: "val a = b\n    *// times\n    c", stmts: 1},
+		{name: "star before block comment", body: "val a = b\n    */* times */c", stmts: 1},
+		{name: "deref in block lambda argument", body: "xs.Map((x) => {\n    val p = &x\n    *p\n})", stmts: 1},
+		{name: "multiplication in a match arm", body: "val r = x match {\n    case Some(v) => v\n        *factor\n    case _ => 0\n}", stmts: 1},
+		{name: "multiplication in a partial function", body: "xs.Collect({\n    case v => v\n        *k\n})", stmts: 1},
+		{name: "multiplication in a composite literal", body: "val r = Rect{\n    w: width\n        *scale,\n}", stmts: 1},
+		{name: "multiplication in a generic composite literal", body: "val r = Array[int]{\n    w\n        *scale,\n}", stmts: 1},
+		{name: "multiplication in a spaced composite literal", body: "val r = Rect {\n    w: width\n        *scale,\n}", stmts: 1},
+		{name: "composite literal after an if-expression", body: "val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}", stmts: 2},
+		{name: "multiplication in an if-expression branch", body: "val r = if (c) Rect{\n    w: a\n        *b,\n} else d", stmts: 1},
+		{name: "multiplication in an arm after a guard", body: "val r = x match {\n    case v if v > 0 => v\n    case _ => Rect{\n        w: a\n            *b,\n    }\n}", stmts: 1},
 		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
 		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
 		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
@@ -82,7 +117,7 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 
 // Declarations that open with '(' still parse when that '(' is put on a new
 // line after a name, since they accept the re-typed '(' as well.
-func TestNewlineParenInDeclarations(t *testing.T) {
+func TestLineStartTokenInDeclarations(t *testing.T) {
 	cases := []struct {
 		name string
 		decl string
@@ -92,11 +127,42 @@ func TestNewlineParenInDeclarations(t *testing.T) {
 		{name: "struct shorthand fields", decl: "struct P\n(x int)"},
 		{name: "sealed case fields", decl: "sealed type S {\n    case A\n    (x int)\n    case B\n}"},
 		{name: "interface method parameters", decl: "type I interface {\n    M\n    (x int) int\n}"},
+		{name: "pointer result type", decl: "func g()\n*int = nil"},
+		{name: "interface after a func type alias", decl: "type F func(int) int\n\ntype I interface {\n    M()\n    *int\n}"},
+		{name: "interface method pointer result", decl: "type I interface {\n    M()\n    *int\n}"},
+		{name: "top-level multiplication", decl: "val a = b\n*c"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\n" + tt.decl + "\n")
 			assert.Empty(t, errs)
+		})
+	}
+}
+
+// A block's '{' is told from a composite literal's by the header before it,
+// not by spacing: a body whose header ends in a type written against the '{'
+// is still a block, so a line-start deref in it begins a statement.
+func TestBlockAfterHeaderEndingInType(t *testing.T) {
+	cases := []struct {
+		name, src string
+		stmts     int
+	}{
+		{name: "function result type", src: "func f() int{\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		{name: "generic result type", src: "func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
+		{name: "expression-bodied function before", src: "func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		{name: "function-typed parameter", src: "func apply(f func(int) int) int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		{name: "generic method with function parameter", src: "func (o Box[T]) m[U any](f func(T) Option[U]) Option[U] {\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
+		{name: "for header with an assignment", src: "func f() {\n    for i := 0; i < n; i = i + step {\n        val p = &n\n        *p = 5\n    }\n}", stmts: 1},
+		{name: "func type alias before", src: "type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			tree, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\n" + tt.src + "\n")
+			require.Empty(t, errs)
+			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
+			body := decls[len(decls)-1].FunctionDeclaration().Block()
+			assert.Len(t, body.AllStatement(), tt.stmts)
 		})
 	}
 }
@@ -114,33 +180,36 @@ func TestNewlineParenInParseExpressionAt(t *testing.T) {
 
 // The re-typed '(' is an implementation detail and never named in a syntax
 // error: ANTLR's expected-token sets list the '(' the user writes instead.
-func TestHideNewlineParen(t *testing.T) {
+func TestHideNewlineTokens(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{in: "mismatched input 'int' expecting {'(', NL_LPAREN}", want: "mismatched input 'int' expecting '('"},
 		{in: "mismatched input '}' expecting {'(', ')', NL_LPAREN}", want: "mismatched input '}' expecting {'(', ')'}"},
 		{in: "missing {'(', NL_LPAREN} at 'x'", want: "missing '(' at 'x'"},
 		{in: "missing NL_LPAREN at 'x'", want: "missing '(' at 'x'"},
+		{in: "extraneous input '}' expecting {'*', NL_STAR, '&', NL_AMP, IDENTIFIER}", want: "extraneous input '}' expecting {'*', '&', IDENTIFIER}"},
+		{in: "missing NL_STAR at 'x'", want: "missing '*' at 'x'"},
 		{in: "extraneous input 'x' expecting '('", want: "extraneous input 'x' expecting '('"},
 		// The quoted input is the user's text and is left alone.
 		{in: "mismatched input 'NL_LPAREN' expecting {'(', NL_LPAREN}", want: "mismatched input 'NL_LPAREN' expecting '('"},
 		{in: "no viable alternative at input 'NL_LPAREN'", want: "no viable alternative at input 'NL_LPAREN'"},
 	}
 	for _, tt := range cases {
-		assert.Equal(t, tt.want, hideNewlineParen(tt.in))
+		assert.Equal(t, tt.want, hideNewlineTokens(tt.in))
 	}
 }
 
 // End to end: a parse error where only a '(' can follow names the '(' alone.
-func TestNewlineParenAbsentFromSyntaxErrors(t *testing.T) {
+func TestNewlineTokensAbsentFromSyntaxErrors(t *testing.T) {
 	for _, input := range []string{
 		"package main\n\nval f func int = g\n",
 		"package main\n\nfunc f() {\n    val x = 1\n    (\n}\n",
 		"package main\n\nsealed type S {\n    case A\n    (\n}\n",
+		"package main\n\nfunc f() {\n    val x = 1\n    *}\n",
 	} {
 		_, _, errs := NewAntlrGalaParser().ParseLenient(input)
 		require.NotEmpty(t, errs, input)
 		for _, err := range errs {
-			assert.NotContains(t, err.Error(), "NL_LPAREN", input)
+			assert.NotContains(t, err.Error(), "NL_", input)
 		}
 	}
 	_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\nval f func int = g\n")
