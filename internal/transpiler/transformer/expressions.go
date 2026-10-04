@@ -713,15 +713,26 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	// The if-expression lowers to an IIFE: a `return` in a branch yields the
 	// branch's value, not the enclosing lambda's. An open slot type holds
 	// placeholders, so it is no return type.
-	iifeType := s.typ
-	if s.open {
-		iifeType = nil
+	branches := ctx.AllIfExprBranch()
+	// An if-expression whose value a local declaration stores, and whose
+	// branches hold a `return`, `break` or `continue`, is lowered as
+	// statements storing its value (see hoisted_value.go): its control flow
+	// acts on the enclosing function or loop.
+	hoist := s.hoist
+	if hoist != nil && !slices.ContainsFunc(branches, func(b grammar.IIfExprBranchContext) bool { return escapesConstruct(b) }) {
+		hoist = nil
 	}
-	defer t.enterIIFEReturnSlot(iifeType)()
+	s.hoist = hoist
+	if hoist == nil {
+		iifeType := s.typ
+		if s.open {
+			iifeType = nil
+		}
+		defer t.enterIIFEReturnSlot(iifeType)()
+	}
 
 	// A branch with no slot type to lower against is typed by the other one
 	// (see lowerBranches).
-	branches := ctx.AllIfExprBranch()
 	var lowered [2]struct {
 		stmts      []ast.Stmt
 		expr       ast.Expr
@@ -734,10 +745,18 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		if b.stmts, b.expr, b.terminates, err = t.transformIfExprBranch(branches[i].(*grammar.IfExprBranchContext), bs); err != nil || !siblingTyped {
 			return nil, err
 		}
+		if hoist != nil && b.terminates {
+			// The branch leaves the function or loop: it has no value.
+			return nil, nil
+		}
 		return t.getExprTypeName(b.expr), nil
 	}
 	if err := t.lowerBranches(2, s, siblingTyped, lowerBranch); err != nil {
 		return nil, err
+	}
+	if hoist != nil {
+		return t.hoistIfExpression(ctx, cond, s, lowered[0].stmts, lowered[0].expr, lowered[0].terminates,
+			lowered[1].stmts, lowered[1].expr, lowered[1].terminates)
 	}
 	if err := t.checkNoLoopControlInValue("an if-expression", lowered[0].stmts, lowered[1].stmts); err != nil {
 		return nil, err
@@ -794,7 +813,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	// there is no value to return, so the branches run as statements in a
 	// closure with no result. Returning them would emit `func() void`, which
 	// is not Go, and `return a()` of a void call, which Go rejects. Such a
-	// closure can only be run as a statement (see checkValuelessBranching).
+	// closure can only be run as a statement (see checkBranchingCalls).
 	if _, isVoid := retType.(transpiler.VoidType); isVoid {
 		branchBody := func(stmts []ast.Stmt, last ast.Expr, terminates bool) *ast.BlockStmt {
 			if !terminates && last != nil && !isNilIdent(last) {
@@ -812,7 +831,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 				}}},
 			},
 		}
-		t.recordValueless(call, "if-expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		t.recordBranchingCall(call, "if-expression", true, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		return call, nil
 	}
 
@@ -834,7 +853,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	}
 
 	// Transpile to IIFE: func() T { if cond { ...thenBody } else { ...elseBody } }()
-	return &ast.CallExpr{
+	call := &ast.CallExpr{
 		Fun: &ast.FuncLit{
 			Type: &ast.FuncType{
 				Params: &ast.FieldList{},
@@ -852,7 +871,48 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 				},
 			},
 		},
-	}, nil
+	}
+	t.recordBranchingCall(call, "if-expression", false, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	return call, nil
+}
+
+// hoistIfExpression lowers an if-expression whose value s.hoist stores, from
+// its lowered branches, as an if statement storing each branch's value: a
+// branch that terminates (ends in a `return`, `break` or `continue`) stores
+// none. The value's type is that of the branches that store one.
+func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext, cond ast.Expr, s slot,
+	thenStmts []ast.Stmt, thenExpr ast.Expr, thenTerminates bool,
+	elseStmts []ast.Stmt, elseExpr ast.Expr, elseTerminates bool) (ast.Expr, error) {
+	var typ transpiler.Type = transpiler.NilType{}
+	switch {
+	case !thenTerminates && !elseTerminates:
+		thenT, elseT := t.getExprTypeName(thenExpr), t.getExprTypeName(elseExpr)
+		if thenT.String() == elseT.String() {
+			typ = thenT
+		} else if unified := t.pickMoreSpecificType(thenT, elseT); unified != nil {
+			typ = unified
+		}
+	case !thenTerminates:
+		typ = t.getExprTypeName(thenExpr)
+	case !elseTerminates:
+		typ = t.getExprTypeName(elseExpr)
+	}
+	typ = t.branchingResultType(typ, s)
+	if transpiler.IsUnusable(typ) || typ.IsVoid() {
+		return nil, untypedBranchingError("if-expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	}
+	branch := func(stmts []ast.Stmt, value ast.Expr, terminates bool) *ast.BlockStmt {
+		if !terminates {
+			stmts = append(stmts, t.storeValue(value, s.hoist)...)
+		}
+		return &ast.BlockStmt{List: stmts}
+	}
+	ifStmt := &ast.IfStmt{
+		Cond: cond,
+		Body: branch(thenStmts, thenExpr, thenTerminates),
+		Else: branch(elseStmts, elseExpr, elseTerminates),
+	}
+	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ), nil
 }
 
 // expressionIsBareMatch reports whether the expression context is a bare
@@ -1022,6 +1082,11 @@ func isNilIdent(expr ast.Expr) bool {
 func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, s slot) ([]ast.Stmt, ast.Expr, bool, error) {
 	if exprCtx := ctx.Expression(); exprCtx != nil {
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+			if s.hoist != nil {
+				// Lowered as statements, the branch acts on the loop: it
+				// terminates, with no value.
+				return []ast.Stmt{bs}, nil, true, nil
+			}
 			return nil, nil, false, t.loopControlInValueError("an if-expression", bs)
 		}
 		expr, err := t.lowerAgainst(exprCtx, s, true)
@@ -1045,7 +1110,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		if err != nil {
 			return nil, nil, false, err
 		}
-		preceding = append(preceding, stmt)
+		preceding = t.spliceStmt(preceding, stmt)
 	}
 
 	// Try to extract expression from the last statement:
@@ -1054,6 +1119,9 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
 		// The branch's value is its trailing expression; loop control has none.
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+			if s.hoist != nil {
+				return append(preceding, bs), nil, true, nil
+			}
 			return nil, nil, false, t.loopControlInValueError("an if-expression", bs)
 		}
 		expr, err := t.lowerAgainst(exprCtx, s, true)
@@ -1069,7 +1137,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	if err != nil {
 		return nil, nil, false, err
 	}
-	preceding = append(preceding, lastStmt)
+	preceding = t.spliceStmt(preceding, lastStmt)
 	// If the last statement is an explicit return, the branch terminates: the
 	// caller must skip its synthesized trailing return so we don't emit dead
 	// `return nil` after a typed return. We also surface the return's value
@@ -1103,6 +1171,11 @@ type slot struct {
 	// the branches' own type (see branchingResultType); user-written `any` is
 	// not a placeholder and does not make a slot open.
 	open bool
+	// hoist: the value is a local declaration's initializer, or an arm of
+	// one lowered as statements, and is stored in this variable: a match or
+	// if-expression whose arms hold a `return`, `break` or `continue` is
+	// lowered as statements storing its value there (see hoisted_value.go).
+	hoist *hoistTarget
 }
 
 // typedSlot is the slot of type typ: an argument, a declaration, a function
@@ -1153,7 +1226,7 @@ func (t *galaASTTransformer) needsExpectedType(exprCtx grammar.IExpressionContex
 // (consumesSlotType). A lambda body is never lowered against the outer slot:
 // it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
-	if transpiler.IsUnusable(s.typ) {
+	if transpiler.IsUnusable(s.typ) && (s.hoist == nil || !t.hoistable(exprCtx)) {
 		return t.transformExpression(exprCtx)
 	}
 	f := t.classifyExpr(exprCtx)

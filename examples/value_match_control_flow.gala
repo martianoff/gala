@@ -1,0 +1,59 @@
+package main
+
+// Control flow in an arm of a match, or a branch of an if-expression, whose
+// value is bound to a `val`: a `return` is typed by the enclosing function's
+// result, not by the match, a bare `return` leaves a function with no result,
+// and `break` / `continue` act on the loop around the declaration.
+
+func typedVal(o Option[int]) string {
+    val x int = o match {
+        case Some(v) => v
+        case None() => { return "none" }
+    }
+    s"some $x"
+}
+
+func voidReturn(o Option[int]) {
+    val x = o match {
+        case Some(v) => v
+        case None() => {
+            Println("  voidReturn: none, leaving")
+            return
+        }
+    }
+    Println(s"  voidReturn: $x")
+}
+
+func half(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None[int]()
+
+func bindPick(n int) Option[int] {
+    bind a = half(n)
+    val b = a match {
+        case 0 => { return Some(-1) }
+        case m => m
+    }
+    Some(b * 10)
+}
+
+func breakAndContinue() {
+    for i := 0; i < 6; i++ {
+        val x = i match {
+            case 1 => { continue }
+            case 4 => { break }
+            case n => n * 10
+        }
+        val y = if (x == 20) { continue } else x + 1
+        Println(s"  loop: $y")
+    }
+    Println("  loop: done")
+}
+
+func main() {
+    Println(s"typedVal: ${typedVal(Some(2))} / ${typedVal(None[int]())}")
+    Println("voidReturn:")
+    voidReturn(Some(2))
+    voidReturn(None[int]())
+    Println(s"bindPick: ${bindPick(4)} ${bindPick(0)} ${bindPick(3)}")
+    Println("breakAndContinue:")
+    breakAndContinue()
+}

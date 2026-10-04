@@ -545,7 +545,7 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 		if err != nil {
 			return nil, err
 		}
-		body.List = append(body.List, stmt)
+		body.List = t.spliceStmt(body.List, stmt)
 	}
 	return body, nil
 }

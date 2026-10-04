@@ -223,7 +223,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 	}
 
-	rhsExprs, err := t.transformExpressionListAgainst(ctx.ExpressionList().(*grammar.ExpressionListContext), declaredType)
+	rhsExprs, err := t.lowerDeclarationInitializers(ctx.ExpressionList().(*grammar.ExpressionListContext), len(namesCtx), declaredType)
 	if err != nil {
 		return nil, err
 	}
@@ -710,7 +710,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 	rhsExprs := make([]ast.Expr, 0)
 	if ctx.ExpressionList() != nil {
 		var err error
-		rhsExprs, err = t.transformExpressionListAgainst(ctx.ExpressionList().(*grammar.ExpressionListContext), declaredType)
+		rhsExprs, err = t.lowerDeclarationInitializers(ctx.ExpressionList().(*grammar.ExpressionListContext), len(namesCtx), declaredType)
 		if err != nil {
 			return nil, err
 		}

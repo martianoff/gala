@@ -56,6 +56,8 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
 		{"tryThunkLambda", t.tryThunkLambda != nil},
 		{"unrecordedCallee", t.unrecordedCallee != nil},
+		{"hoistedPre", len(t.hoistedPre) != 0},
+		{"localDeclaration", t.localDeclaration},
 	}
 }
 
@@ -118,7 +120,10 @@ var accumulatedStateFields = []string{
 	"instanceInterfaceNames",
 	"synthesizedReturns",
 	"loopControlSites",
-	"valuelessSites",
+	"branchingCalls",
+	"userReturns",
+	"hoisted",
+	"spliceBlocks",
 	"userLoops",
 	"methodReceivers",
 	"lspVarTypes",

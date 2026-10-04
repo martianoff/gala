@@ -143,23 +143,39 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	}, nil
 }
 
+// transformStatement lowers a statement. A local declaration whose initializer
+// is lowered as statements (see hoisted_value.go) lowers to those statements
+// followed by the declaration, returned as a block the caller splices into its
+// own list (spliceStmt) so the declaration stays in the caller's scope.
 func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (ast.Stmt, error) {
 	if declCtx := ctx.Declaration(); declCtx != nil {
+		prevLocal, prevPre := t.localDeclaration, t.hoistedPre
+		t.localDeclaration, t.hoistedPre = true, nil
 		decl, stmt, err := t.transformDeclaration(declCtx)
+		pre := t.hoistedPre
+		t.localDeclaration, t.hoistedPre = prevLocal, prevPre
 		if err != nil {
 			return nil, err
 		}
-		if stmt != nil {
-			return stmt, nil
+		if stmt == nil && decl != nil {
+			stmt = &ast.DeclStmt{Decl: decl}
 		}
-		if decl != nil {
-			return &ast.DeclStmt{Decl: decl}, nil
+		if stmt != nil && len(pre) > 0 {
+			block := &ast.BlockStmt{List: append(pre, stmt)}
+			if t.spliceBlocks == nil {
+				t.spliceBlocks = make(map[*ast.BlockStmt]bool)
+			}
+			t.spliceBlocks[block] = true
+			return block, nil
 		}
-		return nil, nil
+		return stmt, nil
 	}
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
+		start := retCtx.GetStart()
 		if retCtx.Expression() == nil {
-			return &ast.ReturnStmt{}, nil
+			ret := &ast.ReturnStmt{}
+			t.recordUserReturn(ret, start.GetLine(), start.GetColumn())
+			return ret, nil
 		}
 		// A lambda, if-expression or match takes its types from the result
 		// type of the innermost enclosing function or lambda.
@@ -167,9 +183,21 @@ func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (
 		if err != nil {
 			return nil, err
 		}
+		t.recordUserReturn(stmt, start.GetLine(), start.GetColumn())
 		return stmt, nil
 	}
 	return nil, nil
+}
+
+// spliceStmt appends stmt to list: the statements of a block transformStatement
+// returned for a declaration lowered with statements before it, any other
+// statement as it is.
+func (t *galaASTTransformer) spliceStmt(list []ast.Stmt, stmt ast.Stmt) []ast.Stmt {
+	if block, ok := stmt.(*ast.BlockStmt); ok && t.spliceBlocks[block] {
+		delete(t.spliceBlocks, block)
+		return append(list, block.List...)
+	}
+	return append(list, stmt)
 }
 
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
@@ -613,6 +641,14 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 					}
 				}
 			}
+		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != nil && t.hoistable(valueExpr) {
+			// The value of an arm lowered as statements is stored, and so is
+			// that of a match or if-expression at its tail (see
+			// hoisted_value.go).
+			var expr ast.Expr
+			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
+				stmt = &ast.ExprStmt{X: expr}
+			}
 		} else if isTrailing && lastStmtIsValue && !transpiler.IsUnusable(lastValueExpected.typ) &&
 			(t.needsExpectedType(valueExpr) || t.consumesSlotType(valueExpr, t.followAliasChain(lastValueExpected.typ))) {
 			// The block's value fills a typed slot: a lambda, if or match tail is
@@ -662,7 +698,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				return nil, err
 			}
 		}
-		block.List = append(block.List, stmt)
+		block.List = t.spliceStmt(block.List, stmt)
 	}
 	if tail == tailValue || tail == tailBranch || tail == tailExpr {
 		t.typeBlockValue(block)

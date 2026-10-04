@@ -92,6 +92,13 @@ func (t *galaASTTransformer) getExprTypeNameManual(expr ast.Expr) transpiler.Typ
 	if cached, ok := t.exprTypeCache[expr]; ok {
 		return cached
 	}
+	// A match or if-expression lowered as statements has the type it stores
+	// (see hoistedResult).
+	if ident, ok := expr.(*ast.Ident); ok {
+		if hv, ok := t.hoisted[ident]; ok {
+			return hv.typ
+		}
+	}
 	result := t.getExprTypeNameManualUncached(expr)
 	// Defensive backstop: Type-returning functions are contractually required to
 	// return transpiler.NilType{} rather than a nil interface. This guard catches

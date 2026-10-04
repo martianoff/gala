@@ -725,6 +725,16 @@ const (
 	// has no type to be used as. Without the check it lowered to a function
 	// with no result, and Go rejected the use with "(no value) used as value".
 	CodeUntypedBranchingValue ErrorCode = "GALA-E0068"
+
+	// E0069: a `return` is written in an arm of a match, or a branch of an
+	// if-expression, whose value is used other than to initialize a local
+	// `val` or `var` or to be returned — an argument, an operand, a receiver.
+	// The construct lowers to a function literal there, so the `return`
+	// would leave only it, and the enclosing function would go on with the
+	// returned value as the construct's. A construct that initializes a local
+	// `val` or `var` is lowered as statements instead, and its `return`
+	// leaves the function.
+	CodeReturnInBranchingValue ErrorCode = "GALA-E0069"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

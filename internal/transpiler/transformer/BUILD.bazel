@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "addressable_receiver.go",
         "bind.go",
+        "branching_calls.go",
         "bridge.go",
         "call_context.go",
         "calls.go",
@@ -21,6 +22,7 @@ go_library(
         "expressions.go",
         "generated_codec_names.go",
         "go_results.go",
+        "hoisted_value.go",
         "imports.go",
         "interpolation.go",
         "lambdas.go",
@@ -54,7 +56,6 @@ go_library(
         "unresolved_types.go",
         "utils.go",
         "value_called_as_function.go",
-        "valueless_branching.go",
         "variant_type_names.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/transformer",

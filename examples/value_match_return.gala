@@ -1,0 +1,103 @@
+package main
+
+// A `return` in an arm of a match, or a branch of an if-expression, whose
+// value is bound to a `val` or `var` returns from the enclosing function — it
+// does not just end the match. Each function prints what it computed, so a
+// return that only left the match shows up as a wrong number.
+
+func matchVal(o Option[int]) int {
+    val x = o match {
+        case Some(v) => v
+        case None() => { return -1 }
+    }
+    x * 10
+}
+
+func ifVal(n int) int {
+    val x = if (n > 0) n else { return -1 }
+    x * 10
+}
+
+func matchVar(o Option[int]) int {
+    var x = o match {
+        case Some(v) => v
+        case None() => { return -1 }
+    }
+    x = x + 1
+    x * 10
+}
+
+func nestedMatch(o Option[int], ok bool) int {
+    val x = o match {
+        case Some(v) => ok match {
+            case true => v
+            case false => { return -2 }
+        }
+        case None() => { return -1 }
+    }
+    x * 10
+}
+
+func ifInMatchArm(o Option[int]) int {
+    val x = o match {
+        case Some(v) => if (v > 0) v else { return -2 }
+        case None() => { return -1 }
+    }
+    x * 10
+}
+
+func returnInBlockArm(o Option[int]) int {
+    val x = o match {
+        case Some(v) => {
+            if (v > 100) {
+                return 100
+            }
+            v
+        }
+        case None() => -1
+    }
+    x * 10
+}
+
+func firstZero(limit int) int {
+    for i := 0; i < limit; i++ {
+        val v = (i - 3) match {
+            case n if n < 0 => n * -1
+            case 0 => { return i }
+            case n => n
+        }
+        Println(s"  firstZero: $v")
+    }
+    -1
+}
+
+func lambdaLocal(n int) int {
+    val f = (k int) int => {
+        val x = k match {
+            case 0 => { return -1 }
+            case _ => k
+        }
+        x * 10
+    }
+    f(n) + 1000
+}
+
+func returnOfMatch(o Option[int]) int {
+    return o match {
+        case Some(v) => v * 10
+        case None() => { return -1 }
+    }
+}
+
+func main() {
+    Println(s"matchVal: ${matchVal(Some(2))} ${matchVal(None[int]())}")
+    Println(s"ifVal: ${ifVal(2)} ${ifVal(-5)}")
+    Println(s"matchVar: ${matchVar(Some(2))} ${matchVar(None[int]())}")
+    Println(s"nestedMatch: ${nestedMatch(Some(2), true)} ${nestedMatch(Some(2), false)} ${nestedMatch(None[int](), true)}")
+    Println(s"ifInMatchArm: ${ifInMatchArm(Some(2))} ${ifInMatchArm(Some(-2))} ${ifInMatchArm(None[int]())}")
+    Println(s"returnInBlockArm: ${returnInBlockArm(Some(2))} ${returnInBlockArm(Some(200))} ${returnInBlockArm(None[int]())}")
+    Println("firstZero:")
+    Println(s"  result ${firstZero(10)}")
+    Println(s"lambdaLocal: ${lambdaLocal(2)} ${lambdaLocal(0)}")
+    Println(s"returnOfMatch: ${returnOfMatch(Some(2))} ${returnOfMatch(None[int]())}")
+}
