@@ -1729,9 +1729,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 
 // lowerFunctionArg lowers one argument of a regular call (see lowerArg). For a
 // generic struct or sealed-variant constructor, an argument whose lowering
-// depends on its slot type (a lambda, or an if/match of lambdas) first has the
-// constructor's still-unbound type parameters masked out of that type (see
-// genericCtorLambdaExpectation).
+// depends on its slot type (a lambda, a placeholder lambda, or an if/match of
+// lambdas) first has the constructor's still-unbound type parameters masked out
+// of that type (see genericCtorLambdaExpectation).
 func (t *galaASTTransformer) lowerFunctionArg(
 	exprCtx grammar.IExpressionContext,
 	lambdaCtx *grammar.LambdaExpressionContext,
@@ -1740,7 +1740,7 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	tryThunk bool,
 ) (ast.Expr, error) {
 	strict := false
-	if len(callCtx.structTypeParams) > 0 &&
+	if len(callCtx.unboundStructTypeParams()) > 0 &&
 		(lambdaCtx != nil || t.needsExpectedType(exprCtx) || t.isPlaceholderLambdaArg(exprCtx, expected)) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
@@ -1750,9 +1750,11 @@ func (t *galaASTTransformer) lowerFunctionArg(
 // isPlaceholderLambdaArg reports whether exprCtx, filling a slot of type
 // slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
 // see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
-// transformArgument, a lambda or partial function in it takes precedence.
+// transformArgument, a lambda or partial function in it takes precedence. A `_`
+// only inside the arguments of a call it makes (`compose(_ + 1, show)`) is not
+// counted: that call's own function-typed slot takes it.
 func (t *galaASTTransformer) isPlaceholderLambdaArg(exprCtx grammar.IExpressionContext, slotType transpiler.Type) bool {
-	return t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholderUnderscoresInExpr(exprCtx) > 0 &&
+	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countDirectPlaceholders(exprCtx) > 0 &&
 		t.findPartialFunctionInExpression(exprCtx) == nil && t.findLambdaInExpression(exprCtx) == nil
 }
 
@@ -4009,7 +4011,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
 	// function type and the expression contains `_` identifiers.
-	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, expectedType, strict); err != nil {
+	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, expectedType); err != nil {
 		return nil, err
 	} else if handled {
 		return expr, nil

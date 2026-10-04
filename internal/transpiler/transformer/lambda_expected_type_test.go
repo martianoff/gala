@@ -608,6 +608,21 @@ func main() {
 }`,
 			contains: []string{"func(__p0 int) int {"},
 		},
+		{
+			name: "a placeholder of a nested call's own slot still binds the type arguments",
+			input: `package main
+
+struct Step[A any, B any](In A, Run func(A) B)
+
+func compose(f func(int) int, g func(int) string) func(int) string = (x) => g(f(x))
+
+func show(n int) string = s"n=$n"
+
+func main() {
+    Println(Step(In = 4, Run = compose(_ + 1, show)).Run(4))
+}`,
+			contains: []string{"Step[int, string]{", "compose(func(__p0 int) int {"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -642,6 +657,19 @@ func main() {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GALA-E0033")
 	assert.Contains(t, err.Error(), "placeholder `_` has no type")
+
+	// More placeholders than the function type has parameters is the same
+	// GALA-E0033 a lambda of too many parameters gets, not an `any` parameter.
+	_, err = trans.Transpile(`package main
+
+struct Fold[A any](Zero A, Combine func(A, A) A)
+
+func main() {
+    Println(Fold(Zero = 0, Combine = _ + _ + _).Combine(1, 2))
+}`, "generic_ctor_placeholder_test.gala")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0033")
+	assert.Contains(t, err.Error(), "placeholder lambda has 3 parameters where a function of 2 is expected")
 }
 
 // TestBranchLambdasTakeSlotType covers an if-expression or match whose
