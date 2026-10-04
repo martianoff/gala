@@ -248,7 +248,7 @@ func TestEncoder_NonFiniteFloatsPanic(t *testing.T) {
 
 // ----- Decoder: strings ------------------------------------------------------
 
-// String decoding follows encoding/json: every escape JSON defines is read
+// These cases follow encoding/json: every escape JSON defines is read
 // (\b and \f included), an escaped surrogate pair is one character above
 // U+FFFF, an unpaired surrogate becomes U+FFFD, and so does each invalid
 // UTF-8 byte in the raw input.

@@ -230,11 +230,13 @@ func (e *YamlEncoderImpl) WriteFloat32(v float32) { e.writeScalar(formatYamlFloa
 
 // formatYamlFloat renders a float in the shortest form that parses back to
 // the same value at the given bit size: plain notation for
-// 1e-6 <= |v| < 1e21 and a YAML 1.2 core-schema exponent form outside it
-// (1e+21, 1e-7: the spelling of encoding/json and of json's formatJsonFloat,
-// which keeps the same rule in GALA), so 1e300 is not a 301-digit literal. NaN and
-// the infinities use YAML's core-schema spellings (.nan, .inf, -.inf), which
-// parseYamlFloat accepts.
+// 1e-6 <= |v| < 1e21 and exponent notation outside it, so 1e300 is not a
+// 301-digit literal. The range is the one encoding/json uses (json's
+// formatJsonFloat keeps the same rule in GALA). The exponent form always has
+// a '.' in the mantissa and a signed exponent (1.0e+21, 1.5e-9), which YAML
+// 1.1 resolvers such as PyYAML require for a float and YAML 1.2 accepts. NaN
+// and the infinities use YAML's core-schema spellings (.nan, .inf, -.inf),
+// which parseYamlFloat accepts.
 func formatYamlFloat(v float64, bitSize int) string {
 	switch {
 	case math.IsNaN(v):
@@ -247,9 +249,14 @@ func formatYamlFloat(v float64, bitSize int) string {
 	if !useExponent(math.Abs(v), bitSize) {
 		return strconv.FormatFloat(v, 'f', -1, bitSize)
 	}
+	s := strconv.FormatFloat(v, 'e', -1, bitSize)
+	mantissa, exponent, _ := strings.Cut(s, "e")
+	if !strings.Contains(mantissa, ".") {
+		mantissa += ".0"
+	}
 	// A positive exponent here is at least 21, so only a one-digit negative
-	// one carries a leading zero to drop (1e-7, not 1e-07).
-	return strings.Replace(strconv.FormatFloat(v, 'e', -1, bitSize), "e-0", "e-", 1)
+	// one carries a leading zero to drop (e-7, not e-07).
+	return mantissa + "e" + strings.Replace(exponent, "-0", "-", 1)
 }
 
 // useExponent reports whether abs lies outside the plain-notation range,
@@ -434,6 +441,11 @@ type YamlDecoderImpl struct {
 }
 
 func NewYamlDecoder(input string) *YamlDecoderImpl {
+	// A YAML stream is Unicode text. Each invalid UTF-8 byte reads as U+FFFD,
+	// as in the json decoder, whatever the style of the scalar it sits in.
+	if !utf8.ValidString(input) {
+		input = string([]rune(input))
+	}
 	return &YamlDecoderImpl{root: parseYAML(input)}
 }
 

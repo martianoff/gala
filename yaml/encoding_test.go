@@ -3,6 +3,7 @@ package yaml
 import (
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -17,8 +18,9 @@ func encodeValue(write func(e *YamlEncoderImpl)) string {
 }
 
 // Floats use the shortest round-trip digits, in plain notation for
-// 1e-6 <= |x| < 1e21 and in exponent notation (a YAML 1.2 core-schema float)
-// outside it, so 1e300 is not written as a 301-digit literal.
+// 1e-6 <= |x| < 1e21 and in exponent notation outside it, so 1e300 is not
+// written as a 301-digit literal. The exponent form keeps a '.' in the
+// mantissa so YAML 1.1 resolvers read it as a float too.
 func TestEncoder_FloatFormat(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -28,11 +30,12 @@ func TestEncoder_FloatFormat(t *testing.T) {
 		{"zero", func(e *YamlEncoderImpl) { e.WriteFloat64(0) }, "0"},
 		{"fraction", func(e *YamlEncoderImpl) { e.WriteFloat64(1.5) }, "1.5"},
 		{"below 1e21", func(e *YamlEncoderImpl) { e.WriteFloat64(1e20) }, "100000000000000000000"},
-		{"1e21", func(e *YamlEncoderImpl) { e.WriteFloat64(1e21) }, "1e+21"},
-		{"huge", func(e *YamlEncoderImpl) { e.WriteFloat64(-1e300) }, "-1e+300"},
+		{"1e21", func(e *YamlEncoderImpl) { e.WriteFloat64(1e21) }, "1.0e+21"},
+		{"huge", func(e *YamlEncoderImpl) { e.WriteFloat64(-1e300) }, "-1.0e+300"},
 		{"1e-6", func(e *YamlEncoderImpl) { e.WriteFloat64(1e-6) }, "0.000001"},
+		{"1e-7", func(e *YamlEncoderImpl) { e.WriteFloat64(1e-7) }, "1.0e-7"},
 		{"one-digit negative exponent", func(e *YamlEncoderImpl) { e.WriteFloat64(1.5e-9) }, "1.5e-9"},
-		{"tiny", func(e *YamlEncoderImpl) { e.WriteFloat64(5e-324) }, "5e-324"},
+		{"tiny", func(e *YamlEncoderImpl) { e.WriteFloat64(5e-324) }, "5.0e-324"},
 		{"float32 1e-6", func(e *YamlEncoderImpl) { e.WriteFloat32(1e-6) }, "0.000001"},
 		{"float32 max", func(e *YamlEncoderImpl) { e.WriteFloat32(math.MaxFloat32) }, "3.4028235e+38"},
 		{"NaN", func(e *YamlEncoderImpl) { e.WriteFloat64(math.NaN()) }, ".nan"},
@@ -111,6 +114,31 @@ func TestEncoder_InvalidUTF8(t *testing.T) {
 			}
 			if v, want := d.ReadString(), string([]rune(tt.in)); v != want {
 				t.Fatalf("value reads back as %q, want %q", v, want)
+			}
+		})
+	}
+}
+
+// The decoder reads each invalid UTF-8 byte as U+FFFD, whatever the style of
+// the scalar it sits in.
+func TestDecoder_InvalidUTF8(t *testing.T) {
+	want := "a" + string(utf8.RuneError) + "b"
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{"plain", "k: a\xffb"},
+		{"single-quoted", "k: 'a\xffb'"},
+		{"double-quoted", "k: \"a\xffb\""},
+		{"literal block", "k: |\n  a\xffb\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewYamlDecoder(tt.in)
+			d.StartObject()
+			d.ReadKey()
+			if got := strings.TrimSuffix(d.ReadString(), "\n"); got != want {
+				t.Fatalf("got %q, want %q", got, want)
 			}
 		})
 	}

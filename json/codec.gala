@@ -505,7 +505,7 @@ func (d *JsonDecoderImpl) readJsonString() string {
 // hex4At reads the code unit named by the four hex digits of a \u escape
 // starting at pos; None when there are not four hex digits there.
 func (d *JsonDecoderImpl) hex4At(pos int) Option[rune] =
-    if (pos + 4 > d.data.Size()) None[rune]()
+    if (pos + 4 > d.data.Size()) None()
     else strconv.ParseUint(BytesToString(d.data, pos, pos + 4), 16, 32).ToOption().Map((cp) => rune(cp))
 
 // completeSurrogate finishes a \u escape whose code unit is r. A high
@@ -517,7 +517,7 @@ func (d *JsonDecoderImpl) completeSurrogate(r rune) rune {
         return r
     }
     val nextIsEscape = d.pos + 2 <= d.data.Size() && d.data[d.pos] == '\\' && d.data[d.pos + 1] == 'u'
-    val pair = (if (nextIsEscape) d.hex4At(d.pos + 2) else None[rune]())
+    val pair = (if (nextIsEscape) d.hex4At(d.pos + 2) else None())
         .Map((low) => utf16.DecodeRune(r, low))
         .Filter((p) => p != unicode.ReplacementChar)
     pair match {
