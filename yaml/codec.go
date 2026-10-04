@@ -229,8 +229,14 @@ func (e *YamlEncoderImpl) WriteFloat64(v float64) { e.writeScalar(formatYamlFloa
 func (e *YamlEncoderImpl) WriteFloat32(v float32) { e.writeScalar(formatYamlFloat(float64(v), 32)) }
 
 // formatYamlFloat renders a float in the shortest form that parses back to
-// the same value at the given bit size. NaN and the infinities use YAML's
-// core-schema spellings (.nan, .inf, -.inf), which parseYamlFloat accepts.
+// the same value at the given bit size: plain notation for
+// 1e-6 <= |v| < 1e21 and exponent notation outside it, so 1e300 is not a
+// 301-digit literal. The range is the one encoding/json uses (json's
+// formatJsonFloat keeps the same rule in GALA). The exponent form always has
+// a '.' in the mantissa and a signed exponent (1.0e+21, 1.5e-9), which YAML
+// 1.1 resolvers such as PyYAML require for a float and YAML 1.2 accepts. NaN
+// and the infinities use YAML's core-schema spellings (.nan, .inf, -.inf),
+// which parseYamlFloat accepts.
 func formatYamlFloat(v float64, bitSize int) string {
 	switch {
 	case math.IsNaN(v):
@@ -240,7 +246,31 @@ func formatYamlFloat(v float64, bitSize int) string {
 	case math.IsInf(v, -1):
 		return "-.inf"
 	}
-	return strconv.FormatFloat(v, 'f', -1, bitSize)
+	if !useExponent(math.Abs(v), bitSize) {
+		return strconv.FormatFloat(v, 'f', -1, bitSize)
+	}
+	s := strconv.FormatFloat(v, 'e', -1, bitSize)
+	mantissa, exponent, _ := strings.Cut(s, "e")
+	if !strings.Contains(mantissa, ".") {
+		mantissa += ".0"
+	}
+	// A positive exponent here is at least 21, so only a one-digit negative
+	// one carries a leading zero to drop (e-7, not e-07).
+	return mantissa + "e" + strings.Replace(exponent, "-0", "-", 1)
+}
+
+// useExponent reports whether abs lies outside the plain-notation range,
+// tested at the value's own precision: float32(1e-6) is just below the
+// float64 1e-6, yet it is written plainly.
+func useExponent(abs float64, bitSize int) bool {
+	if abs == 0 {
+		return false
+	}
+	if bitSize == 32 {
+		a := float32(abs)
+		return a < 1e-6 || a >= 1e21
+	}
+	return abs < 1e-6 || abs >= 1e21
 }
 func (e *YamlEncoderImpl) WriteBool(v bool) {
 	if v {
@@ -270,7 +300,7 @@ func encodeString(s string) string {
 }
 
 func isPlainSafe(s string) bool {
-	if s == "" {
+	if s == "" || !utf8.ValidString(s) {
 		return false
 	}
 	if s[0] == ' ' || s[0] == '\t' {
@@ -338,10 +368,21 @@ func doubleQuoted(s string) string {
 		case '\t':
 			sb.WriteString("\\t")
 		default:
-			if c < 32 {
+			switch {
+			case c < 32:
 				sb.WriteString(fmt.Sprintf("\\x%02x", c))
-			} else {
+			case c < utf8.RuneSelf:
 				sb.WriteByte(c)
+			default:
+				// A YAML stream is Unicode text: a valid UTF-8 sequence is
+				// copied through, an invalid byte is written as \ufffd.
+				r, size := utf8.DecodeRuneInString(s[i:])
+				if r == utf8.RuneError && size == 1 {
+					sb.WriteString(`\ufffd`)
+				} else {
+					sb.WriteString(s[i : i+size])
+				}
+				i += size - 1
 			}
 		}
 	}
@@ -400,6 +441,11 @@ type YamlDecoderImpl struct {
 }
 
 func NewYamlDecoder(input string) *YamlDecoderImpl {
+	// A YAML stream is Unicode text. Each invalid UTF-8 byte reads as U+FFFD,
+	// as in the json decoder, whatever the style of the scalar it sits in.
+	if !utf8.ValidString(input) {
+		input = string([]rune(input))
+	}
 	return &YamlDecoderImpl{root: parseYAML(input)}
 }
 

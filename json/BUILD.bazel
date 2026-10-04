@@ -63,7 +63,10 @@ go_library(
 
 go_test(
     name = "json_go_unit_test",
-    srcs = ["codec_test.go"],
+    srcs = [
+        "codec_test.go",
+        "encoding_test.go",
+    ],
     embed = [":json"],
 )
 

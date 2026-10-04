@@ -1,5 +1,7 @@
 package json
 
+import "unicode/utf8"
+
 // Minimal byte-slice utilities for GALA code that needs sub-slicing.
 // GALA's parser doesn't support Go's slice syntax (data[from:to]),
 // so these helpers bridge the gap.
@@ -22,6 +24,23 @@ func BytesString(data []byte) string {
 // RuneToString converts a rune to a single-character string.
 func RuneToString(r rune) string {
 	return string(r)
+}
+
+// substring returns s[from:to].
+func substring(s string, from int, to int) string {
+	return s[from:to]
+}
+
+// decodeRuneAt decodes the UTF-8 sequence that starts at s[i]; an invalid
+// byte gives (utf8.RuneError, 1).
+func decodeRuneAt(s string, i int) (rune, int) {
+	return utf8.DecodeRuneInString(s[i:])
+}
+
+// decodeRuneAtBytes decodes the UTF-8 sequence that starts at data[i]; an
+// invalid byte gives (utf8.RuneError, 1).
+func decodeRuneAtBytes(data []byte, i int) (rune, int) {
+	return utf8.DecodeRune(data[i:])
 }
 
 // TruncateBytes returns data[:to].

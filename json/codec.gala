@@ -6,6 +6,9 @@ import (
     "math"
     "strconv"
     "strings"
+    "unicode"
+    "unicode/utf16"
+    "unicode/utf8"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
     . "martianoff/gala/collection_immutable"
@@ -93,9 +96,27 @@ func (e *JsonEncoderImpl) writeFloat(v float64, bitSize int) {
         go_builtins.Panic(s"json: unsupported float value ${strconv.FormatFloat(v, 'g', -1, 64)}: JSON has no NaN or Infinity")
     }
     e.writeCommaIfNeeded()
-    e.buf.WriteString(strconv.FormatFloat(v, 'f', -1, bitSize))
+    e.buf.WriteString(formatJsonFloat(v, bitSize))
     e.needsComma = true
 }
+
+// formatJsonFloat spells a finite float as encoding/json does: the shortest
+// digits that parse back to v at bitSize, in plain notation for
+// 1e-6 <= |v| < 1e21 and in exponent notation outside it, so 1e300 is not a
+// 301-digit literal. A one-digit negative exponent drops its leading zero
+// (1e-7, not 1e-07); a positive exponent here is always at least 21. yaml's
+// formatYamlFloat keeps the same rule in Go.
+func formatJsonFloat(v float64, bitSize int) string =
+    if (useExponent(math.Abs(v), bitSize)) strings.Replace(strconv.FormatFloat(v, 'e', -1, bitSize), "e-0", "e-", 1)
+    else strconv.FormatFloat(v, 'f', -1, bitSize)
+
+// useExponent reports whether abs lies outside the plain-notation range. The
+// range test runs at the value's own precision: float32(1e-6) is just below
+// the float64 1e-6, yet it is written plainly.
+func useExponent(abs float64, bitSize int) bool =
+    if (abs == 0) false
+    else if (bitSize == 32) float32(abs) < 1e-6 || float32(abs) >= 1e21
+    else abs < 1e-6 || abs >= 1e21
 
 func (e *JsonEncoderImpl) WriteBool(v bool) {
     e.writeCommaIfNeeded()
@@ -126,28 +147,49 @@ func (e *JsonEncoderImpl) writeCommaIfNeeded() {
 
 func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
     e.buf.WriteByte('"')
-    // Byte-level loop: s[i] byte-indexes and WriteByte writes bytes, so the bound
-    // must be the byte length (.ByteSize() -> len(s)), NOT the rune count
-    // (.Size() -> utf8.RuneCountInString) — the latter truncates multibyte input.
-    for i := 0; i < s.ByteSize(); i++ {
+    // Byte-level scan, on the hot path of every encode: s[i] byte-indexes, so
+    // the bound must be the byte length (.ByteSize() -> len(s)), NOT the rune
+    // count (.Size() -> utf8.RuneCountInString) — the latter truncates
+    // multibyte input. Runs of bytes that need no escaping, valid multibyte
+    // UTF-8 included, are copied in one write from s[start:i].
+    var start = 0
+    var i = 0
+    for i < s.ByteSize() {
         val c = s[i]
-        if c == '"' {
-            e.buf.WriteString("\\\"")
-        } else if c == '\\' {
-            e.buf.WriteString("\\\\")
-        } else if c == '\n' {
-            e.buf.WriteString("\\n")
-        } else if c == '\r' {
-            e.buf.WriteString("\\r")
-        } else if c == '\t' {
-            e.buf.WriteString("\\t")
-        } else if c < 32 {
-            e.buf.WriteString(f"\\u${c}%04x")
+        if c >= utf8.RuneSelf {
+            // An invalid UTF-8 byte is written as the U+FFFD escape, as
+            // encoding/json does, so the document is always valid UTF-8.
+            val r, size = decodeRuneAt(s, i)
+            if r == utf8.RuneError && size == 1 {
+                e.buf.WriteString(substring(s, start, i))
+                e.buf.WriteString("\\ufffd")
+                start = i + 1
+            }
+            i = i + size
+        } else if c < 32 || c == '"' || c == '\\' {
+            e.buf.WriteString(substring(s, start, i))
+            e.writeEscape(c)
+            i = i + 1
+            start = i
         } else {
-            e.buf.WriteByte(c)
+            i = i + 1
         }
     }
+    e.buf.WriteString(substring(s, start, i))
     e.buf.WriteByte('"')
+}
+
+// writeEscape writes the JSON escape for a quote, a backslash or a control
+// character.
+func (e *JsonEncoderImpl) writeEscape(c byte) {
+    c match {
+        case '"' => { e.buf.WriteString("\\\"") }
+        case '\\' => { e.buf.WriteString("\\\\") }
+        case '\n' => { e.buf.WriteString("\\n") }
+        case '\r' => { e.buf.WriteString("\\r") }
+        case '\t' => { e.buf.WriteString("\\t") }
+        case _ => { e.buf.WriteString(f"\\u${c}%04x") }
+    }
 }
 
 // PrettyIndent re-indents a compact JSON string.
@@ -433,26 +475,58 @@ func (d *JsonDecoderImpl) readJsonString() string {
                 case 'n' => { sb.WriteByte('\n') }
                 case 'r' => { sb.WriteByte('\r') }
                 case 't' => { sb.WriteByte('\t') }
+                case 'b' => { sb.WriteByte('\b') }
+                case 'f' => { sb.WriteByte('\f') }
                 case 'u' => {
-                    if d.pos + 4 > d.data.Size() {
-                        go_builtins.Panic("json: incomplete unicode escape")
+                    d.hex4At(d.pos) match {
+                        case Some(r) => {
+                            d.pos = d.pos + 4
+                            sb.WriteRune(d.completeSurrogate(r))
+                        }
+                        case None() => { go_builtins.Panic("json: invalid unicode escape") }
                     }
-                    val hexStr = BytesToString(d.data, d.pos, d.pos + 4)
-                    d.pos = d.pos + 4
-                    val cp, hexErr = strconv.ParseUint(hexStr, 16, 32)
-                    if hexErr != nil {
-                        go_builtins.Panic("json: invalid unicode escape")
-                    }
-                    sb.WriteString(RuneToString(rune(cp)))
                 }
                 case _ => { go_builtins.Panic("json: invalid escape sequence") }
             }
-        } else {
+        } else if c < utf8.RuneSelf {
             sb.WriteByte(c)
             d.pos = d.pos + 1
+        } else {
+            // An invalid UTF-8 byte decodes as (RuneError, 1), so it reads as
+            // U+FFFD, as in encoding/json; a valid sequence is copied whole.
+            val r, size = decodeRuneAtBytes(d.data, d.pos)
+            sb.WriteRune(r)
+            d.pos = d.pos + size
         }
     }
     go_builtins.Panic("json: unterminated string")
+}
+
+// hex4At reads the code unit named by the four hex digits of a \u escape
+// starting at pos; None when there are not four hex digits there.
+func (d *JsonDecoderImpl) hex4At(pos int) Option[rune] =
+    if (pos + 4 > d.data.Size()) None()
+    else strconv.ParseUint(BytesToString(d.data, pos, pos + 4), 16, 32).ToOption().Map((cp) => rune(cp))
+
+// completeSurrogate finishes a \u escape whose code unit is r. A high
+// surrogate followed by an escaped low surrogate is JSON's spelling of one
+// character above U+FFFF, so the second escape is consumed too; any other
+// surrogate is unpaired and reads as U+FFFD, as in encoding/json.
+func (d *JsonDecoderImpl) completeSurrogate(r rune) rune {
+    if !utf16.IsSurrogate(r) {
+        return r
+    }
+    val nextIsEscape = d.pos + 2 <= d.data.Size() && d.data[d.pos] == '\\' && d.data[d.pos + 1] == 'u'
+    val pair = (if (nextIsEscape) d.hex4At(d.pos + 2) else None())
+        .Map((low) => utf16.DecodeRune(r, low))
+        .Filter((p) => p != unicode.ReplacementChar)
+    pair match {
+        case Some(p) => {
+            d.pos = d.pos + 6
+            p
+        }
+        case None() => unicode.ReplacementChar
+    }
 }
 
 // intKindName names the Go integer kind a strconv bit size stands for; 0 is
