@@ -1571,9 +1571,9 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		return nil, false, nil
 	}
 
-	// Choose the parameter types from the expected FuncType. If the expected
-	// type has fewer params than the number of placeholders, pad with `any`
-	// — we'd rather emit code that compiles than reject the call outright.
+	// Choose the parameter types from the expected FuncType. A placeholder it
+	// leaves untyped is bound to `any` only for lowering the body; it is
+	// rejected below once the placeholders that survived are known.
 	paramTypes := make([]transpiler.Type, placeholderCount)
 	for i := 0; i < placeholderCount; i++ {
 		if i < len(ft.Params) && !ft.Params[i].IsNil() {
@@ -1668,6 +1668,25 @@ func (t *galaASTTransformer) tryRewriteAsPlaceholderLambda(
 		// (they were in dead or comment positions). Fall through to ordinary
 		// transformation.
 		return nil, false, nil
+	}
+
+	// A placeholder takes its type from the expected function type exactly as
+	// an unannotated lambda parameter does (transformLambdaWithExpectedType):
+	// one the type has no parameter for, or whose parameter has no type (a
+	// type parameter only the callback could bind, masked out) or one that
+	// could not be resolved, is GALA-E0033, never `any`.
+	line, col := exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn()
+	for i := range paramNames {
+		if i >= len(ft.Params) {
+			return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
+				fmt.Sprintf("placeholder lambda has %d parameters where a function of %d is expected", len(paramNames), len(ft.Params)),
+				fmt.Sprintf("use %d placeholders, or a lambda", len(ft.Params)))
+		}
+		if p := ft.Params[i]; p == nil || p.IsNil() || transpiler.ContainsUnusable(p) {
+			return nil, false, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col,
+				"placeholder `_` has no type and none can be inferred from context",
+				"bind the type parameter it stands for from another argument, write the type arguments explicitly, or use an annotated lambda (e.g. `(x int) => …`)")
+		}
 	}
 
 	// Build the lambda parameter list.

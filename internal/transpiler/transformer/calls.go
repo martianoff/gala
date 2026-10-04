@@ -1729,9 +1729,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 
 // lowerFunctionArg lowers one argument of a regular call (see lowerArg). For a
 // generic struct or sealed-variant constructor, an argument whose lowering
-// depends on its slot type (a lambda, or an if/match of lambdas) first has the
-// constructor's still-unbound type parameters masked out of that type (see
-// genericCtorLambdaExpectation).
+// depends on its slot type (a lambda, a placeholder lambda, or an if/match of
+// lambdas) first has the constructor's still-unbound type parameters masked out
+// of that type (see genericCtorLambdaExpectation).
 func (t *galaASTTransformer) lowerFunctionArg(
 	exprCtx grammar.IExpressionContext,
 	lambdaCtx *grammar.LambdaExpressionContext,
@@ -1740,10 +1740,24 @@ func (t *galaASTTransformer) lowerFunctionArg(
 	tryThunk bool,
 ) (ast.Expr, error) {
 	strict := false
-	if lambdaCtx != nil || t.needsExpectedType(exprCtx) {
+	if len(callCtx.unboundStructTypeParams()) > 0 &&
+		(lambdaCtx != nil || t.needsExpectedType(exprCtx) || t.isPlaceholderLambdaArg(exprCtx, expected)) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
 	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, push: true, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
+}
+
+// isPlaceholderLambdaArg reports whether exprCtx, filling a slot of type
+// slotType, lowers to a placeholder lambda (`_ * 10` against a function type,
+// see tryRewriteAsPlaceholderLambda), so its slot type is a lambda's. Like
+// transformArgument, a lambda or partial function in it takes precedence. Its
+// `_` are counted as tryRewriteAsPlaceholderLambda counts them, nested call
+// arguments included (`double(_)`): one a nested call's own function-typed slot
+// takes (`compose(_ + 1, show)`) lowers there, and the slot's type arguments
+// then bind from the value it produces.
+func (t *galaASTTransformer) isPlaceholderLambdaArg(exprCtx grammar.IExpressionContext, slotType transpiler.Type) bool {
+	return exprCtx != nil && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholderUnderscoresInExpr(exprCtx) > 0 &&
+		t.findPartialFunctionInExpression(exprCtx) == nil && t.findLambdaInExpression(exprCtx) == nil
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -4482,13 +4496,14 @@ func (t *galaASTTransformer) callArgs(argListCtx grammar.IArgumentListContext, p
 
 // inferTypeArgsFromNonLambdaArgs is the first phase of lowering a generic call
 // whose arguments include lambdas: it binds typeParams from the arguments that
-// are not lambdas, unifying each against the type of the slot it fills, so the
+// are not lambdas (explicit, or placeholder ones such as `_ * 2` in a
+// function-typed slot), unifying each against the type of the slot it fills, so the
 // lambdas can then be lowered against concrete types. Only type parameters an
 // argument determines appear in the result.
 func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, args []callArg) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
 	for _, a := range args {
-		if a.lambda != nil || a.slot < 0 || a.slot >= len(paramTypes) {
+		if a.lambda != nil || a.slot < 0 || a.slot >= len(paramTypes) || t.isPlaceholderLambdaArg(a.expr, paramTypes[a.slot]) {
 			continue
 		}
 		expr, err := t.transformExpression(a.expr)
@@ -4532,8 +4547,12 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	// when some argument's lowering depends on a generic function-typed slot.
 	args := t.callArgs(argListCtx, fields)
 	if !slices.ContainsFunc(args, func(a callArg) bool {
-		return (a.lambda != nil || t.needsExpectedType(a.expr)) && a.slot >= 0 && a.slot < len(fieldTypes) &&
-			t.resolveTranspilerTypeAsFuncType(fieldTypes[a.slot]) != nil && typeMentionsTypeParam(fieldTypes[a.slot], typeParams)
+		if a.slot < 0 || a.slot >= len(fieldTypes) || !typeMentionsTypeParam(fieldTypes[a.slot], typeParams) {
+			return false
+		}
+		slotType := fieldTypes[a.slot]
+		return ((a.lambda != nil || t.needsExpectedType(a.expr)) && t.resolveTranspilerTypeAsFuncType(slotType) != nil) ||
+			t.isPlaceholderLambdaArg(a.expr, slotType)
 	}) {
 		return explicit
 	}
