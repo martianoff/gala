@@ -149,3 +149,96 @@ func TestGenericAlias(t *testing.T) {
 		})
 	}
 }
+
+const genericStructAliasDecls = `package main
+
+struct Pair[T any](A T, B T)
+struct Entry[K comparable, V any](Key K, Value V)
+
+type Twin[T any] Pair[T]
+type Twin2[T any] Twin[T]
+type IntKeyed[V any] Entry[int, V]
+type Flipped[V any, K comparable] Entry[K, V]
+type Weird[A any, B any] Pair[A]
+type IntPair Pair[int]
+
+`
+
+// TestGenericStructAliasConstruction covers a generic alias of a generic
+// struct constructed without (all of) its type arguments. They come from the
+// struct's — the fields, the expected type — matched against the struct type
+// the alias names, never an uninstantiated `Twin{...}`, which Go rejects.
+func TestGenericStructAliasConstruction(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "positional",
+			input: "func f() int {\n    val t = Twin(1, 2)\n    t.A + t.B\n}",
+			want:  []string{"Twin[int]{"},
+		},
+		{
+			name:  "named",
+			input: `func f() string = Twin(A = "a", B = "b").A`,
+			want:  []string{"Twin[string]{"},
+		},
+		{
+			name:  "alias of an alias",
+			input: "func f() int = Twin2(5, 6).B",
+			want:  []string{"Twin2[int]{"},
+		},
+		{
+			name:  "alias fixing a type argument",
+			input: `func f() string = IntKeyed(Key = 1, Value = "one").Value`,
+			want:  []string{"IntKeyed[string]{"},
+		},
+		{
+			name:  "alias reordering the type parameters",
+			input: `func f() float64 = Flipped(Key = "x", Value = 2.5).Value`,
+			want:  []string{"Flipped[float64, string]{"},
+		},
+		{
+			name:  "expected type spelled with the alias",
+			input: "func f() Twin[int64] = Twin(3, 4)",
+			want:  []string{"Twin[int64]{"},
+		},
+		{
+			name:  "expected type spelled with the struct",
+			input: "func f() Pair[int64] = Twin(3, 4)",
+			want:  []string{"Twin[int64]{"},
+		},
+		{
+			name:  "written type arguments",
+			input: `func f() string = Twin[string]("p", "q").A`,
+			want:  []string{"Twin[string]{"},
+		},
+		{
+			name:  "alias of an instantiated generic",
+			input: "func f() int = IntPair(9, 10).A",
+			want:  []string{"IntPair{"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(genericStructAliasDecls+tt.input+"\n", "")
+			require.NoError(t, err)
+			for _, w := range tt.want {
+				assert.Contains(t, got, w)
+			}
+		})
+	}
+
+	t.Run("a type parameter the struct does not mention", func(t *testing.T) {
+		_, err := trans.Transpile(genericStructAliasDecls+"func f() int = Weird(1, 2).A\n", "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0067")
+		assert.Contains(t, err.Error(), "cannot infer type argument B of Weird")
+		assert.Contains(t, err.Error(), "`Weird[int, int](...)`")
+	})
+}

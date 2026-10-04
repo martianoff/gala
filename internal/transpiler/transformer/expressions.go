@@ -1280,6 +1280,13 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 	if resolved == "" {
 		return false
 	}
+	// A generic alias of a struct (`Twin(1, 2)` for `type Twin[T any]
+	// Pair[T]`) constructs that struct: its type arguments come from the
+	// struct's (see aliasLiteralType).
+	if target, isAlias := t.lookupTypeAlias(name); isAlias && t.typeMetas[resolved] != nil && len(t.typeMetas[resolved].TypeParams) > 0 {
+		want := t.resolveTypeMetaName(gen.Base.String())
+		return want != "" && t.resolveTypeMetaName(t.followAliasChain(target).BaseName()) == want
+	}
 	// Compared by their metadata keys: the field map has both a bare and a
 	// package-qualified key for a type of this package (`Q`, `units.Q`).
 	if _, isStruct := t.structFields[resolved]; isStruct && stripPackagePrefix(name) == stripPackagePrefix(gen.Base.BaseName()) {

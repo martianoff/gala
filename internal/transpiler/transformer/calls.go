@@ -2865,29 +2865,124 @@ func (t *galaASTTransformer) structLiteralType(
 		return fun, nil
 	}
 	typeMeta := t.getTypeMeta(resolvedTypeName)
-	if typeMeta == nil || len(written) >= len(typeMeta.TypeParams) {
+	if typeMeta == nil {
 		return fun, nil
 	}
-	if _, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
+	if target, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
+		return t.aliasLiteralType(base, written, typeName, target, resolvedTypeName, typeMeta.TypeParams, slotType, line, col, bind)
+	}
+	if len(written) >= len(typeMeta.TypeParams) {
 		return fun, nil
 	}
 
-	// A partial list (`Pair[int](1, "a")` for `Pair[A, B]`) binds its leading
-	// type parameters as written; the rest are inferred, as for a function.
-	inferred := t.writtenTypeArgs(typeMeta.TypeParams, written)
-	// The expected type binds before the fields do, so an untyped constant
-	// takes the slot's type (`Box(1)` as a `Box[int64]` is a `Box[int64]`,
-	// not a `Box[int]`).
-	for tp, typ := range t.slotTypeArgs(slotType, resolvedTypeName, typeMeta.TypeParams) {
+	inferred := t.structTypeArgs(typeMeta.TypeParams, written, resolvedTypeName, slotType, bind)
+	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
+	if missing != nil {
+		return nil, t.uninferredTypeArgError(line, col, base, nil, typeMeta.TypeParams, inferred, missing)
+	}
+	return instantiated, nil
+}
+
+// structTypeArgs binds the type parameters of the generic struct
+// resolvedTypeName that a construction determines: those written (a leading
+// part of the list, `Pair[int](1, "a")` for `Pair[A, B]`), then the expected
+// type's, then the fields' (bind). The expected type binds before the fields
+// do, so an untyped constant takes the slot's type (`Box(1)` as a
+// `Box[int64]` is a `Box[int64]`, not a `Box[int]`).
+func (t *galaASTTransformer) structTypeArgs(
+	typeParams []string,
+	written []ast.Expr,
+	resolvedTypeName string,
+	slotType transpiler.Type,
+	bind func(typeParams []string, inferred map[string]transpiler.Type),
+) map[string]transpiler.Type {
+	inferred := t.writtenTypeArgs(typeParams, written)
+	for tp, typ := range t.slotTypeArgs(slotType, resolvedTypeName, typeParams) {
 		if _, bound := inferred[tp]; !bound {
 			inferred[tp] = typ
 		}
 	}
-	bind(typeMeta.TypeParams, inferred)
+	bind(typeParams, inferred)
+	return inferred
+}
 
-	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
+// aliasLiteralType is structLiteralType for a construction through the alias
+// typeName of the generic struct resolvedTypeName (whose type parameters are
+// structParams), target being the type the alias names. An alias of an
+// instantiated generic (`type IntPair Pair[int]`), or one whose type arguments
+// are all written, is returned as is. A generic alias written without (all of)
+// its type arguments (`Twin(1, 2)` for `type Twin[T any] Pair[T]`) takes them
+// from the struct's: those the construction binds — the fields, the expected
+// type — are matched against the struct type the alias names, so `Twin(1, 2)`
+// is a `Twin[int]`. An alias type parameter still undetermined is an error, as
+// for the struct itself.
+func (t *galaASTTransformer) aliasLiteralType(
+	base ast.Expr,
+	written []ast.Expr,
+	typeName string,
+	target transpiler.Type,
+	resolvedTypeName string,
+	structParams []string,
+	slotType transpiler.Type,
+	line, col int,
+	bind func(typeParams []string, inferred map[string]transpiler.Type),
+) (ast.Expr, error) {
+	fun := withTypeArgs(base, written)
+	aliasMeta := t.getTypeMeta(typeName)
+	if aliasMeta == nil || len(written) >= len(aliasMeta.TypeParams) {
+		return fun, nil
+	}
+	aliasParams := aliasMeta.TypeParams
+	inferred := t.writtenTypeArgs(aliasParams, written)
+
+	// The struct type the alias names, through any chain of aliases, over
+	// the alias's own type parameters (`Pair[T]`). It is also the type the
+	// expected type is matched as, so only it binds the alias's type
+	// parameters: one the struct does not mention (`B` of `type Weird[A any,
+	// B any] Pair[A]`) must be written.
+	// An imported alias's target spells its type parameters qualified
+	// (`shapes.T`); they are matched by bare name.
+	bareParams := make([]transpiler.Type, len(aliasParams))
+	for i, tp := range aliasParams {
+		bareParams[i] = transpiler.BasicType{Name: tp}
+	}
+	named, ok := t.substituteConcreteTypes(t.followAliasChain(target), aliasParams, bareParams).(transpiler.GenericType)
+	if ok && len(named.Params) == len(structParams) {
+		// What the alias fixes of the struct's type arguments (`int` of `type
+		// IntKeyed[V any] Entry[int, V]`, or a written one) binds before the
+		// expected type and the fields do.
+		writtenParams := aliasParams[:len(written)]
+		writtenArgs := make([]transpiler.Type, len(written))
+		for i, tp := range writtenParams {
+			writtenArgs[i] = inferred[tp]
+		}
+		fixed := make(map[string]transpiler.Type)
+		for i, tp := range structParams {
+			if p := t.substituteConcreteTypes(named.Params[i], writtenParams, writtenArgs); !typeMentionsTypeParam(p, aliasParams) {
+				fixed[tp] = p
+			}
+		}
+		structArgs := t.structTypeArgs(structParams, nil, resolvedTypeName, t.followAliasChain(slotType),
+			func(tps []string, m map[string]transpiler.Type) {
+				maps.Copy(m, fixed)
+				bind(tps, m)
+			})
+		for i, tp := range structParams {
+			if typ, ok := structArgs[tp]; ok && !transpiler.IsUnusable(typ) {
+				t.unifyForInference(named.Params[i], typ, aliasParams, inferred)
+			}
+		}
+	}
+
+	instantiated, missing := t.completeTypeArgs(base, aliasParams, written, inferred)
 	if missing != nil {
-		return nil, t.uninferredTypeArgError(line, col, base, nil, typeMeta.TypeParams, inferred, missing)
+		// The value is the struct the alias names, so an annotation binds the
+		// missing type parameters only through it (yields).
+		var yields transpiler.Type = transpiler.NilType{}
+		if ok {
+			yields = named
+		}
+		return nil, t.uninferredTypeArgError(line, col, base, yields, aliasParams, inferred, missing)
 	}
 	return instantiated, nil
 }

@@ -1,0 +1,32 @@
+package main
+
+// A generic alias of a generic struct is constructed like the struct: its
+// type arguments are inferred from the fields and the expected type.
+
+struct Pair[T any](A T, B T)
+
+struct Entry[K comparable, V any](Key K, Value V)
+
+type Twin[T any] Pair[T]
+
+type IntKeyed[V any] Entry[int, V]
+
+type Flipped[V any, K comparable] Entry[K, V]
+
+func wide() Twin[int64] = Twin(3, 4)
+
+func main() {
+    val twin = Twin(1, 2)
+    Println(twin.A + twin.B)
+
+    val named = Twin(A = "a", B = "b")
+    Println(named.A + named.B)
+
+    val keyed = IntKeyed(Key = 1, Value = "one")
+    Println(keyed.Key, keyed.Value)
+
+    val flipped = Flipped(Key = "x", Value = 2.5)
+    Println(flipped.Key, flipped.Value)
+
+    Println(wide().A * wide().B)
+}

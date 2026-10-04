@@ -37,6 +37,9 @@ func main() {
     Println(body)
     Println(codec.Decode(body).Map(_.Lines.Size()))
 
+    val r = shapes.Range(2, 9)
+    Println(r.Hi - r.Lo)
+
     val sizes = Future(s"${ps.Size()} ${totals.Size()}")
     Println(sizes.Get())
 }
