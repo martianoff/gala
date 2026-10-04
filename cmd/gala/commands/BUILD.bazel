@@ -68,6 +68,7 @@ go_library(
 go_test(
     name = "commands_test",
     srcs = [
+        "doc_opaque_test.go",
         "doc_prose_test.go",
         "imports_test.go",
         "mod_tidy_sum_test.go",

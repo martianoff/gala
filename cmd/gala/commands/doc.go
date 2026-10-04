@@ -42,10 +42,14 @@ func init() {
 
 // docType is one type's public surface.
 type docType struct {
-	Name       string       `json:"name"`
-	Doc        string       `json:"doc,omitempty"`
-	TypeParams []string     `json:"typeParams,omitempty"`
-	Sealed     bool         `json:"sealed,omitempty"`
+	Name       string   `json:"name"`
+	Doc        string   `json:"doc,omitempty"`
+	TypeParams []string `json:"typeParams,omitempty"`
+	Sealed     bool     `json:"sealed,omitempty"`
+	// Opaque marks `opaque type UserID int64`; Underlying is the type it is
+	// declared over.
+	Opaque     bool         `json:"opaque,omitempty"`
+	Underlying string       `json:"underlying,omitempty"`
 	Variants   []docVariant `json:"variants,omitempty"`
 	Fields     []docField   `json:"fields,omitempty"`
 	Methods    []docSignat  `json:"methods,omitempty"`
@@ -71,6 +75,9 @@ type docSignat struct {
 	TypeParams []string   `json:"typeParams,omitempty"`
 	Params     []docField `json:"params"`
 	Returns    string     `json:"returns,omitempty"`
+	// Synthesized marks a method the transpiler generates rather than one
+	// declared in source: Hash and Compare on an opaque type.
+	Synthesized bool `json:"synthesized,omitempty"`
 }
 
 type docPackage struct {
@@ -296,6 +303,10 @@ func buildDocType(name string, meta *transpiler.TypeMetadata) docType {
 		Doc:        meta.Doc,
 		TypeParams: meta.TypeParams,
 		Sealed:     meta.IsSealed,
+		Opaque:     meta.IsOpaque,
+	}
+	if underlying, ok := meta.OpaqueUnderlying(); ok {
+		dt.Underlying = underlying.String()
 	}
 	for _, v := range meta.SealedVariants {
 		dt.Variants = append(dt.Variants, docVariant{
@@ -333,6 +344,14 @@ func buildDocType(name string, meta *transpiler.TypeMetadata) docType {
 			TypeParams: m.TypeParams,
 			Params:     namedTypes(m.ParamNames, m.ParamTypes),
 			Returns:    typeString(m.ReturnType),
+		})
+	}
+	for _, m := range meta.SynthesizedOpaqueMethods() {
+		dt.Methods = append(dt.Methods, docSignat{
+			Name:        m.Name,
+			Params:      namedTypes(m.ParamNames, m.ParamTypes),
+			Returns:     typeString(m.ReturnType),
+			Synthesized: true,
 		})
 	}
 	sort.Slice(dt.Methods, func(i, j int) bool { return dt.Methods[i].Name < dt.Methods[j].Name })
@@ -411,9 +430,12 @@ func renderPackageDoc(w io.Writer, pkg *docPackage) {
 		if len(t.TypeParams) > 0 {
 			header += "[" + strings.Join(t.TypeParams, ", ") + "]"
 		}
-		if t.Sealed {
+		switch {
+		case t.Sealed:
 			header = "sealed type " + header
-		} else {
+		case t.Opaque:
+			header = "opaque type " + header + " " + t.Underlying
+		default:
 			header = "type " + header
 		}
 		fmt.Fprintln(w, header)
@@ -428,6 +450,10 @@ func renderPackageDoc(w io.Writer, pkg *docPackage) {
 			renderProse(w, f.Doc, "        ")
 		}
 		for _, m := range t.Methods {
+			if m.Synthesized {
+				fmt.Fprintf(w, "    %s  (synthesized)\n", formatSignature(m))
+				continue
+			}
 			fmt.Fprintf(w, "    %s\n", formatSignature(m))
 			renderProse(w, m.Doc, "        ")
 		}
@@ -508,4 +534,3 @@ func generatedCaseCompanions(rich *transpiler.RichAST, pkgName string) map[strin
 }
 
 // joinParams renders a case's fields as they were declared.
-

@@ -393,6 +393,39 @@ func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
 	return m.Underlying, true
 }
 
+// SynthesizedOpaqueMethods describes the methods the transpiler generates on
+// an opaque type and that the type does not declare itself: Hash, and Compare
+// unless the underlying type is bool (the transformer's
+// isSynthesizedOpaqueMethod is the authority). It is for presentation (hover,
+// gala doc); nil for any other type. A same-package .go method of the name is
+// not visible here.
+func (m *TypeMetadata) SynthesizedOpaqueMethods() []*MethodMetadata {
+	underlying, ok := m.OpaqueUnderlying()
+	if !ok {
+		return nil
+	}
+	var self Type = NamedType{Name: m.Name}
+	if len(m.TypeParams) > 0 {
+		params := make([]Type, len(m.TypeParams))
+		for i, tp := range m.TypeParams {
+			params[i] = NamedType{Name: tp}
+		}
+		self = GenericType{Base: self, Params: params}
+	}
+	var out []*MethodMetadata
+	if _, declared := m.Methods["Hash"]; !declared {
+		out = append(out, &MethodMetadata{Name: "Hash", Package: m.Package, ReturnType: BasicType{Name: "uint32"}})
+	}
+	if _, declared := m.Methods["Compare"]; !declared && underlying.String() != "bool" {
+		out = append(out, &MethodMetadata{
+			Name: "Compare", Package: m.Package,
+			ParamNames: []string{"other"}, ParamTypes: []Type{self},
+			ReturnType: BasicType{Name: "int"},
+		})
+	}
+	return out
+}
+
 // DefaultExpr is a declared default value — of a function or method parameter,
 // or of a shorthand struct field. Text is the expression exactly as written,
 // whitespace included, since it is re-parsed at every call or construction site

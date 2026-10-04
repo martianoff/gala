@@ -467,6 +467,21 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 		}, completionRef{Kind: refKindMember, Key: ownerKey, Name: fn}))
 	}
 
+	// Hash / Compare synthesized on an opaque type
+	for _, m := range tm.SynthesizedOpaqueMethods() {
+		sig := formatMethodSig(m)
+		insertText, format := callInsertText(m.Name, m.ParamNames, nil, snippets)
+		items = append(items, lsp.CompletionItem{
+			Label:            m.Name + sig,
+			Kind:             kindPtr(lsp.CompletionItemKindMethod),
+			Detail:           sig + " (synthesized)",
+			InsertText:       insertText,
+			InsertTextFormat: format,
+			FilterText:       m.Name,
+			SortText:         m.Name,
+		})
+	}
+
 	// Sealed variant IsXxx() methods
 	for _, v := range tm.SealedVariants {
 		items = append(items, lsp.CompletionItem{

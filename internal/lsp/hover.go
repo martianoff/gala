@@ -268,7 +268,21 @@ func memberHover(richAST *transpiler.RichAST, recvType, name string) string {
 	if ft, ok := tm.Fields[name]; ok {
 		return formatField(tm, name, ft)
 	}
+	if m := synthesizedMethod(tm, name); m != nil {
+		return formatMethodMeta(tm, m) + "\n*Synthesized for opaque types*\n"
+	}
 	return ""
+}
+
+// synthesizedMethod returns the Hash or Compare the transpiler generates on an
+// opaque type, or nil when name is not one of them.
+func synthesizedMethod(tm *transpiler.TypeMetadata, name string) *transpiler.MethodMetadata {
+	for _, m := range tm.SynthesizedOpaqueMethods() {
+		if m.Name == name {
+			return m
+		}
+	}
+	return nil
 }
 
 // findSealedVariant locates a `case` by name, preferring one declared in
@@ -380,13 +394,19 @@ func renderHover(signature, doc, pkg string) string {
 func formatTypeMeta(meta *transpiler.TypeMetadata) string {
 	var b strings.Builder
 	b.WriteString("```gala\n")
-	if meta.IsSealed {
+	switch {
+	case meta.IsSealed:
 		b.WriteString("sealed type " + meta.Name)
-	} else {
+	case meta.IsOpaque:
+		b.WriteString("opaque type " + meta.Name)
+	default:
 		b.WriteString("type " + meta.Name)
 	}
 	if len(meta.TypeParams) > 0 {
 		b.WriteString("[" + strings.Join(meta.TypeParams, ", ") + "]")
+	}
+	if underlying, ok := meta.OpaqueUnderlying(); ok {
+		b.WriteString(" " + underlying.String())
 	}
 	b.WriteString("\n```\n")
 
@@ -411,11 +431,15 @@ func formatTypeMeta(meta *transpiler.TypeMetadata) string {
 			b.WriteString(fmt.Sprintf("- `%s`\n", variantSignature(&v)))
 		}
 	}
-	if len(meta.Methods) > 0 {
+	synthesized := meta.SynthesizedOpaqueMethods()
+	if len(meta.Methods) > 0 || len(synthesized) > 0 {
 		b.WriteString("\n**Methods:**\n")
 		for _, name := range slices.Sorted(maps.Keys(meta.Methods)) {
 			m := meta.Methods[name]
 			b.WriteString(fmt.Sprintf("- `%s(%s) %s`\n", name, formatMethodParams(m), m.ReturnType))
+		}
+		for _, m := range synthesized {
+			b.WriteString(fmt.Sprintf("- `%s(%s) %s` *(synthesized)*\n", m.Name, formatMethodParams(m), m.ReturnType))
 		}
 	}
 	if meta.Package != "" {

@@ -60,6 +60,8 @@ go_test(
         "inlay_hints_internal_test.go",
         "keyword_completions_test.go",
         "member_dot_internal_test.go",
+        "opaque_hover_internal_test.go",
+        "opaque_hover_test.go",
         "package_files_internal_test.go",
         "position_encoding_test.go",
         "position_internal_test.go",
