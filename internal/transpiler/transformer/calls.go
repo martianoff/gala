@@ -3884,15 +3884,25 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 // named function type name (`http.HandlerFunc`, or a type of the package's own
 // .go files), or nil.
 func (t *galaASTTransformer) goNamedFuncType(name string) *transpiler.FuncType {
-	if t.goTypeInfo == nil {
-		return nil
-	}
-	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" && len(td.TypeParams) == 0 {
-		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
-			return &ft
-		}
+	if ft, generic := t.goNamedFuncSignature(name); !generic {
+		return ft
 	}
 	return nil
+}
+
+// goNamedFuncSignature returns the underlying function type of the Go named
+// function type name, generic or not, and whether it is generic; nil when
+// name names no Go function type.
+func (t *galaASTTransformer) goNamedFuncSignature(name string) (*transpiler.FuncType, bool) {
+	if t.goTypeInfo == nil {
+		return nil, false
+	}
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
+		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
+			return &ft, len(td.TypeParams) > 0
+		}
+	}
+	return nil, false
 }
 
 // calleeFuncType returns the function type of the value a call's callee reads

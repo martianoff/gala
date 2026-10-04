@@ -370,6 +370,11 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 			gala: "import \"io/fs\"\n\nfunc run(f fs.WalkDirFunc) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
 			want: "err.Get().Error()",
 		},
+		{
+			name: "the result of calling a value of a GALA alias of the type",
+			gala: "import \"io/fs\"\n\ntype Walk fs.WalkDirFunc\n\nfunc run(f Walk) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
+			want: "err.Get().Error()",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -382,13 +387,18 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 
 	// A generic Go named function type is not instantiated here, so a lambda
 	// in its slot still has no type to take.
-	t.Run("a generic Go named function type", func(t *testing.T) {
-		files, galaFile := samePackageModule(".", goSrc,
-			"package main\n\nfunc apply(m Mapper[int]) int = m(1)\n\nfunc run() int = apply((x) => x)\n")
-		_, err := transpileInModule(t, files, galaFile)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "GALA-E0033")
-	})
+	for name, gala := range map[string]string{
+		"a generic Go named function type":                   "func apply(m Mapper[int]) int = m(1)\n\nfunc run() int = apply((x) => x)\n",
+		"a generic Go named function type in a val":          "func run() int {\n    val m Mapper[int] = (x) => x\n    m(1)\n}\n",
+		"a generic Go named function type in a struct field": "struct Box(M Mapper[int])\n\nfunc run() Box = Box(M = (x) => x)\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+gala)
+			_, err := transpileInModule(t, files, galaFile)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "GALA-E0033")
+		})
+	}
 }
 
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for

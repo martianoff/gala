@@ -233,9 +233,10 @@ func (t *galaASTTransformer) newImmutableFor(value ast.Expr, target transpiler.T
 // going into an Immutable[target], or nil when plain inference is already
 // correct.
 //
-// Beyond `nil`, the rewrite is confined to untyped numeric constants going into
-// a numeric slot — a predeclared numeric type, a GALA type declared over one
-// (`type Millis int64`), or a Go named numeric type (`time.Duration`). That is
+// Beyond `nil`, an untyped constant going into an opaque slot and a function
+// value going into a Go named function type slot (`fs.WalkDirFunc`), the
+// rewrite is confined to untyped numeric constants going into a numeric slot —
+// a predeclared numeric type, a GALA type declared over one (`type Millis int64`), or a Go named numeric type (`time.Duration`). That is
 // exactly the set of values whose type Go would have taken from the
 // destination but takes from the argument once the NewImmutable wrapper
 // intervenes. A typed expression, a non-numeric slot, or a type parameter with

@@ -1225,12 +1225,8 @@ func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
 	if transpiler.IsPrimitiveType(name) {
 		return false
 	}
-	td := t.goTypeInfo.GetTypeData(t.goTypeKey(name))
-	if td == nil || td.Kind != "named" {
-		return false
-	}
-	_, isFunc := td.Underlying.(transpiler.FuncType)
-	return isFunc && t.getTypeMeta(name) == nil
+	ft, _ := t.goNamedFuncSignature(name)
+	return ft != nil && t.getTypeMeta(name) == nil
 }
 
 func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {
