@@ -207,12 +207,12 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		if binding == "" || binding == "_" || strings.Contains(binding, " ") || isStablePatternName(binding, richAST) {
 			continue
 		}
-		if i < len(variant.FieldTypes) && isVariantOf(binding, variant.FieldTypes[i], richAST) {
-			// `case wrap(endFrame)` tests the field for that variant; it
-			// binds nothing to annotate.
-			continue
-		}
 		if i < len(variant.FieldTypes) {
+			if isVariantOf(binding, variant.FieldTypes[i], richAST) {
+				// `case wrap(endFrame)` tests the field for that variant; it
+				// binds nothing to annotate.
+				continue
+			}
 			// A field typed by the sealed type's own type parameter has no
 			// type to show until the subject is known; any other name — a
 			// user type called `A` included — is a real type. Compare the
@@ -279,17 +279,9 @@ func isVariantOf(name string, typ transpiler.Type, richAST *transpiler.RichAST) 
 	if typ == nil || richAST == nil {
 		return false
 	}
-	base := typ.BaseName()
-	if dot := strings.LastIndex(base, "."); dot >= 0 {
-		base = base[dot+1:]
-	}
-	for _, tm := range richAST.Types {
-		if tm.IsSealed && tm.Name == base &&
-			slices.ContainsFunc(tm.SealedVariants, func(v transpiler.SealedVariant) bool { return v.Name == name }) {
-			return true
-		}
-	}
-	return false
+	tm := findType(richAST, typ.BaseName())
+	return tm != nil && tm.IsSealed &&
+		slices.ContainsFunc(tm.SealedVariants, func(v transpiler.SealedVariant) bool { return v.Name == name })
 }
 
 func makeTypeHint(line, col int, typeName string) lsp.InlayHint {
