@@ -29,18 +29,24 @@ func annotated[Some any](x Some) Some {
 // An explicit type argument names the type parameter too.
 func wrapRight[Left any](a Left) Option[Left] = Some[Left](a)
 
+// Box holds one value; its type parameter is named like std's Option.
 struct Box[Option any](V Option)
 
+// Get returns the boxed value.
 func (b Box[Option]) Get() Option = b.V
 
+// Map boxes f applied to the value; its own type parameter is named like Try.
 func (b Box[Option]) Map[Try any](f func(Option) Try) Box[Try] = Box(f(b.V))
 
+// Holder uses the block struct form, so a field type names the parameter too.
 type Holder[Tuple any] struct {
     Value Tuple
 }
 
+// Twice returns the held value twice.
 func (h Holder[Tuple]) Twice() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)
 
+// Res is a sealed type whose type parameter is named like std's Some.
 sealed type Res[Some any] {
     case Ok(V Some)
     case Err(Msg string)
