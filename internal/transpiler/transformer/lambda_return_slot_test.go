@@ -174,22 +174,6 @@ func trailingNone(o Option[int]) string = o match {
 			notContains: []string{"return std.None[int]"},
 		},
 		{
-			name: "a trailing value falls back to the match subject when nothing else types the lambda",
-			body: `
-func onlyTrailingNone(o Option[int]) string = o match {
-    case Some(_) => {
-        val r = apply(() => {
-            Println("side effect")
-            None()
-        })
-        s"$r"
-    }
-    case _ => "none"
-}
-`,
-			contains: []string{"apply(func() std.Option[int] {", "return std.None[int]{}"},
-		},
-		{
 			name: "a return in an if-expression branch leaves the lambda's slot alone",
 			body: `
 func doubledSize(s string) Option[string] {
@@ -492,6 +476,26 @@ func run() string {
         return Failure(strconv.ErrRange)
     })
     return s"$r"
+}
+`,
+			wantErr: "cannot infer the result type of this lambda",
+		},
+		{
+			// The match subject is not the lambda's result: it types nothing.
+			name: "a trailing None() in a match nothing else types",
+			input: `package main
+
+func apply[T any](f func() T) T = f()
+
+func onlyTrailingNone(o Option[int]) string = o match {
+    case Some(_) => {
+        val r = apply(() => {
+            Println("side effect")
+            None()
+        })
+        s"$r"
+    }
+    case _ => "none"
 }
 `,
 			wantErr: "cannot infer the result type of this lambda",

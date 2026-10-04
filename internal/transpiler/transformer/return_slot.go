@@ -77,16 +77,11 @@ func declaredTypeParams(own *ast.FieldList, receiver []*ast.Field) map[string]bo
 
 // enterIIFEReturnSlot is enterReturnSlot for a value-position construct
 // lowered to an IIFE (a match or an if-expression), whose value fills a slot
-// of type typ. A `return` in it leaves only the IIFE, so it sees typ, and it
-// never fills or defers into an enclosing lambda's fillable slot.
+// of type typ. A `return` in it leaves only the IIFE, so it sees typ — none
+// when the slot has no type — and never the enclosing function's result type,
+// nor an enclosing lambda's fillable slot.
 func (t *galaASTTransformer) enterIIFEReturnSlot(typ transpiler.Type) func() {
-	switch {
-	case !transpiler.IsUnusable(typ):
-		return t.enterReturnSlot(returnSlot{typ: typ})
-	case t.returnSlot.fillable:
-		return t.enterReturnSlot(returnSlot{})
-	}
-	return func() {}
+	return t.enterReturnSlot(returnSlot{typ: typ})
 }
 
 // isSettledType reports whether typ can fix a lambda's result slot: it is

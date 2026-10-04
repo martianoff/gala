@@ -282,7 +282,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
 				pending := t.expectedArgTypes.peek()
 				handled, expr, err := t.tryTransformGenericMethodAsFunction(nil, receiver, method, typeArgs, recvType, lookupBaseName, pending,
-					suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+					suffix)
 				if err != nil {
 					return nil, err
 				}
@@ -509,6 +509,11 @@ func (t *galaASTTransformer) splitCallTarget(fun ast.Expr) (receiver ast.Expr, m
 //	handled=true  — the section produced an output expression; the caller
 //	                must return `expr` verbatim.
 //
+// argListCtx is nil for a call with no arguments; anchor is the argument
+// list, or the `()` of such a call, where diagnostics about the call point.
+// pendingExpected is the type of the slot the call fills, when it is the
+// value that fills one (see consumesSlotType).
+//
 // Extracted from transformCallWithArgsCtx as part of A1 cont.
 func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	argListCtx *grammar.ArgumentListContext,
@@ -518,7 +523,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	recvType transpiler.Type,
 	lookupBaseName string,
 	pendingExpected transpiler.Type,
-	line, col int,
+	anchor antlr.ParserRuleContext,
 ) (handled bool, result ast.Expr, err error) {
 	// Skip if the "receiver" is actually a package identifier — that is a
 	// package-qualified function call and belongs to a later section.
@@ -749,10 +754,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		return view
 	}
-	var argListLine, argListCol int
-	if argListCtx != nil {
-		argListLine, argListCol = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
-	}
+	argListLine, argListCol := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
 	for i, arg := range slots {
 		if arg == nil {
 			expr, derr := t.methodDefaultArg(methodMeta, i, receiver, recvType, typeSubst, argListLine, argListCol)
@@ -828,7 +830,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// infer" error and needs call-site-context threading, tracked separately.
 	if methodMeta != nil && typeMeta != nil {
 		yields := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypes)
-		if typeArgs, err = t.resultOnlyMethodTypeArgs(receiver, methodMeta, typeArgs, typeSubst, yields, mArgs, line, col); err != nil {
+		if typeArgs, err = t.resultOnlyMethodTypeArgs(anchor, methodMeta, typeArgs, typeSubst, yields, mArgs); err != nil {
 			return true, nil, err
 		}
 	}
@@ -1046,16 +1048,16 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 }
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
-// call of the generic method methodMeta on receiver, when the method has a
-// type parameter only its result mentions (`U` of `Convert[U any]()
-// Option[U]`): Go infers no such parameter, so the call has to spell every
-// one of the method's type arguments. typeSubst holds those its arguments and
-// the slot the call fills bound (see tryTransformGenericMethodAsFunction);
-// yields is its result type on this receiver. One left open is GALA-E0067 at
-// line/col, as for a generic function (see injectFuncPhantomTypeArgs).
-// typeArgs is returned as is when every type parameter is bound by a
-// parameter, which Go infers from the arguments.
-func (t *galaASTTransformer) resultOnlyMethodTypeArgs(receiver ast.Expr, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields transpiler.Type, args []ast.Expr, line, col int) ([]ast.Expr, error) {
+// call of the generic method methodMeta, when the method has a type parameter
+// only its result mentions (`U` of `Convert[U any]() Option[U]`): Go infers
+// no such parameter, so the call has to spell every one of the method's type
+// arguments. typeSubst holds those its arguments and the slot the call fills
+// bound (see tryTransformGenericMethodAsFunction); yields is its result type
+// on this receiver. One left open is GALA-E0067 at anchor (the call's argument
+// list, or its `()`), as for a generic function (see
+// injectFuncPhantomTypeArgs). typeArgs is returned as is when every type
+// parameter is bound by a parameter, which Go infers from the arguments.
+func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
 	if len(typeArgs) >= len(methodMeta.TypeParams) {
 		return typeArgs, nil
 	}
@@ -1081,15 +1083,47 @@ func (t *galaASTTransformer) resultOnlyMethodTypeArgs(receiver ast.Expr, methodM
 	if missing == nil {
 		return full, nil
 	}
-	name := "(...)." + methodMeta.Name
-	if id, ok := receiver.(*ast.Ident); ok {
-		name = id.Name + "." + methodMeta.Name
-	}
+	name := methodCallName(anchor, methodMeta.Name)
+	line, col := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
 	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
 		// No slot fixes an argument whose type is unknown.
 		return nil, t.unknownArgTypeError(line, col, ast.NewIdent(name), missing, args, true)
 	}
 	return nil, t.uninferredTypeArgErrorNamed(line, col, name, valueYields(yields), methodMeta.TypeParams, resolved, missing)
+}
+
+// methodCallName spells the callee of a method call for a diagnostic, as the
+// source writes its receiver (`Box(1).Convert`): call is a node of the call's
+// argument list suffix, from which the enclosing postfix expression is found.
+// Without one, the receiver is shown as `(...)`.
+func methodCallName(call antlr.Tree, method string) string {
+	unknown := "(...)." + method
+	for n := call; n != nil; n = n.GetParent() {
+		suffix, ok := n.(*grammar.PostfixSuffixContext)
+		if !ok {
+			continue
+		}
+		pe, ok := suffix.GetParent().(*grammar.PostfixExprContext)
+		if !ok || pe.PrimaryExpr() == nil {
+			return unknown
+		}
+		suffixes := pe.AllPostfixSuffix()
+		// The call is `.method(...)` or `.method[...](...)`: the receiver is
+		// everything before the member suffix.
+		m := slices.Index(suffixes, grammar.IPostfixSuffixContext(suffix)) - 1
+		if m >= 0 && suffixOpener(suffixes[m].(*grammar.PostfixSuffixContext)) == "[" {
+			m--
+		}
+		if m < 0 || suffixes[m].(*grammar.PostfixSuffixContext).Identifier() == nil {
+			return unknown
+		}
+		recv := pe.PrimaryExpr().GetText()
+		for _, s := range suffixes[:m] {
+			recv += s.GetText()
+		}
+		return recv + "." + method
+	}
+	return unknown
 }
 
 // transformRegularMethodCall handles Section 4 of the call dispatcher: method
@@ -2416,7 +2450,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 3: Generic method -> standalone function rewrite ---
 	if receiver != nil && isGenericMethod {
 		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected,
-			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
+			argListCtx)
 		if err != nil {
 			return nil, err
 		}

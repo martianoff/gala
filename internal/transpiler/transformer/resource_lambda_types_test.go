@@ -252,16 +252,16 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 	// The result of a generic function or method whose type arguments the
 	// call leaves undetermined still names its own type parameter, however
 	// deep the call; the lambda is not lowered against it (`func(s B)`,
-	// undefined in the caller). A free function's type parameter only its
-	// result mentions is reported at the call that leaves it open
-	// (GALA-E0067), before the lambda is reached; a method's, at the lambda.
+	// undefined in the caller). A type parameter of a function or method
+	// that only its result mentions is reported at the call that leaves it
+	// open (GALA-E0067), before the lambda is reached.
 	for _, tc := range []struct{ src, code string }{
 		{"func mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
 			"func run() int = mk(1)((s) => 2)\n", "GALA-E0067"},
 		{"func mk[A any, B any](a A) func(int) func(func(B) A) A = (n) => (h) => a\n\n" +
 			"func run() int = mk(1)(2)((s) => 2)\n", "GALA-E0067"},
 		{"struct Box(N int)\n\nfunc (b Box) Maker[U any]() func(func(U) int) int = (h) => b.N\n\n" +
-			"func run() int = Box(1).Maker()((s) => 2)\n", "GALA-E0033"},
+			"func run() int = Box(1).Maker()((s) => 2)\n", "GALA-E0067"},
 		// The caller declares a type named like the callee's type parameter.
 		{"struct B(X int)\n\nfunc mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
 			"func run() int = mk(1)((s) => 2)\n", "GALA-E0067"},
