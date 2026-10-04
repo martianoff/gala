@@ -23,6 +23,9 @@ opaque type Region Code
 // Timeout is a wait, over a Go named type an importer need not import.
 opaque type Timeout time.Duration
 
+// Ref refers to an entity of type T by number.
+opaque type Ref[T any] int64
+
 // Dollars renders the amount.
 func (c Cents) Dollars() string = f"$$${float64(c) / 100.0}%.2f"
 

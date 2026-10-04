@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -115,12 +117,12 @@ func (t *galaASTTransformer) generateOpaquePattern(
 		stmts = append(stmts, stmt)
 		conds = append(conds, ok)
 	}
-	viaAny := &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}}
+	viaAny := func() ast.Expr { return &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}} }
 	switch {
 	case iface:
 		assertSubject(objExpr)
 	case dynamic:
-		assertSubject(viaAny)
+		assertSubject(viaAny())
 	default:
 		// A pattern spelling type arguments, `case Id[Order](n)`, must name
 		// the subject's own instantiation.
@@ -136,7 +138,7 @@ func (t *galaASTTransformer) generateOpaquePattern(
 		// generic declaration) or unknown, the instantiation the pattern
 		// names is checked at run time.
 		if explicitTypeArgs != nil && t.hasOpenTypeArg(subjectType, meta) {
-			assertSubject(viaAny)
+			assertSubject(viaAny())
 		}
 	}
 
@@ -260,22 +262,14 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 			if td.Kind != "interface" {
 				return nil, false
 			}
-			names := make([]string, 0, len(td.Methods))
-			for n := range td.Methods {
-				names = append(names, n)
-			}
-			return names, true
+			return slices.Collect(maps.Keys(td.Methods)), true
 		}
 	}
 	if meta := t.getTypeMeta(typ.BaseName()); meta != nil {
 		if meta.IsOpaque || meta.IsSealed || meta.IsShorthand || len(meta.Methods) == 0 || !isGalaInterfaceMeta(meta) {
 			return nil, false
 		}
-		names := make([]string, 0, len(meta.Methods))
-		for n := range meta.Methods {
-			names = append(names, n)
-		}
-		return names, true
+		return slices.Collect(maps.Keys(meta.Methods)), true
 	}
 	return nil, false
 }

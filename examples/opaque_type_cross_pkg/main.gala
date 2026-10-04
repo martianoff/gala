@@ -44,7 +44,17 @@ func main() {
         json.Value[billing.Sku]().Encode(billing.Sku("pen")),
     )
     Println(region(billing.Region("eu")), wait(billing.Timeout(2000000000)))
+
+    // A phantom-typed opaque type of another package, as a field and a root.
+    val link = Link(billing.Ref[Order](4))
+    val linkCodec = json.Codec[Link](json.SnakeCase())
+    val linked = linkCodec.Encode(link)
+    Println(linked, linked.FlatMap((s) => linkCodec.Decode(s)).Map((l) => l.Equal(link)))
+    Println(json.Value[billing.Ref[Order]]().Decode("9"))
 }
+
+// Link refers to an order through billing's phantom-typed Ref.
+struct Link(Target billing.Ref[Order])
 
 func region(r billing.Region) string = r match {
     case billing.Region(code) => s"region $code"

@@ -6,3 +6,5 @@ json round-trip equal: true
 yaml round-trip equal: true
 customer 7 guest Success("pen")
 region eu wait 2s
+Success({"target":4}) Success(true)
+Success(9)
