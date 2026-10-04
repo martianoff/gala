@@ -47,9 +47,9 @@ func main() {
     Println(ArrayOf(Id[User](3), ada, bo).Sorted(), TreeSetOf(order, Id[Order](2)).ToArray())
 
     val receipt = Receipt(ada, order)
-    val encoded = json.Codec[Receipt](json.SnakeCase()).Encode(receipt).Get()
-    Println(encoded)
-    Println(json.Codec[Receipt](json.SnakeCase()).Decode(encoded).Get().Equal(receipt))
+    val codec = json.Codec[Receipt](json.SnakeCase())
+    val encoded = codec.Encode(receipt)
+    Println(encoded, encoded.FlatMap((s) => codec.Decode(s)).Map((r) => r.Equal(receipt)))
 
     // The root value of a codec can be an opaque type too.
     Println(json.Value[Id[User]]().Encode(ada), json.Value[Id[User]]().Decode("5"))

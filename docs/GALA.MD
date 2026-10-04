@@ -1139,10 +1139,9 @@ one sub-pattern against the underlying value: `n` binds an `int64`,
 `UserID(0)` compares it with a literal, `UserID(_)` ignores it. Any other number
 of sub-patterns is [GALA-E0065](errors/GALA-E0065.md). On an `any` or interface
 subject the pattern first checks the value is a `UserID` — a plain `int64` is
-not — and a phantom-typed one must spell its type arguments, `case
-Id[User](n)`. Literal
-patterns, stable identifiers (`val Admin Role = 1` then `case Admin`) and type
-patterns (`case u: UserID`) work as for any type. An opaque type is not sealed,
+not — and a phantom-typed one must spell its type arguments,
+`case Id[User](n)`. Literal patterns, stable identifiers (`val Admin Role = 1`
+then `case Admin`) and type patterns (`case u: UserID`) work as for any type. An opaque type is not sealed,
 so a match on one ends in `case _`.
 
 ```gala
