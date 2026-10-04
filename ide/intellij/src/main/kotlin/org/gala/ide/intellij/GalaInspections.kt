@@ -54,6 +54,7 @@ class GalaDuplicateDeclarationInspection : LocalInspectionTool() {
             && element !is FunctionDeclarationNode
             && element !is TypeDeclarationNode
             && element !is SealedTypeDeclarationNode
+            && element !is OpaqueTypeDeclarationNode
         ) {
             for (child in element.children) {
                 collectTopLevelNames(child, seen, holder)

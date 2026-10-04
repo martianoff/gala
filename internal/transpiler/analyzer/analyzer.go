@@ -1590,8 +1590,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	ownAliases := a.fileTypeAliases(sourceFile, pkgName)
 	addQualifiedTypeAliases(richAST, pkgName, ownAliases)
 
+	underlying := a.declaredTypeUnderlying(ownAliases, pkgName, richAST)
+	recordOpaqueBases(richAST, pkgName, underlying)
 	if len(pendingDefaultChecks) > 0 {
-		underlying := a.declaredTypeUnderlying(ownAliases, pkgName, richAST)
 		for _, check := range pendingDefaultChecks {
 			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
 				return nil, err

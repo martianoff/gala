@@ -1097,6 +1097,8 @@ such as `driver.Valuer`). A `String() string` method makes the type a
 every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`)
 for every one except those over `bool`. Each is skipped when the type already
 declares it, in GALA or in a `.go` file of the package. Equality is Go's `==`.
+Hover, completion and `gala doc` list the generated methods, marked
+*synthesized*.
 
 ```gala
 package main

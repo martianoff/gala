@@ -92,7 +92,10 @@ import (
 //
 // v17: TypeMetadata records opaque types (IsOpaque, Underlying). A v16
 // payload would present an imported opaque type as a field-less type.
-const CacheVersion = "v17"
+//
+// v18: an opaque type also records UnderlyingBase, its underlying type
+// followed through aliases and Go named types. A v17 payload lacks it.
+const CacheVersion = "v18"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

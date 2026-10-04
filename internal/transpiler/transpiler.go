@@ -204,7 +204,7 @@ func (r *RichAST) Merge(other *RichAST) {
 		fieldsNeeded := len(v.FieldNames) > 0 && len(existing.FieldNames) == 0
 		typeParamsNeeded := len(v.TypeParams) > 0 && len(existing.TypeParams) == 0
 		sealedNeeded := v.IsSealed && !existing.IsSealed
-		opaqueNeeded := v.IsOpaque && !existing.IsOpaque
+		opaqueNeeded := v.IsOpaque && (!existing.IsOpaque || (existing.UnderlyingBase == nil && v.UnderlyingBase != nil))
 		docNeeded := v.Doc != "" && existing.Doc == ""
 		fieldDocsNeeded := len(v.FieldDocs) > 0 && len(existing.FieldDocs) == 0
 		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded && !opaqueNeeded &&
@@ -242,6 +242,7 @@ func (r *RichAST) Merge(other *RichAST) {
 		if opaqueNeeded {
 			copied.IsOpaque = true
 			copied.Underlying = v.Underlying
+			copied.UnderlyingBase = v.UnderlyingBase
 		}
 		if docNeeded {
 			copied.Doc = v.Doc
@@ -382,6 +383,11 @@ type TypeMetadata struct {
 	// the codec, numeric-slot admission and the Sendable/Shareable checker do.
 	IsOpaque   bool
 	Underlying Type // the declared underlying type of an opaque type; nil otherwise
+	// UnderlyingBase is Underlying followed through aliases and Go named
+	// types to the type Go sees at the bottom (`opaque type Flag Switch`
+	// with `type Switch bool` has base bool), resolved by the analyzer in
+	// the declaring package. Nil when not resolved.
+	UnderlyingBase Type
 }
 
 // OpaqueUnderlying returns the type an opaque type is declared over, and false
@@ -391,6 +397,63 @@ func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
 		return nil, false
 	}
 	return m.Underlying, true
+}
+
+// SynthesizedOpaqueMethods describes the methods the transpiler generates on
+// an opaque type: Hash, and Compare unless the underlying type is bool,
+// judged on UnderlyingBase so an alias or Go named type over bool counts (the
+// transformer's transformOpaqueTypeDeclaration is the authority). Each is
+// left out when the type declares it itself, in GALA or in a .go file of its
+// package. rich is the viewing package's RichAST and may be nil. It is for
+// presentation (hover, completion, signature help, gala doc); nil for any
+// other type.
+func (m *TypeMetadata) SynthesizedOpaqueMethods(rich *RichAST) []*MethodMetadata {
+	underlying, ok := m.OpaqueUnderlying()
+	if !ok {
+		return nil
+	}
+	if m.UnderlyingBase != nil && !m.UnderlyingBase.IsNil() {
+		underlying = m.UnderlyingBase
+	}
+	var goInfo *GoTypeInfo
+	if rich != nil {
+		goInfo = rich.GoTypeInfo
+	}
+	declares := func(name string) bool {
+		if _, ok := m.Methods[name]; ok {
+			return true
+		}
+		if rec := goInfo.GetGalaTypeMethods(m.Package + "." + m.Name); rec != nil {
+			_, ok := rec.Methods[name]
+			return ok
+		}
+		return false
+	}
+	// Compare's parameter is the type itself, spelled as the package viewing
+	// it spells it: qualified from an importer.
+	var self Type = NamedType{Name: m.Name}
+	if rich != nil && m.Package != "" && m.Package != "main" && m.Package != rich.PackageName {
+		self = NamedType{Package: m.Package, Name: m.Name}
+	}
+	if len(m.TypeParams) > 0 {
+		params := make([]Type, len(m.TypeParams))
+		for i, tp := range m.TypeParams {
+			params[i] = NamedType{Name: tp}
+		}
+		self = GenericType{Base: self, Params: params}
+	}
+	var out []*MethodMetadata
+	if !declares("Hash") {
+		out = append(out, &MethodMetadata{Name: "Hash", Package: m.Package, ReturnType: BasicType{Name: "uint32"}})
+	}
+	if !declares("Compare") && underlying.String() != "bool" {
+		out = append(out, &MethodMetadata{
+			Name: "Compare", Package: m.Package,
+			ParamNames: []string{"other"}, ParamTypes: []Type{self},
+			ReturnType: BasicType{Name: "int"},
+		})
+	}
+	return out
 }
 
 // DefaultExpr is a declared default value — of a function or method parameter,

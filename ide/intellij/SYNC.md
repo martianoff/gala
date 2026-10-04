@@ -104,6 +104,22 @@ Packages with importable types:
 
 **How to verify:** The token sets in `GalaNewlineLexer`'s companion object match `kinds` in `newline.go`. `GalaNewlineLexerTest` covers the same forms as `internal/parser/newline_test.go`.
 
+### 6c. Top-Level Declaration Nodes
+
+**Plugin files:** `psi/GalaTokenTypes.kt` (`RULE_*`), `psi/GalaPsiNodes.kt`,
+`GalaParserDefinition.kt` (`createElement`), and the per-kind `when` blocks in
+`GalaStructureViewElement.kt`, `GalaDocumentationProvider.kt`,
+`GalaFindUsagesProvider.kt`, `GalaInspections.kt` and `psi/GalaReference.kt`
+
+**Source of truth:** the declaration rules of `topLevelDeclaration` in
+`internal/parser/grammar/gala.g4` (`typeDeclaration`, `sealedTypeDeclaration`,
+`opaqueTypeDeclaration`, …)
+
+**How to verify:** each declaration rule has a named PSI node that the files
+above handle next to its siblings (an `opaque type` sits beside `sealed type`),
+a live template in `liveTemplates/GALA.xml`, and a parser test-data pair
+(`src/test/testData/<Name>.gala` + `.txt`) run by `GalaParsingTest`.
+
 ## When to Sync
 
 Sync the plugin after any of these changes:
@@ -130,6 +146,10 @@ The LSP server (`internal/lsp/`) also has hardcoded data that must stay in sync:
 **LSP file:** `internal/lsp/completion.go` — `keywordCompletions()`
 
 **Source of truth:** Same as Plugin Sync Point #1 — `gala.g4` keywords.
+
+**How to verify:** `TestKeywordCompletions_CoverGrammarKeywords`
+(`internal/lsp/keyword_completions_test.go`) fails when a word token of the
+generated parser is missing from `keywordCompletions()`.
 
 ### 8. LSP Type Inference
 

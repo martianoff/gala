@@ -511,6 +511,9 @@ func resolveMemberType(richAST *transpiler.RichAST, typeName, methodName string)
 	if ft, ok := tm.Fields[methodName]; ok {
 		return typeDisplayName(ft)
 	}
+	if m := synthesizedMethod(richAST, tm, methodName); m != nil {
+		return typeDisplayName(m.ReturnType)
+	}
 	return ""
 }
 

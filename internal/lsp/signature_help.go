@@ -472,6 +472,9 @@ func resolveCallTarget(call *callContext, enclosingFunc string, richAST *transpi
 				if m, ok := tm.Methods[call.name]; ok {
 					return callTarget{method: m}
 				}
+				if m := synthesizedMethod(richAST, tm, call.name); m != nil {
+					return callTarget{method: m}
+				}
 			}
 		}
 		// Fall through to bare-name lookup — useful when receiver

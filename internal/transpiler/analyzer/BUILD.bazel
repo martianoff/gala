@@ -57,6 +57,7 @@ go_test(
         "import_name_test.go",
         "internal_import_test.go",
         "multipackage_panic_test.go",
+        "opaque_base_test.go",
         "own_go_files_test.go",
         "package_val_infer_test.go",
         "parallel_parse_test.go",

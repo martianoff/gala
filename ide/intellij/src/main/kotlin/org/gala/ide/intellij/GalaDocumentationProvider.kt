@@ -63,6 +63,7 @@ class GalaDocumentationProvider : AbstractDocumentationProvider() {
             is FunctionDeclarationNode -> "func"
             is TypeDeclarationNode -> "type"
             is SealedTypeDeclarationNode -> "sealed type"
+            is OpaqueTypeDeclarationNode -> "opaque type"
             is SealedCaseNode -> "case"
             is ValDeclarationNode -> "val"
             is VarDeclarationNode -> "var"
@@ -88,6 +89,12 @@ class GalaDocumentationProvider : AbstractDocumentationProvider() {
                 text.lines().firstOrNull()?.substringBefore("{")?.trim()
                     ?.removePrefix("sealed ")?.removePrefix("type ")
                     ?: element.name ?: ""
+            }
+            is OpaqueTypeDeclarationNode -> {
+                // `opaque type UserID int64` -> `UserID int64`
+                element.text.trim()
+                    .removePrefix("opaque").trim()
+                    .removePrefix("type").trim()
             }
             is SealedCaseNode -> {
                 val text = element.text.trim()

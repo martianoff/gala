@@ -21,6 +21,10 @@ class GalaParsingTest : ParsingTestCase("", "gala", GalaParserDefinition()) {
         doTest(true)
     }
 
+    fun testOpaqueType() {
+        doTest(true)
+    }
+
     fun testImports() {
         doTest(true)
     }

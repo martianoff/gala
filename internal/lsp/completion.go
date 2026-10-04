@@ -131,8 +131,11 @@ func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 		seen[name] = true
 		kind := lsp.CompletionItemKindClass
 		detail := "type"
-		if tm.IsSealed {
+		switch {
+		case tm.IsSealed:
 			detail = "sealed type"
+		case tm.IsOpaque:
+			detail = "opaque type"
 		}
 		items = append(items, withRef(
 			lsp.CompletionItem{Label: name, Kind: kindPtr(kind), Detail: detail},
@@ -259,7 +262,7 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string, snippets bo
 func keywordCompletions() []lsp.CompletionItem {
 	keywords := []string{
 		"package", "import", "val", "var", "bind", "also", "use", "func", "type", "struct",
-		"interface", "sealed", "embed", "if", "else", "for", "range",
+		"interface", "sealed", "opaque", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
 	// Only genuinely-available names belong here. The bare Go builtins
@@ -444,17 +447,8 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 
 	// Methods — show all methods (including unexported for same-package types)
 	for name, m := range tm.Methods {
-		sig := formatMethodSig(m)
-		insertText, format := callInsertText(name, m.ParamNames, m.DefaultExprs, snippets)
-		items = append(items, withRef(lsp.CompletionItem{
-			Label:            name + sig,
-			Kind:             kindPtr(lsp.CompletionItemKindMethod),
-			Detail:           sig,
-			InsertText:       insertText,
-			InsertTextFormat: format,
-			FilterText:       name,
-			SortText:         name,
-		}, completionRef{Kind: refKindMember, Key: ownerKey, Name: name}))
+		items = append(items, withRef(methodCompletion(name, m, "", snippets),
+			completionRef{Kind: refKindMember, Key: ownerKey, Name: name}))
 	}
 
 	// Fields
@@ -465,6 +459,12 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 			Kind:   kindPtr(lsp.CompletionItemKindField),
 			Detail: ft.String(),
 		}, completionRef{Kind: refKindMember, Key: ownerKey, Name: fn}))
+	}
+
+	// Hash / Compare synthesized on an opaque type. No resolve ref: there is
+	// no declaration, and so no doc comment, to resolve.
+	for _, m := range tm.SynthesizedOpaqueMethods(richAST) {
+		items = append(items, methodCompletion(m.Name, m, " (synthesized)", snippets))
 	}
 
 	// Sealed variant IsXxx() methods
@@ -608,6 +608,22 @@ func goTypeString(t transpiler.Type) string {
 		return "any"
 	}
 	return t.String()
+}
+
+// methodCompletion is the completion item for method name; detailSuffix is
+// appended to the signature shown beside it.
+func methodCompletion(name string, m *transpiler.MethodMetadata, detailSuffix string, snippets bool) lsp.CompletionItem {
+	sig := formatMethodSig(m)
+	insertText, format := callInsertText(name, m.ParamNames, m.DefaultExprs, snippets)
+	return lsp.CompletionItem{
+		Label:            name + sig,
+		Kind:             kindPtr(lsp.CompletionItemKindMethod),
+		Detail:           sig + detailSuffix,
+		InsertText:       insertText,
+		InsertTextFormat: format,
+		FilterText:       name,
+		SortText:         name,
+	}
 }
 
 func formatMethodSig(meta *transpiler.MethodMetadata) string {

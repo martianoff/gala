@@ -32,6 +32,7 @@ class GalaFindUsagesProvider : FindUsagesProvider {
             is FunctionDeclarationNode -> "function"
             is TypeDeclarationNode -> "type"
             is SealedTypeDeclarationNode -> "sealed type"
+            is OpaqueTypeDeclarationNode -> "opaque type"
             is SealedCaseNode -> "case"
             is ValDeclarationNode -> "value"
             is VarDeclarationNode -> "variable"

@@ -112,6 +112,22 @@ class SealedTypeDeclarationNode(node: ASTNode) : GalaPsiNode(node), PsiNameIdent
 }
 
 /**
+ * PSI node for opaque type declarations: `opaque type UserID int64`.
+ */
+class OpaqueTypeDeclarationNode(node: ASTNode) : GalaPsiNode(node), PsiNameIdentifierOwner {
+    override fun getName(): String? = nameIdentifier?.text
+
+    override fun getNameIdentifier(): PsiElement? {
+        for (child in children) {
+            if (child.node.elementType == GalaTokenTypes.RULE_IDENTIFIER) return child
+        }
+        return null
+    }
+
+    override fun setName(name: String): PsiElement = this
+}
+
+/**
  * PSI node for sealed case.
  */
 class SealedCaseNode(node: ASTNode) : GalaPsiNode(node), PsiNameIdentifierOwner {
