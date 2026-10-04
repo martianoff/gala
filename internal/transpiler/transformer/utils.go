@@ -28,11 +28,14 @@ func isWildcard(text string) bool {
 	return text == "_"
 }
 
-// isBindingPattern checks if a pattern text represents a variable binding
-// (a simple lowercase identifier that will bind the matched value).
-// This is a catch-all pattern, like `case body => ...` in Scala/GALA.
+// isBindingPattern checks if a pattern text has the shape of a variable
+// default-arm binding: a simple identifier that does not start with a capital
+// letter. (A capitalized name is never taken as the match's default arm; when
+// it names nothing it is lowered as an ordinary binding in its own arm.)
 // Constructor calls like `Some(x)`, literals like `""` or `42`,
-// and keywords like `true`/`false`/`nil` are NOT bindings.
+// and keywords like `true`/`false`/`nil` are NOT bindings. The shape alone
+// does not make a binding: a name that resolves to a variant or zero-field
+// extractor tests the value instead (see isBindingPatternOf).
 func isBindingPattern(text string) bool {
 	if len(text) == 0 || text == "_" {
 		return false
@@ -53,11 +56,6 @@ func isBindingPattern(text string) bool {
 		return false
 	}
 	return true
-}
-
-// isDefaultPattern checks if a pattern is a catch-all: either `_` or a variable binding.
-func isDefaultPattern(text string) bool {
-	return isWildcard(text) || isBindingPattern(text)
 }
 
 // isLiteralTrue checks if an expression is the literal `true` identifier.

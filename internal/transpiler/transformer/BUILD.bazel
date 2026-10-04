@@ -167,6 +167,7 @@ go_test(
         "literals_test.go",
         "local_type_shadows_std_test.go",
         "loop_control_test.go",
+        "lowercase_sealed_variant_test.go",
         "lsp_scope_test.go",
         "match_any_struct_pattern_test.go",
         "match_arm_block_local_test.go",

@@ -1,0 +1,10 @@
+package multifile_lib_regress
+
+// A sealed type with lowercase (unexported) variants, declared in one file of
+// the package and matched in another (lowercase_variant_match.gala): its
+// variants reach the other file only through package metadata.
+sealed type signal {
+    case tick(N int)
+    case pause()
+    case stop
+}

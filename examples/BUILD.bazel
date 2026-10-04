@@ -1468,6 +1468,15 @@ gala_exec_test(
     expected = "sealed_bare_variants.out",
 )
 
+# Lowercase sealed variants: exhaustiveness and bare zero-field patterns
+# (top-level and nested) decide variant-vs-binding by name resolution, not by
+# capitalization.
+gala_exec_test(
+    name = "lowercase_sealed_variants",
+    src = "lowercase_sealed_variants.gala",
+    expected = "lowercase_sealed_variants.out",
+)
+
 gala_exec_test(
     name = "sealed_case_type_param_from_context",
     src = "sealed_case_type_param_from_context.gala",
@@ -3541,6 +3550,8 @@ gala_library(
         "multifile_lib_regress/generic_sealed.gala",
         "multifile_lib_regress/go_interop.gala",
         "multifile_lib_regress/logic.gala",
+        "multifile_lib_regress/lowercase_variant_match.gala",
+        "multifile_lib_regress/lowercase_variant_types.gala",
         "multifile_lib_regress/opaque_a.gala",
         "multifile_lib_regress/opaque_b.gala",
         "multifile_lib_regress/pkg_name_collision.gala",

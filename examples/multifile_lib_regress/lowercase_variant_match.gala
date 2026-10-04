@@ -1,0 +1,15 @@
+package multifile_lib_regress
+
+// Matches over `signal` (lowercase_variant_types.gala). The lowercase variants
+// count towards exhaustiveness — there is no default arm — and the bare
+// `stop`/`pause` arms match their variants rather than binding a variable.
+
+func describeSignal(s signal) string = s match {
+    case tick(n) => s"tick $n"
+    case pause => "pause"
+    case stop => "stop"
+}
+
+// SignalSummary describes one value of each `signal` variant.
+func SignalSummary() string =
+    s"${describeSignal(tick(3))}, ${describeSignal(pause())}, ${describeSignal(stop())}"

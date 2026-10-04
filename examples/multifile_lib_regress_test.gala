@@ -514,4 +514,7 @@ func main() {
     // An opaque type declared in one file of the package, with methods in two.
     val seat = multifile_lib_regress.SeatOf(47)
     Println(seat.Row(), seat.Label(), int(seat), multifile_lib_regress.SeatSummary())
+    // A sealed type with lowercase variants, declared in one file of the package
+    // and matched exhaustively, with bare zero-field arms, in another.
+    Println(multifile_lib_regress.SignalSummary())
 }

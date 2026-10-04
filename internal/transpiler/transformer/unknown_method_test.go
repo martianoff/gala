@@ -128,6 +128,23 @@ func main() {
 }`,
 		},
 		{
+			// sealed.go generates `is`+variant on the parent for every case,
+			// whatever the case of the variant's first letter.
+			name: "is_predicates_on_sealed",
+			input: `package main
+
+sealed type frame {
+    case lineFrame(Text string)
+    case endFrame()
+    case Idle()
+}
+
+func main() {
+    val f frame = endFrame()
+    Println(f.isendFrame(), f.islineFrame(), f.isIdle())
+}`,
+		},
+		{
 			name: "real_methods_still_work",
 			input: `package main
 

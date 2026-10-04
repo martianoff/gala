@@ -1,0 +1,14 @@
+line x | bare line x | other lineFrame(x)
+end | bare end | end
+idle | bare idle | other idleFrame()
+line  | bare line  | empty line
+just end
+just idle
+just line y
+nothing
+some end
+some lineFrame(z)
+none
+true
+false
+true

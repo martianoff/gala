@@ -102,9 +102,11 @@ func readsName(stmts []ast.Stmt, name string) bool {
 }
 
 // extractVariantName extracts the variant/constructor name from a case pattern text.
-// E.g. "Circle(r)" → "Circle", "Point()" → "Point", "Debug" → "Debug"
-// Bare uppercase identifiers (e.g., `case Debug =>`) name zero-field sealed variants;
-// they are recognised as variant patterns rather than simple bindings.
+// E.g. "Circle(r)" → "Circle", "Point()" → "Point", "Debug" → "Debug",
+// "endFrame" → "endFrame". The name is only a candidate: callers check it
+// against the variants of a sealed type, so its capitalization plays no part
+// — a lowercase variant is as much a variant as a capitalized one. Callers
+// leave out patterns that bind (see isBindingPatternOf).
 func extractVariantName(patternText string) string {
 	idx := strings.Index(patternText, "(")
 	var name string
@@ -123,10 +125,12 @@ func extractVariantName(patternText string) string {
 	if dot := strings.LastIndex(name, "."); dot >= 0 {
 		name = name[dot+1:]
 	}
-	if len(name) == 0 || name[0] < 'A' || name[0] > 'Z' {
+	// Reject anything that is not a plain ASCII identifier — a literal (`42`,
+	// `"x"`), an operator expression, a typed pattern (`x: int`) — with the
+	// same alphabet isBindingPattern and isSimpleIdentifier use.
+	if name == "" || (name[0] >= '0' && name[0] <= '9') {
 		return ""
 	}
-	// Reject identifiers containing non-identifier characters (e.g., dots, operators).
 	for _, ch := range name {
 		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
 			return ""
@@ -674,7 +678,7 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 			continue
 		}
 		patternText := patCtx.GetText()
-		if isWildcard(patternText) || isBindingPattern(patternText) {
+		if isWildcard(patternText) || t.isBindingPatternOf(patternText, nil) {
 			continue
 		}
 		variantName := extractVariantName(patternText)
@@ -1433,13 +1437,14 @@ type matchArm struct {
 }
 
 // lowerDefaultMatchArm lowers the default arm of a match (a wildcard, or the
-// catch-all binding pattern) against armSlot. Its body's trailing value, or
+// catch-all binding pattern, binds) against armSlot. Its body's trailing value, or
 // the value its trailing if/else carries, is the arm's value.
-func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (matchArm, error) {
+func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, binds bool, armSlot slot) (matchArm, error) {
 	var arm matchArm
 	// For binding patterns, register the variable and add assignment
 	var bindingStmts []ast.Stmt
-	if patternText := ctx.Pattern().GetText(); isBindingPattern(patternText) {
+	if binds {
+		patternText := ctx.Pattern().GetText()
 		t.currentScope.vals[patternText] = false
 		if matchedType != nil && !matchedType.IsNil() {
 			t.currentScope.valTypes[patternText] = matchedType

@@ -559,12 +559,16 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// wildcard elsewhere (the binding acts as catch-all). A guarded clause is
 	// conditional and never a default — control can fall through to a later
 	// case when the guard is false.
+	// isBinding[i] reports whether clause i's pattern binds the whole subject
+	// (see isBindingPatternOf); it is resolved once and read below.
+	isBinding := make([]bool, len(caseClauses))
 	isDefault := make([]bool, len(caseClauses))
 	foundDefault := false
 	for i, cc := range caseClauses {
 		ccCtx := cc.(*grammar.CaseClauseContext)
 		patternText := ccCtx.Pattern().GetText()
-		if ccCtx.GetGuard() != nil || !(isWildcard(patternText) || (!hasExplicitWildcard && isBindingPattern(patternText))) {
+		isBinding[i] = t.isBindingPatternOf(patternText, matchedType)
+		if ccCtx.GetGuard() != nil || !(isWildcard(patternText) || (!hasExplicitWildcard && isBinding[i])) {
 			continue
 		}
 		if foundDefault {
@@ -584,12 +588,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		var arm matchArm
 		var err error
 		if isDefault[i] {
-			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, subjectType, armSlot)
+			arm, err = t.lowerDefaultMatchArm(ccCtx, paramName, subjectType, isBinding[i], armSlot)
 		} else {
 			// A guarded binding of the whole subject (`case p if ...`) keeps
 			// the written type too; every other pattern reads the variants.
 			armType := matchedType
-			if isBindingPattern(ccCtx.Pattern().GetText()) {
+			if isBinding[i] {
 				armType = subjectType
 			}
 			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
@@ -684,9 +688,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// Always collect variant patterns for exhaustiveness check
 	{
 		var variantPatterns []string
-		for _, cc := range caseClauses {
+		for i, cc := range caseClauses {
 			pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
-			if !isDefaultPattern(pat) {
+			if !isWildcard(pat) && !isBinding[i] {
 				variantPatterns = append(variantPatterns, pat)
 			}
 		}

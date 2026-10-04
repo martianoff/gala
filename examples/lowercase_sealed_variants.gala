@@ -1,0 +1,80 @@
+package main
+
+// A sealed variant is a variant whatever the case of its first letter. A
+// lowercase variant counts towards exhaustiveness, and a bare zero-field
+// lowercase variant in pattern position matches that variant instead of
+// binding a fresh variable — the same as a capitalized one.
+
+sealed type frame {
+    case lineFrame(Text string)
+    case endFrame()
+    case idleFrame
+}
+
+// Exhaustive without a default: every lowercase variant is covered.
+func describe(f frame) string = f match {
+    case lineFrame(text) => s"line $text"
+    case endFrame() => "end"
+    case idleFrame() => "idle"
+}
+
+// Bare zero-field variants, with or without parentheses at the declaration.
+func describeBare(f frame) string = f match {
+    case endFrame => "bare end"
+    case idleFrame => "bare idle"
+    case lineFrame(text) => s"bare line $text"
+}
+
+// A guarded arm and a catch-all binding: `other` names no variant, so it
+// still binds the whole value.
+func classify(f frame) string = f match {
+    case lineFrame(text) if text == "" => "empty line"
+    case endFrame => "end"
+    case other => s"other $other"
+}
+
+// A generic sealed type with lowercase variants, matched with nested bare
+// variants of another lowercase sealed type.
+sealed type maybe[T any] {
+    case just(Value T)
+    case nothing
+}
+
+func nested(m maybe[frame]) string = m match {
+    case just(endFrame) => "just end"
+    case just(idleFrame) => "just idle"
+    case just(lineFrame(text)) => s"just line $text"
+    case nothing => "nothing"
+}
+
+// Nested inside a std extractor.
+func nestedOption(o Option[frame]) string = o match {
+    case Some(endFrame) => "some end"
+    case Some(other) => s"some $other"
+    case None => "none"
+}
+
+func show(f frame) {
+    Println(s"${describe(f)} | ${describeBare(f)} | ${classify(f)}")
+}
+
+func main() {
+    show(lineFrame("x"))
+    show(endFrame())
+    show(idleFrame())
+    show(lineFrame(""))
+
+    Println(nested(just(endFrame())))
+    Println(nested(just(idleFrame())))
+    Println(nested(just(lineFrame("y"))))
+    Println(nested(nothing()))
+
+    Println(nestedOption(Some(endFrame())))
+    Println(nestedOption(Some(lineFrame("z"))))
+    Println(nestedOption(None()))
+
+    // Generated equality and String for lowercase variants.
+    Println(lineFrame("x") == lineFrame("x"))
+    Println(lineFrame("x") == lineFrame("y"))
+    Println(endFrame().Equal(endFrame()))
+}
