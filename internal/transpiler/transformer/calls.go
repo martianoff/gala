@@ -2869,13 +2869,13 @@ func (t *galaASTTransformer) structLiteralType(
 		return fun, nil
 	}
 	if target, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
-		return t.aliasLiteralType(base, written, typeName, target, resolvedTypeName, typeMeta.TypeParams, slotType, line, col, bind)
+		return t.aliasLiteralType(fun, typeName, target, resolvedTypeName, typeMeta.TypeParams, slotType, line, col, bind)
 	}
 	if len(written) >= len(typeMeta.TypeParams) {
 		return fun, nil
 	}
 
-	inferred := t.structTypeArgs(typeMeta.TypeParams, written, resolvedTypeName, slotType, bind)
+	inferred := t.structTypeArgs(typeMeta.TypeParams, t.writtenTypeArgs(typeMeta.TypeParams, written), resolvedTypeName, slotType, bind)
 	instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, written, inferred)
 	if missing != nil {
 		return nil, t.uninferredTypeArgError(line, col, base, nil, typeMeta.TypeParams, inferred, missing)
@@ -2884,41 +2884,41 @@ func (t *galaASTTransformer) structLiteralType(
 }
 
 // structTypeArgs binds the type parameters of the generic struct
-// resolvedTypeName that a construction determines: those written (a leading
-// part of the list, `Pair[int](1, "a")` for `Pair[A, B]`), then the expected
-// type's, then the fields' (bind). The expected type binds before the fields
-// do, so an untyped constant takes the slot's type (`Box(1)` as a
-// `Box[int64]` is a `Box[int64]`, not a `Box[int]`).
+// resolvedTypeName that a construction determines: those in seed (the written
+// ones, a leading part of the list as in `Pair[int](1, "a")` for `Pair[A,
+// B]`), then the expected type's, then the fields' (bind). The expected type
+// binds before the fields do, so an untyped constant takes the slot's type
+// (`Box(1)` as a `Box[int64]` is a `Box[int64]`, not a `Box[int]`). seed is
+// extended in place and returned.
 func (t *galaASTTransformer) structTypeArgs(
 	typeParams []string,
-	written []ast.Expr,
+	seed map[string]transpiler.Type,
 	resolvedTypeName string,
 	slotType transpiler.Type,
 	bind func(typeParams []string, inferred map[string]transpiler.Type),
 ) map[string]transpiler.Type {
-	inferred := t.writtenTypeArgs(typeParams, written)
 	for tp, typ := range t.slotTypeArgs(slotType, resolvedTypeName, typeParams) {
-		if _, bound := inferred[tp]; !bound {
-			inferred[tp] = typ
+		if _, bound := seed[tp]; !bound {
+			seed[tp] = typ
 		}
 	}
-	bind(typeParams, inferred)
-	return inferred
+	bind(typeParams, seed)
+	return seed
 }
 
-// aliasLiteralType is structLiteralType for a construction through the alias
-// typeName of the generic struct resolvedTypeName (whose type parameters are
-// structParams), target being the type the alias names. An alias of an
+// aliasLiteralType is structLiteralType for a construction fun through the
+// alias typeName of the generic struct resolvedTypeName (whose type parameters
+// are structParams), target being the type the alias names. An alias of an
 // instantiated generic (`type IntPair Pair[int]`), or one whose type arguments
 // are all written, is returned as is. A generic alias written without (all of)
 // its type arguments (`Twin(1, 2)` for `type Twin[T any] Pair[T]`) takes them
-// from the struct's: those the construction binds — the fields, the expected
-// type — are matched against the struct type the alias names, so `Twin(1, 2)`
-// is a `Twin[int]`. An alias type parameter still undetermined is an error, as
-// for the struct itself.
+// from the struct's: what the alias and its written type arguments fix of
+// them, then the expected type and the fields, matched against the struct type
+// the alias names, so `Twin(1, 2)` is a `Twin[int]`. An alias type parameter
+// still undetermined, or bound to two different types (`Same(1, "x")` for
+// `type Same[T any] P2[T, T]`), is an error.
 func (t *galaASTTransformer) aliasLiteralType(
-	base ast.Expr,
-	written []ast.Expr,
+	fun ast.Expr,
 	typeName string,
 	target transpiler.Type,
 	resolvedTypeName string,
@@ -2927,7 +2927,9 @@ func (t *galaASTTransformer) aliasLiteralType(
 	line, col int,
 	bind func(typeParams []string, inferred map[string]transpiler.Type),
 ) (ast.Expr, error) {
-	fun := withTypeArgs(base, written)
+	base, written := splitCallFunTypeArgs(fun)
+	_, qualified := extractTypeNameFromExpr(base)
+	aliasName := t.callSiteName(qualified)
 	aliasMeta := t.getTypeMeta(typeName)
 	if aliasMeta == nil || len(written) >= len(aliasMeta.TypeParams) {
 		return fun, nil
@@ -2935,56 +2937,72 @@ func (t *galaASTTransformer) aliasLiteralType(
 	aliasParams := aliasMeta.TypeParams
 	inferred := t.writtenTypeArgs(aliasParams, written)
 
-	// The struct type the alias names, through any chain of aliases, over
-	// the alias's own type parameters (`Pair[T]`). It is also the type the
-	// expected type is matched as, so only it binds the alias's type
-	// parameters: one the struct does not mention (`B` of `type Weird[A any,
-	// B any] Pair[A]`) must be written.
-	// An imported alias's target spells its type parameters qualified
-	// (`shapes.T`); they are matched by bare name.
-	bareParams := make([]transpiler.Type, len(aliasParams))
-	for i, tp := range aliasParams {
-		bareParams[i] = transpiler.BasicType{Name: tp}
-	}
-	named, ok := t.substituteConcreteTypes(t.followAliasChain(target), aliasParams, bareParams).(transpiler.GenericType)
-	if ok && len(named.Params) == len(structParams) {
-		// What the alias fixes of the struct's type arguments (`int` of `type
-		// IntKeyed[V any] Entry[int, V]`, or a written one) binds before the
-		// expected type and the fields do.
-		writtenParams := aliasParams[:len(written)]
-		writtenArgs := make([]transpiler.Type, len(written))
-		for i, tp := range writtenParams {
-			writtenArgs[i] = inferred[tp]
-		}
+	// The struct type the alias names (`Pair[T]`) is the only route from the
+	// struct's type arguments to the alias's: a parameter it does not mention
+	// (`B` of `type Weird[A any, B any] Pair[A]`) must be written.
+	named, isGeneric := t.aliasedStructType(target, aliasParams)
+	if isGeneric && len(named.Params) == len(structParams) {
 		fixed := make(map[string]transpiler.Type)
 		for i, tp := range structParams {
-			if p := t.substituteConcreteTypes(named.Params[i], writtenParams, writtenArgs); !typeMentionsTypeParam(p, aliasParams) {
+			if p := t.substituteInType(named.Params[i], inferred); !typeMentionsTypeParam(p, aliasParams) {
 				fixed[tp] = p
 			}
 		}
-		structArgs := t.structTypeArgs(structParams, nil, resolvedTypeName, t.followAliasChain(slotType),
-			func(tps []string, m map[string]transpiler.Type) {
-				maps.Copy(m, fixed)
-				bind(tps, m)
-			})
+		structArgs := t.structTypeArgs(structParams, fixed, resolvedTypeName, t.followAliasChain(slotType), bind)
 		for i, tp := range structParams {
-			if typ, ok := structArgs[tp]; ok && !transpiler.IsUnusable(typ) {
-				t.unifyForInference(named.Params[i], typ, aliasParams, inferred)
+			typ, has := structArgs[tp]
+			if !has || transpiler.IsUnusable(typ) {
+				continue
 			}
+			if p := named.Params[i].String(); slices.Contains(aliasParams, p) {
+				if prev, bound := inferred[p]; bound && prev.String() != typ.String() {
+					return nil, galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col,
+						fmt.Sprintf("cannot infer type argument %s of %s: its fields give it both %s and %s",
+							p, aliasName, displayType(prev), displayType(typ)),
+						"make the field values agree, or pass the type arguments explicitly")
+				}
+			}
+			t.unifyForInference(named.Params[i], typ, aliasParams, inferred)
 		}
 	}
 
 	instantiated, missing := t.completeTypeArgs(base, aliasParams, written, inferred)
 	if missing != nil {
-		// The value is the struct the alias names, so an annotation binds the
-		// missing type parameters only through it (yields).
-		var yields transpiler.Type = transpiler.NilType{}
-		if ok {
+		// An annotation spelled with the alias binds a missing type parameter
+		// only through the struct type it names; for one that type does not
+		// mention, the error asks for explicit type arguments instead.
+		var yields transpiler.Type // nil: as for the struct itself
+		switch {
+		case !isGeneric:
+			yields = transpiler.NilType{}
+		case !typeMentionsAllTypeParams(named, missing):
 			yields = named
 		}
 		return nil, t.uninferredTypeArgError(line, col, base, yields, aliasParams, inferred, missing)
 	}
 	return instantiated, nil
+}
+
+// aliasedStructType is the generic type the alias target names, through any
+// chain of aliases, over the alias's type parameters by their bare names (an
+// imported alias's target spells them qualified, `shapes.T`).
+func (t *galaASTTransformer) aliasedStructType(target transpiler.Type, aliasParams []string) (transpiler.GenericType, bool) {
+	bare := make([]transpiler.Type, len(aliasParams))
+	for i, tp := range aliasParams {
+		bare[i] = transpiler.BasicType{Name: tp}
+	}
+	named, ok := t.substituteConcreteTypes(t.followAliasChain(target), aliasParams, bare).(transpiler.GenericType)
+	return named, ok
+}
+
+// typeMentionsAllTypeParams reports whether typ mentions every one of typeParams.
+func typeMentionsAllTypeParams(typ transpiler.Type, typeParams []string) bool {
+	for _, tp := range typeParams {
+		if !typeMentionsTypeParam(typ, []string{tp}) {
+			return false
+		}
+	}
+	return true
 }
 
 // slotTypeArgs returns the type arguments slotType gives the generic struct

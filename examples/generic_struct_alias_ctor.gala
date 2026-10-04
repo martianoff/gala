@@ -28,5 +28,6 @@ func main() {
     val flipped = Flipped(Key = "x", Value = 2.5)
     Println(flipped.Key, flipped.Value)
 
-    Println(wide().A * wide().B)
+    val w = wide()
+    Println(w.A * w.B)
 }

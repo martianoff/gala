@@ -154,8 +154,10 @@ const genericStructAliasDecls = `package main
 
 struct Pair[T any](A T, B T)
 struct Entry[K comparable, V any](Key K, Value V)
+struct P2[A any, B any](X A, Y B)
 
 type Twin[T any] Pair[T]
+type Same[T any] P2[T, T]
 type Twin2[T any] Twin[T]
 type IntKeyed[V any] Entry[int, V]
 type Flipped[V any, K comparable] Entry[K, V]
@@ -214,6 +216,21 @@ func TestGenericStructAliasConstruction(t *testing.T) {
 			want:  []string{"Twin[int64]{"},
 		},
 		{
+			name:  "reordering alias with an expected type and numeric fields",
+			input: `func f() Flipped[int64, string] = Flipped(Key = "k", Value = 1)`,
+			want:  []string{"Flipped[int64, string]{"},
+		},
+		{
+			name:  "fixing alias with an expected type and numeric fields",
+			input: "func f() IntKeyed[int64] = IntKeyed(Key = 1, Value = 2)",
+			want:  []string{"IntKeyed[int64]{"},
+		},
+		{
+			name:  "partly written type arguments",
+			input: `func f() float64 = Flipped[float64](Key = "x", Value = 2.5).Value`,
+			want:  []string{"Flipped[float64, string]{"},
+		},
+		{
 			name:  "written type arguments",
 			input: `func f() string = Twin[string]("p", "q").A`,
 			want:  []string{"Twin[string]{"},
@@ -240,5 +257,12 @@ func TestGenericStructAliasConstruction(t *testing.T) {
 		assert.Contains(t, err.Error(), "GALA-E0067")
 		assert.Contains(t, err.Error(), "cannot infer type argument B of Weird")
 		assert.Contains(t, err.Error(), "`Weird[int, int](...)`")
+	})
+
+	t.Run("an alias type parameter the fields bind two ways", func(t *testing.T) {
+		_, err := trans.Transpile(genericStructAliasDecls+"func f() int = Same(1, \"x\").X\n", "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0067")
+		assert.Contains(t, err.Error(), "cannot infer type argument T of Same: its fields give it both int and string")
 	})
 }

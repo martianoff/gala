@@ -1283,7 +1283,9 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 	// A generic alias of a struct (`Twin(1, 2)` for `type Twin[T any]
 	// Pair[T]`) constructs that struct: its type arguments come from the
 	// struct's (see aliasLiteralType).
-	if target, isAlias := t.lookupTypeAlias(name); isAlias && t.typeMetas[resolved] != nil && len(t.typeMetas[resolved].TypeParams) > 0 {
+	meta := t.typeMetas[resolved]
+	if t.isGenericStructAlias(name, resolved, meta) {
+		target, _ := t.lookupTypeAlias(name)
 		want := t.resolveTypeMetaName(gen.Base.String())
 		return want != "" && t.resolveTypeMetaName(t.followAliasChain(target).BaseName()) == want
 	}
@@ -1292,7 +1294,6 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 	if _, isStruct := t.structFields[resolved]; isStruct && stripPackagePrefix(name) == stripPackagePrefix(gen.Base.BaseName()) {
 		return resolved == t.resolveTypeMetaName(gen.Base.String())
 	}
-	meta := t.typeMetas[resolved]
 	if meta == nil {
 		return false
 	}
@@ -1336,6 +1337,23 @@ func (t *galaASTTransformer) isPhantomGenericCall(name string) bool {
 	}
 	_, phantom := t.phantomTypeParams(meta)
 	return len(phantom) > 0
+}
+
+// isGenericStructAlias reports whether name, resolving to the typeMetas key
+// resolved with metadata meta, is a generic alias of a plain (not sealed)
+// struct — a name with fields of its own is the struct, whatever local alias
+// shares its bare name.
+func (t *galaASTTransformer) isGenericStructAlias(name, resolved string, meta *transpiler.TypeMetadata) bool {
+	if meta == nil || len(meta.TypeParams) == 0 || len(t.structFields[resolved]) > 0 {
+		return false
+	}
+	target, isAlias := t.lookupTypeAlias(name)
+	if !isAlias {
+		return false
+	}
+	end := t.followAliasChain(target).BaseName()
+	endMeta := t.getTypeMeta(t.resolveTypeMetaName(end))
+	return endMeta != nil && !endMeta.IsSealed && len(t.structFields[t.resolveStructTypeName(end)]) > 0
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.
