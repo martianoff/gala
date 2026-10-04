@@ -1,0 +1,30 @@
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+
+    "martianoff/gala/examples/go_interop/mixed/textstats"
+)
+
+func main() {
+    val text = "GALA transpiles to Go\nand Go calls GALA back\n"
+    textstats.Summarize(text) match {
+        case Success(stats) => {
+            Println(s"lines=${stats.Lines} words=${stats.Words} longest=${stats.Longest}")
+            // Stats.MarshalJSON is declared in Go, so encoding/json uses it.
+            Println(json.Marshal(stats).Map((b) => string(b)).GetOrElse("cannot encode"))
+        }
+        case Failure(err) => Println(s"failed: ${err.Error()}")
+    }
+
+    // *Counter is an io.Writer, so fmt.Fprintf can write into a GALA struct.
+    var counter textstats.Counter
+    fmt.Fprintf(&counter, "%d words\n", 3)
+    Println(s"lines=${counter.Lines} words=${counter.Words} bytes=${counter.Bytes}")
+
+    // A word split across two writes counts once.
+    fmt.Fprint(&counter, "split wo")
+    fmt.Fprint(&counter, "rd\n")
+    Println(s"lines=${counter.Lines} words=${counter.Words} bytes=${counter.Bytes}")
+}

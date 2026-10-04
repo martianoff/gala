@@ -1,0 +1,89 @@
+package main
+
+// GALA types implementing Go interfaces: error, fmt.Stringer,
+// sort.Interface and http.Handler. Walked through in docs/GO_INTEROP.MD.
+
+import (
+    "errors"
+    "fmt"
+    "net/http"
+    "net/http/httptest"
+    "sort"
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// error: an Error() string method.
+struct NotFound(Path string)
+
+func (e NotFound) Error() string = s"not found: ${e.Path}"
+
+// fmt.Stringer: a String() string method; fmt and string interpolation use
+// it. Money is an opaque type: a distinct int64 with methods of its own.
+opaque type Money int64
+
+func (m Money) String() string = f"$$${float64(m) / 100.0}%.2f"
+
+// sort.Interface over a Go slice held in a field.
+struct ByLength(Words []string)
+
+func (b ByLength) Len() int = b.Words.Size()
+
+func (b ByLength) Less(i int, j int) bool = b.Words[i].Size() < b.Words[j].Size()
+
+func (b ByLength) Swap(i int, j int) {
+    val w = b.Words[i]
+    b.Words[i] = b.Words[j]
+    b.Words[j] = w
+}
+
+// http.Handler: ServeHTTP(http.ResponseWriter, *http.Request).
+struct Greeter(Greeting string)
+
+func (g Greeter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    val name = r.URL.Query().Get("name")
+    if (name == "") {
+        http.Error(w, "missing name", http.StatusBadRequest)
+    } else {
+        fmt.Fprintf(w, "%s, %s!", g.Greeting, name)
+    }
+}
+
+func lookup(path string) Try[string] =
+    if (path == "/etc/hosts") Success("127.0.0.1 localhost") else Failure(NotFound(path))
+
+func call(h http.Handler, target string) string {
+    val rec = httptest.NewRecorder()
+    h.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
+    s"${rec.Code} ${rec.Body.String()}"
+}
+
+func main() {
+    // A GALA error flows through Try and through Go's errors package.
+    lookup("/nope") match {
+        case Success(text) => Println(text)
+        case Failure(err) => {
+            Println(err.Error())
+            var target NotFound
+            Println(errors.As(err, &target), target.Path)
+        }
+    }
+
+    // fmt and interpolation both call String().
+    val price = Money(1999)
+    Println(s"price: $price")
+    fmt.Printf("%v and %s\n", price, Money(5))
+
+    // sort.Sort drives a GALA sort.Interface.
+    val words = ByLength(ArrayOf("banana", "fig", "apple", "kiwi").ToGoSlice())
+    sort.Sort(words)
+    Println(strings.Join(words.Words, " "))
+
+    // A GALA struct is an http.Handler; so is a lambda converted to
+    // http.HandlerFunc.
+    Println(call(Greeter("Hello"), "/?name=Gopher"))
+    Println(call(Greeter("Hello"), "/"))
+    val health = http.HandlerFunc((w, r) => w.WriteHeader(http.StatusNoContent))
+    Println(call(health, "/health"))
+}

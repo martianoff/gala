@@ -3,9 +3,13 @@ load("@rules_go//go:def.bzl", "go_test")
 go_test(
     name = "doccheck_test",
     # Transpiles every ```gala block in the language docs and on the website,
-    # several harnesses per fragment.
+    # several harnesses per fragment, and checks that listings marked
+    # `doc-source` still match their source files.
     size = "large",
-    srcs = ["doc_snippets_test.go"],
+    srcs = [
+        "doc_snippets_test.go",
+        "doc_sources_test.go",
+    ],
     # The pages under check, plus every GALA package a snippet may import:
     # Linux CI sandboxes tests, so anything not declared here does not exist.
     data = [
@@ -18,6 +22,7 @@ go_test(
         "//crypto:gala_sources",
         "//examples:all_gala_sources",
         "//examples:all_go_bridge_sources",
+        "//examples/go_interop:sources",
         "//fs:gala_sources",
         "//go_builtins:builtins.go",
         "//go_interop:types.go",

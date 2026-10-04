@@ -54,6 +54,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 | [Getting Started]({{ '/getting-started/' | relative_url }}) | Installation, project setup, and writing your first GALA program |
 | [Why GALA?]({{ '/docs/why-gala/' | relative_url }}) | Feature-by-feature assessment, ideal use cases, and honest trade-offs |
 | [Examples]({{ '/docs/examples/' | relative_url }}) | Complete, runnable programs covering the language surface |
+| [Go Interop Guide]({{ '/docs/go-interop/' | relative_url }}) | Mixing GALA and Go in both directions: calling each way, mixed packages, `gala build` and Bazel, gotchas |
 | [Dependency Management]({{ '/docs/dependency-management/' | relative_url }}) | `gala.mod`, GALA and Go dependencies, and Bazel integration |
 | [Error Codes]({{ '/docs/errors/' | relative_url }}) | Every `GALA-Exxxx` diagnostic — when it fires and how to fix it |
 | [IDE Support]({{ '/features/ide-support/' | relative_url }}) | IntelliJ/GoLand plugin and the `gala lsp` server (VS Code, Neovim) |

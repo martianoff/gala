@@ -1,0 +1,71 @@
+package pricing
+
+// A GALA library with a Go-facing API. Go code in
+// examples/go_interop/checkout calls it; docs/GO_INTEROP.MD part 2 shows
+// what each declaration looks like from Go.
+
+import (
+    "errors"
+    "strconv"
+    "strings"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// LineItem is GALA-native: its fields are immutable, so Go sees each one as
+// a std.Immutable[T] and builds a LineItem through NewLineItem.
+struct LineItem(SKU string, UnitCents int64, Qty int)
+
+// Receipt is Go-shaped: `var` fields are plain Go fields.
+type Receipt struct {
+    var TotalCents int64
+    var Lines int
+    var Note string
+}
+
+// Discount is a sealed type: one Go struct plus a constructor type per case.
+sealed type Discount {
+    case NoDiscount()
+    case Percent(Pct int64)
+    case AmountOff(Cents int64)
+}
+
+// ErrEmptyCart is a plain Go error value that Go can test with errors.Is.
+var ErrEmptyCart = errors.New("empty cart")
+
+// NewLineItem is the constructor Go callers use.
+func NewLineItem(sku string, unitCents int64, qty int) LineItem = LineItem(sku, unitCents, qty)
+
+// Subtotal sums an immutable Array of items.
+func Subtotal(items Array[LineItem]) int64 =
+    items.FoldLeft(int64(0), (acc, i) => acc + i.UnitCents * int64(i.Qty))
+
+// Apply is a method on the sealed type.
+func (d Discount) Apply(cents int64) int64 = d match {
+    case NoDiscount() => cents
+    case Percent(p) => cents - cents * p / 100
+    case AmountOff(c) => if (c > cents) int64(0) else cents - c
+}
+
+// amount reads the number after a coupon's prefix.
+func amount(code string, prefix string) Option[int64] =
+    strconv.ParseInt(strings.TrimPrefix(code, prefix), 10, 64).ToOption()
+
+// ParseCoupon returns None for a code it does not know.
+func ParseCoupon(code string) Option[Discount] = code match {
+    case "" => Some(NoDiscount())
+    case c if strings.HasPrefix(c, "PCT") => amount(c, "PCT").Map((n) => Percent(n))
+    case c if strings.HasPrefix(c, "OFF") => amount(c, "OFF").Map((n) => AmountOff(n))
+    case _ => None()
+}
+
+// Checkout fails with ErrEmptyCart or an unknown-coupon error.
+func Checkout(items Array[LineItem], coupon string) Try[Receipt] = ParseCoupon(coupon) match {
+    case _ if items.IsEmpty() => Failure(ErrEmptyCart)
+    case Some(d) => Success(Receipt(
+        TotalCents = d.Apply(Subtotal(items)),
+        Lines = items.Size(),
+        Note = d.String(),
+    ))
+    case None() => Failure(errors.New(s"unknown coupon $coupon"))
+}

@@ -4,7 +4,7 @@
 #   GALA=/path/to/gala tools/ci/cli_path/run_fixtures.sh <work-dir> [fixture...]
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
-# nested, lib_only, go_subpkg, go_cmd_main, gala_dep, dep_go_subpkg,
+# nested, lib_only, go_subpkg, go_cmd_main, go_interop, gala_dep, dep_go_subpkg,
 # dep_generic_alias, sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
@@ -178,6 +178,24 @@ fixture_go_subpkg() {
   expect_output "built binary" expected.out out.txt
 }
 
+# go_interop: GALA and Go calling each other in one module, as the Go interop
+# guide (docs/GO_INTEROP.MD) lays it out: a GALA main with a sibling .go file,
+# a package mixing .gala and hand-written .go, a plain Go package importing a
+# GALA one, and a Go main package under cmd/. The mixed package is the guide's
+# Part 3 example, staged from examples/ so Bazel and this fixture share one copy.
+fixture_go_interop() {
+  local dir
+  dir=$(stage go_interop)
+  cp -R "$repo/examples/go_interop/mixed/textstats" "$dir/textstats"
+  cd "$dir"
+  gala_ok build.log build || return 0
+  "$(exe "$dir/go_interop")" >out.txt
+  expect_output "built binary" expected.out out.txt
+  gala_ok build-gomain.log build -o gomain ./cmd/gomain || return 0
+  "$(exe "$dir/gomain")" >out-gomain.txt
+  expect_output "Go main binary" expected-gomain.out out-gomain.txt
+}
+
 # go_cmd_main: main packages under cmd/ that import the module's GALA package,
 # one written only in Go (cmd/gomain), one in GALA and Go together (cmd/mixed,
 # whose GALA code calls a function its .go file declares).
@@ -297,7 +315,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main gala_dep dep_go_subpkg dep_generic_alias sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main go_interop gala_dep dep_go_subpkg dep_generic_alias sequence)
 fi
 
 for name in "${fixtures[@]}"; do

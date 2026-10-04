@@ -1,0 +1,92 @@
+load("@rules_gala//gala:defs.bzl", "gala_exec_test", "gala_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# The worked examples of the Go interop guide (docs/GO_INTEROP.MD and
+# website/docs/go-interop.md). Every program and every Go example the guide
+# shows is one of these tests, and //internal/doccheck checks that the guide's
+# listings match these sources.
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "**/*.gala",
+        "**/*.go",
+        "**/*.out",
+    ]) + ["BUILD.bazel"],
+    visibility = ["//internal/doccheck:__pkg__"],
+)
+
+# Part 1: GALA calling Go, both the standard library and a hand-written Go
+# package.
+go_library(
+    name = "warehouse",
+    srcs = ["warehouse/warehouse.go"],
+    importpath = "martianoff/gala/examples/go_interop/warehouse",
+)
+
+gala_exec_test(
+    name = "gala_calls_go",
+    src = "gala_calls_go/main.gala",
+    expected = "gala_calls_go/main.out",
+    deps = [
+        ":warehouse",
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
+# Part 1: GALA types implementing Go interfaces (error, fmt.Stringer,
+# sort.Interface, http.Handler).
+gala_exec_test(
+    name = "go_interfaces",
+    src = "go_interfaces/main.gala",
+    expected = "go_interfaces/main.out",
+    deps = ["//collection_immutable"],
+)
+
+# Part 2: Go calling GALA. pricing is a GALA library; checkout is ordinary Go
+# that imports it, and its Example tests pin what each call prints.
+gala_library(
+    name = "pricing",
+    srcs = ["pricing/pricing.gala"],
+    importpath = "martianoff/gala/examples/go_interop/pricing",
+    deps = ["//collection_immutable"],
+)
+
+go_library(
+    name = "checkout",
+    srcs = ["checkout/checkout.go"],
+    importpath = "martianoff/gala/examples/go_interop/checkout",
+    deps = [
+        ":pricing",
+        "//collection_immutable",
+        "//std",
+    ],
+)
+
+go_test(
+    name = "checkout_test",
+    srcs = ["checkout/checkout_test.go"],
+    embed = [":checkout"],
+    deps = [
+        ":pricing",
+        "//collection_immutable",
+    ],
+)
+
+# Part 3: one package mixing GALA and hand-written Go. writer.go adds Go
+# methods to GALA structs and calls GALA functions; the GALA code calls Go.
+gala_library(
+    name = "textstats",
+    srcs = ["mixed/textstats/textstats.gala"],
+    go_srcs = ["mixed/textstats/writer.go"],
+    importpath = "martianoff/gala/examples/go_interop/mixed/textstats",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
+    name = "mixed",
+    src = "mixed/main.gala",
+    expected = "mixed/main.out",
+    gala_deps = [":textstats"],
+)

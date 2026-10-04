@@ -1,0 +1,17 @@
+GALA --- 1m30s
+skipped: strconv.Atoi: parsing "x": invalid syntax
+skipped: want 4 fields: E-5,Epoxy
+Anvil x3
+Z-9: no such item
+reserved 2 of A-1, 1 left
+A-1: not enough stock for 5
+failed: unknown SKU "Z-9"
+true
+A-1, B-2, C-3
+stock value: 162.75
+cheap: Bolt, Clamp
+reported 2
+ALERT A-1 is low: 1 left
+ALERT C-3 is low: 7 left
+Anvil | Bolt | Clamp
+4
