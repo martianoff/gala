@@ -255,6 +255,14 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	if isUntypedConst(value) && t.opaqueMeta(target) != nil {
 		return t.typeToExpr(target)
 	}
+	// A function literal has an unnamed function type, which a Go named
+	// function type slot (`fs.WalkDirFunc`) takes by assignment but not
+	// through NewImmutable's inferred type argument.
+	if _, isFuncLit := value.(*ast.FuncLit); isFuncLit {
+		if _, isFunc := target.(transpiler.FuncType); !isFunc && t.resolveTranspilerTypeAsFuncType(target) != nil {
+			return t.typeToExpr(target)
+		}
+	}
 	defaultName, ok := t.untypedNumericConstExprDefault(value)
 	if !ok || !t.isNumericSlotType(target) {
 		return nil

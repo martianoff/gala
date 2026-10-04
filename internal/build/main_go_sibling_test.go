@@ -267,3 +267,66 @@ func describe(info fs.FileInfo) string {
 		"size of y!",
 	}, "\n"), strings.TrimSpace(strings.ReplaceAll(out, "\r\n", "\n")))
 }
+
+// TestBuild_GoNamedFuncTypeSlots builds a program whose lambdas fill slots
+// typed by non-generic Go named function types — one of the package's own .go
+// file (Visitor) and imported ones (fs.WalkDirFunc, http.HandlerFunc) — as a
+// GALA function's parameter, a val annotation, a result and a struct field.
+// Each lambda takes the type's underlying signature.
+func TestBuild_GoNamedFuncTypeSlots(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH")
+	}
+
+	const moduleName = "example.com/namedfunc"
+	projectDir := t.TempDir()
+	for name, content := range map[string]string{
+		"gala.mod":   "module " + moduleName + "\n\ngala 0.0.0\n",
+		"go.mod":     "module " + moduleName + "\n\ngo 1.22\n",
+		"visitor.go": "package main\n\ntype Visitor func(int) bool\n",
+		"main.gala": `package main
+
+import (
+    "io/fs"
+    "net/http"
+)
+
+struct Walker(Fn fs.WalkDirFunc)
+
+func check(v Visitor) bool = v(3)
+
+func skipAll() fs.WalkDirFunc = (path, d, err) => fs.SkipAll
+
+func main() {
+    Println(check((n) => n > 2))
+    val keep fs.WalkDirFunc = (path, d, err) => err
+    Println(keep(".", nil, nil) == nil)
+    val w = Walker(Fn = (path, d, err) => err)
+    Println(w.Fn(".", nil, nil) == nil)
+    Println(skipAll()(".", nil, nil) == fs.SkipAll)
+    val h http.HandlerFunc = (rw, r) => rw.WriteHeader(204)
+    Println(h != nil)
+}
+`,
+	} {
+		writeFixtureFile(t, filepath.Join(projectDir, filepath.FromSlash(name)), content)
+	}
+
+	isolateUserState(t)
+	setEnvForTest(t, "GOCACHE", filepath.Join(t.TempDir(), "gocache"))
+	alignGorootWithPathGo(t)
+	chdirForTest(t, projectDir)
+
+	b, err := NewBuilder(projectDir, "test", false)
+	require.NoError(t, err)
+	binPath, buildErr := b.Build("")
+	if buildErr != nil {
+		if isToolchainEnvError(buildErr.Error()) {
+			t.Skipf("skipping end-to-end check: Go toolchain unavailable/mismatched in this environment: %v", buildErr)
+		}
+		t.Fatalf("gala build failed: %v", buildErr)
+	}
+	out, runErr := runBuiltBinary(binPath)
+	require.NoError(t, runErr, "built binary failed to run; output:\n%s", out)
+	assert.Equal(t, "true\ntrue\ntrue\ntrue\ntrue", strings.TrimSpace(strings.ReplaceAll(out, "\r\n", "\n")))
+}

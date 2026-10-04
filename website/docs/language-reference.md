@@ -911,6 +911,8 @@ val shouted = apply((s) => s + "!")
 opt.ForEach((x) => { Println(x) })
 ```
 
+A Go named function type (`fs.WalkDirFunc`, `http.HandlerFunc`, or a `type Visitor func(int) bool` in the package's own `.go` file) is a function type here too: a lambda filling a parameter, `val`, result or struct field of that type takes its underlying signature (`val walk fs.WalkDirFunc = (path, d, err) => err`). A generic one is not instantiated, so its lambda needs annotated parameters.
+
 A lambda parameter is immutable unless it is declared `var`, the same rule as
 for a function parameter (see [Parameters](#parameters)): reassigning it is
 `cannot assign to immutable variable x`, and `&x` is a read-only `ConstPtr`.

@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -302,6 +303,73 @@ func TestConversionToGoNamedFuncType(t *testing.T) {
 	out, err := transpileInModule(t, files, galaFile)
 	require.NoError(t, err)
 	assert.Contains(t, out, "func(w http.ResponseWriter, r *http.Request)")
+}
+
+// TestGoNamedFuncTypeSlots covers a lambda in a slot typed by a non-generic Go
+// named function type — imported (`fs.WalkDirFunc`, `http.HandlerFunc`) or of
+// the package's own .go files (`Visitor`) — beyond calling a value of that
+// type: a GALA function's parameter, a val annotation, a result, and a struct
+// field. The lambda takes the type's underlying signature, never GALA-E0033.
+func TestGoNamedFuncTypeSlots(t *testing.T) {
+	const goSrc = "package main\n\ntype Visitor func(int) bool\n\ntype Mapper[T any] func(T) T\n"
+	imports := func(gala string) string {
+		switch {
+		case strings.Contains(gala, "fs."):
+			return "import \"io/fs\"\n\n"
+		case strings.Contains(gala, "http."):
+			return "import \"net/http\"\n\n"
+		}
+		return ""
+	}
+	cases := []struct {
+		name string
+		gala string
+		want string
+	}{
+		{
+			name: "a GALA function's parameter",
+			gala: "func check(v Visitor) bool = v(3)\n\nfunc run() bool = check((n) => n > 2)\n",
+			want: "check(func(n int) bool {",
+		},
+		{
+			name: "a val annotation",
+			gala: "func run() error {\n    val f fs.WalkDirFunc = (path, d, err) => err\n    f(\".\", nil, nil)\n}\n",
+			want: "func(path string, d fs.DirEntry, err error) error {",
+		},
+		{
+			name: "a result",
+			gala: "func run() fs.WalkDirFunc = (path, d, err) => err\n",
+			want: "func(path string, d fs.DirEntry, err error) error {",
+		},
+		{
+			name: "a struct field",
+			gala: "struct Walker(Fn fs.WalkDirFunc)\n\nfunc run() Walker = Walker(Fn = (path, d, err) => err)\n",
+			want: "NewImmutable[fs.WalkDirFunc](func(path string, d fs.DirEntry, err error) error {",
+		},
+		{
+			name: "an imported handler type",
+			gala: "func run() http.HandlerFunc = (w, r) => w.WriteHeader(204)\n",
+			want: "func(w http.ResponseWriter, r *http.Request) {",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+imports(tc.gala)+tc.gala)
+			out, err := transpileInModule(t, files, galaFile)
+			require.NoError(t, err)
+			assert.Contains(t, out, tc.want)
+		})
+	}
+
+	// A generic Go named function type is not instantiated here, so a lambda
+	// in its slot still has no type to take.
+	t.Run("a generic Go named function type", func(t *testing.T) {
+		files, galaFile := samePackageModule(".", goSrc,
+			"package main\n\nfunc apply(m Mapper[int]) int = m(1)\n\nfunc run() int = apply((x) => x)\n")
+		_, err := transpileInModule(t, files, galaFile)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "GALA-E0033")
+	})
 }
 
 // TestConversionToNamedFuncTypeTypesTheLambda covers `Handler((x) => x)` for

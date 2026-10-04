@@ -1157,10 +1157,26 @@ func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type)
 
 	// Try resolving via type alias, through a chain of them
 	// (`type A func(int) int; type B A`).
-	if ft, ok := t.followAliasChain(tp).(transpiler.FuncType); ok {
+	end := t.followAliasChain(tp)
+	if ft, ok := end.(transpiler.FuncType); ok {
 		return &ft
 	}
 
+	return t.goNamedFuncTypeOf(end)
+}
+
+// goNamedFuncTypeOf returns the underlying function type of typ when typ names
+// a non-generic Go named function type (`fs.WalkDirFunc`, or a type of the
+// package's own .go files) that no GALA type of that name hides — a lambda in
+// a slot of that type is a value of that signature, and a call of a value of
+// it has its results — or nil.
+func (t *galaASTTransformer) goNamedFuncTypeOf(typ transpiler.Type) *transpiler.FuncType {
+	switch typ.(type) {
+	case transpiler.NamedType, transpiler.BasicType:
+		if name := typ.String(); !transpiler.IsPrimitiveType(name) && t.getTypeMeta(name) == nil {
+			return t.goNamedFuncType(name)
+		}
+	}
 	return nil
 }
 
