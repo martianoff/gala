@@ -116,39 +116,7 @@ jobs:
 
       - name: Compare
         id: compare
-        run: |
-          set -euo pipefail
-          # stdlib_gen groups its inputs into maps keyed by package and then
-          # sorts both levels before writing, so the order of the file list
-          # below cannot change the output. `sort` is still applied so the
-          # command line in a log is reproducible.
-          mapfile -t nix_files < <(find result/files -type f | sort)
-          echo "comparing ${#nix_files[@]} Nix inputs against Bazel's generate_embedded srcs"
-
-          ./bazel-bin/cmd/stdlib_gen/stdlib_gen_/stdlib_gen \
-            -output "$RUNNER_TEMP/nix_embedded_gen.go" "${nix_files[@]}"
-
-          if diff -u "$RUNNER_TEMP/nix_embedded_gen.go" \
-                    bazel-bin/internal/stdlib/embedded_gen.go > "$RUNNER_TEMP/parity.diff"; then
-            echo "stdlib parity holds: Nix and Bazel produced identical embedded_gen.go"
-          else
-            echo "::error::Nix and Bazel disagree on internal/stdlib/embedded_gen.go"
-            echo "diff lines: $(wc -l < "$RUNNER_TEMP/parity.diff")"
-            # Entry counts on both sides. A mismatch means an input was dropped
-            # on one side only -- Bazel's genrule takes every src, the Nix awk
-            # scrape keeps only labels containing a colon -- so this separates
-            # "an input went missing" from "an input was transpiled
-            # differently" without reading the diff. Equal counts with a
-            # non-empty diff is a codegen divergence.
-            echo "packed entries: nix=$(grep -c $'^\t\t"' "$RUNNER_TEMP/nix_embedded_gen.go")" \
-                 "bazel=$(grep -c $'^\t\t"' bazel-bin/internal/stdlib/embedded_gen.go)"
-            # A whole added or removed package block is the signature of a
-            # dropped input; a changed line inside a package is the signature
-            # of a codegen divergence. Print the first few hunks either way,
-            # because a generated file diffs into thousands of lines otherwise.
-            head -60 "$RUNNER_TEMP/parity.diff"
-            exit 1
-          fi
+        run: tools/ci/compare_stdlib.sh result Nix
 
       - name: Explain a failure
         # Scoped to the Compare step on purpose. A Nix or Bazel build failure

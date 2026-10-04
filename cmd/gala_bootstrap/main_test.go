@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-
 	"strings"
 	"testing"
 
@@ -130,6 +129,26 @@ func TestRunBatchResolvesSiblingTypesInEveryPackage(t *testing.T) {
 				t.Errorf("uses.gala output missing %q; got:\n%s", want, got)
 			}
 		})
+	}
+}
+
+// TestRunBatchKeepsIndependentMainProgramsApart batch-transpiles a directory
+// of separate programs, as examples/ is. Each declares main and Helper, so
+// treating them as one package would make the declarations collide.
+func TestRunBatchKeepsIndependentMainProgramsApart(t *testing.T) {
+	dir := t.TempDir()
+	program := "package main\n\nfunc Helper() int = 1\n\nfunc main() {\n    Println(Helper())\n}\n"
+	var in, out []string
+	for _, name := range []string{"one", "two"} {
+		path := filepath.Join(dir, name+".gala")
+		if err := os.WriteFile(path, []byte(program), 0644); err != nil {
+			t.Fatal(err)
+		}
+		in = append(in, path)
+		out = append(out, filepath.Join(dir, "out", name+".gen.go"))
+	}
+	if err := runBatch(in, out, []string{dir, stdlibRoot(t)}); err != nil {
+		t.Fatalf("runBatch: %v", err)
 	}
 }
 

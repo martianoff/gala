@@ -86,11 +86,11 @@ func runTranspilePackage(cmd *cobra.Command, args []string) {
 //   - scan=false: every other inputs entry is a sibling of inputs[i]. This is
 //     the original behavior and is appropriate when the caller has the full
 //     package file list (e.g. Bazel's package_files).
-//   - scan=true: the siblings are the other non-test .gala files in the
-//     input's directory (analyzer.PackageSiblings). This sees .gala files
-//     that are not listed in inputs (e.g. reserved names such as retry.gala),
-//     holds for packages named main or test too, and matches gala_bootstrap's
-//     batch mode.
+//   - scan=true: the siblings are the input's same-package files in its
+//     directory (analyzer.PackageSiblings). This sees .gala files that are
+//     not listed in inputs (e.g. reserved names such as retry.gala), holds
+//     for packages named main or test too, and matches gala_bootstrap's
+//     batch mode and the LSP.
 func transpilePackage(inputs, outputs []string, search, goroot string, scan bool) error {
 	if len(inputs) != len(outputs) {
 		return fmt.Errorf("number of inputs (%d) != outputs (%d)", len(inputs), len(outputs))
@@ -125,13 +125,7 @@ func transpilePackage(inputs, outputs []string, search, goroot string, scan bool
 		}
 
 		if scan {
-			siblings, err := analyzer.PackageSiblings(inputPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				failed++
-				continue
-			}
-			batchAnalyzer.SetPackageFiles(siblings)
+			batchAnalyzer.SetPackageFiles(analyzer.PackageSiblings(inputPath, string(content), analyzer.ReadSource))
 		} else {
 			// Build package-files list: all other inputs are siblings
 			var packageFiles []string

@@ -135,6 +135,13 @@ func TestTranspilePackageScanResolvesTestPackageSiblings(t *testing.T) {
 	if err := transpilePackage(in, outs, root, "", true); err != nil {
 		t.Fatalf("scan=true over a package named test: %v", err)
 	}
+	got, err := os.ReadFile(outs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "func Describe(t T) string"; !strings.Contains(string(got), want) {
+		t.Errorf("uses.gala output missing %q; got:\n%s", want, got)
+	}
 }
 
 // TestTranspilePackageScanDoesNotMixPackages runs one --scan invocation over

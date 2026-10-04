@@ -117,11 +117,7 @@ func runBatch(inList, outList, paths []string) error {
 
 		// Siblings come from the directory rather than inList, so a file left
 		// out of the batch stays visible to its neighbours.
-		siblings, err := analyzer.PackageSiblings(in)
-		if err != nil {
-			return err
-		}
-		a.SetPackageFiles(siblings)
+		a.SetPackageFiles(analyzer.PackageSiblings(in, string(content), analyzer.ReadSource))
 
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()

@@ -7,6 +7,10 @@ name: Local bootstrap — nix build .#gala-local
 #
 # Skipped for PRs that touch only docs, examples, the IDE plugins or other
 # workflows, none of which can move either side.
+#
+# The bootstrap is a buildGoModule, so a go.mod/go.sum change also needs
+# galaVendorHash in nix/gala.nix updated, or this lane fails on the vendor hash.
+# That is a real gala-local break, not noise: the red run prints the new hash.
 on:
   workflow_dispatch:
   pull_request:
@@ -69,19 +73,7 @@ jobs:
         run: bazel build //internal/stdlib:generate_embedded //cmd/stdlib_gen
 
       - name: Compare the local-bootstrap stdlib with Bazel's
-        run: |
-          set -euo pipefail
-          mapfile -t files < <(find local-stdlib/files -type f | sort)
-          echo "packing ${#files[@]} local-bootstrap inputs"
-          ./bazel-bin/cmd/stdlib_gen/stdlib_gen_/stdlib_gen \
-            -output "$RUNNER_TEMP/local_embedded_gen.go" "${files[@]}"
-          if ! diff -u "$RUNNER_TEMP/local_embedded_gen.go" \
-                      bazel-bin/internal/stdlib/embedded_gen.go > "$RUNNER_TEMP/local.diff"; then
-            echo "::error::The local-bootstrap stdlib and Bazel's generate_embedded disagree"
-            head -60 "$RUNNER_TEMP/local.diff"
-            exit 1
-          fi
-          echo "local-bootstrap stdlib matches Bazel's embedded_gen.go"
+        run: tools/ci/compare_stdlib.sh local-stdlib local-bootstrap
 
       - name: Build gala-local
         run: nix build .#gala-local --print-build-logs

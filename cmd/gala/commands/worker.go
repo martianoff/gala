@@ -402,13 +402,7 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 		// Set siblings for THIS file. With --scan they are read from the
 		// file's directory instead (so files outside inList are visible).
 		if scan {
-			siblings, err := analyzer.PackageSiblings(inputPath)
-			if err != nil {
-				fmt.Fprintf(out, "Error: %v\n", err)
-				hasError = true
-				continue
-			}
-			batch.SetPackageFiles(siblings)
+			batch.SetPackageFiles(analyzer.PackageSiblings(inputPath, string(content), analyzer.ReadSource))
 		} else {
 			var packageFiles []string
 			for j, other := range inList {
