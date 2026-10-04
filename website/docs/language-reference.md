@@ -475,7 +475,7 @@ type Again[T any] Result[T]                         // alias of an alias
 |---|---|---|
 | Annotate a type | `val s MyString = "hello"` | The alias stands wherever the target does |
 | Convert | `Millis(v)`, `MyString(s)` | The ordinary [type conversion](#type-conversions) — `Millis(v)` *is* `int64(v)` |
-| Construct, when the target is a struct | `Coord(1, 2)` | Reaches the target's fields, so named and positional construction both work |
+| Construct, when the target is a struct | `Coord(1, 2)`; `Twin(1, 2)` for `type Twin[T any] Pair[T]` | Reaches the target's fields, so named and positional construction both work. A generic alias infers its type arguments from the fields and the expected type, as the struct does (`Twin(1, 2)` is a `Twin[int]`) |
 | Carry a generic instantiation | `type IntPair Pair[int]` then `IntPair(1, 2)` | The alias names the instantiation; do not re-apply type arguments. It takes no methods — see below |
 | Take methods, when the target is a **plain local type** | `func (c Coord) Sum() int = c.X + c.Y` | Legal because the receiver base type `Point` is declared in this package |
 

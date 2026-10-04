@@ -31,3 +31,10 @@ func Check(n int) Result[int] = if (n < 0) Left(AppError(1, "negative")) else Ri
 
 // Count is generic over the alias's parameters.
 func Count[K comparable, V any](ps Pairs[K, V]) int = ps.Size()
+
+// Span is a generic struct; Range is a generic alias of it, constructed
+// without type arguments by importers.
+struct Span[T any](Lo T, Hi T)
+
+// Range is a generic alias of a generic struct.
+type Range[T any] Span[T]

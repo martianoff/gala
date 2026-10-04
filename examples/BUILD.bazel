@@ -2780,6 +2780,14 @@ gala_exec_test(
     ],
 )
 
+# A generic alias of a generic struct constructed without type arguments takes
+# them from the fields and the expected type, as the struct does.
+gala_exec_test(
+    name = "generic_struct_alias_ctor",
+    src = "generic_struct_alias_ctor.gala",
+    expected = "generic_struct_alias_ctor.out",
+)
+
 # Package-level `val`s read from another package (qualified and dot-imported)
 # must unwrap from std.Immutable[T] at the use site; a `var` stays plain.
 gala_library(
