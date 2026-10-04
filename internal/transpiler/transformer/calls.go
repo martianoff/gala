@@ -2981,9 +2981,8 @@ func (t *galaASTTransformer) reachedAs(typ transpiler.Type) transpiler.Type {
 				// A bare name the package's own type, or a type parameter in
 				// scope, shadows stays qualified.
 				if prefix == "" && !e.IsDot {
-					if t.activeTypeParams[ty.Name] {
-						prefix = e.Alias + "."
-					} else if r := t.resolveTypeMetaName(ty.Name); r != "" && r != ty.Package+"."+ty.Name {
+					r := t.resolveTypeMetaName(ty.Name)
+					if t.activeTypeParams[ty.Name] || (r != "" && r != ty.Package+"."+ty.Name) {
 						prefix = e.Alias + "."
 					}
 				}

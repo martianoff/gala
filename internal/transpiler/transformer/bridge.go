@@ -438,9 +438,7 @@ func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 	// parameters, and none of the declaration being transformed, are bound
 	// while it is converted, so the cached environment does not depend on
 	// where it was built.
-	enclosing := t.activeTypeParams
-	defer func() { t.activeTypeParams = enclosing }()
-	t.activeTypeParams = make(map[string]bool)
+	defer t.onlyTypeParams(nil)()
 	env := make(infer.TypeEnv, len(t.functions))
 	for name, meta := range t.functions {
 		clear(t.activeTypeParams)

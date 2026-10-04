@@ -443,6 +443,11 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 	// default lowered from another package was written against THAT package's
 	// imports, so it keeps the package-name lookup below.
 	qualifier, sel, qualified := strings.Cut(name, ".")
+	// A type parameter of the enclosing declaration shadows every function of
+	// its name.
+	if !qualified && t.activeTypeParams[name] {
+		return nil
+	}
 	if qualified && !t.loweringForeignDefault() {
 		if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
 			return fm

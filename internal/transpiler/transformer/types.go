@@ -83,6 +83,9 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 				return ast.NewIdent("any"), nil
 			}
 			ident = ast.NewIdent(typeName)
+			if t.activeTypeParams[typeName] && ctx.TypeArguments() != nil {
+				return nil, t.typeParamMisuseError(ctx, typeName, "takes no type arguments")
+			}
 			// Use resolution to determine if this type belongs to an imported package
 			resolvedType := t.lookupTypeName(typeName)
 			if !resolvedType.IsNil() {

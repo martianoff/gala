@@ -141,6 +141,11 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 // "acp.Acked"). It handles direct-Unapply extractors, sequence patterns, tuple
 // and struct field matches, and instance extractors, in that order.
 func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, argList *grammar.ArgumentListContext, explicitTypeArgs *grammar.ExpressionListContext, objExpr ast.Expr, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, []ast.Stmt, error) {
+	// A type parameter of the enclosing declaration shadows every extractor,
+	// variant and struct of its name, and is none of them itself.
+	if t.activeTypeParams[rawName] {
+		return nil, nil, t.typeParamMisuseError(patExprCtx, rawName, "cannot be matched as a pattern")
+	}
 	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are
 	// always types, so a sealed variant among them is GALA-E0061.
 	if explicitTypeArgs != nil {
@@ -238,10 +243,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	msg := fmt.Sprintf("extractor '%s' must define an Unapply method. For generic extractors use: func (e Extractor[T]) Unapply(v ContainerType[T]) Option[T]. For guard patterns use: func (e Extractor) Unapply(v ConcreteType) bool",
 		rawName)
 	hint := ""
-	switch {
-	case t.activeTypeParams[rawName]:
-		hint = fmt.Sprintf("'%s' is a type parameter of the enclosing declaration, which shadows every other '%s'; rename the type parameter", rawName, rawName)
-	case suggestion != "":
+	if suggestion != "" {
 		hint = fmt.Sprintf("did you mean '%s'?", suggestion)
 	}
 	return nil, nil, galaerr.NewCodedSemanticError(

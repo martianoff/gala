@@ -212,17 +212,71 @@ func (h Holder[Tuple]) Pair() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)`,
 	runTypeParamCases(t, cases)
 }
 
-// TestTypeParamNamedLikeExtractor guards that matching on an extractor whose
-// name a type parameter shadows is a GALA error naming the cause, not Go that
-// treats the type parameter as an extractor.
-func TestTypeParamNamedLikeExtractor(t *testing.T) {
-	input := typeParamHeader + `func fold[Left any, Right any](e Either[Left, Right]) string = e match {
+// TestTypeParamMisuse guards that using a type parameter where only a name it
+// shadows could stand — as an extractor, or with type arguments — is a GALA
+// error naming the cause, not Go that misuses the type parameter.
+func TestTypeParamMisuse(t *testing.T) {
+	cases := []struct{ name, input, want string }{
+		{
+			name: "extractor pattern",
+			input: `func fold[Left any, Right any](e Either[Left, Right]) string = e match {
     case Left(l) => "l"
     case _ => "r"
-}`
-	_, err := newForbiddenBuiltinTranspiler().Transpile(input, "")
+}`,
+			want: "'Left' is a type parameter of the enclosing declaration and cannot be matched as a pattern",
+		},
+		{
+			name: "struct pattern",
+			input: `struct Wrap(N int)
+
+func h[Wrap any](w Wrap, x any) int = x match {
+    case Wrap(n) => n
+    case _ => 0
+}`,
+			want: "'Wrap' is a type parameter of the enclosing declaration and cannot be matched as a pattern",
+		},
+		{
+			name:  "type arguments in a type",
+			input: `func g[Option any](x Option, o Option[int]) int = 0`,
+			want:  "'Option' is a type parameter of the enclosing declaration and takes no type arguments",
+		},
+		{
+			name:  "type arguments in an expression",
+			input: `func g[Left any](x Left) Either[int, string] = Left[int, string](1)`,
+			want:  "'Left' is a type parameter of the enclosing declaration and takes no type arguments",
+		},
+	}
+	trans := newForbiddenBuiltinTranspiler()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(typeParamHeader+tc.input, "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// TestDefaultLoweredInItsOwnScope guards that a parameter's default, lowered
+// at a call site inside a generic declaration, reads its names in its own
+// declaration's scope: the caller's type parameters do not shadow them.
+func TestDefaultLoweredInItsOwnScope(t *testing.T) {
+	runTypeParamCases(t, []typeParamCase{{
+		name: "default naming a std constructor",
+		input: typeParamHeader + `func f(o Option[int] = None[int]()) int = 0
+
+func g[None any](y None) int = f()`,
+		mustContain: []string{"return f(std.None[int]{}.Apply())"},
+	}})
+
+	// A package-level val the use site's type parameter shadows has no
+	// spelling in the generated Go there, so it is a GALA error.
+	_, err := newForbiddenBuiltinTranspiler().Transpile(typeParamHeader+`val Dflt = 3
+
+func f(n int = Dflt) int = n
+
+func g[Dflt any](x Dflt) int = f()`, "")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "'Left' is a type parameter of the enclosing declaration")
+	require.Contains(t, err.Error(), "reads 'Dflt', which the type parameter 'Dflt' of the enclosing declaration shadows here")
 }
 
 // typeParamHeader opens each typeParamCase input.

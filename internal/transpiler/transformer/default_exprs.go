@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"errors"
+	"fmt"
 	"go/ast"
 	"path/filepath"
 
@@ -58,6 +59,43 @@ type defaultTreeKey struct {
 	file string
 }
 
+// shadowedByUse returns a package-level val, var or function the lowered
+// default expr reads unqualified that one of the use site's type parameters
+// shadows, or "". It runs in the default's own scope, where such a name still
+// resolves to the package's declaration.
+func (t *galaASTTransformer) shadowedByUse(expr ast.Expr, useSite map[string]bool) string {
+	if len(useSite) == 0 {
+		return ""
+	}
+	found := ""
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if found != "" {
+			return false
+		}
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			// A selector's member is never read from the use site's scope.
+			ast.Inspect(sel.X, func(x ast.Node) bool {
+				if id, ok := x.(*ast.Ident); ok && found == "" && t.packageNameShadowed(id.Name, useSite) {
+					found = id.Name
+				}
+				return found == ""
+			})
+			return false
+		}
+		if id, ok := n.(*ast.Ident); ok && t.packageNameShadowed(id.Name, useSite) {
+			found = id.Name
+		}
+		return true
+	})
+	return found
+}
+
+// packageNameShadowed reports whether name is a package-level val, var or
+// function that a type parameter in useSite shadows.
+func (t *galaASTTransformer) packageNameShadowed(name string, useSite map[string]bool) bool {
+	return useSite[name] && (t.isTopLevelBinding(name) || t.getFunction(name) != nil)
+}
+
 // defaultExprTree parses a default's recorded text at its recorded position,
 // once per default per file: lowering is per use site, but the parse tree is
 // the same at every one of them.
@@ -94,6 +132,12 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	prev := t.loweringDefault
 	t.loweringDefault = &defaultLowering{pkg: src.pkg, foreign: !local, useScope: t.currentScope}
 	defer func() { t.loweringDefault = prev }()
+	// The default is lowered in its own declaration's scope: the type
+	// parameters bound at the use site do not shadow the names it reads. In
+	// the generated Go they do, so a name the default reads unqualified that a
+	// use-site type parameter shadows cannot be spelled there (shadowedByUse).
+	useSite := t.activeTypeParams
+	defer t.onlyTypeParams(src.typeParams)()
 	if src.recv != "" {
 		t.pushScope()
 		defer t.popScope()
@@ -107,6 +151,13 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	}
 	if err == nil {
 		expr, err = t.qualifyDefaultExpr(expr, src.pkg)
+	}
+	if err == nil {
+		if name := t.shadowedByUse(expr, useSite); name != "" {
+			err = galaerr.NewSemanticErrorAt(useLine, useCol, fmt.Sprintf(
+				"the default value of a parameter reads '%s', which the type parameter '%s' of the enclosing declaration shadows here; pass the argument explicitly or rename the type parameter",
+				name, name))
+		}
 	}
 	if err != nil {
 		if !local {

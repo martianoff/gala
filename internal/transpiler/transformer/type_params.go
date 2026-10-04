@@ -1,8 +1,11 @@
 package transformer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
+
+	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -76,6 +79,27 @@ func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 			delete(t.activeTypeParams, name)
 		}
 	}
+}
+
+// typeParamMisuseError reports name, a type parameter of the enclosing
+// declaration, used where it cannot stand — a name it shadows was meant.
+func (t *galaASTTransformer) typeParamMisuseError(ctx antlr.ParserRuleContext, name, what string) error {
+	err := t.semanticErrorAt(ctx, fmt.Sprintf("'%s' is a type parameter of the enclosing declaration and %s", name, what))
+	err.Hint = fmt.Sprintf("a type parameter shadows every other '%s' in its declaration; rename the type parameter to reach the outer one", name)
+	return err
+}
+
+// onlyTypeParams binds exactly names, and none of the declaration being
+// transformed, for code read in the scope of another declaration — a callee's
+// signature, a parameter's default — and returns the function that restores
+// the enclosing set.
+func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
+	enclosing := t.activeTypeParams
+	t.activeTypeParams = make(map[string]bool, len(names))
+	for _, name := range names {
+		t.activeTypeParams[name] = true
+	}
+	return func() { t.activeTypeParams = enclosing }
 }
 
 // receiverTypeParams is the type parameters a receiver type declares: the
