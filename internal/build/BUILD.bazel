@@ -45,6 +45,7 @@ go_test(
         "dep_go_types_test.go",
         "deptranspiler_test.go",
         "foreign_gen_go_test.go",
+        "go_cmd_main_test.go",
         "go_subpackage_test.go",
         "go_toolchain_test.go",
         "gomod_test.go",

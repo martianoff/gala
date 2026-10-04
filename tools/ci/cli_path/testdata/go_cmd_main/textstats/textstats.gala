@@ -1,0 +1,7 @@
+package textstats
+
+import "strings"
+
+// WordCount is a GALA library function that the main packages under cmd/
+// call: one written only in Go, one mixing GALA and Go.
+func WordCount(text string) int = strings.Fields(text).Size()

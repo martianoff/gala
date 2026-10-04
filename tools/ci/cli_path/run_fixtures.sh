@@ -4,8 +4,8 @@
 #   GALA=/path/to/gala tools/ci/cli_path/run_fixtures.sh <work-dir> [fixture...]
 #
 # With no fixture names, every fixture runs. Fixtures: root_main, cmd_app,
-# nested, lib_only, go_subpkg, gala_dep, dep_go_subpkg, dep_generic_alias,
-# sequence.
+# nested, lib_only, go_subpkg, go_cmd_main, gala_dep, dep_go_subpkg,
+# dep_generic_alias, sequence.
 #
 # Every other test lane builds GALA with Bazel from repo sources. Users build
 # with the CLI, which transpiles against the stdlib snapshot embedded in the
@@ -178,6 +178,27 @@ fixture_go_subpkg() {
   expect_output "built binary" expected.out out.txt
 }
 
+# go_cmd_main: main packages under cmd/ that import the module's GALA package,
+# one written only in Go (cmd/gomain), one in GALA and Go together (cmd/mixed,
+# whose GALA code calls a function its .go file declares).
+fixture_go_cmd_main() {
+  local dir
+  dir=$(stage go_cmd_main)
+  cd "$dir"
+  gala_ok build-gomain.log build -o gomain ./cmd/gomain || return 0
+  "$(exe "$dir/gomain")" >gomain.txt
+  expect_output "Go-only cmd/gomain binary" gomain.out gomain.txt
+  gala_ok run-gomain.log run ./cmd/gomain || return 0
+  expect_output "gala run ./cmd/gomain" gomain.out run-gomain.log
+  gala_ok build-mixed.log build -o mixed ./cmd/mixed || return 0
+  "$(exe "$dir/mixed")" >mixed.txt
+  expect_output "GALA+Go cmd/mixed binary" mixed.out mixed.txt
+  gala_ok run-mixed.log run ./cmd/mixed || return 0
+  expect_output "gala run ./cmd/mixed" mixed.out run-mixed.log
+  gala_ok test.log test || return 0
+  expect_tests_ran "library test ran" test.log
+}
+
 # gala_dep: a published GALA module in gala.mod, fetched from GitHub into the
 # empty GALA_HOME and built against. Needs network access.
 fixture_gala_dep() {
@@ -276,7 +297,7 @@ fixture_sequence() {
 
 fixtures=("$@")
 if [ ${#fixtures[@]} -eq 0 ]; then
-  fixtures=(root_main cmd_app nested lib_only go_subpkg gala_dep dep_go_subpkg dep_generic_alias sequence)
+  fixtures=(root_main cmd_app nested lib_only go_subpkg go_cmd_main gala_dep dep_go_subpkg dep_generic_alias sequence)
 fi
 
 for name in "${fixtures[@]}"; do

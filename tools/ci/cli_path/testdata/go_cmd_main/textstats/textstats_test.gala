@@ -1,0 +1,5 @@
+package textstats
+
+import . "martianoff/gala/test"
+
+func TestWordCount(t T) T = Eq(t, WordCount("one two  three"), 3)

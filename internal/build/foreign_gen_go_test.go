@@ -51,9 +51,19 @@ func newForeignGenGoProject(t *testing.T, moduleName string, files map[string]st
 // this environment skips the test; a failed build fails it.
 func buildAndRun(t *testing.T, projectDir string) string {
 	t.Helper()
+	return buildAndRunFrom(t, projectDir, "")
+}
+
+// buildAndRunFrom is buildAndRun for `gala build <sourceDir>`, a directory of
+// the project; "" builds the project itself.
+func buildAndRunFrom(t *testing.T, projectDir, sourceDir string) string {
+	t.Helper()
 	chdirForTest(t, projectDir)
 	b, err := NewBuilder(projectDir, "test", false)
 	require.NoError(t, err)
+	if sourceDir != "" {
+		b.SetSourceDir(sourceDir)
+	}
 	binPath, buildErr := b.Build("")
 	if buildErr != nil {
 		if isToolchainEnvError(buildErr.Error()) {
