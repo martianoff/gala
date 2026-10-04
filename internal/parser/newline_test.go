@@ -84,7 +84,10 @@ func TestLineStartTokenStartsStatement(t *testing.T) {
 		{name: "multiplication in a composite literal", body: "val r = Rect{\n    w: width\n        *scale,\n}", stmts: 1},
 		{name: "multiplication in a generic composite literal", body: "val r = Array[int]{\n    w\n        *scale,\n}", stmts: 1},
 		{name: "multiplication in a spaced composite literal", body: "val r = Rect {\n    w: width\n        *scale,\n}", stmts: 1},
-		{name: "composite literal after an if-expression", body: "val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}", stmts: 2},		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
+		{name: "composite literal after an if-expression", body: "val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}", stmts: 2},
+		{name: "multiplication in an if-expression branch", body: "val r = if (c) Rect{\n    w: a\n        *b,\n} else d", stmts: 1},
+		{name: "multiplication in an arm after a guard", body: "val r = x match {\n    case v if v > 0 => v\n    case _ => Rect{\n        w: a\n            *b,\n    }\n}", stmts: 1},
+		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
 		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
 		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
 		{name: "after val equals", body: "val t =\n    (1, 2)", stmts: 1},
@@ -125,6 +128,7 @@ func TestLineStartTokenInDeclarations(t *testing.T) {
 		{name: "sealed case fields", decl: "sealed type S {\n    case A\n    (x int)\n    case B\n}"},
 		{name: "interface method parameters", decl: "type I interface {\n    M\n    (x int) int\n}"},
 		{name: "pointer result type", decl: "func g()\n*int = nil"},
+		{name: "interface after a func type alias", decl: "type F func(int) int\n\ntype I interface {\n    M()\n    *int\n}"},
 		{name: "interface method pointer result", decl: "type I interface {\n    M()\n    *int\n}"},
 		{name: "top-level multiplication", decl: "val a = b\n*c"},
 	}
@@ -147,6 +151,10 @@ func TestBlockAfterHeaderEndingInType(t *testing.T) {
 		{name: "function result type", src: "func f() int{\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
 		{name: "generic result type", src: "func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
 		{name: "expression-bodied function before", src: "func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		{name: "function-typed parameter", src: "func apply(f func(int) int) int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		{name: "generic method with function parameter", src: "func (o Box[T]) m[U any](f func(T) Option[U]) Option[U] {\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
+		{name: "for header with an assignment", src: "func f() {\n    for i := 0; i < n; i = i + step {\n        val p = &n\n        *p = 5\n    }\n}", stmts: 1},
+		{name: "func type alias before", src: "type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

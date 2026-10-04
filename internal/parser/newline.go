@@ -46,12 +46,16 @@ import (
 // no type ends with (`=>`, `)`, `else`, ...); after a type name or ']' it opens
 // a composite literal, after `struct` or `interface` a declaration body, and a
 // '{' whose first token is `case` opens case arms (a match, a partial
-// function, a sealed type). Inside those, within a '(' or '[', and at the top
-// level, '*' and '&' are never re-typed. Followed by whitespace or a comment
-// it is a binary operator continuing the line before, like any other operator
-// at line start: `* b` multiplies, `*b` dereferences. '*' and '&' are re-typed because their prefix
-// forms are pointer operations a line can start with (`*p = 5`, a trailing
-// `*p` or `&n`); '+', '-' and '^' are not, so a line starting with one always
+// function, a sealed type). A header has no block when it is left for a new
+// line or for `=>`, when a func's `=` gives it an expression body, when an
+// if's `else` comes first (an if-expression), or when the token after an if's
+// parenthesized condition is not '{'. Inside a '{' that is not a block,
+// within a '(' or '[', and at the top level, '*' and '&' are never re-typed.
+// Followed by whitespace or a comment it is a binary operator continuing the
+// line before, like any other operator at line start: `* b` multiplies, `*b`
+// dereferences. '*' and '&' are re-typed because their prefix forms are
+// pointer operations a line can start with (`*p = 5`, a trailing `*p` or
+// `&n`); '+', '-' and '^' are not, so a line starting with one always
 // continues the expression. A line that starts with '.' continues a method
 // chain.
 type newlineTokenSource struct {
@@ -66,10 +70,26 @@ type newlineTokenSource struct {
 	prevType int
 	// open holds the brackets open at this point, innermost last.
 	open []openBracket
-	// header is the depth (len(open)) of the `func`, `if` or `for` whose
-	// block's '{' is still to come, or -1.
-	header int
+	// headers holds the `func`, `if` and `for` headers whose block's '{' is
+	// still to come, innermost last.
+	headers []header
 }
+
+// header is a `func`, `if` or `for` whose block's '{' is still to come.
+type header struct {
+	// depth is len(open) where the header started: its '{' opens there.
+	depth int
+	// fn marks a func, whose `=` gives it an expression body instead.
+	fn bool
+	// cond tracks an if's parenthesized condition: condOpen while it is
+	// open, condClosed once it has closed.
+	cond int8
+}
+
+const (
+	condOpen int8 = 1 + iota
+	condClosed
+)
 
 // openBracket is the kind of an open bracket.
 type openBracket int8
@@ -85,7 +105,7 @@ var _ antlr.Lexer = (*newlineTokenSource)(nil)
 // newTokenStream is the token stream every parse reads: the lexer's tokens
 // with the line-break rule above applied.
 func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
-	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, kinds: kinds(), header: -1}, antlr.TokenDefaultChannel)
+	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, kinds: kinds()}, antlr.TokenDefaultChannel)
 }
 
 // lineStartToken describes one re-typed token: the source token it is
@@ -115,7 +135,7 @@ type retype struct {
 // tokenKinds holds the token types the parser driver checks, looked up by name
 // in the generated vocabulary: the generated constants are unexported.
 type tokenKinds struct {
-	identifier, lbrace, rbrace, rbrack, assign, caseKw, elseKw int
+	identifier, lparen, lbrace, rbrace, assign, arrow, caseKw, elseKw, funcKw, ifKw int
 	// bracket is indexed by token type: +1 for a bracket that opens ('(',
 	// NL_LPAREN, '[', '{'), -1 for one that closes (')', ']', '}'), else 0.
 	bracket []int8
@@ -171,12 +191,15 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 	n := len(vocab.SymbolicNames)
 	k := &tokenKinds{
 		identifier:    mustType("IDENTIFIER"),
+		lparen:        mustType("'('"),
 		lbrace:        mustType("'{'"),
 		rbrace:        mustType("'}'"),
-		rbrack:        mustType("']'"),
 		assign:        mustType("'='"),
+		arrow:         mustType("'=>'"),
 		caseKw:        mustType("'case'"),
 		elseKw:        mustType("'else'"),
+		funcKw:        mustType("'func'"),
+		ifKw:          mustType("'if'"),
 		bracket:       make([]int8, n),
 		opensHeader:   make([]bool, n),
 		notBlockAfter: make([]bool, n),
@@ -224,7 +247,7 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
 		ttype = r.to
 	}
-	s.trackBrackets(ttype)
+	s.trackBrackets(ttype, s.prevEndsExpr && line > s.prevEndLine)
 	s.prevType = ttype
 	s.prevEndsExpr = is(k.endsExpr, ttype)
 	s.prevEndLine = line
@@ -234,21 +257,33 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	return tok
 }
 
-// trackBrackets keeps open and header up to date with a token of type ttype
-// (see the newlineTokenSource doc for which '{' opens a block).
-func (s *newlineTokenSource) trackBrackets(ttype int) {
+// trackBrackets keeps open and headers up to date with a token of type ttype;
+// newLine reports that it starts a line after a token that can end an
+// expression (see the newlineTokenSource doc for which '{' opens a block).
+func (s *newlineTokenSource) trackBrackets(ttype int, newLine bool) {
 	k := s.kinds
 	depth := len(s.open)
-	switch b := at(k.bracket, ttype); {
+	h := s.pendingHeader()
+	if h != nil && (newLine || h.cond == condClosed && ttype != k.lbrace) {
+		// A header left for a new line, or an if whose parenthesized
+		// condition is not followed by '{', has no block.
+		s.headers = s.headers[:len(s.headers)-1]
+		h = nil
+	}
+	b := at(k.bracket, ttype)
+	switch {
 	case b > 0 && ttype == k.lbrace:
 		kind := blockOpen
-		if s.header == depth {
-			s.header = -1
+		if h != nil {
+			s.headers = s.headers[:len(s.headers)-1]
 		} else if is(k.notBlockAfter, s.prevType) {
 			kind = braceOpen
 		}
 		s.open = append(s.open, kind)
 	case b > 0:
+		if h != nil && ttype == k.lparen && s.prevType == k.ifKw {
+			h.cond = condOpen
+		}
 		s.open = append(s.open, parenOpen)
 	case b < 0 && ttype == k.rbrace:
 		// A '}' closes the innermost '{', and with it any bracket an edit
@@ -268,15 +303,30 @@ func (s *newlineTokenSource) trackBrackets(ttype int) {
 	case ttype == k.caseKw && s.prevType == k.lbrace && depth > 0:
 		s.open[depth-1] = braceOpen
 	case is(k.opensHeader, ttype):
-		s.header = depth
-	case (ttype == k.assign || ttype == k.elseKw) && s.header == depth:
-		// An expression body (`func f() int = x`) or an if-expression
-		// (`if (c) a else b`): the header has no block.
-		s.header = -1
+		s.headers = append(s.headers, header{depth: depth, fn: ttype == k.funcKw})
+	case h != nil && (ttype == k.assign && h.fn || ttype == k.elseKw || ttype == k.arrow):
+		// An expression body (`func f() int = x`), an if-expression
+		// (`if (c) a else b`) or a match guard ending (`case v if ok =>`):
+		// the header has no block.
+		s.headers = s.headers[:len(s.headers)-1]
 	}
-	if len(s.open) < s.header {
-		s.header = -1
+	// A header whose depth has been closed is gone; one whose condition has
+	// just closed waits to see whether a '{' follows.
+	for len(s.headers) > 0 && s.headers[len(s.headers)-1].depth > len(s.open) {
+		s.headers = s.headers[:len(s.headers)-1]
 	}
+	if h := s.pendingHeader(); h != nil && h.cond == condOpen && b < 0 && ttype != k.rbrace {
+		h.cond = condClosed
+	}
+}
+
+// pendingHeader is the innermost header whose '{' would open at the current
+// depth, or nil.
+func (s *newlineTokenSource) pendingHeader() *header {
+	if n := len(s.headers); n > 0 && s.headers[n-1].depth == len(s.open) {
+		return &s.headers[n-1]
+	}
+	return nil
 }
 
 // atStatementLevel reports whether a statement can begin here: directly inside

@@ -78,6 +78,17 @@ class GalaNewlineLexerTest {
         assertEquals(3, bodyStatements("func f() int{\n    val p = &n\n    *p = 5\n    n\n}"))
         assertEquals(3, bodyStatements("func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}"))
         assertEquals(3, bodyStatements("func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}"))
+        assertEquals(3, bodyStatements("func apply(f func(int) int) int {\n    val p = &n\n    *p = 5\n    n\n}"))
+        assertEquals(
+            3,
+            bodyStatements("func (o Box[T]) m[U any](f func(T) Option[U]) Option[U] {\n    val p = &n\n    *p = 5\n    None()\n}"),
+        )
+        assertEquals(
+            1,
+            bodyStatements("func f() {\n    for i := 0; i < n; i = i + step {\n        val p = &n\n        *p = 5\n    }\n}"),
+        )
+        assertEquals(3, bodyStatements("type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}"))
+        assertEquals(emptyList<String>(), parse("package main\n\ntype F func(int) int\n\ntype I interface {\n    M()\n    *int\n}\n").second)
     }
 
     @Test
@@ -99,6 +110,11 @@ class GalaNewlineLexerTest {
         assertEquals(1, statements("val r = Rect{\n    w: width\n        *scale,\n}"))
         assertEquals(1, statements("val r = Array[int]{\n    w\n        *scale,\n}"))
         assertEquals(1, statements("val r = Rect {\n    w: width\n        *scale,\n}"))
+        assertEquals(1, statements("val r = if (c) Rect{\n    w: a\n        *b,\n} else d"))
+        assertEquals(
+            1,
+            statements("val r = x match {\n    case v if v > 0 => v\n    case _ => Rect{\n        w: a\n            *b,\n    }\n}"),
+        )
         assertEquals(2, statements("val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}"))
         assertEquals(1, statements("f(1)(2)"))
         assertEquals(1, statements("Println(\n    1,\n    (2, 3),\n)"))
