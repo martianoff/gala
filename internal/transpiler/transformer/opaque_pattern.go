@@ -21,6 +21,12 @@ import (
 // not satisfy. Nothing is generated on the type: the pattern lowers to a Go
 // conversion, so the type's method set stays as declared.
 
+// sourcePos is the position of a token a diagnostic points at.
+type sourcePos interface {
+	GetLine() int
+	GetColumn() int
+}
+
 // generateOpaquePattern lowers `case Name(p)` for the opaque type meta.
 func (t *galaASTTransformer) generateOpaquePattern(
 	meta *transpiler.TypeMetadata,
@@ -33,8 +39,8 @@ func (t *galaASTTransformer) generateOpaquePattern(
 ) (ast.Expr, []ast.Stmt, error) {
 	tok := patExprCtx.GetStart()
 	name := t.opaqueName(meta)
-	fail := func(format string, a ...any) (ast.Expr, []ast.Stmt, error) {
-		return nil, nil, galaerr.NewSemanticErrorAt(tok.GetLine(), tok.GetColumn(), fmt.Sprintf(format, a...))
+	failAt := func(at sourcePos, format string, a ...any) (ast.Expr, []ast.Stmt, error) {
+		return nil, nil, galaerr.NewSemanticErrorAt(at.GetLine(), at.GetColumn(), fmt.Sprintf(format, a...))
 	}
 	var args []grammar.IArgumentContext
 	if argList != nil {
@@ -52,66 +58,73 @@ func (t *galaASTTransformer) generateOpaquePattern(
 			fmt.Sprintf("%s unwraps to its one underlying value: write %s(v) to bind it, %s(_) to ignore it", name, name, name),
 		).WithSpan(tok.GetColumn() + len([]rune(written)))
 	}
-	if explicitTypeArgs != nil {
-		if n := len(explicitTypeArgs.AllExpression()); n != len(meta.TypeParams) {
-			return fail("%s takes %d type argument(s), got %d", name, len(meta.TypeParams), n)
+	// A generic opaque type's type-argument count is checked where the
+	// instantiation is built (structPatternAssertType).
+	if explicitTypeArgs != nil && len(meta.TypeParams) == 0 {
+		return failAt(tok, "%s takes 0 type argument(s), got %d", name, len(explicitTypeArgs.AllExpression()))
+	}
+
+	known := matchedType != nil && !transpiler.IsUnusable(matchedType)
+	var ifaceMethods []string
+	iface := false
+	if known {
+		if matchedType.IsAny() {
+			iface = true
+		} else {
+			ifaceMethods, iface = t.interfaceMethodNames(matchedType)
+		}
+	}
+	if iface {
+		// An interface subject holds the opaque type only when it was built
+		// as one, and only if the opaque type implements the interface.
+		if missing := t.missingInterfaceMethods(meta, ifaceMethods); len(missing) > 0 {
+			return failAt(tok, "%s does not implement %s (missing %s), so a %s value never holds one",
+				name, matchedType.String(), strings.Join(missing, ", "), matchedType.String())
+		}
+	}
+
+	// The type the pattern names: on an interface subject a generic
+	// (phantom-typed) one must spell its type arguments, `case Id[User](n)`.
+	var assertType ast.Expr
+	var instantiated transpiler.Type
+	if iface || explicitTypeArgs != nil {
+		var err error
+		if assertType, instantiated, err = t.structPatternAssertType(rawName, explicitTypeArgs, patExprCtx); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 	base := objExpr
-	assertTo := func(subject ast.Expr) error {
-		// A generic (phantom-typed) one must be spelled with its type
-		// arguments, `case Id[User](n)`.
-		assertType, _, err := t.structPatternAssertType(rawName, explicitTypeArgs, patExprCtx)
-		if err != nil {
-			return err
-		}
+	assertSubject := func(subject ast.Expr) {
 		var stmt ast.Stmt
 		var ok ast.Expr
 		base, stmt, ok = t.assertPatternSubject(subject, assertType)
 		stmts = append(stmts, stmt)
 		conds = append(conds, ok)
-		return nil
 	}
 	switch {
-	case matchedType == nil || transpiler.IsUnusable(matchedType):
+	case !known:
 		// The subject's type is unknown: the conversion below is checked by Go.
-	case matchedType.IsAny() || t.isInterfaceType(matchedType):
-		// An interface subject holds the opaque type only when it was built
-		// as one, and only if the opaque type implements the interface.
-		if missing := t.missingInterfaceMethods(meta, matchedType); len(missing) > 0 {
-			return fail("%s does not implement %s (missing %s), so a %s value never holds one",
-				name, matchedType.String(), strings.Join(missing, ", "), matchedType.String())
-		}
-		if err := assertTo(objExpr); err != nil {
-			return nil, nil, err
-		}
+	case iface:
+		assertSubject(objExpr)
 	default:
 		// A pattern spelling type arguments, `case Id[Order](n)`, must name
 		// the subject's own instantiation.
 		patType := matchedType
-		if explicitTypeArgs != nil {
-			_, instantiated, err := t.structPatternAssertType(rawName, explicitTypeArgs, patExprCtx)
-			if err != nil {
-				return nil, nil, err
-			}
-			if instantiated != nil {
-				patType = instantiated
-			}
+		if instantiated != nil {
+			patType = instantiated
 		}
 		subject := t.opaqueMeta(matchedType)
 		if subject == nil || !t.sameOpaqueType(matchedType, subject, patType, meta) {
-			return fail("the pattern %s(...) cannot match a value of type %s", name, matchedType.String())
+			return failAt(tok, "the pattern %s(...) cannot match a value of type %s", name, matchedType.String())
 		}
 		// Inside a generic declaration the subject's type argument may still
 		// be open (`Id[T]`); the instantiation the pattern names is then
 		// checked at run time.
 		if explicitTypeArgs != nil && t.hasOpenTypeArg(matchedType) {
-			if err := assertTo(&ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}}); err != nil {
-				return nil, nil, err
-			}
+			assertSubject(&ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}})
 		}
 	}
 
@@ -121,13 +134,13 @@ func (t *galaASTTransformer) generateOpaquePattern(
 	}
 	underlying, ok := t.underlyingOf(meta)
 	if !ok {
-		return fail("the underlying type of opaque type %s is unknown", name)
+		return failAt(tok, "the underlying type of opaque type %s is unknown", name)
 	}
 	switch p := pat.(type) {
 	case *grammar.ExpressionPatternContext:
-		if inner := t.opaqueStableIdentifier(p.Expression().GetText()); inner != nil && inner.Package == meta.Package && inner.Name == meta.Name {
-			return fail("%s is already a %s: match it with `case %s`, not inside %s(...)",
-				p.Expression().GetText(), name, p.Expression().GetText(), name)
+		text := p.Expression().GetText()
+		if inner := t.opaqueStableIdentifier(text); inner != nil && inner.Package == meta.Package && inner.Name == meta.Name {
+			return failAt(tok, "%s is already a %s: match it with `case %s`, not inside %s(...)", text, name, text, name)
 		}
 		elemExpr := &ast.CallExpr{Fun: t.typeToExpr(underlying), Args: []ast.Expr{base}}
 		nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(p.Expression(), elemExpr, underlying)
@@ -139,21 +152,18 @@ func (t *galaASTTransformer) generateOpaquePattern(
 			conds = append(conds, nestedCond)
 		}
 	case *grammar.TypedPatternContext:
-		ptok := p.GetStart()
-		return nil, nil, galaerr.NewSemanticErrorAt(ptok.GetLine(), ptok.GetColumn(),
-			fmt.Sprintf("the value inside %s(...) is always a %s; bind it with a name, not a typed pattern", name, underlying.String()))
+		return failAt(p.GetStart(), "the value inside %s(...) is always a %s; bind it with a name, not a typed pattern", name, underlying.String())
 	default:
-		ptok := pat.GetStart()
-		return nil, nil, galaerr.NewSemanticErrorAt(ptok.GetLine(), ptok.GetColumn(),
-			fmt.Sprintf("unsupported sub-pattern inside %s(...)", name))
+		return failAt(pat.GetStart(), "unsupported sub-pattern inside %s(...)", name)
 	}
 	return combineStructMatchConds(conds, stmts)
 }
 
-// opaqueStableIdentifier returns the opaque type of the val or var a pattern
-// expression names when it is a bare identifier, or nil.
+// opaqueStableIdentifier returns the opaque type of the value a pattern
+// expression names when it is a stable identifier (see
+// isStableIdentifierPattern), or nil.
 func (t *galaASTTransformer) opaqueStableIdentifier(text string) *transpiler.TypeMetadata {
-	if !isSimpleIdentifier(text) {
+	if !t.isSimpleIdentifier(text) || !t.isStableIdentifierPattern(text) {
 		return nil
 	}
 	typ := t.getType(text)
@@ -163,19 +173,6 @@ func (t *galaASTTransformer) opaqueStableIdentifier(text string) *transpiler.Typ
 		}
 	}
 	return t.opaqueMeta(unwrapGalaType(typ))
-}
-
-// isSimpleIdentifier reports whether s is a bare Go identifier.
-func isSimpleIdentifier(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i, r := range s {
-		if !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9') {
-			return false
-		}
-	}
-	return true
 }
 
 // hasOpenTypeArg reports whether typ is an instantiation with a type argument
@@ -204,16 +201,9 @@ func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) 
 	return ast.NewIdent(castName), stmt, ast.NewIdent(okName)
 }
 
-// isInterfaceType reports whether a value of type typ is an interface that
-// may hold an opaque value among other things: `error`, a GALA interface
-// (methods without a receiver and no fields), or a Go interface type.
-func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
-	_, ok := t.interfaceMethodNames(typ)
-	return ok
-}
-
 // interfaceMethodNames returns the methods an interface type requires, and
-// false when typ is not an interface (see isInterfaceType).
+// false when typ is not an interface that may hold an opaque value among
+// other things: `error`, a GALA interface, or a Go interface type.
 func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string, bool) {
 	if transpiler.IsUnusable(typ) {
 		return nil, false
@@ -222,21 +212,18 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 		return []string{"Error"}, true
 	}
 	if meta := t.getTypeMeta(typ.BaseName()); meta != nil {
-		if meta.IsOpaque || meta.IsSealed || meta.IsShorthand || len(meta.Fields) > 0 || len(meta.Methods) == 0 {
+		if meta.IsOpaque || meta.IsSealed || meta.IsShorthand || len(meta.Methods) == 0 || !isGalaInterfaceMeta(meta) {
 			return nil, false
 		}
-		var names []string
-		for n, m := range meta.Methods {
-			if m.ReceiverName != "" {
-				return nil, false
-			}
+		names := make([]string, 0, len(meta.Methods))
+		for n := range meta.Methods {
 			names = append(names, n)
 		}
 		return names, true
 	}
 	if t.goTypeInfo != nil {
 		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil && td.Kind == "interface" {
-			var names []string
+			names := make([]string, 0, len(td.Methods))
 			for n := range td.Methods {
 				names = append(names, n)
 			}
@@ -246,12 +233,11 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 	return nil, false
 }
 
-// missingInterfaceMethods returns the methods the interface iface requires
-// that the opaque type meta does not have — declared in GALA, in a .go file of
-// its package, or generated (Hash, Compare) — sorted; nil for `any`.
-func (t *galaASTTransformer) missingInterfaceMethods(meta *transpiler.TypeMetadata, iface transpiler.Type) []string {
-	required, ok := t.interfaceMethodNames(iface)
-	if !ok {
+// missingInterfaceMethods returns the methods of required (an interface's
+// method set) that the opaque type meta does not have — declared in GALA, in
+// a .go file of its package, or generated (Hash, Compare) — sorted.
+func (t *galaASTTransformer) missingInterfaceMethods(meta *transpiler.TypeMetadata, required []string) []string {
+	if len(required) == 0 {
 		return nil
 	}
 	goMethods := t.goMethodsOnGalaType(meta)

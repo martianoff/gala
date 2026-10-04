@@ -919,19 +919,16 @@ func (t *galaASTTransformer) codecScalarOf(ty transpiler.Type) (codecScalar, ast
 	// An opaque type, local or imported, encodes as its underlying scalar; a
 	// phantom-typed one (`Id[User]`) too, its conversion naming the
 	// instantiation.
-	opaqueSc, isOpaque := t.opaqueCodecScalar(ty)
-	if _, generic := ty.(transpiler.GenericType); generic {
-		if isOpaque {
-			return opaqueSc, t.typeToExpr(ty), false, true
+	if sc, ok := t.opaqueCodecScalar(ty); ok {
+		if _, generic := ty.(transpiler.GenericType); generic {
+			return sc, t.typeToExpr(ty), false, true
 		}
-		return codecScalar{}, nil, false, false
+		name, pkg, _ := simpleTypeName(ty)
+		return sc, t.codecTypeExpr(transpiler.NamedType{Package: pkg, Name: name}), false, true
 	}
 	name, pkg, ok := simpleTypeName(ty)
 	if !ok {
 		return codecScalar{}, nil, false, false
-	}
-	if isOpaque {
-		return opaqueSc, t.codecTypeExpr(transpiler.NamedType{Package: pkg, Name: name}), false, true
 	}
 	if pkg == "" || pkg == t.packageName {
 		if sc, ok := codecScalars[name]; ok {

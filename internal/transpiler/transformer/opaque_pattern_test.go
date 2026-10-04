@@ -78,3 +78,24 @@ func main() {
 }`)
 	assert.Contains(t, out, "any(obj).(Id[User])")
 }
+
+// TestOpaqueTypePatternLowercaseNameBinds covers a lowercase name inside the
+// opaque-type pattern: it binds the underlying value even when a val of the
+// opaque type shares it, as any lowercase pattern name does.
+func TestOpaqueTypePatternLowercaseNameBinds(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type Level int
+
+val debug Level = 0
+
+func f(l Level) string = l match {
+    case Level(debug) => s"level $debug"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(debug))
+}`)
+	assert.Contains(t, out, "int(obj)")
+}
