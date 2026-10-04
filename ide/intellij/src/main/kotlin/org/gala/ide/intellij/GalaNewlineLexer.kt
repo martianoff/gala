@@ -15,29 +15,32 @@ import org.gala.ide.intellij.parser.galaParser
  * PSI tree matches what the compiler parses: a '(' separated by a line break
  * from a token that can end an expression (an identifier, a literal, ')', ']'
  * or '}') is re-typed as NL_LPAREN, and a '*' or '&' there as NL_STAR or
- * NL_AMP when it is directly inside a block's '{' (not a composite literal's or
- * one that opens case arms) and written against its operand (`*p`, `&n`). The grammar's call suffix, multiplication and bitwise and
- * reject the re-typed tokens, so such a token begins a new statement instead
- * of continuing the line before; `* b` with a space still continues it.
- * Mirrors internal/parser/newline.go in the compiler.
+ * NL_AMP when it is directly inside a block's '{' and written against its
+ * operand (`*p`, `&n`). The grammar's call suffix, multiplication and bitwise
+ * and reject the re-typed tokens, so such a token begins a new statement
+ * instead of continuing the line before; `* b` with a space still continues
+ * it. Mirrors internal/parser/newline.go in the compiler, including which '{'
+ * opens a block (see trackBrackets there).
  */
 class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     private var prevEndLine = 0
     private var prevEndsExpr = false
     private var prevType = 0
-    private var prevStop = -1
 
-    // The brackets open at this point, innermost last: true for a block's
-    // '{', false for any other bracket.
-    private val open = ArrayDeque<Boolean>()
+    // The brackets open at this point, innermost last.
+    private val open = ArrayDeque<Int>()
+
+    // The depth of the `func`, `if` or `for` whose block's '{' is still to
+    // come, or -1.
+    private var header = -1
 
     override fun reset() {
         super.reset()
         prevEndLine = 0
         prevEndsExpr = false
         prevType = 0
-        prevStop = -1
         open.clear()
+        header = -1
     }
 
     override fun nextToken(): Token {
@@ -52,30 +55,50 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
             }
             if (retyped != null) (tok as WritableToken).type = retyped
         }
-        // A '{' opens a block unless it is written against a type name or ']'
-        // (a composite literal); a 'case' right after a '{' shows that '{'
-        // opens case arms instead.
-        when {
-            tok.type in OPENS -> open.addLast(
-                tok.type == LBRACE &&
-                    !((prevType == galaLexer.IDENTIFIER || prevType == RBRACK) && tok.startIndex == prevStop + 1),
-            )
-            tok.type in CLOSES -> open.removeLastOrNull()
-            tok.type == CASE && prevType == LBRACE && open.isNotEmpty() -> open[open.lastIndex] = false
-        }
+        trackBrackets(tok.type)
         prevType = tok.type
-        prevStop = tok.stopIndex
         prevEndsExpr = tok.type in ENDS_EXPR
         prevEndLine = tok.line + if (tok.type in SPANS_LINES) tok.text.count { it == '\n' } else 0
         return tok
     }
 
+    private fun trackBrackets(type: Int) {
+        val depth = open.size
+        when {
+            type == LBRACE -> {
+                var kind = BLOCK_OPEN
+                if (header == depth) {
+                    header = -1
+                } else if (prevType in NOT_BLOCK_AFTER) {
+                    kind = BRACE_OPEN
+                }
+                open.addLast(kind)
+            }
+            type in OPENS -> open.addLast(PAREN_OPEN)
+            // A '}' closes the innermost '{', and with it any bracket an edit
+            // left open inside it.
+            type == RBRACE -> {
+                while (open.isNotEmpty() && open.removeLast() == PAREN_OPEN) {
+                    // keep popping until the '{' itself is closed
+                }
+            }
+            // A stray ')' or ']' does not close a '{'.
+            type in CLOSES -> if (open.lastOrNull() == PAREN_OPEN) open.removeLast()
+            type == CASE && prevType == LBRACE && depth > 0 -> open[open.lastIndex] = BRACE_OPEN
+            type in OPENS_HEADER -> header = depth
+            // An expression body or an if-expression: the header has no block.
+            (type == ASSIGN || type == ELSE) && header == depth -> header = -1
+        }
+        if (open.size < header) header = -1
+    }
+
     // Whether the '*' or '&' just consumed is a prefix operator: directly
-    // inside a block's '{', where a statement can begin, and followed by its operand
-    // rather than by whitespace the grammar's WS rule skips or a comment. The
-    // lexer has just consumed it, so LA(1) is the character after it.
+    // inside a block's '{', where a statement can begin, and followed by its
+    // operand rather than by whitespace the grammar's WS rule skips or a
+    // comment. The lexer has just consumed it, so LA(1) is the character
+    // after it.
     private fun isPrefixOperator(): Boolean {
-        if (open.lastOrNull() != true) return false
+        if (open.lastOrNull() != BLOCK_OPEN) return false
         return when (_input.LA(1)) {
             ' '.code, '\t'.code, '\r'.code, '\n'.code -> false
             '/'.code -> _input.LA(2).let { it != '/'.code && it != '*'.code }
@@ -90,9 +113,16 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
                     galaParser.VOCABULARY.getSymbolicName(it) == name
             }
 
+        // Kinds of open bracket.
+        private const val PAREN_OPEN = 0 // '(' or '['
+        private const val BRACE_OPEN = 1 // a '{' that is not a block
+        private const val BLOCK_OPEN = 2 // a block's '{'
+
         private val LPAREN = typeOf("'('")
         private val LBRACE = typeOf("'{'")
-        private val RBRACK = typeOf("']'")
+        private val RBRACE = typeOf("'}'")
+        private val ASSIGN = typeOf("'='")
+        private val ELSE = typeOf("'else'")
         private val CASE = typeOf("'case'")
         private val STAR = typeOf("'*'")
         private val AMP = typeOf("'&'")
@@ -100,8 +130,10 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
         // The internal tokens the line-break rule re-types into.
         internal val RETYPED = intArrayOf(galaParser.NL_LPAREN, galaParser.NL_STAR, galaParser.NL_AMP)
 
-        private val OPENS = setOf(LPAREN, galaParser.NL_LPAREN, typeOf("'['"), LBRACE)
-        private val CLOSES = listOf("')'", "']'", "'}'").map(::typeOf).toSet()
+        private val OPENS = setOf(LPAREN, galaParser.NL_LPAREN, typeOf("'['"))
+        private val CLOSES = setOf(typeOf("')'"), typeOf("']'"))
+        private val OPENS_HEADER = listOf("'func'", "'if'", "'for'").map(::typeOf).toSet()
+        private val NOT_BLOCK_AFTER = setOf(galaLexer.IDENTIFIER, typeOf("']'"), typeOf("'struct'"), typeOf("'interface'"))
 
         // Literals whose text can hold a line break: a raw string, or a quoted
         // literal with an escaped newline.
@@ -115,11 +147,13 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     }
 }
 
+
 /**
  * Keeps the internal re-typed tokens out of syntax errors: wherever one is
  * expected the token it was re-typed from is expected too, so it is dropped
- * from the expected set the messages print. Only the messages change; error recovery still uses the
- * full expected set, exactly as the compiler's parser does.
+ * from the expected set the messages print. Only the messages change; error
+ * recovery still uses the full expected set, exactly as the compiler's parser
+ * does.
  */
 class GalaErrorStrategy : DefaultErrorStrategy() {
     override fun reportInputMismatch(recognizer: Parser, e: InputMismatchException) {

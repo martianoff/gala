@@ -14,7 +14,7 @@ import (
 // a token that can end an expression begins a new statement; every other line
 // break parses as it did before. Each case is a function body and the number
 // of statements the body must parse into.
-func TestNewlineParenStartsStatement(t *testing.T) {
+func TestLineStartTokenStartsStatement(t *testing.T) {
 	cases := []struct {
 		name  string
 		body  string
@@ -53,6 +53,7 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "deref after nested block", body: "if (a) { f(x) }\n*p = 1", stmts: 2},
 		{name: "deref after a composite literal", body: "val r = Rect{w: 1}\n*p = 1", stmts: 2},
 		{name: "deref after a match", body: "val r = x match {\n    case _ => 0\n}\n*p = 1", stmts: 2},
+		{name: "deref after a var with no type", body: "var x\n*p = 5", stmts: 2},
 
 		// Everything else keeps continuing across the line break.
 		{name: "call on same line", body: "f(1)(2)", stmts: 1},
@@ -82,7 +83,8 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "multiplication in a partial function", body: "xs.Collect({\n    case v => v\n        *k\n})", stmts: 1},
 		{name: "multiplication in a composite literal", body: "val r = Rect{\n    w: width\n        *scale,\n}", stmts: 1},
 		{name: "multiplication in a generic composite literal", body: "val r = Array[int]{\n    w\n        *scale,\n}", stmts: 1},
-		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
+		{name: "multiplication in a spaced composite literal", body: "val r = Rect {\n    w: width\n        *scale,\n}", stmts: 1},
+		{name: "composite literal after an if-expression", body: "val a = if (c) x else y\nval r = Rect{\n    w: v\n        *s,\n}", stmts: 2},		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
 		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
 		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
 		{name: "after val equals", body: "val t =\n    (1, 2)", stmts: 1},
@@ -112,7 +114,7 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 
 // Declarations that open with '(' still parse when that '(' is put on a new
 // line after a name, since they accept the re-typed '(' as well.
-func TestNewlineParenInDeclarations(t *testing.T) {
+func TestLineStartTokenInDeclarations(t *testing.T) {
 	cases := []struct {
 		name string
 		decl string
@@ -134,6 +136,29 @@ func TestNewlineParenInDeclarations(t *testing.T) {
 	}
 }
 
+// A block's '{' is told from a composite literal's by the header before it,
+// not by spacing: a body whose header ends in a type written against the '{'
+// is still a block, so a line-start deref in it begins a statement.
+func TestBlockAfterHeaderEndingInType(t *testing.T) {
+	cases := []struct {
+		name, src string
+		stmts     int
+	}{
+		{name: "function result type", src: "func f() int{\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		{name: "generic result type", src: "func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
+		{name: "expression-bodied function before", src: "func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			tree, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\n" + tt.src + "\n")
+			require.Empty(t, errs)
+			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
+			body := decls[len(decls)-1].FunctionDeclaration().Block()
+			assert.Len(t, body.AllStatement(), tt.stmts)
+		})
+	}
+}
+
 // ParseExpressionAt re-parses text it holds apart from its file, so it has to
 // apply the same rule: a '(' on a new line does not call the line before.
 func TestNewlineParenInParseExpressionAt(t *testing.T) {
@@ -147,7 +172,7 @@ func TestNewlineParenInParseExpressionAt(t *testing.T) {
 
 // The re-typed '(' is an implementation detail and never named in a syntax
 // error: ANTLR's expected-token sets list the '(' the user writes instead.
-func TestHideNewlineParen(t *testing.T) {
+func TestHideNewlineTokens(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{in: "mismatched input 'int' expecting {'(', NL_LPAREN}", want: "mismatched input 'int' expecting '('"},
 		{in: "mismatched input '}' expecting {'(', ')', NL_LPAREN}", want: "mismatched input '}' expecting {'(', ')'}"},
@@ -166,7 +191,7 @@ func TestHideNewlineParen(t *testing.T) {
 }
 
 // End to end: a parse error where only a '(' can follow names the '(' alone.
-func TestNewlineParenAbsentFromSyntaxErrors(t *testing.T) {
+func TestNewlineTokensAbsentFromSyntaxErrors(t *testing.T) {
 	for _, input := range []string{
 		"package main\n\nval f func int = g\n",
 		"package main\n\nfunc f() {\n    val x = 1\n    (\n}\n",
