@@ -74,7 +74,7 @@ func TestEncoderDecoder_FloatsRoundTrip(t *testing.T) {
 
 // A YAML stream is Unicode text, so the encoder never writes invalid UTF-8:
 // a string or key holding an invalid byte is double-quoted with each invalid
-// byte written as �, the way the json encoder writes it.
+// byte written as \ufffd, the way the json encoder writes it.
 func TestEncoder_InvalidUTF8(t *testing.T) {
 	tests := []struct {
 		name string
@@ -82,11 +82,11 @@ func TestEncoder_InvalidUTF8(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"invalid byte in value", "v", "a\xffb", `v: "a�b"`},
-		{"truncated sequence", "v", "\xe2\x82", `v: "��"`},
-		{"encoded surrogate", "v", "\xed\xa0\x80", `v: "���"`},
-		{"invalid byte next to multibyte", "v", "é\xff😀", `v: "é�😀"`},
-		{"invalid byte in key", "k\xfe", "x", `"k�": x`},
+		{"invalid byte in value", "v", "a\xffb", `v: "a\ufffdb"`},
+		{"truncated sequence", "v", "\xe2\x82", `v: "\ufffd\ufffd"`},
+		{"encoded surrogate", "v", "\xed\xa0\x80", `v: "\ufffd\ufffd\ufffd"`},
+		{"invalid byte next to multibyte", "v", "é\xff😀", `v: "é\ufffd😀"`},
+		{"invalid byte in key", "k\xfe", "x", `"k\ufffd": x`},
 		{"valid multibyte stays plain", "v", "café 😀", "v: café 😀"},
 	}
 	for _, tt := range tests {

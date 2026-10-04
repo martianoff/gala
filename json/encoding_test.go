@@ -17,7 +17,7 @@ func encodeString(s string) string {
 	return e.String()
 }
 
-// The encoder always writes valid UTF-8: every invalid byte becomes �,
+// The encoder always writes valid UTF-8: every invalid byte becomes \ufffd,
 // as in encoding/json. Control characters, U+2028/U+2029 and <>& follow
 // GALA's own choices, recorded here: controls other than \n \r \t use the
 // \u00XX form (encoding/json writes \b and \f), and U+2028, U+2029 and <>&
@@ -35,18 +35,18 @@ func TestEncoder_StringEscapes(t *testing.T) {
 		{"other controls", "\x00\x01\b\f\x1f", `"\u0000\u0001\u0008\u000c\u001f"`},
 		{"DEL is not a control", "\x7f", "\"\x7f\""},
 		{"multibyte UTF-8", "é😀", `"é😀"`},
-		{"U+FFFD itself", "�", "\"�\""},
-		{"line and paragraph separators", "  ", "\"  \""},
+		{"U+FFFD itself", "\ufffd", "\"\ufffd\""},
+		{"line and paragraph separators", "\u2028\u2029", "\"\u2028\u2029\""},
 		{"HTML characters", "<>&", `"<>&"`},
-		{"invalid byte mid-string", "a\xffb", `"a�b"`},
-		{"lone invalid byte", "\xff", `"�"`},
-		{"truncated two-byte sequence", "\xc3", `"�"`},
-		{"truncated sequence then ASCII", "\xc3(", `"�("`},
-		{"truncated three-byte sequence", "\xe2\x82", `"��"`},
-		{"stray continuation bytes", "\x80\x80", `"��"`},
-		{"UTF-8 encoded surrogate", "\xed\xa0\x80", `"���"`},
-		{"above U+10FFFF", "\xf4\x90\x80\x80", `"����"`},
-		{"invalid byte before multibyte", "\xffé", `"�é"`},
+		{"invalid byte mid-string", "a\xffb", `"a\ufffdb"`},
+		{"lone invalid byte", "\xff", `"\ufffd"`},
+		{"truncated two-byte sequence", "\xc3", `"\ufffd"`},
+		{"truncated sequence then ASCII", "\xc3(", `"\ufffd("`},
+		{"truncated three-byte sequence", "\xe2\x82", `"\ufffd\ufffd"`},
+		{"stray continuation bytes", "\x80\x80", `"\ufffd\ufffd"`},
+		{"UTF-8 encoded surrogate", "\xed\xa0\x80", `"\ufffd\ufffd\ufffd"`},
+		{"above U+10FFFF", "\xf4\x90\x80\x80", `"\ufffd\ufffd\ufffd\ufffd"`},
+		{"invalid byte before multibyte", "\xffé", `"\ufffdé"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestEncoder_KeyWithInvalidUTF8(t *testing.T) {
 	e.WriteKey("k\xfe")
 	e.WriteString("v\xff")
 	e.WriteEndObject()
-	if got, want := e.String(), `{"k�":"v�"}`; got != want {
+	if got, want := e.String(), `{"k\ufffd":"v\ufffd"}`; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
@@ -255,18 +255,18 @@ func TestDecoder_StringContent(t *testing.T) {
 		want string
 	}{
 		{"all short escapes", `"\"\\\/\b\f\n\r\t"`, "\"\\/\b\f\n\r\t"},
-		{"BMP escape", `"é€"`, "é€"},
-		{"surrogate pair", `"😀"`, "😀"},
-		{"upper-case surrogate pair", `"😀!"`, "😀!"},
-		{"lone high surrogate at end", `"\ud83d"`, "�"},
-		{"high surrogate then text", `"\ud83dx"`, "�x"},
-		{"high surrogate then non-surrogate escape", `"\ud83dA"`, "�A"},
-		{"two high surrogates then pair", `"\ud83d😀"`, "�😀"},
-		{"lone low surrogate", `"\udc00"`, "�"},
+		{"BMP escape", `"\u00e9\u20ac"`, "é€"},
+		{"surrogate pair", `"\ud83d\ude00"`, "😀"},
+		{"upper-case surrogate pair", `"\uD83D\uDE00!"`, "😀!"},
+		{"lone high surrogate at end", `"\ud83d"`, "\ufffd"},
+		{"high surrogate then text", `"\ud83dx"`, "\ufffdx"},
+		{"high surrogate then non-surrogate escape", `"\ud83d\u0041"`, "\ufffdA"},
+		{"two high surrogates then pair", `"\ud83d\ud83d\ude00"`, "\ufffd😀"},
+		{"lone low surrogate", `"\udc00"`, "\ufffd"},
 		{"raw multibyte", "\"é😀\"", "é😀"},
-		{"raw invalid byte", "\"a\xffb\"", "a�b"},
-		{"raw truncated sequence", "\"\xe2\x82\"", "��"},
-		{"raw encoded surrogate", "\"\xed\xa0\x80\"", "���"},
+		{"raw invalid byte", "\"a\xffb\"", "a\ufffdb"},
+		{"raw truncated sequence", "\"\xe2\x82\"", "\ufffd\ufffd"},
+		{"raw encoded surrogate", "\"\xed\xa0\x80\"", "\ufffd\ufffd\ufffd"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestDecoder_StringContent(t *testing.T) {
 func TestDecoder_KeyEscapes(t *testing.T) {
 	d := NewJsonDecoder("{\"\\ud83d\\ude00\\b\xff\":1}")
 	d.StartObject()
-	if got, want := d.ReadKey(), "😀\b�"; got != want {
+	if got, want := d.ReadKey(), "😀\b\ufffd"; got != want {
 		t.Fatalf("ReadKey = %q, want %q", got, want)
 	}
 }
@@ -307,7 +307,7 @@ func TestDecoder_MalformedEscapesPanic(t *testing.T) {
 // Strings written by the encoder read back unchanged when they are valid
 // UTF-8.
 func TestEncoderDecoder_ValidStringsRoundTrip(t *testing.T) {
-	for _, s := range []string{"", "plain", "\x00\b\f\x1f\x7f", "é€😀�", " <>& ", strings.Repeat("ü", 300)} {
+	for _, s := range []string{"", "plain", "\x00\b\f\x1f\x7f", "é€😀\ufffd", "\u2028<>&\u2029", strings.Repeat("ü", 300)} {
 		if got := NewJsonDecoder(encodeString(s)).ReadString(); got != s {
 			t.Errorf("round trip of %q = %q", s, got)
 		}
