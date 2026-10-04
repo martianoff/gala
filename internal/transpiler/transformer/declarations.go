@@ -1166,18 +1166,56 @@ func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type)
 }
 
 // goNamedFuncTypeOf returns the underlying function type of typ when typ names
-// a non-generic Go named function type (`fs.WalkDirFunc`, or a type of the
-// package's own .go files) that no GALA type of that name hides — a lambda in
-// a slot of that type is a value of that signature, and a call of a value of
-// it has its results — or nil.
+// a non-generic Go named function type with at most one result
+// (`fs.WalkDirFunc`, or a type of the package's own .go files) that no GALA
+// type of that name hides — a lambda in a slot of that type is a value of that
+// signature, and a call of a value of it has its result — or nil.
 func (t *galaASTTransformer) goNamedFuncTypeOf(typ transpiler.Type) *transpiler.FuncType {
+	if t.goTypeInfo == nil {
+		return nil
+	}
 	switch typ.(type) {
 	case transpiler.NamedType, transpiler.BasicType:
-		if name := typ.String(); !transpiler.IsPrimitiveType(name) && t.getTypeMeta(name) == nil {
-			return t.goNamedFuncType(name)
-		}
+	default:
+		return nil
 	}
-	return nil
+	name := typ.String()
+	if transpiler.IsPrimitiveType(name) {
+		return nil
+	}
+	// The Go lookup misses cheaply for most names; the GALA one runs only
+	// for a Go function type, to make sure no GALA type hides it.
+	ft := t.goNamedFuncType(name)
+	if ft == nil || len(ft.Results) > 1 || t.getTypeMeta(name) != nil {
+		return nil
+	}
+	return ft
+}
+
+// isGoNamedFuncType reports whether typ, through any GALA aliases, is a Go
+// named function type, generic or not, that no GALA type hides. A value stored
+// as one must be spelled with it: Go assigns an unnamed function to it, but
+// infers a generic's type argument as the unnamed type.
+func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
+	if t.goTypeInfo == nil {
+		return false
+	}
+	end := t.followAliasChain(typ)
+	switch end.(type) {
+	case transpiler.NamedType, transpiler.BasicType, transpiler.GenericType:
+	default:
+		return false
+	}
+	name := end.BaseName()
+	if transpiler.IsPrimitiveType(name) {
+		return false
+	}
+	td := t.goTypeInfo.GetTypeData(t.goTypeKey(name))
+	if td == nil || td.Kind != "named" {
+		return false
+	}
+	_, isFunc := td.Underlying.(transpiler.FuncType)
+	return isFunc && t.getTypeMeta(name) == nil
 }
 
 func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {

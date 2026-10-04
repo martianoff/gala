@@ -1,7 +1,6 @@
 package transformer_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -305,22 +304,15 @@ func TestConversionToGoNamedFuncType(t *testing.T) {
 	assert.Contains(t, out, "func(w http.ResponseWriter, r *http.Request)")
 }
 
-// TestGoNamedFuncTypeSlots covers a lambda in a slot typed by a non-generic Go
-// named function type — imported (`fs.WalkDirFunc`, `http.HandlerFunc`) or of
-// the package's own .go files (`Visitor`) — beyond calling a value of that
-// type: a GALA function's parameter, a val annotation, a result, and a struct
-// field. The lambda takes the type's underlying signature, never GALA-E0033.
+// TestGoNamedFuncTypeSlots covers a slot typed by a Go named function type —
+// imported (`fs.WalkDirFunc`, `http.HandlerFunc`, `context.CancelFunc`) or of
+// the package's own .go files (`Visitor`, `Stop`) — beyond calling a value of
+// that type: a GALA function's parameter, a val annotation, a result, and a
+// struct field. A lambda there takes the type's underlying signature, never
+// GALA-E0033; a value of the type, or nil, is passed as it is, not as a thunk;
+// and a call of such a value has the type's result.
 func TestGoNamedFuncTypeSlots(t *testing.T) {
-	const goSrc = "package main\n\ntype Visitor func(int) bool\n\ntype Mapper[T any] func(T) T\n"
-	imports := func(gala string) string {
-		switch {
-		case strings.Contains(gala, "fs."):
-			return "import \"io/fs\"\n\n"
-		case strings.Contains(gala, "http."):
-			return "import \"net/http\"\n\n"
-		}
-		return ""
-	}
+	const goSrc = "package main\n\ntype Visitor func(int) bool\n\ntype Stop func()\n\ntype Mapper[T any] func(T) T\n"
 	cases := []struct {
 		name string
 		gala string
@@ -333,28 +325,50 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 		},
 		{
 			name: "a val annotation",
-			gala: "func run() error {\n    val f fs.WalkDirFunc = (path, d, err) => err\n    f(\".\", nil, nil)\n}\n",
+			gala: "import \"io/fs\"\n\nfunc run() error {\n    val f fs.WalkDirFunc = (path, d, err) => err\n    f(\".\", nil, nil)\n}\n",
 			want: "func(path string, d fs.DirEntry, err error) error {",
 		},
 		{
 			name: "a result",
-			gala: "func run() fs.WalkDirFunc = (path, d, err) => err\n",
+			gala: "import \"io/fs\"\n\nfunc run() fs.WalkDirFunc = (path, d, err) => err\n",
 			want: "func(path string, d fs.DirEntry, err error) error {",
 		},
 		{
 			name: "a struct field",
-			gala: "struct Walker(Fn fs.WalkDirFunc)\n\nfunc run() Walker = Walker(Fn = (path, d, err) => err)\n",
+			gala: "import \"io/fs\"\n\nstruct Walker(Fn fs.WalkDirFunc)\n\nfunc run() Walker = Walker(Fn = (path, d, err) => err)\n",
 			want: "NewImmutable[fs.WalkDirFunc](func(path string, d fs.DirEntry, err error) error {",
 		},
 		{
+			name: "a struct field given a declared function",
+			gala: "import \"io/fs\"\n\nstruct Walker(Fn fs.WalkDirFunc)\n\n" +
+				"func keep(path string, d fs.DirEntry, err error) error = err\n\nfunc run() Walker = Walker(Fn = keep)\n",
+			want: "NewImmutable[fs.WalkDirFunc](keep)",
+		},
+		{
 			name: "an imported handler type",
-			gala: "func run() http.HandlerFunc = (w, r) => w.WriteHeader(204)\n",
+			gala: "import \"net/http\"\n\nfunc run() http.HandlerFunc = (w, r) => w.WriteHeader(204)\n",
 			want: "func(w http.ResponseWriter, r *http.Request) {",
+		},
+		{
+			name: "a value of a zero-parameter type is not a thunk",
+			gala: "import \"context\"\n\nfunc stop(c context.CancelFunc) = c()\n\n" +
+				"func run() {\n    val ctx, cancel = context.WithCancel(context.Background())\n    Println(ctx.Err())\n    stop(cancel)\n}\n",
+			want: "stop(cancel.Get())",
+		},
+		{
+			name: "nil for a zero-parameter type is not a thunk",
+			gala: "func halt(s Stop) bool = s == nil\n\nfunc run() bool = halt(nil)\n",
+			want: "halt(nil)",
+		},
+		{
+			name: "the result of calling a value of the type",
+			gala: "import \"io/fs\"\n\nfunc run(f fs.WalkDirFunc) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
+			want: "err.Get().Error()",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+imports(tc.gala)+tc.gala)
+			files, galaFile := samePackageModule(".", goSrc, "package main\n\n"+tc.gala)
 			out, err := transpileInModule(t, files, galaFile)
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.want)
