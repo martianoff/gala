@@ -55,7 +55,10 @@ go_library(
 
 go_test(
     name = "yaml_go_unit_test",
-    srcs = ["codec_test.go"],
+    srcs = [
+        "codec_test.go",
+        "encoding_test.go",
+    ],
     embed = [":yaml"],
 )
 
