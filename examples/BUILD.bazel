@@ -2962,6 +2962,22 @@ gala_exec_test(
     expected = "match_sealed_branch_infer.out",
 )
 
+# A `return` in an arm of a match, or a branch of an if-expression, whose value
+# initializes a val or var leaves the enclosing function
+gala_exec_test(
+    name = "value_match_return",
+    src = "value_match_return.gala",
+    expected = "value_match_return.out",
+)
+
+# return / break / continue in a value-position match or if-expression act on
+# the enclosing function or loop
+gala_exec_test(
+    name = "value_match_control_flow",
+    src = "value_match_control_flow.gala",
+    expected = "value_match_control_flow.out",
+)
+
 # Lambda param type inference for generic free functions like Iterate(seed, f)
 gala_exec_test(
     name = "iterate_lambda_infer",

@@ -1,9 +1,11 @@
 # GALA-E0015 — Bare `return` inside a match branch used as a value
 
-**When it fires.** A `match` expression is used as a value (its result is
-assigned to a variable, returned from a function as an expression, or passed
-as an argument) and one of its branches ends with a bare `return` — a
-`return` statement with no value.
+**When it fires.** A `match` expression is used as a value (passed as an
+argument, used as an operand, returned from a function as an expression) and
+one of its branches ends with a bare `return` — a `return` statement with no
+value. A match a local `val` or `var` is initialized with is not such a value:
+it is lowered as statements, and a bare `return` in it leaves the enclosing
+function.
 
 **Minimal repro.** (`main.gala`)
 
@@ -13,14 +15,13 @@ package main
 import "os"
 
 func run(path string) {
-    val data = Try(os.ReadFile(path)) match {
+    Println(Try(os.ReadFile(path)) match {
         case Success(b)   => string(b)
         case Failure(err) => {
             Println(s"error: ${err.Error()}")
             return
         }
-    }
-    Println(data)
+    })
 }
 
 func main() {
@@ -34,12 +35,12 @@ a whole, and the hint names the type the wrapping function must return.
 
 ```text
 error[GALA-E0015]: bare `return` inside a match branch whose result is used as a value
-  --> main.gala:6:16
+  --> main.gala:6:13
   |
-6 |     val data = Try(os.ReadFile(path)) match {
-  |                ^^^ the match is wrapped in a function that must return string
+6 |     Println(Try(os.ReadFile(path)) match {
+  |             ^^^ the match is wrapped in a function that must return string
   |
-  = hint: the match is wrapped in a function that must return string; restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
+  = hint: the match is wrapped in a function that must return string; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
 ```
 
 The `-->` line echoes the source path as the compiler resolved it; the CLI
@@ -49,12 +50,12 @@ prints it absolute.
 immediately-invoked function expression (IIFE):
 
 ```go
-data := func(obj ...) string {
+fmt.Println(func(obj ...) string {
     switch ... {
     case Success:  return string(b)
     case Failure:  fmt.Println(...); return   // <- invalid: IIFE must return string
     }
-}(...)
+}(...))
 ```
 
 A bare `return` inside that IIFE does not exit the enclosing function — it
@@ -63,7 +64,23 @@ compiler rejects it with *"not enough return values"*.
 
 **Fix.** Pick whichever restructuring best matches the intent.
 
-1.  **Early-exit before the match** — test the failure case first and
+1.  **Initialize a `val` with the match** — the match is then lowered as
+    statements, and the bare `return` leaves `run`:
+
+    ```gala
+    func run(path string) {
+        val data = Try(os.ReadFile(path)) match {
+            case Success(b)   => string(b)
+            case Failure(err) => {
+                Println(s"error: ${err.Error()}")
+                return
+            }
+        }
+        Println(data)
+    }
+    ```
+
+2.  **Early-exit before the match** — test the failure case first and
     `return` from the outer function, then destructure the success case:
 
     ```gala
@@ -77,7 +94,7 @@ compiler rejects it with *"not enough return values"*.
     }
     ```
 
-2.  **Use combinators** — `Recover`, `Map`, `GetOrElse`, etc. avoid the IIFE
+3.  **Use combinators** — `Recover`, `Map`, `GetOrElse`, etc. avoid the IIFE
     entirely and compose cleanly:
 
     ```gala
@@ -90,7 +107,7 @@ compiler rejects it with *"not enough return values"*.
     }
     ```
 
-3.  **Return from a `match` used as the function body** — if the match
+4.  **Return from a `match` used as the function body** — if the match
     itself is the function's last expression, each branch can legitimately
     `return` a value (including `return` on its own when the function is
     void).
@@ -98,6 +115,7 @@ compiler rejects it with *"not enough return values"*.
 **Rationale.** GALA's match-as-value form has expression semantics: every
 branch must contribute a value of the match's result type. A bare `return`
 is a *statement-level* control-flow operation whose scope (outer function
-vs. enclosing IIFE) is ambiguous without extra machinery. Rather than pick
+vs. enclosing IIFE) is ambiguous where the match is lowered to an IIFE; a
+match a `val` is initialized with is lowered as statements instead. Rather than pick
 one interpretation silently and generate surprising Go, the transpiler
 rejects the construct and points to the explicit rewrites above.

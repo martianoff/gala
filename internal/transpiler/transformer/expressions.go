@@ -896,6 +896,13 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 		typ = t.getExprTypeName(thenExpr)
 	case !elseTerminates:
 		typ = t.getExprTypeName(elseExpr)
+	default:
+		// Every branch leaves, so the declaration is never reached; its
+		// variable takes the type the returned values share.
+		typ = t.leavingValuesType(append(slices.Clone(thenStmts), elseStmts...))
+		if typ == nil {
+			return nil, leavingBranchingError("if-expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		}
 	}
 	typ = t.branchingResultType(typ, s)
 	if transpiler.IsUnusable(typ) || typ.IsVoid() {

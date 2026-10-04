@@ -234,11 +234,10 @@ func TestLoopControlThatCannotReachItsLoop(t *testing.T) {
 
 func main() {
     for i := 0; i < 5; i++ {
-        val x = i match {
+        Println(i match {
             case 2 => { break }
             case n => n * 10
-        }
-        Println(x)
+        })
     }
 }
 `,
@@ -288,11 +287,10 @@ func main() {
 
 func main() {
     for i := 0; i < 5; i++ {
-        val x = if (i > 1) {
+        Println(if (i > 1) {
             if i == 3 { break }
             i
-        } else 0
-        Println(x)
+        } else 0)
     }
 }
 `,
@@ -305,8 +303,7 @@ func main() {
 
 func main() {
     for i := 0; i < 5; i++ {
-        val x = if (i == 2) { break } else 1
-        Println(x)
+        Println(if (i == 2) { break } else 1)
     }
 }
 `,

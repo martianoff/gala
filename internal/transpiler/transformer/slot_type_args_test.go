@@ -164,18 +164,6 @@ func TestSlotTypeArgsNotFromEnclosingResult(t *testing.T) {
 			input: "func g(o Option[int]) int {\n    val r = o match {\n        case _ => None()\n    }\n    Println(r)\n    1\n}",
 			want:  []string{"GALA-E0018"},
 		},
-		{
-			name: "returns in a value-position match with no slot type",
-			input: "func g(n int) Option[string] {\n    val r = n match {\n        case 1 => {\n            return None()\n        }\n" +
-				"        case _ => {\n            return None()\n        }\n    }\n    Some(s\"$r\")\n}",
-			want: []string{"GALA-E0018"},
-		},
-		{
-			name: "returns in a value-position if-expression with no slot type",
-			input: "func g(ok bool) Option[string] {\n    val r = if (ok) {\n        return None()\n    } else {\n        return None()\n    }\n" +
-				"    Some(s\"$r\")\n}",
-			want: []string{"GALA-E0018"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -190,8 +178,7 @@ func TestSlotTypeArgsNotFromEnclosingResult(t *testing.T) {
 
 // TestSlotTypeArgsOnlyTheValue pins that a slot types the call that fills it
 // and nothing inside it: a receiver gets no type from the slot of the call
-// made on it, and a value-position match or if-expression with no slot type
-// gives a `return` in it none of the enclosing function's result type.
+// made on it.
 func TestSlotTypeArgsOnlyTheValue(t *testing.T) {
 	trans := newAliasExpectedTranspiler()
 	tests := []struct {
@@ -210,15 +197,30 @@ func TestSlotTypeArgsOnlyTheValue(t *testing.T) {
 		{"a typed argument binds its type parameter", "func g(z int32) int32 = Cell(1).Fold(z, (acc, v) => acc)", "func(acc int32, v int) int32"},
 		{"method of a non-generic receiver", "func g(p Plain) Option[int] = p.none()", "Plain_none[int](p)"},
 		{"only the type arguments up to the last result-only one are spelled", "func g() Tuple[Option[string], int] = Cell(true).Pick(1)", "Cell_Pick[string](Cell[bool]"},
+		// A `return` in an arm of a match or a branch of an if-expression that
+		// initializes a val leaves the function (see hoisted_value.go), so its
+		// value is typed by the function's result, whatever the val's type.
 		{
-			"match arm return typed by the match's slot",
+			"match arm return in an annotated val",
 			"func g(n int) Option[string] {\n    val r Option[int] = n match {\n        case 1 => {\n            return None()\n        }\n        case _ => Some(n)\n    }\n    Some(s\"$r\")\n}",
-			"return std.None[int]{}.Apply()",
+			"return std.None[string]{}.Apply()",
 		},
 		{
-			"match arm return typed by its sibling",
+			"match arm return next to a typed sibling",
 			"func g(n int) Option[string] {\n    val r = n match {\n        case 1 => {\n            return None()\n        }\n        case _ => Some(n)\n    }\n    Some(s\"$r\")\n}",
-			"return std.None[int]{}.Apply()",
+			"return std.None[string]{}.Apply()",
+		},
+		{
+			"returns in every arm of a match",
+			"func g(n int) Option[string] {\n    val r = n match {\n        case 1 => {\n            return None()\n        }\n" +
+				"        case _ => {\n            return None()\n        }\n    }\n    Some(s\"$r\")\n}",
+			"return std.None[string]{}.Apply()",
+		},
+		{
+			"returns in both branches of an if-expression",
+			"func g(ok bool) Option[string] {\n    val r = if (ok) {\n        return None()\n    } else {\n        return None()\n    }\n" +
+				"    Some(s\"$r\")\n}",
+			"return std.None[string]{}.Apply()",
 		},
 	}
 	for _, tt := range tests {

@@ -260,6 +260,7 @@ go_test(
         "user_get_method_test.go",
         "val_param_test.go",
         "value_called_as_function_test.go",
+        "value_match_control_flow_test.go",
         "variant_type_names_test.go",
         "var_tuple_destructuring_test.go",
         "variables_test.go",

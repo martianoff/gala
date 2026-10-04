@@ -890,7 +890,9 @@ for i := 0; i < 6; i++ {
 
 A `return` in such an arm likewise returns from the enclosing function.
 
-They must reach a loop written around them in the same function. Outside any loop, inside a lambda (a separate function, even when written in a loop), inside an arm of a `match` or a branch of an if-expression whose value is used, or used as a value, `break` and `continue` are an error: [GALA-E0059](/docs/errors/gala-e0059/).
+So do `break`, `continue` and `return` in an arm of a `match`, or a branch of an if-expression, that a local `val` or `var` is initialized with (`val x = i match { case 2 => break ... }`): the other arms give `x` its value.
+
+They must reach a loop written around them in the same function. Outside any loop, inside a lambda (a separate function, even when written in a loop), inside an arm of a `match` or a branch of an if-expression whose value is used otherwise (`Println(i match { case 2 => break ... })`), or used as a value, `break` and `continue` are an error: [GALA-E0059](/docs/errors/gala-e0059/). A `return` in such a value is [GALA-E0069](/docs/errors/gala-e0069/).
 
 ## 7. Functional Features {#7-functional-features}
 

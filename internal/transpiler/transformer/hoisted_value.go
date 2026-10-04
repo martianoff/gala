@@ -192,6 +192,29 @@ func (t *galaASTTransformer) storeArmValues(stmts []ast.Stmt, target *hoistTarge
 	return out
 }
 
+// leavingValuesType is the settled type the values of the source `return`s in
+// stmts (outside function literals) share, or nil: the type of the variable a
+// construct every branch of which leaves is stored in. The declaration is never
+// reached, so the type matters only to Go, and it is the one the construct had
+// when it was lowered to a function literal its `return`s left.
+func (t *galaASTTransformer) leavingValuesType(stmts []ast.Stmt) transpiler.Type {
+	var types []transpiler.Type
+	for _, s := range stmts {
+		ast.Inspect(s, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.ReturnStmt:
+				if _, user := t.userReturns[x]; user && len(x.Results) == 1 {
+					types = append(types, t.inferResultType(x.Results[0]))
+				}
+			}
+			return true
+		})
+	}
+	return t.siblingsType(types)
+}
+
 // storeValue is the store of value in target: the statements of a hoisted
 // construct, which store their own value, or `target = value`.
 func (t *galaASTTransformer) storeValue(value ast.Expr, target *hoistTarget) []ast.Stmt {

@@ -165,6 +165,21 @@ func withArticle(kind string) string {
 	return "an " + kind
 }
 
+// leavingBranchingError is GALA-E0068 for the construct of kind at line:col
+// that initializes a declaration though every branch of it leaves with a
+// `return`, `break` or `continue`: the declaration is never reached.
+func leavingBranchingError(kind string, line, col int) error {
+	branch := "arm"
+	if kind != "match" {
+		branch = "branch"
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeUntypedBranchingValue,
+		line, col,
+		fmt.Sprintf("this %s has no value: every %s leaves with `return`, `break` or `continue`", kind, branch),
+		fmt.Sprintf("use the %s as a statement on its own line; nothing after it in the block runs", kind))
+}
+
 // untypedBranchingError is GALA-E0068 for the construct of kind at line:col.
 func untypedBranchingError(kind string, line, col int) error {
 	branch := "arm"

@@ -668,7 +668,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match lowered as statements stores a value of its type, so it needs
 	// one.
 	if hoist != nil && (transpiler.IsUnusable(resultType) || resultType.IsVoid()) {
-		return nil, untypedBranchingError("match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+		if slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool { return !escapesConstruct(cc) }) {
+			return nil, untypedBranchingError("match", line, col)
+		}
+		// Every arm leaves, so the declaration is never reached; its
+		// variable takes the type the returned values share.
+		if resultType = t.leavingValuesType(append(slices.Clone(clauses), defaultBody...)); resultType == nil {
+			return nil, leavingBranchingError("match", line, col)
+		}
 	}
 
 	// Statement-position matches discard their value; force the IIFE to be

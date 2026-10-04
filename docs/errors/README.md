@@ -87,6 +87,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0066` | Declaration collides with a dot import | [GALA-E0066.md](GALA-E0066.md) |
 | `GALA-E0067` | Type argument cannot be inferred | [GALA-E0067.md](GALA-E0067.md) |
 | `GALA-E0068` | Match or if-expression value has no type | [GALA-E0068.md](GALA-E0068.md) |
+| `GALA-E0069` | `return` in a match or if-expression whose value is used | [GALA-E0069.md](GALA-E0069.md) |
 
 ### Retired codes
 

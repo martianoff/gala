@@ -177,15 +177,15 @@ func onlyTrailingNone(o Option[int]) string = o match {
     case _ => "none"
 }
 
-// An if-expression lowers to an IIFE: a `return` in a branch is the branch's
-// value and leaves the lambda's slot alone.
+// A `return` in a branch of an if-expression a val is initialized with leaves
+// the lambda, like any other `return` in it.
 func doubledSize(s string) Option[string] {
     val o = apply(() => {
         if (s == "x") {
             return None()
         }
         val n = if (s == "") {
-            return 0
+            return Some(0)
         } else {
             s.ByteSize()
         }

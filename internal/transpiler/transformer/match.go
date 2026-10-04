@@ -559,7 +559,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 		startLine, startCol,
 		"bare `return` inside a match branch whose result is used as a value",
 		"the match is wrapped in a function that must return "+resultType.String()+
-			"; restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
+			"; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
 	)
 }
 

@@ -18,6 +18,11 @@ typed value, and nothing it fills gives it a type. Arms that produce no value
 are an empty block `{}`, a block ending in a statement, an assignment, or a
 call that returns nothing.
 
+It also fires, as "this match has no value: every arm leaves with ...", for a
+match or if-expression a `val` is initialized with when every arm leaves with
+`break`, `continue` or a `return` with no value: the declaration is never
+reached.
+
 **Minimal repro.** (`main.gala`)
 
 ```gala

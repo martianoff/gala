@@ -82,6 +82,14 @@ func lambdaLocal(n int) int {
     f(n) + 1000
 }
 
+func lambdaTail(n int) int {
+    val f = (k int) int => k match {
+        case 0 => { return -1 }
+        case _ => k * 10
+    }
+    f(n) + 1000
+}
+
 func returnOfMatch(o Option[int]) int {
     return o match {
         case Some(v) => v * 10
@@ -99,5 +107,6 @@ func main() {
     Println("firstZero:")
     Println(s"  result ${firstZero(10)}")
     Println(s"lambdaLocal: ${lambdaLocal(2)} ${lambdaLocal(0)}")
+    Println(s"lambdaTail: ${lambdaTail(2)} ${lambdaTail(0)}")
     Println(s"returnOfMatch: ${returnOfMatch(Some(2))} ${returnOfMatch(None[int]())}")
 }
