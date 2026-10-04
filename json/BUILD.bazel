@@ -65,6 +65,7 @@ go_test(
     name = "json_go_unit_test",
     srcs = [
         "codec_test.go",
+        "decoder_strict_test.go",
         "encoding_test.go",
     ],
     embed = [":json"],
