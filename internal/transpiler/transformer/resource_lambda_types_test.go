@@ -252,22 +252,24 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 	// The result of a generic function or method whose type arguments the
 	// call leaves undetermined still names its own type parameter, however
 	// deep the call; the lambda is not lowered against it (`func(s B)`,
-	// undefined in the caller).
-	for _, src := range []string{
-		"func mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
-			"func run() int = mk(1)((s) => 2)\n",
-		"func mk[A any, B any](a A) func(int) func(func(B) A) A = (n) => (h) => a\n\n" +
-			"func run() int = mk(1)(2)((s) => 2)\n",
-		"struct Box(N int)\n\nfunc (b Box) Maker[U any]() func(func(U) int) int = (h) => b.N\n\n" +
-			"func run() int = Box(1).Maker()((s) => 2)\n",
+	// undefined in the caller). A free function's type parameter only its
+	// result mentions is reported at the call that leaves it open
+	// (GALA-E0067), before the lambda is reached; a method's, at the lambda.
+	for _, tc := range []struct{ src, code string }{
+		{"func mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
+			"func run() int = mk(1)((s) => 2)\n", "GALA-E0067"},
+		{"func mk[A any, B any](a A) func(int) func(func(B) A) A = (n) => (h) => a\n\n" +
+			"func run() int = mk(1)(2)((s) => 2)\n", "GALA-E0067"},
+		{"struct Box(N int)\n\nfunc (b Box) Maker[U any]() func(func(U) int) int = (h) => b.N\n\n" +
+			"func run() int = Box(1).Maker()((s) => 2)\n", "GALA-E0033"},
 		// The caller declares a type named like the callee's type parameter.
-		"struct B(X int)\n\nfunc mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
-			"func run() int = mk(1)((s) => 2)\n",
+		{"struct B(X int)\n\nfunc mk[A any, B any](a A) func(func(B) A) A = (h) => a\n\n" +
+			"func run() int = mk(1)((s) => 2)\n", "GALA-E0067"},
 	} {
-		files, galaFile := samePackageModule(".", "package main\n", "package main\n\n"+src)
+		files, galaFile := samePackageModule(".", "package main\n", "package main\n\n"+tc.src)
 		_, err := transpileInModule(t, files, galaFile)
-		require.Error(t, err, src)
-		assert.Contains(t, err.Error(), "GALA-E0033", src)
+		require.Error(t, err, tc.src)
+		assert.Contains(t, err.Error(), tc.code, tc.src)
 	}
 
 	// A declared default is lowered at its use site. A top-level val the

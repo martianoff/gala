@@ -502,7 +502,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	s.discarded = stmtPosition
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
-	// value type, and the arms' enclosing return type for sealed-variant inference.
+	// value type.
 	// A match in value position lowers to an IIFE, so a `return` in an arm
 	// leaves the IIFE: it must not fill or defer into an enclosing lambda's
 	// fillable slot. (A statement-position match whose arms return is inlined,
@@ -769,26 +769,20 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 }
 
 func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {
-	return t.transformTupleLiteralWithExpected(exprs, nil, nil, line...)
+	return t.transformTupleLiteralWithExpected(exprs, nil, line...)
 }
 
 // transformTupleLiteralWithExpected lowers a tuple literal `(a, b, ...)` to
 // `std.TupleN[T1, T2, ...]{V1: NewImmutable(a), V2: NewImmutable(b), ...}`.
-// `perElemExpected`, when non-nil, supplies a higher-priority per-element
-// fallback for type-parameter synthesis (used for the call-site bidirectional
-// inference path). The previous fallback —
-// `returnSlot.typ` — is still consulted when the per-element hint is
-// absent or itself uninformative, preserving the enclosing-return-type case.
-// When neither hint resolves a concrete element type, the parameter
-// degrades to `any` (matching the historical behavior).
 //
 // slotElems, when non-nil, holds the element types of the slot the literal
-// itself fills (a declared return, argument or field type). An untyped numeric
-// constant element adopts its slot element's numeric type (`(1, 2)` into
-// Tuple[int64, float32]) exactly as Go converts it on assignment. A mere hint,
-// such as the enclosing function's return type seen by a local tuple, does not
-// retype a constant.
-func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr, perElemExpected, slotElems []transpiler.Type, line ...int) (ast.Expr, error) {
+// itself fills (a declared return, argument or field type; see
+// tupleElementExpectedTypes). An element whose own type is unknown takes its
+// slot element's type, and an untyped numeric constant element adopts its
+// slot element's numeric type (`(1, 2)` into Tuple[int64, float32]) exactly as
+// Go converts it on assignment. Without a slot such an element's type
+// parameter degrades to `any`.
+func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr, slotElems []transpiler.Type, line ...int) (ast.Expr, error) {
 	n := len(exprs)
 	if n < 2 || n > 10 {
 		errLine, errCol := t.lastLine, t.lastCol
@@ -801,18 +795,9 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	// Determine tuple type name based on arity (B2 — single source of truth).
 	typeName, _ := transpiler.TupleArityName(n)
 
-	// Build the per-element fallback ladder. The most-specific source —
-	// the explicit per-element expected types passed in by the caller —
-	// wins over the enclosing function's return type.
-	var fallbackTypes []transpiler.Type
-	if perElemExpected != nil && len(perElemExpected) == n {
-		fallbackTypes = perElemExpected
-	}
-	if fallbackTypes == nil {
-		if retType, ok := t.returnShape().(transpiler.GenericType); ok &&
-			t.isTupleTypeName(retType.Base.String()) && len(retType.Params) == n {
-			fallbackTypes = retType.Params
-		}
+	fallbackTypes := slotElems
+	if len(fallbackTypes) != n {
+		fallbackTypes = nil
 	}
 
 	var typeParams []ast.Expr

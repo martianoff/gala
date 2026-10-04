@@ -62,7 +62,7 @@ type galaASTTransformer struct {
 	inferer                 *infer.Inferer
 	returnSlot              returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	currentMatchSubjectType transpiler.Type                               // type of the match expression's subject (for branch type inference)
-	siblingTypedBranch      bool                                          // set while a match arm or if branch with no slot type is first lowered: its type comes from its siblings, so a zero-arg constructor in it takes none from the enclosing result type or the match subject (see lowerBranches)
+	siblingTypedBranch      bool                                          // set while a match arm or if branch with no slot type is first lowered: its type comes from its siblings, so a zero-arg constructor in it takes none from the match subject (see lowerBranches)
 	typeAliases             map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets     map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
 	hasOpaque               bool                                          // some known type is an opaque type; gates every opaque-type check
