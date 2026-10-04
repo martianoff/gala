@@ -147,9 +147,10 @@ func TestDecoder_InvalidUTF8(t *testing.T) {
 // YAML 1.2 (section 5.1) allows only printable characters in a stream, and
 // no byte order mark inside a scalar. DEL, the C1 controls U+0080-U+009F,
 // U+FEFF, U+FFFE and U+FFFF are not allowed, so a string holding one is
-// double-quoted with the character escaped: NEL as \N (YAML 1.1 readers take
-// a raw NEL for a line break), the other one-byte characters as \xXX, and
-// the rest as \uXXXX.
+// double-quoted with the character escaped: the other one-byte characters
+// as \xXX and the rest as \uXXXX. NEL and the line and paragraph separators
+// are line breaks to YAML 1.1 readers, so they are escaped too, as \N, \L
+// and \P.
 func TestEncoder_NonPrintableEscaped(t *testing.T) {
 	const bs = "\\"
 	// U+007E, U+00A0, U+FEFE, U+FFFD and U+10000 are printable.
@@ -167,6 +168,8 @@ func TestEncoder_NonPrintableEscaped(t *testing.T) {
 		{"byte order mark", "v", string(rune(0xfeff)) + "x", `v: "` + bs + `uFEFFx"`},
 		{"U+FFFE", "v", "a" + string(rune(0xfffe)), `v: "a` + bs + `uFFFE"`},
 		{"U+FFFF", "v", string(rune(0xffff)), `v: "` + bs + `uFFFF"`},
+		{"line separator", "v", "a" + string(rune(0x2028)) + "b", `v: "a\Lb"`},
+		{"paragraph separator", "v", string(rune(0x2029)), `v: "\P"`},
 		{"mixed with other escapes", "v", "\"\x7f\\\u0085\t", `v: "\"\x7f\\\N\t"`},
 		{"in a key", "k\u0085", "x", `"k\N": x`},
 		// The printable characters next to the escaped ranges stay plain.

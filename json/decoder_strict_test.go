@@ -334,6 +334,31 @@ func TestDecoder_SkipValidatesValue(t *testing.T) {
 	}
 }
 
+// Skip steps over nesting up to encoding/json's depth limit, and fails past
+// it instead of overflowing the stack, however deep the input goes.
+func TestDecoder_SkipDepthLimit(t *testing.T) {
+	nested := func(depth int) string { return strings.Repeat("[", depth) + strings.Repeat("]", depth) }
+	if err := decodeDocument(nested(10000), skipValue); err != "" {
+		t.Fatalf("10000 levels: %s", err)
+	}
+	if got, want := decodeDocument(nested(10001), skipValue), "json at pos 10000: exceeded max depth 10000"; got != want {
+		t.Fatalf("10001 levels: error = %q, want %q", got, want)
+	}
+	if err := decodeDocument(strings.Repeat("[", 5_000_000), skipValue); err == "" {
+		t.Fatalf("5M open brackets did not fail")
+	}
+}
+
+// A skipped value that is not JSON at all is reported as such, not as a
+// malformed number.
+func TestDecoder_SkipNonValueErrors(t *testing.T) {
+	for _, in := range []string{"undefined", "NaN", "Infinity", "@", "}"} {
+		if got, want := decodeDocument(in, skipValue), "json at pos 0: expected a value"; got != want {
+			t.Errorf("Skip(%s): error = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // Skip consumes the element separator in an array, so skipped and read
 // elements interleave.
 func TestDecoder_SkipInsideArray(t *testing.T) {

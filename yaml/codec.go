@@ -303,11 +303,16 @@ func isPlainSafe(s string) bool {
 	if s == "" || !utf8.ValidString(s) {
 		return false
 	}
-	if s[0] == ' ' || s[0] == '\t' {
+	// Tabs, line breaks and the other characters that need an escape can
+	// only be written in a double-quoted scalar.
+	if strings.IndexFunc(s, needsYamlEscape) >= 0 {
+		return false
+	}
+	if s[0] == ' ' {
 		return false
 	}
 	// A trailing ':' would read back as "key:" — a mapping, not a string.
-	if s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == ':' {
+	if s[len(s)-1] == ' ' || s[len(s)-1] == ':' {
 		return false
 	}
 	switch s[0] {
@@ -315,15 +320,10 @@ func isPlainSafe(s string) bool {
 		'|', '>', '\'', '"', '%', '@', '`':
 		return false
 	}
-	// Tabs, line breaks and the other characters that need an escape can
-	// only be written in a double-quoted scalar.
-	if strings.IndexFunc(s, needsYamlEscape) >= 0 {
-		return false
-	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		// ": " mid-string would be parsed as a nested mapping.
-		if c == ':' && i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\t') {
+		if c == ':' && i+1 < len(s) && s[i+1] == ' ' {
 			return false
 		}
 		// " #" starts a comment.
@@ -382,6 +382,10 @@ func doubleQuoted(s string) string {
 				sb.WriteString(`\ufffd`)
 			case r == 0x85:
 				sb.WriteString(`\N`)
+			case r == 0x2028:
+				sb.WriteString(`\L`)
+			case r == 0x2029:
+				sb.WriteString(`\P`)
 			case needsYamlEscape(r) && r <= 0xff:
 				fmt.Fprintf(&sb, `\x%02x`, r)
 			case needsYamlEscape(r): // U+FEFF, U+FFFE, U+FFFF
@@ -396,12 +400,15 @@ func doubleQuoted(s string) string {
 	return sb.String()
 }
 
-// needsYamlEscape reports whether r may not appear as is in a YAML scalar:
-// the C0 controls (tab and line breaks included, which plain scalars cannot
-// hold either), DEL, the C1 controls, the byte order mark and the
-// noncharacters U+FFFE and U+FFFF (YAML 1.2, section 5.1).
+// needsYamlEscape reports whether r is written as an escape. YAML 1.2
+// (section 5.1) does not allow the C0 controls, DEL, the C1 controls, the
+// byte order mark or the noncharacters U+FFFE and U+FFFF as is; tab and line
+// breaks are C0 controls a plain scalar cannot hold either. NEL and the line
+// and paragraph separators U+2028 and U+2029 are line breaks to YAML 1.1
+// readers such as libyaml and gopkg.in/yaml.v3, so they are escaped too.
 func needsYamlEscape(r rune) bool {
-	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == 0xfeff || r == 0xfffe || r == 0xffff
+	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == 0x2028 || r == 0x2029 ||
+		r == 0xfeff || r == 0xfffe || r == 0xffff
 }
 
 // Compile-time check: YamlEncoderImpl must satisfy std.FieldEncoder.

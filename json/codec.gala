@@ -372,12 +372,12 @@ func (d *JsonDecoderImpl) ReadNull() {
     d.expectLiteral("null")
 }
 
-// Skip steps over the next value, checking it as strictly as a read would:
-// a value with a malformed number, string or structure anywhere inside it is
-// a decode error, as in encoding/json.
+// Skip steps over the next value and checks all of it, as encoding/json
+// does: a malformed number, string or structure anywhere inside it is a
+// decode error.
 func (d *JsonDecoderImpl) Skip() {
     d.consumeElemComma()
-    d.skipValue()
+    d.skipValue(0)
 }
 
 // End checks that only whitespace follows the decoded value: a document is
@@ -558,41 +558,47 @@ func isNumberTokenByte(c byte) bool =
 
 func isDigit(c byte) bool = c >= '0' && c <= '9'
 
-// skipValue steps over the value at pos and checks it fully. Containers
-// nest through recursion, as typed decoding of nested values does.
-func (d *JsonDecoderImpl) skipValue() {
+// maxSkipDepth is the deepest container nesting Skip steps over, the limit
+// encoding/json has too. Deeper input is a decode error rather than a stack
+// overflow, which would end the process instead of failing the decode.
+val maxSkipDepth = 10000
+
+// skipValue steps over the value at pos, which sits depth containers deep
+// inside the skipped value, and checks it fully.
+func (d *JsonDecoderImpl) skipValue(depth int) {
     d.skipWs()
     if d.pos >= d.data.Size() {
         go_builtins.Panic(s"json at pos ${d.pos}: expected a value")
     }
     d.data[d.pos] match {
         case '"' => { d.readJsonString() }
-        case '{' => { d.skipMembers('}', d.skipField) }
-        case '[' => { d.skipMembers(']', d.skipValue) }
+        case '{' => { d.skipContainer('}', depth + 1) }
+        case '[' => { d.skipContainer(']', depth + 1) }
         case 't' => { d.expectLiteral("true") }
         case 'f' => { d.expectLiteral("false") }
         case 'n' => { d.expectLiteral("null") }
-        case c if isNumberTokenByte(c) => { d.scanNumber() }
+        case c if c == '-' || isDigit(c) => { d.scanNumber() }
         case _ => { go_builtins.Panic(s"json at pos ${d.pos}: expected a value") }
     }
 }
 
-// skipField steps over one `"key": value` member of an object.
-func (d *JsonDecoderImpl) skipField() {
-    d.readJsonString()
-    d.expectByte(':')
-    d.skipValue()
-}
-
-// skipMembers steps over the container whose opening byte is at pos: members
-// read by skipMember, separated by ',' and ended by close.
-func (d *JsonDecoderImpl) skipMembers(close byte, skipMember func()) {
+// skipContainer steps over the object or array whose opening byte is at pos
+// and whose closing byte is close: members separated by ',', each a
+// `"key": value` field in an object and a value in an array.
+func (d *JsonDecoderImpl) skipContainer(close byte, depth int) {
+    if depth > maxSkipDepth {
+        go_builtins.Panic(s"json at pos ${d.pos}: exceeded max depth $maxSkipDepth")
+    }
     d.pos = d.pos + 1
     if d.skipByte(close) {
         return
     }
     for {
-        skipMember()
+        if close == '}' {
+            d.readJsonString()
+            d.expectByte(':')
+        }
+        d.skipValue(depth)
         if d.skipByte(close) {
             return
         }
