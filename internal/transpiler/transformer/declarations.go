@@ -1157,11 +1157,76 @@ func (t *galaASTTransformer) resolveTranspilerTypeAsFuncType(tp transpiler.Type)
 
 	// Try resolving via type alias, through a chain of them
 	// (`type A func(int) int; type B A`).
-	if ft, ok := t.followAliasChain(tp).(transpiler.FuncType); ok {
+	end := t.followAliasChain(tp)
+	if ft, ok := end.(transpiler.FuncType); ok {
 		return &ft
 	}
 
+	return t.goNamedFuncTypeOf(end)
+}
+
+// aliasedFuncType is resolveTranspilerTypeAsFuncType without Go named function
+// types: the function type tp is, directly or through GALA aliases (which are
+// Go aliases, so a slot of one has that function type), or nil. A Go named
+// function type is a distinct type whose slot only a function literal fills
+// by its signature.
+func (t *galaASTTransformer) aliasedFuncType(tp transpiler.Type) *transpiler.FuncType {
+	if transpiler.IsUnusable(tp) {
+		return nil
+	}
+	if ft, ok := t.followAliasChain(tp).(transpiler.FuncType); ok {
+		return &ft
+	}
 	return nil
+}
+
+// goNamedFuncTypeOf returns the underlying function type of typ when typ names
+// a non-generic Go named function type with at most one result
+// (`fs.WalkDirFunc`, or a type of the package's own .go files) that no GALA
+// type of that name hides — a lambda in a slot of that type is a value of that
+// signature, and a call of a value of it has its result — or nil.
+func (t *galaASTTransformer) goNamedFuncTypeOf(typ transpiler.Type) *transpiler.FuncType {
+	if t.goTypeInfo == nil {
+		return nil
+	}
+	switch typ.(type) {
+	case transpiler.NamedType, transpiler.BasicType:
+	default:
+		return nil
+	}
+	name := typ.String()
+	if transpiler.IsPrimitiveType(name) {
+		return nil
+	}
+	// The Go lookup misses cheaply for most names; the GALA one runs only
+	// for a Go function type, to make sure no GALA type hides it.
+	ft := t.goNamedFuncType(name)
+	if ft == nil || len(ft.Results) > 1 || t.getTypeMeta(name) != nil {
+		return nil
+	}
+	return ft
+}
+
+// isGoNamedFuncType reports whether typ, through any GALA aliases, is a Go
+// named function type, generic or not, that no GALA type hides. A value stored
+// as one must be spelled with it: Go assigns an unnamed function to it, but
+// infers a generic's type argument as the unnamed type.
+func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
+	if t.goTypeInfo == nil {
+		return false
+	}
+	end := t.followAliasChain(typ)
+	switch end.(type) {
+	case transpiler.NamedType, transpiler.BasicType, transpiler.GenericType:
+	default:
+		return false
+	}
+	name := end.BaseName()
+	if transpiler.IsPrimitiveType(name) {
+		return false
+	}
+	ft, _ := t.goNamedFuncSignature(name)
+	return ft != nil && t.getTypeMeta(name) == nil
 }
 
 func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {

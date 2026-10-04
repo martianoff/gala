@@ -1,0 +1,34 @@
+package main
+
+import (
+    "io/fs"
+    "net/http"
+)
+
+// A lambda in a slot typed by a Go named function type takes the type's
+// underlying signature: a parameter, a val annotation, a result, a struct
+// field, and the branches of an if-expression.
+
+struct Walker(Fn fs.WalkDirFunc)
+
+func visit(f fs.WalkDirFunc) bool = f(".", nil, nil) == nil
+
+func skipAll() fs.WalkDirFunc = (path, d, err) => fs.SkipAll
+
+func pick(skip bool) fs.WalkDirFunc = if (skip) (path, d, err) => fs.SkipAll else (path, d, err) => err
+
+func main() {
+    Println(visit((path, d, err) => err))
+
+    val keep fs.WalkDirFunc = (path, d, err) => err
+    Println(keep(".", nil, nil) == nil)
+
+    val walker = Walker(Fn = (path, d, err) => err)
+    Println(walker.Fn(".", nil, nil) == nil)
+
+    Println(skipAll()(".", nil, nil) == fs.SkipAll)
+    Println(pick(true)(".", nil, nil) == fs.SkipAll)
+
+    val handler http.HandlerFunc = (w, r) => w.WriteHeader(204)
+    Println(handler != nil)
+}

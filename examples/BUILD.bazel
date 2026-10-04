@@ -2593,6 +2593,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A lambda in a slot typed by a Go named function type (fs.WalkDirFunc,
+# http.HandlerFunc) takes the type's underlying signature: a parameter, a val
+# annotation, a result, a struct field, and if-expression branches.
+gala_exec_test(
+    name = "go_named_func_type_slots",
+    src = "go_named_func_type_slots.gala",
+    expected = "go_named_func_type_slots.out",
+)
+
 gala_library(
     name = "cross_pkg_namedarg_lib",
     srcs = ["cross_pkg_namedarg/lib/lib.gala"],

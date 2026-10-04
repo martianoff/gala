@@ -3898,15 +3898,25 @@ func (t *galaASTTransformer) conversionFuncType(fun ast.Expr) *transpiler.FuncTy
 // named function type name (`http.HandlerFunc`, or a type of the package's own
 // .go files), or nil.
 func (t *galaASTTransformer) goNamedFuncType(name string) *transpiler.FuncType {
-	if t.goTypeInfo == nil {
-		return nil
-	}
-	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" && len(td.TypeParams) == 0 {
-		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
-			return &ft
-		}
+	if ft, generic := t.goNamedFuncSignature(name); !generic {
+		return ft
 	}
 	return nil
+}
+
+// goNamedFuncSignature returns the underlying function type of the Go named
+// function type name, generic or not, and whether it is generic; nil when
+// name names no Go function type.
+func (t *galaASTTransformer) goNamedFuncSignature(name string) (*transpiler.FuncType, bool) {
+	if t.goTypeInfo == nil {
+		return nil, false
+	}
+	if td := t.goTypeInfo.GetTypeData(t.goTypeKey(name)); td != nil && td.Kind == "named" {
+		if ft, isFunc := td.Underlying.(transpiler.FuncType); isFunc {
+			return &ft, len(td.TypeParams) > 0
+		}
+	}
+	return nil, false
 }
 
 // calleeFuncType returns the function type of the value a call's callee reads
@@ -3995,15 +4005,24 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	// so the slot has that function type: every lowering below that keys on
 	// a function type (lambdas, placeholders, partial functions, thunks)
 	// sees through it.
+	//
+	// A Go named function type (`fs.WalkDirFunc`) is a distinct type: a
+	// function literal written for it (a lambda, placeholder or partial
+	// function) takes its signature, but any other value keeps the slot's
+	// named type — it is never a by-name thunk.
+	funcSlot := s.typ
 	if _, isFunc := s.typ.(transpiler.FuncType); !isFunc {
-		if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+		if ft := t.aliasedFuncType(s.typ); ft != nil {
 			s.typ = *ft
+			funcSlot = *ft
+		} else if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+			funcSlot = *ft
 		}
 	}
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
-		return t.transformPartialFunctionLiteral(pfCtx, expectedType)
+		return t.transformPartialFunctionLiteral(pfCtx, funcSlot)
 	}
 
 	// Try to find a lambda in this expression
@@ -4013,7 +4032,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 
 	// L4: Try to rewrite as a placeholder lambda if the expected type is a
 	// function type and the expression contains `_` identifiers.
-	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, expectedType); err != nil {
+	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
 		return expr, nil
