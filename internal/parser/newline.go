@@ -40,11 +40,13 @@ import (
 // source, so, as in Go, a block comment that spans lines counts as one; a
 // comment is otherwise ignored and never the previous token.
 //
-// A '*' or '&' followed by whitespace is a binary operator continuing the line
-// before, like any other operator at line start: `* b` multiplies, `*b`
-// dereferences. '*' and '&' are re-typed because their prefix forms are
-// pointer operations a line can start with (`*p = 5`, a trailing `*p` or
-// `&n`); '+', '-' and '^' are not, so a line starting with one always
+// A '*' or '&' is re-typed only where a statement can begin — directly inside
+// a '{', not within a '(' or '[' or at the top level — and only when written
+// against its operand. Followed by whitespace or a comment it is a binary operator
+// continuing the line before, like any other operator at line start: `* b`
+// multiplies, `*b` dereferences. '*' and '&' are re-typed because their prefix
+// forms are pointer operations a line can start with (`*p = 5`, a trailing
+// `*p` or `&n`); '+', '-' and '^' are not, so a line starting with one always
 // continues the expression. A line that starts with '.' continues a method
 // chain.
 type newlineTokenSource struct {
@@ -55,6 +57,9 @@ type newlineTokenSource struct {
 	prevEndLine int
 	// prevEndsExpr reports whether that token can end an expression.
 	prevEndsExpr bool
+	// open holds the brackets open at this point, innermost last: true for a
+	// '{', false for a '(' or '['.
+	open []bool
 }
 
 var _ antlr.Lexer = (*newlineTokenSource)(nil)
@@ -65,25 +70,25 @@ func newTokenStream(lexer antlr.Lexer) *antlr.CommonTokenStream {
 	return antlr.NewCommonTokenStream(&newlineTokenSource{Lexer: lexer, kinds: kinds()}, antlr.TokenDefaultChannel)
 }
 
-// lineStartToken is the token the line-break rule re-types into one of the
-// keys of lineStartTokens, and whether it is re-typed only when written
-// directly against its operand.
+// lineStartToken describes one re-typed token: the source token it is
+// re-typed from, and whether it is re-typed only where a statement can begin
+// and only when written directly against its operand.
 type lineStartToken struct {
 	from         string
 	needsOperand bool
 }
 
-// lineStartTokens maps each re-typed token to the token it is re-typed from.
-// The re-typed tokens are internal: syntax errors name the original instead
-// (see hideNewlineTokens).
+// lineStartTokens is keyed by the name of each re-typed token. The re-typed
+// tokens are internal: syntax errors name the original instead (see
+// hideNewlineTokens), which is why the table is keyed this way round.
 var lineStartTokens = map[string]lineStartToken{
 	"NL_LPAREN": {from: "'('"},
 	"NL_STAR":   {from: "'*'", needsOperand: true},
 	"NL_AMP":    {from: "'&'", needsOperand: true},
 }
 
-// retype is what the line-break rule does to one token type: the type it
-// becomes (0 when it is never re-typed) and whether only against an operand.
+// retype is lineStartTokens resolved to token types, for one source token
+// type: the type it becomes (0 when it is never re-typed) and needsOperand.
 type retype struct {
 	to           int
 	needsOperand bool
@@ -93,6 +98,10 @@ type retype struct {
 // in the generated vocabulary: the generated constants are unexported.
 type tokenKinds struct {
 	identifier int
+	// opens and closes are indexed by token type: a bracket that opens ('(',
+	// NL_LPAREN, '[', '{') or closes (')', ']', '}'). openBrace is '{'.
+	opens, closes []bool
+	openBrace     int
 	// atLineStart is indexed by token type: how a token is re-typed when it
 	// starts a line after a token that can end an expression.
 	atLineStart []retype
@@ -138,9 +147,18 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 	}
 	k := &tokenKinds{
 		identifier:  mustType("IDENTIFIER"),
+		opens:       make([]bool, len(vocab.SymbolicNames)),
+		closes:      make([]bool, len(vocab.SymbolicNames)),
+		openBrace:   mustType("'{'"),
 		atLineStart: make([]retype, len(vocab.SymbolicNames)),
 		endsExpr:    make([]bool, len(vocab.SymbolicNames)),
 		spansLines:  make([]bool, len(vocab.SymbolicNames)),
+	}
+	for _, name := range []string{"'('", "NL_LPAREN", "'['", "'{'"} {
+		k.opens[mustType(name)] = true
+	}
+	for _, name := range []string{"')'", "']'", "'}'"} {
+		k.closes[mustType(name)] = true
 	}
 	for to, tok := range lineStartTokens {
 		k.atLineStart[mustType(tok.from)] = retype{to: mustType(to), needsOperand: tok.needsOperand}
@@ -164,13 +182,17 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	k := s.kinds
 	ttype := tok.GetTokenType()
 	line := tok.GetLine()
-	// The lexer has just consumed the token, so LA(1) is the character after
-	// it: a '*' or '&' followed by whitespace stays binary.
 	if r := k.retypeOf(ttype); r.to != 0 && s.prevEndsExpr && line > s.prevEndLine &&
-		(!r.needsOperand || !isSpace(s.GetInputStream().LA(1))) {
+		(!r.needsOperand || s.atStatementLevel() && !s.operatorStandsApart()) {
 		tok = s.GetTokenFactory().Create(tok.GetSource(), r.to, tok.GetText(),
 			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
 		ttype = r.to
+	}
+	switch {
+	case is(k.opens, ttype):
+		s.open = append(s.open, ttype == k.openBrace)
+	case is(k.closes, ttype) && len(s.open) > 0:
+		s.open = s.open[:len(s.open)-1]
 	}
 	s.prevEndsExpr = is(k.endsExpr, ttype)
 	s.prevEndLine = line
@@ -180,9 +202,28 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	return tok
 }
 
-// isSpace reports whether the character code r, as a CharStream returns it,
-// is one the grammar's WS rule skips; EOF (-1) is not.
-func isSpace(r int) bool { return r == ' ' || r == '\t' || r == '\r' || r == '\n' }
+// atStatementLevel reports whether a statement can begin here: directly inside
+// a '{'. At the top level only declarations begin, and those start with a
+// keyword.
+func (s *newlineTokenSource) atStatementLevel() bool {
+	return len(s.open) > 0 && s.open[len(s.open)-1]
+}
+
+// operatorStandsApart reports whether the token the lexer has just consumed is
+// followed by whitespace or a comment rather than by its operand. The lexer
+// has just consumed it, so LA(1) is the character after it.
+func (s *newlineTokenSource) operatorStandsApart() bool {
+	in := s.GetInputStream()
+	switch in.LA(1) {
+	case ' ', '\t', '\r', '\n':
+		// The characters the grammar's WS rule skips.
+		return true
+	case '/':
+		next := in.LA(2)
+		return next == '/' || next == '*'
+	}
+	return false
+}
 
 // hideNewlineTokens keeps the internal re-typed tokens out of syntax errors.
 // It rewrites only the token set ANTLR expected — after "expecting", or

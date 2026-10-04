@@ -53,6 +53,16 @@ class GalaNewlineLexerTest {
         assertEquals(2, statements("f()\n*p = 5"))
         assertEquals(2, statements("val x = 1\n**pp"))
         assertEquals(2, statements("val x = 1\n&x"))
+        assertEquals(2, statements("val a = b\n*(p)"))
+        assertEquals(2, statements("Println(\"zero\")\n        *p = 1"))
+        assertEquals(2, statements("if (a) { f(x) }\n*p = 1"))
+    }
+
+    @Test
+    fun pointerTypesAcceptRetypedStar() {
+        assertEquals(emptyList<String>(), parse("package main\n\nfunc g()\n*int = nil\n").second)
+        assertEquals(emptyList<String>(), parse("package main\n\ntype I interface {\n    M()\n    *int\n}\n").second)
+        assertEquals(emptyList<String>(), parse("package main\n\nval a = b\n*c\n").second)
     }
 
     @Test
@@ -60,6 +70,15 @@ class GalaNewlineLexerTest {
         assertEquals(1, statements("val a = b\n    * c"))
         assertEquals(1, statements("val a = b\n    & c"))
         assertEquals(1, statements("val a =\n    *p"))
+        assertEquals(1, statements("val a = b\n    * *p"))
+        assertEquals(1, statements("val a = b *\n    *p"))
+        assertEquals(1, statements("f(1,\n*p)"))
+        assertEquals(1, statements("f(w\n    *h)"))
+        assertEquals(1, statements("val a = (w\n    &h)"))
+        assertEquals(1, statements("val a = xs[i\n    *2]"))
+        assertEquals(1, statements("val a = b\n    *// times\n    c"))
+        assertEquals(1, statements("val a = b\n    */* times */c"))
+        assertEquals(1, statements("xs.Map((x) => {\n    val p = &x\n    *p\n})"))
         assertEquals(1, statements("f(1)(2)"))
         assertEquals(1, statements("Println(\n    1,\n    (2, 3),\n)"))
         assertEquals(1, statements("xs\n    .Map((x) => x)"))

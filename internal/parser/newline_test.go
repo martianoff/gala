@@ -50,6 +50,7 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "double deref", body: "val a = b\n**pp", stmts: 2},
 		{name: "address-of as trailing value", body: "val x = 1\n&x", stmts: 2},
 		{name: "indented deref", body: "Println(\"zero\")\n        *p = 1", stmts: 2},
+		{name: "deref after nested block", body: "if (a) { f(x) }\n*p = 1", stmts: 2},
 
 		// Everything else keeps continuing across the line break.
 		{name: "call on same line", body: "f(1)(2)", stmts: 1},
@@ -69,6 +70,12 @@ func TestNewlineParenStartsStatement(t *testing.T) {
 		{name: "binary star at line end", body: "val a = b *\n    *p", stmts: 1},
 		{name: "deref after val equals", body: "val a =\n    *p", stmts: 1},
 		{name: "deref after comma", body: "f(1,\n*p)", stmts: 1},
+		{name: "multiplication inside arguments", body: "f(w\n    *h)", stmts: 1},
+		{name: "bitwise and inside parentheses", body: "val a = (w\n    &h)", stmts: 1},
+		{name: "multiplication inside index", body: "val a = xs[i\n    *2]", stmts: 1},
+		{name: "star before line comment", body: "val a = b\n    *// times\n    c", stmts: 1},
+		{name: "star before block comment", body: "val a = b\n    */* times */c", stmts: 1},
+		{name: "deref in block lambda argument", body: "xs.Map((x) => {\n    val p = &x\n    *p\n})", stmts: 1},
 		{name: "match on next line", body: "val r = x\n    match {\n    case _ => 1\n}", stmts: 1},
 		{name: "index on next line", body: "val a = xs\n    [0]", stmts: 1},
 		{name: "return value on next line", body: "return\n(1, 2)", stmts: 1},
@@ -110,6 +117,8 @@ func TestNewlineParenInDeclarations(t *testing.T) {
 		{name: "sealed case fields", decl: "sealed type S {\n    case A\n    (x int)\n    case B\n}"},
 		{name: "interface method parameters", decl: "type I interface {\n    M\n    (x int) int\n}"},
 		{name: "pointer result type", decl: "func g()\n*int = nil"},
+		{name: "interface method pointer result", decl: "type I interface {\n    M()\n    *int\n}"},
+		{name: "top-level multiplication", decl: "val a = b\n*c"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

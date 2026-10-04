@@ -14,21 +14,26 @@ import org.gala.ide.intellij.parser.galaParser
  * The GALA lexer with the compiler's line-break rule applied, so the plugin's
  * PSI tree matches what the compiler parses: a '(' separated by a line break
  * from a token that can end an expression (an identifier, a literal, ')', ']'
- * or '}') is re-typed as NL_LPAREN, and a '*' or '&' there written directly
- * against its operand (`*p`, `&n`) as NL_STAR or NL_AMP. The grammar's call
- * suffix, multiplication and bitwise and reject the re-typed tokens, so such a
- * token begins a new statement instead of continuing the line before; `* b`
- * with a space still continues it. Mirrors internal/parser/newline.go in the
- * compiler.
+ * or '}') is re-typed as NL_LPAREN, and a '*' or '&' there as NL_STAR or
+ * NL_AMP when it is directly inside a '{' and written against its operand
+ * (`*p`, `&n`). The grammar's call suffix, multiplication and bitwise and
+ * reject the re-typed tokens, so such a token begins a new statement instead
+ * of continuing the line before; `* b` with a space still continues it.
+ * Mirrors internal/parser/newline.go in the compiler.
  */
 class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     private var prevEndLine = 0
     private var prevEndsExpr = false
 
+    // The brackets open at this point, innermost last: true for a '{', false
+    // for a '(' or '['.
+    private val open = ArrayDeque<Boolean>()
+
     override fun reset() {
         super.reset()
         prevEndLine = 0
         prevEndsExpr = false
+        open.clear()
     }
 
     override fun nextToken(): Token {
@@ -37,23 +42,32 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
         if (prevEndsExpr && tok.line > prevEndLine) {
             val retyped = when (tok.type) {
                 LPAREN -> galaParser.NL_LPAREN
-                STAR -> galaParser.NL_STAR.takeUnless { followedBySpace() }
-                AMP -> galaParser.NL_AMP.takeUnless { followedBySpace() }
+                STAR -> galaParser.NL_STAR.takeIf { isPrefixOperator() }
+                AMP -> galaParser.NL_AMP.takeIf { isPrefixOperator() }
                 else -> null
             }
             if (retyped != null) (tok as WritableToken).type = retyped
+        }
+        when (tok.type) {
+            in OPENS -> open.addLast(tok.type == LBRACE)
+            in CLOSES -> open.removeLastOrNull()
         }
         prevEndsExpr = tok.type in ENDS_EXPR
         prevEndLine = tok.line + if (tok.type in SPANS_LINES) tok.text.count { it == '\n' } else 0
         return tok
     }
 
-    // The lexer has just consumed the token, so LA(1) is the character after
-    // it: a '*' or '&' followed by a character the grammar's WS rule skips
-    // stays binary.
-    private fun followedBySpace(): Boolean = when (_input.LA(1)) {
-        ' '.code, '\t'.code, '\r'.code, '\n'.code -> true
-        else -> false
+    // Whether the '*' or '&' just consumed is a prefix operator: directly
+    // inside a '{', where a statement can begin, and followed by its operand
+    // rather than by whitespace the grammar's WS rule skips or a comment. The
+    // lexer has just consumed it, so LA(1) is the character after it.
+    private fun isPrefixOperator(): Boolean {
+        if (open.lastOrNull() != true) return false
+        return when (_input.LA(1)) {
+            ' '.code, '\t'.code, '\r'.code, '\n'.code -> false
+            '/'.code -> _input.LA(2).let { it != '/'.code && it != '*'.code }
+            else -> true
+        }
     }
 
     companion object {
@@ -64,11 +78,15 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
             }
 
         private val LPAREN = typeOf("'('")
+        private val LBRACE = typeOf("'{'")
         private val STAR = typeOf("'*'")
         private val AMP = typeOf("'&'")
 
         // The internal tokens the line-break rule re-types into.
         internal val RETYPED = intArrayOf(galaParser.NL_LPAREN, galaParser.NL_STAR, galaParser.NL_AMP)
+
+        private val OPENS = setOf(LPAREN, galaParser.NL_LPAREN, typeOf("'['"), LBRACE)
+        private val CLOSES = listOf("')'", "']'", "'}'").map(::typeOf).toSet()
 
         // Literals whose text can hold a line break: a raw string, or a quoted
         // literal with an escaped newline.
