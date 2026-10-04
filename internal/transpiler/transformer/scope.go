@@ -162,8 +162,15 @@ func (t *galaASTTransformer) lookupTypeName(name string) transpiler.Type {
 // bindingScope returns the innermost scope that binds name, or nil. Every
 // binding is recorded in vals; valTypes may lack an entry when the binding's
 // type is unknown (e.g. a match binding over an uninferable scrutinee).
+//
+// A type parameter of the enclosing generic declaration sits between the
+// declaration's scopes and the package scope (the root), as in Go, so a
+// package-level binding of its name is not found.
 func (t *galaASTTransformer) bindingScope(name string) *scope {
 	for s := t.currentScope; s != nil; s = s.parent {
+		if s.parent == nil && t.activeTypeParams[name] {
+			return nil
+		}
 		if _, ok := s.vals[name]; ok {
 			return s
 		}

@@ -147,6 +147,15 @@ func mk[Wrap any](x Wrap) Wrap = Wrap(x)`,
 			mustContain: []string{"func mk[Wrap any](x Wrap) Wrap {\n\treturn Wrap(x)\n}"},
 		},
 		{
+			// The type parameter's scope is inside the package's, so it
+			// shadows a package-level val as well.
+			name: "type parameter shadows a package-level val",
+			input: typeParamHeader + `val Left = 1
+
+func conv[Left any](a Left) Left = Left(a)`,
+			mustContain: []string{"func conv[Left any](a Left) Left {\n\treturn Left(a)\n}"},
+		},
+		{
 			name:        "type parameters named like std types",
 			input:       typeParamHeader + `func pair[Option any, Try any](a Option, b Try) Tuple[Option, Try] = (a, b)`,
 			mustContain: []string{"func pair[Option any, Try any](a Option, b Try) std.Tuple[Option, Try] {"},
@@ -201,6 +210,19 @@ func (h Holder[Tuple]) Pair() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)`,
 		},
 	}
 	runTypeParamCases(t, cases)
+}
+
+// TestTypeParamNamedLikeExtractor guards that matching on an extractor whose
+// name a type parameter shadows is a GALA error naming the cause, not Go that
+// treats the type parameter as an extractor.
+func TestTypeParamNamedLikeExtractor(t *testing.T) {
+	input := typeParamHeader + `func fold[Left any, Right any](e Either[Left, Right]) string = e match {
+    case Left(l) => "l"
+    case _ => "r"
+}`
+	_, err := newForbiddenBuiltinTranspiler().Transpile(input, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'Left' is a type parameter of the enclosing declaration")
 }
 
 // typeParamHeader opens each typeParamCase input.

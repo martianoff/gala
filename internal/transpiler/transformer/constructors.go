@@ -40,7 +40,8 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		}
 
 		// A type parameter of the enclosing generic declaration shadows every
-		// name outside it, as in Go: `Some[Left](a)` in `func f[Left any]`
+		// name outside it — a package-level val (see bindingScope), std's
+		// names, an import's — as in Go: `Some[Left](a)` in `func f[Left any]`
 		// names the type parameter, not std's Left.
 		if t.activeTypeParams[name] {
 			return ident, nil

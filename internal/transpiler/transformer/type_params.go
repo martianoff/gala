@@ -87,9 +87,15 @@ func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
 	if ctx == nil || ctx.TypeArguments() == nil {
 		return nil
 	}
+	// A partial parse (an editor's `Box[]`) has no type list.
+	list, ok := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext)
+	if !ok {
+		return nil
+	}
 	var params []*ast.Field
-	for _, arg := range ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_() {
-		if name := arg.GetText(); token.IsIdentifier(name) {
+	for _, arg := range list.AllType_() {
+		// `_` is the wildcard type, not a parameter name.
+		if name := arg.GetText(); name != "_" && token.IsIdentifier(name) {
 			params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}})
 		}
 	}

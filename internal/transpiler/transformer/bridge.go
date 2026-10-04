@@ -403,7 +403,10 @@ func (t *galaASTTransformer) scopeBindingCount() int {
 //
 // Name normalization answers from the type namespace only (lookupTypeName),
 // never from the scope chain, so which local bindings are in scope cannot
-// change the result. Two things can, and they are checked differently. The import
+// change the result. The type parameters in scope can — a bound name is no
+// declared type — so each signature is converted with exactly its own
+// function's type parameters bound, never those of the declaration being
+// transformed. Two more things can, and they are checked differently. The import
 // manager moves a revision on every mutation of its entry set, so the cache
 // records the revision it was stamped with and a moved revision rebuilds it —
 // the same derived validity the resolver snapshot uses, which means a site
