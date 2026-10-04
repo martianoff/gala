@@ -1137,7 +1137,7 @@ UserID)` is `{"id":42}`.
 **Pattern matching.** `case UserID(n)` unwraps an opaque value and matches its
 one sub-pattern against the underlying value: `n` binds an `int64`,
 `UserID(0)` compares it with a literal, `UserID(_)` ignores it. Any other number
-of sub-patterns is [GALA-E0065](errors/GALA-E0065.md). On an `any` or interface
+of sub-patterns is [GALA-E0065](errors/GALA-E0065.md). On an `any`, interface or type-parameter
 subject the pattern first checks the value is a `UserID` — a plain `int64` is
 not — and a phantom-typed one must spell its type arguments,
 `case Id[User](n)`. Literal patterns, stable identifiers (`val Admin Role = 1`
