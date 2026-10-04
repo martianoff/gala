@@ -37,6 +37,10 @@ func (c Cell[T]) Convert[U any]() Option[U] = None[U]()
 func (c Cell[T]) Cast[U any](tag string) Option[U] = None[U]()
 func (c Cell[T]) Fold[U any](z U, f func(U, T) U) U = f(z, c.V)
 func (c Cell[T]) Pick[U any, V any](v V) Tuple[Option[U], V] = (None[U](), v)
+
+struct Plain(N int)
+
+func (p Plain) none[T any]() Option[T] = None[T]()
 `
 
 // TestSlotTypeArgsMatrix crosses each position a slot type reaches a value
@@ -199,6 +203,7 @@ func TestSlotTypeArgsOnlyTheValue(t *testing.T) {
 		{"explicit method type argument with arguments", "func g() Option[bool] {\n    val c = Cell(1).Cast[bool](\"y\")\n    c\n}", "Cell_Cast[bool, int]("},
 		{"an untyped constant argument takes the slot's type", "func g() int64 = Cell(1).Fold(0, (acc, v) => acc)", "func(acc int64, v int) int64"},
 		{"a typed argument binds its type parameter", "func g(z int32) int32 = Cell(1).Fold(z, (acc, v) => acc)", "func(acc int32, v int) int32"},
+		{"method of a non-generic receiver", "func g(p Plain) Option[int] = p.none()", "Plain_none[int](p)"},
 		{"only the type arguments up to the last result-only one are spelled", "func g() Tuple[Option[string], int] = Cell(true).Pick(1)", "Cell_Pick[string](Cell[bool]"},
 		{
 			"match arm return typed by the match's slot",
