@@ -223,7 +223,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								// uninstantiated `MkTag{}` too.
 								if _, viaAlias := t.lookupTypeAlias(typeName); !viaAlias {
 									return nil, t.uninferredTypeArgError(suffix.GetStart().GetLine(), suffix.GetStart().GetColumn(),
-										base, applyYields(methodMeta), typeMeta.TypeParams, nil, typeMeta.TypeParams)
+										base, valueYields(methodMeta.ReturnType), typeMeta.TypeParams, nil, typeMeta.TypeParams)
 								}
 							}
 							receiver := &ast.CompositeLit{Type: receiverType}
@@ -1488,12 +1488,12 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		case variant.parent != nil && (partialList || !viaAlias):
 			return true, nil, t.uninferredVariantError(variant, "(...)", inferredMap, missing, line, col)
 		case partialList:
-			return true, nil, t.uninferredApplyTypeArgError(line, col, baseExpr, methodMeta, typeMeta.TypeParams, inferredMap, missing, args)
+			return true, nil, t.uninferredCallTypeArgError(line, col, baseExpr, methodMeta.ReturnType, typeMeta.TypeParams, inferredMap, missing, args)
 		case !viaAlias:
 			// Reported after the metadata injection below, whose error for a
 			// codec call with no type argument (GALA-E0050) is the more
 			// specific one.
-			uninferred = t.uninferredApplyTypeArgError(line, col, baseExpr, methodMeta, typeMeta.TypeParams, inferredMap, missing, args)
+			uninferred = t.uninferredCallTypeArgError(line, col, baseExpr, methodMeta.ReturnType, typeMeta.TypeParams, inferredMap, missing, args)
 		}
 	}
 
@@ -2921,7 +2921,9 @@ func (t *galaASTTransformer) slotTypeArgUsable(p transpiler.Type) bool {
 // The examples it prints are valid GALA where the call is: the constructor,
 // and a type of its package, are named as they are reachable there
 // (callSiteQualifier), and every type argument is the one the construction
-// does fix, or the placeholder `int` for one it leaves open.
+// does fix, or the placeholder `int` for one it leaves open. The remedy is
+// part of the message, so the error carries no separate hint (see
+// isUninferredTypeArgError).
 func (t *galaASTTransformer) uninferredTypeArgError(line, col int, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
 	_, qualified := extractTypeNameFromExpr(base)
 	name := t.callSiteName(qualified)
@@ -2941,13 +2943,13 @@ func (t *galaASTTransformer) uninferredTypeArgError(line, col int, base ast.Expr
 		strings.Join(missing, ", "), what, inferenceRemedy(valueType, name, typeArgs, "(...)")), "")
 }
 
-// applyYields is the type a companion construction through apply has, for
-// uninferredTypeArgError: never nil, which would mean a struct.
-func applyYields(apply *transpiler.MethodMetadata) transpiler.Type {
-	if apply.ReturnType == nil {
+// valueYields is ret, the type a companion Apply or generic function returns,
+// as uninferredTypeArgError's yields: never nil, which would mean a struct.
+func valueYields(ret transpiler.Type) transpiler.Type {
+	if ret == nil {
 		return transpiler.NilType{}
 	}
-	return apply.ReturnType
+	return ret
 }
 
 // inferenceRemedy is the remedy every "cannot infer type argument" hint
@@ -3038,12 +3040,14 @@ func (t *galaASTTransformer) completeTypeArgs(base ast.Expr, typeParams []string
 	return withTypeArgs(base, typeArgs), nil
 }
 
-// uninferredApplyTypeArgError is uninferredTypeArgError for a generic type
-// called through its companion apply. When an argument is a call into a Go
-// package whose types were not loaded — the usual cause, as in
+// uninferredCallTypeArgError is uninferredTypeArgError for a call with
+// arguments args whose value has type yields: a generic type called through
+// its companion Apply, or a generic function. When an argument is a call into
+// a Go package whose types were not loaded — the usual cause, as in
 // `Try(term.MakeRaw(fd))` — the error names the call and the package instead
-// of asking for a type argument.
-func (t *galaASTTransformer) uninferredApplyTypeArgError(line, col int, base ast.Expr, apply *transpiler.MethodMetadata, typeParams []string, inferred map[string]transpiler.Type, missing []string, args []ast.Expr) error {
+// of asking for a type argument, with a hint (see isUninferredTypeArgError:
+// no other slot can fix it).
+func (t *galaASTTransformer) uninferredCallTypeArgError(line, col int, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string, args []ast.Expr) error {
 	_, qualified := extractTypeNameFromExpr(base)
 	name := t.callSiteName(stripStdPrefix(qualified)) // `Try`, as written, not `std.Try`
 	for _, arg := range args {
@@ -3055,7 +3059,7 @@ func (t *galaASTTransformer) uninferredApplyTypeArgError(line, col int, base ast
 					"in gala.mod (`gala mod add --go <module>`)", pkgPath))
 		}
 	}
-	return t.uninferredTypeArgError(line, col, base, applyYields(apply), typeParams, inferred, missing)
+	return t.uninferredTypeArgError(line, col, base, valueYields(yields), typeParams, inferred, missing)
 }
 
 // unloadedGoPackageCall reports whether expr is an untyped call `pkg.F(...)`

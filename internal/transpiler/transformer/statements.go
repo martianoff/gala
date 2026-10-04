@@ -221,12 +221,15 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		return nil, err
 	}
 
-	// A single bare variable's type is the RHS's expected type, so
-	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`.
+	// A single target's type is the RHS's expected type, so
+	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`, and so does a
+	// field or element target: `s.cur = None()` for `cur Option[int]`.
 	rhsListCtx := ctx.GetChild(2).(*grammar.ExpressionListContext)
 	var lhsType transpiler.Type
 	if lhsName, lhsOk := t.singleAssignmentLHSName(lhsCtx); lhsOk {
 		lhsType = t.getValType(lhsName)
+	} else if len(lhsExprs) == 1 {
+		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
 	rhsExprs, err := t.transformExpressionListAgainst(rhsListCtx, lhsType)
 	if err != nil {

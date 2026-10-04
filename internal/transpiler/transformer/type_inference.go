@@ -714,9 +714,10 @@ func (t *galaASTTransformer) phantomTypeParams(funcMeta *transpiler.FunctionMeta
 // pasteable hint (uninferredTypeArgError) rather than emitted uninstantiated.
 //
 // Arg-bound params are resolved only from the arguments, never from the
-// slot: a slot-derived guess could contradict the real argument. When one
-// cannot be resolved from the arguments the call is left as written, for Go
-// to infer.
+// slot: a slot-derived guess could contradict the real argument. Since Go
+// cannot infer a phantom one, the call is emitted with every type argument,
+// so an arg-bound one GALA cannot type (an argument of unknown type) is an
+// error too.
 func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *transpiler.FunctionMetadata, args []ast.Expr, hasSpread bool, expected transpiler.Type, line, col int) (ast.Expr, error) {
 	if funcMeta == nil || len(funcMeta.TypeParams) == 0 {
 		return fun, nil
@@ -740,17 +741,8 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		}
 	}
 	instantiated, missing := t.completeTypeArgs(fun, funcMeta.TypeParams, nil, resolved)
-	var open []string
-	for _, tp := range missing {
-		if !argBound[tp] {
-			open = append(open, tp)
-		}
-	}
-	switch {
-	case open != nil:
-		return nil, t.uninferredTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, open)
-	case missing != nil:
-		return fun, nil // an arg-bound param GALA could not type: Go infers it
+	if missing != nil {
+		return nil, t.uninferredCallTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing, args)
 	}
 	return instantiated, nil
 }

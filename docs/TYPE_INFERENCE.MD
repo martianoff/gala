@@ -914,9 +914,10 @@ The call target is rewritten into an explicit instantiation
 concrete type. A phantom param the slot does not determine is
 [GALA-E0067](errors/GALA-E0067.md), with the same annotation and
 explicit-type-argument hint as a construction's, since Go could never infer
-it. An if or match branch takes it from its siblings (see above). If only an
-argument-bound param is unresolved, the target is left unchanged for Go to
-infer. The rewrite is skipped entirely when arguments alone suffice.
+it. An if or match branch takes it from its siblings (see above). So is an
+argument-bound param GALA cannot type (an argument whose type is unknown), as
+the call must then spell every type argument. The rewrite is skipped entirely
+when arguments alone suffice.
 
 This mirrors the sealed-variant mechanism above (`injectSealedVariantTypeArgs`)
 — both propagate an expected type downward to pin a parameter the call's own

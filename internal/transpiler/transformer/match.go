@@ -1579,10 +1579,15 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 // isUninferredTypeArgError reports whether err says a type argument has no
 // source: GALA-E0018 (a sealed variant constructor) or GALA-E0067 (a generic
 // struct, companion Apply or generic function call) found none in its
-// arguments or the slot it fills. Another slot can still give it one.
+// arguments or the slot it fills. Another slot can still give it one — unless
+// an argument's own type is unknown (the GALA-E0067 that carries a hint, see
+// uninferredCallTypeArgError), which no slot fixes.
 func isUninferredTypeArgError(err error) bool {
 	var se *galaerr.SemanticError
-	return errors.As(err, &se) && (se.Code == galaerr.CodeSealedVariantUninferred || se.Code == galaerr.CodeUninferredTypeArgument)
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Code == galaerr.CodeSealedVariantUninferred || se.Code == galaerr.CodeUninferredTypeArgument && se.Hint == ""
 }
 
 // siblingsType is the settled type the value types of a construct's typed

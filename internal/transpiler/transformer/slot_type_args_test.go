@@ -168,6 +168,39 @@ func TestSlotTypeArgsFromSiblingBranches(t *testing.T) {
 	assert.Contains(t, err.Error(), "GALA-E0067")
 }
 
+// TestSlotTypeArgsAssignmentTarget pins that an assignment target's type is
+// the slot of the value assigned to it — a field or element as well as a
+// variable — and that the enclosing result type plays no part.
+func TestSlotTypeArgsAssignmentTarget(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	const decls = "struct State(var Cur Option[string])\n\n"
+	tests := []struct {
+		name, input, want string
+	}{
+		{"field", "func (s *State) Reset() int {\n    s.Cur = None()\n    1\n}", "std.None[string]{}.Apply()"},
+		{"field from a generic call", "func (s *State) Reset() int {\n    s.Cur = parse()\n    1\n}", "parse[string]()"},
+		{"variable", "func f() int {\n    var o Option[string] = Some(\"x\")\n    o = parse()\n    Println(o)\n    1\n}", "parse[string]()"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(slotTypeArgDecls+decls+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+}
+
+// TestSlotTypeArgsFunctionWithoutResult pins the hint for a generic function
+// with no result: no annotation can bind its type parameter, so only the
+// explicit type arguments are offered.
+func TestSlotTypeArgsFunctionWithoutResult(t *testing.T) {
+	src := slotTypeArgDecls + "func register[T any](name string) {\n    Println(name)\n}\n\nfunc f() int {\n    register(\"x\")\n    1\n}\n"
+	_, err := newAliasExpectedTranspiler().Transpile(src, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot infer type argument T of register from its arguments or the expected type; pass type args explicitly (`register[int](...)`)")
+	assert.NotContains(t, err.Error(), "generic struct")
+}
+
 // TestSlotTypeArgsLambdaTrailingValue pins that a lambda's trailing value fills
 // the slot an earlier `return` settled, so a zero-argument variant or generic
 // call there takes its type from it rather than from the enclosing match
