@@ -161,6 +161,13 @@ func encodingVariants(src string, mode uint8, salt uint16) (string, string, bool
 		}
 		if mode&encodeBlockComments != 0 {
 			for i, tok := range toks {
+				// Not right after a '*' or '&' glued to it: a padded comment
+				// there is a space, and a line-start `*p` / `&n` (a new
+				// statement) would become `* p` / `& n`, which continues the
+				// line before — a different program, not a re-encoding.
+				if at := tok.GetStart(); at > 0 && (runes[at-1] == '*' || runes[at-1] == '&') {
+					continue
+				}
 				if tok.GetChannel() == antlr.TokenDefaultChannel && (i+int(salt))%3 == 0 {
 					// Space-padded: glued to a preceding `/` the opener
 					// would read as `//*`, a line comment.
