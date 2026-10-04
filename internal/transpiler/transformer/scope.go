@@ -162,13 +162,27 @@ func (t *galaASTTransformer) lookupTypeName(name string) transpiler.Type {
 // bindingScope returns the innermost scope that binds name, or nil. Every
 // binding is recorded in vals; valTypes may lack an entry when the binding's
 // type is unknown (e.g. a match binding over an uninferable scrutinee).
+//
+// A type parameter of the enclosing generic declaration sits between the
+// declaration's scopes and the package scope (the root), as in Go, so a
+// package-level binding of its name is not found.
 func (t *galaASTTransformer) bindingScope(name string) *scope {
 	for s := t.currentScope; s != nil; s = s.parent {
+		if t.typeParamHides(s, name) {
+			return nil
+		}
 		if _, ok := s.vals[name]; ok {
 			return s
 		}
 	}
 	return nil
+}
+
+// typeParamHides reports whether a type parameter of the enclosing generic
+// declaration hides s's binding of name: s is the package scope, which the
+// type parameters sit inside of (see bindingScope).
+func (t *galaASTTransformer) typeParamHides(s *scope, name string) bool {
+	return s.parent == nil && t.activeTypeParams[name]
 }
 
 // isTopLevelBinding reports whether name resolves to a package-level binding:
@@ -436,6 +450,11 @@ func (t *galaASTTransformer) getFunction(name string) *transpiler.FunctionMetada
 	// default lowered from another package was written against THAT package's
 	// imports, so it keeps the package-name lookup below.
 	qualifier, sel, qualified := strings.Cut(name, ".")
+	// A type parameter of the enclosing declaration shadows every function of
+	// its name.
+	if !qualified && t.activeTypeParams[name] {
+		return nil
+	}
 	if qualified && !t.loweringForeignDefault() {
 		if fm, bound := t.qualifiedFunction(qualifier, sel); bound {
 			return fm

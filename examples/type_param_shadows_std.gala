@@ -1,0 +1,91 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A type parameter means itself everywhere in its declaration, even when it is
+// named like a std type or variant (Some, Option, Try, Tuple, Left) or like a
+// type an import brings in (Array). As in Go, it shadows every outer name:
+// inside `func f[Some any]`, `Some` is the type parameter, never std's Some.
+
+func id[Some any](x Some) Some = x
+
+func first[Some any](xs Array[Some]) Option[Some] = xs.HeadOption()
+
+func pair[Option any, Try any](a Option, b Try) Tuple[Option, Try] = (a, b)
+
+func firstOr[Array any](xs List[Array], d Array) Array = xs.HeadOption().GetOrElse(d)
+
+// Each declaration binds its own names: a lambda typed from Try in one and
+// from Option in the next keeps its own type parameter.
+func same[Try any](xs Array[Try]) Array[Try] = xs.Map((x) => x)
+
+func alsoSame[Option any](xs Array[Option]) Array[Option] = xs.Map((x) => x)
+
+func annotated[Some any](x Some) Some {
+    val y Some = x
+    val f = (v Some) => v
+    f(y)
+}
+
+// An explicit type argument names the type parameter too.
+func wrapRight[Left any](a Left) Option[Left] = Some[Left](a)
+
+// Box holds one value; its type parameter is named like std's Option.
+struct Box[Option any](V Option)
+
+// Get returns the boxed value.
+func (b Box[Option]) Get() Option = b.V
+
+// Map boxes f applied to the value; its own type parameter is named like Try.
+func (b Box[Option]) Map[Try any](f func(Option) Try) Box[Try] = Box(f(b.V))
+
+// Peek returns the boxed value; the receiver's type argument is a type
+// parameter too, here named like one of Either's variants.
+func (b Box[Left]) Peek() Left = b.V
+
+// convertAll converts each element to the type parameter, which types the
+// lambda's result.
+func convertAll[Wrap any](xs Array[Wrap]) Array[Wrap] = xs.Map((v) => Wrap(v))
+
+// apply's default is typed by its own A — at the call inside viaSome, by
+// viaSome's Some.
+func apply[A any](x A, f func(A) A = (a) => a) A = f(x)
+
+func viaSome[Some any](v Some) Some = apply(v)
+
+// Holder uses the block struct form, so a field type names the parameter too.
+type Holder[Tuple any] struct {
+    Value Tuple
+}
+
+// Twice returns the held value twice.
+func (h Holder[Tuple]) Twice() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)
+
+// Res is a sealed type whose type parameter is named like std's Some.
+sealed type Res[Some any] {
+    case Ok(V Some)
+    case Err(Msg string)
+}
+
+func describe[Some any](r Res[Some]) string = r match {
+    case Ok(v) => s"ok $v"
+    case Err(m) => s"err $m"
+}
+
+func main() {
+    Println(id(3))
+    Println(first(ArrayOf("w")).GetOrElse("none"))
+    Println(pair(1, "b"))
+    Println(firstOr(ListOf(4, 5), 0))
+    Println(same(ArrayOf(9)))
+    Println(alsoSame(ArrayOf("o")))
+    Println(annotated("a"))
+    Println(wrapRight("r").Get())
+    Println(Box(2).Map((x) => s"v$x").Get())
+    Println(Holder(Value = 3).Twice())
+    Println(describe(Ok(1)))
+    Println(describe(Err[int]("bad")))
+    Println(Box(7).Peek())
+    Println(convertAll(ArrayOf(5, 6)))
+    Println(viaSome("s"))
+}

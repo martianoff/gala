@@ -29,6 +29,12 @@ type typeNameMemo struct {
 }
 
 func (t *galaASTTransformer) normalizeTypeNameMemoized(name string, memo *typeNameMemo) string {
+	// A bound type parameter names itself. It never reaches the memo, whose
+	// answers hold across declarations: the same name outside the
+	// declaration that binds it may well be a type.
+	if t.activeTypeParams[name] {
+		return name
+	}
 	if memo != nil {
 		if resolved, ok := memo.resolved[name]; ok {
 			return resolved
@@ -348,8 +354,8 @@ func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 	for s := t.currentScope; s != nil; s = s.parent {
 		shadows = shadows && s != useScope
 		for name := range s.vals {
-			if _, bound := env[name]; bound || hidden[name] {
-				continue // an inner binding of the name came first
+			if _, bound := env[name]; bound || hidden[name] || t.typeParamHides(s, name) {
+				continue // an inner binding of the name, or a type parameter, came first
 			}
 			if _, isFunction := fnEnv[name]; isFunction && !shadows {
 				continue
@@ -365,8 +371,10 @@ func (t *galaASTTransformer) buildTypeEnv() infer.TypeEnv {
 		}
 	}
 
+	// A type parameter hides every package-level function of its name, as it
+	// does for getFunction.
 	for name, scheme := range fnEnv {
-		if _, bound := env[name]; !bound && !hidden[name] {
+		if _, bound := env[name]; !bound && !hidden[name] && !t.activeTypeParams[name] {
 			env[name] = scheme
 		}
 	}
@@ -397,7 +405,10 @@ func (t *galaASTTransformer) scopeBindingCount() int {
 //
 // Name normalization answers from the type namespace only (lookupTypeName),
 // never from the scope chain, so which local bindings are in scope cannot
-// change the result. Two things can, and they are checked differently. The import
+// change the result. The type parameters in scope can — a bound name is no
+// declared type — so each signature is converted with exactly its own
+// function's type parameters bound, never those of the declaration being
+// transformed. Two more things can, and they are checked differently. The import
 // manager moves a revision on every mutation of its entry set, so the cache
 // records the revision it was stamped with and a moved revision rebuilds it —
 // the same derived validity the resolver snapshot uses, which means a site
@@ -425,8 +436,17 @@ func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 	// half.
 	memo := t.sharedTypeNameMemo()
 
+	// Each signature is read in its own declaration's scope: its type
+	// parameters, and none of the declaration being transformed, are bound
+	// while it is converted, so the cached environment does not depend on
+	// where it was built.
+	defer t.onlyTypeParams(nil)()
 	env := make(infer.TypeEnv, len(t.functions))
 	for name, meta := range t.functions {
+		clear(t.activeTypeParams)
+		for _, tp := range meta.TypeParams {
+			t.activeTypeParams[tp] = true
+		}
 		funcType := t.toInferTypeMemoized(transpiler.FuncType{
 			Params:  meta.ParamTypes,
 			Results: []transpiler.Type{meta.ReturnType},
@@ -463,7 +483,8 @@ func (t *galaASTTransformer) functionTypeEnv() infer.TypeEnv {
 
 // sharedTypeNameMemo returns the name-normalization memo shared by
 // functionTypeEnv and buildTypeEnv. normalizeTypeName reads only the type
-// namespace, never the scope chain, so a memoized answer stays right for as
+// namespace, never the scope chain, and a bound type parameter bypasses the
+// memo (see normalizeTypeNameMemoized), so a memoized answer stays right for as
 // long as the state the function-environment cache is keyed on stays put: the
 // memo is reset when typeEnvEpoch or the import manager's revision moves, and
 // kept across inferences otherwise.

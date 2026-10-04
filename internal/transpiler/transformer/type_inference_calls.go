@@ -167,6 +167,11 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if t.opaqueConversionCallee(e.Fun) != nil {
 		return t.astTypeToTranspilerType(e.Fun)
 	}
+	// So has a conversion to a type parameter of the enclosing declaration,
+	// `T(v)`.
+	if id, ok := e.Fun.(*ast.Ident); ok && len(e.Args) == 1 && t.typeParamValue(id.Name) {
+		return t.resolveType(id.Name)
+	}
 
 	// Handle b.Get() or std.Some()
 	// Capture type arguments from generic calls like Tuple[int, string](...)

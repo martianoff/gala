@@ -961,7 +961,7 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 		src.typeParams = append(slices.Clone(recvMeta.TypeParams), src.typeParams...)
 	}
 	if i < len(methodMeta.ParamTypes) {
-		src.declared = t.substituteTranspilerTypeParams(methodMeta.ParamTypes[i], typeSubst)
+		t.substituteDeclared(&src, methodMeta.ParamTypes[i], parseTypeSubst(typeSubst))
 	}
 	return t.transformDefaultExpr(src, line, col)
 }
@@ -3170,9 +3170,11 @@ func (t *galaASTTransformer) reachedAs(typ transpiler.Type) transpiler.Type {
 		if t.importManager != nil {
 			if e, ok := t.importManager.GetByPkgName(ty.Package); ok {
 				prefix := t.callSiteQualifier(e.Alias)
-				// A bare name the package's own type shadows stays qualified.
+				// A bare name the package's own type, or a type parameter in
+				// scope, shadows stays qualified.
 				if prefix == "" && !e.IsDot {
-					if r := t.resolveTypeMetaName(ty.Name); r != "" && r != ty.Package+"."+ty.Name {
+					r := t.resolveTypeMetaName(ty.Name)
+					if t.activeTypeParams[ty.Name] || (r != "" && r != ty.Package+"."+ty.Name) {
 						prefix = e.Alias + "."
 					}
 				}
@@ -3813,7 +3815,7 @@ func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadat
 		typeParams:  funcMeta.TypeParams,
 	}
 	if i < len(funcMeta.ParamTypes) {
-		src.declared = t.substituteTranspilerTypeParams(funcMeta.ParamTypes[i], typeSubst)
+		t.substituteDeclared(&src, funcMeta.ParamTypes[i], parseTypeSubst(typeSubst))
 	}
 	return t.transformDefaultExpr(src, line, col)
 }

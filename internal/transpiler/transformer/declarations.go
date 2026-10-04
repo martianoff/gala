@@ -808,6 +808,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	var receiver *ast.FieldList
 	var receiverTypeName string
 	var originalRecvTypeExpr ast.Expr // the receiver type as written
+	var recvTypeParams []*ast.Field   // the type parameters the receiver type declares
 	if ctx.Receiver() != nil {
 		recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
 		recvName := recvCtx.Identifier().GetText()
@@ -816,6 +817,12 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			err.Hint = receiverRebindHint(recvName)
 			return nil, err
 		}
+		// The receiver's type arguments (`func (b Box[T]) ...`) declare type
+		// parameters, as in Go: they are in scope for the receiver type itself,
+		// the signature and the body, and shadow any same-named type declared
+		// outside — std's included.
+		recvTypeParams = receiverTypeParams(recvCtx.Type_())
+		defer t.bindTypeParams(recvTypeParams...)()
 		recvTypeExpr, err := t.transformType(recvCtx.Type_())
 		if err != nil {
 			return nil, err
@@ -870,12 +877,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		typeParams = tp
 	}
-	// The receiver's type arguments (`func (b Box[T]) ...`) and the function's
-	// own type parameters are in scope for the signature and the body, and
-	// shadow any same-named type declared outside.
-	if originalRecvTypeExpr != nil {
-		defer t.bindTypeParams(t.extractTypeParams(originalRecvTypeExpr)...)()
-	}
+	// The function's own type parameters are in scope for the signature and
+	// the body, and shadow any same-named type declared outside.
 	defer t.bindTypeParams(fieldListOrNil(typeParams)...)()
 
 	// Signature
@@ -919,14 +922,15 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// 1. Add receiver as first parameter
 		funcType.Params.List = append([]*ast.Field{receiver.List[0]}, funcType.Params.List...)
 
-		// 2. Extract type parameters from receiver type and add to typeParams
-		recvTypeParams := t.extractTypeParams(originalRecvTypeExpr)
-		if len(recvTypeParams) > 0 {
+		// 2. Extract type parameters, with their constraints, from receiver
+		// type and add to typeParams
+		constrained := t.extractTypeParams(originalRecvTypeExpr)
+		if len(constrained) > 0 {
 			if funcType.TypeParams == nil {
 				funcType.TypeParams = &ast.FieldList{}
 			}
 			// Check for duplicates
-			for _, rtp := range recvTypeParams {
+			for _, rtp := range constrained {
 				exists := false
 				for _, tp := range funcType.TypeParams.List {
 					if tp.Names[0].Name == rtp.Names[0].Name {
@@ -945,7 +949,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	// Track the current function's return type so tuple literals in return statements
 	// can use it as a fallback when element type inference fails.
 	funcSlot := returnSlot{
-		typeParams: declaredTypeParams(typeParams, t.extractTypeParams(originalRecvTypeExpr)),
+		typeParams: declaredTypeParams(typeParams, recvTypeParams),
 		funcName:   t.sourceFunctionName(ctx, receiverTypeName),
 	}
 	hasResult := funcType.Results != nil && len(funcType.Results.List) > 0

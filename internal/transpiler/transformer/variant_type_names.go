@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"slices"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -126,9 +127,14 @@ func (t *galaASTTransformer) checkVariantTypeNames(tree antlr.Tree) error {
 }
 
 // typeParamInScope reports whether a declaration enclosing node declares a
-// type parameter called name.
+// type parameter called name — in its type parameter list, or, for a method,
+// as a type argument of its receiver (`func (b Box[Left]) Get() Left`).
 func typeParamInScope(node antlr.Tree, name string) bool {
 	for ; node != nil; node = node.GetParent() {
+		if fn, ok := node.(*grammar.FunctionDeclarationContext); ok && fn.Receiver() != nil &&
+			slices.Contains(receiverTypeParamNames(fn.Receiver().(*grammar.ReceiverContext).Type_()), name) {
+			return true
+		}
 		decl, ok := node.(interface {
 			TypeParameters() grammar.ITypeParametersContext
 		})
