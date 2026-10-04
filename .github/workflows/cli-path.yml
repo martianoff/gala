@@ -192,12 +192,12 @@ jobs:
         # goflags: gala-tui's root package peaks at ~10 GB RSS while compiling,
         # so its packages are compiled one at a time, as its own CI does.
         include:
-          # gala-tui 0.15.3 (the commit its tag points at). Floors: no
+          # gala-tui 0.15.4 (the commit its tag points at). Floors: no
           # `val _ =` (GALA-E0060 rejects it) and every file imports the
           # time_utils names it uses (GALA-E0023).
           - name: gala-tui
             repo: martianoff/gala-tui
-            ref: 1b86545bf8299891e13888e8c7fd4bbd23dfc501
+            ref: c46554dd1e24a2074c4b99dd2294f30cbe955489
             commands: test
             goflags: -p=1
           # gala-server (martianoff/gala-server, `commands: build test`) is not

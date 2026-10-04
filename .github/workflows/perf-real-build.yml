@@ -89,19 +89,14 @@ jobs:
     # gala_team's MODULE.bazel requires, so the override matches what
     # gala_team is written against.
     env:
-      # gala_tui 0.15.3 (the commit its 0.15.3 tag points at) — the release
+      # gala_tui 0.15.4 (the commit its 0.15.4 tag points at) — the release
       # gala_team's MODULE.bazel requires at GALA_TEAM_REF. Move the two pins
       # together: older gala_tui releases contain code that newer GALA checks
       # correctly reject (0.15.2 still has a `val _ =`, GALA-E0060).
-      GALA_TUI_REF: 1b86545bf8299891e13888e8c7fd4bbd23dfc501
-      # TEMPORARY pin to an unmerged gala_team PR head: martianoff/gala-team#143,
-      # which adopts gala_tui 0.15.3. gala_team can't merge it until a GALA
-      # release newer than 0.84.1 ships: its CI builds with the 0.84.1 CLI,
-      # which fails on gala_tui 0.15.3 (backend.gala, a bare Try(...) in a
-      # void lambda). Do not delete or force-push that branch. After the next
-      # GALA release, merge that PR and re-pin this to the merged gala_team
-      # master commit.
-      GALA_TEAM_REF: "8906754e4278798f2367f28a46aba34afe500f66"
+      GALA_TUI_REF: c46554dd1e24a2074c4b99dd2294f30cbe955489
+      # gala_team master after it adopted GALA 0.85.0 and gala_tui 0.15.4
+      # (martianoff/gala-team#143).
+      GALA_TEAM_REF: "5c52a439968c0060129ebcb37c72531d784e8508"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 
