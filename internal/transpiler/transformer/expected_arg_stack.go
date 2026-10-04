@@ -84,6 +84,23 @@ func (s *expectedArgTypeStack) consume() transpiler.Type {
 	return top.typ
 }
 
+// takeFor removes and returns the hint on top of the stack when it was pushed
+// for owner, and nil otherwise: a call takes the type of the slot it fills,
+// never a hint left on the stack by another value.
+func (s *expectedArgTypeStack) takeFor(owner *grammar.PostfixExprContext) transpiler.Type {
+	if owner == nil || len(s.stack) == 0 || s.stack[len(s.stack)-1].owner != owner {
+		return nil
+	}
+	return s.consume()
+}
+
+// callOwner is the postfix expression the call suffix ends, the owner of the
+// hint pushed for the call (see pushFor).
+func callOwner(suffix *grammar.PostfixSuffixContext) *grammar.PostfixExprContext {
+	pe, _ := suffix.GetParent().(*grammar.PostfixExprContext)
+	return pe
+}
+
 // withhold hides the hint on top of the stack when it was pushed for owner,
 // and returns the function that puts it back, to be called once. A slot
 // types the call that is its value, never that call's receiver: `parse()` in
