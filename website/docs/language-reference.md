@@ -631,7 +631,62 @@ func main() {
 | A Go slice, map, pointer or channel; an interface; a function type | No |
 | A bare type parameter (`opaque type Box[T any] T`) | No |
 
-**Encoding.** A JSON or YAML codec writes an opaque type as its underlying value — as a struct field, inside an `Option`, `Array` or `List`, and as a `HashMap` key (over `string`) or value — including an opaque type declared in another package. `struct User(Id UserID)` is `{"id":42}`.
+**Encoding.** A JSON or YAML codec writes an opaque type as its underlying value — as a struct field, inside an `Option`, `Array` or `List`, and as a `HashMap` key (over `string`) or value — including an opaque type declared in another package or instantiated with phantom type arguments, and as the root value (`json.Value[UserID]().Encode(UserID(42))` is `42`). `struct User(Id UserID)` is `{"id":42}`.
+
+**Pattern matching.** `case UserID(n)` unwraps an opaque value and matches its
+one sub-pattern against the underlying value: `n` binds an `int64`,
+`UserID(0)` compares it with a literal, `UserID(_)` ignores it. Any other number
+of sub-patterns is [GALA-E0065](/docs/errors/gala-e0065/). On an `any`, interface or type-parameter
+subject the pattern first checks the value is a `UserID` — a plain `int64` is
+not — and a phantom-typed one must spell its type arguments,
+`case Id[User](n)`. Literal patterns, stable identifiers (`val Admin Role = 1`
+then `case Admin`) and type patterns (`case u: UserID`) work as for any type. An opaque type is not sealed,
+so a match on one ends in `case _`.
+
+```gala
+package main
+
+opaque type UserID int64
+
+func describe(id UserID) string = id match {
+    case UserID(0) => "nobody"
+    case UserID(n) if n < 0 => s"invalid $n"
+    case UserID(n) => s"user $n"
+    case _ => "unreachable"
+}
+
+func main() {
+    Println(describe(UserID(0)), describe(UserID(7)))   // nobody user 7
+}
+```
+
+**Phantom type parameters.** An opaque type may take type parameters that its
+underlying type does not use, so one declaration gives each entity its own ID
+type. `Id[User]` and `Id[Order]` are both an `int64` at run time, but neither
+passes for the other ([GALA-E0064](/docs/errors/gala-e0064/)), and converting one
+into the other directly is [GALA-E0063](/docs/errors/gala-e0063/):
+
+```gala
+package main
+
+struct User(Name string)
+struct Order(Total int)
+
+opaque type Id[T any] int64
+
+func (i Id[T]) Next() Id[T] = i + 1
+
+func orderTotal(id Id[Order]) int = int(id) * 10
+
+func main() {
+    val ada = Id[User](1)
+    Println(ada.Next(), orderTotal(Id[Order](7)), orderTotal(Id[Order](int64(ada))))
+    // 2 70 10
+}
+```
+
+A bare type parameter cannot be the underlying type itself:
+`opaque type Box[T any] T` is [GALA-E0062](/docs/errors/gala-e0062/).
 
 An opaque type is declared at the top level of a file; `opaque` is a keyword. Its zero value is the underlying zero value (`UserID(0)`); use `Option[UserID]` for "no ID".
 

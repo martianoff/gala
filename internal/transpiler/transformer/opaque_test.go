@@ -403,3 +403,132 @@ func main() {
 	assert.Contains(t, out, "UserID(")
 	assert.Contains(t, out, "!bool(t.On.Get())", "a named bool's emptiness test yields a plain bool")
 }
+
+// TestOpaqueTypePattern covers `case UserID(p)`: on a subject of the opaque
+// type it converts to the underlying value and matches p against it; on an
+// `any` subject it asserts the opaque type first. Nothing is generated on the
+// type itself.
+func TestOpaqueTypePattern(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type UserID int64
+
+func describe(id UserID) string = id match {
+    case UserID(0) => "nobody"
+    case UserID(n) => s"user $n"
+    case _ => "?"
+}
+
+func kind(v any) string = v match {
+    case UserID(n) => s"id $n"
+    case _ => "other"
+}
+
+func main() {
+    Println(describe(UserID(3)), kind(UserID(4)), kind(int64(4)))
+}`)
+	assert.Contains(t, out, "int64(obj) == 0")
+	assert.Contains(t, out, ".(UserID)")
+	assert.NotContains(t, out, "Unapply", "no extractor is generated for an opaque type")
+}
+
+// TestOpaqueTypePhantomCodec covers a codec field of a phantom-typed opaque
+// type and the root value of an opaque type: both are the bare scalar.
+func TestOpaqueTypePhantomCodec(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+import "martianoff/gala/json"
+
+struct User(Name string)
+
+opaque type Id[T any] int64
+
+struct Ref(Who Id[User])
+
+func main() {
+    Println(json.Codec[Ref](json.AsIs()).Encode(Ref(Id[User](1))), json.Value[Id[User]]().Encode(Id[User](2)))
+}`)
+	assert.Contains(t, out, "int64(t.Who.Get())")
+	assert.Contains(t, out, "Id[User](")
+}
+
+// TestOpaqueTypePatternSubjects covers which subjects the opaque-type pattern
+// accepts: an interface subject (a GALA interface) is asserted to the type; a
+// pattern spelling another phantom instantiation than the subject's, or naming
+// another opaque type, is rejected; a field-less struct with methods is not an
+// interface.
+func TestOpaqueTypePatternSubjects(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type UserID int64
+
+func (u UserID) Label() string = s"#${int64(u)}"
+
+type Labeled interface {
+    Label() string
+}
+
+func kind(l Labeled) string = l match {
+    case UserID(n) => s"user $n"
+    case _ => "other"
+}
+
+func main() {
+    Println(kind(UserID(4)))
+}`)
+	assert.Contains(t, out, ".(UserID)")
+
+	trans := newAliasExpectedTranspiler()
+	for _, tc := range []struct{ name, src, want string }{
+		{"another phantom instantiation", `package main
+
+struct User(Name string)
+struct Order(Total int)
+
+opaque type Id[T any] int64
+
+func f(id Id[User]) string = id match {
+    case Id[Order](n) => s"order $n"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(Id[User](1)))
+}`, "cannot match a value of type"},
+		{"another opaque type", `package main
+
+opaque type UserID int64
+opaque type OrderID int64
+
+func f(id UserID) string = id match {
+    case OrderID(n) => s"order $n"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(UserID(1)))
+}`, "the pattern OrderID(...) cannot match a value of type UserID"},
+		{"a field-less struct with methods", `package main
+
+opaque type UserID int64
+
+struct Probe()
+
+func (p Probe) Label() string = "probe"
+
+func f(p Probe) string = p match {
+    case UserID(n) => s"user $n"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(Probe()))
+}`, "the pattern UserID(...) cannot match a value of type"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(tc.src, "opaque_test.gala")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}

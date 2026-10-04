@@ -4002,3 +4002,24 @@ gala_exec_test(
     expected = "immutable_lambda_params_receivers.out",
     deps = ["//collection_immutable"],
 )
+
+# Pattern matching on opaque types: the `case UserID(n)` extractor, literal
+# and stable-identifier patterns, and type patterns on an `any` subject.
+gala_exec_test(
+    name = "opaque_type_match",
+    src = "opaque_type_match.gala",
+    expected = "opaque_type_match.out",
+)
+
+# Phantom type parameters on an opaque type: Id[User] and Id[Order] are
+# distinct; each hashes, sorts and encodes (as a field and as the root value).
+gala_exec_test(
+    name = "opaque_type_phantom",
+    src = "opaque_type_phantom.gala",
+    expected = "opaque_type_phantom.out",
+    deps = [
+        "//collection_immutable",
+        "//json",
+        "//yaml",
+    ],
+)

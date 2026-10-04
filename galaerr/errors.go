@@ -696,6 +696,13 @@ const (
 	// implicitly in either direction; untyped constants (`42`, `"a"`) still
 	// mix, as in Go.
 	CodeOpaqueTypeMismatch ErrorCode = "GALA-E0064"
+
+	// E0065: an opaque-type pattern `case UserID(...)` does not have exactly
+	// one sub-pattern. The pattern unwraps the single underlying value, so
+	// `case UserID(n)` binds it and `case UserID(0)` matches it; `UserID()`
+	// and `UserID(a, b)` name nothing.
+	CodeOpaquePatternArity ErrorCode = "GALA-E0065"
+
 	// E0066: the package declares a top-level type, sealed variant or
 	// function under a name that a GALA package it dot-imports also exports
 	// (`struct List(...)` beside `import . "martianoff/gala/collection_immutable"`).

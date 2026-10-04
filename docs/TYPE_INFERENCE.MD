@@ -843,6 +843,13 @@ own and never as its underlying type:
   constant rule above (a slot of an opaque type over a numeric type is
   numeric), the JSON / YAML codec (which writes the underlying scalar), and
   the Sendable/Shareable check (an opaque scalar is shareable).
+- In the pattern `case UserID(n)`, `n` has the underlying type (`int64`).
+- A phantom-typed opaque type's instantiations are different types:
+  `Id[User]` and `Id[Order]` never unify. Type arguments are compared as the
+  types they resolve to (through aliases and import aliases); one that is
+  still open (a type parameter of the enclosing declaration) matches any, and
+  a pattern naming an instantiation, `case Id[User](n)`, checks it at run
+  time there.
 
 Where a slot's type is known — an argument, a typed `val` / `var`, an
 assignment, a return, a constructor field — a value whose type is the opaque

@@ -1,5 +1,7 @@
 package billing
 
+import "time"
+
 // Opaque types another package uses: in signatures, as struct fields of its
 // own structs, as HashMap keys and through a codec.
 
@@ -17,6 +19,12 @@ type Code string
 // Region is declared over an alias of this package; an importer encoding it
 // reads the underlying type from this package.
 opaque type Region Code
+
+// Timeout is a wait, over a Go named type an importer need not import.
+opaque type Timeout time.Duration
+
+// Ref refers to an entity of type T by number.
+opaque type Ref[T any] int64
 
 // Dollars renders the amount.
 func (c Cents) Dollars() string = f"$$${float64(c) / 100.0}%.2f"

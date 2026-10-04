@@ -1,0 +1,88 @@
+package main
+
+// Pattern matching on opaque types: the `case UserID(n)` extractor unwraps
+// the underlying value, literal patterns compare it, stable identifiers name
+// constants of the type, and a type pattern tells an opaque value apart from
+// a value of its underlying type. Opaque types are not sealed, so a match on
+// one ends in `case _`.
+
+// UserID identifies a user.
+opaque type UserID int64
+
+// Email is an e-mail address.
+opaque type Email string
+
+// Level is a log level, an open enum over int.
+opaque type Level int
+
+// Debug is the most verbose level.
+val Debug Level = 0
+
+// Error is the least verbose level.
+val Error Level = 2
+
+// Account pairs an owner with an address.
+struct Account(Owner UserID, Mail Email)
+
+func describe(id UserID) string = id match {
+    case UserID(0) => "nobody"
+    case 42 => "the answer"
+    case UserID(n) if n < 0 => s"invalid $n"
+    case UserID(n) => s"user $n"
+    case _ => "unreachable"
+}
+
+func levelName(l Level) string = l match {
+    case Debug => "debug"
+    case Error => "error"
+    case Level(n) => s"level $n"
+    case _ => "unreachable"
+}
+
+func kind(v any) string = v match {
+    case UserID(n) => s"a UserID holding $n"
+    case n: int64 => s"a plain int64 $n"
+    case e: Email => s"an Email $e"
+    case _ => "something else"
+}
+
+// label matches a value of any type: the pattern checks it holds a UserID.
+func label[T any](v T) string = v match {
+    case UserID(n) => s"id $n"
+    case _ => "not an id"
+}
+
+// isID only checks the value is a UserID.
+func isID(v any) bool = v match {
+    case UserID(_) => true
+    case _ => false
+}
+
+// first unwraps a UserID nested in an Option.
+func first(o Option[UserID]) string = o match {
+    case Some(UserID(n)) => s"first $n"
+    case _ => "none"
+}
+
+func owner(a Account) string = a match {
+    case Account(UserID(0), _) => "unowned"
+    case Account(UserID(n), Email(m)) if m != "" => s"$n <$m>"
+    case Account(UserID(n), _) => s"$n (no mail)"
+    case _ => "unreachable"
+}
+
+func main() {
+    Println(
+        describe(UserID(0)), "|", describe(UserID(42)), "|",
+        describe(UserID(-3)), "|", describe(UserID(7)),
+    )
+    Println(levelName(Debug), levelName(Error), levelName(Level(5)))
+    Println(kind(UserID(1500)), "|", kind(int64(1500)), "|", kind(Email("a@b")), "|", kind("x"))
+    Println(label(UserID(9)), "|", label(int64(9)))
+    Println(isID(UserID(1)), isID(int64(1)), first(Some(UserID(3))), first(None()))
+    Println(
+        owner(Account(UserID(0), Email("root@x"))), "|",
+        owner(Account(UserID(5), Email("ada@x"))), "|",
+        owner(Account(UserID(6), Email(""))),
+    )
+}
