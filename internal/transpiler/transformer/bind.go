@@ -243,9 +243,8 @@ func firstReferencedName(expr ast.Expr, names map[string]bool) string {
 // slot or the block's trailing value, which is lowered before any enclosing
 // continuation lambda or FlatMap call is built, so every level sees it.
 type bindResult struct {
-	typ     transpiler.Type
-	monad   string // the block's monad (lookup base name)
-	guessed bool   // typ came from the match subject, not the trailing value's own type
+	typ   transpiler.Type
+	monad string // the block's monad (lookup base name)
 }
 
 // newBindResult starts a bind block whose result type is typ (nil when not
@@ -569,15 +568,10 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	var expr ast.Expr
 	var err error
 	if transpiler.IsUnusable(res.typ) {
-		// The block's type comes from this value's own type. Only if that
-		// fails is the match subject consulted, and a type guessed from it
-		// never fills the enclosing lambda's slot (see res.guessed).
-		if expr, err = t.lowerOwnValue(exprCtx); err != nil {
-			expr, err = t.transformExpression(exprCtx)
-			res.guessed = true
-		}
+		// The block's type comes from this value's own type.
+		expr, err = t.transformExpression(exprCtx)
 	} else {
-		expr, err = t.lowerAgainst(exprCtx, argSlot(res.typ), true)
+		expr, err = t.lowerAgainst(exprCtx, typedSlot(res.typ), true)
 	}
 	if err != nil {
 		return nil, err

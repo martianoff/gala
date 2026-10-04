@@ -42,14 +42,24 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "postfixExpr must have primaryExpr")
 	}
 
+	// The type of the slot this expression fills is for its last suffix, the
+	// call that is the value (see consumesSlotType), or for a bare tuple
+	// literal: never for the receiver the call is applied to.
+	suffixes := ctx.AllPostfixSuffix()
+	release := t.expectedArgTypes.withhold(ctx)
+	if len(suffixes) == 0 {
+		release()
+	}
 	result, err := t.transformPrimaryExpr(primaryExpr.(*grammar.PrimaryExprContext))
 	if err != nil {
 		return nil, err
 	}
 
 	// Apply postfix suffixes
-	suffixes := ctx.AllPostfixSuffix()
-	for _, suffix := range suffixes {
+	for i, suffix := range suffixes {
+		if i == len(suffixes)-1 {
+			release()
+		}
 		result, err = t.applyPostfixSuffix(result, suffix.(*grammar.PostfixSuffixContext))
 		if err != nil {
 			return nil, err
@@ -493,12 +503,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	defer t.popScope()
 	t.addVar(paramName, subjectType)
 
-	// Track match subject type so branch bodies can infer type params
-	// for sealed variant constructors (e.g., None() infers None[int] from Option[int])
-	prevMatchSubjectType := t.currentMatchSubjectType
-	t.currentMatchSubjectType = matchedType
-	defer func() { t.currentMatchSubjectType = prevMatchSubjectType }()
-
 	// Consume the statement-position marker set by transformBlock. Arm bodies
 	// must see matchInStatementPos = false so a NESTED match used as the arm's
 	// value is not also forced to void.
@@ -646,6 +650,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, err
 	}
 	resultType = t.branchingResultType(resultType, s)
+	if transpiler.IsUnusable(resultType) {
+		// No arm and no slot types the match (see inferCommonResultType).
+		resultType = transpiler.VoidType{}
+	}
 
 	// Statement-position matches discard their value; force the IIFE to be
 	// void so that arms with mixed value/void payloads — e.g. one arm calling

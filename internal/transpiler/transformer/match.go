@@ -959,41 +959,18 @@ func (t *galaASTTransformer) inferCommonResultType(types []transpiler.Type, patt
 		}
 
 		if allNilOrVoid && !hasTypeParam {
-			// Complete inference failure — no branch could be typed.
-			// Fall back to the enclosing function/lambda's declared return type.
-			// This handles cases where branches call methods from pure Go packages
-			// whose return types aren't in the GALA type metadata.
-			// Safety: if the fallback type is wrong, the Go compiler will catch it.
-			if t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
-				t.traceType(nil, t.returnSlot.typ, "match-result-fallback-to-enclosing-return")
-				return t.returnSlot.typ, nil
-			}
-			// No enclosing concrete return type either — this is a dispatch-style
-			// match used purely for side effects (all arms call void functions,
-			// recurse, or are empty `{}` blocks, with none producing a typed value).
-			// Treat the match as void: the IIFE has no return type and the result
-			// is discarded. If the caller tried to use the match as a value, the
-			// Go compiler will surface that error downstream.
-			t.traceType(nil, transpiler.VoidType{}, "match-result-fallback-to-void-dispatch")
-			return transpiler.VoidType{}, nil
+			// Complete inference failure — no branch could be typed. The
+			// match's type is then the type of the slot it fills, if any (see
+			// branchingResultType); never the enclosing function's result
+			// type, which is the type of the result value only. With no slot
+			// type either, it is a dispatch-style match used purely for side
+			// effects (all arms call void functions, recurse, or are empty
+			// `{}` blocks, with none producing a typed value): the IIFE has
+			// no return type and the result is discarded.
+			t.traceType(nil, transpiler.NilType{}, "match-result-untyped-arms")
+			return transpiler.NilType{}, nil
 		}
-		// Type parameters or mixed type-param/nil: prefer the enclosing
-		// function's return type when it matches one of the branch types.
-		// This handles `func f[T any](...) T { return e match { case ... => fnReturningT(...) } }`,
-		// where every branch yields the same type parameter T as the
-		// declared return — emitting `func(...) any` for the IIFE breaks
-		// the Go compile because `any` does not satisfy `T`.
-		if t.returnSlot.typ != nil && !t.returnSlot.typ.IsNil() {
-			enclosingName := t.returnSlot.typ.String()
-			for _, typ := range types {
-				if typ != nil && !typ.IsNil() && typ.String() == enclosingName {
-					t.traceType(nil, t.returnSlot.typ, "match-result-fallback-to-enclosing-typeparam-return")
-					return t.returnSlot.typ, nil
-				}
-			}
-		}
-		// B3: when no enclosing return is available (or it doesn't match), but
-		// every typed arm names the *same* type parameter AND that parameter
+		// B3: when every typed arm names the *same* type parameter AND that parameter
 		// is in scope of the currently-transforming function, return it
 		// directly. Without the in-scope guard the IIFE would be emitted
 		// with a return type Go cannot resolve (the type param is bound at
@@ -1524,52 +1501,43 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 // no type. Its type is then the one its branches unify to, and a branch that
 // cannot be typed on its own takes it from its siblings: a bare `None()` arm
 // next to `Some(v)` is `None[T]`, and `Phantom()` next to `Phantom[int]()` is
-// `Phantom[int]`. The matched value's type is not the construct's type, so a
-// zero-arg constructor may not guess from it (siblingTypedBranch): a branch
-// whose construction or generic call has no type argument fails its first
-// lowering (isUninferredTypeArgError) and is lowered again against the type
-// the other branches unify to, in either order. When they unify to no settled
-// type, or the construction still has none against it (it is not the
-// branch's value, as in `val d = None()` inside the branch), it is lowered
-// again as before, guesses included. Any other error is reported as it is.
+// `Phantom[int]`. A branch whose construction or generic call has no type
+// argument fails its first lowering (isUninferredTypeArgError) and is lowered
+// again against the type the other branches unify to, in either order. When
+// they unify to no settled type, the first such error is reported; when the
+// construction still has no type argument against it (it is not the branch's
+// value, as in `val d = None()` inside the branch), so is that error. Any
+// other error is reported as it is.
 func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, lower func(i int, s slot) (transpiler.Type, error)) error {
-	outer := t.siblingTypedBranch
-	t.siblingTypedBranch = outer || siblingTyped
 	var types []transpiler.Type
 	var retry []int
+	var firstErr error
 	for i := range n {
 		typ, err := lower(i, s)
 		switch {
 		case err != nil && siblingTyped && isUninferredTypeArgError(err):
 			retry = append(retry, i)
+			if firstErr == nil {
+				firstErr = err
+			}
 		case err != nil:
-			t.siblingTypedBranch = outer
 			return err
 		case typ != nil:
 			types = append(types, typ)
 		}
 	}
-	t.siblingTypedBranch = outer
 	if len(retry) == 0 {
 		return nil
 	}
 	common := t.siblingsType(types)
+	if common == nil {
+		return firstErr
+	}
 	for _, i := range retry {
-		if common != nil {
-			restore := t.enterReturnSlot(returnSlot{typ: common})
-			_, err := lower(i, argSlot(common))
-			restore()
-			if err == nil {
-				continue
-			}
-			if !isUninferredTypeArgError(err) {
-				return err
-			}
-			// The constructor that has no type is not the branch's value
-			// (`val d = None()` inside it): the siblings' type does not
-			// apply to it, so it keeps the guesses it had before.
-		}
-		if _, err := lower(i, s); err != nil {
+		restore := t.enterReturnSlot(returnSlot{typ: common})
+		_, err := lower(i, typedSlot(common))
+		restore()
+		if err != nil {
 			return err
 		}
 	}

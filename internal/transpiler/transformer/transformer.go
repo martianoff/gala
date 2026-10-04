@@ -51,60 +51,58 @@ type galaASTTransformer struct {
 	// every file in the package, so GALA's `strings` and Go's `strings` collide
 	// there — as do io, path, json, crypto and fs. Membership here is metadata,
 	// not an import-path heuristic.
-	galaPkgPaths            map[string]bool
-	typeMetas               map[string]*transpiler.TypeMetadata
-	variantNames            map[string]bool                                // bare name of every sealed variant in typeMetas (GALA-E0061 pre-filter)
-	companionObjects        map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
-	importManager           *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
-	cachedTypeResolver      *resolver.TypeResolver
-	cachedTypeResolverRev   uint64 // import-manager revision cachedTypeResolver was built at
-	tempVarCount            int
-	inferer                 *infer.Inferer
-	returnSlot              returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
-	currentMatchSubjectType transpiler.Type                               // type of the match expression's subject (for branch type inference)
-	siblingTypedBranch      bool                                          // set while a match arm or if branch with no slot type is first lowered: its type comes from its siblings, so a zero-arg constructor in it takes none from the match subject (see lowerBranches)
-	typeAliases             map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
-	fileTypeDeclTargets     map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
-	hasOpaque               bool                                          // some known type is an opaque type; gates every opaque-type check
-	goTypeInfo              *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
-	filePath                string                                        // source file path (for error reporting)
-	richAST                 *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
-	traceTypeResolution     bool                                          // when true, type resolution events are recorded
-	typeTraces              []TypeTraceEntry                              // recorded type resolution events (only when tracing is enabled)
-	exprTypeCache           map[ast.Expr]transpiler.Type                  // cache for getExprTypeNameManual results
-	goResults               map[*ast.CallExpr]*goResult                   // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
-	tryThunkLambda          *grammar.LambdaExpressionContext              // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
-	needsEmbedImport        bool                                          // true when embed val declarations require import "embed"
-	warnTypeInference       bool                                          // when true, log warnings about type inference fallbacks
-	inferenceWarnings       []string                                      // collected type inference warnings
-	unresolvedTypes         []UnresolvedType                              // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
-	unresolvedSeen          map[ast.Expr]bool                             // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
-	unrecordedCallee        ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
-	diagPackageNames        map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
-	structMetas             map[string]*structMetaConfig                  // StructMeta configs, keyed by the resolved name of their struct
-	valueMetas              map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
-	instanceInterfaceNames  map[string]string                             // type name -> actual generated interface name (for collision avoidance)
-	defaultTrees            map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
-	loweringDefault         *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
-	expectedArgTypes        expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
-	matchInStatementPos     bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
-	methodReceivers         []methodReceiver                              // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
-	loopControlSites        map[*ast.BranchStmt]loopControlSite           // source position of each `break` / `continue` lowered from source, checked by checkLoopControl once the file is complete
-	userLoops               map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)
-	synthesizedReturns      map[*ast.ReturnStmt]bool                      // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
-	pendingMatchStmtBlock   *ast.BlockStmt                                // side-channel: when buildMatchExpressionFromClauses detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
-	lspVarTypes             map[string]transpiler.Type                    // LSP: collects all resolved var types during transformation
-	lspCurrentFunc          string                                        // LSP: name of the function currently being transformed (for scoping)
-	lspLambdaParamHints     []transpiler.LambdaParamHint                  // LSP: positions of lambda params with inferred types
-	lastLine                int                                           // last known ANTLR source line (for error reporting in deeply-nested helpers)
-	lastCol                 int                                           // last known ANTLR source column (for error reporting in deeply-nested helpers)
-	typeEnvEpoch            uint32                                        // invalidates funcTypeEnv; see invalidateTypeEnv
-	funcTypeEnv             infer.TypeEnv                                 // cached function-derived half of the Hindley-Milner environment for the current file; see functionTypeEnv
-	funcTypeEnvEpoch        uint32                                        // typeEnvEpoch the cache above was built at
-	funcTypeEnvImportRev    uint64                                        // importManager.Revision the cache above was built at, so an import change rebuilds it without being announced
-	typeNameCache           typeNameMemo                                  // name-normalization memo shared by functionTypeEnv and buildTypeEnv; see sharedTypeNameMemo
-	typeNameCacheEpoch      uint32                                        // typeEnvEpoch the memo above was filled at
-	typeNameCacheImportRev  uint64                                        // importManager.Revision the memo above was filled at
+	galaPkgPaths           map[string]bool
+	typeMetas              map[string]*transpiler.TypeMetadata
+	variantNames           map[string]bool                                // bare name of every sealed variant in typeMetas (GALA-E0061 pre-filter)
+	companionObjects       map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
+	importManager          *ImportManager                                 // unified import tracking (includes transitive imports and dot-import usage)
+	cachedTypeResolver     *resolver.TypeResolver
+	cachedTypeResolverRev  uint64 // import-manager revision cachedTypeResolver was built at
+	tempVarCount           int
+	inferer                *infer.Inferer
+	returnSlot             returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
+	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
+	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
+	hasOpaque              bool                                          // some known type is an opaque type; gates every opaque-type check
+	goTypeInfo             *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
+	filePath               string                                        // source file path (for error reporting)
+	richAST                *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
+	traceTypeResolution    bool                                          // when true, type resolution events are recorded
+	typeTraces             []TypeTraceEntry                              // recorded type resolution events (only when tracing is enabled)
+	exprTypeCache          map[ast.Expr]transpiler.Type                  // cache for getExprTypeNameManual results
+	goResults              map[*ast.CallExpr]*goResult                   // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
+	tryThunkLambda         *grammar.LambdaExpressionContext              // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
+	needsEmbedImport       bool                                          // true when embed val declarations require import "embed"
+	warnTypeInference      bool                                          // when true, log warnings about type inference fallbacks
+	inferenceWarnings      []string                                      // collected type inference warnings
+	unresolvedTypes        []UnresolvedType                              // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
+	unresolvedSeen         map[ast.Expr]bool                             // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
+	unrecordedCallee       ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
+	diagPackageNames       map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
+	structMetas            map[string]*structMetaConfig                  // StructMeta configs, keyed by the resolved name of their struct
+	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
+	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
+	defaultTrees           map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
+	loweringDefault        *defaultLowering                              // non-nil while a declared default value is being lowered at a use site (see transformDefaultExpr)
+	expectedArgTypes       expectedArgTypeStack                          // (B1) LIFO stack of expected-type hints for downward inference; replaces a single-field side-channel. See expected_arg_stack.go for the contract.
+	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
+	methodReceivers        []methodReceiver                              // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
+	loopControlSites       map[*ast.BranchStmt]loopControlSite           // source position of each `break` / `continue` lowered from source, checked by checkLoopControl once the file is complete
+	userLoops              map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)
+	synthesizedReturns     map[*ast.ReturnStmt]bool                      // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
+	pendingMatchStmtBlock  *ast.BlockStmt                                // side-channel: when buildMatchExpressionFromClauses detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
+	lspVarTypes            map[string]transpiler.Type                    // LSP: collects all resolved var types during transformation
+	lspCurrentFunc         string                                        // LSP: name of the function currently being transformed (for scoping)
+	lspLambdaParamHints    []transpiler.LambdaParamHint                  // LSP: positions of lambda params with inferred types
+	lastLine               int                                           // last known ANTLR source line (for error reporting in deeply-nested helpers)
+	lastCol                int                                           // last known ANTLR source column (for error reporting in deeply-nested helpers)
+	typeEnvEpoch           uint32                                        // invalidates funcTypeEnv; see invalidateTypeEnv
+	funcTypeEnv            infer.TypeEnv                                 // cached function-derived half of the Hindley-Milner environment for the current file; see functionTypeEnv
+	funcTypeEnvEpoch       uint32                                        // typeEnvEpoch the cache above was built at
+	funcTypeEnvImportRev   uint64                                        // importManager.Revision the cache above was built at, so an import change rebuilds it without being announced
+	typeNameCache          typeNameMemo                                  // name-normalization memo shared by functionTypeEnv and buildTypeEnv; see sharedTypeNameMemo
+	typeNameCacheEpoch     uint32                                        // typeEnvEpoch the memo above was filled at
+	typeNameCacheImportRev uint64                                        // importManager.Revision the memo above was filled at
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
 	// declares, so a sub-pattern's statements can be split into declarations

@@ -342,5 +342,5 @@ func (t *galaASTTransformer) transformWithDeclaredType(exprCtx grammar.IExpressi
 	if exprCtx.GetText() == "nil" {
 		return ast.NewIdent("nil"), nil
 	}
-	return t.transformArgument(exprCtx, argSlot(declared), true)
+	return t.transformArgument(exprCtx, typedSlot(declared), true)
 }

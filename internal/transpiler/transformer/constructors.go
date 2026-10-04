@@ -182,7 +182,7 @@ func (t *galaASTTransformer) transformTupleElementExpressions(
 		if i < len(perElemExpected) {
 			expected = perElemExpected[i]
 		}
-		expr, err := t.lowerAgainst(eCtx, argSlot(expected), true)
+		expr, err := t.lowerAgainst(eCtx, typedSlot(expected), true)
 		if err != nil {
 			return nil, err
 		}

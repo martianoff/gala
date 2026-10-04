@@ -165,10 +165,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 							// vestigial type parameter from an empty composite literal.
 							// Consume the top expected-type hint set by enclosing val
 							// declarations / argument transforms (B1). It is the type
-							// of the slot the constructor itself fills, so it wins
-							// over the match subject:
-							// `None()` passed for `d Option[Drag]` in a function
-							// returning `Option[int]` is `None[Drag]`.
+							// of the slot the constructor itself fills, its only
+							// source: `None()` passed for `d Option[Drag]` in a
+							// function returning `Option[int]` is `None[Drag]`.
 							if pending := t.expectedArgTypes.peek(); pending != nil && !pending.IsNil() {
 								if rewritten, ok := t.injectSealedVariantTypeArgs(base, pending); ok {
 									receiverType = rewritten
@@ -182,15 +181,6 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 										receiverType = instantiated
 										t.expectedArgTypes.consume()
 									}
-								}
-							}
-							// Otherwise, if the type is generic but no explicit type
-							// args were provided, infer them from the match subject
-							// via the companion relationship.
-							// e.g., None() inside `Option[int] match { ... }` → None[int]{}.Apply()
-							if receiverType == base && len(typeMeta.TypeParams) > 0 && baseExpr == base {
-								if inferredBase := t.inferZeroArgTypeParams(typeName, typeMeta); inferredBase != nil {
-									receiverType = inferredBase
 								}
 							}
 							// B6 fail-loud: if neither inference path resolved the
@@ -276,53 +266,31 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		var zeroArgRecvType transpiler.Type = transpiler.NilType{}
 		zeroArgLookupBase := ""
 		if sel, ok := base.(*ast.SelectorExpr); ok {
-			receiver := sel.X
-			method := sel.Sel.Name
-
 			// Same normalization the call dispatcher uses — resolve the
 			// receiver to its canonical form and derive the pointer-stripped
 			// registry key — rather than repeating it inline.
-			recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
-			zeroArgRecvType, zeroArgLookupBase = recvType, lookupBaseName
-
-			// Check if this is a generic method - try all possible package lookups
-			isGenericMethod := t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
-			if isGenericMethod {
-				// Check if receiver is a package name
-				isPkg := false
-				if id, ok := receiver.(*ast.Ident); ok {
-					if t.importManager.IsPackage(id.Name) {
-						isPkg = true
-					}
+			zeroArgRecvType, zeroArgLookupBase = t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
+		}
+		// A generic method takes the same rewrite to a standalone function,
+		// TypeName_Method[...](receiver), as a call with arguments: its
+		// defaults, written type arguments and slot type included.
+		if receiver, method, typeArgs := t.splitCallTarget(base); receiver != nil {
+			recvType, lookupBaseName := zeroArgRecvType, zeroArgLookupBase
+			if len(typeArgs) > 0 {
+				recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
+			}
+			if len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
+				pending := t.expectedArgTypes.peek()
+				handled, expr, err := t.tryTransformGenericMethodAsFunction(nil, receiver, method, typeArgs, recvType, lookupBaseName, pending,
+					suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+				if err != nil {
+					return nil, err
 				}
-
-				if !isPkg {
-					// Transform to standalone function call: TypeName_Method[T](receiver)
-					var funExpr ast.Expr
-					if !recvType.IsNil() {
-						recvPkg := recvType.GetPackage()
-						if recvPkg == registry.StdPackageName || hasStdPrefix(lookupBaseName) {
-							baseName := stripStdPrefix(lookupBaseName)
-							funExpr = t.stdIdent(baseName + "_" + method)
-						} else {
-							funExpr = t.ident(lookupBaseName + "_" + method)
-						}
-					} else {
-						funExpr = ast.NewIdent(method)
+				if handled {
+					if pending != nil {
+						t.expectedArgTypes.consume()
 					}
-
-					// Add receiver's type arguments for the extracted function
-					recvTypeArgs := t.getReceiverTypeArgs(recvType)
-					if len(recvTypeArgs) == 1 {
-						funExpr = &ast.IndexExpr{X: funExpr, Index: recvTypeArgs[0]}
-					} else if len(recvTypeArgs) > 1 {
-						funExpr = &ast.IndexListExpr{X: funExpr, Indices: recvTypeArgs}
-					}
-
-					return &ast.CallExpr{
-						Fun:  funExpr,
-						Args: []ast.Expr{receiver},
-					}, nil
+					return expr, nil
 				}
 			}
 		}
@@ -550,6 +518,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	recvType transpiler.Type,
 	lookupBaseName string,
 	pendingExpected transpiler.Type,
+	line, col int,
 ) (handled bool, result ast.Expr, err error) {
 	// Skip if the "receiver" is actually a package identifier — that is a
 	// package-qualified function call and belongs to a later section.
@@ -811,7 +780,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			return true, nil, cerr
 		}
 		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
-		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, push: true, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
+		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
 		if aerr != nil {
 			return true, nil, aerr
 		}
@@ -857,6 +826,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// type param Go also cannot infer (one that appears solely in the return type
 	// with nothing at the call site to bind it) — that produces a Go "cannot
 	// infer" error and needs call-site-context threading, tracked separately.
+	if methodMeta != nil && typeMeta != nil {
+		yields := t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypes)
+		if typeArgs, err = t.resultOnlyMethodTypeArgs(receiver, methodMeta, typeArgs, typeSubst, yields, mArgs, line, col); err != nil {
+			return true, nil, err
+		}
+	}
 	if methodMeta != nil {
 		for _, tp := range methodMeta.TypeParams {
 			if _, ok := typeSubst[tp]; !ok {
@@ -1070,6 +1045,53 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 	}
 }
 
+// resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
+// call of the generic method methodMeta on receiver, when the method has a
+// type parameter only its result mentions (`U` of `Convert[U any]()
+// Option[U]`): Go infers no such parameter, so the call has to spell every
+// one of the method's type arguments. typeSubst holds those its arguments and
+// the slot the call fills bound (see tryTransformGenericMethodAsFunction);
+// yields is its result type on this receiver. One left open is GALA-E0067 at
+// line/col, as for a generic function (see injectFuncPhantomTypeArgs).
+// typeArgs is returned as is when every type parameter is bound by a
+// parameter, which Go infers from the arguments.
+func (t *galaASTTransformer) resultOnlyMethodTypeArgs(receiver ast.Expr, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields transpiler.Type, args []ast.Expr, line, col int) ([]ast.Expr, error) {
+	if len(typeArgs) >= len(methodMeta.TypeParams) {
+		return typeArgs, nil
+	}
+	argBound := make(map[string]bool)
+	for _, pt := range methodMeta.ParamTypes {
+		t.collectReferencedParams(pt, methodMeta.TypeParams, argBound)
+	}
+	if !slices.ContainsFunc(methodMeta.TypeParams, func(tp string) bool { return !argBound[tp] }) {
+		return typeArgs, nil
+	}
+	full := slices.Clone(typeArgs)
+	resolved := t.writtenTypeArgs(methodMeta.TypeParams, typeArgs)
+	var missing []string
+	for _, tp := range methodMeta.TypeParams[len(typeArgs):] {
+		if s, ok := typeSubst[tp]; ok {
+			typ := transpiler.ParseType(s)
+			resolved[tp] = typ
+			full = append(full, t.typeToExpr(typ))
+		} else {
+			missing = append(missing, tp)
+		}
+	}
+	if missing == nil {
+		return full, nil
+	}
+	name := "(...)." + methodMeta.Name
+	if id, ok := receiver.(*ast.Ident); ok {
+		name = id.Name + "." + methodMeta.Name
+	}
+	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
+		// No slot fixes an argument whose type is unknown.
+		return nil, t.unknownArgTypeError(line, col, ast.NewIdent(name), missing, args, true)
+	}
+	return nil, t.uninferredTypeArgErrorNamed(line, col, name, valueYields(yields), methodMeta.TypeParams, resolved, missing)
+}
+
 // transformRegularMethodCall handles Section 4 of the call dispatcher: method
 // calls on a receiver where the method is NOT generic (or the generic path
 // declined). It has three sub-paths:
@@ -1169,7 +1191,7 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		if positional && lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) == 0 {
 			expected = goSigParamType(goSig, i)
 		}
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expected), false)
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expected), false)
 		if err != nil {
 			return nil, err
 		}
@@ -1234,7 +1256,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		// unresolved type params in return types.
 		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
 		expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
-		expr, err := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, push: true, open: true}, false)
+		expr, err := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, open: true}, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1279,7 +1301,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveNamedArgExpectedType(resolvedMethodCtx, argName)
-			expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expectedType), false)
+			expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expectedType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -1290,7 +1312,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 				return nil, cerr
 			}
 			expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
-			expr, err := t.lowerArg(exprCtx, lambdaCtx, argSlot(expectedType), false)
+			expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expectedType), false)
 			if err != nil {
 				return nil, err
 			}
@@ -1744,7 +1766,7 @@ func (t *galaASTTransformer) lowerFunctionArg(
 		(lambdaCtx != nil || t.needsExpectedType(exprCtx) || t.isPlaceholderLambdaArg(exprCtx, expected)) {
 		expected, strict = t.genericCtorLambdaExpectation(expected, callCtx)
 	}
-	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, push: true, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
+	return t.lowerArg(exprCtx, lambdaCtx, slot{typ: expected, open: callCtx.typeArgPlaceholders, tryThunk: tryThunk}, strict)
 }
 
 // isPlaceholderLambdaArg reports whether exprCtx, filling a slot of type
@@ -2393,7 +2415,8 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 3: Generic method -> standalone function rewrite ---
 	if receiver != nil && isGenericMethod {
-		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected)
+		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected,
+			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
 			return nil, err
 		}
@@ -3112,7 +3135,12 @@ func (t *galaASTTransformer) slotTypeArgUsable(p transpiler.Type) bool {
 // isUninferredTypeArgError).
 func (t *galaASTTransformer) uninferredTypeArgError(line, col int, base ast.Expr, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
 	_, qualified := extractTypeNameFromExpr(base)
-	name := t.callSiteName(qualified)
+	return t.uninferredTypeArgErrorNamed(line, col, t.callSiteName(qualified), yields, typeParams, inferred, missing)
+}
+
+// uninferredTypeArgErrorNamed is uninferredTypeArgError for a callee spelled
+// name at the call site.
+func (t *galaASTTransformer) uninferredTypeArgErrorNamed(line, col int, name string, yields transpiler.Type, typeParams []string, inferred map[string]transpiler.Type, missing []string) error {
 	args := t.hintTypeArgTypes(typeParams, inferred)
 	typeArgs := joinDisplayTypes(args)
 	what, valueType := "generic struct "+name+" from its fields", name+"["+typeArgs+"]"
@@ -4556,47 +4584,6 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 		}
 	}
 	return transpiler.FuncType{Params: params, Results: results}
-}
-
-// inferZeroArgTypeParams infers type parameters for a zero-argument sealed variant
-// constructor (e.g., None()) that the slot it fills gave none, from the
-// enclosing match subject: `x match { case _ => None() }` where the subject is
-// Option[T] and nothing else types the value (a lambda whose result type
-// nothing settles). Only a proxy: it equals the result type when the match
-// maps Option[T] to Option[T]. The enclosing function's result type is never
-// a source: it types only the value that fills it, pushed onto
-// expectedArgTypes (see consumesSlotType).
-// Returns a typed AST expression (e.g., None[User]) or nil if inference fails.
-func (t *galaASTTransformer) inferZeroArgTypeParams(typeName string, typeMeta *transpiler.TypeMetadata) ast.Expr {
-	// A branch typed by its siblings (see lowerBranches) is in neither
-	// context: its type is the construct's, which is not yet known.
-	if t.siblingTypedBranch {
-		return nil
-	}
-	// Look up companion relationship for this type
-	companion := t.lookupCompanion(typeName)
-	if companion == nil {
-		return nil
-	}
-	targetBaseName := stripPackagePrefix(companion.TargetType)
-
-	// The subject is stored as the type an alias names; its base must match
-	// the companion's target type.
-	gen, ok := t.currentMatchSubjectType.(transpiler.GenericType)
-	if !ok || len(gen.Params) == 0 || stripPackagePrefix(gen.BaseName()) != targetBaseName {
-		return nil
-	}
-	// Reject a subject type that names a type parameter left unbound (the `T`
-	// of a callee's `Option[T]` before T is known). A type parameter of the
-	// declaration being lowered — its own or its receiver's — is resolved.
-	if slices.ContainsFunc(gen.Params, t.typeMentionsUnresolvedTypeParam) {
-		return nil
-	}
-	indices := make([]ast.Expr, len(gen.Params))
-	for i, p := range gen.Params {
-		indices[i] = t.typeToExpr(p)
-	}
-	return withTypeArgs(t.typeToExpr(transpiler.BasicType{Name: typeName}), indices)
 }
 
 // inferFuncTypeSubstFromArgs pre-scans non-lambda arguments of a generic function call

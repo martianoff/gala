@@ -536,11 +536,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				return nil, err
 			}
 			if lastStmtIsValue {
-				if res.guessed {
-					t.returnSlot.guesses = append(t.returnSlot.guesses, expr)
-				} else {
-					t.tryFillReturnSlot(res.typ)
-				}
+				t.tryFillReturnSlot(res.typ)
 				block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			} else {
 				block.List = append(block.List, &ast.ExprStmt{X: expr})
@@ -587,7 +583,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		// fills a slot of that type like any other result value.
 		if isTrailing && lastStmtIsValue && ctx == t.returnSlot.body && t.returnSlot.fillable &&
 			transpiler.IsUnusable(lastValueExpected.typ) && !transpiler.IsUnusable(t.returnSlot.typ) {
-			lastValueExpected = resultSlot(t.returnSlot.typ)
+			lastValueExpected = typedSlot(t.returnSlot.typ)
 		}
 		ifCtx := ifStatementOf(stmtCtx.(*grammar.StatementContext))
 		if bs, ok := t.lowerLoopControl(valueExpr); ok {
@@ -623,10 +619,8 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			// lowered against it, and so is a tuple literal or generic struct
 			// construction of the slot's type, which lowerAgainst then need not
 			// recognize again. Any other plain tail stays an ordinary statement.
-			s := lastValueExpected
-			s.push = s.push || !t.needsExpectedType(valueExpr)
 			var expr ast.Expr
-			if expr, err = t.lowerAgainst(valueExpr, s, true); err == nil {
+			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
 				stmt = &ast.ExprStmt{X: expr}
 			}
 		} else if fillsPendingSlot {

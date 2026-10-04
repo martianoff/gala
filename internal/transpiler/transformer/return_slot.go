@@ -9,9 +9,9 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// returnSlot is the result type that a `return`, a `bind` block and the
-// return-type fallbacks see in the body being lowered: the result type of the
-// innermost function, lambda, or construct lowered to an IIFE.
+// returnSlot is the result type that a `return` and a `bind` block see in the
+// body being lowered: the result type of the innermost function, lambda, or
+// construct lowered to an IIFE.
 //
 // A lambda has its own slot, never the enclosing function's. When its result
 // type is known (an annotation, or a concrete expected type) typ holds it. When
@@ -24,7 +24,6 @@ type returnSlot struct {
 	fillable bool
 	body     *grammar.BlockContext // a fillable lambda's block body: its trailing value is a result value
 	deferred []deferredReturn
-	guesses  []ast.Expr // result values typed from a guess (the match subject): they never fill the slot
 	// typeParams are the type parameters of the enclosing function
 	// declaration and its receiver, in scope for every slot inside it: a type
 	// naming one of them is resolved (see isSettledType).
@@ -37,28 +36,26 @@ type returnSlot struct {
 // deferredReturn is a result value (a `return` value or the body's trailing
 // value) in a fillable slot that had no settled type when it was reached.
 // value is the expression emitted for it so far, replaced wherever it appears
-// once the value is settled; scope and subject are the lexical scope and match
-// subject it is lowered in again; err is the first lowering's error.
+// once the value is settled; scope is the lexical scope it is lowered in
+// again; err is the first lowering's error.
 type deferredReturn struct {
 	value   ast.Expr
 	exprCtx grammar.IExpressionContext
 	scope   *scope
-	subject transpiler.Type
 	err     error
 }
 
 // enterReturnSlot makes s the current return slot and returns the function
 // that restores the previous one, for `defer t.enterReturnSlot(s)()`. A slot
 // nested in a function (a lambda's, an IIFE's) keeps the function's type
-// parameters. A body with its own slot is not a branch typed by its siblings
-// (see lowerBranches), even inside one.
+// parameters.
 func (t *galaASTTransformer) enterReturnSlot(s returnSlot) func() {
-	prev, prevSiblingTyped := t.returnSlot, t.siblingTypedBranch
+	prev := t.returnSlot
 	if s.typeParams == nil {
 		s.typeParams = prev.typeParams
 	}
-	t.returnSlot, t.siblingTypedBranch = s, false
-	return func() { t.returnSlot, t.siblingTypedBranch = prev, prevSiblingTyped }
+	t.returnSlot = s
+	return func() { t.returnSlot = prev }
 }
 
 // declaredTypeParams is the set of type parameter names a function declaration
@@ -165,7 +162,7 @@ func (t *galaASTTransformer) lowerReturnValue(exprCtx grammar.IExpressionContext
 	if t.returnSlotPending() {
 		return &ast.ReturnStmt{Results: []ast.Expr{t.lowerFillingValue(exprCtx, true)}}, nil
 	}
-	expr, err := t.lowerAgainst(exprCtx, resultSlot(t.returnSlot.typ), false)
+	expr, err := t.lowerAgainst(exprCtx, typedSlot(t.returnSlot.typ), false)
 	if err != nil {
 		return nil, err
 	}
@@ -187,13 +184,8 @@ func (t *galaASTTransformer) returnSlotPending() bool {
 // type is not settled is deferred too (deferUnsettled); a trailing value is
 // not, since it may legitimately be void or have a type the transpiler cannot
 // name.
-//
-// Only a value's own type may fill the slot, never a guess: the enclosing
-// match subject, which a zero-arg constructor such as `None()` falls back to,
-// is hidden while the value is lowered here.
 func (t *galaASTTransformer) lowerFillingValue(exprCtx grammar.IExpressionContext, deferUnsettled bool) ast.Expr {
-	subject := t.currentMatchSubjectType
-	expr, err := t.lowerOwnValue(exprCtx)
+	expr, err := t.transformExpression(exprCtx)
 	if err == nil {
 		expr = t.unwrapImmutable(expr)
 		if t.tryFillReturnSlot(t.getExprTypeName(expr)) || !deferUnsettled {
@@ -203,18 +195,9 @@ func (t *galaASTTransformer) lowerFillingValue(exprCtx grammar.IExpressionContex
 		expr = ast.NewIdent("nil")
 	}
 	t.returnSlot.deferred = append(t.returnSlot.deferred, deferredReturn{
-		value: expr, exprCtx: exprCtx, scope: t.currentScope, subject: subject, err: err,
+		value: expr, exprCtx: exprCtx, scope: t.currentScope, err: err,
 	})
 	return expr
-}
-
-// lowerOwnValue lowers exprCtx with the enclosing match subject hidden, so the
-// value's type is its own and not a guess from the subject.
-func (t *galaASTTransformer) lowerOwnValue(exprCtx grammar.IExpressionContext) (ast.Expr, error) {
-	subject := t.currentMatchSubjectType
-	t.currentMatchSubjectType = nil
-	defer func() { t.currentMatchSubjectType = subject }()
-	return t.transformExpression(exprCtx)
 }
 
 // errorAtOutermostCall reports whether err is a semantic error anchored at the
@@ -249,20 +232,17 @@ const unresolvedLambdaResultMsg = "cannot infer the result type of this lambda: 
 // If no `return` filled it, the body's other result values (the promoted
 // trailing value, a `bind` chain) are tried. Each deferred return is then
 // lowered again in its own scope: against the filled slot, or — when nothing
-// filled it — with its match-subject context back, where a value that still
-// has no settled type is an error.
+// filled it — on its own, where a value that still has no settled type is an
+// error.
 func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	s := &t.returnSlot
 	if !s.fillable || len(s.deferred) == 0 {
 		return nil
 	}
-	// Values that must not fill the slot: the deferred ones, and guesses.
-	deferred := make(map[ast.Expr]bool, len(s.deferred)+len(s.guesses))
+	// The deferred values must not fill the slot.
+	deferred := make(map[ast.Expr]bool, len(s.deferred))
 	for _, d := range s.deferred {
 		deferred[d.value] = true
-	}
-	for _, g := range s.guesses {
-		deferred[g] = true
 	}
 	if transpiler.IsUnusable(s.typ) {
 		ast.Inspect(body, func(n ast.Node) bool {
@@ -279,11 +259,11 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 	}
 	filled := !transpiler.IsUnusable(s.typ)
 	settled := make(map[ast.Expr]ast.Expr, len(s.deferred))
-	outerScope, outerSubject := t.currentScope, t.currentMatchSubjectType
-	defer func() { t.currentScope, t.currentMatchSubjectType = outerScope, outerSubject }()
+	outerScope := t.currentScope
+	defer func() { t.currentScope = outerScope }()
 	for _, d := range s.deferred {
-		t.currentScope, t.currentMatchSubjectType = d.scope, d.subject
-		expr, err := t.lowerAgainst(d.exprCtx, resultSlot(s.typ), false)
+		t.currentScope = d.scope
+		expr, err := t.lowerAgainst(d.exprCtx, typedSlot(s.typ), false)
 		// A constructor with no type argument that is itself the value of an
 		// unfilled slot (`return Failure(e)`) is the lambda's missing result
 		// type, which is what the user has to annotate. One nested deeper
