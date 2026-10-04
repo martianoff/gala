@@ -6,10 +6,10 @@ package main
 // before. With a space after it (`* b`) it is still a binary operator that
 // continues the line before.
 
-// A deref expression statement after a val: `&n` and `*p + 1` are two
-// statements, not `&n * p + 1`.
+// A deref expression after a val: `&n` and `*p + 1` are two statements, not
+// `&n * p + 1`.
 func derefAfterVal() int {
-    var n = 1
+    val n = 1
     val p = &n
     *p + 1
 }
@@ -18,32 +18,30 @@ func derefAfterVal() int {
 func derefAssignAfterCall() int {
     var n = 1
     val p = &n
-    Println(s"before ${*p}")
+    Println(s"before $n")
     *p = 5
     n
 }
 
-// A deref as the trailing value of a block, after a val.
-func derefTrailing() int {
-    var n = 7
+// A deref as the trailing value of a block, right after a val.
+func derefTrailing(n int) int {
+    Println(s"doubled ${n * 2}")
     val p = &n
-    val doubled = n * 2
-    Println(s"doubled $doubled")
     *p
 }
 
-// An address-of as the trailing value of a block.
+// An address-of as the trailing value of a block, after a call. The result is
+// a plain pointer, so the target is a var.
 func addressTrailing() *int {
     var n = 9
-    val label = "addr"
-    Println(label)
+    Println("addr")
     &n
 }
 
 func main() {
     Println(derefAfterVal())
     Println(derefAssignAfterCall())
-    Println(derefTrailing())
+    Println(derefTrailing(7))
     Println(*addressTrailing())
 
     // An operator followed by a space at line start still continues.
