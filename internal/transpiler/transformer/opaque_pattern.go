@@ -68,26 +68,23 @@ func (t *galaASTTransformer) generateOpaquePattern(
 	}
 
 	// Classify the subject: an interface value is asserted to the opaque
-	// type; a value whose static type says nothing (a type parameter, or a
-	// type inference could not determine) is asserted through `any`, so the
+	// type; a value of a type parameter is asserted through `any`, so the
 	// pattern never matches a value of another type with the same
-	// underlying type; a value of the opaque type itself is converted.
-	subjectType := matchedType
-	known := subjectType != nil && !transpiler.IsUnusable(subjectType)
-	if known {
-		subjectType = t.followAliasChain(subjectType)
+	// underlying type; a value of the opaque type itself is converted. A
+	// subject of unknown type is an error rather than a guess.
+	if matchedType == nil || transpiler.IsUnusable(matchedType) {
+		return failAt(tok, "cannot infer the type of the value matched against %s(...); give it a declared type", name)
 	}
+	subjectType := t.followAliasChain(matchedType)
 	var ifaceMethods []string
-	iface, dynamic := false, !known
-	if known {
-		switch {
-		case subjectType.IsAny():
-			iface = true
-		case t.isTypeParamSubject(subjectType):
-			dynamic = true
-		default:
-			ifaceMethods, iface = t.interfaceMethodNames(subjectType)
-		}
+	iface, dynamic := false, false
+	switch {
+	case subjectType.IsAny():
+		iface = true
+	case t.isTypeParamSubject(subjectType):
+		dynamic = true
+	default:
+		ifaceMethods, iface = t.interfaceMethodNames(subjectType)
 	}
 	if iface {
 		// An interface holds the opaque type only if the type implements it.
@@ -145,6 +142,10 @@ func (t *galaASTTransformer) generateOpaquePattern(
 
 	pat := arg.Pattern()
 	if isWildcard(pat.GetText()) {
+		if cast, asserted := base.(*ast.Ident); asserted && base != objExpr {
+			// Only the assertion is checked; its value goes unused.
+			stmts = blankAssignTempVar(stmts, cast.Name)
+		}
 		return combineStructMatchConds(conds, stmts)
 	}
 	underlying, ok := t.underlyingOf(meta)
@@ -201,7 +202,7 @@ func (t *galaASTTransformer) opaqueTypeOfPatternValue(expr grammar.IExpressionCo
 		if err != nil {
 			return nil
 		}
-		return t.opaqueMeta(unwrapGalaType(t.getExprTypeName(goExpr)))
+		return t.opaqueMeta(unwrapGalaType(t.probeExprType(goExpr)))
 	}
 	if !t.isSimpleIdentifier(text) || !t.isStableIdentifierPattern(text) {
 		return nil
@@ -252,6 +253,20 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 	if b, ok := typ.(transpiler.BasicType); ok && b.Name == "error" {
 		return []string{"Error"}, true
 	}
+	// A Go type (of a Go package, or of this package's .go files) is what its
+	// Go declaration says, whatever metadata was synthesized for it.
+	if t.goTypeInfo != nil {
+		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
+			if td.Kind != "interface" {
+				return nil, false
+			}
+			names := make([]string, 0, len(td.Methods))
+			for n := range td.Methods {
+				names = append(names, n)
+			}
+			return names, true
+		}
+	}
 	if meta := t.getTypeMeta(typ.BaseName()); meta != nil {
 		if meta.IsOpaque || meta.IsSealed || meta.IsShorthand || len(meta.Methods) == 0 || !isGalaInterfaceMeta(meta) {
 			return nil, false
@@ -261,15 +276,6 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 			names = append(names, n)
 		}
 		return names, true
-	}
-	if t.goTypeInfo != nil {
-		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil && td.Kind == "interface" {
-			names := make([]string, 0, len(td.Methods))
-			for n := range td.Methods {
-				names = append(names, n)
-			}
-			return names, true
-		}
 	}
 	return nil, false
 }

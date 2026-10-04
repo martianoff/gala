@@ -52,6 +52,18 @@ func label[T any](v T) string = v match {
     case _ => "not an id"
 }
 
+// isID only checks the value is a UserID.
+func isID(v any) bool = v match {
+    case UserID(_) => true
+    case _ => false
+}
+
+// first unwraps a UserID nested in an Option.
+func first(o Option[UserID]) string = o match {
+    case Some(UserID(n)) => s"first $n"
+    case _ => "none"
+}
+
 func owner(a Account) string = a match {
     case Account(UserID(0), _) => "unowned"
     case Account(UserID(n), Email(m)) if m != "" => s"$n <$m>"
@@ -67,6 +79,7 @@ func main() {
     Println(levelName(Debug), levelName(Error), levelName(Level(5)))
     Println(kind(UserID(1500)), "|", kind(int64(1500)), "|", kind(Email("a@b")), "|", kind("x"))
     Println(label(UserID(9)), "|", label(int64(9)))
+    Println(isID(UserID(1)), isID(int64(1)), first(Some(UserID(3))), first(None()))
     Println(
         owner(Account(UserID(0), Email("root@x"))), "|",
         owner(Account(UserID(5), Email("ada@x"))), "|",

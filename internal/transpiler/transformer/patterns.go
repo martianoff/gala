@@ -898,7 +898,7 @@ func (t *galaASTTransformer) structPatternAssertType(structName string, explicit
 			kind = "opaque type"
 		}
 		return nil, nil, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
-			fmt.Sprintf("cannot match generic %s '%s' against an interface value without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
+			fmt.Sprintf("cannot match generic %s '%s' against a value of an interface or type-parameter type without its %d type argument(s): Go can only type-assert to an instantiated type. Write the type arguments in the pattern, e.g. `case %s[%s](...)`",
 				kind, stripPackagePrefix(structName), len(meta.TypeParams), stripPackagePrefix(structName), strings.Join(meta.TypeParams, ", ")))
 	}
 	goArgs := make([]ast.Expr, len(typeArgExprs))

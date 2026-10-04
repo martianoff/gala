@@ -2,4 +2,5 @@ nobody | the answer | invalid -3 | user 7
 debug error level 5
 a UserID holding 1500 | a plain int64 1500 | an Email a@b | something else
 id 9 | not an id
+true false first 3 none
 unowned | 5 <ada@x> | 6 (no mail)

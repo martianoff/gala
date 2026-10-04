@@ -5,3 +5,4 @@ Array(100, 200, 300)
 json round-trip equal: true
 yaml round-trip equal: true
 customer 7 guest Success("pen")
+region eu wait 2s

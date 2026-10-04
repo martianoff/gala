@@ -43,6 +43,17 @@ func main() {
         describe(billing.CustomerID(0)),
         json.Value[billing.Sku]().Encode(billing.Sku("pen")),
     )
+    Println(region(billing.Region("eu")), wait(billing.Timeout(2000000000)))
+}
+
+func region(r billing.Region) string = r match {
+    case billing.Region(code) => s"region $code"
+    case _ => "unreachable"
+}
+
+func wait(t billing.Timeout) string = t match {
+    case billing.Timeout(d) => s"wait ${d.String()}"
+    case _ => "unreachable"
 }
 
 func describe(id billing.CustomerID) string = id match {
