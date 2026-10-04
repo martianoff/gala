@@ -32,7 +32,7 @@ func main() {
     val tmpResult = Try(() => os.MkdirTemp("", "gala-test-*")) match {
         case Success(dir) => {
             os.RemoveAll(dir)
-            return "temp dir created and cleaned"
+            "temp dir created and cleaned"
         }
         case Failure(_) => "failed"
     }
