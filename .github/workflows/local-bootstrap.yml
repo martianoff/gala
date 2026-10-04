@@ -1,0 +1,79 @@
+name: Local bootstrap — nix build .#gala-local
+
+# Builds gala-local (nix/gala.nix with useLocalBootstrap), whose stdlib is
+# transpiled by cmd/gala_bootstrap from this tree in batch mode, and diffs that
+# stdlib, packed by cmd/stdlib_gen, against Bazel's generate_embedded. Bazel
+# only ever runs the bootstrap per file, so no other lane exercises batch mode.
+#
+# Skipped for PRs that touch only docs, examples, the IDE plugins or other
+# workflows, none of which can move either side.
+#
+# The bootstrap is a buildGoModule, so a go.mod/go.sum change also needs
+# galaVendorHash in nix/gala.nix updated, or this lane fails on the vendor hash.
+# That is a real gala-local break, not noise: the red run prints the new hash.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!website/**"
+      - "!examples/**"
+      - "!ide/**"
+      - "!**/*.md"
+      - "!**/*.MD"
+      - "!.github/**"
+      - ".github/workflows/local-bootstrap.yml"
+
+# Checkouts and builds only; the token never needs to write.
+permissions:
+  contents: read
+
+concurrency:
+  group: local-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gala-local:
+    name: gala-local builds and matches Bazel's stdlib
+    runs-on: ubuntu-latest
+    # No Nix binary cache is configured, so every run builds from cold.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      # Bazel's transpile actions read GOROOT for Go type inference.
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
+      - name: Setup Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: local-bootstrap-${{ steps.setup-go.outputs.go-version }}
+          repository-cache: true
+
+      # The batch transpile is what breaks, so it runs first and fails fast.
+      - name: Transpile the stdlib with the local bootstrap
+        run: nix build .#gala-local.localTranspiled --out-link local-stdlib --print-build-logs
+
+      - name: Build the Bazel stdlib
+        run: bazel build //internal/stdlib:generate_embedded //cmd/stdlib_gen
+
+      - name: Compare the local-bootstrap stdlib with Bazel's
+        run: tools/ci/compare_stdlib.sh local-stdlib local-bootstrap
+
+      - name: Build gala-local
+        run: nix build .#gala-local --print-build-logs

@@ -26,8 +26,17 @@ go_binary(
 go_test(
     name = "gala_bootstrap_test",
     srcs = ["main_test.go"],
+    # The undefined-name check only runs once std (and the go_builtins it
+    # dot-imports) loads, so the sibling tests need them in runfiles; the
+    # test package is batch-transpiled as the local bootstrap does it.
+    data = [
+        "//go_builtins:builtins.go",
+        "//std:gala_sources",
+        "//test:gala_sources",
+    ],
     embed = [":gala_bootstrap_lib"],
     deps = [
+        "@rules_go//go/tools/bazel",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
