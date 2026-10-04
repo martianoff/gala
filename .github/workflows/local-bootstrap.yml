@@ -13,6 +13,10 @@ name: Local bootstrap — nix build .#gala-local
 # That is a real gala-local break, not noise: the red run prints the new hash.
 on:
   workflow_dispatch:
+  # Seeds the Bazel disk cache from master so PR runs can restore it
+  # (PR-scoped cache entries are not shared across PRs).
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
 
@@ -26,6 +30,8 @@ concurrency:
 
 jobs:
   gala-local:
+    # This name is the context the master ruleset requires. Renaming it
+    # orphans the required check — update the ruleset in the same change.
     name: gala-local builds and matches Bazel's stdlib
     runs-on: ubuntu-latest
     # No Nix binary cache is configured, so every run builds from cold.
