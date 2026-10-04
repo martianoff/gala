@@ -598,6 +598,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		recvTypeArgTypes = append(recvTypeArgTypes, transpiler.ParseType(a))
 	}
 	var fromSlot map[string]transpiler.Type
+	slotTyped := map[string]bool{} // bound from the slot over an untyped constant argument
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && !transpiler.IsUnusableOrAny(pendingExpected) {
 		// The slot binds only what it can name: no type parameter left
 		// unbound by another callee, no masked part (resultSlotTypeArgs).
@@ -715,7 +716,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				return ok
 			}
 			for tp, inferred := range inferredMap {
-				if _, slotted := fromSlot[tp]; slotted && untyped() {
+				if slot, slotted := fromSlot[tp]; slotted && untyped() {
+					// Go would infer the constant's default type, so the
+					// slot's is spelled when it differs
+					// (resultOnlyMethodTypeArgs).
+					slotTyped[tp] = slot.String() != inferred.String()
 					continue
 				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {
@@ -842,7 +847,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		yields := func() transpiler.Type {
 			return t.substituteConcreteTypes(methodMeta.ReturnType, typeMeta.TypeParams, recvTypeArgTypes)
 		}
-		if typeArgs, err = t.resultOnlyMethodTypeArgs(anchor, methodMeta, typeArgs, typeSubst, yields, mArgs); err != nil {
+		if typeArgs, err = t.resultOnlyMethodTypeArgs(anchor, methodMeta, typeArgs, typeSubst, slotTyped, yields, mArgs); err != nil {
 			return true, nil, err
 		}
 	}
@@ -1068,20 +1073,25 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 // only its result mentions (phantom, see phantomTypeParams: the `U` of
 // `Convert[U any]() Option[U]`). Go infers no such parameter, so the call has
 // to spell the method's type arguments up to the last such one; Go infers
-// those after it from the arguments and the receiver. typeSubst holds those
-// its arguments and the slot the call fills bound (see
+// those after it from the arguments and the receiver. So does one slotTyped:
+// bound from the slot over an untyped constant argument, which Go would give
+// the constant's default type (`0` for a `U` in an `Option[int64]` slot).
+// typeSubst holds those its arguments and the slot the call fills bound (see
 // tryTransformGenericMethodAsFunction); yields gives its result type on this
 // receiver, for the hint. One left open is GALA-E0067 at anchor (the call's
 // argument list, or its `()`), as for a generic function (see
-// injectFuncPhantomTypeArgs). typeArgs is returned as is when the method has
-// no phantom type parameter: Go infers the others from the arguments.
-func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
+// injectFuncPhantomTypeArgs). typeArgs is returned as is when nothing needs
+// spelling: Go infers every type argument from the arguments.
+func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, slotTyped map[string]bool, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
 	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
 	// The call spells a prefix of the type arguments, up to the last phantom
-	// one; Go infers the rest from the arguments and the receiver.
+	// or slot-typed one; Go infers the rest from the arguments and the
+	// receiver.
 	end := 0
-	if len(phantom) > 0 {
-		end = slices.Index(methodMeta.TypeParams, phantom[len(phantom)-1]) + 1
+	for i, tp := range methodMeta.TypeParams {
+		if slotTyped[tp] || slices.Contains(phantom, tp) {
+			end = i + 1
+		}
 	}
 	if len(typeArgs) >= end {
 		return typeArgs, nil
