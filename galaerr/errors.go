@@ -727,13 +727,14 @@ const (
 	CodeUntypedBranchingValue ErrorCode = "GALA-E0068"
 
 	// E0069: a `return` is written in an arm of a match, or a branch of an
-	// if-expression, whose value is used other than to initialize a local
-	// `val` or `var` or to be returned — an argument, an operand, a receiver.
-	// The construct lowers to a function literal there, so the `return`
-	// would leave only it, and the enclosing function would go on with the
-	// returned value as the construct's. A construct that initializes a local
-	// `val` or `var` is lowered as statements instead, and its `return`
-	// leaves the function.
+	// if-expression, whose value is used inside a larger expression — an
+	// argument, an operand, a receiver, an interpolation. The rest of the
+	// expression would still have to be evaluated, so the construct lowers to
+	// a function literal there, and the `return` would leave only it while
+	// the enclosing function went on with the returned value as the
+	// construct's. A construct that initializes a local `val` or `var`, is
+	// assigned to a variable, or is the function's result is lowered so that
+	// its `return` leaves the function.
 	CodeReturnInBranchingValue ErrorCode = "GALA-E0069"
 )
 

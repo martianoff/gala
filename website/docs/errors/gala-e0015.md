@@ -11,7 +11,7 @@ last_modified_at: 2026-10-04
 
 # GALA-E0015 — Bare `return` inside a value-producing match
 
-**What it means.** A `match` expression is used as a value — passed as an argument, used as an operand, or returned as an expression — and one of its branches ends with a bare `return` (a `return` with no value). A match a local `val` or `var` is initialized with is not such a value: it is lowered as statements, and a bare `return` in it leaves the enclosing function.
+**What it means.** A `match` expression is used as a value — passed as an argument, used as an operand, or returned as an expression — and one of its branches ends with a bare `return` (a `return` with no value). A match a local `val` or `var` is initialized with, or a variable is assigned, is not such a value: it is lowered as statements, and a bare `return` in it leaves the enclosing function.
 
 ---
 

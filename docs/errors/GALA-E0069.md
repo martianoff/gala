@@ -1,12 +1,15 @@
 # GALA-E0069 — `return` in a match or if-expression whose value is used
 
 **When it fires.** A `return` is written in an arm of a `match`, or a branch of
-an if-expression, whose value is used other than to initialize a local `val`
-or `var` or to be the function's result: passed as an argument, used as an
-operand, assigned to an existing variable, or called a method on. There the
-construct is lowered to a Go function literal called on the spot, so the
-`return` would leave only that function — the match — and the enclosing
-function would go on running with the returned value as the match's value.
+an if-expression, whose value is used inside a larger expression: passed as an
+argument, used as an operand, interpolated into a string, or called a method
+on. A `return` there has to leave the enclosing function, but the rest of the
+expression around the match would still have to be evaluated first, so the
+construct cannot be lowered as statements; it is lowered to a Go function
+literal called on the spot, which the `return` could only leave. (A match or
+if-expression that initializes a local `val` or `var`, is assigned to a
+variable, or is the function's result, is fine: there the `return` leaves the
+function.)
 
 **Minimal repro.** (`main.gala`)
 
@@ -41,9 +44,9 @@ error[GALA-E0069]: `return` inside a match whose value is used leaves only the m
 ```
 
 **Fix.** Initialize a `val` with the match, and use the `val`. A match or
-if-expression a local `val` or `var` is initialized with is lowered as
-statements, so a `return` in it leaves the function, and a `break` or
-`continue` acts on the loop around it:
+if-expression a local `val` or `var` is initialized with, or a variable is
+assigned, is lowered as statements, so a `return` in it leaves the function,
+and a `break` or `continue` acts on the loop around it:
 
 ```gala
 package main
@@ -72,6 +75,7 @@ a lambda inside an arm leaves that lambda.
 **Rationale.** Before this check such a `return` compiled, and the program
 ran on with the wrong value: `val x = o match { case None() => { return -1 }
 ... }` followed by `x * 10` returned `-10` instead of `-1`, and in a loop that
-was meant to stop it kept going. A `val` or `var` initializer is now lowered
-so that the `return` does what it says; anywhere else the construct has to be
-a function literal, so the `return` is rejected rather than silently confined.
+was meant to stop it kept going. A `val` or `var` initializer and an
+assignment are now lowered so that the `return` does what it says; inside a
+larger expression the construct has to be a function literal, so the `return`
+is rejected rather than silently confined.

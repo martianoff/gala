@@ -656,11 +656,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if loopControl != nil && !stmtPosition && hoist == "" {
 		return nil, t.loopControlInValueError("a match", loopControl)
 	}
-	if hoist != "" {
-		if err := t.checkHoistedReturns("match", clauses, defaultBody); err != nil {
-			return nil, err
-		}
-	}
 
 	// Infer common result type from all branches. In statement position the
 	// value is discarded, so arms need not unify (see inferCommonResultType).

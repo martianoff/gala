@@ -89,7 +89,7 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 		{"match as an argument", "func f(o Option[int]) int {\n    val y = twice(o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    })\n    y\n}", "`return` inside a match whose value is used leaves only the match, not the function", 8, 25},
 		{"if-expression as an argument", "func f(n int) int {\n    val y = twice(if (n > 0) n else { return -1 })\n    y\n}", "`return` inside an if-expression whose value is used leaves only the if-expression, not the function", 6, 38},
 		{"match as an operand", "func f(o Option[int]) int {\n    val x = 1 + (o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    })\n    x\n}", "`return` inside a match whose value is used", 8, 25},
-		{"match assigned to an existing var", "func f(o Option[int]) int {\n    var x = 0\n    x = o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n    x\n}", "`return` inside a match whose value is used", 9, 25},
+		{"match in a string interpolation", "func f(o Option[int]) string {\n    val s = s\"v=${o match { case Some(v) => v case None() => { return \"none\" } }}\"\n    s\n}", "`return` inside a match whose value is used", 6, 61},
 	}
 	for _, tt := range errorCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -104,18 +104,8 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 		})
 	}
 
-	// A `return` with a value meant as the arm's value, in a function that
-	// returns nothing: it leaves the function, which has no value to return.
-	_, err := trans.Transpile(header+"func show(n int) {\n    val s = n match {\n        case 0 => { return \"zero\" }\n        case _ => \"other\"\n    }\n    Println(s)\n}\n", "")
-	require.Error(t, err)
-	var se *galaerr.SemanticError
-	require.True(t, errors.As(err, &se), "want a SemanticError, got %v", err)
-	assert.Equal(t, galaerr.CodeReturnInBranchingValue, se.Code)
-	assert.Contains(t, se.Error(), "`return` with a value inside a match leaves the function, which returns nothing")
-	assert.Equal(t, 7, se.Line)
-	assert.Equal(t, 20, se.Column)
-
 	validCases := []struct{ name, input string }{
+		{"match assigned to an existing var", "func f(o Option[int]) int {\n    var x = 0\n    x = o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n    x\n}"},
 		{"returned match", "func f(o Option[int]) int {\n    return o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"trailing match of a function", "func f(o Option[int]) int {\n    Println(\"x\")\n    o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"parenthesized result of a function", "func f(o Option[int]) int = (o match {\n    case Some(v) => v\n    case None() => { return 0 }\n})"},

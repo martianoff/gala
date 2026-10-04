@@ -240,7 +240,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	} else if len(lhsExprs) == 1 {
 		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
-	rhsExprs, err := t.transformExpressionListAgainst(rhsListCtx, lhsType)
+	rhsExprs, err := t.lowerDeclarationInitializers(rhsListCtx, len(lhsExprs), lhsType)
 	if err != nil {
 		return nil, err
 	}

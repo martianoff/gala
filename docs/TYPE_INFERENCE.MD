@@ -521,7 +521,8 @@ A value-position match or if-expression lowers to an IIFE and gives its arms
 and branches their own slot, since a `return` there leaves only the IIFE
 (which is GALA-E0069 unless the IIFE is itself the result). A
 statement-position match whose arms return is inlined instead, and so is one a
-local `val` or `var` is initialized with whose arms return, `break` or
+local `val` or `var` is initialized with (or a variable assigned) whose arms
+return, `break` or
 `continue`, so their returns fill the lambda's slot.
 
 ---

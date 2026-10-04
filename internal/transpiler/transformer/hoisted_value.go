@@ -1,13 +1,11 @@
 package transformer
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 
 	"github.com/antlr4-go/antlr/v4"
 
-	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -17,17 +15,20 @@ import (
 // Such a construct lowers to a function literal called at once, so a `return`
 // in one of its arms would leave only that function — the match — and a
 // `break` / `continue` would name no loop. When the construct is the whole
-// initializer of a local `val` or `var`, it is lowered as statements instead:
-// a variable of the construct's type is declared before the declaration, each
-// arm stores its value in it, and the declaration reads it. A `return`, `break`
-// or `continue` in an arm then acts on the enclosing function or loop, as it
-// does in a statement-position match.
+// initializer of a local `val` or `var`, or the whole value assigned to a
+// variable, it is lowered as statements instead: a variable of the construct's
+// type is declared before the statement, each arm stores its value in it, and
+// the statement reads it. A `return`, `break` or `continue` in an arm then
+// acts on the enclosing function or loop, as it does in a statement-position
+// match.
 //
 // A construct is lowered this way only when it needs to be: when its arms hold
 // such a statement outside any lambda (escapesConstruct). An arm whose value is
-// itself such a construct stores into the same variable. Anywhere else, a
-// `return` that would leave only the construct is GALA-E0069 and a `break` /
-// `continue` GALA-E0059 (see branching_calls.go and loop_control.go).
+// itself such a construct stores into the same variable. Inside a larger
+// expression it cannot be: the rest of the expression would have to be
+// evaluated around it. There a `return` that would leave only the construct is
+// GALA-E0069 and a `break` / `continue` GALA-E0059 (see branching_calls.go and
+// loop_control.go).
 //
 // slot.hoist names the variable a construct lowered this way stores its value
 // in ("" when it is lowered to a function literal).
@@ -98,11 +99,11 @@ func (t *galaASTTransformer) hoistable(exprCtx grammar.IExpressionContext) bool 
 	return false
 }
 
-// lowerDeclarationInitializers lowers the initializers of a `val` or `var`
-// declaring names names, with declared type declared (nil when none). The
-// single initializer of a single local name is lowered as statements when
-// hoistable: the declaration is then initialized with the variable they store
-// its value in, and the statements are left in t.hoistedPre for
+// lowerDeclarationInitializers lowers the values of a `val` or `var`
+// declaring names names, or of an assignment to names targets, with declared
+// type declared (nil when none). The single value of a single local name is
+// lowered as statements when hoistable: the statement then reads the variable
+// they store its value in, and they are left in t.hoistedPre for
 // transformStatement to emit before it.
 func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.ExpressionListContext, names int, declared transpiler.Type) ([]ast.Expr, error) {
 	local := t.localDeclaration
@@ -266,43 +267,6 @@ func (t *galaASTTransformer) armLeaves(clause ast.Stmt, defaultBody []ast.Stmt) 
 	}
 	ifStmt, ok := clause.(*ast.IfStmt)
 	return ok && ifStmt.Body != nil && t.leaves(ifStmt.Body.List)
-}
-
-// checkHoistedReturns rejects, in the branches of a construct of kind lowered
-// as statements, a source `return` with a value when the enclosing function
-// returns none. Lowered to a function literal, such a `return` used to give the
-// construct its value; lowered as statements it leaves the function, so what
-// was meant as the branch's value is GALA-E0069 here rather than Go's "too
-// many return values".
-func (t *galaASTTransformer) checkHoistedReturns(kind string, branches ...[]ast.Stmt) error {
-	if t.returnSlot.fillable || !transpiler.IsUnusable(t.returnSlot.typ) && !t.returnSlot.typ.IsVoid() {
-		return nil
-	}
-	var found error
-	visit := func(n ast.Node) bool {
-		if found != nil {
-			return false
-		}
-		switch x := n.(type) {
-		case *ast.FuncLit:
-			return false
-		case *ast.ReturnStmt:
-			if pos, user := t.userReturns[x]; user && len(x.Results) > 0 {
-				found = galaerr.NewCodedSemanticError(
-					galaerr.CodeReturnInBranchingValue,
-					pos.line, pos.col,
-					fmt.Sprintf("`return` with a value inside %s leaves the function, which returns nothing", withArticle(kind)),
-					fmt.Sprintf("to give the %s this value, end the %s in it instead of `return`", kind, branchNoun(kind)))
-			}
-		}
-		return true
-	}
-	for _, stmts := range branches {
-		for _, s := range stmts {
-			ast.Inspect(s, visit)
-		}
-	}
-	return found
 }
 
 // leavingValuesType is the settled type the values of the source `return`s in

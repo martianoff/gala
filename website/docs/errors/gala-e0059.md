@@ -18,8 +18,8 @@ the `for` loop written around it. That is the case when it is:
   used — returned, passed as an argument, used as an operand, or the trailing
   value of a function. Such a construct is a value, and has to produce one on
   every path. (A match or if-expression a local `val` or `var` is initialized
-  with is lowered as statements, so its `break` and `continue` do control the
-  loop.);
+  with, or a variable assigned, is lowered as statements, so its `break` and
+  `continue` do control the loop.);
 - inside a lambda, even one written inside the loop. A lambda is a separate
   function, so it cannot leave or advance its caller's loop;
 - outside any `for` loop at all;

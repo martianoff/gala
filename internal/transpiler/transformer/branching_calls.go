@@ -22,9 +22,9 @@ import (
 //     itself returned — `return x match {...}`, the tail of a function or
 //     lambda with a result — but anywhere else the enclosing function would
 //     go on running with the returned value as the match's: GALA-E0069. (A
-//     construct a local `val` or `var` is initialized with is lowered as
-//     statements instead, so its `return` does leave the function; see
-//     hoisted_value.go.)
+//     construct a local `val` or `var` is initialized with, or a variable
+//     assigned, is lowered as statements instead, so its `return` does leave
+//     the function; see hoisted_value.go.)
 
 // branchingSite is the source position and kind ("match" or "if-expression")
 // of a recorded call.

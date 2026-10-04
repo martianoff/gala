@@ -889,9 +889,6 @@ type loweredIfBranch struct {
 // none. The value's type is that of the branches that store one (see
 // hoistedType).
 func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext, cond ast.Expr, s slot, branches [2]loweredIfBranch) (ast.Expr, error) {
-	if err := t.checkHoistedReturns("if-expression", branches[0].stmts, branches[1].stmts); err != nil {
-		return nil, err
-	}
 	var types [2]transpiler.Type
 	for i, b := range branches {
 		types[i] = transpiler.NilType{}

@@ -1940,9 +1940,9 @@ for i := 0; i < 6; i++ {
 A `return` in such an arm likewise returns from the enclosing function.
 
 So do `break`, `continue` and `return` in an arm of a `match`, or a branch of
-an if-expression, that a local `val` or `var` is initialized with
-(`val x = i match { case 2 => break ... }`): the other arms give `x` its
-value.
+an if-expression, that a local `val` or `var` is initialized with, or a
+variable is assigned (`val x = i match { case 2 => break ... }`): the other
+arms give `x` its value.
 
 They must reach a loop written around them in the same function. Each of these
 is an error, [GALA-E0059](errors/GALA-E0059.md):
