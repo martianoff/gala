@@ -278,7 +278,7 @@ Println(s"x=${decoded.X} y=${decoded.Y}")
 // => x=1 y=2
 ```
 
-Skipping handles all JSON value shapes — strings, numbers, booleans, `null`, and nested objects/arrays — so an unknown field can carry an arbitrarily complex payload without breaking the decode.
+Skipping handles all JSON value shapes — strings, numbers, booleans, `null`, and nested objects/arrays — so an unknown field can carry an arbitrarily complex payload without breaking the decode. The skipped payload must still be valid JSON: a malformed number, string or structure inside it is a `Failure`.
 
 ---
 

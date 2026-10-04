@@ -303,11 +303,11 @@ func isPlainSafe(s string) bool {
 	if s == "" || !utf8.ValidString(s) {
 		return false
 	}
-	if s[0] == ' ' || s[0] == '\t' {
+	if s[0] == ' ' {
 		return false
 	}
 	// A trailing ':' would read back as "key:" — a mapping, not a string.
-	if s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == ':' {
+	if s[len(s)-1] == ' ' || s[len(s)-1] == ':' {
 		return false
 	}
 	switch s[0] {
@@ -315,13 +315,15 @@ func isPlainSafe(s string) bool {
 		'|', '>', '\'', '"', '%', '@', '`':
 		return false
 	}
+	// Tabs, line breaks and the other characters that need an escape can
+	// only be written in a double-quoted scalar.
+	if strings.IndexFunc(s, needsYamlEscape) >= 0 {
+		return false
+	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c == '\n' || c == '\r' || c == '\t' || c < 32 {
-			return false
-		}
 		// ": " mid-string would be parsed as a nested mapping.
-		if c == ':' && i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\t') {
+		if c == ':' && i+1 < len(s) && s[i+1] == ' ' {
 			return false
 		}
 		// " #" starts a comment.
@@ -368,26 +370,45 @@ func doubleQuoted(s string) string {
 		case '\t':
 			sb.WriteString("\\t")
 		default:
-			switch {
-			case c < 32:
-				sb.WriteString(fmt.Sprintf("\\x%02x", c))
-			case c < utf8.RuneSelf:
-				sb.WriteByte(c)
-			default:
-				// A YAML stream is Unicode text: a valid UTF-8 sequence is
-				// copied through, an invalid byte is written as \ufffd.
-				r, size := utf8.DecodeRuneInString(s[i:])
-				if r == utf8.RuneError && size == 1 {
-					sb.WriteString(`\ufffd`)
-				} else {
-					sb.WriteString(s[i : i+size])
-				}
-				i += size - 1
+			// A YAML stream is Unicode text of printable characters: a
+			// printable character is copied through, any other is escaped,
+			// and an invalid byte is written as the U+FFFD escape.
+			r, size := rune(c), 1
+			if c >= utf8.RuneSelf {
+				r, size = utf8.DecodeRuneInString(s[i:])
 			}
+			switch {
+			case r == utf8.RuneError && size == 1:
+				sb.WriteString(`\ufffd`)
+			case r == 0x85:
+				sb.WriteString(`\N`)
+			case r == 0x2028:
+				sb.WriteString(`\L`)
+			case r == 0x2029:
+				sb.WriteString(`\P`)
+			case needsYamlEscape(r) && r <= 0xff:
+				fmt.Fprintf(&sb, `\x%02x`, r)
+			case needsYamlEscape(r): // U+FEFF, U+FFFE, U+FFFF
+				fmt.Fprintf(&sb, `\u%04X`, r)
+			default:
+				sb.WriteString(s[i : i+size])
+			}
+			i += size - 1
 		}
 	}
 	sb.WriteByte('"')
 	return sb.String()
+}
+
+// needsYamlEscape reports whether r is written as an escape. YAML 1.2
+// (section 5.1) does not allow the C0 controls, DEL, the C1 controls, the
+// byte order mark or the noncharacters U+FFFE and U+FFFF as is; tab and line
+// breaks are C0 controls a plain scalar cannot hold either. NEL and the line
+// and paragraph separators U+2028 and U+2029 are line breaks to YAML 1.1
+// readers such as libyaml and gopkg.in/yaml.v3, so they are escaped too.
+func needsYamlEscape(r rune) bool {
+	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == 0x2028 || r == 0x2029 ||
+		r == 0xfeff || r == 0xfffe || r == 0xffff
 }
 
 // Compile-time check: YamlEncoderImpl must satisfy std.FieldEncoder.
@@ -947,7 +968,7 @@ func parseSequence(lines []pLine, start, indent int) (*yNode, int) {
 		if !isSequenceLine(line.raw) {
 			break
 		}
-		itemPart := withoutComment(strings.TrimSpace(line.raw[1:]))
+		itemPart := withoutComment(trimYamlSpace(line.raw[1:]))
 		if itemPart == "" {
 			// Bare "-" — value lives on subsequent indented lines.
 			if i+1 >= len(lines) || lines[i+1].indent <= indent {
@@ -1041,19 +1062,24 @@ func tryParseKeyValue(line string) (string, string, bool) {
 	if ci < 0 {
 		return "", "", false
 	}
-	key := strings.TrimSpace(line[:ci])
+	key := trimYamlSpace(line[:ci])
 	value := ""
 	if ci+1 < len(line) {
-		value = withoutComment(strings.TrimSpace(line[ci+1:]))
+		value = withoutComment(trimYamlSpace(line[ci+1:]))
 	}
 	return key, value, true
 }
+
+// trimYamlSpace trims the white space around a scalar's text. YAML white
+// space is the space and the tab only (YAML 1.2, section 5.5): a no-break
+// space or another Unicode space at either end is part of the text.
+func trimYamlSpace(s string) string { return strings.Trim(s, " \t") }
 
 // withoutComment drops a trailing comment (" # ...", outside quotes) from a
 // scalar's text.
 func withoutComment(s string) string {
 	if hi := findUnquotedHash(s); hi >= 0 {
-		return strings.TrimSpace(s[:hi])
+		return trimYamlSpace(s[:hi])
 	}
 	return s
 }
@@ -1127,7 +1153,7 @@ func parseQuotedKey(line string) (string, string, bool) {
 		}
 		rest := ""
 		if j+1 < len(line) {
-			rest = strings.TrimSpace(line[j+1:])
+			rest = trimYamlSpace(line[j+1:])
 		}
 		key := line[1:i]
 		if quote == '"' {
@@ -1139,7 +1165,7 @@ func parseQuotedKey(line string) (string, string, bool) {
 }
 
 func parseInlineScalar(raw string) *yNode {
-	s := strings.TrimSpace(raw)
+	s := trimYamlSpace(raw)
 	if s == "" || s == "~" || s == "null" || s == "Null" || s == "NULL" {
 		return newScalarNode("", true)
 	}
