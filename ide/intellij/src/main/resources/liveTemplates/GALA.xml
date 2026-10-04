@@ -56,7 +56,7 @@
         <context><option name="GALA" value="true" /></context>
     </template>
 
-    <template name="struct"value="type $NAME$ struct {&#10;    val $FIELD$ $TYPE$&#10;}" description="Struct type declaration" toReformat="true" toShortenFQNames="true">
+    <template name="struct" value="type $NAME$ struct {&#10;    val $FIELD$ $TYPE$&#10;}" description="Struct type declaration" toReformat="true" toShortenFQNames="true">
         <variable name="NAME" expression="" defaultValue="MyStruct" alwaysStopAt="true" />
         <variable name="FIELD" expression="" defaultValue="field" alwaysStopAt="true" />
         <variable name="TYPE" expression="" defaultValue="string" alwaysStopAt="true" />
