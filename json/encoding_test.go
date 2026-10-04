@@ -59,17 +59,24 @@ func TestEncoder_StringEscapes(t *testing.T) {
 			}
 			// encoding/json reads it back as the text it would itself have
 			// written for the input.
-			var back, want string
+			var back string
 			if err := stdjson.Unmarshal([]byte(got), &back); err != nil {
 				t.Fatalf("encoding/json cannot read %q: %v", got, err)
 			}
-			ref, _ := stdjson.Marshal(tt.in)
-			_ = stdjson.Unmarshal(ref, &want)
-			if back != want {
+			if want := stdjsonRoundTrip(tt.in); back != want {
 				t.Fatalf("decodes to %q, encoding/json's own encoding decodes to %q", back, want)
 			}
 		})
 	}
+}
+
+// stdjsonRoundTrip is the text encoding/json reads back from its own encoding
+// of s.
+func stdjsonRoundTrip(s string) string {
+	ref, _ := stdjson.Marshal(s)
+	var back string
+	_ = stdjson.Unmarshal(ref, &back)
+	return back
 }
 
 // Keys go through the same escaper as values.
@@ -99,10 +106,7 @@ func TestEncoder_RandomBytesStayValid(t *testing.T) {
 		if !utf8.ValidString(got) || !stdjson.Valid([]byte(got)) {
 			t.Fatalf("WriteString(%q) = %q is not valid UTF-8 JSON", s, got)
 		}
-		var want string
-		ref, _ := stdjson.Marshal(s)
-		_ = stdjson.Unmarshal(ref, &want)
-		if back := NewJsonDecoder(got).ReadString(); back != want {
+		if back, want := NewJsonDecoder(got).ReadString(), stdjsonRoundTrip(s); back != want {
 			t.Fatalf("WriteString(%q) = %q reads back as %q, want %q", s, got, back, want)
 		}
 	}

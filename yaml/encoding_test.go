@@ -105,21 +105,13 @@ func TestEncoder_InvalidUTF8(t *testing.T) {
 			}
 			d := NewYamlDecoder(got)
 			d.StartObject()
-			if k, want := d.ReadKey(), toValidUTF8(tt.key); k != want {
+			// string([]rune(s)) replaces each invalid byte with U+FFFD.
+			if k, want := d.ReadKey(), string([]rune(tt.key)); k != want {
 				t.Fatalf("key reads back as %q, want %q", k, want)
 			}
-			if v, want := d.ReadString(), toValidUTF8(tt.in); v != want {
+			if v, want := d.ReadString(), string([]rune(tt.in)); v != want {
 				t.Fatalf("value reads back as %q, want %q", v, want)
 			}
 		})
 	}
-}
-
-// toValidUTF8 replaces each invalid byte with U+FFFD.
-func toValidUTF8(s string) string {
-	out := make([]rune, 0, len(s))
-	for _, r := range s {
-		out = append(out, r)
-	}
-	return string(out)
 }

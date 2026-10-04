@@ -26,6 +26,11 @@ func RuneToString(r rune) string {
 	return string(r)
 }
 
+// substring returns s[from:to].
+func substring(s string, from int, to int) string {
+	return s[from:to]
+}
+
 // decodeRuneAt decodes the UTF-8 sequence that starts at s[i]; an invalid
 // byte gives (utf8.RuneError, 1).
 func decodeRuneAt(s string, i int) (rune, int) {

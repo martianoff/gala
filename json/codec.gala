@@ -104,7 +104,8 @@ func (e *JsonEncoderImpl) writeFloat(v float64, bitSize int) {
 // digits that parse back to v at bitSize, in plain notation for
 // 1e-6 <= |v| < 1e21 and in exponent notation outside it, so 1e300 is not a
 // 301-digit literal. A one-digit negative exponent drops its leading zero
-// (1e-7, not 1e-07); a positive exponent here is always at least 21.
+// (1e-7, not 1e-07); a positive exponent here is always at least 21. yaml's
+// formatYamlFloat keeps the same rule in Go.
 func formatJsonFloat(v float64, bitSize int) string =
     if (useExponent(math.Abs(v), bitSize)) strings.Replace(strconv.FormatFloat(v, 'e', -1, bitSize), "e-0", "e-", 1)
     else strconv.FormatFloat(v, 'f', -1, bitSize)
@@ -146,42 +147,48 @@ func (e *JsonEncoderImpl) writeCommaIfNeeded() {
 
 func (e *JsonEncoderImpl) writeEscapedJsonString(s string) {
     e.buf.WriteByte('"')
-    // Byte-level loop: s[i] byte-indexes, so the bound must be the byte length
-    // (.ByteSize() -> len(s)), NOT the rune count (.Size() ->
-    // utf8.RuneCountInString) — the latter truncates multibyte input.
+    // Byte-level scan, on the hot path of every encode: s[i] byte-indexes, so
+    // the bound must be the byte length (.ByteSize() -> len(s)), NOT the rune
+    // count (.Size() -> utf8.RuneCountInString) — the latter truncates
+    // multibyte input. Runs of bytes that need no escaping, valid multibyte
+    // UTF-8 included, are copied in one write from s[start:i].
+    var start = 0
     var i = 0
     for i < s.ByteSize() {
         val c = s[i]
-        if c < utf8.RuneSelf {
-            e.writeEscapedByte(c)
-            i = i + 1
-        } else {
-            // A valid UTF-8 sequence is copied through; an invalid byte is
-            // written as \ufffd, as encoding/json does, so the document is
-            // always valid UTF-8.
+        if c >= utf8.RuneSelf {
+            // An invalid UTF-8 byte is written as the U+FFFD escape, as
+            // encoding/json does, so the document is always valid UTF-8.
             val r, size = decodeRuneAt(s, i)
             if r == utf8.RuneError && size == 1 {
+                e.buf.WriteString(substring(s, start, i))
                 e.buf.WriteString("\\ufffd")
-            } else {
-                e.buf.WriteRune(r)
+                start = i + 1
             }
             i = i + size
+        } else if c < 32 || c == '"' || c == '\\' {
+            e.buf.WriteString(substring(s, start, i))
+            e.writeEscape(c)
+            i = i + 1
+            start = i
+        } else {
+            i = i + 1
         }
     }
+    e.buf.WriteString(substring(s, start, i))
     e.buf.WriteByte('"')
 }
 
-// writeEscapedByte writes one ASCII byte of a string body, escaped where JSON
-// requires it.
-func (e *JsonEncoderImpl) writeEscapedByte(c byte) {
+// writeEscape writes the JSON escape for a quote, a backslash or a control
+// character.
+func (e *JsonEncoderImpl) writeEscape(c byte) {
     c match {
         case '"' => { e.buf.WriteString("\\\"") }
         case '\\' => { e.buf.WriteString("\\\\") }
         case '\n' => { e.buf.WriteString("\\n") }
         case '\r' => { e.buf.WriteString("\\r") }
         case '\t' => { e.buf.WriteString("\\t") }
-        case ctl if ctl < 32 => { e.buf.WriteString(f"\\u${ctl}%04x") }
-        case _ => { e.buf.WriteByte(c) }
+        case _ => { e.buf.WriteString(f"\\u${c}%04x") }
     }
 }
 

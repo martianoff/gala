@@ -230,8 +230,9 @@ func (e *YamlEncoderImpl) WriteFloat32(v float32) { e.writeScalar(formatYamlFloa
 
 // formatYamlFloat renders a float in the shortest form that parses back to
 // the same value at the given bit size: plain notation for
-// 1e-6 <= |v| < 1e21 and a core-schema exponent form outside it (as
-// encoding/json spells floats), so 1e300 is not a 301-digit literal. NaN and
+// 1e-6 <= |v| < 1e21 and a YAML 1.2 core-schema exponent form outside it
+// (1e+21, 1e-7: the spelling of encoding/json and of json's formatJsonFloat,
+// which keeps the same rule in GALA), so 1e300 is not a 301-digit literal. NaN and
 // the infinities use YAML's core-schema spellings (.nan, .inf, -.inf), which
 // parseYamlFloat accepts.
 func formatYamlFloat(v float64, bitSize int) string {
