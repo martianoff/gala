@@ -315,14 +315,13 @@ func isPlainSafe(s string) bool {
 		'|', '>', '\'', '"', '%', '@', '`':
 		return false
 	}
+	// Tabs, line breaks and the other characters that need an escape can
+	// only be written in a double-quoted scalar.
 	if strings.IndexFunc(s, needsYamlEscape) >= 0 {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c == '\n' || c == '\r' || c == '\t' || c < 32 {
-			return false
-		}
 		// ": " mid-string would be parsed as a nested mapping.
 		if c == ':' && i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\t') {
 			return false
@@ -374,15 +373,18 @@ func doubleQuoted(s string) string {
 			// A YAML stream is Unicode text of printable characters: a
 			// printable character is copied through, any other is escaped,
 			// and an invalid byte is written as the U+FFFD escape.
-			r, size := utf8.DecodeRuneInString(s[i:])
+			r, size := rune(c), 1
+			if c >= utf8.RuneSelf {
+				r, size = utf8.DecodeRuneInString(s[i:])
+			}
 			switch {
 			case r == utf8.RuneError && size == 1:
 				sb.WriteString(`\ufffd`)
 			case r == 0x85:
 				sb.WriteString(`\N`)
-			case r <= 0xff && needsYamlEscape(r):
+			case needsYamlEscape(r) && r <= 0xff:
 				fmt.Fprintf(&sb, `\x%02x`, r)
-			case needsYamlEscape(r):
+			case needsYamlEscape(r): // U+FEFF, U+FFFE, U+FFFF
 				fmt.Fprintf(&sb, `\u%04X`, r)
 			default:
 				sb.WriteString(s[i : i+size])

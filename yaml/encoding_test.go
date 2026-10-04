@@ -199,33 +199,37 @@ func TestEncoder_NonPrintableEscaped(t *testing.T) {
 // another Unicode space at either end is part of the text.
 func TestDecoder_UnicodeSpaceIsText(t *testing.T) {
 	nbsp, ideographic := string(rune(0xa0)), string(rune(0x3000))
+	readValue := func(d *YamlDecoderImpl) string {
+		d.StartObject()
+		d.ReadKey()
+		return d.ReadString()
+	}
 	tests := []struct {
 		name string
 		in   string
+		read func(d *YamlDecoderImpl) string
 		want string
 	}{
-		{"plain value", "k: " + nbsp + "x" + nbsp, nbsp + "x" + nbsp},
-		{"value with comment", "k: x" + ideographic + " # note", "x" + ideographic},
-		{"sequence item", "k:\n  - " + nbsp, nbsp},
-		{"tabs and spaces still trimmed", "k: \t x \t", "x"},
+		{"plain value", "k: " + nbsp + "x" + nbsp, readValue, nbsp + "x" + nbsp},
+		{"value with comment", "k: x" + ideographic + " # note", readValue, "x" + ideographic},
+		{"tabs and spaces still trimmed", "k: \t x \t", readValue, "x"},
+		{"sequence item", "k:\n  - " + nbsp, func(d *YamlDecoderImpl) string {
+			d.StartObject()
+			d.ReadKey()
+			d.StartArray()
+			return d.ReadString()
+		}, nbsp},
+		{"key", nbsp + "k" + nbsp + ": v", func(d *YamlDecoderImpl) string {
+			d.StartObject()
+			return d.ReadKey()
+		}, nbsp + "k" + nbsp},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := NewYamlDecoder(tt.in)
-			d.StartObject()
-			d.ReadKey()
-			if strings.Contains(tt.in, "- ") {
-				d.StartArray()
-			}
-			if got := d.ReadString(); got != tt.want {
+			if got := tt.read(NewYamlDecoder(tt.in)); got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
 		})
-	}
-	d := NewYamlDecoder(nbsp + "k" + nbsp + ": v")
-	d.StartObject()
-	if k := d.ReadKey(); k != nbsp+"k"+nbsp {
-		t.Fatalf("key reads as %q", k)
 	}
 }
 

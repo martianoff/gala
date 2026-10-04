@@ -225,21 +225,13 @@ func (d *JsonDecoderImpl) StartObject() {
     // panics on the leading ',' of element 2+. The primitive Read* paths
     // already do this; objects/arrays were missing the same hook.
     d.consumeElemComma()
-    d.skipWs()
-    if d.pos >= d.data.Size() || d.data[d.pos] != '{' {
-        go_builtins.Panic(s"json at pos ${d.pos}: expected '{'")
-    }
-    d.pos = d.pos + 1
+    d.expectByte('{')
     d.stack = go_interop.SliceAppend(d.stack, 'o')
     d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
 }
 
 func (d *JsonDecoderImpl) EndObject() {
-    d.skipWs()
-    if d.pos >= d.data.Size() || d.data[d.pos] != '}' {
-        go_builtins.Panic(s"json at pos ${d.pos}: expected '}'")
-    }
-    d.pos = d.pos + 1
+    d.expectByte('}')
     d.stack = TruncateBytes(d.stack, d.stack.Size() - 1)
     d.firstConsumed = TruncateBools(d.firstConsumed, d.firstConsumed.Size() - 1)
 }
@@ -248,21 +240,13 @@ func (d *JsonDecoderImpl) StartArray() {
     // See StartObject — the enclosing array context's leading ',' must be
     // consumed before we can recognise the '[' of a nested array element.
     d.consumeElemComma()
-    d.skipWs()
-    if d.pos >= d.data.Size() || d.data[d.pos] != '[' {
-        go_builtins.Panic(s"json at pos ${d.pos}: expected '['")
-    }
-    d.pos = d.pos + 1
+    d.expectByte('[')
     d.stack = go_interop.SliceAppend(d.stack, 'a')
     d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
 }
 
 func (d *JsonDecoderImpl) EndArray() {
-    d.skipWs()
-    if d.pos >= d.data.Size() || d.data[d.pos] != ']' {
-        go_builtins.Panic(s"json at pos ${d.pos}: expected ']'")
-    }
-    d.pos = d.pos + 1
+    d.expectByte(']')
     d.stack = TruncateBytes(d.stack, d.stack.Size() - 1)
     d.firstConsumed = TruncateBools(d.firstConsumed, d.firstConsumed.Size() - 1)
 }
@@ -291,11 +275,7 @@ func (d *JsonDecoderImpl) ReadKey() string {
     if depth >= 0 { d.firstConsumed[depth] = true }
 
     val key = d.readJsonString()
-    d.skipWs()
-    if d.pos >= d.data.Size() || d.data[d.pos] != ':' {
-        go_builtins.Panic(s"json at pos ${d.pos}: expected ':'")
-    }
-    d.pos = d.pos + 1
+    d.expectByte(':')
     return key
 }
 
@@ -389,11 +369,7 @@ func (d *JsonDecoderImpl) IsNull() bool {
 func (d *JsonDecoderImpl) ReadNull() {
     d.consumeElemComma()
     d.skipWs()
-    if d.pos + 4 <= d.data.Size() && BytesToString(d.data, d.pos, d.pos + 4) == "null" {
-        d.pos = d.pos + 4
-        return
-    }
-    go_builtins.Panic(s"json at pos ${d.pos}: expected null")
+    d.expectLiteral("null")
 }
 
 // Skip steps over the next value, checking it as strictly as a read would:
@@ -549,25 +525,29 @@ func intKindName(prefix string, bitSize int) string =
 func (d *JsonDecoderImpl) numberToken() string {
     d.consumeElemComma()
     d.skipWs()
-    return d.readNumberStr()
+    BytesString(d.scanNumber())
 }
 
-// readNumberStr reads the number literal at pos. It must follow the RFC 8259
-// grammar, as in encoding/json, so `+1`, `01`, `.5`, `1.` and `0x10` are
-// errors rather than numbers strconv happens to accept or a prefix of one.
-func (d *JsonDecoderImpl) readNumberStr() string {
+// scanNumber steps over the number literal at pos and returns its bytes. It
+// must be a number as RFC 8259 and encoding/json spell one, so `+1`, `01`,
+// `.5`, `1.` and `0x10` are errors rather than numbers strconv happens to
+// accept, or a prefix of one.
+func (d *JsonDecoderImpl) scanNumber() []byte {
     val start = d.pos
     for d.pos < d.data.Size() && isNumberTokenByte(d.data[d.pos]) {
         d.pos = d.pos + 1
     }
-    val s = BytesToString(d.data, start, d.pos)
-    if s == "" {
+    val token = SliceBytes(d.data, start, d.pos)
+    if token.Size() == 0 {
         go_builtins.Panic(s"json at pos $start: expected a number")
     }
-    if !isJsonNumber(s) {
-        go_builtins.Panic(f"json at pos $start: invalid number ${s}%q")
+    // The token holds only number-token bytes and starts with '-' or a
+    // digit, so encoding/json accepts it exactly when it is a JSON number
+    // (true, false and null start with a letter).
+    if !(token[0] == '-' || isDigit(token[0])) || !json.Valid(token) {
+        go_builtins.Panic(f"json at pos $start: invalid number ${token}%q")
     }
-    s
+    token
 }
 
 // isNumberTokenByte reports whether c continues a number token. Letters and
@@ -577,50 +557,6 @@ func isNumberTokenByte(c byte) bool =
     isDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '+' || c == '.' || c == '_'
 
 func isDigit(c byte) bool = c >= '0' && c <= '9'
-
-// isJsonNumber reports whether s is a number in the RFC 8259 grammar:
-//
-//     -? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?
-func isJsonNumber(s string) bool =
-    integerEnd(s)
-        .FlatMap((i) => fractionEnd(s, i))
-        .FlatMap((i) => exponentEnd(s, i))
-        .Filter((i) => i == s.ByteSize())
-        .IsDefined()
-
-// integerEnd returns the index just past the sign and integer part at the
-// start of s: a lone 0, or a digit run that does not start with 0.
-func integerEnd(s string) Option[int] {
-    val first = if (s.ByteSize() > 0 && s[0] == '-') 1 else 0
-    val end = digitsEnd(s, first)
-    When(end == first + 1 || (end > first + 1 && s[first] != '0'), end)
-}
-
-// fractionEnd returns the index just past the fraction that starts at i, or
-// i itself when there is none; None when the '.' has no digits after it.
-func fractionEnd(s string, i int) Option[int] {
-    if i >= s.ByteSize() || s[i] != '.' {
-        return Some(i)
-    }
-    val end = digitsEnd(s, i + 1)
-    When(end > i + 1, end)
-}
-
-// exponentEnd returns the index just past the exponent that starts at i, or
-// i itself when there is none; None when the 'e' and its sign have no digits
-// after them.
-func exponentEnd(s string, i int) Option[int] {
-    if i >= s.ByteSize() || (s[i] != 'e' && s[i] != 'E') {
-        return Some(i)
-    }
-    val first = if (i + 1 < s.ByteSize() && (s[i + 1] == '+' || s[i + 1] == '-')) i + 2 else i + 1
-    val end = digitsEnd(s, first)
-    When(end > first, end)
-}
-
-// digitsEnd returns the index just past the run of ASCII digits at i.
-func digitsEnd(s string, i int) int =
-    s.ByteSize() - strings.TrimLeft(substring(s, i, s.ByteSize()), "0123456789").ByteSize()
 
 // skipValue steps over the value at pos and checks it fully. Containers
 // nest through recursion, as typed decoding of nested values does.
@@ -636,7 +572,7 @@ func (d *JsonDecoderImpl) skipValue() {
         case 't' => { d.expectLiteral("true") }
         case 'f' => { d.expectLiteral("false") }
         case 'n' => { d.expectLiteral("null") }
-        case c if isNumberTokenByte(c) => { d.readNumberStr() }
+        case c if isNumberTokenByte(c) => { d.scanNumber() }
         case _ => { go_builtins.Panic(s"json at pos ${d.pos}: expected a value") }
     }
 }
@@ -652,29 +588,34 @@ func (d *JsonDecoderImpl) skipField() {
 // read by skipMember, separated by ',' and ended by close.
 func (d *JsonDecoderImpl) skipMembers(close byte, skipMember func()) {
     d.pos = d.pos + 1
-    d.skipWs()
-    if d.pos < d.data.Size() && d.data[d.pos] == close {
-        d.pos = d.pos + 1
+    if d.skipByte(close) {
         return
     }
     for {
         skipMember()
-        d.skipWs()
-        if d.pos < d.data.Size() && d.data[d.pos] == close {
-            d.pos = d.pos + 1
+        if d.skipByte(close) {
             return
         }
         d.expectByte(',')
     }
 }
 
+// skipByte steps over c when it is the next byte after any whitespace, and
+// reports whether it did.
+func (d *JsonDecoderImpl) skipByte(c byte) bool {
+    d.skipWs()
+    val found = d.pos < d.data.Size() && d.data[d.pos] == c
+    if found {
+        d.pos = d.pos + 1
+    }
+    found
+}
+
 // expectByte steps over c, after any whitespace.
 func (d *JsonDecoderImpl) expectByte(c byte) {
-    d.skipWs()
-    if d.pos >= d.data.Size() || d.data[d.pos] != c {
+    if !d.skipByte(c) {
         go_builtins.Panic(f"json at pos ${d.pos}: expected ${c}%q")
     }
-    d.pos = d.pos + 1
 }
 
 // expectLiteral steps over the literal word at pos.
