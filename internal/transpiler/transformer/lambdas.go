@@ -127,7 +127,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 					typeExpr := t.typeToExpr(expType)
 					name := paramCtx.Identifier().GetText()
 					field.Type = typeExpr
-					t.addDeclaredParam(name, expType, paramCtx.VAL() != nil)
+					t.addParam(name, expType, paramCtx.VAR() != nil)
 					if t.lspVarTypes != nil && t.loweringDefault == nil {
 						pos := transpiler.PosFromToken(paramCtx.Identifier().GetStart())
 						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{

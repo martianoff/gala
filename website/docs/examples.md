@@ -137,6 +137,32 @@ func main() {
 
 See also: [Language Reference - Generics](/docs/language-reference/#8-generics)
 
+## Immutable Parameters, Lambda Parameters and Receivers
+
+```gala
+package main
+
+struct Counter(var N int)
+
+// Writing a `var` field through the receiver is allowed; rebinding it is not.
+func (c *Counter) Bump() {
+    c.N = c.N + 1
+}
+
+func main() {
+    var c = Counter(0)
+    c.Bump()
+    // A lambda parameter is reassignable only when declared `var`.
+    val clamp = (var n int) int => {
+        if (n < 0) {
+            n = 0
+        }
+        n
+    }
+    Println(c.N, clamp(-3))
+}
+```
+
 ## Pattern Matching with Filters (Guards) Example
 
 ```gala

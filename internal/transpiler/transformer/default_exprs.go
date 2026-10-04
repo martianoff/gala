@@ -97,7 +97,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if src.recv != "" {
 		t.pushScope()
 		defer t.popScope()
-		t.addVar(src.recv, src.recvType)
+		t.addReceiver(src.recv, src.recvType)
 	}
 
 	exprCtx, err := t.defaultExprTree(src)

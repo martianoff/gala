@@ -223,10 +223,10 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 		if err != nil {
 			return nil, err
 		}
-		// A parameter not declared `var` is immutable like a val but is a plain
-		// Go parameter, so its address is taken directly and wrapped in
-		// ConstPtr to prevent write-through: std.NewConstPtr(&name).
-		if opText == "&" && t.isFixedParam(simpleIdentifierName(innerUnary.(*grammar.UnaryExprContext))) {
+		// A parameter not declared `var`, and any receiver, is immutable like a
+		// val but is a plain Go parameter, so its address is taken directly and
+		// wrapped in ConstPtr to prevent write-through: std.NewConstPtr(&name).
+		if opText == "&" && t.fixedBindingOf(simpleIdentifierName(innerUnary.(*grammar.UnaryExprContext))) != notFixed {
 			return &ast.CallExpr{
 				Fun:  t.stdIdent(transpiler.FuncNewConstPtr),
 				Args: []ast.Expr{&ast.UnaryExpr{Op: token.AND, X: expr}},

@@ -212,13 +212,14 @@ lambda. A lambda takes no type parameters, so a generic helper stays at the top
 level.
 
 ### Parameters
-A function or method parameter is an immutable binding, like a `val`:
+A function, method or lambda parameter is an immutable binding, like a `val`:
 reassigning it — with `=`, a compound assignment such as `+=`, or `++`/`--` —
 is a compile error, `cannot assign to immutable variable data`, whose hint is
 ``declare it `var data` to reassign it``. Mark a parameter `var` to make it
 reassignable. Its address (`&data`) is a read-only `ConstPtr`, as for a `val`.
 Writing `val` is allowed but redundant: `val label string` means
-exactly the same as `label string`.
+exactly the same as `label string`. A method's receiver is never reassignable
+(see [Receivers](#receivers)).
 
 ```gala
 func process(data string, val label string, var count int) {
@@ -231,9 +232,8 @@ func process(data string, val label string, var count int) {
 Whatever its keyword, a parameter is a plain Go parameter of its declared type
 in the generated code — `func process(data string, label string, count int)`
 above — so a call passes its arguments as they are and Go code can call the
-function directly. A receiver marked `val` and a lambda parameter marked `val`
-are likewise plain Go parameters that reject reassignment; an unmarked lambda
-parameter is not checked.
+function directly. Receivers and lambda parameters are plain Go parameters
+too.
 
 ### Named Arguments
 
@@ -355,6 +355,37 @@ type Box[T any] struct { Value T }
 
 func (b Box[T]) GetValue() T = b.Value
 func (b Box[T]) Transform[U any](f func(T) U) Box[U] = Box[U](Value = f(b.Value))
+```
+
+#### Receivers
+A receiver can never be rebound. `p = ...`, a compound assignment and
+`for _, p = range ...` are compile errors, `cannot assign to receiver p`
+(`p++` is `cannot increment/decrement receiver p`), whose hint is ``a receiver cannot be rebound; copy it into a local `var` (`var c = p`) if you need a mutable copy``.
+This holds for value and pointer receivers alike; there is no `var` receiver,
+and `val` on a receiver is allowed but redundant. The address of a receiver
+(`&p`) is a read-only `ConstPtr`, as for a parameter — for a pointer receiver,
+a `ConstPtr` to the pointer.
+
+Mutation *through* the receiver is unaffected: a method may write the
+receiver's `var` fields and call its mutating methods. Through a pointer
+receiver the change reaches the caller; through a value receiver it changes
+the method's own copy.
+
+```gala
+struct Counter(var N int)
+
+func (c *Counter) Bump() {
+    c.N = c.N + 1      // OK: writes a `var` field through the receiver
+}
+
+func (c Counter) Clamped() Counter {
+    // c = Counter(0)  // Error: cannot assign to receiver c
+    var out = c        // a changing copy is a local `var`
+    if (out.N < 0) {
+        out = Counter(0)
+    }
+    out
+}
 ```
 
 ## 4. Types and Structs {#4-types-and-structs}
@@ -825,6 +856,23 @@ val shouted = apply((s) => s + "!")
 opt.ForEach((x) => { Println(x) })
 ```
 
+A lambda parameter is immutable unless it is declared `var`, the same rule as
+for a function parameter (see [Parameters](#parameters)): reassigning it is
+`cannot assign to immutable variable x`, and `&x` is a read-only `ConstPtr`.
+
+```gala
+val clamp = (var n int) int => {
+    if (n < 0) {
+        n = 0          // OK: a `var` lambda parameter
+    }
+    n
+}
+val total = Some(5).Map((var n) => {
+    n += 10            // `var` works on an inferred parameter too
+    n
+})
+```
+
 ### Partial Function Literals
 
 <!-- doc-check: fragment -->
@@ -1274,6 +1322,7 @@ func main() {
 ## 16. Best Practices {#16-best-practices}
 
 - **Prefer `val` over `var`** - Use mutable variables only when necessary
+- **All parameters, lambda parameters and receivers are immutable** - Declare a parameter or lambda parameter `var` only when its body reassigns it; a receiver is never rebound, so copy it into a local `var` instead (see [Parameters](#parameters))
 - **Use `Copy()` for updates** - `person.Copy(age = 31)`
 - **Prefer `match` over if-else chains** for type/value dispatch
 - **Use extractors** - `case Some(x) =>` not `if opt.IsDefined() { x := opt.Get() }`
