@@ -187,8 +187,9 @@ func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
 		}
 		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
 		if meta := t.getTypeMeta(key); meta != nil {
-			_, ok := meta.Methods[f.Sel.Name]
-			return ok
+			// A Go type's metadata, synthesized from Go, holds Go methods.
+			m, ok := meta.Methods[f.Sel.Name]
+			return ok && !m.GoDeclared
 		}
 	}
 	return false

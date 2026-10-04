@@ -69,9 +69,10 @@ func (t *galaASTTransformer) structDecodeMode(config *structMetaConfig) decodeMo
 // config's struct T: a value receiver, no parameters or type parameters, and
 // a Try of the struct itself. The result may be spelled through aliases of
 // the struct's package: GALA aliases are Go type aliases, so the method still
-// returns a Try with its Get.
+// returns a Try with its Get. A Go method's recorded Try is its (T, error)
+// results, which the decoder cannot call .Get() on, so it does not qualify.
 func (t *galaASTTransformer) isValidateMethod(config *structMetaConfig, m *transpiler.MethodMetadata) bool {
-	if m == nil || m.PointerReceiver || len(m.ParamTypes) != 0 || len(m.TypeParams) != 0 {
+	if m == nil || m.GoDeclared || m.PointerReceiver || len(m.ParamTypes) != 0 || len(m.TypeParams) != 0 {
 		return false
 	}
 	ret, ok := t.codecUnalias(m.ReturnType, config.pkg).(transpiler.GenericType)

@@ -3290,6 +3290,35 @@ gala_exec_test(
     ],
 )
 
+# A Go method returning several results is lifted to Try/Tuple like a Go
+# function: value and pointer receivers, (T, error), (T, bool), (A, B), an
+# error-only method under FromError, and a method chained off a constructor.
+gala_exec_test(
+    name = "go_method_multi_results",
+    src = "go_method_multi_results.gala",
+    expected = "go_method_multi_results.out",
+    deps = [
+        "//examples/warehouse_bridge",
+    ],
+)
+
+# A function of a mixed package's own .go file returning several results is
+# lifted to Try/Tuple when the package's GALA code calls it.
+gala_library(
+    name = "own_go_func_multi_results",
+    srcs = ["own_go_func_multi_results/box.gala"],
+    go_srcs = ["own_go_func_multi_results/counter.go"],
+    importpath = "martianoff/gala/examples/own_go_func_multi_results",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "own_go_func_multi_results_test",
+    src = "own_go_func_multi_results_test.gala",
+    expected = "own_go_func_multi_results_test.out",
+    deps = [":own_go_func_multi_results"],
+)
+
 # Retry combinator with backoff strategies
 gala_exec_test(
     name = "retry_backoff",

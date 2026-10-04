@@ -3246,8 +3246,14 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 				paramTypes = append(paramTypes, p.Type)
 				paramNames = append(paramNames, p.Name)
 			}
+			// A call of the method is a Go call: several results are one
+			// GALA value, Try[T] for (T, error) and a Tuple for (A, B). One
+			// that has no GALA value (an unresolved result, more than ten)
+			// keeps its first result.
 			var retType transpiler.Type
-			if len(sig.Returns) > 0 {
+			if value, several := transpiler.GoResultValueOf(sig.Returns); several && !value.Type.IsNil() {
+				retType = value.Type
+			} else if len(sig.Returns) > 0 {
 				retType = sig.Returns[0]
 			}
 			methods[mName] = &transpiler.MethodMetadata{
@@ -3257,6 +3263,7 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 				ParamNames:      paramNames,
 				ReturnType:      retType,
 				PointerReceiver: td.PointerMethods[mName],
+				GoDeclared:      true,
 			}
 		}
 

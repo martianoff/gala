@@ -119,8 +119,9 @@ func (t *galaASTTransformer) inferSelectorExprType(e *ast.SelectorExpr) transpil
 // the type it names, with the alias's arguments substituted at each hop.
 //
 // Only methods declared in GALA source qualify: the metadata synthesized for a
-// Go type's methods keeps a single result and no variadic marker, so it does
-// not describe the Go method value, whose type Go infers on its own.
+// Go type's methods records several results as their GALA value (Try/Tuple)
+// and no variadic marker, so it does not describe the Go method value, whose
+// type Go infers on its own.
 func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method string) (transpiler.Type, bool) {
 	if recvType.IsNil() {
 		return nil, false

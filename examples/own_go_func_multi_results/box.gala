@@ -1,0 +1,33 @@
+package own_go_func_multi_results
+
+// A function of this package's own .go file returning several results is one
+// GALA value, as for a function of an imported Go package.
+
+struct Box(var N int)
+
+// (T, error) as a match subject.
+func Describe(n int) string = CountInt(n) match {
+    case Success(count) => s"count $count"
+    case Failure(err) => s"failed: ${err.Error()}"
+}
+
+// (T, error) bound, then a Try method.
+func CountOr(n int, fallback int) int {
+    val counted = CountInt(n)
+    counted.GetOrElse(fallback)
+}
+
+// (A, B) destructured.
+func Flagged(n int) string {
+    val (next, even) = IntAndFlag(n)
+    s"next $next, even $even"
+}
+
+// (GALA type, error) mapped.
+func BoxSize(n int) int = MakeBox(n).Map((box) => box.N).GetOrElse(-1)
+
+// Names bound one by one keep Go's raw results.
+func RawCount(n int) string {
+    val count, err = CountInt(n)
+    if (err != nil) s"raw error: ${err.Error()}" else s"raw $count"
+}
