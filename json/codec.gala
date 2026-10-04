@@ -488,7 +488,7 @@ func (d *JsonDecoderImpl) readEscape() rune {
     }
     val esc = d.data[d.pos]
     d.pos = d.pos + 1
-    return esc match {
+    esc match {
         case '"' => '"'
         case '\\' => '\\'
         case '/' => '/'
@@ -567,7 +567,7 @@ func (d *JsonDecoderImpl) readNumberStr() string {
     if !isJsonNumber(s) {
         go_builtins.Panic(f"json at pos $start: invalid number ${s}%q")
     }
-    return s
+    s
 }
 
 // isNumberTokenByte reports whether c continues a number token. Letters and
@@ -593,7 +593,7 @@ func isJsonNumber(s string) bool =
 func integerEnd(s string) Option[int] {
     val first = if (s.ByteSize() > 0 && s[0] == '-') 1 else 0
     val end = digitsEnd(s, first)
-    return When(end == first + 1 || (end > first + 1 && s[first] != '0'), end)
+    When(end == first + 1 || (end > first + 1 && s[first] != '0'), end)
 }
 
 // fractionEnd returns the index just past the fraction that starts at i, or
@@ -603,7 +603,7 @@ func fractionEnd(s string, i int) Option[int] {
         return Some(i)
     }
     val end = digitsEnd(s, i + 1)
-    return When(end > i + 1, end)
+    When(end > i + 1, end)
 }
 
 // exponentEnd returns the index just past the exponent that starts at i, or
@@ -615,17 +615,12 @@ func exponentEnd(s string, i int) Option[int] {
     }
     val first = if (i + 1 < s.ByteSize() && (s[i + 1] == '+' || s[i + 1] == '-')) i + 2 else i + 1
     val end = digitsEnd(s, first)
-    return When(end > first, end)
+    When(end > first, end)
 }
 
 // digitsEnd returns the index just past the run of ASCII digits at i.
-func digitsEnd(s string, i int) int {
-    var end = i
-    for end < s.ByteSize() && isDigit(s[end]) {
-        end = end + 1
-    }
-    return end
-}
+func digitsEnd(s string, i int) int =
+    s.ByteSize() - strings.TrimLeft(substring(s, i, s.ByteSize()), "0123456789").ByteSize()
 
 // skipValue steps over the value at pos and checks it fully. Containers
 // nest through recursion, as typed decoding of nested values does.
@@ -636,8 +631,8 @@ func (d *JsonDecoderImpl) skipValue() {
     }
     d.data[d.pos] match {
         case '"' => { d.readJsonString() }
-        case '{' => { d.skipMembers('}', () => d.skipField()) }
-        case '[' => { d.skipMembers(']', () => d.skipValue()) }
+        case '{' => { d.skipMembers('}', d.skipField) }
+        case '[' => { d.skipMembers(']', d.skipValue) }
         case 't' => { d.expectLiteral("true") }
         case 'f' => { d.expectLiteral("false") }
         case 'n' => { d.expectLiteral("null") }
