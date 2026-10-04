@@ -1,59 +1,26 @@
 name: Local bootstrap — nix build .#gala-local
 
-# `gala-local` (nix/gala.nix with useLocalBootstrap) transpiles the stdlib with
-# cmd/gala_bootstrap built from this tree, in its batch mode: every stdlib file
-# in one `--inputs` call. Bazel never uses that mode — it runs the bootstrap
-# once per file with an explicit package_files list — so the Bazel lanes
-# cannot see a batch-only break. One shipped anyway: the batch analyzer stopped
-# resolving the stdlib `test` package's sibling types, and gala-local failed to
-# build with nothing in CI to say so (#678).
+# Builds gala-local (nix/gala.nix with useLocalBootstrap), whose stdlib is
+# transpiled by cmd/gala_bootstrap from this tree in batch mode, and diffs that
+# stdlib, packed by cmd/stdlib_gen, against Bazel's generate_embedded. Bazel
+# only ever runs the bootstrap per file, so no other lane exercises batch mode.
 #
-# This lane builds gala-local, then packs its transpiled stdlib with
-# cmd/stdlib_gen and diffs the result against Bazel's generate_embedded. The
-# two take the same sources through the same transpiler, so any difference is
-# the batch path disagreeing with the per-file path.
-#
-# The path filter keeps it off PRs that cannot move either side (docs,
-# examples, the IDE plugin, other workflows). The cost of the filter: a PR that
-# breaks gala-local only through a file outside it goes unflagged until the
-# next PR that touches one of these paths.
+# Skipped for PRs that touch only docs, examples, the IDE plugins or other
+# workflows, none of which can move either side.
 on:
   workflow_dispatch:
   pull_request:
     branches: [master]
     paths:
+      - "**"
+      - "!docs/**"
+      - "!website/**"
+      - "!examples/**"
+      - "!ide/**"
+      - "!**/*.md"
+      - "!**/*.MD"
+      - "!.github/**"
       - ".github/workflows/local-bootstrap.yml"
-      - "cmd/gala_bootstrap/**"
-      - "cmd/stdlib_gen/**"
-      - "internal/**"
-      - "nix/**"
-      - "flake.nix"
-      - "flake.lock"
-      - "go.mod"
-      - "go.sum"
-      - "gala.mod"
-      # The stdlib packages nix/gala.nix transpiles (its stdlibPkgs list).
-      - "collection_immutable/**"
-      - "collection_mutable/**"
-      - "concurrent/**"
-      - "crypto/**"
-      - "fs/**"
-      - "go_builtins/**"
-      - "go_interop/**"
-      - "io/**"
-      - "json/**"
-      - "lazy/**"
-      - "path/**"
-      - "regex/**"
-      - "resource/**"
-      - "std/**"
-      - "stream/**"
-      - "strings/**"
-      - "subprocess/**"
-      - "test/**"
-      - "time_utils/**"
-      - "validation/**"
-      - "yaml/**"
 
 # Checkouts and builds only; the token never needs to write.
 permissions:
@@ -67,8 +34,7 @@ jobs:
   gala-local:
     name: gala-local builds and matches Bazel's stdlib
     runs-on: ubuntu-latest
-    # No Nix binary cache is configured, so every run builds the bootstrap,
-    # the vendored Go deps and the CLI from cold.
+    # No Nix binary cache is configured, so every run builds from cold.
     timeout-minutes: 60
 
     steps:
@@ -92,12 +58,12 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
           bazelisk-cache: true
-          # A key of its own, as every other lane has.
           disk-cache: local-bootstrap-${{ steps.setup-go.outputs.go-version }}
           repository-cache: true
 
-      - name: Build gala-local
-        run: nix build .#gala-local --print-build-logs
+      # The batch transpile is what breaks, so it runs first and fails fast.
+      - name: Transpile the stdlib with the local bootstrap
+        run: nix build .#gala-local.localTranspiled --out-link local-stdlib --print-build-logs
 
       - name: Build the Bazel stdlib
         run: bazel build //internal/stdlib:generate_embedded //cmd/stdlib_gen
@@ -105,8 +71,6 @@ jobs:
       - name: Compare the local-bootstrap stdlib with Bazel's
         run: |
           set -euo pipefail
-          # Already built as gala-local's input; this only links it.
-          nix build .#gala-local.localTranspiled --out-link local-stdlib
           mapfile -t files < <(find local-stdlib/files -type f | sort)
           echo "packing ${#files[@]} local-bootstrap inputs"
           ./bazel-bin/cmd/stdlib_gen/stdlib_gen_/stdlib_gen \
@@ -118,3 +82,6 @@ jobs:
             exit 1
           fi
           echo "local-bootstrap stdlib matches Bazel's embedded_gen.go"
+
+      - name: Build gala-local
+        run: nix build .#gala-local --print-build-logs

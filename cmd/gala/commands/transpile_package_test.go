@@ -118,6 +118,25 @@ func TestTranspilePackageScanSeesUnlistedSiblings(t *testing.T) {
 	}
 }
 
+// TestTranspilePackageScanResolvesTestPackageSiblings pins that --scan gives a
+// package named test its siblings. The analyzer's own directory scan skips
+// main and test packages, so relying on it rejected uses.gala's reference to
+// T (declared in decl.gala) with GALA-E0023.
+func TestTranspilePackageScanResolvesTestPackageSiblings(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "gala.mod"), "module example.com/repro\n\ngala dev\n")
+	pkg := filepath.Join(root, "test")
+	writeFile(t, filepath.Join(pkg, "uses.gala"), "package test\n\nfunc Describe(t T) string = t.Name\n")
+	writeFile(t, filepath.Join(pkg, "decl.gala"), "package test\n\nstruct T(Name string)\n")
+	out := t.TempDir()
+
+	in := []string{filepath.Join(pkg, "uses.gala"), filepath.Join(pkg, "decl.gala")}
+	outs := []string{filepath.Join(out, "uses.gen.go"), filepath.Join(out, "decl.gen.go")}
+	if err := transpilePackage(in, outs, root, "", true); err != nil {
+		t.Fatalf("scan=true over a package named test: %v", err)
+	}
+}
+
 // TestTranspilePackageScanDoesNotMixPackages runs one --scan invocation over
 // files from two packages that both define Thing. Per-file directory scanning
 // must keep each package's siblings separate; a shared sibling set would make

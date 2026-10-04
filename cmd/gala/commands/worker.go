@@ -399,12 +399,16 @@ func runWorkerTranspilePackage(argv []string, out io.Writer) int {
 			continue
 		}
 
-		// Set siblings for THIS file. SetPackageFiles also resets
-		// checkedDirs so per-file directory scanning starts fresh.
-		// With --scan, siblings come from the directory scan instead
-		// (and files outside inList are visible).
+		// Set siblings for THIS file. With --scan they are read from the
+		// file's directory instead (so files outside inList are visible).
 		if scan {
-			batch.SetPackageFiles(nil)
+			siblings, err := analyzer.PackageSiblings(inputPath)
+			if err != nil {
+				fmt.Fprintf(out, "Error: %v\n", err)
+				hasError = true
+				continue
+			}
+			batch.SetPackageFiles(siblings)
 		} else {
 			var packageFiles []string
 			for j, other := range inList {

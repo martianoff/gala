@@ -115,12 +115,13 @@ func runBatch(inList, outList, paths []string) error {
 			return fmt.Errorf("reading %s: %w", in, err)
 		}
 
-		// Pass no explicit package files: that would replace the analyzer's
-		// directory scan rather than add to it, hiding same-directory .gala
-		// files that are not in inList. Clearing also resets checkedDirs, so
-		// each file gets a fresh scan. This matches Bazel, which passes no
-		// explicit list at all.
-		a.SetPackageFiles(nil)
+		// Siblings come from the directory rather than inList, so a file left
+		// out of the batch stays visible to its neighbours.
+		siblings, err := analyzer.PackageSiblings(in)
+		if err != nil {
+			return err
+		}
+		a.SetPackageFiles(siblings)
 
 		tr := transformer.NewGalaASTTransformer()
 		g := generator.NewGoCodeGenerator()
