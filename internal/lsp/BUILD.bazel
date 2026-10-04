@@ -58,6 +58,7 @@ go_test(
         "hover_internal_test.go",
         "hover_variable_test.go",
         "inlay_hints_internal_test.go",
+        "keyword_completions_test.go",
         "member_dot_internal_test.go",
         "package_files_internal_test.go",
         "position_encoding_test.go",
@@ -86,6 +87,7 @@ go_test(
     tags = ["no-sandbox"],
     deps = [
         "//galaerr",
+        "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",

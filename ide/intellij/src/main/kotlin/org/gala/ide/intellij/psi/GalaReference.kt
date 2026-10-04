@@ -75,6 +75,7 @@ class GalaReference(element: PsiElement) : PsiReferenceBase<PsiElement>(element,
                     && child !is FunctionDeclarationNode
                     && child !is TypeDeclarationNode
                     && child !is SealedTypeDeclarationNode
+                    && child !is OpaqueTypeDeclarationNode
                 ) {
                     for (grandchild in child.children) {
                         val found2 = checkDeclaration(grandchild, name)

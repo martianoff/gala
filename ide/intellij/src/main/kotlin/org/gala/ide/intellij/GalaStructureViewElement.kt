@@ -30,6 +30,7 @@ class GalaStructureViewElement(private val element: PsiElement) : StructureViewT
                     return when (element) {
                         is FunctionDeclarationNode -> buildFunctionPresentation(element, name)
                         is SealedTypeDeclarationNode -> "sealed type $name"
+                        is OpaqueTypeDeclarationNode -> "opaque type $name"
                         is SealedCaseNode -> "case $name"
                         is TypeDeclarationNode -> "type $name"
                         is ValDeclarationNode -> "val $name"
@@ -77,6 +78,7 @@ class GalaStructureViewElement(private val element: PsiElement) : StructureViewT
                 is FunctionDeclarationNode,
                 is TypeDeclarationNode,
                 is SealedTypeDeclarationNode,
+                is OpaqueTypeDeclarationNode,
                 is ValDeclarationNode,
                 is VarDeclarationNode,
                 is StructShorthandDeclarationNode -> out.add(GalaStructureViewElement(child))

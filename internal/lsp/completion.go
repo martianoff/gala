@@ -259,7 +259,7 @@ func packageCompletions(richAST *transpiler.RichAST, pkgName string, snippets bo
 func keywordCompletions() []lsp.CompletionItem {
 	keywords := []string{
 		"package", "import", "val", "var", "bind", "also", "use", "func", "type", "struct",
-		"interface", "sealed", "embed", "if", "else", "for", "range",
+		"interface", "sealed", "opaque", "embed", "if", "else", "for", "range",
 		"return", "match", "case", "true", "false", "nil", "map",
 	}
 	// Only genuinely-available names belong here. The bare Go builtins

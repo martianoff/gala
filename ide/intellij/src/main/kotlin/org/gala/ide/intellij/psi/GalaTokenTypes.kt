@@ -58,6 +58,7 @@ object GalaTokenTypes {
     val RULE_FUNCTION_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_functionDeclaration]
     val RULE_TYPE_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_typeDeclaration]
     val RULE_SEALED_TYPE_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_sealedTypeDeclaration]
+    val RULE_OPAQUE_TYPE_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_opaqueTypeDeclaration]
     val RULE_VAL_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_valDeclaration]
     val RULE_VAR_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_varDeclaration]
     val RULE_BIND_DECLARATION: IElementType get() = ruleIElementTypes[galaParser.RULE_bindDeclaration]

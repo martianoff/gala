@@ -1,0 +1,5 @@
+package ids
+
+opaque type UserID int64
+
+opaque type Id[T any] int64

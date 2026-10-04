@@ -62,6 +62,7 @@ class GalaParserDefinition : ParserDefinition {
             GalaTokenTypes.RULE_FUNCTION_DECLARATION -> FunctionDeclarationNode(node)
             GalaTokenTypes.RULE_TYPE_DECLARATION -> TypeDeclarationNode(node)
             GalaTokenTypes.RULE_SEALED_TYPE_DECLARATION -> SealedTypeDeclarationNode(node)
+            GalaTokenTypes.RULE_OPAQUE_TYPE_DECLARATION -> OpaqueTypeDeclarationNode(node)
             GalaTokenTypes.RULE_SEALED_CASE -> SealedCaseNode(node)
             GalaTokenTypes.RULE_VAL_DECLARATION -> ValDeclarationNode(node)
             GalaTokenTypes.RULE_VAR_DECLARATION -> VarDeclarationNode(node)
