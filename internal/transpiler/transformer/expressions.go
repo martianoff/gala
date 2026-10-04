@@ -355,13 +355,13 @@ func (t *galaASTTransformer) transformExpressionList(ctx *grammar.ExpressionList
 }
 
 // transformExpressionListAgainst lowers a declaration's or assignment's
-// right-hand side; a single expression is lowered against argSlot(expected).
+// right-hand side; a single expression is lowered against typedSlot(expected).
 func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.ExpressionListContext, expected transpiler.Type) ([]ast.Expr, error) {
 	exprs := ctx.AllExpression()
 	if len(exprs) != 1 {
 		return t.transformExpressionList(ctx)
 	}
-	e, err := t.lowerAgainst(exprs[0], argSlot(expected), true)
+	e, err := t.lowerAgainst(exprs[0], typedSlot(expected), true)
 	if err != nil {
 		return nil, err
 	}
@@ -1043,15 +1043,9 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 }
 
 // slot is the type a value is lowered against (see lowerAgainst), with the
-// slot kind's policy for a plain expression.
+// way the value is lowered: an open, by-name or discarded slot.
 type slot struct {
 	typ transpiler.Type
-	// push: a plain expression (not a lambda, if or match) sees typ pushed on
-	// expectedArgTypes for downward inference. Argument and declaration slots
-	// push; return-type slots (return, expression-bodied function, lambda body,
-	// TCO branch) do not. An if/match passes its slot, policy included, to its
-	// branches.
-	push bool
 	// tryThunk: the slot is the thunk parameter of Try(...), which turns an
 	// error into a Failure, so a Go call there yields its plain value and
 	// panics on the error rather than producing a Try (see tryThunkValue).
@@ -1068,11 +1062,10 @@ type slot struct {
 	open bool
 }
 
-// argSlot is the slot of an argument, declaration or other pushing position.
-func argSlot(typ transpiler.Type) slot { return slot{typ: typ, push: true} }
-
-// resultSlot is the slot of a function or lambda result.
-func resultSlot(typ transpiler.Type) slot { return slot{typ: typ} }
+// typedSlot is the slot of type typ: an argument, a declaration, a function
+// or lambda result. Each gives typ to the value that fills it, and only to it
+// (see consumesSlotType).
+func typedSlot(typ transpiler.Type) slot { return slot{typ: typ} }
 
 // exprForm classifies an expression by the forms whose lowering depends on
 // the slot they fill; at most one field is set.
@@ -1113,8 +1106,9 @@ func (t *galaASTTransformer) needsExpectedType(exprCtx grammar.IExpressionContex
 // takes its parameter and result types from a function type (strict is
 // transformLambdaWithExpectedType's untyped-parameter policy); an if-expression
 // or match lowers each branch against the same slot (branch lambdas strictly);
-// a plain expression follows the slot's push policy. A lambda body is never
-// lowered against the outer slot: it gets resultSlot(the lambda's result type).
+// a plain expression sees the slot type only if it consumes it
+// (consumesSlotType). A lambda body is never lowered against the outer slot:
+// it gets typedSlot(the lambda's result type).
 func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
 	if transpiler.IsUnusable(s.typ) {
 		return t.transformExpression(exprCtx)
@@ -1137,21 +1131,22 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	case f.match != nil:
 		return t.transformPostfixMatchExpressionAgainst(f.match, s)
 	}
-	// A tuple literal filling a result slot (`func f() Tuple[int64, int64] =
-	// (1, 2)`) takes its element types from the slot, exactly as one in an
-	// argument slot does, and so does a construction of the generic struct the
-	// slot names (`func f() Tag[int] = Tag("x")`), for the type arguments its
-	// fields leave open, and a generic call whose result-only type parameters
-	// only the slot gives (`func f() Option[int] = parse()`). They are the
-	// only plain expressions a result slot pushes for (consumesSlotType): the
-	// literal, construction or call consumes the entry itself, so nothing
-	// nested inside it sees the result type.
+	// A tuple literal filling a slot (`func f() Tuple[int64, int64] = (1, 2)`)
+	// takes its element types from it, and so does a construction of the
+	// generic struct the slot names (`func f() Tag[int] = Tag("x")`), for the
+	// type arguments its fields leave open, and a generic function or method
+	// call whose type parameters the slot can give (`func f() Option[int] =
+	// parse()`). They are the only plain expressions a slot pushes for
+	// (consumesSlotType), and only the literal or the call that is the value
+	// reads the entry: its receiver does not (expectedArgTypeStack.withhold),
+	// and the call takes it before its arguments are lowered, so nothing
+	// nested inside it sees the slot type.
 	//
 	// The hint is the type an alias names, not the alias: the constructors and
 	// generic calls that read it match its structure (`Try[Email]` for
 	// `type Checked Try[Email]`) to bind their type arguments.
-	if hint := t.followAliasChain(s.typ); s.push || t.consumesSlotType(exprCtx, hint) {
-		release := t.expectedArgTypes.push(hint)
+	if hint := t.followAliasChain(s.typ); t.consumesSlotType(exprCtx, hint) {
+		release := t.expectedArgTypes.pushFor(hint, t.barePostfix(exprCtx))
 		defer release()
 	}
 	expr, err := t.transformExpression(exprCtx)
@@ -1234,21 +1229,46 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 }
 
 // consumesSlotType reports whether exprCtx is a plain expression that takes
-// the type of a result slot it fills (see lowerAgainst), given as hint, the
-// type an alias names: a tuple literal of that tuple type, a construction of a
-// value of that generic type (isConstructionOf), or a call of a generic
-// function whose result-only type parameters only the slot can give
-// (isPhantomGenericCall).
+// the type of the slot it fills (see lowerAgainst) — an argument, a
+// declaration, a function or lambda result — given as hint, the type an alias
+// names: a tuple literal of that tuple type, a construction of a value of
+// that generic type (isConstructionOf), a call of a generic function whose
+// result-only type parameters only the slot can give (isPhantomGenericCall),
+// or a call of a method whose own type parameters its result mentions
+// (isResultGenericMethodCall).
 //
-// This is the one place a result type reaches a value's type arguments: a
-// construction or generic function call that is not the result value itself
-// never sees the enclosing function's result type.
+// This is the one place a slot type reaches a value's type arguments, and it
+// reaches only the call or literal that is the value: never a receiver it is
+// applied to (see expectedArgTypeStack.withhold), an argument nested in it,
+// or a value elsewhere in the enclosing function.
 func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext, hint transpiler.Type) bool {
 	if t.isTupleLiteralFor(exprCtx, hint) {
 		return true
 	}
 	name, typeArgs := t.calleeOfCall(exprCtx)
-	return name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name))
+	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name)) {
+		return true
+	}
+	return t.isResultGenericMethodCall(exprCtx)
+}
+
+// isResultGenericMethodCall reports whether exprCtx is a method call written
+// without type arguments, `recv.m(...)`, where some type declares a method m
+// whose own type parameters its result mentions (`Convert[U any]() Option[U]`,
+// `Map[U any](f func(T) U) Option[U]`): the slot the call fills can bind
+// them. The receiver's type is not known before it is lowered, so any such m
+// qualifies; the method call itself takes the slot type only when it is one.
+func (t *galaASTTransformer) isResultGenericMethodCall(exprCtx grammar.IExpressionContext) bool {
+	p := t.barePostfix(exprCtx)
+	if p == nil || len(p.AllCaseClause()) > 0 {
+		return false
+	}
+	suffixes := p.AllPostfixSuffix()
+	if len(suffixes) == 0 || !isCallSuffix(suffixes[len(suffixes)-1]) {
+		return false
+	}
+	member := calledMemberToken(suffixes[len(suffixes)-1])
+	return member != nil && t.resultGenericMethods[member.GetText()]
 }
 
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
@@ -1273,6 +1293,11 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 	gen, ok := typ.(transpiler.GenericType)
 	if !ok {
 		return false
+	}
+	// `Tuple(a, b, c)` constructs the std tuple of its arity, `Tuple3`
+	// (rewriteStdTupleIdent).
+	if stripPackagePrefix(name) == transpiler.TypeTuple && isTupleTypeName(stripPackagePrefix(gen.Base.BaseName())) {
+		return true
 	}
 	// Most result values call a function, not a type: that settles it before
 	// the slot's type is resolved.
@@ -1335,7 +1360,7 @@ func (t *galaASTTransformer) isPhantomGenericCall(name string) bool {
 	if meta == nil {
 		return false
 	}
-	_, phantom := t.phantomTypeParams(meta)
+	_, phantom := t.phantomTypeParams(meta.TypeParams, meta.ParamTypes)
 	return len(phantom) > 0
 }
 

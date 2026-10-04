@@ -238,7 +238,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	var bodySlot slot
 	if retType != nil && retType != ExpectedVoid {
 		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || !containsAny(retType) {
-			bodySlot = resultSlot(rt)
+			bodySlot = typedSlot(rt)
 		}
 	}
 

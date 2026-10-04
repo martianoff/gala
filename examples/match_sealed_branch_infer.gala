@@ -3,8 +3,8 @@ package main
 func main() {
     val x = Some(42)
 
-    // When match subject is Option[int], and a branch returns None(),
-    // the None() should infer as None[int]() → Option[int]
+    // A branch returning None() takes its type from its sibling branch:
+    // Some(v * 2) is an Option[int], so None() is None[int]()
     val result = x match {
         case Some(v) => Some(v * 2)
         case None() => None()

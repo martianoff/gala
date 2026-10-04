@@ -133,8 +133,8 @@ func zeroIsNone(n int) Option[string] {
     return o.Map((v) => s"v=$v")
 }
 
-// The match subject is only a guess for `None()`: it never fixes the slot,
-// so the lambda's result type comes from `Some("x")`.
+// The match subject does not type `None()`: the lambda's result type comes
+// from `Some("x")`.
 func subjectNotResult(o Option[int]) string {
     val r = apply(() => {
         o match {
@@ -151,8 +151,7 @@ func subjectNotResult(o Option[int]) string {
 }
 
 // The same holds for the lambda's trailing value: inside a match over an
-// Option[int], a trailing `None()` takes Option[string] from the `return`. It
-// falls back to the subject only when nothing else types the lambda.
+// Option[int], a trailing `None()` takes Option[string] from the `return`.
 func trailingNone(o Option[int]) string = o match {
     case Some(v) => {
         val r = apply(() => {
@@ -166,11 +165,12 @@ func trailingNone(o Option[int]) string = o match {
     case _ => "none"
 }
 
+// When nothing else types the lambda, its `None()` needs its type argument.
 func onlyTrailingNone(o Option[int]) string = o match {
     case Some(_) => {
         val r = apply(() => {
             Println("side effect")
-            None()
+            None[int]()
         })
         s"$r"
     }

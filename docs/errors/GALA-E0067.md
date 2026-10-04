@@ -1,14 +1,15 @@
 # GALA-E0067 — Type argument cannot be inferred
 
-**When it fires.** A generic type is constructed, or a generic function called,
+**When it fires.** A generic type is constructed, or a generic function or method called,
 and nothing at the call determines one of its type parameters: not the
 arguments, not the slot the value fills (the binding's declared type, a
 parameter, or the enclosing function's result type when the value is the
 result). It covers a generic struct built from its fields (`Tag("x")`), a type
 called through its companion `Apply` (`Try(x)`), a partial type-argument list
 (`Mk[int](2, "c")`) whose remaining parameters the arguments do not fix, and a
-generic function whose type parameter only its result mentions (`parse()` for
-`func parse[T any]() Option[T]`).
+generic function or method whose type parameter only its result mentions
+(`parse()` for `func parse[T any]() Option[T]`, `b.Convert()` for
+`Convert[U any]() Option[U]`).
 
 **Minimal repro.**
 

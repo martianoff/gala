@@ -111,6 +111,20 @@ func siblings(flag bool) string {
     s"$marker ${takeBoolTag(tag)} ${takeTag(called)}"
 }
 
+// So does a generic method, with or without arguments, in every slot: the
+// result, an argument and an annotated val. Only the call that fills the slot
+// takes its type; the receiver the call is made on does not.
+func (t Tag[T]) Retag[U any]() Tag[U] = Tag[U](t.Name)
+
+func (t Tag[T]) Rename[U any](name string) Tag[U] = Tag[U](name)
+
+func retagged() Tag[int] = Tag[string]("retag").Retag()
+
+func methodSlots() string {
+    val renamed Tag[bool] = Tag[int]("x").Rename("renamed")
+    s"${takeTag(Tag[string]("arg").Retag())} ${takeBoolTag(renamed)}"
+}
+
 func main() {
     Println(exprBody().Describe())
     Println(blockValue(2).Describe())
@@ -149,4 +163,6 @@ func main() {
     Println(viaCallBranches(0).Describe())
     Println(siblings(true))
     Println(siblings(false))
+    Println(retagged().Describe())
+    Println(methodSlots())
 }

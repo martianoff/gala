@@ -29,6 +29,19 @@ func parse[T any]() Option[T] = None[T]()
 func parseS[T any](s string) Option[T] = None[T]()
 func pair[A any, B any](a A) Tuple[A, Option[B]] = (a, None[B]())
 func runThunk[T any](f func() T) T = f()
+func keep(o Option[int]) Option[int] = o
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Convert[U any]() Option[U] = None[U]()
+func (c Cell[T]) Cast[U any](tag string) Option[U] = None[U]()
+func (c Cell[T]) Fold[U any](z U, f func(U, T) U) U = f(z, c.V)
+func (c Cell[T]) Pick[U any, V any](v V) Tuple[Option[U], V] = (None[U](), v)
+func (c Cell[T]) Wrap[U any](u U) Option[U] = Some(u)
+
+struct Plain(N int)
+
+func (p Plain) none[T any]() Option[T] = None[T]()
 `
 
 // TestSlotTypeArgsMatrix crosses each position a slot type reaches a value
@@ -43,6 +56,8 @@ func TestSlotTypeArgsMatrix(t *testing.T) {
 		{"Option[string]", `parse()`, "parse[string]()"},
 		{"Option[string]", `parseS("x")`, `parseS[string]("x")`},
 		{"Tuple[int, Option[string]]", `pair(1)`, "pair[int, string](1)"},
+		{"Option[string]", `Cell(1).Convert()`, "Cell_Convert[string, int]("},
+		{"Option[string]", `Cell(1).Cast("x")`, "Cell_Cast[string, int]("},
 	}
 	for _, pos := range expectedTypePositions {
 		for _, v := range values {
@@ -116,6 +131,51 @@ func TestSlotTypeArgsNotFromEnclosingResult(t *testing.T) {
 			input: "func g() Option[string] {\n    parse()\n    Some(\"x\")\n}",
 			want:  []string{"GALA-E0067", "cannot infer type argument T of parse"},
 		},
+		{
+			name:  "generic call that is the receiver of an argument",
+			input: "func g() Option[int] = keep(parse().OrElse(Some(1)))",
+			want:  []string{"GALA-E0067", "cannot infer type argument T of parse"},
+		},
+		{
+			name:  "generic call that is the receiver of an annotated val",
+			input: "func g() int {\n    val o Option[int] = parse().OrElse(Some(1))\n    o.GetOrElse(0)\n}",
+			want:  []string{"GALA-E0067", "cannot infer type argument T of parse"},
+		},
+		{
+			name:  "generic call that is the receiver of a result-generic method",
+			input: "func g() Option[string] = parse().Map((v) => \"x\")",
+			want:  []string{"GALA-E0067", "cannot infer type argument T of parse"},
+		},
+		{
+			name:  "method with a result-only type parameter bound to an unannotated val",
+			input: "func g() Option[string] {\n    val c = Cell(1).Convert()\n    c\n}",
+			want: []string{
+				"GALA-E0067", "cannot infer type argument U of Cell(1).Convert from its arguments or the expected type",
+				"annotate the binding (e.g. `val x Option[int] = Cell(1).Convert(...)`) or pass type args explicitly (`Cell(1).Convert[int](...)`)",
+			},
+		},
+		{
+			name:  "method with arguments and a result-only type parameter bound to an unannotated val",
+			input: "func g() Option[string] {\n    val c = Cell(1).Cast(\"x\")\n    c\n}",
+			want:  []string{"GALA-E0067", "cannot infer type argument U of Cell(1).Cast"},
+		},
+		{
+			name:  "zero-arg variant in a match over an Option",
+			input: "func g(o Option[int]) int {\n    val r = o match {\n        case _ => None()\n    }\n    Println(r)\n    1\n}",
+			want:  []string{"GALA-E0018"},
+		},
+		{
+			name: "returns in a value-position match with no slot type",
+			input: "func g(n int) Option[string] {\n    val r = n match {\n        case 1 => {\n            return None()\n        }\n" +
+				"        case _ => {\n            return None()\n        }\n    }\n    Some(s\"$r\")\n}",
+			want: []string{"GALA-E0018"},
+		},
+		{
+			name: "returns in a value-position if-expression with no slot type",
+			input: "func g(ok bool) Option[string] {\n    val r = if (ok) {\n        return None()\n    } else {\n        return None()\n    }\n" +
+				"    Some(s\"$r\")\n}",
+			want: []string{"GALA-E0018"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,6 +184,48 @@ func TestSlotTypeArgsNotFromEnclosingResult(t *testing.T) {
 			for _, want := range tt.want {
 				assert.Contains(t, err.Error(), want)
 			}
+		})
+	}
+}
+
+// TestSlotTypeArgsOnlyTheValue pins that a slot types the call that fills it
+// and nothing inside it: a receiver gets no type from the slot of the call
+// made on it, and a value-position match or if-expression with no slot type
+// gives a `return` in it none of the enclosing function's result type.
+func TestSlotTypeArgsOnlyTheValue(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	tests := []struct {
+		name, input, want string
+	}{
+		{"receiver with its own type arguments", "func g() Option[int] = keep(parse[int]().OrElse(Some(1)))", "parse[int]().OrElse("},
+		{"result-generic method on a generic call", "func g() Option[string] = parse[int]().Map((v) => \"x\")", "std.Option_Map(parse[int](), func(v int) string {"},
+		{"method on a construction in a val", "func g() Option[bool] {\n    val c Option[bool] = Cell(2).Cast(\"y\")\n    c\n}", "Cell_Cast[bool, int]("},
+		{"explicit method type argument", "func g() Option[bool] {\n    val c = Cell(1).Convert[bool]()\n    c\n}", "Cell_Convert[bool, int]("},
+		{"explicit method type argument with arguments", "func g() Option[bool] {\n    val c = Cell(1).Cast[bool](\"y\")\n    c\n}", "Cell_Cast[bool, int]("},
+		{"an indexed function field called with no arguments", "struct Handlers(Fns []func() int)\nfunc g(h Handlers) int = h.Fns[0]()", "return h.Fns.Get()[0]()"},
+		{"a Tuple construction of three in a val", "func g() int64 {\n    val t Tuple3[int64, string, bool] = Tuple(1, \"a\", true)\n    t.V1\n}", "std.Tuple3[int64, string, bool]{"},
+		{"a Tuple construction of three as an argument", "func h(t Tuple3[int64, string, bool]) int64 = t.V1\nfunc g() int64 = h(Tuple(1, \"a\", true))", "h(std.Tuple3[int64, string, bool]{"},
+		{"an untyped constant argument takes the slot's type", "func g() int64 = Cell(1).Fold(0, (acc, v) => acc)", "func(acc int64, v int) int64"},
+		{"an untyped constant alone spells the slot's type", "func g() Option[int64] = Cell(1).Wrap(0)", "Cell_Wrap[int64, int](Cell[int]"},
+		{"a typed argument binds its type parameter", "func g(z int32) int32 = Cell(1).Fold(z, (acc, v) => acc)", "func(acc int32, v int) int32"},
+		{"method of a non-generic receiver", "func g(p Plain) Option[int] = p.none()", "Plain_none[int](p)"},
+		{"only the type arguments up to the last result-only one are spelled", "func g() Tuple[Option[string], int] = Cell(true).Pick(1)", "Cell_Pick[string](Cell[bool]"},
+		{
+			"match arm return typed by the match's slot",
+			"func g(n int) Option[string] {\n    val r Option[int] = n match {\n        case 1 => {\n            return None()\n        }\n        case _ => Some(n)\n    }\n    Some(s\"$r\")\n}",
+			"return std.None[int]{}.Apply()",
+		},
+		{
+			"match arm return typed by its sibling",
+			"func g(n int) Option[string] {\n    val r = n match {\n        case 1 => {\n            return None()\n        }\n        case _ => Some(n)\n    }\n    Some(s\"$r\")\n}",
+			"return std.None[int]{}.Apply()",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(slotTypeArgDecls+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
 		})
 	}
 }
@@ -247,4 +349,22 @@ func TestSlotTypeArgsLambdaTrailingValue(t *testing.T) {
 			assert.Contains(t, got, tt.want)
 		})
 	}
+}
+
+// TestSlotTypeArgsOverGoUntypedConstant pins that an untyped constant of a Go
+// package, like a literal, leaves a method's type parameter to the slot the
+// call fills.
+func TestSlotTypeArgsOverGoUntypedConstant(t *testing.T) {
+	got, err := newAliasExpectedTranspiler().Transpile(`package main
+
+import "math"
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Fold[U any](z U, f func(U, T) U) U = f(z, c.V)
+
+func g() int64 = Cell(1).Fold(math.MaxInt8, (acc, v) => acc)
+`, "")
+	require.NoError(t, err)
+	assert.Contains(t, got, "func(acc int64, v int) int64")
 }

@@ -29,3 +29,5 @@ tag call 1
 tag empty
 {} tag sibling tag empty
 {} tag other tag other
+tag retag
+tag arg tag renamed
