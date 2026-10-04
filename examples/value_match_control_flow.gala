@@ -24,7 +24,7 @@ func voidReturn(o Option[int]) {
     Println(s"  voidReturn: $x")
 }
 
-func half(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None[int]()
+func half(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None()
 
 func bindPick(n int) Option[int] {
     bind a = half(n)
@@ -49,10 +49,10 @@ func breakAndContinue() {
 }
 
 func main() {
-    Println(s"typedVal: ${typedVal(Some(2))} / ${typedVal(None[int]())}")
+    Println(s"typedVal: ${typedVal(Some(2))} / ${typedVal(None())}")
     Println("voidReturn:")
     voidReturn(Some(2))
-    voidReturn(None[int]())
+    voidReturn(None())
     Println(s"bindPick: ${bindPick(4)} ${bindPick(0)} ${bindPick(3)}")
     Println("breakAndContinue:")
     breakAndContinue()

@@ -98,15 +98,15 @@ func returnOfMatch(o Option[int]) int {
 }
 
 func main() {
-    Println(s"matchVal: ${matchVal(Some(2))} ${matchVal(None[int]())}")
+    Println(s"matchVal: ${matchVal(Some(2))} ${matchVal(None())}")
     Println(s"ifVal: ${ifVal(2)} ${ifVal(-5)}")
-    Println(s"matchVar: ${matchVar(Some(2))} ${matchVar(None[int]())}")
-    Println(s"nestedMatch: ${nestedMatch(Some(2), true)} ${nestedMatch(Some(2), false)} ${nestedMatch(None[int](), true)}")
-    Println(s"ifInMatchArm: ${ifInMatchArm(Some(2))} ${ifInMatchArm(Some(-2))} ${ifInMatchArm(None[int]())}")
-    Println(s"returnInBlockArm: ${returnInBlockArm(Some(2))} ${returnInBlockArm(Some(200))} ${returnInBlockArm(None[int]())}")
+    Println(s"matchVar: ${matchVar(Some(2))} ${matchVar(None())}")
+    Println(s"nestedMatch: ${nestedMatch(Some(2), true)} ${nestedMatch(Some(2), false)} ${nestedMatch(None(), true)}")
+    Println(s"ifInMatchArm: ${ifInMatchArm(Some(2))} ${ifInMatchArm(Some(-2))} ${ifInMatchArm(None())}")
+    Println(s"returnInBlockArm: ${returnInBlockArm(Some(2))} ${returnInBlockArm(Some(200))} ${returnInBlockArm(None())}")
     Println("firstZero:")
     Println(s"  result ${firstZero(10)}")
     Println(s"lambdaLocal: ${lambdaLocal(2)} ${lambdaLocal(0)}")
     Println(s"lambdaTail: ${lambdaTail(2)} ${lambdaTail(0)}")
-    Println(s"returnOfMatch: ${returnOfMatch(Some(2))} ${returnOfMatch(None[int]())}")
+    Println(s"returnOfMatch: ${returnOfMatch(Some(2))} ${returnOfMatch(None())}")
 }

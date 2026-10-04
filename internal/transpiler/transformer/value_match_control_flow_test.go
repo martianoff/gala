@@ -112,11 +112,16 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 	}
 }
 
-// TestDeclarationOfAConstructThatAlwaysLeaves pins GALA-E0068 for a
-// declaration whose match or if-expression leaves on every branch.
+// TestDeclarationOfAConstructThatAlwaysLeaves pins a declaration whose match
+// or if-expression leaves on every branch: with `return` values, its variable
+// takes their type and the code compiles (the declaration is never reached);
+// with only `break` / `continue` it has no type at all, GALA-E0068.
 func TestDeclarationOfAConstructThatAlwaysLeaves(t *testing.T) {
 	trans := newAliasExpectedTranspiler()
 	_, err := trans.Transpile("package main\n\nfunc f(c bool) int {\n    val x = if (c) { return 1 } else { return 2 }\n    x\n}\n", "")
+	require.NoError(t, err)
+
+	_, err = trans.Transpile("package main\n\nfunc f(c bool) {\n    for i := 0; i < 3; i++ {\n        val x = if (c) { break } else { continue }\n        Println(x)\n    }\n}\n", "")
 	require.Error(t, err)
 	var se *galaerr.SemanticError
 	require.True(t, errors.As(err, &se), "want a SemanticError, got %v", err)
