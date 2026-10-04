@@ -161,11 +161,12 @@ func encodingVariants(src string, mode uint8, salt uint16) (string, string, bool
 		}
 		if mode&encodeBlockComments != 0 {
 			for i, tok := range toks {
-				// Not right after a '*' or '&' glued to it: a padded comment
-				// there is a space, and a line-start `*p` / `&n` (a new
-				// statement) would become `* p` / `& n`, which continues the
-				// line before — a different program, not a re-encoding.
-				if at := tok.GetStart(); at > 0 && (runes[at-1] == '*' || runes[at-1] == '&') {
+				// Not right after a line-start '*' or '&' glued to it: a
+				// padded comment there is a space, and a line-start `*p` /
+				// `&n` (a new statement) would become `* p` / `& n`, which
+				// continues the line before — a different program, not a
+				// re-encoding.
+				if gluedLineStartUnary(runes, toks, i) {
 					continue
 				}
 				if tok.GetChannel() == antlr.TokenDefaultChannel && (i+int(salt))%3 == 0 {
@@ -253,6 +254,36 @@ func blankLineEndingAt(runes []rune, nl int) bool {
 		}
 	}
 	return true
+}
+
+// gluedLineStartUnary reports whether toks[i] is glued to a '*' or '&' that
+// starts its line — a line break separates it from the default-channel token
+// before it, comments aside, as the parser counts lines. Such a `*p` / `&n`
+// is a new statement only while the operator touches its operand.
+func gluedLineStartUnary(runes []rune, toks []antlr.Token, i int) bool {
+	op := prevDefaultToken(toks, i)
+	if op < 0 {
+		return false
+	}
+	if text := toks[op].GetText(); (text != "*" && text != "&") || toks[op].GetStop()+1 != toks[i].GetStart() {
+		return false
+	}
+	from := 0
+	if before := prevDefaultToken(toks, op); before >= 0 {
+		from = toks[before].GetStop() + 1
+	}
+	return slices.Contains(runes[from:toks[op].GetStart()], '\n')
+}
+
+// prevDefaultToken is the index of the default-channel token before toks[i],
+// or -1.
+func prevDefaultToken(toks []antlr.Token, i int) int {
+	for j := i - 1; j >= 0; j-- {
+		if toks[j].GetChannel() == antlr.TokenDefaultChannel {
+			return j
+		}
+	}
+	return -1
 }
 
 // literalTokens returns the string, s"..." and f"..." literals whose value is
