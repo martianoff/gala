@@ -795,9 +795,8 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	// Determine tuple type name based on arity (B2 — single source of truth).
 	typeName, _ := transpiler.TupleArityName(n)
 
-	fallbackTypes := slotElems
-	if len(fallbackTypes) != n {
-		fallbackTypes = nil
+	if len(slotElems) != n {
+		slotElems = nil
 	}
 
 	var typeParams []ast.Expr
@@ -805,37 +804,36 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	// given, so its NewImmutable wrapper names the same type argument.
 	slotTypes := make([]transpiler.Type, n)
 	for i, expr := range exprs {
+		var expected transpiler.Type = transpiler.NilType{}
+		if slotElems != nil && slotElems[i] != nil {
+			expected = slotElems[i]
+		}
 		exprType := t.getExprTypeName(expr)
 		if exprType.IsNil() || exprType.IsAny() {
-			if fallbackTypes != nil && !fallbackTypes[i].IsNil() && !fallbackTypes[i].IsAny() {
-				typeParams = append(typeParams, t.typeToExpr(fallbackTypes[i]))
+			if !expected.IsNil() && !expected.IsAny() {
+				typeParams = append(typeParams, t.typeToExpr(expected))
 				// A bare `nil` element has no type of its own; its wrapper
 				// must name the slot type too.
-				slotTypes[i] = fallbackTypes[i]
+				slotTypes[i] = expected
 			} else {
 				typeParams = append(typeParams, ast.NewIdent("any"))
 			}
 		} else {
-			// Sealed widening: when the element's static type is a sealed CASE
-			// (e.g. `MsgCmd[AppMsg]`) and the expected slot type is its sealed
-			// PARENT (`Cmd[AppMsg]`), emit the parent in the tuple's type
-			// arguments. This keeps a tuple-typed match-arm result aligned
-			// with the surrounding function's declared return type, where
-			// the parent type is the lowest common type for both arms.
-			if i < len(slotElems) {
-				if _, untyped := t.untypedNumericConstExprDefault(expr); untyped && t.isNumericSlotType(slotElems[i]) {
-					typeParams = append(typeParams, t.typeToExpr(slotElems[i]))
-					slotTypes[i] = slotElems[i]
+			if !expected.IsNil() {
+				if _, untyped := t.untypedNumericConstExprDefault(expr); untyped && t.isNumericSlotType(expected) {
+					typeParams = append(typeParams, t.typeToExpr(expected))
+					slotTypes[i] = expected
 					continue
 				}
 			}
-			if fallbackTypes != nil && i < len(fallbackTypes) {
-				expected := fallbackTypes[i]
-				if expected != nil && !expected.IsNil() && !expected.IsAny() && expected.String() != exprType.String() {
-					if parent := t.sealedCaseParent(exprType); parent != nil && parent.String() == expected.String() {
-						typeParams = append(typeParams, t.typeToExpr(expected))
-						continue
-					}
+			// Sealed widening: when the element's static type is a sealed CASE
+			// (e.g. `MsgCmd[AppMsg]`) and the slot's element type is its sealed
+			// PARENT (`Cmd[AppMsg]`), emit the parent in the tuple's type
+			// arguments, the lowest common type for every arm filling that slot.
+			if !expected.IsNil() && !expected.IsAny() && expected.String() != exprType.String() {
+				if parent := t.sealedCaseParent(exprType); parent != nil && parent.String() == expected.String() {
+					typeParams = append(typeParams, t.typeToExpr(expected))
+					continue
 				}
 			}
 			typeParams = append(typeParams, t.typeToExpr(exprType))

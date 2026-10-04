@@ -27,5 +27,5 @@ Right(2)
 tag empty
 tag call 1
 tag empty
-{} tag sibling tag empty true
-{} tag other tag other false
+{} tag sibling tag empty
+{} tag other tag other

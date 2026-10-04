@@ -732,71 +732,27 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		return fun, nil
 	}
 
-	// Resolve arg-bound params strictly from the arguments.
-	resolved := make(map[string]transpiler.Type, len(funcMeta.TypeParams))
-	for i, arg := range args {
-		var paramType transpiler.Type
-		if i < len(funcMeta.ParamTypes) {
-			paramType = funcMeta.ParamTypes[i]
-		} else if len(funcMeta.ParamTypes) > 0 {
-			last := funcMeta.ParamTypes[len(funcMeta.ParamTypes)-1]
-			if arr, ok := last.(transpiler.ArrayType); ok {
-				paramType = arr.Elem
-			} else {
-				paramType = last
-			}
-		}
-		if paramType == nil {
-			continue
-		}
-		argType := t.getExprTypeNameManual(arg)
-		if transpiler.IsUnusable(argType) {
-			argType, _ = t.inferExprType(arg)
-		}
-		if transpiler.IsUnusable(argType) {
-			continue
-		}
-		if hasSpread {
-			if arr, ok := argType.(transpiler.ArrayType); ok {
-				argType = arr.Elem
-			}
-		}
-		t.unifyForInference(paramType, argType, funcMeta.TypeParams, resolved)
-	}
-
-	// Fill the phantom params from the slot type via result-type unification;
-	// arg-bound params keep their argument-derived value.
-	if !transpiler.IsUnusable(expected) && !transpiler.IsUnusable(funcMeta.ReturnType) {
-		fromSlot := make(map[string]transpiler.Type)
-		t.unifyForInference(funcMeta.ReturnType, t.followAliasChain(expected), funcMeta.TypeParams, fromSlot)
-		for _, tp := range phantom {
-			if v, ok := fromSlot[tp]; ok && t.slotTypeArgUsable(v) {
-				resolved[tp] = v
-			}
+	// Arg-bound params come from the arguments, phantom ones from the slot.
+	resolved := t.argTypeArgs(funcMeta, args, hasSpread)
+	for tp, typ := range t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, expected) {
+		if !argBound[tp] {
+			resolved[tp] = typ
 		}
 	}
-	var missing []string
-	for _, tp := range phantom {
-		if v, ok := resolved[tp]; !ok || transpiler.IsUnusable(v) {
-			missing = append(missing, tp)
+	instantiated, missing := t.completeTypeArgs(fun, funcMeta.TypeParams, nil, resolved)
+	var open []string
+	for _, tp := range missing {
+		if !argBound[tp] {
+			open = append(open, tp)
 		}
 	}
-	if missing != nil {
-		return nil, t.uninferredTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing)
+	switch {
+	case open != nil:
+		return nil, t.uninferredTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, open)
+	case missing != nil:
+		return fun, nil // an arg-bound param GALA could not type: Go infers it
 	}
-
-	// Rewrite only when every arg-bound param is resolved too.
-	typeArgs := make([]ast.Expr, len(funcMeta.TypeParams))
-	for i, tp := range funcMeta.TypeParams {
-		got, ok := resolved[tp]
-		if !ok || transpiler.IsUnusable(got) {
-			if argBound[tp] {
-				return fun, nil
-			}
-		}
-		typeArgs[i] = t.typeToExpr(got)
-	}
-	return withTypeArgs(fun, typeArgs), nil
+	return instantiated, nil
 }
 
 // instantiateNullaryGenericCall gives a call to a generic GALA function that
@@ -874,11 +830,26 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 	if len(fMeta.TypeParams) == 0 || len(args) == 0 {
 		return nil
 	}
+	inferredMap := t.argTypeArgs(fMeta, args, hasEllipsis)
+	if len(inferredMap) == 0 {
+		return nil
+	}
+	result := make([]transpiler.Type, len(fMeta.TypeParams))
+	for i, paramName := range fMeta.TypeParams {
+		inferredType, ok := inferredMap[paramName]
+		if !ok {
+			return nil // couldn't infer this type param
+		}
+		result[i] = inferredType
+	}
+	return result
+}
 
-	// Build a mapping from type param names to inferred concrete types
+// argTypeArgs binds fMeta's type parameters from the lowered arguments of a
+// call, unifying each parameter type with its argument's type; only those an
+// argument determines appear in the result.
+func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
-
-	// Try to infer type params from each argument
 	for i, arg := range args {
 		var paramType transpiler.Type
 		if i < len(fMeta.ParamTypes) {
@@ -918,23 +889,7 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 		// Try to unify paramType with argType to find type param substitutions
 		t.unifyForInference(paramType, argType, fMeta.TypeParams, inferredMap)
 	}
-
-	// Build result in order of type params
-	if len(inferredMap) == 0 {
-		return nil
-	}
-
-	result := make([]transpiler.Type, len(fMeta.TypeParams))
-	for i, paramName := range fMeta.TypeParams {
-		if inferredType, ok := inferredMap[paramName]; ok {
-			result[i] = inferredType
-		} else {
-			// Couldn't infer this type param
-			return nil
-		}
-	}
-
-	return result
+	return inferredMap
 }
 
 // unifyForInference attempts to unify a pattern type with a concrete type to infer type parameters.

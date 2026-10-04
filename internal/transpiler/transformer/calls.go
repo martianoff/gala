@@ -177,7 +177,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 									// Any other companion takes them from the
 									// slot as one called with arguments does:
 									// `MkTag()` as a `Tagged[int]`.
-									slotArgs := t.applySlotTypeArgs(methodMeta, typeMeta.TypeParams, pending)
+									slotArgs := t.resultSlotTypeArgs(methodMeta.ReturnType, typeMeta.TypeParams, pending)
 									if instantiated, missing := t.completeTypeArgs(base, typeMeta.TypeParams, nil, slotArgs); missing == nil {
 										receiverType = instantiated
 										t.expectedArgTypes.consume()
@@ -1455,7 +1455,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// result slot gives its type only to a construction that is the
 		// result value (consumesSlotType), never to one bound to a `val` or
 		// nested in the result.
-		for tp, typ := range t.applySlotTypeArgs(methodMeta, typeMeta.TypeParams, slotType) {
+		for tp, typ := range t.resultSlotTypeArgs(methodMeta.ReturnType, typeMeta.TypeParams, slotType) {
 			if _, written := inferredMap[tp]; !written {
 				inferredMap[tp] = typ
 			}
@@ -2890,16 +2890,17 @@ func (t *galaASTTransformer) slotTypeArgs(slotType transpiler.Type, resolvedType
 	return args
 }
 
-// applySlotTypeArgs is slotTypeArgs for a companion Apply construction: the
-// type arguments slotType gives typeParams where what apply returns matches it
+// resultSlotTypeArgs is slotTypeArgs for a value whose type is result over
+// typeParams — what a companion Apply or a generic function returns: the type
+// arguments slotType gives typeParams where result matches it
 // (`Pair[int, string]` binds both of a `Mk[A, B]` whose Apply returns
 // `Pair[A, B]`).
-func (t *galaASTTransformer) applySlotTypeArgs(apply *transpiler.MethodMetadata, typeParams []string, slotType transpiler.Type) map[string]transpiler.Type {
-	if transpiler.IsUnusable(slotType) || transpiler.IsUnusable(apply.ReturnType) {
+func (t *galaASTTransformer) resultSlotTypeArgs(result transpiler.Type, typeParams []string, slotType transpiler.Type) map[string]transpiler.Type {
+	if transpiler.IsUnusable(slotType) || transpiler.IsUnusable(result) {
 		return nil
 	}
 	args := make(map[string]transpiler.Type, len(typeParams))
-	t.unifyForInference(apply.ReturnType, t.followAliasChain(slotType), typeParams, args)
+	t.unifyForInference(result, t.followAliasChain(slotType), typeParams, args)
 	maps.DeleteFunc(args, func(_ string, p transpiler.Type) bool { return !t.slotTypeArgUsable(p) })
 	return args
 }

@@ -1241,10 +1241,14 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 // (isPhantomGenericCall).
 //
 // This is the one place a result type reaches a value's type arguments: a
-// construction or generic call that is not the result value itself never
-// sees the enclosing function's result type.
+// construction or generic function call that is not the result value itself
+// never sees the enclosing function's result type.
 func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext, hint transpiler.Type) bool {
-	return t.isTupleLiteralFor(exprCtx, hint) || t.isConstructionOf(exprCtx, hint) || t.isPhantomGenericCall(exprCtx)
+	if t.isTupleLiteralFor(exprCtx, hint) {
+		return true
+	}
+	name, typeArgs := t.calleeOfCall(exprCtx)
+	return name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name))
 }
 
 // isTupleLiteralFor reports whether exprCtx is exactly a tuple literal
@@ -1258,20 +1262,16 @@ func (t *galaASTTransformer) isTupleLiteralFor(exprCtx grammar.IExpressionContex
 	return list != nil && len(list.AllExpression()) > 1 && len(list.AllExpression()) == len(gen.Params)
 }
 
-// isConstructionOf reports whether exprCtx is exactly a construction of a
-// value of the generic type typ instantiates — of that struct (`Tag("x")`,
-// `Pair[int](1)`, `geo.Tag(name = "x")` for `Tag[int]`), or through a
-// companion Apply returning it (`Mk(1)` for a `Pair[int, string]` when
-// `Mk[A, B]`'s Apply returns `Pair[A, B]`; `Left("x")` for an
-// `Either[string, int]`) — and not a value derived from one
-// (`Tag("x").Rename()`).
-func (t *galaASTTransformer) isConstructionOf(exprCtx grammar.IExpressionContext, typ transpiler.Type) bool {
+// isConstructionOf reports whether a call of name (see calleeOfCall) is a
+// construction of a value of the generic type typ instantiates — of that
+// struct (`Tag("x")`, `Pair[int](1)`, `geo.Tag(name = "x")` for `Tag[int]`),
+// or through a companion Apply returning it (`Mk(1)` for a
+// `Pair[int, string]` when `Mk[A, B]`'s Apply returns `Pair[A, B]`;
+// `Left("x")` for an `Either[string, int]`). calleeOfCall rules out a value
+// derived from one (`Tag("x").Rename()`).
+func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) bool {
 	gen, ok := typ.(transpiler.GenericType)
 	if !ok {
-		return false
-	}
-	name, _ := t.calleeOfCall(exprCtx)
-	if name == "" {
 		return false
 	}
 	// Most result values call a function, not a type: that settles it before
@@ -1318,17 +1318,13 @@ func (t *galaASTTransformer) calleeOfCall(exprCtx grammar.IExpressionContext) (n
 	return "", false
 }
 
-// isPhantomGenericCall reports whether exprCtx is exactly a call of a generic
-// function with a type parameter only its result mentions (`parse()` for
-// `func parse[T any]() Option[T]`), written without type arguments: the slot
-// it fills is the only place that parameter can come from.
-func (t *galaASTTransformer) isPhantomGenericCall(exprCtx grammar.IExpressionContext) bool {
-	name, typeArgs := t.calleeOfCall(exprCtx)
-	if name == "" || typeArgs {
-		return false
-	}
+// isPhantomGenericCall reports whether name (see calleeOfCall, called without
+// type arguments) is a generic function with a type parameter only its result
+// mentions (`parse()` for `func parse[T any]() Option[T]`): the slot the call
+// fills is the only place that parameter can come from.
+func (t *galaASTTransformer) isPhantomGenericCall(name string) bool {
 	meta := t.getFunction(name)
-	if meta == nil || len(meta.TypeParams) == 0 {
+	if meta == nil {
 		return false
 	}
 	_, phantom := t.phantomTypeParams(meta)

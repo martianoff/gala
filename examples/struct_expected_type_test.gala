@@ -108,8 +108,7 @@ func siblings(flag bool) string {
     val marker = if (flag) Marker[int]() else Marker()
     val tag = if (flag) MkTag("sibling") else Tag[bool]("other")
     val called = if (flag) emptyTag() else Tag[int]("other")
-    val maybe = if (flag) None() else Some(Pair[int, string](1))
-    s"$marker ${takeBoolTag(tag)} ${takeTag(called)} ${maybe.IsEmpty()}"
+    s"$marker ${takeBoolTag(tag)} ${takeTag(called)}"
 }
 
 func main() {
