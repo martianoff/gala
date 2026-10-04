@@ -1353,7 +1353,8 @@ func (t *galaASTTransformer) isGenericStructAlias(name, resolved string, meta *t
 	}
 	end := t.followAliasChain(target).BaseName()
 	endMeta := t.getTypeMeta(t.resolveTypeMetaName(end))
-	return endMeta != nil && !endMeta.IsSealed && len(t.structFields[t.resolveStructTypeName(end)]) > 0
+	_, isStruct := t.structFields[t.resolveStructTypeName(end)]
+	return endMeta != nil && !endMeta.IsSealed && isStruct
 }
 
 // isCallSuffix reports whether s is an argument list `(...)`.

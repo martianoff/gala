@@ -2074,16 +2074,10 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 					}
 					// Generic struct: a lambda for a `func(T) T` field must see
 					// the call's type arguments, not the declared `T`.
-					if len(typeMeta.TypeParams) > 0 {
-						ctx.structTypeParams = typeMeta.TypeParams
-						// The slot type binds as it does for the literal itself
-						// (see structLiteralType), which keeps an alias of an
-						// instantiated generic (`IntH(...)`) as written.
-						var fromSlot map[string]transpiler.Type
-						if _, isAlias := t.lookupTypeAlias(funcName); !isAlias {
-							fromSlot = t.slotTypeArgs(slotType, resolved, typeMeta.TypeParams)
-						}
-						ctx.structTypeSubst = t.structCtorTypeSubst(fun, typeMeta.TypeParams, fields, ctx.structFieldExpectedTypes, argListCtx, fromSlot)
+					if structMeta := t.getTypeMeta(resolved); structMeta != nil && len(structMeta.TypeParams) > 0 {
+						typeParams, ctorFun, fromSlot := t.structCtorSlotArgs(fun, funcName, resolved, typeMeta.TypeParams, slotType)
+						ctx.structTypeParams = typeParams
+						ctx.structTypeSubst = t.structCtorTypeSubst(ctorFun, typeParams, fields, ctx.structFieldExpectedTypes, argListCtx, fromSlot)
 						for i, ft := range ctx.structFieldExpectedTypes {
 							ctx.structFieldExpectedTypes[i] = t.substituteTranspilerTypeParams(ft, ctx.structTypeSubst)
 						}
@@ -2162,6 +2156,34 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 	return ctx
 }
 
+// structCtorSlotArgs returns, for the construction fun of the generic struct
+// resolved named funcName, the type parameters its field types are written
+// over, fun as structCtorTypeSubst reads its explicit type arguments, and the
+// type arguments known from the slot it fills — bound as for the literal itself
+// (see structLiteralType). typeParams are funcName's own. A generic alias
+// (`Fn((x) => x + 1)` for `type Fn[U any] Box[U]`) is read as the struct it
+// names: the fields are the struct's, so its type parameters are, with what
+// the alias and its written type arguments fix of them; an alias of an
+// instantiated generic (`IntH(...)`) is kept as written.
+func (t *galaASTTransformer) structCtorSlotArgs(fun ast.Expr, funcName, resolved string, typeParams []string, slotType transpiler.Type) ([]string, ast.Expr, map[string]transpiler.Type) {
+	target, isAlias := t.lookupTypeAlias(funcName)
+	if !isAlias {
+		return typeParams, fun, t.slotTypeArgs(slotType, resolved, typeParams)
+	}
+	structMeta := t.getTypeMeta(resolved)
+	named, isGeneric := t.aliasedStructType(target, typeParams)
+	if structMeta == nil || !isGeneric || len(named.Params) != len(structMeta.TypeParams) {
+		return typeParams, fun, nil
+	}
+	base, written := splitCallFunTypeArgs(fun)
+	fromSlot := t.aliasFixedStructArgs(named, structMeta.TypeParams, typeParams, t.writtenTypeArgs(typeParams, written))
+	for tp, typ := range t.slotTypeArgs(t.followAliasChain(slotType), resolved, structMeta.TypeParams) {
+		if _, bound := fromSlot[tp]; !bound {
+			fromSlot[tp] = typ
+		}
+	}
+	return structMeta.TypeParams, base, fromSlot
+}
 // explicitTypeArgSubst maps typeParams to a call's explicit type arguments, or
 // returns nil when there are none.
 func explicitTypeArgSubst(typeParams, typeArgs []string) map[string]string {
@@ -2864,11 +2886,18 @@ func (t *galaASTTransformer) structLiteralType(
 	default:
 		return fun, nil
 	}
+	target, isAlias := t.lookupTypeAlias(typeName)
+	if isAlias && typeName == resolvedTypeName && len(t.structFields[resolvedTypeName]) == 0 {
+		// An alias of a field-less struct resolves to its own (field-less)
+		// entry; its type parameters are the struct's it names. (A name with
+		// fields is a struct, whatever alias of that name an import declares.)
+		resolvedTypeName = t.resolveStructTypeName(t.followAliasChain(target).BaseName())
+	}
 	typeMeta := t.getTypeMeta(resolvedTypeName)
 	if typeMeta == nil {
 		return fun, nil
 	}
-	if target, isAlias := t.lookupTypeAlias(typeName); isAlias && typeName != resolvedTypeName {
+	if isAlias && typeName != resolvedTypeName {
 		return t.aliasLiteralType(fun, typeName, target, resolvedTypeName, typeMeta.TypeParams, slotType, line, col, bind)
 	}
 	if len(written) >= len(typeMeta.TypeParams) {
@@ -2915,8 +2944,7 @@ func (t *galaASTTransformer) structTypeArgs(
 // from the struct's: what the alias and its written type arguments fix of
 // them, then the expected type and the fields, matched against the struct type
 // the alias names, so `Twin(1, 2)` is a `Twin[int]`. An alias type parameter
-// still undetermined, or bound to two different types (`Same(1, "x")` for
-// `type Same[T any] P2[T, T]`), is an error.
+// still undetermined is an error, as for the struct itself.
 func (t *galaASTTransformer) aliasLiteralType(
 	fun ast.Expr,
 	typeName string,
@@ -2928,8 +2956,6 @@ func (t *galaASTTransformer) aliasLiteralType(
 	bind func(typeParams []string, inferred map[string]transpiler.Type),
 ) (ast.Expr, error) {
 	base, written := splitCallFunTypeArgs(fun)
-	_, qualified := extractTypeNameFromExpr(base)
-	aliasName := t.callSiteName(qualified)
 	aliasMeta := t.getTypeMeta(typeName)
 	if aliasMeta == nil || len(written) >= len(aliasMeta.TypeParams) {
 		return fun, nil
@@ -2942,27 +2968,14 @@ func (t *galaASTTransformer) aliasLiteralType(
 	// (`B` of `type Weird[A any, B any] Pair[A]`) must be written.
 	named, isGeneric := t.aliasedStructType(target, aliasParams)
 	if isGeneric && len(named.Params) == len(structParams) {
-		fixed := make(map[string]transpiler.Type)
-		for i, tp := range structParams {
-			if p := t.substituteInType(named.Params[i], inferred); !typeMentionsTypeParam(p, aliasParams) {
-				fixed[tp] = p
-			}
-		}
+		fixed := t.aliasFixedStructArgs(named, structParams, aliasParams, inferred)
 		structArgs := t.structTypeArgs(structParams, fixed, resolvedTypeName, t.followAliasChain(slotType), bind)
+		// The first binding wins, as for the struct's own type parameters: a
+		// later one that disagrees is left to Go's type check of the literal.
 		for i, tp := range structParams {
-			typ, has := structArgs[tp]
-			if !has || transpiler.IsUnusable(typ) {
-				continue
+			if typ, has := structArgs[tp]; has && !transpiler.IsUnusable(typ) {
+				t.unifyForInference(named.Params[i], typ, aliasParams, inferred)
 			}
-			if p := named.Params[i].String(); slices.Contains(aliasParams, p) {
-				if prev, bound := inferred[p]; bound && prev.String() != typ.String() {
-					return nil, galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, line, col,
-						fmt.Sprintf("cannot infer type argument %s of %s: its fields give it both %s and %s",
-							p, aliasName, displayType(prev), displayType(typ)),
-						"make the field values agree, or pass the type arguments explicitly")
-				}
-			}
-			t.unifyForInference(named.Params[i], typ, aliasParams, inferred)
 		}
 	}
 
@@ -2972,11 +2985,8 @@ func (t *galaASTTransformer) aliasLiteralType(
 		// only through the struct type it names; for one that type does not
 		// mention, the error asks for explicit type arguments instead.
 		var yields transpiler.Type // nil: as for the struct itself
-		switch {
-		case !isGeneric:
+		if !isGeneric || !typeMentionsAllTypeParams(named, missing) {
 			yields = transpiler.NilType{}
-		case !typeMentionsAllTypeParams(named, missing):
-			yields = named
 		}
 		return nil, t.uninferredTypeArgError(line, col, base, yields, aliasParams, inferred, missing)
 	}
@@ -2995,6 +3005,19 @@ func (t *galaASTTransformer) aliasedStructType(target transpiler.Type, aliasPara
 	return named, ok
 }
 
+// aliasFixedStructArgs returns what the alias fixes of its struct's type
+// arguments (`int` of `type IntKeyed[V any] Entry[int, V]`), with the alias's
+// type arguments bound so far substituted, keyed by the struct's type
+// parameter. named is the struct type the alias names (aliasedStructType).
+func (t *galaASTTransformer) aliasFixedStructArgs(named transpiler.GenericType, structParams, aliasParams []string, bound map[string]transpiler.Type) map[string]transpiler.Type {
+	fixed := make(map[string]transpiler.Type)
+	for i, tp := range structParams {
+		if p := t.substituteInType(named.Params[i], bound); !typeMentionsTypeParam(p, aliasParams) {
+			fixed[tp] = p
+		}
+	}
+	return fixed
+}
 // typeMentionsAllTypeParams reports whether typ mentions every one of typeParams.
 func typeMentionsAllTypeParams(typ transpiler.Type, typeParams []string) bool {
 	for _, tp := range typeParams {

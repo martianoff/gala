@@ -322,26 +322,24 @@ func (t *galaASTTransformer) isNumericSlotType(typ transpiler.Type) bool {
 // arguments carried by the literal's type expression (`Box[int64]` → T: int64).
 // It returns nil when the literal is not an instantiation or the arity does not
 // line up, in which case fields typed with a type parameter stay uninstantiated.
-// A literal spelled with a generic alias (`Flipped[int64, string]` for `type
-// Flipped[V any, K comparable] Entry[K, V]`) carries the arguments of the struct
-// type the alias names (`Entry[string, int64]`).
+// A literal spelled with an alias (`Flipped[int64, string]` for `type
+// Flipped[V any, K comparable] Entry[K, V]`, or `IntPair` for `type IntPair
+// Pair[int]`) carries the arguments of the struct type the alias names
+// (`Entry[string, int64]`, `Pair[int]`).
 func (t *galaASTTransformer) structTypeArgSubst(typeExpr ast.Expr, resolvedTypeName string) map[string]ast.Expr {
-	var indices []ast.Expr
-	switch te := typeExpr.(type) {
-	case *ast.IndexExpr:
-		indices = []ast.Expr{te.Index}
-	case *ast.IndexListExpr:
-		indices = te.Indices
-	default:
-		return nil
-	}
-	if spelled := t.astTypeToTranspilerType(typeExpr); !transpiler.IsUnusable(spelled) {
-		if named, ok := t.followAliasChain(spelled).(transpiler.GenericType); ok && named.BaseName() != spelled.BaseName() {
-			indices = make([]ast.Expr, len(named.Params))
-			for i, p := range named.Params {
-				indices[i] = t.typeToExpr(p)
+	base, indices := splitCallFunTypeArgs(typeExpr)
+	if _, name := extractTypeNameFromExpr(base); name != "" {
+		if _, isAlias := t.lookupTypeAlias(name); isAlias {
+			if named, ok := t.followAliasChain(t.astTypeToTranspilerType(typeExpr)).(transpiler.GenericType); ok {
+				indices = make([]ast.Expr, len(named.Params))
+				for i, p := range named.Params {
+					indices[i] = t.typeToExpr(p)
+				}
 			}
 		}
+	}
+	if len(indices) == 0 {
+		return nil
 	}
 	typeMeta := t.getTypeMeta(resolvedTypeName)
 	if typeMeta == nil || len(typeMeta.TypeParams) != len(indices) {

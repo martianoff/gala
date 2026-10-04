@@ -152,9 +152,13 @@ func TestGenericAlias(t *testing.T) {
 
 const genericStructAliasDecls = `package main
 
+import . "martianoff/gala/collection_immutable"
+
 struct Pair[T any](A T, B T)
 struct Entry[K comparable, V any](Key K, Value V)
 struct P2[A any, B any](X A, Y B)
+struct Box[T any](F func(T) T, Tags Array[T] = EmptyArray())
+struct Phantom[T any]()
 
 type Twin[T any] Pair[T]
 type Same[T any] P2[T, T]
@@ -163,6 +167,9 @@ type IntKeyed[V any] Entry[int, V]
 type Flipped[V any, K comparable] Entry[K, V]
 type Weird[A any, B any] Pair[A]
 type IntPair Pair[int]
+type Fn[U any] Box[U]
+type IntBox Box[int]
+type Ph[T any] Phantom[T]
 
 `
 
@@ -236,6 +243,31 @@ func TestGenericStructAliasConstruction(t *testing.T) {
 			want:  []string{"Twin[string]{"},
 		},
 		{
+			name:  "the first binding wins, as for the struct",
+			input: "func f(n int64) int64 = Same(n, 2).Y",
+			want:  []string{"Same[int64]{"},
+		},
+		{
+			name:  "a lambda field typed through the alias",
+			input: "func f() int = Fn(F = (x) => x + 1, Tags = ArrayOf(2)).F(1)",
+			want:  []string{"Fn[int]{", "func(x int) int {"},
+		},
+		{
+			name:  "a lambda field typed by the expected type",
+			input: "func f() Fn[int] = Fn((x) => x + 1)",
+			want:  []string{"Fn[int]{", "func(x int) int {"},
+		},
+		{
+			name:  "a zero-field struct through its alias, from the expected type",
+			input: "func f() Ph[int] = Ph()",
+			want:  []string{"Ph[int]{}"},
+		},
+		{
+			name:  "a default of an alias of an instantiated generic",
+			input: "func f() int = IntBox((x) => x * 2).Tags.Size()",
+			want:  []string{"IntBox{"},
+		},
+		{
 			name:  "alias of an instantiated generic",
 			input: "func f() int = IntPair(9, 10).A",
 			want:  []string{"IntPair{"},
@@ -259,10 +291,5 @@ func TestGenericStructAliasConstruction(t *testing.T) {
 		assert.Contains(t, err.Error(), "`Weird[int, int](...)`")
 	})
 
-	t.Run("an alias type parameter the fields bind two ways", func(t *testing.T) {
-		_, err := trans.Transpile(genericStructAliasDecls+"func f() int = Same(1, \"x\").X\n", "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "GALA-E0067")
-		assert.Contains(t, err.Error(), "cannot infer type argument T of Same: its fields give it both int and string")
-	})
+
 }
