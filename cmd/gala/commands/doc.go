@@ -532,5 +532,3 @@ func generatedCaseCompanions(rich *transpiler.RichAST, pkgName string) map[strin
 	}
 	return companions
 }
-
-// joinParams renders a case's fields as they were declared.

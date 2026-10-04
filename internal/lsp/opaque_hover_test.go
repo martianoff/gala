@@ -14,6 +14,7 @@ func (u UserID) Next() UserID = u + 1
 func main() {
     val id = UserID(1)
     Println(id.Hash())
+    Println(id.Compare(id))
 }
 `
 
@@ -44,7 +45,7 @@ func TestHover_OpaqueType(t *testing.T) {
 		{
 			name:   "synthesized method on a value",
 			anchor: "id.Hash()", word: "Hash",
-			want:   []string{"func (UserID) Hash() uint32", "Synthesized"},
+			want: []string{"func (UserID) Hash() uint32", "Synthesized"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -77,5 +78,33 @@ func TestHover_OpaqueType(t *testing.T) {
 				t.Errorf("completion is missing %q; got %v", want, labels)
 			}
 		}
+	})
+
+	t.Run("signature help on a synthesized method", func(t *testing.T) {
+		line, col := locate(t, opaqueHoverSrc, "id.Compare(id", "Compare(")
+		sh := requestSignatureHelp(t, h, uri, line, col+len("Compare(")-1)
+		if sh == nil || len(sh.Signatures) != 1 {
+			t.Fatalf("expected one signature, got %+v", sh)
+		}
+		if got := labelOf(sh.Signatures[0].Parameters[0]); got != "other UserID" {
+			t.Errorf("param label: got %q, want %q", got, "other UserID")
+		}
+	})
+
+	t.Run("type-name completion says opaque type", func(t *testing.T) {
+		line, col := locate(t, opaqueHoverSrc, "val id = UserID", "UserID")
+		list, err := h.Completion(uri, line, col)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range list.Items {
+			if item.Label == "UserID" {
+				if item.Detail != "opaque type" {
+					t.Errorf("detail = %q, want %q", item.Detail, "opaque type")
+				}
+				return
+			}
+		}
+		t.Error("UserID not offered")
 	})
 }

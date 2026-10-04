@@ -277,6 +277,9 @@ func memberHover(richAST *transpiler.RichAST, recvType, name string) string {
 // synthesizedMethod returns the Hash or Compare the transpiler generates on an
 // opaque type, or nil when name is not one of them.
 func synthesizedMethod(richAST *transpiler.RichAST, tm *transpiler.TypeMetadata, name string) *transpiler.MethodMetadata {
+	if !tm.IsOpaque || (name != "Hash" && name != "Compare") {
+		return nil
+	}
 	for _, m := range tm.SynthesizedOpaqueMethods(richAST) {
 		if m.Name == name {
 			return m

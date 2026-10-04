@@ -131,8 +131,11 @@ func typeCompletions(richAST *transpiler.RichAST) []lsp.CompletionItem {
 		seen[name] = true
 		kind := lsp.CompletionItemKindClass
 		detail := "type"
-		if tm.IsSealed {
+		switch {
+		case tm.IsSealed:
 			detail = "sealed type"
+		case tm.IsOpaque:
+			detail = "opaque type"
 		}
 		items = append(items, withRef(
 			lsp.CompletionItem{Label: name, Kind: kindPtr(kind), Detail: detail},

@@ -26,9 +26,42 @@ func TestSynthesizedOpaqueMethods(t *testing.T) {
 			want: []string{"Hash"},
 		},
 		{
-			name: "alias of bool has no Compare",
-			meta: &TypeMetadata{Name: "Flag", Package: "app", IsOpaque: true, Underlying: NamedType{Name: "Switch"}},
-			rich: &RichAST{TypeAliases: map[string]Type{"Switch": BasicType{Name: "bool"}}},
+			name: "alias of bool in main has no Compare",
+			meta: &TypeMetadata{Name: "Flag", Package: "main", IsOpaque: true, Underlying: BasicType{Name: "Switch"}},
+			rich: &RichAST{PackageName: "main", TypeAliases: map[string]Type{"Switch": BasicType{Name: "bool"}}},
+			want: []string{"Hash"},
+		},
+		{
+			// A library package records its own aliases as `cfg.Switch`.
+			name: "alias of bool in a library has no Compare",
+			meta: &TypeMetadata{Name: "Flag", Package: "cfg", IsOpaque: true, Underlying: BasicType{Name: "Switch"}},
+			rich: &RichAST{PackageName: "cfg", TypeAliases: map[string]Type{"cfg.Switch": BasicType{Name: "bool"}}},
+			want: []string{"Hash"},
+		},
+		{
+			name: "an importer's same-named alias is not the declaring package's",
+			meta: &TypeMetadata{Name: "Flag", Package: "cfg", IsOpaque: true, Underlying: BasicType{Name: "Switch"}},
+			rich: &RichAST{PackageName: "main", TypeAliases: map[string]Type{
+				"Switch":     BasicType{Name: "int64"},
+				"cfg.Switch": BasicType{Name: "bool"},
+			}},
+			want: []string{"Hash"},
+		},
+		{
+			name: "alias chain ending in int64 keeps Compare",
+			meta: &TypeMetadata{Name: "Level", Package: "cfg", IsOpaque: true, Underlying: BasicType{Name: "Raw"}},
+			rich: &RichAST{PackageName: "main", TypeAliases: map[string]Type{
+				"Switch":  BasicType{Name: "bool"},
+				"cfg.Raw": BasicType{Name: "int64"},
+			}},
+			want: []string{"Hash", "Compare"},
+		},
+		{
+			name: "own .go named bool has no Compare",
+			meta: &TypeMetadata{Name: "Flag", Package: "cfg", IsOpaque: true, Underlying: BasicType{Name: "Toggle"}},
+			rich: &RichAST{PackageName: "cfg", GoTypeInfo: &GoTypeInfo{Types: map[string]*GoTypeData{
+				"cfg.Toggle": {Underlying: BasicType{Name: "bool"}},
+			}}},
 			want: []string{"Hash"},
 		},
 		{
@@ -71,5 +104,16 @@ func TestSynthesizedOpaqueMethods(t *testing.T) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// Compare's parameter is spelled as the viewing package spells the type.
+func TestSynthesizedCompareParamIsQualifiedForImporters(t *testing.T) {
+	meta := &TypeMetadata{Name: "UserID", Package: "ids", IsOpaque: true, Underlying: BasicType{Name: "int64"}}
+	for viewer, want := range map[string]string{"ids": "UserID", "main": "ids.UserID"} {
+		methods := meta.SynthesizedOpaqueMethods(&RichAST{PackageName: viewer})
+		if got := methods[1].ParamTypes[0].String(); got != want {
+			t.Errorf("viewed from %s: Compare(other %s), want %s", viewer, got, want)
+		}
 	}
 }

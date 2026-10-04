@@ -419,7 +419,12 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods(rich *RichAST) []*MethodMetadata
 		}
 		return false
 	}
+	// Compare's parameter is the type itself, spelled as the package viewing
+	// it spells it: qualified from an importer.
 	var self Type = NamedType{Name: m.Name}
+	if rich != nil && m.Package != "" && m.Package != "main" && m.Package != rich.PackageName {
+		self = NamedType{Package: m.Package, Name: m.Name}
+	}
 	if len(m.TypeParams) > 0 {
 		params := make([]Type, len(m.TypeParams))
 		for i, tp := range m.TypeParams {
@@ -441,33 +446,49 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods(rich *RichAST) []*MethodMetadata
 	return out
 }
 
-// scalarBase follows typ through rich's aliases and Go named types (the
-// opaque type's own package's included) to the type at the bottom, and
-// returns its name.
+// scalarBase follows typ through rich's aliases and Go named types to the
+// type at the bottom, and returns its name. A bare name is looked up in the
+// namespace of the package that wrote it — the opaque type's, at first — so
+// an importer's same-named alias is never taken for the declaring package's
+// (aliases and own .go types are recorded under `pkg.Name`; the bare key is
+// only the package being analyzed).
 func (m *TypeMetadata) scalarBase(rich *RichAST, typ Type) string {
 	if rich == nil {
 		return typ.String()
 	}
+	pkg := m.Package
 	for hop := 0; hop < 16; hop++ {
 		name := typ.BaseName()
-		local := strings.TrimPrefix(name, m.Package+".")
-		if next, ok := rich.TypeAliases[name]; ok && next != nil && !next.IsNil() && next.BaseName() != name {
-			typ = next
-			continue
+		if IsPrimitiveType(name) {
+			break
 		}
-		if next, ok := rich.TypeAliases[local]; ok && next != nil && !next.IsNil() && next.BaseName() != local {
-			typ = next
-			continue
+		var keys []string
+		if p := typ.GetPackage(); p != "" {
+			pkg = p
+			keys = []string{name}
+		} else {
+			if pkg != "" && pkg != "main" {
+				keys = append(keys, pkg+"."+name)
+			}
+			if pkg == "" || pkg == "main" || pkg == rich.PackageName {
+				keys = append(keys, name)
+			}
 		}
-		td := rich.GoTypeInfo.GetTypeData(name)
-		if td == nil {
-			td = rich.GoTypeInfo.GetTypeData(m.Package + "." + local)
+		next := Type(nil)
+		for _, key := range keys {
+			if alias, ok := rich.TypeAliases[key]; ok && alias != nil && !alias.IsNil() {
+				next = alias
+			} else if td := rich.GoTypeInfo.GetTypeData(key); td != nil && td.Underlying != nil {
+				next = td.Underlying
+			}
+			if next != nil {
+				break
+			}
 		}
-		if td != nil && td.Underlying != nil && td.Underlying.BaseName() != name {
-			typ = td.Underlying
-			continue
+		if next == nil || next.BaseName() == name {
+			break
 		}
-		break
+		typ = next
 	}
 	return typ.String()
 }
