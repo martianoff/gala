@@ -96,19 +96,19 @@ func testComparison() {
 }
 
 // Pattern Matching (line 237-249)
-func testPatternMatch() {
-    val s = S("hello")
-    val result = s match {
-        case EmptyStr() => "empty"
-        case NonEmptyStr(head, tail) => {
-            if (tail.IsEmpty()) {
-                return "single character"
-            }
-            return fmt.Sprintf("starts with %c, rest: %s", head, tail.ToString())
+func describe(s Str) string = s match {
+    case EmptyStr() => "empty"
+    case NonEmptyStr(head, tail) => {
+        if (tail.IsEmpty()) {
+            return "single character"
         }
-        case _ => "other"
+        return fmt.Sprintf("starts with %c, rest: %s", head, tail.ToString())
     }
-    fmt.Printf("Pattern match: %s\n", result)
+    case _ => "other"
+}
+
+func testPatternMatch() {
+    fmt.Printf("Pattern match: %s\n", describe(S("hello")))
 }
 
 func main() {

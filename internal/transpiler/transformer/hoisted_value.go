@@ -1,11 +1,13 @@
 package transformer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -264,6 +266,43 @@ func (t *galaASTTransformer) armLeaves(clause ast.Stmt, defaultBody []ast.Stmt) 
 	}
 	ifStmt, ok := clause.(*ast.IfStmt)
 	return ok && ifStmt.Body != nil && t.leaves(ifStmt.Body.List)
+}
+
+// checkHoistedReturns rejects, in the branches of a construct of kind lowered
+// as statements, a source `return` with a value when the enclosing function
+// returns none. Lowered to a function literal, such a `return` used to give the
+// construct its value; lowered as statements it leaves the function, so what
+// was meant as the branch's value is GALA-E0069 here rather than Go's "too
+// many return values".
+func (t *galaASTTransformer) checkHoistedReturns(kind string, branches ...[]ast.Stmt) error {
+	if t.returnSlot.fillable || !transpiler.IsUnusable(t.returnSlot.typ) && !t.returnSlot.typ.IsVoid() {
+		return nil
+	}
+	var found error
+	visit := func(n ast.Node) bool {
+		if found != nil {
+			return false
+		}
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			if pos, user := t.userReturns[x]; user && len(x.Results) > 0 {
+				found = galaerr.NewCodedSemanticError(
+					galaerr.CodeReturnInBranchingValue,
+					pos.line, pos.col,
+					fmt.Sprintf("`return` with a value inside %s leaves the function, which returns nothing", withArticle(kind)),
+					fmt.Sprintf("to give the %s this value, end the %s in it instead of `return`", kind, branchNoun(kind)))
+			}
+		}
+		return true
+	}
+	for _, stmts := range branches {
+		for _, s := range stmts {
+			ast.Inspect(s, visit)
+		}
+	}
+	return found
 }
 
 // leavingValuesType is the settled type the values of the source `return`s in

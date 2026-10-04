@@ -104,6 +104,17 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 		})
 	}
 
+	// A `return` with a value meant as the arm's value, in a function that
+	// returns nothing: it leaves the function, which has no value to return.
+	_, err := trans.Transpile(header+"func show(n int) {\n    val s = n match {\n        case 0 => { return \"zero\" }\n        case _ => \"other\"\n    }\n    Println(s)\n}\n", "")
+	require.Error(t, err)
+	var se *galaerr.SemanticError
+	require.True(t, errors.As(err, &se), "want a SemanticError, got %v", err)
+	assert.Equal(t, galaerr.CodeReturnInBranchingValue, se.Code)
+	assert.Contains(t, se.Error(), "`return` with a value inside a match leaves the function, which returns nothing")
+	assert.Equal(t, 7, se.Line)
+	assert.Equal(t, 20, se.Column)
+
 	validCases := []struct{ name, input string }{
 		{"returned match", "func f(o Option[int]) int {\n    return o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"trailing match of a function", "func f(o Option[int]) int {\n    Println(\"x\")\n    o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
