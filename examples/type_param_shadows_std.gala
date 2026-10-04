@@ -4,21 +4,22 @@ import . "martianoff/gala/collection_immutable"
 
 // A type parameter means itself everywhere in its declaration, even when it is
 // named like a std type or variant (Some, Option, Try, Tuple, Left) or like a
-// type an import brings in (Array).
+// type an import brings in (Array). As in Go, it shadows every outer name:
+// inside `func f[Some any]`, `Some` is the type parameter, never std's Some.
 
 func id[Some any](x Some) Some = x
 
-// Some(x) is still the std constructor: a type parameter names a type only.
-func wrap[Some any](x Some) Option[Some] = Some(x)
+func first[Some any](xs Array[Some]) Option[Some] = xs.HeadOption()
 
 func pair[Option any, Try any](a Option, b Try) Tuple[Option, Try] = (a, b)
 
 func firstOr[Array any](xs List[Array], d Array) Array = xs.HeadOption().GetOrElse(d)
 
-func unwrapOr[Some any](o Option[Some], d Some) Some = o match {
-    case Some(v) => v
-    case _ => d
-}
+// Each declaration binds its own names: a lambda typed from Try in one and
+// from Option in the next keeps its own type parameter.
+func same[Try any](xs Array[Try]) Array[Try] = xs.Map((x) => x)
+
+func alsoSame[Option any](xs Array[Option]) Array[Option] = xs.Map((x) => x)
 
 func annotated[Some any](x Some) Some {
     val y Some = x
@@ -59,10 +60,11 @@ func describe[Some any](r Res[Some]) string = r match {
 
 func main() {
     Println(id(3))
-    Println(wrap("w").GetOrElse("none"))
+    Println(first(ArrayOf("w")).GetOrElse("none"))
     Println(pair(1, "b"))
     Println(firstOr(ListOf(4, 5), 0))
-    Println(unwrapOr(None[int](), 9))
+    Println(same(ArrayOf(9)))
+    Println(alsoSame(ArrayOf("o")))
     Println(annotated("a"))
     Println(wrapRight("r").Get())
     Println(Box(2).Map((x) => s"v$x").Get())

@@ -381,17 +381,9 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 		return nil, err
 	}
 	base = t.unwrapImmutable(base)
-	var indices []ast.Expr
-	for _, eCtx := range exprList.AllExpression() {
-		if name := t.typeParamIndex(eCtx); name != "" {
-			indices = append(indices, ast.NewIdent(name))
-			continue
-		}
-		index, err := t.transformExpression(eCtx)
-		if err != nil {
-			return nil, err
-		}
-		indices = append(indices, index)
+	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
+	if err != nil {
+		return nil, err
 	}
 	if len(indices) == 1 {
 		return &ast.IndexExpr{X: base, Index: indices[0]}, nil

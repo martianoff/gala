@@ -147,15 +147,7 @@ func (t *galaASTTransformer) lookupTypeName(name string) transpiler.Type {
 		return transpiler.NilType{}
 	}
 
-	// 2. A type parameter of the enclosing generic declaration shadows every
-	// type outside it — std's, an import's, the package's own — exactly as in
-	// Go, so it names no declared type.
-	if t.activeTypeParams[name] {
-		t.traceType(nil, transpiler.NilType{}, "scope:type-param:"+name)
-		return transpiler.NilType{}
-	}
-
-	// 3. Use unified type resolution for type metadata lookup
+	// 2. Use unified type resolution for type metadata lookup
 	resolved := t.resolveTypeMetaName(name)
 	if resolved != "" {
 		result := transpiler.ParseType(resolved)

@@ -112,9 +112,39 @@ func TestTypeParamShadowsStdName(t *testing.T) {
 		},
 		{
 			name:        "type parameter used as a std type argument",
-			input:       typeParamHeader + `func wrap[Some any](x Some) Option[Some] = Some(x)`,
-			mustContain: []string{"func wrap[Some any](x Some) std.Option[Some] {"},
+			input:       typeParamHeader + `func first[Some any](xs Array[Some]) Option[Some] = xs.HeadOption()`,
+			mustContain: []string{"func first[Some any](xs Array[Some]) std.Option[Some] {"},
 			mustNotHave: []string{"std.Option[std.Some]"},
+		},
+		{
+			// Name normalization is memoized across declarations; an answer
+			// for Option or Try outside a generic declaration must not be
+			// reused inside one that binds the name.
+			name: "declarations after others that resolve the same names",
+			input: typeParamHeader + `type HasLen interface {
+    Size() int
+}
+
+struct Bag(N int)
+
+func (b Bag) Size() int = b.N
+
+func m1[Try any](xs Array[Try]) Array[Try] = xs.Map((o) => o)
+
+func m2[Option any](xs Array[Option]) Array[Option] = xs.Map((o) => o)
+
+func m3[Try HasLen](xs Array[Try]) Array[Try] = xs.Map((o) => o)`,
+			mustContain: []string{"func(o Try) Try", "func(o Option) Option"},
+			mustNotHave: []string{"std.Option", "std.Try"},
+		},
+		{
+			// As in Go, the type parameter shadows a value name too: here
+			// Wrap(3) is a conversion to the type parameter, not the struct.
+			name: "type parameter shadows a package type's constructor",
+			input: typeParamHeader + `struct Wrap(N int)
+
+func mk[Wrap any](x Wrap) Wrap = Wrap(x)`,
+			mustContain: []string{"func mk[Wrap any](x Wrap) Wrap {\n\treturn Wrap(x)\n}"},
 		},
 		{
 			name:        "type parameters named like std types",

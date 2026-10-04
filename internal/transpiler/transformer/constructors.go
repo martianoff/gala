@@ -39,6 +39,13 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			return ident, nil
 		}
 
+		// A type parameter of the enclosing generic declaration shadows every
+		// name outside it, as in Go: `Some[Left](a)` in `func f[Left any]`
+		// names the type parameter, not std's Left.
+		if t.activeTypeParams[name] {
+			return ident, nil
+		}
+
 		// A type the package declares shadows a std type or companion of the
 		// same name (`Seq`, `Left`).
 		if t.packageDeclaresType(name) {

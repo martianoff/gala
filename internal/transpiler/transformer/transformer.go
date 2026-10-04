@@ -655,6 +655,13 @@ var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 //
 // Returns the resolved name and whether resolution succeeded.
 func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string) bool) (string, bool) {
+	// A type parameter of the enclosing generic declaration shadows every
+	// name outside it — std's, an import's, the package's own — as in Go, so
+	// a bare name it binds resolves to no declared type.
+	if t.activeTypeParams[typeName] {
+		return "", false
+	}
+
 	// 1. Try exact match first
 	if exists(typeName) {
 		return typeName, true
@@ -923,6 +930,11 @@ func (t *galaASTTransformer) packageDeclaresType(name string) bool {
 // the name is taken, so no other type — an import's, through the fallbacks
 // of getTypeMeta — may answer for it.
 func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
+	// A type parameter of the enclosing generic declaration is no declared
+	// type, whatever else shares its name (see resolveTypeName).
+	if t.activeTypeParams[typeName] {
+		return ""
+	}
 	// A bare name the package's own hand-written .go files declare is that
 	// type, whatever an import also exports under the name: Go resolves it in
 	// the package scope first, and so must the transpiler. It has no GALA

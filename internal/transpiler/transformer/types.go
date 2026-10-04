@@ -83,10 +83,9 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 				return ast.NewIdent("any"), nil
 			}
 			ident = ast.NewIdent(typeName)
-			// Use resolution to determine if this type belongs to an imported
-			// package. A type parameter of the enclosing declaration resolves
-			// to nothing and is emitted as written.
-			if resolvedType := t.lookupTypeName(typeName); !resolvedType.IsNil() {
+			// Use resolution to determine if this type belongs to an imported package
+			resolvedType := t.lookupTypeName(typeName)
+			if !resolvedType.IsNil() {
 				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 					// Type belongs to an imported package, use package-qualified identifier
 					if pkg == registry.StdPackageName {
