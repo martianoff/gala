@@ -147,14 +147,14 @@ func TestDecoder_InvalidUTF8(t *testing.T) {
 // YAML 1.2 (section 5.1) allows only printable characters in a stream, and
 // no byte order mark inside a scalar. DEL, the C1 controls U+0080-U+009F,
 // U+FEFF, U+FFFE and U+FFFF are not allowed, so a string holding one is
-// double-quoted with the character escaped: the other one-byte characters
-// as \xXX and the rest as \uXXXX. NEL and the line and paragraph separators
-// are line breaks to YAML 1.1 readers, so they are escaped too, as \N, \L
-// and \P.
+// double-quoted with the character escaped. NEL and the line and paragraph
+// separators are line breaks to YAML 1.1 readers, so they are escaped too,
+// with their own escapes \N, \L and \P. Every other escaped character below
+// U+0100 is written as \xXX, and the rest as \uXXXX.
 func TestEncoder_NonPrintableEscaped(t *testing.T) {
 	const bs = "\\"
-	// U+007E, U+00A0, U+FEFE, U+FFFD and U+10000 are printable.
-	printableNeighbours := string([]rune{0x7e, 0xa0, 0xfefe, 0xfffd, 0x10000})
+	// U+007E, U+00A0, U+2027, U+202A, U+FEFE, U+FFFD and U+10000 are printable.
+	printableNeighbours := string([]rune{0x7e, 0xa0, 0x2027, 0x202a, 0xfefe, 0xfffd, 0x10000})
 	tests := []struct {
 		name string
 		key  string

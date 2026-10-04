@@ -42,8 +42,9 @@ func skipValue(d *JsonDecoderImpl)  { d.Skip() }
 //
 //	-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?
 //
-// as encoding/json does. Every other spelling is an error that names the
-// offset where the number starts and the text it read there.
+// as encoding/json does, both when reading a number and when skipping a
+// value. Every other spelling is an error (TestDecoder_InvalidNumberErrors
+// checks the messages).
 func TestDecoder_NumberGrammar(t *testing.T) {
 	tests := []struct {
 		in    string
@@ -346,6 +347,35 @@ func TestDecoder_SkipDepthLimit(t *testing.T) {
 	}
 	if err := decodeDocument(strings.Repeat("[", 5_000_000), skipValue); err == "" {
 		t.Fatalf("5M open brackets did not fail")
+	}
+}
+
+// The limit counts the whole document: containers the caller opened and the
+// ones Skip steps over inside them.
+func TestDecoder_DepthLimitSpansReadsAndSkip(t *testing.T) {
+	openArrays := func(d *JsonDecoderImpl, n int) {
+		for i := 0; i < n; i++ {
+			d.StartArray()
+		}
+	}
+	if got, want := decodeErr(func() { openArrays(NewJsonDecoder(strings.Repeat("[", 10001)), 10001) }),
+		"json at pos 10000: exceeded max depth 10000"; got != want {
+		t.Fatalf("typed reads: error = %q, want %q", got, want)
+	}
+	in := strings.Repeat("[", 6000) + strings.Repeat("[", 4001)
+	if got, want := decodeErr(func() {
+		d := NewJsonDecoder(in)
+		openArrays(d, 6000)
+		d.Skip()
+	}), "json at pos 10000: exceeded max depth 10000"; got != want {
+		t.Fatalf("reads then Skip: error = %q, want %q", got, want)
+	}
+	if err := decodeErr(func() {
+		d := NewJsonDecoder(strings.Repeat("[", 10000) + strings.Repeat("]", 10000))
+		openArrays(d, 6000)
+		d.Skip()
+	}); err != "" {
+		t.Fatalf("10000 levels across reads and Skip: %s", err)
 	}
 }
 

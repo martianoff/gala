@@ -303,11 +303,6 @@ func isPlainSafe(s string) bool {
 	if s == "" || !utf8.ValidString(s) {
 		return false
 	}
-	// Tabs, line breaks and the other characters that need an escape can
-	// only be written in a double-quoted scalar.
-	if strings.IndexFunc(s, needsYamlEscape) >= 0 {
-		return false
-	}
 	if s[0] == ' ' {
 		return false
 	}
@@ -318,6 +313,11 @@ func isPlainSafe(s string) bool {
 	switch s[0] {
 	case '-', '?', ':', ',', '[', ']', '{', '}', '#', '&', '*', '!',
 		'|', '>', '\'', '"', '%', '@', '`':
+		return false
+	}
+	// Tabs, line breaks and the other characters that need an escape can
+	// only be written in a double-quoted scalar.
+	if strings.IndexFunc(s, needsYamlEscape) >= 0 {
 		return false
 	}
 	for i := 0; i < len(s); i++ {

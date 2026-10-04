@@ -225,9 +225,31 @@ func (d *JsonDecoderImpl) StartObject() {
     // panics on the leading ',' of element 2+. The primitive Read* paths
     // already do this; objects/arrays were missing the same hook.
     d.consumeElemComma()
-    d.expectByte('{')
-    d.stack = go_interop.SliceAppend(d.stack, 'o')
+    d.openContainer('{', 'o')
+}
+
+// openContainer steps over the opening byte of an object or array that the
+// caller decodes, and records it as kind ('o' or 'a') on the stack.
+func (d *JsonDecoderImpl) openContainer(open byte, kind byte) {
+    d.skipWs()
+    d.checkDepth(d.stack.Size() + 1)
+    d.expectByte(open)
+    d.stack = go_interop.SliceAppend(d.stack, kind)
     d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
+}
+
+// maxJsonDepth is the deepest container nesting the decoder reads or skips,
+// the limit encoding/json has too. Deeper input is a decode error rather
+// than a stack overflow, which would end the process instead of failing the
+// decode.
+val maxJsonDepth = 10000
+
+// checkDepth fails the decode when a container at pos would sit depth
+// containers deep in the document.
+func (d *JsonDecoderImpl) checkDepth(depth int) {
+    if depth > maxJsonDepth {
+        go_builtins.Panic(s"json at pos ${d.pos}: exceeded max depth $maxJsonDepth")
+    }
 }
 
 func (d *JsonDecoderImpl) EndObject() {
@@ -240,9 +262,7 @@ func (d *JsonDecoderImpl) StartArray() {
     // See StartObject — the enclosing array context's leading ',' must be
     // consumed before we can recognise the '[' of a nested array element.
     d.consumeElemComma()
-    d.expectByte('[')
-    d.stack = go_interop.SliceAppend(d.stack, 'a')
-    d.firstConsumed = go_interop.SliceAppend(d.firstConsumed, false)
+    d.openContainer('[', 'a')
 }
 
 func (d *JsonDecoderImpl) EndArray() {
@@ -377,7 +397,7 @@ func (d *JsonDecoderImpl) ReadNull() {
 // decode error.
 func (d *JsonDecoderImpl) Skip() {
     d.consumeElemComma()
-    d.skipValue(0)
+    d.skipValue(d.stack.Size())
 }
 
 // End checks that only whitespace follows the decoded value: a document is
@@ -558,13 +578,8 @@ func isNumberTokenByte(c byte) bool =
 
 func isDigit(c byte) bool = c >= '0' && c <= '9'
 
-// maxSkipDepth is the deepest container nesting Skip steps over, the limit
-// encoding/json has too. Deeper input is a decode error rather than a stack
-// overflow, which would end the process instead of failing the decode.
-val maxSkipDepth = 10000
-
 // skipValue steps over the value at pos, which sits depth containers deep
-// inside the skipped value, and checks it fully.
+// in the document, and checks it fully.
 func (d *JsonDecoderImpl) skipValue(depth int) {
     d.skipWs()
     if d.pos >= d.data.Size() {
@@ -586,9 +601,7 @@ func (d *JsonDecoderImpl) skipValue(depth int) {
 // and whose closing byte is close: members separated by ',', each a
 // `"key": value` field in an object and a value in an array.
 func (d *JsonDecoderImpl) skipContainer(close byte, depth int) {
-    if depth > maxSkipDepth {
-        go_builtins.Panic(s"json at pos ${d.pos}: exceeded max depth $maxSkipDepth")
-    }
+    d.checkDepth(depth)
     d.pos = d.pos + 1
     if d.skipByte(close) {
         return
