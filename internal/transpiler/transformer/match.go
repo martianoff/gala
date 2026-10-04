@@ -685,11 +685,6 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 		if variantName == "" {
 			continue
 		}
-		// A name bound in scope is a value — an instance extractor such as a
-		// compiled regex `re(a, b)` — not a companion naming a sealed type.
-		if _, bound := t.lookupBinding("", variantName); bound {
-			continue
-		}
 
 		// Look up the variant in companion objects to find the parent sealed type
 		companion := t.lookupCompanion(variantName)

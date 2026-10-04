@@ -150,6 +150,43 @@ func main() {
 			wantAbsent:   []string{"endFrame{}.Unapply("},
 		},
 		{
+			// The same name in a guarded arm and in a tuple element binds too:
+			// the lowering decides as the default-arm classification does.
+			name: "variant of an unrelated type binds in every position",
+			src: lowercaseFrame + `func describe(n int) string = n match {
+    case endFrame if endFrame > 5 => s"big $endFrame"
+    case _ => "small"
+}
+
+func pair(p Tuple[int, int]) string = p match {
+    case (endFrame, k) => s"$endFrame $k"
+}
+
+func main() {
+    Println(describe(7))
+    Println(pair((1, 2)))
+    Println(endFrame())
+}`,
+			wantContains: []string{"endFrame := obj"},
+			wantAbsent:   []string{"endFrame{}.Unapply("},
+		},
+		{
+			// A field typed by an alias of a sealed type is matched as that
+			// sealed type: the nested variant tests, it does not bind.
+			name: "nested variant under an alias-typed field",
+			src: lowercaseFrame + `type alias frame
+
+func describe(o Option[alias]) string = o match {
+    case Some(endFrame) => "some end"
+    case Some(other) => s"some $other"
+    case None => "none"
+}
+
+func main() { Println(describe(Some[alias](endFrame()))) }`,
+			wantContains: []string{"endFrame{}.Unapply("},
+			wantAbsent:   []string{"endFrame := "},
+		},
+		{
 			// An `any` subject is no sealed type, so a variant's name binds.
 			name: "variant name against an any subject still binds",
 			src: lowercaseFrame + `func describe(v any) string = v match {

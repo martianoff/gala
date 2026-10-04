@@ -1532,7 +1532,7 @@ Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case 
 
 A few edge cases:
 
-- **Variants and extractors come first.** A name that is a zero-field variant of the matched sealed type, or a zero-field extractor (`case None`, `case Debug`, `case endFrame`), matches that variant, whatever the case of its first letter, even if a value has the same name.
+- **Variants and extractors come first.** A name that is a zero-field variant of the matched sealed type, or a standalone zero-field extractor (`case None`, `case Debug`, `case endFrame`), matches that variant, whatever the case of its first letter, even if a value has the same name. A variant of some other sealed type is an ordinary binding.
 - **Lowercase values never compare.** Any other lowercase identifier is a fresh binding, even when an outer value has the same name: it shadows that value and matches everything. To compare against a lowercase value, use a guard (below).
 - **A name cannot appear twice in one pattern.** `case (X, X)` and `case (x, x)` are rejected, because a name bound earlier in the same pattern is not a value to compare with. To match equal parts, use `case (a, b) if a == b`.
 - **Unknown names bind.** A capitalized identifier that names no value, variant or extractor still binds, as shown in [Basic Sealed Type](#basic-sealed-type).
