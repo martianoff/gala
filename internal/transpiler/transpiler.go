@@ -394,15 +394,25 @@ func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
 }
 
 // SynthesizedOpaqueMethods describes the methods the transpiler generates on
-// an opaque type and that the type does not declare itself: Hash, and Compare
-// unless the underlying type is bool (the transformer's
-// isSynthesizedOpaqueMethod is the authority). It is for presentation (hover,
-// gala doc); nil for any other type. A same-package .go method of the name is
-// not visible here.
-func (m *TypeMetadata) SynthesizedOpaqueMethods() []*MethodMetadata {
+// an opaque type: Hash, and Compare unless the underlying type is bool (the
+// transformer's transformOpaqueTypeDeclaration is the authority). Each is
+// left out when the type declares it itself, in GALA or in a .go file of its
+// package (looked up in goInfo, which may be nil). It is for presentation
+// (hover, completion, gala doc); nil for any other type.
+func (m *TypeMetadata) SynthesizedOpaqueMethods(goInfo *GoTypeInfo) []*MethodMetadata {
 	underlying, ok := m.OpaqueUnderlying()
 	if !ok {
 		return nil
+	}
+	declares := func(name string) bool {
+		if _, ok := m.Methods[name]; ok {
+			return true
+		}
+		if rec := goInfo.GetGalaTypeMethods(m.Package + "." + m.Name); rec != nil {
+			_, ok := rec.Methods[name]
+			return ok
+		}
+		return false
 	}
 	var self Type = NamedType{Name: m.Name}
 	if len(m.TypeParams) > 0 {
@@ -413,10 +423,10 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods() []*MethodMetadata {
 		self = GenericType{Base: self, Params: params}
 	}
 	var out []*MethodMetadata
-	if _, declared := m.Methods["Hash"]; !declared {
+	if !declares("Hash") {
 		out = append(out, &MethodMetadata{Name: "Hash", Package: m.Package, ReturnType: BasicType{Name: "uint32"}})
 	}
-	if _, declared := m.Methods["Compare"]; !declared && underlying.String() != "bool" {
+	if !declares("Compare") && underlying.String() != "bool" {
 		out = append(out, &MethodMetadata{
 			Name: "Compare", Package: m.Package,
 			ParamNames: []string{"other"}, ParamTypes: []Type{self},

@@ -273,7 +273,7 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 			continue
 		}
 		seen[bare] = true
-		out.Types = append(out.Types, buildDocType(name, meta))
+		out.Types = append(out.Types, buildDocType(name, meta, rich.GoTypeInfo))
 	}
 	for name, meta := range rich.Functions {
 		if meta == nil || !declaredBy(meta.Package, pkgName) {
@@ -297,7 +297,7 @@ func collectPackageDoc(pkgName string, rich *transpiler.RichAST) *docPackage {
 	return out
 }
 
-func buildDocType(name string, meta *transpiler.TypeMetadata) docType {
+func buildDocType(name string, meta *transpiler.TypeMetadata, goInfo *transpiler.GoTypeInfo) docType {
 	dt := docType{
 		Name:       bareTypeName(name),
 		Doc:        meta.Doc,
@@ -346,7 +346,7 @@ func buildDocType(name string, meta *transpiler.TypeMetadata) docType {
 			Returns:    typeString(m.ReturnType),
 		})
 	}
-	for _, m := range meta.SynthesizedOpaqueMethods() {
+	for _, m := range meta.SynthesizedOpaqueMethods(goInfo) {
 		dt.Methods = append(dt.Methods, docSignat{
 			Name:        m.Name,
 			Params:      namedTypes(m.ParamNames, m.ParamTypes),

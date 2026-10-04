@@ -7,13 +7,14 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// A method the type declares itself replaces the synthesized one, and an
-// opaque type over bool gets no Compare.
+// A method the type declares itself, in GALA or in a .go file of its package,
+// replaces the synthesized one, and an opaque type over bool gets no Compare.
 func TestSynthesizedOpaqueMethods(t *testing.T) {
 	tests := []struct {
-		name string
-		meta *transpiler.TypeMetadata
-		want []string
+		name   string
+		meta   *transpiler.TypeMetadata
+		goInfo *transpiler.GoTypeInfo
+		want   []string
 	}{
 		{
 			name: "int64",
@@ -26,11 +27,19 @@ func TestSynthesizedOpaqueMethods(t *testing.T) {
 			want: []string{"Hash"},
 		},
 		{
-			name: "declared Hash wins",
+			name: "Hash declared in GALA",
 			meta: &transpiler.TypeMetadata{
 				Name: "Key", IsOpaque: true, Underlying: transpiler.BasicType{Name: "string"},
 				Methods: map[string]*transpiler.MethodMetadata{"Hash": {Name: "Hash"}},
 			},
+			want: []string{"Compare"},
+		},
+		{
+			name: "Hash declared in a .go file of the package",
+			meta: &transpiler.TypeMetadata{Name: "UserID", Package: "ids", IsOpaque: true, Underlying: transpiler.BasicType{Name: "int64"}},
+			goInfo: &transpiler.GoTypeInfo{GalaTypeMethods: map[string]*transpiler.GoTypeData{
+				"ids.UserID": {Methods: map[string]*transpiler.GoFuncSignature{"Hash": {}}},
+			}},
 			want: []string{"Compare"},
 		},
 		{
@@ -42,7 +51,7 @@ func TestSynthesizedOpaqueMethods(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got []string
-			for _, m := range tt.meta.SynthesizedOpaqueMethods() {
+			for _, m := range tt.meta.SynthesizedOpaqueMethods(tt.goInfo) {
 				got = append(got, m.Name)
 			}
 			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
@@ -55,7 +64,7 @@ func TestSynthesizedOpaqueMethods(t *testing.T) {
 // A phantom-typed opaque type compares against itself with its type
 // parameters.
 func TestFormatTypeMetaOpaqueGeneric(t *testing.T) {
-	got := formatTypeMeta(&transpiler.TypeMetadata{
+	got := formatTypeMeta(&transpiler.RichAST{}, &transpiler.TypeMetadata{
 		Name: "Id", Package: "ids", IsOpaque: true,
 		TypeParams: []string{"T"},
 		Underlying: transpiler.BasicType{Name: "int64"},

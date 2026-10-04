@@ -175,7 +175,7 @@ func declarationAt(richAST *transpiler.RichAST, path string, line, char int, wor
 
 	for _, tm := range richAST.Types {
 		if tm.Name == word && sameSourceFile(tm.DefinedIn, path) && posCovers(tm.Pos, line, char, word) {
-			return formatTypeMeta(tm)
+			return formatTypeMeta(richAST, tm)
 		}
 	}
 	for _, fm := range richAST.Functions {
@@ -209,7 +209,7 @@ func packageMemberHover(richAST *transpiler.RichAST, pkg, name string) string {
 	case m.Variant != nil:
 		return formatVariant(m.Variant, m.Parent)
 	case m.Type != nil:
-		return formatTypeMeta(m.Type)
+		return formatTypeMeta(richAST, m.Type)
 	case m.Func != nil:
 		return formatFuncMeta(m.Func)
 	}
@@ -268,7 +268,7 @@ func memberHover(richAST *transpiler.RichAST, recvType, name string) string {
 	if ft, ok := tm.Fields[name]; ok {
 		return formatField(tm, name, ft)
 	}
-	if m := synthesizedMethod(tm, name); m != nil {
+	if m := synthesizedMethod(richAST, tm, name); m != nil {
 		return formatMethodMeta(tm, m) + "\n*Synthesized for opaque types*\n"
 	}
 	return ""
@@ -276,13 +276,21 @@ func memberHover(richAST *transpiler.RichAST, recvType, name string) string {
 
 // synthesizedMethod returns the Hash or Compare the transpiler generates on an
 // opaque type, or nil when name is not one of them.
-func synthesizedMethod(tm *transpiler.TypeMetadata, name string) *transpiler.MethodMetadata {
-	for _, m := range tm.SynthesizedOpaqueMethods() {
+func synthesizedMethod(richAST *transpiler.RichAST, tm *transpiler.TypeMetadata, name string) *transpiler.MethodMetadata {
+	for _, m := range tm.SynthesizedOpaqueMethods(goTypeInfo(richAST)) {
 		if m.Name == name {
 			return m
 		}
 	}
 	return nil
+}
+
+// goTypeInfo is richAST's Go type info, nil when there is no RichAST.
+func goTypeInfo(richAST *transpiler.RichAST) *transpiler.GoTypeInfo {
+	if richAST == nil {
+		return nil
+	}
+	return richAST.GoTypeInfo
 }
 
 // findSealedVariant locates a `case` by name, preferring one declared in
@@ -333,11 +341,11 @@ func lookupSymbol(richAST *transpiler.RichAST, name string) string {
 		}
 	}
 	if hasType {
-		return formatTypeMeta(typeMeta)
+		return formatTypeMeta(richAST, typeMeta)
 	}
 	for key, typeMeta := range richAST.Types {
 		if strings.HasSuffix(key, "."+name) {
-			return formatTypeMeta(typeMeta)
+			return formatTypeMeta(richAST, typeMeta)
 		}
 	}
 	if fm := findFunction(richAST, name); fm != nil {
@@ -391,7 +399,7 @@ func renderHover(signature, doc, pkg string) string {
 	return b.String()
 }
 
-func formatTypeMeta(meta *transpiler.TypeMetadata) string {
+func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) string {
 	var b strings.Builder
 	b.WriteString("```gala\n")
 	switch {
@@ -431,7 +439,7 @@ func formatTypeMeta(meta *transpiler.TypeMetadata) string {
 			b.WriteString(fmt.Sprintf("- `%s`\n", variantSignature(&v)))
 		}
 	}
-	synthesized := meta.SynthesizedOpaqueMethods()
+	synthesized := meta.SynthesizedOpaqueMethods(goTypeInfo(richAST))
 	if len(meta.Methods) > 0 || len(synthesized) > 0 {
 		b.WriteString("\n**Methods:**\n")
 		for _, name := range slices.Sorted(maps.Keys(meta.Methods)) {

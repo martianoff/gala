@@ -468,7 +468,7 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 	}
 
 	// Hash / Compare synthesized on an opaque type
-	for _, m := range tm.SynthesizedOpaqueMethods() {
+	for _, m := range tm.SynthesizedOpaqueMethods(goTypeInfo(richAST)) {
 		sig := formatMethodSig(m)
 		insertText, format := callInsertText(m.Name, m.ParamNames, nil, snippets)
 		items = append(items, lsp.CompletionItem{
