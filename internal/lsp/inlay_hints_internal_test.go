@@ -26,6 +26,16 @@ func TestCasePatternHints_TypeParamsByScope(t *testing.T) {
 			},
 		},
 		"main.UserID": {Name: "UserID", IsOpaque: true, Underlying: transpiler.BasicType{Name: "int64"}},
+		"main.frame": {
+			Name: "frame", IsSealed: true,
+			SealedVariants: []transpiler.SealedVariant{{Name: "endFrame"}, {Name: "EndAll"}},
+		},
+		"main.wrap": {
+			Name: "wrap", IsSealed: true,
+			SealedVariants: []transpiler.SealedVariant{
+				{Name: "wrapped", FieldNames: []string{"F"}, FieldTypes: []transpiler.Type{transpiler.NamedType{Package: "main", Name: "frame"}}},
+			},
+		},
 	}, PackageVals: map[string]*transpiler.PackageValMetadata{"Root": {}}}
 
 	cases := []struct {
@@ -39,6 +49,11 @@ func TestCasePatternHints_TypeParamsByScope(t *testing.T) {
 		{name: "opaque type with a literal", line: "    case UserID(0) => 0", want: nil},
 		{name: "opaque type with a wildcard", line: "    case UserID(_) => 0", want: nil},
 		{name: "opaque type with a stable identifier", line: "    case UserID(Root) => 0", want: nil},
+		// A variant of the field's sealed type tests the field: no binding,
+		// whatever the case of its first letter.
+		{name: "lowercase variant of the field's type", line: "    case wrapped(endFrame) => 0", want: nil},
+		{name: "capitalized variant of the field's type", line: "    case wrapped(EndAll) => 0", want: nil},
+		{name: "binding of a sealed-typed field", line: "    case wrapped(f) => f", want: []string{`": main.frame"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

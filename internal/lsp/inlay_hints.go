@@ -207,6 +207,11 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 		if binding == "" || binding == "_" || strings.Contains(binding, " ") || isStablePatternName(binding, richAST) {
 			continue
 		}
+		if i < len(variant.FieldTypes) && isVariantOf(binding, variant.FieldTypes[i], richAST) {
+			// `case wrap(endFrame)` tests the field for that variant; it
+			// binds nothing to annotate.
+			continue
+		}
 		if i < len(variant.FieldTypes) {
 			// A field typed by the sealed type's own type parameter has no
 			// type to show until the subject is known; any other name — a
@@ -264,6 +269,27 @@ func isStablePatternName(name string, richAST *transpiler.RichAST) bool {
 	}
 	_, ok := richAST.PackageVals[name]
 	return ok
+}
+
+// isVariantOf reports whether name, written as a sub-pattern against a value
+// of type typ, is a variant of that sealed type — so the pattern tests the
+// value instead of binding it, whatever the case of the name's first letter
+// (as the transpiler decides it).
+func isVariantOf(name string, typ transpiler.Type, richAST *transpiler.RichAST) bool {
+	if typ == nil || richAST == nil {
+		return false
+	}
+	base := typ.BaseName()
+	if dot := strings.LastIndex(base, "."); dot >= 0 {
+		base = base[dot+1:]
+	}
+	for _, tm := range richAST.Types {
+		if tm.IsSealed && tm.Name == base &&
+			slices.ContainsFunc(tm.SealedVariants, func(v transpiler.SealedVariant) bool { return v.Name == name }) {
+			return true
+		}
+	}
+	return false
 }
 
 func makeTypeHint(line, col int, typeName string) lsp.InlayHint {

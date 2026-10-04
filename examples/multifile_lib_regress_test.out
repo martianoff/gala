@@ -136,3 +136,4 @@ Array(2, 1)
 http://localhost:8080/api hits=1 misses=0
 mode=fast true db true
 4 row 4 seat 7 47 ada row 1 seat 2 2
+tick 3, pause, stop
