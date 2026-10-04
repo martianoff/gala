@@ -381,9 +381,20 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 		return nil, err
 	}
 	base = t.unwrapImmutable(base)
-	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
-	if err != nil {
-		return nil, err
+	var indices []ast.Expr
+	for _, eCtx := range exprList.AllExpression() {
+		// A type parameter is never a value, so as an index it is a type
+		// argument (`Some[Left](a)` in `func f[Left any]`), and it shadows
+		// any same-named name outside its declaration — std's included.
+		if name := eCtx.GetText(); t.activeTypeParams[name] && !t.isVal(name) && !t.isVar(name) {
+			indices = append(indices, ast.NewIdent(name))
+			continue
+		}
+		index, err := t.transformExpression(eCtx)
+		if err != nil {
+			return nil, err
+		}
+		indices = append(indices, index)
 	}
 	if len(indices) == 1 {
 		return &ast.IndexExpr{X: base, Index: indices[0]}, nil

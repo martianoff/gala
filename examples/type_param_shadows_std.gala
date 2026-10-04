@@ -1,0 +1,66 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A type parameter means itself everywhere in its declaration, even when it is
+// named like a std type or variant (Some, Option, Try, Tuple, Left) or like a
+// type an import brings in (Array).
+
+func id[Some any](x Some) Some = x
+
+// Some(x) is still the std constructor: a type parameter names a type only.
+func wrap[Some any](x Some) Option[Some] = Some(x)
+
+func pair[Option any, Try any](a Option, b Try) Tuple[Option, Try] = (a, b)
+
+func firstOr[Array any](xs List[Array], d Array) Array = xs.HeadOption().GetOrElse(d)
+
+func unwrapOr[Some any](o Option[Some], d Some) Some = o match {
+    case Some(v) => v
+    case _ => d
+}
+
+func annotated[Some any](x Some) Some {
+    val y Some = x
+    val f = (v Some) => v
+    f(y)
+}
+
+// An explicit type argument names the type parameter too.
+func wrapRight[Left any](a Left) Option[Left] = Some[Left](a)
+
+struct Box[Option any](V Option)
+
+func (b Box[Option]) Get() Option = b.V
+
+func (b Box[Option]) Map[Try any](f func(Option) Try) Box[Try] = Box(f(b.V))
+
+type Holder[Tuple any] struct {
+    Value Tuple
+}
+
+func (h Holder[Tuple]) Twice() Array[Tuple] = ArrayOf[Tuple](h.Value, h.Value)
+
+sealed type Res[Some any] {
+    case Ok(V Some)
+    case Err(Msg string)
+}
+
+func describe[Some any](r Res[Some]) string = r match {
+    case Ok(v) => s"ok $v"
+    case Err(m) => s"err $m"
+}
+
+func main() {
+    Println(id(3))
+    Println(wrap("w").GetOrElse("none"))
+    Println(pair(1, "b"))
+    Println(firstOr(ListOf(4, 5), 0))
+    Println(unwrapOr(None[int](), 9))
+    Println(annotated("a"))
+    Println(wrapRight("r").Get())
+    Println(Box(2).Map((x) => s"v$x").Get())
+    Println(Holder(Value = 3).Twice())
+    Println(describe(Ok(1)))
+    Println(describe(Err[int]("bad")))
+}

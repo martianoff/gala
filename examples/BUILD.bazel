@@ -3873,6 +3873,15 @@ gala_exec_test(
     expected = "shadowed_function.out",
 )
 
+# A type parameter named like a std type or variant, or an imported type,
+# means the type parameter throughout its declaration.
+gala_exec_test(
+    name = "type_param_shadows_std",
+    src = "type_param_shadows_std.gala",
+    expected = "type_param_shadows_std.out",
+    deps = ["//collection_immutable"],
+)
+
 # `break` / `continue` in an arm of a statement match control the enclosing
 # loop (for-clause, condition and range loops, nested matches); a loop inside a
 # value match arm keeps its own `break`.

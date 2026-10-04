@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -75,6 +76,24 @@ func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 			delete(t.activeTypeParams, name)
 		}
 	}
+}
+
+// receiverTypeParams is the type parameters a receiver type declares: the
+// type arguments of `Box[T]` or `*Pair[A, B]`, each a bare name.
+func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
+	for ctx != nil && ctx.QualifiedIdentifier() == nil && len(ctx.AllType_()) == 1 {
+		ctx = ctx.Type_(0) // *Box[T]
+	}
+	if ctx == nil || ctx.TypeArguments() == nil {
+		return nil
+	}
+	var params []*ast.Field
+	for _, arg := range ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_() {
+		if name := arg.GetText(); token.IsIdentifier(name) {
+			params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}})
+		}
+	}
+	return params
 }
 
 // fieldListOrNil returns the fields of a possibly-nil field list.

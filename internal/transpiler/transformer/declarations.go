@@ -816,6 +816,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			err.Hint = receiverRebindHint(recvName)
 			return nil, err
 		}
+		// The receiver's type arguments (`func (b Box[T]) ...`) declare type
+		// parameters, as in Go: they are in scope for the receiver type itself,
+		// the signature and the body, and shadow any same-named type declared
+		// outside — std's included.
+		defer t.bindTypeParams(receiverTypeParams(recvCtx.Type_())...)()
 		recvTypeExpr, err := t.transformType(recvCtx.Type_())
 		if err != nil {
 			return nil, err
@@ -870,12 +875,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		}
 		typeParams = tp
 	}
-	// The receiver's type arguments (`func (b Box[T]) ...`) and the function's
-	// own type parameters are in scope for the signature and the body, and
-	// shadow any same-named type declared outside.
-	if originalRecvTypeExpr != nil {
-		defer t.bindTypeParams(t.extractTypeParams(originalRecvTypeExpr)...)()
-	}
+	// The function's own type parameters are in scope for the signature and
+	// the body, and shadow any same-named type declared outside.
 	defer t.bindTypeParams(fieldListOrNil(typeParams)...)()
 
 	// Signature

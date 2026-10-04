@@ -83,9 +83,10 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 				return ast.NewIdent("any"), nil
 			}
 			ident = ast.NewIdent(typeName)
-			// Use resolution to determine if this type belongs to an imported package
-			resolvedType := t.lookupTypeName(typeName)
-			if !resolvedType.IsNil() {
+			// Use resolution to determine if this type belongs to an imported
+			// package. A type parameter of the enclosing declaration resolves
+			// to nothing and is emitted as written.
+			if resolvedType := t.lookupTypeName(typeName); !resolvedType.IsNil() {
 				if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
 					// Type belongs to an imported package, use package-qualified identifier
 					if pkg == registry.StdPackageName {
@@ -254,10 +255,10 @@ func isPrimitiveType(name string) bool {
 }
 
 // isKnownStdType reports whether the bare name means a std type here, so it is
-// emitted as std.Name: std exports it, and the package does not declare a type
-// of its own under the name, which would shadow std's.
+// emitted as std.Name: std exports it, and neither a type parameter of the
+// enclosing generic declaration nor a type the package declares shadows it.
 func (t *galaASTTransformer) isKnownStdType(name string) bool {
-	return registry.IsStdType(name) && !t.packageDeclaresType(name)
+	return registry.IsStdType(name) && !t.activeTypeParams[name] && !t.packageDeclaresType(name)
 }
 
 func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
