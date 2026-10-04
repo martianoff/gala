@@ -187,6 +187,22 @@ func main() { Println(describe(Some[alias](endFrame()))) }`,
 			wantAbsent:   []string{"endFrame := "},
 		},
 		{
+			// concurrent.Future declares an unexported `fut` case. Another
+			// package cannot name it, so there `fut` is an ordinary binding.
+			name: "unexported variant of another package's type binds",
+			src: `package main
+
+import "martianoff/gala/concurrent"
+
+func count(o Option[concurrent.Future[int]]) int = o match {
+    case Some(fut) => fut.Await().GetOrElse(0)
+    case None => 0
+}
+
+func main() { Println(count(None[concurrent.Future[int]]())) }`,
+			wantContains: []string{"fut := "},
+		},
+		{
 			// An `any` subject is no sealed type, so a variant's name binds.
 			name: "variant name against an any subject still binds",
 			src: lowercaseFrame + `func describe(v any) string = v match {

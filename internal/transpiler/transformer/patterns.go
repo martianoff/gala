@@ -265,13 +265,15 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 // variant. This is deliberately scoped to the matched type: a bare identifier
 // that happens to share a name with some unrelated variant elsewhere in the
 // program is an ordinary binding. An alias of a sealed type (`type F frame`)
-// is matched as the type it names.
+// is matched as the type it names. An unexported variant of a sealed type
+// declared in another package is out of reach (see visibleHere): there the
+// name is an ordinary binding too.
 func (t *galaASTTransformer) sealedVariantOfMatchedType(name string, matchedType transpiler.Type) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
 	if matchedType == nil || transpiler.IsUnusable(matchedType) {
 		return nil, nil
 	}
 	meta := t.getTypeMeta(t.followAliasChain(matchedType).BaseName())
-	if meta == nil || !meta.IsSealed {
+	if meta == nil || !meta.IsSealed || !t.visibleHere(name, meta) {
 		return nil, nil
 	}
 	for i := range meta.SealedVariants {
@@ -378,10 +380,20 @@ func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.T
 // sealed type other than the known matched type is not one: the name binds.
 func (t *galaASTTransformer) bareExtractor(name string, matchedType transpiler.Type) (*transpiler.TypeMetadata, *transpiler.MethodMetadata) {
 	meta, unapplyMeta := t.zeroFieldExtractor(name)
-	if meta == nil || (!transpiler.IsUnusable(matchedType) && t.findSealedParentForVariant(name, "") != nil) {
+	if meta == nil || !t.visibleHere(name, meta) ||
+		(!transpiler.IsUnusable(matchedType) && t.findSealedParentForVariant(name, "") != nil) {
 		return nil, nil
 	}
 	return meta, unapplyMeta
+}
+
+// visibleHere reports whether name, a variant or type that meta's package
+// declares, can be referred to from the package being compiled: it is
+// exported, or that package is this one. Go's export rule, not a naming
+// heuristic — `concurrent.Future`'s unexported `fut` case is invisible to
+// another package, where `case FutureCmd(fut)` binds a name.
+func (t *galaASTTransformer) visibleHere(name string, meta *transpiler.TypeMetadata) bool {
+	return token.IsExported(name) || meta.Package == "" || meta.Package == t.packageName
 }
 
 // zeroFieldExtractor returns the type a bare pattern name names, and its
