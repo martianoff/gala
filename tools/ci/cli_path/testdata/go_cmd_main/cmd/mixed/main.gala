@@ -1,0 +1,8 @@
+package main
+
+import "example.com/gocmdmain/textstats"
+
+// The GALA half of a main package that also holds a hand-written .go file.
+func main() {
+    Println(s"${banner()}: ${textstats.WordCount("GALA and Go together")} words")
+}

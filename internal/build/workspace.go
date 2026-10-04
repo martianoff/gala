@@ -269,7 +269,9 @@ func PackageNameIn(dir string) string {
 		return ""
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+		// A _test.go file may declare the external <name>_test package, which
+		// is not the package the directory builds.
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
 		}
 		if name := detectPackageName(filepath.Join(dir, entry.Name())); name != "" {

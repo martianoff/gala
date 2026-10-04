@@ -229,10 +229,16 @@ func (b *Builder) Build(outputPath string) (string, error) {
 // files in it, and the user got the Go toolchain's "no Go files in
 // <workspace hash>/gen" naming a path they have no way to reason about.
 func (b *Builder) buildTarget() (string, error) {
-	if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
-		// Multi-package mode: the consumer was transpiled into gen/cmd/main,
-		// and is package main by construction.
-		return "./gen/cmd/main", nil
+	if rel := b.consumerRel(); rel != "" {
+		// Multi-package mode: the consumer package sits at its project path
+		// in gen/, its .gala files transpiled beside its copied .go files.
+		if pkg := PackageNameIn(filepath.Join(b.workspace.GenDir, rel)); pkg != "main" {
+			if b.verbose {
+				fmt.Printf("Package %q is a library, running compile check...\n", pkg)
+			}
+			return "", nil
+		}
+		return "./gen/" + filepath.ToSlash(rel), nil
 	}
 
 	switch pkg := PackageNameIn(b.workspace.GenDir); pkg {
@@ -605,19 +611,32 @@ func (b *Builder) ensureStdlib() error {
 // treeShape describes the layout this builder generates into gen/, for the
 // source-hash key. Empty is the plain build — library at the gen root. A
 // multi-package build (a directory argument, e.g. `gala build ./cmd/app`) also
-// synthesizes a consumer main, so it is keyed by the directory it came from.
+// builds a consumer package, so it is keyed by the directory it came from.
 //
 // The path is made relative to the project root so the key does not change when
 // the same project is built from a different absolute location.
 func (b *Builder) treeShape() string {
+	return filepath.ToSlash(b.consumerRel())
+}
+
+// consumerRel returns the consumer package's directory in a multi-package build
+// (a directory argument, e.g. `gala build ./cmd/app`), relative to both the
+// project and gen/, or "" for a plain build. The consumer is generated at its
+// own project path so that its transpiled .gala files and the .go files
+// copyNonGalaFiles puts there form one package: a main written in Go alone, or
+// in GALA and Go together, builds like a main written in GALA.
+func (b *Builder) consumerRel() string {
 	if b.sourceDir == "" || b.sourceDir == b.workspace.ProjectDir {
 		return ""
 	}
 	rel, err := filepath.Rel(b.workspace.ProjectDir, b.sourceDir)
-	if err != nil {
-		return b.sourceDir // outside the project: distinct, which is all the key needs
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		// The CLI only sets a source dir inside the project (the project is
+		// found by walking up from it); anything else is not a package of it,
+		// and transpileWithSourceDir rejects it.
+		return ""
 	}
-	return filepath.ToSlash(rel)
+	return rel
 }
 
 // transpile transpiles all .gala files in the project to the workspace.
@@ -790,7 +809,7 @@ func (b *Builder) transpile() error {
 // subdirectory (e.g., examples/hello/), transpile the project library first,
 // then the consumer source files on top of it.
 //
-// Workspace layout after transpilation:
+// Workspace layout after transpilation, for `gala build ./cmd/app`:
 //
 //	gen/
 //	  filter.gen.go          ← library (package server)
@@ -798,14 +817,30 @@ func (b *Builder) transpile() error {
 //	  ...
 //	  httpcore/              ← local Go subpackages
 //	  cmd/
-//	    main/
-//	      main.gen.go        ← consumer (package main)
+//	    app/
+//	      main.gen.go        ← consumer .gala files (package main)
+//	      flags.go           ← consumer .go files, copied
 //
-// The consumer's imports of the project module are rewritten to point to gen/.
+// The consumer may be written in GALA, in Go, or in both. The consumer's
+// imports of the project module are rewritten to point to gen/.
 func (b *Builder) transpileWithSourceDir() error {
 	if b.verbose {
 		fmt.Printf("Multi-package build: library from %s, main from %s\n",
 			b.workspace.ProjectDir, b.sourceDir)
+	}
+
+	rel := b.consumerRel()
+	if rel == "" {
+		return fmt.Errorf("%s is not inside the project %s", b.sourceDir, b.workspace.ProjectDir)
+	}
+	// Checked before the library is transpiled, so a mistyped directory fails
+	// at once.
+	consumerFiles, err := findGalaFiles(b.sourceDir)
+	if err != nil {
+		return fmt.Errorf("finding consumer files: %w", err)
+	}
+	if len(consumerFiles) == 0 && !dirHasGoFiles(b.sourceDir) {
+		return fmt.Errorf("no .gala or .go files found in %s", b.sourceDir)
 	}
 
 	// Clean gen directory
@@ -836,10 +871,8 @@ func (b *Builder) transpileWithSourceDir() error {
 	consumerPrefix := b.sourceDir + string(filepath.Separator)
 	var libFiles []string
 	for _, f := range allLibFiles {
-		if b.sourceDir != "" && b.sourceDir != b.workspace.ProjectDir {
-			if f == b.sourceDir || strings.HasPrefix(f, consumerPrefix) {
-				continue
-			}
+		if strings.HasPrefix(f, consumerPrefix) {
+			continue
 		}
 		libFiles = append(libFiles, f)
 	}
@@ -897,21 +930,22 @@ func (b *Builder) transpileWithSourceDir() error {
 		return fmt.Errorf("copying local Go subpackages: %w", err)
 	}
 
-	// Step 2: Transpile consumer files (sourceDir) into gen/cmd/main/
-	consumerFiles, err := findGalaFiles(b.sourceDir)
-	if err != nil {
-		return fmt.Errorf("finding consumer files: %w", err)
-	}
-	if len(consumerFiles) == 0 {
-		return fmt.Errorf("no .gala files found in %s", b.sourceDir)
-	}
+	// Step 2: Transpile consumer files (sourceDir) into gen/<rel>/, beside the
+	// consumer's .go files copied above. A consumer written only in Go has
+	// nothing to transpile.
 	if b.verbose {
 		fmt.Printf("  Transpiling %d consumer files...\n", len(consumerFiles))
 	}
 
-	consumerDir := filepath.Join(b.workspace.GenDir, "cmd", "main")
+	consumerDir := filepath.Join(b.workspace.GenDir, rel)
 	if err := os.MkdirAll(consumerDir, 0755); err != nil {
 		return fmt.Errorf("creating consumer dir: %w", err)
+	}
+	// The project-wide copy above leaves out testdata/, vendor/ and dot
+	// directories; a consumer named explicitly is copied wherever it sits.
+	// Files already copied are kept.
+	if err := copyNonGalaFiles(b.sourceDir, consumerDir, b.verbose); err != nil {
+		return fmt.Errorf("copying consumer Go files: %w", err)
 	}
 
 	// Reuse libBatch for consumer files: SetPackageFiles is per-call so
@@ -944,7 +978,7 @@ func (b *Builder) transpileWithSourceDir() error {
 			return fmt.Errorf("writing %s: %w", outPath, err)
 		}
 		if b.verbose {
-			fmt.Printf("    %s -> cmd/main/%s\n", filepath.Base(galaFile), outName)
+			fmt.Printf("    %s -> %s\n", filepath.Base(galaFile), filepath.ToSlash(filepath.Join(rel, outName)))
 		}
 	}
 
