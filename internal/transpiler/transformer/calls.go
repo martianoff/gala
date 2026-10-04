@@ -183,7 +183,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 									}
 								}
 							}
-							// B6 fail-loud: if neither inference path resolved the
+							// B6 fail-loud: if the slot hint did not resolve the
 							// generic parameter, emitting an untyped `Variant{}`
 							// would produce an obscure Go error far from the GALA
 							// source. Surface as GALA-E0018 with a hint pointing at
@@ -710,13 +710,17 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 			inferredMap := make(map[string]transpiler.Type)
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
-			untyped := isUntypedConstExpr(expr)
-			if !untyped {
-				// An untyped constant of a Go package (`math.MaxInt8`).
-				_, untyped = t.untypedNumericConstExprDefault(expr)
+			// An untyped constant, a literal or one of a Go package
+			// (`math.MaxInt8`), leaves the slot's binding in place.
+			untyped := func() bool {
+				if isUntypedConstExpr(expr) {
+					return true
+				}
+				_, ok := t.untypedNumericConstExprDefault(expr)
+				return ok
 			}
 			for tp, inferred := range inferredMap {
-				if _, slotted := fromSlot[tp]; slotted && untyped {
+				if _, slotted := fromSlot[tp]; slotted && untyped() {
 					continue
 				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {

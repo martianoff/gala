@@ -688,7 +688,8 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 
 // phantomTypeParams classifies the type parameters of a generic function or
 // method whose parameters have types paramTypes: argBound holds those some
-// parameter type mentions (Go infers them from the arguments); phantom lists the others, which appear only in the result (the `A` of
+// parameter type mentions (Go infers them from the arguments); phantom lists
+// the others, which appear only in the result (the `A` of
 // `func InvalidOf[E, A](err E) Validated[E, A]`). Go can never infer a
 // phantom type parameter from a call.
 func (t *galaASTTransformer) phantomTypeParams(typeParams []string, paramTypes []transpiler.Type) (argBound map[string]bool, phantom []string) {

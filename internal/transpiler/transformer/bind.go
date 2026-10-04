@@ -565,14 +565,8 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 	if transpiler.IsUnusable(res.typ) {
 		res.typ = t.returnShape()
 	}
-	var expr ast.Expr
-	var err error
-	if transpiler.IsUnusable(res.typ) {
-		// The block's type comes from this value's own type.
-		expr, err = t.transformExpression(exprCtx)
-	} else {
-		expr, err = t.lowerAgainst(exprCtx, typedSlot(res.typ), true)
-	}
+	// With no type yet, the block's type comes from this value's own type.
+	expr, err := t.lowerAgainst(exprCtx, typedSlot(res.typ), true)
 	if err != nil {
 		return nil, err
 	}
