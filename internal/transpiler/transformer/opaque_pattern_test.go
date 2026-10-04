@@ -48,6 +48,48 @@ func f(id UserID) string = id match {
 func main() {
     Println(f(UserID(1)))
 }`, "UserID takes 0 type argument(s), got 1"},
+		{"too many type arguments on a concrete subject", `package main
+
+struct User(Name string)
+struct Order(Total int)
+
+opaque type Id[T any] int64
+
+func f(id Id[User]) string = id match {
+    case Id[User, Order](n) => s"user $n"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(Id[User](1)))
+}`, "Id takes 1 type argument(s), got 2"},
+		{"a named sub-pattern", `package main
+
+opaque type UserID int64
+
+func f(id UserID) string = id match {
+    case UserID(id = n) => s"user $n"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(UserID(1)))
+}`, "the sub-pattern of UserID(...) is a single pattern for its underlying value"},
+		{"a stable identifier of another opaque type", `package main
+
+opaque type UserID int64
+opaque type OrderID int64
+
+val FirstOrder OrderID = 1
+
+func f(id UserID) string = id match {
+    case UserID(FirstOrder) => "first"
+    case _ => "?"
+}
+
+func main() {
+    Println(f(UserID(1)))
+}`, "FirstOrder has type OrderID, but the value inside UserID(...) has type int64"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := trans.Transpile(tc.src, "opaque_test.gala")
@@ -98,4 +140,33 @@ func main() {
     Println(f(debug))
 }`)
 	assert.Contains(t, out, "int(obj)")
+}
+
+// TestOpaqueTypePatternSubjectKinds covers subjects that are neither the
+// opaque type nor an interface: a type parameter is asserted through `any`
+// (its value may be of any type), and an alias of the opaque type is the
+// opaque type.
+func TestOpaqueTypePatternSubjectKinds(t *testing.T) {
+	out := transpileOpaque(t, `package main
+
+opaque type UserID int64
+
+type Uid UserID
+
+func show[T any](v T) string = v match {
+    case UserID(n) => s"user $n"
+    case _ => "?"
+}
+
+func viaAlias(u Uid) string = u match {
+    case UserID(0) => "nobody"
+    case UserID(n) => s"user $n"
+    case _ => "?"
+}
+
+func main() {
+    Println(show(UserID(1)), show(int64(1)), viaAlias(UserID(2)))
+}`)
+	assert.Regexp(t, `any\(\w+\)\.\(UserID\)`, out)
+	assert.Contains(t, out, "int64(obj) == 0")
 }

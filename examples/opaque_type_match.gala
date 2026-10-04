@@ -46,6 +46,12 @@ func kind(v any) string = v match {
     case _ => "something else"
 }
 
+// label matches a value of any type: the pattern checks it holds a UserID.
+func label[T any](v T) string = v match {
+    case UserID(n) => s"id $n"
+    case _ => "not an id"
+}
+
 func owner(a Account) string = a match {
     case Account(UserID(0), _) => "unowned"
     case Account(UserID(n), Email(m)) if m != "" => s"$n <$m>"
@@ -60,6 +66,7 @@ func main() {
     )
     Println(levelName(Debug), levelName(Error), levelName(Level(5)))
     Println(kind(UserID(1500)), "|", kind(int64(1500)), "|", kind(Email("a@b")), "|", kind("x"))
+    Println(label(UserID(9)), "|", label(int64(9)))
     Println(
         owner(Account(UserID(0), Email("root@x"))), "|",
         owner(Account(UserID(5), Email("ada@x"))), "|",
