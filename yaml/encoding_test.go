@@ -143,3 +143,107 @@ func TestDecoder_InvalidUTF8(t *testing.T) {
 		})
 	}
 }
+
+// YAML 1.2 (section 5.1) allows only printable characters in a stream, and
+// no byte order mark inside a scalar. DEL, the C1 controls U+0080-U+009F,
+// U+FEFF, U+FFFE and U+FFFF are not allowed, so a string holding one is
+// double-quoted with the character escaped: NEL as \N (YAML 1.1 readers take
+// a raw NEL for a line break), the other one-byte characters as \xXX, and
+// the rest as \uXXXX.
+func TestEncoder_NonPrintableEscaped(t *testing.T) {
+	const bs = "\\"
+	// U+007E, U+00A0, U+FEFE, U+FFFD and U+10000 are printable.
+	printableNeighbours := string([]rune{0x7e, 0xa0, 0xfefe, 0xfffd, 0x10000})
+	tests := []struct {
+		name string
+		key  string
+		in   string
+		want string
+	}{
+		{"DEL", "v", "a\x7fb", `v: "a\x7fb"`},
+		{"first C1 control", "v", "\u0080", `v: "\x80"`},
+		{"NEL", "v", "line\u0085next", `v: "line\Nnext"`},
+		{"last C1 control", "v", "x\u009f", `v: "x\x9f"`},
+		{"byte order mark", "v", string(rune(0xfeff)) + "x", `v: "` + bs + `uFEFFx"`},
+		{"U+FFFE", "v", "a" + string(rune(0xfffe)), `v: "a` + bs + `uFFFE"`},
+		{"U+FFFF", "v", string(rune(0xffff)), `v: "` + bs + `uFFFF"`},
+		{"mixed with other escapes", "v", "\"\x7f\\\u0085\t", `v: "\"\x7f\\\N\t"`},
+		{"in a key", "k\u0085", "x", `"k\N": x`},
+		// The printable characters next to the escaped ranges stay plain.
+		{"printable neighbours", "v", printableNeighbours, "v: " + printableNeighbours},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := NewYamlEncoder()
+			e.WriteStartObject()
+			e.WriteKey(tt.key)
+			e.WriteString(tt.in)
+			e.WriteEndObject()
+			got := e.String()
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+			d := NewYamlDecoder(got)
+			d.StartObject()
+			if k := d.ReadKey(); k != tt.key {
+				t.Fatalf("key reads back as %q, want %q", k, tt.key)
+			}
+			if v := d.ReadString(); v != tt.in {
+				t.Fatalf("value reads back as %q, want %q", v, tt.in)
+			}
+		})
+	}
+}
+
+// Only space and tab are white space around a scalar; a no-break space or
+// another Unicode space at either end is part of the text.
+func TestDecoder_UnicodeSpaceIsText(t *testing.T) {
+	nbsp, ideographic := string(rune(0xa0)), string(rune(0x3000))
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain value", "k: " + nbsp + "x" + nbsp, nbsp + "x" + nbsp},
+		{"value with comment", "k: x" + ideographic + " # note", "x" + ideographic},
+		{"sequence item", "k:\n  - " + nbsp, nbsp},
+		{"tabs and spaces still trimmed", "k: \t x \t", "x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewYamlDecoder(tt.in)
+			d.StartObject()
+			d.ReadKey()
+			if strings.Contains(tt.in, "- ") {
+				d.StartArray()
+			}
+			if got := d.ReadString(); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+	d := NewYamlDecoder(nbsp + "k" + nbsp + ": v")
+	d.StartObject()
+	if k := d.ReadKey(); k != nbsp+"k"+nbsp {
+		t.Fatalf("key reads as %q", k)
+	}
+}
+
+// Every character from U+0000 to U+FFFF (surrogates aside) round-trips
+// through the encoder and decoder, alone and between other text.
+func TestEncoderDecoder_AllBMPCharactersRoundTrip(t *testing.T) {
+	for r := rune(0); r <= 0xffff; r++ {
+		if r >= 0xd800 && r <= 0xdfff {
+			continue
+		}
+		for _, s := range []string{string(r), "a" + string(r) + "b"} {
+			got := encodeValue(func(e *YamlEncoderImpl) { e.WriteString(s) })
+			d := NewYamlDecoder(got)
+			d.StartObject()
+			d.ReadKey()
+			if v := d.ReadString(); v != s {
+				t.Fatalf("%q encodes as %q, which reads back as %q", s, got, v)
+			}
+		}
+	}
+}
