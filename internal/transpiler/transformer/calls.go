@@ -4073,9 +4073,10 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 		return expr, false
 	}
 	// So is a value of a named function type of the slot's signature
-	// (`context.CancelFunc` for `func()`, a GALA alias of it), and nil, the
-	// zero function.
-	if id, isIdent := expr.(*ast.Ident); isIdent && id.Name == "nil" {
+	// (`context.CancelFunc` for `func()`, a GALA alias of it), and nil for a
+	// result-less one — `func() { nil }` is no thunk at all, while nil for a
+	// `func() *T` is the by-name value nil.
+	if id, isIdent := expr.(*ast.Ident); isIdent && id.Name == "nil" && len(ft.Results) == 0 {
 		return expr, false
 	}
 	if named := t.resolveTranspilerTypeAsFuncType(exprType); named != nil && named.String() == ft.String() {
