@@ -41,10 +41,20 @@ type hoistedValue struct {
 // `continue` outside any lambda: one that, in a construct lowered to a
 // function literal, could not reach the function or loop it is written for. A
 // `break` / `continue` inside a `for` loop of the tree's own controls that
-// loop.
-func escapesConstruct[T antlr.Tree](trees ...T) bool {
+// loop. The answer for each tree is cached: a construct and those nested in
+// it are asked about at every level of the lowering.
+func escapesConstruct[T antlr.Tree](t *galaASTTransformer, trees ...T) bool {
 	for _, tree := range trees {
-		if escapes(tree, false) {
+		key := antlr.Tree(tree)
+		escaping, ok := t.escapeCache[key]
+		if !ok {
+			escaping = escapes(key, false)
+			if t.escapeCache == nil {
+				t.escapeCache = make(map[antlr.Tree]bool)
+			}
+			t.escapeCache[key] = escaping
+		}
+		if escaping {
 			return true
 		}
 	}
@@ -79,9 +89,9 @@ func (t *galaASTTransformer) hoistable(exprCtx grammar.IExpressionContext) bool 
 	case f.grouped != nil:
 		return t.hoistable(f.grouped)
 	case f.ifExpr != nil:
-		return escapesConstruct(f.ifExpr)
+		return escapesConstruct(t, f.ifExpr)
 	case f.match != nil:
-		return escapesConstruct(f.match.AllCaseClause()...)
+		return escapesConstruct(t, f.match.AllCaseClause()...)
 	}
 	return false
 }
@@ -146,19 +156,26 @@ func (t *galaASTTransformer) takeHoisted(expr ast.Expr) (hoistedValue, bool) {
 }
 
 // storeArmValues rewrites, in the lowered arms stmts of a hoisted match, each
-// synthesized arm-tail `return X` into the store of X in target (storeValue).
-// A user `return` is left as it is: it leaves the function.
-func (t *galaASTTransformer) storeArmValues(stmts []ast.Stmt, target string) []ast.Stmt {
+// synthesized arm-tail `return X` into the store of X in target, of type typ
+// (storeValue). A user `return` is left as it is: it leaves the function.
+func (t *galaASTTransformer) storeArmValues(stmts []ast.Stmt, target string, typ transpiler.Type) []ast.Stmt {
 	return t.rewriteSynthesizedArmReturns(stmts, func(value ast.Expr) []ast.Stmt {
-		return t.storeValue(value, target)
+		return t.storeValue(value, target, typ)
 	})
 }
 
-// storeValue is the store of value in target: the statements of a hoisted
-// construct, which store their own value, or `target = value`.
-func (t *galaASTTransformer) storeValue(value ast.Expr, target string) []ast.Stmt {
+// storeValue is the store of value in target, of type typ: the statements of
+// a hoisted construct, which store their own value, or `target = value`. A
+// name of type `any` is asserted to typ, as a match lowered to a function
+// literal returns it (see fixupReturnStatement).
+func (t *galaASTTransformer) storeValue(value ast.Expr, target string, typ transpiler.Type) []ast.Stmt {
 	if hv, ok := t.takeHoisted(value); ok {
 		return []ast.Stmt{&ast.BlockStmt{List: hv.stmts}}
+	}
+	if ident, ok := value.(*ast.Ident); ok && !transpiler.IsUnusableOrAny(typ) {
+		if vt := t.getType(ident.Name); vt != nil && vt.IsAny() {
+			value = &ast.TypeAssertExpr{X: value, Type: t.typeToExpr(typ)}
+		}
 	}
 	return []ast.Stmt{&ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(target)},
@@ -186,6 +203,67 @@ func (t *galaASTTransformer) hoistedType(kind string, typ transpiler.Type, s slo
 		return nil, untypedBranchingError(kind, line, col)
 	}
 	return typ, nil
+}
+
+// armBranchResult is the value the promoted trailing if/else of a match arm
+// gives the arm (see firstBranchResult). In a match lowered as statements
+// (s.hoist) a user `return` in a branch leaves the function rather than giving
+// the arm a value, so only a synthesized arm-tail return counts.
+func (t *galaASTTransformer) armBranchResult(promoted *ast.IfStmt, s slot) ast.Expr {
+	if s.hoist == "" {
+		return firstBranchResult(promoted)
+	}
+	var result ast.Expr
+	ast.Inspect(promoted, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			if result == nil && len(x.Results) == 1 && t.isSynthesizedArmReturn(x) {
+				result = x.Results[0]
+			}
+		}
+		return result == nil
+	})
+	return result
+}
+
+// leaves reports whether stmts, the lowered body of a branch, leave on every
+// path: they end in a source `return`, a `break` or `continue`, or an if/else
+// every branch of which leaves.
+func (t *galaASTTransformer) leaves(stmts []ast.Stmt) bool {
+	if len(stmts) == 0 {
+		return false
+	}
+	switch last := stmts[len(stmts)-1].(type) {
+	case *ast.ReturnStmt:
+		_, user := t.userReturns[last]
+		return user
+	case *ast.BranchStmt:
+		return true
+	case *ast.BlockStmt:
+		return t.leaves(last.List)
+	case *ast.IfStmt:
+		if last.Body == nil || last.Else == nil || !t.leaves(last.Body.List) {
+			return false
+		}
+		return t.leaves([]ast.Stmt{last.Else})
+	}
+	return false
+}
+
+// armLeaves reports whether a lowered match arm leaves on every path: clause
+// is a regular arm's `if cond { body }`, possibly after its bindings, or nil
+// for the default arm, whose body is defaultBody.
+func (t *galaASTTransformer) armLeaves(clause ast.Stmt, defaultBody []ast.Stmt) bool {
+	if clause == nil {
+		return t.leaves(defaultBody)
+	}
+	if block, ok := clause.(*ast.BlockStmt); ok && len(block.List) > 0 {
+		clause = block.List[len(block.List)-1]
+	}
+	ifStmt, ok := clause.(*ast.IfStmt)
+	return ok && ifStmt.Body != nil && t.leaves(ifStmt.Body.List)
 }
 
 // leavingValuesType is the settled type the values of the source `return`s in

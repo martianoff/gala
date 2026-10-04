@@ -718,7 +718,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	// branches hold a `return`, `break` or `continue`, is lowered as
 	// statements storing its value (see hoisted_value.go): its control flow
 	// acts on the enclosing function or loop.
-	if s.hoist != "" && !escapesConstruct(branches...) {
+	if s.hoist != "" && !escapesConstruct(t, branches...) {
 		s.hoist = ""
 	}
 	if s.hoist == "" {
@@ -904,7 +904,7 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 	}
 	store := func(b loweredIfBranch) *ast.BlockStmt {
 		if !b.terminates {
-			return &ast.BlockStmt{List: append(b.stmts, t.storeValue(b.expr, s.hoist)...)}
+			return &ast.BlockStmt{List: append(b.stmts, t.storeValue(b.expr, s.hoist, typ)...)}
 		}
 		return &ast.BlockStmt{List: b.stmts}
 	}

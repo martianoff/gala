@@ -54,6 +54,11 @@ func TestValueMatchControlFlowLowersAsStatements(t *testing.T) {
 			want:  []string{"continue", "break"},
 		},
 		{
+			name:  "an arm's trailing if/else with a return branch takes its type from the other branch",
+			input: "func pick(o Option[int]) string {\n    val x = o match {\n        case Some(v) => {\n            if (v < 0) {\n                return \"neg\"\n            } else {\n                v\n            }\n        }\n        case _ => 0\n    }\n    s\"$x\"\n}",
+			want:  []string{"var _tmp_1 int\n", "return \"neg\""},
+		},
+		{
 			name:  "a return in a lambda inside an arm stays the lambda's",
 			input: "func pick(n int) int {\n    val f = (k int) int => {\n        val x = k match {\n            case 0 => { return -1 }\n            case _ => k\n        }\n        x\n    }\n    f(n)\n}",
 			want:  []string{"return -1"},
@@ -102,7 +107,8 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 	validCases := []struct{ name, input string }{
 		{"returned match", "func f(o Option[int]) int {\n    return o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"trailing match of a function", "func f(o Option[int]) int {\n    Println(\"x\")\n    o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
-		{"trailing match of a lambda", "func f(n int) int {\n    val g = (k int) int => k match {\n        case 0 => { return -1 }\n        case _ => k\n    }\n    g(n)\n}"},
+		{"parenthesized result of a function", "func f(o Option[int]) int = (o match {\n    case Some(v) => v\n    case None() => { return 0 }\n})"},
+		{"trailing match of a lambda","func f(n int) int {\n    val g = (k int) int => k match {\n        case 0 => { return -1 }\n        case _ => k\n    }\n    g(n)\n}"},
 	}
 	for _, tt := range validCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,6 +126,12 @@ func TestDeclarationOfAConstructThatAlwaysLeaves(t *testing.T) {
 	trans := newAliasExpectedTranspiler()
 	_, err := trans.Transpile("package main\n\nfunc f(c bool) int {\n    val x = if (c) { return 1 } else { return 2 }\n    x\n}\n", "")
 	require.NoError(t, err)
+
+	// An arm that may leave but may also fall through with no value is not
+	// one that always leaves: the match has no typed value.
+	_, err = trans.Transpile("package main\n\nfunc f(n int) int {\n    val x = n match {\n        case 1 => {\n            if (n > 0) { return 5 }\n            Println(\"x\")\n        }\n        case _ => { return 3 }\n    }\n    x\n}\n", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot infer the type of this match: its value is used, but no arm has a typed value")
 
 	_, err = trans.Transpile("package main\n\nfunc f(c bool) {\n    for i := 0; i < 3; i++ {\n        val x = if (c) { break } else { continue }\n        Println(x)\n    }\n}\n", "")
 	require.Error(t, err)

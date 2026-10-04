@@ -73,7 +73,7 @@ func (t *galaASTTransformer) checkBranchingCalls(file *ast.File) error {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			if site, ok := t.branchingCalls[x]; ok && isVoidIIFE(x) {
-				if _, stmt := stack[len(stack)-2].(*ast.ExprStmt); !stmt {
+				if _, stmt := stack[holderIndex(stack, len(stack)-1)].(*ast.ExprStmt); !stmt {
 					found = untypedBranchingError(site.kind, site.line, site.col)
 				}
 			}
@@ -96,7 +96,7 @@ func (t *galaASTTransformer) checkBranchingCalls(file *ast.File) error {
 // trappingCall reports the recorded call a `return` — the top of stack, the
 // path from the file to it — leaves without leaving the enclosing function:
 // the innermost function literal around it is a recorded call's (stack[j] the
-// literal, stack[j-1] the call, stack[j-2] what holds the call), and that
+// literal, stack[j-1] the call, holderIndex what holds the call), and that
 // call's value is neither returned nor the trailing statement of a function
 // body (where leaving it is leaving that function).
 func (t *galaASTTransformer) trappingCall(stack []ast.Node) (branchingSite, bool) {
@@ -123,18 +123,32 @@ func (t *galaASTTransformer) trappingCall(stack []ast.Node) (branchingSite, bool
 		if !ok {
 			return branchingSite{}, false
 		}
-		switch stack[j-2].(type) {
+		h := holderIndex(stack, j-1)
+		switch stack[h].(type) {
 		case *ast.ReturnStmt:
-			i = j - 2
+			i = h
 			continue
 		case *ast.ExprStmt:
-			if j >= 4 && isTrailingStmtOfFuncBody(stack[j-4], stack[j-3], stack[j-2]) {
-				i = j - 2
+			if h >= 2 && isTrailingStmtOfFuncBody(stack[h-2], stack[h-1], stack[h]) {
+				i = h
 				continue
 			}
 		}
 		return site, true
 	}
+}
+
+// holderIndex is the index in stack of the node that holds stack[i], looking
+// through parentheses around it.
+func holderIndex(stack []ast.Node, i int) int {
+	h := i - 1
+	for h > 0 {
+		if _, paren := stack[h].(*ast.ParenExpr); !paren {
+			break
+		}
+		h--
+	}
+	return h
 }
 
 // isTrailingStmtOfFuncBody reports whether stmt is the last statement of

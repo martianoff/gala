@@ -123,6 +123,7 @@ var accumulatedStateFields = []string{
 	"branchingCalls",
 	"userReturns",
 	"hoisted",
+	"escapeCache",
 	"userLoops",
 	"methodReceivers",
 	"lspVarTypes",

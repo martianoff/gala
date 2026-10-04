@@ -516,7 +516,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match whose value a local declaration stores, and whose arms hold a
 	// `return`, `break` or `continue`, is lowered as statements storing its
 	// value (see hoisted_value.go); its arms store theirs the same way.
-	if s.hoist != "" && (stmtPosition || !escapesConstruct(caseClauses...)) {
+	if s.hoist != "" && (stmtPosition || !escapesConstruct(t, caseClauses...)) {
 		s.hoist = ""
 	}
 	hoist := s.hoist
@@ -667,7 +667,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match lowered as statements stores a value of its type, so it needs
 	// one.
 	if hoist != "" && (transpiler.IsUnusable(resultType) || resultType.IsVoid()) {
-		allLeave := !slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool { return !escapesConstruct(cc) })
+		allLeave := !slices.ContainsFunc(arms, func(a matchArm) bool { return !t.armLeaves(a.clause, a.defaultBody) })
 		if resultType, err = t.hoistedType("match", resultType, s, allLeave,
 			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), clauses, defaultBody); err != nil {
 			return nil, err
@@ -788,7 +788,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// stores its value in the declaration's variable, and its control flow
 	// acts on the enclosing function or loop (see hoisted_value.go).
 	if hoist != "" {
-		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist)
+		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
 		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType), nil
 	}

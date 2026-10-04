@@ -1368,7 +1368,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					// one gives the arm's result type.
 					if promoted, ok := t.promoteIfBranchValues(ifStmt, t.armReturn); ok {
 						body[len(body)-1] = promoted
-						if result := firstBranchResult(promoted); result != nil {
+						if result := t.armBranchResult(promoted, armSlot); result != nil {
 							resultType = t.inferResultType(result)
 						}
 					}
@@ -1485,7 +1485,7 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 				// the first one gives the arm's result type.
 				if promoted, ok := t.promoteIfBranchValues(lastStmt, t.armReturn); ok {
 					arm.defaultBody[last] = promoted
-					if result := firstBranchResult(promoted); result != nil {
+					if result := t.armBranchResult(promoted, armSlot); result != nil {
 						arm.resultType, arm.hasResult = t.inferResultType(result), true
 					}
 				}
@@ -1542,9 +1542,16 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 	if common == nil {
 		return firstErr
 	}
+	// A construct lowered as statements (s.hoist) keeps doing so; its
+	// `return`s leave the enclosing function, so they keep its slot.
+	retrySlot := typedSlot(common)
+	retrySlot.hoist = s.hoist
 	for _, i := range retry {
-		restore := t.enterReturnSlot(returnSlot{typ: common})
-		_, err := lower(i, typedSlot(common))
+		restore := func() {}
+		if s.hoist == "" {
+			restore = t.enterReturnSlot(returnSlot{typ: common})
+		}
+		_, err := lower(i, retrySlot)
 		restore()
 		if err != nil {
 			return err
