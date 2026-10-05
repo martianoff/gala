@@ -371,6 +371,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: a partial function whose result is the enclosing declaration's
+# type parameter. Collect must return Array[T], not Array[any].
+gala_exec_test(
+    name = "collect_type_param_result",
+    src = "collect_type_param_result.gala",
+    expected = "collect_type_param_result.out",
+    deps = ["//collection_immutable"],
+)
+
 # Regression: bare function reference passed to method whose receiver
 # carries a type parameter (Array.Map). Must infer method type arg U from
 # the bare function's signature, not leave U unresolved as "any".

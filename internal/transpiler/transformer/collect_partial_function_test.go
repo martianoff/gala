@@ -54,6 +54,27 @@ func main() {
 				"Some[any]{}.Apply(code)",              // any-fallback must not leak
 			},
 		},
+		{
+			name: "Collect whose result is the enclosing type parameter keeps it",
+			input: `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func keepPositive[T any](xs Array[T], key func(T) int) Array[T] =
+    xs.Collect({ case x if key(x) > 0 => x })
+
+func main() {
+    Println(keepPositive(ArrayOf(1, -2, 3), (i) => i))
+}`,
+			mustContain: []string{
+				"func(_pf_arg T) std.Option[T] {",
+				"std.None[T]{}.Apply()",
+			},
+			mustNotHave: []string{
+				"Option[any]",
+				"None[any]",
+			},
+		},
 	}
 
 	for _, tt := range tests {

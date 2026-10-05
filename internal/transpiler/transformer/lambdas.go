@@ -651,7 +651,6 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 	}, returnTypeExpr
 }
 
-
 // inferBlockReturnType tries to infer the return type from a block's return statements.
 // Returns nil if no concrete type can be inferred.
 func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr {
@@ -1215,11 +1214,10 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		return nil, err
 	}
 
-	if transpiler.IsUnusable(innerResultType) {
-		innerResultType = transpiler.BasicType{Name: "any"}
-	}
-
-	if t.typeHasUnresolvedParams(innerResultType) {
+	// The enclosing declaration's type parameters can be named here
+	// (`{ case x => x }` inside `func f[T any]` returns Option[T]); a callee's
+	// leftover placeholder cannot.
+	if transpiler.IsUnusable(innerResultType) || t.mentionsUnboundTypeParam(innerResultType) {
 		innerResultType = transpiler.BasicType{Name: "any"}
 	}
 
