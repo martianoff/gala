@@ -141,3 +141,33 @@ func TestDeclarationOfAConstructThatAlwaysLeaves(t *testing.T) {
 	assert.Equal(t, galaerr.CodeUntypedBranchingValue, se.Code)
 	assert.Contains(t, se.Error(), "this if-expression has no value: every branch leaves with `return`, `break` or `continue`")
 }
+
+// TestLoopClauseIsNotHoisted pins that only a declaration or an assignment
+// statement of its own lowers its match as statements. The post statement of
+// a `for` runs on every iteration, so statements hoisted before the loop would
+// run once: a `return` there leaves only the match, GALA-E0069, as it does in
+// any other value.
+func TestLoopClauseIsNotHoisted(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	_, err := trans.Transpile("package main\n\nfunc f(n int) int {\n    var i = 0\n    for ; i < n; i = i match {\n        case 5 => { return -1 }\n        case _ => i + 1\n    } {\n        Println(i)\n    }\n    i\n}\n", "")
+	require.Error(t, err)
+	var se *galaerr.SemanticError
+	require.True(t, errors.As(err, &se), "want a SemanticError, got %v", err)
+	assert.Equal(t, galaerr.CodeReturnInBranchingValue, se.Code)
+
+	// Nor is an assignment to an element: its index is evaluated before the
+	// value, so the value's statements cannot run first.
+	_, err = trans.Transpile("package main\n\nimport . \"martianoff/gala/go_interop\"\n\nfunc f(o Option[int], i int) int {\n    val arr = SliceOf(1, 2, 3)\n    arr[i] = o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n    arr[0]\n}\n", "")
+	require.Error(t, err)
+	require.True(t, errors.As(err, &se), "want a SemanticError, got %v", err)
+	assert.Equal(t, galaerr.CodeReturnInBranchingValue, se.Code)
+}
+
+// TestAnyTypedIfExpressionBranches pins that branches typed `any` by a Go API
+// give the if-expression the type `any`: it is not GALA-E0068.
+func TestAnyTypedIfExpressionBranches(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	got, err := trans.Transpile("package main\n\nimport \"reflect\"\n\nfunc f(ok bool) {\n    val v = if (ok) reflect.ValueOf(1).Interface() else reflect.ValueOf(2).Interface()\n    Println(v)\n}\n", "")
+	require.NoError(t, err)
+	assert.Contains(t, got, "func() any {")
+}

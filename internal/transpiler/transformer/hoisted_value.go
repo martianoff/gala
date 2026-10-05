@@ -92,7 +92,7 @@ func (t *galaASTTransformer) hoistable(exprCtx grammar.IExpressionContext) bool 
 	case f.grouped != nil:
 		return t.hoistable(f.grouped)
 	case f.ifExpr != nil:
-		return escapesConstruct(t, f.ifExpr)
+		return escapesConstruct(t, f.ifExpr.AllIfExprBranch()...)
 	case f.match != nil:
 		return escapesConstruct(t, f.match.AllCaseClause()...)
 	}
@@ -175,10 +175,8 @@ func (t *galaASTTransformer) storeValue(value ast.Expr, target string, typ trans
 	if hv, ok := t.takeHoisted(value); ok {
 		return []ast.Stmt{&ast.BlockStmt{List: hv.stmts}}
 	}
-	if ident, ok := value.(*ast.Ident); ok && !transpiler.IsUnusableOrAny(typ) {
-		if vt := t.getType(ident.Name); vt != nil && vt.IsAny() {
-			value = &ast.TypeAssertExpr{X: value, Type: t.typeToExpr(typ)}
-		}
+	if !transpiler.IsUnusableOrAny(typ) {
+		value = t.assertAnyIdent(value, typ)
 	}
 	return []ast.Stmt{&ast.AssignStmt{
 		Lhs: []ast.Expr{ast.NewIdent(target)},
@@ -232,8 +230,8 @@ func (t *galaASTTransformer) armBranchResult(promoted *ast.IfStmt, s slot) ast.E
 }
 
 // leaves reports whether stmts, the lowered body of a branch, leave on every
-// path: they end in a source `return`, a `break` or `continue`, or an if/else
-// every branch of which leaves.
+// path: they end in a source `return`, a `break` or `continue`, a `panic`, or
+// an if/else every branch of which leaves.
 func (t *galaASTTransformer) leaves(stmts []ast.Stmt) bool {
 	if len(stmts) == 0 {
 		return false
@@ -244,6 +242,9 @@ func (t *galaASTTransformer) leaves(stmts []ast.Stmt) bool {
 		return user
 	case *ast.BranchStmt:
 		return true
+	case *ast.ExprStmt:
+		// A diverging call (`panic(...)`, which `Panic` lowers to).
+		return isTerminatingStmt(last)
 	case *ast.BlockStmt:
 		return t.leaves(last.List)
 	case *ast.IfStmt:

@@ -33,7 +33,7 @@ func assigned(o Option[int]) int {
     x * 10
 }
 
-func half(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None()
+func half(n int) Option[int] = When(n % 2 == 0, n / 2)
 
 func bindPick(n int) Option[int] {
     bind a = half(n)

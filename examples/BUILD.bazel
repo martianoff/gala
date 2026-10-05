@@ -2968,6 +2968,7 @@ gala_exec_test(
     name = "value_match_return",
     src = "value_match_return.gala",
     expected = "value_match_return.out",
+    deps = ["//go_builtins"],
 )
 
 # return / break / continue in a value-position match or if-expression act on

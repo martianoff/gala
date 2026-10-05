@@ -710,9 +710,10 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	if err != nil {
 		return nil, err
 	}
-	// The if-expression lowers to an IIFE: a `return` in a branch yields the
-	// branch's value, not the enclosing lambda's. An open slot type holds
-	// placeholders, so it is no return type.
+	// The if-expression lowers to an IIFE, which gives its branches their own
+	// return slot: a `return` in a branch leaves only the IIFE (GALA-E0069
+	// unless the IIFE is itself the result, see branching_calls.go). An open
+	// slot type holds placeholders, so it is no return type.
 	branches := ctx.AllIfExprBranch()
 	// An if-expression whose value a local declaration stores, and whose
 	// branches hold a `return`, `break` or `continue`, is lowered as
@@ -739,7 +740,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		if b.stmts, b.expr, b.terminates, err = t.transformIfExprBranch(branches[i].(*grammar.IfExprBranchContext), bs); err != nil || !siblingTyped {
 			return nil, err
 		}
-		if s.hoist != "" && b.terminates {
+		if s.hoist != "" && (b.terminates || t.leaves(b.stmts)) {
 			// The branch leaves the function or loop: it has no value.
 			return nil, nil
 		}
@@ -771,6 +772,16 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	// resolves the common arm type even when both arms are user methods.
 	if retType.IsNil() {
 		retType = t.unifyBranchTypes(t.getExprTypeName(thenExpr), t.getExprTypeName(elseExpr))
+	}
+	// A branch typed `any` — the value of a Go API that returns it — is a
+	// known type: the if-expression's value is `any` too.
+	if retType.IsNil() {
+		for _, e := range []ast.Expr{thenExpr, elseExpr} {
+			if bt := t.getExprTypeName(e); bt.IsAny() {
+				retType = bt
+				break
+			}
+		}
 	}
 
 	// Neither branch has a type, and nothing the if-expression fills gives it
@@ -891,6 +902,11 @@ type loweredIfBranch struct {
 func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext, cond ast.Expr, s slot, branches [2]loweredIfBranch) (ast.Expr, error) {
 	var types [2]transpiler.Type
 	for i, b := range branches {
+		// A branch ending in an if/else every path of which leaves has no
+		// value either.
+		if t.leaves(b.stmts) {
+			branches[i].terminates, b.terminates = true, true
+		}
 		types[i] = transpiler.NilType{}
 		if !b.terminates {
 			types[i] = t.getExprTypeName(b.expr)

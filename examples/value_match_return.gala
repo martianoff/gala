@@ -1,5 +1,7 @@
 package main
 
+import . "martianoff/gala/go_builtins"
+
 // A `return` in an arm of a match, or a branch of an if-expression, whose
 // value is bound to a `val` or `var` returns from the enclosing function — it
 // does not just end the match. Each function prints what it computed, so a
@@ -90,6 +92,21 @@ func lambdaTail(n int) int {
     f(n) + 1000
 }
 
+func ifElseLeaves(n int) int {
+    val x = if (n > 0) n else {
+        if (n == 0) { return 0 } else { return -1 }
+    }
+    x * 10
+}
+
+func returnOrPanic(o Option[int]) int {
+    val r = o match {
+        case Some(v) => { return v * 10 }
+        case None() => Panic("none")
+    }
+    r
+}
+
 func returnOfMatch(o Option[int]) int {
     return o match {
         case Some(v) => v * 10
@@ -108,5 +125,7 @@ func main() {
     Println(s"  result ${firstZero(10)}")
     Println(s"lambdaLocal: ${lambdaLocal(2)} ${lambdaLocal(0)}")
     Println(s"lambdaTail: ${lambdaTail(2)} ${lambdaTail(0)}")
+    Println(s"ifElseLeaves: ${ifElseLeaves(2)} ${ifElseLeaves(0)} ${ifElseLeaves(-2)}")
+    Println(s"returnOrPanic: ${returnOrPanic(Some(2))}")
     Println(s"returnOfMatch: ${returnOfMatch(Some(2))} ${returnOfMatch(None())}")
 }

@@ -143,6 +143,24 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	}, nil
 }
 
+// hoistsInitializer reports whether the value of ctx may be lowered as
+// statements emitted before it: a `val` or `var` declaration, or an assignment
+// statement of its own to a variable. Not the clauses of an `if` or `for`: a
+// `for` post statement runs on every iteration, not once before the loop. Nor
+// an assignment to an element or field: its index and receiver operands are
+// evaluated before its value, so the value's statements cannot go first.
+func hoistsInitializer(ctx grammar.IDeclarationContext) bool {
+	if ctx.ValDeclaration() != nil || ctx.VarDeclaration() != nil {
+		return true
+	}
+	simple := ctx.SimpleStatement()
+	if simple == nil || simple.Assignment() == nil {
+		return false
+	}
+	targets := simple.Assignment().AllExpressionList()[0].AllExpression()
+	return len(targets) == 1 && token.IsIdentifier(targets[0].GetText())
+}
+
 // transformStatement lowers a statement to stmt, preceded by pre: the
 // statements a local declaration whose initializer is lowered as statements
 // needs before it (see hoisted_value.go), emitted in the caller's own list so
@@ -150,7 +168,7 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (stmt ast.Stmt, pre []ast.Stmt, err error) {
 	if declCtx := ctx.Declaration(); declCtx != nil {
 		prevLocal, prevPre := t.localDeclaration, t.hoistedPre
-		t.localDeclaration, t.hoistedPre = true, nil
+		t.localDeclaration, t.hoistedPre = hoistsInitializer(declCtx), nil
 		decl, stmt, err := t.transformDeclaration(declCtx)
 		pre := t.hoistedPre
 		t.localDeclaration, t.hoistedPre = prevLocal, prevPre

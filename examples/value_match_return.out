@@ -11,4 +11,6 @@ firstZero:
   result 3
 lambdaLocal: 1020 999
 lambdaTail: 1020 999
+ifElseLeaves: 20 0 -1
+returnOrPanic: 20
 returnOfMatch: 20 -1
