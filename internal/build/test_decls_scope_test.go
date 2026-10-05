@@ -28,10 +28,12 @@ func TestTest_TestDeclarationsStayInTheirPackageTest(t *testing.T) {
 		{
 			name: "library root dot-imported by a subpackage",
 			files: map[string]string{
-				"gala.mod":      "module example.com/leak\n\ngala 0.0.0\n",
-				"lib.gala":      "package leak\n\nfunc Answer() int = 42\n",
-				"lib_test.gala": "package leak\n\nimport . \"martianoff/gala/test\"\n\nstruct Shared(X int)\n\nfunc TestAnswer(t T) T = Eq(t, Answer(), Shared(X = 42).X)\n",
-				"sub/sub.gala":  "package sub\n\nimport . \"example.com/leak\"\n\nfunc Twice() int = Answer() * 2\n",
+				"gala.mod": "module example.com/leak\n\ngala 0.0.0\n",
+				"lib.gala": "package leak\n\nfunc Answer() int = 42\n",
+				"lib_test.gala": "package leak\n\nimport . \"martianoff/gala/test\"\n\nstruct Shared(X int)\n\nfunc TestAnswer(t T) T = Eq(t, Answer(), Shared(X = 42).X)\n\n" +
+					// Run as a test, though go test would not take its name for one.
+					"func Testable(t T) T = Eq(t, Answer(), 42)\n",
+				"sub/sub.gala": "package sub\n\nimport . \"example.com/leak\"\n\nfunc Twice() int = Answer() * 2\n",
 				"sub/sub_test.gala": "package sub\n\nimport . \"martianoff/gala/test\"\n\nstruct Shared(Y int)\n\n" +
 					"func TestTwice(t T) T = Eq(t, Twice(), Shared(Y = 84).Y)\n",
 			},

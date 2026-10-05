@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -20,10 +21,16 @@ import (
 // functions are emitted under goTestFuncName instead, and the generated harness
 // calls them by that name while reporting the GALA one.
 
-// goTestFuncName is the Go name of the GALA function name in a transpiled
-// _test.go file, when go test would take name for one of its own.
+const goTestFuncPrefix = "gala_"
+
+// goTestFuncName is the Go name of the top-level GALA function name in a
+// transpiled _test.go file: name itself, unless go test would take it for one
+// of its own tests (isGoTestName).
 func goTestFuncName(name string) string {
-	return "gala_" + name
+	if isGoTestName(name) {
+		return goTestFuncPrefix + name
+	}
+	return name
 }
 
 // isGoTestName mirrors cmd/go's isTest for the prefixes whose signature it
@@ -40,18 +47,20 @@ func isGoTestName(name string) bool {
 	return false
 }
 
-// testOutputsByDir groups the transpiled outputs of testFiles that have a
-// _test.go name by the gen directory they are in. Outputs written under
-// another name (a main root's tests, built into its test binary) are left out.
-func (b *Builder) testOutputsByDir(testFiles []string) map[string][]string {
+// renameGoTestFuncsByPackage runs renameGoTestFuncs over the transpiled
+// outputs of testFiles, one package (gen directory) at a time.
+func (b *Builder) renameGoTestFuncsByPackage(testFiles []string) error {
 	byDir := make(map[string][]string)
 	for _, tf := range testFiles {
 		out := filepath.Join(b.workspace.GenDir, testGenFileName(b.workspace.ProjectDir, tf))
-		if strings.HasSuffix(out, "_test.go") && fileExists(out) {
-			byDir[filepath.Dir(out)] = append(byDir[filepath.Dir(out)], out)
+		byDir[filepath.Dir(out)] = append(byDir[filepath.Dir(out)], out)
+	}
+	for _, outs := range byDir {
+		if err := renameGoTestFuncs(outs); err != nil {
+			return err
 		}
 	}
-	return byDir
+	return nil
 }
 
 // renameGoTestFuncs renames, across paths (the transpiled test files of one
@@ -88,32 +97,37 @@ func renameGoTestFuncs(paths []string) error {
 	}
 
 	for _, pf := range files {
-		// ast.Inspect visits the identifiers in source order.
 		refs := packageFuncRefs(pf.file, renamed)
 		if len(refs) == 0 {
 			continue
 		}
-		var sb strings.Builder
+		tf := fset.File(pf.file.Pos())
+		var buf bytes.Buffer
+		buf.Grow(len(pf.src) + len(refs)*len(goTestFuncPrefix))
 		last := 0
 		for _, id := range refs {
-			off := fset.Position(id.Pos()).Offset
-			sb.Write(pf.src[last:off])
-			sb.WriteString(goTestFuncName(id.Name))
+			off := tf.Offset(id.Pos())
+			buf.Write(pf.src[last:off])
+			buf.WriteString(goTestFuncName(id.Name))
 			last = off + len(id.Name)
 		}
-		sb.Write(pf.src[last:])
-		if err := os.WriteFile(pf.path, []byte(sb.String()), 0644); err != nil {
+		buf.Write(pf.src[last:])
+		if err := os.WriteFile(pf.path, buf.Bytes(), 0644); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// packageFuncRefs returns the identifiers in f that name one of the package's
-// top-level functions in names: their declarations and their uses. A name a
-// local declaration shadows, a field, a method and a selector's member are not.
+// packageFuncRefs returns, in source order, the identifiers in f that name one
+// of the package's top-level functions in names: their declarations and their
+// uses. A name a local declaration shadows, a field, a method and a selector's
+// member are not.
 func packageFuncRefs(f *ast.File, names map[string]bool) []*ast.Ident {
+	// ast.Inspect visits a node before its children, so an identifier is
+	// marked here before the walk reaches it.
 	notFunc := make(map[*ast.Ident]bool)
+	var refs []*ast.Ident
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncDecl:
@@ -132,14 +146,10 @@ func packageFuncRefs(f *ast.File, names map[string]bool) []*ast.Ident {
 			if id, ok := n.Key.(*ast.Ident); ok {
 				notFunc[id] = true
 			}
-		}
-		return true
-	})
-	var refs []*ast.Ident
-	ast.Inspect(f, func(n ast.Node) bool {
-		id, ok := n.(*ast.Ident)
-		if ok && names[id.Name] && !notFunc[id] && (id.Obj == nil || id.Obj.Kind == ast.Fun) {
-			refs = append(refs, id)
+		case *ast.Ident:
+			if names[n.Name] && !notFunc[n] && (n.Obj == nil || n.Obj.Kind == ast.Fun) {
+				refs = append(refs, n)
+			}
 		}
 		return true
 	})

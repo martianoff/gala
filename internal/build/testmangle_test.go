@@ -24,6 +24,13 @@ func TestIsGoTestName(t *testing.T) {
 		"gala_TestMain": false,
 	} {
 		assert.Equal(t, want, isGoTestName(name), name)
+		// The harness calls a test by goTestFuncName, so it must agree with
+		// what renameGoTestFuncs renames.
+		if want {
+			assert.Equal(t, "gala_"+name, goTestFuncName(name))
+		} else {
+			assert.Equal(t, name, goTestFuncName(name))
+		}
 	}
 }
 

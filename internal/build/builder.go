@@ -1743,7 +1743,10 @@ func (b *Builder) Test(verbose bool) error {
 		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
 
-	// Step 5: Transpile files
+	// Step 5: Transpile files. The tests `go test` runs are in _test.go files,
+	// where their functions need a Go name (see goTestFuncName); a main root's
+	// own tests are built into its test binary instead.
+	goTestFiles := testFiles
 	if isLib {
 		if err := b.transpileTestLibrary(sourceFiles, testFiles); err != nil {
 			return fmt.Errorf("transpiling: %w", err)
@@ -1752,11 +1755,10 @@ func (b *Builder) Test(verbose bool) error {
 		if err := b.transpileTestMain(sourceFiles, testFiles); err != nil {
 			return fmt.Errorf("transpiling: %w", err)
 		}
+		_, goTestFiles = splitRootTestFiles(b.workspace.ProjectDir, testFiles)
 	}
-	for _, outs := range b.testOutputsByDir(testFiles) {
-		if err := renameGoTestFuncs(outs); err != nil {
-			return fmt.Errorf("transpiling: %w", err)
-		}
+	if err := b.renameGoTestFuncsByPackage(goTestFiles); err != nil {
+		return fmt.Errorf("transpiling: %w", err)
 	}
 
 	// Step 6: Generate go.mod
