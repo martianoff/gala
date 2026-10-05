@@ -30,8 +30,8 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     // The brackets open at this point, innermost last.
     private val open = ArrayDeque<Int>()
 
-    // The `func`, `if` and `for` headers whose block's '{' is still to come,
-    // innermost last (see newline.go's header).
+    // The function declaration, `if` and `for` headers whose block's '{' is
+    // still to come, innermost last (see newline.go's header).
     private class Header(val depth: Int, val fn: Boolean) {
         var cond = 0 // COND_OPEN while an if's parenthesized condition is open, COND_CLOSED after
     }
@@ -49,7 +49,9 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
     override fun nextToken(): Token {
         val tok = super.nextToken()
         if (tok.channel != Token.DEFAULT_CHANNEL) return tok
-        if (prevEndsExpr && tok.line > prevEndLine) {
+        val lineBreak = tok.line > prevEndLine
+        endHeader(tok.type)
+        if (prevEndsExpr && lineBreak) {
             val retyped = when (tok.type) {
                 LPAREN -> galaParser.NL_LPAREN
                 STAR -> galaParser.NL_STAR.takeIf { isPrefixOperator() }
@@ -58,7 +60,7 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
             }
             if (retyped != null) (tok as WritableToken).type = retyped
         }
-        trackBrackets(tok.type, prevEndsExpr && tok.line > prevEndLine)
+        trackBrackets(tok.type, lineBreak)
         prevType = tok.type
         prevEndsExpr = tok.type in ENDS_EXPR
         prevEndLine = tok.line + if (tok.type in SPANS_LINES) tok.text.count { it == '\n' } else 0
@@ -67,15 +69,30 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
 
     private fun pendingHeader(): Header? = headers.lastOrNull()?.takeIf { it.depth == open.size }
 
-    private fun trackBrackets(type: Int, newLine: Boolean) {
+    // Drops the pending header of an if whose parenthesized condition is not
+    // followed by '{': it has no block. Runs before the token is re-typed,
+    // since a statement cannot begin inside a header.
+    private fun endHeader(type: Int) {
+        val h = pendingHeader() ?: return
+        if (h.cond == COND_CLOSED && type != LBRACE) headers.removeLast()
+    }
+
+    // Directly inside a block's '{' and not inside a header still waiting for
+    // its own '{': where a statement can begin.
+    private fun atStatementLevel(): Boolean = open.lastOrNull() == BLOCK_OPEN && pendingHeader() == null
+
+    // Whether a `func` here declares a function rather than writing a func
+    // type (which has no block, so is not a header): it starts a line or
+    // follows a block's '{', at the top level or directly inside a block, and
+    // not inside another header (where a `func` on its own line is a
+    // func-typed result).
+    private fun declarationCanBegin(lineBreak: Boolean): Boolean =
+        (open.isEmpty() || open.last() == BLOCK_OPEN) && pendingHeader() == null &&
+            (lineBreak || prevType == LBRACE)
+
+    private fun trackBrackets(type: Int, lineBreak: Boolean) {
         val depth = open.size
-        var h = pendingHeader()
-        if (h != null && (newLine || h.cond == COND_CLOSED && type != LBRACE)) {
-            // A header left for a new line, or an if whose parenthesized
-            // condition is not followed by '{', has no block.
-            headers.removeLast()
-            h = null
-        }
+        val h = pendingHeader()
         when {
             type == LBRACE -> {
                 var kind = BLOCK_OPEN
@@ -100,7 +117,8 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
             // A stray ')' or ']' does not close a '{'.
             type in CLOSES -> if (open.lastOrNull() == PAREN_OPEN) open.removeLast()
             type == CASE && prevType == LBRACE && depth > 0 -> open[open.lastIndex] = BRACE_OPEN
-            type in OPENS_HEADER -> headers.addLast(Header(depth, type == FUNC))
+            type in OPENS_HEADER && (type != FUNC || declarationCanBegin(lineBreak)) ->
+                headers.addLast(Header(depth, type == FUNC))
             // An expression body, an if-expression or a match guard ending:
             // the header has no block.
             h != null && (type == ASSIGN && h.fn || type == ELSE || type == ARROW) -> headers.removeLast()
@@ -112,13 +130,12 @@ class GalaNewlineLexer(input: CharStream?) : galaLexer(input) {
         if (closed != null && closed.cond == COND_OPEN && type in CLOSES) closed.cond = COND_CLOSED
     }
 
-    // Whether the '*' or '&' just consumed is a prefix operator: directly
-    // inside a block's '{', where a statement can begin, and followed by its
-    // operand rather than by whitespace the grammar's WS rule skips or a
-    // comment. The lexer has just consumed it, so LA(1) is the character
-    // after it.
+    // Whether the '*' or '&' just consumed is a prefix operator: where a
+    // statement can begin, and followed by its operand rather than by
+    // whitespace the grammar's WS rule skips or a comment. The lexer has just
+    // consumed it, so LA(1) is the character after it.
     private fun isPrefixOperator(): Boolean {
-        if (open.lastOrNull() != BLOCK_OPEN) return false
+        if (!atStatementLevel()) return false
         return when (_input.LA(1)) {
             ' '.code, '\t'.code, '\r'.code, '\n'.code -> false
             '/'.code -> _input.LA(2).let { it != '/'.code && it != '*'.code }

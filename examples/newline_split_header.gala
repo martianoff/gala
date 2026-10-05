@@ -1,0 +1,68 @@
+package main
+
+// A func, if or for header split across lines still opens a block. A line in
+// that block that starts with `*p`, `&n` or '(' begins a new statement, just
+// as in a block whose header is on one line. It never continues the line
+// before.
+
+// The '{' on its own line after the result type.
+func derefAfterBraceOnNextLine(n int) int
+{
+    val p = &n
+    val k = 1
+    *p + k
+}
+
+// The parameters on the line after the name, the result on the line after
+// them. The result is a plain pointer, so the target is a var.
+func addressAfterWrappedHeader
+(n int)
+    *int {
+    var m = n
+    Println(s"wrapped $m")
+    &m
+}
+
+// A wrapped receiver header: the method name on the line after the receiver.
+struct Counter(start int)
+
+func (c Counter)
+    plus(n int) int {
+    var total = c.start
+    val p = &total
+    *p = total + n
+    total
+}
+
+// A for whose '{' is on its own line.
+func sumBelow(limit int) int {
+    var i = 0
+    var sum = 0
+    for i < limit
+    {
+        val p = &sum
+        *p = sum + i
+        i = i + 1
+    }
+    sum
+}
+
+// An if whose condition is wrapped and whose '{' is on its own line.
+func pairIf(a bool, b bool) Tuple[int, int] {
+    var x = 0
+    if (a &&
+        b)
+    {
+        val p = &x
+        *p = 1
+    }
+    (x, 2)
+}
+
+func main() {
+    Println(derefAfterBraceOnNextLine(4))
+    Println(*addressAfterWrappedHeader(3))
+    Println(Counter(10).plus(5))
+    Println(sumBelow(5))
+    Println(pairIf(true, true))
+}

@@ -68,13 +68,17 @@ class GalaNewlineLexerTest {
         assertEquals(emptyList<String>(), parse("package main\n\nval a = b\n*c\n").second)
     }
 
+    // The number of statements in the block `pick` selects from the parsed file.
+    private fun blockStatements(src: String, pick: (galaParser.SourceFileContext) -> galaParser.BlockContext?): Int {
+        val (tree, errors) = parse("package main\n\n$src\n")
+        assertEquals(emptyList<String>(), errors)
+        return pick(tree)!!.statement().size
+    }
+
     @Test
     fun blockAfterHeaderEndingInType() {
-        fun bodyStatements(src: String): Int {
-            val (tree, errors) = parse("package main\n\n$src\n")
-            assertEquals(emptyList<String>(), errors)
-            return tree.topLevelDeclaration().last().functionDeclaration().block().statement().size
-        }
+        fun bodyStatements(src: String) =
+            blockStatements(src) { it.topLevelDeclaration().last().functionDeclaration().block() }
         assertEquals(3, bodyStatements("func f() int{\n    val p = &n\n    *p = 5\n    n\n}"))
         assertEquals(3, bodyStatements("func f() Option[int]{\n    val p = &n\n    *p = 5\n    None()\n}"))
         assertEquals(3, bodyStatements("func g() int = 1\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}"))
@@ -89,6 +93,35 @@ class GalaNewlineLexerTest {
         )
         assertEquals(3, bodyStatements("type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}"))
         assertEquals(emptyList<String>(), parse("package main\n\ntype F func(int) int\n\ntype I interface {\n    M()\n    *int\n}\n").second)
+    }
+
+    @Test
+    fun splitHeaderOpensBlock() {
+        val body = "\n    val q = 1\n    *p + q\n    val r = 2\n    &r\n    val s = 3\n    (s, 2)\n}"
+        fun inFunc(header: String) = "func f() int {\n    $header$body\n    0\n}"
+        // The body is the block whose first statement is `val q = 1`.
+        fun find(node: org.antlr.v4.runtime.tree.ParseTree): galaParser.BlockContext? {
+            if (node is galaParser.BlockContext && node.statement().firstOrNull()?.text == "valq=1") return node
+            return (0 until node.childCount).firstNotNullOfOrNull { find(node.getChild(it)) }
+        }
+        fun bodyStatements(src: String) = blockStatements(src, ::find)
+        listOf(
+            "func f() int\n{$body",
+            "func f() Option[int]\n{$body",
+            "func f() func(int) int\n{$body",
+            "func f\n(a int) int {$body",
+            "func f(a int)\n    int {$body",
+            "func (r T)\n    f() int {$body",
+            "func f(\n    a int,\n    b *int,\n) int {$body",
+            "func f()\n    func(int) int {$body",
+            "func g()\n    func(int) int {\n    (x) => x\n}\n\ntype I interface {\n    M()\n    *int\n}\n\nfunc f() int {$body",
+            "type F func(int) int\n\nfunc f() int\n{$body",
+            inFunc("func g() int\n    {"),
+            inFunc("func g()\n        *int {"),
+            inFunc("if (a &&\n        b)\n    {"),
+            inFunc("for i < n\n    {"),
+        ).forEach { assertEquals(it, 6, bodyStatements(it)) }
+        assertEquals(4, statements("var g func() int\n*p = 5\nval q = 1\n*p + q"))
     }
 
     @Test

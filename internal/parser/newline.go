@@ -46,11 +46,15 @@ import (
 // no type ends with (`=>`, `)`, `else`, ...); after a type name or ']' it opens
 // a composite literal, after `struct` or `interface` a declaration body, and a
 // '{' whose first token is `case` opens case arms (a match, a partial
-// function, a sealed type). A header has no block when it is left for a new
-// line or for `=>`, when a func's `=` gives it an expression body, when an
-// if's `else` comes first (an if-expression), or when the token after an if's
-// parenthesized condition is not '{'. Inside a '{' that is not a block,
-// within a '(' or '[', and at the top level, '*' and '&' are never re-typed.
+// function, a sealed type). A header can be split across lines, its '{'
+// included. Only a `func` that starts a line (or follows a block's '{') at the
+// top level or in a block declares a function; any other `func` is a func
+// type, which has no block. A header has no block when `=>` ends it, when a
+// func's `=` gives it an expression body, when an if's `else` comes first (an
+// if-expression), or when the token after an if's parenthesized condition is
+// not '{'. Inside a '{' that is not a block,
+// within a '(' or '[', inside a header, and at the top level, '*' and '&' are
+// never re-typed.
 // Followed by whitespace or a comment it is a binary operator continuing the
 // line before, like any other operator at line start: `* b` multiplies, `*b`
 // dereferences. '*' and '&' are re-typed because their prefix forms are
@@ -75,7 +79,9 @@ type newlineTokenSource struct {
 	headers []header
 }
 
-// header is a `func`, `if` or `for` whose block's '{' is still to come.
+// header is a function declaration, `if` or `for` whose block's '{' is still
+// to come. It can be split across lines. A func type (`type F func(int) int`,
+// `val g func() int = h`) has no block and is not a header.
 type header struct {
 	// depth is len(open) where the header started: its '{' opens there.
 	depth int
@@ -241,13 +247,15 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	k := s.kinds
 	ttype := tok.GetTokenType()
 	line := tok.GetLine()
-	if r := at(k.atLineStart, ttype); r.to != 0 && s.prevEndsExpr && line > s.prevEndLine &&
+	lineBreak := line > s.prevEndLine
+	s.endHeader(ttype)
+	if r := at(k.atLineStart, ttype); r.to != 0 && s.prevEndsExpr && lineBreak &&
 		(!r.needsOperand || s.atStatementLevel() && !s.operatorStandsApart()) {
 		tok = s.GetTokenFactory().Create(tok.GetSource(), r.to, tok.GetText(),
 			tok.GetChannel(), tok.GetStart(), tok.GetStop(), line, tok.GetColumn())
 		ttype = r.to
 	}
-	s.trackBrackets(ttype, s.prevEndsExpr && line > s.prevEndLine)
+	s.trackBrackets(ttype, lineBreak)
 	s.prevType = ttype
 	s.prevEndsExpr = is(k.endsExpr, ttype)
 	s.prevEndLine = line
@@ -257,19 +265,22 @@ func (s *newlineTokenSource) NextToken() antlr.Token {
 	return tok
 }
 
+// endHeader drops the pending header of an if whose parenthesized condition is
+// not followed by '{': it has no block. It runs before the token is re-typed,
+// since a statement cannot begin inside a header (see atStatementLevel).
+func (s *newlineTokenSource) endHeader(ttype int) {
+	if h := s.pendingHeader(); h != nil && h.cond == condClosed && ttype != s.kinds.lbrace {
+		s.headers = s.headers[:len(s.headers)-1]
+	}
+}
+
 // trackBrackets keeps open and headers up to date with a token of type ttype;
-// newLine reports that it starts a line after a token that can end an
-// expression (see the newlineTokenSource doc for which '{' opens a block).
-func (s *newlineTokenSource) trackBrackets(ttype int, newLine bool) {
+// lineBreak reports that a line break separates it from the token before (see
+// the newlineTokenSource doc for which '{' opens a block).
+func (s *newlineTokenSource) trackBrackets(ttype int, lineBreak bool) {
 	k := s.kinds
 	depth := len(s.open)
 	h := s.pendingHeader()
-	if h != nil && (newLine || h.cond == condClosed && ttype != k.lbrace) {
-		// A header left for a new line, or an if whose parenthesized
-		// condition is not followed by '{', has no block.
-		s.headers = s.headers[:len(s.headers)-1]
-		h = nil
-	}
 	b := at(k.bracket, ttype)
 	switch {
 	case b > 0 && ttype == k.lbrace:
@@ -302,7 +313,7 @@ func (s *newlineTokenSource) trackBrackets(ttype int, newLine bool) {
 		}
 	case ttype == k.caseKw && s.prevType == k.lbrace && depth > 0:
 		s.open[depth-1] = braceOpen
-	case is(k.opensHeader, ttype):
+	case is(k.opensHeader, ttype) && (ttype != k.funcKw || s.declarationCanBegin(lineBreak)):
 		s.headers = append(s.headers, header{depth: depth, fn: ttype == k.funcKw})
 	case h != nil && (ttype == k.assign && h.fn || ttype == k.elseKw || ttype == k.arrow):
 		// An expression body (`func f() int = x`), an if-expression
@@ -329,11 +340,21 @@ func (s *newlineTokenSource) pendingHeader() *header {
 	return nil
 }
 
+// declarationCanBegin reports whether a `func` here declares a function rather
+// than writing a func type: it starts a line or follows a block's '{', at the
+// top level or directly inside a block, and not inside another header (where a
+// `func` on its own line is a func-typed result).
+func (s *newlineTokenSource) declarationCanBegin(lineBreak bool) bool {
+	n := len(s.open)
+	return (n == 0 || s.open[n-1] == blockOpen) && s.pendingHeader() == nil &&
+		(lineBreak || s.prevType == s.kinds.lbrace)
+}
+
 // atStatementLevel reports whether a statement can begin here: directly inside
-// a block's '{'. At the top level only declarations begin, and those start
-// with a keyword.
+// a block's '{', and not inside a header still waiting for its own '{'. At the
+// top level only declarations begin, and those start with a keyword.
 func (s *newlineTokenSource) atStatementLevel() bool {
-	return len(s.open) > 0 && s.open[len(s.open)-1] == blockOpen
+	return len(s.open) > 0 && s.open[len(s.open)-1] == blockOpen && s.pendingHeader() == nil
 }
 
 // operatorStandsApart reports whether the token the lexer has just consumed is
