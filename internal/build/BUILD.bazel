@@ -34,6 +34,10 @@ go_library(
 
 go_test(
     name = "build_test",
+    # Most of these tests run a real gala build or gala test, Go compile
+    # included. On a CI runner the package takes 150-280s, so the default
+    # medium timeout (300s) fails it intermittently.
+    size = "large",
     srcs = [
         "apex_perf_test.go",
         "bom_test.go",
