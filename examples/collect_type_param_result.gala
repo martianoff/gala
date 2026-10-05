@@ -15,7 +15,7 @@ func somes[T any](xs Array[Option[T]]) Array[T] =
 
 func main() {
     Println(keepPositive(ArrayOf(1, -2, 3), (i) => i))
-    Println(keepPositive(ArrayOf("a", "", "bc"), (s) => s.Size()))
+    Println(keepPositive(ArrayOf("a", "", "bc"), _.Size()))
     Println(firstOfPairs(ListOf(("x", true), ("y", false), ("z", true)), (b) => b))
     Println(somes(ArrayOf(Some(1), None[int](), Some(3))))
 }

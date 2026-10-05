@@ -1199,7 +1199,6 @@ func (t *galaASTTransformer) isTypeParameter(typeName string) bool {
 	return t.isActiveTypeParam(typeName)
 }
 
-
 // isSimpleIdentifier checks if a string is a simple identifier (not underscore, not complex)
 func (t *galaASTTransformer) isSimpleIdentifier(s string) bool {
 	if s == "_" || s == "" {
