@@ -1,0 +1,21 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A partial function whose result is the enclosing declaration's type
+// parameter: Collect returns Array[T] / List[T], with T as written.
+func keepPositive[T any](xs Array[T], key func(T) int) Array[T] =
+    xs.Collect({ case x if key(x) > 0 => x })
+
+func firstOfPairs[A any, B any](xs List[Tuple[A, B]], keep func(B) bool) List[A] =
+    xs.Collect({ case (a, b) if keep(b) => a })
+
+func somes[T any](xs Array[Option[T]]) Array[T] =
+    xs.Collect({ case Some(v) => v })
+
+func main() {
+    Println(keepPositive(ArrayOf(1, -2, 3), (i) => i))
+    Println(keepPositive(ArrayOf("a", "", "bc"), (s) => s.Size()))
+    Println(firstOfPairs(ListOf(("x", true), ("y", false), ("z", true)), (b) => b))
+    Println(somes(ArrayOf(Some(1), None[int](), Some(3))))
+}

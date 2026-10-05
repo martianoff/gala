@@ -1199,11 +1199,6 @@ func (t *galaASTTransformer) isTypeParameter(typeName string) bool {
 	return t.isActiveTypeParam(typeName)
 }
 
-// typeHasUnresolvedParams checks if a type contains unresolved type parameters (like T, U, A, B).
-// Delegates to hasTypeParams for consistent type parameter detection.
-func (t *galaASTTransformer) typeHasUnresolvedParams(typ transpiler.Type) bool {
-	return t.hasTypeParams(typ)
-}
 
 // isSimpleIdentifier checks if a string is a simple identifier (not underscore, not complex)
 func (t *galaASTTransformer) isSimpleIdentifier(s string) bool {

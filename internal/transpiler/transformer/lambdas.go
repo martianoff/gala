@@ -1219,7 +1219,10 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		innerResultType = transpiler.BasicType{Name: "any"}
 	}
 
-	if t.typeHasUnresolvedParams(innerResultType) {
+	// A type parameter of the enclosing declaration is a type the generated
+	// Go can name — `{ case x => x }` inside `func f[T any]` returns
+	// Option[T] — only a callee's placeholder that inference left behind is not.
+	if t.mentionsUnboundTypeParam(innerResultType) {
 		innerResultType = transpiler.BasicType{Name: "any"}
 	}
 
