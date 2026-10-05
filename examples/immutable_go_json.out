@@ -1,0 +1,11 @@
+{"SKU":"A-1","UnitCents":250,"Qty":3}
+true
+A-1 250 3 equal=true
+{"name":"box","count":2}
+true
+crate fragile 7
+{"ID":"o-9","Item":{"SKU":"A-1","UnitCents":250,"Qty":3}}
+true
+o-9 A-1 equal=true
+{o-9 {A-1 250 3}}
+true

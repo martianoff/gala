@@ -131,10 +131,14 @@ go_test(
     name = "std_go_test",
     srcs = [
         "as_test.go",
+        "immutable_encoding_test.go",
         "unapply_test.go",
     ],
     embed = [":std"],
-    deps = ["@com_github_stretchr_testify//assert"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )
 
 gala_test(

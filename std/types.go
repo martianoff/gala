@@ -1,6 +1,8 @@
 package std
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
@@ -8,6 +10,63 @@ import (
 // ImmutableUnwrapper is implemented by Immutable[T] to allow interface-based unwrapping.
 type ImmutableUnwrapper interface {
 	GetAny() any
+}
+
+// A GALA struct field or package-level val that is not `var` is an
+// Immutable[T] in Go, and the value inside it is unexported, so Go's
+// reflection-based encoders and fmt would see an empty struct. These methods
+// make Immutable[T] read and write as the value it holds: in encoding/json,
+// in YAML libraries that use the MarshalYAML / UnmarshalYAML(func(any) error)
+// convention (gopkg.in/yaml.v2 and v3), and in fmt. A struct tag on the field
+// applies to the wrapped value.
+var (
+	_ json.Marshaler   = Immutable[int]{}
+	_ json.Unmarshaler = (*Immutable[int])(nil)
+	_ fmt.Formatter    = Immutable[int]{}
+)
+
+// MarshalJSON encodes the wrapped value through a pointer, so T's
+// pointer-receiver MarshalJSON applies too. HTML escaping is left to the
+// calling encoder, which applies its own setting to the result.
+func (i Immutable[T]) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(&i.value); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes into the wrapped value. Like any json.Unmarshaler,
+// it does not see the calling Decoder's settings (DisallowUnknownFields,
+// UseNumber).
+func (i *Immutable[T]) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &i.value)
+}
+
+// IsZero reports whether the wrapped value is its type's zero value. YAML
+// encoders use it for `omitempty`, and encoding/json for `omitzero`; without
+// it they would judge the wrapper by its exported fields, of which it has
+// none.
+func (i Immutable[T]) IsZero() bool {
+	return reflect.ValueOf(&i.value).Elem().IsZero()
+}
+
+// MarshalYAML returns the wrapped value for the YAML encoder to encode.
+func (i Immutable[T]) MarshalYAML() (any, error) {
+	return i.value, nil
+}
+
+// UnmarshalYAML decodes into the wrapped value.
+func (i *Immutable[T]) UnmarshalYAML(unmarshal func(any) error) error {
+	return unmarshal(&i.value)
+}
+
+// Format prints the wrapped value with the same verb, flags, width and
+// precision.
+func (i Immutable[T]) Format(f fmt.State, verb rune) {
+	fmt.Fprintf(f, fmt.FormatString(f, verb), i.value)
 }
 
 func unwrapImmutable(obj any) any {

@@ -4158,3 +4158,11 @@ gala_exec_test(
         "//yaml",
     ],
 )
+
+# Go's encoding/json encodes and decodes a GALA struct's immutable fields as their values
+gala_exec_test(
+    name = "immutable_go_json",
+    src = "immutable_go_json.gala",
+    expected = "immutable_go_json.out",
+    deps = ["//go_interop"],
+)
