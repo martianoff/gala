@@ -38,9 +38,19 @@ func (i Immutable[T]) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// UnmarshalJSON decodes into the wrapped value.
+// UnmarshalJSON decodes into the wrapped value. Like any json.Unmarshaler,
+// it does not see the calling Decoder's settings (DisallowUnknownFields,
+// UseNumber).
 func (i *Immutable[T]) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &i.value)
+}
+
+// IsZero reports whether the wrapped value is its type's zero value. YAML
+// encoders use it for `omitempty`, and encoding/json for `omitzero`; without
+// it they would judge the wrapper by its exported fields, of which it has
+// none.
+func (i Immutable[T]) IsZero() bool {
+	return reflect.ValueOf(&i.value).Elem().IsZero()
 }
 
 // MarshalYAML returns the wrapped value for the YAML encoder to encode.

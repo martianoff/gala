@@ -102,6 +102,14 @@ func TestImmutableYAMLConvention(t *testing.T) {
 	assert.Equal(t, "decoded", i.Get())
 }
 
+func TestImmutableIsZero(t *testing.T) {
+	assert.True(t, Immutable[string]{}.IsZero())
+	assert.True(t, NewImmutable[*int](nil).IsZero())
+	assert.True(t, NewImmutable[error](nil).IsZero())
+	assert.False(t, NewImmutable("x").IsZero())
+	assert.False(t, NewImmutable([]int{}).IsZero())
+}
+
 func TestImmutableFormat(t *testing.T) {
 	item := lineItem{SKU: NewImmutable("A-1"), Qty: NewImmutable(3)}
 	tests := []struct {

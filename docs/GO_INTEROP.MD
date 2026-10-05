@@ -694,7 +694,7 @@ A checklist of what differs from writing Go. The first ones are covered in the p
 **Calling GALA from Go**
 
 - **Immutable fields are `std.Immutable[T]`.** Go reads them with `.Get()` and cannot assign them. Go can build a struct with `std.NewImmutable(v)` per field, but an exported `NewX` constructor reads better. Generating one is a proposed extension ([#688](https://github.com/martianoff/gala/issues/688)).
-- **Encoders see the value.** `encoding/json`, YAML libraries (`gopkg.in/yaml.v2`, `v3`) and `fmt` encode, decode and print an immutable field as the value it holds, and the field's struct tag applies to that value. To `encoding/json` the field is a struct, so `omitempty` never leaves it out; use `omitzero`.
+- **Encoders see the value.** `encoding/json`, YAML libraries (`gopkg.in/yaml.v2`, `v3`) and `fmt` encode, decode and print an exported immutable field as the value it holds, and the field's struct tag applies to that value. To `encoding/json` the field is a struct, so `omitempty` never leaves it out; use `omitzero`. A `json.Decoder`'s `DisallowUnknownFields` and `UseNumber` do not reach inside the field.
 - **Sealed cases are told apart with `Unapply`**, because the variant tag is unexported: `(pricing.Percent{}).Unapply(d).IsDefined()`. A GALA helper such as `Describe` above is friendlier.
 - **Generic methods are free functions.** `opt.Map(f)` in GALA is `std.Option_Map(opt, f)` in Go, and `arr.FoldLeft(z, f)` is `collection_immutable.Array_FoldLeft(arr, z, f)`.
 - **Default and named arguments are GALA-only.** Go passes every parameter, in order.
