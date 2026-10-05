@@ -17,8 +17,11 @@ func TestIsGoTestName(t *testing.T) {
 		"Test1":         true,
 		"BenchmarkX":    true,
 		"FuzzParse":     true,
-		"Testable":      false,
-		"Benchmarking":  false,
+		"ExampleConfig": true,
+		"Examples":      true,
+		// vet's tests analyzer checks a plain prefix.
+		"Testable":      true,
+		"Benchmarking":  true,
 		"testSquare":    false,
 		"MyTestSquare":  false,
 		"gala_TestMain": false,

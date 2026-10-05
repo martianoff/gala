@@ -9,17 +9,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 )
 
 // A transpiled test file has a _test.go name, so Go compiles it only into its
 // own package's test and no importer sees its declarations. In a _test.go file,
 // `go test` takes every top-level TestXxx, BenchmarkXxx and FuzzXxx function
 // for a Go test and rejects it unless its signature is func(*testing.T) (or
-// *testing.B, *testing.F). A GALA test is func TestXxx(t T) T, so those
-// functions are emitted under goTestFuncName instead, and the generated harness
-// calls them by that name while reporting the GALA one.
+// *testing.B, *testing.F), and vet checks ExampleXxx functions too. A GALA test
+// is func TestXxx(t T) T, so those functions are emitted under goTestFuncName
+// instead, and the generated harness calls them by that name while reporting
+// the GALA one.
 
 const goTestFuncPrefix = "gala_"
 
@@ -33,15 +32,14 @@ func goTestFuncName(name string) string {
 	return name
 }
 
-// isGoTestName mirrors cmd/go's isTest for the prefixes whose signature it
-// checks: the prefix, then nothing or a character that is not lowercase.
+// isGoTestName reports whether go test would check name in a _test.go file:
+// cmd/go rejects a TestXxx, BenchmarkXxx or FuzzXxx with the wrong signature,
+// and the vet `tests` analyzer it runs checks every function whose name merely
+// starts with Test, Benchmark, Fuzz or Example. The plain prefix covers both.
 func isGoTestName(name string) bool {
-	for _, prefix := range []string{"Test", "Benchmark", "Fuzz"} {
-		if rest, ok := strings.CutPrefix(name, prefix); ok {
-			r, _ := utf8.DecodeRuneInString(rest)
-			if rest == "" || !unicode.IsLower(r) {
-				return true
-			}
+	for _, prefix := range []string{"Test", "Benchmark", "Fuzz", "Example"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
 		}
 	}
 	return false
