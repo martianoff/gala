@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"runtime/debug"
+	"runtime"
+	"strings"
 )
 
 // ImmutableUnwrapper is implemented by Immutable[T] to allow interface-based unwrapping.
@@ -187,20 +188,27 @@ func tryRecover[T any](f func() T) (result Try[T]) {
 // recovered panic's error (Try.Get inside an outer Try) keeps the original
 // stack, which names where the problem started.
 func recoveredError(r any) error {
-	if p, ok := r.(*panicError); ok {
-		return p
-	}
 	var err error
 	switch e := r.(type) {
+	case *panicError:
+		return e
 	case error:
 		err = e
 	case string:
-		err = fmt.Errorf("%s", e)
+		err = errors.New(e)
 	default:
 		err = fmt.Errorf("panic: %v", r)
 	}
-	return &panicError{err: err, stack: string(debug.Stack())}
+	// Only the program counters are recorded here: a Failure is often handled
+	// without anyone reading its stack, so symbolizing waits for PanicStack.
+	var pcs [maxPanicFrames]uintptr
+	n := runtime.Callers(2, pcs[:])
+	return &panicError{err: err, pcs: append([]uintptr(nil), pcs[:n]...)}
 }
+
+// maxPanicFrames bounds the frames kept for a recovered panic. The innermost
+// frames, the ones that locate the panic, are the ones kept.
+const maxPanicFrames = 64
 
 // panicError is the error of a Failure produced by a recovered panic. It is
 // transparent: Error() and fmt formatting are the panic's own, Unwrap returns
@@ -209,8 +217,8 @@ func recoveredError(r any) error {
 // stack, so two Failures of the same panic value stay equal and printing a
 // Failure does not dump a stack.
 type panicError struct {
-	err   error
-	stack string
+	err error
+	pcs []uintptr
 }
 
 func (e *panicError) Error() string { return e.err.Error() }
@@ -222,13 +230,31 @@ func (e *panicError) Format(s fmt.State, verb rune) {
 	fmt.Fprintf(s, fmt.FormatString(s, verb), e.err)
 }
 
+// stack renders the recorded frames as a Go traceback lists them, a function
+// and its file:line per frame, starting at the frame that panicked: the frames
+// between the recover and the panic (up to runtime.gopanic) are left out.
+func (e *panicError) stack() string {
+	var b strings.Builder
+	frames := runtime.CallersFrames(e.pcs)
+	started := false
+	for more := true; more; {
+		var f runtime.Frame
+		f, more = frames.Next()
+		if started {
+			fmt.Fprintf(&b, "%s(...)\n\t%s:%d\n", f.Function, f.File, f.Line)
+		}
+		started = started || f.Function == "runtime.gopanic"
+	}
+	return b.String()
+}
+
 // panicStackOf returns the stack recorded for the panic err came from, or None
 // when neither err nor any error it wraps is a recovered panic. PanicStack
 // (try.gala) is its GALA face.
 func panicStackOf(err error) Option[string] {
 	var p *panicError
 	if errors.As(err, &p) {
-		return Some[string]{}.Apply(p.stack)
+		return Some[string]{}.Apply(p.stack())
 	}
 	return None[string]{}.Apply()
 }

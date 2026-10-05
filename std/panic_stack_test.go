@@ -27,9 +27,9 @@ func TestTryRecover_PanicKeepsStack(t *testing.T) {
 		message  string
 		function string
 	}{
-		{"string panic", panicsWithString, "boom", "std.panicsWithString"},
-		{"error panic", panicsWithError, "code 7", "std.panicsWithError"},
-		{"other value panic", panicsWithValue, "panic: 42", "std.panicsWithValue"},
+		{"string panic", panicsWithString, "boom", "panicsWithString"},
+		{"error panic", panicsWithError, "code 7", "panicsWithError"},
+		{"other value panic", panicsWithValue, "panic: 42", "panicsWithValue"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -37,7 +37,8 @@ func TestTryRecover_PanicKeepsStack(t *testing.T) {
 			assert.Equal(t, tt.message, err.Error(), "Error() is the panic's own message")
 			stack := PanicStack(err)
 			assert.True(t, stack.IsDefined())
-			assert.Contains(t, stack.Get(), tt.function, "the stack names the panicking frame")
+			assert.True(t, strings.HasPrefix(stack.Get(), "martianoff/gala/std."+tt.function+"(...)\n"),
+				"the stack starts at the panicking frame, got:\n%s", stack.Get())
 		})
 	}
 }
