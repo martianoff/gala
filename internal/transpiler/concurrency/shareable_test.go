@@ -497,14 +497,14 @@ func TestAliasShareable(t *testing.T) {
 func TestSubstitute(t *testing.T) {
 	subst := buildSubst([]string{"T"}, []transpiler.Type{basic("int")})
 
-	got := substitute(immArray(basic("T")), subst)
+	got := transpiler.SubstituteTypeParams(immArray(basic("T")), subst)
 	want := immArray(basic("int"))
 	if got.String() != want.String() {
 		t.Errorf("substitute Array[T] = %s, want %s", got.String(), want.String())
 	}
 
 	// identity when no subst
-	id := substitute(immArray(basic("T")), nil)
+	id := transpiler.SubstituteTypeParams(immArray(basic("T")), nil)
 	if id.String() != immArray(basic("T")).String() {
 		t.Errorf("nil subst should be identity, got %s", id.String())
 	}

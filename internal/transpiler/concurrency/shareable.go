@@ -371,7 +371,7 @@ func (c *Checker) isNamedStructShareable(named transpiler.Type, typeArgs []trans
 		// checked.
 		for i := range meta.SealedVariants {
 			for _, ft := range meta.SealedVariants[i].FieldTypes {
-				if !c.isShareable(substitute(ft, subst), visited) {
+				if !c.isShareable(transpiler.SubstituteTypeParams(ft, subst), visited) {
 					return false
 				}
 			}
@@ -389,7 +389,7 @@ func (c *Checker) isNamedStructShareable(named transpiler.Type, typeArgs []trans
 		if !ok {
 			return false // metadata inconsistency: be conservative
 		}
-		if !c.isShareable(substitute(ft, subst), visited) {
+		if !c.isShareable(transpiler.SubstituteTypeParams(ft, subst), visited) {
 			return false
 		}
 	}

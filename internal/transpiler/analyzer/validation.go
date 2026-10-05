@@ -143,7 +143,9 @@ func typeParamScope(outer map[string]bool, params []string) map[string]bool {
 
 // receiverTypeArgScope adds to scope the names a method's receiver gives its
 // type's parameters. A receiver may rename them (`func (b Box[E]) Get() E` on
-// `struct Box[T any]`), and the method metadata keeps the names as written. A
+// `struct Box[T any]`). Method metadata takes the type's own names
+// (renameReceiverTypeParams) except where the receiver names fewer of them
+// than the type declares, and then keeps the names as written. A
 // bare name in the signature that resolves to nothing else is taken as such a
 // name, provided there are no more of them than the type has parameters.
 func receiverTypeArgScope(ast *transpiler.RichAST, m *transpiler.MethodMetadata, typeParamCount int, scope map[string]bool) map[string]bool {

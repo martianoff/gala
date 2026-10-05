@@ -1,0 +1,34 @@
+package main
+
+// A method's receiver may name its type's parameters differently from the
+// type's declaration. A call types its arguments, lambdas included, against
+// the type arguments of the receiver it is made on.
+
+struct Box[T any](V T)
+
+func (b Box[U]) Twice(f func(U) U) U = f(f(b.V))
+func (b Box[Elem]) Apply(f func(Elem) Elem) Elem = f(b.V)
+func (b Box[U]) Map[V any](f func(U) V) Box[V] = Box(f(b.V))
+func (b *Box[U]) Peek(f func(U) string) string = f(b.V)
+// The method's own `T` is not the type's `T`, which this receiver calls `U`.
+func (b Box[U]) Describe[T any](f func(U) T) T = f(b.V)
+func (b Box[U]) OrElse(d Option[U] = None()) U = d.GetOrElse(b.V)
+
+struct Pair[A any, B any](L A, R B)
+
+func (p Pair[X, Y]) Swap() Pair[Y, X] = Pair(p.R, p.L)
+func (p Pair[X, Y]) Both(f func(X, Y) string) string = f(p.L, p.R)
+
+func main() {
+    Println(Box(4).Twice((x) => x + 1))
+    Println(Box("a").Apply((s) => s + "!"))
+    Println(Box(4).Map((x) => s"n=$x").V)
+    val boxed = &Box(7)
+    Println(boxed.Peek((x) => s"peek $x"))
+    Println(Box(5).Describe((x) => s"five is $x"))
+    Println(Box(6).OrElse())
+    Println(Box(6).OrElse(Some(60)))
+    val swapped = Pair(1, "a").Swap()
+    Println(swapped.L + swapped.L)
+    Println(Pair(2, "b").Both((n, s) => s"$s$n"))
+}
