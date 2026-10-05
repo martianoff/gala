@@ -36,8 +36,8 @@ func CountReader(r io.Reader) (Counter, error) {
 	return c, err
 }
 
-// MarshalJSON makes Stats a json.Marshaler. Its fields are immutable, which
-// Go sees as std.Immutable[T] values; Get reads them.
+// MarshalJSON makes Stats a json.Marshaler with lowercase keys. Its fields are
+// immutable, which Go sees as std.Immutable[T] values; Get reads them.
 func (s Stats) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]any{
 		"lines":   s.Lines.Get(),

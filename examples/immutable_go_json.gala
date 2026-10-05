@@ -1,0 +1,58 @@
+package main
+
+import (
+    "encoding/json"
+
+    . "martianoff/gala/go_interop"
+)
+
+// LineItem is GALA-native. Go's encoding/json sees its fields as Go does:
+// every field that is not `var` is a std.Immutable[T]. The wrapper encodes and
+// decodes as the value it holds, so the struct round-trips with its data.
+struct LineItem(SKU string, UnitCents int64, Qty int)
+
+// Tagged uses the block form, which carries struct tags. A field's tag applies
+// to the value inside the wrapper. To Go the field is a struct, which
+// `omitempty` never leaves out; `omitzero` does.
+type Tagged struct {
+    Name string "json:\"name\""
+    Note string "json:\"note,omitzero\""
+    var Count int "json:\"count\""
+}
+
+// Order nests a GALA struct inside another.
+struct Order(ID string, Item LineItem)
+
+func encode[T any](v T) string = json.Marshal(v).Map(ToString).GetOrElse("cannot encode")
+
+func main() {
+    val item = LineItem("A-1", 250, 3)
+    val itemJson = encode(item)
+    Println(itemJson)
+
+    // json.Unmarshal fills a Go decode target through its address.
+    var decodedItem LineItem
+    Println(FromError(json.Unmarshal(ToBytes(itemJson), &decodedItem)).IsSuccess())
+    Println(s"${decodedItem.SKU} ${decodedItem.UnitCents} ${decodedItem.Qty} equal=${decodedItem == item}")
+
+    Println(encode(Tagged(Name = "box", Note = "", Count = 2)))
+
+    var decodedTagged Tagged
+    Println(FromError(json.Unmarshal(ToBytes("{\"name\":\"crate\",\"note\":\"fragile\",\"count\":7}"), &decodedTagged)).IsSuccess())
+    Println(s"${decodedTagged.Name} ${decodedTagged.Note} ${decodedTagged.Count}")
+
+    val order = Order("o-9", item)
+    val orderJson = encode(order)
+    Println(orderJson)
+
+    var decodedOrder Order
+    Println(FromError(json.Unmarshal(ToBytes(orderJson), &decodedOrder)).IsSuccess())
+    Println(s"${decodedOrder.ID} ${decodedOrder.Item.SKU} equal=${decodedOrder == order}")
+
+    // fmt prints the values too, not the wrappers.
+    Println(order)
+
+    // A value of the wrong JSON type is a decode error, as for a plain Go field.
+    var bad LineItem
+    Println(FromError(json.Unmarshal(ToBytes("{\"Qty\":\"three\"}"), &bad)).IsFailure())
+}

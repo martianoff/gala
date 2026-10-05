@@ -1236,6 +1236,9 @@ colors.Hits = colors.Hits + 1        // OK: a var
 // colors.Green = NamedColor(3)      // ERROR: cannot assign to immutable variable colors.Green
 ```
 
+### Go Encoders and `fmt`
+Go's reflection-based encoders and `fmt` see an immutable value as the value it holds, not the `std.Immutable[T]` wrapper: `encoding/json` and YAML libraries using the `MarshalYAML`/`UnmarshalYAML` convention (`gopkg.in/yaml.v2`, `v3`) encode and decode it as a `T`, and `%v` prints the value. A struct tag on an immutable field applies to the value. To `encoding/json` the field is still a struct, which `omitempty` never leaves out; use `omitzero`.
+
 ### Struct Fields Declared `Immutable[T]`
 A shorthand struct field declared `Immutable[T]` is the same field as one declared `T`: it takes a `T` (positionally, by name, as a `Copy` override or as its default), wrapped once, and reads as a `T`. A `var` field, an explicit `val` field or a block-form field declared `Immutable[T]` holds the `Immutable[T]` it names.
 
