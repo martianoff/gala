@@ -158,7 +158,7 @@ func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
 			if err != nil {
 				return nil, &PackageError{path, fmt.Errorf("transpiling %s: %w", name, err)}
 			}
-			full = strings.TrimSuffix(full, ".gala") + ".gen.go"
+			full = genheader.OutputName(full)
 		case strings.HasSuffix(name, ".go"):
 			if ok, _ := build.Default.MatchFile(dir, name); !ok {
 				continue

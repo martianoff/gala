@@ -128,6 +128,7 @@ func TestTestGenFileName(t *testing.T) {
 	}{
 		{"root file", filepath.Join(projectDir, "main.gala"), "main.gen.go"},
 		{"subdir file", filepath.Join(projectDir, "sub", "lib.gala"), filepath.Join("sub", "lib.gen.go")},
+		{"test file", filepath.Join(projectDir, "sub", "lib_test.gala"), filepath.Join("sub", "lib_test.gen_test.go")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

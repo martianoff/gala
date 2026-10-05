@@ -186,11 +186,19 @@ func TestBuild_ForeignGenGoChild(t *testing.T) {
 // would be dropped from gen/ while the analyzer counts its types. The copy
 // reports the collision instead.
 func TestCopyNonGalaFiles_ForeignGenGoNamedLikeTranspilerOutput(t *testing.T) {
-	src := t.TempDir()
-	writeFixtureFile(t, filepath.Join(src, "api", "server.gala"), "package api\n")
-	writeFixtureFile(t, filepath.Join(src, "api", "server.gen.go"), oapiGenGo("api", "type ServerInterface interface{}\n"))
+	for _, tc := range []struct{ gala, goFile string }{
+		{"server.gala", "server.gen.go"},
+		// A test source is transpiled to a _test.go name.
+		{"server_test.gala", "server_test.gen_test.go"},
+	} {
+		t.Run(tc.gala, func(t *testing.T) {
+			src := t.TempDir()
+			writeFixtureFile(t, filepath.Join(src, "api", tc.gala), "package api\n")
+			writeFixtureFile(t, filepath.Join(src, "api", tc.goFile), oapiGenGo("api", "type ServerInterface interface{}\n"))
 
-	err := copyNonGalaFiles(src, t.TempDir(), false)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "server.gala is transpiled to")
+			err := copyNonGalaFiles(src, t.TempDir(), false)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.gala+" is transpiled to")
+		})
+	}
 }

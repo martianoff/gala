@@ -344,7 +344,7 @@ When you run `gala build`, GALA:
 1. **Creates a build workspace** at `~/.gala/build/<hash>/` (hash is derived from your project path)
 2. **Extracts the stdlib** to `~/.gala/stdlib/v<version>/`
 3. **Transpiles GALA dependencies** — any GALA library in `gala.mod` (not marked `// go`) is transpiled from `.gala` source in the module cache to `.gen.go` files in `~/.gala/build/<hash>/deps/`
-4. **Transpiles** your `.gala` files to `.gen.go` files in `~/.gala/build/<hash>/gen/`
+4. **Transpiles** your `.gala` files to `.gen.go` files in `~/.gala/build/<hash>/gen/` (`gala test` writes an `x_test.gala` to `x_test.gen_test.go`, which Go compiles only into that package's tests)
 5. **Generates** a `go.mod` in the workspace with absolute paths to dependencies
 6. **Downloads** Go dependencies to `~/.gala/go/pkg/mod/`
 7. **Runs** `go build` to create the binary

@@ -13,6 +13,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -236,7 +237,7 @@ func (dt *DepTranspiler) transpileSingleDep(dep mod.Require, transpiledDirs map[
 				return "", fmt.Errorf("transpiling %s: %w", galaFile, err)
 			}
 
-			outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
+			outName := genheader.OutputName(filepath.Base(galaFile))
 			outPath := filepath.Join(pkgOutDir, outName)
 
 			if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
@@ -456,11 +457,12 @@ func copyNonGalaFiles(srcDir, dstDir string, verbose bool) error {
 			return nil
 		}
 
-		// x.gala is transpiled to x.gen.go, so another generator's x.gen.go
-		// beside it would be dropped from the build without a word.
-		if stem, ok := strings.CutSuffix(path, ".gen.go"); ok && fileExists(stem+".gala") {
+		// x.gala is transpiled to x.gen.go (x_test.gala to x_test.gen_test.go),
+		// so another generator's file of that name beside it would be dropped
+		// from the build without a word.
+		if src, ok := genheader.SourceName(path); ok && fileExists(src) {
 			return fmt.Errorf("%s has the name %s is transpiled to; rename the generated Go file",
-				path, filepath.Base(stem)+".gala")
+				path, filepath.Base(src))
 		}
 
 		dstPath := filepath.Join(dstDir, relPath)
