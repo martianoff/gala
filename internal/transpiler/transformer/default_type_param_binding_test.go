@@ -70,16 +70,15 @@ func main() { Println(viaParam(true)) }`, "orFallback(u, std.None[U]{}.Apply())"
 	}
 }
 
-// TestDefaultTypeParamRecursiveCall: inside the declaration itself a call that
-// binds nothing keeps the default's T, the enclosing T, which Go infers the
-// callee's from.
+// TestDefaultTypeParamRecursiveCall: inside the declaration itself, a call
+// binding T to the enclosing T keeps the default's T as written.
 func TestDefaultTypeParamRecursiveCall(t *testing.T) {
 	trans := newDefaultsTranspiler()
 
 	got, err := trans.Transpile(`package main
 
 func describe[T any](v Option[T] = None[T]()) string = v match {
-    case Some(x) => s"some $x, then " + describe()
+    case Some(x) => s"some $x, then " + describe[T]()
     case None() => "none"
 }
 
@@ -87,28 +86,43 @@ func main() {
     Println(describe(Some(1)))
 }`, "")
 	require.NoError(t, err)
-	assert.Contains(t, got, "describe(std.None[T]{}.Apply())")
+	assert.Contains(t, got, "describe[T](std.None[T]{}.Apply())")
 }
 
 // TestDefaultTypeParamUnbound: a call that binds nothing to a type parameter
-// its default names is a GALA error at the call, not Go's `undefined: T`.
+// its default names is a GALA error at the call — not Go's `undefined: T`,
+// and not, in a caller with a T of its own, silently that unrelated T.
 func TestDefaultTypeParamUnbound(t *testing.T) {
 	trans := newDefaultsTranspiler()
 
-	_, err := trans.Transpile(`package main
+	cases := []struct {
+		name   string
+		caller string
+	}{
+		{"plain caller", `func main() {
+    Println(describe())
+}`},
+		{"caller with a type parameter of the same name", `func inner[T any](t T) string = describe() + s" $t"
+
+func main() {
+    Println(inner(1))
+}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := trans.Transpile(`package main
 
 func describe[T any](v Option[T] = None[T]()) string = v match {
     case Some(x) => s"some $x"
-    case _ => "none"
+    case None() => "none"
 }
 
-func main() {
-    Println(describe())
-}`, "")
-	require.Error(t, err)
-	var se *galaerr.SemanticError
-	require.True(t, errors.As(err, &se), "want a SemanticError, got %T: %v", err, err)
-	assert.Equal(t, galaerr.CodeUninferredTypeArgument, se.Code)
-	assert.Contains(t, se.Error(), "cannot infer type argument T")
-	assert.Equal(t, 9, se.Line)
+`+tc.caller, "")
+			require.Error(t, err)
+			var se *galaerr.SemanticError
+			require.True(t, errors.As(err, &se), "want a SemanticError, got %T: %v", err, err)
+			assert.Equal(t, galaerr.CodeUninferredTypeArgument, se.Code)
+			assert.Contains(t, se.Error(), "cannot infer type argument T")
+		})
+	}
 }
