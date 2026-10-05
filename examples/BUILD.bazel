@@ -1285,6 +1285,13 @@ gala_exec_test(
     expected = "newline_deref_statement.out",
 )
 
+# A func, if or for header split across lines still opens a block
+gala_exec_test(
+    name = "newline_split_header",
+    src = "newline_split_header.gala",
+    expected = "newline_split_header.out",
+)
+
 # An expression-bodied function with no result type runs its body as a statement
 gala_exec_test(
     name = "void_expression_function",

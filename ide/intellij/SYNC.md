@@ -102,7 +102,7 @@ Packages with importable types:
 
 **Source of truth:** `internal/parser/newline.go` — which tokens end an expression, which literals can span lines, which tokens are re-typed (and when a `*` or `&` stays binary), and how the re-typed tokens are kept out of syntax errors
 
-**How to verify:** The token sets in `GalaNewlineLexer`'s companion object match `kinds` and `lineStartTokens` in `newline.go` (the `when` in `nextToken` re-types the same tokens; `isPrefixOperator` mirrors `atStatementLevel` + `operatorStandsApart`, and the bracket tracking in `nextToken` mirrors `trackBrackets`). `GalaNewlineLexerTest` covers the same forms as `internal/parser/newline_test.go`.
+**How to verify:** The token sets in `GalaNewlineLexer`'s companion object match `kinds` and `lineStartTokens` in `newline.go` (the `when` in `nextToken` re-types the same tokens; `isPrefixOperator` mirrors `atStatementLevel` + `operatorStandsApart`, and the bracket tracking in `nextToken` mirrors `endHeader`, `declarationCanBegin` and `trackBrackets`). `GalaNewlineLexerTest` covers the same forms as `internal/parser/newline_test.go`.
 
 ### 6c. Top-Level Declaration Nodes
 

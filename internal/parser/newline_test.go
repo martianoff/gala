@@ -155,6 +155,9 @@ func TestBlockAfterHeaderEndingInType(t *testing.T) {
 		{name: "generic method with function parameter", src: "func (o Box[T]) m[U any](f func(T) Option[U]) Option[U] {\n    val p = &n\n    *p = 5\n    None()\n}", stmts: 3},
 		{name: "for header with an assignment", src: "func f() {\n    for i := 0; i < n; i = i + step {\n        val p = &n\n        *p = 5\n    }\n}", stmts: 1},
 		{name: "func type alias before", src: "type F func(int) int\n\nfunc f() int {\n    val p = &n\n    *p = 5\n    n\n}", stmts: 3},
+		// A func type has no block, so the '*' on the line after one starts
+		// a statement as after any other declaration.
+		{name: "local func type before", src: "func f() int {\n    var g func() int\n    *p = 5\n    val q = 1\n    *p + q\n}", stmts: 4},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -163,6 +166,66 @@ func TestBlockAfterHeaderEndingInType(t *testing.T) {
 			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
 			body := decls[len(decls)-1].FunctionDeclaration().Block()
 			assert.Len(t, body.AllStatement(), tt.stmts)
+		})
+	}
+}
+
+// A func, if or for header split across lines still opens a block, so a line
+// in its body that starts with '(', or with '*' or '&' against its operand,
+// begins a new statement.
+func TestSplitHeaderOpensBlock(t *testing.T) {
+	// Six statements, three of which start with a re-typed token.
+	const body = "\n    val q = 1\n    *p + q\n    val r = 2\n    &r\n    val s = 3\n    (s, 2)\n}"
+	const stmts = 6
+	inFunc := func(header string) string { return "func f() int {\n    " + header + body + "\n    0\n}" }
+	cases := []struct{ name, src string }{
+		{name: "func brace on next line", src: "func f() int\n{" + body},
+		{name: "func brace on next line after generic result", src: "func f() Option[int]\n{" + body},
+		{name: "func brace on next line after func result", src: "func f() func(int) int\n{" + body},
+		{name: "func brace on next line after parameters", src: "func f()\n{" + body},
+		{name: "func parameters on next line", src: "func f\n(a int) int {" + body},
+		{name: "func result on next line", src: "func f(a int)\n    int {" + body},
+		{name: "func name on next line after receiver", src: "func (r T)\n    f() int {" + body},
+		{name: "func parameters over several lines", src: "func f(\n    a int,\n    b *int,\n) int {" + body},
+		{name: "func parameters wrapped", src: "func f(a int,\n    b int) int {" + body},
+		{name: "func returning a func type", src: "func f() func(int) int {" + body},
+		{name: "func type result on its own line", src: "func f()\n    func(int) int {" + body},
+		{name: "after a func type result on its own line", src: "func g()\n    func(int) int {\n    (x) => x\n}\n\ntype I interface {\n    M()\n    *int\n}\n\nfunc f() int {" + body},
+		{name: "func after a func type alias", src: "type F func(int) int\n\nfunc f() int\n{" + body},
+		{name: "local func brace on next line", src: inFunc("func g() int\n    {")},
+		{name: "local func pointer result on next line", src: inFunc("func g()\n        *int {")},
+		{name: "if condition wrapped", src: inFunc("if (a &&\n        b) {")},
+		{name: "if condition closed on its own line", src: inFunc("if (a &&\n        b\n    ) {")},
+		{name: "if brace on next line", src: inFunc("if (a &&\n        b)\n    {")},
+		{name: "else if condition wrapped", src: inFunc("if (a) {\n    } else if (b &&\n        c) {")},
+		{name: "for condition brace on next line", src: inFunc("for i < n\n    {")},
+		{name: "for clause wrapped", src: inFunc("for i := 0; i < n &&\n        ok; i++ {")},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			input := "package main\n\n" + tt.src + "\n"
+			tree, _, errs := NewAntlrGalaParser().ParseLenient(input)
+			require.Empty(t, errs)
+			// The body is the block whose first statement is `val q = 1`.
+			var body grammar.IBlockContext
+			var find func(n antlr.Tree)
+			find = func(n antlr.Tree) {
+				if b, ok := n.(grammar.IBlockContext); ok && len(b.AllStatement()) > 0 && b.Statement(0).GetText() == "valq=1" {
+					body = b
+				}
+				for _, c := range n.GetChildren() {
+					find(c)
+				}
+			}
+			find(tree)
+			require.NotNil(t, body)
+			assert.Len(t, body.AllStatement(), stmts)
+
+			llTree, _, llErrors := parseFingerprint(input, antlr.PredictionModeLL)
+			sllTree, _, sllErrors := parseFingerprint(input, antlr.PredictionModeSLL)
+			assert.Empty(t, sllErrors)
+			assert.Empty(t, llErrors)
+			assert.Equal(t, llTree, sllTree)
 		})
 	}
 }
