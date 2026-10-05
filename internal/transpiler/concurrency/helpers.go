@@ -78,7 +78,7 @@ func instantiationKey(args []transpiler.Type) string {
 
 // buildSubst maps a declaration's type-parameter names to the type arguments of
 // a particular instantiation. Returns nil when there is nothing to substitute,
-// which substitute() treats as identity.
+// which transpiler.SubstituteTypeParams treats as identity.
 func buildSubst(typeParams []string, typeArgs []transpiler.Type) map[string]transpiler.Type {
 	if len(typeParams) == 0 || len(typeArgs) == 0 {
 		return nil
@@ -90,53 +90,4 @@ func buildSubst(typeParams []string, typeArgs []transpiler.Type) map[string]tran
 		}
 	}
 	return m
-}
-
-// substitute replaces type-parameter references inside t according to subst,
-// walking every composite kind so a field like Array[T] becomes Array[int]. A
-// nil/empty subst is identity. Type parameters appear as BasicType (see
-// resolveTypeWithParams, which lowers a bare type-param name to BasicType).
-func substitute(t transpiler.Type, subst map[string]transpiler.Type) transpiler.Type {
-	if len(subst) == 0 || transpiler.IsUnusable(t) {
-		return t
-	}
-	switch v := t.(type) {
-	case transpiler.BasicType:
-		if repl, ok := subst[v.Name]; ok {
-			return repl
-		}
-		return v
-	case transpiler.NamedType:
-		// A NamedType with a package is never a type parameter; but an
-		// unqualified one might shadow a param name in odd cases.
-		if v.Package == "" {
-			if repl, ok := subst[v.Name]; ok {
-				return repl
-			}
-		}
-		return v
-	case transpiler.GenericType:
-		params := make([]transpiler.Type, len(v.Params))
-		for i, p := range v.Params {
-			params[i] = substitute(p, subst)
-		}
-		return transpiler.GenericType{Base: substitute(v.Base, subst), Params: params}
-	case transpiler.ArrayType:
-		return transpiler.ArrayType{Elem: substitute(v.Elem, subst)}
-	case transpiler.MapType:
-		return transpiler.MapType{Key: substitute(v.Key, subst), Elem: substitute(v.Elem, subst)}
-	case transpiler.PointerType:
-		return transpiler.PointerType{Elem: substitute(v.Elem, subst)}
-	case transpiler.FuncType:
-		params := make([]transpiler.Type, len(v.Params))
-		for i, p := range v.Params {
-			params[i] = substitute(p, subst)
-		}
-		results := make([]transpiler.Type, len(v.Results))
-		for i, r := range v.Results {
-			results[i] = substitute(r, subst)
-		}
-		return transpiler.FuncType{Params: params, Results: results}
-	}
-	return t
 }

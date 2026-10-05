@@ -207,6 +207,7 @@ go_test(
         "pointer_receiver_test.go",
         "pointer_receiver_val_test.go",
         "qualified_namedarg_shadow_test.go",
+        "receiver_type_param_rename_test.go",
         "recursive_immutable_test.go",
         "resource_inference_test.go",
         "resource_lambda_types_test.go",

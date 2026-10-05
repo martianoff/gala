@@ -1371,11 +1371,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 					// Collect receiver's type parameters to include when resolving types
 					// e.g., for "func (s Some[T]) Unapply(o Option[T])", we need to know T is a type param
-					var allTypeParams []string
+					var typeTypeParams []string
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-						allTypeParams = append(allTypeParams, typeMeta.TypeParams...)
+						typeTypeParams = typeMeta.TypeParams
 					}
-					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+					recvNames := receiverTypeArgNames(recvCtx.Type_())
+					allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 					if ctx.Signature().Type_() != nil {
 						methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
@@ -1409,6 +1410,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							}
 						}
 					}
+
+					// The signature takes its type's parameter names after
+					// section 2.5, when every file's types are known.
+					decls.recordReceiver(methodMeta, recvNames, fullBaseType)
 
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
@@ -1584,6 +1589,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	logPhase("extract-sibling-metadata", phaseStart)
 	phaseStart = time.Now()
+
+	decls.renameReceivers(richAST)
 
 	// Resolved here, while this file's imports are in effect: a target such
 	// as `Array[Millis]` needs them.
@@ -3538,6 +3545,36 @@ type packageDecls struct {
 	mainFile string
 	methods  map[string]packageDeclSite
 	funcs    map[string]packageDeclSite
+	// receivers holds the methods whose receiver spells type arguments, for
+	// renameReceiverTypeParams once every type of the package is known.
+	receivers []receiverDecl
+}
+
+// receiverDecl is a method's metadata, the names its receiver gives its
+// type's parameters, and the metadata key of that type.
+type receiverDecl struct {
+	meta      *transpiler.MethodMetadata
+	recvNames []string
+	typeKey   string
+}
+
+// recordReceiver queues meta, a method whose receiver names its type's
+// parameters recvNames, for renameReceivers.
+func (d *packageDecls) recordReceiver(meta *transpiler.MethodMetadata, recvNames []string, typeKey string) {
+	if recvNames != nil {
+		d.receivers = append(d.receivers, receiverDecl{meta, recvNames, typeKey})
+	}
+}
+
+// renameReceivers gives each queued method's signature its type's parameter
+// names (renameReceiverTypeParams). It runs after the sibling pass, so a
+// receiver type declared in any file of the package is known.
+func (d *packageDecls) renameReceivers(richAST *transpiler.RichAST) {
+	for _, r := range d.receivers {
+		if typeMeta, ok := richAST.Types[r.typeKey]; ok {
+			renameReceiverTypeParams(r.meta, r.recvNames, typeMeta.TypeParams)
+		}
+	}
 }
 
 func newPackageDecls(mainFile string) *packageDecls {
@@ -4016,11 +4053,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					}
 				}
 
-				var allTypeParams []string
+				var typeTypeParams []string
 				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-					allTypeParams = append(allTypeParams, typeMeta.TypeParams...)
+					typeTypeParams = typeMeta.TypeParams
 				}
-				allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+				recvNames := receiverTypeArgNames(recvCtx.Type_())
+				allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 				if ctx.Signature().Type_() != nil {
 					methodMeta.ReturnType = a.resolveTypeWithParams(ctx.Signature().Type_().GetText(), pkgName, allTypeParams)
@@ -4056,6 +4094,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						}
 					}
 				}
+				decls.recordReceiver(methodMeta, recvNames, fullBaseType)
 
 				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 					if _, exists := typeMeta.Methods[methodName]; !exists {

@@ -146,6 +146,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "receiver_type_param_rename",
+    src = "receiver_type_param_rename.gala",
+    expected = "receiver_type_param_rename.out",
+)
+
+gala_exec_test(
     name = "go_generic_lambda_return",
     src = "go_generic_lambda_return.gala",
     expected = "go_generic_lambda_return.out",

@@ -1184,8 +1184,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		if !visible(fn) {
 			continue
 		}
-		sig := fn.Type().(*types.Signature)
-		data.Methods[fn.Name()] = convertSignature(sig)
+		data.Methods[fn.Name()] = goMethodSignature(fn, typ)
 	}
 
 	// Also include value receiver methods
@@ -1199,8 +1198,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		}
 		valueMethods[fn.Name()] = true
 		if _, exists := data.Methods[fn.Name()]; !exists {
-			sig := fn.Type().(*types.Signature)
-			data.Methods[fn.Name()] = convertSignature(sig)
+			data.Methods[fn.Name()] = goMethodSignature(fn, typ)
 		}
 	}
 
@@ -1236,7 +1234,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 				continue
 			}
 			sig := fn.Type().(*types.Signature)
-			data.Methods[fn.Name()] = convertSignature(sig)
+			data.Methods[fn.Name()] = goMethodSignature(fn, typ)
 			// The method-set difference above sees nothing here (both sets
 			// are empty for an uninstantiated generic), so read the receiver.
 			if recv := sig.Recv(); recv != nil {
@@ -1248,6 +1246,59 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	}
 
 	return data
+}
+
+// goMethodSignature converts the signature of fn, a method of the Go type typ.
+// A method declared on typ itself whose receiver names typ's type parameters
+// differently (`func (b Box[U]) M(f func(U))` on `Box[T]`) is recorded in
+// typ's own names, as renameReceiverTypeParams does for a GALA method: the
+// type's metadata is read against its declared names. A Go method has no type
+// parameters of its own, so no rename can capture one. A method promoted from
+// an embedded field keeps its signature as is.
+func goMethodSignature(fn *types.Func, typ types.Type) *transpiler.GoFuncSignature {
+	sig := fn.Type().(*types.Signature)
+	result := convertSignature(sig)
+	named, ok := typ.(*types.Named)
+	recv := sig.RecvTypeParams()
+	if !ok || recv == nil || fn.Origin().Pkg() != named.Obj().Pkg() || !declaresMethod(named.Origin(), fn.Origin()) {
+		return result
+	}
+	declared := named.Origin().TypeParams()
+	if declared == nil || recv.Len() != declared.Len() {
+		return result
+	}
+	renames := map[string]transpiler.Type{}
+	for i := 0; i < recv.Len(); i++ {
+		if from, to := recv.At(i).Obj().Name(), declared.At(i).Obj().Name(); from != to {
+			renames[from] = transpiler.BasicType{Name: to}
+		}
+	}
+	if len(renames) == 0 {
+		return result
+	}
+	for i, tp := range result.TypeParams {
+		if to, ok := renames[tp]; ok {
+			result.TypeParams[i] = to.String()
+		}
+	}
+	for i := range result.Params {
+		result.Params[i].Type = transpiler.SubstituteTypeParams(result.Params[i].Type, renames)
+	}
+	for i, r := range result.Returns {
+		result.Returns[i] = transpiler.SubstituteTypeParams(r, renames)
+	}
+	return result
+}
+
+// declaresMethod reports whether fn is one of the methods named declares (not
+// one promoted from an embedded field).
+func declaresMethod(named *types.Named, fn *types.Func) bool {
+	for i := 0; i < named.NumMethods(); i++ {
+		if named.Method(i) == fn {
+			return true
+		}
+	}
+	return false
 }
 
 // convertSignature converts a types.Signature to a transpiler.GoFuncSignature.

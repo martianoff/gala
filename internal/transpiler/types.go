@@ -394,3 +394,52 @@ func ParseType(s string) Type {
 	}
 	return BasicType{Name: s}
 }
+
+// SubstituteTypeParams replaces type-parameter references inside t according to subst,
+// walking every composite kind so a field like Array[T] becomes Array[int]. A
+// nil/empty subst is identity. Type parameters appear as BasicType (see
+// resolveTypeWithParams, which lowers a bare type-param name to BasicType).
+func SubstituteTypeParams(t Type, subst map[string]Type) Type {
+	if len(subst) == 0 || IsUnusable(t) {
+		return t
+	}
+	switch v := t.(type) {
+	case BasicType:
+		if repl, ok := subst[v.Name]; ok {
+			return repl
+		}
+		return v
+	case NamedType:
+		// A NamedType with a package is never a type parameter; but an
+		// unqualified one might shadow a param name in odd cases.
+		if v.Package == "" {
+			if repl, ok := subst[v.Name]; ok {
+				return repl
+			}
+		}
+		return v
+	case GenericType:
+		params := make([]Type, len(v.Params))
+		for i, p := range v.Params {
+			params[i] = SubstituteTypeParams(p, subst)
+		}
+		return GenericType{Base: SubstituteTypeParams(v.Base, subst), Params: params}
+	case ArrayType:
+		return ArrayType{Elem: SubstituteTypeParams(v.Elem, subst)}
+	case MapType:
+		return MapType{Key: SubstituteTypeParams(v.Key, subst), Elem: SubstituteTypeParams(v.Elem, subst)}
+	case PointerType:
+		return PointerType{Elem: SubstituteTypeParams(v.Elem, subst)}
+	case FuncType:
+		params := make([]Type, len(v.Params))
+		for i, p := range v.Params {
+			params[i] = SubstituteTypeParams(p, subst)
+		}
+		results := make([]Type, len(v.Results))
+		for i, r := range v.Results {
+			results[i] = SubstituteTypeParams(r, subst)
+		}
+		return FuncType{Params: params, Results: results}
+	}
+	return t
+}
