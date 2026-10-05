@@ -274,7 +274,7 @@ func TestGenericStructPatternOnAnySubject(t *testing.T) {
     case Box[int](v, _) => v + 1
     case _              => 0
 }`,
-			contains: []string{".(Box[int])", "v := "},
+			contains: []string{"std.As[Box[int]](obj)", "v := "},
 		},
 		{
 			name: "two type arguments type both fields",
@@ -282,7 +282,7 @@ func TestGenericStructPatternOnAnySubject(t *testing.T) {
     case Pair[string, int](k, v) => s"$k${v * 2}"
     case _                       => ""
 }`,
-			contains: []string{".(Pair[string, int])"},
+			contains: []string{"std.As[Pair[string, int]](obj)"},
 		},
 		{
 			name: "non-generic struct still asserts to itself",

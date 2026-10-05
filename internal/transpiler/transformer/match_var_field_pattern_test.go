@@ -113,7 +113,7 @@ func typed(v any) string = v match {
     case _ => "none"
 }
 `,
-			contains:   []string{"obj.(Point)", "std.As[int](", ".X)", ".Y\n"},
+			contains:   []string{"std.As[Point](obj)", "std.As[int](", ".X)", ".Y\n"},
 			notContain: []string{".X.Get()", ".Y.Get()"},
 		},
 	}

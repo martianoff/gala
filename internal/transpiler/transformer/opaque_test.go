@@ -428,7 +428,7 @@ func main() {
     Println(describe(UserID(3)), kind(UserID(4)), kind(int64(4)))
 }`)
 	assert.Contains(t, out, "int64(obj) == 0")
-	assert.Contains(t, out, ".(UserID)")
+	assert.Contains(t, out, "std.As[UserID](obj)")
 	assert.NotContains(t, out, "Unapply", "no extractor is generated for an opaque type")
 }
 
@@ -476,7 +476,7 @@ func kind(l Labeled) string = l match {
 func main() {
     Println(kind(UserID(4)))
 }`)
-	assert.Contains(t, out, ".(UserID)")
+	assert.Contains(t, out, "std.As[UserID](obj)")
 
 	trans := newAliasExpectedTranspiler()
 	for _, tc := range []struct{ name, src, want string }{

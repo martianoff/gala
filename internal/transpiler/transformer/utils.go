@@ -125,6 +125,16 @@ func (t *galaASTTransformer) stdIdent(name string) ast.Expr {
 	return ref
 }
 
+// stdAsCall returns `std.As[typ](obj)`: obj asserted to typ, looking through
+// std's transparent wrappers. A pattern that tests a value's dynamic type goes
+// through it, so every such pattern sees the same value.
+func (t *galaASTTransformer) stdAsCall(typ, obj ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  &ast.IndexExpr{X: t.stdIdent("As"), Index: typ},
+		Args: []ast.Expr{obj},
+	}
+}
+
 func (t *galaASTTransformer) ident(name string) ast.Expr {
 	if idx := strings.Index(name, "."); idx != -1 {
 		pkg := name[:idx]

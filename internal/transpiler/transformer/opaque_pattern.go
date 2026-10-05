@@ -235,13 +235,16 @@ func (t *galaASTTransformer) hasOpenTypeArg(typ transpiler.Type, meta *transpile
 }
 
 // assertPatternSubject asserts an interface-typed match subject to
-// assertType: it declares `cast, ok := subject.(assertType)` and returns the
-// cast value, the declaration, and the condition that the assertion held.
+// assertType: it declares `cast, ok := std.As[assertType](subject)` and
+// returns the cast value, the declaration, and the condition that the
+// assertion held. std.As is the Go assertion plus a look through std's own
+// transparent wrappers (Immutable, a recovered panic's error), as for a type
+// pattern `case x: T`.
 func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) (ast.Expr, ast.Stmt, ast.Expr) {
 	castName := t.nextTempVar()
 	okName := t.nextTempVar()
 	stmt := t.patternDefine([]string{castName, okName}, []ast.Expr{assertType, ast.NewIdent("bool")},
-		&ast.TypeAssertExpr{X: objExpr, Type: assertType})
+		t.stdAsCall(assertType, objExpr))
 	return ast.NewIdent(castName), stmt, ast.NewIdent(okName)
 }
 

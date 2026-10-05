@@ -14,6 +14,28 @@ struct NotFound(Key string)
 // Error returns the error message.
 func (e NotFound) Error() string = s"not found: ${e.Key}"
 
+// Code is an opaque error type, matched with `case Code(c)`.
+opaque type Code int
+
+// Error returns the error message.
+func (c Code) Error() string = s"code ${int(c)}"
+
+// Tagged is a generic error type, matched with `case e: Tagged[_]`.
+struct Tagged[T any](Tag T)
+
+// Error returns the error message.
+func (e Tagged[T]) Error() string = s"tag ${e.Tag}"
+
+func failCode() int {
+    Panic(Code(7))
+    0
+}
+
+func failTagged() int {
+    Panic(Tagged(Tag = "x"))
+    0
+}
+
 func divide(a int, b int) int = a / b
 
 func explode() int {
@@ -52,11 +74,11 @@ func main() {
     Println(failed.Equal(Failure[int](errors.New("boom"))))
     Println(Failure[int](errors.New("boom")).Equal(failed))
 
-    // A wrapped panic error still has its stack; errors.Is sees through it.
+    // An error wrapping the panic's error still has its stack.
     val wrapped = fmt.Errorf("handler: %w", err)
     Println(PanicStack(wrapped).IsDefined())
 
-    // Type patterns and errors.As see the panic's own error.
+    // Patterns, errors.Is and errors.As see the panic's own error.
     val typed = Try(missing()) match {
         case Failure(e: NotFound) => s"key ${e.Key}"
         case _ => "other"
@@ -64,6 +86,23 @@ func main() {
     Println(typed)
     var target NotFound
     Println(errors.As(Try(missing()).GetError(), &target), target.Key)
+    Println(errors.Is(Try(missing()).GetError(), NotFound(Key = "id")))
+    val coded = Try(failCode()) match {
+        case Failure(Code(c)) => s"code $c"
+        case _ => "other"
+    }
+    Println(coded)
+    val tagged = Try(failTagged()).GetError() match {
+        case e: Tagged[_] => s"tagged: $e"
+        case _ => "other"
+    }
+    Println(tagged)
+    val subject any = Try(missing()).GetError()
+    val viaAny = subject match {
+        case NotFound(key) => s"key $key"
+        case _ => "other"
+    }
+    Println(viaAny)
 
     // A re-raised Failure keeps the stack of the original panic.
     val nested = Try(failed.Get())

@@ -1104,9 +1104,12 @@ Try(handle(request)).OnFailure((err) => {
 })
 ```
 
-The stack is not part of the error itself: `err.Error()` and printing are the
-panic's own message, `errors.Is` / `errors.As` and type patterns see the
-panic's own error, and two `Failure`s of the same panic value are `Equal`.
+The stack travels with the error without changing what it says: `err.Error()`
+and printing are the panic's own message, patterns (`case e: NotFound`,
+`case NotFound(key)`) and `errors.Is` / `errors.As` see the panic's own error,
+and two `Failure`s of the same panic value are `Equal`. The `Failure` holds a
+wrapper of that error, so test it with `errors.Is(err, io.EOF)` or a pattern
+rather than `==`, and with `errors.As` rather than a type switch in Go code.
 The stack is captured only when a panic is recovered; a `Try` that succeeds
 costs nothing extra.
 

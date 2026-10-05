@@ -555,15 +555,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	okName := t.nextTempVar()
 
 	// v, ok := std.As[T](obj)
-	asCall := &ast.CallExpr{
-		Fun: &ast.IndexExpr{
-			X:     t.stdIdent("As"),
-			Index: typeExpr,
-		},
-		Args: []ast.Expr{objExpr},
-	}
-
-	assign := t.patternDefine([]string{name, okName}, []ast.Expr{typeExpr, ast.NewIdent("bool")}, asCall)
+	assign := t.patternDefine([]string{name, okName}, []ast.Expr{typeExpr, ast.NewIdent("bool")}, t.stdAsCall(typeExpr, objExpr))
 
 	return ast.NewIdent(okName), []ast.Stmt{assign}, nil
 }
@@ -622,13 +614,10 @@ func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string
 	okName := t.nextTempVar()
 	instName := t.nextTempVar()
 
-	// inst, ok := any(obj).(WrapInstance)
-	typeAssert := &ast.TypeAssertExpr{
-		X:    &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}},
-		Type: ast.NewIdent(interfaceName),
-	}
-
-	assign1 := t.patternDefine([]string{instName, okName}, []ast.Expr{ast.NewIdent(interfaceName), ast.NewIdent("bool")}, typeAssert)
+	// inst, ok := std.As[WrapInstance](obj) — like a type pattern, it looks
+	// through std's transparent wrappers.
+	assign1 := t.patternDefine([]string{instName, okName}, []ast.Expr{ast.NewIdent(interfaceName), ast.NewIdent("bool")},
+		t.stdAsCall(ast.NewIdent(interfaceName), objExpr))
 
 	// name := obj (keep original concrete type)
 	assign2 := t.patternDefine([]string{name}, []ast.Expr{t.knownTypeExpr(t.getExprTypeName(objExpr))}, objExpr)
@@ -797,7 +786,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	// When the match subject is statically an interface (`any`) — e.g. a match
 	// that mixes a type pattern (`case i: int`) with a struct pattern, or a
 	// parameter declared `any` — the struct's fields are not directly reachable:
-	// Go requires a type assertion first. Insert `castVar, ok := obj.(Struct)`
+	// Go requires a type assertion first. Insert `castVar, ok := std.As[Struct](obj)`
 	// and gate the arm on `ok`; subsequent field access reads from castVar.
 	// (We assert ONLY for interface subjects: `p.(Struct)` on a concrete,
 	// non-interface value is itself a Go compile error, so a concretely-typed
