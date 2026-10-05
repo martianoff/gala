@@ -87,7 +87,9 @@ func GenerateTestMain(testFuncs []string) string {
 //
 // The generated file uses TestMain(m *testing.M) as the entry point,
 // which calls the GALA test framework's RunTests(). This is a _test.go
-// file so it's only compiled by `go test`, not `go build`.
+// file so it's only compiled by `go test`, not `go build`. The tests are
+// called by their Go name in a transpiled _test.go file (goTestFuncName) and
+// reported by their GALA one.
 func GenerateGoTestHarness(pkgName string, testFuncs []string) string {
 	var sb strings.Builder
 
@@ -112,7 +114,7 @@ func GenerateGoTestHarness(pkgName string, testFuncs []string) string {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("TestFunc{Name: std.NewImmutable(\"%s\"), F: std.NewImmutable(%s)}", funcName, funcName))
+		sb.WriteString(fmt.Sprintf("TestFunc{Name: std.NewImmutable(\"%s\"), F: std.NewImmutable(%s)}", funcName, goTestFuncName(funcName)))
 	}
 
 	sb.WriteString(")\n")

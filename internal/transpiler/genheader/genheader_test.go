@@ -52,12 +52,40 @@ func TestStale(t *testing.T) {
 		want          bool
 	}{
 		{"lib.gen.go", own, true},
+		{"lib_test.gen_test.go", own, true},
 		// A plain .go the transpiler wrote is compiled like any other.
 		{"lib.go", own, false},
+		// Not a name OutputName gives: lib.gala is written to lib.gen.go.
+		{"lib.gen_test.go", own, false},
 		{"api.gen.go", foreign, false},
 	} {
 		assert.Equal(t, tc.want, Stale(tc.name, []byte(tc.content)), "Stale(%s)", tc.name)
 		assert.Equal(t, tc.want, StaleFile(write(tc.name, tc.content)), "StaleFile(%s)", tc.name)
 	}
 	assert.False(t, StaleFile(filepath.Join(dir, "missing.gen.go")))
+}
+
+// A test source gets a _test.go name, so Go compiles it only into its
+// package's test; SourceName maps every OutputName back.
+func TestOutputName(t *testing.T) {
+	for _, tc := range []struct{ gala, want string }{
+		{"lib.gala", "lib.gen.go"},
+		{"lib_test.gala", "lib_test.gen_test.go"},
+		{filepath.Join("sub", "sub_test.gala"), filepath.Join("sub", "sub_test.gen_test.go")},
+		// Only the _test suffix makes a test source.
+		{"test.gala", "test.gen.go"},
+		{"testing.gala", "testing.gen.go"},
+	} {
+		got := OutputName(tc.gala)
+		assert.Equal(t, tc.want, got, "OutputName(%s)", tc.gala)
+		assert.Equal(t, strings.HasSuffix(tc.gala, "_test.gala"), strings.HasSuffix(got, "_test.go"),
+			"%s: a test source, and only a test source, gets a _test.go name", got)
+		src, ok := SourceName(got)
+		assert.True(t, ok, "SourceName(%s)", got)
+		assert.Equal(t, tc.gala, src, "SourceName(%s)", got)
+	}
+	for _, name := range []string{"lib.go", "lib_test.go", "lib.gen_test.go", "lib.gala"} {
+		_, ok := SourceName(name)
+		assert.False(t, ok, "SourceName(%s)", name)
+	}
 }

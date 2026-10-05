@@ -602,7 +602,7 @@ lines=2 words=4 bytes=19
 
 - All files share one `package` name and one namespace, so a name declared in both a `.gala` and a `.go` file is a duplicate.
 - A Go file can add methods to a GALA type, as long as the transpiler does not generate a method of that name. It generates `Copy`, `Equal`, `Unapply`, and for sealed types `String`. For an opaque type, a hand-written `Hash` or `Compare` replaces the generated one.
-- Don't name a hand-written file `x.gen.go` next to an `x.gala`: `gala build` writes `x.gala`'s output under that name and rejects the clash.
+- Don't name a hand-written file `x.gen.go` next to an `x.gala`, or `x_test.gen_test.go` next to an `x_test.gala`: `gala build` writes the `.gala` file's output under that name and rejects the clash.
 
 ---
 
@@ -702,5 +702,5 @@ A checklist of what differs from writing Go. The first ones are covered in the p
 **Building**
 
 - **`.go` files build together with the `.gala` files.** A plain `go build` or `go test` does not understand `.gala` sources. Build with `gala` or Bazel.
-- **Don't name a hand-written file `x.gen.go` next to `x.gala`.** That is the name `gala build` gives `x.gala`'s output, so the clash is an error.
+- **Don't name a hand-written file `x.gen.go` next to `x.gala`** (or `x_test.gen_test.go` next to `x_test.gala`). That is the name `gala build` gives the `.gala` file's output, so the clash is an error.
 - **Bazel: a GALA dependency whose constructors you call goes in `gala_deps`** ([Part 4](#with-bazel)).

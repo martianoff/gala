@@ -751,7 +751,7 @@ func (b *Builder) transpile() error {
 		// Preserve the subdirectory layout in gen/ so each GALA subpackage
 		// lands in its own directory — this is what the Go toolchain needs
 		// to resolve imports like "gala-build-workspace/gen/sub".
-		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+		outName := genheader.OutputName(relPath)
 		outPath := filepath.Join(b.workspace.GenDir, outName)
 
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
@@ -912,7 +912,7 @@ func (b *Builder) transpileWithSourceDir() error {
 		if err != nil {
 			relPath = filepath.Base(galaFile)
 		}
-		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+		outName := genheader.OutputName(relPath)
 		outPath := filepath.Join(b.workspace.GenDir, outName)
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
@@ -972,7 +972,7 @@ func (b *Builder) transpileWithSourceDir() error {
 		if err != nil {
 			return fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
-		outName := strings.TrimSuffix(filepath.Base(galaFile), ".gala") + ".gen.go"
+		outName := genheader.OutputName(filepath.Base(galaFile))
 		outPath := filepath.Join(consumerDir, outName)
 		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", outPath, err)
@@ -1753,6 +1753,11 @@ func (b *Builder) Test(verbose bool) error {
 			return fmt.Errorf("transpiling: %w", err)
 		}
 	}
+	for _, outs := range b.testOutputsByDir(testFiles) {
+		if err := renameGoTestFuncs(outs); err != nil {
+			return fmt.Errorf("transpiling: %w", err)
+		}
+	}
 
 	// Step 6: Generate go.mod
 	if err := b.generateGoMod(); err != nil {
@@ -1958,6 +1963,19 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 		return fmt.Errorf("renaming user main for test binary: %w", err)
 	}
 
+	// The root's tests are built into that binary with `go build`, which
+	// skips _test.go files, so they go in under a plain .go name. Nothing can
+	// import package main, so no other package sees their declarations.
+	// Subpackage tests keep their _test.go names: `go test` runs them.
+	rootTests, _ := splitRootTestFiles(b.workspace.ProjectDir, testFiles)
+	for _, tf := range rootTests {
+		testOut := filepath.Join(b.workspace.GenDir, testGenFileName(b.workspace.ProjectDir, tf))
+		binaryOut := strings.TrimSuffix(testOut, "_test.go") + ".go"
+		if err := os.Rename(testOut, binaryOut); err != nil {
+			return fmt.Errorf("adding %s to the test binary: %w", filepath.Base(tf), err)
+		}
+	}
+
 	// Copy local Go subpackages to gen/ so the test binary compiles
 	// when it references types from local Go packages (e.g., httpcore/).
 	if err := copyNonGalaFiles(b.workspace.ProjectDir, b.workspace.GenDir, b.verbose); err != nil {
@@ -1973,8 +1991,8 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 	return nil
 }
 
-// testGenFileName mirrors the naming that transpileFilesToDir applies when
-// emitting .gen.go outputs. The returned path is relative to the gen dir and
+// testGenFileName is the name transpileFilesToDir gives galaFile's output
+// (genheader.OutputName). The returned path is relative to the gen dir and
 // uses OS-native separators, mirroring the subdirectory layout of the
 // original .gala source so subpackages land in their own gen/<sub>/ folder.
 func testGenFileName(projectDir, galaFile string) string {
@@ -1982,7 +2000,7 @@ func testGenFileName(projectDir, galaFile string) string {
 	if err != nil {
 		relPath = filepath.Base(galaFile)
 	}
-	return strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+	return genheader.OutputName(relPath)
 }
 
 // renameUserMainInDir scans .gen.go files under dir (recursively) and renames
@@ -2299,7 +2317,7 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 		// Preserve subdirectory layout under outDir. Each GALA subpackage
 		// lands in its own directory so Go can resolve imports of the form
 		// "gala-build-workspace/gen/<sub>" cleanly.
-		outName := strings.TrimSuffix(relPath, ".gala") + ".gen.go"
+		outName := genheader.OutputName(relPath)
 		outPath := filepath.Join(outDir, outName)
 
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
