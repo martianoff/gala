@@ -4,14 +4,45 @@
 the `for` loop written around it. That is the case when it is:
 
 - inside an arm of a `match`, or a branch of an if-expression, whose value is
-  used — assigned, returned, passed as an argument, or the trailing value of a
-  function. Such a construct is a value, and has to produce one on every path;
+  used — returned, passed as an argument, used as an operand, or the trailing
+  value of a function. Such a construct is a value, and has to produce one on
+  every path. (A match or if-expression a local `val` or `var` is initialized
+  with, or a variable assigned, is lowered as statements, so its `break` and
+  `continue` do control the loop.);
 - inside a lambda, even one written inside the loop. A lambda is a separate
   function, so it cannot leave or advance its caller's loop;
 - outside any `for` loop at all;
-- used as a value itself, as in `val x = if (done) { break } else 1`.
+- used as a value itself, as in `val x = break`.
 
 **Minimal repro.**
+
+```gala
+package main
+
+func main() {
+    for i := 0; i < 5; i++ {
+        Println(i match {
+            case 3 => break
+            case n => s"item $n"
+        })
+    }
+}
+```
+
+**Error output.**
+
+```
+error[GALA-E0059]: `break` inside a match whose value is used cannot reach the loop around it
+  --> main.gala:6:23
+  |
+6 |             case 3 => break
+  |                       ^^^^^ a match whose value is used must produce one on every path
+  |
+  = hint: a match whose value is used must produce one on every path; initialize a `val` with it, use it as a statement, or test the condition before it and `break` there
+```
+
+**Fix.** Initialize a `val` with the `match`: it is then lowered as
+statements, and `break` leaves the loop:
 
 ```gala
 package main
@@ -27,20 +58,8 @@ func main() {
 }
 ```
 
-**Error output.**
-
-```
-error[GALA-E0059]: `break` inside a match whose value is used cannot reach the loop around it
-  --> main.gala:6:23
-  |
-6 |             case 3 => break
-  |                       ^^^^^ a match whose value is used must produce one on every path
-  |
-  = hint: a match whose value is used must produce one on every path; use it as a statement, or test the condition before it and `break` there
-```
-
-**Fix.** Use the `match` as a statement, so its arms run as statements and
-`break` leaves the loop:
+Or use the `match` as a statement, so its arms run as statements and `break`
+leaves the loop:
 
 ```gala
 package main
@@ -175,4 +194,5 @@ instead, because quietly picking a different control flow is the one outcome
 that must never happen.
 
 **Scope.** Only `break` and `continue` written in GALA source are checked. A
-`return` in an arm is covered by [GALA-E0015](GALA-E0015.md).
+`return` in an arm is covered by [GALA-E0015](GALA-E0015.md) and
+[GALA-E0069](GALA-E0069.md).

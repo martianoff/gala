@@ -1,0 +1,10 @@
+typedVal: some 2 / none
+voidReturn:
+  voidReturn: 2
+  voidReturn: none, leaving
+assigned: 20 -1
+bindPick: Some(20) Some(-1) None()
+breakAndContinue:
+  loop: 1
+  loop: 31
+  loop: done

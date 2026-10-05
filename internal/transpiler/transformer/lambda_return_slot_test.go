@@ -174,7 +174,7 @@ func trailingNone(o Option[int]) string = o match {
 			notContains: []string{"return std.None[int]"},
 		},
 		{
-			name: "a return in an if-expression branch leaves the lambda's slot alone",
+			name: "a return in a branch of an if-expression a val is initialized with leaves the lambda",
 			body: `
 func doubledSize(s string) Option[string] {
     val o = apply(() => {
@@ -182,7 +182,7 @@ func doubledSize(s string) Option[string] {
             return None()
         }
         val n = if (s == "") {
-            return 0
+            return Some(0)
         } else {
             s.ByteSize()
         }
@@ -191,7 +191,7 @@ func doubledSize(s string) Option[string] {
     return o.Map((v) => s"v=$v")
 }
 `,
-			contains: []string{"return std.None[int]{}", "apply(func() std.Option[int] {"},
+			contains: []string{"return std.None[int]{}", "return std.Some[int]{}.Apply(0)", "apply(func() std.Option[int] {"},
 		},
 		{
 			name: "returned match takes the lambda's type",

@@ -137,14 +137,13 @@ func main() {
 import "os"
 
 func run(path string) {
-    val data = Try(os.ReadFile(path)) match {
+    Println(Try(os.ReadFile(path)) match {
         case Success(b)   => string(b)
         case Failure(err) => {
             Println(s"error: ${err.Error()}")
             return
         }
-    }
-    Println(data)
+    })
 }
 
 func main() {
@@ -798,11 +797,10 @@ func main() {
 
 func main() {
     for i := 0; i < 5; i++ {
-        val label = i match {
+        Println(i match {
             case 3 => break
             case n => s"item $n"
-        }
-        Println(label)
+        })
     }
 }
 `)
@@ -978,6 +976,68 @@ import "golang.org/x/term"
 
 func main() {
     Println(Try(term.MakeRaw(0)).IsSuccess())
+}
+`)
+			},
+		},
+		{
+			name: "match whose arms have no value bound to a val",
+			code: galaerr.CodeUntypedBranchingValue, // GALA-E0068
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Square(Side int)
+}
+
+func report(msg string) {
+    Println(msg)
+}
+
+func main() {
+    val s Shape = Circle(1)
+    val done = s match {
+        case Circle(_) => report("circle")
+        case Square(_) => report("square")
+    }
+    Println(done)
+}
+`)
+			},
+		},
+		{
+			name: "return in a match passed as an argument",
+			code: galaerr.CodeReturnInBranchingValue, // GALA-E0069
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func double(n int) int = n * 2
+
+func pick(o Option[int]) int {
+    val y = double(o match {
+        case Some(v) => v
+        case None() => { return -1 }
+    })
+    y + 1
+}
+
+func main() {
+    Println(pick(None[int]()))
+}
+`)
+			},
+		},
+		{
+			name: "if-expression whose branches have no known type",
+			code: galaerr.CodeUntypedBranchingValue, // GALA-E0068
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func main() {
+    val ok = true
+    val p = if (ok) nil else nil
+    Println(p)
 }
 `)
 			},

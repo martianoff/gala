@@ -95,8 +95,9 @@ jobs:
       # correctly reject (0.15.2 still has a `val _ =`, GALA-E0060).
       GALA_TUI_REF: c46554dd1e24a2074c4b99dd2294f30cbe955489
       # gala_team master after it adopted GALA 0.85.0 and gala_tui 0.15.4
-      # (martianoff/gala-team#143).
-      GALA_TEAM_REF: "5c52a439968c0060129ebcb37c72531d784e8508"
+      # (martianoff/gala-team#143), with its match arms giving their values
+      # directly rather than through `return` (martianoff/gala-team#144).
+      GALA_TEAM_REF: "d5f543eb77f535f76861c774ef01458a7b10b4ff"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 

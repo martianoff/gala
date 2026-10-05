@@ -1939,15 +1939,21 @@ for i := 0; i < 6; i++ {
 
 A `return` in such an arm likewise returns from the enclosing function.
 
+So do `break`, `continue` and `return` in an arm of a `match`, or a branch of
+an if-expression, that a local `val` or `var` is initialized with, or a
+variable is assigned (`val x = i match { case 2 => break ... }`): the other
+arms give `x` its value.
+
 They must reach a loop written around them in the same function. Each of these
 is an error, [GALA-E0059](errors/GALA-E0059.md):
 
 - outside any `for` loop;
 - inside a lambda, even one written in a loop — a lambda is a separate function;
 - inside an arm of a `match`, or a branch of an if-expression, whose value is
-  used (`val x = i match { case 2 => break ... }`) — such a construct has to
-  produce a value on every path;
-- used as a value itself (`val x = if (c) { break } else 1`).
+  used otherwise (`Println(i match { case 2 => break ... })`) — such a
+  construct has to produce a value on every path. A `return` there is
+  [GALA-E0069](errors/GALA-E0069.md);
+- used as a value itself (`val x = break`).
 
 #### Increment and Decrement Operators
 GALA supports `++` and `--` operators for incrementing and decrementing mutable variables:

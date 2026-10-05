@@ -1,0 +1,16 @@
+matchVal: 20 -1
+ifVal: 20 -1
+matchVar: 30 -1
+nestedMatch: 20 -2 -1
+ifInMatchArm: 20 -2 -1
+returnInBlockArm: 20 100 -10
+firstZero:
+  firstZero: 3
+  firstZero: 2
+  firstZero: 1
+  result 3
+lambdaLocal: 1020 999
+lambdaTail: 1020 999
+ifElseLeaves: 20 0 -1
+returnOrPanic: 20
+returnOfMatch: 20 -1

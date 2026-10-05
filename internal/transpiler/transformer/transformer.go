@@ -91,6 +91,12 @@ type galaASTTransformer struct {
 	matchInStatementPos    bool                                          // set when transforming a `subject match { ... }` whose value is discarded (statement-position match); causes the IIFE to be lowered as void so void-returning arm calls do not appear as `return d.Skip()`
 	methodReceivers        []methodReceiver                              // receivers collected during the walk, validated once the file is complete (see method_receiver_alias.go)
 	loopControlSites       map[*ast.BranchStmt]loopControlSite           // source position of each `break` / `continue` lowered from source, checked by checkLoopControl once the file is complete
+	branchingCalls         map[*ast.CallExpr]branchingSite               // the function-literal call each match or if-expression whose value is used lowered to, checked by checkBranchingCalls once the file is complete
+	userReturns            map[*ast.ReturnStmt]loopControlSite           // source position of each `return` lowered from source, checked by checkBranchingCalls
+	hoisted                map[*ast.Ident]hoistedValue                   // a match or if-expression lowered as statements, by the placeholder that stands for it until its consumer takes it (see hoisted_value.go)
+	escapeCache            map[antlr.Tree]bool                           // whether a parse subtree holds control flow that would leave a construct lowered to a function literal (see escapesConstruct)
+	hoistedPre             []ast.Stmt                                    // statements the local declaration being lowered needs before it, set when its initializer is lowered as statements (see hoisted_value.go)
+	localDeclaration       bool                                          // set while transformStatement lowers a val, var or assignment statement in a function body, whose single value may be lowered as statements (see lowerDeclarationInitializers)
 	userLoops              map[ast.Stmt]bool                             // the for / range loops written in source: the only loops a source `break` / `continue` may control (see loop_control.go)
 	synthesizedReturns     map[*ast.ReturnStmt]bool                      // tracks ReturnStmt nodes synthesized by lowering match-arm tail expressions (vs. user-written `return X`). Used to inline a statement-position match whose arms contain user returns: stripReturnStatements would otherwise convert user `return X` into a bare return that only exits the synthetic match-IIFE, leaving the enclosing function — and any surrounding `for` loop — to spin without the intended exit.
 	pendingMatchStmtBlock  *ast.BlockStmt                                // side-channel: when buildMatchExpressionFromClauses detects a statement-position match with user-written returns inside arm bodies, it stores the inlined block here and returns a placeholder expression. transformBlock consumes this field and replaces the placeholder ExprStmt with the inlined block, so the user's `return X` becomes a real Go return from the enclosing function.
@@ -206,6 +212,10 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.resetExprTypeCache()
 	t.goResults = nil
 	t.loopControlSites = nil
+	t.branchingCalls = nil
+	t.userReturns = nil
+	t.hoisted = nil
+	t.escapeCache = nil
 	t.userLoops = nil
 	if collectLSPMetadata {
 		t.lspVarTypes = make(map[string]transpiler.Type)
@@ -432,6 +442,13 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Every source `break` / `continue` must reach a source loop in its own
 	// Go function; only the finished file shows which function each sits in.
 	if err := t.checkLoopControl(file); err != nil {
+		return nil, nil, err
+	}
+
+	// Whether the value of a match or if-expression lowered to a function
+	// literal is used, and whether a `return` in it leaves only that
+	// function, also shows only in the finished file.
+	if err := t.checkBranchingCalls(file); err != nil {
 		return nil, nil, err
 	}
 

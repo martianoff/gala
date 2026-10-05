@@ -718,6 +718,24 @@ const (
 	// A common cause is an argument calling into a Go package whose types
 	// were not loaded.
 	CodeUninferredTypeArgument ErrorCode = "GALA-E0067"
+
+	// E0068: the value of a match or if-expression is used — bound,
+	// passed, returned, interpolated or called a method on — but none of its
+	// branches has a typed value and nothing it fills gives it a type, so it
+	// has no type to be used as. Without the check it lowered to a function
+	// with no result, and Go rejected the use with "(no value) used as value".
+	CodeUntypedBranchingValue ErrorCode = "GALA-E0068"
+
+	// E0069: a `return` is written in an arm of a match, or a branch of an
+	// if-expression, whose value is used inside a larger expression — an
+	// argument, an operand, a receiver, an interpolation. The rest of the
+	// expression would still have to be evaluated, so the construct lowers to
+	// a function literal there, and the `return` would leave only it while
+	// the enclosing function went on with the returned value as the
+	// construct's. A construct that initializes a local `val` or `var`, is
+	// assigned to a variable, or is the function's result is lowered so that
+	// its `return` leaves the function.
+	CodeReturnInBranchingValue ErrorCode = "GALA-E0069"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

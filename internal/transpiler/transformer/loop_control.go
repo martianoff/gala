@@ -132,7 +132,7 @@ func (t *galaASTTransformer) loopControlInValueError(construct string, bs *ast.B
 		galaerr.CodeLoopControlOutsideLoop,
 		site.line, site.col,
 		fmt.Sprintf("`%s` inside %s whose value is used cannot reach the loop around it", bs.Tok, construct),
-		fmt.Sprintf("%s whose value is used must produce one on every path; use it as a statement, or test the condition before it and `%s` there", construct, bs.Tok))
+		fmt.Sprintf("%s whose value is used must produce one on every path; initialize a `val` with it, use it as a statement, or test the condition before it and `%s` there", construct, bs.Tok))
 }
 
 // checkLoopControl verifies, on the finished file, that every `break` and

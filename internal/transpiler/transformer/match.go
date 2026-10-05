@@ -33,6 +33,12 @@ func (t *galaASTTransformer) containsUserReturnInClauses(clauses []ast.Stmt, def
 // for the IIFE's value channel). Synthesized arm-tail returns are removed so
 // they do not erroneously exit the enclosing function with a discarded value.
 func (t *galaASTTransformer) buildMatchBodyForInline(clauses []ast.Stmt, defaultBody []ast.Stmt) []ast.Stmt {
+	return t.stripSynthesizedArmReturns(chainMatchClauses(clauses, defaultBody))
+}
+
+// chainMatchClauses chains the lowered arms of a match into one if-else
+// chain, the default arm's body as its final else.
+func chainMatchClauses(clauses []ast.Stmt, defaultBody []ast.Stmt) []ast.Stmt {
 	var rootIf ast.Stmt
 	var currentIf *ast.IfStmt
 	for _, clause := range clauses {
@@ -44,16 +50,13 @@ func (t *galaASTTransformer) buildMatchBodyForInline(clauses []ast.Stmt, default
 			currentIf = findLeafIf(clause)
 		}
 	}
-	var body []ast.Stmt
-	if rootIf != nil {
-		if len(defaultBody) > 0 && currentIf != nil {
-			currentIf.Else = &ast.BlockStmt{List: defaultBody}
-		}
-		body = []ast.Stmt{rootIf}
-	} else {
-		body = defaultBody
+	if rootIf == nil {
+		return defaultBody
 	}
-	return t.stripSynthesizedArmReturns(body)
+	if len(defaultBody) > 0 && currentIf != nil {
+		currentIf.Else = &ast.BlockStmt{List: defaultBody}
+	}
+	return []ast.Stmt{rootIf}
 }
 
 // buildInlinedMatchBlock wraps the inlined match body in a Go block that
@@ -433,36 +436,47 @@ func (t *galaASTTransformer) stmtContainsUserReturn(stmt ast.Stmt) bool {
 // (the only structural nodes the match lowering produces); other compound
 // statements are returned unchanged.
 func (t *galaASTTransformer) stripSynthesizedArmReturns(stmts []ast.Stmt) []ast.Stmt {
+	return t.rewriteSynthesizedArmReturns(stmts, func(value ast.Expr) []ast.Stmt {
+		if isValidGoExprStatement(value) {
+			return []ast.Stmt{&ast.ExprStmt{X: value}}
+		}
+		// Drop entirely if not a valid expression statement; the value was
+		// the only payload and is being discarded.
+		return nil
+	})
+}
+
+// rewriteSynthesizedArmReturns replaces each synthesized arm-tail `return X`
+// in stmts (see markSynthesizedArmReturn) with replace(X), recursing through
+// BlockStmt and IfStmt, the only structural nodes the match lowering
+// produces. User-written returns and other statements are left as they are.
+func (t *galaASTTransformer) rewriteSynthesizedArmReturns(stmts []ast.Stmt, replace func(value ast.Expr) []ast.Stmt) []ast.Stmt {
 	out := make([]ast.Stmt, 0, len(stmts))
 	for _, s := range stmts {
 		switch n := s.(type) {
 		case *ast.ReturnStmt:
 			if len(n.Results) > 0 && t.isSynthesizedArmReturn(n) {
-				if isValidGoExprStatement(n.Results[0]) {
-					out = append(out, &ast.ExprStmt{X: n.Results[0]})
-				}
-				// Drop entirely if not a valid expression statement; the value
-				// was the only payload and is being discarded.
+				out = append(out, replace(n.Results[0])...)
 				continue
 			}
 			out = append(out, n)
 		case *ast.BlockStmt:
-			out = append(out, &ast.BlockStmt{List: t.stripSynthesizedArmReturns(n.List)})
+			out = append(out, &ast.BlockStmt{List: t.rewriteSynthesizedArmReturns(n.List, replace)})
 		case *ast.IfStmt:
 			newIf := &ast.IfStmt{Init: n.Init, Cond: n.Cond}
 			if n.Body != nil {
-				newIf.Body = &ast.BlockStmt{List: t.stripSynthesizedArmReturns(n.Body.List)}
+				newIf.Body = &ast.BlockStmt{List: t.rewriteSynthesizedArmReturns(n.Body.List, replace)}
 			}
 			if n.Else != nil {
 				switch e := n.Else.(type) {
 				case *ast.BlockStmt:
-					newIf.Else = &ast.BlockStmt{List: t.stripSynthesizedArmReturns(e.List)}
+					newIf.Else = &ast.BlockStmt{List: t.rewriteSynthesizedArmReturns(e.List, replace)}
 				case *ast.IfStmt:
-					stripped := t.stripSynthesizedArmReturns([]ast.Stmt{e})
-					if len(stripped) == 1 {
-						newIf.Else = stripped[0]
+					rewritten := t.rewriteSynthesizedArmReturns([]ast.Stmt{e}, replace)
+					if len(rewritten) == 1 {
+						newIf.Else = rewritten[0]
 					} else {
-						newIf.Else = &ast.BlockStmt{List: stripped}
+						newIf.Else = &ast.BlockStmt{List: rewritten}
 					}
 				default:
 					newIf.Else = n.Else
@@ -556,7 +570,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 		startLine, startCol,
 		"bare `return` inside a match branch whose result is used as a value",
 		"the match is wrapped in a function that must return "+resultType.String()+
-			"; restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
+			"; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
 	)
 }
 
@@ -773,30 +787,7 @@ func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionO
 // buildMatchBody chains case clauses into an if-else chain with default body,
 // and applies void stripping or return fixup based on result type.
 func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []ast.Stmt, resultType transpiler.Type) []ast.Stmt {
-	var rootIf ast.Stmt
-	var currentIf *ast.IfStmt
-
-	for _, clause := range clauses {
-		if rootIf == nil {
-			rootIf = clause
-			currentIf = findLeafIf(clause)
-		} else {
-			if currentIf != nil {
-				currentIf.Else = clause
-				currentIf = findLeafIf(clause)
-			}
-		}
-	}
-
-	var body []ast.Stmt
-	if rootIf != nil {
-		if len(defaultBody) > 0 && currentIf != nil {
-			currentIf.Else = &ast.BlockStmt{List: defaultBody}
-		}
-		body = []ast.Stmt{rootIf}
-	} else {
-		body = defaultBody
-	}
+	body := chainMatchClauses(clauses, defaultBody)
 
 	isVoid := resultType != nil && resultType.IsVoid()
 	if isVoid {
@@ -1287,18 +1278,27 @@ func extractUserVarsFromStmt(stmt ast.Stmt, names *[]string) {
 }
 
 // collectReferencedIdents walks Go AST nodes and collects all referenced identifier names.
-func collectReferencedIdents(nodes []ast.Node) map[string]bool {
+//
+// A match or if-expression lowered as statements is still a placeholder in
+// nodes (see hoistedResult); the names its statements reference count too.
+func (t *galaASTTransformer) collectReferencedIdents(nodes []ast.Node) map[string]bool {
 	refs := make(map[string]bool)
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		ast.Inspect(node, func(n ast.Node) bool {
-			if ident, ok := n.(*ast.Ident); ok {
-				refs[ident.Name] = true
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		if ident, ok := n.(*ast.Ident); ok {
+			refs[ident.Name] = true
+			if hv, ok := t.hoisted[ident]; ok {
+				for _, s := range hv.stmts {
+					ast.Inspect(s, visit)
+				}
 			}
-			return true
-		})
+		}
+		return true
+	}
+	for _, node := range nodes {
+		if node != nil {
+			ast.Inspect(node, visit)
+		}
 	}
 	return refs
 }
@@ -1351,7 +1351,10 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					stmt, typ := t.lowerMatchArmTailExpr(exprStmt.X)
 					body[len(body)-1] = stmt
 					resultType = typ
-				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
+				} else if ret, ok := lastStmt.(*ast.ReturnStmt); ok && len(ret.Results) > 0 && armSlot.hoist == "" {
+					// In a match lowered to a function literal, a `return`
+					// yields the arm's value; in one lowered as statements it
+					// leaves the function, and the arm has no value.
 					resultType = t.inferResultType(ret.Results[0])
 				} else if ifStmt, ok := lastStmt.(*ast.IfStmt); ok {
 					// A trailing if/else is the arm's value too, carried by its
@@ -1359,7 +1362,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 					// one gives the arm's result type.
 					if promoted, ok := t.promoteIfBranchValues(ifStmt, t.armReturn); ok {
 						body[len(body)-1] = promoted
-						if result := firstBranchResult(promoted); result != nil {
+						if result := t.armBranchResult(promoted, armSlot); result != nil {
 							resultType = t.inferResultType(result)
 						}
 					}
@@ -1392,7 +1395,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 		if guardExpr != nil {
 			nodesToCheck = append(nodesToCheck, guardExpr)
 		}
-		refs := collectReferencedIdents(nodesToCheck)
+		refs := t.collectReferencedIdents(nodesToCheck)
 
 		for _, varName := range userVars {
 			if !refs[varName] {
@@ -1462,7 +1465,8 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 			last := len(arm.defaultBody) - 1
 			switch lastStmt := b.List[len(b.List)-1].(type) {
 			case *ast.ReturnStmt:
-				if len(lastStmt.Results) > 0 {
+				// See transformCaseClauseWithType.
+				if len(lastStmt.Results) > 0 && armSlot.hoist == "" {
 					arm.resultType, arm.hasResult = t.inferResultType(lastStmt.Results[0]), true
 				}
 			case *ast.ExprStmt:
@@ -1475,7 +1479,7 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 				// the first one gives the arm's result type.
 				if promoted, ok := t.promoteIfBranchValues(lastStmt, t.armReturn); ok {
 					arm.defaultBody[last] = promoted
-					if result := firstBranchResult(promoted); result != nil {
+					if result := t.armBranchResult(promoted, armSlot); result != nil {
 						arm.resultType, arm.hasResult = t.inferResultType(result), true
 					}
 				}
@@ -1532,9 +1536,16 @@ func (t *galaASTTransformer) lowerBranches(n int, s slot, siblingTyped bool, low
 	if common == nil {
 		return firstErr
 	}
+	// A construct lowered as statements (s.hoist) keeps doing so; its
+	// `return`s leave the enclosing function, so they keep its slot.
+	retrySlot := typedSlot(common)
+	retrySlot.hoist = s.hoist
 	for _, i := range retry {
-		restore := t.enterReturnSlot(returnSlot{typ: common})
-		_, err := lower(i, typedSlot(common))
+		restore := func() {}
+		if s.hoist == "" {
+			restore = t.enterReturnSlot(returnSlot{typ: common})
+		}
+		_, err := lower(i, retrySlot)
 		restore()
 		if err != nil {
 			return err

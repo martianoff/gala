@@ -518,9 +518,12 @@ in its body use it, never the enclosing function's return type.
   [`GALA-E0018`](errors/GALA-E0018.md)).
 
 A value-position match or if-expression lowers to an IIFE and gives its arms
-and branches their own slot, since a `return` there leaves only the IIFE. A
-statement-position match whose arms return is inlined instead, so its returns
-fill the lambda's slot.
+and branches their own slot, since a `return` there leaves only the IIFE
+(which is GALA-E0069 unless the IIFE is itself the result). A
+statement-position match whose arms return is inlined instead, and so is one a
+local `val` or `var` is initialized with (or a variable assigned) whose arms
+return, `break` or
+`continue`, so their returns fill the lambda's slot.
 
 ---
 
@@ -648,9 +651,10 @@ compiler, which reports the count.
   e.g. `v.AsObject() match { case Some(fields) => …; case None() => None() }`
   inside `func firstName(v) Option[string]` — the subject is
   `Option[Array[JField]]` but the result must be `Option[string]`. A
-  `return` in a value-position match or if-expression with no slot type
-  takes none either, not the enclosing function's: it leaves only the
-  IIFE, whose type its sibling branches give. A context type is
+  `return` in a match or if-expression a local `val` or `var` is
+  initialized with leaves the enclosing function (the construct is
+  lowered as statements), so the function's result type is its slot. A
+  context type is
   skipped only when it names a type parameter nobody has bound yet (the
   `T` of a callee's `Option[T]`). The type parameters of the
   declaration being lowered — its own and its receiver's — are known

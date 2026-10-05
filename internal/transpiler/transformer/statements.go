@@ -143,33 +143,60 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	}, nil
 }
 
-func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (ast.Stmt, error) {
+// hoistsInitializer reports whether the value of ctx may be lowered as
+// statements emitted before it: a `val` or `var` declaration, or an assignment
+// statement of its own to a variable. Not the clauses of an `if` or `for`: a
+// `for` post statement runs on every iteration, not once before the loop. Nor
+// an assignment to an element or field: its index and receiver operands are
+// evaluated before its value, so the value's statements cannot go first.
+func hoistsInitializer(ctx grammar.IDeclarationContext) bool {
+	if ctx.ValDeclaration() != nil || ctx.VarDeclaration() != nil {
+		return true
+	}
+	simple := ctx.SimpleStatement()
+	if simple == nil || simple.Assignment() == nil {
+		return false
+	}
+	targets := simple.Assignment().AllExpressionList()[0].AllExpression()
+	return len(targets) == 1 && token.IsIdentifier(targets[0].GetText())
+}
+
+// transformStatement lowers a statement to stmt, preceded by pre: the
+// statements a local declaration whose initializer is lowered as statements
+// needs before it (see hoisted_value.go), emitted in the caller's own list so
+// the declaration stays in its scope.
+func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (stmt ast.Stmt, pre []ast.Stmt, err error) {
 	if declCtx := ctx.Declaration(); declCtx != nil {
+		prevLocal, prevPre := t.localDeclaration, t.hoistedPre
+		t.localDeclaration, t.hoistedPre = hoistsInitializer(declCtx), nil
 		decl, stmt, err := t.transformDeclaration(declCtx)
+		pre := t.hoistedPre
+		t.localDeclaration, t.hoistedPre = prevLocal, prevPre
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if stmt != nil {
-			return stmt, nil
+		if stmt == nil && decl != nil {
+			stmt = &ast.DeclStmt{Decl: decl}
 		}
-		if decl != nil {
-			return &ast.DeclStmt{Decl: decl}, nil
-		}
-		return nil, nil
+		return stmt, pre, nil
 	}
 	if retCtx := ctx.ReturnStatement(); retCtx != nil {
+		start := retCtx.GetStart()
 		if retCtx.Expression() == nil {
-			return &ast.ReturnStmt{}, nil
+			ret := &ast.ReturnStmt{}
+			t.recordUserReturn(ret, start.GetLine(), start.GetColumn())
+			return ret, nil, nil
 		}
 		// A lambda, if-expression or match takes its types from the result
 		// type of the innermost enclosing function or lambda.
 		stmt, err := t.lowerReturnValue(retCtx.Expression())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return stmt, nil
+		t.recordUserReturn(stmt, start.GetLine(), start.GetColumn())
+		return stmt, nil, nil
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
@@ -231,7 +258,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	} else if len(lhsExprs) == 1 {
 		lhsType = t.getExprTypeName(lhsExprs[0])
 	}
-	rhsExprs, err := t.transformExpressionListAgainst(rhsListCtx, lhsType)
+	rhsExprs, err := t.lowerDeclarationInitializers(rhsListCtx, len(lhsExprs), lhsType)
 	if err != nil {
 		return nil, err
 	}
@@ -574,6 +601,9 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			t.matchInStatementPos = true
 		}
 		var stmt ast.Stmt
+		// pre: statements a local declaration needs before it (see
+		// transformStatement).
+		var pre []ast.Stmt
 		var err error
 		valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext))
 		// The trailing value of a lambda whose result type is not known yet
@@ -613,6 +643,14 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 					}
 				}
 			}
+		} else if isTrailing && lastStmtIsValue && lastValueExpected.hoist != "" && t.hoistable(valueExpr) {
+			// The value of an arm lowered as statements is stored, and so is
+			// that of a match or if-expression at its tail (see
+			// hoisted_value.go).
+			var expr ast.Expr
+			if expr, err = t.lowerAgainst(valueExpr, lastValueExpected, true); err == nil {
+				stmt = &ast.ExprStmt{X: expr}
+			}
 		} else if isTrailing && lastStmtIsValue && !transpiler.IsUnusable(lastValueExpected.typ) &&
 			(t.needsExpectedType(valueExpr) || t.consumesSlotType(valueExpr, t.followAliasChain(lastValueExpected.typ))) {
 			// The block's value fills a typed slot: a lambda, if or match tail is
@@ -628,7 +666,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				stmt = &ast.ExprStmt{X: t.lowerFillingValue(valueExpr, false)}
 			}
 		} else {
-			stmt, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
+			stmt, pre, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
 		}
 		t.matchInStatementPos = prev
 		if err != nil {
@@ -662,7 +700,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				return nil, err
 			}
 		}
-		block.List = append(block.List, stmt)
+		block.List = append(append(block.List, pre...), stmt)
 	}
 	if tail == tailValue || tail == tailBranch || tail == tailExpr {
 		t.typeBlockValue(block)

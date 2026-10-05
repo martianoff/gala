@@ -166,24 +166,24 @@ func main() {
 			expectContains: "default for parameter",
 		},
 		{
-			// Repro of fix/gap-04: a match used as a value (assigned to `val`)
-			// whose Failure branch ends with a bare `return` would previously
-			// emit invalid Go (the IIFE has return type string but returns no
-			// value). We now reject this at transpile time with GALA-E0015.
+			// A match used as a value (passed as an argument) whose Failure
+			// branch ends with a bare `return` would emit invalid Go (the IIFE
+			// has return type string but returns no value). A match a `val` is
+			// initialized with is lowered as statements, and its `return`
+			// leaves the function (see value_match_control_flow_test.go).
 			name: "GALA-E0015 bare return inside value-producing match (Try)",
 			input: `package main
 
 import "os"
 
 func run(path string) {
-    val data = Try(() => os.ReadFile(path)) match {
+    Println(Try(() => os.ReadFile(path)) match {
         case Success(b)   => string(b)
         case Failure(err) => {
             Println(s"error: ${err.Error()}")
             return
         }
-    }
-    Println(data)
+    })
 }
 
 func main() { run("missing.txt") }`,
@@ -197,12 +197,13 @@ func main() { run("missing.txt") }`,
 			name: "GALA-E0015 bare return inside value-producing match (Option)",
 			input: `package main
 
+func double(n int) int = n * 2
+
 func lookup(opt Option[int]) int {
-    val n = opt match {
+    return double(opt match {
         case Some(v) => v
         case None()  => { return }
-    }
-    return n * 2
+    })
 }
 
 func main() { lookup(None[int]()) }`,
@@ -883,11 +884,10 @@ func main() {
 
 func main() {
     for i := 0; i < 5; i++ {
-        val x = i match {
+        Println(i match {
             case 2 => break
             case n => n
-        }
-        Println(x)
+        })
     }
 }`,
 			expectCode:     galaerr.CodeLoopControlOutsideLoop,
@@ -1025,6 +1025,21 @@ func main() {
 }`,
 			expectCode:     galaerr.CodeUninferredTypeArgument,
 			expectContains: "cannot infer type argument T of generic struct Tag from its fields or the expected type",
+		},
+		{
+			name: "GALA-E0068 match whose arms have no value bound to a val",
+			input: `package main
+
+func main() {
+    val n = 1
+    val x = n match {
+        case 1 => {}
+        case _ => {}
+    }
+    Println(x)
+}`,
+			expectCode:     galaerr.CodeUntypedBranchingValue,
+			expectContains: "cannot infer the type of this match: its value is used, but no arm has a typed value",
 		},
 		{
 			name: "GALA-E0048 method on a scalar alias suggests an opaque type",

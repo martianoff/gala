@@ -1570,23 +1570,24 @@ func (t *galaASTTransformer) fixupReturnStatements(stmts []ast.Stmt, resultType 
 	}
 }
 
+// assertAnyIdent is expr asserted to typ when expr is a name of type `any`,
+// and expr otherwise.
+func (t *galaASTTransformer) assertAnyIdent(expr ast.Expr, typ transpiler.Type) ast.Expr {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return expr
+	}
+	if vt := t.getType(ident.Name); vt != nil && vt.IsAny() {
+		return &ast.TypeAssertExpr{X: expr, Type: t.typeToExpr(typ)}
+	}
+	return expr
+}
+
 func (t *galaASTTransformer) fixupReturnStatement(stmt ast.Stmt, resultType transpiler.Type) {
 	switch s := stmt.(type) {
 	case *ast.ReturnStmt:
-		if len(s.Results) > 0 {
-			for i, result := range s.Results {
-				// Check if the result expression is a simple identifier with type 'any'
-				if ident, ok := result.(*ast.Ident); ok {
-					varType := t.getType(ident.Name)
-					if varType != nil && varType.IsAny() {
-						// Wrap with type assertion to the expected result type
-						s.Results[i] = &ast.TypeAssertExpr{
-							X:    result,
-							Type: t.typeToExpr(resultType),
-						}
-					}
-				}
-			}
+		for i, result := range s.Results {
+			s.Results[i] = t.assertAnyIdent(result, resultType)
 		}
 	case *ast.IfStmt:
 		// Recursively process if body and else clause

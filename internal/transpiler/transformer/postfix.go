@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"slices"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -512,14 +513,23 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// In statement position every arm's value is discarded too, so an arm
 	// block's trailing match is itself a statement.
 	s.discarded = stmtPosition
+	// A match whose value a local declaration stores, and whose arms hold a
+	// `return`, `break` or `continue`, is lowered as statements storing its
+	// value (see hoisted_value.go); its arms store theirs the same way.
+	if s.hoist != "" && (stmtPosition || !escapesConstruct(t, caseClauses...)) {
+		s.hoist = ""
+	}
+	hoist := s.hoist
 
 	// The slot type the match fills (see lowerAgainst) is each arm's expected
 	// value type.
 	// A match in value position lowers to an IIFE, so a `return` in an arm
 	// leaves the IIFE: it must not fill or defer into an enclosing lambda's
 	// fillable slot. (A statement-position match whose arms return is inlined,
-	// and its returns do exit the lambda, so it keeps the lambda's slot.)
+	// and its returns do exit the lambda, so it keeps the lambda's slot; so is
+	// a match lowered as statements.)
 	switch {
+	case hoist != "":
 	case !stmtPosition:
 		defer t.enterIIFEReturnSlot(s.typ)()
 	case !transpiler.IsUnusable(s.typ):
@@ -643,7 +653,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// inlined so the loop sees it, and a match whose value is used rejects it
 	// before its arms are unified (an arm ending in `break` has no value).
 	loopControl := t.escapingLoopControl(clauses, defaultBody)
-	if loopControl != nil && !stmtPosition {
+	if loopControl != nil && !stmtPosition && hoist == "" {
 		return nil, t.loopControlInValueError("a match", loopControl)
 	}
 
@@ -654,6 +664,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, err
 	}
 	resultType = t.branchingResultType(resultType, s)
+	// A match lowered as statements stores a value of its type, so it needs
+	// one.
+	if hoist != "" && (transpiler.IsUnusable(resultType) || resultType.IsVoid()) {
+		allLeave := !slices.ContainsFunc(arms, func(a matchArm) bool { return !t.armLeaves(a.clause, a.defaultBody) })
+		if resultType, err = t.hoistedType("match", resultType, s, allLeave,
+			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), clauses, defaultBody); err != nil {
+			return nil, err
+		}
+	}
 
 	// Statement-position matches discard their value; force the IIFE to be
 	// void so that arms with mixed value/void payloads — e.g. one arm calling
@@ -667,7 +686,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// Reject bare `return` inside a value-producing match (the IIFE would need
 	// to return a concrete type, but a bare return produces none). See GALA-E0015.
-	{
+	// A match lowered as statements has no function literal to return from.
+	if hoist == "" {
 		startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
 		if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
 			return nil, err
@@ -763,6 +783,16 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return ast.NewIdent("_"), nil
 	}
 
+	// A match whose value a local declaration stores, and whose arms hold a
+	// `return`, `break` or `continue`, is lowered as statements: each arm
+	// stores its value in the declaration's variable, and its control flow
+	// acts on the enclosing function or loop (see hoisted_value.go).
+	if hoist != "" {
+		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)
+		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
+		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType), nil
+	}
+
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping
 	stmts := t.buildMatchBody(clauses, defaultBody, resultType)
 
@@ -783,7 +813,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		Body: &ast.BlockStmt{List: stmts},
 	}
 
-	return &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}, nil
+	call := &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}
+	if !stmtPosition {
+		t.recordBranchingCall(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	}
+	return call, nil
 }
 
 func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int) (ast.Expr, error) {

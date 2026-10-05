@@ -121,6 +121,8 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0065](/docs/errors/gala-e0065/) | Opaque-type pattern with the wrong number of sub-patterns | Types |
 | [GALA-E0066](/docs/errors/gala-e0066/) | Declaration collides with a dot import | Declarations |
 | [GALA-E0067](/docs/errors/gala-e0067/) | Type argument cannot be inferred | Types |
+| [GALA-E0068](/docs/errors/gala-e0068/) | Match or if-expression value has no type | Type inference |
+| [GALA-E0069](/docs/errors/gala-e0069/) | `return` in a match or if-expression whose value is used | Control flow |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -154,7 +156,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
-**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one. See [Type Inference](/features/type-inference/).
+**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one, [E0068](/docs/errors/gala-e0068/) a match or if-expression whose value is used but has no type. See [Type Inference](/features/type-inference/).
 
 **Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type · [E0065](/docs/errors/gala-e0065/) an opaque-type pattern with other than one sub-pattern. Start with [Opaque Types](/docs/language-reference/#opaque-types).
 
@@ -166,7 +168,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Syntax** — [E0042](/docs/errors/gala-e0042/) unparenthesized lambda parameter (`x => e`); GALA always writes `(x) => e`.
 
-**Control flow** — [E0015](/docs/errors/gala-e0015/) bare `return` in a match whose value is used · [E0059](/docs/errors/gala-e0059/) `break` or `continue` that cannot reach its loop (outside a loop, in a lambda, or in a match or if-expression whose value is used).
+**Control flow** — [E0015](/docs/errors/gala-e0015/) bare `return` in a match whose value is used · [E0059](/docs/errors/gala-e0059/) `break` or `continue` that cannot reach its loop (outside a loop, in a lambda, or in a match or if-expression whose value is used) · [E0069](/docs/errors/gala-e0069/) a `return` that would leave only a match or if-expression whose value is used.
 
 **Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 
