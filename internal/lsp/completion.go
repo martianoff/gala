@@ -275,7 +275,7 @@ func keywordCompletions() []lsp.CompletionItem {
 		// Auto-imported std prelude constructors / converters
 		// (see internal/transpiler/registry/std.go and std/*.gala).
 		"NewImmutable", "NewConstPtr", "NewEmbeddedFS",
-		"FromError", "FromOption", "FromEitherError",
+		"FromError", "FromOption", "FromEitherError", "PanicStack",
 	}
 	items := make([]lsp.CompletionItem, 0)
 	for _, kw := range keywords {

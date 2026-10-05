@@ -3,8 +3,10 @@ package std
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 )
 
 // ImmutableUnwrapper is implemented by Immutable[T] to allow interface-based unwrapping.
@@ -122,6 +124,7 @@ func Copy[T any](v T) T {
 }
 
 func Equal[T any](v1, v2 T) bool {
+	v1, v2 = unwrapPanic(v1), unwrapPanic(v2)
 	if e, ok := any(v1).(Equatable[T]); ok {
 		return e.Equal(v2)
 	}
@@ -162,24 +165,83 @@ func Equal[T any](v1, v2 T) bool {
 // tryRecover executes f with panic recovery, returning a Try.
 // Used by TryApply (defined in try.gala) as the underlying implementation
 // since GALA cannot express Go's defer/recover with named return values.
+//
+// A recovered panic becomes a Failure holding a *panicError, which records the
+// stack of the panic. The stack is taken inside the deferred recover, while the
+// panicking frames are still on the goroutine's stack; nothing is captured on
+// the success path.
 func tryRecover[T any](f func() T) (result Try[T]) {
 	defer func() {
 		if r := recover(); r != nil {
-			var err error
-			switch e := r.(type) {
-			case error:
-				err = e
-			case string:
-				err = fmt.Errorf("%s", e)
-			default:
-				err = fmt.Errorf("panic: %v", r)
-			}
-			result = Try[T]{Err: NewImmutable(err), _variant: _Try_Failure}
+			result = Try[T]{Err: NewImmutable(recoveredError(r)), _variant: _Try_Failure}
 		}
 	}()
 	v := f()
 	result = Try[T]{Value: NewImmutable(v), _variant: _Try_Success}
 	return
+}
+
+// recoveredError turns a recovered panic value into the error a Failure holds.
+// It must be called from the deferred function that recovered r, so the stack
+// it records still contains the panicking frames. A panic that re-raises a
+// recovered panic's error (Try.Get inside an outer Try) keeps the original
+// stack, which names where the problem started.
+func recoveredError(r any) error {
+	if p, ok := r.(*panicError); ok {
+		return p
+	}
+	var err error
+	switch e := r.(type) {
+	case error:
+		err = e
+	case string:
+		err = fmt.Errorf("%s", e)
+	default:
+		err = fmt.Errorf("panic: %v", r)
+	}
+	return &panicError{err: err, stack: string(debug.Stack())}
+}
+
+// panicError is the error of a Failure produced by a recovered panic. It is
+// transparent: Error() and fmt formatting are the panic's own, Unwrap returns
+// the panic's error (so errors.Is / errors.As see it), and Equal and As (hence
+// GALA type patterns) look through it. Only PanicStack reads the recorded
+// stack, so two Failures of the same panic value stay equal and printing a
+// Failure does not dump a stack.
+type panicError struct {
+	err   error
+	stack string
+}
+
+func (e *panicError) Error() string { return e.err.Error() }
+
+func (e *panicError) Unwrap() error { return e.err }
+
+// Format prints the panic's error exactly as it prints on its own.
+func (e *panicError) Format(s fmt.State, verb rune) {
+	fmt.Fprintf(s, fmt.FormatString(s, verb), e.err)
+}
+
+// panicStackOf returns the stack recorded for the panic err came from, or None
+// when neither err nor any error it wraps is a recovered panic. PanicStack
+// (try.gala) is its GALA face.
+func panicStackOf(err error) Option[string] {
+	var p *panicError
+	if errors.As(err, &p) {
+		return Some[string]{}.Apply(p.stack)
+	}
+	return None[string]{}.Apply()
+}
+
+// unwrapPanic returns the panic's own error when v is a *panicError whose
+// error is a T, and v unchanged otherwise.
+func unwrapPanic[T any](v T) T {
+	if p, ok := any(v).(*panicError); ok {
+		if inner, ok := any(p.err).(T); ok {
+			return inner
+		}
+	}
+	return v
 }
 
 func As[T any](obj any) (T, bool) {
@@ -192,6 +254,11 @@ func As[T any](obj any) (T, bool) {
 	if u, ok := obj.(ImmutableUnwrapper); ok {
 		unwrapped := u.GetAny()
 		return As[T](unwrapped)
+	}
+
+	// A recovered panic matches the patterns its own error matches
+	if p, ok := obj.(*panicError); ok {
+		return As[T](p.err)
 	}
 
 	var zero T

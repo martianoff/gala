@@ -2521,6 +2521,29 @@ func processOrder(id int) Try[Receipt] =
 | `ToOption()` | Convert to Option |
 | `ToEither()` | Convert to Either[error, T] |
 
+#### Panic Stack Traces
+
+When `Try` turns a panic into a `Failure`, it also keeps the stack trace of the
+panic, taken while the panicking frames are still on the stack. `PanicStack(err)`
+reads it back: `Some(stack)` for the error of a `Failure` made from a panic (or
+an error that wraps one), `None` for any other error, such as `FromError(err)`.
+The frames point at `.gala` source lines, so a program that uses `Try` as a
+safety boundary can log where the panic happened:
+
+<!-- doc-check: fragment -->
+```gala
+Try(handle(request)).OnFailure((err) => {
+    Println(s"request failed: $err")
+    PanicStack(err).ForEach((stack) => Println(stack))
+})
+```
+
+The stack is not part of the error itself: `err.Error()` and printing are the
+panic's own message, `errors.Is` / `errors.As` and type patterns see the
+panic's own error, and two `Failure`s of the same panic value are `Equal`.
+The stack is captured only when a panic is recovered; a `Try` that succeeds
+costs nothing extra.
+
 #### Try with Go Functions
 
 A Go function that returns `(T, error)` already gives a `Try[T]` when its call

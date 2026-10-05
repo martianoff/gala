@@ -1475,6 +1475,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "try_panic_stack",
+    src = "try_panic_stack.gala",
+    expected = "try_panic_stack.out",
+)
+
+gala_exec_test(
     name = "try_go_interop",
     src = "try_go_interop.gala",
     expected = "try_go_interop.out",
