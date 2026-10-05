@@ -1246,10 +1246,27 @@ func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext
 		return true
 	}
 	name, typeArgs := t.calleeOfCall(exprCtx)
-	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name)) {
+	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && (t.isPhantomGenericCall(name) || t.isDefaultedGenericCall(exprCtx, name))) {
 		return true
 	}
 	return t.isResultGenericMethodCall(exprCtx)
+}
+
+// isDefaultedGenericCall reports whether exprCtx calls name, a generic function
+// with default values, with no arguments: every parameter takes its default,
+// so the type parameters those defaults name come from the slot the call
+// fills, as a phantom one's do (`val p Option[int] = pick()` for
+// `func pick[T any](d Option[T] = None[T]()) Option[T]`).
+func (t *galaASTTransformer) isDefaultedGenericCall(exprCtx grammar.IExpressionContext, name string) bool {
+	meta := t.getFunction(name)
+	if meta == nil || len(meta.TypeParams) == 0 || len(meta.DefaultExprs) == 0 || len(meta.ParamTypes) == 0 {
+		return false
+	}
+	_, args, _ := t.getCallPatternWithTypeArgsFromExpression(exprCtx)
+	if args == nil {
+		_, _, args, _, _ = t.getQualifiedCallPattern(exprCtx)
+	}
+	return args == nil || len(args.AllArgument()) == 0
 }
 
 // isResultGenericMethodCall reports whether exprCtx is a method call written

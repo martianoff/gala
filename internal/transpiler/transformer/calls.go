@@ -301,7 +301,15 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// The slot type is the call's, taken before its defaults are
 				// lowered so none of them sees it.
 				pending := t.expectedArgTypes.takeFor(callOwner(suffix))
-				filled, err := t.fillDefaultArgs(nil, funcMeta, nil, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+				// Every argument is a default, so the type parameters the
+				// defaults spell are bound by the call's explicit type
+				// arguments (`describe[int]()`), or else by the slot
+				// (`val p Option[int] = pick()`).
+				typeSubst := explicitTypeArgSubst(funcMeta.TypeParams, t.extractFuncCallTypeArgs(base))
+				if typeSubst == nil {
+					typeSubst = typeSubstStrings(t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
+				}
+				filled, err := t.fillDefaultArgs(nil, funcMeta, typeSubst, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 				if err != nil {
 					return nil, err
 				}

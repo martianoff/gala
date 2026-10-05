@@ -26,12 +26,13 @@ import (
 // needs to know about its declaration.
 type defaultSource struct {
 	transpiler.DefaultExpr
-	file        string          // declaring source file; "" when unknown
-	pkg         string          // declaring package; names it borrows from there are qualified at a use site in another package
-	declared    transpiler.Type // the parameter's or field's declared type, type arguments substituted; nil when unknown
-	typeParams  []string        // type parameters of the declaration; a declared type still mentioning one is not threaded
-	carried     []string        // the use site's type parameters the type arguments carry into declared (see carriedTypeParams)
-	unspellable []string        // those of carried the default's source must not spell (see substituteDeclared)
+	file        string                     // declaring source file; "" when unknown
+	pkg         string                     // declaring package; names it borrows from there are qualified at a use site in another package
+	declared    transpiler.Type            // the parameter's or field's declared type, type arguments substituted; nil when unknown
+	typeParams  []string                   // type parameters of the declaration; a declared type still mentioning one is not threaded
+	typeArgs    map[string]transpiler.Type // the use site's type arguments for typeParams (see bindDefaultTypeParams)
+	carried     []string                   // the use site's type parameters the type arguments carry into declared (see carriedTypeParams)
+	unspellable []string                   // those of carried the default's source must not spell (see substituteDeclared)
 
 	// A method parameter's default may use the method's receiver. It is
 	// lowered with recv bound to recvType, as in the method body, and recvExpr
@@ -96,9 +97,10 @@ func (t *galaASTTransformer) shadowedByUse(expr ast.Expr, useSite map[string]boo
 }
 
 // substituteDeclared sets src's declared type to declared with the type
-// arguments of subst substituted, and records the use site's type parameters
-// those arguments carry into it (see carriedTypeParams).
+// arguments of subst substituted, and records those arguments and the use
+// site's type parameters they carry into it (see carriedTypeParams).
 func (t *galaASTTransformer) substituteDeclared(src *defaultSource, declared transpiler.Type, subst map[string]transpiler.Type) {
+	src.typeArgs = subst
 	src.declared = t.substituteInType(declared, subst)
 	src.carried = t.carriedTypeParams(src.declared, subst)
 	for _, name := range src.carried {
@@ -264,10 +266,66 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		}
 		return nil, err
 	}
+	expr, err = t.bindDefaultTypeParams(expr, src, useLine, useCol)
+	if err != nil {
+		return nil, err
+	}
 	if src.recv != "" {
 		expr = replaceReceiver(expr, src.recv, src.recvExpr)
 	}
 	return expr, nil
+}
+
+// bindDefaultTypeParams puts the use site's type arguments in place of the
+// declaration's own type parameters that a lowered default spells. The default
+// was lowered where they are bound; the use site binds none of them, or binds
+// a type parameter of its own under the same name: `None[T]()` declared on
+// `func f[T any]` is `None[int]()` at a call that binds T to int. One the use
+// site leaves unbound has no type to stand for, and is reported at
+// useLine/useCol.
+//
+// It runs after qualifying and the shadowing check, which the arguments are
+// not subject to: they are already spelled in the use site's scope. A
+// substituted argument is not rewritten again, and the call-site receiver is
+// put in place only afterwards, so the use site's own code is never touched.
+func (t *galaASTTransformer) bindDefaultTypeParams(expr ast.Expr, src defaultSource, useLine, useCol int) (ast.Expr, error) {
+	if len(src.typeParams) == 0 {
+		return expr, nil
+	}
+	bound := boundNames(expr)
+	substituted := map[ast.Node]bool{}
+	unbound := ""
+	holder := &ast.ParenExpr{X: expr}
+	ast.Inspect(holder, func(n ast.Node) bool {
+		if substituted[n] {
+			return false
+		}
+		for _, slot := range referenceSlots(n) {
+			id, ok := (*slot).(*ast.Ident)
+			if !ok || bound[id.Name] || !slices.Contains(src.typeParams, id.Name) {
+				continue
+			}
+			arg := src.typeArgs[id.Name]
+			switch {
+			case transpiler.IsUnusable(arg):
+				if unbound == "" {
+					unbound = id.Name
+				}
+			case arg.String() != id.Name:
+				// A fresh expression per slot: AST nodes are not shared.
+				spelled := t.typeToExpr(arg)
+				substituted[spelled] = true
+				*slot = spelled
+			}
+		}
+		return true
+	})
+	if unbound != "" {
+		return nil, galaerr.NewCodedSemanticError(galaerr.CodeUninferredTypeArgument, useLine, useCol, fmt.Sprintf(
+			"cannot infer type argument %s for a default value that names it; pass the argument, or the type arguments, explicitly",
+			unbound), "")
+	}
+	return holder.X, nil
 }
 
 // recordDefaultLambdaHints records the LSP inlay hints for a lambda default's
