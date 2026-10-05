@@ -1,0 +1,41 @@
+package main
+
+import (
+    "math/big"
+    "strconv"
+)
+
+// An untyped constant passed to a generic function or method takes the type
+// of the slot the call fills, as it would assigned there directly: `Id(0)` in
+// an `int64` slot is an `int64`, not Go's default `int`.
+
+struct Cell[T any](V T)
+
+func (c Cell[T]) Const[U any](z U) U = z
+
+func Id[U any](z U) U = z
+func Wrap[U any](z U) Cell[U] = Cell(z)
+func First[A any, B any](a A, b B) A = a
+
+func asResult() int64 = Id(1)
+func wrapped() Cell[int64] = Wrap(2)
+func double(x int64) int64 = x * 2
+
+func main() {
+    Println(asResult())
+    Println(wrapped().V)
+    Println(double(Id(3)))
+    val declared int64 = Id(4)
+    Println(declared)
+    val ratio float64 = Id(1)
+    Println(ratio / 4)
+    val first int64 = First(5, "ignored")
+    Println(first)
+    Println(strconv.FormatInt(Id(6), 2))
+    Println(strconv.FormatInt(Cell(1).Const(7), 2))
+    Println(big.NewInt(0).SetInt64(Id(12)).String())
+    val method int64 = Cell("x").Const(8)
+    Println(method)
+    val inferred = Id(9)
+    Println(inferred)
+}

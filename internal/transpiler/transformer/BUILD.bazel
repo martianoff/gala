@@ -254,6 +254,7 @@ go_test(
         "unresolved_nil_test.go",
         "unresolved_types_test.go",
         "untyped_const_immutable_test.go",
+        "untyped_const_slot_test.go",
         "use_binding_test.go",
         "user_get_method_test.go",
         "val_param_test.go",
