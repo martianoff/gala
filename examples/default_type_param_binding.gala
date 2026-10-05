@@ -6,19 +6,20 @@ package main
 
 func describe[T any](v Option[T] = None[T]()) string = v match {
     case Some(x) => s"some $x"
-    case _ => "none"
+    case None() => "none"
 }
 
 func orFallback[T any](x T, fallback Option[T] = None[T]()) Option[T] = fallback.OrElse(Some(x))
 
 func pick[T any](d Option[T] = None[T]()) Option[T] = d
 
+// Slot holds an optional value, empty unless one is given.
 struct Slot[T any](Value Option[T] = None[T](), Label string = "slot")
 
-type Box[T any] struct {
-    V T
-}
+// Box holds one value.
+struct Box[T any](V T)
 
+// Or is alt, or else the boxed value.
 func (b Box[T]) Or(alt Option[T] = None[T]()) Option[T] = alt.OrElse(Some(b.V))
 
 // A caller with a type parameter of its own named like the callee's.

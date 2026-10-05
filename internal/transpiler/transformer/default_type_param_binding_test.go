@@ -30,11 +30,11 @@ func pick[T any](d Option[T] = None[T]()) Option[T] = d
 
 struct Slot[T any](Value Option[T] = None[T](), Label string = "slot")
 
-type Box[T any] struct {
-    V T
-}
+struct Box[T any](V T)
 
 func (b Box[T]) Or(alt Option[T] = None[T]()) Option[T] = alt.OrElse(Some(b.V))
+
+func (b Box[T]) With[U any](u Option[U] = None[U]()) Tuple[T, Option[U]] = (b.V, u)
 `
 
 	cases := []struct {
@@ -56,6 +56,7 @@ func main() { Println(inner("x")) }`, "describe[int](std.None[int]{}.Apply())"},
 		{"caller binding a type parameter of another name", `func viaParam[U any](u U) Option[U] = orFallback(u)
 
 func main() { Println(viaParam(true)) }`, "orFallback(u, std.None[U]{}.Apply())"},
+		{"method type argument", `func main() { Println(Box(V = 1).With[string]()) }`, "std.None[string]{}.Apply()"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -67,6 +68,26 @@ func main() { Println(viaParam(true)) }`, "orFallback(u, std.None[U]{}.Apply())"
 			assert.NotContains(t, got, "None[T]")
 		})
 	}
+}
+
+// TestDefaultTypeParamRecursiveCall: inside the declaration itself a call that
+// binds nothing keeps the default's T, the enclosing T, which Go infers the
+// callee's from.
+func TestDefaultTypeParamRecursiveCall(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	got, err := trans.Transpile(`package main
+
+func describe[T any](v Option[T] = None[T]()) string = v match {
+    case Some(x) => s"some $x, then " + describe()
+    case None() => "none"
+}
+
+func main() {
+    Println(describe(Some(1)))
+}`, "")
+	require.NoError(t, err)
+	assert.Contains(t, got, "describe(std.None[T]{}.Apply())")
 }
 
 // TestDefaultTypeParamUnbound: a call that binds nothing to a type parameter

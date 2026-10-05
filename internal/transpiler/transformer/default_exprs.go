@@ -266,7 +266,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		}
 		return nil, err
 	}
-	expr, err = t.bindDefaultTypeParams(expr, src, useLine, useCol)
+	expr, err = t.bindDefaultTypeParams(expr, src, useSite, useLine, useCol)
 	if err != nil {
 		return nil, err
 	}
@@ -281,14 +281,16 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 // was lowered where they are bound; the use site binds none of them, or binds
 // a type parameter of its own under the same name: `None[T]()` declared on
 // `func f[T any]` is `None[int]()` at a call that binds T to int. One the use
-// site leaves unbound has no type to stand for, and is reported at
-// useLine/useCol.
+// site leaves unbound stays as written when useSite, the type parameters in
+// scope where the default is emitted, has it (a recursive `f()` inside f: Go
+// infers the callee's T from it); otherwise it names nothing there and is
+// reported at useLine/useCol.
 //
 // It runs after qualifying and the shadowing check, which the arguments are
 // not subject to: they are already spelled in the use site's scope. A
 // substituted argument is not rewritten again, and the call-site receiver is
 // put in place only afterwards, so the use site's own code is never touched.
-func (t *galaASTTransformer) bindDefaultTypeParams(expr ast.Expr, src defaultSource, useLine, useCol int) (ast.Expr, error) {
+func (t *galaASTTransformer) bindDefaultTypeParams(expr ast.Expr, src defaultSource, useSite map[string]bool, useLine, useCol int) (ast.Expr, error) {
 	if len(src.typeParams) == 0 {
 		return expr, nil
 	}
@@ -308,7 +310,7 @@ func (t *galaASTTransformer) bindDefaultTypeParams(expr ast.Expr, src defaultSou
 			arg := src.typeArgs[id.Name]
 			switch {
 			case transpiler.IsUnusable(arg):
-				if unbound == "" {
+				if unbound == "" && !useSite[id.Name] {
 					unbound = id.Name
 				}
 			case arg.String() != id.Name:
