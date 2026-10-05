@@ -1,0 +1,9 @@
+none
+some 3
+Some(5)
+Some(a)
+None()
+false
+Some(7)
+none x
+Some(true)

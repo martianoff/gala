@@ -1,0 +1,41 @@
+package main
+
+// Defaults that name their declaration's type parameter take the type
+// argument of each use site: explicit, inferred from another argument, from
+// the slot, from a struct's type arguments or from the receiver.
+
+func describe[T any](v Option[T] = None[T]()) string = v match {
+    case Some(x) => s"some $x"
+    case None() => "none"
+}
+
+func orFallback[T any](x T, fallback Option[T] = None[T]()) Option[T] = fallback.OrElse(Some(x))
+
+func pick[T any](d Option[T] = None[T]()) Option[T] = d
+
+// Slot holds an optional value, empty unless one is given.
+struct Slot[T any](Value Option[T] = None[T](), Label string = "slot")
+
+// Box holds one value.
+struct Box[T any](V T)
+
+// Or is alt, or else the boxed value.
+func (b Box[T]) Or(alt Option[T] = None[T]()) Option[T] = alt.OrElse(Some(b.V))
+
+// A caller with a type parameter of its own named like the callee's.
+func inner[T any](t T) string = describe[int]() + s" $t"
+
+func viaParam[U any](u U) Option[U] = orFallback(u)
+
+func main() {
+    Println(describe[int]())
+    Println(describe(Some(3)))
+    Println(orFallback(5))
+    Println(orFallback("a"))
+    val p Option[int] = pick()
+    Println(p)
+    Println(Slot[int](Label = "a").Value.IsDefined())
+    Println(Box(V = 7).Or())
+    Println(inner("x"))
+    Println(viaParam(true))
+}

@@ -120,6 +120,7 @@ go_test(
         "crosspkg_funcref_chain_test.go",
         "crosspkg_package_val_test.go",
         "default_immutability_test.go",
+        "default_type_param_binding_test.go",
         "doc_comments_test.go",
         "dot_import_generic_namedarg_test.go",
         "dot_import_test.go",

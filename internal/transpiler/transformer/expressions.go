@@ -1245,8 +1245,8 @@ func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext
 	if t.isTupleLiteralFor(exprCtx, hint) {
 		return true
 	}
-	name, typeArgs := t.calleeOfCall(exprCtx)
-	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name)) {
+	name, typeArgs, noArgs := t.calleeOfCall(exprCtx)
+	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name, noArgs)) {
 		return true
 	}
 	return t.isResultGenericMethodCall(exprCtx)
@@ -1337,28 +1337,35 @@ func (t *galaASTTransformer) isConstructionOf(name string, typ transpiler.Type) 
 // calleeOfCall returns the callee of an expression that is exactly one call
 // of a name, optionally package-qualified and with type arguments (`Tag("x")`,
 // `geo.Tag[int](1)`, `parse()`), as written without its type arguments, and
-// whether it has any; "" for anything else.
-func (t *galaASTTransformer) calleeOfCall(exprCtx grammar.IExpressionContext) (name string, typeArgs bool) {
+// whether it has any type arguments and whether it passes no arguments; ""
+// for anything else.
+func (t *galaASTTransformer) calleeOfCall(exprCtx grammar.IExpressionContext) (name string, typeArgs, noArgs bool) {
 	if p := t.barePostfix(exprCtx); p == nil || len(p.AllCaseClause()) > 0 {
-		return "", false
+		return "", false, false
 	}
-	if prim, _, args := t.getCallPatternWithTypeArgsFromExpression(exprCtx); prim != nil {
-		return prim.GetText(), args != nil
+	if prim, argList, typeArgList := t.getCallPatternWithTypeArgsFromExpression(exprCtx); prim != nil {
+		return prim.GetText(), typeArgList != nil, argList == nil || len(argList.AllArgument()) == 0
 	}
-	if pkg, ctor, _, args, ok := t.getQualifiedCallPattern(exprCtx); ok {
-		return pkg.GetText() + "." + ctor, args != nil
+	if pkg, ctor, argList, typeArgList, ok := t.getQualifiedCallPattern(exprCtx); ok {
+		return pkg.GetText() + "." + ctor, typeArgList != nil, argList == nil || len(argList.AllArgument()) == 0
 	}
-	return "", false
+	return "", false, false
 }
 
 // isPhantomGenericCall reports whether name (see calleeOfCall, called without
 // type arguments) is a generic function with a type parameter only its result
 // mentions (`parse()` for `func parse[T any]() Option[T]`): the slot the call
-// fills is the only place that parameter can come from.
-func (t *galaASTTransformer) isPhantomGenericCall(name string) bool {
+// fills is the only place that parameter can come from. So it is for every
+// type parameter of a call with noArgs whose parameters all take their
+// defaults (`val p Option[int] = pick()` for
+// `func pick[T any](d Option[T] = None[T]()) Option[T]`).
+func (t *galaASTTransformer) isPhantomGenericCall(name string, noArgs bool) bool {
 	meta := t.getFunction(name)
-	if meta == nil {
+	if meta == nil || len(meta.TypeParams) == 0 {
 		return false
+	}
+	if noArgs && len(meta.ParamTypes) > 0 && len(meta.DefaultExprs) == len(meta.ParamTypes) {
+		return true
 	}
 	_, phantom := t.phantomTypeParams(meta.TypeParams, meta.ParamTypes)
 	return len(phantom) > 0
