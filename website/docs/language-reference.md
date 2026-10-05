@@ -415,6 +415,8 @@ val p3 = Person(age = 20, name = "Charlie") // Named arguments
 
 A named argument that names no field is [GALA-E0045](/docs/errors/gala-e0045/), for a shorthand or block-form struct, and for a Go struct whose fields the Go type info lists. A struct declared in a hand-written `.go` file of the package itself (`package main` included) is built with named arguments as a Go composite literal, like an imported Go struct: `Bag(Items = go_interop.SliceOf("a"), Score = (n) => n * 2)`.
 
+Outside its own package, a struct is constructible by call syntax only when every field the call sets is exported. For the shorthand form that is every field, since an omitted one takes its default in the same literal, so `lib.Box(1)` for `struct Box(N int, seen bool = false)` is [GALA-E0043](/docs/errors/gala-e0043/). Call a constructor function the package exports, or start from the zero value `lib.Box{}`.
+
 ### Automatic Copy and Equal Methods
 
 <!-- doc-check: fragment -->

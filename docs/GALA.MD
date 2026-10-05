@@ -726,6 +726,13 @@ val c = Cfg(Name = "a")
 // error[GALA-E0045]: missing required field "Tries" in construction of "Cfg"
 ```
 
+A default is set in the same literal as the supplied fields, so outside its own
+package a shorthand struct with an unexported field has no constructor call,
+even when that field has a default: `lib.Box(1)` for
+`struct Box(N int, seen bool = false)` is
+[GALA-E0043](errors/GALA-E0043.md). Call a constructor function the package
+exports, or start from the zero value `lib.Box{}`.
+
 ##### What stays partial, and why
 
 The check applies to **shorthand-declared GALA structs only**. Everything that is
