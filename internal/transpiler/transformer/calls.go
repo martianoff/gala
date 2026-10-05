@@ -718,17 +718,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			}
 			inferredMap := make(map[string]transpiler.Type)
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
-			// An untyped constant, a literal or one of a Go package
-			// (`math.MaxInt8`), leaves the slot's binding in place.
-			untyped := func() bool {
-				if isUntypedConstExpr(expr) {
-					return true
-				}
-				_, ok := t.untypedNumericConstExprDefault(expr)
-				return ok
-			}
+			// An untyped constant leaves the slot's binding in place.
 			for tp, inferred := range inferredMap {
-				if slot, slotted := fromSlot[tp]; slotted && untyped() {
+				if slot, slotted := fromSlot[tp]; slotted && t.isUntypedConstArg(expr) {
 					// Go would infer the constant's default type, so the
 					// slot's is spelled when it differs
 					// (resultOnlyMethodTypeArgs).
@@ -1246,6 +1238,8 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		expected := transpiler.Type(transpiler.NilType{})
 		if positional && lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) == 0 {
 			expected = goSigParamType(goSig, i)
+		} else if positional && lambdaCtx == nil {
+			expected = t.goParamSlot(goSig, i, exprCtx)
 		}
 		expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expected), false)
 		if err != nil {
@@ -1264,6 +1258,26 @@ func (t *galaASTTransformer) emitDirectMethodCall(argListCtx *grammar.ArgumentLi
 		Args:     mArgs,
 		Ellipsis: ellipsisPos(hasSpread),
 	}, nil
+}
+
+// goParamSlot is the slot type the i-th argument exprCtx of a call to the Go
+// function sig is lowered against, as an argument of a GALA function is: its
+// parameter's type, for a value that takes its type arguments from the slot
+// it fills (consumesSlotType) — `Id(5)` in `strconv.FormatInt(Id(5), 10)`
+// is an `Id[int64]`. NilType for any other argument, a parameter of a generic
+// Go function, or one of an interface type.
+func (t *galaASTTransformer) goParamSlot(sig *transpiler.GoFuncSignature, i int, exprCtx grammar.IExpressionContext) transpiler.Type {
+	if sig == nil || len(sig.TypeParams) > 0 {
+		return transpiler.NilType{}
+	}
+	param := goSigParamType(sig, i)
+	if transpiler.IsUnusableOrAny(param) || !t.consumesSlotType(exprCtx, t.followAliasChain(param)) {
+		return transpiler.NilType{}
+	}
+	if _, iface := t.interfaceMethodNames(param); iface {
+		return transpiler.NilType{}
+	}
+	return param
 }
 
 // goSigParamType is the type of the parameter the i-th positional argument of
@@ -1786,6 +1800,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 			return nil, nil, false, cerr
 		}
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
+		if transpiler.IsUnusable(expectedType) && !isSpreadAll {
+			expectedType = t.goParamSlot(goSig, argIdx, exprCtx)
+		}
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
 		tryThunk := len(args) == 1 && isTryThunkParam(funcCallCtx, argIdx)

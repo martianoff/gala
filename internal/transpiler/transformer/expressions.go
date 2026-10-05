@@ -1233,7 +1233,7 @@ func (t *galaASTTransformer) groupedExpression(exprCtx grammar.IExpressionContex
 // declaration, a function or lambda result — given as hint, the type an alias
 // names: a tuple literal of that tuple type, a construction of a value of
 // that generic type (isConstructionOf), a call of a generic function whose
-// result-only type parameters only the slot can give (isPhantomGenericCall),
+// result mentions its type parameters (isResultGenericCall),
 // or a call of a method whose own type parameters its result mentions
 // (isResultGenericMethodCall).
 //
@@ -1246,7 +1246,7 @@ func (t *galaASTTransformer) consumesSlotType(exprCtx grammar.IExpressionContext
 		return true
 	}
 	name, typeArgs, noArgs := t.calleeOfCall(exprCtx)
-	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isPhantomGenericCall(name, noArgs)) {
+	if name != "" && (t.isConstructionOf(name, hint) || !typeArgs && t.isResultGenericCall(name, noArgs)) {
 		return true
 	}
 	return t.isResultGenericMethodCall(exprCtx)
@@ -1352,14 +1352,16 @@ func (t *galaASTTransformer) calleeOfCall(exprCtx grammar.IExpressionContext) (n
 	return "", false, false
 }
 
-// isPhantomGenericCall reports whether name (see calleeOfCall, called without
-// type arguments) is a generic function with a type parameter only its result
-// mentions (`parse()` for `func parse[T any]() Option[T]`): the slot the call
-// fills is the only place that parameter can come from. So it is for every
-// type parameter of a call with noArgs whose parameters all take their
-// defaults (`val p Option[int] = pick()` for
+// isResultGenericCall reports whether name (see calleeOfCall, called without
+// type arguments) is a generic function whose result mentions one of its type
+// parameters: the slot the call fills gives one only its result mentions
+// (`parse()` for `func parse[T any]() Option[T]`), and one only untyped
+// constant arguments bind (`Id(0)` in an `int64` slot), which Go would infer
+// as the constant's default type (see injectFuncPhantomTypeArgs). It also
+// gives every type parameter of a call with noArgs whose parameters all take
+// their defaults (`val p Option[int] = pick()` for
 // `func pick[T any](d Option[T] = None[T]()) Option[T]`).
-func (t *galaASTTransformer) isPhantomGenericCall(name string, noArgs bool) bool {
+func (t *galaASTTransformer) isResultGenericCall(name string, noArgs bool) bool {
 	meta := t.getFunction(name)
 	if meta == nil || len(meta.TypeParams) == 0 {
 		return false
@@ -1367,8 +1369,9 @@ func (t *galaASTTransformer) isPhantomGenericCall(name string, noArgs bool) bool
 	if noArgs && len(meta.ParamTypes) > 0 && len(meta.DefaultExprs) == len(meta.ParamTypes) {
 		return true
 	}
-	_, phantom := t.phantomTypeParams(meta.TypeParams, meta.ParamTypes)
-	return len(phantom) > 0
+	mentioned := make(map[string]bool)
+	t.collectReferencedParams(meta.ReturnType, meta.TypeParams, mentioned)
+	return len(mentioned) > 0
 }
 
 // isGenericStructAlias reports whether name, resolving to the typeMetas key

@@ -716,7 +716,10 @@ func (t *galaASTTransformer) phantomTypeParams(typeParams []string, paramTypes [
 // pasteable hint (uninferredTypeArgError) rather than emitted uninstantiated.
 //
 // Arg-bound params are resolved only from the arguments, never from the
-// slot: a slot-derived guess could contradict the real argument. Since Go
+// slot: a slot-derived guess could contradict the real argument. The one
+// exception is a param only untyped constant arguments bind
+// (constSlotTypeArgs): Go would give it the constant's default type, so the
+// slot's is spelled (`Id[int64](0)`), with those before it. Since Go
 // cannot infer a phantom one, the call is emitted with every type argument,
 // so an arg-bound one GALA cannot type (an argument of unknown type) is an
 // error too.
@@ -730,19 +733,37 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 		return fun, nil
 	}
 	argBound, phantom := t.phantomTypeParams(funcMeta.TypeParams, funcMeta.ParamTypes)
-	if len(phantom) == 0 {
+	if len(phantom) == 0 && !slices.ContainsFunc(args, t.isUntypedConstArg) {
 		// Every type param is determined by an argument — leave it to Go.
 		return fun, nil
 	}
-
-	// Arg-bound params come from the arguments, phantom ones from the slot.
+	fromSlot := t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, expected)
 	resolved := t.argTypeArgs(funcMeta, args, hasSpread)
-	for tp, typ := range t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, expected) {
-		if !argBound[tp] {
+	constBound := t.constSlotTypeArgs(funcMeta, args, hasSpread, resolved, fromSlot)
+	// The call spells every type argument when one is phantom, else those up
+	// to the last constBound one; Go infers the rest from the arguments.
+	spelled := funcMeta.TypeParams
+	if len(phantom) == 0 {
+		end := 0
+		for i, tp := range funcMeta.TypeParams {
+			if constBound[tp] {
+				end = i + 1
+			}
+		}
+		if end == 0 {
+			return fun, nil
+		}
+		spelled = funcMeta.TypeParams[:end]
+	}
+
+	// Arg-bound params come from the arguments, phantom and constBound ones
+	// from the slot.
+	for tp, typ := range fromSlot {
+		if !argBound[tp] || constBound[tp] {
 			resolved[tp] = typ
 		}
 	}
-	instantiated, missing := t.completeTypeArgs(fun, funcMeta.TypeParams, nil, resolved)
+	instantiated, missing := t.completeTypeArgs(fun, spelled, nil, resolved)
 	if slices.ContainsFunc(missing, func(tp string) bool { return argBound[tp] }) {
 		// No slot fixes an argument whose type is unknown.
 		return nil, t.unknownArgTypeError(line, col, t.argCalleeName(fun), missing, args, true)
@@ -843,12 +864,46 @@ func (t *galaASTTransformer) inferFuncTypeParamsFromArgs(fMeta *transpiler.Funct
 	return result
 }
 
+// constSlotTypeArgs reports the type parameters of fMeta that only untyped
+// constant arguments bind (isUntypedConstArg) and that fromSlot, the slot the
+// call fills, binds to another type than the constants'. Go infers such a
+// parameter as the constant's default type (`int` for the `0` of `Id(0)` in
+// an `int64` slot), so the call has to spell the slot's. bound is what all
+// the arguments bind (argTypeArgs).
+func (t *galaASTTransformer) constSlotTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool, bound, fromSlot map[string]transpiler.Type) map[string]bool {
+	if len(fromSlot) == 0 {
+		return nil
+	}
+	typedArgs := make([]ast.Expr, len(args))
+	for i, arg := range args {
+		if !t.isUntypedConstArg(arg) {
+			typedArgs[i] = arg
+		}
+	}
+	typed := t.argTypeArgs(fMeta, typedArgs, hasEllipsis)
+	var out map[string]bool
+	for tp, inferred := range bound {
+		slot, ok := fromSlot[tp]
+		if _, byTyped := typed[tp]; !ok || byTyped || transpiler.IsUnusableOrAny(slot) || slot.String() == inferred.String() {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]bool)
+		}
+		out[tp] = true
+	}
+	return out
+}
+
 // argTypeArgs binds fMeta's type parameters from the lowered arguments of a
 // call, unifying each parameter type with its argument's type; only those an
-// argument determines appear in the result.
+// argument determines appear in the result. A nil argument binds nothing.
 func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, args []ast.Expr, hasEllipsis bool) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
 	for i, arg := range args {
+		if arg == nil {
+			continue
+		}
 		var paramType transpiler.Type
 		if i < len(fMeta.ParamTypes) {
 			paramType = fMeta.ParamTypes[i]
