@@ -689,17 +689,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A match lowered as statements has no function literal to return from:
 	// its bare `return` leaves the enclosing function, which must then return
 	// nothing.
-	{
-		startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-		var err error
-		if hoist == "" {
-			err = t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol)
-		} else {
-			err = t.validateNoBareReturnsInHoistedMatch(clauses, defaultBody, startLine, startCol)
-		}
-		if err != nil {
-			return nil, err
-		}
+	if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, hoist != "",
+		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()); err != nil {
+		return nil, err
 	}
 
 	// Note: We keep result types with unresolved type parameters because they are valid Go
@@ -798,11 +790,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if hoist != "" {
 		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
-		stmts, err := t.scopeReleases([]ast.Stmt{block}, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
-		if err != nil {
-			return nil, err
-		}
-		return t.hoistedResult(hoist, stmts, resultType), nil
+		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}
 
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping

@@ -1326,8 +1326,9 @@ func (t *galaASTTransformer) emitNonRestBindings(
 	return varDecls, guardedAssigns, extraConds, nil
 }
 
-// seqVarDecl builds `var name T` as a DeclStmt for seq-pattern bindings.
-// Helper used by emitNonRestBindings.
+// seqVarDecl builds `var name T` (`var name T = value` with a value) as a
+// DeclStmt: for seq-pattern bindings (emitNonRestBindings) and the variables
+// of a construct lowered as statements (hoisted_value.go).
 func seqVarDecl(name string, typeExpr ast.Expr, value ...ast.Expr) ast.Stmt {
 	return &ast.DeclStmt{
 		Decl: &ast.GenDecl{

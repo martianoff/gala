@@ -163,9 +163,19 @@ func hoistsInitializer(ctx grammar.IDeclarationContext) bool {
 
 // transformStatement lowers a statement to stmt, preceded by pre: the
 // statements a local declaration whose initializer is lowered as statements
-// needs before it (see hoisted_value.go), emitted in the caller's own list so
-// the declaration stays in its scope.
+// needs before it (see hoisted_value.go), or the binding of a `use`, emitted
+// in the caller's own list so the name stays in its scope.
 func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (stmt ast.Stmt, pre []ast.Stmt, err error) {
+	// A `use x = acquire` scoped-resource binding lowers to `x := acquire`,
+	// emitted before, plus `defer x.Close()`; the binding stays in scope for
+	// the rest of the block and releases (LIFO) when the function returns.
+	if useDecl := useDeclFromStatement(ctx); useDecl != nil {
+		useStmts, err := t.transformUseDeclaration(useDecl)
+		if err != nil {
+			return nil, nil, err
+		}
+		return useStmts[1], useStmts[:1], nil
+	}
 	if declCtx := ctx.Declaration(); declCtx != nil {
 		prevLocal, prevPre := t.localDeclaration, t.hoistedPre
 		t.localDeclaration, t.hoistedPre = hoistsInitializer(declCtx), nil
@@ -569,18 +579,6 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				block.List = append(block.List, &ast.ExprStmt{X: expr})
 			}
 			return block, nil
-		}
-		// A `use x = acquire` scoped-resource binding lowers to `x := acquire`
-		// plus `defer x.Close()`; the binding stays in scope for the rest of
-		// this block and releases (LIFO) when the function returns. Emitted
-		// inline so subsequent statements see `x`.
-		if useDecl := useDeclFromStatement(stmtCtx); useDecl != nil {
-			useStmts, err := t.transformUseDeclaration(useDecl)
-			if err != nil {
-				return nil, err
-			}
-			block.List = append(block.List, useStmts...)
-			continue
 		}
 		// A bare `subject match { ... }` whose value is discarded by the
 		// surrounding ExprStmt must be lowered as a void IIFE; otherwise

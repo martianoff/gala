@@ -925,11 +925,7 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 		return &ast.BlockStmt{List: b.stmts}
 	}
 	ifStmt := &ast.IfStmt{Cond: cond, Body: store(branches[0]), Else: store(branches[1])}
-	stmts, err := t.scopeReleases([]ast.Stmt{ifStmt}, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
-	if err != nil {
-		return nil, err
-	}
-	return t.hoistedResult(s.hoist, stmts, typ), nil
+	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 }
 
 // expressionIsBareMatch reports whether the expression context is a bare
@@ -1123,16 +1119,6 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 
 	var preceding []ast.Stmt
 	for _, stmtCtx := range stmts[:len(stmts)-1] {
-		// A `use` binding is two statements, as in any block (see
-		// transformBlockWithTail).
-		if useDecl := useDeclFromStatement(stmtCtx); useDecl != nil {
-			useStmts, err := t.transformUseDeclaration(useDecl)
-			if err != nil {
-				return nil, nil, false, err
-			}
-			preceding = append(preceding, useStmts...)
-			continue
-		}
 		stmt, pre, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
 		if err != nil {
 			return nil, nil, false, err
