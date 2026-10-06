@@ -393,7 +393,12 @@ func (t *galaASTTransformer) bareExtractor(name string, matchedType transpiler.T
 // heuristic — `concurrent.Future`'s unexported `fut` case is invisible to
 // another package, where `case FutureCmd(fut)` binds a name.
 func (t *galaASTTransformer) visibleHere(name string, meta *transpiler.TypeMetadata) bool {
-	return token.IsExported(name) || meta.Package == "" || meta.Package == t.packageName
+	return visibleFrom(name, meta, t.packageName)
+}
+
+// visibleFrom is visibleHere for code in package fromPackage.
+func visibleFrom(name string, meta *transpiler.TypeMetadata, fromPackage string) bool {
+	return token.IsExported(name) || meta.Package == "" || meta.Package == fromPackage
 }
 
 // zeroFieldExtractor returns the type a bare pattern name names, and its

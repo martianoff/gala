@@ -360,6 +360,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// construction fills, as for one with arguments: no field
 				// can bind them (`func p() Phantom[int] = Phantom()`).
 				line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+				// Every field takes its default here, so another package's
+				// struct with a private field has no such construction.
+				if err := t.checkPrivateFieldCtor(base, t.getTypeMeta(resolved), fields, func(int, string) bool { return false }, suffix); err != nil {
+					return nil, err
+				}
 				typed, err := t.structLiteralType(base, typeName, resolved, t.expectedArgTypes.peek(), line, col,
 					func([]string, map[string]transpiler.Type) {})
 				if err != nil {
@@ -1671,7 +1676,7 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 // then takes the omitted fields' defaults. Neither does when the fields are
 // private to another package.
 func (t *galaASTTransformer) positionalCallBuildsStructLiteral(typeMeta *transpiler.TypeMetadata, fields []string, nargs int) bool {
-	if nargs == 0 || nargs > len(fields) || t.positionalCtorIsUnavailable(typeMeta.Package, fields, nargs) {
+	if nargs == 0 || nargs > len(fields) || t.positionalCtorIsUnavailable(typeMeta, fields, nargs) {
 		return false
 	}
 	_, hasApply := typeMeta.Methods["Apply"]
@@ -2682,6 +2687,12 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		// thought they had just written, and before type-argument inference,
 		// which would blame the type argument that field was to bind.
 		if err := checkUnknownStructFields(qualifiedName, fields, argListCtx); err != nil {
+			return nil, err
+		}
+		// Another package's struct is not constructible here when the literal
+		// would set a field private to that package.
+		provided := func(_ int, name string) bool { _, ok := namedArgs[name]; return ok }
+		if err := t.checkPrivateFieldCtor(fun, t.getTypeMeta(resolvedTypeName), fields, provided, argListCtx); err != nil {
 			return nil, err
 		}
 		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, callCtx.slotType, line, col)

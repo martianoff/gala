@@ -75,6 +75,15 @@ val f = Future(() => compute())     // companion Apply
 A struct you declared yourself is still positionally constructible, including
 from another package when its fields are exported.
 
+**Another package's private fields.** From outside its package, a struct is
+constructible by call syntax only when every field the call sets is exported.
+For a shorthand struct that is every field — one the call omits takes its
+default in the same literal — so a single unexported field, defaulted or not,
+makes `lib.Box(1)`, `lib.Box(N = 1)` and `lib.Box()` this error, with a hint
+naming the field. For a block-form struct only the fields the call names count.
+Call a constructor function the package exports, or start from the zero value,
+`lib.Box{}`.
+
 **Rationale.** Scala spells collection construction `List(1, 2, 3)`, so reaching
 for the type name is a common first attempt in GALA. What made it worth a
 dedicated code is what used to happen instead of a clear error.

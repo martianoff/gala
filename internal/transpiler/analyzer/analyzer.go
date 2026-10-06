@@ -4580,7 +4580,7 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		// own). Without an Apply, private fields leave the call unlowered.
 		apply := meta.Methods["Apply"]
 		fields := len(meta.FieldNames)
-		private := transformer.PositionalCtorUnavailable(meta.Package, pkgName, meta.FieldNames, args)
+		private := transformer.PositionalCtorUnavailable(meta, pkgName, meta.FieldNames, args)
 		literal := fields > 0 && args > 0 && args == fields && !(meta.IsSealed && apply != nil) && !private
 		switch {
 		case apply != nil && !literal:

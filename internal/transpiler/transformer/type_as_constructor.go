@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 )
@@ -72,14 +74,17 @@ func (t *galaASTTransformer) checkTypeUsedAsConstructor(fun ast.Expr, line, col 
 		return nil
 	}
 
-	msg := fmt.Sprintf("%s is a type, not a constructor", typeName)
-	hint := t.constructorHintFor(typeName, meta.TypeParams)
+	return typeNotConstructorError(typeName, t.constructorHintFor(typeName, qualifiedName, meta), line, col, exact)
+}
 
-	err := galaerr.NewCodedSemanticError(galaerr.CodeTypeUsedAsConstructor, line, col, msg, hint)
+// typeNotConstructorError builds the GALA-E0043 diagnostic. With exact, the
+// span covers the callee name so the caret covers what has to be renamed. The
+// span is over the name the user wrote, which is the unqualified one even when
+// the emitted callee has acquired a package qualifier.
+func typeNotConstructorError(typeName, hint string, line, col int, exact bool) error {
+	err := galaerr.NewCodedSemanticError(galaerr.CodeTypeUsedAsConstructor, line, col,
+		fmt.Sprintf("%s is a type, not a constructor", typeName), hint)
 	if exact {
-		// Span the callee name so the caret covers what has to be renamed. The
-		// span is over the name the user wrote, which is the unqualified one
-		// even when the emitted callee has acquired a package qualifier.
 		err = err.WithSpan(col + len([]rune(typeName)))
 	}
 	return err
@@ -89,17 +94,23 @@ func (t *galaASTTransformer) checkTypeUsedAsConstructor(fun ast.Expr, line, col 
 // function that exists in scope — so the suggestion is something the compiler
 // will actually accept — and falls back to describing the convention when the
 // type has no discoverable constructor.
-func (t *galaASTTransformer) constructorHintFor(typeName string, typeParams []string) string {
+func (t *galaASTTransformer) constructorHintFor(typeName, qualifiedName string, meta *transpiler.TypeMetadata) string {
 	for _, candidate := range constructorCandidates(typeName) {
 		if t.isKnownFunctionName(candidate) {
 			return fmt.Sprintf("use `%s(...)`; GALA constructs values through named "+
 				"functions, so a type name is never callable", candidate)
 		}
 	}
-	if len(typeParams) > 0 {
+	if len(meta.TypeParams) > 0 {
 		return fmt.Sprintf("%s is generic and has no constructor function in scope; "+
 			"look for a `%sOf` or `Empty%s` in the package that declares it",
 			typeName, typeName, typeName)
+	}
+	// Naming the fields is no way out when one of them is private to the
+	// declaring package. A sealed parent's fields are synthetic (`_variant`),
+	// and its zero value is no variant, so it keeps the generic hint.
+	if field := PrivateFieldSetByCtor(meta, t.packageName, meta.FieldNames, func(int, string) bool { return true }); field != "" && !meta.IsSealed {
+		return privateFieldHint(qualifiedName, meta, field)
 	}
 	return fmt.Sprintf("%s has no constructor function in scope; construct it by "+
 		"naming its fields, or call the function that builds it", typeName)
@@ -144,26 +155,65 @@ func (t *galaASTTransformer) isKnownFunctionName(name string) bool {
 // site is what stops it. Go would reject the literal anyway, so nothing that
 // used to compile stops compiling — the difference is that the rejection now
 // happens in GALA, in GALA's vocabulary, with the real constructor named.
-func (t *galaASTTransformer) positionalCtorIsUnavailable(typePackage string, fields []string, argCount int) bool {
-	return PositionalCtorUnavailable(typePackage, t.packageName, fields, argCount)
+func (t *galaASTTransformer) positionalCtorIsUnavailable(meta *transpiler.TypeMetadata, fields []string, argCount int) bool {
+	return PositionalCtorUnavailable(meta, t.packageName, fields, argCount)
 }
 
 // PositionalCtorUnavailable is positionalCtorIsUnavailable for a call made
 // from package fromPackage. It is exported so the analyzer, which infers a
 // package-level val's type from its constructor call, dispatches that call
 // exactly as the transformer lowers it.
-func PositionalCtorUnavailable(typePackage, fromPackage string, fields []string, argCount int) bool {
-	if typePackage == "" || typePackage == fromPackage {
-		return false
+func PositionalCtorUnavailable(meta *transpiler.TypeMetadata, fromPackage string, fields []string, argCount int) bool {
+	return PrivateFieldSetByCtor(meta, fromPackage, fields, func(i int, _ string) bool { return i < argCount }) != ""
+}
+
+// PrivateFieldSetByCtor returns the first field that a constructor call made
+// from package fromPackage would set although the declaring package keeps it
+// unexported, or "" when there is none. provided reports whether the call site
+// supplies the field at index i.
+//
+// A supplied field is set. For the shorthand form every other field is set as
+// well: an omitted field either takes its declared default, which is lowered
+// into the same literal, or is a required field the call left out — and a
+// required field the caller cannot name cannot be supplied either. So a
+// shorthand struct with any unexported field has no constructor call outside
+// its package, whatever arguments are given. A block-form struct has no
+// defaults and leaves omitted fields zero, so only the supplied ones count.
+func PrivateFieldSetByCtor(meta *transpiler.TypeMetadata, fromPackage string, fields []string, provided func(i int, name string) bool) string {
+	if meta == nil {
+		return ""
 	}
-	n := argCount
-	if n > len(fields) {
-		n = len(fields)
-	}
-	for i := 0; i < n; i++ {
-		if !ast.IsExported(fields[i]) {
-			return true
+	for i, name := range fields {
+		if !visibleFrom(name, meta, fromPackage) && (meta.IsShorthand || provided(i, name)) {
+			return name
 		}
 	}
-	return false
+	return ""
+}
+
+// checkPrivateFieldCtor rejects a named-argument or zero-argument construction
+// of another package's struct that would set one of its unexported fields.
+// Those forms never reach the positional dispatcher, whose calls of the same
+// type are reported by checkTypeUsedAsConstructor; both report GALA-E0043,
+// since in both the type has no constructor at the call site. The error points
+// at the callee of the call that node belongs to.
+func (t *galaASTTransformer) checkPrivateFieldCtor(fun ast.Expr, meta *transpiler.TypeMetadata, fields []string, provided func(i int, name string) bool, node antlr.ParserRuleContext) error {
+	field := PrivateFieldSetByCtor(meta, t.packageName, fields, provided)
+	if field == "" {
+		return nil
+	}
+	line, col, exact := primaryStartOf(node)
+	if !exact {
+		line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
+	}
+	typeName, qualifiedName := extractTypeNameFromExpr(fun)
+	return typeNotConstructorError(typeName, privateFieldHint(qualifiedName, meta, field), line, col, exact)
+}
+
+// privateFieldHint says why another package's struct cannot be built by
+// calling its type, naming the field responsible.
+func privateFieldHint(qualifiedName string, meta *transpiler.TypeMetadata, field string) string {
+	return fmt.Sprintf("field %q of %s is unexported, so only package %s can construct it; "+
+		"call a constructor function %s exports, or start from its zero value (`%s{}`)",
+		field, qualifiedName, meta.Package, meta.Package, qualifiedName)
 }
