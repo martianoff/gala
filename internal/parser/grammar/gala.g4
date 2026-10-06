@@ -98,7 +98,12 @@ functionDeclaration: 'func' (receiver)? identifier (typeParameters)? signature (
 
 receiver: '(' (VAL | VAR)? identifier type ')';
 
-signature: parameters (type)?;
+// A signature has one result type, or a Go result list of two or more types,
+// `(int, error)`, for a function Go calls with several results (an io.Writer's
+// Write). Inside GALA such a function's result is one value, as a Go call's
+// is: `(T, error)` is a Try[T], `(A, B)` a Tuple[A, B].
+signature: parameters (type | goResults)?;
+goResults: '(' type (',' type)+ ')';
 
 parameters: ('(' | NL_LPAREN) parameterList? ')';
 parameterList: parameter (',' parameter)* ','?;

@@ -3378,6 +3378,29 @@ gala_exec_test(
     ],
 )
 
+# A GALA type implements Go interfaces whose methods return several results
+# (io.Writer, json.Marshaler) by declaring Go's result list; the body computes
+# their Try/Tuple value.
+gala_exec_test(
+    name = "go_multi_result_methods",
+    src = "go_multi_result_methods.gala",
+    expected = "go_multi_result_methods.out",
+    deps = ["//go_interop"],
+)
+
+# A lambda passed where Go expects a callback with several results returns
+# them: non-generic Go callbacks, generic ones (sync.OnceValues), and a GALA
+# function's function-typed parameter.
+gala_exec_test(
+    name = "go_multi_result_callbacks",
+    src = "go_multi_result_callbacks.gala",
+    expected = "go_multi_result_callbacks.out",
+    deps = [
+        "//examples/callback_bridge",
+        "//go_interop",
+    ],
+)
+
 # A function of a mixed package's own .go file returning several results is
 # lifted to Try/Tuple when the package's GALA code calls it.
 gala_library(

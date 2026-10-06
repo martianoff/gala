@@ -1,0 +1,57 @@
+package main
+
+import (
+    "errors"
+    "strconv"
+    "sync"
+    . "martianoff/gala/go_interop"
+    "martianoff/gala/examples/callback_bridge"
+)
+
+// A lambda passed where Go expects a function with several results computes
+// their one GALA value — a Try for (T, error), a Tuple for (A, B) — and Go
+// receives the results. A body that is a Go call with those results returns
+// them as they are.
+
+func lookup(name string) Option[string] = name match {
+    case "home" => Some("/root")
+    case "shell" => Some("/bin/sh")
+    case _ => None()
+}
+
+// A GALA function can take such a callback too.
+func twice(f func() (int, error)) Try[int] = f().Map((n) => n * 2)
+
+func main() {
+    // func() (int, error)
+    Println(callback_bridge.RunWith(() => strconv.Atoi("5")))
+    Println(callback_bridge.RunWith(() => strconv.Atoi("five")))
+    Println(callback_bridge.RunWith(() => Success(7)))
+    Println(callback_bridge.RunWith(() => {
+        val n = strconv.Atoi("20")
+        n.Map((k) => k + 1)
+    }))
+
+    // func(string) (string, bool)
+    Println(callback_bridge.Describe(SliceOf("home", "shell", "editor"), (name) => lookup(name) match {
+        case Some(v) => (v, true)
+        case None() => ("", false)
+    }))
+
+    // func(int) (string, int, error)
+    Println(callback_bridge.Retry(3, (attempt) =>
+        if (attempt < 2) Failure(errors.New(s"attempt $attempt failed"))
+        else Success(("ok", attempt * 10))))
+    Println(callback_bridge.Retry(2, (attempt) => Failure(errors.New(s"attempt $attempt failed"))))
+
+    // A generic Go function takes its type arguments from the lambda's results.
+    val port = sync.OnceValues(() => strconv.Atoi("8080"))
+    val p, err = port()
+    Println(s"$p ${err == nil}")
+    // A call of the function it returns is one value, like a Go call.
+    Println(port().Map((n) => n + 1))
+    val answer = sync.OnceValue(() => 42)
+    Println(answer())
+
+    Println(twice(() => strconv.Atoi("21")))
+}

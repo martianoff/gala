@@ -1,0 +1,13 @@
+lines=2 bytes=10
+wrote 0, error: over the 16-byte limit
+Success(2)
+Success(5)
+failed: json: error calling MarshalJSON for type main.Celsius: below absolute zero
+Success(255)
+true
+17 = 5 * 3 + 2
+Success((port, 8080))
+Failure(no ':' in port)
+x 1 true
+answer=42
+(42, true)

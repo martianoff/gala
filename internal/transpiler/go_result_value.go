@@ -1,6 +1,7 @@
 package transpiler
 
 import (
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/transpiler/registry"
@@ -61,6 +62,49 @@ func GoResultValueOf(returns []Type) (r GoResultValue, ok bool) {
 		r.Type = GenericType{Base: NamedType{Package: registry.StdPackageName, Name: TypeTry}, Params: []Type{inner}}
 	}
 	return r, true
+}
+
+// GoResultsOf is the inverse of GoResultValueOf: the n Go results a GALA value
+// of type value is spread over, where Go expects n results — `Try[T]` is
+// `(T, error)`, `Try[Tuple[A, B]]` is `(A, B, error)`, `Tuple[A, B]` is
+// `(A, B)`. ok is false when value cannot make n results.
+func GoResultsOf(value Type, n int) (results []Type, ok bool) {
+	gen, isGeneric := value.(GenericType)
+	if !isGeneric || n < 2 {
+		return nil, false
+	}
+	base, isNamed := gen.Base.(NamedType)
+	if !isNamed || base.Package != registry.StdPackageName {
+		return nil, false
+	}
+	errorType := BasicType{Name: "error"}
+	switch {
+	case base.Name == TypeTry && len(gen.Params) == 1:
+		if n == 2 {
+			return []Type{gen.Params[0], errorType}, true
+		}
+		values, ok := tupleComponents(gen.Params[0], n-1)
+		if !ok {
+			return nil, false
+		}
+		return append(values, errorType), true
+	default:
+		return tupleComponents(value, n)
+	}
+}
+
+// tupleComponents returns the component types of value when it is the std
+// Tuple of n values.
+func tupleComponents(value Type, n int) ([]Type, bool) {
+	gen, isGeneric := value.(GenericType)
+	if !isGeneric || len(gen.Params) != n {
+		return nil, false
+	}
+	name, fits := TupleArityName(n)
+	if base, isNamed := gen.Base.(NamedType); !fits || !isNamed || base.Package != registry.StdPackageName || base.Name != name {
+		return nil, false
+	}
+	return slices.Clone(gen.Params), true
 }
 
 // TupleArityName returns the std type name of a tuple of n values: `Tuple` for

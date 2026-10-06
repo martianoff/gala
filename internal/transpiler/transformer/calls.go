@@ -1070,11 +1070,44 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 		}
 	}
 
-	return &ast.CallExpr{
+	call := &ast.CallExpr{
 		Fun:      funExpr,
 		Args:     append([]ast.Expr{receiver}, mArgs...),
 		Ellipsis: ellipsisPos(hasSpread),
 	}
+	if methodMeta != nil && methodMeta.GoResults != nil {
+		t.recordGenericGoResultCall(call, recvType, lookupBaseName, methodMeta)
+	}
+	return call
+}
+
+// recordGenericGoResultCall remembers the signature of call, a generic method
+// declaring a Go result list lowered to a free function, so that the call is
+// lifted to one GALA value as other calls of such functions are: the
+// receiver's type arguments substituted, and the receiver its first parameter.
+func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvType transpiler.Type, baseName string, m *transpiler.MethodMetadata) {
+	subst := map[string]transpiler.Type{}
+	if gen, ok := recvType.(transpiler.GenericType); ok {
+		if meta := t.getTypeMeta(baseName); meta != nil {
+			for i, tp := range meta.TypeParams {
+				if i < len(gen.Params) {
+					subst[tp] = gen.Params[i]
+				}
+			}
+		}
+	}
+	params := []transpiler.GoParam{{Type: recvType}}
+	for _, p := range m.ParamTypes {
+		params = append(params, transpiler.GoParam{Type: t.substituteGoTypeParams(p, subst)})
+	}
+	returns := make([]transpiler.Type, len(m.GoResults))
+	for i, r := range m.GoResults {
+		returns[i] = t.substituteGoTypeParams(r, subst)
+	}
+	if t.genericGoResultCalls == nil {
+		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
+	}
+	t.genericGoResultCalls[call] = &transpiler.GoFuncSignature{Params: params, Returns: returns, TypeParams: m.TypeParams}
 }
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
@@ -1283,6 +1316,32 @@ func (t *galaASTTransformer) goParamSlot(sig *transpiler.GoFuncSignature, i int,
 		return transpiler.NilType{}
 	}
 	return param
+}
+
+// genericGoLambdaSlot is the slot a lambda fills as the i-th argument of a call
+// of fun, the generic Go function sig: the parameter's function type with the
+// type parameters that explicit type arguments and the earlier arguments prior
+// determine substituted, and each result that still names one left open for
+// the lambda's body to give (`sync.OnceValues(() => strconv.Atoi(s))`). Go
+// then infers the rest from the lambda. NilType when the parameter is not a
+// function type, or when one of its parameters still names a type parameter,
+// which the lambda's parameters cannot be typed by.
+func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature, i int, prior []ast.Expr, fun ast.Expr) transpiler.Type {
+	ft := t.resolveTranspilerTypeAsFuncType(goSigParamType(sig, i))
+	if ft == nil {
+		return transpiler.NilType{}
+	}
+	inst := *ft
+	if subst := t.inferGoSignatureTypeArgs(sig, prior, t.callSiteTypeArgs(&ast.CallExpr{Fun: fun}), false); len(subst) > 0 {
+		if sub, ok := t.substituteGoTypeParams(*ft, subst).(transpiler.FuncType); ok {
+			inst = sub
+		}
+	}
+	if funcTypeParamsMentionTypeParams(inst.Params, sig.TypeParams) {
+		return transpiler.NilType{}
+	}
+	inst.Results = maskTypeParamResults(inst.Results, sig.TypeParams)
+	return inst
 }
 
 // goSigParamType is the type of the parameter the i-th positional argument of
@@ -1807,6 +1866,9 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
 		if transpiler.IsUnusable(expectedType) && !isSpreadAll {
 			expectedType = t.goParamSlot(goSig, argIdx, exprCtx)
+		}
+		if lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) > 0 {
+			expectedType = t.genericGoLambdaSlot(goSig, argIdx, positional, fun)
 		}
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
 		// the Failure itself (see tryThunkValue).
@@ -4134,7 +4196,11 @@ func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionC
 		// it is: each parameter is `any`, as the callee declares.
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, lambdaParamCount(lambdaCtx))
 	}
-	return t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+	lit, err := t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+	if err != nil {
+		return nil, err
+	}
+	return t.spreadLambdaGoResults(lit, s.typ, lambdaCtx)
 }
 
 // goTypeKey returns the Go type info key of a type named as written: a bare
@@ -4360,10 +4426,9 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	if expr == nil || expectedType == nil || expectedType.IsNil() {
 		return expr, false
 	}
-	// The expected type must be a zero-arg function type. Multi-result function
-	// types (Go tuples) are not expressible as a single GALA expression.
+	// The expected type must be a zero-arg function type.
 	ft, ok := expectedType.(transpiler.FuncType)
-	if !ok || len(ft.Params) != 0 || len(ft.Results) > 1 {
+	if !ok || len(ft.Params) != 0 {
 		return expr, false
 	}
 
@@ -4374,6 +4439,12 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	exprType := t.getExprTypeName(expr)
 	if _, isFunc := exprType.(transpiler.FuncType); isFunc {
 		return expr, false
+	}
+
+	// Several results: the expression is their one GALA value, spread over
+	// them as a lambda's is (see spreadLambdaGoResults).
+	if len(ft.Results) > 1 {
+		return t.goResultsThunk(expr, exprType, len(ft.Results))
 	}
 
 	// Void thunk: `func()` expecting no result. The body is the expression as a
@@ -5041,6 +5112,9 @@ func (t *galaASTTransformer) resolveGoCallReturnTypes(expr ast.Expr) []transpile
 		return nil
 	}
 	sig := t.resolveGoCallSignature(callExpr)
+	if sig == nil {
+		sig = t.declaredGoResultsSignature(callExpr)
+	}
 	if sig == nil {
 		return nil
 	}

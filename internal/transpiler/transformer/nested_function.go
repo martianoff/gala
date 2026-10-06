@@ -42,6 +42,8 @@ func checkNestedFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) err
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot take type parameters", name)
 	case sig.hasDefault:
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot take default parameter values", name)
+	case ctx.Signature().GoResults() != nil:
+		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot declare a Go result list", name)
 	case sig.partial:
 		hint = "write it as a lambda bound to a `val`; a lambda names every parameter, as in `(x int) =>`"
 	default:

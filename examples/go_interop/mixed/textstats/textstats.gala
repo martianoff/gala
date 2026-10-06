@@ -1,9 +1,9 @@
 package textstats
 
 // One package, two languages: this file is GALA, writer.go next to it is
-// hand-written Go. Go adds the methods GALA cannot declare (io.Writer's
-// Write and json.Marshaler's MarshalJSON both return two results), and each
-// side calls the other directly. Walked through in docs/GO_INTEROP.MD, part 3.
+// hand-written Go. Go adds two methods to a GALA struct (io.Writer's Write
+// and json.Marshaler's MarshalJSON), and each side calls the other directly.
+// Walked through in docs/GO_INTEROP.MD, part 3.
 
 import (
     "strings"

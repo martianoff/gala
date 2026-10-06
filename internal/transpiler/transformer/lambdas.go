@@ -39,9 +39,21 @@ func (t *galaASTTransformer) lambdaExpectation(typ transpiler.Type) (ret ast.Exp
 	if ft == nil {
 		return nil, nil, false
 	}
-	ret = ExpectedVoid
-	if len(ft.Results) > 0 {
+	switch {
+	case len(ft.Results) >= 2:
+		// Go's several results: the lambda computes the one GALA value they
+		// make (spreadLambdaGoResults returns it to Go as the results). With a
+		// result still unknown (a type parameter of a generic Go callee), the
+		// value is inferred from the body.
+		var value transpiler.Type = transpiler.NilType{}
+		if v, _ := transpiler.GoResultValueOf(ft.Results); !transpiler.ContainsUnusable(v.Type) {
+			value = v.Type
+		}
+		ret = t.typeToExpr(value)
+	case len(ft.Results) == 1:
 		ret = t.typeToExpr(ft.Results[0])
+	default:
+		ret = ExpectedVoid
 	}
 	return ret, ft.Params, true
 }

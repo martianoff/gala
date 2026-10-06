@@ -1095,8 +1095,7 @@ Whether `Millis * Millis` means anything is up to you.
 **Methods.** An opaque type starts with no methods: those of its underlying
 type are **not** inherited — `opaque type Timeout time.Duration` has no
 `.Seconds()`. Declare methods in GALA, or in a hand-written `.go` file of the
-same package (to implement a Go interface whose signature GALA cannot spell,
-such as `driver.Valuer`). A `String() string` method makes the type a
+same package. A `String() string` method makes the type a
 `fmt.Stringer`, used by `Println` and string interpolation.
 
 **Hash and Compare are generated**, so an opaque type works as a `HashMap` or
@@ -2251,7 +2250,7 @@ initializer and no type annotation: `var (a, b)` with no `= tuple`, or
 
 #### Multiple Return Values
 
-GALA does not support Go-style multi-value returns `(A, B, error)`. Instead, use **Tuple types** to return multiple values from a function, and **tuple destructuring** at the call site. (Calling a *Go* function that returns several results is covered in [Go functions that return several results](#go-functions-that-return-several-results).)
+A GALA expression is one value, so use **Tuple types** to return multiple values from a function, and **tuple destructuring** at the call site. (Calling a *Go* function that returns several results is covered in [Go functions that return several results](#go-functions-that-return-several-results); a function that *Go* calls with several results, such as an `io.Writer`'s `Write`, declares them as in [Returning several results to Go](#returning-several-results-to-go).)
 
 ```gala
 // Return two values using Tuple[A, B]
@@ -2366,6 +2365,70 @@ on its own line — calls the Go function as it is. So does a branch of an
 if-expression, or an arm of a match, whose value is not used:
 `if (verbose) fmt.Println(msg) else log.Print(msg)` on its own line is an if
 statement.
+
+#### Returning several results to Go
+
+The other direction: a function that **Go** calls with several results. A
+function or method may declare Go's result list, two or more types in
+parentheses, in place of its result type. The body computes the results' one
+GALA value by the same table — a `Try[T]` for `(T, error)`, a `Tuple[A, B]` for
+`(A, B)`, a `Try[Tuple[A, B]]` for `(A, B, error)` — and Go receives the results
+(a `Failure(err)` is the zero value and `err`). This is how a GALA type
+implements a Go interface whose methods return several results, such as
+`io.Writer` or `json.Marshaler`:
+
+```gala
+import (
+    "encoding/json"
+    "errors"
+    "fmt"
+    . "martianoff/gala/go_interop"
+)
+
+struct LineCounter(var Lines int)
+
+// io.Writer: Write(p []byte) (n int, err error)
+func (c *LineCounter) Write(p []byte) (int, error) {
+    c.Lines = c.Lines + 1
+    Success(p.Size())
+}
+
+struct Celsius(Degrees int)
+
+// json.Marshaler: MarshalJSON() ([]byte, error)
+func (c Celsius) MarshalJSON() ([]byte, error) =
+    if (c.Degrees < -273) Failure(errors.New("below absolute zero"))
+    else Success(ToBytes(s"\"${c.Degrees}C\""))
+
+func divmod(a int, b int) (int, int) = (a / b, a % b)
+
+var counter = LineCounter(0)
+fmt.Fprintf(&counter, "hello %s\n", "go")    // calls Write
+val data = json.Marshal(Celsius(21))          // calls MarshalJSON
+```
+
+In GALA, a call of such a function is one value, exactly like a call of a Go
+function with those results: `divmod(17, 5)` is a `Tuple[int, int]`,
+`counter.Write(b)` a `Try[int]`, and `val n, err = counter.Write(b)` takes the
+results one by one. A GALA interface may declare such a method, and a function
+type may have such results: `func() (int, error)`.
+
+**A lambda** passed where a function with several results is expected — a Go
+callback such as `func() (T, error)`, or a parameter of that function type —
+works the same way: its value is spread over the results, and a body that is a
+Go call with those results returns them as they are. A generic Go function
+takes its type arguments from the lambda's results:
+
+```gala
+import (
+    "strconv"
+    "sync"
+)
+
+val port = sync.OnceValues(() => strconv.Atoi("8080"))  // func() (int, error)
+val p, err = port()                                     // 8080, nil
+val next = port().Map((n) => n + 1)                     // Success(8081)
+```
 
 See [Either](#either) for typed error handling, and [Try](#try-monad) for exception-safe error handling.
 

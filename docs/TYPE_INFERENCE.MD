@@ -959,6 +959,15 @@ used as a value, is inferred as one GALA type built from the Go signature:
   takes its component's type (`var (a, b, c)` likewise, as reassignable variables).
 - Where the plain `T` is expected but the call's `Try[T]` or Tuple is given, the
   transpiler reports GALA-E0049 instead of inferring `T`.
+- A GALA function or method declaring Go's result list (`func f() (int, error)`),
+  and a value of a function type with several results, is called like a Go
+  function with those results: `f()` infers `Try[int]`. The body of such a
+  function is inferred against that value type.
+- A lambda in the slot of a function type with several results is inferred
+  against their GALA value. A result that is still a type parameter of a
+  generic Go callee (`sync.OnceValues(f func() (T1, T2))`) is taken from the
+  lambda's body: a body of type `Try[V]` gives `(V, error)`, a `TupleN` its N
+  components, and Go infers the callee's type arguments from them.
 
 Go type inference is optional — if the Go SDK is not found, transpilation still succeeds but Go type resolution is disabled (a warning is printed to stderr).
 
