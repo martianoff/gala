@@ -30,6 +30,10 @@ func (e NotFound) Error() string = e.Key
 
 struct Holder(S Shape)
 struct Boxed(V any)
+
+type Marker interface {}
+
+struct Tagged(M Marker)
 struct Report(Code int, Cause error)
 struct Framed(Label string, S Shape = Square(1.0))
 `
@@ -48,6 +52,11 @@ struct Framed(Label string, S Shape = Square(1.0))
 			name:     "any, positional",
 			body:     `Println(Boxed(Square(2.0)).V)`,
 			contains: []string{"V: std.NewImmutable[any](Square{"},
+		},
+		{
+			name:     "declared interface with no methods",
+			body:     `Println(Tagged(Square(2.0)).M)`,
+			contains: []string{"M: std.NewImmutable[Marker](Square{"},
 		},
 		{
 			name: "error, named, from a variable",

@@ -259,13 +259,22 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 	if typ.IsAny() {
 		return true
 	}
-	// A predeclared scalar is never one; skip the type-info lookups that
-	// every struct field would otherwise pay.
-	if b, ok := typ.(transpiler.BasicType); ok && b.Name != "error" && transpiler.IsPrimitiveType(b.Name) {
-		return false
+	if b, ok := typ.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(b.Name) {
+		return b.Name == "error"
 	}
-	_, iface := t.interfaceMethodNames(typ)
-	return iface
+	// A Go type is what its Go declaration says.
+	if t.goTypeInfo != nil {
+		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
+			return td.Kind == "interface"
+		}
+	}
+	// Unlike interfaceMethodNames, a GALA interface with no methods counts:
+	// it holds any value. Its metadata cannot be told from a fieldless block
+	// struct's, which is taken for one too; a value of such a struct only
+	// ever has that struct's own type, so treating it as an interface spells
+	// out the type it already has.
+	meta := t.getTypeMeta(typ.BaseName())
+	return meta != nil && !meta.IsOpaque && !meta.IsSealed && !meta.IsShorthand && isGalaInterfaceMeta(meta)
 }
 
 // interfaceMethodNames returns the methods an interface type requires, and
