@@ -23,10 +23,11 @@ func lookup(name string) Option[string] = name match {
 func twice(f func() (int, error)) Try[int] = f().Map((n) => n * 2)
 
 func main() {
-    // func() (int, error)
+    // func() (int, error), filled by a lambda
     Println(callback_bridge.RunWith(() => strconv.Atoi("5")))
-    Println(callback_bridge.RunWith(() => strconv.Atoi("five")))
-    Println(callback_bridge.RunWith(() => Success(7)))
+    // or by a bare expression, as for any function with no parameters
+    Println(callback_bridge.RunWith(strconv.Atoi("five")))
+    Println(callback_bridge.RunWith(Success(7)))
     Println(callback_bridge.RunWith(() => {
         val n = strconv.Atoi("20")
         n.Map((k) => k + 1)
@@ -50,8 +51,9 @@ func main() {
     Println(s"$p ${err == nil}")
     // A call of the function it returns is one value, like a Go call.
     Println(port().Map((n) => n + 1))
-    val answer = sync.OnceValue(() => 42)
+    val answer = sync.OnceValue(42)
     Println(answer())
 
-    Println(twice(() => strconv.Atoi("21")))
+    Println(twice(strconv.Atoi("21")))
+    Println(twice(sync.OnceValues(strconv.Atoi("x"))))
 }

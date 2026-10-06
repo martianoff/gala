@@ -176,6 +176,27 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 			contains: []string{"fmt.Println(std.GoTry(get.Get()()))", "describe(std.GoTry(get.Get()()))"},
 		},
 		{
+			name:     "a bare Go call is lifted into a thunk returning its results",
+			body:     `func five() int = run(strconv.Atoi("5"))`,
+			contains: []string{"run(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
+			absent:   []string{"GoTry(strconv"},
+		},
+		{
+			name:     "a bare Try is lifted into a thunk spreading it",
+			body:     `func seven() int = run(Success(7))`,
+			contains: []string{"run(func() (int, error) {", "return _goResult.Get(), nil"},
+		},
+		{
+			name:     "a bare Go call fills a generic Go callee's thunk",
+			body:     "func once() int {\n    val get = sync.OnceValues(strconv.Atoi(\"5\"))\n    get().GetOrElse(0)\n}",
+			contains: []string{"sync.OnceValues(func() (int, error) {\n\t\treturn strconv.Atoi(\"5\")\n\t})"},
+		},
+		{
+			name:     "a function value with the results is passed as it is",
+			body:     "func once() int {\n    val get = sync.OnceValues(strconv.Atoi(\"5\"))\n    run(get)\n}",
+			contains: []string{"run(get.Get())"},
+		},
+		{
 			name:     "a generic Go callee's single result is the lambda's",
 			body:     "func once() int {\n    val get = sync.OnceValue(() => 5)\n    get()\n}",
 			contains: []string{"sync.OnceValue(func() int {"},

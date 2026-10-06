@@ -2416,8 +2416,9 @@ type may have such results: `func() (int, error)`.
 **A lambda** passed where a function with several results is expected — a Go
 callback such as `func() (T, error)`, or a parameter of that function type —
 works the same way: its value is spread over the results, and a body that is a
-Go call with those results returns them as they are. A generic Go function
-takes its type arguments from the lambda's results:
+Go call with those results returns them as they are. With no parameters, the
+lambda can be written as its bare body: `sync.OnceValues(strconv.Atoi(s))`. A
+generic Go function takes its type arguments from the lambda's results:
 
 ```gala
 import (
