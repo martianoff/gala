@@ -556,7 +556,7 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 	hoisted bool,
 	startLine, startCol int,
 ) error {
-	hint := "the match is wrapped in a function that must return %s; initialize a `val` with the match first (a `return` in it then leaves the function)"
+	hint := "the match is wrapped in a function that must return %s; in a function that returns nothing, initialize a `val` with the match first (a `return` in it then leaves the function)"
 	if hoisted {
 		resultType = t.returnSlot.typ
 		hint = "the `return` leaves the enclosing function, which must return %s; give it a value (`return x`)"

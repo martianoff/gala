@@ -78,6 +78,21 @@ func loopControl(n int) int {
     total
 }
 
+// So does a match used as a statement whose other arm returns.
+func statementMatch(n int) int {
+    for i := 0; i < n; i++ {
+        open(i) match {
+            case Some(r) => {
+                use f = r
+                Println(s"  use ${f.Name}")
+            }
+            case None() => { return -1 }
+        }
+        Println(s"  after match $i")
+    }
+    n
+}
+
 func ifBranch(i int) int {
     val k = if (i >= 0) {
         use f = Res(Name = s"if$i")
@@ -125,6 +140,26 @@ func inLambda(n int) int {
     f(n) + f(-1)
 }
 
+// A lambda whose result type its own `return`s give: the first one, lowered
+// before that type is known, is completed once the second one gives it.
+func inUntypedLambda(o Option[Res]) Option[int] {
+    val g = (p Option[Res]) => {
+        val k = p match {
+            case None() => { return None() }
+            case Some(r) => {
+                use h = r
+                if (h.Name == "r9") {
+                    return Some(-1)
+                }
+                h.Name.Size()
+            }
+        }
+        Println("  after match in untyped lambda")
+        return Some(k)
+    }
+    g(o)
+}
+
 func main() {
     Println("inLoop:")
     Println(s"  result ${inLoop(2)}")
@@ -133,6 +168,8 @@ func main() {
     Println(s"  result ${returnAfterUse(7)}")
     Println("loopControl:")
     Println(s"  result ${loopControl(5)}")
+    Println("statementMatch:")
+    Println(s"  result ${statementMatch(2)}")
     Println("ifBranch:")
     Println(s"  result ${ifBranch(3)} ${ifBranch(-3)}")
     Println("nested:")
@@ -140,4 +177,6 @@ func main() {
     Println(s"  result ${nested(1, false)}")
     Println("inLambda:")
     Println(s"  result ${inLambda(4)}")
+    Println("inUntypedLambda:")
+    Println(s"  result ${inUntypedLambda(open(1))} ${inUntypedLambda(open(9))} ${inUntypedLambda(open(-1))}")
 }

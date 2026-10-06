@@ -370,10 +370,12 @@ func (t *galaASTTransformer) scopeReleases(stmts []ast.Stmt, line, col int) ([]a
 	}
 	out := []ast.Stmt{seqVarDecl(r.exit, ast.NewIdent("int"))}
 	if r.hasValue {
+		// Only a lambda's result type can still be unknown here.
 		if transpiler.IsUnusable(retType) {
 			return nil, galaerr.NewSemanticErrorAt(line, col,
-				"cannot infer the type of the value a `return` in this construct returns, which the `use` in it needs")
+				"cannot infer the result type of this lambda, which holds the value a `return` beside a `use` in this construct returns — annotate the lambda's result type (e.g. `(x int) Option[int] => { ... }`)")
 		}
+		t.addVar(r.result, retType)
 		out = append(out, seqVarDecl(r.result, t.typeToExpr(retType)))
 	}
 	out = append(append(out, call), dispatch...)

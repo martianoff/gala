@@ -3950,10 +3950,10 @@ satisfy `Close() error`. Multiple `use` bindings release **LIFO** (last acquired
 closes first), so nested resources unwind in the right order. No import is
 needed.
 
-A `use` in an arm of a `match`, or a branch of an if-expression, whose value is
-used is released when that match or if-expression ends, not when the function
-returns — also when another arm has a `return`, `break` or `continue` that
-leaves the function or loop around it.
+A `use` in an arm of a `match`, or in a branch of an if-expression whose value
+is used, is released when that match or if-expression ends, not when the
+function returns — also when another arm has a `return`, `break` or `continue`
+that leaves the function or loop around it.
 
 <!-- doc-check: fragment -->
 ```gala

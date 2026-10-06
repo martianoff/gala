@@ -776,8 +776,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A `break` / `continue` in an arm is inlined for the same reason: in the
 	// IIFE it would name no loop, and the enclosing loop must see it.
 	if stmtPosition && (loopControl != nil || t.containsUserReturnInClauses(clauses, defaultBody)) {
+		// A `use` in an arm is released at the end of the match, as in a
+		// match lowered to a function literal (see scopeReleases).
 		body := t.buildMatchBodyForInline(clauses, defaultBody)
-		t.pendingMatchStmtBlock = t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
+		stmts, err := t.scopeReleases([]ast.Stmt{t.buildInlinedMatchBlock(subject, paramName, matchedType, body)},
+			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		if err != nil {
+			return nil, err
+		}
+		t.pendingMatchStmtBlock = stmts[0].(*ast.BlockStmt)
 		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
 		// and replaces the wrapping ExprStmt with the inlined block.
 		return ast.NewIdent("_"), nil

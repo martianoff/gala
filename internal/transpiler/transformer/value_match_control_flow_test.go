@@ -265,6 +265,11 @@ func TestUseInHoistedMatchIsReleasedAtItsEnd(t *testing.T) {
 			input: "func f(o Option[Res], ok bool) int {\n    val x = o match {\n        case Some(r) => ok match {\n            case true => {\n                use g = r\n                1\n            }\n            case false => { return -2 }\n        }\n        case None() => { return -1 }\n    }\n    x\n}",
 			want:  []string{`defer g\.Close\(\)`, `_tmp_\d+ = -2\s`, `\sreturn -1\s`},
 		},
+		{
+			name:  "match used as a statement",
+			input: "func f(n int) int {\n    for i := 0; i < n; i++ {\n        Some(Res(Name = \"a\")) match {\n            case Some(r) => {\n                use g = r\n                Println(g.Name)\n            }\n            case None() => { return -1 }\n        }\n    }\n    n\n}",
+			want:  []string{`func\(\) \{`, `defer g\.Close\(\)`, `\}\(\)\s+if _tmp_\d+ == 1 \{\s+return _tmp_\d+\s+\}`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

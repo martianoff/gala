@@ -42,7 +42,7 @@ error[GALA-E0015]: bare `return` inside a match branch whose result is used as a
 6 |     Println(Try(os.ReadFile(path)) match {
   |             ^^^ the match is wrapped in a function that must return string
   |
-  = hint: the match is wrapped in a function that must return string; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
+  = hint: the match is wrapped in a function that must return string; in a function that returns nothing, initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
 ```
 
 The `-->` line echoes the source path as the compiler resolved it; the CLI
