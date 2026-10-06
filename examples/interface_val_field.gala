@@ -29,18 +29,15 @@ struct Report(Code int, Cause error)
 struct Framed(Label string, S Shape = Square(1.0))
 
 func main() {
-    val h = Holder(Square(2.0))
-    Println(h.S.Area())
+    Println(Holder(Square(2.0)).S.Area())
 
     val sq = Square(3.0)
     val named = Holder(S = sq)
     Println(named.S.Area())
 
-    val moved = named.Copy(S = Rect(2.0, 5.0))
-    Println(moved.S.Area())
+    Println(named.Copy(S = Rect(2.0, 5.0)).S.Area())
 
-    val b = Boxed(Square(4.0))
-    Println(b.V)
+    Println(Boxed(Square(4.0)).V)
 
     val r = Report(Code = 404, Cause = NotFound(Key = "k"))
     Println(s"${r.Code} ${r.Cause.Error()}")
