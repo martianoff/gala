@@ -118,7 +118,7 @@ func kind[T any](id Id[T]) string = id match {
 func main() {
     Println(kind(Id[User](1)), kind(Id[Order](2)))
 }`)
-	assert.Contains(t, out, "any(obj).(Id[User])")
+	assert.Contains(t, out, "std.As[Id[User]](any(obj))")
 }
 
 // TestOpaqueTypePatternLowercaseNameBinds covers a lowercase name inside the
@@ -167,6 +167,6 @@ func viaAlias(u Uid) string = u match {
 func main() {
     Println(show(UserID(1)), show(int64(1)), viaAlias(UserID(2)))
 }`)
-	assert.Regexp(t, `any\(\w+\)\.\(UserID\)`, out)
+	assert.Regexp(t, `std\.As\[UserID\]\(any\(\w+\)\)`, out)
 	assert.Contains(t, out, "int64(obj) == 0")
 }

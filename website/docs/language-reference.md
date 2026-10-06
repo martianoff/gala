@@ -1089,6 +1089,32 @@ val msg = result match {
 }
 ```
 
+#### Panic Stack Traces {#panic-stack-traces}
+
+When `Try` turns a panic into a `Failure`, it also keeps the stack trace of the
+panic, taken while the panicking frames are still on the stack. `PanicStack(err)`
+reads it back: `Some(stack)` for the error of a `Failure` made from a panic (or
+an error that wraps one), `None` for any other error, such as `FromError(err)`.
+The frames point at `.gala` source lines, so a program that uses `Try` as a
+safety boundary can log where the panic happened:
+
+<!-- doc-check: fragment -->
+```gala
+Try(handle(request)).OnFailure((err) => {
+    Println(s"request failed: $err")
+    PanicStack(err).ForEach((stack) => Println(stack))
+})
+```
+
+The stack travels with the error without changing what it says: `err.Error()`
+and printing are the panic's own message, patterns (`case e: NotFound`,
+`case NotFound(key)`) and `errors.Is` / `errors.As` see the panic's own error,
+and two `Failure`s of the same panic value are `Equal`. The `Failure` holds a
+wrapper of that error, so test it with `errors.Is(err, io.EOF)` or a pattern
+rather than `==`, and with `errors.As` rather than a type switch in Go code.
+The stack is captured only when a panic is recovered; a `Try` that succeeds
+costs nothing extra.
+
 #### Try with Go Functions {#try-with-go-functions}
 
 A Go function that returns `(T, error)` already gives a `Try[T]` when its call

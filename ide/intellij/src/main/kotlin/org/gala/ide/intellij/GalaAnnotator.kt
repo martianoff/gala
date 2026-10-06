@@ -77,7 +77,8 @@ class GalaAnnotator : Annotator {
             // Auto-imported std prelude constructors / converters (distinctive
             // names — see internal/transpiler/registry/std.go and std/*.gala)
             "NewImmutable", "NewConstPtr", "NewEmbeddedFS",
-            "FromError", "FromOption", "FromEitherError"
+            "FromError", "FromOption", "FromEitherError",
+            "PanicStack"
         )
 
         // Standard library types (auto-imported / prelude — available without

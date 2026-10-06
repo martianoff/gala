@@ -132,6 +132,7 @@ go_test(
     srcs = [
         "as_test.go",
         "immutable_encoding_test.go",
+        "panic_stack_test.go",
         "unapply_test.go",
     ],
     embed = [":std"],

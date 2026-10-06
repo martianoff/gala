@@ -1,0 +1,120 @@
+package main
+
+import "errors"
+import "fmt"
+import "regexp"
+import "strings"
+
+// A Failure made by Try from a panic carries the panic's stack trace, read
+// back with PanicStack. Its frames point at .gala source lines, so a program
+// using Try as a safety boundary can log where a recovered panic happened.
+
+// NotFound is an error type, to show that type patterns see a panic's own error.
+struct NotFound(Key string)
+
+// Error returns the error message.
+func (e NotFound) Error() string = s"not found: ${e.Key}"
+
+// Code is an opaque error type, matched with `case Code(c)`.
+opaque type Code int
+
+// Error returns the error message.
+func (c Code) Error() string = s"code ${int(c)}"
+
+// Tagged is a generic error type, matched with `case e: Tagged[_]`.
+struct Tagged[T any](Tag T)
+
+// Error returns the error message.
+func (e Tagged[T]) Error() string = s"tag ${e.Tag}"
+
+func failCode() int {
+    Panic(Code(7))
+    0
+}
+
+func failTagged() int {
+    Panic(Tagged(Tag = "x"))
+    0
+}
+
+func divide(a int, b int) int = a / b
+
+func explode() int {
+    Panic("boom")
+    0
+}
+
+func missing() int {
+    Panic(NotFound(Key = "id"))
+    0
+}
+
+// explodeFrame is the stack entry of the Panic call in explode: the function,
+// then the .gala file and line (43) it panicked on. The file name is not
+// matched, so the example can be run under any name.
+val explodeFrame = regexp.MustCompile("main\\.explode\\(\\.\\.\\.\\)\\n\\t[^\\n]*\\.gala:43\\n")
+
+func describe(stack Option[string]) string = stack match {
+    case Some(s) => {
+        val namesFrame = strings.Contains(s, "main.explode")
+        val galaSource = explodeFrame.MatchString(s)
+        s"stack names explode: $namesFrame, points at its .gala line: $galaSource"
+    }
+    case None() => "no stack"
+}
+
+func main() {
+    // A recovered panic: the message is unchanged and the stack is kept.
+    val failed = Try(explode())
+    val err = failed.GetError()
+    Println(err.Error())
+    Println(describe(PanicStack(err)))
+
+    // A runtime panic, such as an integer division by zero.
+    val byZero = Try(divide(1, 0))
+    Println(PanicStack(byZero.GetError()).IsDefined())
+
+    // The stack is not part of the message, printing or equality.
+    Println(failed)
+    Println(Try(explode()).Equal(failed))
+    Println(failed.Equal(Failure[int](errors.New("boom"))))
+    Println(Failure[int](errors.New("boom")).Equal(failed))
+
+    // An error wrapping the panic's error still has its stack.
+    val wrapped = fmt.Errorf("handler: %w", err)
+    Println(PanicStack(wrapped).IsDefined())
+
+    // Patterns, errors.Is and errors.As see the panic's own error.
+    val typed = Try(missing()) match {
+        case Failure(e: NotFound) => s"key ${e.Key}"
+        case _ => "other"
+    }
+    Println(typed)
+    var target NotFound
+    Println(errors.As(Try(missing()).GetError(), &target), target.Key)
+    Println(errors.Is(Try(missing()).GetError(), NotFound(Key = "id")))
+    val coded = Try(failCode()) match {
+        case Failure(Code(c)) => s"code $c"
+        case _ => "other"
+    }
+    Println(coded)
+    val tagged = Try(failTagged()).GetError() match {
+        case e: Tagged[_] => s"tagged: $e"
+        case _ => "other"
+    }
+    Println(tagged)
+    val subject any = Try(missing()).GetError()
+    val viaAny = subject match {
+        case NotFound(key) => s"key $key"
+        case _ => "other"
+    }
+    Println(viaAny)
+
+    // A re-raised Failure keeps the stack of the original panic.
+    val nested = Try(failed.Get())
+    Println(PanicStack(nested.GetError()) == PanicStack(err))
+
+    // Errors that are not panics have no stack.
+    Println(describe(PanicStack(FromError(errors.New("plain")).GetError())))
+    Println(describe(PanicStack(Failure[int](errors.New("plain")).GetError())))
+}
