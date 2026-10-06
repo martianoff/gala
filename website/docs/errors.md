@@ -123,6 +123,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0067](/docs/errors/gala-e0067/) | Type argument cannot be inferred | Types |
 | [GALA-E0068](/docs/errors/gala-e0068/) | Match or if-expression value has no type | Type inference |
 | [GALA-E0069](/docs/errors/gala-e0069/) | `return` in a match or if-expression whose value is used | Control flow |
+| [GALA-E0070](/docs/errors/gala-e0070/) | Read-only pointer where an interface is expected | Immutability |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -170,7 +171,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Control flow** — [E0015](/docs/errors/gala-e0015/) bare `return` in a match whose value is used · [E0059](/docs/errors/gala-e0059/) `break` or `continue` that cannot reach its loop (outside a loop, in a lambda, or in a match or if-expression whose value is used) · [E0069](/docs/errors/gala-e0069/) a `return` that would leave only a match or if-expression whose value is used.
 
-**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
+**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder · [E0070](/docs/errors/gala-e0070/) a `val`'s read-only address where an interface is expected. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 
 **Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/), [E0024](/docs/errors/gala-e0024/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
 

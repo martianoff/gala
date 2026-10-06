@@ -1296,6 +1296,11 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 		if err := t.checkOpaqueMismatch(expr, s.typ, exprCtx); err != nil {
 			return nil, err
 		}
+		// A val's address is a read-only ConstPtr, which implements no
+		// interface of the value's type; say so rather than leave it to Go.
+		if err := t.checkConstPtrInterface(expr, s.typ, exprCtx); err != nil {
+			return nil, err
+		}
 	}
 	return expr, nil
 }

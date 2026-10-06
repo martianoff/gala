@@ -4177,6 +4177,12 @@ val name = getPersonName(&alice)  // OK: &val returns ConstPtr
 // incrementAge(&alice)  // Would need explicit conversion or var binding
 ```
 
+A `ConstPtr` has only its own methods, so it implements no interface of the
+value's type. Passing `&c` of a `val` where an interface is expected and only
+`*Counter` implements it (pointer-receiver methods, the usual shape of an
+`io.Writer`-like or callback interface) is [GALA-E0070](errors/GALA-E0070.md);
+declare the value `var` to pass a `*Counter`.
+
 #### Pointer-Receiver Methods on a `val`
 
 A method with a pointer receiver — a GALA `func (c *Counter) Bump()` or a Go

@@ -459,13 +459,19 @@ func (t *galaASTTransformer) checkGoResultAgainst(expr ast.Expr, expected transp
 
 // checkGoResultGoArg is checkGoResultAgainst for argument i of a call to a Go
 // function or method, whose parameter types come from its Go signature rather
-// than from a slot (sig may be nil: nothing is checked).
+// than from a slot (sig may be nil: nothing is checked). It also runs the
+// ConstPtr-in-interface check (GALA-E0070) the slot would have run.
 func (t *galaASTTransformer) checkGoResultGoArg(sig *transpiler.GoFuncSignature, i int, expr ast.Expr, ctx antlr.ParserRuleContext) error {
 	param := goSigParamType(sig, i)
 	if param.IsNil() {
 		return nil
 	}
-	return t.checkGoResultAgainst(expr, param, ctx)
+	if err := t.checkGoResultAgainst(expr, param, ctx); err != nil {
+		return err
+	}
+	// A Go interface parameter is not lowered against (goParamSlot), so a
+	// val's read-only address passed for it is checked here.
+	return t.checkConstPtrInterface(expr, param, ctx)
 }
 
 // cannotHold reports whether a slot of type expected certainly cannot hold a

@@ -1267,6 +1267,8 @@ val value = *ptr // OK: read
 // *ptr = 100    // ERROR: cannot write through ConstPtr
 ```
 
+A `ConstPtr` implements no interface of the value's type. Passing `&c` of a `val` where an interface such as `Notifier` is expected, and only `*Counter` implements it, is [GALA-E0070](/docs/errors/gala-e0070/); declare the value `var` to pass a `*Counter`.
+
 ### Pointer-Receiver Methods on a `val`
 A method with a pointer receiver (a GALA `func (c *Counter) Bump()`, or Go's `url.URL.String`) can be called on a `val`, a field reached through one, a call result or a literal. Go only calls such a method on an addressable value, so it runs on a fresh copy and whatever it assigns to the receiver's own fields is lost. A `var`, a function parameter and a pattern binding are addressable, so there the method changes the variable itself.
 

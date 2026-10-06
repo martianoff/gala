@@ -275,7 +275,7 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 }
 
 // missingInterfaceMethods returns the methods of required (an interface's
-// method set) that the opaque type meta does not have — declared in GALA, in
+// method set) that the type meta describes does not have — declared in GALA, in
 // a .go file of its package, or generated (Hash, Compare) — sorted.
 func (t *galaASTTransformer) missingInterfaceMethods(meta *transpiler.TypeMetadata, required []string) []string {
 	if len(required) == 0 {
