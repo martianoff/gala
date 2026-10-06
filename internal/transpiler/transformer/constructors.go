@@ -267,14 +267,10 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	}
 	// A function value of an unnamed function type (a lambda, a declared
 	// function) goes into a Go named function type slot (`fs.WalkDirFunc`) by
-	// assignment, but not through NewImmutable's inferred type argument.
-	if t.isGoNamedFuncType(target) && !t.typeMentionsUnresolvedTypeParam(target) {
-		return t.typeToExpr(target)
-	}
-	// A value of a concrete type goes into an interface slot (`error`, `any`,
-	// `Shape`) by assignment, but NewImmutable would infer the concrete type,
-	// and Immutable[Square] is not an Immutable[Shape].
-	if t.isInterfaceType(target) && !t.typeMentionsUnresolvedTypeParam(target) {
+	// assignment, but not through NewImmutable's inferred type argument. So
+	// does a value of a concrete type going into an interface slot (`error`,
+	// `any`, `Shape`): Immutable[Square] is not an Immutable[Shape].
+	if (t.isGoNamedFuncType(target) || t.isInterfaceType(target)) && !t.typeMentionsUnresolvedTypeParam(target) {
 		return t.typeToExpr(target)
 	}
 	defaultName, ok := t.untypedNumericConstExprDefault(value)

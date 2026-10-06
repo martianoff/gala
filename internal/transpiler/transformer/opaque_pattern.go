@@ -259,6 +259,11 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 	if typ.IsAny() {
 		return true
 	}
+	// A predeclared scalar is never one; skip the type-info lookups that
+	// every struct field would otherwise pay.
+	if b, ok := typ.(transpiler.BasicType); ok && b.Name != "error" && transpiler.IsPrimitiveType(b.Name) {
+		return false
+	}
 	_, iface := t.interfaceMethodNames(typ)
 	return iface
 }
