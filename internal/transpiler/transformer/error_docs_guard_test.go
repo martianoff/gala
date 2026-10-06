@@ -1043,6 +1043,34 @@ func main() {
 			},
 		},
 		{
+			name: "address of a val passed where an interface is expected",
+			code: galaerr.CodeConstPtrNotInterface, // GALA-E0070
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var N int)
+
+func (c *Counter) Notify(s string) {
+    c.N = c.N + 1
+}
+
+type Notifier interface {
+    Notify(s string)
+}
+
+func send(n Notifier) {
+    n.Notify("x")
+}
+
+func main() {
+    val c = Counter(0)
+    send(&c)
+    Println(c.N)
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

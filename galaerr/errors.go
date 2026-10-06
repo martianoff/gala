@@ -736,6 +736,13 @@ const (
 	// assigned to a variable, or is the function's result is lowered so that
 	// its `return` leaves the function.
 	CodeReturnInBranchingValue ErrorCode = "GALA-E0069"
+
+	// E0070: the address of an immutable binding (`&x` of a val, a
+	// parameter, a receiver) — a read-only ConstPtr — fills a slot of an
+	// interface type that ConstPtr does not implement: one whose methods are
+	// declared on T or *T. Without the check Go rejected the generated
+	// `std.NewConstPtr(x.Ptr())` as not implementing the interface.
+	CodeConstPtrNotInterface ErrorCode = "GALA-E0070"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
