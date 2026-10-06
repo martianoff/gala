@@ -2648,7 +2648,6 @@ func (a *galaAnalyzer) buildTypeResolver(pkgName string) *resolver.TypeResolver 
 	}
 }
 
-// resolveFuncType resolves a function type string like "func(T) Option[U]"
 // signatureResult resolves a declared signature's result: its result type, or
 // for a Go result list (`(int, error)`) the GALA value a call of it is (see
 // transpiler.GoResultValueOf) together with the Go result types. Both are nil
@@ -2669,6 +2668,7 @@ func (a *galaAnalyzer) signatureResult(sig grammar.ISignatureContext, pkgName st
 	return value.Type, results
 }
 
+// resolveFuncType resolves a function type string like "func(T) Option[U]"
 func (a *galaAnalyzer) resolveFuncType(typeName string, pkgName string, typeParams []string) transpiler.Type {
 	// Find the matching closing parenthesis for the parameters
 	openParen := strings.Index(typeName, "(")

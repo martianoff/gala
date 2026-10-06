@@ -94,10 +94,10 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.Postfi
 	// The signature first: it answers at once for almost every call (no Go
 	// type info, or a single result), before the guards that infer types.
 	sig := t.resolveGoCallSignature(call)
-	if sig != nil && (len(sig.Returns) < 2 || t.isImmutableUnwrapCall(call) || t.isGalaCallee(call)) {
-		sig = nil
+	if sig != nil && (len(sig.Returns) < 2 || t.isImmutableUnwrapCall(call)) {
+		return expr, nil
 	}
-	if sig == nil {
+	if sig == nil || t.isGalaCallee(call) {
 		// A GALA function declaring a Go result list, or a value of a
 		// function type with several results, is called as Go's are.
 		sig = t.declaredGoResultsSignature(call)
@@ -224,28 +224,34 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 	case *ast.Ident:
 		if t.shadowingScope(f.Name) != nil {
 			if ft := t.resolveTranspilerTypeAsFuncType(t.getType(f.Name)); ft != nil && len(ft.Results) >= 2 {
-				return &transpiler.GoFuncSignature{Params: goParams(ft.Params, nil), Returns: ft.Results}
+				return goResultsSignature(ft.Params, nil, ft.Results, nil)
 			}
 			return nil
 		}
 		if fm := t.getFunction(f.Name); fm != nil && fm.GoResults != nil {
-			return &transpiler.GoFuncSignature{Params: goParams(fm.ParamTypes, fm.ParamNames), Returns: fm.GoResults, TypeParams: fm.TypeParams}
+			return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
 		}
 	case *ast.SelectorExpr:
 		if id, ok := f.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
 			if fm := t.getFunction(id.Name + "." + f.Sel.Name); fm != nil && fm.GoResults != nil {
-				return &transpiler.GoFuncSignature{Params: goParams(fm.ParamTypes, fm.ParamNames), Returns: fm.GoResults, TypeParams: fm.TypeParams}
+				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
 			}
 			return nil
 		}
 		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
 		if meta := t.getTypeMeta(key); meta != nil {
 			if m := meta.Methods[f.Sel.Name]; m != nil && m.GoResults != nil {
-				return &transpiler.GoFuncSignature{Params: goParams(m.ParamTypes, m.ParamNames), Returns: m.GoResults, TypeParams: m.TypeParams}
+				return goResultsSignature(m.ParamTypes, m.ParamNames, m.GoResults, m.TypeParams)
 			}
 		}
 	}
 	return nil
+}
+
+// goResultsSignature is the signature of a callee with these parameters
+// (names may be nil) that declares the Go result list results.
+func goResultsSignature(params []transpiler.Type, names []string, results []transpiler.Type, typeParams []string) *transpiler.GoFuncSignature {
+	return &transpiler.GoFuncSignature{Params: goParams(params, names), Returns: results, TypeParams: typeParams}
 }
 
 // goParams pairs parameter types with their names (names may be nil).

@@ -89,11 +89,15 @@ func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transp
 	if fn.Type.Results != nil && len(fn.Type.Results.List) == 1 {
 		valueType = fn.Type.Results.List[0].Type
 	}
-	results := t.goResultsOfValue(valueType, len(ft.Results))
+	var value transpiler.Type = transpiler.NilType{}
+	if valueType != nil {
+		value = t.astTypeToTranspilerType(valueType)
+	}
+	results := t.goResultsOfValue(value, len(ft.Results))
 	if results == nil {
 		got := "no value"
 		if valueType != nil {
-			got = "a value of type " + t.astTypeToTranspilerType(valueType).String()
+			got = "a value of type " + value.String()
 		}
 		want := "a Try for `(T, error)`, a Tuple for `(A, B)`"
 		if v, _ := transpiler.GoResultValueOf(ft.Results); !transpiler.ContainsUnusable(v.Type) {
@@ -112,28 +116,24 @@ func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transp
 // expected (see wrapExprAsThunkIfNeeded). ok is false when expr's value
 // cannot make n results.
 func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.Type, n int) (ast.Expr, bool) {
-	if transpiler.ContainsUnusable(valueType) {
-		return expr, false
-	}
-	typeExpr := t.typeToExpr(valueType)
-	results := t.goResultsOfValue(typeExpr, n)
+	results := t.goResultsOfValue(valueType, n)
 	if results == nil {
 		return expr, false
 	}
 	body := &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{expr}}}}
 	return &ast.FuncLit{
 		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: results},
-		Body: t.returnGoResults(body, typeExpr, results),
+		Body: t.returnGoResults(body, t.typeToExpr(valueType), results),
 	}, true
 }
 
 // goResultsOfValue lists the n Go results a value of valueType is spread over
 // (see transpiler.GoResultsOf), or nil when it cannot make them.
-func (t *galaASTTransformer) goResultsOfValue(valueType ast.Expr, n int) *ast.FieldList {
-	if valueType == nil {
+func (t *galaASTTransformer) goResultsOfValue(valueType transpiler.Type, n int) *ast.FieldList {
+	if transpiler.ContainsUnusable(valueType) {
 		return nil
 	}
-	types, ok := transpiler.GoResultsOf(t.astTypeToTranspilerType(valueType), n)
+	types, ok := transpiler.GoResultsOf(valueType, n)
 	if !ok || slices.ContainsFunc(types, transpiler.ContainsUnusable) {
 		return nil
 	}
@@ -158,10 +158,7 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.
 		return &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{res.raw}}}}
 	}
 	if value == nil {
-		value = &ast.CallExpr{Fun: &ast.FuncLit{
-			Type: &ast.FuncType{Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: valueType}}}},
-			Body: body,
-		}}
+		value = &ast.CallExpr{Fun: thunkLit(body, valueType)}
 	}
 	results := make([]ast.Expr, len(goResults.List))
 	for i, f := range goResults.List {
@@ -177,7 +174,7 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.
 		Names: []*ast.Ident{ast.NewIdent(goResultsName)}, Type: valueType, Values: []ast.Expr{value},
 	}}}}}
 	if !fails {
-		return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: tupleComponents(ast.NewIdent(goResultsName), len(values))})}
+		return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: tupleFieldGets(ast.NewIdent(goResultsName), len(values))})}
 	}
 	// if _goResult.IsFailure() { return *new(A), ..., _goResult.GetError() }
 	failure := make([]ast.Expr, 0, len(results))
@@ -194,14 +191,14 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.
 	if len(values) == 1 {
 		successResults = []ast.Expr{success}
 	} else {
-		successResults = tupleComponents(success, len(values))
+		successResults = tupleFieldGets(success, len(values))
 	}
 	return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: append(successResults, ast.NewIdent("nil"))})}
 }
 
-// tupleComponents reads the n components of the Tuple tuple: tuple.V1.Get(), ….
+// tupleFieldGets reads the n components of the Tuple tuple: tuple.V1.Get(), ….
 // A Tuple's fields are vals, held as Immutable.
-func tupleComponents(tuple ast.Expr, n int) []ast.Expr {
+func tupleFieldGets(tuple ast.Expr, n int) []ast.Expr {
 	out := make([]ast.Expr, n)
 	for i := range out {
 		field := &ast.SelectorExpr{X: tuple, Sel: ast.NewIdent(fmt.Sprintf("V%d", i+1))}

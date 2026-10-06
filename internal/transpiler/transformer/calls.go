@@ -1087,27 +1087,26 @@ func (t *galaASTTransformer) emitGenericMethodFreeFunc(
 // receiver's type arguments substituted, and the receiver its first parameter.
 func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvType transpiler.Type, baseName string, m *transpiler.MethodMetadata) {
 	subst := map[string]transpiler.Type{}
-	if gen, ok := recvType.(transpiler.GenericType); ok {
-		if meta := t.getTypeMeta(baseName); meta != nil {
-			for i, tp := range meta.TypeParams {
-				if i < len(gen.Params) {
-					subst[tp] = gen.Params[i]
-				}
+	if meta := t.getTypeMeta(baseName); meta != nil {
+		args := t.getReceiverTypeArgTypes(recvType)
+		for i, tp := range meta.TypeParams {
+			if i < len(args) {
+				subst[tp] = args[i]
 			}
 		}
 	}
-	params := []transpiler.GoParam{{Type: recvType}}
-	for _, p := range m.ParamTypes {
-		params = append(params, transpiler.GoParam{Type: t.substituteGoTypeParams(p, subst)})
-	}
-	returns := make([]transpiler.Type, len(m.GoResults))
-	for i, r := range m.GoResults {
-		returns[i] = t.substituteGoTypeParams(r, subst)
+	substAll := func(types []transpiler.Type) []transpiler.Type {
+		out := make([]transpiler.Type, len(types))
+		for i, typ := range types {
+			out[i] = t.substituteGoTypeParams(typ, subst)
+		}
+		return out
 	}
 	if t.genericGoResultCalls == nil {
 		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
 	}
-	t.genericGoResultCalls[call] = &transpiler.GoFuncSignature{Params: params, Returns: returns, TypeParams: m.TypeParams}
+	params := append([]transpiler.Type{recvType}, substAll(m.ParamTypes)...)
+	t.genericGoResultCalls[call] = goResultsSignature(params, nil, substAll(m.GoResults), m.TypeParams)
 }
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
