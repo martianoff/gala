@@ -1,5 +1,5 @@
 boom
-stack names explode: true, points at .gala source: true
+stack names explode: true, points at its .gala line: true
 true
 Failure(boom)
 true

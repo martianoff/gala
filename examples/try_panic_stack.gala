@@ -2,10 +2,11 @@ package main
 
 import "errors"
 import "fmt"
+import "regexp"
 import "strings"
 
 // A Failure made by Try from a panic carries the panic's stack trace, read
-// back with PanicStack. Its frames point at this .gala file, so a program
+// back with PanicStack. Its frames point at .gala source lines, so a program
 // using Try as a safety boundary can log where a recovered panic happened.
 
 // NotFound is an error type, to show that type patterns see a panic's own error.
@@ -48,11 +49,16 @@ func missing() int {
     0
 }
 
+// explodeFrame is the stack entry of the Panic call in explode: the function,
+// then the .gala file and line (43) it panicked on. The file name is not
+// matched, so the example can be run under any name.
+val explodeFrame = regexp.MustCompile("main\\.explode\\(\\.\\.\\.\\)\\n\\t[^\\n]*\\.gala:43\\n")
+
 func describe(stack Option[string]) string = stack match {
     case Some(s) => {
         val namesFrame = strings.Contains(s, "main.explode")
-        val galaSource = strings.Contains(s, "try_panic_stack.gala")
-        s"stack names explode: $namesFrame, points at .gala source: $galaSource"
+        val galaSource = explodeFrame.MatchString(s)
+        s"stack names explode: $namesFrame, points at its .gala line: $galaSource"
     }
     case None() => "no stack"
 }
