@@ -574,6 +574,41 @@ func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 	)
 }
 
+// validateNoBareReturnsInHoistedMatch rejects a bare `return` in the arms of
+// a match lowered as statements (see hoisted_value.go) — clauses and
+// defaultBody, outside any function literal — when the enclosing function
+// returns a value: the `return` leaves that function, which Go would reject
+// with "not enough return values". GALA-E0015, as in a match lowered to a
+// function literal.
+func (t *galaASTTransformer) validateNoBareReturnsInHoistedMatch(clauses, defaultBody []ast.Stmt, startLine, startCol int) error {
+	resultType := t.returnSlot.typ
+	if transpiler.IsUnusable(resultType) || resultType.IsVoid() {
+		return nil
+	}
+	bare := false
+	for _, s := range append(append([]ast.Stmt{}, clauses...), defaultBody...) {
+		ast.Inspect(s, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.ReturnStmt:
+				bare = bare || len(x.Results) == 0
+			}
+			return !bare
+		})
+	}
+	if !bare {
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeBareReturnInValueMatch,
+		startLine, startCol,
+		"bare `return` inside a match branch whose result is used as a value",
+		"the `return` leaves the enclosing function, which must return "+resultType.String()+
+			"; give it a value (`return x`), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
+	)
+}
+
 // validateSealedVariantArity checks that each sealed-variant extractor pattern
 // binds the same number of fields as the variant declares. Each argument of
 // the pattern counts as one field whatever its shape: a binding, `_`, a

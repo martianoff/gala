@@ -486,7 +486,10 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 			fmt.Sprintf("destructure one tuple; to bind several values, write them as one: `%s (a, b) = (x, y)`", keyword))
 	}
 
-	rhsExprs, err := t.transformExpressionList(list)
+	// The tuple is one value: a match or if-expression with a `return` in an
+	// arm is lowered as statements, as for a single name (see
+	// hoisted_value.go).
+	rhsExprs, err := t.lowerDeclarationInitializers(list, 1, nil)
 	if err != nil {
 		return nil, err
 	}

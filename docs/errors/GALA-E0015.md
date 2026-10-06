@@ -6,7 +6,8 @@ one of its branches ends with a bare `return` — a `return` statement with no
 value. A match a local `val` or `var` is initialized with, or a variable is
 assigned, is not such a value:
 it is lowered as statements, and a bare `return` in it leaves the enclosing
-function.
+function. That is fine when the function returns nothing; when it returns a
+value, a bare `return` there is GALA-E0015 too — give the `return` a value.
 
 **Minimal repro.** (`main.gala`)
 

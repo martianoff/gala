@@ -686,10 +686,18 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// Reject bare `return` inside a value-producing match (the IIFE would need
 	// to return a concrete type, but a bare return produces none). See GALA-E0015.
-	// A match lowered as statements has no function literal to return from.
-	if hoist == "" {
+	// A match lowered as statements has no function literal to return from:
+	// its bare `return` leaves the enclosing function, which must then return
+	// nothing.
+	{
 		startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-		if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
+		var err error
+		if hoist == "" {
+			err = t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol)
+		} else {
+			err = t.validateNoBareReturnsInHoistedMatch(clauses, defaultBody, startLine, startCol)
+		}
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -790,7 +798,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if hoist != "" {
 		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
-		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType), nil
+		stmts, err := t.scopeReleases([]ast.Stmt{block}, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		if err != nil {
+			return nil, err
+		}
+		return t.hoistedResult(hoist, stmts, resultType), nil
 	}
 
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping

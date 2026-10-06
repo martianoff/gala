@@ -3021,6 +3021,14 @@ gala_exec_test(
     expected = "value_match_control_flow.out",
 )
 
+# a `use` in an arm of a value-position match or if-expression with a return,
+# break or continue in it is released at the end of the match
+gala_exec_test(
+    name = "value_match_use_release",
+    src = "value_match_use_release.gala",
+    expected = "value_match_use_release.out",
+)
+
 # Lambda param type inference for generic free functions like Iterate(seed, f)
 gala_exec_test(
     name = "iterate_lambda_infer",
