@@ -87,6 +87,11 @@ func main() {
     // Several names take the results one by one, as from a Go call.
     val key, value, splitErr = splitPair("x:1")
     Println(s"$key $value ${splitErr == nil}")
+    // Held as a value, such a function is called as it is by name.
+    val split = splitPair
+    Println(split("y:2"))
+    val parseDecimal = Radix(10).Parse
+    Println(parseDecimal("42"))
 
     val label = Labeled("answer", 42)
     val (name, answer) = label.Unpack()

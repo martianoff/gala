@@ -2,6 +2,8 @@ package main
 
 import (
     "errors"
+    "io"
+    "os"
     "strconv"
     "sync"
     . "martianoff/gala/go_interop"
@@ -21,6 +23,8 @@ func lookup(name string) Option[string] = name match {
 
 // A GALA function can take such a callback too.
 func twice(f func() (int, error)) Try[int] = f().Map((n) => n * 2)
+
+func opened(f func() (io.Reader, error)) Try[io.Reader] = f()
 
 func main() {
     // func() (int, error), filled by a lambda
@@ -56,4 +60,7 @@ func main() {
 
     Println(twice(strconv.Atoi("21")))
     Println(twice(sync.OnceValues(strconv.Atoi("x"))))
+    // A bare expression takes the slot's own result types, so a Go call
+    // whose results are assignable to them fills it.
+    Println(opened(os.Open("no-such-file")).IsFailure())
 }

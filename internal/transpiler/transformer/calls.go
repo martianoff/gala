@@ -1343,6 +1343,15 @@ func (t *galaASTTransformer) genericGoLambdaSlot(sig *transpiler.GoFuncSignature
 	return inst
 }
 
+// isGoResultsThunkSlot reports whether slot is a function type taking nothing
+// and returning several results, the slot a bare expression fills as a thunk
+// (see goResultsThunk); for a generic Go callee it is typed as a lambda's is,
+// by genericGoLambdaSlot, so a result naming a type parameter is left open.
+func isGoResultsThunkSlot(slot transpiler.Type) bool {
+	ft, ok := slot.(transpiler.FuncType)
+	return ok && len(ft.Params) == 0 && len(ft.Results) > 1
+}
+
 // goSigParamType is the type of the parameter the i-th positional argument of
 // a call of sig fills, or NilType when there is none (sig may be nil). Every
 // argument past the last parameter of a variadic signature fills that one,
@@ -1866,7 +1875,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		if transpiler.IsUnusable(expectedType) && !isSpreadAll {
 			expectedType = t.goParamSlot(goSig, argIdx, exprCtx)
 		}
-		if lambdaCtx != nil && goSig != nil && len(goSig.TypeParams) > 0 {
+		if goSig != nil && len(goSig.TypeParams) > 0 && (lambdaCtx != nil || isGoResultsThunkSlot(expectedType)) {
 			expectedType = t.genericGoLambdaSlot(goSig, argIdx, positional, fun)
 		}
 		// The sole argument of Try(...) is its thunk: a Go call's error there is
@@ -4443,7 +4452,7 @@ func (t *galaASTTransformer) wrapExprAsThunkIfNeeded(expr ast.Expr, expectedType
 	// Several results: the expression is their one GALA value, spread over
 	// them as a lambda's is (see spreadLambdaGoResults).
 	if len(ft.Results) > 1 {
-		return t.goResultsThunk(expr, exprType, len(ft.Results))
+		return t.goResultsThunk(expr, exprType, ft.Results)
 	}
 
 	// Void thunk: `func()` expecting no result. The body is the expression as a

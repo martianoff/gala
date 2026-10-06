@@ -9,5 +9,7 @@ true
 Success((port, 8080))
 Failure(no ':' in port)
 x 1 true
+Success((y, 2))
+Success(42)
 answer=42
 (42, true)

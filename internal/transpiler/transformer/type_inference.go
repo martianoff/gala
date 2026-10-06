@@ -147,7 +147,11 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			var params []transpiler.Type
 			params = append(params, fm.ParamTypes...)
 			var results []transpiler.Type
-			if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+			if fm.GoResults != nil {
+				// A Go result list: the function value has Go's several
+				// results, so a call of it is lifted as Go's are.
+				results = append(results, fm.GoResults...)
+			} else if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
 				results = append(results, fm.ReturnType)
 			}
 			return transpiler.FuncType{Params: params, Results: results}
@@ -455,16 +459,20 @@ func (t *galaASTTransformer) resolveType(name string) transpiler.Type {
 // Use this when callers need to unify the function's signature against an
 // expected param type to bind both method-level and function-level type params.
 func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) transpiler.FuncType {
-	return signatureType(fm.ParamTypes, fm.ReturnType)
+	return signatureType(fm.ParamTypes, fm.ReturnType, fm.GoResults)
 }
 
 // signatureType is the FuncType of a declaration with the given parameter
 // types and result type (nil, NilType or VoidType for none — metadata read
-// back from the cache spells "no result" as VoidType). The parameters are
-// copied.
-func signatureType(paramTypes []transpiler.Type, returnType transpiler.Type) transpiler.FuncType {
+// back from the cache spells "no result" as VoidType). A declaration with a Go
+// result list (goResults non-nil) has those results instead: its value is a
+// Go function with several results, and a call of that value is lifted as a
+// Go call's is. The parameters are copied.
+func signatureType(paramTypes []transpiler.Type, returnType transpiler.Type, goResults []transpiler.Type) transpiler.FuncType {
 	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...)}
-	if _, void := returnType.(transpiler.VoidType); !void && returnType != nil && !returnType.IsNil() {
+	if goResults != nil {
+		ft.Results = append([]transpiler.Type(nil), goResults...)
+	} else if _, void := returnType.(transpiler.VoidType); !void && returnType != nil && !returnType.IsNil() {
 		ft.Results = []transpiler.Type{returnType}
 	}
 	return ft

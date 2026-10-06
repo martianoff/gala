@@ -111,12 +111,25 @@ func (t *galaASTTransformer) spreadLambdaGoResults(lit ast.Expr, slotType transp
 	return fn, nil
 }
 
-// goResultsThunk lifts expr, of type valueType, into a thunk returning n Go
-// results — the by-name form of `() => expr` where a `func() (A, B)` is
-// expected (see wrapExprAsThunkIfNeeded). ok is false when expr's value
-// cannot make n results.
-func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.Type, n int) (ast.Expr, bool) {
-	results := t.goResultsOfValue(valueType, n)
+// goResultsThunk lifts expr, of type valueType, into a thunk returning the Go
+// results slot — the by-name form of `() => expr` where a `func() (A, B)` is
+// expected (see wrapExprAsThunkIfNeeded). The thunk has the slot's results
+// when they are all known, as a `func() T` thunk has the slot's T, so a Go
+// call with assignable results (`os.Open(p)` for `func() (io.Reader,
+// error)`) fills it; a result left open (a type parameter of a generic Go
+// callee) takes its type from expr's value. ok is false when expr's value
+// cannot make the results.
+func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.Type, slot []transpiler.Type) (ast.Expr, bool) {
+	var results *ast.FieldList
+	if v, _ := transpiler.GoResultValueOf(slot); !transpiler.ContainsUnusable(v.Type) && !t.hasTypeParams(v.Type) {
+		valueType = v.Type
+		results = &ast.FieldList{}
+		for _, typ := range slot {
+			results.List = append(results.List, &ast.Field{Type: t.typeToExpr(typ)})
+		}
+	} else {
+		results = t.goResultsOfValue(valueType, len(slot))
+	}
 	if results == nil {
 		return expr, false
 	}
