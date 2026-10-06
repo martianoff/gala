@@ -164,6 +164,7 @@ go_test(
         "immutable_unwrapping_test.go",
         "import_test.go",
         "imports_test.go",
+        "interface_val_field_test.go",
         "interpolation_diagnostics_test.go",
         "lambda_expected_type_test.go",
         "lambda_param_receiver_test.go",

@@ -248,6 +248,21 @@ func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) 
 	return ast.NewIdent(castName), stmt, ast.NewIdent(okName)
 }
 
+// isInterfaceType reports whether typ is statically an interface — `any`,
+// `error`, or another GALA or Go interface — so a value of it holds some
+// other, dynamic type.
+func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
+	if transpiler.IsUnusable(typ) {
+		return false
+	}
+	typ = t.followAliasChain(typ)
+	if typ.IsAny() {
+		return true
+	}
+	_, iface := t.interfaceMethodNames(typ)
+	return iface
+}
+
 // interfaceMethodNames returns the methods an interface type requires, and
 // false when typ is not an interface that may hold an opaque value among
 // other things: `error`, a GALA interface, or a Go interface type.

@@ -241,8 +241,9 @@ func (t *galaASTTransformer) newImmutableFor(value ast.Expr, target transpiler.T
 // going into an Immutable[target], or nil when plain inference is already
 // correct.
 //
-// Beyond `nil`, an untyped constant going into an opaque slot and a function
-// value going into a Go named function type slot (`fs.WalkDirFunc`), the
+// Beyond `nil`, an untyped constant going into an opaque slot, a function
+// value going into a Go named function type slot (`fs.WalkDirFunc`) and any
+// value going into an interface slot (`error`, `any`, `Shape`), the
 // rewrite is confined to untyped numeric constants going into a numeric slot —
 // a predeclared numeric type, a GALA type declared over one (`type Millis int64`), or a Go named numeric type (`time.Duration`). That is
 // exactly the set of values whose type Go would have taken from the
@@ -268,6 +269,12 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	// function) goes into a Go named function type slot (`fs.WalkDirFunc`) by
 	// assignment, but not through NewImmutable's inferred type argument.
 	if t.isGoNamedFuncType(target) && !t.typeMentionsUnresolvedTypeParam(target) {
+		return t.typeToExpr(target)
+	}
+	// A value of a concrete type goes into an interface slot (`error`, `any`,
+	// `Shape`) by assignment, but NewImmutable would infer the concrete type,
+	// and Immutable[Square] is not an Immutable[Shape].
+	if t.isInterfaceType(target) && !t.typeMentionsUnresolvedTypeParam(target) {
 		return t.typeToExpr(target)
 	}
 	defaultName, ok := t.untypedNumericConstExprDefault(value)

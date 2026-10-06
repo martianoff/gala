@@ -1,0 +1,50 @@
+package main
+
+// A struct whose immutable field is an interface — `error`, `any`, or an
+// interface the program declares — is built from a value of a concrete type
+// that implements it, positionally, by name, from a variable, through Copy,
+// or from a field default.
+type Shape interface {
+    Area() float64
+}
+
+struct Square(Side float64)
+
+func (s Square) Area() float64 = s.Side * s.Side
+
+struct Rect(W float64, H float64)
+
+func (r Rect) Area() float64 = r.W * r.H
+
+struct NotFound(Key string)
+
+func (e NotFound) Error() string = s"not found: ${e.Key}"
+
+struct Holder(S Shape)
+
+struct Boxed(V any)
+
+struct Report(Code int, Cause error)
+
+struct Framed(Label string, S Shape = Square(1.0))
+
+func main() {
+    val h = Holder(Square(2.0))
+    Println(h.S.Area())
+
+    val sq = Square(3.0)
+    val named = Holder(S = sq)
+    Println(named.S.Area())
+
+    val moved = named.Copy(S = Rect(2.0, 5.0))
+    Println(moved.S.Area())
+
+    val b = Boxed(Square(4.0))
+    Println(b.V)
+
+    val r = Report(Code = 404, Cause = NotFound(Key = "k"))
+    Println(s"${r.Code} ${r.Cause.Error()}")
+
+    val f = Framed("default")
+    Println(s"${f.Label} ${f.S.Area()}")
+}

@@ -4180,3 +4180,10 @@ gala_exec_test(
     expected = "immutable_go_json.out",
     deps = ["//go_interop"],
 )
+
+# A struct is built from a concrete value going into an interface-typed val field
+gala_exec_test(
+    name = "interface_val_field",
+    src = "interface_val_field.gala",
+    expected = "interface_val_field.out",
+)
