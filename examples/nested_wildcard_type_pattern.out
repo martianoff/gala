@@ -1,0 +1,11 @@
+tagged failure: tag x
+tagged failure: tag 7
+other failure: plain
+success 1
+some 3
+tuple 1.5 2
+typed k 2
+holder 4
+report: tag r
+array 5
+top tag y

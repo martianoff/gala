@@ -1,0 +1,75 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A wildcard type pattern, `e: Tagged[_]`, matches every instantiation of
+// Tagged, at the top level and nested inside another pattern: in a Failure, in
+// a Some, in a tuple element, in a struct field and in a sequence element. A
+// typed pattern in a tuple element tests the element's type and binds it.
+struct Tagged[T any](Tag T)
+
+func (e Tagged[T]) Error() string = s"tag ${e.Tag}"
+
+struct NotTagged()
+
+struct Holder[T any](V T)
+
+struct Report(Err error)
+
+func (e NotTagged) Error() string = "plain"
+
+func describe(t Try[int]) string = t match {
+    case Failure(e: Tagged[_]) => s"tagged failure: $e"
+    case Failure(e) => s"other failure: ${e.Error()}"
+    case Success(v) => s"success $v"
+}
+
+func main() {
+    Println(describe(Failure(Tagged(Tag = "x"))))
+    Println(describe(Failure(Tagged(Tag = 7))))
+    Println(describe(Failure(NotTagged())))
+    Println(describe(Success(1)))
+
+    val some = Some(Tagged(Tag = 3)) match {
+        case Some(e: Tagged[_]) => s"some ${e.Tag}"
+        case _ => "none"
+    }
+    Println(some)
+
+    val pair = (Tagged(Tag = 1.5), 2) match {
+        case Tuple(e: Tagged[_], n) => s"tuple ${e.Tag} $n"
+        case _ => "no"
+    }
+    Println(pair)
+
+    val typed = (Tagged(Tag = "k"), 2) match {
+        case Tuple(e: Tagged[string], n) => s"typed ${e.Tag} $n"
+        case _ => "no"
+    }
+    Println(typed)
+
+    val held = Holder(Tagged(Tag = 4)) match {
+        case Holder(e: Tagged[_]) => s"holder ${e.Tag}"
+        case _ => "no"
+    }
+    Println(held)
+
+    val report = Report(Tagged(Tag = "r")) match {
+        case Report(e: Tagged[_]) => s"report: $e"
+        case _ => "no"
+    }
+    Println(report)
+
+    val seq = ArrayOf(Tagged(Tag = 5), Tagged(Tag = 6)) match {
+        case Array(e: Tagged[_], _) => s"array ${e.Tag}"
+        case _ => "no"
+    }
+    Println(seq)
+
+    val err error = Tagged(Tag = "y")
+    val top = err match {
+        case e: Tagged[_] => s"top $e"
+        case _ => "other"
+    }
+    Println(top)
+}

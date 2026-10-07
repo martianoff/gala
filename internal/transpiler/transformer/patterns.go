@@ -39,7 +39,7 @@ func (t *galaASTTransformer) transformPatternWithType(patCtx grammar.IPatternCon
 	case *grammar.ExpressionPatternContext:
 		return t.transformExpressionPatternWithType(ctx.Expression(), objExpr, matchedType)
 	case *grammar.TypedPatternContext:
-		return t.transformTypedPattern(ctx, objExpr)
+		return t.transformTypedPattern(ctx, objExpr, matchedType)
 	case *grammar.RestPatternContext:
 		// Rest pattern like "rest..." or "_..." - these should only appear in argument lists
 		// If we get here, it's an error (rest patterns must be part of a sequence pattern)
@@ -527,7 +527,10 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 	return cond, nil, nil
 }
 
-func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternContext, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+// transformTypedPattern lowers `name: Type`. matchedType is the subject's type
+// as the enclosing pattern knows it, nil when it does not; objExpr may be a
+// temp whose type cannot be read back, as with a value an extractor took out.
+func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	name := ctx.Identifier().GetText()
 	typeExpr, err := t.transformType(ctx.Type_())
 	if err != nil {
@@ -538,10 +541,13 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	// Only use interface-based matching when objExpr has a concrete generic type,
 	// not when it's 'any' (because we need field access which requires concrete type)
 	if baseName, isWildcard := t.isWildcardGenericType(typeExpr); isWildcard {
-		objType := t.getExprTypeName(objExpr)
+		objType := matchedType
+		if transpiler.IsUnusable(objType) {
+			objType = t.getExprTypeName(objExpr)
+		}
 		// Only use interface check if the object has a concrete generic type (not any/interface)
-		if !objType.IsNil() && !objType.IsAny() {
-			return t.transformWildcardTypedPattern(name, baseName, objExpr)
+		if !transpiler.IsUnusableOrAny(objType) {
+			return t.transformWildcardTypedPattern(name, baseName, objExpr, objType)
 		}
 	}
 
@@ -602,8 +608,9 @@ func (t *galaASTTransformer) isWildcardGenericType(typeExpr ast.Expr) (string, b
 }
 
 // transformWildcardTypedPattern generates code for wildcard generic patterns like w: Wrap[_].
-// Instead of using As[Wrap[any]], it uses the marker interface check.
-func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string, objExpr ast.Expr) (ast.Expr, []ast.Stmt, error) {
+// Instead of using As[Wrap[any]], it uses the marker interface check. The
+// binding keeps the subject's type, objType.
+func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string, objExpr ast.Expr, objType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
 	interfaceName := baseName + "Instance"
 	// Use the actual generated interface name if it was renamed to avoid collision
 	if t.instanceInterfaceNames != nil {
@@ -615,7 +622,7 @@ func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string
 
 	// The variable keeps its original type from objExpr
 	// We just need to verify it's an instance of the generic type
-	t.addVar(name, t.getExprTypeName(objExpr))
+	t.addVar(name, objType)
 
 	okName := t.nextTempVar()
 	instName := t.nextTempVar()
@@ -626,7 +633,7 @@ func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string
 		t.stdAsCall(ast.NewIdent(interfaceName), objExpr))
 
 	// name := obj (keep original concrete type)
-	assign2 := t.patternDefine([]string{name}, []ast.Expr{t.knownTypeExpr(t.getExprTypeName(objExpr))}, objExpr)
+	assign2 := t.patternDefine([]string{name}, []ast.Expr{t.knownTypeExpr(objType)}, objExpr)
 
 	// Condition: ok && inst.IsWrap()
 	cond := &ast.BinaryExpr{
@@ -749,17 +756,15 @@ func (t *galaASTTransformer) generateDirectTupleStructMatch(objExpr ast.Expr, ar
 			},
 		}
 
-		// A binding or a nested pattern, both lowered by the general dispatcher.
-		patCtx := arg.Pattern()
-		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, elemType)
-			if err != nil {
-				return nil, nil, err
-			}
-			stmts = append(stmts, nestedStmts...)
-			if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-				conds = append(conds, nestedCond)
-			}
+		// A binding, a nested pattern or a typed pattern, all lowered by the
+		// general dispatcher.
+		nestedCond, nestedStmts, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)
+		if err != nil {
+			return nil, nil, err
+		}
+		stmts = append(stmts, nestedStmts...)
+		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
+			conds = append(conds, nestedCond)
 		}
 	}
 
@@ -880,45 +885,17 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 			fieldType = unwrapGalaType(fieldType)
 		}
 
-		// A binding (`name := obj.Field`, `.Get()` added when immutable) or a
-		// nested pattern such as `Circle(r)`, both lowered by the general
-		// dispatcher against the field's type.
-		patCtx := arg.Pattern()
-		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			nestedCond, nestedStmts, err := t.transformExpressionPatternWithType(exprPat.Expression(), elemExpr, fieldType)
-			if err != nil {
-				return nil, nil, err
-			}
-			stmts = append(stmts, nestedStmts...)
-			if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-				conds = append(conds, nestedCond)
-			}
-		} else if typedPat, ok := patCtx.(*grammar.TypedPatternContext); ok {
-			// Typed pattern: case Person(name: string, age: int)
-			varName := typedPat.Identifier().GetText()
-
-			// Parse the expected type
-			typeExpr, err := t.transformType(typedPat.Type_())
-			if err != nil {
-				return nil, nil, err
-			}
-
-			expectedType := t.resolveType(t.getBaseTypeName(typeExpr))
-			t.currentScope.vals[varName] = false
-			t.currentScope.valTypes[varName] = expectedType
-
-			// Generate: varName, okN := std.As[ExpectedType](elemExpr)
-			okName := t.nextTempVar()
-			asCall := &ast.CallExpr{
-				Fun: &ast.IndexExpr{
-					X:     t.stdIdent("As"),
-					Index: typeExpr,
-				},
-				Args: []ast.Expr{elemExpr},
-			}
-
-			stmts = append(stmts, t.patternDefine([]string{varName, okName}, []ast.Expr{typeExpr, ast.NewIdent("bool")}, asCall))
-			conds = append(conds, ast.NewIdent(okName))
+		// A binding (`name := obj.Field`, `.Get()` added when immutable), a
+		// nested pattern such as `Circle(r)` or a typed pattern such as
+		// `e: Tagged[_]`, all lowered by the general dispatcher against the
+		// field's type.
+		nestedCond, nestedStmts, err := t.transformPatternWithType(arg.Pattern(), elemExpr, fieldType)
+		if err != nil {
+			return nil, nil, err
+		}
+		stmts = append(stmts, nestedStmts...)
+		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
+			conds = append(conds, nestedCond)
 		}
 	}
 
@@ -1320,62 +1297,29 @@ func (t *galaASTTransformer) emitNonRestBindings(
 			continue
 		}
 
-		if exprPat, ok := patCtx.(*grammar.ExpressionPatternContext); ok {
-			// A binding (`head`) or a nested pattern (`Circle(r)`): read the
-			// element into a temp, then lower the sub-pattern against it
-			// through the general dispatcher. Everything runs inside the size
-			// guard, so a too-short sequence never reads an element or runs a
-			// sub-pattern (a field read through a nil pointer, a user Unapply)
-			// on a zero value; the names the sub-pattern declares are hoisted
-			// before the guard so the arm and its condition see them.
-			tempName := t.nextTempVar()
-			varDecls = append(varDecls, seqVarDecl(tempName, elemTypeExpr))
-			guardedAssigns = append(guardedAssigns, seqGetAssign(tempName, objExpr, argIndex))
-			nestedCond, nestedStmts, nerr := t.transformExpressionPatternWithType(exprPat.Expression(), ast.NewIdent(tempName), elemType)
-			if nerr != nil {
-				return nil, nil, nil, nerr
-			}
-			decls, guarded, herr := t.hoistPatternDecls(nestedStmts, tempName, elemTypeExpr)
-			if herr != nil {
-				return nil, nil, nil, herr
-			}
-			varDecls = append(varDecls, decls...)
-			guardedAssigns = append(guardedAssigns, guarded...)
-			if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
-				extraConds = append(extraConds, nestedCond)
-			}
-		} else if typedPat, ok := patCtx.(*grammar.TypedPatternContext); ok {
-			// Typed pattern: `case Array(x: int)` → std.As[int](obj.Get(i)).
-			varName := typedPat.Identifier().GetText()
-			typeExpr, terr := t.transformType(typedPat.Type_())
-			if terr != nil {
-				return nil, nil, nil, terr
-			}
-			expectedType := t.resolveType(t.getBaseTypeName(typeExpr))
-			t.currentScope.vals[varName] = false
-			t.currentScope.valTypes[varName] = expectedType
-			// The binding and its ok flag are both declared outside the size
-			// guard and assigned inside it, so the arm and its condition see them.
-			okName := t.nextTempVar()
-			varDecls = append(varDecls, seqVarDecl(varName, typeExpr), seqVarDecl(okName, ast.NewIdent("bool")))
-			asCall := &ast.CallExpr{
-				Fun: &ast.IndexExpr{
-					X:     t.stdIdent("As"),
-					Index: typeExpr,
-				},
-				Args: []ast.Expr{
-					&ast.CallExpr{
-						Fun:  &ast.SelectorExpr{X: objExpr, Sel: ast.NewIdent("Get")},
-						Args: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", argIndex)}},
-					},
-				},
-			}
-			guardedAssigns = append(guardedAssigns, &ast.AssignStmt{
-				Lhs: []ast.Expr{ast.NewIdent(varName), ast.NewIdent(okName)},
-				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{asCall},
-			})
-			extraConds = append(extraConds, ast.NewIdent(okName))
+		// A binding (`head`), a nested pattern (`Circle(r)`) or a typed
+		// pattern (`x: int`, `e: Tagged[_]`): read the element into a temp,
+		// then lower the sub-pattern against it through the general
+		// dispatcher. Everything runs inside the size guard, so a too-short
+		// sequence never reads an element or runs a sub-pattern (a field read
+		// through a nil pointer, a user Unapply) on a zero value; the names the
+		// sub-pattern declares are hoisted before the guard so the arm and its
+		// condition see them.
+		tempName := t.nextTempVar()
+		varDecls = append(varDecls, seqVarDecl(tempName, elemTypeExpr))
+		guardedAssigns = append(guardedAssigns, seqGetAssign(tempName, objExpr, argIndex))
+		nestedCond, nestedStmts, nerr := t.transformPatternWithType(patCtx, ast.NewIdent(tempName), elemType)
+		if nerr != nil {
+			return nil, nil, nil, nerr
+		}
+		decls, guarded, herr := t.hoistPatternDecls(nestedStmts, tempName, elemTypeExpr)
+		if herr != nil {
+			return nil, nil, nil, herr
+		}
+		varDecls = append(varDecls, decls...)
+		guardedAssigns = append(guardedAssigns, guarded...)
+		if ident, ok := nestedCond.(*ast.Ident); !ok || ident.Name != "true" {
+			extraConds = append(extraConds, nestedCond)
 		}
 		argIndex++
 	}
