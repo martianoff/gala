@@ -1565,6 +1565,22 @@ val res = x match {
 }
 ```
 
+#### Struct Patterns on Interface Values
+A struct pattern also matches a value whose static type is an interface — `any`, `error`, an interface the program declares, a Go interface — or a type parameter. The arm matches when the value holds that struct, and binds its fields:
+
+```gala
+struct NotFound(Key string)
+
+func (e NotFound) Error() string = s"not found: ${e.Key}"
+
+func describe(err error) string = err match {
+    case NotFound(k) => s"missing $k"
+    case _           => err.Error()
+}
+```
+
+A struct the interface can never hold — one missing a method of the interface, or declaring it with a pointer receiver — is a compile error rather than an arm that never matches. A generic struct names its type arguments, `case Box[int](v)`, since Go can only check for one instantiation.
+
 #### Generic Type Pattern Matching
 GALA supports matching against generic types. This is particularly useful for generic containers like `Option[T]`, `Either[A, B]`, or custom generic structs.
 
