@@ -93,7 +93,7 @@ func readAll(path string) string =
     Using(OpenFile(path), (f) => f.ReadString())  // Close() guaranteed
 ```
 
-- **`use x = acquire`** — the top-to-bottom binding form (no nesting pyramid): `x` is bound for the rest of the block and `x.Close()` runs when the function returns, on every path. Multiple `use` bindings release LIFO. No import needed.
+- **`use x = acquire`** — the top-to-bottom binding form (no nesting pyramid): `x` is bound for the rest of the block and `x.Close()` runs when the function returns (or, in an arm of a `match` or a branch of an if-expression, when that ends), on every path. Multiple `use` bindings release LIFO. No import needed.
 
 <!-- doc-check: fragment -->
 ```gala

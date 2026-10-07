@@ -1464,7 +1464,7 @@ Full program: [`examples/bind_notation_future.gala`](../examples/bind_notation_f
 
 ## Scoped Resource Cleanup with `use`
 
-GALA has no `defer` (a bare `defer`/`go` statement is a hard error, **GALA-E0036**). Cleanup is a `use` binding: `use x = acquire` binds `x` for the rest of the block and guarantees `x.Close()` runs when the function returns, on every path. Multiple `use` bindings release **LIFO** (last acquired closes first):
+GALA has no `defer` (a bare `defer`/`go` statement is a hard error, **GALA-E0036**). Cleanup is a `use` binding: `use x = acquire` binds `x` for the rest of the block and guarantees `x.Close()` runs when the function returns (or, in an arm of a `match` or a branch of an if-expression, when that ends), on every path. Multiple `use` bindings release **LIFO** (last acquired closes first):
 
 ```gala
 struct Handle(name string)
