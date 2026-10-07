@@ -248,6 +248,47 @@ func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) 
 	return ast.NewIdent(castName), stmt, ast.NewIdent(okName)
 }
 
+// isInterfaceType reports whether typ is statically an interface — `any`,
+// `error`, or another GALA or Go interface — so a value of it holds some
+// other, dynamic type.
+func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
+	if transpiler.IsUnusable(typ) {
+		return false
+	}
+	typ = t.followAliasChain(typ)
+	if typ.IsAny() {
+		return true
+	}
+	if b, ok := typ.(transpiler.BasicType); ok && transpiler.IsPrimitiveType(b.Name) {
+		return b.Name == "error"
+	}
+	// A Go type is what its Go declaration says.
+	if t.goTypeInfo != nil {
+		if td := t.goTypeInfo.GetTypeData(t.goTypeLookupName(typ)); td != nil {
+			return td.Kind == "interface"
+		}
+	}
+	// Unlike interfaceMethodNames, a GALA interface with no methods counts:
+	// it holds any value. Its metadata cannot be told from a fieldless block
+	// struct's, which is taken for one too; a value of such a struct only
+	// ever has that struct's own type, so treating it as an interface spells
+	// out the type it already has.
+	meta := t.getTypeMeta(typ.BaseName())
+	return meta != nil && !meta.IsOpaque && !meta.IsSealed && !meta.IsShorthand && isGalaInterfaceMeta(meta)
+}
+
+// isGoTypeWithoutInfo reports whether typ, through any GALA aliases, is a type
+// of a Go package that this file's Go type information does not describe:
+// one reached through another GALA package, such as the `io.Reader` field of
+// a struct that package declares, when this file does not import `io`.
+func (t *galaASTTransformer) isGoTypeWithoutInfo(typ transpiler.Type) bool {
+	nt, ok := t.followAliasChain(typ).(transpiler.NamedType)
+	if !ok || !t.isGoTyped(nt) || t.isOwnPackageType(nt) {
+		return false
+	}
+	return t.goTypeInfo == nil || t.goTypeInfo.GetTypeData(t.goTypeLookupName(nt)) == nil
+}
+
 // interfaceMethodNames returns the methods an interface type requires, and
 // false when typ is not an interface that may hold an opaque value among
 // other things: `error`, a GALA interface, or a Go interface type.

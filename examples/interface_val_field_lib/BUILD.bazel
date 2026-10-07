@@ -1,0 +1,8 @@
+load("@rules_gala//gala:defs.bzl", "gala_library")
+
+gala_library(
+    name = "interface_val_field_lib",
+    src = "holders.gala",
+    importpath = "martianoff/gala/examples/interface_val_field_lib",
+    visibility = ["//visibility:public"],
+)

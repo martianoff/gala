@@ -241,8 +241,10 @@ func (t *galaASTTransformer) newImmutableFor(value ast.Expr, target transpiler.T
 // going into an Immutable[target], or nil when plain inference is already
 // correct.
 //
-// Beyond `nil`, an untyped constant going into an opaque slot and a function
-// value going into a Go named function type slot (`fs.WalkDirFunc`), the
+// Beyond `nil`, an untyped constant going into an opaque slot, a function
+// value going into a Go named function type slot (`fs.WalkDirFunc`), any
+// value going into an interface slot (`error`, `any`, `Shape`) and any value
+// going into a slot of a Go type this file has no type information for, the
 // rewrite is confined to untyped numeric constants going into a numeric slot —
 // a predeclared numeric type, a GALA type declared over one (`type Millis int64`), or a Go named numeric type (`time.Duration`). That is
 // exactly the set of values whose type Go would have taken from the
@@ -266,8 +268,15 @@ func (t *galaASTTransformer) immutableTypeArg(value ast.Expr, target transpiler.
 	}
 	// A function value of an unnamed function type (a lambda, a declared
 	// function) goes into a Go named function type slot (`fs.WalkDirFunc`) by
-	// assignment, but not through NewImmutable's inferred type argument.
-	if t.isGoNamedFuncType(target) && !t.typeMentionsUnresolvedTypeParam(target) {
+	// assignment, but not through NewImmutable's inferred type argument. So
+	// does a value of a concrete type going into an interface slot (`error`,
+	// `any`, `Shape`): Immutable[Square] is not an Immutable[Shape]. A Go type
+	// this file has no type information for — a field of a struct another
+	// package declares, of a Go package this file does not import — may be
+	// either, so it is spelled too: the slot already has that type, so naming
+	// it never changes what the value must be assignable to.
+	if (t.isGoNamedFuncType(target) || t.isInterfaceType(target) || t.isGoTypeWithoutInfo(target)) &&
+		!t.typeMentionsUnresolvedTypeParam(target) {
 		return t.typeToExpr(target)
 	}
 	defaultName, ok := t.untypedNumericConstExprDefault(value)
