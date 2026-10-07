@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"slices"
 	"strings"
 
@@ -1571,6 +1572,9 @@ func (t *galaASTTransformer) goImportRealName(importPath string) (string, bool) 
 // the type arguments, the signature cannot be instantiated and nil is returned
 // rather than a signature naming type parameters that mean nothing here.
 func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method string) *transpiler.GoFuncSignature {
+	if sig := universeMethodSignature(recv, method); sig != nil {
+		return sig
+	}
 	if t.goTypeInfo == nil || transpiler.IsUnusable(recv) {
 		return nil
 	}
@@ -1620,6 +1624,45 @@ func (t *galaASTTransformer) goMethodSignature(recv transpiler.Type, method stri
 		}
 	}
 	return inst
+}
+
+// universeMethodSignature returns the signature of method on a predeclared
+// Go type that has methods — `error`'s Error() — or nil. Such a type belongs
+// to no package, so no package's type info records it; its method set is read
+// from Go's universe scope instead. Only basic parameter and result types are
+// converted, which is all a predeclared type's methods use.
+func universeMethodSignature(recv transpiler.Type, method string) *transpiler.GoFuncSignature {
+	b, ok := recv.(transpiler.BasicType)
+	if !ok {
+		return nil
+	}
+	tn, ok := types.Universe.Lookup(b.Name).(*types.TypeName)
+	if !ok {
+		return nil
+	}
+	obj, _, _ := types.LookupFieldOrMethod(tn.Type(), false, nil, method)
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return nil
+	}
+	gosig := fn.Type().(*types.Signature)
+	sig := &transpiler.GoFuncSignature{IsVariadic: gosig.Variadic()}
+	for i := 0; i < gosig.Params().Len(); i++ {
+		p := gosig.Params().At(i)
+		pt, ok := p.Type().(*types.Basic)
+		if !ok {
+			return nil
+		}
+		sig.Params = append(sig.Params, transpiler.GoParam{Name: p.Name(), Type: transpiler.BasicType{Name: pt.Name()}})
+	}
+	for i := 0; i < gosig.Results().Len(); i++ {
+		rt, ok := gosig.Results().At(i).Type().(*types.Basic)
+		if !ok {
+			return nil
+		}
+		sig.Returns = append(sig.Returns, transpiler.BasicType{Name: rt.Name()})
+	}
+	return sig
 }
 
 // getGoFieldType returns the type of a field on a Go struct type.
