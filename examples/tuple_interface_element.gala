@@ -1,0 +1,64 @@
+package main
+
+import "io/fs"
+
+// A tuple literal whose expected type has an interface element — a declared
+// interface, `error`, or an empty interface — holds each value as that
+// interface, whether the literal is a val's value, an argument, a function's
+// result, a branch of an if or a match, a struct field or an element of another
+// tuple. A function value goes into a Go named function type element the same
+// way.
+type Shape interface {
+    Area() float64
+}
+
+type Marker interface {}
+
+struct Square(Side float64)
+
+func (s Square) Area() float64 = s.Side * s.Side
+
+struct Rect(W float64, H float64)
+
+func (r Rect) Area() float64 = r.W * r.H
+
+struct NotFound(Key string)
+
+func (e NotFound) Error() string = s"not found: ${e.Key}"
+
+struct Placed(At Tuple[Shape, int])
+
+func describe(t Tuple[Shape, string]) string = s"${t.V2}: ${t.V1.Area()}"
+
+func pick(b bool) Tuple[Shape, int] = if (b) (Square(1.0), 1) else (Rect(1.0, 2.0), 2)
+
+func choose(n int) Tuple[Shape, int] = n match {
+    case 0 => (Square(2.0), 0)
+    case _ => (Rect(2.0, 2.0), n)
+}
+
+func failed(key string) Tuple[int, error] = (404, NotFound(key))
+
+func main() {
+    val t Tuple[Shape, int] = (Square(1.0), 2)
+    Println(t.V1.Area(), t.V2)
+
+    Println(describe((Rect(2.0, 3.0), "rect")))
+
+    Println(pick(true).V1.Area(), pick(false).V1.Area())
+    Println(choose(0).V1.Area(), choose(3).V2)
+
+    val f = failed("k")
+    Println(s"${f.V1} ${f.V2.Error()}")
+
+    Println(Placed((Square(3.0), 7)).At.V1.Area())
+
+    val m Tuple3[Marker, Shape, error] = (Square(2.0), Rect(1.0, 4.0), NotFound("x"))
+    Println(m.V2.Area(), m.V3.Error())
+
+    val nested Tuple[Tuple[Shape, int], string] = ((Square(5.0), 1), "n")
+    Println(nested.V1.V1.Area(), nested.V2)
+
+    val walk Tuple[fs.WalkDirFunc, string] = ((path string, d fs.DirEntry, err error) => err, "walk")
+    Println(walk.V2, walk.V1("", nil, nil) == nil)
+}

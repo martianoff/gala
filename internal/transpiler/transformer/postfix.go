@@ -841,10 +841,10 @@ func (t *galaASTTransformer) transformTupleLiteral(exprs []ast.Expr, line ...int
 // slotElems, when non-nil, holds the element types of the slot the literal
 // itself fills (a declared return, argument or field type; see
 // tupleElementExpectedTypes). An element whose own type is unknown takes its
-// slot element's type, and an untyped numeric constant element adopts its
-// slot element's numeric type (`(1, 2)` into Tuple[int64, float32]) exactly as
-// Go converts it on assignment. Without a slot such an element's type
-// parameter degrades to `any`.
+// slot element's type. So does an element Go would convert on assignment: an
+// untyped numeric constant (`(1, 2)` into Tuple[int64, float32]), or a value
+// going into an interface slot (`(Square(1.0), 2)` into Tuple[Shape, int]).
+// Without a slot an element of unknown type degrades to `any`.
 func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr, slotElems []transpiler.Type, line ...int) (ast.Expr, error) {
 	n := len(exprs)
 	if n < 2 || n > 10 {
@@ -863,8 +863,9 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 	}
 
 	var typeParams []ast.Expr
-	// slotTypes records, per element, the slot type an untyped constant was
-	// given, so its NewImmutable wrapper names the same type argument.
+	// slotTypes records, per element, the slot type the tuple took for it in
+	// place of the element's own type, so its NewImmutable wrapper names the
+	// same type argument.
 	slotTypes := make([]transpiler.Type, n)
 	for i, expr := range exprs {
 		var expected transpiler.Type = transpiler.NilType{}
@@ -882,18 +883,23 @@ func (t *galaASTTransformer) transformTupleLiteralWithExpected(exprs []ast.Expr,
 				typeParams = append(typeParams, ast.NewIdent("any"))
 			}
 		} else {
-			if !expected.IsNil() {
-				if _, untyped := t.untypedNumericConstExprDefault(expr); untyped && t.isNumericSlotType(expected) {
-					typeParams = append(typeParams, t.typeToExpr(expected))
+			if !expected.IsNil() && expected.String() != exprType.String() {
+				// An element whose wrapper must name its slot type — an untyped
+				// constant going into a numeric or opaque slot, a value going
+				// into an interface (`Shape`, `error`, `any`) or a Go named
+				// function type slot — gives the tuple that type argument too,
+				// as a Go assignment would convert it: Tuple[Square, int] is not
+				// a Tuple[Shape, int].
+				if typeArg := t.immutableTypeArg(expr, expected); typeArg != nil {
+					typeParams = append(typeParams, typeArg)
 					slotTypes[i] = expected
 					continue
 				}
-			}
-			// Sealed widening: when the element's static type is a sealed CASE
-			// (e.g. `MsgCmd[AppMsg]`) and the slot's element type is its sealed
-			// PARENT (`Cmd[AppMsg]`), emit the parent in the tuple's type
-			// arguments, the lowest common type for every arm filling that slot.
-			if !expected.IsNil() && !expected.IsAny() && expected.String() != exprType.String() {
+				// Sealed widening: when the element's static type is a sealed
+				// CASE (e.g. `MsgCmd[AppMsg]`) and the slot's element type is its
+				// sealed PARENT (`Cmd[AppMsg]`), emit the parent in the tuple's
+				// type arguments, the lowest common type for every arm filling
+				// that slot.
 				if parent := t.sealedCaseParent(exprType); parent != nil && parent.String() == expected.String() {
 					typeParams = append(typeParams, t.typeToExpr(expected))
 					continue

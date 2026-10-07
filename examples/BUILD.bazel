@@ -4220,3 +4220,12 @@ gala_exec_test(
     expected = "interface_val_field_crosspkg.out",
     deps = ["//examples/interface_val_field_lib"],
 )
+
+# A tuple literal whose expected type has an interface element holds each
+# value as that interface: a val, an argument, a result, a struct field and a
+# nested tuple.
+gala_exec_test(
+    name = "tuple_interface_element",
+    src = "tuple_interface_element.gala",
+    expected = "tuple_interface_element.out",
+)
