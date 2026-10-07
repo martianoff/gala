@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"sort"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -788,19 +789,21 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	var stmts []ast.Stmt
 	var conds []ast.Expr
 
-	// When the match subject is statically an interface (`any`) — e.g. a match
-	// that mixes a type pattern (`case i: int`) with a struct pattern, or a
-	// parameter declared `any` — the struct's fields are not directly reachable:
-	// Go requires a type assertion first. Insert `castVar, ok := std.As[Struct](obj)`
-	// and gate the arm on `ok`; subsequent field access reads from castVar.
-	// (We assert ONLY for interface subjects: `p.(Struct)` on a concrete,
-	// non-interface value is itself a Go compile error, so a concretely-typed
-	// subject keeps reading fields straight off objExpr.)
+	// When the match subject is statically an interface — `any`, `error`, or
+	// another GALA or Go interface — or a type parameter, the struct's fields
+	// are not directly reachable: Go requires a type assertion first. Insert
+	// `castVar, ok := std.As[Struct](obj)` and gate the arm on `ok`; subsequent
+	// field access reads from castVar. A concretely-typed subject keeps reading
+	// fields straight off objExpr.
 	baseExpr := objExpr
-	if matchedType != nil && matchedType.IsAny() {
+	assertFrom, err := t.structPatternAssertSubject(objExpr, structName, matchedType, patExprCtx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if assertFrom != nil {
 		// A generic struct can only be asserted to one of its instantiations,
-		// which an `any` subject cannot supply: the pattern must name the type
-		// arguments (`case Box[int](v, tag)`). They then type the fields too.
+		// which an interface subject cannot supply: the pattern must name the
+		// type arguments (`case Box[int](v, tag)`). They then type the fields too.
 		assertType, instantiated, err := t.structPatternAssertType(structName, explicitTypeArgs, patExprCtx)
 		if err != nil {
 			return nil, nil, err
@@ -810,7 +813,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 		}
 		var stmt ast.Stmt
 		var ok ast.Expr
-		baseExpr, stmt, ok = t.assertPatternSubject(objExpr, assertType)
+		baseExpr, stmt, ok = t.assertPatternSubject(assertFrom, assertType)
 		stmts = append(stmts, stmt)
 		conds = append(conds, ok)
 	}
@@ -868,7 +871,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 
 		// baseExpr.FieldName, unwrapped with .Get() only for a non-`var`
 		// (Immutable[T]) field; a `var` field is a plain Go field.
-		// baseExpr is the type-asserted castVar for `any` subjects, else objExpr.
+		// baseExpr is the type-asserted castVar for interface subjects, else objExpr.
 		// Metadata synthesized from Go source records an immutable field's
 		// type as Immutable[T]; the unwrapped read is a T.
 		isImmut := i < len(immutFlags) && immutFlags[i]
@@ -938,12 +941,65 @@ func combineStructMatchConds(conds []ast.Expr, stmts []ast.Stmt) (ast.Expr, []as
 	return finalCond, stmts, nil
 }
 
-// structPatternAssertType returns the type a struct pattern asserts an `any`
-// subject to. A non-generic struct asserts to itself. A generic struct needs
-// one of its instantiations, so the pattern must spell the type arguments
-// (`case Box[int](...)`); the instantiated type is returned as well so the
-// fields can be typed by it. Without them the pattern is rejected: Go cannot
-// assert to an uninstantiated generic type.
+// structPatternAssertSubject returns the expression a struct pattern asserts
+// to the struct before reading its fields, or nil when the subject is of a
+// concrete type whose fields are read directly. An interface subject is
+// asserted as it is, once the struct is known to implement the interface — a
+// struct that does not could never be held by it, so the arm is an error
+// rather than one that silently never matches. A value of a type parameter is
+// asserted through `any`.
+func (t *galaASTTransformer) structPatternAssertSubject(objExpr ast.Expr, structName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, error) {
+	if matchedType == nil {
+		return nil, nil
+	}
+	subjectType := t.followAliasChain(matchedType)
+	if t.isTypeParamSubject(subjectType) {
+		return &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{objExpr}}, nil
+	}
+	if !t.isInterfaceType(subjectType) {
+		return nil, nil
+	}
+	// Only a struct declared in GALA has its whole method set in metadata.
+	meta := t.getTypeMeta(structName)
+	if meta == nil || !strings.HasSuffix(meta.DefinedIn, ".gala") {
+		return objExpr, nil
+	}
+	required, _ := t.interfaceMethodNames(subjectType)
+	reason := ""
+	if missing := t.missingInterfaceMethods(meta, required); len(missing) > 0 {
+		reason = "missing " + strings.Join(missing, ", ")
+	} else if ptr := pointerReceiverMethods(meta, required); len(ptr) > 0 {
+		reason = strings.Join(ptr, ", ") + " has a pointer receiver"
+	}
+	if reason != "" {
+		at := patExprCtx.GetStart()
+		name := stripPackagePrefix(structName)
+		return nil, galaerr.NewSemanticErrorAt(at.GetLine(), at.GetColumn(),
+			fmt.Sprintf("%s does not implement %s (%s), so a value of type %s never holds one and the pattern %s(...) never matches",
+				name, matchedType.String(), reason, matchedType.String(), name))
+	}
+	return objExpr, nil
+}
+
+// pointerReceiverMethods returns the methods of required that meta's type
+// declares with a pointer receiver, sorted: a value of the type lacks them.
+func pointerReceiverMethods(meta *transpiler.TypeMetadata, required []string) []string {
+	var ptr []string
+	for _, m := range required {
+		if mm := meta.Methods[m]; mm != nil && mm.PointerReceiver {
+			ptr = append(ptr, m)
+		}
+	}
+	sort.Strings(ptr)
+	return ptr
+}
+
+// structPatternAssertType returns the type a struct pattern asserts an interface
+// or type-parameter subject to. A non-generic struct asserts to itself. A
+// generic struct needs one of its instantiations, so the pattern must spell
+// the type arguments (`case Box[int](...)`); the instantiated type is
+// returned as well so the fields can be typed by it. Without them the pattern
+// is rejected: Go cannot assert to an uninstantiated generic type.
 func (t *galaASTTransformer) structPatternAssertType(structName string, explicitTypeArgs *grammar.ExpressionListContext, patExprCtx grammar.IExpressionContext) (ast.Expr, transpiler.Type, error) {
 	meta := t.getTypeMeta(structName)
 	if meta == nil || len(meta.TypeParams) == 0 {

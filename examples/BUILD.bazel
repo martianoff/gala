@@ -4229,3 +4229,13 @@ gala_exec_test(
     src = "tuple_interface_element.gala",
     expected = "tuple_interface_element.out",
 )
+
+# A struct extractor pattern on a subject of an interface type other than
+# `any` (`error`, a declared interface, a Go interface) or of a type parameter
+# asserts the subject to the struct before reading its fields, nested patterns
+# included.
+gala_exec_test(
+    name = "struct_pattern_interface_subject",
+    src = "struct_pattern_interface_subject.gala",
+    expected = "struct_pattern_interface_subject.out",
+)

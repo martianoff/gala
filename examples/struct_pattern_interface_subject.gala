@@ -1,0 +1,75 @@
+package main
+
+import "fmt"
+
+// A struct extractor pattern matches a value whose static type is an
+// interface — `error`, an interface the program declares, or a Go interface —
+// or a type parameter, when the value holds that struct, at the top level and
+// nested inside another pattern.
+type Shape interface {
+    Area() float64
+}
+
+struct Square(Side float64)
+
+func (s Square) Area() float64 = s.Side * s.Side
+
+struct Circle(R float64)
+
+func (c Circle) Area() float64 = 3.0 * c.R * c.R
+
+func (c Circle) String() string = s"circle ${c.R}"
+
+struct NotFound(Key string)
+
+func (e NotFound) Error() string = s"not found: ${e.Key}"
+
+struct Coded[T any](Code T)
+
+func (e Coded[T]) Error() string = "coded"
+
+func describeErr(err error) string = err match {
+    case NotFound(k) if k == "x" => "x is missing"
+    case NotFound(k) => s"key $k"
+    case Coded[int](c) => s"code $c"
+    case _ => s"other: ${err.Error()}"
+}
+
+func describeShape(sh Shape) string = sh match {
+    case Square(side) => s"square $side"
+    case Circle(r) => s"circle $r"
+    case _ => "unknown shape"
+}
+
+func describeStringer(st fmt.Stringer) string = st match {
+    case Circle(r) => s"stringer circle $r"
+    case _ => "other stringer"
+}
+
+func describeAny[T any](x T) string = x match {
+    case Square(side) => s"generic square $side"
+    case _ => "generic other"
+}
+
+func main() {
+    Println(describeErr(NotFound(Key = "k")))
+    Println(describeErr(NotFound(Key = "x")))
+    Println(describeErr(Coded(7)))
+    Println(describeErr(fmt.Errorf("plain")))
+    Println(describeShape(Square(2.0)))
+    Println(describeShape(Circle(1.0)))
+    Println(describeStringer(Circle(2.0)))
+    Println(describeAny(Square(5.0)))
+    Println(describeAny("text"))
+
+    Println(Failure[int](NotFound(Key = "f")) match {
+        case Failure(NotFound(k)) => s"failed on $k"
+        case _ => "no failure"
+    })
+
+    val found Option[error] = Some(NotFound(Key = "o"))
+    Println(found match {
+        case Some(NotFound(k)) => s"some $k"
+        case _ => "none"
+    })
+}
