@@ -4239,3 +4239,13 @@ gala_exec_test(
     src = "struct_pattern_interface_subject.gala",
     expected = "struct_pattern_interface_subject.out",
 )
+
+# A wildcard type pattern, `e: Tagged[_]`, nested in Failure, Some, a tuple
+# element, a struct field or a sequence element matches every instantiation,
+# as it does at the top level
+gala_exec_test(
+    name = "nested_wildcard_type_pattern",
+    src = "nested_wildcard_type_pattern.gala",
+    expected = "nested_wildcard_type_pattern.out",
+    deps = ["//collection_immutable"],
+)

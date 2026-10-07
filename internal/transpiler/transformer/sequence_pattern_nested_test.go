@@ -249,17 +249,19 @@ func TestHoistedBindingUnusedIsReported(t *testing.T) {
 }
 
 // A typed element's ok flag is assigned (not declared) inside the guard, so
-// the arm condition that reads it compiles.
+// the arm condition that reads it compiles. The element is read into a temp
+// inside the guard, like any other sub-pattern's subject.
 func TestSequencePatternTypedElementOkFlagDeclaredOutside(t *testing.T) {
 	got, err := transpileSequencePattern(t, `func f(xs Array[any]) int = xs match {
     case Array(n: int, _) => n
     case _                => 0
 }`)
 	require.NoError(t, err)
-	m := regexp.MustCompile(`n, (_tmp_\d+) = std\.As\[int\]\(obj\.Get\(0\)\)`).FindStringSubmatch(got)
+	m := regexp.MustCompile(`n, (_tmp_\d+) = std\.As\[int\]\((_tmp_\d+)\)`).FindStringSubmatch(got)
 	require.NotNil(t, m, "typed element should assign through std.As:\n%s", got)
 	assert.Contains(t, got, "var "+m[1]+" bool")
 	assert.Contains(t, got, "var n int")
+	assert.Contains(t, got, m[2]+" = obj.Get(0)")
 }
 
 func TestGenericStructPatternOnAnySubject(t *testing.T) {

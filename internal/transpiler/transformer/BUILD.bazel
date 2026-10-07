@@ -198,6 +198,7 @@ go_test(
         "nested_generic_method_infer_test.go",
         "nested_success_typearg_test.go",
         "nested_tuple_pattern_test.go",
+        "nested_wildcard_type_pattern_test.go",
         "nocopy_receiver_test.go",
         "none_expected_type_test.go",
         "none_qualified_downward_inference_test.go",

@@ -800,6 +800,8 @@ val res = x match {
 }
 ```
 
+A wildcard type argument, `case w: Wrap[_]`, matches any instantiation of a generic struct, at the top level or nested in another pattern (`case Failure(e: Tagged[_])`, `case Some(w: Wrap[_])`, a tuple element, a struct field, a sequence element). The binding has the type of the value being matched: its fields can be read when that type is an instantiation, and an interface's methods when it is an interface such as `error`. A value typed `any` is the exception: `Wrap[_]` asserts to `Wrap[any]` there, and matches only a `Wrap[any]`.
+
 #### Struct Patterns on Interface Values
 A struct pattern also matches a value whose static type is an interface — `any`, `error`, an interface the program declares, a Go interface — or a type parameter. The arm matches when the value holds that struct, and binds its fields:
 
