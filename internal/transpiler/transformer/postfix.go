@@ -784,7 +784,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		if err != nil {
 			return nil, err
 		}
-		t.pendingMatchStmtBlock = stmts[0].(*ast.BlockStmt)
+		block, ok := stmts[0].(*ast.BlockStmt)
+		if !ok {
+			block = &ast.BlockStmt{List: stmts}
+		}
+		t.pendingMatchStmtBlock = block
 		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
 		// and replaces the wrapping ExprStmt with the inlined block.
 		return ast.NewIdent("_"), nil

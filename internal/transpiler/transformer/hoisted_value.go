@@ -327,14 +327,13 @@ const (
 // literal: each statement that leaves them — a `return`, or a `break` /
 // `continue` lowered from source that reaches a loop around them — records
 // how in exit and returns from the literal. A `return` with a value stores it
-// in result first (hasValue); leaving[k] is the first statement that left by
-// k, whose source position its dispatch keeps.
+// in result first, named by the first such `return`; leaving[k] is the first
+// statement that left by k, whose source position its dispatch keeps.
 type releaseScope struct {
-	t        *galaASTTransformer
-	exit     string
-	result   string
-	hasValue bool
-	leaving  [exitContinue + 1]ast.Stmt
+	t       *galaASTTransformer
+	exit    string
+	result  string
+	leaving [exitContinue + 1]ast.Stmt
 }
 
 // scopeReleases runs stmts, the statements of a construct lowered as
@@ -342,7 +341,7 @@ type releaseScope struct {
 // a `use` — so what they acquire is released at their end. A construct at
 // line:col whose `return` has a value of no known type to hold is an error.
 func (t *galaASTTransformer) scopeReleases(stmts []ast.Stmt, line, col int) ([]ast.Stmt, error) {
-	if !anyOutsideFuncLits(stmts, func(n ast.Node) bool { _, ok := n.(*ast.DeferStmt); return ok }) {
+	if !holdsDefer(stmts) {
 		return stmts, nil
 	}
 	// The type a `return` value is held in: the enclosing function's, or,
@@ -351,7 +350,7 @@ func (t *galaASTTransformer) scopeReleases(stmts []ast.Stmt, line, col int) ([]a
 	if transpiler.IsUnusable(retType) {
 		retType = t.leavingValuesType(stmts)
 	}
-	r := &releaseScope{t: t, exit: t.nextTempVar(), result: t.nextTempVar()}
+	r := &releaseScope{t: t, exit: t.nextTempVar()}
 	call := &ast.ExprStmt{X: &ast.CallExpr{Fun: &ast.FuncLit{
 		Type: &ast.FuncType{Params: &ast.FieldList{}},
 		Body: &ast.BlockStmt{List: r.rewriteList(stmts, false)},
@@ -369,7 +368,7 @@ func (t *galaASTTransformer) scopeReleases(stmts []ast.Stmt, line, col int) ([]a
 		return []ast.Stmt{call}, nil
 	}
 	out := []ast.Stmt{seqVarDecl(r.exit, ast.NewIdent("int"))}
-	if r.hasValue {
+	if r.result != "" {
 		// Only a lambda's result type can still be unknown here.
 		if transpiler.IsUnusable(retType) {
 			return nil, galaerr.NewSemanticErrorAt(line, col,
@@ -390,7 +389,7 @@ func (r *releaseScope) dispatch(k int, left ast.Stmt) ast.Stmt {
 	t := r.t
 	if k == exitReturn {
 		ret := &ast.ReturnStmt{}
-		if r.hasValue {
+		if r.result != "" {
 			ret.Results = []ast.Expr{ast.NewIdent(r.result)}
 		}
 		if site, ok := t.userReturns[left.(*ast.ReturnStmt)]; ok {
@@ -420,7 +419,9 @@ func (r *releaseScope) rewrite(stmt ast.Stmt, inLoop bool) ast.Stmt {
 	case *ast.ReturnStmt:
 		var store []ast.Stmt
 		if len(s.Results) == 1 {
-			r.hasValue = true
+			if r.result == "" {
+				r.result = r.t.nextTempVar()
+			}
 			store = []ast.Stmt{assignStmt(r.result, s.Results[0])}
 		}
 		return r.leave(exitReturn, s, store...)
@@ -464,16 +465,18 @@ func (r *releaseScope) leave(k int, left ast.Stmt, store ...ast.Stmt) ast.Stmt {
 	return &ast.BlockStmt{List: append(store, assignStmt(r.exit, intLit(k)), &ast.ReturnStmt{})}
 }
 
-// anyOutsideFuncLits reports whether a node of stmts outside any function
-// literal satisfies match.
-func anyOutsideFuncLits(stmts []ast.Stmt, match func(ast.Node) bool) bool {
+// holdsDefer reports whether stmts hold a `defer` outside any function
+// literal.
+func holdsDefer(stmts []ast.Stmt) bool {
 	found := false
 	for _, s := range stmts {
 		ast.Inspect(s, func(n ast.Node) bool {
-			if _, lit := n.(*ast.FuncLit); lit || found {
+			switch n.(type) {
+			case *ast.FuncLit:
 				return false
+			case *ast.DeferStmt:
+				found = true
 			}
-			found = n != nil && match(n)
 			return !found
 		})
 		if found {

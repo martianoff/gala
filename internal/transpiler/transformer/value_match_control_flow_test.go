@@ -109,7 +109,7 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 		{"returned match", "func f(o Option[int]) int {\n    return o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"trailing match of a function", "func f(o Option[int]) int {\n    Println(\"x\")\n    o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"parenthesized result of a function", "func f(o Option[int]) int = (o match {\n    case Some(v) => v\n    case None() => { return 0 }\n})"},
-		{"trailing match of a lambda","func f(n int) int {\n    val g = (k int) int => k match {\n        case 0 => { return -1 }\n        case _ => k\n    }\n    g(n)\n}"},
+		{"trailing match of a lambda", "func f(n int) int {\n    val g = (k int) int => k match {\n        case 0 => { return -1 }\n        case _ => k\n    }\n    g(n)\n}"},
 	}
 	for _, tt := range validCases {
 		t.Run(tt.name, func(t *testing.T) {
