@@ -513,9 +513,7 @@ func functionSignature(name string, fm *transpiler.FunctionMetadata) *lsp.Signat
 		label.WriteString("[" + strings.Join(fm.TypeParams, ", ") + "]")
 	}
 	label.WriteString("(" + strings.Join(labels, ", ") + ")")
-	if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-		label.WriteString(" " + fm.ReturnType.String())
-	}
+	label.WriteString(resultSuffix(fm.ReturnType, fm.GoResults))
 	return &lsp.SignatureInformation{
 		Label:         label.String(),
 		Documentation: markdown(summary),
@@ -532,9 +530,7 @@ func methodSignature(name string, m *transpiler.MethodMetadata) *lsp.SignatureIn
 		label.WriteString("[" + strings.Join(m.TypeParams, ", ") + "]")
 	}
 	label.WriteString("(" + strings.Join(labels, ", ") + ")")
-	if m.ReturnType != nil && !m.ReturnType.IsNil() {
-		label.WriteString(" " + m.ReturnType.String())
-	}
+	label.WriteString(resultSuffix(m.ReturnType, m.GoResults))
 	return &lsp.SignatureInformation{
 		Label:         label.String(),
 		Documentation: markdown(summary),

@@ -35,6 +35,10 @@ import (
 // goResultsName is the local holding the body's value while it is spread.
 const goResultsName = "_goResult"
 
+// goValueName is the local holding a successful Try's Tuple while its
+// components are returned.
+const goValueName = "_goValue"
+
 // liftDeclaredGoResults turns funcType's results, when sig declares a Go result
 // list, into the one GALA value they make, the result type the body is lowered
 // against, and returns the Go results for returnGoResults to restore. It
@@ -202,11 +206,11 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: failure}}},
 	})
 	success := methodCall(goResultsName, transpiler.MethodGet)
-	var successResults []ast.Expr
-	if len(values) == 1 {
-		successResults = []ast.Expr{success}
-	} else {
-		successResults = tupleFieldGets(success, len(values))
+	successResults := []ast.Expr{success}
+	if len(values) > 1 {
+		// The Tuple is taken out of the Try once: _goValue := _goResult.Get().
+		stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(goValueName)}, Tok: token.DEFINE, Rhs: []ast.Expr{success}})
+		successResults = tupleFieldGets(ast.NewIdent(goValueName), len(values))
 	}
 	return &ast.BlockStmt{List: append(stmts, &ast.ReturnStmt{Results: append(successResults, ast.NewIdent("nil"))})}
 }

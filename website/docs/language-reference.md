@@ -1111,13 +1111,16 @@ In GALA, a call of such a function is one value, exactly like a call of a Go
 function with those results: `divmod(17, 5)` is a `Tuple[int, int]`,
 `counter.Write(b)` a `Try[int]`, and `val n, err = counter.Write(b)` takes the
 results one by one. A GALA interface may declare such a method, and a function
-type may have such results: `func() (int, error)`.
+type may have such results: `func() (int, error)`. A call of any value of such
+a type — a `val`, a struct field, the result of another call — is one value
+too.
 
 **A lambda** passed where a function with several results is expected — a Go
 callback such as `func() (T, error)`, or a parameter of that function type —
 works the same way: its value is spread over the results, and a body that is a
-Go call with those results returns them as they are. With no parameters, the
-lambda can be written as its bare body: `sync.OnceValues(strconv.Atoi(s))`. A
+Go call with those results returns them as they are. So does a placeholder
+lambda (`strconv.Atoi(_)`). With no parameters, the lambda can be written as
+its bare body: `sync.OnceValues(strconv.Atoi(s))`. A
 generic Go function takes its type arguments from the lambda's results:
 
 ```gala

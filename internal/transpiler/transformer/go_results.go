@@ -208,7 +208,8 @@ func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
 // result list (`func (c *Counter) Write(p []byte) (int, error)`; a generic
 // one is lowered to a free function, see recordGenericGoResultCall), or a local
 // value of a function type with several results (`val get =
-// sync.OnceValues(...)`). nil for any other call.
+// sync.OnceValues(...)`, a struct field, the result of a call). nil for any
+// other call.
 func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *transpiler.GoFuncSignature {
 	if sig := t.genericGoResultCalls[call]; sig != nil {
 		return sig
@@ -228,8 +229,11 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 			}
 			return nil
 		}
-		if fm := t.getFunction(f.Name); fm != nil && fm.GoResults != nil {
-			return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
+		if fm := t.getFunction(f.Name); fm != nil {
+			if fm.GoResults != nil {
+				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
+			}
+			return nil
 		}
 	case *ast.SelectorExpr:
 		if id, ok := f.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
@@ -240,10 +244,20 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 		}
 		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
 		if meta := t.getTypeMeta(key); meta != nil {
-			if m := meta.Methods[f.Sel.Name]; m != nil && m.GoResults != nil {
-				return goResultsSignature(m.ParamTypes, m.ParamNames, m.GoResults, m.TypeParams)
+			if m := meta.Methods[f.Sel.Name]; m != nil {
+				if m.GoResults != nil {
+					return goResultsSignature(m.ParamTypes, m.ParamNames, m.GoResults, m.TypeParams)
+				}
+				return nil
 			}
 		}
+	}
+	// Any other value of a function type with several results: a struct
+	// field, a package-level val, the result of a call. Most callees are none
+	// of these, so the type is probed without counting a give-up as an
+	// inference failure.
+	if ft := t.resolveTranspilerTypeAsFuncType(t.probeExprType(fun)); ft != nil && len(ft.Results) >= 2 {
+		return goResultsSignature(ft.Params, nil, ft.Results, nil)
 	}
 	return nil
 }

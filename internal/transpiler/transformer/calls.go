@@ -4372,7 +4372,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	if expr, handled, err := t.tryRewriteAsPlaceholderLambda(exprCtx, funcSlot); err != nil {
 		return nil, err
 	} else if handled {
-		return expr, nil
+		return t.spreadLambdaGoResults(expr, funcSlot, exprCtx)
 	}
 
 	// Check mode: an if-expression or match lowers its branches against the

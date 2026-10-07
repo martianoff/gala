@@ -88,7 +88,8 @@ func TestDeclaredGoResults(t *testing.T) {
 			contains: []string{
 				"func split(s string) (string, int, error) {",
 				"return *new(string), *new(int), _goResult.GetError()",
-				"return _goResult.Get().V1.Get(), _goResult.Get().V2.Get(), nil",
+				"_goValue := _goResult.Get()",
+				"return _goValue.V1.Get(), _goValue.V2.Get(), nil",
 			},
 		},
 		{
@@ -195,6 +196,26 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 			name:     "a function value with the results is passed as it is",
 			body:     "func once() int {\n    val get = sync.OnceValues(strconv.Atoi(\"5\"))\n    run(get)\n}",
 			contains: []string{"run(get.Get())"},
+		},
+		{
+			name:     "a call of a struct field with several results is one value",
+			body:     "struct Box(cb func(string) (int, error))\n\nfunc viaField(b Box) Try[int] = b.cb(\"4\")",
+			contains: []string{`std.GoTry(b.cb.Get()("4"))`},
+		},
+		{
+			name:     "a call of a call's result with several results is one value",
+			body:     "func mk() func(string) (int, error) = (s) => strconv.Atoi(s)\n\nfunc viaCall() Try[int] = mk()(\"5\")",
+			contains: []string{`std.GoTry(mk()("5"))`},
+		},
+		{
+			name:     "a placeholder lambda over a Go call returns its results",
+			body:     "func atoiWith(f func(string) (int, error)) Try[int] = f(\"7\")\n\nfunc seven() Try[int] = atoiWith(strconv.Atoi(_))",
+			contains: []string{"atoiWith(func(__p0 string) (int, error) {\n\t\treturn strconv.Atoi(__p0)"},
+		},
+		{
+			name:     "a placeholder lambda's Tuple is spread",
+			body:     "func pair(n string) Tuple[string, bool] = (n, true)\n\nfunc look(f func(string) (string, bool)) Try[string] = Success(f(\"x\").V1)\n\nfunc found() Try[string] = look(pair(_))",
+			contains: []string{"look(func(__p0 string) (string, bool) {", "var _goResult std.Tuple[string, bool] = pair(__p0)"},
 		},
 		{
 			name:     "a generic Go callee's single result is the lambda's",
