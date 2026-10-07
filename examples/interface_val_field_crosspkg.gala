@@ -1,0 +1,26 @@
+package main
+
+import (
+    "strings"
+
+    lib "martianoff/gala/examples/interface_val_field_lib"
+)
+
+// A struct from another package whose immutable field is an interface — a Go
+// interface this file does not import, an interface of that package, or
+// `error` — is built from a value of a concrete type that implements it.
+struct Square(Side float64)
+
+func (s Square) Area() float64 = s.Side * s.Side
+
+struct NotFound(Key string)
+
+func (e NotFound) Error() string = s"not found: ${e.Key}"
+
+func main() {
+    Println(lib.Source(strings.NewReader("text")).R != nil)
+
+    Println(lib.Holder(Square(2.0)).S.Area())
+
+    Println(lib.Report(Code = 404, Cause = NotFound(Key = "k")).Cause.Error())
+}

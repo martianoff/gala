@@ -1,0 +1,15 @@
+package interface_val_field_lib
+
+import "io"
+
+// Structs whose immutable fields are interfaces — a Go one, one this package
+// declares, and `error` — for another package to build from concrete values.
+type Shape interface {
+    Area() float64
+}
+
+struct Source(R io.Reader)
+
+struct Holder(S Shape)
+
+struct Report(Code int, Cause error)

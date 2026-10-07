@@ -1,12 +1,14 @@
 package main
 
-// A struct whose immutable field is an interface — `error`, `any`, or an
-// interface the program declares — is built from a value of a concrete type
-// that implements it, positionally, by name, from a variable, through Copy,
-// or from a field default.
+// A struct whose immutable field is an interface — `error`, an interface the
+// program declares, or one with no methods that holds any value — is built
+// from a value of a concrete type that implements it, positionally, by name,
+// from a variable, through Copy, or from a field default.
 type Shape interface {
     Area() float64
 }
+
+type Marker interface {}
 
 struct Square(Side float64)
 
@@ -22,7 +24,7 @@ func (e NotFound) Error() string = s"not found: ${e.Key}"
 
 struct Holder(S Shape)
 
-struct Boxed(V any)
+struct Boxed(V Marker)
 
 struct Report(Code int, Cause error)
 

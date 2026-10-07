@@ -277,6 +277,18 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 	return meta != nil && !meta.IsOpaque && !meta.IsSealed && !meta.IsShorthand && isGalaInterfaceMeta(meta)
 }
 
+// isGoTypeWithoutInfo reports whether typ, through any GALA aliases, is a type
+// of a Go package that this file's Go type information does not describe:
+// one reached through another GALA package, such as the `io.Reader` field of
+// a struct that package declares, when this file does not import `io`.
+func (t *galaASTTransformer) isGoTypeWithoutInfo(typ transpiler.Type) bool {
+	nt, ok := t.followAliasChain(typ).(transpiler.NamedType)
+	if !ok || !t.isGoTyped(nt) || t.isOwnPackageType(nt) {
+		return false
+	}
+	return t.goTypeInfo == nil || t.goTypeInfo.GetTypeData(t.goTypeLookupName(nt)) == nil
+}
+
 // interfaceMethodNames returns the methods an interface type requires, and
 // false when typ is not an interface that may hold an opaque value among
 // other things: `error`, a GALA interface, or a Go interface type.

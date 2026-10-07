@@ -4187,3 +4187,13 @@ gala_exec_test(
     src = "interface_val_field.gala",
     expected = "interface_val_field.out",
 )
+
+# The same, for a struct declared in another package: a Go interface field
+# whose package this file does not import, an interface of that package, and
+# `error`.
+gala_exec_test(
+    name = "interface_val_field_crosspkg",
+    src = "interface_val_field_crosspkg.gala",
+    expected = "interface_val_field_crosspkg.out",
+    deps = ["//examples/interface_val_field_lib"],
+)
