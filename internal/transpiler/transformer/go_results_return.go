@@ -123,10 +123,7 @@ func (t *galaASTTransformer) goResultsThunk(expr ast.Expr, valueType transpiler.
 	var results *ast.FieldList
 	if v, _ := transpiler.GoResultValueOf(slot); !transpiler.ContainsUnusable(v.Type) && !t.hasTypeParams(v.Type) {
 		valueType = v.Type
-		results = &ast.FieldList{}
-		for _, typ := range slot {
-			results.List = append(results.List, &ast.Field{Type: t.typeToExpr(typ)})
-		}
+		results = t.resultFieldList(slot)
 	} else {
 		results = t.goResultsOfValue(valueType, len(slot))
 	}
@@ -150,9 +147,14 @@ func (t *galaASTTransformer) goResultsOfValue(valueType transpiler.Type, n int) 
 	if !ok || slices.ContainsFunc(types, transpiler.ContainsUnusable) {
 		return nil
 	}
-	results := &ast.FieldList{}
-	for _, typ := range types {
-		results.List = append(results.List, &ast.Field{Type: t.typeToExpr(typ)})
+	return t.resultFieldList(types)
+}
+
+// resultFieldList is a function type's result list of types.
+func (t *galaASTTransformer) resultFieldList(types []transpiler.Type) *ast.FieldList {
+	results := &ast.FieldList{List: make([]*ast.Field, len(types))}
+	for i, typ := range types {
+		results.List[i] = &ast.Field{Type: t.typeToExpr(typ)}
 	}
 	return results
 }

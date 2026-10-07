@@ -1095,18 +1095,11 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 			}
 		}
 	}
-	substAll := func(types []transpiler.Type) []transpiler.Type {
-		out := make([]transpiler.Type, len(types))
-		for i, typ := range types {
-			out[i] = t.substituteGoTypeParams(typ, subst)
-		}
-		return out
-	}
 	if t.genericGoResultCalls == nil {
 		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
 	}
-	params := append([]transpiler.Type{recvType}, substAll(m.ParamTypes)...)
-	t.genericGoResultCalls[call] = goResultsSignature(params, nil, substAll(m.GoResults), m.TypeParams)
+	params := append([]transpiler.Type{recvType}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
+	t.genericGoResultCalls[call] = goResultsSignature(params, nil, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
 }
 
 // resultOnlyMethodTypeArgs completes typeArgs, the type arguments written at a
