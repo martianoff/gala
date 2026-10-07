@@ -925,7 +925,7 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 		return &ast.BlockStmt{List: b.stmts}
 	}
 	ifStmt := &ast.IfStmt{Cond: cond, Body: store(branches[0]), Else: store(branches[1])}
-	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ), nil
+	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 }
 
 // expressionIsBareMatch reports whether the expression context is a bare

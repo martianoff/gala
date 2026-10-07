@@ -114,6 +114,20 @@ func returnOfMatch(o Option[int]) int {
     }
 }
 
+func tupleVal(o Option[int]) Tuple[int, int] {
+    val (a, b) = o match {
+        case Some(v) => (v, v + 1)
+        case None() => { return (-1, -1) }
+    }
+    (a * 10, b * 10)
+}
+
+func tupleVar(n int) int {
+    var (a, b) = if (n > 0) (n, n * 2) else { return -1 }
+    a = a + 1
+    a + b
+}
+
 func main() {
     Println(s"matchVal: ${matchVal(Some(2))} ${matchVal(None())}")
     Println(s"ifVal: ${ifVal(2)} ${ifVal(-5)}")
@@ -128,4 +142,6 @@ func main() {
     Println(s"ifElseLeaves: ${ifElseLeaves(2)} ${ifElseLeaves(0)} ${ifElseLeaves(-2)}")
     Println(s"returnOrPanic: ${returnOrPanic(Some(2))}")
     Println(s"returnOfMatch: ${returnOfMatch(Some(2))} ${returnOfMatch(None())}")
+    Println(s"tupleVal: ${tupleVal(Some(2))} ${tupleVal(None())}")
+    Println(s"tupleVar: ${tupleVar(2)} ${tupleVar(-2)}")
 }

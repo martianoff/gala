@@ -493,10 +493,10 @@ func (t *galaASTTransformer) rewriteSynthesizedArmReturns(stmts []ast.Stmt, repl
 // containsBareReturn reports whether any statement in stmts (recursively) is a
 // `return` with no results. It is used to detect "bare return" inside a branch
 // of a match-as-value expression, which would generate invalid Go because the
-// generated IIFE has a non-void return type.
+// function that `return` leaves has a result.
 //
-// Only structural containers are traversed (blocks, if/else, the top-level
-// case body). Constructs that establish their own return scope (func literals,
+// Only statements are traversed (blocks, if/else, loops, the top-level case
+// body). Constructs that establish their own return scope (func literals,
 // nested IIFEs) are NOT traversed, since a bare return inside a nested lambda
 // exits that lambda, not the enclosing match IIFE.
 func containsBareReturn(stmts []ast.Stmt) bool {
@@ -522,6 +522,10 @@ func stmtContainsBareReturn(stmt ast.Stmt) bool {
 			return true
 		}
 		return false
+	case *ast.ForStmt:
+		return s.Body != nil && containsBareReturn(s.Body.List)
+	case *ast.RangeStmt:
+		return s.Body != nil && containsBareReturn(s.Body.List)
 	case *ast.LabeledStmt:
 		return stmtContainsBareReturn(s.Stmt)
 	}
@@ -529,48 +533,46 @@ func stmtContainsBareReturn(stmt ast.Stmt) bool {
 }
 
 // validateNoBareReturnsInValueMatch rejects a match expression whose result is
-// used as a value (non-void) but whose case bodies contain a bare `return`.
-// Such a construct would emit Go like:
+// used as a value but whose case bodies contain a bare `return`, when the
+// function that `return` leaves has a result: GALA-E0015.
+//
+// A match lowered to a function literal (hoisted false) emits Go like:
 //
 //	func(obj T) string { ...; return /* no value */ }(subject)
 //
 // which fails to compile with "not enough return values". The user intent is
 // ambiguous between "exit the outer function" and "exit the match IIFE", so we
-// reject it and point at explicit rewrites in docs/errors/GALA-E0015.md.
+// reject it and point at explicit rewrites in docs/errors/GALA-E0015.md. In a
+// match lowered as statements (hoisted, see hoisted_value.go) the `return`
+// leaves the enclosing function, which fails the same way when that function
+// returns a value.
 //
 // Called after case bodies have been transformed and the common result type
-// has been inferred; no-ops when resultType is void/nil.
+// has been inferred; no-ops when the result type is void/nil.
 func (t *galaASTTransformer) validateNoBareReturnsInValueMatch(
 	clauses []ast.Stmt,
 	defaultBody []ast.Stmt,
 	resultType transpiler.Type,
+	hoisted bool,
 	startLine, startCol int,
 ) error {
-	if transpiler.IsUnusable(resultType) {
+	hint := "the match is wrapped in a function that must return %s; in a function that returns nothing, initialize a `val` with the match first (a `return` in it then leaves the function)"
+	if hoisted {
+		resultType = t.returnSlot.typ
+		hint = "the `return` leaves the enclosing function, which must return %s; give it a value (`return x`)"
+	}
+	if transpiler.IsUnusable(resultType) || resultType.IsVoid() {
 		return nil
 	}
-	if resultType != nil && resultType.IsVoid() {
-		return nil
-	}
-	offender := false
-	for _, c := range clauses {
-		if stmtContainsBareReturn(c) {
-			offender = true
-			break
-		}
-	}
-	if !offender && containsBareReturn(defaultBody) {
-		offender = true
-	}
-	if !offender {
+	if !containsBareReturn(clauses) && !containsBareReturn(defaultBody) {
 		return nil
 	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeBareReturnInValueMatch,
 		startLine, startCol,
 		"bare `return` inside a match branch whose result is used as a value",
-		"the match is wrapped in a function that must return "+resultType.String()+
-			"; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
+		fmt.Sprintf(hint, resultType)+
+			", restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md",
 	)
 }
 

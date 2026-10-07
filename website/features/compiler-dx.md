@@ -185,7 +185,7 @@ Both checks are **resolver-aware**: a symbol the program itself declared — a `
 
 ### `use` — scoped resource binding
 
-`use x = acquire` binds `x` for the rest of the enclosing block and guarantees `x.Close()` runs when the function returns, on every path including a panic. It is the top-to-bottom replacement for Go's `defer x.Close()`; the resource must satisfy `Close() error`. Multiple `use` bindings release **LIFO**, so nested resources unwind in the right order. No import is needed.
+`use x = acquire` binds `x` for the rest of the enclosing block and guarantees `x.Close()` runs when the function returns (or, in an arm of a `match` or a branch of an if-expression, when that ends), on every path including a panic. It is the top-to-bottom replacement for Go's `defer x.Close()`; the resource must satisfy `Close() error`. Multiple `use` bindings release **LIFO**, so nested resources unwind in the right order. No import is needed.
 
 ```gala
 // A Closeable resource that announces open/close so ordering is observable.

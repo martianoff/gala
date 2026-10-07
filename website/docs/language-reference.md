@@ -4,7 +4,7 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
-last_modified_at: 2026-10-03
+last_modified_at: 2026-10-05
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
@@ -892,7 +892,7 @@ for i := 0; i < 6; i++ {
 
 A `return` in such an arm likewise returns from the enclosing function.
 
-So do `break`, `continue` and `return` in an arm of a `match`, or a branch of an if-expression, that a local `val` or `var` is initialized with, or a variable is assigned (`val x = i match { case 2 => break ... }`): the other arms give `x` its value.
+So do `break`, `continue` and `return` in an arm of a `match`, or a branch of an if-expression, that a local `val` or `var` is initialized with — one name, or a tuple destructuring `val (a, b) = ...` — or a variable is assigned (`val x = i match { case 2 => break ... }`): the other arms give `x` its value.
 
 They must reach a loop written around them in the same function. Outside any loop, inside a lambda (a separate function, even when written in a loop), inside an arm of a `match` or a branch of an if-expression whose value is used otherwise (`Println(i match { case 2 => break ... })`), or used as a value, `break` and `continue` are an error: [GALA-E0059](/docs/errors/gala-e0059/). A `return` in such a value is [GALA-E0069](/docs/errors/gala-e0069/).
 

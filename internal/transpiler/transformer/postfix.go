@@ -686,12 +686,12 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 
 	// Reject bare `return` inside a value-producing match (the IIFE would need
 	// to return a concrete type, but a bare return produces none). See GALA-E0015.
-	// A match lowered as statements has no function literal to return from.
-	if hoist == "" {
-		startLine, startCol := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-		if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, startLine, startCol); err != nil {
-			return nil, err
-		}
+	// A match lowered as statements has no function literal to return from:
+	// its bare `return` leaves the enclosing function, which must then return
+	// nothing.
+	if err := t.validateNoBareReturnsInValueMatch(clauses, defaultBody, resultType, hoist != "",
+		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()); err != nil {
+		return nil, err
 	}
 
 	// Note: We keep result types with unresolved type parameters because they are valid Go
@@ -776,8 +776,19 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A `break` / `continue` in an arm is inlined for the same reason: in the
 	// IIFE it would name no loop, and the enclosing loop must see it.
 	if stmtPosition && (loopControl != nil || t.containsUserReturnInClauses(clauses, defaultBody)) {
+		// A `use` in an arm is released at the end of the match, as in a
+		// match lowered to a function literal (see scopeReleases).
 		body := t.buildMatchBodyForInline(clauses, defaultBody)
-		t.pendingMatchStmtBlock = t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
+		stmts, err := t.scopeReleases([]ast.Stmt{t.buildInlinedMatchBlock(subject, paramName, matchedType, body)},
+			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		if err != nil {
+			return nil, err
+		}
+		block, ok := stmts[0].(*ast.BlockStmt)
+		if !ok {
+			block = &ast.BlockStmt{List: stmts}
+		}
+		t.pendingMatchStmtBlock = block
 		// Return a placeholder; transformBlock recognises pendingMatchStmtBlock
 		// and replaces the wrapping ExprStmt with the inlined block.
 		return ast.NewIdent("_"), nil
@@ -790,7 +801,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if hoist != "" {
 		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
-		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType), nil
+		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}
 
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping

@@ -4,14 +4,14 @@ title: "GALA-E0015 — Bare return Inside a Value-Producing Match"
 description: "GALA-E0015 fires when a match used as a value has a branch ending in a bare `return`. Learn why the generated function cannot return nothing, and three ways to restructure the code."
 keywords: "gala-e0015, bare return inside match, gala match as value, gala return in match branch, gala match expression error, gala early exit"
 permalink: /docs/errors/gala-e0015/
-last_modified_at: 2026-10-04
+last_modified_at: 2026-10-05
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0015</p>
 
 # GALA-E0015 — Bare `return` inside a value-producing match
 
-**What it means.** A `match` expression is used as a value — passed as an argument, used as an operand, or returned as an expression — and one of its branches ends with a bare `return` (a `return` with no value). A match a local `val` or `var` is initialized with, or a variable is assigned, is not such a value: it is lowered as statements, and a bare `return` in it leaves the enclosing function.
+**What it means.** A `match` expression is used as a value — passed as an argument, used as an operand, or returned as an expression — and one of its branches ends with a bare `return` (a `return` with no value). A match a local `val` or `var` is initialized with, or a variable is assigned, is not such a value: it is lowered as statements, and a bare `return` in it leaves the enclosing function. That is fine when the function returns nothing; when it returns a value, a bare `return` there is GALA-E0015 too — give the `return` a value.
 
 ---
 
@@ -44,7 +44,7 @@ error[GALA-E0015]: bare `return` inside a match branch whose result is used as a
 6 |     Println(Try(os.ReadFile(path)) match {
   |             ^^^ the match is wrapped in a function that must return string
   |
-  = hint: the match is wrapped in a function that must return string; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
+  = hint: the match is wrapped in a function that must return string; in a function that returns nothing, initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
 ```
 
 The caret marks the match being used as a value, and the hint names the result type its wrapper must produce.

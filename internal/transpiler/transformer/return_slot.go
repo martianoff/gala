@@ -276,7 +276,9 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 		settled[d.value] = expr
 	}
 	// Put each settled value where its placeholder was emitted: a return
-	// (possibly inside a bind continuation) or the trailing statement.
+	// (possibly inside a bind continuation), the trailing statement, or the
+	// store of a return's value in a match whose `use` is released at its end
+	// (see scopeReleases).
 	placed := make(map[ast.Expr]bool, len(settled))
 	place := func(slot *ast.Expr) {
 		if expr, ok := settled[*slot]; ok {
@@ -292,6 +294,10 @@ func (t *galaASTTransformer) settleReturnSlot(body *ast.BlockStmt) error {
 			}
 		case *ast.ExprStmt:
 			place(&n.X)
+		case *ast.AssignStmt:
+			if len(n.Rhs) == 1 {
+				place(&n.Rhs[0])
+			}
 		}
 		return true
 	})

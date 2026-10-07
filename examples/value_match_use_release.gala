@@ -1,0 +1,182 @@
+package main
+
+// A `use` in an arm of a match, or a branch of an if-expression, that a local
+// `val` is initialized with releases its resource at the end of the match —
+// not when the enclosing function returns — even when another arm has a
+// `return`, `break` or `continue` that leaves the function or loop. Each
+// resource prints when it closes, so a release that waits for the end of the
+// function shows up after the lines printed between.
+
+type Res struct {
+    Name string
+}
+
+func (r Res) Close() error {
+    Println(s"  close ${r.Name}")
+    nil
+}
+
+func open(i int) Option[Res] = When(i >= 0, Res(Name = s"r$i"))
+
+// Each iteration's resource is released before the next one opens.
+func inLoop(n int) int {
+    var total = 0
+    for i := 0; i < n; i++ {
+        val k = open(i) match {
+            case Some(r) => {
+                use f = r
+                Println(s"  use ${f.Name}")
+                i + 1
+            }
+            case None() => { return -1 }
+        }
+        total = total + k
+        Println(s"  after match $i")
+    }
+    Println("  end of inLoop")
+    total
+}
+
+// A `return` in the arm that holds the `use` releases the resource, then
+// leaves the function with its value.
+func returnAfterUse(i int) int {
+    val k = open(i) match {
+        case Some(r) => {
+            use f = r
+            if (i > 5) {
+                return i * 100
+            }
+            i
+        }
+        case None() => -1
+    }
+    Println(s"  after match $k")
+    k * 10
+}
+
+// `break` and `continue` in the arm that holds the `use` act on the loop
+// around the match, after the release.
+func loopControl(n int) int {
+    var total = 0
+    for i := 0; i < n; i++ {
+        val k = open(i) match {
+            case Some(r) => {
+                use f = r
+                if (i == 1) {
+                    continue
+                }
+                if (i == 3) {
+                    break
+                }
+                i
+            }
+            case None() => { return -1 }
+        }
+        Println(s"  after match $i")
+        total = total + k
+    }
+    total
+}
+
+// So does a match used as a statement whose other arm returns.
+func statementMatch(n int) int {
+    for i := 0; i < n; i++ {
+        open(i) match {
+            case Some(r) => {
+                use f = r
+                Println(s"  use ${f.Name}")
+            }
+            case None() => { return -1 }
+        }
+        Println(s"  after match $i")
+    }
+    n
+}
+
+func ifBranch(i int) int {
+    val k = if (i >= 0) {
+        use f = Res(Name = s"if$i")
+        i * 2
+    } else {
+        return -1
+    }
+    Println(s"  after if $k")
+    k
+}
+
+// A `use` in a nested match is released at the end of that match.
+func nested(i int, ok bool) int {
+    val k = open(i) match {
+        case Some(r) => {
+            use outer = r
+            val inner = ok match {
+                case true => {
+                    use f = Res(Name = s"inner$i")
+                    i + 1
+                }
+                case false => { return -2 }
+            }
+            Println(s"  after inner match $inner")
+            inner
+        }
+        case None() => { return -1 }
+    }
+    Println(s"  after outer match $k")
+    k
+}
+
+func inLambda(n int) int {
+    val f = (i int) int => {
+        val k = open(i) match {
+            case Some(r) => {
+                use g = r
+                i
+            }
+            case None() => { return -1 }
+        }
+        Println(s"  after match in lambda $k")
+        k + 1
+    }
+    f(n) + f(-1)
+}
+
+// A lambda whose result type its own `return`s give: the first one, lowered
+// before that type is known, is completed once the second one gives it.
+func inUntypedLambda(o Option[Res]) Option[int] {
+    val g = (p Option[Res]) => {
+        val k = p match {
+            case None() => { return None() }
+            case Some(r) => {
+                use h = r
+                if (h.Name == "r9") {
+                    return Some(-1)
+                }
+                h.Name.Size()
+            }
+        }
+        Println("  after match in untyped lambda")
+        return Some(k)
+    }
+    g(o)
+}
+
+func main() {
+    Println("inLoop:")
+    Println(s"  result ${inLoop(2)}")
+    Println("returnAfterUse:")
+    Println(s"  result ${returnAfterUse(2)}")
+    Println(s"  result ${returnAfterUse(7)}")
+    Println("loopControl:")
+    Println(s"  result ${loopControl(5)}")
+    Println("statementMatch:")
+    Println(s"  result ${statementMatch(2)}")
+    Println("ifBranch:")
+    Println(s"  result ${ifBranch(3)} ${ifBranch(-3)}")
+    Println("nested:")
+    Println(s"  result ${nested(1, true)}")
+    Println(s"  result ${nested(1, false)}")
+    Println("inLambda:")
+    Println(s"  result ${inLambda(4)}")
+    Println("inUntypedLambda:")
+    Println(s"  result ${inUntypedLambda(open(1))} ${inUntypedLambda(open(9))} ${inUntypedLambda(open(-1))}")
+}

@@ -1,0 +1,52 @@
+inLoop:
+  use r0
+  close r0
+  after match 0
+  use r1
+  close r1
+  after match 1
+  end of inLoop
+  result 3
+returnAfterUse:
+  close r2
+  after match 2
+  result 20
+  close r7
+  result 700
+loopControl:
+  close r0
+  after match 0
+  close r1
+  close r2
+  after match 2
+  close r3
+  result 2
+statementMatch:
+  use r0
+  close r0
+  after match 0
+  use r1
+  close r1
+  after match 1
+  result 2
+ifBranch:
+  close if3
+  after if 6
+  result 6 -1
+nested:
+  close inner1
+  after inner match 2
+  close r1
+  after outer match 2
+  result 2
+  close r1
+  result -2
+inLambda:
+  close r4
+  after match in lambda 4
+  result 4
+inUntypedLambda:
+  close r1
+  after match in untyped lambda
+  close r9
+  result Some(2) Some(-1) None()

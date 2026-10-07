@@ -14,3 +14,5 @@ lambdaTail: 1020 999
 ifElseLeaves: 20 0 -1
 returnOrPanic: 20
 returnOfMatch: 20 -1
+tupleVal: (20, 30) (-1, -1)
+tupleVar: 7 -1

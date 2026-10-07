@@ -6,6 +6,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -121,27 +122,28 @@ func (t *galaASTTransformer) lowerDeclarationInitializers(ctx *grammar.Expressio
 	if !ok {
 		return []ast.Expr{expr}, nil
 	}
-	decl := &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{&ast.ValueSpec{
-		Names: []*ast.Ident{ast.NewIdent(target)},
-		Type:  t.typeToExpr(hv.typ),
-	}}}}
 	t.addVar(target, hv.typ)
-	t.hoistedPre = append([]ast.Stmt{decl}, hv.stmts...)
+	t.hoistedPre = append([]ast.Stmt{seqVarDecl(target, t.typeToExpr(hv.typ))}, hv.stmts...)
 	return []ast.Expr{ast.NewIdent(target)}, nil
 }
 
 // hoistedResult records stmts, storing a value of type typ in target, as the
-// lowering of a construct and returns the placeholder expression that stands
-// for it until its consumer takes it (takeHoisted). The placeholder has the
-// type of the value, for the arm that holds the construct.
-func (t *galaASTTransformer) hoistedResult(target string, stmts []ast.Stmt, typ transpiler.Type) ast.Expr {
+// lowering of the construct at line:col and returns the placeholder
+// expression that stands for it until its consumer takes it (takeHoisted).
+// The placeholder has the type of the value, for the arm that holds the
+// construct. What stmts acquire is released at their end (scopeReleases).
+func (t *galaASTTransformer) hoistedResult(target string, stmts []ast.Stmt, typ transpiler.Type, line, col int) (ast.Expr, error) {
+	stmts, err := t.scopeReleases(stmts, line, col)
+	if err != nil {
+		return nil, err
+	}
 	ph := ast.NewIdent(target)
 	if t.hoisted == nil {
 		t.hoisted = make(map[*ast.Ident]hoistedValue)
 	}
 	t.hoisted[ph] = hoistedValue{stmts: stmts, typ: typ}
 	t.exprTypeCache[ph] = typ
-	return ph
+	return ph, nil
 }
 
 // takeHoisted returns the construct expr stands for, if it is a placeholder
@@ -178,11 +180,7 @@ func (t *galaASTTransformer) storeValue(value ast.Expr, target string, typ trans
 	if !transpiler.IsUnusableOrAny(typ) {
 		value = t.assertAnyIdent(value, typ)
 	}
-	return []ast.Stmt{&ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(target)},
-		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{value},
-	}}
+	return []ast.Stmt{assignStmt(target, value)}
 }
 
 // hoistedType is the type of the variable a construct of kind lowered as
@@ -291,4 +289,204 @@ func (t *galaASTTransformer) leavingValuesType(branches ...[]ast.Stmt) transpile
 		}
 	}
 	return t.siblingsType(types)
+}
+
+// Resources a construct lowered as statements acquires.
+//
+// A `use` lowers to a Go `defer`, which runs when the Go function it is in
+// returns. A construct lowered to a function literal releases what its arms
+// acquire at its own end; lowered as statements, its arms are part of the
+// enclosing function, and a `use` in one would hold its resource until that
+// function returns — in a loop, every iteration's. So a construct whose
+// statements hold a `defer` (outside any function literal) runs them in a
+// function literal of their own, called at once, and carries the control
+// flow that leaves them out of it:
+//
+//	var _exit int // how the statements left; 0 at their end
+//	var _ret R    // the value a `return` in them returns
+//	func() {
+//		... _ret = x; _exit = 1; return // was `return x`
+//		... _exit = 2; return           // was `break`
+//	}()
+//	if _exit == 1 { return _ret }
+//	if _exit == 2 { break }
+//
+// The construct's value is stored in its variable, declared before them, as
+// before. A construct nested in such statements has already run its own
+// statements this way.
+
+// The ways statements run in a function literal of their own (see
+// scopeReleases) leave it.
+const (
+	exitReturn = iota + 1
+	exitBreak
+	exitContinue
+)
+
+// releaseScope rewrites the statements scopeReleases runs in a function
+// literal: each statement that leaves them — a `return`, or a `break` /
+// `continue` lowered from source that reaches a loop around them — records
+// how in exit and returns from the literal. A `return` with a value stores it
+// in result first, named by the first such `return`; leaving[k] is the first
+// statement that left by k, whose source position its dispatch keeps.
+type releaseScope struct {
+	t       *galaASTTransformer
+	exit    string
+	result  string
+	leaving [exitContinue + 1]ast.Stmt
+}
+
+// scopeReleases runs stmts, the statements of a construct lowered as
+// statements, in a function literal of their own when they hold a `defer` —
+// a `use` — so what they acquire is released at their end. A construct at
+// line:col whose `return` has a value of no known type to hold is an error.
+func (t *galaASTTransformer) scopeReleases(stmts []ast.Stmt, line, col int) ([]ast.Stmt, error) {
+	if !holdsDefer(stmts) {
+		return stmts, nil
+	}
+	// The type a `return` value is held in: the enclosing function's, or,
+	// while a lambda's is not known yet, the one its values share.
+	retType := t.returnSlot.typ
+	if transpiler.IsUnusable(retType) {
+		retType = t.leavingValuesType(stmts)
+	}
+	r := &releaseScope{t: t, exit: t.nextTempVar()}
+	call := &ast.ExprStmt{X: &ast.CallExpr{Fun: &ast.FuncLit{
+		Type: &ast.FuncType{Params: &ast.FieldList{}},
+		Body: &ast.BlockStmt{List: r.rewriteList(stmts, false)},
+	}}}
+	var dispatch []ast.Stmt
+	for k := exitReturn; k <= exitContinue; k++ {
+		if left := r.leaving[k]; left != nil {
+			dispatch = append(dispatch, &ast.IfStmt{
+				Cond: &ast.BinaryExpr{X: ast.NewIdent(r.exit), Op: token.EQL, Y: intLit(k)},
+				Body: &ast.BlockStmt{List: []ast.Stmt{r.dispatch(k, left)}},
+			})
+		}
+	}
+	if len(dispatch) == 0 {
+		return []ast.Stmt{call}, nil
+	}
+	out := []ast.Stmt{seqVarDecl(r.exit, ast.NewIdent("int"))}
+	if r.result != "" {
+		// Only a lambda's result type can still be unknown here.
+		if transpiler.IsUnusable(retType) {
+			return nil, galaerr.NewSemanticErrorAt(line, col,
+				"cannot infer the result type of this lambda, which holds the value a `return` beside a `use` in this construct returns — annotate the lambda's result type (e.g. `(x int) Option[int] => { ... }`)")
+		}
+		t.addVar(r.result, retType)
+		out = append(out, seqVarDecl(r.result, t.typeToExpr(retType)))
+	}
+	out = append(append(out, call), dispatch...)
+	return []ast.Stmt{&ast.BlockStmt{List: out}}, nil
+}
+
+// dispatch is the statement that leaves the way k names once the function
+// literal has returned, standing for left, the first statement in it that
+// left so. It keeps left's source position, to be checked as left would be
+// (see checkBranchingCalls and checkLoopControl).
+func (r *releaseScope) dispatch(k int, left ast.Stmt) ast.Stmt {
+	t := r.t
+	if k == exitReturn {
+		ret := &ast.ReturnStmt{}
+		if r.result != "" {
+			ret.Results = []ast.Expr{ast.NewIdent(r.result)}
+		}
+		if site, ok := t.userReturns[left.(*ast.ReturnStmt)]; ok {
+			t.recordUserReturn(ret, site.line, site.col)
+		}
+		return ret
+	}
+	bs := &ast.BranchStmt{Tok: token.BREAK}
+	if k == exitContinue {
+		bs.Tok = token.CONTINUE
+	}
+	t.loopControlSites[bs] = t.loopControlSites[left.(*ast.BranchStmt)]
+	return bs
+}
+
+// rewriteList rewrites stmts in place (see releaseScope); inLoop reports
+// whether a loop written in source among the statements encloses them.
+func (r *releaseScope) rewriteList(stmts []ast.Stmt, inLoop bool) []ast.Stmt {
+	for i, s := range stmts {
+		stmts[i] = r.rewrite(s, inLoop)
+	}
+	return stmts
+}
+
+func (r *releaseScope) rewrite(stmt ast.Stmt, inLoop bool) ast.Stmt {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		var store []ast.Stmt
+		if len(s.Results) == 1 {
+			if r.result == "" {
+				r.result = r.t.nextTempVar()
+			}
+			store = []ast.Stmt{assignStmt(r.result, s.Results[0])}
+		}
+		return r.leave(exitReturn, s, store...)
+	case *ast.BranchStmt:
+		if _, user := r.t.loopControlSites[s]; user && !inLoop {
+			k := exitBreak
+			if s.Tok == token.CONTINUE {
+				k = exitContinue
+			}
+			return r.leave(k, s)
+		}
+	case *ast.BlockStmt:
+		r.rewriteList(s.List, inLoop)
+	case *ast.IfStmt:
+		r.rewriteList(s.Body.List, inLoop)
+		if s.Else != nil {
+			s.Else = r.rewrite(s.Else, inLoop)
+		}
+	case *ast.ForStmt:
+		r.rewriteList(s.Body.List, inLoop || r.t.userLoops[s])
+	case *ast.RangeStmt:
+		r.rewriteList(s.Body.List, inLoop || r.t.userLoops[s])
+	case *ast.LabeledStmt:
+		s.Stmt = r.rewrite(s.Stmt, inLoop)
+	case *ast.SwitchStmt:
+		r.rewriteList(s.Body.List, inLoop)
+	case *ast.TypeSwitchStmt:
+		r.rewriteList(s.Body.List, inLoop)
+	case *ast.CaseClause:
+		r.rewriteList(s.Body, inLoop)
+	}
+	return stmt
+}
+
+// leave is the statement standing for left, which leaves the statements the
+// way k names: store, then the record of k, then the return from the literal.
+func (r *releaseScope) leave(k int, left ast.Stmt, store ...ast.Stmt) ast.Stmt {
+	if r.leaving[k] == nil {
+		r.leaving[k] = left
+	}
+	return &ast.BlockStmt{List: append(store, assignStmt(r.exit, intLit(k)), &ast.ReturnStmt{})}
+}
+
+// holdsDefer reports whether stmts hold a `defer` outside any function
+// literal.
+func holdsDefer(stmts []ast.Stmt) bool {
+	found := false
+	for _, s := range stmts {
+		ast.Inspect(s, func(n ast.Node) bool {
+			switch n.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.DeferStmt:
+				found = true
+			}
+			return !found
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
+// assignStmt is `name = value`.
+func assignStmt(name string, value ast.Expr) ast.Stmt {
+	return &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(name)}, Tok: token.ASSIGN, Rhs: []ast.Expr{value}}
 }

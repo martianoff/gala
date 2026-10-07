@@ -109,7 +109,7 @@ func TestReturnLeavingOnlyAValueMatchIsAnError(t *testing.T) {
 		{"returned match", "func f(o Option[int]) int {\n    return o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"trailing match of a function", "func f(o Option[int]) int {\n    Println(\"x\")\n    o match {\n        case Some(v) => v\n        case None() => { return -1 }\n    }\n}"},
 		{"parenthesized result of a function", "func f(o Option[int]) int = (o match {\n    case Some(v) => v\n    case None() => { return 0 }\n})"},
-		{"trailing match of a lambda","func f(n int) int {\n    val g = (k int) int => k match {\n        case 0 => { return -1 }\n        case _ => k\n    }\n    g(n)\n}"},
+		{"trailing match of a lambda", "func f(n int) int {\n    val g = (k int) int => k match {\n        case 0 => { return -1 }\n        case _ => k\n    }\n    g(n)\n}"},
 	}
 	for _, tt := range validCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -170,4 +170,114 @@ func TestAnyTypedIfExpressionBranches(t *testing.T) {
 	got, err := trans.Transpile("package main\n\nimport \"reflect\"\n\nfunc f(ok bool) {\n    val v = if (ok) reflect.ValueOf(1).Interface() else reflect.ValueOf(2).Interface()\n    Println(v)\n}\n", "")
 	require.NoError(t, err)
 	assert.Contains(t, got, "func() any {")
+}
+
+// TestBareReturnInHoistedMatch pins GALA-E0015 for a bare `return` in an arm
+// of a match lowered as statements, in a function that returns a value: the
+// `return` leaves that function, which needs a value, so Go would reject it
+// with "not enough return values". In a function with no result it is fine,
+// and so is a bare `return` in a lambda inside the arm, which leaves only the
+// lambda.
+func TestBareReturnInHoistedMatch(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	_, err := trans.Transpile("package main\n\nfunc f(o Option[int]) int {\n    val x = o match {\n        case Some(v) => v\n        case None() => { return }\n    }\n    x + 1\n}\n", "")
+	require.Error(t, err)
+	var se *galaerr.SemanticError
+	require.True(t, errors.As(err, &se), "want a SemanticError, got %v", err)
+	assert.Equal(t, galaerr.CodeBareReturnInValueMatch, se.Code)
+	assert.Equal(t, 4, se.Line, "line")
+	assert.Equal(t, 12, se.Column, "column")
+	assert.Contains(t, se.Error(), "the `return` leaves the enclosing function, which must return int")
+
+	validCases := []struct{ name, input string }{
+		{"function with no result", "func f(o Option[int]) {\n    val x = o match {\n        case Some(v) => v\n        case None() => { return }\n    }\n    Println(x)\n}"},
+		{"bare return in a lambda in the arm", "func f(o Option[int]) int {\n    val x = o match {\n        case Some(v) => {\n            val g = () => { return }\n            g()\n            v\n        }\n        case None() => { return -1 }\n    }\n    x\n}"},
+	}
+	for _, tt := range validCases {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := trans.Transpile("package main\n\n"+tt.input+"\n", "")
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestTupleDestructuringIsHoisted pins that a tuple destructuring
+// `val (a, b) = ...` or `var (a, b) = ...` lowers its match or if-expression
+// as statements like a single-name declaration, so a `return` in an arm
+// leaves the function.
+func TestTupleDestructuringIsHoisted(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	tests := []struct{ name, input string }{
+		{"val with a match", "func f(o Option[int]) Tuple[int, int] {\n    val (a, b) = o match {\n        case Some(v) => (v, v + 1)\n        case None() => { return (0, 0) }\n    }\n    (a * 10, b)\n}"},
+		{"var with an if-expression", "func f(n int) int {\n    var (a, b) = if (n > 0) (n, n * 2) else { return -1 }\n    a = a + 1\n    a + b\n}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile("package main\n\n"+tt.input+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, "var _tmp_1 std.Tuple[int, int]\n")
+		})
+	}
+}
+
+// TestUseInHoistedMatchIsReleasedAtItsEnd pins that the statements of a match
+// lowered as statements run in a function literal of their own when an arm
+// holds a `use`, so its resource is released at the end of the match rather
+// than when the enclosing function returns; a `return`, `break` or
+// `continue` in them is carried out of the literal. The runtime behaviour is
+// pinned by examples/value_match_use_release.gala.
+func TestUseInHoistedMatchIsReleasedAtItsEnd(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	const header = "package main\n\ntype Res struct {\n    Name string\n}\n\nfunc (r Res) Close() error = nil\n\n"
+	tests := []struct {
+		name, input string
+		want        []string
+	}{
+		{
+			name:  "return in another arm",
+			input: "func f(o Option[Res]) int {\n    val x = o match {\n        case Some(r) => {\n            use g = r\n            g.Name.Size()\n        }\n        case None() => { return -1 }\n    }\n    x\n}",
+			want: []string{
+				`var (_tmp_\d+) int\s+var (_tmp_\d+) int\s+func\(\) \{`,
+				`defer g\.Close\(\)\s+_tmp_1 = `,
+				`\{\s+(_tmp_\d+) = -1\s+(_tmp_\d+) = 1\s+return\s+\}`,
+				`\}\(\)\s+if _tmp_\d+ == 1 \{\s+return _tmp_\d+\s+\}`,
+			},
+		},
+		{
+			name:  "break and continue",
+			input: "func f() {\n    for i := 0; i < 5; i++ {\n        val x = i match {\n            case 0 => { continue }\n            case 3 => { break }\n            case _ => {\n                use g = Res(Name = s\"r$i\")\n                g.Name\n            }\n        }\n        Println(x)\n    }\n}",
+			want: []string{
+				`defer g\.Close\(\)`,
+				`\{\s+_tmp_\d+ = 3\s+return\s+\}`,
+				`\{\s+_tmp_\d+ = 2\s+return\s+\}`,
+				`\}\(\)\s+if _tmp_\d+ == 2 \{\s+break\s+\}\s+if _tmp_\d+ == 3 \{\s+continue\s+\}`,
+			},
+		},
+		{
+			name:  "if-expression",
+			input: "func f(n int) int {\n    val x = if (n > 0) {\n        use g = Res(Name = \"a\")\n        n\n    } else {\n        return -1\n    }\n    x\n}",
+			want:  []string{`defer g\.Close\(\)`, `\}\(\)\s+if _tmp_\d+ == 1 \{\s+return _tmp_\d+\s+\}`},
+		},
+		{
+			// The nested match runs in a literal of its own; the outer one,
+			// whose statements then hold no `defer`, does not.
+			name:  "use in a nested match",
+			input: "func f(o Option[Res], ok bool) int {\n    val x = o match {\n        case Some(r) => ok match {\n            case true => {\n                use g = r\n                1\n            }\n            case false => { return -2 }\n        }\n        case None() => { return -1 }\n    }\n    x\n}",
+			want:  []string{`defer g\.Close\(\)`, `_tmp_\d+ = -2\s`, `\sreturn -1\s`},
+		},
+		{
+			name:  "match used as a statement",
+			input: "func f(n int) int {\n    for i := 0; i < n; i++ {\n        Some(Res(Name = \"a\")) match {\n            case Some(r) => {\n                use g = r\n                Println(g.Name)\n            }\n            case None() => { return -1 }\n        }\n    }\n    n\n}",
+			want:  []string{`func\(\) \{`, `defer g\.Close\(\)`, `\}\(\)\s+if _tmp_\d+ == 1 \{\s+return _tmp_\d+\s+\}`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(header+tt.input+"\n", "")
+			require.NoError(t, err)
+			for _, w := range tt.want {
+				assert.Regexp(t, w, got)
+			}
+		})
+	}
 }

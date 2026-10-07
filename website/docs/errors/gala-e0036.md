@@ -65,7 +65,7 @@ Every forbidden keyword, with the hint the compiler emits for it:
 
 ## How to fix it — `defer` becomes `use`
 
-`use x = acquire` binds `x` for the rest of the enclosing block and guarantees `x.Close()` runs when the function returns, on every path — normal return or panic. The resource must satisfy `Close() error`. No import is needed.
+`use x = acquire` binds `x` for the rest of the enclosing block and guarantees `x.Close()` runs when the function returns (or, in an arm of a `match` or a branch of an if-expression, when that ends), on every path — normal return or panic. The resource must satisfy `Close() error`. No import is needed.
 
 ```gala
 package main

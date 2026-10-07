@@ -6,7 +6,8 @@ one of its branches ends with a bare `return` — a `return` statement with no
 value. A match a local `val` or `var` is initialized with, or a variable is
 assigned, is not such a value:
 it is lowered as statements, and a bare `return` in it leaves the enclosing
-function.
+function. That is fine when the function returns nothing; when it returns a
+value, a bare `return` there is GALA-E0015 too — give the `return` a value.
 
 **Minimal repro.** (`main.gala`)
 
@@ -41,7 +42,7 @@ error[GALA-E0015]: bare `return` inside a match branch whose result is used as a
 6 |     Println(Try(os.ReadFile(path)) match {
   |             ^^^ the match is wrapped in a function that must return string
   |
-  = hint: the match is wrapped in a function that must return string; initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
+  = hint: the match is wrapped in a function that must return string; in a function that returns nothing, initialize a `val` with the match first (a `return` in it then leaves the function), restructure to early-exit before the match, or use combinators like .Recover / .GetOrElse. See docs/errors/GALA-E0015.md
 ```
 
 The `-->` line echoes the source path as the compiler resolved it; the CLI
