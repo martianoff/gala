@@ -439,7 +439,11 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 		b.WriteString("\n**Methods:**\n")
 		for _, name := range slices.Sorted(maps.Keys(meta.Methods)) {
 			m := meta.Methods[name]
-			b.WriteString(fmt.Sprintf("- `%s(%s) %s`\n", name, formatMethodParams(m), m.ReturnType))
+			var ret any = m.ReturnType
+			if m.GoResults != nil {
+				ret = goResultList(m.GoResults)
+			}
+			b.WriteString(fmt.Sprintf("- `%s(%s) %s`\n", name, formatMethodParams(m), ret))
 		}
 		for _, m := range synthesized {
 			b.WriteString(fmt.Sprintf("- `%s(%s) %s` *(synthesized)*\n", m.Name, formatMethodParams(m), m.ReturnType))
@@ -449,6 +453,28 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 		b.WriteString(fmt.Sprintf("\n*Package: %s*\n", meta.Package))
 	}
 	return b.String()
+}
+
+// resultSuffix renders a declaration's result after its parameters: the Go
+// result list it declares (`(int, error)`), else its result type; "" when it
+// has none.
+func resultSuffix(ret transpiler.Type, goResults []transpiler.Type) string {
+	if goResults != nil {
+		return " " + goResultList(goResults)
+	}
+	if ret != nil && !ret.IsNil() {
+		return " " + ret.String()
+	}
+	return ""
+}
+
+// goResultList renders a Go result list as declared: `(int, error)`.
+func goResultList(results []transpiler.Type) string {
+	parts := make([]string, len(results))
+	for i, r := range results {
+		parts[i] = r.String()
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
 }
 
 func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
@@ -467,9 +493,7 @@ func formatFuncMeta(meta *transpiler.FunctionMetadata) string {
 		}
 	}
 	b.WriteString(")")
-	if meta.ReturnType != nil && !meta.ReturnType.IsNil() {
-		b.WriteString(" " + meta.ReturnType.String())
-	}
+	b.WriteString(resultSuffix(meta.ReturnType, meta.GoResults))
 	return renderHover(b.String(), meta.Doc, meta.Package)
 }
 
@@ -482,9 +506,7 @@ func formatMethodMeta(owner *transpiler.TypeMetadata, m *transpiler.MethodMetada
 		b.WriteString("[" + strings.Join(m.TypeParams, ", ") + "]")
 	}
 	b.WriteString("(" + formatMethodParams(m) + ")")
-	if m.ReturnType != nil && !m.ReturnType.IsNil() {
-		b.WriteString(" " + m.ReturnType.String())
-	}
+	b.WriteString(resultSuffix(m.ReturnType, m.GoResults))
 	pkg := m.Package
 	if pkg == "" {
 		pkg = owner.Package

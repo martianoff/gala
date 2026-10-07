@@ -63,6 +63,9 @@ func renameReceiverTypeParams(meta *transpiler.MethodMetadata, recvNames, typeTy
 		meta.ParamTypes[i] = transpiler.SubstituteTypeParams(pt, renames)
 	}
 	meta.ReturnType = transpiler.SubstituteTypeParams(meta.ReturnType, renames)
+	for i, rt := range meta.GoResults {
+		meta.GoResults[i] = transpiler.SubstituteTypeParams(rt, renames)
+	}
 }
 
 // receiverTypeArgNames lists the type arguments a receiver type spells, as

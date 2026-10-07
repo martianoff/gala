@@ -1,0 +1,100 @@
+package main
+
+import (
+    "encoding/json"
+    "errors"
+    "fmt"
+    "strconv"
+    "strings"
+    . "martianoff/gala/go_interop"
+)
+
+// A function or method can declare Go's result list, so a GALA type
+// implements a Go interface whose methods return several results. The body
+// computes their one GALA value: (T, error) is a Try[T], (A, B) a Tuple[A, B].
+
+// io.Writer: Write(p []byte) (n int, err error). fmt.Fprintf writes to it.
+struct LineCounter(var Lines int, var Bytes int, Limit int)
+
+func (c *LineCounter) Write(p []byte) (int, error) {
+    if (c.Bytes + p.Size() > c.Limit) {
+        return Failure(errors.New(s"over the ${c.Limit}-byte limit"))
+    }
+    c.Lines = c.Lines + 1
+    c.Bytes = c.Bytes + p.Size()
+    Success(p.Size())
+}
+
+// json.Marshaler: MarshalJSON() ([]byte, error). json.Marshal calls it.
+struct Celsius(Degrees int)
+
+func (c Celsius) MarshalJSON() ([]byte, error) =
+    if (c.Degrees < -273) Failure(errors.New("below absolute zero"))
+    else Success(ToBytes(s"\"${c.Degrees}C\""))
+
+// A GALA interface can declare such a method too.
+type Parser interface {
+    Parse(s string) (int, error)
+}
+
+struct Radix(Base int)
+
+// The body is any expression of the results' value.
+func (r Radix) Parse(s string) (int, error) = strconv.ParseInt(s, r.Base, 64).Map((n) => int(n))
+
+// (A, B): a Tuple.
+func divmod(a int, b int) (int, int) = (a / b, a % b)
+
+// (A, B, error): a Try of a Tuple.
+func splitPair(s string) (string, int, error) {
+    val (key, value, found) = strings.Cut(s, ":")
+    if (found) strconv.Atoi(value).Map((n) => (key, n))
+    else Failure(errors.New(s"no ':' in $s"))
+}
+
+// A method of a generic type, with type parameters of its own.
+struct Labeled[T any](Label string, Value T)
+
+func (l Labeled[T]) Unpack() (string, T) = (l.Label, l.Value)
+
+func (l Labeled[T]) Zip[U any](u U) (T, U) = (l.Value, u)
+
+func main() {
+    var counter = LineCounter(0, 0, 16)
+    fmt.Fprintf(&counter, "hello %s", "go")
+    fmt.Fprintln(&counter, "!")
+    Println(s"lines=${counter.Lines} bytes=${counter.Bytes}")
+    val n, err = fmt.Fprintf(&counter, "%s", "this does not fit")
+    Println(s"wrote $n, error: ${err.Error()}")
+
+    // Called from GALA, such a method is one value, like a Go call.
+    Println(counter.Write(ToBytes("ok")))
+
+    Println(json.Marshal(Celsius(21)).Map((b) => b.Size()))
+    Println(json.Marshal(Celsius(-300)) match {
+        case Success(_) => "marshalled"
+        case Failure(e) => s"failed: ${e.Error()}"
+    })
+
+    val p Parser = Radix(16)
+    Println(p.Parse("ff"))
+    Println(p.Parse("zz").IsFailure())
+
+    val (q, r) = divmod(17, 5)
+    Println(s"17 = 5 * $q + $r")
+    Println(splitPair("port:8080"))
+    Println(splitPair("port"))
+    // Several names take the results one by one, as from a Go call.
+    val key, value, splitErr = splitPair("x:1")
+    Println(s"$key $value ${splitErr == nil}")
+    // Held as a value, such a function is called as it is by name.
+    val split = splitPair
+    Println(split("y:2"))
+    val parseDecimal = Radix(10).Parse
+    Println(parseDecimal("42"))
+
+    val label = Labeled("answer", 42)
+    val (name, answer) = label.Unpack()
+    Println(s"$name=$answer")
+    Println(label.Zip(true))
+}

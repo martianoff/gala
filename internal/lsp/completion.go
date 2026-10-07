@@ -381,9 +381,7 @@ func formatFuncSig(meta *transpiler.FunctionMetadata) string {
 		}
 	}
 	b.WriteString(")")
-	if meta.ReturnType != nil && !meta.ReturnType.IsNil() {
-		b.WriteString(" " + meta.ReturnType.String())
-	}
+	b.WriteString(resultSuffix(meta.ReturnType, meta.GoResults))
 	return b.String()
 }
 
@@ -638,8 +636,6 @@ func formatMethodSig(meta *transpiler.MethodMetadata) string {
 		}
 	}
 	b.WriteString(")")
-	if meta.ReturnType != nil && !meta.ReturnType.IsNil() {
-		b.WriteString(" " + meta.ReturnType.String())
-	}
+	b.WriteString(resultSuffix(meta.ReturnType, meta.GoResults))
 	return b.String()
 }

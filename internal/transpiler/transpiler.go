@@ -557,6 +557,11 @@ type MethodMetadata struct {
 	// is a Go call: several results are one GALA value (Try/Tuple), which
 	// ReturnType already records.
 	GoDeclared bool
+	// GoResults is the Go result list a GALA method declares,
+	// `Write(p []byte) (int, error)`; nil for a single result type. Go sees
+	// these results, and a call of the method is a Go call: ReturnType holds
+	// its GALA value (Try/Tuple).
+	GoResults []Type
 }
 
 type FunctionMetadata struct {
@@ -570,6 +575,9 @@ type FunctionMetadata struct {
 	TypeParams   []string
 	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
 	DefinedIn    string              // Source file where this function was defined
+	// GoResults is the Go result list the function declares (see
+	// MethodMetadata.GoResults); ReturnType holds a call's GALA value.
+	GoResults []Type
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

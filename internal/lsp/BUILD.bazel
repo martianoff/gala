@@ -52,6 +52,7 @@ go_test(
         "docsplit_test.go",
         "error_lines_test.go",
         "go_keyword_name_test.go",
+        "go_result_list_hover_test.go",
         "go_results_test.go",
         "hover_chain_test.go",
         "hover_coverage_test.go",

@@ -890,6 +890,13 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		return nil, err
 	}
 
+	// A Go result list: the body computes the results' one GALA value, as a
+	// function of that result type would, and returns it to Go as the results.
+	goResults, err := t.liftDeclaredGoResults(funcType, ctx.Signature().(*grammar.SignatureContext))
+	if err != nil {
+		return nil, err
+	}
+
 	// Register function parameters in scope for type inference.
 	t.registerFunctionParametersInScope(ctx.Signature().(*grammar.SignatureContext))
 
@@ -1013,6 +1020,10 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 			exprBody = b
 		}
 		body = exprBody
+	}
+	if goResults != nil {
+		body = t.returnGoResults(body, funcType.Results.List[0].Type, goResults)
+		funcType.Results = goResults
 	}
 
 	return &ast.FuncDecl{
@@ -1756,18 +1767,9 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 		}
 	}
 
-	var results *ast.FieldList
-	if ctx.Type_() != nil {
-		retType, err := t.transformType(ctx.Type_())
-		if err != nil {
-			return nil, err
-		}
-		t.isImmutableType(t.astTypeToTranspilerType(retType))
-		results = &ast.FieldList{
-			List: []*ast.Field{
-				{Type: retType},
-			},
-		}
+	results, err := t.transformSignatureResults(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ast.FuncType{
@@ -1775,6 +1777,30 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 		Params:     fieldList,
 		Results:    results,
 	}, nil
+}
+
+// transformSignatureResults lowers a signature's results: its one result type,
+// or each type of its Go result list (`(int, error)`); nil when it has none.
+func (t *galaASTTransformer) transformSignatureResults(ctx *grammar.SignatureContext) (*ast.FieldList, error) {
+	var types []grammar.ITypeContext
+	if ctx.Type_() != nil {
+		types = []grammar.ITypeContext{ctx.Type_()}
+	} else if list, ok := ctx.GoResults().(*grammar.GoResultsContext); ok {
+		types = list.AllType_()
+	}
+	if len(types) == 0 {
+		return nil, nil
+	}
+	results := &ast.FieldList{}
+	for _, typ := range types {
+		retType, err := t.transformType(typ)
+		if err != nil {
+			return nil, err
+		}
+		t.isImmutableType(t.astTypeToTranspilerType(retType))
+		results.List = append(results.List, &ast.Field{Type: retType})
+	}
+	return results, nil
 }
 
 // transformFuncTypeSignature transforms a function type's signature (used in type positions like func(T) bool).
@@ -1829,17 +1855,9 @@ func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureCo
 		}
 	}
 
-	var results *ast.FieldList
-	if ctx.Type_() != nil {
-		retType, err := t.transformType(ctx.Type_())
-		if err != nil {
-			return nil, err
-		}
-		results = &ast.FieldList{
-			List: []*ast.Field{
-				{Type: retType},
-			},
-		}
+	results, err := t.transformSignatureResults(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	return &ast.FuncType{

@@ -74,6 +74,7 @@ type galaASTTransformer struct {
 	typeTraces             []TypeTraceEntry                              // recorded type resolution events (only when tracing is enabled)
 	exprTypeCache          map[ast.Expr]transpiler.Type                  // cache for getExprTypeNameManual results
 	goResults              map[*ast.CallExpr]*goResult                   // Go calls converted to one GALA value, keyed by the wrapping helper call (see go_results.go)
+	genericGoResultCalls   map[*ast.CallExpr]*transpiler.GoFuncSignature // calls of a generic method lowered to a free function that declares a Go result list, with that function's signature (see declaredGoResultsSignature)
 	tryThunkLambda         *grammar.LambdaExpressionContext              // the lambda being lowered as the thunk of Try(...) (see tryThunkValue)
 	needsEmbedImport       bool                                          // true when embed val declarations require import "embed"
 	warnTypeInference      bool                                          // when true, log warnings about type inference fallbacks
@@ -211,6 +212,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.currentScope = nil
 	t.resetExprTypeCache()
 	t.goResults = nil
+	t.genericGoResultCalls = nil
 	t.loopControlSites = nil
 	t.branchingCalls = nil
 	t.userReturns = nil

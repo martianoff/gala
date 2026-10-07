@@ -108,6 +108,7 @@ var accumulatedStateFields = []string{
 	"typeTraces",
 	"exprTypeCache",
 	"goResults",
+	"genericGoResultCalls",
 	"patternDefineTypes",
 	"defaultTrees",
 	"warnTypeInference",

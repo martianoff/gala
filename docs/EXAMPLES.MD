@@ -912,6 +912,64 @@ true
 mode -> fast (true)
 ```
 
+## Returning Several Results to Go
+
+A function or method that Go calls with several results declares Go's result
+list; its body gives their one GALA value, a `Try` for `(T, error)` or a Tuple
+for `(A, B)`. A lambda passed where Go expects such a function works the same
+way:
+
+```gala
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "strconv"
+    "sync"
+    . "martianoff/gala/go_interop"
+)
+
+struct LineCounter(var Lines int)
+
+// io.Writer
+func (c *LineCounter) Write(p []byte) (int, error) {
+    c.Lines = c.Lines + 1
+    Success(p.Size())
+}
+
+struct Celsius(Degrees int)
+
+// json.Marshaler
+func (c Celsius) MarshalJSON() ([]byte, error) = Success(ToBytes(s"\"${c.Degrees}C\""))
+
+func divmod(a int, b int) (int, int) = (a / b, a % b)
+
+func main() {
+    var counter = LineCounter(0)
+    fmt.Fprintln(&counter, "one")
+    fmt.Fprintln(&counter, "two")
+    Println(counter.Lines) // 2
+
+    Println(json.Marshal(Celsius(21)).Map((b) => b.Size())) // Success(5)
+
+    val (q, r) = divmod(17, 5) // a GALA call of it is a Tuple
+    Println(s"$q $r") // 3 2
+
+    // A lambda returning Go's (int, error)
+    val port = sync.OnceValues(() => strconv.Atoi("8080"))
+    Println(port()) // Success(8080)
+}
+```
+
+Output:
+```
+2
+Success(5)
+3 2
+Success(8080)
+```
+
 ## MkString - Joining Collection Elements
 
 ```gala

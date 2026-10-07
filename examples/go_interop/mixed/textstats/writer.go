@@ -8,10 +8,10 @@ import (
 	"unicode/utf8"
 )
 
-// Write makes *Counter an io.Writer. GALA cannot declare it (the result is
-// (int, error)), but a Go file in the same package can add it to the GALA
-// struct. A caller may split its input across several writes (io.Copy writes
-// 32 KB at a time), so a word cut in two is counted once.
+// Write makes *Counter an io.Writer. A Go file in the same package can add
+// a method to the GALA struct; this one works on raw bytes, which reads more
+// simply in Go. A caller may split its input across several writes (io.Copy
+// writes 32 KB at a time), so a word cut in two is counted once.
 func (c *Counter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil

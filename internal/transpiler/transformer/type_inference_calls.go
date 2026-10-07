@@ -138,7 +138,7 @@ func (t *galaASTTransformer) methodValueType(recvType transpiler.Type, method st
 	if !ok || (meta.DefinedIn == "" && mm.DefinedIn == "") || mm.IsGeneric || len(mm.TypeParams) > 0 {
 		return nil, false
 	}
-	ft := signatureType(mm.ParamTypes, mm.ReturnType)
+	ft := signatureType(mm.ParamTypes, mm.ReturnType, mm.GoResults)
 	if len(meta.TypeParams) == 0 {
 		return ft, true
 	}

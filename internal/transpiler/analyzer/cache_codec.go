@@ -310,6 +310,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeString(m.DefinedIn)
 	e.writeBool(m.PointerReceiver)
 	e.writeBool(m.GoDeclared)
+	e.writeTypeSlice(m.GoResults)
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -388,6 +389,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeStringSlice(f.TypeParams)
 	e.writeDefaultExprs(f.DefaultExprs)
 	e.writeString(f.DefinedIn)
+	e.writeTypeSlice(f.GoResults)
 }
 
 func (e *encoder) writeStringFuncMetaMap(m map[string]*transpiler.FunctionMetadata) {
@@ -799,6 +801,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.DefinedIn = d.readString()
 	m.PointerReceiver = d.readBool()
 	m.GoDeclared = d.readBool()
+	m.GoResults = d.readTypeSlice()
 	return m
 }
 
@@ -889,6 +892,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f.TypeParams = d.readStringSlice()
 	f.DefaultExprs = d.readDefaultExprs()
 	f.DefinedIn = d.readString()
+	f.GoResults = d.readTypeSlice()
 	return f
 }
 

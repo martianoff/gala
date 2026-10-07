@@ -94,7 +94,15 @@ func (t *galaASTTransformer) liftGoResults(expr ast.Expr, suffix *grammar.Postfi
 	// The signature first: it answers at once for almost every call (no Go
 	// type info, or a single result), before the guards that infer types.
 	sig := t.resolveGoCallSignature(call)
-	if sig == nil || len(sig.Returns) < 2 || t.isImmutableUnwrapCall(call) || t.isGalaCallee(call) {
+	if sig != nil && (len(sig.Returns) < 2 || t.isImmutableUnwrapCall(call)) {
+		return expr, nil
+	}
+	if sig == nil || t.isGalaCallee(call) {
+		// A GALA function declaring a Go result list, or a value of a
+		// function type with several results, is called as Go's are.
+		sig = t.declaredGoResultsSignature(call)
+	}
+	if sig == nil {
 		return expr, nil
 	}
 	returns := t.instantiateGoSignatureReturns(sig, call.Args, t.callSiteTypeArgs(call), call.Ellipsis != token.NoPos)
@@ -193,6 +201,83 @@ func (t *galaASTTransformer) isGalaCallee(call *ast.CallExpr) bool {
 		}
 	}
 	return false
+}
+
+// declaredGoResultsSignature returns the signature of a call whose callee GALA
+// declares with several Go results: a GALA function or method with a Go
+// result list (`func (c *Counter) Write(p []byte) (int, error)`; a generic
+// one is lowered to a free function, see recordGenericGoResultCall), or a local
+// value of a function type with several results (`val get =
+// sync.OnceValues(...)`, a struct field, the result of a call). nil for any
+// other call.
+func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *transpiler.GoFuncSignature {
+	if sig := t.genericGoResultCalls[call]; sig != nil {
+		return sig
+	}
+	fun, _ := splitCallFunTypeArgs(call.Fun)
+	// A val is called through its Immutable wrapper: `get.Get()()`.
+	if sel := immutableGetReceiver(fun); sel != nil {
+		if id, ok := sel.X.(*ast.Ident); ok && t.isVal(id.Name) {
+			fun = id
+		}
+	}
+	switch f := fun.(type) {
+	case *ast.Ident:
+		if t.shadowingScope(f.Name) != nil {
+			if ft := t.resolveTranspilerTypeAsFuncType(t.getType(f.Name)); ft != nil && len(ft.Results) >= 2 {
+				return goResultsSignature(ft.Params, nil, ft.Results, nil)
+			}
+			return nil
+		}
+		if fm := t.getFunction(f.Name); fm != nil {
+			if fm.GoResults != nil {
+				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
+			}
+			return nil
+		}
+	case *ast.SelectorExpr:
+		if id, ok := f.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) {
+			if fm := t.getFunction(id.Name + "." + f.Sel.Name); fm != nil && fm.GoResults != nil {
+				return goResultsSignature(fm.ParamTypes, fm.ParamNames, fm.GoResults, fm.TypeParams)
+			}
+			return nil
+		}
+		_, key := t.resolveReceiverTypeAndLookupKey(f.X, f.Sel.Name)
+		if meta := t.getTypeMeta(key); meta != nil {
+			if m := meta.Methods[f.Sel.Name]; m != nil {
+				if m.GoResults != nil {
+					return goResultsSignature(m.ParamTypes, m.ParamNames, m.GoResults, m.TypeParams)
+				}
+				return nil
+			}
+		}
+	}
+	// Any other value of a function type with several results: a struct
+	// field, a package-level val, the result of a call. Most callees are none
+	// of these, so the type is probed without counting a give-up as an
+	// inference failure.
+	if ft := t.resolveTranspilerTypeAsFuncType(t.probeExprType(fun)); ft != nil && len(ft.Results) >= 2 {
+		return goResultsSignature(ft.Params, nil, ft.Results, nil)
+	}
+	return nil
+}
+
+// goResultsSignature is the signature of a callee with these parameters
+// (names may be nil) that declares the Go result list results.
+func goResultsSignature(params []transpiler.Type, names []string, results []transpiler.Type, typeParams []string) *transpiler.GoFuncSignature {
+	return &transpiler.GoFuncSignature{Params: goParams(params, names), Returns: results, TypeParams: typeParams}
+}
+
+// goParams pairs parameter types with their names (names may be nil).
+func goParams(types []transpiler.Type, names []string) []transpiler.GoParam {
+	params := make([]transpiler.GoParam, len(types))
+	for i, typ := range types {
+		params[i].Type = typ
+		if i < len(names) {
+			params[i].Name = names[i]
+		}
+	}
+	return params
 }
 
 // isImmutableUnwrapCall reports whether expr is the `.Get()` that

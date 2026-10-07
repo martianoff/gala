@@ -30,6 +30,7 @@ go_test(
 go_test(
     name = "transpiler_test",
     srcs = [
+        "go_result_value_test.go",
         "import_names_test.go",
         "line_directives_guard_test.go",
         "merge_test.go",

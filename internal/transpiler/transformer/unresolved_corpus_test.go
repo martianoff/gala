@@ -99,7 +99,12 @@ import (
 // Lowered 153 -> 143 when calls of a struct's generated Equal (and of an
 // opaque type's generated Hash and Compare) started being typed; see
 // TestOpaqueTypeSynthesizedMethodTypes in opaque_test.go.
-const unresolvedBudget = 143
+//
+// Lowered 143 -> 124 when a method call on an `error` value (`e.Error()`)
+// started being typed: `error` is predeclared, so no package's Go type info
+// records its method set, and every such call bound by a Failure pattern or
+// taken out of an Option went untyped. See error_method_type_test.go.
+const unresolvedBudget = 124
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

@@ -1252,7 +1252,11 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 		return &ast.ParenExpr{X: expr}, nil
 	case f.lambda != nil:
 		if expectedRetType, expectedParamTypes, ok := t.lambdaExpectation(s.typ); ok {
-			return t.transformLambdaWithExpectedType(f.lambda, expectedRetType, expectedParamTypes, strict)
+			lit, err := t.transformLambdaWithExpectedType(f.lambda, expectedRetType, expectedParamTypes, strict)
+			if err != nil {
+				return nil, err
+			}
+			return t.spreadLambdaGoResults(lit, s.typ, f.lambda)
 		}
 		return t.transformExpression(exprCtx)
 	case f.ifExpr != nil:
