@@ -77,8 +77,12 @@ func F() { fmt.Println(Some(1), alias.X) }
 	files, err := Export(Module{
 		Path:      "new.example/lib",
 		GoVersion: "1.24",
-		Packages:  map[string]map[string]string{"p": {"p.go": src, "p.gala": `import "old.mod/std"`}},
-		Remap:     map[string]string{"old.mod": "new.example/lib"},
+		Packages: map[string]map[string]string{
+			"p":          {"p.go": src, "p.gala": `import "old.mod/std"`},
+			"std":        {"std.go": "package std\n"},
+			"collection": {"c.go": "package collection\n"},
+		},
+		Remap: map[string]string{"old.mod": "new.example/lib"},
 	})
 	require.NoError(t, err)
 	got := map[string]string{}
@@ -102,8 +106,37 @@ func TestExport_RejectsImportsTheModuleCannotProvide(t *testing.T) {
 	require.ErrorContains(t, err, `imports "github.com/other/dep"`)
 }
 
+func TestExport_RejectsUnresolvableImports(t *testing.T) {
+	export := func(imp string) error {
+		_, err := Export(Module{
+			Path:      "new.example/lib",
+			GoVersion: "1.24",
+			Packages:  map[string]map[string]string{"p": {"p.go": "package p\n\nimport _ \"" + imp + "\"\n"}},
+			Remap:     map[string]string{"martianoff/gala": "new.example/lib"},
+		})
+		return err
+	}
+	require.NoError(t, export("net/http"))
+	require.NoError(t, export("martianoff/gala/p"))
+	require.ErrorContains(t, export("martianoff/other/x"), "does not provide", "an unremapped GALA module is not Go's standard library")
+	require.ErrorContains(t, export("martianoff/gala/missing"), "does not provide", "remapped into a package the export lacks")
+}
+
+func TestRemapImport_LongestPrefixWins(t *testing.T) {
+	remap := map[string]string{"a.io/x": "n.io/m", "a.io/x/sub": "o.io/k"}
+	for i := 0; i < 20; i++ {
+		require.Equal(t, "o.io/k/p", remapImport("a.io/x/sub/p", remap))
+		require.Equal(t, "n.io/m/other", remapImport("a.io/x/other", remap))
+	}
+	require.Equal(t, "a.io/xy", remapImport("a.io/xy", remap))
+}
+
 func TestWriteDir(t *testing.T) {
 	files := []File{{Path: "go.mod", Content: []byte("module x.y/z\n")}, {Path: "a/b.go", Content: []byte("package a\n")}}
+
+	notADir := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(notADir, nil, 0o644))
+	require.ErrorContains(t, WriteDir(notADir, files), "cannot export")
 
 	nonEmpty := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(nonEmpty, "stale"), nil, 0o644))
@@ -167,6 +200,15 @@ func TestWriteProxy_Layout(t *testing.T) {
 	again, err := os.ReadFile(filepath.Join(other, "go.example.com", "stdlib", "@v", "v0.86.0.zip"))
 	require.NoError(t, err)
 	require.Equal(t, data, again, "the same export must produce the same zip")
+}
+
+func TestAppendVersionList_AddsMissingNewline(t *testing.T) {
+	list := filepath.Join(t.TempDir(), "list")
+	require.NoError(t, os.WriteFile(list, []byte("v0.85.0"), 0o644))
+	require.NoError(t, appendVersionList(list, "v0.86.0"))
+	got, err := os.ReadFile(list)
+	require.NoError(t, err)
+	require.Equal(t, "v0.85.0\nv0.86.0\n", string(got))
 }
 
 func TestWriteProxy_RejectsFilesTheGoCommandWouldReject(t *testing.T) {

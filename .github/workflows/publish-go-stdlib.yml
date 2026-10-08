@@ -210,8 +210,13 @@ jobs:
           fi
           git tag -a "$VERSION" -m "go.gala.fyi/stdlib ${VERSION} from gala ${TAG}"
           git push origin "refs/tags/$VERSION"
-          if [ "$PRERELEASE" != true ]; then
+          # main shows the newest stable version: a patch for an older line
+          # gets its tag but leaves main alone.
+          newest=$(git tag -l 'v*' | grep -v -- - | sort -V | tail -n 1)
+          if [ "$PRERELEASE" != true ] && [ "$VERSION" = "$newest" ]; then
             git push origin HEAD:refs/heads/main
+          else
+            echo "main stays at $newest"
           fi
 
       - name: Confirm proxy.golang.org serves the version

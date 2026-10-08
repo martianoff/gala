@@ -16,9 +16,17 @@ work=${1:?usage: check_stdlib_export.sh <work-dir> <module-path> <version>}
 module=${2:?module path required}
 version=${3:?version required}
 
+# The work dir is deleted on every run, so only a directory this script
+# created (it carries the marker) or an empty one is accepted.
+marker=.go-export-check
+if [ -d "$work" ] && [ -n "$(ls -A "$work")" ] && [ ! -e "$work/$marker" ]; then
+  echo "::error::$work is not empty and was not created by this script; pass a new directory"
+  exit 2
+fi
 rm -rf "$work"
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
+touch "$work/$marker"
 
 echo "+ gala stdlib export --go-module $module --version $version"
 "$GALA" stdlib export --go-module "$module" --out "$work/out" --proxy "$work/proxy" --version "$version"
@@ -47,7 +55,7 @@ printf 'module example.com/consumer\n\n%s\n' "$go_line" >"$consumer/go.mod"
 (
   cd "$consumer"
   go mod tidy
-  if ! grep -q "^require $module $version\$" go.mod; then
+  if ! grep -qxF "require $module $version" go.mod; then
     echo "::error::go mod tidy did not resolve $module $version:"
     cat go.mod
     exit 1

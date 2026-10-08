@@ -68,6 +68,9 @@ func runStdlibExport(cmd *cobra.Command, args []string) error {
 	if ws, ok := enclosingBazelWorkspace(out); ok {
 		return fmt.Errorf("refusing to export into %s: it is inside the Bazel workspace %s; choose a directory outside it", out, ws)
 	}
+	if seVersion != "" && seProxy == "" {
+		return fmt.Errorf("--version only applies with --proxy")
+	}
 	var modVersion string
 	if seProxy != "" {
 		version := seVersion

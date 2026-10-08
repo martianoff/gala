@@ -53,8 +53,8 @@ type Module struct {
 // file and every package's files.
 //
 // The exported go.mod has no requirements, so every import must resolve to
-// the Go standard library or to the module itself after remapping; any other
-// import is an error rather than a go.mod that silently lacks it.
+// the Go standard library or, after remapping, to one of m.Packages; any
+// other import is an error rather than a module that cannot build.
 func Export(m Module) ([]File, error) {
 	if err := module.CheckPath(m.Path); err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
 	for _, imp := range f.Imports {
 		p, _ := strconv.Unquote(imp.Path.Value)
 		newPath := remapImport(p, m.Remap)
-		if !isGoStdlib(newPath) && newPath != m.Path && !strings.HasPrefix(newPath, m.Path+"/") {
+		if !providedBy(newPath, m) && !isGoStdlib(newPath, m.Remap) {
 			return nil, fmt.Errorf("%s imports %q, which the exported module %s does not provide", name, p, m.Path)
 		}
 		if newPath == p {
@@ -120,24 +120,44 @@ func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
 }
 
 // remapImport returns p with its module prefix replaced when it belongs to a
-// remapped module.
+// remapped module. The longest matching source module wins, so overlapping
+// entries rewrite the same way on every run.
 func remapImport(p string, remap map[string]string) string {
-	for from, to := range remap {
-		if p == from {
-			return to
-		}
-		if rest, ok := strings.CutPrefix(p, from+"/"); ok {
-			return to + "/" + rest
+	best := ""
+	for from := range remap {
+		if (p == from || strings.HasPrefix(p, from+"/")) && len(from) > len(best) {
+			best = from
 		}
 	}
-	return p
+	if best == "" {
+		return p
+	}
+	return remap[best] + strings.TrimPrefix(p, best)
 }
 
-// isGoStdlib reports whether p is a Go standard library import: its first
-// element has no dot.
-func isGoStdlib(p string) bool {
+// providedBy reports whether import path p names one of m's packages.
+func providedBy(p string, m Module) bool {
+	if p != m.Path && !strings.HasPrefix(p, m.Path+"/") {
+		return false
+	}
+	_, ok := m.Packages[strings.TrimPrefix(strings.TrimPrefix(p, m.Path), "/")]
+	return ok
+}
+
+// isGoStdlib reports whether p can be a Go standard library import: its first
+// element has no dot, and it is not under a remapped source module's first
+// element (martianoff/... is never Go's, so an unremapped one is an error).
+func isGoStdlib(p string, remap map[string]string) bool {
 	first, _, _ := strings.Cut(p, "/")
-	return !strings.Contains(first, ".")
+	if strings.Contains(first, ".") {
+		return false
+	}
+	for from := range remap {
+		if fromFirst, _, _ := strings.Cut(from, "/"); fromFirst == first {
+			return false
+		}
+	}
+	return true
 }
 
 // StdlibOptions configures a standard library export.
@@ -163,7 +183,11 @@ func Stdlib(opts StdlibOptions) ([]File, error) {
 
 // WriteDir writes files under dir, which must not exist or must be empty.
 func WriteDir(dir string, files []File) error {
-	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot export into %s: %w", dir, err)
+	}
+	if len(entries) > 0 {
 		return fmt.Errorf("refusing to export into %s: the directory is not empty", dir)
 	}
 	for _, f := range files {

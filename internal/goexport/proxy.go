@@ -91,6 +91,9 @@ func appendVersionList(listPath, version string) error {
 			return nil
 		}
 	}
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		existing = append(existing, '\n')
+	}
 	return os.WriteFile(listPath, append(existing, []byte(version+"\n")...), 0o644)
 }
 
