@@ -1,17 +1,15 @@
-// Package goexport writes GALA's standard library as one plain Go module that
-// a Go program can depend on without the GALA toolchain.
+// Package goexport writes GALA-generated Go as a plain Go module that a Go
+// program can depend on without the GALA toolchain.
 //
 // GALA code imports the standard library as martianoff/gala/..., a path the
 // go command cannot download because its first element has no dot. An export
-// rewrites those imports to a fetchable module path (for example
-// go.gala.fyi/stdlib) and writes every package under one go.mod, so a Go
-// consumer needs no replace directive. GALA builds never see the exported
-// path.
+// rewrites imports through a table of module paths (for example
+// martianoff/gala -> go.gala.fyi/stdlib) and writes every package under one
+// go.mod, so a Go consumer needs no replace directive. GALA builds never see
+// the exported paths.
 package goexport
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -22,24 +20,10 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/mod/module"
+
 	"martianoff/gala/internal/stdlib"
 )
-
-// Options configures an export.
-type Options struct {
-	// ModulePath is the Go module path the export is published under.
-	ModulePath string
-	// GalaVersion and Commit identify the compiler that produced the export.
-	// They are written to the VERSION file.
-	GalaVersion string
-	Commit      string
-}
-
-// SourceModulePath is the module path GALA code imports the standard library
-// from, derived from the embedded package table.
-func SourceModulePath() string {
-	return strings.TrimSuffix(stdlib.PackageImportPaths["std"], "/std")
-}
 
 // File is one file of an export, with its slash-separated path relative to
 // the module root.
@@ -48,29 +32,53 @@ type File struct {
 	Content []byte
 }
 
-// Stdlib returns the files of the exported standard library module, sorted by
-// path: a root go.mod, a VERSION file, and each embedded package's Go and GALA
-// sources with every standard library import rewritten to opts.ModulePath.
-func Stdlib(opts Options) ([]File, error) {
-	if err := checkModulePath(opts.ModulePath); err != nil {
+// Module describes one exported Go module.
+type Module struct {
+	// Path is the Go module path the export is published under.
+	Path string
+	// GoVersion is the go directive of the exported go.mod.
+	GoVersion string
+	// Packages maps a package directory (relative to the module root) to its
+	// files by name. Go files have their imports rewritten; other files are
+	// copied as they are.
+	Packages map[string]map[string]string
+	// Remap maps a source module path to its exported module path. An import
+	// of a remapped module, or of a package under it, is rewritten.
+	Remap map[string]string
+	// Version is written to the module's VERSION file.
+	Version string
+}
+
+// Export returns the files of m, sorted by path: a root go.mod, a VERSION
+// file and every package's files.
+//
+// The exported go.mod has no requirements, so every import must resolve to
+// the Go standard library or to the module itself after remapping; any other
+// import is an error rather than a go.mod that silently lacks it.
+func Export(m Module) ([]File, error) {
+	if err := module.CheckPath(m.Path); err != nil {
 		return nil, err
 	}
-	from := SourceModulePath()
-	if opts.ModulePath == from {
-		return nil, fmt.Errorf("module path %q is the path GALA imports the stdlib from; export it under a path the go command can download", from)
+	for from, to := range m.Remap {
+		if from == to {
+			return nil, fmt.Errorf("module %s is remapped to itself", from)
+		}
+		if err := module.CheckPath(to); err != nil {
+			return nil, err
+		}
 	}
 
 	files := []File{
-		{Path: "go.mod", Content: []byte("module " + opts.ModulePath + "\n\ngo " + stdlib.GoVersion + "\n")},
-		{Path: "VERSION", Content: []byte(fmt.Sprintf("gala %s\ncommit %s\n", opts.GalaVersion, opts.Commit))},
+		{Path: "go.mod", Content: []byte("module " + m.Path + "\n\ngo " + m.GoVersion + "\n")},
+		{Path: "VERSION", Content: []byte(m.Version)},
 	}
-	for pkg, sources := range stdlib.EmbeddedPackages {
+	for pkg, sources := range m.Packages {
 		for name, content := range sources {
 			p := path.Join(pkg, name)
 			data := []byte(content)
 			if strings.HasSuffix(name, ".go") {
 				var err error
-				if data, err = rewriteImports(p, data, from, opts.ModulePath); err != nil {
+				if data, err = rewriteImports(p, data, m); err != nil {
 					return nil, err
 				}
 			}
@@ -81,59 +89,85 @@ func Stdlib(opts Options) ([]File, error) {
 	return files, nil
 }
 
-// rewriteImports replaces the quoted import prefix `"from/` with `"to/`,
-// which covers import specs and import examples in comments, then checks
-// that the file still parses and mentions from nowhere else.
-func rewriteImports(name string, src []byte, from, to string) ([]byte, error) {
-	out := bytes.ReplaceAll(src, []byte(`"`+from+`/`), []byte(`"`+to+`/`))
-	f, err := parser.ParseFile(token.NewFileSet(), name, out, parser.ImportsOnly)
+// rewriteImports rewrites the remapped import paths of a Go file in place,
+// leaving every other byte (comments, string literals, //line directives)
+// untouched, and rejects imports the exported module cannot satisfy.
+func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, name, src, parser.ImportsOnly)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s after rewriting imports: %w", name, err)
+		return nil, fmt.Errorf("parsing %s: %w", name, err)
 	}
+	var out []byte
+	last := 0
 	for _, imp := range f.Imports {
 		p, _ := strconv.Unquote(imp.Path.Value)
-		if p == from || strings.HasPrefix(p, from+"/") {
-			return nil, fmt.Errorf("%s: import %q was not rewritten", name, p)
+		newPath := remapImport(p, m.Remap)
+		if !isGoStdlib(newPath) && newPath != m.Path && !strings.HasPrefix(newPath, m.Path+"/") {
+			return nil, fmt.Errorf("%s imports %q, which the exported module %s does not provide", name, p, m.Path)
+		}
+		if newPath == p {
+			continue
+		}
+		start, end := fset.Position(imp.Path.Pos()).Offset, fset.Position(imp.Path.End()).Offset
+		out = append(append(out, src[last:start]...), strconv.Quote(newPath)...)
+		last = end
+	}
+	if out == nil {
+		return src, nil
+	}
+	return append(out, src[last:]...), nil
+}
+
+// remapImport returns p with its module prefix replaced when it belongs to a
+// remapped module.
+func remapImport(p string, remap map[string]string) string {
+	for from, to := range remap {
+		if p == from {
+			return to
+		}
+		if rest, ok := strings.CutPrefix(p, from+"/"); ok {
+			return to + "/" + rest
 		}
 	}
-	if bytes.Contains(out, []byte(from+"/")) {
-		return nil, fmt.Errorf("%s still mentions %s/ outside an import; the export cannot rewrite it", name, from)
-	}
-	return out, nil
+	return p
 }
 
-// checkModulePath accepts a module path the go command can download: its
-// first element must look like a domain name.
-func checkModulePath(p string) error {
-	if p == "" {
-		return errors.New("module path is required")
-	}
+// isGoStdlib reports whether p is a Go standard library import: its first
+// element has no dot.
+func isGoStdlib(p string) bool {
 	first, _, _ := strings.Cut(p, "/")
-	if !strings.Contains(first, ".") || strings.HasPrefix(first, ".") || strings.HasSuffix(first, ".") {
-		return fmt.Errorf("module path %q: the go command only downloads paths whose first element is a domain name", p)
-	}
-	if strings.HasSuffix(p, "/") || strings.Contains(p, "//") {
-		return fmt.Errorf("module path %q is malformed", p)
-	}
-	return nil
+	return !strings.Contains(first, ".")
 }
 
-// WriteDir writes files under dir. dir must not exist or must be empty, and
-// must not lie inside a Bazel workspace, where Gazelle would pick up the
-// rewritten imports.
+// StdlibOptions configures a standard library export.
+type StdlibOptions struct {
+	// ModulePath is the Go module path the standard library is published under.
+	ModulePath string
+	// GalaVersion and Commit identify the compiler that produced the export.
+	GalaVersion string
+	Commit      string
+}
+
+// Stdlib exports the standard library embedded in this binary.
+func Stdlib(opts StdlibOptions) ([]File, error) {
+	from := strings.TrimSuffix(stdlib.PackageImportPaths["std"], "/std")
+	return Export(Module{
+		Path:      opts.ModulePath,
+		GoVersion: stdlib.GoVersion,
+		Packages:  stdlib.EmbeddedPackages,
+		Remap:     map[string]string{from: opts.ModulePath},
+		Version:   fmt.Sprintf("gala %s\ncommit %s\n", opts.GalaVersion, opts.Commit),
+	})
+}
+
+// WriteDir writes files under dir, which must not exist or must be empty.
 func WriteDir(dir string, files []File) error {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return err
-	}
-	if ws, ok := enclosingWorkspace(abs); ok {
-		return fmt.Errorf("refusing to export into %s: it is inside the Bazel workspace %s; choose a directory outside it", abs, ws)
-	}
-	if entries, err := os.ReadDir(abs); err == nil && len(entries) > 0 {
-		return fmt.Errorf("refusing to export into %s: the directory is not empty", abs)
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+		return fmt.Errorf("refusing to export into %s: the directory is not empty", dir)
 	}
 	for _, f := range files {
-		target := filepath.Join(abs, filepath.FromSlash(f.Path))
+		target := filepath.Join(dir, filepath.FromSlash(f.Path))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
@@ -142,19 +176,4 @@ func WriteDir(dir string, files []File) error {
 		}
 	}
 	return nil
-}
-
-// enclosingWorkspace reports the nearest ancestor of dir (or dir itself) that
-// is a Bazel workspace root.
-func enclosingWorkspace(dir string) (string, bool) {
-	for d := dir; ; d = filepath.Dir(d) {
-		for _, marker := range []string{"MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel", "REPO.bazel"} {
-			if _, err := os.Stat(filepath.Join(d, marker)); err == nil {
-				return d, true
-			}
-		}
-		if filepath.Dir(d) == d {
-			return "", false
-		}
-	}
 }

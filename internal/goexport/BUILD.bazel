@@ -8,7 +8,12 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/goexport",
     visibility = ["//:__subpackages__"],
-    deps = ["//internal/stdlib"],
+    deps = [
+        "//internal/stdlib",
+        "@org_golang_x_mod//module",
+        "@org_golang_x_mod//semver",
+        "@org_golang_x_mod//zip",
+    ],
 )
 
 go_test(

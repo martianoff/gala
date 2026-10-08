@@ -71,16 +71,14 @@ jobs:
           RUN: ${{ github.run_number }}
         run: |
           set -euo pipefail
+          # gala stdlib export --version rejects anything that is not a
+          # semantic version the go command accepts.
+          prerelease=false
           if [ "$CHANNEL" = dev ]; then
             version="v0.0.0-dev.${RUN}"
-            prerelease=true
           else
             [ -n "$TAG" ] || { echo "::error::the release channel needs a tag"; exit 1; }
             version="v${TAG#v}"
-            if ! [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::tag '$TAG' is not a semantic version the go command accepts"
-              exit 1
-            fi
             prerelease=$PRERELEASE
             case "$version" in *-*) prerelease=true ;; esac
           fi
@@ -154,23 +152,23 @@ jobs:
         env:
           CHANNEL: ${{ steps.v.outputs.channel }}
           VERSION: ${{ steps.v.outputs.version }}
-          PRERELEASE: ${{ steps.v.outputs.prerelease }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          # What the code repo owns; the export replaces everything else.
+          keep=(.git .github LICENSE README.md)
           git config user.name "github-actions[bot]"
           git config user.email "41898268+github-actions[bot]@users.noreply.github.com"
 
-          if [ "$CHANNEL" = dev ] && git rev-parse -q --verify origin/dev >/dev/null; then
-            git checkout -q -B dev origin/dev
-          elif [ "$CHANNEL" = dev ]; then
-            git checkout -q -B dev
+          if [ "$CHANNEL" = dev ]; then
+            git checkout -q -B dev origin/dev 2>/dev/null || git checkout -q -B dev
           else
             git checkout -q --detach
           fi
 
-          # Replace everything the export owns; keep what the code repo owns.
-          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name LICENSE ! -name README.md -exec rm -rf {} +
+          find_args=()
+          for k in "${keep[@]}"; do find_args+=(! -name "$k"); done
+          find . -mindepth 1 -maxdepth 1 "${find_args[@]}" -exec rm -rf {} +
           cp -R "$RUNNER_TEMP/export/out/." .
           git add -A
 
@@ -181,31 +179,31 @@ jobs:
           else
             git commit -q -m "go.gala.fyi/stdlib ${VERSION} (gala ${label}, ${gala_commit})"
           fi
-          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           if [ "$CHANNEL" = release ] && git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
-            if git diff --quiet "$VERSION" HEAD -- . ':(exclude).github' ':(exclude)LICENSE' ':(exclude)README.md'; then
+            excludes=()
+            for k in "${keep[@]:1}"; do excludes+=(":(exclude)$k"); done
+            if git diff --quiet "$VERSION" HEAD -- . "${excludes[@]}"; then
               echo "$VERSION is already published with this content; nothing to push."
-              echo "push=none" >> "$GITHUB_OUTPUT"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "::error::$VERSION is already published with different content. A published Go version cannot change; cut a new GALA patch release instead."
             git diff --stat "$VERSION" HEAD
             exit 1
           fi
-          echo "push=$CHANNEL" >> "$GITHUB_OUTPUT"
 
       - name: Push
-        if: steps.commit.outputs.push != 'none'
+        if: steps.commit.outputs.skip != 'true'
         working-directory: code
         env:
-          PUSH: ${{ steps.commit.outputs.push }}
+          CHANNEL: ${{ steps.v.outputs.channel }}
           VERSION: ${{ steps.v.outputs.version }}
           PRERELEASE: ${{ steps.v.outputs.prerelease }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [ "$PUSH" = dev ]; then
+          if [ "$CHANNEL" = dev ]; then
             git push origin HEAD:refs/heads/dev
             echo "Published to dev: go get ${MODULE}@dev"
             exit 0

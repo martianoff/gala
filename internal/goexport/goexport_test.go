@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +18,7 @@ const testModule = "go.example.com/stdlib"
 
 func exportForTest(t *testing.T) []File {
 	t.Helper()
-	files, err := Stdlib(Options{ModulePath: testModule, GalaVersion: "0.86.0", Commit: "abc123"})
+	files, err := Stdlib(StdlibOptions{ModulePath: testModule, GalaVersion: "0.86.0", Commit: "abc123"})
 	require.NoError(t, err)
 	return files
 }
@@ -33,18 +32,14 @@ func TestStdlib_OneModuleWithRewrittenImports(t *testing.T) {
 
 	require.Equal(t, "module "+testModule+"\n\ngo "+stdlib.GoVersion+"\n", string(byPath["go.mod"]))
 	require.Equal(t, "gala 0.86.0\ncommit abc123\n", string(byPath["VERSION"]))
-
 	for pkg, sources := range stdlib.EmbeddedPackages {
 		for name := range sources {
 			require.Contains(t, byPath, pkg+"/"+name)
 		}
 	}
-	for p, content := range byPath {
+	for p := range byPath {
 		if p != "go.mod" {
 			require.NotEqual(t, "go.mod", path.Base(p), "nested go.mod %s", p)
-		}
-		if strings.HasSuffix(p, ".go") {
-			require.NotContains(t, string(content), "martianoff/gala", p)
 		}
 	}
 	require.Contains(t, string(byPath["collection_immutable/array.gen.go"]), `"`+testModule+`/std"`)
@@ -59,24 +54,56 @@ func TestStdlib_Deterministic(t *testing.T) {
 }
 
 func TestStdlib_RejectsUndownloadableModulePaths(t *testing.T) {
-	for _, mp := range []string{"", "martianoff/gala", "stdlib", "go.gala.fyi/", ".fyi/x", "go.gala.fyi//x"} {
-		_, err := Stdlib(Options{ModulePath: mp})
+	for _, mp := range []string{"", "martianoff/gala", "stdlib", "go.gala.fyi/", "go.gala.fyi//x", "go.gala.fyi/std lib"} {
+		_, err := Stdlib(StdlibOptions{ModulePath: mp})
 		require.Error(t, err, mp)
 	}
 }
 
-func TestRewriteImports_RejectsUnrewritableMention(t *testing.T) {
-	src := []byte("package p\n\nconst where = \"see martianoff/gala/std\"\n")
-	_, err := rewriteImports("p.go", src, "martianoff/gala", testModule)
-	require.ErrorContains(t, err, "outside an import")
+func TestExport_RewritesOnlyImportPaths(t *testing.T) {
+	src := `package p
+
+import (
+	"fmt"
+	. "old.mod/std"
+	alias "old.mod/collection"
+)
+
+// Use it: import "old.mod/std"
+const where = "old.mod/std"
+
+func F() { fmt.Println(Some(1), alias.X) }
+`
+	files, err := Export(Module{
+		Path:      "new.example/lib",
+		GoVersion: "1.24",
+		Packages:  map[string]map[string]string{"p": {"p.go": src, "p.gala": `import "old.mod/std"`}},
+		Remap:     map[string]string{"old.mod": "new.example/lib"},
+	})
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, f := range files {
+		got[f.Path] = string(f.Content)
+	}
+	want := strings.NewReplacer(
+		`. "old.mod/std"`, `. "new.example/lib/std"`,
+		`alias "old.mod/collection"`, `alias "new.example/lib/collection"`,
+	).Replace(src)
+	require.Equal(t, want, got["p/p.go"], "comments and string literals keep the old path")
+	require.Equal(t, `import "old.mod/std"`, got["p/p.gala"], "non-Go files are copied as they are")
 }
 
-func TestWriteDir_Guards(t *testing.T) {
-	files := []File{{Path: "go.mod", Content: []byte("module x.y/z\n")}, {Path: "a/b.go", Content: []byte("package a\n")}}
+func TestExport_RejectsImportsTheModuleCannotProvide(t *testing.T) {
+	_, err := Export(Module{
+		Path:      "new.example/lib",
+		GoVersion: "1.24",
+		Packages:  map[string]map[string]string{"p": {"p.go": "package p\n\nimport _ \"github.com/other/dep\"\n"}},
+	})
+	require.ErrorContains(t, err, `imports "github.com/other/dep"`)
+}
 
-	ws := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(ws, "MODULE.bazel"), nil, 0o644))
-	require.ErrorContains(t, WriteDir(filepath.Join(ws, "out"), files), "Bazel workspace")
+func TestWriteDir(t *testing.T) {
+	files := []File{{Path: "go.mod", Content: []byte("module x.y/z\n")}, {Path: "a/b.go", Content: []byte("package a\n")}}
 
 	nonEmpty := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(nonEmpty, "stale"), nil, 0o644))
@@ -100,7 +127,7 @@ func TestModuleVersion(t *testing.T) {
 		require.NoError(t, err, in)
 		require.Equal(t, want, got)
 	}
-	for _, bad := range []string{"dev", "0.86", "0.86.0-1-gabc+meta", "01.2.3", ""} {
+	for _, bad := range []string{"dev", "0.86", "0.86.0+meta", "01.2.3", ""} {
 		_, err := ModuleVersion(bad)
 		require.Error(t, err, bad)
 	}
@@ -109,10 +136,9 @@ func TestModuleVersion(t *testing.T) {
 func TestWriteProxy_Layout(t *testing.T) {
 	files := exportForTest(t)
 	dir := t.TempDir()
-	at := time.Unix(0, 0)
-	require.NoError(t, WriteProxy(dir, testModule, "v0.86.0", files, at))
-	require.NoError(t, WriteProxy(dir, testModule, "v0.87.0-rc.1", files, at))
-	require.NoError(t, WriteProxy(dir, testModule, "v0.86.0", files, at)) // re-run lists it once
+	require.NoError(t, WriteProxy(dir, testModule, "v0.86.0", files))
+	require.NoError(t, WriteProxy(dir, testModule, "v0.87.0-rc.1", files))
+	require.NoError(t, WriteProxy(dir, testModule, "v0.86.0", files)) // a re-run lists it once
 
 	vdir := filepath.Join(dir, "go.example.com", "stdlib", "@v")
 	list, err := os.ReadFile(filepath.Join(vdir, "list"))
@@ -128,15 +154,26 @@ func TestWriteProxy_Layout(t *testing.T) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	require.NoError(t, err)
 	require.Len(t, zr.File, len(files))
-	for i, zf := range zr.File {
-		require.Equal(t, testModule+"@v0.86.0/"+files[i].Path, zf.Name)
+	names := map[string]bool{}
+	for _, zf := range zr.File {
+		names[zf.Name] = true
+	}
+	for _, f := range files {
+		require.True(t, names[testModule+"@v0.86.0/"+f.Path], f.Path)
 	}
 
-	again, err := moduleZip(testModule, "v0.86.0", files, at)
+	other := t.TempDir()
+	require.NoError(t, WriteProxy(other, testModule, "v0.86.0", files))
+	again, err := os.ReadFile(filepath.Join(other, "go.example.com", "stdlib", "@v", "v0.86.0.zip"))
 	require.NoError(t, err)
 	require.Equal(t, data, again, "the same export must produce the same zip")
 }
 
-func TestEscapePath(t *testing.T) {
-	require.Equal(t, "github.com/!azure/sdk", escapePath("github.com/Azure/sdk"))
+func TestWriteProxy_RejectsFilesTheGoCommandWouldReject(t *testing.T) {
+	files := []File{
+		{Path: "go.mod", Content: []byte("module " + testModule + "\n")},
+		{Path: "a/X.go", Content: []byte("package a\n")},
+		{Path: "a/x.go", Content: []byte("package a\n")},
+	}
+	require.Error(t, WriteProxy(t.TempDir(), testModule, "v0.1.0", files), "case-insensitive file name collision")
 }

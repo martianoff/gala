@@ -23,23 +23,17 @@ work=$(cd "$work" && pwd)
 echo "+ gala stdlib export --go-module $module --version $version"
 "$GALA" stdlib export --go-module "$module" --out "$work/out" --proxy "$work/proxy" --version "$version"
 
-# The old import path must be gone from every Go file; only the .gala sources
-# kept for provenance still name it.
-if leftovers=$(grep -rl --include='*.go' 'martianoff/gala' "$work/out"); then
-  echo "::error::exported Go still mentions martianoff/gala:"
-  echo "$leftovers"
-  exit 1
-fi
-
 # Run go with a clean module environment: only the local proxy, no checksum
 # database, and a private module cache so nothing leaks between runs.
-export GOPROXY="file://$work/proxy" GOSUMDB=off GOFLAGS=-mod=mod GOWORK=off
+# -modcacherw keeps the module cache deletable, so a re-run can clear <work-dir>.
+export GOPROXY="file://$work/proxy" GOSUMDB=off GOFLAGS="-mod=mod -modcacherw" GOWORK=off
 export GOMODCACHE="$work/modcache"
 unset GOPRIVATE GONOPROXY GONOSUMDB
 
-# go vet is not run: the generated code has known vet findings (unreachable
-# code after exhaustive matches), and a consumer's go vet ./... does not
-# analyze its dependencies.
+# Builds every package, not only the ones the consumer below imports. go vet
+# is not run: the generated code has known vet findings (unreachable code
+# after exhaustive matches), and a consumer's go vet ./... does not analyze
+# its dependencies.
 echo "+ go build in the exported module"
 (cd "$work/out" && go build ./...)
 
@@ -47,7 +41,9 @@ echo "+ plain Go consumer via go mod tidy"
 consumer="$work/consumer"
 mkdir -p "$consumer"
 sed "s|@MODULE@|$module|g" "$here/consumer/main.go.tmpl" >"$consumer/main.go"
-printf 'module example.com/consumer\n\ngo 1.24\n' >"$consumer/go.mod"
+# The consumer declares the same go version as the export.
+go_line=$(grep '^go ' "$work/out/go.mod")
+printf 'module example.com/consumer\n\n%s\n' "$go_line" >"$consumer/go.mod"
 (
   cd "$consumer"
   go mod tidy
