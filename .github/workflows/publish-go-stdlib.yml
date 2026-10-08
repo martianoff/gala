@@ -1,0 +1,235 @@
+name: Publish stdlib for Go consumers
+
+# Publishes the standard library as the Go module go.gala.fyi/stdlib, so a
+# plain Go program that uses GALA-generated code can `go get` it with no GALA
+# toolchain and no replace directive.
+#
+#   release (called by release.yml)  exports with the release binary and
+#       pushes the export to the code repo, tagged v<release>. A stable
+#       release also moves main; a prerelease pushes only its tag.
+#   dev (manual)  exports with a binary built from the chosen ref and pushes
+#       it, untagged, to the code repo's dev branch, so downstream projects
+#       can try `go get go.gala.fyi/stdlib@dev` before a release exists.
+#
+# A published Go version never changes: proxy.golang.org and the checksum
+# database keep the first content they saw. Re-running a release whose tag
+# already exists succeeds only when the export is identical; a different
+# export fails, and the fix is a new GALA patch release.
+#
+# The code repo owns its LICENSE, README and .github (including the Pages
+# workflow that serves the go.gala.fyi meta tags); this workflow replaces
+# everything else.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: GALA release tag, e.g. 0.86.0
+        type: string
+        required: true
+      prerelease:
+        type: boolean
+        default: false
+    secrets:
+      GALA_STDLIB_DEPLOY_KEY:
+        required: true
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "release: (re)publish an existing GALA release. dev: publish the selected ref to the dev branch."
+        type: choice
+        options: [release, dev]
+        default: release
+      tag:
+        description: GALA release tag for the release channel, e.g. 0.86.0
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-go-stdlib
+  cancel-in-progress: false
+
+env:
+  MODULE: go.gala.fyi/stdlib
+  CODE_REPO: martianoff/gala-stdlib
+
+jobs:
+  publish:
+    name: Publish go.gala.fyi/stdlib
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Resolve channel and version
+        id: v
+        env:
+          CHANNEL: ${{ inputs.channel || 'release' }}
+          TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          RUN: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = dev ]; then
+            version="v0.0.0-dev.${RUN}"
+            prerelease=true
+          else
+            [ -n "$TAG" ] || { echo "::error::the release channel needs a tag"; exit 1; }
+            version="v${TAG#v}"
+            if ! [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::tag '$TAG' is not a semantic version the go command accepts"
+              exit 1
+            fi
+            prerelease=$PRERELEASE
+            case "$version" in *-*) prerelease=true ;; esac
+          fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL version=$version prerelease=$prerelease"
+
+      - name: Checkout gala
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.v.outputs.channel == 'release' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      # The release channel exports with the binary users download.
+      - name: Download release binary
+        if: steps.v.outputs.channel == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern gala-linux-amd64 --dir "$RUNNER_TEMP/bin"
+          chmod +x "$RUNNER_TEMP/bin/gala-linux-amd64"
+          echo "GALA=$RUNNER_TEMP/bin/gala-linux-amd64" >> "$GITHUB_ENV"
+
+      - name: Setup Bazel
+        if: steps.v.outputs.channel == 'dev'
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: publish-go-stdlib
+          repository-cache: true
+
+      - name: Build dev binary
+        if: steps.v.outputs.channel == 'dev'
+        run: |
+          set -euo pipefail
+          chmod +x tools/workspace_status.sh
+          bazel build //cmd/gala:gala --stamp --workspace_status_command=tools/workspace_status.sh
+          mkdir -p "$RUNNER_TEMP/bin"
+          cp bazel-bin/cmd/gala/gala_/gala "$RUNNER_TEMP/bin/gala"
+          echo "GALA=$RUNNER_TEMP/bin/gala" >> "$GITHUB_ENV"
+
+      - name: Export and check with a plain Go consumer
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          "$GALA" version
+          tools/ci/go_export/check_stdlib_export.sh "$RUNNER_TEMP/export" "$MODULE" "$VERSION"
+          cat "$RUNNER_TEMP/export/out/VERSION"
+
+      - name: Checkout code repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CODE_REPO }}
+          ssh-key: ${{ secrets.GALA_STDLIB_DEPLOY_KEY }}
+          path: code
+          fetch-depth: 0
+
+      - name: Commit export
+        id: commit
+        working-directory: code
+        env:
+          CHANNEL: ${{ steps.v.outputs.channel }}
+          VERSION: ${{ steps.v.outputs.version }}
+          PRERELEASE: ${{ steps.v.outputs.prerelease }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898268+github-actions[bot]@users.noreply.github.com"
+
+          if [ "$CHANNEL" = dev ] && git rev-parse -q --verify origin/dev >/dev/null; then
+            git checkout -q -B dev origin/dev
+          elif [ "$CHANNEL" = dev ]; then
+            git checkout -q -B dev
+          else
+            git checkout -q --detach
+          fi
+
+          # Replace everything the export owns; keep what the code repo owns.
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name LICENSE ! -name README.md -exec rm -rf {} +
+          cp -R "$RUNNER_TEMP/export/out/." .
+          git add -A
+
+          gala_commit=$(awk '$1 == "commit" { print $2 }' VERSION)
+          label=${TAG:-dev}
+          if git diff --cached --quiet; then
+            echo "Export is identical to the current tree."
+          else
+            git commit -q -m "go.gala.fyi/stdlib ${VERSION} (gala ${label}, ${gala_commit})"
+          fi
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          if [ "$CHANNEL" = release ] && git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            if git diff --quiet "$VERSION" HEAD -- . ':(exclude).github' ':(exclude)LICENSE' ':(exclude)README.md'; then
+              echo "$VERSION is already published with this content; nothing to push."
+              echo "push=none" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::$VERSION is already published with different content. A published Go version cannot change; cut a new GALA patch release instead."
+            git diff --stat "$VERSION" HEAD
+            exit 1
+          fi
+          echo "push=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+      - name: Push
+        if: steps.commit.outputs.push != 'none'
+        working-directory: code
+        env:
+          PUSH: ${{ steps.commit.outputs.push }}
+          VERSION: ${{ steps.v.outputs.version }}
+          PRERELEASE: ${{ steps.v.outputs.prerelease }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$PUSH" = dev ]; then
+            git push origin HEAD:refs/heads/dev
+            echo "Published to dev: go get ${MODULE}@dev"
+            exit 0
+          fi
+          git tag -a "$VERSION" -m "go.gala.fyi/stdlib ${VERSION} from gala ${TAG}"
+          git push origin "refs/tags/$VERSION"
+          if [ "$PRERELEASE" != true ]; then
+            git push origin HEAD:refs/heads/main
+          fi
+
+      - name: Confirm proxy.golang.org serves the version
+        if: steps.v.outputs.channel == 'release'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          url="https://proxy.golang.org/${MODULE}/@v/${VERSION}.info"
+          for attempt in $(seq 1 20); do
+            if body=$(curl -fsS "$url" 2>/dev/null); then
+              echo "$body"
+              exit 0
+            fi
+            echo "attempt $attempt: $url not available yet"
+            sleep 30
+          done
+          echo "::error::proxy.golang.org does not serve ${MODULE}@${VERSION}; check the go.gala.fyi meta pages and the code repo tag"
+          exit 1

@@ -273,3 +273,18 @@ jobs:
             artifacts/gala-windows-*
             artifacts/*.zip
             artifacts/checksums-sha256.txt
+
+  # Publishes the standard library as the Go module go.gala.fyi/stdlib from
+  # the release binary. Off until the repository variable GALA_STDLIB_PUBLISH
+  # is "true", which needs the code repo, its deploy key and the go.gala.fyi
+  # meta pages to exist (see publish-go-stdlib.yml).
+  publish-go-stdlib:
+    name: Publish stdlib for Go consumers
+    needs: upload-release
+    if: vars.GALA_STDLIB_PUBLISH == 'true'
+    uses: ./.github/workflows/publish-go-stdlib.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+      prerelease: ${{ github.event.release.prerelease }}
+    secrets:
+      GALA_STDLIB_DEPLOY_KEY: ${{ secrets.GALA_STDLIB_DEPLOY_KEY }}

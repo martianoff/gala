@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "goexport",
+    srcs = [
+        "goexport.go",
+        "proxy.go",
+    ],
+    importpath = "martianoff/gala/internal/goexport",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/stdlib"],
+)
+
+go_test(
+    name = "goexport_test",
+    srcs = ["goexport_test.go"],
+    embed = [":goexport"],
+    deps = [
+        "//internal/stdlib",
+        "@com_github_stretchr_testify//require",
+    ],
+)
