@@ -244,7 +244,7 @@ gala export --out ../mylib-go --stdlib-version v0.0.0-local.1 \
 **What happens:**
 1. Transpiles and compile-checks the project as `gala build` does for a library
 2. Writes every package's generated and hand-written Go (no tests, no `gala.mod` or Bazel files) to `--out`, with imports of GALA's standard library rewritten to the published Go module `go.gala.fyi/stdlib`
-3. Writes a `go.mod` that requires `go.gala.fyi/stdlib` at this `gala`'s version, plus the project's `// go` requirements from `gala.mod`. Its `go` directive is the newer of the one generated code needs and the project's own `go.mod`'s
+3. Writes a `go.mod` that requires `go.gala.fyi/stdlib` at this `gala`'s version, plus every Go module the code needs, as `go mod tidy` resolves them for the build, including modules a hand-written `.go` file reaches only through another dependency. Its `go` directive is the newer of the one generated code needs and the project's own `go.mod`'s
 
 Run it in the project root: it always exports the whole project. `--out` must be empty, and outside the project and any Bazel workspace. `--go-module` must be a path the go command can download (its first element is a domain). A `main` package is exported with a warning, since Go code cannot import it. Not supported yet: packages that import another GALA module, and a `gala.mod` that `replace`s a Go module (a published module's `replace` directives do not apply to the programs that import it). Publishing the export and using it from Go: [Using GALA from a plain Go module](GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module).
 

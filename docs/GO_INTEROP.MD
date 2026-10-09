@@ -758,7 +758,7 @@ shapes-go/
 ```
 
 - **The project is transpiled and compile-checked the way `gala build` does it for a library.** The export holds every package except tests, with the project's own imports under its module path and standard library imports rewritten to `go.gala.fyi/stdlib`. `gala.mod` and Bazel files are left out.
-- **`go.mod` requires `go.gala.fyi/stdlib` at the version of the `gala` that exported it**, plus the project's Go dependencies from `gala.mod` (the `// go` requirements).
+- **`go.mod` requires `go.gala.fyi/stdlib` at the version of the `gala` that exported it**, plus every Go module the code needs, as `go mod tidy` resolves them for `gala build`: the `// go` requirements of `gala.mod` and the modules they bring in.
 - **`--go-module` sets the path Go programs import the export by.** It defaults to the project's module path, and it must be a path the go command can download: one whose first element is a domain, such as `github.com/you/shapes`.
 - **Run it in the project root**, with `--out` outside the project: the whole project is exported.
 - **Not supported yet:** a package that imports another GALA module, and a `gala.mod` that `replace`s a Go module, since a published module's `replace` directives do not apply to the programs that import it.
@@ -795,6 +795,21 @@ func main() {
 ```
 
 **Versions.** Generated code calls the standard library's own helpers, so export a library with the GALA release you build it with. When a Go program uses several exported libraries, Go picks the highest `go.gala.fyi/stdlib` version any of them requires, so export the libraries one program combines with the same GALA release.
+
+**A GALA library that is not published for Go.** Most GALA libraries, gala-tui among them, are released for GALA only. A Go program can still use one: export a checkout of the release it wants, and point the program at the export with a `replace`:
+
+```sh
+git clone --branch 0.15.4 https://github.com/martianoff/gala-tui
+cd gala-tui && gala export --out ../gala-tui-go
+```
+
+```
+// in the Go program's go.mod
+require github.com/martianoff/gala-tui v0.0.0
+replace github.com/martianoff/gala-tui => ../gala-tui-go
+```
+
+`go mod tidy` then fetches `go.gala.fyi/stdlib` and the library's Go dependencies as usual; only the library itself comes from the export. Commit the export, or script the two commands, so every build of the program gets the same one.
 
 ### Trying an unpublished build
 
