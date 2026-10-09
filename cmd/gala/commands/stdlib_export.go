@@ -41,7 +41,7 @@ offline before the version is published.
 Example:
   gala stdlib export --go-module go.gala.fyi/stdlib --out /tmp/stdlib
   gala stdlib export --go-module go.gala.fyi/stdlib --out /tmp/stdlib \
-    --proxy /tmp/goproxy --version v0.87.0-dev.1`,
+    --proxy /tmp/goproxy --version v0.0.0-local.1`,
 	Args: cobra.NoArgs,
 	RunE: runStdlibExport,
 }
@@ -59,9 +59,15 @@ func init() {
 }
 
 func runStdlibExport(cmd *cobra.Command, args []string) error {
-	out, err := filepath.Abs(seOut)
+	out, err := callerPath(seOut)
 	if err != nil {
 		return err
+	}
+	proxy := seProxy
+	if proxy != "" {
+		if proxy, err = callerPath(proxy); err != nil {
+			return err
+		}
 	}
 	// Gazelle would pick up the rewritten imports of an export inside a
 	// Bazel workspace and generate targets for them.
@@ -97,11 +103,21 @@ func runStdlibExport(cmd *cobra.Command, args []string) error {
 	if seProxy == "" {
 		return nil
 	}
-	if err := goexport.WriteProxy(seProxy, seModule, modVersion, files); err != nil {
+	if err := goexport.WriteProxy(proxy, seModule, modVersion, files); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s@%s to proxy %s\n", seModule, modVersion, seProxy)
+	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s@%s to proxy %s\n", seModule, modVersion, proxy)
 	return nil
+}
+
+// callerPath makes p absolute relative to the directory the user ran the
+// command from. Under `bazel run` the process starts in the runfiles tree,
+// and Bazel reports the user's directory in BUILD_WORKING_DIRECTORY.
+func callerPath(p string) (string, error) {
+	if wd := os.Getenv("BUILD_WORKING_DIRECTORY"); wd != "" && !filepath.IsAbs(p) {
+		p = filepath.Join(wd, p)
+	}
+	return filepath.Abs(p)
 }
 
 // enclosingBazelWorkspace reports the nearest ancestor of dir (or dir itself)

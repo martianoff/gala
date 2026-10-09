@@ -1,20 +1,22 @@
-// A plain Go program that uses the exported GALA standard library. The
-// check script replaces @MODULE@ with the module path under test.
+// A plain Go program that uses GALA's standard library as the Go module
+// go.gala.fyi/stdlib. check_stdlib_export.sh builds it against every export;
+// it substitutes the module path when checking an export under another one.
 package main
 
 import (
 	"fmt"
 	"strconv"
 
-	ci "@MODULE@/collection_immutable"
-	"@MODULE@/std"
+	ci "go.gala.fyi/stdlib/collection_immutable"
+	"go.gala.fyi/stdlib/std"
 )
 
 func main() {
 	nums := ci.ArrayOf(1, 2, 3, 4)
 	sum := ci.Array_FoldLeft(nums, 0, func(acc, n int) int { return acc + n })
-	fmt.Println(nums.MkString(","), sum)
+	fmt.Println(nums.MkString(","), sum) // 1,2,3,4 10
 
+	// Generic GALA methods are free functions in Go: Option.Map is Option_Map.
 	label := std.Option_Map(std.Some[int]{}.Apply(7), strconv.Itoa)
-	fmt.Println(label.GetOrElse("none"))
+	fmt.Println(label.GetOrElse("none")) // 7
 }

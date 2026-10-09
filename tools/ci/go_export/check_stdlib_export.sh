@@ -48,7 +48,7 @@ echo "+ go build in the exported module"
 echo "+ plain Go consumer via go mod tidy"
 consumer="$work/consumer"
 mkdir -p "$consumer"
-sed "s|@MODULE@|$module|g" "$here/consumer/main.go.tmpl" >"$consumer/main.go"
+sed "s|go.gala.fyi/stdlib|$module|g" "$here/consumer/main.go.tmpl" >"$consumer/main.go"
 # The consumer declares the same go version as the export.
 go_line=$(grep '^go ' "$work/out/go.mod")
 printf 'module example.com/consumer\n\n%s\n' "$go_line" >"$consumer/go.mod"

@@ -78,6 +78,7 @@ go_test(
         "new_test.go",
         "project_test.go",
         "run_test.go",
+        "stdlib_export_test.go",
         "transpile_package_test.go",
     ],
     embed = [":commands"],

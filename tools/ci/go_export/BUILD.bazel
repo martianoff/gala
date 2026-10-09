@@ -1,0 +1,6 @@
+# The Go consumer program is quoted in the Go interop guide; the doc check
+# keeps that listing in step with this file.
+exports_files(
+    ["consumer/main.go.tmpl"],
+    visibility = ["//internal/doccheck:__pkg__"],
+)
