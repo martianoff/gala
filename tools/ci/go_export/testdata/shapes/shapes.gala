@@ -20,7 +20,4 @@ func Area(s Shape) float64 = units.Round2(s match {
 
 // Largest returns the shape with the largest area, or None for no shapes.
 func Largest(shapes Array[Shape]) Option[Shape] =
-    shapes.FoldLeft(None[Shape](), (best, s) => best match {
-        case Some(b) if Area(b) >= Area(s) => best
-        case _ => Some(s)
-    })
+    shapes.ReduceOption((a, b) => if (Area(a) >= Area(b)) a else b)
