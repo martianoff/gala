@@ -279,3 +279,13 @@ func TestReadPackages(t *testing.T) {
 		"sub/data": {"page.html": "<p>embedded</p>"},
 	}, pkgs)
 }
+
+func TestExport_UnsupportedModuleNamesTheReason(t *testing.T) {
+	_, err := Export(Module{
+		Path:        "example.com/lib",
+		GoVersion:   "1.24",
+		Packages:    map[string]map[string]string{"": {"lib.go": "package lib\n\nimport _ \"example.com/galadep/x\"\n"}},
+		Unsupported: map[string]string{"example.com/galadep": "it is a GALA module"},
+	})
+	require.ErrorContains(t, err, `imports "example.com/galadep/x": it is a GALA module`)
+}

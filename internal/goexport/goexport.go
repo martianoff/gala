@@ -49,6 +49,9 @@ type Module struct {
 	// Requires lists the modules the exported go.mod requires. Imports of
 	// packages under them are allowed.
 	Requires []module.Version
+	// Unsupported maps a module path to why the export cannot import it; an
+	// import of a package under it is an error naming the reason.
+	Unsupported map[string]string
 	// Version is written to the module's VERSION file.
 	Version string
 }
@@ -112,6 +115,11 @@ func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
 	for _, imp := range f.Imports {
 		p, _ := strconv.Unquote(imp.Path.Value)
 		newPath := remapImport(p, m.Remap)
+		for mp, why := range m.Unsupported {
+			if p == mp || strings.HasPrefix(p, mp+"/") {
+				return nil, fmt.Errorf("%s imports %q: %s", name, p, why)
+			}
+		}
 		if !providedBy(newPath, m) && !required(newPath, m.Requires) && !isGoStdlib(newPath, m.Remap) {
 			return nil, fmt.Errorf("%s imports %q, which the exported module %s does not provide", name, p, m.Path)
 		}
@@ -179,9 +187,18 @@ func goMod(m Module) []byte {
 	return []byte(b.String())
 }
 
+// notExported names files a build workspace holds that are not part of a Go
+// module: GALA's and Bazel's project files.
+var notExported = map[string]bool{
+	"gala.mod": true, "gala.sum": true,
+	"BUILD": true, "BUILD.bazel": true, "WORKSPACE": true, "WORKSPACE.bazel": true,
+	"MODULE.bazel": true, "MODULE.bazel.lock": true, "REPO.bazel": true,
+}
+
 // ReadPackages loads a tree of Go packages for Export: every file under dir
 // by package directory, leaving out tests (_test.go files, testdata), dot
-// directories and the tree's own go.mod and go.sum.
+// files and directories, GALA and Bazel project files, and the tree's own
+// go.mod and go.sum.
 func ReadPackages(dir string) (map[string]map[string]string, error) {
 	pkgs := map[string]map[string]string{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -195,7 +212,8 @@ func ReadPackages(dir string) (map[string]map[string]string, error) {
 			}
 			return nil
 		}
-		if strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, ".") || ((name == "go.mod" || name == "go.sum") && filepath.Dir(p) == dir) {
+		if strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, ".") || notExported[name] ||
+			((name == "go.mod" || name == "go.sum") && filepath.Dir(p) == dir) {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, filepath.Dir(p))
@@ -235,6 +253,31 @@ func isGoStdlib(p string, remap map[string]string) bool {
 	return true
 }
 
+// VersionFile is the content of an export's VERSION file.
+func VersionFile(galaVersion, commit string) string {
+	return fmt.Sprintf("gala %s\ncommit %s\n", galaVersion, commit)
+}
+
+// MainPackages returns the directories of packages whose Go files declare
+// package main: programs, which Go code cannot import.
+func MainPackages(pkgs map[string]map[string]string) []string {
+	var mains []string
+	for dir, files := range pkgs {
+		for name, src := range files {
+			if !strings.HasSuffix(name, ".go") {
+				continue
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), name, src, parser.PackageClauseOnly)
+			if err == nil && f.Name.Name == "main" {
+				mains = append(mains, dir)
+			}
+			break
+		}
+	}
+	sort.Strings(mains)
+	return mains
+}
+
 // StdlibOptions configures a standard library export.
 type StdlibOptions struct {
 	// ModulePath is the Go module path the standard library is published under.
@@ -257,7 +300,7 @@ func Stdlib(opts StdlibOptions) ([]File, error) {
 		GoVersion: stdlib.GoVersion,
 		Packages:  stdlib.EmbeddedPackages,
 		Remap:     map[string]string{StdlibSourceModule(): opts.ModulePath},
-		Version:   fmt.Sprintf("gala %s\ncommit %s\n", opts.GalaVersion, opts.Commit),
+		Version:   VersionFile(opts.GalaVersion, opts.Commit),
 	})
 }
 

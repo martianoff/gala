@@ -26,3 +26,14 @@ func TestCallerPath(t *testing.T) {
 	want, _ := filepath.Abs("out")
 	require.Equal(t, want, got)
 }
+
+func TestCallerPath_IgnoresInheritedBuildWorkingDirectory(t *testing.T) {
+	t.Setenv("BUILD_WORKING_DIRECTORY", t.TempDir())
+	cwd := t.TempDir() // not a runfiles tree: the variable was inherited
+	t.Chdir(cwd)
+	got, err := callerPath("out")
+	require.NoError(t, err)
+	want, err := filepath.Abs("out")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}

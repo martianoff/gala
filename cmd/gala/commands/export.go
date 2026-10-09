@@ -3,10 +3,14 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 
 	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/goexport"
@@ -24,6 +28,7 @@ var (
 	exVersion       string
 	exStdlibModule  string
 	exStdlibVersion string
+	exCommit        string
 	exVerbose       bool
 )
 
@@ -63,6 +68,7 @@ func init() {
 	f.StringVar(&exStdlibVersion, "stdlib-version", "", "Version of the standard library module to require (default: this binary's GALA version, v-prefixed)")
 	f.StringVar(&exProxy, "proxy", "", "Also write the module into this GOPROXY file layout")
 	f.StringVar(&exVersion, "version", "", "Module version for --proxy (required with --proxy)")
+	f.StringVar(&exCommit, "commit", "", "Compiler commit recorded in VERSION (default: this binary's commit)")
 	f.BoolVarP(&exVerbose, "verbose", "v", false, "Verbose output")
 	_ = exportCmd.MarkFlagRequired("out")
 }
@@ -80,9 +86,17 @@ func runExport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if root != projectDir {
+		return fmt.Errorf("gala export writes a whole project; run it in the project root %s, not in %s", root, projectDir)
+	}
 	dest, err := newExportDest(exOut, exProxy, exVersion, "")
 	if err != nil {
 		return err
+	}
+	// gala build copies everything under the project into its workspace, so
+	// an export inside the project would be built, and exported, as part of it.
+	if rel, err := filepath.Rel(root, dest.out); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to export into %s: it is inside the project %s; choose a directory outside it", dest.out, root)
 	}
 	stdlibVersion := exStdlibVersion
 	if stdlibVersion == "" {
@@ -105,8 +119,23 @@ func runExport(cmd *cobra.Command, args []string) error {
 	}
 
 	requires := []module.Version{{Path: exStdlibModule, Version: stdlibVersion}}
-	for _, r := range builder.GalaMod().GoRequires() {
+	for _, r := range builder.GoRequires() {
 		requires = append(requires, module.Version{Path: r.Path, Version: r.Version})
+	}
+	if replaced := builder.ReplacedGoModules(); len(replaced) > 0 {
+		return fmt.Errorf("gala.mod replaces the Go modules %s; a Go module's replace directives do not apply to the programs that import it, so the export would build against different code", strings.Join(replaced, ", "))
+	}
+	unsupported := map[string]string{}
+	for _, p := range builder.GalaImportPaths() {
+		unsupported[p] = "it is a GALA module, and exporting packages that import another GALA module is not supported yet"
+	}
+	goVersion, err := exportGoVersion(root)
+	if err != nil {
+		return err
+	}
+	commit := exCommit
+	if commit == "" {
+		commit = GitCommit
 	}
 
 	var files []goexport.File
@@ -115,26 +144,48 @@ func runExport(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		for _, dir := range goexport.MainPackages(pkgs) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s is package main, a program Go code cannot import\n", path.Join(modulePath, dir))
+		}
 		files, err = goexport.Export(goexport.Module{
 			Path:      modulePath,
-			GoVersion: stdlib.GoVersion,
+			GoVersion: goVersion,
 			Packages:  pkgs,
 			Remap: map[string]string{
 				build.WorkspaceGenModule:      modulePath,
 				goexport.StdlibSourceModule(): exStdlibModule,
 			},
-			Requires: requires,
-			Version:  fmt.Sprintf("gala %s\ncommit %s\n", Version, GitCommit),
+			Requires:    requires,
+			Unsupported: unsupported,
+			Version:     goexport.VersionFile(Version, commit),
 		})
 		return err
 	})
 	if err != nil {
-		if len(builder.GalaMod().GalaRequires()) > 0 {
-			return fmt.Errorf("%w (exporting packages that import another GALA module is not supported yet)", err)
-		}
 		return err
 	}
 	return dest.write(cmd, modulePath, files)
+}
+
+// exportGoVersion is the go directive of an export: the one generated code
+// needs, or the project's own go.mod's when that is newer.
+func exportGoVersion(root string) (string, error) {
+	v := stdlib.GoVersion
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if os.IsNotExist(err) {
+		return v, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	f, err := modfile.ParseLax("go.mod", data, nil)
+	if err != nil {
+		return "", err
+	}
+	if f.Go != nil && semver.Compare("v"+f.Go.Version, "v"+v) > 0 {
+		v = f.Go.Version
+	}
+	return v, nil
 }
 
 // exportDest is where an export is written: a module directory and,
@@ -156,6 +207,9 @@ func newExportDest(out, proxy, version, defaultVersion string) (exportDest, erro
 	// Bazel workspace and generate targets for them.
 	if ws, ok := enclosingBazelWorkspace(d.out); ok {
 		return d, fmt.Errorf("refusing to export into %s: it is inside the Bazel workspace %s; choose a directory outside it", d.out, ws)
+	}
+	if entries, err := os.ReadDir(d.out); err == nil && len(entries) > 0 {
+		return d, fmt.Errorf("refusing to export into %s: the directory is not empty", d.out)
 	}
 	if proxy == "" {
 		if version != "" {
@@ -195,12 +249,19 @@ func (d exportDest) write(cmd *cobra.Command, modulePath string, files []goexpor
 
 // callerPath makes p absolute relative to the directory the user ran the
 // command from. Under `bazel run` the process starts in the runfiles tree,
-// and Bazel reports the user's directory in BUILD_WORKING_DIRECTORY.
+// and Bazel reports the user's directory in BUILD_WORKING_DIRECTORY. A
+// process started elsewhere can inherit that variable, so it is honored only
+// while the working directory is a runfiles tree.
 func callerPath(p string) (string, error) {
-	if wd := os.Getenv("BUILD_WORKING_DIRECTORY"); wd != "" && !filepath.IsAbs(p) {
+	if wd := os.Getenv("BUILD_WORKING_DIRECTORY"); wd != "" && !filepath.IsAbs(p) && inRunfiles() {
 		p = filepath.Join(wd, p)
 	}
 	return filepath.Abs(p)
+}
+
+func inRunfiles() bool {
+	cwd, err := os.Getwd()
+	return err == nil && strings.Contains(filepath.ToSlash(cwd), ".runfiles/")
 }
 
 // enclosingBazelWorkspace reports the nearest ancestor of dir (or dir itself)
