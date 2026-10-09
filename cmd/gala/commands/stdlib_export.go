@@ -1,10 +1,6 @@
 package commands
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/spf13/cobra"
 
 	"martianoff/gala/internal/goexport"
@@ -41,7 +37,7 @@ offline before the version is published.
 Example:
   gala stdlib export --go-module go.gala.fyi/stdlib --out /tmp/stdlib
   gala stdlib export --go-module go.gala.fyi/stdlib --out /tmp/stdlib \
-    --proxy /tmp/goproxy --version v0.87.0-dev.1`,
+    --proxy /tmp/goproxy --version v0.0.0-local.1`,
 	Args: cobra.NoArgs,
 	RunE: runStdlibExport,
 }
@@ -59,62 +55,17 @@ func init() {
 }
 
 func runStdlibExport(cmd *cobra.Command, args []string) error {
-	out, err := filepath.Abs(seOut)
+	dest, err := newExportDest(seOut, seProxy, seVersion, Version)
 	if err != nil {
 		return err
-	}
-	// Gazelle would pick up the rewritten imports of an export inside a
-	// Bazel workspace and generate targets for them.
-	if ws, ok := enclosingBazelWorkspace(out); ok {
-		return fmt.Errorf("refusing to export into %s: it is inside the Bazel workspace %s; choose a directory outside it", out, ws)
-	}
-	if seVersion != "" && seProxy == "" {
-		return fmt.Errorf("--version only applies with --proxy")
-	}
-	var modVersion string
-	if seProxy != "" {
-		version := seVersion
-		if version == "" {
-			version = Version
-		}
-		if modVersion, err = goexport.ModuleVersion(version); err != nil {
-			return fmt.Errorf("%w; pass --version for a dev build", err)
-		}
 	}
 	commit := seCommit
 	if commit == "" {
 		commit = GitCommit
 	}
-
 	files, err := goexport.Stdlib(goexport.StdlibOptions{ModulePath: seModule, GalaVersion: Version, Commit: commit})
 	if err != nil {
 		return err
 	}
-	if err := goexport.WriteDir(out, files); err != nil {
-		return err
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Exported %s (%d files) to %s\n", seModule, len(files), out)
-	if seProxy == "" {
-		return nil
-	}
-	if err := goexport.WriteProxy(seProxy, seModule, modVersion, files); err != nil {
-		return err
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s@%s to proxy %s\n", seModule, modVersion, seProxy)
-	return nil
-}
-
-// enclosingBazelWorkspace reports the nearest ancestor of dir (or dir itself)
-// that is a Bazel workspace root.
-func enclosingBazelWorkspace(dir string) (string, bool) {
-	for d := dir; ; d = filepath.Dir(d) {
-		for _, marker := range []string{"MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel", "REPO.bazel"} {
-			if _, err := os.Stat(filepath.Join(d, marker)); err == nil {
-				return d, true
-			}
-		}
-		if filepath.Dir(d) == d {
-			return "", false
-		}
-	}
+	return dest.write(cmd, seModule, files)
 }

@@ -14,6 +14,8 @@ GALA provides a dependency management system similar to Go modules, using `gala.
    - [gala build](#gala-build)
    - [gala run](#gala-run)
    - [gala clean](#gala-clean)
+   - [gala export](#gala-export)
+   - [gala stdlib export](#gala-stdlib-export)
    - [gala mod init](#gala-mod-init)
    - [gala mod add](#gala-mod-add)
    - [gala mod remove](#gala-mod-remove)
@@ -222,6 +224,40 @@ gala clean --all
 # Clean stale workspaces (projects that no longer exist)
 gala clean --stale
 ```
+
+### gala export
+
+Write a GALA project as a plain Go module, so a Go program can import it with `go get` and build it with plain `go build`, without GALA.
+
+```bash
+# Export the project in the current directory
+gala export --out ../mylib-go
+
+# Under another module path (default: the project's module path)
+gala export --out ../mylib-go --go-module github.com/me/mylib-go
+
+# With a dev build: pin the standard library version, and also write a local module proxy
+gala export --out ../mylib-go --stdlib-version v0.0.0-local.1 \
+    --proxy ../goproxy --version v0.1.0
+```
+
+**What happens:**
+1. Transpiles and compile-checks the project as `gala build` does for a library
+2. Writes every package's generated and hand-written Go (no tests, no `gala.mod` or Bazel files) to `--out`, with imports of GALA's standard library rewritten to the published Go module `go.gala.fyi/stdlib`
+3. Writes a `go.mod` that requires `go.gala.fyi/stdlib` at this `gala`'s version, plus the project's `// go` requirements from `gala.mod`. Its `go` directive is the newer of the one generated code needs and the project's own `go.mod`'s
+
+Run it in the project root: it always exports the whole project. `--out` must be empty, and outside the project and any Bazel workspace. `--go-module` must be a path the go command can download (its first element is a domain). A `main` package is exported with a warning, since Go code cannot import it. Not supported yet: packages that import another GALA module, and a `gala.mod` that `replace`s a Go module (a published module's `replace` directives do not apply to the programs that import it). Publishing the export and using it from Go: [Using GALA from a plain Go module](GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module).
+
+### gala stdlib export
+
+Write GALA's standard library, as embedded in this `gala` binary, as one plain Go module. GALA releases publish it as `go.gala.fyi/stdlib`; use this command to try a build before it is released.
+
+```bash
+gala stdlib export --go-module go.gala.fyi/stdlib --out ../stdlib-go \
+    --proxy ../goproxy --version v0.0.0-local.1
+```
+
+`--proxy` also writes the module, as version `--version`, in the layout `GOPROXY=file://<dir>` serves.
 
 ### gala mod init
 

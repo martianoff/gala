@@ -122,6 +122,58 @@ func timedBuildPhase(p *profiler.Profiler, label string, fn func() error) error 
 	return err
 }
 
+// prepare readies the workspace for transpiling the project: it ensures the
+// workspace, takes its lock (released by the returned func), clears it when the
+// GALA version changed, extracts the stdlib, and fetches and transpiles the
+// GALA dependencies. Build, Test and Generate all start with it.
+func (b *Builder) prepare(prof *profiler.Profiler) (release func(), err error) {
+	if b.verbose {
+		fmt.Printf("Using workspace: %s\n", b.workspace.Dir)
+	}
+	if err := timedBuildPhase(prof, "workspace.ensure", b.workspace.Ensure); err != nil {
+		return nil, fmt.Errorf("ensuring workspace: %w", err)
+	}
+
+	// The workspace is a single mutable tree, so a second gala process working
+	// in it would delete this build's files mid-transpile.
+	lock, err := timedBuildPhaseValue(prof, "workspace.lock", func() (*lockHandle, error) {
+		return b.workspace.Lock(lockTimeout(workspaceLockTimeout))
+	})
+	if err != nil {
+		return nil, err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			lock.Release()
+		}
+	}()
+
+	versionFile := filepath.Join(b.workspace.Dir, ".gala-version")
+	if oldVer, err := os.ReadFile(versionFile); err != nil || string(oldVer) != b.stdlibVersion {
+		if b.verbose && err == nil {
+			fmt.Printf("GALA version changed (%s -> %s), invalidating workspace\n", string(oldVer), b.stdlibVersion)
+		}
+		if err := timedBuildPhase(prof, "workspace.invalidate", func() error {
+			return b.invalidateWorkspace(versionFile)
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := timedBuildPhase(prof, "stdlib.ensure", b.ensureStdlib); err != nil {
+		return nil, fmt.Errorf("ensuring stdlib: %w", err)
+	}
+	if err := timedBuildPhase(prof, "deps.fetch", b.ensureDeps); err != nil {
+		return nil, fmt.Errorf("fetching dependencies: %w", err)
+	}
+	if err := timedBuildPhase(prof, "deps.transpile", b.transpileDeps); err != nil {
+		return nil, fmt.Errorf("transpiling dependencies: %w", err)
+	}
+	ok = true
+	return lock.Release, nil
+}
+
 // Build executes the full build process and returns the path to the output binary.
 // If outputPath is empty, uses the module name. If it's an absolute path, uses it directly.
 // Otherwise, treats it as relative to the project directory.
@@ -138,52 +190,12 @@ func (b *Builder) Build(outputPath string) (string, error) {
 		return "", err
 	}
 
-	// Step 1: Ensure workspace exists
-	if b.verbose {
-		fmt.Printf("Using workspace: %s\n", b.workspace.Dir)
-	}
-	if err := timedBuildPhase(buildProf, "workspace.ensure", b.workspace.Ensure); err != nil {
-		return "", fmt.Errorf("ensuring workspace: %w", err)
-	}
-
-	// Step 1.1: Take the workspace lock. The workspace is a single mutable
-	// tree, so a second gala process working in it would delete this build's
-	// files mid-transpile.
-	lock, err := timedBuildPhaseValue(buildProf, "workspace.lock", func() (*lockHandle, error) {
-		return b.workspace.Lock(lockTimeout(workspaceLockTimeout))
-	})
+	// Steps 1-2.6: workspace, lock, stdlib and dependencies.
+	release, err := b.prepare(buildProf)
 	if err != nil {
 		return "", err
 	}
-	defer lock.Release()
-
-	// Step 1.5: Invalidate workspace if gala version changed
-	versionFile := filepath.Join(b.workspace.Dir, ".gala-version")
-	if oldVer, err := os.ReadFile(versionFile); err != nil || string(oldVer) != b.stdlibVersion {
-		if b.verbose && err == nil {
-			fmt.Printf("GALA version changed (%s -> %s), invalidating workspace\n", string(oldVer), b.stdlibVersion)
-		}
-		if err := timedBuildPhase(buildProf, "workspace.invalidate", func() error {
-			return b.invalidateWorkspace(versionFile)
-		}); err != nil {
-			return "", err
-		}
-	}
-
-	// Step 2: Ensure stdlib is extracted to versioned cache
-	if err := timedBuildPhase(buildProf, "stdlib.ensure", b.ensureStdlib); err != nil {
-		return "", fmt.Errorf("ensuring stdlib: %w", err)
-	}
-
-	// Step 2.5: Fetch missing GALA dependencies
-	if err := timedBuildPhase(buildProf, "deps.fetch", b.ensureDeps); err != nil {
-		return "", fmt.Errorf("fetching dependencies: %w", err)
-	}
-
-	// Step 2.6: Transpile GALA dependencies
-	if err := timedBuildPhase(buildProf, "deps.transpile", b.transpileDeps); err != nil {
-		return "", fmt.Errorf("transpiling dependencies: %w", err)
-	}
+	defer release()
 
 	// Step 3: Transpile .gala files to workspace
 	if err := timedBuildPhase(buildProf, "project.transpile", b.transpile); err != nil {
@@ -988,7 +1000,7 @@ func (b *Builder) transpileWithSourceDir() error {
 	// ("martianoff/gala-server"). Rewrite both to the workspace path.
 	projectModule := b.projectGoModulePath()
 	if projectModule != "" {
-		if err := rewriteImportsInDir(consumerDir, projectModule, "gala-build-workspace/gen", b.verbose); err != nil {
+		if err := rewriteImportsInDir(consumerDir, projectModule, WorkspaceGenModule, b.verbose); err != nil {
 			return fmt.Errorf("rewriting consumer imports: %w", err)
 		}
 		// Also rewrite the short path (without VCS host prefix like github.com/).
@@ -996,7 +1008,7 @@ func (b *Builder) transpileWithSourceDir() error {
 		for _, prefix := range []string{"github.com/", "gitlab.com/", "bitbucket.org/"} {
 			if strings.HasPrefix(projectModule, prefix) {
 				shortPath := strings.TrimPrefix(projectModule, prefix)
-				if err := rewriteImportsInDir(consumerDir, shortPath, "gala-build-workspace/gen", b.verbose); err != nil {
+				if err := rewriteImportsInDir(consumerDir, shortPath, WorkspaceGenModule, b.verbose); err != nil {
 					return fmt.Errorf("rewriting consumer short imports: %w", err)
 				}
 				break
@@ -1157,7 +1169,7 @@ func (b *Builder) rewriteProjectModuleImports(dir string) error {
 		fmt.Printf("Rewriting project module imports: %s → gala-build-workspace/gen\n", projectModule)
 	}
 
-	return rewriteImportsInDir(dir, projectModule, "gala-build-workspace/gen", b.verbose)
+	return rewriteImportsInDir(dir, projectModule, WorkspaceGenModule, b.verbose)
 }
 
 // projectGoModulePath returns the project's Go module path by reading go.mod
@@ -1649,46 +1661,12 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 // synthesized test binary instead. If verbose is true, `go test` runs with -v.
 // Returns an error when any test fails.
 func (b *Builder) Test(verbose bool) error {
-	// Step 1: Ensure workspace exists
-	if b.verbose {
-		fmt.Printf("Using workspace: %s\n", b.workspace.Dir)
-	}
-	if err := b.workspace.Ensure(); err != nil {
-		return fmt.Errorf("ensuring workspace: %w", err)
-	}
-
-	// Step 1.1: Take the workspace lock — see the note in Build.
-	lock, err := b.workspace.Lock(lockTimeout(workspaceLockTimeout))
+	// Steps 1-2.6: workspace, lock, stdlib and dependencies.
+	release, err := b.prepare(nil)
 	if err != nil {
 		return err
 	}
-	defer lock.Release()
-
-	// Step 1.5: Invalidate workspace if gala version changed
-	versionFile := filepath.Join(b.workspace.Dir, ".gala-version")
-	if oldVer, err := os.ReadFile(versionFile); err != nil || string(oldVer) != b.stdlibVersion {
-		if b.verbose && err == nil {
-			fmt.Printf("GALA version changed (%s -> %s), invalidating workspace\n", string(oldVer), b.stdlibVersion)
-		}
-		if err := b.invalidateWorkspace(versionFile); err != nil {
-			return err
-		}
-	}
-
-	// Step 2: Ensure stdlib is extracted
-	if err := b.ensureStdlib(); err != nil {
-		return fmt.Errorf("ensuring stdlib: %w", err)
-	}
-
-	// Step 2.5: Fetch missing GALA dependencies
-	if err := b.ensureDeps(); err != nil {
-		return fmt.Errorf("fetching dependencies: %w", err)
-	}
-
-	// Step 2.6: Transpile GALA dependencies
-	if err := b.transpileDeps(); err != nil {
-		return fmt.Errorf("transpiling dependencies: %w", err)
-	}
+	defer release()
 
 	// Step 3: Find source and test files. We recurse so that subpackages
 	// (e.g. `state/state.gala`, `state/state_test.gala`) are picked up
@@ -2204,7 +2182,7 @@ func rewritePackageToMain(code string) string {
 		if !importAdded && packageReplaced {
 			if trimmed == "import (" {
 				result = append(result, line)
-				result = append(result, "\t. \"gala-build-workspace/gen\"")
+				result = append(result, "\t. \""+WorkspaceGenModule+"\"")
 				importAdded = true
 				continue
 			}
@@ -2215,7 +2193,7 @@ func rewritePackageToMain(code string) string {
 				if start >= 0 && end > start {
 					impPath := trimmed[start+1 : end]
 					result = append(result, "import (")
-					result = append(result, "\t. \"gala-build-workspace/gen\"")
+					result = append(result, "\t. \""+WorkspaceGenModule+"\"")
 					if strings.Contains(trimmed[:start], ".") {
 						result = append(result, fmt.Sprintf("\t. \"%s\"", impPath))
 					} else {
@@ -2243,7 +2221,7 @@ func rewritePackageToMain(code string) string {
 			final = append(final, line)
 			if strings.TrimSpace(line) == "package main" {
 				final = append(final, "")
-				final = append(final, "import . \"gala-build-workspace/gen\"")
+				final = append(final, "import . \""+WorkspaceGenModule+"\"")
 			}
 		}
 		result = final

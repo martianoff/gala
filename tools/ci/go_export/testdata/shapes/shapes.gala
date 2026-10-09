@@ -1,0 +1,23 @@
+package shapes
+
+import (
+    . "martianoff/gala/collection_immutable"
+
+    "example.com/shapes/units"
+)
+
+// Shape is a sealed type; Go builds a case with Circle{}.Apply(r).
+sealed type Shape {
+    case Circle(R float64)
+    case Rect(W float64, H float64)
+}
+
+// Area uses pi() from the hand-written shapes.go and the units subpackage.
+func Area(s Shape) float64 = units.Round2(s match {
+    case Circle(r) => pi() * r * r
+    case Rect(w, h) => w * h
+})
+
+// Largest returns the shape with the largest area, or None for no shapes.
+func Largest(shapes Array[Shape]) Option[Shape] =
+    shapes.ReduceOption((a, b) => if (Area(a) >= Area(b)) a else b)

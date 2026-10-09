@@ -1,10 +1,10 @@
 ---
 layout: default
 title: "Go Interop Guide — Mixing GALA and Go in One Application"
-description: "How to write applications that mix GALA and Go in both directions: calling Go from GALA, calling GALA from Go, one package with .gala and .go files, building with gala build and Bazel, plus the gotchas and limitations. Every example is a tested program."
-keywords: "gala go interop guide, call go from gala, call gala from go, mixed gala go project, gala go package, gala bazel go_library, gala io.Writer, gala json.Marshaler, gala std.Immutable go"
+description: "How to write applications that mix GALA and Go in both directions: calling Go from GALA, calling GALA from Go, one package with .gala and .go files, building with gala build and Bazel, using GALA from plain Go modules (go.gala.fyi/stdlib and gala export), plus the gotchas and limitations. Every example is a tested program."
+keywords: "gala go interop guide, call go from gala, call gala from go, mixed gala go project, gala go package, gala bazel go_library, gala io.Writer, gala json.Marshaler, gala std.Immutable go, go.gala.fyi/stdlib, gala stdlib go module, gala export, import gala library from go"
 permalink: /docs/go-interop/
-last_modified_at: 2026-10-04
+last_modified_at: 2026-10-08
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Go Interop Guide</p>
@@ -24,7 +24,8 @@ For a shorter overview of calling Go from GALA, see [Go Interop](/features/go-in
 3. [Part 2: Calling GALA from Go](#part-2-calling-gala-from-go)
 4. [Part 3: One package, two languages](#part-3-one-package-two-languages)
 5. [Part 4: Building a mixed project](#part-4-building-a-mixed-project)
-6. [Gotchas and limitations](#gotchas-and-limitations)
+6. [Part 5: Using GALA from a plain Go module](#part-5-using-gala-from-a-plain-go-module)
+7. [Gotchas and limitations](#gotchas-and-limitations)
 
 ---
 
@@ -669,7 +670,7 @@ go_interop/
 - **A Go `main` package works too.** `gala build -o gomain ./cmd/gomain` builds a binary whose `main` is Go and which reaches GALA through its imports.
 - **Third-party Go modules** go in `gala.mod` with `// go` (`gala mod add ... --go`). Use `gala mod tidy`, not `go mod tidy`.
 
-Generated Go is written to a build workspace under `GALA_HOME`, not to your source tree. A plain `go build` does not understand `.gala` files, so build with `gala` (or Bazel).
+Generated Go is written to a build workspace under `GALA_HOME`, not to your source tree. A plain `go build` does not understand `.gala` files, so build with `gala` (or Bazel). A Go module built with plain `go build` can use GALA code that `gala export` wrote as a Go module ([Part 5](#part-5-using-gala-from-a-plain-go-module)).
 
 ### With Bazel
 
@@ -708,6 +709,133 @@ gala_exec_test(
 
 ---
 
+## Part 5: Using GALA from a plain Go module
+
+Parts 2 to 4 build Go and GALA together with `gala` or Bazel. A Go module built with plain `go build` cannot do that: the go command does not transpile `.gala` files, and it cannot download GALA's standard library, which GALA code imports as `martianoff/gala/...` (a path whose first element has no dot). Two things close the gap:
+
+- **`go.gala.fyi/stdlib`** is the standard library as an ordinary Go module. Every GALA release publishes it at the same version (GALA `0.87.0` is `v0.87.0`), with its imports rewritten to `go.gala.fyi/stdlib/...` and one `go.mod` with no `replace` directives.
+- **`gala export`** writes your GALA project as an ordinary Go module: its generated and hand-written Go, with standard library imports rewritten to `go.gala.fyi/stdlib`, and a `go.mod` that requires it. Publish that, and Go programs import your library with `go get`.
+
+GALA source, `gala build` and Bazel are unchanged: they keep using `martianoff/gala/...`.
+
+### The standard library
+
+```sh
+go get go.gala.fyi/stdlib@latest
+```
+
+[`tools/ci/go_export/consumer/main.go.tmpl`](https://github.com/martianoff/gala/blob/master/tools/ci/go_export/consumer/main.go.tmpl) uses it. CI exports the standard library from every pull request and builds this program against it with `go mod tidy` and `go run`, with no `gala` on `PATH`:
+
+<!-- doc-source: tools/ci/go_export/consumer/main.go.tmpl -->
+```go
+package main
+
+import (
+	"fmt"
+	"strconv"
+
+	ci "go.gala.fyi/stdlib/collection_immutable"
+	"go.gala.fyi/stdlib/std"
+)
+
+func main() {
+	nums := ci.ArrayOf(1, 2, 3, 4)
+	sum := ci.Array_FoldLeft(nums, 0, func(acc, n int) int { return acc + n })
+	fmt.Println(nums.MkString(","), sum) // 1,2,3,4 10
+
+	// Generic GALA methods are free functions in Go: Option.Map is Option_Map.
+	label := std.Option_Map(std.Some[int]{}.Apply(7), strconv.Itoa)
+	fmt.Println(label.GetOrElse("none")) // 7
+}
+```
+
+- **Versions follow GALA releases**, prereleases included (`0.87.0-rc.1` is `v0.87.0-rc.1`). Publishing started with the first release after 0.86.0. A published version never changes.
+- **The Go-side API is the one [Part 2](#part-2-calling-gala-from-go) describes.** Generic methods are free functions (`std.Option_Map`), immutable fields are read with `.Get()`, and sealed cases are told apart with `Unapply`.
+- **It does not mix with `martianoff/gala`.** Go treats `go.gala.fyi/stdlib/std` and `martianoff/gala/std` as different packages, so an `Option` from one is not an `Option` of the other, and each copy has its own package state, such as `concurrent`'s global execution context. Use one or the other in a program.
+
+### Exporting a GALA library
+
+[`tools/ci/go_export/testdata/shapes`](https://github.com/martianoff/gala/tree/master/tools/ci/go_export/testdata/shapes) is a GALA library, module `example.com/shapes`, with a sealed type `Shape`, a subpackage `units`, and a hand-written `shapes.go`. `gala export`, run in the project, writes it as a Go module:
+
+```sh
+gala export --out ../shapes-go
+```
+
+```
+shapes-go/
+├── go.mod               module example.com/shapes; require go.gala.fyi/stdlib v0.87.0
+├── VERSION              the gala version and commit that wrote it
+├── shapes.gen.go        from shapes.gala
+├── shapes.go            hand-written Go, copied as it is
+└── units/units.gen.go   from units/units.gala
+```
+
+- **The project is transpiled and compile-checked the way `gala build` does it for a library.** The export holds every package except tests, with the project's own imports under its module path and standard library imports rewritten to `go.gala.fyi/stdlib`. `gala.mod` and Bazel files are left out.
+- **`go.mod` requires `go.gala.fyi/stdlib` at the version of the `gala` that exported it**, plus the project's Go dependencies from `gala.mod` (the `// go` requirements).
+- **`--go-module` sets the path Go programs import the export by.** It defaults to the project's module path, and it must be a path the go command can download: one whose first element is a domain, such as `github.com/you/shapes`.
+- **Run it in the project root**, with `--out` outside the project: the whole project is exported.
+- **Not supported yet:** a package that imports another GALA module, and a `gala.mod` that `replace`s a Go module, since a published module's `replace` directives do not apply to the programs that import it.
+
+**Publishing.** The go command downloads a module from the repository its path names, reading the files committed at a `vX.Y.Z` tag. So the export must be what is committed at that tag:
+
+- **A repository for the Go form.** Export with that repository's path, `gala export --go-module github.com/you/shapes-go --out ../shapes-go`, commit the directory's contents there, and tag the commit.
+- **The library's own repository.** Commit the export's contents on a release commit that is not on your main branch, and tag that commit `vX.Y.Z`. The tag keeps the commit reachable, and the main branch keeps your GALA sources.
+
+A Go program then imports the library like any Go module. CI exports `example.com/shapes` from every pull request and builds this program against it, resolving both modules with `go mod tidy` through a module proxy:
+
+<!-- doc-source: tools/ci/go_export/library_consumer/main.go.tmpl -->
+```go
+package main
+
+import (
+	"fmt"
+
+	"example.com/shapes"
+	ci "go.gala.fyi/stdlib/collection_immutable"
+)
+
+func main() {
+	// Sealed-type cases are built with Apply on the case's Go type.
+	all := ci.ArrayOf(shapes.Circle{}.Apply(1), shapes.Rect{}.Apply(2, 3))
+	fmt.Println(shapes.Area(all.Get(0)), shapes.Area(all.Get(1))) // 3.14 6
+
+	largest := shapes.Largest(all)
+	fmt.Println(largest.Get()) // Rect(2, 3)
+
+	none := shapes.Largest(ci.EmptyArray[shapes.Shape]())
+	fmt.Println(none.IsDefined()) // false
+}
+```
+
+**Versions.** Generated code calls the standard library's own helpers, so export a library with the GALA release you build it with. When a Go program uses several exported libraries, Go picks the highest `go.gala.fyi/stdlib` version any of them requires, so export the libraries one program combines with the same GALA release.
+
+### Trying an unpublished build
+
+`gala stdlib export` and `gala export` work with a `gala` built from your checkout too (`bazel run //cmd/gala -- ...`, which resolves relative paths from the directory you run it in). Export the standard library under a version that will never be published, and the library against it:
+
+```sh
+gala stdlib export --go-module go.gala.fyi/stdlib --out ../stdlib-export \
+    --proxy ../goproxy --version v0.0.0-local.1
+gala export --out ../shapes-go --stdlib-version v0.0.0-local.1 \
+    --proxy ../goproxy --version v0.1.0
+```
+
+`--out` must be empty and outside any Bazel workspace. A Go module then uses the exports in one of two ways:
+
+- **A Go workspace**, for a quick check. `go work init . ../stdlib-export ../shapes-go` makes the module's imports resolve to the exports, with no change to its `go.mod`.
+- **A local module proxy**, which goes through `go get` the way a published version does. `--proxy` writes each export as module version `--version`, in the layout `GOPROXY=file://` serves:
+
+  ```sh
+  GOPROXY=file://$PWD/../goproxy,https://proxy.golang.org GONOSUMDB=go.gala.fyi/stdlib,example.com/shapes \
+      go get example.com/shapes@v0.1.0
+  ```
+
+  `GONOSUMDB` is needed because the checksum database only knows published versions. Use versions that will never be published, such as `v0.0.0-local.N`: a local zip under a real version number would clash with the published one in `go.sum`.
+
+A maintainer can also publish a standard library build from any branch without a release. Running the *Publish stdlib for Go consumers* workflow with the `dev` channel pushes it to the `dev` branch of the module's repository, and `go get go.gala.fyi/stdlib@dev` fetches it.
+
+---
+
 ## Gotchas and limitations
 
 A checklist of what differs from writing Go. The first ones are covered in the parts above and are listed here so nothing is missed.
@@ -736,6 +864,7 @@ A checklist of what differs from writing Go. The first ones are covered in the p
 **Building**
 
 - **`.go` files build together with the `.gala` files.** A plain `go build` or `go test` does not understand `.gala` sources. Build with `gala` or Bazel.
+- **Plain Go uses exported GALA code.** The go command cannot download `martianoff/gala/...` or transpile `.gala` files. A Go module built without GALA depends on `go.gala.fyi/stdlib` and on libraries written with `gala export` ([Part 5](#part-5-using-gala-from-a-plain-go-module)). `go.gala.fyi/stdlib` and `martianoff/gala` are different packages and do not mix.
 - **Don't name a hand-written file `x.gen.go` next to `x.gala`** (or `x_test.gen_test.go` next to `x_test.gala`). That is the name `gala build` gives the `.gala` file's output, so the clash is an error.
 - **Bazel: a GALA dependency whose constructors you call goes in `gala_deps`** ([Part 4](#with-bazel)).
 

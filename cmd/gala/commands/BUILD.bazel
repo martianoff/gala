@@ -8,6 +8,7 @@ go_library(
         "cache.go",
         "clean.go",
         "doc.go",
+        "export.go",
         "explain.go",
         "imports.go",
         "lsp.go",
@@ -59,6 +60,9 @@ go_library(
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//server",
         "@com_github_spf13_cobra//:cobra",
+        "@org_golang_x_mod//modfile",
+        "@org_golang_x_mod//module",
+        "@org_golang_x_mod//semver",
     ] + select({
         "@rules_go//go/platform:windows": [
             "@org_golang_x_sys//windows",
@@ -72,6 +76,7 @@ go_test(
     srcs = [
         "doc_opaque_test.go",
         "doc_prose_test.go",
+        "export_test.go",
         "imports_test.go",
         "mod_tidy_sum_test.go",
         "mod_tidy_test.go",
