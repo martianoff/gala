@@ -104,6 +104,7 @@ func init() {
 	rootCmd.AddCommand(cacheCmd)
 	rootCmd.AddCommand(newCmd)
 	rootCmd.AddCommand(workerCmd)
+	rootCmd.AddCommand(stdlibCmd)
 
 	// Add global flags that mirror transpile flags for backward compatibility
 	rootCmd.Flags().StringVarP(&transpileInput, "input", "i", "", "Path to the input .gala file")

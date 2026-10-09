@@ -1,0 +1,20 @@
+// A plain Go program that uses the exported GALA standard library. The
+// check script replaces @MODULE@ with the module path under test.
+package main
+
+import (
+	"fmt"
+	"strconv"
+
+	ci "@MODULE@/collection_immutable"
+	"@MODULE@/std"
+)
+
+func main() {
+	nums := ci.ArrayOf(1, 2, 3, 4)
+	sum := ci.Array_FoldLeft(nums, 0, func(acc, n int) int { return acc + n })
+	fmt.Println(nums.MkString(","), sum)
+
+	label := std.Option_Map(std.Some[int]{}.Apply(7), strconv.Itoa)
+	fmt.Println(label.GetOrElse("none"))
+}

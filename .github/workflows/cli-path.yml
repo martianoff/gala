@@ -15,6 +15,8 @@ name: CLI path and downstream
 #   cli-fixtures    build/run/test over project layouts in
 #                   tools/ci/cli_path/testdata, including a warm-vs-fresh
 #                   GALA_HOME comparison after an edit
+#   go-export       export the stdlib as a Go module and build a plain Go
+#                   consumer of it, as the release job does before publishing
 #   downstream      build and test real downstream projects at pinned refs
 #
 # The first two run on Linux AND Windows; the Windows lane is the point for
@@ -166,6 +168,37 @@ jobs:
         env:
           FIXTURE: ${{ matrix.fixture }}
         run: tools/ci/cli_path/run_fixtures.sh "${RUNNER_TEMP}/cli-fixtures" "$FIXTURE"
+
+  # The same export and consumer check the release job runs before it
+  # publishes the standard library for Go consumers, so a broken export fails
+  # here, before a release tag exists.
+  go-export:
+    name: Stdlib export for Go consumers
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Download gala CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: gala-cli
+          path: ${{ runner.temp }}/gala-cli
+
+      - name: Export and build a plain Go consumer
+        run: |
+          set -euo pipefail
+          export GALA="${RUNNER_TEMP}/gala-cli/gala-linux_amd64"
+          chmod +x "$GALA"
+          tools/ci/go_export/check_stdlib_export.sh "${RUNNER_TEMP}/go-export" go.gala.fyi/stdlib v0.0.0-ci.1
 
   downstream:
     name: Downstream ${{ matrix.name }}
