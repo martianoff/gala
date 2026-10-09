@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/module"
 
 	"martianoff/gala/internal/stdlib"
 )
@@ -218,4 +219,63 @@ func TestWriteProxy_RejectsFilesTheGoCommandWouldReject(t *testing.T) {
 		{Path: "a/x.go", Content: []byte("package a\n")},
 	}
 	require.Error(t, WriteProxy(t.TempDir(), testModule, "v0.1.0", files), "case-insensitive file name collision")
+}
+
+func TestExport_Requires(t *testing.T) {
+	files, err := Export(Module{
+		Path:      "example.com/lib",
+		GoVersion: "1.24",
+		Packages: map[string]map[string]string{
+			"":    {"lib.go": "package lib\n\nimport (\n\t_ \"gala-build-workspace/gen/sub\"\n\t_ \"github.com/google/uuid\"\n\t_ \"martianoff/gala/std\"\n)\n"},
+			"sub": {"sub.go": "package sub\n"},
+		},
+		Remap: map[string]string{
+			"gala-build-workspace/gen": "example.com/lib",
+			"martianoff/gala":          "go.gala.fyi/stdlib",
+		},
+		Requires: []module.Version{
+			{Path: "go.gala.fyi/stdlib", Version: "v0.87.0"},
+			{Path: "github.com/google/uuid", Version: "v1.6.0"},
+		},
+	})
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, f := range files {
+		got[f.Path] = string(f.Content)
+	}
+	require.Equal(t, "module example.com/lib\n\ngo 1.24\n\nrequire (\n\tgithub.com/google/uuid v1.6.0\n\tgo.gala.fyi/stdlib v0.87.0\n)\n", got["go.mod"])
+	require.Contains(t, got["lib.go"], `"example.com/lib/sub"`)
+	require.Contains(t, got["lib.go"], `"go.gala.fyi/stdlib/std"`)
+
+	_, err = Export(Module{
+		Path:      "example.com/lib",
+		GoVersion: "1.24",
+		Packages:  map[string]map[string]string{"": {"lib.go": "package lib\n\nimport _ \"example.com/otherlib\"\n"}},
+		Requires:  []module.Version{{Path: "go.gala.fyi/stdlib", Version: "v0.87.0"}},
+	})
+	require.ErrorContains(t, err, `imports "example.com/otherlib"`, "a dependency the go.mod does not require")
+}
+
+func TestReadPackages(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+	}
+	write("go.mod", "module gala-build-workspace\n")
+	write("lib.gen.go", "package lib\n")
+	write("lib_test.go", "package lib\n")
+	write("sub/sub.go", "package sub\n")
+	write("sub/data/page.html", "<p>embedded</p>")
+	write("sub/testdata/fixture.txt", "x")
+	write(".hidden/x.go", "package x\n")
+
+	pkgs, err := ReadPackages(dir)
+	require.NoError(t, err)
+	require.Equal(t, map[string]map[string]string{
+		"":         {"lib.gen.go": "package lib\n"},
+		"sub":      {"sub.go": "package sub\n"},
+		"sub/data": {"page.html": "<p>embedded</p>"},
+	}, pkgs)
 }

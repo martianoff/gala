@@ -23,5 +23,6 @@ go_test(
     deps = [
         "//internal/stdlib",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_mod//module",
     ],
 )

@@ -1,0 +1,23 @@
+// A plain Go program that imports a GALA library exported with gala export
+// (the example.com/shapes fixture in testdata/shapes). check_library_export.sh
+// builds it against every export.
+package main
+
+import (
+	"fmt"
+
+	"example.com/shapes"
+	ci "go.gala.fyi/stdlib/collection_immutable"
+)
+
+func main() {
+	// Sealed-type cases are built with Apply on the case's Go type.
+	all := ci.ArrayOf(shapes.Circle{}.Apply(1), shapes.Rect{}.Apply(2, 3))
+	fmt.Println(shapes.Area(all.Get(0)), shapes.Area(all.Get(1))) // 3.14 6
+
+	largest := shapes.Largest(all)
+	fmt.Println(largest.Get()) // Rect(2, 3)
+
+	none := shapes.Largest(ci.EmptyArray[shapes.Shape]())
+	fmt.Println(none.IsDefined()) // false
+}

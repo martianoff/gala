@@ -8,6 +8,7 @@ go_library(
         "config.go",
         "deptranspiler.go",
         "errors.go",
+        "generate.go",
         "gomod.go",
         "lock.go",
         "stdlibver.go",

@@ -38,6 +38,7 @@ go_test(
         "//subprocess:gala_sources",
         "//test:gala_sources",
         "//tools/ci/go_export:consumer/main.go.tmpl",
+        "//tools/ci/go_export:library_consumer/main.go.tmpl",
         "//time_utils:gala_sources",
         "//validation:gala_sources",
         "//yaml:gala_sources",
