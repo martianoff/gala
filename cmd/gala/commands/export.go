@@ -41,8 +41,8 @@ them with go get and build them with plain go build, without GALA.
 The project is transpiled the way gala build does it. The export holds every
 package's generated and hand-written Go (no tests), with imports of GALA's
 standard library rewritten to the published Go module go.gala.fyi/stdlib and
-a go.mod that requires it, at this compiler's version, along with the
-project's Go dependencies from gala.mod.
+a go.mod that requires it, at this compiler's version, along with every Go
+module the code needs, as go mod tidy resolves them for gala build.
 
 --go-module is the module path Go programs import the export by; it defaults
 to the project's module path and must be one the go command can download.
@@ -118,10 +118,6 @@ func runExport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%w; pass --go-module with a path the go command can download", err)
 	}
 
-	requires := []module.Version{{Path: exStdlibModule, Version: stdlibVersion}}
-	for _, r := range builder.GoRequires() {
-		requires = append(requires, module.Version{Path: r.Path, Version: r.Version})
-	}
 	if replaced := builder.ReplacedGoModules(); len(replaced) > 0 {
 		return fmt.Errorf("gala.mod replaces the Go modules %s; a Go module's replace directives do not apply to the programs that import it, so the export would build against different code", strings.Join(replaced, ", "))
 	}
@@ -139,8 +135,16 @@ func runExport(cmd *cobra.Command, args []string) error {
 	}
 
 	var files []goexport.File
-	err = builder.Generate(func(genDir string) error {
-		pkgs, err := goexport.ReadPackages(genDir)
+	err = builder.Generate(func(gen build.Generated) error {
+		// The workspace's tidied go.mod has every Go module the code needs,
+		// including those only hand-written Go imports through a dependency.
+		requires := []module.Version{{Path: exStdlibModule, Version: stdlibVersion}}
+		indirect := map[string]bool{}
+		for _, r := range gen.GoRequires {
+			requires = append(requires, module.Version{Path: r.Path, Version: r.Version})
+			indirect[r.Path] = r.Indirect
+		}
+		pkgs, err := goexport.ReadPackages(gen.GenDir)
 		if err != nil {
 			return err
 		}
@@ -156,6 +160,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 				goexport.StdlibSourceModule(): exStdlibModule,
 			},
 			Requires:    requires,
+			Indirect:    indirect,
 			Unsupported: unsupported,
 			Version:     goexport.VersionFile(Version, commit),
 		})

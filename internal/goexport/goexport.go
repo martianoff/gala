@@ -49,6 +49,8 @@ type Module struct {
 	// Requires lists the modules the exported go.mod requires. Imports of
 	// packages under them are allowed.
 	Requires []module.Version
+	// Indirect marks the Requires that no exported package imports directly.
+	Indirect map[string]bool
 	// Unsupported maps a module path to why the export cannot import it; an
 	// import of a package under it is an error naming the reason.
 	Unsupported map[string]string
@@ -180,7 +182,11 @@ func goMod(m Module) []byte {
 	if len(reqs) > 0 {
 		b.WriteString("\nrequire (\n")
 		for _, r := range reqs {
-			fmt.Fprintf(&b, "\t%s %s\n", r.Path, r.Version)
+			fmt.Fprintf(&b, "\t%s %s", r.Path, r.Version)
+			if m.Indirect[r.Path] {
+				b.WriteString(" // indirect")
+			}
+			b.WriteString("\n")
 		}
 		b.WriteString(")\n")
 	}

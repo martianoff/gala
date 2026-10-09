@@ -2,8 +2,9 @@ package build
 
 import (
 	"fmt"
+	"os"
 
-	"martianoff/gala/internal/depman/mod"
+	"golang.org/x/mod/modfile"
 )
 
 // WorkspaceModule is the module path of a build workspace's generated go.mod.
@@ -14,13 +15,30 @@ const WorkspaceModule = "gala-build-workspace"
 // in gen/ is rewritten to it.
 const WorkspaceGenModule = WorkspaceModule + "/gen"
 
+// Generated is what Generate hands its visitor.
+type Generated struct {
+	// GenDir holds the project's generated and hand-written Go, with project
+	// imports under WorkspaceGenModule and standard library imports as GALA
+	// writes them.
+	GenDir string
+	// GoRequires are the Go modules that code needs, as `go mod tidy`
+	// resolved them for the workspace: direct and indirect requirements
+	// alike, leaving out the modules the workspace serves from local
+	// directories (the standard library and GALA dependencies).
+	GoRequires []GoRequire
+}
+
+// GoRequire is one Go module requirement.
+type GoRequire struct {
+	Path, Version string
+	Indirect      bool
+}
+
 // Generate transpiles the project, and the GALA dependencies it needs, into
-// the build workspace the way Build does, then calls visit with the gen/
-// directory while the workspace lock is held. It stops before go.mod
-// generation and the compile check that a library build ends with: visit sees
-// the project's generated and hand-written Go with project imports under
-// WorkspaceGenModule and standard library imports as GALA writes them.
-func (b *Builder) Generate(visit func(genDir string) error) error {
+// the build workspace the way Build does, writes the workspace go.mod and
+// compile-checks the result, as a library build does, then calls visit while
+// the workspace lock is held.
+func (b *Builder) Generate(visit func(Generated) error) error {
 	if err := ensureGoToolchain(); err != nil {
 		return err
 	}
@@ -32,21 +50,43 @@ func (b *Builder) Generate(visit func(genDir string) error) error {
 	if err := b.transpile(); err != nil {
 		return fmt.Errorf("transpiling: %w", err)
 	}
-	// The workspace go.mod and a compile check, as a library build does, so
-	// only a tree that builds is handed over.
 	if err := b.generateGoMod(); err != nil {
 		return fmt.Errorf("generating go.mod: %w", err)
 	}
 	if err := b.goCompileCheck(); err != nil {
 		return fmt.Errorf("go build (compile check): %w", err)
 	}
-	return visit(b.workspace.GenDir)
+	data, err := os.ReadFile(b.workspace.GoModPath)
+	if err != nil {
+		return err
+	}
+	reqs, err := resolvedGoRequires(data)
+	if err != nil {
+		return fmt.Errorf("reading the workspace go.mod: %w", err)
+	}
+	return visit(Generated{GenDir: b.workspace.GenDir, GoRequires: reqs})
 }
 
-// GoRequires returns the Go modules the project requires, with those its
-// GALA dependencies require merged in at the highest version.
-func (b *Builder) GoRequires() []mod.Require {
-	return goRequiresWithDeps(b.galaMod, b.effectiveDepDir)
+// resolvedGoRequires returns a tidied workspace go.mod's requirements,
+// leaving out modules replaced by a local directory.
+func resolvedGoRequires(goMod []byte) ([]GoRequire, error) {
+	f, err := modfile.Parse("go.mod", goMod, nil)
+	if err != nil {
+		return nil, err
+	}
+	local := map[string]bool{}
+	for _, r := range f.Replace {
+		if r.New.Version == "" { // a directory replacement
+			local[r.Old.Path] = true
+		}
+	}
+	var reqs []GoRequire
+	for _, r := range f.Require {
+		if !local[r.Mod.Path] {
+			reqs = append(reqs, GoRequire{Path: r.Mod.Path, Version: r.Mod.Version, Indirect: r.Indirect})
+		}
+	}
+	return reqs, nil
 }
 
 // GalaImportPaths returns the module paths the project's GALA dependencies

@@ -758,7 +758,7 @@ shapes-go/
 ```
 
 - **The project is transpiled and compile-checked the way `gala build` does it for a library.** The export holds every package except tests, with the project's own imports under its module path and standard library imports rewritten to `go.gala.fyi/stdlib`. `gala.mod` and Bazel files are left out.
-- **`go.mod` requires `go.gala.fyi/stdlib` at the version of the `gala` that exported it**, plus the project's Go dependencies from `gala.mod` (the `// go` requirements).
+- **`go.mod` requires `go.gala.fyi/stdlib` at the version of the `gala` that exported it**, plus every Go module the code needs, as `go mod tidy` resolves them for `gala build`: the `// go` requirements of `gala.mod` and the modules they bring in.
 - **`--go-module` sets the path Go programs import the export by.** It defaults to the project's module path, and it must be a path the go command can download: one whose first element is a domain, such as `github.com/you/shapes`.
 - **Run it in the project root**, with `--out` outside the project: the whole project is exported.
 - **Not supported yet:** a package that imports another GALA module, and a `gala.mod` that `replace`s a Go module, since a published module's `replace` directives do not apply to the programs that import it.

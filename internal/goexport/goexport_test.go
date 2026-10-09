@@ -236,14 +236,16 @@ func TestExport_Requires(t *testing.T) {
 		Requires: []module.Version{
 			{Path: "go.gala.fyi/stdlib", Version: "v0.87.0"},
 			{Path: "github.com/google/uuid", Version: "v1.6.0"},
+			{Path: "golang.org/x/sys", Version: "v0.26.0"},
 		},
+		Indirect: map[string]bool{"golang.org/x/sys": true},
 	})
 	require.NoError(t, err)
 	got := map[string]string{}
 	for _, f := range files {
 		got[f.Path] = string(f.Content)
 	}
-	require.Equal(t, "module example.com/lib\n\ngo 1.24\n\nrequire (\n\tgithub.com/google/uuid v1.6.0\n\tgo.gala.fyi/stdlib v0.87.0\n)\n", got["go.mod"])
+	require.Equal(t, "module example.com/lib\n\ngo 1.24\n\nrequire (\n\tgithub.com/google/uuid v1.6.0\n\tgo.gala.fyi/stdlib v0.87.0\n\tgolang.org/x/sys v0.26.0 // indirect\n)\n", got["go.mod"])
 	require.Contains(t, got["lib.go"], `"example.com/lib/sub"`)
 	require.Contains(t, got["lib.go"], `"go.gala.fyi/stdlib/std"`)
 

@@ -30,6 +30,7 @@ go_library(
         "//internal/transpiler/genheader",
         "//internal/transpiler/profiler",
         "//internal/transpiler/transformer",
+        "@org_golang_x_mod//modfile",
     ],
 )
 
@@ -54,6 +55,7 @@ go_test(
         "go_cmd_main_test.go",
         "go_subpackage_test.go",
         "go_toolchain_test.go",
+        "generate_test.go",
         "gomod_test.go",
         "main_go_sibling_test.go",
         "main_package_test.go",
