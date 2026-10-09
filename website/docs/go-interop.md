@@ -809,6 +809,21 @@ func main() {
 
 **Versions.** Generated code calls the standard library's own helpers, so export a library with the GALA release you build it with. When a Go program uses several exported libraries, Go picks the highest `go.gala.fyi/stdlib` version any of them requires, so export the libraries one program combines with the same GALA release.
 
+**A GALA library that is not published for Go.** Most GALA libraries, gala-tui among them, are released for GALA only. A Go program can still use one: export a checkout of the release it wants, and point the program at the export with a `replace`:
+
+```sh
+git clone --branch 0.15.4 https://github.com/martianoff/gala-tui
+cd gala-tui && gala export --out ../gala-tui-go
+```
+
+```
+// in the Go program's go.mod
+require github.com/martianoff/gala-tui v0.0.0
+replace github.com/martianoff/gala-tui => ../gala-tui-go
+```
+
+`go mod tidy` then fetches `go.gala.fyi/stdlib` and the library's Go dependencies as usual; only the library itself comes from the export. Commit the export, or script the two commands, so every build of the program gets the same one.
+
 ### Trying an unpublished build
 
 `gala stdlib export` and `gala export` work with a `gala` built from your checkout too (`bazel run //cmd/gala -- ...`, which resolves relative paths from the directory you run it in). Export the standard library under a version that will never be published, and the library against it:
