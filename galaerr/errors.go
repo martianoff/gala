@@ -749,6 +749,12 @@ const (
 	// `+`, `-` or `^` without parentheses, or `|` sits inside a comparison or
 	// boolean expression of the pattern.
 	CodeInvalidAlternativePattern ErrorCode = "GALA-E0071"
+
+	// E0072: a sealed variant declares more fields than the widest std
+	// tuple (Tuple10) holds. A variant's extractor returns its fields as one
+	// tuple, so it can have at most that many; related fields are grouped
+	// into a struct.
+	CodeSealedVariantTooWide ErrorCode = "GALA-E0072"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

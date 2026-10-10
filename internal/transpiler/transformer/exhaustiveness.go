@@ -172,7 +172,8 @@ func (c *coverage) specialize(rows [][]covCell, ctor covCtor, typ transpiler.Typ
 
 // constructors returns the constructors of typ: the variants of a sealed
 // type (with the subject's type arguments in their field types), true and
-// false for bool, and, when nested is set, the one constructor of a tuple.
+// false for bool, and, when nested is set, the one constructor of a tuple or
+// a struct.
 func (c *coverage) constructors(typ transpiler.Type, nested bool) ([]covCtor, bool) {
 	if typ == nil || typ.IsNil() {
 		return nil, false
@@ -187,23 +188,44 @@ func (c *coverage) constructors(typ transpiler.Type, nested bool) ([]covCtor, bo
 		return []covCtor{{name: tupleCtorName, fields: gen.Params}}, true
 	}
 	key := typ.String()
+	if nested {
+		key = "nested " + key
+	}
 	if ctors, ok := c.ctors[key]; ok {
 		return ctors, ctors != nil
 	}
-	ctors := c.sealedConstructors(typ)
+	ctors := c.sealedConstructors(typ, nested)
 	c.ctors[key] = ctors
 	return ctors, ctors != nil
 }
 
-// sealedConstructors returns the variants of the sealed type typ, or nil.
-func (c *coverage) sealedConstructors(typ transpiler.Type) []covCtor {
+// sealedConstructors returns the variants of the sealed type typ, or, when
+// nested is set, the one constructor of a struct whose pattern reads its
+// fields (one without a hand-written Unapply), or nil.
+func (c *coverage) sealedConstructors(typ transpiler.Type, nested bool) []covCtor {
 	meta := c.t.getTypeMeta(typ.BaseName())
-	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) == 0 {
+	if meta == nil {
 		return nil
 	}
 	var args []transpiler.Type
 	if gen, ok := typ.(transpiler.GenericType); ok {
 		args = gen.Params
+	}
+	if !meta.IsSealed {
+		if !nested || meta.IsOpaque || len(meta.FieldNames) == 0 {
+			return nil
+		}
+		if _, _, hasUnapply := c.t.userDefinedMethodFlags(typ.BaseName()); hasUnapply {
+			return nil
+		}
+		fields := make([]transpiler.Type, len(meta.FieldNames))
+		for i, f := range meta.FieldNames {
+			fields[i] = c.t.substituteConcreteTypes(meta.Fields[f], meta.TypeParams, args)
+		}
+		return []covCtor{{name: stripPackagePrefix(typ.BaseName()), fields: fields}}
+	}
+	if len(meta.SealedVariants) == 0 {
+		return nil
 	}
 	ctors := make([]covCtor, len(meta.SealedVariants))
 	for i, v := range meta.SealedVariants {

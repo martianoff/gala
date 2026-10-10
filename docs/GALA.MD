@@ -1221,6 +1221,8 @@ an email address, a non-empty name.
 
 Sealed types define algebraic data types (ADTs) concisely. The transpiler auto-generates the parent struct, companion objects, `Apply`/`Unapply` methods, `Copy`, and `Equal`. To test which variant a value is, `match` on it — that is the idiomatic (and exhaustive) approach.
 
+A variant has at most 10 fields, the widest std tuple its `Unapply` returns them in ([GALA-E0072](errors/GALA-E0072.md)); group related fields into a struct.
+
 #### Basic Sealed Type
 ```gala
 sealed type Shape {
