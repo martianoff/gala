@@ -156,6 +156,10 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	if t.typeParamValue(rawName) {
 		return nil, nil, t.typeParamMisuseError(patExprCtx, rawName, "cannot be matched as a pattern")
 	}
+	argList, err := t.normalizePatternArgs(rawName, argList, matchedType)
+	if err != nil {
+		return nil, nil, err
+	}
 	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are
 	// always types, so a sealed variant among them is GALA-E0061.
 	if explicitTypeArgs != nil {

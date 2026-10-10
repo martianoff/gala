@@ -307,14 +307,19 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 	}
 	for _, ctor := range ctors {
 		if ctor.name == name {
+			argList, err := c.t.normalizePatternArgs(name, argList, typ)
+			if err != nil {
+				// Lowering reports the malformed sub-patterns.
+				return "", nil
+			}
 			return name, c.fieldPatterns(argList, ctor)
 		}
 	}
 	return "", nil
 }
 
-// fieldPatterns returns the patterns a variant pattern gives its fields,
-// read by position as the pattern is lowered.
+// fieldPatterns returns the patterns a variant pattern gives its fields, by
+// position once named sub-patterns are normalized.
 func (c *coverage) fieldPatterns(argList *grammar.ArgumentListContext, ctor covCtor) []covCell {
 	fields := make([]covCell, len(ctor.fields))
 	if argList == nil {
@@ -325,6 +330,8 @@ func (c *coverage) fieldPatterns(argList *grammar.ArgumentListContext, ctor covC
 			break
 		}
 		switch pat := a.(*grammar.ArgumentContext).Pattern().(type) {
+		case nil:
+			// A field left out of named sub-patterns matches anything.
 		case *grammar.ExpressionPatternContext:
 			fields[i] = pat.Expression()
 		case *grammar.TypedPatternContext:

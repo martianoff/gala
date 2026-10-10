@@ -1596,6 +1596,35 @@ The rules:
 - **`|` cannot appear inside a comparison or boolean expression of a pattern** (`case Some(1 | 2 > 1)`), and **`_` cannot be an alternative** (`case Some(1) | _`): write the comparison as a guard, and the catch-all as `case _`.
 - **A guard applies to the whole pattern.** In `case 1 | 2 if ok`, the guard is checked whichever alternative matched.
 
+#### Named Sub-Patterns
+In a pattern on a sealed variant or a struct, `Field = p` matches `p` against the field of that name, as a named argument fills it at construction. Positional sub-patterns come first, and a field given neither way matches anything:
+
+```gala
+package main
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+}
+
+func height(s Shape) int = s match {
+    case Circle(Radius = r)          => 2 * r
+    case Rect(Height = h, Width = _) => h
+}
+
+func describe(s Shape) string = s match {
+    case Rect(1, Height = 1) => "unit square"
+    case Rect(Height = 0)    => "flat"
+    case _                   => "other"
+}
+
+func main() {
+    Println(height(Rect(1, 2)), describe(Rect(5, 0)))
+}
+```
+
+A field left out counts as `_` for exhaustiveness, so `Circle(Radius = r)` and `Rect(Height = h)` cover `Shape`. Naming a field that does not exist, matching a field twice, writing a positional sub-pattern after a named one, or naming fields of an extractor with its own `Unapply` is [GALA-E0073](errors/GALA-E0073.md).
+
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.
 

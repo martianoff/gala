@@ -1138,6 +1138,28 @@ func main() {
 			},
 		},
 		{
+			name: "named sub-pattern naming no field",
+			code: galaerr.CodeInvalidNamedSubPattern, // GALA-E0073
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+}
+
+func height(s Shape) int = s match {
+    case Circle(Radius = r) => 2 * r
+    case Rect(Depth = d)    => d
+}
+
+func main() {
+    Println(height(Rect(1, 2)))
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

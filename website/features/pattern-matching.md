@@ -4,7 +4,7 @@ title: "Golang Pattern Matching — Exhaustive Match Expressions for Go"
 description: "GALA brings real pattern matching to Go — struct destructuring, sealed type exhaustive matching, guard clauses, nested patterns, custom extractors, and sequence patterns. Beyond what Go's switch can do."
 keywords: "golang pattern matching, go pattern matching, golang match expression, go switch alternative, go exhaustive match, go destructuring, golang guard clauses, go struct pattern matching, golang case expression"
 permalink: /features/pattern-matching/
-last_modified_at: 2026-10-09
+last_modified_at: 2026-10-10
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Pattern Matching</p>
@@ -171,6 +171,32 @@ func main() {
 ```
 
 Alternatives bind no names: `case Some(n) | None()` is rejected ([GALA-E0071](/docs/errors/gala-e0071/)). In a pattern `|` is never Go's bitwise OR; match a bitwise value with a guard.
+
+---
+
+## Named Sub-Patterns
+
+In a pattern on a sealed variant or a struct, `Field = p` matches the field of that name, as a named argument fills it at construction. Fields left out match anything:
+
+```gala
+package main
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+}
+
+func height(s Shape) int = s match {
+    case Circle(Radius = r) => 2 * r
+    case Rect(Height = h)   => h
+}
+
+func main() {
+    Println(height(Rect(1, 2)))
+}
+```
+
+A name that matches no field, or a field matched twice, is [GALA-E0073](/docs/errors/gala-e0073/).
 
 ---
 

@@ -755,6 +755,13 @@ const (
 	// tuple, so it can have at most that many; related fields are grouped
 	// into a struct.
 	CodeSealedVariantTooWide ErrorCode = "GALA-E0072"
+
+	// E0073: a named sub-pattern `Field = p` is malformed: what the pattern
+	// matches has no fields to name (an extractor with its own Unapply), the
+	// field does not exist, a field is matched twice, a positional
+	// sub-pattern follows a named one, or there are more positional
+	// sub-patterns than fields.
+	CodeInvalidNamedSubPattern ErrorCode = "GALA-E0073"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

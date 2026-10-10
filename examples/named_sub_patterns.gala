@@ -1,0 +1,41 @@
+package main
+
+// Named sub-patterns: `Field = p` matches p against the field of that name.
+// Fields left out match anything.
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+}
+
+struct Point(X int, Y int)
+
+func height(s Shape) int = s match {
+    case Circle(Radius = r)          => 2 * r
+    case Rect(Height = h, Width = _) => h
+}
+
+func flat(s Shape) bool = s match {
+    case Rect(Height = 0) => true
+    case _                => false
+}
+
+func square(s Shape) string = s match {
+    case Rect(1, Height = 1)           => "unit square"
+    case Rect(w, Height = h) if w == h => "square"
+    case Rect(_, _)                    => "rect"
+    case Circle(_)                     => "circle"
+}
+
+func axis(p Point) string = p match {
+    case Point(Y = 0) => "on the x axis"
+    case Point(X = 0) => "on the y axis"
+    case _            => s"(${p.X}, ${p.Y})"
+}
+
+func main() {
+    Println(height(Rect(1, 2)), height(Circle(3)))
+    Println(flat(Rect(5, 0)), flat(Rect(0, 5)))
+    Println(square(Rect(1, 1)), square(Rect(2, 2)), square(Rect(2, 3)), square(Circle(1)))
+    Println(axis(Point(4, 0)), axis(Point(0, 4)), axis(Point(1, 2)))
+}
