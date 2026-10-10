@@ -766,8 +766,10 @@ func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpi
 	for _, f := range files {
 		imports := fileImportPaths(f)
 		for _, decl := range f.Decls {
+			// Every recorded function is repaired: the package's own files
+			// record unexported ones too (see AnalyzeOwnGoFiles).
 			fd, ok := decl.(*ast.FuncDecl)
-			if !ok || fd.Recv != nil || fd.Type == nil || !fd.Name.IsExported() {
+			if !ok || fd.Recv != nil || fd.Type == nil {
 				continue
 			}
 			if sig := info.Functions[pkgName+"."+fd.Name.Name]; sig != nil {

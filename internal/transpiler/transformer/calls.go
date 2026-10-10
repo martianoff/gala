@@ -564,26 +564,16 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// fatal when a foreign type's package name collides with the current package
 	// (io/fs vs GALA's own `fs`): the lambda param would emit a bare, colliding
 	// name. Carrying the receiver's actual arg Types keeps the qualifier.
-	typeSubstTypes := make(map[string]transpiler.Type)
+	var typeSubstTypes map[string]transpiler.Type
 	var recvTypeArgStrings []string
 	if methodMeta != nil && typeMeta != nil {
 		recvTypeArgStrings = t.getReceiverTypeArgStrings(recvType)
-		recvTypeArgTypesFull := t.getReceiverTypeArgTypes(recvType)
 		for i, tp := range typeMeta.TypeParams {
 			if i < len(recvTypeArgStrings) {
 				typeSubst[tp] = recvTypeArgStrings[i]
 			}
-			// Only override with the ImportPath-preserving Type for a foreign Go
-			// type (one known to goTypeInfo). A local GALA type carries its own
-			// module-path ImportPath which must NOT survive — the string form
-			// blanks it so typeToExpr drops the current-package qualifier. Keeping
-			// it would emit `<currentPackage>.LocalType` (undefined). The foreign
-			// case (io/fs, whose name collides with the current `fs` package) is
-			// exactly the one that needs its qualifier preserved.
-			if i < len(recvTypeArgTypesFull) && t.isForeignGoType(recvTypeArgTypesFull[i]) {
-				typeSubstTypes[tp] = recvTypeArgTypesFull[i]
-			}
 		}
+		typeSubstTypes = t.receiverTypeArgOverrides(typeMeta.TypeParams, recvType)
 		for i, tp := range methodMeta.TypeParams {
 			if i < len(typeArgs) {
 				typeSubst[tp] = t.exprToTypeString(typeArgs[i])
@@ -1236,7 +1226,25 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 
 	// Fully concrete receiver type: transform args (named + positional), then
 	// dispatch through named-args / default-args fillers if needed.
-	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, recvType)
+	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, t.receiverTypeArgOverrides(typeMeta.TypeParams, recvType), recvType)
+}
+
+// receiverTypeArgOverrides returns, for each type parameter of a generic
+// receiver, the receiver's type argument when it is a type of another package
+// (see isForeignGoType). typeSubst carries type arguments as strings, which
+// drop the import path; these overrides keep it, so a lambda parameter typed
+// by one (`Option[sub.Command].ForEach((c) => …)`) stays qualified and the
+// file imports its package. A type of this package is left to the string
+// form, which emits it unqualified.
+func (t *galaASTTransformer) receiverTypeArgOverrides(typeParams []string, recvType transpiler.Type) map[string]transpiler.Type {
+	args := t.getReceiverTypeArgTypes(recvType)
+	overrides := make(map[string]transpiler.Type)
+	for i, tp := range typeParams {
+		if i < len(args) && t.isForeignGoType(args[i]) {
+			overrides[tp] = args[i]
+		}
+	}
+	return overrides
 }
 
 // emitDirectMethodCall is the fallback used when the method's metadata
@@ -1414,6 +1422,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	method string,
 	methodMeta *transpiler.MethodMetadata,
 	typeSubst map[string]string,
+	typeSubstTypes map[string]transpiler.Type,
 	recvType transpiler.Type,
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
@@ -1432,6 +1441,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		if arg.Identifier() != nil {
 			argName := arg.Identifier().GetText()
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			resolvedMethodCtx.typeSubstTypes = typeSubstTypes
 			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
@@ -1443,6 +1453,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			mNamedArgs[argName] = expr
 		} else {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			resolvedMethodCtx.typeSubstTypes = typeSubstTypes
 			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
