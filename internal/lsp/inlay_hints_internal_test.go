@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,5 +69,25 @@ func TestCasePatternHints_TypeParamsByScope(t *testing.T) {
 			}
 			assert.Equal(t, tc.want, got)
 		})
+	}
+}
+
+// A named sub-pattern's hint follows its bound name, not an earlier field
+// label spelled the same way.
+func TestCasePatternHints_NamedSubPatternPosition(t *testing.T) {
+	richAST := &transpiler.RichAST{Types: map[string]*transpiler.TypeMetadata{
+		"main.Shape": {
+			Name: "Shape", IsSealed: true,
+			SealedVariants: []transpiler.SealedVariant{
+				{Name: "Box", FieldNames: []string{"W", "H"}, FieldTypes: []transpiler.Type{transpiler.BasicType{Name: "int"}, transpiler.BasicType{Name: "string"}}},
+			},
+		},
+	}}
+	line := "    case Box(H = x, W = H) => H"
+	hints := casePatternHints(line, 0, richAST)
+	if assert.Len(t, hints, 2) {
+		// x ends at the column after `x`; H (bound to W) after the second H.
+		assert.Equal(t, strings.Index(line, "H = x")+len("H = x"), hints[0].Position.Character)
+		assert.Equal(t, strings.LastIndex(line, "W = H")+len("W = H"), hints[1].Position.Character)
 	}
 }

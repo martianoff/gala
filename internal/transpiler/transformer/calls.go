@@ -3580,12 +3580,7 @@ func unwrapToBaseIdent(expr ast.Expr) *ast.Ident {
 
 // hasNamedArg reports whether a call passes any argument by name.
 func hasNamedArg(argListCtx *grammar.ArgumentListContext) bool {
-	if argListCtx == nil {
-		return false
-	}
-	return slices.ContainsFunc(argListCtx.AllArgument(), func(a grammar.IArgumentContext) bool {
-		return a.(*grammar.ArgumentContext).Identifier() != nil
-	})
+	return firstNamedArg(argListCtx) >= 0
 }
 
 // goStructTypeData returns the Go type info of the Go struct a call target

@@ -202,15 +202,20 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 
 	hints := make([]lsp.InlayHint, 0)
 	parts := strings.Split(bindings, ",")
-	for i, binding := range parts {
-		binding = strings.TrimSpace(binding)
-		// A named sub-pattern `Field = x` binds x to the field of that name.
+	offset := bindingsStart // where the current piece starts in line
+	for i, piece := range parts {
+		pieceStart := offset
+		offset += len(piece) + 1
+		binding := strings.TrimSpace(piece)
+		// A named sub-pattern `Field = x` binds x to the field of that name;
+		// the hint follows x, searched for after the `=`.
 		if field, sub, named := strings.Cut(binding, "="); named {
 			i = slices.Index(variant.FieldNames, strings.TrimSpace(field))
 			binding = strings.TrimSpace(sub)
 			if i < 0 {
 				continue
 			}
+			pieceStart += strings.Index(piece, "=") + 1
 		}
 		if binding == "" || binding == "_" || strings.Contains(binding, " ") || isStablePatternName(binding, richAST) {
 			continue
@@ -230,9 +235,9 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 			if slices.Contains(owner.TypeParams, typeName) {
 				continue
 			}
-			pos := findWholeWord(line[bindingsStart:], binding)
+			pos := findWholeWord(line[pieceStart:], binding)
 			if pos >= 0 {
-				pos += bindingsStart
+				pos += pieceStart
 				hints = append(hints, makeTypeHint(lineNum, pos+len(binding), typeName))
 			}
 		}

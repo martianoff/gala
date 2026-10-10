@@ -31,9 +31,7 @@ type TypeTraceEntry struct {
 }
 
 type galaASTTransformer struct {
-	currentScope *scope
-	// namedArgs caches normalizePatternArgs per pattern argument list.
-	namedArgs         map[*grammar.ArgumentListContext]normalizedArgs
+	currentScope      *scope
 	packageName       string
 	immutFields       map[string]bool
 	structImmutFields map[string][]bool

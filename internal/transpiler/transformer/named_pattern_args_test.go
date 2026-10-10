@@ -84,6 +84,16 @@ func (e Even) Unapply(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None
 			wantErr: "'Temp' cannot be matched by field name: its pattern calls its own Unapply",
 		},
 		{
+			name:    "lambda given to a field",
+			fn:      "func f(s Shape) int = s match {\n    case Rect(Height = (x) => x) => 1\n    case _ => 0\n}",
+			wantErr: "field 'Height' is given a lambda",
+		},
+		{
+			name:    "variant matched on a value of another type",
+			fn:      "func f(x any) int = x match {\n    case Rect(Height = h) => h\n    case _ => 0\n}",
+			wantErr: "it is a variant of Shape, and the value matched is not a Shape",
+		},
+		{
 			name:    "sequence",
 			fn:      "func f(a Array[int]) int = a match {\n    case Array(length = n) => n\n    case _ => 0\n}",
 			wantErr: "'Array' cannot be matched by field name",
