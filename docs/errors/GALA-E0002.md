@@ -1,7 +1,8 @@
 # GALA-E0002 — Non-exhaustive sealed match
 
 **When it fires.** A `match` expression on a sealed type omits one or more
-variants and has no default (`case _ =>`) fallback.
+variants, or covers one only in part, and has no default (`case _ =>`)
+fallback.
 
 **Minimal repro.** (`main.gala`)
 
@@ -63,6 +64,38 @@ func name(c Color) string = c match {
     case _     => "other"
 }
 ```
+
+**A variant covered only in part.** A variant counts as covered only when its
+cases match every value of its fields. `Some(0)` matches only one `Some`, and
+a case with an `if` guard covers nothing, since its guard may be false. The
+missing list then names the variant as `Some(...)`:
+
+```gala
+package main
+
+func describe(o Option[int]) string = o match {
+    case Some(0) => "zero"
+    case None()  => "none"
+}
+
+func main() {
+    Println(describe(Some(3)))
+}
+```
+
+```text
+error[GALA-E0002]: non-exhaustive match: missing cases: Some(...)
+  --> main.gala:4:5
+  |
+4 |     case Some(0) => "zero"
+  |     ^^^^ add the missing variant cases, or add a `case _ => ...` defa…
+  |
+  = hint: add the missing variant cases, or add a `case _ => ...` default to cover them
+```
+
+Cover the rest of the variant with a case that matches all of it, such as
+`case Some(_) => "other"`. Nested patterns count together:
+`Some(Some(_))`, `Some(None())` and `None()` cover every `Option[Option[int]]`.
 
 **Rationale.** Sealed types exist specifically so the compiler can verify
 you've thought about every variant. Allowing a silent fall-through on an

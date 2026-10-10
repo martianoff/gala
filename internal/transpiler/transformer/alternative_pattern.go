@@ -192,18 +192,3 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []grammar.IExpress
 	}
 	return ast.NewIdent(matched), out, nil
 }
-
-// alternativePatternTexts returns the source text of each alternative of a
-// case pattern (see flatAlternatives), or the whole pattern's text when it
-// has none.
-func (t *galaASTTransformer) alternativePatternTexts(pat grammar.IPatternContext) []string {
-	exprPat, ok := pat.(*grammar.ExpressionPatternContext)
-	if !ok {
-		return []string{pat.GetText()}
-	}
-	var texts []string
-	for _, alt := range t.flatAlternatives(exprPat.Expression()) {
-		texts = append(texts, alt.GetText())
-	}
-	return texts
-}
