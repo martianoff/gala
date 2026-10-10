@@ -263,7 +263,7 @@ func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []str
 	// GoTypeInfo entries are keyed "pkgName.SymName" — keep only this package's.
 	var ownGoTypeInfo *transpiler.GoTypeInfo
 	if r.GoTypeInfo != nil {
-		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg)
+		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg, r.OwnImportPath)
 	}
 
 	return &CachedRichAST{
@@ -283,53 +283,58 @@ func toCachedRichAST(r *transpiler.RichAST, depsHash string, directImports []str
 	}
 }
 
-// filterGoTypeInfo returns a new GoTypeInfo containing only entries whose
-// "pkgName.SymName" qualified keys match the given package. Returns nil
-// if no entries belong to this package.
-func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg string) *transpiler.GoTypeInfo {
+// filterGoTypeInfo returns a new GoTypeInfo containing only entries keyed
+// "pkgName.SymName" by the given package, or "importPath.SymName" by its own
+// import path (see GoTypeInfo.AddImportPathKeys). Returns nil if no entries
+// belong to this package.
+func filterGoTypeInfo(g *transpiler.GoTypeInfo, pkg, ownImportPath string) *transpiler.GoTypeInfo {
 	if g == nil {
 		return nil
 	}
 	prefix := pkg + "."
+	pathPrefix := ownImportPath + "."
+	own := func(k string) bool {
+		return strings.HasPrefix(k, prefix) || ownImportPath != "" && strings.HasPrefix(k, pathPrefix)
+	}
 	out := transpiler.NewGoTypeInfo()
 	any := false
 	for k, v := range g.Functions {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.Functions[k] = v
 			any = true
 		}
 	}
 	for k, v := range g.Types {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.Types[k] = v
 			any = true
 		}
 	}
 	for k, v := range g.Variables {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.Variables[k] = v
 			any = true
 		}
 	}
 	for k, v := range g.Constants {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.Constants[k] = v
 			any = true
 		}
 	}
 	for k, v := range g.UntypedConstants {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.UntypedConstants[k] = v
 		}
 	}
 	for k, v := range g.TypeAliases {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.TypeAliases[k] = v
 			any = true
 		}
 	}
 	for k, v := range g.GalaTypeMethods {
-		if strings.HasPrefix(k, prefix) {
+		if own(k) {
 			out.GalaTypeMethods[k] = v
 			any = true
 		}
@@ -427,7 +432,7 @@ func projectOwnRichAST(r *transpiler.RichAST) *transpiler.RichAST {
 
 	var ownGoTypeInfo *transpiler.GoTypeInfo
 	if r.GoTypeInfo != nil {
-		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg)
+		ownGoTypeInfo = filterGoTypeInfo(r.GoTypeInfo, pkg, r.OwnImportPath)
 	}
 
 	return &transpiler.RichAST{

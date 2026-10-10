@@ -2837,6 +2837,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 	if contentHash != "" && a.cache != nil {
 		cacheStart := time.Now()
 		if cached, cachedDirectImports := a.cache.Get(relPath, contentHash, depsHash); cached != nil {
+			cached.OwnImportPath = goFilesImportPath(dirPath, importPath)
 			// Re-merge the package's direct imports into the cached own-only
 			// pkgAST. Each import resolves through analyzePackage, which is
 			// itself cache-served — so a deep dependency graph is recovered
@@ -2865,6 +2866,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		Functions:        make(map[string]*transpiler.FunctionMetadata),
 		Packages:         make(map[string]string),
 		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
+		// The key its Go type info is recorded under besides its name (see
+		// GoTypeInfo.AddImportPathKeys); the own-package projection keeps it.
+		OwnImportPath: goFilesImportPath(dirPath, importPath),
 	}
 
 	// Collect candidate file paths so the parses can run in parallel.

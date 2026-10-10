@@ -41,6 +41,7 @@ go_test(
     # medium timeout (300s) fails it intermittently.
     size = "large",
     srcs = [
+        "aliased_go_subpackage_test.go",
         "apex_perf_test.go",
         "bom_test.go",
         "builder_test.go",
