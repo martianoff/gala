@@ -86,6 +86,23 @@ func main() {
 			},
 		},
 		{
+			name: "variant covered only in part",
+			code: galaerr.CodeNonExhaustiveMatch, // GALA-E0002
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func describe(o Option[int]) string = o match {
+    case Some(0) => "zero"
+    case None()  => "none"
+}
+
+func main() {
+    Println(describe(Some(3)))
+}
+`)
+			},
+		},
+		{
 			name: "non-sealed match with no default",
 			code: galaerr.CodeMissingDefault, // GALA-E0003
 			render: func(t *testing.T) string {

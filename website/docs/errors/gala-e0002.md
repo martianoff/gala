@@ -4,14 +4,14 @@ title: "GALA-E0002 — Non-Exhaustive Match on a Sealed Type"
 description: "\"non-exhaustive match: missing cases\" — GALA-E0002 fires when a match on a sealed type omits variants and has no default branch. See the triggering code, the real compiler output, and both fixes."
 keywords: "gala-e0002, non-exhaustive match, gala sealed type match, missing cases, golang exhaustive pattern matching, gala match error"
 permalink: /docs/errors/gala-e0002/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-10-10
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0002</p>
 
 # GALA-E0002 — Non-exhaustive match on a sealed type
 
-**What it means.** A `match` expression on a sealed type omits one or more variants and has no default (`case _ =>`) fallback. The compiler lists exactly which variants are missing.
+**What it means.** A `match` expression on a sealed type omits one or more variants, or covers one only in part, and has no default (`case _ =>`) fallback. The compiler lists exactly which variants are missing.
 
 ---
 
@@ -79,6 +79,35 @@ func name(c Color) string = c match {
 ```
 
 ---
+
+## A variant covered only in part
+
+A variant counts as covered only when its cases match every value of its fields. `Some(0)` matches only one `Some`, and a case with an `if` guard covers nothing, since its guard may be false. The missing list then names the variant as `Some(...)`:
+
+```gala
+package main
+
+func describe(o Option[int]) string = o match {
+    case Some(0) => "zero"
+    case None()  => "none"
+}
+
+func main() {
+    Println(describe(Some(3)))
+}
+```
+
+```text
+error[GALA-E0002]: non-exhaustive match: missing cases: Some(...)
+  --> main.gala:4:5
+  |
+4 |     case Some(0) => "zero"
+  |     ^^^^ add the missing variant cases, or add a `case _ => ...` defa…
+  |
+  = hint: add the missing variant cases, or add a `case _ => ...` default to cover them
+```
+
+Cover the rest of the variant with a case that matches all of it, such as `case Some(_) => "other"`. Nested patterns count together: `Some(Some(_))`, `Some(None())` and `None()` cover every `Option[Option[int]]`.
 
 ## Why the rule exists
 

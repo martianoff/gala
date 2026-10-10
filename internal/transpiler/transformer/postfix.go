@@ -705,17 +705,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have at least one case")
 	}
 
-	// Always collect variant patterns for exhaustiveness check
+	// Exhaustiveness of a match over a sealed type or bool (see coverageOf)
 	{
-		var variantPatterns []string
+		ccs := make([]*grammar.CaseClauseContext, len(caseClauses))
 		for i, cc := range caseClauses {
-			pat := cc.(*grammar.CaseClauseContext).Pattern()
-			if !isWildcard(pat.GetText()) && !isBinding[i] {
-				variantPatterns = append(variantPatterns, t.alternativePatternTexts(pat)...)
-			}
+			ccs[i] = cc.(*grammar.CaseClauseContext)
 		}
-
-		isSealed, isExhaustive, missing := t.isExhaustiveMatch(matchedType, variantPatterns)
+		isSealed, isExhaustive, missing, guardedMissing := t.coverageOf(matchedType, ccs)
 
 		// An unguarded binding (`case n =>`) already set foundDefault above.
 		hasDefault := foundDefault
@@ -740,11 +736,15 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
 			}
 			if isSealed && !isExhaustive {
+				hint := "add the missing variant cases, or add a `case _ => ...` default to cover them"
+				if guardedMissing {
+					hint += "; a case with an `if` guard does not count, since its guard may be false"
+				}
 				return nil, galaerr.NewCodedSemanticError(
 					galaerr.CodeNonExhaustiveMatch,
 					line, col,
 					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
-					"add the missing variant cases, or add a `case _ => ...` default to cover them")
+					hint)
 			} else if isSealed && isExhaustive {
 				// Exhaustive sealed match — generate synthetic panic("unreachable") default
 				defaultBody = unreachableDefaultBody()
