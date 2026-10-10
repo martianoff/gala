@@ -2,14 +2,17 @@ package build
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// transpileMainGen transpiles projectDir and returns the generated main.gen.go.
-func transpileMainGen(t *testing.T, projectDir string) string {
+// transpileAndRun transpiles projectDir and returns the generated
+// main.gen.go, then builds the program with the same Builder and returns its
+// output (fields joined by "|", as buildAndRun does).
+func transpileAndRun(t *testing.T, projectDir string) (mainGen, out string) {
 	t.Helper()
 	chdirForTest(t, projectDir)
 	b, err := NewBuilder(projectDir, "test", false)
@@ -18,7 +21,17 @@ func transpileMainGen(t *testing.T, projectDir string) string {
 	require.NoError(t, b.ensureStdlib())
 	require.NoError(t, b.transpileDeps())
 	require.NoError(t, b.transpile())
-	return readFileString(t, filepath.Join(b.workspace.GenDir, "main.gen.go"))
+	mainGen = readFileString(t, filepath.Join(b.workspace.GenDir, "main.gen.go"))
+	binPath, buildErr := b.Build("")
+	if buildErr != nil {
+		if isToolchainEnvError(buildErr.Error()) {
+			t.Skipf("skipping end-to-end check: Go toolchain unavailable/mismatched in this environment: %v", buildErr)
+		}
+		t.Fatalf("gala build failed: %v", buildErr)
+	}
+	raw, runErr := runBuiltBinary(binPath)
+	require.NoError(t, runErr, "built binary failed to run; output:\n%s", raw)
+	return mainGen, strings.Join(strings.Fields(raw), "|")
 }
 
 // TestBuild_AliasedGoSubpackageKeepsGoResults builds a project whose GALA
@@ -41,10 +54,10 @@ func main() {
 `,
 	})
 
-	mainGen := transpileMainGen(t, projectDir)
+	mainGen, out := transpileAndRun(t, projectDir)
 	assert.Contains(t, mainGen, "std.GoTry(st.Load())",
 		"a (T, error) call through the alias must become a Try value:\n%s", mainGen)
-	assert.Equal(t, "ok", buildAndRun(t, projectDir))
+	assert.Equal(t, "ok", out)
 }
 
 // TestBuild_SameNameGoSubpackagesKeepTheirOwnSignatures imports hand-written
@@ -75,10 +88,10 @@ func main() {
 }
 `,
 			})
-			mainGen := transpileMainGen(t, projectDir)
+			mainGen, out := transpileAndRun(t, projectDir)
 			assert.Contains(t, mainGen, "std.GoTry(ua.Get())", "ua.Get returns (int, error):\n%s", mainGen)
 			assert.NotContains(t, mainGen, "std.GoTry(ub.Get())", "ub.Get returns one value:\n%s", mainGen)
-			assert.Equal(t, "1|b", buildAndRun(t, projectDir))
+			assert.Equal(t, "1|b", out)
 		}
 	})
 
