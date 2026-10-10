@@ -78,7 +78,7 @@ func TestTranspilePackageScanFalseIsExplicitSiblings(t *testing.T) {
 	outA := filepath.Join(out, "a.gen.go")
 	outB := filepath.Join(out, "b.gen.go")
 
-	err := transpilePackage([]string{inA, inB}, []string{outA, outB}, root, "", false)
+	err := transpilePackage([]string{inA, inB}, []string{outA, outB}, root, "", false, "")
 	if err == nil {
 		t.Fatal("scan=false with c.gala omitted from inputs: expected a failure")
 	}
@@ -102,7 +102,7 @@ func TestTranspilePackageScanSeesUnlistedSiblings(t *testing.T) {
 	outA := filepath.Join(out, "a.gen.go")
 	outB := filepath.Join(out, "b.gen.go")
 
-	if err := transpilePackage([]string{inA, inB}, []string{outA, outB}, root, "", true); err != nil {
+	if err := transpilePackage([]string{inA, inB}, []string{outA, outB}, root, "", true, ""); err != nil {
 		t.Fatalf("scan=true: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestTranspilePackageScanResolvesTestPackageSiblings(t *testing.T) {
 
 	in := []string{filepath.Join(pkg, "uses.gala"), filepath.Join(pkg, "decl.gala")}
 	outs := []string{filepath.Join(out, "uses.gen.go"), filepath.Join(out, "decl.gen.go")}
-	if err := transpilePackage(in, outs, root, "", true); err != nil {
+	if err := transpilePackage(in, outs, root, "", true, ""); err != nil {
 		t.Fatalf("scan=true over a package named test: %v", err)
 	}
 	got, err := os.ReadFile(outs[0])
@@ -157,7 +157,7 @@ func TestTranspilePackageScanDoesNotMixPackages(t *testing.T) {
 	out1 := filepath.Join(out, "pkg1", "a.gen.go")
 	out2 := filepath.Join(out, "pkg2", "a.gen.go")
 
-	if err := transpilePackage([]string{in1, in2}, []string{out1, out2}, root, "", true); err != nil {
+	if err := transpilePackage([]string{in1, in2}, []string{out1, out2}, root, "", true, ""); err != nil {
 		t.Fatalf("scan=true across two packages: %v", err)
 	}
 	for in, outPath := range map[string]string{in1: out1, in2: out2} {
@@ -168,5 +168,79 @@ func TestTranspilePackageScanDoesNotMixPackages(t *testing.T) {
 		if want := referenceSingleScan(t, in); string(got) != want {
 			t.Errorf("%s output differs from directory-scanning single-file output:\ngot:\n%s\nwant:\n%s", in, got, want)
 		}
+	}
+}
+
+// TestTranspilePackageStdlibModule pins --stdlib-module: every import of the
+// standard library, the implicit std one and a dot import alike, is written
+// under the given module, and without the flag the output keeps
+// martianoff/gala.
+func TestTranspilePackageStdlibModule(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "gala.mod"), "module example.com/repro\n\ngala dev\n")
+	in := filepath.Join(root, "p", "p.gala")
+	writeFile(t, in, `package p
+
+import . "martianoff/gala/collection_immutable"
+
+func Names() string = ArrayOf(1, 2, 3).MkString(",")
+
+func First(o Option[int]) int = o.GetOrElse(0)
+`)
+
+	cases := []struct {
+		name         string
+		stdlibModule string
+		want         []string
+		absent       []string
+	}{
+		{
+			name:         "rewritten",
+			stdlibModule: "go.gala.fyi/stdlib",
+			want:         []string{`"go.gala.fyi/stdlib/std"`, `. "go.gala.fyi/stdlib/collection_immutable"`},
+			absent:       []string{`"martianoff/gala/`},
+		},
+		{
+			name: "unchanged by default",
+			want: []string{`"martianoff/gala/std"`, `. "martianoff/gala/collection_immutable"`},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "p.gen.go")
+			if err := transpilePackage([]string{in}, []string{out}, root, "", true, tc.stdlibModule); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(string(data), w) {
+					t.Errorf("output lacks %s:\n%s", w, data)
+				}
+			}
+			for _, a := range tc.absent {
+				if strings.Contains(string(data), a) {
+					t.Errorf("output still has %s:\n%s", a, data)
+				}
+			}
+		})
+	}
+}
+
+// TestTranspilePackageRejectsBadStdlibModule pins that a --stdlib-module the
+// go command could not download fails once, before any file is transpiled.
+func TestTranspilePackageRejectsBadStdlibModule(t *testing.T) {
+	root := t.TempDir()
+	in := filepath.Join(root, "p.gala")
+	writeFile(t, in, "package p\n\nfunc One() int = 1\n")
+	out := filepath.Join(t.TempDir(), "p.gen.go")
+	err := transpilePackage([]string{in}, []string{out}, root, "", true, "stdlib")
+	if err == nil || !strings.Contains(err.Error(), "--stdlib-module") {
+		t.Fatalf("want a --stdlib-module error, got %v", err)
+	}
+	if _, statErr := os.Stat(out); statErr == nil {
+		t.Fatal("no output may be written for a rejected --stdlib-module")
 	}
 }

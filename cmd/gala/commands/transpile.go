@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/module"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
+	"martianoff/gala/internal/goexport"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -25,6 +27,7 @@ var (
 	transpileSearch       string
 	transpilePackageFiles string
 	transpileGoroot       string
+	transpileStdlibModule string
 )
 
 var transpileCmd = &cobra.Command{
@@ -34,6 +37,12 @@ var transpileCmd = &cobra.Command{
 
 Outputs transpiled Go code without creating additional files.
 Use 'gala build' for a complete build workflow.
+
+--stdlib-module writes imports of GALA's standard library under another Go
+module path. Use it to commit generated Go to a plain Go module (no gala.mod)
+that requires the published standard library at this compiler's version:
+
+  gala transpile -i p.gala -o p.go --stdlib-module go.gala.fyi/stdlib
 
 Examples:
   gala transpile main.gala               # Output to stdout
@@ -50,6 +59,7 @@ func init() {
 	transpileCmd.Flags().StringVarP(&transpileSearch, "search", "s", ".", "Comma-separated search paths")
 	transpileCmd.Flags().StringVar(&transpilePackageFiles, "package-files", "", "Comma-separated list of sibling .gala files in the same package")
 	transpileCmd.Flags().StringVar(&transpileGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
+	transpileCmd.Flags().StringVar(&transpileStdlibModule, "stdlib-module", "", "Go module path to write standard library imports under, such as go.gala.fyi/stdlib (default: none, imports stay martianoff/gala)")
 	addDiagnosticsJSONFlag(transpileCmd)
 }
 
@@ -159,6 +169,15 @@ func runTranspile(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	if err := checkStdlibModule(transpileStdlibModule); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if transpileStdlibModule != "" && transpileRun {
+		fmt.Fprintln(os.Stderr, "Error: --stdlib-module cannot be combined with --run: the generated code imports a Go module that only a go.mod requiring it can resolve")
+		os.Exit(1)
+	}
+
 	// Read input file
 	content, err := os.ReadFile(inputPath)
 	if err != nil {
@@ -202,6 +221,11 @@ func runTranspile(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	if goCode, err = remapStdlibImports(inputPath, goCode, transpileStdlibModule); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Determine output handling
 	tempDir := ""
 	actualOutput := transpileOutput
@@ -240,4 +264,30 @@ func runTranspile(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 	}
+}
+
+// remapStdlibImports rewrites the imports of GALA's standard library in the
+// generated Go code to stdlibModule (--stdlib-module). An empty stdlibModule
+// leaves the code as it is.
+func remapStdlibImports(name, goCode, stdlibModule string) (string, error) {
+	if stdlibModule == "" {
+		return goCode, nil
+	}
+	out, err := goexport.RemapImports(name, []byte(goCode), goexport.StdlibRemap(stdlibModule))
+	if err != nil {
+		return "", fmt.Errorf("--stdlib-module: %w", err)
+	}
+	return string(out), nil
+}
+
+// checkStdlibModule rejects a --stdlib-module value the go command could not
+// download, before anything is transpiled. An empty value is no rewrite.
+func checkStdlibModule(stdlibModule string) error {
+	if stdlibModule == "" {
+		return nil
+	}
+	if err := module.CheckPath(stdlibModule); err != nil {
+		return fmt.Errorf("--stdlib-module: %w", err)
+	}
+	return nil
 }
