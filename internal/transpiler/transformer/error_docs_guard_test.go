@@ -1121,6 +1121,23 @@ func main() {
 			},
 		},
 		{
+			name: "sealed variant wider than the widest tuple",
+			code: galaerr.CodeSealedVariantTooWide, // GALA-E0072
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Event {
+    case Order(Id int, User int, Item int, Qty int, Price int, Tax int, Ship int, Total int, Paid bool, Sent bool, Note string)
+    case Cancel(Id int)
+}
+
+func main() {
+    Println(Cancel(1))
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

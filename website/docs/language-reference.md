@@ -726,6 +726,8 @@ val desc = c match {
 
 A variant is a constructor and a pattern, not a type: `Circle(3.14)` is a `Shape`. Naming a variant where a type is expected — `func radius(c Circle)`, `Array[Some[int]]`, `case c: Circle` — is [GALA-E0061](/docs/errors/gala-e0061/); take the sealed type and match on the variant.
 
+A variant has at most 10 fields, the widest std tuple its extractor returns them in ([GALA-E0072](/docs/errors/gala-e0072/)); group related fields into a struct.
+
 Generic sealed types:
 ```gala
 sealed type Result[T any] {

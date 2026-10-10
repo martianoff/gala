@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"strings"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -66,6 +67,14 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 					typeCtx:     fc.Type_(),
 					isRecursive: isSelfReferentialSealedField(fieldTypeText, name),
 				})
+			}
+		}
+		if n := len(vi.fields); n >= 2 {
+			if _, ok := transpiler.TupleArityName(n); !ok {
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeSealedVariantTooWide,
+					sc.Identifier().GetStart().GetLine(), sc.Identifier().GetStart().GetColumn(),
+					fmt.Sprintf("sealed variant %q has %d fields; a variant can have at most %d", vi.name, n, transpiler.MaxGoResultValues),
+					"group related fields into a struct and give the variant a field of that type")
 			}
 		}
 		variants = append(variants, vi)

@@ -33,6 +33,13 @@ sealed type Cell {
     case Slot(Pos Tuple[bool, Option[int]])
 }
 
+struct Point(X int, Y int)
+
+sealed type Mark {
+    case At(P Point)
+    case Nowhere()
+}
+
 val Zero = 0
 `
 	cases := []struct {
@@ -131,6 +138,17 @@ val Zero = 0
 			subject:     "Cell",
 			arms:        "case Slot((true, _)) => 1\n    case Slot((_, None())) => 2",
 			wantMissing: "Slot(...)",
+		},
+		{
+			name:    "struct field read through its fields",
+			subject: "Mark",
+			arms:    "case At(Point(_, y)) => y\n    case Nowhere() => 0",
+		},
+		{
+			name:        "struct field with a refutable field",
+			subject:     "Mark",
+			arms:        "case At(Point(0, _)) => 0\n    case Nowhere() => 1",
+			wantMissing: "At(...)",
 		},
 		{
 			name:    "guarded case backed by an unguarded one",
