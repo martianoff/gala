@@ -9,8 +9,9 @@ fires when one is malformed:
 - a positional sub-pattern follows a named one;
 - there are more positional sub-patterns than fields;
 - what the pattern matches has no fields to name: an extractor with its own
-  `Unapply`. (An opaque-type pattern takes one sub-pattern and reports a named
-  one itself.)
+  `Unapply`, or a sequence such as `Array`, whose pattern matches elements.
+  (An opaque-type pattern takes one sub-pattern and reports a named one
+  itself.)
 
 **Minimal repro.**
 

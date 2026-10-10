@@ -204,6 +204,14 @@ func casePatternHints(line string, lineNum int, richAST *transpiler.RichAST) []l
 	parts := strings.Split(bindings, ",")
 	for i, binding := range parts {
 		binding = strings.TrimSpace(binding)
+		// A named sub-pattern `Field = x` binds x to the field of that name.
+		if field, sub, named := strings.Cut(binding, "="); named {
+			i = slices.Index(variant.FieldNames, strings.TrimSpace(field))
+			binding = strings.TrimSpace(sub)
+			if i < 0 {
+				continue
+			}
+		}
 		if binding == "" || binding == "_" || strings.Contains(binding, " ") || isStablePatternName(binding, richAST) {
 			continue
 		}

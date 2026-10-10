@@ -212,14 +212,12 @@ func (c *coverage) sealedConstructors(typ transpiler.Type, nested bool) []covCto
 		args = gen.Params
 	}
 	if !meta.IsSealed {
-		if !nested || meta.IsOpaque || len(meta.FieldNames) == 0 {
+		names := c.t.structPatternFields(typ.BaseName())
+		if !nested || names == nil {
 			return nil
 		}
-		if _, _, hasUnapply := c.t.userDefinedMethodFlags(typ.BaseName()); hasUnapply {
-			return nil
-		}
-		fields := make([]transpiler.Type, len(meta.FieldNames))
-		for i, f := range meta.FieldNames {
+		fields := make([]transpiler.Type, len(names))
+		for i, f := range names {
 			fields[i] = c.t.substituteConcreteTypes(meta.Fields[f], meta.TypeParams, args)
 		}
 		return []covCtor{{name: stripPackagePrefix(typ.BaseName()), fields: fields}}

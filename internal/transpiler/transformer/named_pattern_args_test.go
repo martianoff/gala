@@ -10,11 +10,12 @@ import (
 
 // TestNamedSubPatterns pins `Field = p` in a pattern: it matches p against
 // the field of that name, wherever it is written, and a field left out
-// matches anything. Read by position instead, `Rect(Height = h, Width = _)`
-// bound Width to h. The runtime behaviour is pinned by
+// matches anything. The runtime behaviour is pinned by
 // examples/named_sub_patterns.
 func TestNamedSubPatterns(t *testing.T) {
 	const decls = `package main
+
+import . "martianoff/gala/collection_immutable"
 
 sealed type Shape {
     case Circle(Radius int)
@@ -24,6 +25,10 @@ sealed type Shape {
 struct Point(X int, Y int)
 
 struct Even()
+
+struct Temp(C int)
+
+func (t Temp) Unapply(n int) Option[int] = Some(n)
 
 func (e Even) Unapply(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None[int]()
 `
@@ -74,9 +79,19 @@ func (e Even) Unapply(n int) Option[int] = if (n % 2 == 0) Some(n / 2) else None
 			wantErr: "'Rect' has 2 fields, but this is sub-pattern 3",
 		},
 		{
+			name:    "struct with its own Unapply",
+			fn:      "func f(n int) int = n match {\n    case Temp(C = c) => c\n    case _ => 0\n}",
+			wantErr: "'Temp' cannot be matched by field name: its pattern calls its own Unapply",
+		},
+		{
+			name:    "sequence",
+			fn:      "func f(a Array[int]) int = a match {\n    case Array(length = n) => n\n    case _ => 0\n}",
+			wantErr: "'Array' cannot be matched by field name",
+		},
+		{
 			name:    "extractor with its own Unapply",
 			fn:      "func f(n int) int = n match {\n    case Even(Half = h) => h\n    case _ => 0\n}",
-			wantErr: "'Even' has no fields to match by name",
+			wantErr: "'Even' cannot be matched by field name",
 		},
 	}
 	for _, tc := range cases {

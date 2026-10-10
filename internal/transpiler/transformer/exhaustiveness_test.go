@@ -223,3 +223,24 @@ func main() {
 	require.Contains(t, err.Error(), "missing cases: Rect")
 	require.NotContains(t, err.Error(), "guard")
 }
+
+// TestExhaustivenessSequenceFieldIsRefutable pins that a sequence pattern in a
+// field covers only the sequences of its length: a sequence is a struct, but
+// its pattern matches elements, not its fields.
+func TestExhaustivenessSequenceFieldIsRefutable(t *testing.T) {
+	src := `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func f(o Option[Array[int]]) int = o match {
+    case Some(Array(x, y)) => x + y
+    case None()            => 0
+}
+
+func main() {
+    Println(f(None[Array[int]]()))
+}`
+	_, err := transpileBareVariant(t, src)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing cases: Some(...)")
+}

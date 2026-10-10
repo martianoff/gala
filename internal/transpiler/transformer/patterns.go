@@ -1970,6 +1970,9 @@ func (t *galaASTTransformer) tryBindingExtractorPattern(
 			fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
 				b, varTypeName, returnType.String()))
 	}
+	if i := firstNamedArg(argList); i >= 0 {
+		return nil, nil, true, noFieldNamesError(argList, i, b.String(), "it is an extractor whose result has no field names")
+	}
 	expr, stmts, err := t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, objExpr, argList, matchedType)
 	return expr, stmts, true, err
 }

@@ -1623,7 +1623,7 @@ func main() {
 }
 ```
 
-A field left out counts as `_` for exhaustiveness, so `Circle(Radius = r)` and `Rect(Height = h)` cover `Shape`. Naming a field that does not exist, matching a field twice, writing a positional sub-pattern after a named one, or naming fields of an extractor with its own `Unapply` is [GALA-E0073](errors/GALA-E0073.md).
+A field left out counts as `_` for exhaustiveness, so `Circle(Radius = r)` and `Rect(Height = h)` cover `Shape`. Naming a field that does not exist, matching a field twice, writing a positional sub-pattern after a named one, or naming fields of an extractor with its own `Unapply` or of a sequence is [GALA-E0073](errors/GALA-E0073.md).
 
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.
