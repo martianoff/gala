@@ -705,14 +705,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "match expression must have at least one case")
 	}
 
-	// Exhaustiveness of a match over a sealed type or bool (see coverageOf)
+	// A match without a default must cover every value: exhaustively over a
+	// sealed type or bool (see coverageOf), or it needs one.
 	{
-		ccs := make([]*grammar.CaseClauseContext, len(caseClauses))
-		for i, cc := range caseClauses {
-			ccs[i] = cc.(*grammar.CaseClauseContext)
-		}
-		isSealed, isExhaustive, missing, guardedMissing := t.coverageOf(matchedType, ccs)
-
 		// An unguarded binding (`case n =>`) already set foundDefault above.
 		hasDefault := foundDefault
 
@@ -727,6 +722,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 
 		if !hasDefault {
+			ccs := make([]*grammar.CaseClauseContext, len(caseClauses))
+			for i, cc := range caseClauses {
+				ccs[i] = cc.(*grammar.CaseClauseContext)
+			}
+			enumerable, isExhaustive, missing, guardedMissing := t.coverageOf(matchedType, ccs)
 			// Both diagnoses below are about the match as a whole, so they
 			// anchor on the first case clause (the match keyword itself sits
 			// after the subject and reads worse in the framed snippet).
@@ -735,7 +735,8 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 				cc := caseClauses[0].(*grammar.CaseClauseContext)
 				line, col = cc.GetStart().GetLine(), cc.GetStart().GetColumn()
 			}
-			if isSealed && !isExhaustive {
+			switch {
+			case enumerable && !isExhaustive:
 				hint := "add the missing variant cases, or add a `case _ => ...` default to cover them"
 				if guardedMissing {
 					hint += "; a case with an `if` guard does not count, since its guard may be false"
@@ -745,10 +746,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					line, col,
 					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
 					hint)
-			} else if isSealed && isExhaustive {
-				// Exhaustive sealed match — generate synthetic panic("unreachable") default
+			case enumerable:
+				// Exhaustive: the if-chain ends in an unreachable panic.
 				defaultBody = unreachableDefaultBody()
-			} else if !isSealed {
+			default:
 				// The remediation lives in the hint only — repeating
 				// `case _ => ...` in the message duplicated what the
 				// renderer already prints as the caret annotation and the
@@ -760,7 +761,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					"add `case _ => ...`")
 			}
 		}
-		// When foundDefault && isSealed && isExhaustive: unreachable default is harmless, allow it
 	}
 
 	// Statement-position match with a user-written `return X` inside an arm

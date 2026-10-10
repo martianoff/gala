@@ -607,6 +607,14 @@ gala_exec_test(
     expected = "generic_sealed_exhaustive.out",
 )
 
+# A sealed variant at the 10-field limit (GALA-E0072) constructs and matches
+# by position, by name, and nested.
+gala_exec_test(
+    name = "sealed_variant_max_width",
+    src = "sealed_variant_max_width.gala",
+    expected = "sealed_variant_max_width.out",
+)
+
 # A bare identifier naming a zero-field variant of the matched type is that
 # variant's pattern, not a binding. This test asserts RUNTIME OUTPUT because the
 # failure mode it guards is silent: a binding matches every value, so the arm

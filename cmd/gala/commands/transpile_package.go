@@ -59,7 +59,7 @@ func init() {
 	transpilePackageCmd.Flags().StringVarP(&tpSearch, "search", "s", ".", "Comma-separated search paths")
 	transpilePackageCmd.Flags().StringVar(&tpGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
 	transpilePackageCmd.Flags().BoolVar(&tpScan, "scan", false, "Discover sibling .gala files by directory scan instead of treating every --inputs entry as a sibling")
-	transpilePackageCmd.Flags().StringVar(&tpStdlib, "stdlib-module", "", "Go module path to write standard library imports under, such as go.gala.fyi/stdlib (default: none, imports stay martianoff/gala)")
+	transpilePackageCmd.Flags().StringVar(&tpStdlib, "stdlib-module", "", stdlibModuleUsage)
 }
 
 func runTranspilePackage(cmd *cobra.Command, args []string) {
@@ -103,7 +103,8 @@ func transpilePackage(inputs, outputs []string, search, goroot string, scan bool
 	if len(inputs) != len(outputs) {
 		return fmt.Errorf("number of inputs (%d) != outputs (%d)", len(inputs), len(outputs))
 	}
-	if err := checkStdlibModule(stdlibModule); err != nil {
+	stdlibRemap, err := stdlibRemapFor(stdlibModule)
+	if err != nil {
 		return err
 	}
 
@@ -158,7 +159,7 @@ func transpilePackage(inputs, outputs []string, search, goroot string, scan bool
 			failed++
 			continue
 		}
-		if goCode, err = remapStdlibImports(inputPath, goCode, stdlibModule); err != nil {
+		if goCode, err = remapStdlibImports(inputPath, goCode, stdlibRemap); err != nil {
 			fmt.Fprintf(os.Stderr, "Error transpiling %s: %v\n", inputPath, err)
 			failed++
 			continue

@@ -1,0 +1,38 @@
+package main
+
+// A sealed variant can have up to 10 fields, the widest std tuple its
+// extractor returns. Every field is matched by position, by name, and inside a
+// nested pattern.
+
+sealed type Row {
+    case Wide(A int, B int, C int, D int, E int, F int, G int, H int, I int, J string)
+    case Narrow(Label string)
+}
+
+func sum(r Row) int = r match {
+    case Wide(a, b, c, d, e, f, g, h, i, _) => a + b + c + d + e + f + g + h + i
+    case Narrow(_) => 0
+}
+
+func label(r Row) string = r match {
+    case Wide(J = j) => j
+    case Narrow(l) => l
+}
+
+func describe(r Option[Row]) string = r match {
+    case Some(Wide(1, _, _, _, _, _, _, _, _, j)) => s"wide from one: $j"
+    case Some(Wide(_, _, _, _, _, _, _, _, _, j)) => s"wide: $j"
+    case Some(Narrow(l)) => s"narrow: $l"
+    case None() => "none"
+}
+
+func main() {
+    val w = Wide(1, 2, 3, 4, 5, 6, 7, 8, 9, "ten")
+    Println(sum(w))
+    Println(label(w))
+    Println(label(Narrow("n")))
+    Println(describe(Some(w)))
+    Println(describe(Some(w.Copy(A = 0))))
+    Println(describe(Some(Narrow("n"))))
+    Println(describe(None()))
+}

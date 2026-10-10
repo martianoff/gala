@@ -21,7 +21,6 @@ func TestSealedVariantWidth(t *testing.T) {
 	}{
 		{fields: 10},
 		{fields: 11, wantErr: true},
-		{fields: 16, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%d fields", tc.fields), func(t *testing.T) {

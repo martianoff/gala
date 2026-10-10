@@ -41,6 +41,12 @@ sealed type Mark {
 }
 
 val Zero = 0
+
+type Flag bool
+type AnyShape Shape
+type Scored Tuple[int, bool]
+
+struct Switches(On bool, Off bool)
 `
 	cases := []struct {
 		name    string
@@ -149,6 +155,38 @@ val Zero = 0
 			subject:     "Mark",
 			arms:        "case At(Point(0, _)) => 0\n    case Nowhere() => 1",
 			wantMissing: "At(...)",
+		},
+		{
+			name:    "alias of a sealed type",
+			subject: "AnyShape",
+			arms:    "case Circle(_) => 1\n    case Rect(_, _) => 2",
+		},
+		{
+			name:        "alias of a sealed type left partial",
+			subject:     "AnyShape",
+			arms:        "case Circle(_) => 1",
+			wantMissing: "Rect",
+		},
+		{
+			name:    "alias of bool",
+			subject: "Option[Flag]",
+			arms:    "case Some(true) => 1\n    case Some(false) => 2\n    case None() => 3",
+		},
+		{
+			name:    "alias of a tuple",
+			subject: "Option[Scored]",
+			arms:    "case Some((_, true)) => 1\n    case Some((_, false)) => 2\n    case None() => 3",
+		},
+		{
+			name:    "struct fields held as Immutable",
+			subject: "Option[Switches]",
+			arms:    "case Some(Switches(true, _)) => 1\n    case Some(Switches(false, _)) => 2\n    case None() => 3",
+		},
+		{
+			name:        "struct fields held as Immutable left partial",
+			subject:     "Option[Switches]",
+			arms:        "case Some(Switches(true, _)) => 1\n    case None() => 3",
+			wantMissing: "Some(...)",
 		},
 		{
 			name:    "guarded case backed by an unguarded one",

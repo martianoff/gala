@@ -69,13 +69,11 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 				})
 			}
 		}
-		if n := len(vi.fields); n >= 2 {
-			if _, ok := transpiler.TupleArityName(n); !ok {
-				return nil, galaerr.NewCodedSemanticError(galaerr.CodeSealedVariantTooWide,
-					sc.Identifier().GetStart().GetLine(), sc.Identifier().GetStart().GetColumn(),
-					fmt.Sprintf("sealed variant %q has %d fields; a variant can have at most %d", vi.name, n, transpiler.MaxGoResultValues),
-					"group related fields into a struct and give the variant a field of that type")
-			}
+		if n := len(vi.fields); n > transpiler.MaxTupleArity {
+			return nil, galaerr.NewCodedSemanticError(galaerr.CodeSealedVariantTooWide,
+				sc.Identifier().GetStart().GetLine(), sc.Identifier().GetStart().GetColumn(),
+				fmt.Sprintf("sealed variant %q has %d fields; a variant can have at most %d", vi.name, n, transpiler.MaxTupleArity),
+				"group related fields into a struct and give the variant a field of that type")
 		}
 		variants = append(variants, vi)
 	}

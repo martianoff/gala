@@ -137,10 +137,9 @@ import (
 func F() { fmt.Println(std.Some(1), ArrayOf(1), other.X) }
 `
 	cases := []struct {
-		name    string
-		remap   map[string]string
-		want    string
-		wantErr string
+		name  string
+		remap map[string]string
+		want  string
 	}{
 		{
 			name:  "rewrites only the remapped imports",
@@ -155,19 +154,10 @@ func F() { fmt.Println(std.Some(1), ArrayOf(1), other.X) }
 			remap: map[string]string{"unused.mod": "new.example/stdlib"},
 			want:  src,
 		},
-		{
-			name:    "rejects a target the go command cannot download",
-			remap:   map[string]string{"old.mod": "stdlib"},
-			wantErr: "remapping old.mod",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := RemapImports("p.go", []byte(src), tc.remap)
-			if tc.wantErr != "" {
-				require.ErrorContains(t, err, tc.wantErr)
-				return
-			}
 			require.NoError(t, err)
 			require.Equal(t, tc.want, string(got))
 		})

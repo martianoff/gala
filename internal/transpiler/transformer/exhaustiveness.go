@@ -24,8 +24,9 @@ var covRefutable covCell = grammar.NewEmptyExpressionContext()
 
 // covCtor is one constructor of an enumerable type and its field types.
 type covCtor struct {
-	name   string
-	fields []transpiler.Type
+	name       string
+	fields     []transpiler.Type
+	structural bool // a struct's single constructor, not a variant
 }
 
 // tupleCtorName names the single constructor of a tuple type.
@@ -77,6 +78,7 @@ func (t *galaASTTransformer) coverageOf(matchedType transpiler.Type, clauses []*
 		for _, row := range guarded {
 			if name, _ := c.constructorOf(row[0], matchedType); name == ctor.name {
 				guardedMissing = true
+				break
 			}
 		}
 	}
@@ -95,7 +97,7 @@ func (c *coverage) covers(rows [][]covCell, types []transpiler.Type) bool {
 		}
 	}
 	head, rest := types[0], types[1:]
-	if ctors, ok := c.constructors(head, true); ok && c.anyConstructor(rows, head) {
+	if ctors, ok := c.constructors(head, true); ok && c.writesEvery(rows, ctors, head) {
 		for _, ctor := range ctors {
 			if !c.covers(c.specialize(rows, ctor, head), append(append([]transpiler.Type{}, ctor.fields...), rest...)) {
 				return false
@@ -103,8 +105,9 @@ func (c *coverage) covers(rows [][]covCell, types []transpiler.Type) bool {
 		}
 		return true
 	}
-	// No constructor is written in this column (or the type has none to
-	// enumerate): only the rows that match anything here can cover it.
+	// A constructor no row names (or a type with none to enumerate) is
+	// matched only by the rows that match anything here, and if those cover
+	// the rest they cover every constructor: so they decide.
 	var def [][]covCell
 	for _, row := range rows {
 		if c.isWildcard(row[0], head) {
@@ -140,12 +143,15 @@ func (c *coverage) expandAlternatives(rows [][]covCell) [][]covCell {
 	return out
 }
 
-// anyConstructor reports whether a row's first pattern names a constructor
-// of typ.
-func (c *coverage) anyConstructor(rows [][]covCell, typ transpiler.Type) bool {
+// writesEvery reports whether, between them, the rows' first patterns name
+// every constructor of typ.
+func (c *coverage) writesEvery(rows [][]covCell, ctors []covCtor, typ transpiler.Type) bool {
+	named := make(map[string]bool, len(ctors))
 	for _, row := range rows {
 		if name, _ := c.constructorOf(row[0], typ); name != "" {
-			return true
+			if named[name] = true; len(named) == len(ctors) {
+				return true
+			}
 		}
 	}
 	return false
@@ -178,31 +184,31 @@ func (c *coverage) constructors(typ transpiler.Type, nested bool) ([]covCtor, bo
 	if typ == nil || typ.IsNil() {
 		return nil, false
 	}
+	typ = c.t.followAliasChain(typ)
 	if bt, ok := typ.(transpiler.BasicType); ok && bt.Name == "bool" {
 		return []covCtor{{name: "true"}, {name: "false"}}, true
 	}
-	if gen, ok := typ.(transpiler.GenericType); ok && gen.Base != nil && isTupleTypeName(stripStdPrefix(gen.Base.BaseName())) {
+	if gen, ok := typ.(transpiler.GenericType); ok && gen.Base != nil && c.t.isTupleTypeName(gen.Base.BaseName()) {
 		if !nested {
 			return nil, false
 		}
 		return []covCtor{{name: tupleCtorName, fields: gen.Params}}, true
 	}
 	key := typ.String()
-	if nested {
-		key = "nested " + key
+	ctors, ok := c.ctors[key]
+	if !ok {
+		ctors = c.typeConstructors(typ)
+		c.ctors[key] = ctors
 	}
-	if ctors, ok := c.ctors[key]; ok {
-		return ctors, ctors != nil
+	if len(ctors) == 1 && ctors[0].structural && !nested {
+		return nil, false // a struct is enumerated only inside another pattern
 	}
-	ctors := c.sealedConstructors(typ, nested)
-	c.ctors[key] = ctors
 	return ctors, ctors != nil
 }
 
-// sealedConstructors returns the variants of the sealed type typ, or, when
-// nested is set, the one constructor of a struct whose pattern reads its
-// fields (one without a hand-written Unapply), or nil.
-func (c *coverage) sealedConstructors(typ transpiler.Type, nested bool) []covCtor {
+// typeConstructors returns the variants of the sealed type typ, or the one constructor of a struct whose pattern reads its
+// fields (see structPatternFields), or nil.
+func (c *coverage) typeConstructors(typ transpiler.Type) []covCtor {
 	meta := c.t.getTypeMeta(typ.BaseName())
 	if meta == nil {
 		return nil
@@ -213,14 +219,16 @@ func (c *coverage) sealedConstructors(typ transpiler.Type, nested bool) []covCto
 	}
 	if !meta.IsSealed {
 		names := c.t.structPatternFields(typ.BaseName())
-		if !nested || names == nil {
+		if names == nil {
 			return nil
 		}
 		fields := make([]transpiler.Type, len(names))
 		for i, f := range names {
-			fields[i] = c.t.substituteConcreteTypes(meta.Fields[f], meta.TypeParams, args)
+			// A field read through the pattern is its value, not the
+			// Immutable that holds it.
+			fields[i] = c.t.substituteConcreteTypes(unwrapGalaType(meta.Fields[f]), meta.TypeParams, args)
 		}
-		return []covCtor{{name: stripPackagePrefix(typ.BaseName()), fields: fields}}
+		return []covCtor{{name: stripPackagePrefix(typ.BaseName()), fields: fields, structural: true}}
 	}
 	if len(meta.SealedVariants) == 0 {
 		return nil
@@ -245,7 +253,7 @@ func (c *coverage) isWildcard(cell covCell, typ transpiler.Type) bool {
 	case cell == covRefutable:
 		return false
 	}
-	if inner := c.unparen(cell); inner != nil {
+	if inner := c.t.parenthesizedPattern(cell); inner != nil {
 		return c.isWildcard(inner, typ)
 	}
 	if isWildcard(cell.GetText()) {
@@ -267,9 +275,10 @@ func (c *coverage) isWildcard(cell covCell, typ transpiler.Type) bool {
 // the pattern names none: a literal, a stable identifier, an extractor that
 // is not a variant.
 func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []covCell) {
-	if cell == nil || cell == covRefutable {
+	if cell == nil || cell == covRefutable || typ == nil || typ.IsNil() {
 		return "", nil
 	}
+	typ = c.t.followAliasChain(typ)
 	if bt, ok := typ.(transpiler.BasicType); ok && bt.Name == "bool" {
 		if text := cell.GetText(); text == "true" || text == "false" {
 			return text, nil
@@ -287,7 +296,7 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 		}
 		return tupleCtorName, list.AllExpression()
 	}
-	if inner := c.unparen(cell); inner != nil {
+	if inner := c.t.parenthesizedPattern(cell); inner != nil {
 		return c.constructorOf(inner, typ)
 	}
 	if name := patternIdentifier(cell); name != "" {
@@ -355,12 +364,4 @@ func (c *coverage) typedPatternOfType(pat *grammar.TypedPatternContext, typ tran
 	}
 	field := c.t.knownTypeExpr(typ)
 	return field != nil && types.ExprString(written) == types.ExprString(field)
-}
-
-// unparen returns p when cell is exactly `(p)`.
-func (c *coverage) unparen(cell covCell) grammar.IExpressionContext {
-	if list := c.t.parenthesizedList(cell); list != nil && list.GetChildCount() == 1 {
-		return list.Expression(0)
-	}
-	return nil
 }

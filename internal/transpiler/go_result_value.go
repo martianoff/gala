@@ -7,9 +7,14 @@ import (
 	"martianoff/gala/internal/transpiler/registry"
 )
 
-// MaxGoResultValues is the widest Tuple (Tuple10): a Go call returning more
-// values than that has no GALA value.
-const MaxGoResultValues = 10
+// MaxTupleArity is the arity of the widest std tuple, Tuple10: a sealed
+// variant's extractor returns its fields as one tuple, so a variant has at
+// most that many.
+const MaxTupleArity = 10
+
+// MaxGoResultValues is the most values a Go call may return and still have a
+// GALA value, one tuple of them.
+const MaxGoResultValues = MaxTupleArity
 
 // GoResultValue is the one GALA value a Go call returning several results is
 // presented as:
