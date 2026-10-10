@@ -107,6 +107,34 @@ func Export(m Module) ([]File, error) {
 // leaving every other byte (comments, string literals, //line directives)
 // untouched, and rejects imports the exported module cannot satisfy.
 func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
+	return replaceImports(name, src, m.Remap, func(p, newPath string) error {
+		for mp, why := range m.Unsupported {
+			if p == mp || strings.HasPrefix(p, mp+"/") {
+				return fmt.Errorf("%s imports %q: %s", name, p, why)
+			}
+		}
+		if !providedBy(newPath, m) && !required(newPath, m.Requires) && !isGoStdlib(newPath, m.Remap) {
+			return fmt.Errorf("%s imports %q, which the exported module %s does not provide", name, p, m.Path)
+		}
+		return nil
+	})
+}
+
+// RemapImports rewrites the import paths of a Go file through remap, as an
+// export does, leaving every other byte untouched. It checks nothing about
+// where the rewritten imports resolve.
+func RemapImports(name string, src []byte, remap map[string]string) ([]byte, error) {
+	for from, to := range remap {
+		if err := module.CheckPath(to); err != nil {
+			return nil, fmt.Errorf("remapping %s: %w", from, err)
+		}
+	}
+	return replaceImports(name, src, remap, nil)
+}
+
+// replaceImports rewrites each import of src through remap, calling check (if
+// not nil) with every import path and its rewritten form first.
+func replaceImports(name string, src []byte, remap map[string]string, check func(p, newPath string) error) ([]byte, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, name, src, parser.ImportsOnly)
 	if err != nil {
@@ -116,14 +144,11 @@ func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
 	last := 0
 	for _, imp := range f.Imports {
 		p, _ := strconv.Unquote(imp.Path.Value)
-		newPath := remapImport(p, m.Remap)
-		for mp, why := range m.Unsupported {
-			if p == mp || strings.HasPrefix(p, mp+"/") {
-				return nil, fmt.Errorf("%s imports %q: %s", name, p, why)
+		newPath := remapImport(p, remap)
+		if check != nil {
+			if err := check(p, newPath); err != nil {
+				return nil, err
 			}
-		}
-		if !providedBy(newPath, m) && !required(newPath, m.Requires) && !isGoStdlib(newPath, m.Remap) {
-			return nil, fmt.Errorf("%s imports %q, which the exported module %s does not provide", name, p, m.Path)
 		}
 		if newPath == p {
 			continue
@@ -297,6 +322,18 @@ type StdlibOptions struct {
 // library from.
 func StdlibSourceModule() string {
 	return strings.TrimSuffix(stdlib.PackageImportPaths["std"], "/std")
+}
+
+// StdlibRemap maps the import path of every standard library package to
+// the same package under modulePath, for RemapImports. Other packages of the
+// source module are left out.
+func StdlibRemap(modulePath string) map[string]string {
+	source := StdlibSourceModule()
+	remap := make(map[string]string, len(stdlib.PackageImportPaths))
+	for _, p := range stdlib.PackageImportPaths {
+		remap[p] = modulePath + strings.TrimPrefix(p, source)
+	}
+	return remap
 }
 
 // Stdlib exports the standard library embedded in this binary.

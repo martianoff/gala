@@ -22,6 +22,7 @@ var (
 	tpSearch  string
 	tpGoroot  string
 	tpScan    bool
+	tpStdlib  string
 )
 
 var transpilePackageCmd = &cobra.Command{
@@ -45,7 +46,10 @@ Example:
   gala transpile-package --scan \
     --inputs a.gala,b.gala \
     --outputs a.gen.go,b.gen.go \
-    --search /path/to/gala`,
+    --search /path/to/gala
+
+--stdlib-module writes imports of GALA's standard library under another Go
+module path, as gala transpile does.`,
 	Run: runTranspilePackage,
 }
 
@@ -55,6 +59,7 @@ func init() {
 	transpilePackageCmd.Flags().StringVarP(&tpSearch, "search", "s", ".", "Comma-separated search paths")
 	transpilePackageCmd.Flags().StringVar(&tpGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
 	transpilePackageCmd.Flags().BoolVar(&tpScan, "scan", false, "Discover sibling .gala files by directory scan instead of treating every --inputs entry as a sibling")
+	transpilePackageCmd.Flags().StringVar(&tpStdlib, "stdlib-module", "", "Go module path to write standard library imports under, such as go.gala.fyi/stdlib (default: none, imports stay martianoff/gala)")
 }
 
 func runTranspilePackage(cmd *cobra.Command, args []string) {
@@ -73,7 +78,7 @@ func runTranspilePackage(cmd *cobra.Command, args []string) {
 	inputs := strings.Split(tpInputs, ",")
 	outputs := strings.Split(tpOutputs, ",")
 
-	if err := transpilePackage(inputs, outputs, tpSearch, tpGoroot, tpScan); err != nil {
+	if err := transpilePackage(inputs, outputs, tpSearch, tpGoroot, tpScan, tpStdlib); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -91,9 +96,15 @@ func runTranspilePackage(cmd *cobra.Command, args []string) {
 //     not listed in inputs (e.g. reserved names such as retry.gala), holds
 //     for packages named main or test too, and matches gala_bootstrap's
 //     batch mode and the LSP.
-func transpilePackage(inputs, outputs []string, search, goroot string, scan bool) error {
+//
+// A non-empty stdlibModule rewrites the standard library imports of every
+// output (see remapStdlibImports).
+func transpilePackage(inputs, outputs []string, search, goroot string, scan bool, stdlibModule string) error {
 	if len(inputs) != len(outputs) {
 		return fmt.Errorf("number of inputs (%d) != outputs (%d)", len(inputs), len(outputs))
+	}
+	if err := checkStdlibModule(stdlibModule); err != nil {
+		return err
 	}
 
 	if goroot != "" {
@@ -143,6 +154,11 @@ func transpilePackage(inputs, outputs []string, search, goroot string, scan bool
 
 		goCode, err := t.TranspileWithSummary(string(content), inputPath, summary)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error transpiling %s: %v\n", inputPath, err)
+			failed++
+			continue
+		}
+		if goCode, err = remapStdlibImports(inputPath, goCode, stdlibModule); err != nil {
 			fmt.Fprintf(os.Stderr, "Error transpiling %s: %v\n", inputPath, err)
 			failed++
 			continue

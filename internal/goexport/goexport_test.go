@@ -123,6 +123,79 @@ func TestExport_RejectsUnresolvableImports(t *testing.T) {
 	require.ErrorContains(t, export("martianoff/gala/missing"), "does not provide", "remapped into a package the export lacks")
 }
 
+func TestRemapImports(t *testing.T) {
+	src := `package p
+
+import (
+	"fmt"
+	"old.mod/std"
+	. "old.mod/collection"
+	other "elsewhere.example/x"
+)
+
+// Use it: import "old.mod/std"
+func F() { fmt.Println(std.Some(1), ArrayOf(1), other.X) }
+`
+	cases := []struct {
+		name    string
+		remap   map[string]string
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "rewrites only the remapped imports",
+			remap: map[string]string{"old.mod": "new.example/stdlib"},
+			want: strings.NewReplacer(
+				`	"old.mod/std"`, `	"new.example/stdlib/std"`,
+				`. "old.mod/collection"`, `. "new.example/stdlib/collection"`,
+			).Replace(src),
+		},
+		{
+			name:  "leaves a file without remapped imports unchanged",
+			remap: map[string]string{"unused.mod": "new.example/stdlib"},
+			want:  src,
+		},
+		{
+			name:    "rejects a target the go command cannot download",
+			remap:   map[string]string{"old.mod": "stdlib"},
+			wantErr: "remapping old.mod",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := RemapImports("p.go", []byte(src), tc.remap)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(got))
+		})
+	}
+}
+
+func TestStdlibRemap_OnlyStandardLibraryPackages(t *testing.T) {
+	src := `package p
+
+import (
+	"martianoff/gala/collection_immutable"
+	"martianoff/gala/examples/shapes"
+	"martianoff/gala/std"
+)
+
+var _ = collection_immutable.ArrayOf[int]
+var _ = shapes.X
+var _ = std.Some[int]{}
+`
+	got, err := RemapImports("p.go", []byte(src), StdlibRemap("go.gala.fyi/stdlib"))
+	require.NoError(t, err)
+	want := strings.NewReplacer(
+		`"martianoff/gala/collection_immutable"`, `"go.gala.fyi/stdlib/collection_immutable"`,
+		`"martianoff/gala/std"`, `"go.gala.fyi/stdlib/std"`,
+	).Replace(src)
+	require.Equal(t, want, string(got), "a package of the module that is not in the standard library keeps its path")
+}
+
 func TestRemapImport_LongestPrefixWins(t *testing.T) {
 	remap := map[string]string{"a.io/x": "n.io/m", "a.io/x/sub": "o.io/k"}
 	for i := 0; i < 20; i++ {

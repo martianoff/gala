@@ -68,7 +68,7 @@ func main() {
 - [Examples](https://gala.fyi/docs/examples/): feature-by-feature programs
 - [Immutable collections](https://gala.fyi/docs/immutable-collections/) · [Mutable collections](https://gala.fyi/docs/mutable-collections/): the method surface
 - [Go interop](https://gala.fyi/features/go-interop/): calling Go, and where Go types are allowed
-- [Go interop guide](https://gala.fyi/docs/go-interop/): mixing GALA and Go in both directions, mixed packages, building, using GALA from plain Go modules (`go.gala.fyi/stdlib`, `gala export`), gotchas
+- [Go interop guide](https://gala.fyi/docs/go-interop/): mixing GALA and Go in both directions, mixed packages, building, using GALA from plain Go modules (`go.gala.fyi/stdlib`, `gala export`, `gala transpile --stdlib-module`), gotchas
 - [Pattern matching](https://gala.fyi/features/pattern-matching/) · [Sealed types](https://gala.fyi/features/sealed-types/)
 - [For AI agents](https://gala.fyi/for-ai/): why the compiler suits a generate-check-fix loop
 

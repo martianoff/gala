@@ -629,6 +629,8 @@ lines=2 words=4 bytes=19
 - A Go file can add methods to a GALA type, as long as the transpiler does not generate a method of that name. It generates `Copy`, `Equal`, `Unapply`, and for sealed types `String`. For an opaque type, a hand-written `Hash` or `Compare` replaces the generated one.
 - Don't name a hand-written file `x.gen.go` next to an `x.gala`, or `x_test.gen_test.go` next to an `x_test.gala`: `gala build` writes the `.gala` file's output under that name and rejects the clash.
 
+A module built with plain `go build` instead of `gala build` can commit the transpiled files; see [Committing transpiled files to a plain Go module](#committing-transpiled-files-to-a-plain-go-module).
+
 ---
 
 ## Part 4: Building a mixed project
@@ -698,12 +700,23 @@ gala_exec_test(
 
 ## Part 5: Using GALA from a plain Go module
 
-Parts 2 to 4 build Go and GALA together with `gala` or Bazel. A Go module built with plain `go build` cannot do that: the go command does not transpile `.gala` files, and it cannot download GALA's standard library, which GALA code imports as `martianoff/gala/...` (a path whose first element has no dot). Two things close the gap:
+Parts 2 to 4 build Go and GALA together with `gala` or Bazel. A Go module built with plain `go build` cannot do that: the go command does not transpile `.gala` files, and it cannot download GALA's standard library, which GALA code imports as `martianoff/gala/...` (a path whose first element has no dot). Three things close the gap:
 
 - **`go.gala.fyi/stdlib`** is the standard library as an ordinary Go module. Every GALA release publishes it at the same version (GALA `0.87.0` is `v0.87.0`), with its imports rewritten to `go.gala.fyi/stdlib/...` and one `go.mod` with no `replace` directives.
 - **`gala export`** writes your GALA project as an ordinary Go module: its generated and hand-written Go, with standard library imports rewritten to `go.gala.fyi/stdlib`, and a `go.mod` that requires it. Publish that, and Go programs import your library with `go get`.
+- **`gala transpile --stdlib-module`** writes one generated file's standard library imports as `go.gala.fyi/stdlib/...`, for a Go module that commits a few transpiled `.gala` files next to its Go code.
 
 GALA source, `gala build` and Bazel are unchanged: they keep using `martianoff/gala/...`.
+
+Which one fits:
+
+| Situation | Use |
+|---|---|
+| A GALA project built with `gala build` / `gala run` | nothing: its imports already resolve |
+| A Bazel build with rules_gala | nothing (and never `--stdlib-module`) |
+| Go code that wants GALA's collections, `Option` or `Try` | `require go.gala.fyi/stdlib` ([The standard library](#the-standard-library)) |
+| A library written in GALA that Go programs should `go get` | `gala export` ([Exporting a GALA library](#exporting-a-gala-library)) |
+| A Go module that commits the output of a few `.gala` files | `gala transpile --stdlib-module` ([Committing transpiled files](#committing-transpiled-files-to-a-plain-go-module)) |
 
 ### The standard library
 
@@ -810,6 +823,47 @@ replace github.com/martianoff/gala-tui => ../gala-tui-go
 ```
 
 `go mod tidy` then fetches `go.gala.fyi/stdlib` and the library's Go dependencies as usual; only the library itself comes from the export. Commit the export, or script the two commands, so every build of the program gets the same one.
+
+### Committing transpiled files to a plain Go module
+
+Some Go modules hold a few `.gala` files among their Go code and commit the Go that `gala transpile` writes for them, the layout of [Part 3](#part-3-one-package-two-languages) without `gala build`. Everyone else builds the module with plain `go build` and needs no GALA; only whoever edits a `.gala` file runs `gala`. By default the generated file imports `martianoff/gala/...`, which the go command cannot download, so such a file could not use the standard library at all. `--stdlib-module` writes those imports under the published module instead:
+
+```sh
+cd p && gala transpile -i p.gala -o p.go --stdlib-module go.gala.fyi/stdlib
+```
+
+Run it in the package directory with relative paths: the generated file's `//line` comments name the input as given, and committed files should not depend on where they were generated.
+
+With the module's `go.mod` requiring the standard library at the version of that `gala` (`gala version`), `go build` resolves the imports like any other dependency:
+
+```
+module example.com/server
+
+go 1.24
+
+require go.gala.fyi/stdlib v0.87.1
+```
+
+```gala
+package p
+
+import . "martianoff/gala/collection_immutable"
+
+func Names() string = ArrayOf(1, 2, 3).MkString(",")
+```
+
+The generated `p/p.go` then imports `go.gala.fyi/stdlib/std` and `go.gala.fyi/stdlib/collection_immutable`, and Go code in the module calls `p.Names()` as usual. A `//go:generate` line next to the `.gala` file keeps the command in one place:
+
+```go
+//go:generate gala transpile -i p.gala -o p.go --stdlib-module go.gala.fyi/stdlib
+```
+
+- **The version is pinned to the compiler.** Generated code calls the standard library's own helpers, so `require` exactly the version of the `gala` that wrote the files. To upgrade, regenerate every file with the new `gala` and change the `require` in the same commit.
+- **Every transpiled file in the module uses the flag.** A file written without it imports `martianoff/gala/std`, a different package from `go.gala.fyi/stdlib/std` (see [The standard library](#the-standard-library)), so its `Option` is not the other files' `Option`.
+- **Only for committed output.** `gala build` and Bazel resolve `martianoff/gala/...` themselves, and `--stdlib-module` cannot be combined with `gala transpile --run`.
+- **Only the standard library is remapped.** A `.gala` file that imports another GALA module, such as gala-tui, still needs that module as Go, for example through [`gala export`](#exporting-a-gala-library).
+- **`gala transpile` can leave a `.gala/` cache directory** in the module; add `.gala/` to `.gitignore`.
+- **`gala transpile-package`** takes the same flag for several files of one package.
 
 ### Trying an unpublished build
 
