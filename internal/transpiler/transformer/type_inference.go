@@ -1240,7 +1240,7 @@ func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type)
 	if gen, ok := recvType.(transpiler.GenericType); ok {
 		var args []string
 		for _, param := range gen.Params {
-			args = append(args, t.typeArgString(param))
+			args = append(args, param.String())
 		}
 		return args
 	}
@@ -1323,15 +1323,11 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 
 // substituteTranspilerTypeParams substitutes type parameters in a type with their concrete values.
 // Delegates to substituteInType after converting the string-keyed map to a Type-keyed map.
-func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type, subst map[string]string) transpiler.Type {
+func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type, subst typeSubstMap) transpiler.Type {
 	if typ == nil || typ.IsNil() || len(subst) == 0 {
 		return typ
 	}
-	paramMap := make(map[string]transpiler.Type, len(subst))
-	for k, v := range subst {
-		paramMap[k] = t.parseTypeArg(v)
-	}
-	return t.substituteInType(typ, paramMap)
+	return t.substituteInType(typ, subst)
 }
 
 // getGoFuncReturnTypeForCall resolves a Go function's return type AT A CALL SITE

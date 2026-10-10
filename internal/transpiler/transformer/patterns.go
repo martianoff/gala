@@ -2002,10 +2002,10 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	returnType := unapplyMeta.ReturnType
 	// Unwrap Immutable[X] to get X (vals are wrapped)
 	if genType, ok := unwrapGalaType(b.typ).(transpiler.GenericType); ok && len(varTypeMeta.TypeParams) > 0 {
-		typeSubst := make(map[string]string)
+		typeSubst := make(typeSubstMap)
 		for i, tp := range varTypeMeta.TypeParams {
 			if i < len(genType.Params) {
-				typeSubst[tp] = t.typeArgString(genType.Params[i])
+				typeSubst[tp] = genType.Params[i]
 			}
 		}
 		if len(typeSubst) > 0 {

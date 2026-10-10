@@ -878,7 +878,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ownImportPath = a.resolver.PackageImportPath(filePath)
 		}
 		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
-		goInfo, ownTypes := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
+		goInfo, ownTypes, goImports := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
 		if !goInfo.IsEmpty() {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
@@ -886,7 +886,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			richAST.GoTypeInfo.Merge(goInfo)
 			richAST.OwnGoTypes = ownTypes
 		}
-		a.loadOwnGoGalaImports(dirPath, pkgName, richAST.OwnImportPath, richAST, mergeVisited)
+		for _, path := range goImports {
+			if path != richAST.OwnImportPath {
+				a.loadGalaMetadata(path, richAST)
+			}
+		}
 	}
 
 	logPhase("analyze-local-go-files", phaseStart)
@@ -2560,36 +2564,18 @@ func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, 
 	}
 }
 
-// loadOwnGoGalaImports loads the GALA packages the hand-written .go files of
-// the package named pkgName in dirPath import (see loadGalaImport). A type of
-// such a package reaches the GALA code through those files' signatures — a
-// map of its structs, say — and its fields and methods must be known even
-// when no .gala file imports it.
-func (a *galaAnalyzer) loadOwnGoGalaImports(dirPath, pkgName, ownImportPath string, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return
-	}
-	fset := token.NewFileSet()
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		fullPath := filepath.Join(dirPath, name)
-		if genheader.StaleFile(fullPath) {
-			continue
-		}
-		f, err := goparser.ParseFile(fset, fullPath, nil, goparser.ImportsOnly)
-		if err != nil || f.Name == nil || f.Name.Name != pkgName {
-			continue
-		}
-		for _, imp := range f.Imports {
-			if path := strings.Trim(imp.Path.Value, `"`); path != ownImportPath {
-				a.loadGalaImport(path, richAST, mergeVisited)
-			}
-		}
-	}
+// loadGalaMetadata merges the metadata of the GALA package at path, when path
+// names one, into richAST: the types and functions a type of that package
+// reaching the GALA code through the package's own hand-written Go needs —
+// a map of its structs, say. Unlike loadGalaImport it does not make the
+// package an import of the file, so it claims no package name a Go import
+// of the file may hold; the file imports it only by emitting one of its types,
+// which carry their import path.
+func (a *galaAnalyzer) loadGalaMetadata(path string, richAST *transpiler.RichAST) {
+	scratch := &transpiler.RichAST{Packages: make(map[string]string)}
+	a.loadGalaImport(path, scratch, make(map[string]bool))
+	scratch.Packages = nil
+	richAST.Merge(scratch)
 }
 
 // findKnownTypePackage checks if a type name is already known in richAST.Types

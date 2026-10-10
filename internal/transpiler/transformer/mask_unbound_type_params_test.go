@@ -17,17 +17,16 @@ func TestMaskUnboundMethodTypeParams(t *testing.T) {
 	cases := []struct {
 		name   string
 		typ    transpiler.Type
-		subst  map[string]string
+		subst  typeSubstMap
 		active []string
 		want   transpiler.Type
 	}{
 		{"unbound parameter type", transpiler.FuncType{Params: []transpiler.Type{tParam}}, nil, nil, transpiler.NilType{}},
 		{"unbound result only", transpiler.FuncType{Params: []transpiler.Type{intT}, Results: []transpiler.Type{tParam}}, nil, nil,
 			transpiler.FuncType{Params: []transpiler.Type{intT}, Results: []transpiler.Type{transpiler.NilType{}}}},
-		{"bound: a user type called T", transpiler.FuncType{Params: []transpiler.Type{tParam}}, map[string]string{"T": "T"}, nil,
+		{"bound: a user type called T", transpiler.FuncType{Params: []transpiler.Type{tParam}}, typeSubstMap{"T": tParam}, nil,
 			transpiler.FuncType{Params: []transpiler.Type{tParam}}},
-		{"in scope", transpiler.FuncType{Params: []transpiler.Type{tParam}}, nil, []string{"T"},
-			transpiler.FuncType{Params: []transpiler.Type{tParam}}},
+		{"unbound, though the caller has a T", transpiler.FuncType{Params: []transpiler.Type{tParam}}, nil, []string{"T"}, transpiler.NilType{}},
 		{"concrete", transpiler.FuncType{Params: []transpiler.Type{intT}}, nil, nil, transpiler.FuncType{Params: []transpiler.Type{intT}}},
 	}
 	for _, tc := range cases {

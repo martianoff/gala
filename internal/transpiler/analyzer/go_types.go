@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -475,6 +476,7 @@ var goFilesCache = struct {
 type goFilesResult struct {
 	info     *transpiler.GoTypeInfo
 	ownTypes map[string]bool
+	imports  []string // the import paths of the files that took part
 }
 
 // AnalyzeGoFiles parses and type-checks local .go files and extracts type info.
@@ -502,10 +504,10 @@ func AnalyzeGoFiles(dirPath, importPath string) *transpiler.GoTypeInfo {
 // package being compiled, named pkgName. Only the files of that package take
 // part — the package clause must name pkgName — and the package's unexported
 // declarations are recorded too. It also returns the bare names of the types
-// those files declare.
-func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) (*transpiler.GoTypeInfo, map[string]bool) {
+// those files declare, and the paths they import.
+func AnalyzeOwnGoFiles(dirPath, importPath, pkgName string) (*transpiler.GoTypeInfo, map[string]bool, []string) {
 	r := analyzeGoFilesMemo(dirPath, importPath, pkgName)
-	return r.info, r.ownTypes
+	return r.info, r.ownTypes, r.imports
 }
 
 func analyzeGoFilesMemo(dirPath, importPath, pkgName string) goFilesResult {
@@ -565,6 +567,11 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 			continue
 		}
 		files = append(files, f)
+		for _, imp := range f.Imports {
+			if p := strings.Trim(imp.Path.Value, `"`); !slices.Contains(result.imports, p) {
+				result.imports = append(result.imports, p)
+			}
+		}
 	}
 
 	if len(files) == 0 {
@@ -862,6 +869,9 @@ func repairGenDecl(d *ast.GenDecl, imports map[string]string, pkgName string, in
 				continue
 			}
 			for i, name := range sp.Names {
+				if name.Name == "_" {
+					continue
+				}
 				key := pkgName + "." + name.Name
 				// A variable go/types could not type at all is not recorded;
 				// it is added the way extraction would have (own files record

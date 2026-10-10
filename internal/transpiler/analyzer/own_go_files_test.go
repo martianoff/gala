@@ -33,7 +33,7 @@ func TestAnalyzeOwnGoFiles(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644))
 	}
 
-	info, ownTypes := analyzer.AnalyzeOwnGoFiles(dir, "example.com/list", "list")
+	info, ownTypes, _ := analyzer.AnalyzeOwnGoFiles(dir, "example.com/list", "list")
 	assert.Equal(t, map[string]bool{"node": true, "LinuxOnly": true}, ownTypes,
 		"only the types this package's own files declare, unexported ones included")
 	assert.NotNil(t, info.GetFuncSignature("list.Front"))
