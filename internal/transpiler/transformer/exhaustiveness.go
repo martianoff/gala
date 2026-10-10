@@ -184,6 +184,7 @@ func (c *coverage) constructors(typ transpiler.Type, nested bool) ([]covCtor, bo
 	if typ == nil || typ.IsNil() {
 		return nil, false
 	}
+	typ = c.t.followAliasChain(typ)
 	if bt, ok := typ.(transpiler.BasicType); ok && bt.Name == "bool" {
 		return []covCtor{{name: "true"}, {name: "false"}}, true
 	}
@@ -205,11 +206,9 @@ func (c *coverage) constructors(typ transpiler.Type, nested bool) ([]covCtor, bo
 	return ctors, ctors != nil
 }
 
-// typeConstructors returns the variants of the sealed type typ (through any
-// alias of it), or the one constructor of a struct whose pattern reads its
+// typeConstructors returns the variants of the sealed type typ, or the one constructor of a struct whose pattern reads its
 // fields (see structPatternFields), or nil.
 func (c *coverage) typeConstructors(typ transpiler.Type) []covCtor {
-	typ = c.t.followAliasChain(typ)
 	meta := c.t.getTypeMeta(typ.BaseName())
 	if meta == nil {
 		return nil
@@ -276,9 +275,10 @@ func (c *coverage) isWildcard(cell covCell, typ transpiler.Type) bool {
 // the pattern names none: a literal, a stable identifier, an extractor that
 // is not a variant.
 func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []covCell) {
-	if cell == nil || cell == covRefutable {
+	if cell == nil || cell == covRefutable || typ == nil || typ.IsNil() {
 		return "", nil
 	}
+	typ = c.t.followAliasChain(typ)
 	if bt, ok := typ.(transpiler.BasicType); ok && bt.Name == "bool" {
 		if text := cell.GetText(); text == "true" || text == "false" {
 			return text, nil

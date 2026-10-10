@@ -122,7 +122,9 @@ func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
 
 // RemapImports rewrites the import paths of a Go file through remap, as an
 // export does, leaving every other byte untouched. It checks nothing about
-// where the rewritten imports resolve.
+// where the rewritten imports resolve: a caller validates the targets once
+// (module.CheckPath), as Export and the --stdlib-module flag do, rather than
+// on every file.
 func RemapImports(name string, src []byte, remap map[string]string) ([]byte, error) {
 	return replaceImports(name, src, remap, nil)
 }
