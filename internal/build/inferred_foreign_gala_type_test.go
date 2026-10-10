@@ -2,6 +2,7 @@ package build
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,7 +82,19 @@ func main() {
 			assert.Contains(t, mainGen, "(c sub.Command)", "the lambda parameter must be the inferred struct:\n%s", mainGen)
 			assert.NotContains(t, mainGen, "(c T)", "a type parameter must not reach the generated Go:\n%s", mainGen)
 			assert.NotContains(t, mainGen, "sub.Command) any", "the field must keep its type:\n%s", mainGen)
-			assert.Equal(t, "run", buildAndRun(t, projectDir))
+
+			// The same Builder builds it: a second one could run go build
+			// against the GOROOT this one pinned.
+			binPath, buildErr := b.Build("")
+			if buildErr != nil {
+				if isToolchainEnvError(buildErr.Error()) {
+					t.Skipf("skipping end-to-end check: Go toolchain unavailable/mismatched in this environment: %v", buildErr)
+				}
+				t.Fatalf("gala build failed: %v", buildErr)
+			}
+			out, runErr := runBuiltBinary(binPath)
+			require.NoError(t, runErr, "built binary failed to run; output:\n%s", out)
+			assert.Equal(t, "run", strings.TrimSpace(out))
 		})
 	}
 }
