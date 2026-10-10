@@ -305,7 +305,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// defaults spell are bound by the call's explicit type
 				// arguments (`describe[int]()`) and, for the rest, by the
 				// slot (`val p Option[int] = pick()`).
-				typeSubst := (t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
+				typeSubst := maps.Clone(t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
 				if explicit := explicitTypeArgSubst(funcMeta.TypeParams, t.extractFuncCallTypeArgs(base)); explicit != nil {
 					if typeSubst == nil {
 						typeSubst = explicit
@@ -4725,7 +4725,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
 func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset typeSubstMap) (subst typeSubstMap, placeholders bool) {
-	inferred := (t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames)))
+	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames))
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
@@ -4826,7 +4826,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	argListCtx grammar.IArgumentListContext,
 	fromSlot map[string]transpiler.Type,
 ) typeSubstMap {
-	explicit := (fromSlot)
+	explicit := maps.Clone(fromSlot)
 	if explicit == nil {
 		explicit = typeSubstMap{}
 	}
@@ -4849,7 +4849,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	}
 	// A partial explicit list binds its leading type parameters; the
 	// arguments determine the rest.
-	inferred := (t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
+	inferred := t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args)
 	if inferred == nil {
 		return explicit
 	}

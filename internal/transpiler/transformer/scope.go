@@ -129,26 +129,33 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 }
 
 // ownGoValueType returns the type of a package-level variable or constant
-// this package's hand-written Go declares, or nil.
+// this package's hand-written Go declares, or nil. By the package's import
+// path the key is exact; by its name it may be a Go package of the same name
+// the file imports, so then it misses.
 func (t *galaASTTransformer) ownGoValueType(name string) transpiler.Type {
 	if t.goTypeInfo == nil || t.packageName == "" || name == "_" {
 		return nil
 	}
-	keys := []string{t.packageName + "." + name}
-	if t.richAST != nil && t.richAST.OwnImportPath != "" {
-		// By the package's import path the key is exact: no other package of
-		// the same name shares it.
-		keys = []string{t.richAST.OwnImportPath + "." + name, keys[0]}
-	}
-	for _, key := range keys {
+	lookup := func(key string) transpiler.Type {
 		if typ, ok := t.goTypeInfo.Variables[key]; ok && typ != nil && !typ.IsNil() {
 			return typ
 		}
 		if typ, ok := t.goTypeInfo.Constants[key]; ok && typ != nil && !typ.IsNil() {
 			return typ
 		}
+		return nil
 	}
-	return nil
+	if t.richAST != nil && t.richAST.OwnImportPath != "" {
+		if typ := lookup(t.richAST.OwnImportPath + "." + name); typ != nil {
+			return typ
+		}
+	}
+	for _, entry := range t.importManager.All() {
+		if entry.PkgName == t.packageName && !t.galaPkgPaths[entry.Path] {
+			return nil
+		}
+	}
+	return lookup(t.packageName + "." + name)
 }
 
 // lookupTypeName resolves name in the TYPE namespace only: a (possibly

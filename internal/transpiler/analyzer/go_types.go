@@ -794,46 +794,20 @@ func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpi
 }
 
 // recordedSignature returns the signature info records for fd: a function's,
-// or a method's on its receiver type (a Go type, or a GALA type its package's
-// hand-written Go adds the method to).
+// or a method's on its receiver type. (Methods hand-written Go adds to a GALA
+// type are repaired by extractMethodsOnForeignTypes.)
 func recordedSignature(info *transpiler.GoTypeInfo, pkgName string, fd *ast.FuncDecl) *transpiler.GoFuncSignature {
 	if fd.Recv == nil {
 		return info.Functions[pkgName+"."+fd.Name.Name]
 	}
-	recv := receiverTypeName(fd)
-	if recv == "" {
+	if len(fd.Recv.List) != 1 {
 		return nil
 	}
-	for _, td := range []*transpiler.GoTypeData{info.Types[pkgName+"."+recv], info.GalaTypeMethods[pkgName+"."+recv]} {
-		if td != nil {
-			if sig := td.Methods[fd.Name.Name]; sig != nil {
-				return sig
-			}
-		}
+	recv, _ := receiverBaseName(fd.Recv.List[0].Type)
+	if td := info.Types[pkgName+"."+recv]; recv != "" && td != nil {
+		return td.Methods[fd.Name.Name]
 	}
 	return nil
-}
-
-// receiverTypeName returns the name of fd's receiver type, without a pointer
-// or type arguments, or "".
-func receiverTypeName(fd *ast.FuncDecl) string {
-	if len(fd.Recv.List) != 1 {
-		return ""
-	}
-	recv := fd.Recv.List[0].Type
-	if star, ok := recv.(*ast.StarExpr); ok {
-		recv = star.X
-	}
-	switch e := recv.(type) {
-	case *ast.IndexExpr:
-		recv = e.X
-	case *ast.IndexListExpr:
-		recv = e.X
-	}
-	if id, ok := recv.(*ast.Ident); ok {
-		return id.Name
-	}
-	return ""
 }
 
 // repairGenDecl recovers the struct field types and the declared types of
