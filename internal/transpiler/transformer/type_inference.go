@@ -1240,7 +1240,7 @@ func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type)
 	if gen, ok := recvType.(transpiler.GenericType); ok {
 		var args []string
 		for _, param := range gen.Params {
-			args = append(args, param.String())
+			args = append(args, t.typeArgString(param))
 		}
 		return args
 	}
@@ -1329,7 +1329,7 @@ func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type,
 	}
 	paramMap := make(map[string]transpiler.Type, len(subst))
 	for k, v := range subst {
-		paramMap[k] = transpiler.ParseType(v)
+		paramMap[k] = t.parseTypeArg(v)
 	}
 	return t.substituteInType(typ, paramMap)
 }

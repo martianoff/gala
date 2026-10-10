@@ -19,6 +19,7 @@ type callContext struct {
 	applyTypeParams []string                     // the companion type's own type-param names (for masking unresolved Apply param types)
 	typeSubst       map[string]string            // generic type param substitutions (type param name -> concrete type string)
 	typeSubstTypes  map[string]transpiler.Type   // ImportPath-preserving overrides for typeSubst (receiver type args); wins over the string form so a foreign type whose package name collides with the current package stays qualified
+	recvTypeParams  []string                     // the generic receiver type's own type-param names, for masking any left unbound
 
 	goParamTypes            []transpiler.Type // Go type info fallback param types (for Go-defined functions)
 	structFields            []transpiler.Type // struct construction fallback field types
@@ -162,14 +163,14 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 			if len(ctx.typeSubstTypes) > 0 {
 				paramMap := make(map[string]transpiler.Type, len(ctx.typeSubst))
 				for k, v := range ctx.typeSubst {
-					paramMap[k] = transpiler.ParseType(v)
+					paramMap[k] = t.parseTypeArg(v)
 				}
 				for k, v := range ctx.typeSubstTypes {
 					paramMap[k] = v
 				}
-				return t.substituteInType(ctx.methodMeta.ParamTypes[argIdx], paramMap)
+				return t.maskUnboundMethodTypeParams(t.substituteInType(ctx.methodMeta.ParamTypes[argIdx], paramMap), ctx)
 			}
-			return t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[argIdx], ctx.typeSubst)
+			return t.maskUnboundMethodTypeParams(t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[argIdx], ctx.typeSubst), ctx)
 		}
 		return transpiler.NilType{}
 	}
@@ -330,7 +331,7 @@ func (t *galaASTTransformer) resolveNamedArgExpectedType(ctx callContext, argNam
 				if inner, isSendable := transpiler.UnwrapSendable(raw); isSendable {
 					return t.sendableInnerExpected(inner, ctx.methodMeta.TypeParams, ctx.typeSubst)
 				}
-				return t.substituteTranspilerTypeParams(raw, ctx.typeSubst)
+				return t.maskUnboundMethodTypeParams(t.substituteTranspilerTypeParams(raw, ctx.typeSubst), ctx)
 			}
 		}
 		return transpiler.NilType{}
@@ -399,4 +400,32 @@ func maskTypeParamResults(results []transpiler.Type, typeParams []string) []tran
 		}
 	}
 	return out
+}
+
+// maskUnboundMethodTypeParams drops what a method argument's expected type
+// cannot say: a type parameter of the method or of its receiver type that the
+// call left unbound and that is not in scope here. A function type keeps its
+// parameters when they are concrete and loses only the results that name one
+// (the lambda's body then types them); otherwise the expected type is
+// unknown, and an unannotated lambda is GALA-E0033 rather than Go naming a
+// type parameter it never declared.
+func (t *galaASTTransformer) maskUnboundMethodTypeParams(typ transpiler.Type, ctx callContext) transpiler.Type {
+	var unbound []string
+	for _, names := range [][]string{ctx.recvTypeParams, ctx.methodMeta.TypeParams} {
+		for _, name := range names {
+			// A bound one was substituted: a name left that spells it is the
+			// type argument itself (a user type called `A`).
+			_, bound := ctx.typeSubst[name]
+			if _, override := ctx.typeSubstTypes[name]; !bound && !override && !t.isActiveTypeParam(name) {
+				unbound = append(unbound, name)
+			}
+		}
+	}
+	if !typeMentionsTypeParam(typ, unbound) {
+		return typ
+	}
+	if ft, ok := typ.(transpiler.FuncType); ok && !funcTypeParamsMentionTypeParams(ft.Params, unbound) {
+		return transpiler.FuncType{Params: ft.Params, Results: maskTypeParamResults(ft.Results, unbound)}
+	}
+	return transpiler.NilType{}
 }

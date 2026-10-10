@@ -886,6 +886,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			richAST.GoTypeInfo.Merge(goInfo)
 			richAST.OwnGoTypes = ownTypes
 		}
+		a.loadOwnGoGalaImports(dirPath, pkgName, richAST.OwnImportPath, richAST, mergeVisited)
 	}
 
 	logPhase("analyze-local-go-files", phaseStart)
@@ -2513,40 +2514,79 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 			s := spec.(*grammar.ImportSpecContext)
 			path := strings.Trim(s.STRING().GetText(), "\"")
 
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
+			a.loadGalaImport(path, richAST, mergeVisited)
+		}
+	}
+}
 
-			if isInternalGala || isExternalGala {
-				var relPath string
-				if isInternalGala {
-					relPath = strings.TrimPrefix(path, "martianoff/gala/")
-				} else {
-					relPath = path
-				}
+// loadGalaImport analyzes the GALA package at path, when path names one, and
+// merges its metadata and its closure into richAST, recording it among
+// richAST.Packages (an implicit import of the file until the file names it).
+func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
+	isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+	if !isInternalGala && !a.resolver.IsGalaPackage(path) {
+		return
+	}
+	relPath := path
+	if isInternalGala {
+		relPath = strings.TrimPrefix(path, "martianoff/gala/")
+	}
+	if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
+		a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
+		if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
+			richAST.Packages[path] = cached.PackageName
+		}
+		return
+	}
+	if _, inProgress := a.analyzedPkgs[path]; inProgress {
+		return
+	}
+	a.analyzedPkgs[path] = nil
+	importedAST, err := a.analyzePackage(relPath, path)
+	if err != nil {
+		return
+	}
+	a.storeAnalyzedPkg(path, importedAST)
+	a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
+	if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
+		richAST.Packages[path] = importedAST.PackageName
+		return
+	}
+	for _, typeMeta := range importedAST.Types {
+		if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
+			richAST.Packages[path] = typeMeta.Package
+			return
+		}
+	}
+}
 
-				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-						richAST.Packages[path] = cached.PackageName
-					}
-				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
-					a.analyzedPkgs[path] = nil
-					importedAST, err := a.analyzePackage(relPath, path)
-					if err == nil {
-						a.storeAnalyzedPkg(path, importedAST)
-						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-							richAST.Packages[path] = importedAST.PackageName
-						} else {
-							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
-									richAST.Packages[path] = typeMeta.Package
-									break
-								}
-							}
-						}
-					}
-				}
+// loadOwnGoGalaImports loads the GALA packages the hand-written .go files of
+// the package named pkgName in dirPath import (see loadGalaImport). A type of
+// such a package reaches the GALA code through those files' signatures — a
+// map of its structs, say — and its fields and methods must be known even
+// when no .gala file imports it.
+func (a *galaAnalyzer) loadOwnGoGalaImports(dirPath, pkgName, ownImportPath string, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return
+	}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		fullPath := filepath.Join(dirPath, name)
+		if genheader.StaleFile(fullPath) {
+			continue
+		}
+		f, err := goparser.ParseFile(fset, fullPath, nil, goparser.ImportsOnly)
+		if err != nil || f.Name == nil || f.Name.Name != pkgName {
+			continue
+		}
+		for _, imp := range f.Imports {
+			if path := strings.Trim(imp.Path.Value, `"`); path != ownImportPath {
+				a.loadGalaImport(path, richAST, mergeVisited)
 			}
 		}
 	}

@@ -76,6 +76,7 @@ func scopedStateFieldNames() []string {
 // accumulatedStateFields lists fields that are results or configuration and
 // are therefore exempt from the residue check.
 var accumulatedStateFields = []string{
+	"typeArgPaths",
 	"packageName",
 	"variantNames",
 	"immutFields",

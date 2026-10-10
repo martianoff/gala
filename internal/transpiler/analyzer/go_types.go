@@ -591,7 +591,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 
 	own := pkgName != ""
 	extractPackageInfo(pkg, info, own)
-	repairUnresolvedSignatures(files, pkg.Name(), info)
+	repairUnresolvedSignatures(files, pkg.Name(), info, own)
 	extractMethodsOnForeignTypes(files, typesInfo, pkg, info, own)
 	info.AddImportPathKeys(pkg.Name(), importPath)
 	result.ownTypes = make(map[string]bool)
@@ -743,8 +743,10 @@ func goFilesImportPath(dirPath, importPath string) string {
 // process, over which module files do not move.
 var derivedImportPaths sync.Map // dirPath -> string
 
-// repairUnresolvedSignatures recovers signature slots go/types could not resolve
-// from the type as it is WRITTEN in the source.
+// repairUnresolvedSignatures recovers the types go/types could not resolve —
+// in function and method signatures, struct fields and package variables —
+// from the type as it is WRITTEN in the source (a variable without one, from
+// the composite literal that initializes it).
 //
 // A hand-written .go file in a GALA package may name a GALA-defined type — e.g.
 // `func OptionFromMap[K comparable, V any](m map[K]V, key K) std.Option[V]`. That
@@ -759,21 +761,125 @@ var derivedImportPaths sync.Map // dirPath -> string
 // says which package `std` is, which together are exactly the GenericType the rest
 // of the pipeline needs. Recovery is therefore syntactic.
 //
-// Nothing here is specific to std, or even to GALA: any Go signature naming a type
-// the checker could not load is recovered the same way, and slots go/types DID
-// resolve are never touched.
-func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpiler.GoTypeInfo) {
+// Nothing here is specific to std, or even to GALA: any Go declaration naming a
+// type the checker could not load is recovered the same way, and slots go/types
+// DID resolve are never touched.
+func repairUnresolvedSignatures(files []*ast.File, pkgName string, info *transpiler.GoTypeInfo, own bool) {
 	for _, f := range files {
 		imports := fileImportPaths(f)
 		for _, decl := range f.Decls {
-			// Every recorded function is repaired: the package's own files
-			// record unexported ones too (see AnalyzeOwnGoFiles).
-			fd, ok := decl.(*ast.FuncDecl)
-			if !ok || fd.Recv != nil || fd.Type == nil {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				// Every recorded function and method is repaired: the
+				// package's own files record unexported ones too (see
+				// AnalyzeOwnGoFiles).
+				if d.Type == nil {
+					continue
+				}
+				if sig := recordedSignature(info, pkgName, d); sig != nil {
+					repairSignature(sig, d, imports, pkgName)
+				}
+			case *ast.GenDecl:
+				repairGenDecl(d, imports, pkgName, info, own)
+			}
+		}
+	}
+}
+
+// recordedSignature returns the signature info records for fd: a function's,
+// or a method's on its receiver type (a Go type, or a GALA type its package's
+// hand-written Go adds the method to).
+func recordedSignature(info *transpiler.GoTypeInfo, pkgName string, fd *ast.FuncDecl) *transpiler.GoFuncSignature {
+	if fd.Recv == nil {
+		return info.Functions[pkgName+"."+fd.Name.Name]
+	}
+	recv := receiverTypeName(fd)
+	if recv == "" {
+		return nil
+	}
+	for _, td := range []*transpiler.GoTypeData{info.Types[pkgName+"."+recv], info.GalaTypeMethods[pkgName+"."+recv]} {
+		if td != nil {
+			if sig := td.Methods[fd.Name.Name]; sig != nil {
+				return sig
+			}
+		}
+	}
+	return nil
+}
+
+// receiverTypeName returns the name of fd's receiver type, without a pointer
+// or type arguments, or "".
+func receiverTypeName(fd *ast.FuncDecl) string {
+	if len(fd.Recv.List) != 1 {
+		return ""
+	}
+	recv := fd.Recv.List[0].Type
+	if star, ok := recv.(*ast.StarExpr); ok {
+		recv = star.X
+	}
+	switch e := recv.(type) {
+	case *ast.IndexExpr:
+		recv = e.X
+	case *ast.IndexListExpr:
+		recv = e.X
+	}
+	if id, ok := recv.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// repairGenDecl recovers the struct field types and the declared types of
+// package variables in d that go/types could not resolve.
+func repairGenDecl(d *ast.GenDecl, imports map[string]string, pkgName string, info *transpiler.GoTypeInfo, own bool) {
+	for _, spec := range d.Specs {
+		switch sp := spec.(type) {
+		case *ast.TypeSpec:
+			st, ok := sp.Type.(*ast.StructType)
+			td := info.Types[pkgName+"."+sp.Name.Name]
+			if !ok || td == nil || st.Fields == nil {
 				continue
 			}
-			if sig := info.Functions[pkgName+"."+fd.Name.Name]; sig != nil {
-				repairSignature(sig, fd, imports, pkgName)
+			typeParams := map[string]bool{}
+			if sp.TypeParams != nil {
+				for _, field := range sp.TypeParams.List {
+					for _, name := range field.Names {
+						typeParams[name.Name] = true
+					}
+				}
+			}
+			for _, field := range st.Fields.List {
+				for _, name := range field.Names {
+					if cur, ok := td.Fields[name.Name]; ok && transpiler.ContainsUnusable(cur) {
+						if rec := syntacticGoType(field.Type, imports, pkgName, typeParams); !rec.IsNil() {
+							td.Fields[name.Name] = rec
+						}
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			if d.Tok != token.VAR {
+				continue
+			}
+			for i, name := range sp.Names {
+				key := pkgName + "." + name.Name
+				// A variable go/types could not type at all is not recorded;
+				// it is added the way extraction would have (own files record
+				// unexported names too).
+				cur, ok := info.Variables[key]
+				if ok && !transpiler.ContainsUnusable(cur) || !ok && !own && !name.IsExported() {
+					continue
+				}
+				typeExpr := sp.Type
+				if typeExpr == nil && i < len(sp.Values) {
+					typeExpr = literalTypeExpr(sp.Values[i])
+				}
+				if typeExpr == nil {
+					continue
+				}
+				if rec := syntacticGoType(typeExpr, imports, pkgName, nil); !rec.IsNil() {
+					info.Variables[key] = rec
+				}
 			}
 		}
 	}
@@ -1506,4 +1612,18 @@ func extractFromAST(files []*ast.File, info *transpiler.GoTypeInfo) {
 			}
 		}
 	}
+}
+
+// literalTypeExpr returns the type a composite literal value states, `T` of
+// `T{...}` or `*T` of `&T{...}`, or nil for any other value.
+func literalTypeExpr(v ast.Expr) ast.Expr {
+	switch e := v.(type) {
+	case *ast.CompositeLit:
+		return e.Type
+	case *ast.UnaryExpr:
+		if lit, ok := e.X.(*ast.CompositeLit); ok && e.Op == token.AND && lit.Type != nil {
+			return &ast.StarExpr{X: lit.Type}
+		}
+	}
+	return nil
 }

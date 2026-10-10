@@ -305,7 +305,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// defaults spell are bound by the call's explicit type
 				// arguments (`describe[int]()`) and, for the rest, by the
 				// slot (`val p Option[int] = pick()`).
-				typeSubst := typeSubstStrings(t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
+				typeSubst := t.typeArgStrings(t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
 				if explicit := explicitTypeArgSubst(funcMeta.TypeParams, t.extractFuncCallTypeArgs(base)); explicit != nil {
 					if typeSubst == nil {
 						typeSubst = explicit
@@ -698,7 +698,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 							for _, mtp := range methodMeta.TypeParams {
 								if v, ok := combinedInferred[mtp]; ok && v != nil && !v.IsNil() {
 									if _, alreadySet := typeSubst[mtp]; !alreadySet {
-										typeSubst[mtp] = v.String()
+										typeSubst[mtp] = t.typeArgString(v)
 									}
 								}
 							}
@@ -723,14 +723,14 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					continue
 				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {
-					typeSubst[tp] = inferred.String()
+					typeSubst[tp] = t.typeArgString(inferred)
 				}
 			}
 		}
 	}
 	for tp, inferred := range fromSlot {
 		if _, alreadySet := typeSubst[tp]; !alreadySet {
-			typeSubst[tp] = inferred.String()
+			typeSubst[tp] = t.typeArgString(inferred)
 		}
 	}
 	// Harvest type params from earlier lambdas to refine later ones.
@@ -793,6 +793,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 		genMethodCtx := t.buildMethodCallContext(methodMeta, anyView(), false)
 		genMethodCtx.typeSubstTypes = typeSubstTypes
+		if typeMeta != nil {
+			genMethodCtx.recvTypeParams = typeMeta.TypeParams
+		}
 		if cerr := t.checkSendableArg(genMethodCtx, i, exprCtx, lambdaCtx); cerr != nil {
 			return true, nil, cerr
 		}
@@ -817,7 +820,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 							if transpiler.IsUnusableOrAny(inferred) {
 								continue
 							}
-							typeSubst[tp] = inferred.String()
+							typeSubst[tp] = t.typeArgString(inferred)
 						}
 					}
 				}
@@ -952,7 +955,7 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 		src.typeParams = append(slices.Clone(recvMeta.TypeParams), src.typeParams...)
 	}
 	if i < len(methodMeta.ParamTypes) {
-		t.substituteDeclared(&src, methodMeta.ParamTypes[i], parseTypeSubst(typeSubst))
+		t.substituteDeclared(&src, methodMeta.ParamTypes[i], t.parseTypeSubst(typeSubst))
 	}
 	return t.transformDefaultExpr(src, line, col)
 }
@@ -1125,7 +1128,7 @@ func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleCon
 	var missing []string
 	for _, tp := range methodMeta.TypeParams[len(typeArgs):end] {
 		if s, ok := typeSubst[tp]; ok {
-			typ := transpiler.ParseType(s)
+			typ := t.parseTypeArg(s)
 			resolved[tp] = typ
 			full = append(full, t.typeToExpr(typ))
 		} else {
@@ -1226,7 +1229,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 
 	// Fully concrete receiver type: transform args (named + positional), then
 	// dispatch through named-args / default-args fillers if needed.
-	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, t.receiverTypeArgOverrides(typeMeta.TypeParams, recvType), recvType)
+	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, t.receiverTypeArgOverrides(typeMeta.TypeParams, recvType), typeMeta.TypeParams, recvType)
 }
 
 // receiverTypeArgOverrides returns, for each type parameter of a generic
@@ -1423,6 +1426,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	methodMeta *transpiler.MethodMetadata,
 	typeSubst map[string]string,
 	typeSubstTypes map[string]transpiler.Type,
+	recvTypeParams []string,
 	recvType transpiler.Type,
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
@@ -1442,6 +1446,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			argName := arg.Identifier().GetText()
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 			resolvedMethodCtx.typeSubstTypes = typeSubstTypes
+			resolvedMethodCtx.recvTypeParams = recvTypeParams
 			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
@@ -1454,6 +1459,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		} else {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
 			resolvedMethodCtx.typeSubstTypes = typeSubstTypes
+			resolvedMethodCtx.recvTypeParams = recvTypeParams
 			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
@@ -4001,7 +4007,7 @@ func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadat
 		typeParams:  funcMeta.TypeParams,
 	}
 	if i < len(funcMeta.ParamTypes) {
-		t.substituteDeclared(&src, funcMeta.ParamTypes[i], parseTypeSubst(typeSubst))
+		t.substituteDeclared(&src, funcMeta.ParamTypes[i], t.parseTypeSubst(typeSubst))
 	}
 	return t.transformDefaultExpr(src, line, col)
 }
@@ -4760,7 +4766,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
 func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset map[string]string) (subst map[string]string, placeholders bool) {
-	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames)))
+	inferred := t.typeArgStrings(t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames)))
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
@@ -4861,7 +4867,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	argListCtx grammar.IArgumentListContext,
 	fromSlot map[string]transpiler.Type,
 ) map[string]string {
-	explicit := typeSubstStrings(fromSlot)
+	explicit := t.typeArgStrings(fromSlot)
 	if explicit == nil {
 		explicit = map[string]string{}
 	}
@@ -4884,7 +4890,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	}
 	// A partial explicit list binds its leading type parameters; the
 	// arguments determine the rest.
-	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
+	inferred := t.typeArgStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
 	if inferred == nil {
 		return explicit
 	}

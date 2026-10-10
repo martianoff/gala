@@ -31,6 +31,9 @@ type TypeTraceEntry struct {
 }
 
 type galaASTTransformer struct {
+	// typeArgPaths maps a printed package-qualified type argument to its import
+	// path, for the current file (see typeArgString).
+	typeArgPaths      map[string]string
 	currentScope      *scope
 	packageName       string
 	immutFields       map[string]bool
@@ -262,6 +265,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.invalidateTypeEnv()
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
+	t.typeArgPaths = nil
 	t.structMetas = make(map[string]*structMetaConfig)
 	t.valueMetas = make(map[string]*valueMetaConfig)
 	t.defaultTrees = nil

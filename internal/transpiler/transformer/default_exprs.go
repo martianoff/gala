@@ -141,15 +141,6 @@ func (t *galaASTTransformer) carriedTypeParams(declared transpiler.Type, subst m
 	return carried
 }
 
-// parseTypeSubst parses the type arguments of a call's type substitution.
-func parseTypeSubst(subst map[string]string) map[string]transpiler.Type {
-	parsed := make(map[string]transpiler.Type, len(subst))
-	for name, arg := range subst {
-		parsed[name] = transpiler.ParseType(arg)
-	}
-	return parsed
-}
-
 // spellsAny returns the first of names that the default's source refers to —
 // as a value or as a type, not as a member, label or binding — or "".
 func spellsAny(tree antlr.Tree, names []string) string {

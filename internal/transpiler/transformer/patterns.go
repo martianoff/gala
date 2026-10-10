@@ -2005,7 +2005,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 		typeSubst := make(map[string]string)
 		for i, tp := range varTypeMeta.TypeParams {
 			if i < len(genType.Params) {
-				typeSubst[tp] = genType.Params[i].String()
+				typeSubst[tp] = t.typeArgString(genType.Params[i])
 			}
 		}
 		if len(typeSubst) > 0 {

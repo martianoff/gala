@@ -120,8 +120,28 @@ func (t *galaASTTransformer) getType(name string) transpiler.Type {
 				return typeName
 			}
 		}
+		if typeName := t.ownGoValueType(name); typeName != nil {
+			t.traceType(nil, typeName, "scope:own-go:"+name)
+			return typeName
+		}
 	}
 	return t.lookupTypeName(name)
+}
+
+// ownGoValueType returns the type of a package-level variable or constant
+// this package's hand-written Go declares, or nil.
+func (t *galaASTTransformer) ownGoValueType(name string) transpiler.Type {
+	if t.goTypeInfo == nil || t.packageName == "" {
+		return nil
+	}
+	key := t.packageName + "." + name
+	if typ, ok := t.goTypeInfo.Variables[key]; ok && typ != nil && !typ.IsNil() {
+		return typ
+	}
+	if typ, ok := t.goTypeInfo.Constants[key]; ok && typ != nil && !typ.IsNil() {
+		return typ
+	}
+	return nil
 }
 
 // lookupTypeName resolves name in the TYPE namespace only: a (possibly
