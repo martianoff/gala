@@ -22,6 +22,10 @@ func transpileAndRun(t *testing.T, projectDir string) (mainGen, out string) {
 	require.NoError(t, b.transpileDeps())
 	require.NoError(t, b.transpile())
 	mainGen = readFileString(t, filepath.Join(b.workspace.GenDir, "main.gen.go"))
+	// The first transpile in the process points GOROOT at the SDK the type
+	// inference uses (the analyzer's Go importer, set up once); align it with
+	// the PATH go again before building.
+	alignGorootWithPathGo(t)
 	binPath, buildErr := b.Build("")
 	if buildErr != nil {
 		if isToolchainEnvError(buildErr.Error()) {
