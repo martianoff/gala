@@ -5050,6 +5050,9 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 			return sig
 		}
 		for _, entry := range t.importManager.dotImports {
+			if sig := t.goTypeInfo.GetFuncSignature(entry.Path + "." + fun.Name); sig != nil {
+				return sig
+			}
 			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
 				return sig
 			}
@@ -5060,10 +5063,10 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 
 // ownGoFuncSignature finds the Go signature of a function a bare name calls in
 // the package's own hand-written .go files — the declaring package's, while a
-// default declared in another package is being lowered. Go type info is keyed
-// by short package name alone, so the lookup misses rather than guesses when
-// the name is a GALA function of the package, or when the file imports a Go
-// package of the same name, whose functions share those keys.
+// default declared in another package is being lowered. It misses rather than
+// guesses when the name is a GALA function of the package. Found by the
+// package's import path the key is exact; found by its name it may be a Go
+// package of the same name the file imports, so then it misses too.
 func (t *galaASTTransformer) ownGoFuncSignature(name string) *transpiler.GoFuncSignature {
 	pkg := t.packageName
 	if t.loweringForeignDefault() {
@@ -5082,6 +5085,9 @@ func (t *galaASTTransformer) ownGoFuncSignature(name string) *transpiler.GoFuncS
 	}
 	if _, isGala := t.unshadowedFunctionByName(name); isGala {
 		return nil
+	}
+	if key != pkg+"."+name {
+		return sig // by import path: exact
 	}
 	for _, entry := range t.importManager.All() {
 		if entry.PkgName == pkg && !t.galaPkgPaths[entry.Path] {

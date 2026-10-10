@@ -161,7 +161,6 @@ func (g *GoTypeInfo) GetFuncReturnType(qualifiedName string) Type {
 	return nil
 }
 
-// GetFuncSignature returns the full function signature, or nil if unknown.
 // AddImportPathKeys records every entry of the package named pkgName again
 // under its import path, `importPath.Name` beside `pkgName.Name`. A key by
 // name alone cannot tell two packages of one name apart (two `util` packages
@@ -205,6 +204,9 @@ func (g *GoTypeInfo) HasQualified(key string) bool {
 	if _, ok := g.Constants[key]; ok {
 		return true
 	}
+	if _, ok := g.GalaTypeMethods[key]; ok {
+		return true
+	}
 	_, ok := g.TypeAliases[key]
 	return ok
 }
@@ -217,6 +219,7 @@ func mapKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+// GetFuncSignature returns the full function signature, or nil if unknown.
 func (g *GoTypeInfo) GetFuncSignature(qualifiedName string) *GoFuncSignature {
 	if g == nil {
 		return nil
