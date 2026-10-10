@@ -4,7 +4,7 @@ title: "Golang Pattern Matching — Exhaustive Match Expressions for Go"
 description: "GALA brings real pattern matching to Go — struct destructuring, sealed type exhaustive matching, guard clauses, nested patterns, custom extractors, and sequence patterns. Beyond what Go's switch can do."
 keywords: "golang pattern matching, go pattern matching, golang match expression, go switch alternative, go exhaustive match, go destructuring, golang guard clauses, go struct pattern matching, golang case expression"
 permalink: /features/pattern-matching/
-last_modified_at: 2026-10-03
+last_modified_at: 2026-10-09
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Pattern Matching</p>
@@ -138,6 +138,39 @@ val res = x match {
 ```
 
 Guards are evaluated after the pattern matches. If the guard fails, the next `case` is tried.
+
+---
+
+## Alternative Patterns
+
+Several patterns can share one arm, separated by `|`. The arm matches when any alternative matches, at the top of a `case` or nested inside an extractor or tuple. Alternatives count toward exhaustiveness, so `Click(_, _) | Tap(_, _)` covers both variants:
+
+```gala
+package main
+
+sealed type Event {
+    case Click(X int, Y int)
+    case Tap(X int, Y int)
+    case Key(Code int)
+    case Quit()
+}
+
+func describe(e Event) string = e match {
+    case Click(_, _) | Tap(_, _) => "pointer"
+    case Key(9 | 13 | 32)        => "whitespace key"
+    case Key(_)                  => "other key"
+    case Quit()                  => "quit"
+}
+
+func main() {
+    Println(describe(Tap(1, 2)))
+    Println(describe(Key(13)))
+    Println(describe(Key(65)))
+    Println(describe(Quit()))
+}
+```
+
+Alternatives bind no names: `case Some(n) | None()` is rejected ([GALA-E0071](/docs/errors/gala-e0071/)). In a pattern `|` is never Go's bitwise OR; match a bitwise value with a guard.
 
 ---
 
@@ -373,6 +406,7 @@ case Point:
 | Struct destructuring | Yes | No |
 | Exhaustive checking | Yes (sealed types, booleans) | No |
 | Guard clauses | Yes (`if` after pattern) | No (separate `if` inside case) |
+| Several values per case | Yes (`case 1 \| 2`, nested too) | Yes (`case 1, 2:`, top level only) |
 | Nested patterns | Yes | No |
 | Custom extractors | Yes (Unapply) | No |
 | Instance extractors | Yes (variable Unapply) | No |

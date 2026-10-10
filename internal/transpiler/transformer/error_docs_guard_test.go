@@ -1071,6 +1071,39 @@ func main() {
 			},
 		},
 		{
+			name: "pattern alternative that binds a name",
+			code: galaerr.CodeInvalidAlternativePattern, // GALA-E0071
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func describe(o Option[int]) string = o match {
+    case Some(n) | None() => "value"
+}
+
+func main() {
+    Println(describe(Some(1)))
+}
+`)
+			},
+		},
+		{
+			name: "pattern alternative mixed with another operator",
+			code: galaerr.CodeInvalidAlternativePattern, // GALA-E0071
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func describe(n int) string = n match {
+    case 1 + 1 | 3 => "two or three"
+    case _ => "other"
+}
+
+func main() {
+    Println(describe(2))
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

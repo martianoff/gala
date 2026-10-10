@@ -4,7 +4,7 @@ title: "GALA Language Reference - Complete Specification"
 description: "Complete GALA language specification. Variables, functions, structs, sealed types, pattern matching, generics, lambdas, interfaces, control flow, and standard library types — the full reference for the Go alternative language."
 keywords: "gala language reference, gala specification, gala syntax, gala language guide, go alternative language reference, gala documentation"
 permalink: /docs/language-reference/
-last_modified_at: 2026-10-05
+last_modified_at: 2026-10-09
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Language Reference</p>
@@ -786,6 +786,27 @@ func mode(env Environment, limit Environment) string = env match {
     case Development     => "dev"       // env == Development
     case x if x == limit => "limit"     // lowercase value: use a guard
     case _               => "other"
+}
+```
+
+#### Alternative Patterns
+`p1 | p2 | …` matches when any alternative matches, at the top of a `case` or nested inside an extractor or tuple; a sealed match is exhaustive when its alternatives cover every variant. Alternatives bind no names: `case Some(n) | None()` is rejected ([GALA-E0071](/docs/errors/gala-e0071/)), so use `_` or one case per alternative. In a pattern `|` is always an alternative, also inside parentheses; match a bitwise OR with a guard (`case n if n == (FlagA | FlagB)`) or a named `val`. Parenthesize an alternative that uses `+`, `-` or `^`: `case (1 + 1) | 3`.
+```gala
+package main
+
+func mode(m string) string = m match {
+    case "debug" | "development" => "dev"
+    case "prod" | "production"   => "prod"
+    case _                       => "unknown"
+}
+
+func size(o Option[int]) string = o match {
+    case Some(1 | 2 | 3)  => "small"
+    case Some(_) | None() => "other"
+}
+
+func main() {
+    Println(mode("debug"), size(Some(2)))
 }
 ```
 

@@ -709,9 +709,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	{
 		var variantPatterns []string
 		for i, cc := range caseClauses {
-			pat := cc.(*grammar.CaseClauseContext).Pattern().GetText()
-			if !isWildcard(pat) && !isBinding[i] {
-				variantPatterns = append(variantPatterns, pat)
+			pat := cc.(*grammar.CaseClauseContext).Pattern()
+			if !isWildcard(pat.GetText()) && !isBinding[i] {
+				variantPatterns = append(variantPatterns, t.alternativePatternTexts(pat)...)
 			}
 		}
 
