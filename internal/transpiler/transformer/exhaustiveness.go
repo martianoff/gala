@@ -76,11 +76,10 @@ func (t *galaASTTransformer) coverageOf(matchedType transpiler.Type, clauses []*
 			missing = append(missing, ctor.name+"(...)")
 		}
 		for _, row := range guarded {
-			if guardedMissing {
+			if name, _ := c.constructorOf(row[0], matchedType); name == ctor.name {
+				guardedMissing = true
 				break
 			}
-			name, _ := c.constructorOf(row[0], matchedType)
-			guardedMissing = name == ctor.name
 		}
 	}
 	return true, len(missing) == 0, missing, guardedMissing
@@ -150,10 +149,12 @@ func (c *coverage) writesEvery(rows [][]covCell, ctors []covCtor, typ transpiler
 	named := make(map[string]bool, len(ctors))
 	for _, row := range rows {
 		if name, _ := c.constructorOf(row[0], typ); name != "" {
-			named[name] = true
+			if named[name] = true; len(named) == len(ctors) {
+				return true
+			}
 		}
 	}
-	return len(named) == len(ctors)
+	return false
 }
 
 // specialize keeps the rows that can match constructor ctor, with ctor's
@@ -253,7 +254,7 @@ func (c *coverage) isWildcard(cell covCell, typ transpiler.Type) bool {
 	case cell == covRefutable:
 		return false
 	}
-	if inner := c.unparen(cell); inner != nil {
+	if inner := c.t.parenthesizedPattern(cell); inner != nil {
 		return c.isWildcard(inner, typ)
 	}
 	if isWildcard(cell.GetText()) {
@@ -295,7 +296,7 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 		}
 		return tupleCtorName, list.AllExpression()
 	}
-	if inner := c.unparen(cell); inner != nil {
+	if inner := c.t.parenthesizedPattern(cell); inner != nil {
 		return c.constructorOf(inner, typ)
 	}
 	if name := patternIdentifier(cell); name != "" {
@@ -363,9 +364,4 @@ func (c *coverage) typedPatternOfType(pat *grammar.TypedPatternContext, typ tran
 	}
 	field := c.t.knownTypeExpr(typ)
 	return field != nil && types.ExprString(written) == types.ExprString(field)
-}
-
-// unparen returns p when cell is exactly `(p)`.
-func (c *coverage) unparen(cell covCell) grammar.IExpressionContext {
-	return c.t.parenthesizedPattern(cell)
 }

@@ -52,3 +52,13 @@ func TestGoResultsOfRejects(t *testing.T) {
 		})
 	}
 }
+
+// MaxTupleArity is the widest std tuple: TupleArityName names one of exactly
+// that many elements and none wider.
+func TestMaxTupleArityIsTheWidestTuple(t *testing.T) {
+	name, ok := TupleArityName(MaxTupleArity)
+	require.True(t, ok)
+	assert.Equal(t, TypeTuple10, name)
+	_, ok = TupleArityName(MaxTupleArity + 1)
+	assert.False(t, ok)
+}
