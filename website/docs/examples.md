@@ -4,7 +4,7 @@ title: "GALA Code Examples - Learn by Example"
 description: "GALA code examples covering pattern matching, sealed types, Option monads, generics, collections, and more. Complete, runnable programs you can try in the playground."
 keywords: "gala examples, gala code examples, gala tutorial examples, gala pattern matching example, gala sealed type example, learn gala"
 permalink: /docs/examples/
-last_modified_at: 2026-07-05
+last_modified_at: 2026-10-09
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Examples</p>
@@ -192,6 +192,33 @@ func main() {
 ```
 
 See also: [Language Reference - Pattern Matching Filters](/docs/language-reference/#pattern-matching-filters-guards)
+
+## Alternative Patterns Example
+
+```gala
+package main
+
+sealed type Event {
+    case Click(X int, Y int)
+    case Tap(X int, Y int)
+    case Key(Code int)
+    case Quit()
+}
+
+func describe(e Event) string = e match {
+    case Click(_, _) | Tap(_, _) => "pointer"
+    case Key(9 | 13 | 32)        => "whitespace key"
+    case Key(_)                  => "other key"
+    case Quit()                  => "quit"
+}
+
+func main() {
+    Println(describe(Tap(1, 2)))
+    Println(describe(Key(13)))
+    Println(describe(Key(65)))
+    Println(describe(Quit()))
+}
+```
 
 ## Pattern Matching with Extractors Example
 

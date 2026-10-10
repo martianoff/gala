@@ -400,6 +400,27 @@ func (t *galaASTTransformer) getPrimaryFromExpression(ctx grammar.IExpressionCon
 // operand intervenes. With sole set, every level must hold exactly one
 // operand, i.e. ctx has no binary operator at all.
 func LeadingPostfixExpr(ctx grammar.IExpressionContext, sole bool) *grammar.PostfixExprContext {
+	addExpr := leadingAdditiveExpr(ctx, sole)
+	if addExpr == nil {
+		return nil
+	}
+	fits := func(n int) bool { return n > 0 && (!sole || n == 1) }
+	mulExprs := addExpr.AllMultiplicativeExpr()
+	if !fits(len(mulExprs)) {
+		return nil
+	}
+	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
+	if !fits(len(unaryExprs)) {
+		return nil
+	}
+	postfix, _ := unaryExprs[0].(*grammar.UnaryExprContext).PostfixExpr().(*grammar.PostfixExprContext)
+	return postfix
+}
+
+// leadingAdditiveExpr walks the precedence chain of ctx down to the additive
+// expression of its first operand, as LeadingPostfixExpr does. With sole set,
+// no `||`, `&&` or comparison may join several operands above it.
+func leadingAdditiveExpr(ctx grammar.IExpressionContext, sole bool) *grammar.AdditiveExprContext {
 	if ctx == nil {
 		return nil
 	}
@@ -424,16 +445,8 @@ func LeadingPostfixExpr(ctx grammar.IExpressionContext, sole bool) *grammar.Post
 	if !fits(len(addExprs)) {
 		return nil
 	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if !fits(len(mulExprs)) {
-		return nil
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if !fits(len(unaryExprs)) {
-		return nil
-	}
-	postfix, _ := unaryExprs[0].(*grammar.UnaryExprContext).PostfixExpr().(*grammar.PostfixExprContext)
-	return postfix
+	addExpr, _ := addExprs[0].(*grammar.AdditiveExprContext)
+	return addExpr
 }
 
 // PrimaryOf returns the primary a postfix expression starts from, or nil when

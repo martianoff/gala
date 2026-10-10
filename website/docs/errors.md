@@ -4,7 +4,7 @@ title: "GALA Compiler Error Codes — Complete Reference (GALA-E0001 to GALA-E00
 description: "Every GALA compile-time error code explained: what it means, the code that triggers it, the exact compiler message, and how to fix it. Searchable reference for GALA-E0001 through GALA-E0048."
 keywords: "gala error codes, gala compiler errors, gala-e0001, gala-e0038, gala-e0039, gala-e0040, gala-e0041, gala semantic error, gala transpiler error, gala compile error reference, golang transpiler error codes"
 permalink: /docs/errors/
-last_modified_at: 2026-09-27
+last_modified_at: 2026-10-09
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Error Codes</p>
@@ -124,6 +124,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0068](/docs/errors/gala-e0068/) | Match or if-expression value has no type | Type inference |
 | [GALA-E0069](/docs/errors/gala-e0069/) | `return` in a match or if-expression whose value is used | Control flow |
 | [GALA-E0070](/docs/errors/gala-e0070/) | Read-only pointer where an interface is expected | Immutability |
+| [GALA-E0071](/docs/errors/gala-e0071/) | Invalid alternative pattern | Pattern matching |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -149,7 +150,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 ## By category
 
-**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name, [E0061](/docs/errors/gala-e0061/) a variant used as a type. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
+**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name, [E0061](/docs/errors/gala-e0061/) a variant used as a type, [E0071](/docs/errors/gala-e0071/) an alternative pattern that binds a name. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value, [E0067](/docs/errors/gala-e0067/) a type argument nothing determines, often a Go package whose types were not loaded. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 

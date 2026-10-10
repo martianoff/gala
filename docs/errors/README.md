@@ -89,6 +89,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0068` | Match or if-expression value has no type | [GALA-E0068.md](GALA-E0068.md) |
 | `GALA-E0069` | `return` in a match or if-expression whose value is used | [GALA-E0069.md](GALA-E0069.md) |
 | `GALA-E0070` | Read-only pointer where an interface is expected | [GALA-E0070.md](GALA-E0070.md) |
+| `GALA-E0071` | Invalid alternative pattern | [GALA-E0071.md](GALA-E0071.md) |
 
 ### Retired codes
 

@@ -1283,6 +1283,13 @@ gala_exec_test(
     expected = "match_type_inference.out",
 )
 
+# Alternative patterns `p1 | p2`, top level and nested
+gala_exec_test(
+    name = "alternative_patterns",
+    src = "alternative_patterns.gala",
+    expected = "alternative_patterns.out",
+)
+
 # A block-bodied function returns its trailing expression
 gala_exec_test(
     name = "block_function_trailing_value",

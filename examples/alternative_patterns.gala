@@ -1,0 +1,63 @@
+package main
+
+// Alternative patterns: `p1 | p2` matches when any alternative matches.
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+    case Empty()
+}
+
+val FlagA = 1
+val FlagB = 2
+val Both = FlagA | FlagB
+
+func small(n int) string = n match {
+    case 1 | 2 => "one-or-two"
+    case _     => "other"
+}
+
+func mode(m string) string = m match {
+    case "debug" | "development"            => "dev"
+    case ("prod" | ("production" | "live")) => "prod"
+    case _                                  => "unknown"
+}
+
+// Alternatives covering every variant make the match exhaustive.
+func kind(s Shape) string = s match {
+    case Circle(_) | Rect(_, _) => "solid"
+    case Empty()                => "empty"
+}
+
+func size(o Option[int]) string = o match {
+    case Some(1 | 2 | 3)   => "small"
+    case Some(n) if n > 10 => "big"
+    case Some(_) | None()  => "other"
+}
+
+func pair(p Tuple[int, string]) string = p match {
+    case (1 | 2, "a" | "b") => "hit"
+    case _                  => "miss"
+}
+
+func guarded(n int) string = n match {
+    case 1 | 2 if n > 1 => "two"
+    case _              => "not two"
+}
+
+// A bitwise OR is matched through a named val or a guard, never through `|`.
+func flags(n int) string = n match {
+    case Both          => "both"
+    case FlagA | FlagB => "one"
+    case _             => "none"
+}
+
+func main() {
+    Println(small(1), small(2), small(3))
+    Println(mode("debug"), mode("development"), mode("live"), mode("prod"), mode("x"))
+    Println(kind(Circle(1)), kind(Rect(1, 2)), kind(Empty()))
+    Println(size(Some(2)), size(Some(20)), size(Some(5)), size(None()))
+    Println(pair((2, "b")), pair((1, "c")), pair((3, "a")))
+    Println(guarded(1), guarded(2))
+    Println(flags(3), flags(1), flags(2), flags(0))
+}

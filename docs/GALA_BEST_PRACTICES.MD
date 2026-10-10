@@ -140,6 +140,7 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
 - **Use sealed types** for closed variant sets — `sealed type Shape { case Circle(...); case Rectangle(...) }`. The transpiler enforces exhaustiveness; no `case _ =>` needed.
 - **Replace iota enums with sealed cases** — `case Red() case Green() case Blue()`.
 - **Use guards, not nested ifs** — `case n: int if n > 0 =>`.
+- **One arm for several values** — `case "debug" | "development" =>`, not a Go-style `case 1, 2:`. Alternatives bind no names; use `_` inside them. ([Alternative Patterns](GALA.MD#alternative-patterns))
 - **Use sequence patterns** for `Array`/`List` — `case List(first, second, rest...) =>`.
 
 ---

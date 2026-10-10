@@ -59,8 +59,17 @@ func (t *galaASTTransformer) transformExpressionPattern(patExprCtx grammar.IExpr
 }
 
 func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx grammar.IExpressionContext, objExpr ast.Expr, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if isWildcard(patExprCtx.GetText()) {
+	text := patExprCtx.GetText()
+	if isWildcard(text) {
 		return ast.NewIdent("true"), nil, nil
+	}
+
+	if strings.Contains(text, "|") {
+		if alts, err := t.patternAlternatives(patExprCtx); err != nil {
+			return nil, nil, err
+		} else if alts != nil {
+			return t.transformAlternativePattern(alts, objExpr, matchedType)
+		}
 	}
 
 	// Tuple pattern with parentheses syntax: (a, b, c) => Tuple3(a, b, c)
