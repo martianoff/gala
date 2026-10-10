@@ -3075,6 +3075,9 @@ func (a *galaAnalyzer) storeAnalyzedPkg(path string, importedAST *transpiler.Ric
 		return nil
 	}
 	own := projectOwnRichAST(importedAST)
+	// The projection keeps the package's Go type info under its name only;
+	// record it under the import path too (see GoTypeInfo.AddImportPathKeys).
+	own.GoTypeInfo.AddImportPathKeys(own.PackageName, path)
 	a.analyzedPkgs[path] = own
 	if a.analyzedPkgImports != nil {
 		a.analyzedPkgImports[path] = extractDirectGalaImports(importedAST)

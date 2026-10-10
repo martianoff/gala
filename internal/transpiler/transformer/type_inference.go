@@ -1482,12 +1482,11 @@ func (t *galaASTTransformer) substituteGoTypeParamsIn(types []transpiler.Type, s
 }
 
 // goTypeLookupName returns the name Go type info records typ under, one
-// pointer level stripped. Go type info keys a package by its real name, while
-// a type written against an aliased import (`gostrings "strings"`, or a GALA
-// package whose hand-written Go declares the type) is qualified by the alias —
-// `gostrings.Builder`, recorded as `strings.Builder`. The alias is resolved
-// through the import path the type carries (see goLookupPackage). Every other
-// type keeps its printed form.
+// pointer level stripped: the key by the import path the type carries when one
+// is recorded (see GoTypeInfo.AddImportPathKeys), else, for a type written
+// against an aliased Go import (`gostrings "strings"`), the package's real name
+// — `gostrings.Builder` is recorded as `strings.Builder`. Every other type
+// keeps its printed form.
 func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 	if ptr, ok := typ.(transpiler.PointerType); ok {
 		typ = ptr.Elem
@@ -1502,8 +1501,11 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 	if nt.Package == "" {
 		return t.ownGoTypeKey(nt.Name)
 	}
-	if nt.ImportPath != "" {
-		if name, ok := t.goLookupPackage(nt.ImportPath, !t.isGoTyped(nt), nt.Name); ok {
+	if key := nt.ImportPath + "." + nt.Name; nt.ImportPath != "" && t.goTypeInfo.HasQualified(key) {
+		return key
+	}
+	if t.isGoTyped(nt) {
+		if name, ok := t.goImportRealName(nt.ImportPath); ok {
 			return name + "." + nt.Name
 		}
 	}
@@ -1517,52 +1519,47 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 // it is, as is a type parameter in scope that shadows such a name.
 func (t *galaASTTransformer) ownGoTypeKey(name string) string {
 	if t.packageName != "" && !strings.Contains(name, ".") {
-		if key := t.packageName + "." + name; t.goTypeInfo.GetTypeData(key) != nil && !t.isActiveTypeParam(name) {
+		if key := t.ownGoKey(name); t.goTypeInfo.GetTypeData(key) != nil && !t.isActiveTypeParam(name) {
 			return key
 		}
 	}
 	return name
 }
 
+// ownGoKey returns the Go type info key of name declared by this package's
+// hand-written Go: the key by the package's import path when one is recorded,
+// which an imported package of the same name cannot shadow, else
+// `packageName.name`.
+func (t *galaASTTransformer) ownGoKey(name string) string {
+	if t.richAST != nil && t.richAST.OwnImportPath != "" {
+		if key := t.richAST.OwnImportPath + "." + name; t.goTypeInfo.HasQualified(key) {
+			return key
+		}
+	}
+	return t.packageName + "." + name
+}
+
 // goQualifiedName returns the name Go type info records the package-level
-// `qualifier.name` under: `gourl.ParseQuery` with `gourl "net/url"` is
-// recorded as `url.ParseQuery`. The alias of a GALA package resolves the same
-// way for a name its hand-written Go declares (`st.Load` with
-// `st "mymod/store"`, where store.go declares Load, is `store.Load`). Any
-// other qualifier, including a local binding that shadows an import, is kept
-// as written.
+// `qualifier.name` under. Through an import it is the key by the import's
+// path when one is recorded (`st.Load` with `st "mymod/store"` is
+// `mymod/store.Load`, whatever the alias and whatever other package shares the
+// name); otherwise a Go import's real name (`gourl.ParseQuery` with
+// `gourl "net/url"` is `url.ParseQuery`). Any other qualifier, including a
+// local binding that shadows an import, is kept as written.
 func (t *galaASTTransformer) goQualifiedName(qualifier, name string) string {
 	if t.importManager != nil && t.bindingScope(qualifier) == nil {
 		if entry, isGala, ok := t.importForQualifier(qualifier); ok && !entry.IsDot {
-			if real, ok := t.goLookupPackage(entry.Path, isGala, name); ok {
-				return real + "." + name
+			if key := entry.Path + "." + name; t.goTypeInfo.HasQualified(key) {
+				return key
+			}
+			if !isGala {
+				if real, ok := t.goImportRealName(entry.Path); ok {
+					return real + "." + name
+				}
 			}
 		}
 	}
 	return qualifier + "." + name
-}
-
-// goLookupPackage returns the package name Go type info records name of the
-// import at path under. For a Go import that is its real name (see
-// goImportRealName). For a GALA import it is the real name only when the
-// package's hand-written Go exports name (RichAST.GoExports) and no other
-// import of this file shares that name: Go type info and GoExports are keyed
-// by package name alone, so two such packages cannot be told apart and the
-// lookup must miss rather than take the other one's declaration.
-func (t *galaASTTransformer) goLookupPackage(path string, isGala bool, name string) (string, bool) {
-	if !isGala {
-		return t.goImportRealName(path)
-	}
-	entry, ok := t.importManager.GetByPath(path)
-	if !ok || t.richAST == nil || !slices.Contains(t.richAST.GoExports[entry.PkgName], name) {
-		return "", false
-	}
-	for _, other := range t.importManager.All() {
-		if other.Path != path && other.PkgName == entry.PkgName {
-			return "", false
-		}
-	}
-	return entry.PkgName, true
 }
 
 // goImportRealName returns the real package name of the Go package this file

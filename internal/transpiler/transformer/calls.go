@@ -5072,7 +5072,11 @@ func (t *galaASTTransformer) ownGoFuncSignature(name string) *transpiler.GoFuncS
 	if pkg == "" {
 		return nil
 	}
-	sig := t.goTypeInfo.GetFuncSignature(pkg + "." + name)
+	key := pkg + "." + name
+	if !t.loweringForeignDefault() {
+		key = t.ownGoKey(name)
+	}
+	sig := t.goTypeInfo.GetFuncSignature(key)
 	if sig == nil {
 		return nil
 	}

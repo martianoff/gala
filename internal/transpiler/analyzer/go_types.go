@@ -447,6 +447,7 @@ func AnalyzeGoPackage(importPath string) *transpiler.GoTypeInfo {
 	}
 
 	extractPackageInfo(pkg, info, false)
+	info.AddImportPathKeys(pkg.Name(), pkg.Path())
 
 	goPackageCache.mu.Lock()
 	goPackageCache.cache[importPath] = info
@@ -592,6 +593,7 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 	extractPackageInfo(pkg, info, own)
 	repairUnresolvedSignatures(files, pkg.Name(), info)
 	extractMethodsOnForeignTypes(files, typesInfo, pkg, info, own)
+	info.AddImportPathKeys(pkg.Name(), importPath)
 	result.ownTypes = make(map[string]bool)
 	for _, name := range pkg.Scope().Names() {
 		if tn, ok := pkg.Scope().Lookup(name).(*types.TypeName); ok && (own || tn.Exported()) {

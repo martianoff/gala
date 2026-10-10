@@ -2,7 +2,6 @@ package build
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,45 +47,77 @@ func main() {
 	assert.Equal(t, "ok", buildAndRun(t, projectDir))
 }
 
-// TestBuild_AliasedSameNameGoSubpackagesDoNotBorrowSignatures imports two
-// hand-written Go packages of the module that share a package name, each under
-// its own alias. Go type info is keyed by package name, so neither alias may
-// take the other package's signature: the generated call must not depend on
-// the order of the imports.
-func TestBuild_AliasedSameNameGoSubpackagesDoNotBorrowSignatures(t *testing.T) {
-	gen := func(imports string) string {
-		projectDir := newForeignGenGoProject(t, "example.com/samename", map[string]string{
-			"a/util/util.go": "package util\n\nfunc Get() (int, error) { return 1, nil }\n",
-			"b/util/util.go": "package util\n\nfunc Get() string { return \"b\" }\n",
-			"main.gala": `package main
+// TestBuild_SameNameGoSubpackagesKeepTheirOwnSignatures imports hand-written
+// Go packages of the module that share a package name: under aliases in one
+// file, from sibling files of one package, and as the name of the package
+// being compiled. Go type info records each under its import path, so every
+// call gets its own package's signature, in any import order.
+func TestBuild_SameNameGoSubpackagesKeepTheirOwnSignatures(t *testing.T) {
+	const a = "package util\n\nfunc Get() (int, error) { return 1, nil }\n"
+	const b = "package util\n\nfunc Get() string { return \"b\" }\n"
+
+	t.Run("aliases in one file, either order", func(t *testing.T) {
+		for _, imports := range []string{
+			"ua \"example.com/samename/a/util\"\n    ub \"example.com/samename/b/util\"",
+			"ub \"example.com/samename/b/util\"\n    ua \"example.com/samename/a/util\"",
+		} {
+			projectDir := newForeignGenGoProject(t, "example.com/samename", map[string]string{
+				"a/util/util.go": a,
+				"b/util/util.go": b,
+				"main.gala": `package main
 
 import (
-` + imports + `
+    ` + imports + `
 )
 
 func main() {
-    val n, err = ua.Get()
-    Println(n, err, ub.Get())
+    Println(ua.Get().GetOrElse(0), ub.Get())
+}
+`,
+			})
+			mainGen := transpileMainGen(t, projectDir)
+			assert.Contains(t, mainGen, "std.GoTry(ua.Get())", "ua.Get returns (int, error):\n%s", mainGen)
+			assert.NotContains(t, mainGen, "std.GoTry(ub.Get())", "ub.Get returns one value:\n%s", mainGen)
+			assert.Equal(t, "1|b", buildAndRun(t, projectDir))
+		}
+	})
+
+	t.Run("sibling files", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/samename", map[string]string{
+			"a/util/util.go": a,
+			"b/util/util.go": b,
+			"main.gala": `package main
+
+import ua "example.com/samename/a/util"
+
+func main() {
+    Println(ua.Get().GetOrElse(0), fromB())
+}
+`,
+			"other.gala": `package main
+
+import "example.com/samename/b/util"
+
+func fromB() string = util.Get()
+`,
+		})
+		assert.Equal(t, "1|b", buildAndRun(t, projectDir))
+	})
+
+	t.Run("the compiled package's own name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/samename", map[string]string{
+			"lib/util.go":    "package util\n\nfunc Local() string { return \"local\" }\n",
+			"lib/lib.gala":   "package util\n\nimport o \"example.com/samename/a/util\"\n\nfunc Both() string = s\"${o.Get().GetOrElse(0)} ${Local()}\"\n",
+			"a/util/util.go": a,
+			"main.gala": `package main
+
+import u "example.com/samename/lib"
+
+func main() {
+    Println(u.Both())
 }
 `,
 		})
-		return transpileMainGen(t, projectDir)
-	}
-	const a, b = `    ua "example.com/samename/a/util"`, `    ub "example.com/samename/b/util"`
-	first, second := callLines(gen(a+"\n"+b)), callLines(gen(b+"\n"+a))
-	for _, out := range []string{first, second} {
-		assert.NotContains(t, out, "std.GoTry(ub.Get())", "ub.Get returns one value:\n%s", out)
-	}
-	assert.Equal(t, first, second, "the generated calls must not depend on the import order")
-}
-
-// callLines returns the lines of src that call Get.
-func callLines(src string) string {
-	var lines []string
-	for _, line := range strings.Split(src, "\n") {
-		if strings.Contains(line, "Get()") {
-			lines = append(lines, strings.TrimSpace(line))
-		}
-	}
-	return strings.Join(lines, "\n")
+		assert.Equal(t, "1|local", buildAndRun(t, projectDir))
+	})
 }

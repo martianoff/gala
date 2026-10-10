@@ -1,5 +1,7 @@
 package transpiler
 
+import "strings"
+
 // GoTypeInfo holds type information extracted from Go source files and packages.
 // It bridges the gap between Go's type system and GALA's transpiler type system,
 // enabling type inference for Go function calls, struct field access, and method calls.
@@ -160,6 +162,61 @@ func (g *GoTypeInfo) GetFuncReturnType(qualifiedName string) Type {
 }
 
 // GetFuncSignature returns the full function signature, or nil if unknown.
+// AddImportPathKeys records every entry of the package named pkgName again
+// under its import path, `importPath.Name` beside `pkgName.Name`. A key by
+// name alone cannot tell two packages of one name apart (two `util` packages
+// of a module, GALA's `strings` and Go's); a key by import path is exact, and
+// a lookup through an import prefers it (see HasQualified).
+func (g *GoTypeInfo) AddImportPathKeys(pkgName, importPath string) {
+	if g == nil || pkgName == "" || importPath == "" || importPath == pkgName {
+		return
+	}
+	prefix := pkgName + "."
+	copyKeys := func(keys []string, add func(from, to string)) {
+		for _, k := range keys {
+			if rest, ok := strings.CutPrefix(k, prefix); ok {
+				add(k, importPath+"."+rest)
+			}
+		}
+	}
+	copyKeys(mapKeys(g.Functions), func(from, to string) { g.Functions[to] = g.Functions[from] })
+	copyKeys(mapKeys(g.Types), func(from, to string) { g.Types[to] = g.Types[from] })
+	copyKeys(mapKeys(g.Variables), func(from, to string) { g.Variables[to] = g.Variables[from] })
+	copyKeys(mapKeys(g.Constants), func(from, to string) { g.Constants[to] = g.Constants[from] })
+	copyKeys(mapKeys(g.UntypedConstants), func(from, to string) { g.UntypedConstants[to] = g.UntypedConstants[from] })
+	copyKeys(mapKeys(g.TypeAliases), func(from, to string) { g.TypeAliases[to] = g.TypeAliases[from] })
+	copyKeys(mapKeys(g.GalaTypeMethods), func(from, to string) { g.GalaTypeMethods[to] = g.GalaTypeMethods[from] })
+}
+
+// HasQualified reports whether any entry is recorded under key.
+func (g *GoTypeInfo) HasQualified(key string) bool {
+	if g == nil {
+		return false
+	}
+	if _, ok := g.Functions[key]; ok {
+		return true
+	}
+	if _, ok := g.Types[key]; ok {
+		return true
+	}
+	if _, ok := g.Variables[key]; ok {
+		return true
+	}
+	if _, ok := g.Constants[key]; ok {
+		return true
+	}
+	_, ok := g.TypeAliases[key]
+	return ok
+}
+
+func mapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (g *GoTypeInfo) GetFuncSignature(qualifiedName string) *GoFuncSignature {
 	if g == nil {
 		return nil
