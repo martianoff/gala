@@ -1501,8 +1501,8 @@ func (t *galaASTTransformer) goTypeLookupName(typ transpiler.Type) string {
 	if nt.Package == "" {
 		return t.ownGoTypeKey(nt.Name)
 	}
-	if t.isGoTyped(nt) {
-		if name, ok := t.goImportRealName(nt.ImportPath); ok {
+	if nt.ImportPath != "" {
+		if name, ok := t.goImportRealName(nt.ImportPath); ok && (t.isGoTyped(nt) || t.declaresGoExport(name, nt.Name)) {
 			return name + "." + nt.Name
 		}
 	}
@@ -1525,17 +1525,26 @@ func (t *galaASTTransformer) ownGoTypeKey(name string) string {
 
 // goQualifiedName returns the name Go type info records the package-level
 // `qualifier.name` under: `gourl.ParseQuery` with `gourl "net/url"` is
-// recorded as `url.ParseQuery`. Any other qualifier, including a local binding
-// that shadows an import, is kept as written.
+// recorded as `url.ParseQuery`. The alias of a GALA package resolves the same
+// way for a name its hand-written Go declares (`st.Load` with
+// `st "mymod/store"`, where store.go declares Load, is `store.Load`). Any
+// other qualifier, including a local binding that shadows an import, is kept
+// as written.
 func (t *galaASTTransformer) goQualifiedName(qualifier, name string) string {
 	if t.importManager != nil && t.bindingScope(qualifier) == nil {
-		if entry, isGala, ok := t.importForQualifier(qualifier); ok && !isGala && !entry.IsDot {
-			if real, ok := t.goImportRealName(entry.Path); ok {
+		if entry, isGala, ok := t.importForQualifier(qualifier); ok && !entry.IsDot {
+			if real, ok := t.goImportRealName(entry.Path); ok && (!isGala || t.declaresGoExport(real, name)) {
 				return real + "." + name
 			}
 		}
 	}
 	return qualifier + "." + name
+}
+
+// declaresGoExport reports whether the hand-written Go of the GALA package
+// named pkg exports name.
+func (t *galaASTTransformer) declaresGoExport(pkg, name string) bool {
+	return t.richAST != nil && slices.Contains(t.richAST.GoExports[pkg], name)
 }
 
 // goImportRealName returns the real package name of the Go package this file
