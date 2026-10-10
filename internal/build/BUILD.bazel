@@ -58,6 +58,7 @@ go_test(
         "go_toolchain_test.go",
         "generate_test.go",
         "gomod_test.go",
+        "inferred_foreign_gala_type_test.go",
         "main_go_sibling_test.go",
         "main_package_test.go",
         "main_root_subpackage_test_test.go",

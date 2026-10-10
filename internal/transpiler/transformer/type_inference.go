@@ -1226,7 +1226,8 @@ func (t *galaASTTransformer) getReceiverTypeArgs(recvType transpiler.Type) []ast
 	return nil
 }
 
-// getReceiverTypeArgStrings extracts type arguments from a receiver type as strings.
+// getReceiverTypeArgStrings extracts the printed type arguments of a receiver
+// type, for messages and method-name lookups (bind, unknown methods).
 // For example, for *Container[int], it returns ["int"].
 func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type) []string {
 	if transpiler.IsUnusable(recvType) {
@@ -1267,37 +1268,6 @@ func (t *galaASTTransformer) getReceiverTypeArgTypes(recvType transpiler.Type) [
 	return nil
 }
 
-// isForeignGoType reports whether typ (or its element, unwrapping arrays and
-// pointers) is a foreign type whose ImportPath must be preserved through
-// combinator param inference. It returns true only when the type's own
-// ImportPath exactly matches a known (explicit or transitive) import for its
-// package name. That is precisely the collision case — a foreign Go type whose
-// package name equals the current GALA package (io/fs's "fs" inside GALA's own
-// `fs`) — and it is false for a local type, whose ImportPath is the current
-// package's own path (never a foreign import) and must be dropped so its
-// current-package qualifier is not emitted (`<pkg>.LocalType` — undefined).
-func (t *galaASTTransformer) isForeignGoType(typ transpiler.Type) bool {
-	switch v := typ.(type) {
-	case transpiler.NamedType:
-		if v.ImportPath == "" {
-			return false
-		}
-		// Never preserve the ImportPath of a type that belongs to the CURRENT
-		// package. A Go type declared in the current package (e.g. via an
-		// events.go alongside the .gala sources) carries the current package's
-		// own import path (RichAST.OwnImportPath); keeping it would emit a
-		// `<currentPackage>.LocalType` qualifier (undefined). Only a genuinely
-		// foreign type (io/fs, whose package name collides with the current `fs`)
-		// needs its qualifier preserved through combinator param inference.
-		return !t.isOwnPackageType(v)
-	case transpiler.PointerType:
-		return t.isForeignGoType(v.Elem)
-	case transpiler.ArrayType:
-		return t.isForeignGoType(v.Elem)
-	}
-	return false
-}
-
 // exprToTypeString converts an ast.Expr to a type string.
 func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 	switch e := expr.(type) {
@@ -1323,15 +1293,11 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 
 // substituteTranspilerTypeParams substitutes type parameters in a type with their concrete values.
 // Delegates to substituteInType after converting the string-keyed map to a Type-keyed map.
-func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type, subst map[string]string) transpiler.Type {
+func (t *galaASTTransformer) substituteTranspilerTypeParams(typ transpiler.Type, subst typeSubstMap) transpiler.Type {
 	if typ == nil || typ.IsNil() || len(subst) == 0 {
 		return typ
 	}
-	paramMap := make(map[string]transpiler.Type, len(subst))
-	for k, v := range subst {
-		paramMap[k] = transpiler.ParseType(v)
-	}
-	return t.substituteInType(typ, paramMap)
+	return t.substituteInType(typ, subst)
 }
 
 // getGoFuncReturnTypeForCall resolves a Go function's return type AT A CALL SITE

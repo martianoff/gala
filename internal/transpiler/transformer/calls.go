@@ -305,7 +305,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				// defaults spell are bound by the call's explicit type
 				// arguments (`describe[int]()`) and, for the rest, by the
 				// slot (`val p Option[int] = pick()`).
-				typeSubst := typeSubstStrings(t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
+				typeSubst := maps.Clone(t.resultSlotTypeArgs(funcMeta.ReturnType, funcMeta.TypeParams, pending))
 				if explicit := explicitTypeArgSubst(funcMeta.TypeParams, t.extractFuncCallTypeArgs(base)); explicit != nil {
 					if typeSubst == nil {
 						typeSubst = explicit
@@ -558,35 +558,23 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	}
 
 	// Build type argument substitution map: receiver type params + method type params.
-	typeSubst := make(map[string]string)
+	typeSubst := make(typeSubstMap)
 	// Parallel ImportPath-preserving substitution for the receiver type params.
 	// The string form above drops ImportPath (via String()->ParseType), which is
 	// fatal when a foreign type's package name collides with the current package
 	// (io/fs vs GALA's own `fs`): the lambda param would emit a bare, colliding
 	// name. Carrying the receiver's actual arg Types keeps the qualifier.
-	typeSubstTypes := make(map[string]transpiler.Type)
-	var recvTypeArgStrings []string
+	var recvTypeArgTypes []transpiler.Type
 	if methodMeta != nil && typeMeta != nil {
-		recvTypeArgStrings = t.getReceiverTypeArgStrings(recvType)
-		recvTypeArgTypesFull := t.getReceiverTypeArgTypes(recvType)
+		recvTypeArgTypes = t.getReceiverTypeArgTypes(recvType)
 		for i, tp := range typeMeta.TypeParams {
-			if i < len(recvTypeArgStrings) {
-				typeSubst[tp] = recvTypeArgStrings[i]
-			}
-			// Only override with the ImportPath-preserving Type for a foreign Go
-			// type (one known to goTypeInfo). A local GALA type carries its own
-			// module-path ImportPath which must NOT survive — the string form
-			// blanks it so typeToExpr drops the current-package qualifier. Keeping
-			// it would emit `<currentPackage>.LocalType` (undefined). The foreign
-			// case (io/fs, whose name collides with the current `fs` package) is
-			// exactly the one that needs its qualifier preserved.
-			if i < len(recvTypeArgTypesFull) && t.isForeignGoType(recvTypeArgTypesFull[i]) {
-				typeSubstTypes[tp] = recvTypeArgTypesFull[i]
+			if i < len(recvTypeArgTypes) {
+				typeSubst[tp] = recvTypeArgTypes[i]
 			}
 		}
 		for i, tp := range methodMeta.TypeParams {
 			if i < len(typeArgs) {
-				typeSubst[tp] = t.exprToTypeString(typeArgs[i])
+				typeSubst[tp] = transpiler.ParseType(t.exprToTypeString(typeArgs[i]))
 			}
 			// Don't default to "any" — will try to infer from non-lambda args below.
 		}
@@ -610,10 +598,6 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// a `Shape` slot), since Go infers them from it too; an untyped constant
 	// takes the slot's (`0` in an `int64` slot). The slot's bindings are
 	// therefore kept apart (fromSlot) and only fill what the arguments leave.
-	recvTypeArgTypes := make([]transpiler.Type, 0, len(recvTypeArgStrings))
-	for _, a := range recvTypeArgStrings {
-		recvTypeArgTypes = append(recvTypeArgTypes, transpiler.ParseType(a))
-	}
 	var fromSlot map[string]transpiler.Type
 	slotTyped := map[string]bool{} // bound from the slot over an untyped constant argument
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && !transpiler.IsUnusableOrAny(pendingExpected) {
@@ -708,7 +692,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 							for _, mtp := range methodMeta.TypeParams {
 								if v, ok := combinedInferred[mtp]; ok && v != nil && !v.IsNil() {
 									if _, alreadySet := typeSubst[mtp]; !alreadySet {
-										typeSubst[mtp] = v.String()
+										typeSubst[mtp] = v
 									}
 								}
 							}
@@ -733,14 +717,14 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 					continue
 				}
 				if _, alreadySet := typeSubst[tp]; !alreadySet {
-					typeSubst[tp] = inferred.String()
+					typeSubst[tp] = inferred
 				}
 			}
 		}
 	}
 	for tp, inferred := range fromSlot {
 		if _, alreadySet := typeSubst[tp]; !alreadySet {
-			typeSubst[tp] = inferred.String()
+			typeSubst[tp] = inferred
 		}
 	}
 	// Harvest type params from earlier lambdas to refine later ones.
@@ -765,15 +749,15 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// emittable. The real typeSubst may still gain entries via the refinement
 	// step below; we only copy those into the final substitution if they
 	// remain unresolved.
-	anyView := func() map[string]string {
-		view := make(map[string]string, len(typeSubst))
+	anyView := func() typeSubstMap {
+		view := make(typeSubstMap, len(typeSubst))
 		for k, v := range typeSubst {
 			view[k] = v
 		}
 		if methodMeta != nil {
 			for _, tp := range methodMeta.TypeParams {
 				if _, ok := view[tp]; !ok {
-					view[tp] = "any"
+					view[tp] = anyTypeArg
 				}
 			}
 		}
@@ -802,7 +786,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			continue
 		}
 		genMethodCtx := t.buildMethodCallContext(methodMeta, anyView(), false)
-		genMethodCtx.typeSubstTypes = typeSubstTypes
+		if typeMeta != nil {
+			genMethodCtx.recvTypeParams = typeMeta.TypeParams
+		}
 		if cerr := t.checkSendableArg(genMethodCtx, i, exprCtx, lambdaCtx); cerr != nil {
 			return true, nil, cerr
 		}
@@ -827,7 +813,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 							if transpiler.IsUnusableOrAny(inferred) {
 								continue
 							}
-							typeSubst[tp] = inferred.String()
+							typeSubst[tp] = inferred
 						}
 					}
 				}
@@ -864,7 +850,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		for _, tp := range methodMeta.TypeParams {
 			if _, ok := typeSubst[tp]; !ok {
 				t.warnInference("method type parameter %q defaulted to `any` (unresolved from arguments)", tp)
-				typeSubst[tp] = "any"
+				typeSubst[tp] = anyTypeArg
 			}
 		}
 	}
@@ -936,7 +922,7 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 // on callSiteReceiver, at line/col. typeSubst (may be nil) carries the type
 // arguments the call has bound so far; a declared parameter type that still
 // mentions an unbound type parameter is not threaded into the default.
-func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvType transpiler.Type, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetadata, i int, callSiteReceiver ast.Expr, recvType transpiler.Type, typeSubst typeSubstMap, line, col int) (ast.Expr, error) {
 	// A default may use the receiver (`f func(int) int = (x) => x * b.K`): it
 	// is lowered with the receiver bound as in the method body, so `b.K`
 	// resolves — and unwraps an immutable field — as it does there, and the
@@ -962,7 +948,7 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 		src.typeParams = append(slices.Clone(recvMeta.TypeParams), src.typeParams...)
 	}
 	if i < len(methodMeta.ParamTypes) {
-		t.substituteDeclared(&src, methodMeta.ParamTypes[i], parseTypeSubst(typeSubst))
+		t.substituteDeclared(&src, methodMeta.ParamTypes[i], typeSubst)
 	}
 	return t.transformDefaultExpr(src, line, col)
 }
@@ -970,18 +956,18 @@ func (t *galaASTTransformer) methodDefaultArg(methodMeta *transpiler.MethodMetad
 // receiverTypeSubst maps a generic receiver type's parameters to the type
 // arguments recvType carries (`T` → `int` for Box[int]), overlaid on extra
 // (which is not modified). extra is returned as is when recvType carries none.
-func receiverTypeSubst(typeParams []string, recvType transpiler.Type, extra map[string]string) map[string]string {
+func receiverTypeSubst(typeParams []string, recvType transpiler.Type, extra typeSubstMap) typeSubstMap {
 	generic, ok := recvType.(transpiler.GenericType)
 	if !ok || len(generic.Params) != len(typeParams) {
 		return extra
 	}
-	subst := make(map[string]string, len(typeParams)+len(extra))
+	subst := make(typeSubstMap, len(typeParams)+len(extra))
 	for k, v := range extra {
 		subst[k] = v
 	}
 	for i, tp := range typeParams {
 		if _, bound := subst[tp]; !bound && !transpiler.IsUnusable(generic.Params[i]) {
-			subst[tp] = generic.Params[i].String()
+			subst[tp] = generic.Params[i]
 		}
 	}
 	return subst
@@ -1116,7 +1102,7 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 // argument list, or its `()`), as for a generic function (see
 // injectFuncPhantomTypeArgs). typeArgs is returned as is when nothing needs
 // spelling: Go infers every type argument from the arguments.
-func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst map[string]string, slotTyped map[string]bool, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
+func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata, typeArgs []ast.Expr, typeSubst typeSubstMap, slotTyped map[string]bool, yields func() transpiler.Type, args []ast.Expr) ([]ast.Expr, error) {
 	argBound, phantom := t.phantomTypeParams(methodMeta.TypeParams, methodMeta.ParamTypes)
 	// The call spells a prefix of the type arguments, up to the last phantom
 	// or slot-typed one; Go infers the rest from the arguments and the
@@ -1135,7 +1121,7 @@ func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleCon
 	var missing []string
 	for _, tp := range methodMeta.TypeParams[len(typeArgs):end] {
 		if s, ok := typeSubst[tp]; ok {
-			typ := transpiler.ParseType(s)
+			typ := s
 			resolved[tp] = typ
 			full = append(full, t.typeToExpr(typ))
 		} else {
@@ -1214,13 +1200,13 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 	}
 
 	// Build type substitution map from receiver's type arguments.
-	typeSubst := make(map[string]string)
-	recvTypeArgs := t.getReceiverTypeArgStrings(recvType)
+	typeSubst := make(typeSubstMap)
+	recvTypeArgs := t.getReceiverTypeArgTypes(recvType)
 	hasUnresolvedTypeParams := false
 	for i, tp := range typeMeta.TypeParams {
 		if i < len(recvTypeArgs) {
 			arg := recvTypeArgs[i]
-			if t.isUnboundTypeParam(arg) {
+			if t.isUnboundTypeParam(arg.String()) {
 				hasUnresolvedTypeParams = true
 				break
 			}
@@ -1236,7 +1222,7 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 
 	// Fully concrete receiver type: transform args (named + positional), then
 	// dispatch through named-args / default-args fillers if needed.
-	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, recvType)
+	return t.emitMethodCallWithFullTypes(argListCtx, receiver, method, methodMeta, typeSubst, typeMeta.TypeParams, recvType)
 }
 
 // emitDirectMethodCall is the fallback used when the method's metadata
@@ -1374,7 +1360,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 	receiver ast.Expr,
 	method string,
 	methodMeta *transpiler.MethodMetadata,
-	typeSubst map[string]string,
+	typeSubst typeSubstMap,
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
 	hasSpread := false
@@ -1413,7 +1399,8 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 	receiver ast.Expr,
 	method string,
 	methodMeta *transpiler.MethodMetadata,
-	typeSubst map[string]string,
+	typeSubst typeSubstMap,
+	recvTypeParams []string,
 	recvType transpiler.Type,
 ) (ast.Expr, error) {
 	var mArgs []ast.Expr
@@ -1432,6 +1419,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		if arg.Identifier() != nil {
 			argName := arg.Identifier().GetText()
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			resolvedMethodCtx.recvTypeParams = recvTypeParams
 			if cerr := t.checkSendableNamedArg(resolvedMethodCtx, argName, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
@@ -1443,6 +1431,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			mNamedArgs[argName] = expr
 		} else {
 			resolvedMethodCtx := t.buildMethodCallContext(methodMeta, typeSubst, false)
+			resolvedMethodCtx.recvTypeParams = recvTypeParams
 			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
@@ -2143,7 +2132,7 @@ type functionCallContext struct {
 	// function type, or a value of function type (see calleeFuncType).
 	goFuncParamTypes         []transpiler.Type
 	structFieldExpectedTypes []transpiler.Type
-	inferredTypeSubst        map[string]string
+	inferredTypeSubst        typeSubstMap
 	// typeArgPlaceholders: inferredTypeSubst fills some type parameter with
 	// an `any` placeholder (see inferFuncTypeSubstFromArgs), so the call's
 	// argument slots are open.
@@ -2151,7 +2140,7 @@ type functionCallContext struct {
 	// A generic struct / sealed-variant constructor's type parameters and the
 	// type arguments known before its lambdas are lowered (structCtorTypeSubst).
 	structTypeParams []string
-	structTypeSubst  map[string]string
+	structTypeSubst  typeSubstMap
 	// structLiteral: the call's positional arguments build a struct literal
 	// (see positionalCallBuildsStructLiteral), so each fills a field.
 	structLiteral bool
@@ -2175,7 +2164,7 @@ type functionCallContext struct {
 	// companion-Apply calls would be transformed before Section 10 resolves
 	// them and would miss their expected type entirely.
 	applyMethodMeta *transpiler.MethodMetadata
-	applyTypeSubst  map[string]string
+	applyTypeSubst  typeSubstMap
 	// applyTypeParams carries the companion type's own type-param names so the
 	// argument pass can mask unresolved Apply parameter result types (see
 	// resolveExpectedArgType's companion-Apply branch).
@@ -2368,28 +2357,15 @@ func (t *galaASTTransformer) structCtorSlotArgs(fun ast.Expr, funcName, resolved
 
 // explicitTypeArgSubst maps typeParams to a call's explicit type arguments, or
 // returns nil when there are none.
-func explicitTypeArgSubst(typeParams, typeArgs []string) map[string]string {
+func explicitTypeArgSubst(typeParams, typeArgs []string) typeSubstMap {
 	if len(typeArgs) == 0 {
 		return nil
 	}
-	subst := make(map[string]string, len(typeParams))
+	subst := make(typeSubstMap, len(typeParams))
 	for i, tp := range typeParams {
 		if i < len(typeArgs) {
-			subst[tp] = typeArgs[i]
+			subst[tp] = transpiler.ParseType(typeArgs[i])
 		}
-	}
-	return subst
-}
-
-// typeSubstStrings converts an inferred substitution to the string form
-// substituteTranspilerTypeParams takes; nil when empty.
-func typeSubstStrings(inferred map[string]transpiler.Type) map[string]string {
-	if len(inferred) == 0 {
-		return nil
-	}
-	subst := make(map[string]string, len(inferred))
-	for k, v := range inferred {
-		subst[k] = v.String()
 	}
 	return subst
 }
@@ -3982,7 +3958,7 @@ func (t *galaASTTransformer) injectSealedVariantTypeArgs(fun ast.Expr, expected 
 // funcDefaultArg is the default value of a function's i-th parameter at a call
 // at line/col. typeSubst (may be nil) carries the type arguments the call binds,
 // explicitly or by inference from the arguments it does pass.
-func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadata, i int, typeSubst map[string]string, line, col int) (ast.Expr, error) {
+func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadata, i int, typeSubst typeSubstMap, line, col int) (ast.Expr, error) {
 	src := defaultSource{
 		DefaultExpr: funcMeta.DefaultExprs[i],
 		file:        funcMeta.DefinedIn,
@@ -3990,14 +3966,14 @@ func (t *galaASTTransformer) funcDefaultArg(funcMeta *transpiler.FunctionMetadat
 		typeParams:  funcMeta.TypeParams,
 	}
 	if i < len(funcMeta.ParamTypes) {
-		t.substituteDeclared(&src, funcMeta.ParamTypes[i], parseTypeSubst(typeSubst))
+		t.substituteDeclared(&src, funcMeta.ParamTypes[i], typeSubst)
 	}
 	return t.transformDefaultExpr(src, line, col)
 }
 
 // fillDefaultArgs fills missing positional arguments with default values from function metadata.
 // Called when a function has defaults and fewer args were provided than parameters.
-func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, typeSubst map[string]string, line, col int) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpiler.FunctionMetadata, typeSubst typeSubstMap, line, col int) ([]ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 
@@ -4028,7 +4004,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	positionalArgs []ast.Expr,
 	namedArgs map[string]ast.Expr,
 	funcMeta *transpiler.FunctionMetadata,
-	typeSubst map[string]string,
+	typeSubst typeSubstMap,
 	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(funcMeta.ParamTypes)
@@ -4097,7 +4073,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	namedArgs map[string]ast.Expr,
 	methodMeta *transpiler.MethodMetadata,
 	recvType transpiler.Type,
-	typeSubst map[string]string,
+	typeSubst typeSubstMap,
 	line, col int,
 ) (ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
@@ -4145,7 +4121,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 
 // fillDefaultArgsMethod fills missing positional arguments with default values from method metadata.
 // callSiteReceiver is the actual receiver expression at the call site.
-func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvType transpiler.Type, typeSubst map[string]string, line, col int) ([]ast.Expr, error) {
+func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, args []ast.Expr, methodMeta *transpiler.MethodMetadata, recvType transpiler.Type, typeSubst typeSubstMap, line, col int) ([]ast.Expr, error) {
 	totalParams := len(methodMeta.ParamTypes)
 	result := make([]ast.Expr, totalParams)
 	copy(result, args)
@@ -4748,8 +4724,8 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // placeholders reports that some type parameter was filled with `any`.
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
-func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset map[string]string) (subst map[string]string, placeholders bool) {
-	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames)))
+func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset typeSubstMap) (subst typeSubstMap, placeholders bool) {
+	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames))
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
@@ -4760,14 +4736,14 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 	// in `body func(R) A`) become `any`, so the bound ones (`R`) still reach
 	// the lambda. An `any` expected result means "infer from the body", and in
 	// the emitted call Go infers the real type argument itself.
-	subst = make(map[string]string, len(funcMeta.TypeParams))
+	subst = make(typeSubstMap, len(funcMeta.TypeParams))
 	for _, tp := range funcMeta.TypeParams {
 		if v, ok := preset[tp]; ok {
 			subst[tp] = v
 		} else if v, ok := inferred[tp]; ok {
 			subst[tp] = v
 		} else {
-			subst[tp] = "any"
+			subst[tp] = anyTypeArg
 			placeholders = true
 		}
 	}
@@ -4849,10 +4825,10 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	fieldTypes []transpiler.Type,
 	argListCtx grammar.IArgumentListContext,
 	fromSlot map[string]transpiler.Type,
-) map[string]string {
-	explicit := typeSubstStrings(fromSlot)
+) typeSubstMap {
+	explicit := maps.Clone(fromSlot)
 	if explicit == nil {
-		explicit = map[string]string{}
+		explicit = typeSubstMap{}
 	}
 	maps.Copy(explicit, explicitTypeArgSubst(typeParams, t.extractFuncCallTypeArgs(fun)))
 	if len(explicit) == len(typeParams) || argListCtx == nil {
@@ -4873,7 +4849,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	}
 	// A partial explicit list binds its leading type parameters; the
 	// arguments determine the rest.
-	inferred := typeSubstStrings(t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args))
+	inferred := t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args)
 	if inferred == nil {
 		return explicit
 	}

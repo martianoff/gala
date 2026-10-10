@@ -878,13 +878,18 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			ownImportPath = a.resolver.PackageImportPath(filePath)
 		}
 		richAST.OwnImportPath = goFilesImportPath(dirPath, ownImportPath)
-		goInfo, ownTypes := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
+		goInfo, ownTypes, goImports := AnalyzeOwnGoFiles(dirPath, richAST.OwnImportPath, pkgName)
 		if !goInfo.IsEmpty() {
 			if richAST.GoTypeInfo == nil {
 				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 			}
 			richAST.GoTypeInfo.Merge(goInfo)
 			richAST.OwnGoTypes = ownTypes
+		}
+		for _, path := range goImports {
+			if path != richAST.OwnImportPath {
+				a.loadGalaMetadata(path, richAST)
+			}
 		}
 	}
 
@@ -2513,43 +2518,64 @@ func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *trans
 			s := spec.(*grammar.ImportSpecContext)
 			path := strings.Trim(s.STRING().GetText(), "\"")
 
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
-
-			if isInternalGala || isExternalGala {
-				var relPath string
-				if isInternalGala {
-					relPath = strings.TrimPrefix(path, "martianoff/gala/")
-				} else {
-					relPath = path
-				}
-
-				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-						richAST.Packages[path] = cached.PackageName
-					}
-				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
-					a.analyzedPkgs[path] = nil
-					importedAST, err := a.analyzePackage(relPath, path)
-					if err == nil {
-						a.storeAnalyzedPkg(path, importedAST)
-						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-							richAST.Packages[path] = importedAST.PackageName
-						} else {
-							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
-									richAST.Packages[path] = typeMeta.Package
-									break
-								}
-							}
-						}
-					}
-				}
-			}
+			a.loadGalaImport(path, richAST, mergeVisited)
 		}
 	}
+}
+
+// loadGalaImport analyzes the GALA package at path, when path names one, and
+// merges its metadata and its closure into richAST, recording it among
+// richAST.Packages (an implicit import of the file until the file names it).
+func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
+	isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+	if !isInternalGala && !a.resolver.IsGalaPackage(path) {
+		return
+	}
+	relPath := path
+	if isInternalGala {
+		relPath = strings.TrimPrefix(path, "martianoff/gala/")
+	}
+	if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
+		a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
+		if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
+			richAST.Packages[path] = cached.PackageName
+		}
+		return
+	}
+	if _, inProgress := a.analyzedPkgs[path]; inProgress {
+		return
+	}
+	a.analyzedPkgs[path] = nil
+	importedAST, err := a.analyzePackage(relPath, path)
+	if err != nil {
+		return
+	}
+	a.storeAnalyzedPkg(path, importedAST)
+	a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
+	if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
+		richAST.Packages[path] = importedAST.PackageName
+		return
+	}
+	for _, typeMeta := range importedAST.Types {
+		if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
+			richAST.Packages[path] = typeMeta.Package
+			return
+		}
+	}
+}
+
+// loadGalaMetadata merges the metadata of the GALA package at path, when path
+// names one, into richAST: the types and functions a type of that package
+// reaching the GALA code through the package's own hand-written Go needs —
+// a map of its structs, say. Unlike loadGalaImport it does not make the
+// package an import of the file, so it claims no package name a Go import
+// of the file may hold; the file imports it only by emitting one of its types,
+// which carry their import path.
+func (a *galaAnalyzer) loadGalaMetadata(path string, richAST *transpiler.RichAST) {
+	scratch := &transpiler.RichAST{Packages: make(map[string]string)}
+	a.loadGalaImport(path, scratch, make(map[string]bool))
+	scratch.Packages = nil
+	richAST.Merge(scratch)
 }
 
 // findKnownTypePackage checks if a type name is already known in richAST.Types
