@@ -34,5 +34,5 @@ func main() {
     Println(describe(Some(w)))
     Println(describe(Some(w.Copy(A = 0))))
     Println(describe(Some(Narrow("n"))))
-    Println(describe(None[Row]()))
+    Println(describe(None()))
 }
