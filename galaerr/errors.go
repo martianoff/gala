@@ -743,6 +743,12 @@ const (
 	// declared on T or *T. Without the check Go rejected the generated
 	// `std.NewConstPtr(x.Ptr())` as not implementing the interface.
 	CodeConstPtrNotInterface ErrorCode = "GALA-E0070"
+
+	// E0071: an alternative pattern `p1 | p2` is malformed: an alternative
+	// binds a name or is the wildcard `_`, `|` shares an operand chain with
+	// `+`, `-` or `^` without parentheses, or `|` sits inside a comparison or
+	// boolean expression of the pattern.
+	CodeInvalidAlternativePattern ErrorCode = "GALA-E0071"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

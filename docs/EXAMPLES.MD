@@ -247,6 +247,33 @@ func main() {
 }
 ```
 
+## Alternative Patterns Example
+
+```gala
+package main
+
+sealed type Event {
+    case Click(X int, Y int)
+    case Tap(X int, Y int)
+    case Key(Code int)
+    case Quit()
+}
+
+func describe(e Event) string = e match {
+    case Click(_, _) | Tap(_, _) => "pointer"
+    case Key(9 | 13 | 32)        => "whitespace key"
+    case Key(_)                  => "other key"
+    case Quit()                  => "quit"
+}
+
+func main() {
+    Println(describe(Tap(1, 2)))
+    Println(describe(Key(13)))
+    Println(describe(Key(65)))
+    Println(describe(Quit()))
+}
+```
+
 ## Pattern Matching with Extractors Example
 
 ```gala

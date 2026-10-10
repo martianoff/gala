@@ -29,9 +29,10 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 11. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
 12. [Opaque Types](#opaque-types)
 13. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-14. [Go Type Inference](#go-type-inference)
-15. [Limitations and Edge Cases](#limitations-and-edge-cases)
-16. [Key Files](#key-files)
+14. [Alternative Patterns](#alternative-patterns)
+15. [Go Type Inference](#go-type-inference)
+16. [Limitations and Edge Cases](#limitations-and-edge-cases)
+17. [Key Files](#key-files)
 
 ---
 
@@ -928,6 +929,16 @@ sealed-case constructors.
 | `transformer/calls.go::transformCallWithArgsCtx` | Invokes the fill just before the verbatim-call fallback, passing the consumed call-site hint |
 
 ---
+
+## Alternative Patterns
+
+An alternative pattern `p1 | p2` ([GALA.MD](GALA.MD#alternative-patterns)) is typed one alternative at a time:
+
+- **Each alternative is matched against the subject's type**, as a whole pattern would be, so `case Some(1 | 2)` types both `1` and `2` against `Option[int]`'s element and `case 1 | "a"` on an `int` fails on `"a"`.
+- **Nothing is bound**, so the arm's guard and body see no new names and the arm's result type comes from its body alone.
+- **Exhaustiveness and variant arity count each alternative**: `case Circle(_) | Rect(_, _)` covers both variants, and a wrong field count in either one is GALA-E0004.
+
+`transformer/alternative_pattern.go` splits the pattern and lowers each alternative through the ordinary pattern path.
 
 ## Go Type Inference
 

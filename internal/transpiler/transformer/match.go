@@ -602,28 +602,30 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 		if !ok {
 			continue
 		}
-		name, argList, isCall := t.patternCallShape(exprPat.Expression())
-		if !isCall {
-			continue
-		}
-		variant, ok := variantByName[name]
-		if !ok {
-			continue
-		}
-		got := 0
-		if argList != nil {
-			got = len(argList.AllArgument())
-		}
-		want := len(variant.FieldNames)
-		if got != want {
-			return galaerr.NewCodedSemanticError(
-				galaerr.CodeVariantArityMismatch,
-				pat.GetStart().GetLine(),
-				pat.GetStart().GetColumn(),
-				fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d",
-					name, got, want),
-				"use `_` for unused fields",
-			)
+		for _, alt := range t.flatAlternatives(exprPat.Expression()) {
+			name, argList, isCall := t.patternCallShape(alt)
+			if !isCall {
+				continue
+			}
+			variant, ok := variantByName[name]
+			if !ok {
+				continue
+			}
+			got := 0
+			if argList != nil {
+				got = len(argList.AllArgument())
+			}
+			want := len(variant.FieldNames)
+			if got != want {
+				return galaerr.NewCodedSemanticError(
+					galaerr.CodeVariantArityMismatch,
+					alt.GetStart().GetLine(),
+					alt.GetStart().GetColumn(),
+					fmt.Sprintf("sealed variant %q pattern binds %d field(s) but declares %d",
+						name, got, want),
+					"use `_` for unused fields",
+				)
+			}
 		}
 	}
 	return nil

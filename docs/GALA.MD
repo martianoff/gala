@@ -1553,6 +1553,47 @@ val r = n match {
 }
 ```
 
+#### Alternative Patterns
+As in Scala, `p1 | p2 | …` matches when any of its alternatives matches. Alternatives work at the top of a `case` and nested inside an extractor or a tuple, and a sealed match is exhaustive when its alternatives cover every variant:
+
+```gala
+package main
+
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+    case Empty()
+}
+
+func mode(m string) string = m match {
+    case "debug" | "development" => "dev"
+    case "prod" | "production"   => "prod"
+    case _                       => "unknown"
+}
+
+func kind(s Shape) string = s match {
+    case Circle(_) | Rect(_, _) => "solid"
+    case Empty()                => "empty"
+}
+
+func size(o Option[int]) string = o match {
+    case Some(1 | 2 | 3) => "small"
+    case Some(_) | None() => "other"
+}
+
+func main() {
+    Println(mode("development"), kind(Rect(1, 2)), size(Some(2)))
+}
+```
+
+The rules:
+
+- **Alternatives bind no names.** `case Some(n) | None()` is rejected ([GALA-E0071](errors/GALA-E0071.md)), because `n` would have no value when `None()` matched. Use `_`, or give each alternative its own case.
+- **`|` is always an alternative in a pattern**, also inside parentheses: `case (A | B)` is the same as `case A | B`. To match the bitwise OR of two values, use a guard, `case n if n == (FlagA | FlagB)`, or name the value with a `val` and match the name as a [stable identifier](#stable-identifiers-constants-in-patterns).
+- **`|` cannot be mixed with `+`, `-` or `^` in one alternative without parentheses.** They share its precedence, so `case 1 + 1 | 3` is rejected; write `case (1 + 1) | 3`.
+- **`|` cannot appear inside a comparison or boolean expression of a pattern** (`case Some(1 | 2 > 1)`), and **`_` cannot be an alternative** (`case Some(1) | _`): write the comparison as a guard, and the catch-all as `case _`.
+- **A guard applies to the whole pattern.** In `case 1 | 2 if ok`, the guard is checked whichever alternative matched.
+
 #### Type-Based Pattern Matching
 GALA supports matching based on the type of an object. This is useful when working with `any` or interface types.
 
