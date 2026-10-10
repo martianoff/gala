@@ -2165,14 +2165,16 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 				Params: []transpiler.Type{fieldType},
 			}
 		default:
-			// Option[Tuple[...]]
+			// Option[Tuple[...]]. A variant wider than the widest tuple has no
+			// extractor (GALA-E0072 rejects its declaration).
+			tupleName, ok := transpiler.TupleArityName(len(vi.fields))
+			if !ok {
+				richAST.Types[fullCompanionName] = companionMeta
+				continue
+			}
 			var tupleParams []transpiler.Type
 			for _, f := range vi.fields {
 				tupleParams = append(tupleParams, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
-			}
-			tupleName := fmt.Sprintf("Tuple%d", len(vi.fields))
-			if len(vi.fields) == 2 {
-				tupleName = "Tuple"
 			}
 			tupleType := transpiler.GenericType{
 				Base:   transpiler.NamedType{Package: registry.StdPackageName, Name: tupleName},

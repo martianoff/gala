@@ -124,11 +124,6 @@ func rewriteImports(name string, src []byte, m Module) ([]byte, error) {
 // export does, leaving every other byte untouched. It checks nothing about
 // where the rewritten imports resolve.
 func RemapImports(name string, src []byte, remap map[string]string) ([]byte, error) {
-	for from, to := range remap {
-		if err := module.CheckPath(to); err != nil {
-			return nil, fmt.Errorf("remapping %s: %w", from, err)
-		}
-	}
 	return replaceImports(name, src, remap, nil)
 }
 
@@ -326,7 +321,9 @@ func StdlibSourceModule() string {
 
 // StdlibRemap maps the import path of every standard library package to
 // the same package under modulePath, for RemapImports. Other packages of the
-// source module are left out.
+// source module are left out: transpiled user code imports only stdlib
+// packages of it. (An export remaps the whole module, whose packages it
+// writes all of.)
 func StdlibRemap(modulePath string) map[string]string {
 	source := StdlibSourceModule()
 	remap := make(map[string]string, len(stdlib.PackageImportPaths))

@@ -59,7 +59,7 @@ func init() {
 	transpileCmd.Flags().StringVarP(&transpileSearch, "search", "s", ".", "Comma-separated search paths")
 	transpileCmd.Flags().StringVar(&transpilePackageFiles, "package-files", "", "Comma-separated list of sibling .gala files in the same package")
 	transpileCmd.Flags().StringVar(&transpileGoroot, "goroot", "", "Path to Go SDK root (for Go type inference)")
-	transpileCmd.Flags().StringVar(&transpileStdlibModule, "stdlib-module", "", "Go module path to write standard library imports under, such as go.gala.fyi/stdlib (default: none, imports stay martianoff/gala)")
+	transpileCmd.Flags().StringVar(&transpileStdlibModule, "stdlib-module", "", stdlibModuleUsage)
 	addDiagnosticsJSONFlag(transpileCmd)
 }
 
@@ -169,7 +169,8 @@ func runTranspile(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if err := checkStdlibModule(transpileStdlibModule); err != nil {
+	stdlibRemap, err := stdlibRemapFor(transpileStdlibModule)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -221,7 +222,7 @@ func runTranspile(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if goCode, err = remapStdlibImports(inputPath, goCode, transpileStdlibModule); err != nil {
+	if goCode, err = remapStdlibImports(inputPath, goCode, stdlibRemap); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -266,28 +267,32 @@ func runTranspile(cmd *cobra.Command, args []string) {
 	}
 }
 
-// remapStdlibImports rewrites the imports of GALA's standard library in the
-// generated Go code to stdlibModule (--stdlib-module). An empty stdlibModule
-// leaves the code as it is.
-func remapStdlibImports(name, goCode, stdlibModule string) (string, error) {
+// stdlibModuleUsage is the help text of the --stdlib-module flag.
+const stdlibModuleUsage = "Go module path to write standard library imports under, such as go.gala.fyi/stdlib (default: none, imports stay martianoff/gala)"
+
+// stdlibRemapFor returns the import remap --stdlib-module asks for (see
+// goexport.StdlibRemap), or nil when it is empty. A module path the go
+// command could not download is rejected before anything is transpiled.
+func stdlibRemapFor(stdlibModule string) (map[string]string, error) {
 	if stdlibModule == "" {
+		return nil, nil
+	}
+	if err := module.CheckPath(stdlibModule); err != nil {
+		return nil, fmt.Errorf("--stdlib-module: %w", err)
+	}
+	return goexport.StdlibRemap(stdlibModule), nil
+}
+
+// remapStdlibImports rewrites the imports of GALA's standard library in the
+// generated Go code through remap (see stdlibRemapFor). A nil remap leaves the
+// code as it is.
+func remapStdlibImports(name, goCode string, remap map[string]string) (string, error) {
+	if remap == nil {
 		return goCode, nil
 	}
-	out, err := goexport.RemapImports(name, []byte(goCode), goexport.StdlibRemap(stdlibModule))
+	out, err := goexport.RemapImports(name, []byte(goCode), remap)
 	if err != nil {
 		return "", fmt.Errorf("--stdlib-module: %w", err)
 	}
 	return string(out), nil
-}
-
-// checkStdlibModule rejects a --stdlib-module value the go command could not
-// download, before anything is transpiled. An empty value is no rewrite.
-func checkStdlibModule(stdlibModule string) error {
-	if stdlibModule == "" {
-		return nil
-	}
-	if err := module.CheckPath(stdlibModule); err != nil {
-		return fmt.Errorf("--stdlib-module: %w", err)
-	}
-	return nil
 }

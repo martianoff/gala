@@ -36,9 +36,8 @@ func (t *galaASTTransformer) patternAlternatives(expr grammar.IExpressionContext
 	}
 	muls := add.AllMultiplicativeExpr()
 	if len(muls) == 1 {
-		// `(p,)` is a one-element tuple, not a parenthesized pattern.
-		if list := t.parenthesizedList(expr); list != nil && list.GetChildCount() == 1 {
-			return t.patternAlternatives(list.Expression(0))
+		if inner := t.parenthesizedPattern(expr); inner != nil {
+			return t.patternAlternatives(inner)
 		}
 		return nil, nil
 	}
@@ -191,4 +190,13 @@ func (t *galaASTTransformer) transformAlternativePattern(alts []grammar.IExpress
 		out = append(out, &ast.IfStmt{Cond: &ast.UnaryExpr{Op: token.NOT, X: ast.NewIdent(matched)}, Body: body})
 	}
 	return ast.NewIdent(matched), out, nil
+}
+
+// parenthesizedPattern returns p when expr is exactly `(p)`, or nil; `(p,)`
+// is a one-element tuple, not a parenthesized pattern.
+func (t *galaASTTransformer) parenthesizedPattern(expr grammar.IExpressionContext) grammar.IExpressionContext {
+	if list := t.parenthesizedList(expr); list != nil && list.GetChildCount() == 1 {
+		return list.Expression(0)
+	}
+	return nil
 }
