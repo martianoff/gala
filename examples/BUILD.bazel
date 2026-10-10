@@ -1290,6 +1290,13 @@ gala_exec_test(
     expected = "alternative_patterns.out",
 )
 
+# Named sub-patterns `Field = p` in variant and struct patterns
+gala_exec_test(
+    name = "named_sub_patterns",
+    src = "named_sub_patterns.gala",
+    expected = "named_sub_patterns.out",
+)
+
 # A block-bodied function returns its trailing expression
 gala_exec_test(
     name = "block_function_trailing_value",

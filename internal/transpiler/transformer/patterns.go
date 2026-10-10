@@ -156,6 +156,10 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 	if t.typeParamValue(rawName) {
 		return nil, nil, t.typeParamMisuseError(patExprCtx, rawName, "cannot be matched as a pattern")
 	}
+	argList, err := t.normalizePatternArgs(rawName, argList, matchedType)
+	if err != nil {
+		return nil, nil, err
+	}
 	// An extractor's explicit type arguments (`case Unwrap[Circle](v)`) are
 	// always types, so a sealed variant among them is GALA-E0061.
 	if explicitTypeArgs != nil {
@@ -1965,6 +1969,9 @@ func (t *galaASTTransformer) tryBindingExtractorPattern(
 		return nil, nil, true, galaerr.NewSemanticErrorAt(patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn(),
 			fmt.Sprintf("extractor variable '%s' (type '%s') must have Unapply returning bool or Option[T], got '%s'",
 				b, varTypeName, returnType.String()))
+	}
+	if i := firstNamedArg(argList); i >= 0 {
+		return nil, nil, true, noFieldNamesError(argList, i, b.String(), "it is an extractor whose result has no field names")
 	}
 	expr, stmts, err := t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, objExpr, argList, matchedType)
 	return expr, stmts, true, err

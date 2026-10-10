@@ -555,6 +555,10 @@ func (t *galaASTTransformer) validateSealedVariantArity(matchedType transpiler.T
 			if !ok {
 				continue
 			}
+			argList, err := t.normalizePatternArgs(name, argList, matchedType)
+			if err != nil {
+				return err
+			}
 			got := 0
 			if argList != nil {
 				got = len(argList.AllArgument())
