@@ -721,7 +721,7 @@ func packageHover(richAST *transpiler.RichAST, text, word string) string {
 	}
 	pkg := word
 	if name, found := richAST.Packages[path]; found {
-		pkg = name
+		pkg = transpiler.PackageKeyName(name, path)
 	}
 	return renderHover("package "+pkg+"\nimport \""+path+"\"", "", "")
 }

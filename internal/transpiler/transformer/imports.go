@@ -229,7 +229,9 @@ func (m *ImportManager) AddFromPackages(packages map[string]string) {
 		if _, exists := m.byPath[path]; exists {
 			continue
 		}
-		m.add(path, pkgName, false, pkgName, true)
+		// A keyed package (see transpiler.PackageKey) is named by its key
+		// in metadata, and by its own name in the generated Go.
+		m.add(path, transpiler.PackageKeyName(pkgName, path), false, pkgName, true)
 	}
 }
 
@@ -604,9 +606,6 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 	for _, entry := range m.dotImports {
 		if entry.PkgName == pkgName {
 			for name := range richAST.ImportedVals[entry.Path] {
-				exports[name] = true
-			}
-			for name := range richAST.ImportedFuncs[entry.Path] {
 				exports[name] = true
 			}
 		}

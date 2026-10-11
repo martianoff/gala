@@ -628,19 +628,10 @@ func (t *galaASTTransformer) qualifiedFunction(qualifier, name string) (fm *tran
 }
 
 // importedFunction returns the function name of the GALA package entry
-// imports, or nil. It resolves through the import's path (see
-// RichAST.AddImportedFuncs): a key by package name alone would also find a
-// function of the package being compiled, or of another import, that shares
-// the package's name.
+// imports, or nil. A package that shares its name with another the file
+// reaches is recorded under its own key, which entry.PkgName holds (see
+// transpiler.PackageKey).
 func (t *galaASTTransformer) importedFunction(entry *ImportEntry, name string) *transpiler.FunctionMetadata {
-	if t.richAST != nil {
-		if funcs, known := t.richAST.ImportedFuncs[entry.Path]; known {
-			return funcs[name]
-		}
-	}
-	if entry.PkgName == t.packageName {
-		return nil
-	}
 	return t.functions[ownFunctionKey(entry.PkgName, name)]
 }
 

@@ -1,6 +1,7 @@
 package transpiler
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -10,28 +11,32 @@ import (
 // import, or two imports), each imported one is recorded under its own
 // package key instead (see PackageKey): its types, functions and companions
 // are keyed, and its types named, by that key, so every lookup keyed by
-// package name finds the right package. The package's import still emits the
-// file's qualifier for it; a key never reaches the generated Go.
+// package name finds the right package. The package's import still binds its
+// own name in source and emits the file's qualifier; a key never reaches the
+// generated Go.
 
 // PackageKey is the key the package pkgName at importPath is recorded under
-// when another package of its name is reached too. It names the package and
-// its whole path, and is an identifier, as a package name is.
+// when another package of its name is reached too: the name, "__", and the
+// path with every byte but a letter or digit written as `_` and its hex code.
+// It is an identifier, as a package name is, distinct for every path, and its
+// path part never holds "__".
 func PackageKey(pkgName, importPath string) string {
 	var b strings.Builder
 	b.WriteString(pkgName)
 	b.WriteString("__")
-	for _, r := range importPath {
-		if r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-			b.WriteRune(r)
+	for i := 0; i < len(importPath); i++ {
+		c := importPath[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+			b.WriteByte(c)
 		} else {
-			b.WriteByte('_')
+			fmt.Fprintf(&b, "_%02x", c)
 		}
 	}
 	return b.String()
 }
 
 // PackageKeyName is the package name a PackageKey of the package at
-// importPath was made from.
+// importPath was made from; any other name is returned as it is.
 func PackageKeyName(key, importPath string) string {
 	return strings.TrimSuffix(key, PackageKey("", importPath))
 }
@@ -39,8 +44,8 @@ func PackageKeyName(key, importPath string) string {
 // PackageDisplayName is the name to show for the package pkg: the package
 // name of a key (see PackageKey), else pkg itself.
 func PackageDisplayName(pkg string) string {
-	if name, _, keyed := strings.Cut(pkg, "__"); keyed && name != "" {
-		return name
+	if i := strings.LastIndex(pkg, "__"); i > 0 {
+		return pkg[:i]
 	}
 	return pkg
 }
@@ -56,102 +61,70 @@ func (r *RichAST) ApplyPackageKeys() {
 	}
 }
 
-// RenamePackage returns r with the package from recorded as to: every
-// declaration of from re-keyed and every type of from renamed, the
-// declarations of other packages left as they are. r is not modified; what
-// changes is copied.
-func (r *RichAST) RenamePackage(from, to string) *RichAST {
+// RenamePackages returns r with each package named in renames (old name ->
+// new) recorded under its new name: its declarations re-keyed and every type
+// naming it renamed, other packages' declarations left as they are. r is not
+// modified; what changes is copied.
+func (r *RichAST) RenamePackages(renames map[string]string) *RichAST {
 	out := *r
-	if out.PackageName == from {
-		out.PackageName = to
-	}
-	rn := packageRenamer{from: from, to: to}
-	if r.Types != nil {
-		out.Types = make(map[string]*TypeMetadata, len(r.Types))
-		for k, v := range r.Types {
-			out.Types[rn.key(k)] = rn.typeMeta(v)
-		}
-	}
-	if r.Functions != nil {
-		out.Functions = make(map[string]*FunctionMetadata, len(r.Functions))
-		for k, v := range r.Functions {
-			out.Functions[rn.key(k)] = rn.function(v)
-		}
-	}
-	if r.CompanionObjects != nil {
-		out.CompanionObjects = make(map[string]*CompanionObjectMetadata, len(r.CompanionObjects))
-		for k, v := range r.CompanionObjects {
-			out.CompanionObjects[rn.key(k)] = rn.companion(v)
-		}
-	}
-	if r.TypeAliases != nil {
-		out.TypeAliases = make(map[string]Type, len(r.TypeAliases))
-		for k, v := range r.TypeAliases {
-			out.TypeAliases[rn.key(k)] = rn.typ(v)
-		}
-	}
-	if r.PackageVals != nil {
-		out.PackageVals = make(map[string]*PackageValMetadata, len(r.PackageVals))
-		for k, v := range r.PackageVals {
-			out.PackageVals[k] = rn.packageVal(v)
-		}
-	}
-	if r.Packages != nil {
-		out.Packages = make(map[string]string, len(r.Packages))
-		for k, v := range r.Packages {
-			out.Packages[k] = rn.pkg(v)
-		}
-	}
+	rn := packageRenamer(renames)
+	out.PackageName = rn.pkg(r.PackageName)
+	out.Types = mapEntries(r.Types, rn.key, rn.typeMeta)
+	out.Functions = mapEntries(r.Functions, rn.key, rn.function)
+	out.CompanionObjects = mapEntries(r.CompanionObjects, rn.key, rn.companion)
+	out.TypeAliases = mapEntries(r.TypeAliases, rn.key, rn.typ)
+	out.PackageVals = mapEntries(r.PackageVals, same, rn.packageVal)
+	out.Packages = mapEntries(r.Packages, same, rn.pkg)
+	out.GoExports = withRenamedKeys(r.GoExports, rn.pkg)
+	out.GoTypeInfo = rn.goTypeInfo(r.GoTypeInfo)
 	return &out
 }
 
-// RenamePackageIn records, in r itself, the package from as to (see
-// RenamePackage): for a package merged into r before another package of its
-// name reached r.
-func (r *RichAST) RenamePackageIn(from, to string) {
-	renamed := r.RenamePackage(from, to)
+// RenamePackagesIn is RenamePackages applied to r itself, its imported
+// bindings included: for a package merged into r under its name before
+// another package of the name reached r.
+func (r *RichAST) RenamePackagesIn(renames map[string]string) {
+	renamed := r.RenamePackages(renames)
 	r.Types, r.Functions, r.CompanionObjects = renamed.Types, renamed.Functions, renamed.CompanionObjects
 	r.TypeAliases, r.PackageVals, r.Packages = renamed.TypeAliases, renamed.PackageVals, renamed.Packages
-	for path, funcs := range r.ImportedFuncs {
-		r.ImportedFuncs[path] = renamed.renamedFuncs(funcs, from, to)
-	}
+	r.GoExports, r.GoTypeInfo = renamed.GoExports, renamed.GoTypeInfo
+	rn := packageRenamer(renames)
 	for path, vals := range r.ImportedVals {
-		r.ImportedVals[path] = renamed.renamedVals(vals, from, to)
+		r.ImportedVals[path] = mapEntries(vals, same, rn.packageVal)
 	}
 }
 
-func (*RichAST) renamedFuncs(funcs map[string]*FunctionMetadata, from, to string) map[string]*FunctionMetadata {
-	rn := packageRenamer{from: from, to: to}
-	out := make(map[string]*FunctionMetadata, len(funcs))
-	for k, v := range funcs {
-		out[k] = rn.function(v)
-	}
-	return out
-}
+func same(k string) string { return k }
 
-func (*RichAST) renamedVals(vals map[string]*PackageValMetadata, from, to string) map[string]*PackageValMetadata {
-	rn := packageRenamer{from: from, to: to}
-	out := make(map[string]*PackageValMetadata, len(vals))
-	for k, v := range vals {
-		out[k] = rn.packageVal(v)
+// mapEntries returns m with every key passed through key and every value
+// through value; nil for a nil m.
+func mapEntries[V any](m map[string]V, key func(string) string, value func(V) V) map[string]V {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]V, len(m))
+	for k, v := range m {
+		out[key(k)] = value(v)
 	}
 	return out
 }
 
-// packageRenamer rewrites the package from to to in metadata.
-type packageRenamer struct{ from, to string }
+// packageRenamer rewrites package names (old -> new) in metadata.
+type packageRenamer map[string]string
 
 func (rn packageRenamer) pkg(p string) string {
-	if p == rn.from {
-		return rn.to
+	if to, ok := rn[p]; ok {
+		return to
 	}
 	return p
 }
 
-// key renames a "pkg.Name" key (or a qualified type name) of from.
+// key renames the package of a "pkg.Name" key or qualified type name.
 func (rn packageRenamer) key(k string) string {
-	if rest, ok := strings.CutPrefix(k, rn.from+"."); ok {
-		return rn.to + "." + rest
+	if pkg, rest, ok := strings.Cut(k, "."); ok {
+		if to, renamed := rn[pkg]; renamed {
+			return to + "." + rest
+		}
 	}
 	return k
 }
@@ -201,24 +174,9 @@ func (rn packageRenamer) typeMeta(m *TypeMetadata) *TypeMetadata {
 	}
 	c := *m
 	c.Package = rn.pkg(m.Package)
-	if m.Methods != nil {
-		c.Methods = make(map[string]*MethodMetadata, len(m.Methods))
-		for k, v := range m.Methods {
-			c.Methods[k] = rn.method(v)
-		}
-	}
-	if m.Fields != nil {
-		c.Fields = make(map[string]Type, len(m.Fields))
-		for k, v := range m.Fields {
-			c.Fields[k] = rn.typ(v)
-		}
-	}
-	if m.TypeParamConstraints != nil {
-		c.TypeParamConstraints = make(map[string]string, len(m.TypeParamConstraints))
-		for k, v := range m.TypeParamConstraints {
-			c.TypeParamConstraints[k] = rn.key(v)
-		}
-	}
+	c.Methods = mapEntries(m.Methods, same, rn.method)
+	c.Fields = mapEntries(m.Fields, same, rn.typ)
+	c.TypeParamConstraints = mapEntries(m.TypeParamConstraints, same, rn.key)
 	if m.SealedVariants != nil {
 		c.SealedVariants = make([]SealedVariant, len(m.SealedVariants))
 		for i, v := range m.SealedVariants {
@@ -271,6 +229,42 @@ func (rn packageRenamer) companion(co *CompanionObjectMetadata) *CompanionObject
 	c.Package = rn.pkg(co.Package)
 	c.TargetType = rn.key(co.TargetType)
 	return &c
+}
+
+// goTypeInfo adds, under the new names, the entries a renamed package's
+// hand-written Go records under its old one. The old entries stay: a Go
+// package of the old name (a GALA package may share a Go package's name)
+// records its own under the same keys. The types they hold are Go's, and
+// keep their names.
+func (rn packageRenamer) goTypeInfo(g *GoTypeInfo) *GoTypeInfo {
+	if g == nil {
+		return nil
+	}
+	c := *g
+	c.Functions = withRenamedKeys(g.Functions, rn.key)
+	c.Types = withRenamedKeys(g.Types, rn.key)
+	c.Variables = withRenamedKeys(g.Variables, rn.key)
+	c.Constants = withRenamedKeys(g.Constants, rn.key)
+	c.UntypedConstants = withRenamedKeys(g.UntypedConstants, rn.key)
+	c.TypeAliases = withRenamedKeys(g.TypeAliases, rn.key)
+	c.GalaTypeMethods = withRenamedKeys(g.GalaTypeMethods, rn.key)
+	return &c
+}
+
+// withRenamedKeys returns m with every entry whose key renames also recorded
+// under the renamed key.
+func withRenamedKeys[V any](m map[string]V, key func(string) string) map[string]V {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]V, len(m))
+	for k, v := range m {
+		out[k] = v
+		if renamed := key(k); renamed != k {
+			out[renamed] = v
+		}
+	}
+	return out
 }
 
 func (rn packageRenamer) packageVal(v *PackageValMetadata) *PackageValMetadata {

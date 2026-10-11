@@ -9,13 +9,15 @@ import (
 
 func TestPackageKey(t *testing.T) {
 	key := PackageKey("util", "example.com/same-name/a/util")
-	assert.Equal(t, "util__example_com_same_name_a_util", key)
+	assert.Equal(t, "util__example_2ecom_2fsame_2dname_2fa_2futil", key)
+	assert.NotEqual(t, PackageKey("x", "a/b-c"), PackageKey("x", "a/b_c"))
+	assert.Equal(t, "my__pkg", PackageDisplayName(PackageKey("my__pkg", "a/b")))
 	assert.Equal(t, "util", PackageKeyName(key, "example.com/same-name/a/util"))
 	assert.Equal(t, "util", PackageDisplayName(key))
 	assert.Equal(t, "collection_immutable", PackageDisplayName("collection_immutable"))
 }
 
-// RenamePackage renames the package's own declarations and every type that
+// RenamePackages renames the package's own declarations and every type that
 // names it, and leaves other packages' alone.
 func TestRenamePackage(t *testing.T) {
 	config := NamedType{Package: "util", Name: "Config"}
@@ -35,7 +37,7 @@ func TestRenamePackage(t *testing.T) {
 		CompanionObjects: map[string]*CompanionObjectMetadata{"util.Some": {Name: "Some", Package: "util", TargetType: "util.Config"}},
 	}
 
-	out := r.RenamePackage("util", "k")
+	out := r.RenamePackages(map[string]string{"util": "k"})
 
 	assert.Equal(t, "k", out.PackageName)
 	require.Contains(t, out.Types, "k.Config")

@@ -319,6 +319,83 @@ func main() {
 		assert.Equal(t, "lib-own|a2", buildAndRun(t, projectDir))
 	})
 
+	t.Run("a package that reaches only one of them", func(t *testing.T) {
+		for _, imports := range []string{
+			"\"example.com/sametype/x\"\n    ub \"example.com/sametype/b/util\"",
+			"ub \"example.com/sametype/b/util\"\n    \"example.com/sametype/x\"",
+		} {
+			projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+				"a/util/util.gala": a,
+				"b/util/util.gala": b,
+				"x/x.gala": `package x
+
+import "example.com/sametype/a/util"
+
+func Make(n int) util.Config = util.Config(n)
+
+val made = Make(4)
+`,
+				"main.gala": `package main
+
+import (
+    ` + imports + `
+)
+
+func main() {
+    Println(x.Make(3).Show(), ub.Config(Name = "y").Describe())
+}
+`,
+			})
+			assert.Equal(t, "a3|b-y", buildAndRun(t, projectDir))
+		}
+	})
+
+	t.Run("an unaliased import while another package of its name is reached", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+			"a/util/util.gala": a,
+			"b/util/util.gala": b,
+			"x/x.gala":         "package x\n\nimport \"example.com/sametype/a/util\"\n\nfunc Make(n int) util.Config = util.Config(n)\n",
+			"main.gala": `package main
+
+import (
+    "example.com/sametype/x"
+    "example.com/sametype/b/util"
+)
+
+func describe(c util.Config) string = c.Describe()
+
+func main() {
+    Println(x.Make(5).Show(), describe(util.Config(Name = "z")))
+}
+`,
+		})
+		assert.Equal(t, "a5|b-z", buildAndRun(t, projectDir))
+	})
+
+	t.Run("a package with hand-written Go of the compiled package's name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+			"a/util/util.gala": a,
+			"a/util/extra.go":  "package util\n\nfunc (c Config) Twice() int { return c.N.Get() * 2 }\n\nfunc Base() int { return 10 }\n",
+			"lib/lib.gala": `package util
+
+import ua "example.com/sametype/a/util"
+
+struct Config(Label string)
+
+func Both() string = s"${Config("own").Label} ${ua.Config(4).Twice()} ${ua.Base()}"
+`,
+			"main.gala": `package main
+
+import u "example.com/sametype/lib"
+
+func main() {
+    Println(u.Both())
+}
+`,
+		})
+		assert.Equal(t, "own|8|10", buildAndRun(t, projectDir))
+	})
+
 	t.Run("a default declared in an import of the compiled package's name", func(t *testing.T) {
 		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
 			"b/util/util.gala": `package util
