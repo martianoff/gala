@@ -375,7 +375,41 @@ func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx ant
 	if err := t.checkGoResultOperands(op, ctx, left, right); err != nil {
 		return nil, err
 	}
-	return &ast.BinaryExpr{X: t.unwrapImmutable(left), Op: tok, Y: t.unwrapImmutable(right)}, nil
+	left, right = t.unwrapImmutable(left), t.unwrapImmutable(right)
+	// A sealed type whose zero value is read as its default case built with
+	// field defaults (see normalizeMethodName) holds two representations of
+	// that value; its Equal compares them as one.
+	if tok == token.EQL || tok == token.NEQ {
+		if meta := t.getTypeMeta(t.probeExprType(left).BaseName()); t.sealedNormalizes(meta) {
+			var eq ast.Expr = &ast.CallExpr{Fun: &ast.SelectorExpr{X: left, Sel: ast.NewIdent("Equal")}, Args: []ast.Expr{right}}
+			if tok == token.NEQ {
+				eq = &ast.UnaryExpr{Op: token.NOT, X: eq}
+			}
+			return eq, nil
+		}
+	}
+	return &ast.BinaryExpr{X: left, Op: tok, Y: right}, nil
+}
+
+// sealedNormalizes reports whether meta is a sealed type whose default case
+// has field defaults, so that its Go zero value is normalized when read (see
+// normalizeMethodName).
+func (t *galaASTTransformer) sealedNormalizes(meta *transpiler.TypeMetadata) bool {
+	if meta == nil || !meta.IsSealed {
+		return false
+	}
+	for _, v := range meta.SealedVariants {
+		if !v.IsDefault {
+			continue
+		}
+		key := v.Name
+		if meta.Package != "" && meta.Package != "main" && meta.Package != "test" {
+			key = meta.Package + "." + v.Name
+		}
+		companion := t.getTypeMeta(key)
+		return companion != nil && companion.Methods["Apply"] != nil && len(companion.Methods["Apply"].DefaultExprs) > 0
+	}
+	return false
 }
 
 func (t *galaASTTransformer) isBinaryOperator(op string) bool {

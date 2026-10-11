@@ -64,6 +64,7 @@ go_test(
         "main_root_subpackage_test_test.go",
         "module_cache_immutable_test.go",
         "nested_subpackage_test.go",
+        "sealed_case_defaults_test.go",
         "sourcehash_test.go",
         "sourcemap_stacktrace_test.go",
         "stdlib_extract_race_test.go",

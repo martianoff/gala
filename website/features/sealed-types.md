@@ -132,6 +132,29 @@ val desc = shape match {
 
 ---
 
+## Case Field Defaults
+
+A case's fields can declare defaults, written as a function's parameter
+defaults are. A constructor call leaves a defaulted field out, by position or
+by name:
+
+```gala
+sealed type Shape {
+    case Circle(Radius int, Label string = "circle")
+    case Square(Side int)
+}
+
+func main() {
+    Println(Circle(3), Circle(Radius = 4), Circle(5, Label = "big"))
+    // Circle(3, circle) Circle(4, circle) Circle(5, big)
+}
+```
+
+Fields with defaults come after the fields without them
+([GALA-E0013](/docs/errors/gala-e0013/)).
+
+---
+
 ## Default Case
 
 A sealed type can mark one case `default`. The default case is the type's
@@ -151,6 +174,21 @@ func main() {
     var m Mode
     val c = Cfg{Name: "a"}   // M left out
     Println(m, c.M)          // Off() Off()
+}
+```
+
+When the default case's fields declare defaults, the zero value is the default
+case built with them, for matching, `==`, `Equal` and `String` alike:
+
+```gala
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+func main() {
+    var l Light
+    Println(l, l == On())   // On(30, Living) true
 }
 ```
 

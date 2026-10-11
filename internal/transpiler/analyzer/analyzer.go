@@ -1969,6 +1969,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	type variantFieldInfo struct {
 		name     string
 		typeName string
+		def      *transpiler.DefaultExpr // the field's declared default, if any
 	}
 	type variantInfo struct {
 		name      string
@@ -2012,7 +2013,12 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
 				fieldTypeStr := fc.Type_().GetText()
-				vi.fields = append(vi.fields, variantFieldInfo{fieldName, fieldTypeStr})
+				field := variantFieldInfo{name: fieldName, typeName: fieldTypeStr}
+				if pd := fc.ParamDefault(); pd != nil {
+					exprCtx := pd.(*grammar.ParamDefaultContext).Expression()
+					field.def = &transpiler.DefaultExpr{Text: transpiler.SourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}
+				}
+				vi.fields = append(vi.fields, field)
 				if allFieldTypes[fieldName] == nil {
 					allFieldTypes[fieldName] = make(map[string]bool)
 				}
@@ -2118,8 +2124,25 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			Name:    "Apply",
 			Package: pkgName,
 		}
-		for _, f := range vi.fields {
+		for i, f := range vi.fields {
 			applyMeta.ParamTypes = append(applyMeta.ParamTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+			applyMeta.ParamNames = append(applyMeta.ParamNames, f.name)
+			if f.def == nil && len(applyMeta.DefaultExprs) > 0 {
+				// A field without a default after one with: a positional
+				// construction could not leave the earlier one out.
+				return galaerr.NewCodedSemanticError(
+					galaerr.CodeParamMissingDefaultAfterDefault,
+					vi.pos.Line, vi.pos.Column,
+					fmt.Sprintf("field %q of case %s has no default but follows a field with a default", f.name, vi.name),
+					"move the fields with defaults to the end of the case",
+				)
+			}
+			if f.def != nil {
+				if applyMeta.DefaultExprs == nil {
+					applyMeta.DefaultExprs = make(map[int]transpiler.DefaultExpr)
+				}
+				applyMeta.DefaultExprs[i] = *f.def
+			}
 		}
 		// Return type is the parent sealed type.
 		//

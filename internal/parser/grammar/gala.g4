@@ -40,7 +40,7 @@ sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase
 // Variants with fields still require parentheses: `case Add(l Expr, r Expr)`.
 sealedCase: DEFAULT? CASE identifier (('(' | NL_LPAREN) sealedCaseFieldList? ')')?;
 sealedCaseFieldList: sealedCaseField (',' sealedCaseField)* ','?;
-sealedCaseField: identifier type;
+sealedCaseField: identifier type paramDefault?;
 
 // `opaque type UserID int64`, `opaque type Id[T any] int64`: a distinct type
 // whose representation is its underlying type. Which underlying types are

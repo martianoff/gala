@@ -150,6 +150,35 @@ desk off, dim 0
 hall on at 7
 ```
 
+## Case Field Defaults
+
+A case's fields can declare defaults. A constructor leaves them out by
+position or by name, and a default case with field defaults is its type's
+zero value built with them.
+
+```gala
+package main
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+struct Home(Name string, L Light)
+
+func main() {
+    Println(On(), On(Power = 50), On(10, "Kitchen"))
+    val home = Home{Name: "flat"}
+    Println(home.L, home.L == On())
+}
+```
+
+Output:
+```
+On(30, Living) On(50, Living) On(10, Kitchen)
+On(30, Living) true
+```
+
 ## Generic Methods Example
 
 ```gala

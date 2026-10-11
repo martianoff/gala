@@ -1324,6 +1324,27 @@ call with [`GALA-E0018`](errors/GALA-E0018.md). The full set of
 contexts and the propagation mechanism are described in
 [Downward Inference for Generic Sealed-Type Case Constructors](TYPE_INFERENCE.MD#downward-inference-for-generic-sealed-type-case-constructors).
 
+#### Case Field Defaults
+
+A case's fields can declare defaults, written as a function's parameter
+defaults are. A constructor call leaves a defaulted field out, by position or
+by name, and the default is evaluated at each construction:
+
+```gala
+sealed type Shape {
+    case Circle(Radius int, Label string = "circle")
+    case Square(Side int)
+}
+
+func main() {
+    Println(Circle(3), Circle(Radius = 4), Circle(5, Label = "big"))
+    // Circle(3, circle) Circle(4, circle) Circle(5, big)
+}
+```
+
+Fields with defaults come after the fields without
+([`GALA-E0013`](errors/GALA-E0013.md)).
+
 #### Default Case
 
 A sealed type can mark one case `default`. The default case is the type's
@@ -1346,8 +1367,25 @@ func main() {
 }
 ```
 
-The default case's fields, if it has any, are their own zero values. `Option`'s
-default case is `None()`, so an uninitialized `Option` is `None`.
+The default case's fields, if it has any, are their own zero values, unless
+they declare defaults: then the zero value is the default case built with
+them. Matching, `==`, `Equal` and `String` all read it so:
+
+```gala
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+func main() {
+    var l Light
+    Println(l, l == On())   // On(30, Living) true
+}
+```
+
+(Hand-written Go reading the struct's fields directly sees Go's zero values;
+read a GALA value through GALA.) `Option`'s default case is `None()`, so an
+uninitialized `Option` is `None`.
 
 A sealed type **without** a default case has no zero value. A zero value of
 one — it can only come from Go, or from a value nothing constructed — is none
