@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -183,10 +182,15 @@ func (t *galaASTTransformer) isTuplePatternOfSubjectArity(pat grammar.IPatternCo
 // unreachableDefaultBody is the synthetic `panic("unreachable")` else-branch
 // that closes a match whose arms already cover every value.
 func unreachableDefaultBody() []ast.Stmt {
+	return panicStmt("unreachable")
+}
+
+// panicStmt is `panic(msg)`.
+func panicStmt(msg string) []ast.Stmt {
 	return []ast.Stmt{
 		&ast.ExprStmt{X: &ast.CallExpr{
 			Fun:  ast.NewIdent("panic"),
-			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(msg)}},
 		}},
 	}
 }
@@ -196,20 +200,14 @@ func unreachableDefaultBody() []ast.Stmt {
 // so its Go zero value matches none of them: the panic says so.
 func (t *galaASTTransformer) exhaustiveDefaultBody(matchedType transpiler.Type) []ast.Stmt {
 	meta := t.getTypeMeta(t.followAliasChain(matchedType).BaseName())
-	if meta == nil || !meta.IsSealed || slices.ContainsFunc(meta.SealedVariants, func(v transpiler.SealedVariant) bool { return v.IsDefault }) {
+	if meta == nil || !meta.IsSealed || meta.HasDefaultCase() {
 		return unreachableDefaultBody() // a zero value is the default case, which an arm matches
 	}
 	name := meta.Name
 	if meta.Package != "" && meta.Package != t.packageName {
 		name = transpiler.PackageDisplayName(meta.Package) + "." + name
 	}
-	msg := fmt.Sprintf("gala: a %s matched none of its cases: it is a zero value, which a sealed type without a default case does not have", name)
-	return []ast.Stmt{
-		&ast.ExprStmt{X: &ast.CallExpr{
-			Fun:  ast.NewIdent("panic"),
-			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(msg)}},
-		}},
-	}
+	return panicStmt(fmt.Sprintf("gala: a %s matched none of its cases: it is a zero value, which a sealed type without a default case does not have", name))
 }
 
 // isNoReturnCallExpr reports whether expr is a call to a Go builtin/function

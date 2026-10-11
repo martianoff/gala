@@ -5013,23 +5013,39 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 		// (`exec.Command(...).Output()`).
 		return t.goMethodSignature(t.getExprTypeNameManual(fun.X), fun.Sel.Name)
 	case *ast.Ident:
-		// A local binding of the name is the callee, not a Go function.
-		if t.shadowingScope(fun.Name) != nil {
-			return nil
-		}
-		if sig := t.ownGoFuncSignature(fun.Name); sig != nil {
-			return sig
-		}
-		for _, entry := range t.importManager.dotImports {
-			if sig := t.goTypeInfo.GetFuncSignature(entry.Path + "." + fun.Name); sig != nil {
-				return sig
-			}
-			if sig := t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + fun.Name); sig != nil {
-				return sig
-			}
-		}
+		return t.lookupGoIdentSignature(fun.Name)
 	}
 	return nil
+}
+
+// lookupGoIdentSignature finds the Go function a bare name refers to: one of
+// the package's own hand-written .go files, or of a dot import. A local
+// binding of the name is no Go function. Outside a default declared in
+// another package the answer depends on the name alone, so it is kept.
+func (t *galaASTTransformer) lookupGoIdentSignature(name string) *transpiler.GoFuncSignature {
+	if t.goTypeInfo == nil || t.shadowingScope(name) != nil {
+		return nil
+	}
+	memo := !t.loweringForeignDefault()
+	if sig, ok := t.goIdentSignatures[name]; ok && memo {
+		return sig
+	}
+	sig := t.ownGoFuncSignature(name)
+	for _, entry := range t.importManager.dotImports {
+		if sig != nil {
+			break
+		}
+		if sig = t.goTypeInfo.GetFuncSignature(entry.Path + "." + name); sig == nil {
+			sig = t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + name)
+		}
+	}
+	if memo {
+		if t.goIdentSignatures == nil {
+			t.goIdentSignatures = make(map[string]*transpiler.GoFuncSignature)
+		}
+		t.goIdentSignatures[name] = sig
+	}
+	return sig
 }
 
 // ownGoFuncSignature finds the Go signature of a function a bare name calls in

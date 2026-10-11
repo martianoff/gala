@@ -1407,18 +1407,7 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 // instantiated with typeArgs when it is generic. NilType otherwise, and for a
 // generic one without its type arguments, which is no value Go can hold.
 func (t *galaASTTransformer) goFuncValueType(name string, typeArgs []transpiler.Type) transpiler.Type {
-	if t.goTypeInfo == nil || t.shadowingScope(name) != nil {
-		return transpiler.NilType{}
-	}
-	sig := t.ownGoFuncSignature(name)
-	for _, entry := range t.importManager.dotImports {
-		if sig != nil {
-			break
-		}
-		if sig = t.goTypeInfo.GetFuncSignature(entry.Path + "." + name); sig == nil {
-			sig = t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + name)
-		}
-	}
+	sig := t.lookupGoIdentSignature(name)
 	if sig == nil || len(typeArgs) != len(sig.TypeParams) {
 		return transpiler.NilType{}
 	}
