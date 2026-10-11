@@ -122,9 +122,10 @@ type galaAnalyzer struct {
 	// counterpart to PR #308's on-disk cache projection.
 	analyzedPkgs        map[string]*transpiler.RichAST // Cache of analyzed packages (own-only projections)
 	analyzedPkgImports  map[string][]string            // path -> direct GALA import paths (for closure rehydration)
-	// ownFuncs holds, per analyzedPkgs entry, the functions its package
-	// declares by name (see RichAST.AddImportedFuncs).
-	ownFuncs map[string]map[string]*transpiler.FunctionMetadata
+	// renamedPkgs memoizes renamedPkg per analyzedPkgs entry and renames.
+	renamedPkgs map[string]*transpiler.RichAST
+	// closures memoizes closureOf per analyzedPkgs entry.
+	closures map[string][]string
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
@@ -751,9 +752,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
 					// Use cached metadata — walk closure to materialize transitive types.
-					a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-					if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-						richAST.Packages[path] = cached.PackageName
+					if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
+						richAST.Packages[path] = name
 					}
 				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
 					// First time analyzing this package - set placeholder to prevent infinite recursion
@@ -768,10 +768,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					}
 					if err == nil {
 						a.storeAnalyzedPkg(path, importedAST)
-						a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
 						// Store package name from the imported package
-						if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-							richAST.Packages[path] = importedAST.PackageName
+						if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
+							richAST.Packages[path] = name
 						} else {
 							// Fallback if PackageName is not set properly
 							for _, typeMeta := range importedAST.Types {
@@ -787,6 +786,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	richAST.ApplyPackageKeys()
 	logPhase("scan-gala-imports", phaseStart)
 	phaseStart = time.Now()
 
@@ -844,14 +844,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// Go imports are loaded, and the import aliases it records (e.g.,
 	// import im "path/to/pkg" → im → actual package name).
 	fileQuals := a.qualifiersForFile(sourceFile, richAST)
-	for name, b := range fileQuals.named {
-		if b.IsGala && b.Alias == name && b.PkgName != "" {
-			if richAST.ImportAliases == nil {
-				richAST.ImportAliases = make(map[string]string)
-			}
-			richAST.ImportAliases[name] = b.PkgName
-		}
-	}
+	recordImportAliases(richAST, fileQuals)
 
 	logPhase("analyze-go-packages", phaseStart)
 	phaseStart = time.Now()
@@ -904,6 +897,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// struct fields can't find types from packages that only siblings import.
 	for _, sibTree := range siblingTrees {
 		a.scanImports(sibTree, richAST, mergeVisited)
+	}
+	if len(richAST.PackageKeys) > 0 {
+		// A sibling's import may have keyed a package merged above (see
+		// keySharedNames): read this file's import table against it again.
+		richAST.ApplyPackageKeys()
+		fileQuals = a.qualifiersForFile(sourceFile, richAST)
+		recordImportAliases(richAST, fileQuals)
 	}
 
 	logPhase("scan-sibling-imports", phaseStart)
@@ -1732,6 +1732,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
 	}
 
+	richAST.ApplyPackageKeys()
 	return richAST, nil
 }
 
@@ -2541,9 +2542,8 @@ func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, 
 		relPath = strings.TrimPrefix(path, "martianoff/gala/")
 	}
 	if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-		a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-		if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-			richAST.Packages[path] = cached.PackageName
+		if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
+			richAST.Packages[path] = name
 		}
 		return
 	}
@@ -2556,9 +2556,8 @@ func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, 
 		return
 	}
 	a.storeAnalyzedPkg(path, importedAST)
-	a.mergeAnalyzedClosureAt(richAST, path, mergeVisited)
-	if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-		richAST.Packages[path] = importedAST.PackageName
+	if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
+		richAST.Packages[path] = name
 		return
 	}
 	for _, typeMeta := range importedAST.Types {
@@ -2577,12 +2576,16 @@ func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, 
 // of the file may hold; the file imports it only by emitting one of its types,
 // which carry their import path.
 func (a *galaAnalyzer) loadGalaMetadata(path string, richAST *transpiler.RichAST) {
-	// The scratch RichAST is named as richAST is, so a package of that name
-	// keeps its functions out of richAST's own (see mergeAnalyzedClosureAt).
-	scratch := &transpiler.RichAST{Packages: make(map[string]string), PackageName: richAST.PackageName, OwnImportPath: richAST.OwnImportPath}
-	a.loadGalaImport(path, scratch, make(map[string]bool))
-	scratch.Packages = nil
-	richAST.Merge(scratch)
+	known := make(map[string]bool, len(richAST.Packages))
+	for p := range richAST.Packages {
+		known[p] = true
+	}
+	a.loadGalaImport(path, richAST, make(map[string]bool))
+	for p := range richAST.Packages {
+		if !known[p] {
+			delete(richAST.Packages, p)
+		}
+	}
 }
 
 // findKnownTypePackage checks if a type name is already known in richAST.Types
@@ -3113,10 +3116,14 @@ func (a *galaAnalyzer) storeAnalyzedPkg(path string, importedAST *transpiler.Ric
 	}
 	own := projectOwnRichAST(importedAST)
 	a.analyzedPkgs[path] = own
-	if a.ownFuncs == nil {
-		a.ownFuncs = make(map[string]map[string]*transpiler.FunctionMetadata)
+	// A new entry can extend other packages' closures; a renamed projection
+	// is made from one entry, so only path's go stale.
+	a.closures = nil
+	for memo := range a.renamedPkgs {
+		if strings.HasPrefix(memo, path+"\x00") {
+			delete(a.renamedPkgs, memo)
+		}
 	}
-	a.ownFuncs[path] = transpiler.OwnFunctions(own.PackageName, own.Functions)
 	if a.analyzedPkgImports != nil {
 		a.analyzedPkgImports[path] = extractDirectGalaImports(importedAST)
 	}
@@ -3143,8 +3150,20 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 	if visited == nil || target == nil {
 		return ""
 	}
+	if !visited[path] {
+		a.keySharedNames(target, path)
+	}
+	return a.mergeClosure(target, path, visited)
+}
+
+// mergeClosure is mergeAnalyzedClosureAt once the packages of path's closure
+// that share a name with another package target reaches are keyed.
+func (a *galaAnalyzer) mergeClosure(target *transpiler.RichAST, path string, visited map[string]bool) string {
 	if visited[path] {
 		// Already merged in this walk — but caller may still want pkgName.
+		if key, ok := target.PackageKeys[path]; ok {
+			return key
+		}
 		if cached := a.analyzedPkgs[path]; cached != nil {
 			return cached.PackageName
 		}
@@ -3156,24 +3175,16 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 		return ""
 	}
 	src := cached
-	if cached.PackageName != "" && cached.PackageName == target.PackageName && path != target.OwnImportPath {
-		// Its functions share their "pkg.Name" keys with the package being
-		// compiled, whose own they would replace; it is called through
-		// ImportedFuncs alone.
-		noFuncs := *cached
-		noFuncs.Functions = nil
-		src = &noFuncs
+	if renames := a.viewRenames(target, path); len(renames) > 0 {
+		src = a.renamedPkg(path, cached, renames)
 	}
 	target.Merge(src)
-	target.AddImportedVals(path, cached.PackageVals)
-	if funcs, ok := a.ownFuncs[path]; ok {
-		target.AddImportedFuncs(path, funcs)
-	}
+	target.AddImportedVals(path, src.PackageVals)
 	for _, imp := range a.analyzedPkgImports[path] {
 		if imp == "" || imp == path {
 			continue
 		}
-		impPkg := a.mergeAnalyzedClosureAt(target, imp, visited)
+		impPkg := a.mergeClosure(target, imp, visited)
 		if impPkg != "" && impPkg != "main" && impPkg != "test" {
 			if target.Packages == nil {
 				target.Packages = make(map[string]string)
@@ -3183,7 +3194,141 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 			}
 		}
 	}
-	return cached.PackageName
+	return src.PackageName
+}
+
+// keySharedNames keys, in target, every package of path's closure that
+// shares its name with another package target reaches: the package target
+// is, another package of the closure, or one target already holds. One merged
+// under its name before is keyed in place. The package target is keeps its
+// name. Keys are settled for the whole closure before any of it is merged,
+// so a package's names are known when it is (see viewRenames).
+func (a *galaAnalyzer) keySharedNames(target *transpiler.RichAST, path string) {
+	byName := make(map[string][]string)
+	for _, q := range a.closureOf(path) {
+		name := a.analyzedPkgs[q].PackageName
+		if name == "" || name == "main" || name == "test" || q == target.OwnImportPath {
+			continue
+		}
+		if _, keyed := target.PackageKeys[q]; keyed || target.MergedPackages[name] == q {
+			continue
+		}
+		byName[name] = append(byName[name], q)
+	}
+	for name, paths := range byName {
+		merged, wasMerged := target.MergedPackages[name]
+		if len(paths) == 1 && !wasMerged && name != target.PackageName && !hasKeyedPackage(target, name) {
+			setEntry(&target.MergedPackages, name, paths[0])
+			continue
+		}
+		if wasMerged {
+			key := transpiler.PackageKey(name, merged)
+			target.RenamePackagesIn(map[string]string{name: key})
+			setEntry(&target.PackageKeys, merged, key)
+			delete(target.MergedPackages, name)
+		}
+		for _, q := range paths {
+			setEntry(&target.PackageKeys, q, transpiler.PackageKey(name, q))
+		}
+	}
+}
+
+// recordImportAliases records in richAST.ImportAliases the GALA package each
+// alias of the file's import table q names (e.g., import im "path/to/pkg" →
+// im → the package's name). A keyed package (see transpiler.PackageKey) is
+// recorded under the name it binds even without an alias: its name alone
+// does not tell it from another package of that name.
+func recordImportAliases(richAST *transpiler.RichAST, q fileQualifiers) {
+	for name, b := range q.named {
+		keyed := transpiler.PackageKeyName(b.PkgName, b.Path) != b.PkgName
+		if b.IsGala && (b.Alias == name || keyed) && b.PkgName != "" {
+			setEntry(&richAST.ImportAliases, name, b.PkgName)
+		}
+	}
+}
+
+// hasKeyedPackage reports whether target keys a package named name.
+func hasKeyedPackage(target *transpiler.RichAST, name string) bool {
+	for path, key := range target.PackageKeys {
+		if transpiler.PackageKeyName(key, path) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// viewRenames returns the renames that record the package at p as target
+// does: each name p's metadata uses for a package target keys, mapped to its
+// key. A name means, to p, p itself or the one package of that name in p's
+// closure; a package of a name the closure holds more than once is keyed in
+// p's metadata already (by the same key: see transpiler.PackageKey).
+func (a *galaAnalyzer) viewRenames(target *transpiler.RichAST, p string) map[string]string {
+	if len(target.PackageKeys) == 0 {
+		return nil
+	}
+	closure := a.closureOf(p)
+	count := make(map[string]int, len(closure))
+	for _, q := range closure {
+		count[a.analyzedPkgs[q].PackageName]++
+	}
+	var renames map[string]string
+	for _, q := range closure {
+		name := a.analyzedPkgs[q].PackageName
+		if key, keyed := target.PackageKeys[q]; keyed && (q == p || count[name] == 1) {
+			setEntry(&renames, name, key)
+		}
+	}
+	return renames
+}
+
+// closureOf returns the analyzed packages p reaches through its GALA
+// imports, p first.
+func (a *galaAnalyzer) closureOf(p string) []string {
+	if c, ok := a.closures[p]; ok {
+		return c
+	}
+	var out []string
+	seen := map[string]bool{p: true}
+	for queue := []string{p}; len(queue) > 0; queue = queue[1:] {
+		q := queue[0]
+		if a.analyzedPkgs[q] == nil {
+			continue
+		}
+		out = append(out, q)
+		for _, imp := range a.analyzedPkgImports[q] {
+			if imp != "" && !seen[imp] {
+				seen[imp] = true
+				queue = append(queue, imp)
+			}
+		}
+	}
+	setEntry(&a.closures, p, out)
+	return out
+}
+
+// renamedPkg returns the analyzedPkgs entry pkg of path with renames applied
+// (see transpiler.RichAST.RenamePackages), built once per renames.
+func (a *galaAnalyzer) renamedPkg(path string, pkg *transpiler.RichAST, renames map[string]string) *transpiler.RichAST {
+	names := make([]string, 0, len(renames))
+	for from, to := range renames {
+		names = append(names, from+"="+to)
+	}
+	sort.Strings(names)
+	memo := path + "\x00" + strings.Join(names, ",")
+	if renamed, ok := a.renamedPkgs[memo]; ok {
+		return renamed
+	}
+	renamed := pkg.RenamePackages(renames)
+	setEntry(&a.renamedPkgs, memo, renamed)
+	return renamed
+}
+
+// setEntry sets (*m)[k] = v, making the map first if it is nil.
+func setEntry[V any](m *map[string]V, k string, v V) {
+	if *m == nil {
+		*m = make(map[string]V)
+	}
+	(*m)[k] = v
 }
 
 // addQualifiedTypeAliases records the aliases a file of package pkgName
@@ -3240,9 +3385,8 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 		// avoids redundant disk reads and keeps cycle detection simple.
 		if cached, ok := a.analyzedPkgs[imp]; ok {
 			if cached != nil {
-				a.mergeAnalyzedClosureAt(pkgAST, imp, visited)
-				if cached.PackageName != "" && cached.PackageName != "main" && cached.PackageName != "test" {
-					pkgAST.Packages[imp] = cached.PackageName
+				if name := a.mergeAnalyzedClosureAt(pkgAST, imp, visited); name != "" && name != "main" && name != "test" {
+					pkgAST.Packages[imp] = name
 				}
 			}
 			continue
@@ -3269,9 +3413,8 @@ func (a *galaAnalyzer) rehydrateImports(pkgPath string, pkgAST *transpiler.RichA
 			continue
 		}
 		a.storeAnalyzedPkg(imp, importedAST)
-		a.mergeAnalyzedClosureAt(pkgAST, imp, visited)
-		if importedAST.PackageName != "" && importedAST.PackageName != "main" && importedAST.PackageName != "test" {
-			pkgAST.Packages[imp] = importedAST.PackageName
+		if name := a.mergeAnalyzedClosureAt(pkgAST, imp, visited); name != "" && name != "main" && name != "test" {
+			pkgAST.Packages[imp] = name
 		}
 	}
 }
@@ -4660,11 +4803,7 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		}
 		return transpiler.NilType{}
 	}
-	fn := richAST.Functions[key]
-	if funcs, known := richAST.ImportedFuncs[importPath]; known {
-		fn = funcs[name]
-	}
-	if fn != nil && len(fn.TypeParams) == 0 {
+	if fn := richAST.Functions[key]; fn != nil && len(fn.TypeParams) == 0 {
 		return knownType(fn.ReturnType)
 	}
 	return transpiler.NilType{}

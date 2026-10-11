@@ -242,7 +242,11 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, owningPkg string)
 			unexported(id.Name)
 			return id
 		}
-		sel := &ast.SelectorExpr{X: ast.NewIdent(owningPkg), Sel: ast.NewIdent(id.Name)}
+		qualifier := owningPkg
+		if q, ok := t.packageQualifier(owningPkg); ok {
+			qualifier = q // this file's name for the package: an alias, or a keyed package's own name
+		}
+		sel := &ast.SelectorExpr{X: ast.NewIdent(qualifier), Sel: ast.NewIdent(id.Name)}
 		qualified[sel] = true
 		return sel
 	}

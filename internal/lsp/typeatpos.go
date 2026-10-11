@@ -282,17 +282,16 @@ func resolveReceiverType(name, funcScope string, richAST *transpiler.RichAST, va
 		}
 	}
 
-	// 4. Check if it's a package name → return package marker for package completion
+	// 4. Check if it's an import alias, or the name a keyed package binds
+	// (see transpiler.PackageKey) → resolve to the package's metadata name
+	if pkgName, ok := richAST.ImportAliases[name]; ok {
+		return packagePrefix + pkgName
+	}
+
+	// 4b. Check if it's a package name → return package marker for package completion
 	for _, pkgName := range richAST.Packages {
 		if pkgName == name {
 			return packagePrefix + name
-		}
-	}
-
-	// 4b. Check if it's an import alias → resolve to actual package name
-	if richAST.ImportAliases != nil {
-		if pkgName, ok := richAST.ImportAliases[name]; ok {
-			return packagePrefix + pkgName
 		}
 	}
 

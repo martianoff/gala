@@ -1568,6 +1568,11 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 // analyzer did not learn it: the GALA package's name, or the Go package's as
 // its type info reports it (k8s.io/api/core/v1 is package v1).
 func (t *galaASTTransformer) importPackageName(path string) string {
+	if key := t.richAST.PackageKeys[path]; key != "" {
+		// A keyed package binds its own name in source; its entry takes the
+		// key from Packages once the imports are read.
+		return transpiler.PackageKeyName(key, path)
+	}
 	if name := t.richAST.Packages[path]; name != "" {
 		return name
 	}

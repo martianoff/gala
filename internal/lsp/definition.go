@@ -251,7 +251,7 @@ func (h *GalaHandler) definitionLocations(uri, text string, richAST *transpiler.
 
 	// Check import paths — clicking a package name navigates to its directory
 	for path, pkgName := range richAST.Packages {
-		if pkgName == word || word == path {
+		if transpiler.PackageKeyName(pkgName, path) == word || word == path {
 			// Try to find the package directory
 			for _, searchPath := range h.getSearchPaths(uriToPath(uri)) {
 				pkgDir := searchPath + "/" + path

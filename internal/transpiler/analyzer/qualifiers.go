@@ -49,7 +49,8 @@ func (a *galaAnalyzer) qualifiersForFile(sf *grammar.SourceFileContext, richAST 
 			q.dots = append(q.dots, b)
 			continue
 		}
-		names.Bind(imp.Path, imp.Alias, b.PkgName, b)
+		// A keyed package (see transpiler.PackageKey) binds its own name.
+		names.Bind(imp.Path, imp.Alias, transpiler.PackageKeyName(b.PkgName, imp.Path), b)
 	}
 	q.named = names.Map()
 	return q

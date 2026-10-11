@@ -928,7 +928,7 @@ func collectQualifiers(imports []fileImport, rich *transpiler.RichAST) map[strin
 	for _, imp := range imports {
 		pkgName := rich.GoImportNames[imp.Path]
 		if pkgName == "" {
-			pkgName = rich.Packages[imp.Path]
+			pkgName = transpiler.PackageKeyName(rich.Packages[imp.Path], imp.Path) // a keyed package binds its own name
 		}
 		for _, n := range transpiler.ImportNames(imp.Path, imp.Alias, pkgName) {
 			if n.Name != "" {

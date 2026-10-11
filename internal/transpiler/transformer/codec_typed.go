@@ -1170,6 +1170,9 @@ func (t *galaASTTransformer) qualifiedTypeIdent(name string) ast.Expr {
 		case "std":
 			return t.stdIdent(sym)
 		}
+		if q, ok := t.packageQualifier(pkg); ok {
+			pkg = q // this file's name for the package (an alias, or a keyed package's own name)
+		}
 		return &ast.SelectorExpr{X: ast.NewIdent(pkg), Sel: ast.NewIdent(sym)}
 	}
 	return ast.NewIdent(name)
