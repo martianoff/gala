@@ -1971,10 +1971,11 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		typeName string
 	}
 	type variantInfo struct {
-		name   string
-		doc    string
-		pos    transpiler.SourcePos
-		fields []variantFieldInfo
+		name      string
+		doc       string
+		pos       transpiler.SourcePos
+		fields    []variantFieldInfo
+		isDefault bool
 	}
 	var variants []variantInfo
 
@@ -1999,9 +2000,10 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			}
 		}
 		vi := variantInfo{
-			name: variantName,
-			doc:  docAt(docs, sc.GetStart()),
-			pos:  transpiler.PosFromToken(sc.Identifier().GetStart()),
+			name:      variantName,
+			doc:       docAt(docs, sc.GetStart()),
+			pos:       transpiler.PosFromToken(sc.Identifier().GetStart()),
+			isDefault: sc.DEFAULT() != nil,
 		}
 
 		if sc.SealedCaseFieldList() != nil {
@@ -2066,7 +2068,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 
 	// Store variant metadata on parent
 	for _, vi := range variants {
-		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos}
+		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos, IsDefault: vi.isDefault}
 		for _, f := range vi.fields {
 			sv.FieldNames = append(sv.FieldNames, f.name)
 			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))

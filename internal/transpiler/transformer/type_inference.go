@@ -157,14 +157,17 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			}
 			return transpiler.FuncType{Params: params, Results: results}
 		}
-		return transpiler.NilType{}
+		return t.goFuncValueType(e.Name, nil)
 	case *ast.IndexExpr:
 		// e.g., funcName[T] — instantiated reference to a generic function.
 		// Resolve to the substituted FuncType so callers can unify against it.
 		if id, ok := e.X.(*ast.Ident); ok {
+			typeArgs := []transpiler.Type{t.astTypeToTranspilerType(e.Index)}
 			if fm, exists := t.functionByName(id.Name); exists && len(fm.TypeParams) == 1 {
-				typeArgs := []transpiler.Type{t.astTypeToTranspilerType(e.Index)}
 				return t.instantiateFuncMetaType(fm, typeArgs)
+			}
+			if ft := t.goFuncValueType(id.Name, typeArgs); !ft.IsNil() {
+				return ft
 			}
 		}
 		xType := t.getExprTypeNameManual(e.X)
@@ -180,12 +183,15 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		// e.g., funcName[T, U] — instantiated reference to a generic function with
 		// multiple type parameters. Resolve to the substituted FuncType.
 		if id, ok := e.X.(*ast.Ident); ok {
+			var typeArgs []transpiler.Type
+			for _, idx := range e.Indices {
+				typeArgs = append(typeArgs, t.astTypeToTranspilerType(idx))
+			}
 			if fm, exists := t.functionByName(id.Name); exists && len(fm.TypeParams) == len(e.Indices) {
-				var typeArgs []transpiler.Type
-				for _, idx := range e.Indices {
-					typeArgs = append(typeArgs, t.astTypeToTranspilerType(idx))
-				}
 				return t.instantiateFuncMetaType(fm, typeArgs)
+			}
+			if ft := t.goFuncValueType(id.Name, typeArgs); !ft.IsNil() {
+				return ft
 			}
 		}
 		// Handle generic type expression like Tuple[int, string]
@@ -1394,6 +1400,37 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 		return nil
 	}
 	return inferred
+}
+
+// goFuncValueType is the type of name as a value when it is a Go function the
+// file reaches unqualified (its package's hand-written Go, or a dot import),
+// instantiated with typeArgs when it is generic. NilType otherwise, and for a
+// generic one without its type arguments, which is no value Go can hold.
+func (t *galaASTTransformer) goFuncValueType(name string, typeArgs []transpiler.Type) transpiler.Type {
+	if t.goTypeInfo == nil || t.shadowingScope(name) != nil {
+		return transpiler.NilType{}
+	}
+	sig := t.ownGoFuncSignature(name)
+	for _, entry := range t.importManager.dotImports {
+		if sig != nil {
+			break
+		}
+		if sig = t.goTypeInfo.GetFuncSignature(entry.Path + "." + name); sig == nil {
+			sig = t.goTypeInfo.GetFuncSignature(entry.PkgName + "." + name)
+		}
+	}
+	if sig == nil || len(typeArgs) != len(sig.TypeParams) {
+		return transpiler.NilType{}
+	}
+	params := make([]transpiler.Type, len(sig.Params))
+	for i, p := range sig.Params {
+		params[i] = p.Type
+	}
+	results := sig.Returns
+	if subst := t.inferGoSignatureTypeArgs(sig, nil, typeArgs, false); len(subst) > 0 {
+		params, results = t.substituteGoTypeParamsIn(params, subst), t.substituteGoTypeParamsIn(results, subst)
+	}
+	return transpiler.FuncType{Params: params, Results: results}
 }
 
 // instantiateGoSignatureReturn substitutes a Go generic signature's type

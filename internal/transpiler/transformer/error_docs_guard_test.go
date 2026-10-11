@@ -1160,6 +1160,24 @@ func main() {
 			},
 		},
 		{
+			name: "sealed type with two default cases",
+			code: galaerr.CodeMultipleDefaultCases, // GALA-E0074
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+sealed type Light {
+    default case Off()
+    case Dim(Level int)
+    default case Unknown()
+}
+
+func main() {
+    Println(Off())
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

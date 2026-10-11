@@ -558,6 +558,8 @@ type SealedVariant struct {
 	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
+	// IsDefault marks the type's `default case`, its zero value.
+	IsDefault bool
 }
 
 type MethodMetadata struct {

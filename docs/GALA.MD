@@ -1324,6 +1324,39 @@ call with [`GALA-E0018`](errors/GALA-E0018.md). The full set of
 contexts and the propagation mechanism are described in
 [Downward Inference for Generic Sealed-Type Case Constructors](TYPE_INFERENCE.MD#downward-inference-for-generic-sealed-type-case-constructors).
 
+#### Default Case
+
+A sealed type can mark one case `default`. The default case is the type's
+**zero value**: what a value holds when nothing constructed it — an
+uninitialized `var`, a field a struct literal leaves out, a slot of a fresh
+Go slice, a missed Go map lookup.
+
+```gala
+sealed type Mode {
+    case On(Level int)
+    default case Off()
+}
+
+struct Cfg(Name string, M Mode)
+
+func main() {
+    var m Mode
+    val c = Cfg{Name: "a"}   // M left out
+    Println(m, c.M)          // Off() Off()
+}
+```
+
+The default case's fields, if it has any, are their own zero values. `Option`'s
+default case is `None()`, so an uninitialized `Option` is `None`.
+
+A sealed type **without** a default case has no zero value. A match on one —
+it can only come from Go, or from a value nothing constructed — matches none
+of the cases and panics, naming the type, rather than reading it as one of
+them. Give a type a default case when a value of it may be left unset; leave
+it out when every value must be built from a case, as for `Try` and `Either`.
+
+A sealed type marks at most one case `default` ([`GALA-E0074`](errors/GALA-E0074.md)).
+
 #### Wildcard Catch-All in Sealed Match
 When you only care about a subset of variants, use `case _ =>` as a catch-all instead of listing every variant. This is valid for exhaustive matching:
 
