@@ -12,6 +12,7 @@ func TestPackageKey(t *testing.T) {
 	assert.Equal(t, "util__example_2ecom_2fsame_2dname_2fa_2futil", key)
 	assert.NotEqual(t, PackageKey("x", "a/b-c"), PackageKey("x", "a/b_c"))
 	assert.Equal(t, "my__pkg", PackageDisplayName(PackageKey("my__pkg", "a/b")))
+	assert.Equal(t, "my__pkg", PackageDisplayName("my__pkg"))
 	assert.Equal(t, "util", PackageKeyName(key, "example.com/same-name/a/util"))
 	assert.Equal(t, "util", PackageDisplayName(key))
 	assert.Equal(t, "collection_immutable", PackageDisplayName("collection_immutable"))

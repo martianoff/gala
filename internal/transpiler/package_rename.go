@@ -44,7 +44,9 @@ func PackageKeyName(key, importPath string) string {
 // PackageDisplayName is the name to show for the package pkg: the package
 // name of a key (see PackageKey), else pkg itself.
 func PackageDisplayName(pkg string) string {
-	if i := strings.LastIndex(pkg, "__"); i > 0 {
+	// A key's path part escapes the path's separators, so it holds a `_`; a
+	// package name that merely contains "__" keeps its last part plain.
+	if i := strings.LastIndex(pkg, "__"); i > 0 && strings.Contains(pkg[i+2:], "_") {
 		return pkg[:i]
 	}
 	return pkg
@@ -52,12 +54,13 @@ func PackageDisplayName(pkg string) string {
 
 // ApplyPackageKeys records in Packages the key of every keyed package (see
 // PackageKeys), the name its metadata goes by.
+// A package Packages does not hold is left out: its metadata was loaded
+// without making it an import.
 func (r *RichAST) ApplyPackageKeys() {
 	for path, key := range r.PackageKeys {
-		if r.Packages == nil {
-			r.Packages = make(map[string]string)
+		if _, ok := r.Packages[path]; ok {
+			r.Packages[path] = key
 		}
-		r.Packages[path] = key
 	}
 }
 
@@ -89,6 +92,7 @@ func (r *RichAST) RenamePackagesIn(renames map[string]string) {
 	r.TypeAliases, r.PackageVals, r.Packages = renamed.TypeAliases, renamed.PackageVals, renamed.Packages
 	r.GoExports, r.GoTypeInfo = renamed.GoExports, renamed.GoTypeInfo
 	rn := packageRenamer(renames)
+	r.ImportAliases = mapEntries(r.ImportAliases, same, rn.pkg)
 	for path, vals := range r.ImportedVals {
 		r.ImportedVals[path] = mapEntries(vals, same, rn.packageVal)
 	}

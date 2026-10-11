@@ -396,6 +396,28 @@ func main() {
 		assert.Equal(t, "own|8|10", buildAndRun(t, projectDir))
 	})
 
+	t.Run("a codec of a struct holding both", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+			"a/util/util.gala": a,
+			"b/util/util.gala": b,
+			"main.gala": `package main
+
+import (
+    . "martianoff/gala/json"
+    ua "example.com/sametype/a/util"
+    ub "example.com/sametype/b/util"
+)
+
+struct Pair(A ua.Config, B ub.Config)
+
+func main() {
+    Println(Codec[Pair](SnakeCase()).Encode(Pair(ua.Config(1), ub.Config(Name = "x"))).Get())
+}
+`,
+		})
+		assert.Equal(t, `{"a":{"n":1},"b":{"name":"x","debug":false}}`, buildAndRun(t, projectDir))
+	})
+
 	t.Run("a default declared in an import of the compiled package's name", func(t *testing.T) {
 		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
 			"b/util/util.gala": `package util

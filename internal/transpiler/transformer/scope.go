@@ -632,6 +632,9 @@ func (t *galaASTTransformer) qualifiedFunction(qualifier, name string) (fm *tran
 // reaches is recorded under its own key, which entry.PkgName holds (see
 // transpiler.PackageKey).
 func (t *galaASTTransformer) importedFunction(entry *ImportEntry, name string) *transpiler.FunctionMetadata {
+	if entry.PkgName == t.packageName {
+		return nil // the compiled package's own functions hold that key
+	}
 	return t.functions[ownFunctionKey(entry.PkgName, name)]
 }
 

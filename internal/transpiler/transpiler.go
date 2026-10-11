@@ -273,6 +273,24 @@ func (r *RichAST) Merge(other *RichAST) {
 	for k, v := range other.Packages {
 		r.Packages[k] = v
 	}
+	// Which packages are keyed (see PackageKey) travels with the names.
+	for k, v := range other.PackageKeys {
+		if r.PackageKeys == nil {
+			r.PackageKeys = make(map[string]string)
+		}
+		r.PackageKeys[k] = v
+	}
+	for k, v := range other.MergedPackages {
+		if _, keyed := r.PackageKeys[v]; keyed {
+			continue
+		}
+		if r.MergedPackages == nil {
+			r.MergedPackages = make(map[string]string)
+		}
+		if _, ok := r.MergedPackages[k]; !ok {
+			r.MergedPackages[k] = v
+		}
+	}
 	if len(other.ImportAliases) > 0 {
 		if r.ImportAliases == nil {
 			r.ImportAliases = make(map[string]string)
