@@ -58,7 +58,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		}
 		if sc.DEFAULT() != nil {
 			if defaultCase != nil {
-				return nil, galaerr.NewCodedSemanticError(galaerr.CodeMultipleDefaultCases,
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
 					sc.GetStart().GetLine(), sc.GetStart().GetColumn(),
 					fmt.Sprintf("sealed type %q marks both %q and %q as its default case", name, defaultCase.Identifier().GetText(), vi.name),
 					"keep `default` on one case: the default case is the type's zero value")
@@ -79,10 +79,19 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 					allFieldTypes[fieldName] = make(map[string]bool)
 				}
 				allFieldTypes[fieldName][fieldTypeText] = true
+				recursive := isSelfReferentialSealedField(fieldTypeText, name)
+				if recursive && sc.DEFAULT() != nil {
+					// The field is held through a pointer, which a zero
+					// value leaves nil.
+					return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
+						fc.GetStart().GetLine(), fc.GetStart().GetColumn(),
+						fmt.Sprintf("the default case %q of sealed type %q has a field %q of type %s itself, which its zero value cannot hold", vi.name, name, fieldName, name),
+						"make a case without such a field the default, or drop `default`")
+				}
 				vi.fields = append(vi.fields, sealedFieldInfo{
 					name:        fieldName,
 					typeCtx:     fc.Type_(),
-					isRecursive: isSelfReferentialSealedField(fieldTypeText, name),
+					isRecursive: recursive,
 				})
 			}
 		}

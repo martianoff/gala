@@ -1161,7 +1161,7 @@ func main() {
 		},
 		{
 			name: "sealed type with two default cases",
-			code: galaerr.CodeMultipleDefaultCases, // GALA-E0074
+			code: galaerr.CodeInvalidDefaultCase, // GALA-E0074
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
 

@@ -31,7 +31,7 @@ class GalaStructureViewElement(private val element: PsiElement) : StructureViewT
                         is FunctionDeclarationNode -> buildFunctionPresentation(element, name)
                         is SealedTypeDeclarationNode -> "sealed type $name"
                         is OpaqueTypeDeclarationNode -> "opaque type $name"
-                        is SealedCaseNode -> "case $name"
+                        is SealedCaseNode -> if (element.text.trimStart().startsWith("default")) "default case $name" else "case $name"
                         is TypeDeclarationNode -> "type $name"
                         is ValDeclarationNode -> "val $name"
                         is VarDeclarationNode -> "var $name"

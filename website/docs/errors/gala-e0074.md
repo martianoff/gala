@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "GALA-E0074 — More Than One Default Case"
-description: "GALA-E0074 fires when a sealed type marks more than one case default. The default case is the type's zero value, so there is at most one."
+title: "GALA-E0074 — Invalid Default Case"
+description: "GALA-E0074 fires when a sealed type marks more than one case default, or its default case holds a field of the type itself. The default case is the type's zero value."
 keywords: "gala-e0074, gala sealed default case, gala sealed type zero value, gala default case, gala option none zero value"
 permalink: /docs/errors/gala-e0074/
 last_modified_at: 2026-10-10
@@ -9,11 +9,16 @@ last_modified_at: 2026-10-10
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0074</p>
 
-# GALA-E0074 — More than one default case
+# GALA-E0074 — Invalid default case
 
-**When it fires.** A sealed type marks more than one case `default`. The
-default case is the type's zero value — what a value nothing constructed holds
-— so a sealed type has at most one.
+**When it fires.** A sealed type's default case is invalid:
+
+- more than one case is marked `default`. The default case is the type's zero
+  value — what a value nothing constructed holds — so a sealed type has at
+  most one; or
+- the default case has a field of the sealed type itself. Such a field is held
+  through a pointer, which a zero value leaves nil, so the zero value could not
+  be read as that case.
 
 **Minimal repro.**
 
@@ -43,7 +48,8 @@ error[GALA-E0074]: sealed type "Light" marks both "Off" and "Unknown" as its def
   = hint: keep `default` on one case: the default case is the type's zero value
 ```
 
-**Fix.** Keep `default` on the case a value should be when nothing set it:
+**Fix.** Keep `default` on the case a value should be when nothing set it,
+and make it a case without a field of the type itself:
 
 ```gala
 package main

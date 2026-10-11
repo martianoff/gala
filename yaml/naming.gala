@@ -8,8 +8,9 @@ import "martianoff/gala/go_interop"
 // Usage:
 //   val codec = Codec[Person](SnakeCase())
 sealed type Naming {
-    // CamelCase converts PascalCase to camelCase (e.g., "FirstName" -> "firstName")
-    case CamelCase()
+    // CamelCase converts PascalCase to camelCase (e.g., "FirstName" -> "firstName").
+    // It is the default: a Naming nothing set is CamelCase.
+    default case CamelCase()
     // SnakeCase converts PascalCase to snake_case (e.g., "FirstName" -> "first_name")
     case SnakeCase()
     // KebabCase converts PascalCase to kebab-case (e.g., "FirstName" -> "first-name")

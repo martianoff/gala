@@ -156,9 +156,10 @@ func main() {
 
 `Option`'s default case is `None()`, so an uninitialized `Option` is `None`.
 
-A sealed type **without** a default case has no zero value. A match on one
-matches none of the cases and panics, naming the type, rather than reading it
-as one of them. Leave the default case out when every value must be built
+A sealed type **without** a default case has no zero value. A zero value of
+one is none of its cases: an exhaustive match without a wildcard panics on it,
+naming the type, rather than reading it as one of the cases (a `case _` or
+binding arm matches it like any value). Leave the default case out when every value must be built
 from a case, as for `Try` and `Either`. A sealed type marks at most one case
 `default` ([GALA-E0074](/docs/errors/gala-e0074/)).
 
