@@ -356,13 +356,13 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 	}
 
 	if id, ok := sel.X.(*ast.Ident); ok {
-		// Only a qualifier bound to a GALA import reads t.functions, which is
-		// keyed by package NAME: Go `strings` must not pick up GALA `strings`
-		// signatures loaded by a sibling (see ImportManager.ClaimGalaPackageNames).
+		// Only a qualifier bound to a GALA import reads GALA functions: Go
+		// `strings` must not pick up GALA `strings` signatures loaded by a
+		// sibling (see ImportManager.ClaimGalaPackageNames).
 		if entry, isGala, ok := t.importForQualifier(id.Name); ok && isGala {
 			pkgName := entry.PkgName
 			fullName := pkgName + "." + sel.Sel.Name
-			if fMeta, ok := t.functions[fullName]; ok {
+			if fMeta := t.importedFunction(entry, sel.Sel.Name); fMeta != nil {
 				retType := fMeta.ReturnType
 				// Substitute explicit type arguments if provided
 				if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
@@ -379,8 +379,14 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 				}
 				return retType
 			}
-			// Check Go type info (stdlib, local Go files, third-party)
-			if retType := t.getGoFuncReturnTypeForCall(fullName, e, typeArgs); !retType.IsNil() {
+			// Check Go type info (stdlib, local Go files, third-party): by the
+			// import's path where it is recorded under it, else by the
+			// package's name unless the package being compiled shares it.
+			goKey := entry.Path + "." + sel.Sel.Name
+			if !t.goTypeInfo.HasQualified(goKey) && pkgName != t.packageName {
+				goKey = fullName
+			}
+			if retType := t.getGoFuncReturnTypeForCall(goKey, e, typeArgs); !retType.IsNil() {
 				return retType
 			}
 			// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)

@@ -137,6 +137,7 @@ type RichAST struct {
 	EmbedDirectives  []EmbedDirective                    // embed val declarations
 	PackageVals      map[string]*PackageValMetadata      // package-level val/var name -> metadata (for cross-file Immutable unwrap)
 	ImportedVals     map[string]map[string]*PackageValMetadata // import path -> exported package-level val/var name -> metadata (see AddImportedVals)
+	ImportedFuncs    map[string]map[string]*FunctionMetadata   // import path -> function name -> metadata (see AddImportedFuncs)
 	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
 	GoImportNames    map[string]string                   // this file's Go import path -> the package's real name, when the loaded Go package tells it (k8s.io/api/core/v1 -> v1)
 	FilePath         string                              // source file path (for error reporting)
@@ -331,6 +332,36 @@ func (r *RichAST) AddImportedVals(importPath string, vals map[string]*PackageVal
 	if _, ok := r.ImportedVals[importPath]; !ok {
 		r.ImportedVals[importPath] = vals // shared and read-only: one package's own bindings
 	}
+}
+
+// AddImportedFuncs records funcs, the top-level functions of the GALA package
+// at importPath by name (see OwnFunctions). Functions keys them by package
+// name alone, which cannot tell two packages of one name apart (the package
+// being compiled and a package it imports, or two imports); a qualified call
+// resolves through the import's path here instead. A package with no
+// functions is recorded too, so a lookup through it is known to miss.
+func (r *RichAST) AddImportedFuncs(importPath string, funcs map[string]*FunctionMetadata) {
+	if importPath == "" {
+		return
+	}
+	if r.ImportedFuncs == nil {
+		r.ImportedFuncs = make(map[string]map[string]*FunctionMetadata)
+	}
+	if _, ok := r.ImportedFuncs[importPath]; !ok {
+		r.ImportedFuncs[importPath] = funcs // shared and read-only: one package's own functions
+	}
+}
+
+// OwnFunctions returns the functions of funcs that the package pkgName
+// declares, by name.
+func OwnFunctions(pkgName string, funcs map[string]*FunctionMetadata) map[string]*FunctionMetadata {
+	own := make(map[string]*FunctionMetadata)
+	for _, fm := range funcs {
+		if fm != nil && fm.Package == pkgName {
+			own[fm.Name] = fm
+		}
+	}
+	return own
 }
 
 // PreferPackageVal reports whether candidate should replace existing as the

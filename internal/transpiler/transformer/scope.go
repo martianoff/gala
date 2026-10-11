@@ -575,7 +575,7 @@ func (t *galaASTTransformer) unshadowedFunctionByName(name string) (*transpiler.
 			if !entry.IsDot || !t.galaPkgPaths[entry.Path] {
 				continue
 			}
-			if fm, ok := t.functions[entry.PkgName+"."+name]; ok && fm != nil {
+			if fm := t.importedFunction(entry, name); fm != nil {
 				return fm, true
 			}
 		}
@@ -624,7 +624,24 @@ func (t *galaASTTransformer) qualifiedFunction(qualifier, name string) (fm *tran
 	if !isGala {
 		return nil, true
 	}
-	return t.functions[entry.PkgName+"."+name], true
+	return t.importedFunction(entry, name), true
+}
+
+// importedFunction returns the function name of the GALA package entry
+// imports, or nil. It resolves through the import's path (see
+// RichAST.AddImportedFuncs): a key by package name alone would also find a
+// function of the package being compiled, or of another import, that shares
+// the package's name.
+func (t *galaASTTransformer) importedFunction(entry *ImportEntry, name string) *transpiler.FunctionMetadata {
+	if t.richAST != nil {
+		if funcs, known := t.richAST.ImportedFuncs[entry.Path]; known {
+			return funcs[name]
+		}
+	}
+	if entry.PkgName == t.packageName {
+		return nil
+	}
+	return t.functions[ownFunctionKey(entry.PkgName, name)]
 }
 
 // functionForQualifier is qualifiedFunction for callers that only need the
