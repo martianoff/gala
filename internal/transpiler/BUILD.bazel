@@ -6,6 +6,7 @@ go_library(
         "go_result_value.go",
         "go_type_info.go",
         "import_names.go",
+        "package_rename.go",
         "parser.go",
         "transpiler.go",
         "types.go",
@@ -32,6 +33,7 @@ go_test(
     srcs = [
         "go_result_value_test.go",
         "go_type_info_test.go",
+        "package_rename_test.go",
         "import_names_test.go",
         "line_directives_guard_test.go",
         "merge_test.go",

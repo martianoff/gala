@@ -245,3 +245,109 @@ func main() {
 		assert.Equal(t, "lib|1", buildAndRun(t, projectDir))
 	})
 }
+
+// TestBuild_SameNameGalaPackagesKeepTheirOwnTypes declares a type of one name
+// in GALA packages that share a package name, and in the importing package
+// too. Each qualified type, constructor and pattern names the type of the
+// package its qualifier imports, with that type's own fields and methods.
+func TestBuild_SameNameGalaPackagesKeepTheirOwnTypes(t *testing.T) {
+	const a = `package util
+
+struct Config(N int)
+
+func (c Config) Show() string = s"a${c.N}"
+
+sealed type Shape {
+    case Dot()
+    case Line(Len int)
+}
+`
+	const b = `package util
+
+struct Config(Name string, Debug bool = false)
+
+func (c Config) Describe() string = s"b-${c.Name}"
+`
+	t.Run("two imports", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+			"a/util/util.gala": a,
+			"b/util/util.gala": b,
+			"main.gala": `package main
+
+import (
+    ua "example.com/sametype/a/util"
+    ub "example.com/sametype/b/util"
+)
+
+func size(s ua.Shape) int = s match {
+    case ua.Dot() => 0
+    case ua.Line(n) => n
+}
+
+func main() {
+    val ca ua.Config = ua.Config(1)
+    val cb = ub.Config(Name = "x")
+    Println(ca.Show(), cb.Describe(), cb.Debug, size(ua.Line(3)))
+}
+`,
+		})
+		assert.Equal(t, "a1|b-x|false|3", buildAndRun(t, projectDir))
+	})
+
+	t.Run("an import of the compiled package's name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+			"a/util/util.gala": a,
+			"lib/lib.gala": `package util
+
+import ua "example.com/sametype/a/util"
+
+struct Config(Label string)
+
+func (c Config) Show() string = s"lib-${c.Label}"
+
+func Both() string = s"${Config("own").Show()} ${ua.Config(2).Show()}"
+`,
+			"main.gala": `package main
+
+import u "example.com/sametype/lib"
+
+func main() {
+    Println(u.Both())
+}
+`,
+		})
+		assert.Equal(t, "lib-own|a2", buildAndRun(t, projectDir))
+	})
+
+	t.Run("a default declared in an import of the compiled package's name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/sametype", map[string]string{
+			"b/util/util.gala": `package util
+
+func DefaultLevel() int = 5
+
+struct Opts(Level int = DefaultLevel())
+
+func Describe(o Opts, suffix string = Tag()) string = s"${o.Level}${suffix}"
+
+func Tag() string = "!"
+`,
+			"lib/lib.gala": `package util
+
+import ub "example.com/sametype/b/util"
+
+func DefaultLevel() int = 0
+
+func Run() string = ub.Describe(ub.Opts())
+`,
+			"main.gala": `package main
+
+import u "example.com/sametype/lib"
+
+func main() {
+    Println(u.Run())
+}
+`,
+		})
+		assert.Equal(t, "5!", buildAndRun(t, projectDir))
+	})
+}

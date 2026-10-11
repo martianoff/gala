@@ -544,6 +544,11 @@ func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST)
 				if entry, ok := m.GetByPath(path); ok && entry != nil {
 					localName = entry.PkgName
 				}
+				if richAST != nil {
+					if key := richAST.PackageKeys[path]; key != "" {
+						localName = transpiler.PackageKeyName(key, path) // a key names the metadata, not the import
+					}
+				}
 				if localName == "" {
 					parts := strings.Split(path, "/")
 					localName = parts[len(parts)-1]

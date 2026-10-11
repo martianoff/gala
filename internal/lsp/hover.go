@@ -389,7 +389,7 @@ func renderHover(signature, doc, pkg string) string {
 		b.WriteString("\n" + doc + "\n")
 	}
 	if pkg != "" {
-		b.WriteString(fmt.Sprintf("\n*Package: %s*\n", pkg))
+		b.WriteString(fmt.Sprintf("\n*Package: %s*\n", transpiler.PackageDisplayName(pkg)))
 	}
 	return b.String()
 }
@@ -450,7 +450,7 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 		}
 	}
 	if meta.Package != "" {
-		b.WriteString(fmt.Sprintf("\n*Package: %s*\n", meta.Package))
+		b.WriteString(fmt.Sprintf("\n*Package: %s*\n", transpiler.PackageDisplayName(meta.Package)))
 	}
 	return b.String()
 }

@@ -787,6 +787,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	richAST.ApplyPackageKeys()
 	logPhase("scan-gala-imports", phaseStart)
 	phaseStart = time.Now()
 
@@ -1732,6 +1733,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
 	}
 
+	richAST.ApplyPackageKeys()
 	return richAST, nil
 }
 
@@ -2577,12 +2579,16 @@ func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, 
 // of the file may hold; the file imports it only by emitting one of its types,
 // which carry their import path.
 func (a *galaAnalyzer) loadGalaMetadata(path string, richAST *transpiler.RichAST) {
-	// The scratch RichAST is named as richAST is, so a package of that name
-	// keeps its functions out of richAST's own (see mergeAnalyzedClosureAt).
-	scratch := &transpiler.RichAST{Packages: make(map[string]string), PackageName: richAST.PackageName, OwnImportPath: richAST.OwnImportPath}
-	a.loadGalaImport(path, scratch, make(map[string]bool))
-	scratch.Packages = nil
-	richAST.Merge(scratch)
+	known := make(map[string]bool, len(richAST.Packages))
+	for p := range richAST.Packages {
+		known[p] = true
+	}
+	a.loadGalaImport(path, richAST, make(map[string]bool))
+	for p := range richAST.Packages {
+		if !known[p] {
+			delete(richAST.Packages, p)
+		}
+	}
 }
 
 // findKnownTypePackage checks if a type name is already known in richAST.Types
@@ -3145,6 +3151,9 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 	}
 	if visited[path] {
 		// Already merged in this walk — but caller may still want pkgName.
+		if key, ok := target.PackageKeys[path]; ok {
+			return key
+		}
 		if cached := a.analyzedPkgs[path]; cached != nil {
 			return cached.PackageName
 		}
@@ -3155,18 +3164,14 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 	if cached == nil {
 		return ""
 	}
-	src := cached
-	if cached.PackageName != "" && cached.PackageName == target.PackageName && path != target.OwnImportPath {
-		// Its functions share their "pkg.Name" keys with the package being
-		// compiled, whose own they would replace; it is called through
-		// ImportedFuncs alone.
-		noFuncs := *cached
-		noFuncs.Functions = nil
-		src = &noFuncs
+	src, funcs := cached, a.ownFuncs[path]
+	if key := packageKeyIn(target, path, cached.PackageName); key != "" {
+		src = cached.RenamePackage(cached.PackageName, key)
+		funcs = transpiler.OwnFunctions(key, src.Functions)
 	}
 	target.Merge(src)
-	target.AddImportedVals(path, cached.PackageVals)
-	if funcs, ok := a.ownFuncs[path]; ok {
+	target.AddImportedVals(path, src.PackageVals)
+	if funcs != nil {
 		target.AddImportedFuncs(path, funcs)
 	}
 	for _, imp := range a.analyzedPkgImports[path] {
@@ -3183,7 +3188,54 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 			}
 		}
 	}
-	return cached.PackageName
+	return src.PackageName
+}
+
+// packageKeyIn returns the key the package pkgName at path is recorded under
+// in target (see transpiler.PackageKey), or "" for its name: an imported
+// package is keyed when target is a package of its name, or when target
+// reaches another package of its name, which is then keyed too, in place if
+// it was merged under its name.
+func packageKeyIn(target *transpiler.RichAST, path, pkgName string) string {
+	if pkgName == "" || pkgName == "main" || pkgName == "test" {
+		return ""
+	}
+	if key, ok := target.PackageKeys[path]; ok {
+		return key
+	}
+	collides := pkgName == target.PackageName && path != target.OwnImportPath
+	if other, ok := target.MergedPackages[pkgName]; ok && other != path {
+		otherKey := transpiler.PackageKey(pkgName, other)
+		target.RenamePackageIn(pkgName, otherKey)
+		setPackageKey(target, other, otherKey)
+		target.MergedPackages[pkgName] = ""
+		collides = true
+	} else if ok && other == "" {
+		collides = true // packages of this name are keyed already
+	}
+	if !collides {
+		if target.MergedPackages == nil {
+			target.MergedPackages = make(map[string]string)
+		}
+		target.MergedPackages[pkgName] = path
+		return ""
+	}
+	if target.MergedPackages == nil {
+		target.MergedPackages = make(map[string]string)
+	}
+	if _, ok := target.MergedPackages[pkgName]; !ok {
+		target.MergedPackages[pkgName] = ""
+	}
+	key := transpiler.PackageKey(pkgName, path)
+	setPackageKey(target, path, key)
+	return key
+}
+
+func setPackageKey(target *transpiler.RichAST, path, key string) {
+	if target.PackageKeys == nil {
+		target.PackageKeys = make(map[string]string)
+	}
+	target.PackageKeys[path] = key
 }
 
 // addQualifiedTypeAliases records the aliases a file of package pkgName
