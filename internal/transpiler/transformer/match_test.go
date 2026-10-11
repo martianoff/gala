@@ -243,8 +243,8 @@ type Light struct {
 }
 
 const (
-	_Light_On uint8 = iota
-	_Light_Off
+	_Light_On  uint8 = 1
+	_Light_Off uint8 = 2
 )
 
 type On struct {
@@ -299,7 +299,7 @@ func describe(l Light) string {
 				if _tmp_2 {
 					return "off"
 				} else {
-					panic("unreachable")
+					panic("gala: a Light matched none of its cases: it is a zero value, which a sealed type without a default case does not have")
 				}
 			}
 		}
@@ -329,8 +329,8 @@ type Light struct {
 }
 
 const (
-	_Light_On uint8 = iota
-	_Light_Off
+	_Light_On  uint8 = 1
+	_Light_Off uint8 = 2
 )
 
 type On struct {

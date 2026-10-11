@@ -55,7 +55,7 @@ via the analyzer's `RichAST`; the plugin set only drives semantic highlighting.
 **How to extract auto-imported types:**
 ```bash
 # Sealed types + constructors
-grep -h "^sealed type \|^    case " std/*.gala | head -20
+grep -hE "^sealed type |^    (default )?case " std/*.gala | head -20
 
 # Core struct types always available
 grep -h "^type " std/tuple.gala std/immutable.gala

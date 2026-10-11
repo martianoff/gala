@@ -57,9 +57,10 @@ type docType struct {
 
 // docVariant is one case of a sealed type.
 type docVariant struct {
-	Name   string     `json:"name"`
-	Doc    string     `json:"doc,omitempty"`
-	Params []docField `json:"params,omitempty"`
+	Name    string     `json:"name"`
+	Doc     string     `json:"doc,omitempty"`
+	Params  []docField `json:"params,omitempty"`
+	Default bool       `json:"default,omitempty"` // the type's default case, its zero value
 }
 
 type docField struct {
@@ -310,9 +311,10 @@ func buildDocType(name string, meta *transpiler.TypeMetadata, rich *transpiler.R
 	}
 	for _, v := range meta.SealedVariants {
 		dt.Variants = append(dt.Variants, docVariant{
-			Name:   v.Name,
-			Doc:    v.Doc,
-			Params: namedTypes(v.FieldNames, v.FieldTypes),
+			Name:    v.Name,
+			Doc:     v.Doc,
+			Params:  namedTypes(v.FieldNames, v.FieldTypes),
+			Default: v.IsDefault,
 		})
 	}
 	// A sealed type has no fields of its own: the grammar gives it only cases,
@@ -442,7 +444,11 @@ func renderPackageDoc(w io.Writer, pkg *docPackage) {
 		renderProse(w, t.Doc, "    ")
 
 		for _, v := range t.Variants {
-			fmt.Fprintf(w, "    case %s\n", formatSignature(docSignat{Name: v.Name, Params: v.Params}))
+			keyword := "case"
+			if v.Default {
+				keyword = "default case"
+			}
+			fmt.Fprintf(w, "    %s %s\n", keyword, formatSignature(docSignat{Name: v.Name, Params: v.Params}))
 			renderProse(w, v.Doc, "        ")
 		}
 		for _, f := range t.Fields {

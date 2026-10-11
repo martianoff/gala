@@ -100,12 +100,13 @@ func main() {
 
 // TestT3ExhaustiveSealedNoDefaultEmitsUnreachable asserts that an
 // exhaustive sealed match without an explicit `case _ =>` default
-// compiles and emits a synthesized `panic("unreachable")` tail.
+// compiles and emits a synthesized panic tail.
 //
 // This is the Phase 3 round-trip guarantee for sealed matches: if every
 // variant is named, the generated Go still needs a syntactic default so
 // Go's control flow is complete. The transpiler synthesises it; this
-// test pins the generated shape.
+// test pins the generated shape. Color has no default case, so only its
+// zero value reaches the tail, and the panic says so.
 func TestT3ExhaustiveSealedNoDefaultEmitsUnreachable(t *testing.T) {
 	trans := newTranspiler()
 	input := `package main
@@ -128,8 +129,8 @@ func main() {
 }`
 	out, err := trans.Transpile(input, "")
 	require.NoError(t, err, "exhaustive sealed match should compile without a default")
-	assert.Contains(t, out, `panic("unreachable")`,
-		"expected synthesised panic(\"unreachable\") default for exhaustive sealed match")
+	assert.Contains(t, out, `panic("gala: a Color matched none of its cases: it is a zero value, which a sealed type without a default case does not have")`,
+		"expected a synthesised panic naming the type as the default of an exhaustive sealed match")
 }
 
 // TestT5ImmutableAutoUnwrapInInterpolation asserts that when an

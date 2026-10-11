@@ -415,6 +415,12 @@ type TypeMetadata struct {
 	UnderlyingBase Type
 }
 
+// HasDefaultCase reports whether m is a sealed type with a `default case`, its
+// zero value.
+func (m *TypeMetadata) HasDefaultCase() bool {
+	return m != nil && slices.ContainsFunc(m.SealedVariants, func(v SealedVariant) bool { return v.IsDefault })
+}
+
 // OpaqueUnderlying returns the type an opaque type is declared over, and false
 // when m is nil, not an opaque type, or its underlying type is unknown.
 func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
@@ -558,6 +564,8 @@ type SealedVariant struct {
 	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
+	// IsDefault marks the type's `default case`, its zero value.
+	IsDefault bool
 }
 
 type MethodMetadata struct {

@@ -98,7 +98,7 @@ class GalaDocumentationProvider : AbstractDocumentationProvider() {
             }
             is SealedCaseNode -> {
                 val text = element.text.trim()
-                text.removePrefix("case ")
+                text.removePrefix("default ").trim().removePrefix("case ")
             }
             is TypeDeclarationNode -> {
                 val text = element.text

@@ -557,7 +557,11 @@ func variantSignature(v *transpiler.SealedVariant) string {
 			fields = append(fields, fn)
 		}
 	}
-	return fmt.Sprintf("case %s(%s)", v.Name, strings.Join(fields, ", "))
+	keyword := "case"
+	if v.IsDefault {
+		keyword = "default case"
+	}
+	return fmt.Sprintf("%s %s(%s)", keyword, v.Name, strings.Join(fields, ", "))
 }
 
 // packageValAt returns the package-level binding named by word when the cursor

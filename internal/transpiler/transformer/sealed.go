@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strconv"
 	"strings"
 
 	"martianoff/gala/galaerr"
@@ -15,7 +16,7 @@ type sealedVariantInfo struct {
 	name     string
 	fields   []sealedFieldInfo
 	tagConst string // e.g., "_Shape_Circle"
-	tagValue int    // iota index
+	tagValue int    // the case's tag: 0 for the default case, else 1, 2, … in declaration order
 }
 
 type sealedFieldInfo struct {
@@ -44,12 +45,28 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	// Parse all variants (two passes: first collect, then resolve field name conflicts)
 	var variants []sealedVariantInfo
 	allFieldTypes := make(map[string]map[string]bool) // field name -> set of type texts (for conflict detection)
-	for i, caseCtx := range ctx.AllSealedCase() {
+	// The default case takes tag 0, so a Go zero value of the type is that
+	// case with zero fields. Without one, tags start at 1 and a zero value
+	// is no case at all (see exhaustiveDefaultBody).
+	nextTag := 1
+	var defaultCase *grammar.SealedCaseContext
+	for _, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
 		vi := sealedVariantInfo{
 			name:     sc.Identifier().GetText(),
 			tagConst: fmt.Sprintf("_%s_%s", name, sc.Identifier().GetText()),
-			tagValue: i,
+		}
+		if sc.DEFAULT() != nil {
+			if defaultCase != nil {
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
+					sc.GetStart().GetLine(), sc.GetStart().GetColumn(),
+					fmt.Sprintf("sealed type %q marks both %q and %q as its default case", name, defaultCase.Identifier().GetText(), vi.name),
+					"keep `default` on one case: the default case is the type's zero value")
+			}
+			defaultCase = sc
+		} else {
+			vi.tagValue = nextTag
+			nextTag++
 		}
 
 		if sc.SealedCaseFieldList() != nil {
@@ -62,10 +79,19 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 					allFieldTypes[fieldName] = make(map[string]bool)
 				}
 				allFieldTypes[fieldName][fieldTypeText] = true
+				recursive := isSelfReferentialSealedField(fieldTypeText, name)
+				if recursive && sc.DEFAULT() != nil {
+					// The field is held through a pointer, which a zero
+					// value leaves nil.
+					return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
+						fc.GetStart().GetLine(), fc.GetStart().GetColumn(),
+						fmt.Sprintf("the default case %q of sealed type %q has a field %q of type %s itself, which its zero value cannot hold", vi.name, name, fieldName, name),
+						"make a case without such a field the default, or drop `default`")
+				}
 				vi.fields = append(vi.fields, sealedFieldInfo{
 					name:        fieldName,
 					typeCtx:     fc.Type_(),
-					isRecursive: isSelfReferentialSealedField(fieldTypeText, name),
+					isRecursive: recursive,
 				})
 			}
 		}
@@ -187,17 +213,14 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		Specs: []ast.Spec{typeSpec},
 	})
 
-	// 2. Generate variant tag constants: const ( _Shape_Circle uint8 = iota; _Shape_Rectangle; _Shape_Point )
+	// 2. Generate variant tag constants: const ( _Shape_Circle uint8 = 1; _Shape_Rectangle uint8 = 2 )
 	var constSpecs []ast.Spec
-	for i, vi := range variants {
-		spec := &ast.ValueSpec{
-			Names: []*ast.Ident{ast.NewIdent(vi.tagConst)},
-		}
-		if i == 0 {
-			spec.Type = ast.NewIdent("uint8")
-			spec.Values = []ast.Expr{ast.NewIdent("iota")}
-		}
-		constSpecs = append(constSpecs, spec)
+	for _, vi := range variants {
+		constSpecs = append(constSpecs, &ast.ValueSpec{
+			Names:  []*ast.Ident{ast.NewIdent(vi.tagConst)},
+			Type:   ast.NewIdent("uint8"),
+			Values: []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: strconv.Itoa(vi.tagValue)}},
+		})
 	}
 	decls = append(decls, &ast.GenDecl{
 		Tok:    token.CONST,

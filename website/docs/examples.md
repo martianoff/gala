@@ -118,6 +118,38 @@ func main() {
 
 See also: [Language Reference - Option Monad](/docs/language-reference/#option-monad)
 
+## Default Case
+
+A sealed type's `default case` is its zero value: a field a struct literal
+leaves out holds it. `Option`'s default case is `None()`.
+
+```gala
+package main
+
+sealed type Mode {
+    case On(Level int)
+    default case Off()
+}
+
+struct Lamp(Name string, M Mode, Dim Option[int])
+
+func describe(l Lamp) string = l.M match {
+    case On(level) => s"${l.Name} on at $level"
+    case Off()     => s"${l.Name} off, dim ${l.Dim.GetOrElse(0)}"
+}
+
+func main() {
+    Println(describe(Lamp{Name: "desk"}))
+    Println(describe(Lamp("hall", On(7), Some(3))))
+}
+```
+
+Output:
+```
+desk off, dim 0
+hall on at 7
+```
+
 ## Generic Methods Example
 
 ```gala

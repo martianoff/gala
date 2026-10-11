@@ -58,9 +58,10 @@ sealed type Maybe[T any] {
     Println(r)
 }`)
 		require.NoError(t, err)
-		// An exhaustive sealed match lowers with a synthetic unreachable
-		// default rather than a user-supplied one.
-		require.Contains(t, out, `panic("unreachable")`)
+		// An exhaustive sealed match lowers with a synthetic default rather
+		// than a user-supplied one: Maybe has no default case, so only its
+		// zero value reaches it.
+		require.Contains(t, out, `panic("gala: a Maybe matched none of its cases`)
 	})
 
 	// The BARE zero-field spelling (`case Nothing` rather than `case Nothing()`)
@@ -191,6 +192,6 @@ func main() {
 
 	out, err := newDocGuardTranspilerWithPaths(searchRoot).Transpile(mainSrc, mainPath)
 	require.NoError(t, err)
-	require.Contains(t, out, `panic("unreachable")`,
+	require.Contains(t, out, `matched none of its cases: it is a zero value`,
 		"a named-package generic sealed type must also be recognized as exhaustive")
 }

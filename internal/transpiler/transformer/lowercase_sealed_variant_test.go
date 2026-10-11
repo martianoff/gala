@@ -45,7 +45,7 @@ func TestLowercaseSealedVariants(t *testing.T) {
 }
 
 func main() { Println(describe(lineFrame("x"))) }`,
-			wantContains: []string{`panic("unreachable")`},
+			wantContains: []string{`matched none of its cases: it is a zero value`},
 		},
 		{
 			name: "PascalCase control",
@@ -62,7 +62,7 @@ func describe(f Frame) string = f match {
 }
 
 func main() { Println(describe(LineFrame("x"))) }`,
-			wantContains: []string{`panic("unreachable")`},
+			wantContains: []string{`matched none of its cases: it is a zero value`},
 		},
 		{
 			name: "explicit default still compiles",
@@ -92,7 +92,7 @@ func main() { Println(describe(lineFrame("x"))) }`,
 }
 
 func main() { Println(describe(endFrame())) }`,
-			wantContains: []string{"endFrame{}.Unapply(obj)", `panic("unreachable")`},
+			wantContains: []string{"endFrame{}.Unapply(obj)", `matched none of its cases: it is a zero value`},
 			wantAbsent:   []string{"endFrame := obj"},
 		},
 		{
@@ -231,7 +231,7 @@ func describe(m maybe[frame]) string = m match {
 }
 
 func main() { Println(describe(just[frame](endFrame()))) }`,
-			wantContains: []string{"endFrame{}.Unapply(", "nothing[frame]{}.Unapply(obj)", `panic("unreachable")`},
+			wantContains: []string{"endFrame{}.Unapply(", "nothing[frame]{}.Unapply(obj)", `matched none of its cases: it is a zero value`},
 			wantAbsent:   []string{"endFrame := ", "nothing := obj"},
 		},
 		{

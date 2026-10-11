@@ -747,8 +747,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 					fmt.Sprintf("non-exhaustive match: missing cases: %s", strings.Join(missing, ", ")),
 					hint)
 			case enumerable:
-				// Exhaustive: the if-chain ends in an unreachable panic.
-				defaultBody = unreachableDefaultBody()
+				// Exhaustive: the if-chain ends in a panic only a zero value
+				// of a sealed type without a default case reaches.
+				defaultBody = t.exhaustiveDefaultBody(matchedType)
 			default:
 				// The remediation lives in the hint only — repeating
 				// `case _ => ...` in the message duplicated what the
