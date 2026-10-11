@@ -1,0 +1,38 @@
+package main
+
+import . "martianoff/gala/go_interop"
+
+// A sealed type's `default case` is its zero value: a value nothing
+// constructed (an uninitialized var, an omitted field, a slot of a fresh Go
+// slice) is that case. Option's default case is None.
+
+sealed type Mode {
+    case On(Level int)
+    default case Off()
+}
+
+struct Cfg(Name string, Opt Option[int], M Mode)
+
+func describe(o Option[int]) string = o match {
+    case Some(v) => s"some $v"
+    case None() => "none"
+}
+
+func level(m Mode) string = m match {
+    case On(l) => s"on $l"
+    case Off() => "off"
+}
+
+func zeroOption() Option[int] {
+    var o Option[int]
+    return o
+}
+
+func main() {
+    Println(describe(zeroOption()))
+    val c = Cfg{Name: "a"}
+    Println(describe(c.Opt), level(c.M))
+    val slots = SliceWithSize[Option[int]](2)
+    Println(describe(slots[1]))
+    Println(describe(Some(3)), level(On(2)))
+}

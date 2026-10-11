@@ -762,6 +762,10 @@ const (
 	// sub-pattern follows a named one, or there are more positional
 	// sub-patterns than fields.
 	CodeInvalidNamedSubPattern ErrorCode = "GALA-E0073"
+
+	// E0074: a sealed type marks more than one case `default`. The default
+	// case is the type's zero value, so there is at most one.
+	CodeMultipleDefaultCases ErrorCode = "GALA-E0074"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

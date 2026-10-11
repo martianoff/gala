@@ -73,6 +73,7 @@ class GalaSyntaxHighlighter : SyntaxHighlighterBase() {
             galaLexer.IMPORT,
             galaLexer.PACKAGE,
             galaLexer.SEALED,
+            galaLexer.DEFAULT,
             galaLexer.OPAQUE,
             galaLexer.EMBED -> arrayOf(KEYWORD)
 

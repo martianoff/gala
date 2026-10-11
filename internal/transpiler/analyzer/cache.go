@@ -104,7 +104,11 @@ import (
 // v20: a GALA function or method declaring a Go result list records it
 // (GoResults). A v19 payload lacks it, so a call of such a function would not
 // be lifted.
-const CacheVersion = "v20"
+//
+// v21: a sealed variant records whether it is the type's default case
+// (SealedVariant.IsDefault). A v20 payload lacks it, so a match on such a type
+// from another package would report a zero value it in fact matches.
+const CacheVersion = "v21"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

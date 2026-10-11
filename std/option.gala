@@ -18,10 +18,11 @@ func getSomeValue(opt any) any = opt match {
 }
 
 // Option represents an optional value: every instance of Option is either an instance
-// of Some containing a value, or None representing an empty value.
+// of Some containing a value, or None representing an empty value. Its zero
+// value is None.
 sealed type Option[T any] {
     case Some(Value T)
-    case None()
+    default case None()
 }
 
 // IsDefined returns true if the option is an instance of Some, false otherwise.

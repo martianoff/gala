@@ -38,7 +38,7 @@ structShorthandDeclaration: 'struct' identifier (typeParameters)? parameters;
 sealedTypeDeclaration: SEALED 'type' identifier (typeParameters)? '{' sealedCase+ '}';
 // Parentheses are optional for zero-field variants: `case Debug` and `case Debug()` are both valid.
 // Variants with fields still require parentheses: `case Add(l Expr, r Expr)`.
-sealedCase: CASE identifier (('(' | NL_LPAREN) sealedCaseFieldList? ')')?;
+sealedCase: DEFAULT? CASE identifier (('(' | NL_LPAREN) sealedCaseFieldList? ')')?;
 sealedCaseFieldList: sealedCaseField (',' sealedCaseField)* ','?;
 sealedCaseField: identifier type;
 
@@ -259,7 +259,9 @@ typeArguments: '[' typeList ']';
 typeList: type (',' type)*;
 
 qualifiedIdentifier: identifier ('.' identifier)*;
-identifier: IDENTIFIER;
+// `default` is a keyword only before `case` in a sealed type; elsewhere it is
+// a name, so naming a binding after the Go keyword reports GALA-E0055.
+identifier: IDENTIFIER | DEFAULT;
 
 literal
     : INT_LIT
@@ -294,6 +296,7 @@ RETURN: 'return';
 IMPORT: 'import';
 PACKAGE: 'package';
 SEALED: 'sealed';
+DEFAULT: 'default';
 OPAQUE: 'opaque';
 EMBED: 'embed';
 COLON: ':';

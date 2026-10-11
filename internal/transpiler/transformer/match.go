@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -185,6 +187,27 @@ func unreachableDefaultBody() []ast.Stmt {
 		&ast.ExprStmt{X: &ast.CallExpr{
 			Fun:  ast.NewIdent("panic"),
 			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: `"unreachable"`}},
+		}},
+	}
+}
+
+// exhaustiveDefaultBody closes a match whose arms cover every case of
+// matchedType. A sealed type without a default case numbers its cases from 1,
+// so its Go zero value matches none of them: the panic says so.
+func (t *galaASTTransformer) exhaustiveDefaultBody(matchedType transpiler.Type) []ast.Stmt {
+	meta := t.getTypeMeta(t.followAliasChain(matchedType).BaseName())
+	if meta == nil || !meta.IsSealed || slices.ContainsFunc(meta.SealedVariants, func(v transpiler.SealedVariant) bool { return v.IsDefault }) {
+		return unreachableDefaultBody() // a zero value is the default case, which an arm matches
+	}
+	name := meta.Name
+	if meta.Package != "" && meta.Package != t.packageName {
+		name = transpiler.PackageDisplayName(meta.Package) + "." + name
+	}
+	msg := fmt.Sprintf("gala: a %s matched none of its cases: it is a zero value, which a sealed type without a default case does not have", name)
+	return []ast.Stmt{
+		&ast.ExprStmt{X: &ast.CallExpr{
+			Fun:  ast.NewIdent("panic"),
+			Args: []ast.Expr{&ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(msg)}},
 		}},
 	}
 }
