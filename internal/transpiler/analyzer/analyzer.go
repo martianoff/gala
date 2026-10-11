@@ -3146,8 +3146,18 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 	if cached == nil {
 		return ""
 	}
-	target.Merge(cached)
+	if cached.PackageName != "" && cached.PackageName == target.PackageName && path != target.OwnImportPath {
+		// Its functions share their "pkg.Name" keys with the package being
+		// compiled, whose own they would replace; it is called through
+		// ImportedFuncs alone.
+		noFuncs := *cached
+		noFuncs.Functions = nil
+		target.Merge(&noFuncs)
+	} else {
+		target.Merge(cached)
+	}
 	target.AddImportedVals(path, cached.PackageVals)
+	target.AddImportedFuncs(path, cached.PackageName, cached.Functions)
 	for _, imp := range a.analyzedPkgImports[path] {
 		if imp == "" || imp == path {
 			continue

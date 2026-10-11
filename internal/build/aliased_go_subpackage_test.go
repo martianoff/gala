@@ -137,4 +137,49 @@ func main() {
 		})
 		assert.Equal(t, "1|local", buildAndRun(t, projectDir))
 	})
+
+	t.Run("the compiled package declares a function of the same name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/samename", map[string]string{
+			"lib/lib.gala":   "package util\n\nimport o \"example.com/samename/a/util\"\n\nfunc Get() string = s\"lib ${o.Get().GetOrElse(0)}\"\n",
+			"a/util/util.go": a,
+			"main.gala": `package main
+
+import u "example.com/samename/lib"
+
+func main() {
+    Println(u.Get())
+}
+`,
+		})
+		assert.Equal(t, "lib|1", buildAndRun(t, projectDir))
+	})
+}
+
+// TestBuild_SameNameGalaPackagesKeepTheirOwnFunctions imports GALA packages
+// that share a package name, and declares a function of that name in the
+// importing package too. Each qualified call resolves to the function of the
+// package its qualifier imports, whatever its signature.
+func TestBuild_SameNameGalaPackagesKeepTheirOwnFunctions(t *testing.T) {
+	projectDir := newForeignGenGoProject(t, "example.com/samegala", map[string]string{
+		"a/util/util.gala": "package util\n\nfunc Get(n int) int = n + 1\n",
+		"b/util/util.gala": "package util\n\nfunc Get(s string, suffix string = \"!\") string = s + suffix\n",
+		"lib/lib.gala": `package util
+
+import (
+    ua "example.com/samegala/a/util"
+    ub "example.com/samegala/b/util"
+)
+
+func Get() string = s"${ua.Get(1)} ${ub.Get("b")}"
+`,
+		"main.gala": `package main
+
+import u "example.com/samegala/lib"
+
+func main() {
+    Println(u.Get())
+}
+`,
+	})
+	assert.Equal(t, "2|b!", buildAndRun(t, projectDir))
 }
