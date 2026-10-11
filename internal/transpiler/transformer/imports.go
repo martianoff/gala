@@ -601,6 +601,9 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 			for name := range richAST.ImportedVals[entry.Path] {
 				exports[name] = true
 			}
+			for name := range richAST.ImportedFuncs[entry.Path] {
+				exports[name] = true
+			}
 		}
 	}
 	if len(exports) == 0 {

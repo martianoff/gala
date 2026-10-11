@@ -211,4 +211,37 @@ func main() {
 		})
 		assert.Equal(t, "20|b!?", buildAndRun(t, projectDir))
 	}
+
+	t.Run("dot import of a package of the compiled package's name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/samegala", map[string]string{
+			"a/util/util.gala": "package util\n\nfunc Only() int = 7\n",
+			"lib/lib.gala":     "package util\n\nimport . \"example.com/samegala/a/util\"\n\nfunc Get() int = Only() + 1\n",
+			"main.gala": `package main
+
+import u "example.com/samegala/lib"
+
+func main() {
+    Println(u.Get())
+}
+`,
+		})
+		assert.Equal(t, "8", buildAndRun(t, projectDir))
+	})
+
+	t.Run("hand-written Go of the compiled package imports a package of its name", func(t *testing.T) {
+		projectDir := newForeignGenGoProject(t, "example.com/samegala", map[string]string{
+			"a/util/util.gala": "package util\n\nfunc Get() int = 1\n\nfunc Extra() int = 2\n",
+			"lib/conv.go":      "package util\n\nimport au \"example.com/samegala/a/util\"\n\nfunc FromA() int { return au.Get() }\n",
+			"lib/lib.gala":     "package util\n\nfunc Get() string = s\"lib ${FromA()}\"\n",
+			"main.gala": `package main
+
+import u "example.com/samegala/lib"
+
+func main() {
+    Println(u.Get())
+}
+`,
+		})
+		assert.Equal(t, "lib|1", buildAndRun(t, projectDir))
+	})
 }

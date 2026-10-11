@@ -122,7 +122,8 @@ type galaAnalyzer struct {
 	// counterpart to PR #308's on-disk cache projection.
 	analyzedPkgs        map[string]*transpiler.RichAST // Cache of analyzed packages (own-only projections)
 	analyzedPkgImports  map[string][]string            // path -> direct GALA import paths (for closure rehydration)
-	// ownFuncs memoizes ownFuncsOf per analyzedPkgs entry.
+	// ownFuncs holds, per analyzedPkgs entry, the functions its package
+	// declares by name (see RichAST.AddImportedFuncs).
 	ownFuncs map[string]map[string]*transpiler.FunctionMetadata
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
@@ -2576,7 +2577,9 @@ func (a *galaAnalyzer) loadGalaImport(path string, richAST *transpiler.RichAST, 
 // of the file may hold; the file imports it only by emitting one of its types,
 // which carry their import path.
 func (a *galaAnalyzer) loadGalaMetadata(path string, richAST *transpiler.RichAST) {
-	scratch := &transpiler.RichAST{Packages: make(map[string]string)}
+	// The scratch RichAST is named as richAST is, so a package of that name
+	// keeps its functions out of richAST's own (see mergeAnalyzedClosureAt).
+	scratch := &transpiler.RichAST{Packages: make(map[string]string), PackageName: richAST.PackageName, OwnImportPath: richAST.OwnImportPath}
 	a.loadGalaImport(path, scratch, make(map[string]bool))
 	scratch.Packages = nil
 	richAST.Merge(scratch)
@@ -3110,26 +3113,14 @@ func (a *galaAnalyzer) storeAnalyzedPkg(path string, importedAST *transpiler.Ric
 	}
 	own := projectOwnRichAST(importedAST)
 	a.analyzedPkgs[path] = own
-	delete(a.ownFuncs, path)
+	if a.ownFuncs == nil {
+		a.ownFuncs = make(map[string]map[string]*transpiler.FunctionMetadata)
+	}
+	a.ownFuncs[path] = transpiler.OwnFunctions(own.PackageName, own.Functions)
 	if a.analyzedPkgImports != nil {
 		a.analyzedPkgImports[path] = extractDirectGalaImports(importedAST)
 	}
 	return own
-}
-
-// ownFuncsOf returns the functions the package at path declares, by name
-// (transpiler.OwnFunctions of its analyzedPkgs entry pkg), built once per
-// entry and shared by every RichAST that imports it.
-func (a *galaAnalyzer) ownFuncsOf(path string, pkg *transpiler.RichAST) map[string]*transpiler.FunctionMetadata {
-	if funcs, ok := a.ownFuncs[path]; ok {
-		return funcs
-	}
-	funcs := transpiler.OwnFunctions(pkg.PackageName, pkg.Functions)
-	if a.ownFuncs == nil {
-		a.ownFuncs = make(map[string]map[string]*transpiler.FunctionMetadata)
-	}
-	a.ownFuncs[path] = funcs
-	return funcs
 }
 
 // mergeAnalyzedClosureAt walks the in-memory analyzedPkgs entry for `path`
@@ -3175,8 +3166,8 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 	}
 	target.Merge(src)
 	target.AddImportedVals(path, cached.PackageVals)
-	if cached.PackageName != "" {
-		target.AddImportedFuncs(path, a.ownFuncsOf(path, cached))
+	if funcs, ok := a.ownFuncs[path]; ok {
+		target.AddImportedFuncs(path, funcs)
 	}
 	for _, imp := range a.analyzedPkgImports[path] {
 		if imp == "" || imp == path {
@@ -4670,8 +4661,8 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		return transpiler.NilType{}
 	}
 	fn := richAST.Functions[key]
-	if importPath != "" {
-		fn = richAST.ImportedFuncs[importPath][name]
+	if funcs, known := richAST.ImportedFuncs[importPath]; known {
+		fn = funcs[name]
 	}
 	if fn != nil && len(fn.TypeParams) == 0 {
 		return knownType(fn.ReturnType)

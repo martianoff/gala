@@ -379,8 +379,14 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 				}
 				return retType
 			}
-			// Check Go type info (stdlib, local Go files, third-party)
-			if retType := t.getGoFuncReturnTypeForCall(fullName, e, typeArgs); !retType.IsNil() {
+			// Check Go type info (stdlib, local Go files, third-party): by the
+			// import's path where it is recorded under it, else by the
+			// package's name unless the package being compiled shares it.
+			goKey := entry.Path + "." + sel.Sel.Name
+			if !t.goTypeInfo.HasQualified(goKey) && pkgName != t.packageName {
+				goKey = fullName
+			}
+			if retType := t.getGoFuncReturnTypeForCall(goKey, e, typeArgs); !retType.IsNil() {
 				return retType
 			}
 			// Handle Receiver_Method (e.g., std.Some_Apply, std.Try_FlatMap)
