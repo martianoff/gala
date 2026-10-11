@@ -334,30 +334,34 @@ func (r *RichAST) AddImportedVals(importPath string, vals map[string]*PackageVal
 	}
 }
 
-// AddImportedFuncs records the top-level functions of the GALA package
-// pkgName at importPath, from funcs keyed as the analyzer keys them
-// ("pkgName.Name"). Functions keys them by package name alone, which cannot
-// tell two packages of one name apart (the package being compiled and a
-// package it imports, or two imports); a qualified call resolves through the
-// import's path here instead. A package with no functions is recorded too,
-// so a lookup through it is known to miss.
-func (r *RichAST) AddImportedFuncs(importPath, pkgName string, funcs map[string]*FunctionMetadata) {
-	if importPath == "" || pkgName == "" {
+// AddImportedFuncs records funcs, the top-level functions of the GALA package
+// at importPath by name (see OwnFunctions). Functions keys them by package
+// name alone, which cannot tell two packages of one name apart (the package
+// being compiled and a package it imports, or two imports); a qualified call
+// resolves through the import's path here instead. A package with no
+// functions is recorded too, so a lookup through it is known to miss.
+func (r *RichAST) AddImportedFuncs(importPath string, funcs map[string]*FunctionMetadata) {
+	if importPath == "" {
 		return
-	}
-	if _, ok := r.ImportedFuncs[importPath]; ok {
-		return
-	}
-	own := make(map[string]*FunctionMetadata)
-	for key, fm := range funcs {
-		if name, ok := strings.CutPrefix(key, pkgName+"."); ok && fm != nil && fm.Package == pkgName {
-			own[name] = fm
-		}
 	}
 	if r.ImportedFuncs == nil {
 		r.ImportedFuncs = make(map[string]map[string]*FunctionMetadata)
 	}
-	r.ImportedFuncs[importPath] = own
+	if _, ok := r.ImportedFuncs[importPath]; !ok {
+		r.ImportedFuncs[importPath] = funcs // shared and read-only: one package's own functions
+	}
+}
+
+// OwnFunctions returns the functions of funcs that the package pkgName
+// declares, by name.
+func OwnFunctions(pkgName string, funcs map[string]*FunctionMetadata) map[string]*FunctionMetadata {
+	own := make(map[string]*FunctionMetadata)
+	for _, fm := range funcs {
+		if fm != nil && fm.Package == pkgName {
+			own[fm.Name] = fm
+		}
+	}
+	return own
 }
 
 // PreferPackageVal reports whether candidate should replace existing as the

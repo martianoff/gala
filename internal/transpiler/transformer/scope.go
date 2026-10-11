@@ -641,7 +641,7 @@ func (t *galaASTTransformer) importedFunction(entry *ImportEntry, name string) *
 	if entry.PkgName == t.packageName {
 		return nil
 	}
-	return t.functions[entry.PkgName+"."+name]
+	return t.functions[ownFunctionKey(entry.PkgName, name)]
 }
 
 // functionForQualifier is qualifiedFunction for callers that only need the

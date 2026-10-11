@@ -122,6 +122,8 @@ type galaAnalyzer struct {
 	// counterpart to PR #308's on-disk cache projection.
 	analyzedPkgs        map[string]*transpiler.RichAST // Cache of analyzed packages (own-only projections)
 	analyzedPkgImports  map[string][]string            // path -> direct GALA import paths (for closure rehydration)
+	// ownFuncs memoizes ownFuncsOf per analyzedPkgs entry.
+	ownFuncs map[string]map[string]*transpiler.FunctionMetadata
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
@@ -3108,10 +3110,26 @@ func (a *galaAnalyzer) storeAnalyzedPkg(path string, importedAST *transpiler.Ric
 	}
 	own := projectOwnRichAST(importedAST)
 	a.analyzedPkgs[path] = own
+	delete(a.ownFuncs, path)
 	if a.analyzedPkgImports != nil {
 		a.analyzedPkgImports[path] = extractDirectGalaImports(importedAST)
 	}
 	return own
+}
+
+// ownFuncsOf returns the functions the package at path declares, by name
+// (transpiler.OwnFunctions of its analyzedPkgs entry pkg), built once per
+// entry and shared by every RichAST that imports it.
+func (a *galaAnalyzer) ownFuncsOf(path string, pkg *transpiler.RichAST) map[string]*transpiler.FunctionMetadata {
+	if funcs, ok := a.ownFuncs[path]; ok {
+		return funcs
+	}
+	funcs := transpiler.OwnFunctions(pkg.PackageName, pkg.Functions)
+	if a.ownFuncs == nil {
+		a.ownFuncs = make(map[string]map[string]*transpiler.FunctionMetadata)
+	}
+	a.ownFuncs[path] = funcs
+	return funcs
 }
 
 // mergeAnalyzedClosureAt walks the in-memory analyzedPkgs entry for `path`
@@ -3146,18 +3164,20 @@ func (a *galaAnalyzer) mergeAnalyzedClosureAt(target *transpiler.RichAST, path s
 	if cached == nil {
 		return ""
 	}
+	src := cached
 	if cached.PackageName != "" && cached.PackageName == target.PackageName && path != target.OwnImportPath {
 		// Its functions share their "pkg.Name" keys with the package being
 		// compiled, whose own they would replace; it is called through
 		// ImportedFuncs alone.
 		noFuncs := *cached
 		noFuncs.Functions = nil
-		target.Merge(&noFuncs)
-	} else {
-		target.Merge(cached)
+		src = &noFuncs
 	}
+	target.Merge(src)
 	target.AddImportedVals(path, cached.PackageVals)
-	target.AddImportedFuncs(path, cached.PackageName, cached.Functions)
+	if cached.PackageName != "" {
+		target.AddImportedFuncs(path, a.ownFuncsOf(path, cached))
+	}
 	for _, imp := range a.analyzedPkgImports[path] {
 		if imp == "" || imp == path {
 			continue
@@ -4649,7 +4669,11 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		}
 		return transpiler.NilType{}
 	}
-	if fn := richAST.Functions[key]; fn != nil && len(fn.TypeParams) == 0 {
+	fn := richAST.Functions[key]
+	if importPath != "" {
+		fn = richAST.ImportedFuncs[importPath][name]
+	}
+	if fn != nil && len(fn.TypeParams) == 0 {
 		return knownType(fn.ReturnType)
 	}
 	return transpiler.NilType{}
