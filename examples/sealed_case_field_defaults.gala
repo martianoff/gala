@@ -1,10 +1,8 @@
 package main
 
-import . "martianoff/gala/go_interop"
-
 // A sealed case's fields can declare defaults, as a function's parameters
-// can: a constructor call leaves them out by position or by name. A default
-// case with field defaults is its type's zero value built with them.
+// can: a constructor call leaves them out by position or by name, and each
+// default is evaluated at the construction.
 
 sealed type Light {
     case Off()
@@ -16,8 +14,6 @@ sealed type Shape {
     case Square(Side int)
 }
 
-struct Home(Name string, L Light)
-
 func describe(l Light) string = l match {
     case On(p, r) => s"on $p in $r"
     case Off()    => "off"
@@ -26,11 +22,5 @@ func describe(l Light) string = l match {
 func main() {
     Println(On(), On(Power = 50), On(Room = "Hall"), On(10), On(10, "Kitchen"))
     Println(Circle(3), Circle(Radius = 4), Circle(5, Label = "big"), Square(2))
-
-    val home = Home{Name: "flat"}
-    Println(home.L, describe(home.L), home.L == On())
-    Println(home.L.Power, home.L.Room, home == Home("flat", On()), Some(home.L) == Some(On()))
-
-    val slots = SliceWithSize[Light](1)
-    Println(slots[0], describe(slots[0]), slots[0] != Off())
+    Println(describe(On(Power = 5)), describe(Off()))
 }

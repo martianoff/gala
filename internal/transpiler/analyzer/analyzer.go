@@ -1307,6 +1307,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					}
 					if cm, ok := richAST.Types[companionKey]; ok {
 						cm.DefinedIn = filePath
+						if apply := cm.Methods["Apply"]; apply != nil {
+							apply.DefinedIn = filePath // its field defaults are lowered as declared here
+						}
 						if apply := cm.Methods["Apply"]; apply != nil && len(apply.DefaultExprs) > 0 {
 							caseDefaultChecks = append(caseDefaultChecks, caseDefaults{v.Name, apply, v.Pos})
 						}
@@ -2094,9 +2097,6 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	// Store variant metadata on parent
 	for _, vi := range variants {
 		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos, IsDefault: vi.isDefault}
-		for _, f := range vi.fields {
-			sv.HasFieldDefaults = sv.HasFieldDefaults || f.def != nil
-		}
 		for _, f := range vi.fields {
 			sv.FieldNames = append(sv.FieldNames, f.name)
 			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
@@ -4215,6 +4215,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					}
 					if cm, ok := richAST.Types[companionKey]; ok && cm.DefinedIn == "" {
 						cm.DefinedIn = absSibPath
+						if apply := cm.Methods["Apply"]; apply != nil {
+							apply.DefinedIn = absSibPath
+						}
 					}
 				}
 			}

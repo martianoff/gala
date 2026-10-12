@@ -375,59 +375,7 @@ func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx ant
 	if err := t.checkGoResultOperands(op, ctx, left, right); err != nil {
 		return nil, err
 	}
-	left, right = t.unwrapImmutable(left), t.unwrapImmutable(right)
-	// A sealed type whose zero value is read as its default case built with
-	// field defaults (TypeMetadata.NormalizesZeroValue) holds two
-	// representations of that value, and so does any value holding one; the
-	// generated Equal compares them as one.
-	if tok == token.EQL || tok == token.NEQ {
-		if t.holdsNormalizingValue(t.probeExprType(left), map[string]bool{}) {
-			var eq ast.Expr = &ast.CallExpr{Fun: &ast.SelectorExpr{X: left, Sel: ast.NewIdent("Equal")}, Args: []ast.Expr{right}}
-			if tok == token.NEQ {
-				eq = &ast.UnaryExpr{Op: token.NOT, X: eq}
-			}
-			return eq, nil
-		}
-	}
-	return &ast.BinaryExpr{X: left, Op: tok, Y: right}, nil
-}
-
-// holdsNormalizingValue reports whether a GALA value of typ is, or holds in a
-// field or through a type argument, a sealed type whose zero value is
-// normalized (TypeMetadata.NormalizesZeroValue). seen guards recursive types.
-func (t *galaASTTransformer) holdsNormalizingValue(typ transpiler.Type, seen map[string]bool) bool {
-	if transpiler.IsUnusable(typ) {
-		return false
-	}
-	typ = t.followAliasChain(typ)
-	if gen, ok := typ.(transpiler.GenericType); ok {
-		for _, p := range gen.Params {
-			if t.holdsNormalizingValue(p, seen) {
-				return true
-			}
-		}
-	}
-	name := typ.BaseName()
-	if seen[name] {
-		return false
-	}
-	seen[name] = true
-	meta := t.getTypeMeta(name)
-	if meta == nil {
-		return false
-	}
-	if meta.NormalizesZeroValue() {
-		return true
-	}
-	if meta.IsSealed {
-		return false // its own type arguments were checked above
-	}
-	for _, f := range meta.Fields {
-		if t.holdsNormalizingValue(f, seen) {
-			return true
-		}
-	}
-	return false
+	return &ast.BinaryExpr{X: t.unwrapImmutable(left), Op: tok, Y: t.unwrapImmutable(right)}, nil
 }
 
 func (t *galaASTTransformer) isBinaryOperator(op string) bool {

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"go/types"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -19,18 +17,7 @@ type sealedVariantInfo struct {
 	fields   []sealedFieldInfo
 	tagConst string // e.g., "_Shape_Circle"
 	tagValue int    // the case's tag: 0 for the default case, else 1, 2, … in declaration order
-	isDefault bool // the type's default case
-	// normalizes marks a default case some of whose fields declare a
-	// default (see normalizeMethodName).
-	normalizes bool
 }
-
-// normalizeMethodName names the method a sealed type whose default case has
-// field defaults gets: its Go zero value (tag 0) holds none of their values,
-// so it is read as the default case built with them. Every method the type
-// generates that reads a value calls it first, as GALA does before reading a
-// field; hand-written Go calls it to read a value as GALA does.
-const normalizeMethodName = "WithDefaults"
 
 type sealedFieldInfo struct {
 	name            string
@@ -69,13 +56,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			name:     sc.Identifier().GetText(),
 			tagConst: fmt.Sprintf("_%s_%s", name, sc.Identifier().GetText()),
 		}
-		vi.isDefault = sc.DEFAULT() != nil
-		if list := sc.SealedCaseFieldList(); list != nil && vi.isDefault {
-			for _, f := range list.(*grammar.SealedCaseFieldListContext).AllSealedCaseField() {
-				vi.normalizes = vi.normalizes || f.(*grammar.SealedCaseFieldContext).ParamDefault() != nil
-			}
-		}
-		if vi.isDefault {
+		if sc.DEFAULT() != nil {
 			if defaultCase != nil {
 				return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
 					sc.GetStart().GetLine(), sc.GetStart().GetColumn(),
@@ -83,10 +64,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 					"keep `default` on one case: the default case is the type's zero value")
 			}
 			defaultCase = sc
-		}
-		// A default case whose fields have defaults keeps a tag of its own:
-		// tag 0, the zero value, is read as it with those defaults.
-		if !vi.isDefault || vi.normalizes {
+		} else {
 			vi.tagValue = nextTag
 			nextTag++
 		}
@@ -250,16 +228,6 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		Specs:  constSpecs,
 	})
 
-	// The methods below that read a value, when the type normalizes its zero
-	// value (see normalizeMethodName).
-	normalizing := slices.ContainsFunc(variants, func(vi sealedVariantInfo) bool { return vi.normalizes })
-	var readers []*ast.FuncDecl
-	addReader := func(fn *ast.FuncDecl) {
-		if normalizing {
-			readers = append(readers, fn)
-		}
-	}
-
 	// 3. Generate companion structs and methods for each variant
 	for _, vi := range variants {
 		companionDecls, err := t.generateSealedCompanion(name, vi, tParams, recursiveFields)
@@ -267,18 +235,12 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			return nil, err
 		}
 		decls = append(decls, companionDecls...)
-		for _, d := range companionDecls {
-			if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "Unapply" {
-				addReader(fn)
-			}
-		}
 	}
 
 	// 4. Generate IsXxx() methods on parent
 	for _, vi := range variants {
 		isMethod := t.generateSealedIsMethod(name, vi, tParams)
 		decls = append(decls, isMethod)
-		addReader(isMethod)
 	}
 
 	// 5. Generate Copy, Equal methods on parent — skip if user-defined
@@ -298,28 +260,11 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			return nil, err
 		}
 		decls = append(decls, equalMethod)
-		addReader(equalMethod)
 	}
 
 	// 6. Generate String() method on parent
 	stringMethod := t.generateSealedStringMethod(name, variants, tParams, recursiveFields, funcFields)
 	decls = append(decls, stringMethod)
-	addReader(stringMethod)
-
-	// 6b. A default case with field defaults: the zero value reads as it.
-	for _, vi := range variants {
-		if !vi.normalizes {
-			continue
-		}
-		normalize, err := t.generateSealedNormalize(name, vi, tParams, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
-		if err != nil {
-			return nil, err
-		}
-		decls = append(decls, normalize)
-		for _, fn := range readers {
-			normalizeReaderValues(fn)
-		}
-	}
 
 	// 7. For generic sealed types, generate InstanceMarker
 	if tParams != nil {
@@ -371,67 +316,6 @@ func (t *galaASTTransformer) generateSealedCompanion(parentName string, vi seale
 	decls = append(decls, unapplyMethod)
 
 	return decls, nil
-}
-
-// generateSealedNormalize is the normalize method (see normalizeMethodName) of
-// sealed type parentName, whose default case vi has field defaults:
-// `func (s T) WithDefaults() T { if s._variant == 0 { return Vi{}.Apply(defaults…) }; return s }`.
-func (t *galaASTTransformer) generateSealedNormalize(parentName string, vi sealedVariantInfo, tParams *ast.FieldList, line, col int) (*ast.FuncDecl, error) {
-	parentType := t.buildGenericTypeExpr(parentName, tParams)
-	companionType := t.buildGenericTypeExpr(vi.name, tParams)
-	var apply *transpiler.MethodMetadata
-	if meta := t.getTypeMeta(vi.name); meta != nil {
-		apply = meta.Methods["Apply"]
-	}
-	fieldNames := make([]string, len(vi.fields))
-	for i, f := range vi.fields {
-		fieldNames[i] = f.name
-	}
-	args, err := t.variantApplyArgs(companionType, vi.name, apply, fieldNames, nil, nil, line, col)
-	if err != nil {
-		return nil, err
-	}
-	s := ast.NewIdent("s")
-	return &ast.FuncDecl{
-		Recv: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{s}, Type: parentType}}},
-		Name: ast.NewIdent(normalizeMethodName),
-		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: parentType}}}},
-		Body: &ast.BlockStmt{List: []ast.Stmt{
-			&ast.IfStmt{
-				Cond: &ast.BinaryExpr{X: &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent("_variant")}, Op: token.EQL, Y: &ast.BasicLit{Kind: token.INT, Value: "0"}},
-				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{applyCall(companionType, args)}}}},
-			},
-			&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("s")}},
-		}},
-	}, nil
-}
-
-// normalizeReaderValues makes fn, a generated method reading a value of the
-// sealed type, read its receiver and parameters of that type normalized
-// (see normalizeMethodName): `s = s.WithDefaults()` first.
-func normalizeReaderValues(fn *ast.FuncDecl) {
-	sealedType := ""
-	var names []string
-	if fn.Recv != nil && len(fn.Recv.List) == 1 && fn.Name.Name != "Unapply" {
-		sealedType = types.ExprString(fn.Recv.List[0].Type)
-		names = append(names, fn.Recv.List[0].Names[0].Name)
-	}
-	for _, p := range fn.Type.Params.List {
-		if fn.Name.Name == "Unapply" || types.ExprString(p.Type) == sealedType {
-			for _, n := range p.Names {
-				names = append(names, n.Name)
-			}
-		}
-	}
-	var stmts []ast.Stmt
-	for _, n := range names {
-		stmts = append(stmts, &ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent(n)},
-			Tok: token.ASSIGN,
-			Rhs: []ast.Expr{&ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent(n), Sel: ast.NewIdent(normalizeMethodName)}}},
-		})
-	}
-	fn.Body.List = append(stmts, fn.Body.List...)
 }
 
 // buildGenericTypeExpr creates a type expression like `Name` or `Name[T]` or `Name[T, U]`.

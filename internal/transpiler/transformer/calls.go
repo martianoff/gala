@@ -225,11 +225,12 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								Args: nil,
 							}, nil
 						}
-					} else if len(methodMeta.DefaultExprs) == len(methodMeta.ParamTypes) {
-						// Every parameter has a default (a sealed case whose
-						// fields all declare one): called with none, it takes
-						// them all, through the same path as a call with
-						// arguments.
+					} else if len(methodMeta.DefaultExprs) > 0 || t.sealedVariantOf(typeName).parent != nil {
+						// A sealed case with fields, or an Apply with
+						// parameter defaults, called with no arguments goes
+						// through the same path as a call with arguments:
+						// defaults fill what they cover, and a required field
+						// left out is reported.
 						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, nil,
 							suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 						if err != nil || handled {
@@ -1697,11 +1698,14 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 	}
 
 	// Arguments left off the end take their declared defaults: a sealed
-	// case's field defaults, or any companion Apply's parameter defaults.
-	if len(args) < len(methodMeta.ParamTypes) && len(methodMeta.DefaultExprs) > 0 {
+	// case's field defaults, or any companion Apply's parameter defaults. A
+	// case's required field left out is reported as a struct's is.
+	variant := t.sealedVariantOf(typeName)
+	if len(args) < len(methodMeta.ParamTypes) && (len(methodMeta.DefaultExprs) > 0 || variant.parent != nil) ||
+		len(args) > len(methodMeta.ParamTypes) && variant.parent != nil {
 		var filled []ast.Expr
 		var err error
-		if variant := t.sealedVariantOf(typeName); variant.parent != nil {
+		if variant.parent != nil {
 			filled, err = t.variantApplyArgs(fun, origTypeName, methodMeta, methodMeta.ParamNames, args, nil, line, col)
 		} else {
 			filled, err = t.fillDefaultArgsMethod(&ast.CompositeLit{Type: fun}, args, methodMeta, t.astTypeToTranspilerType(fun), nil, line, col)
@@ -2739,6 +2743,9 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return nil, ferr
 			}
 			if found {
+				if err := checkUnknownStructFields(qualifiedName, variantFieldNames, argListCtx); err != nil {
+					return nil, err
+				}
 				variantFun, err := t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs, line, col)
 				if err != nil {
 					return nil, err
@@ -2937,6 +2944,9 @@ func applyCall(companion ast.Expr, args []ast.Expr) ast.Expr {
 // Apply's DefaultExprs). A field left out that has no default is reported
 // as for a struct (GALA-E0045).
 func (t *galaASTTransformer) variantApplyArgs(fun ast.Expr, typeName string, apply *transpiler.MethodMetadata, fieldNames []string, args []ast.Expr, namedArgs map[string]ast.Expr, line, col int) ([]ast.Expr, error) {
+	if len(args) > len(fieldNames) {
+		return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("%q has %d fields, but %d arguments are given", typeName, len(fieldNames), len(args)))
+	}
 	ordered := make([]ast.Expr, len(fieldNames))
 	var missing []string
 	defaults := make(map[string]transpiler.DefaultExpr)

@@ -73,9 +73,9 @@ func main() { Println(Leaf()) }`,
 }
 
 // TestCaseFieldDefaults pins sealed case field defaults: an omitted field
-// takes its default, a field without one cannot follow one with, a required
-// field left out of a named construction is reported, and a default case with
-// field defaults normalizes its zero value.
+// takes its default, a field without one cannot follow one with, and a
+// construction leaving out a required field, naming no field or passing too
+// many arguments is reported.
 func TestCaseFieldDefaults(t *testing.T) {
 	const decls = `package main
 
@@ -102,9 +102,21 @@ sealed type Shape {
 			contains: []string{`On{}.Apply(30, "Living")`, `On{}.Apply(5, "Living")`, `Circle{}.Apply(2, "circle")`},
 		},
 		{
-			name:     "the default case's zero value is normalized",
-			body:     `func main() { Println(Off()) }`,
-			contains: []string{"func (s Light) WithDefaults() Light", "s = s.WithDefaults()", "_Light_On  uint8 = 2"},
+			name:      "a required field left out of an empty call",
+			body:      `func main() { Println(Square()) }`,
+			wantCode:  galaerr.CodeMissingStructField,
+			wantError: `missing required field "Side" in construction of "Square"`,
+		},
+		{
+			name:      "a named argument matching no field",
+			body:      `func main() { Println(Circle(Radius = 1, Labl = "x")) }`,
+			wantCode:  galaerr.CodeMissingStructField,
+			wantError: `unknown field "Labl" in construction of "Circle"`,
+		},
+		{
+			name:      "more arguments than fields",
+			body:      `func main() { Println(Circle(1, "a", "b")) }`,
+			wantError: `"Circle" has 2 fields, but 3 arguments are given`,
 		},
 		{
 			name:      "a required field left out by name",

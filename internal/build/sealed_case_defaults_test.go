@@ -7,9 +7,8 @@ import (
 )
 
 // TestBuild_SealedCaseFieldDefaultsAcrossPackages builds a program whose
-// sealed type, with field defaults on its default case, is declared in
-// another package: the importer constructs it leaving fields out, and reads a
-// zero value of it (an omitted struct field) as that case built with them.
+// sealed type, with field defaults, is declared in another package: the
+// importer constructs it leaving fields out, by position and by name.
 func TestBuild_SealedCaseFieldDefaultsAcrossPackages(t *testing.T) {
 	projectDir := newForeignGenGoProject(t, "example.com/casedefaults", map[string]string{
 		"lights/lights.gala": `package lights
@@ -18,8 +17,6 @@ sealed type Light {
     case Off()
     default case On(Power int = 30, Room string = "Living")
 }
-
-struct Home(Name string, L Light)
 `,
 		"main.gala": `package main
 
@@ -31,10 +28,9 @@ func describe(l lights.Light) string = l match {
 }
 
 func main() {
-    val home = lights.Home{Name: "flat"}
-    Println(describe(home.L), home.L == lights.On(), describe(lights.On(Room = "Hall")))
+    Println(describe(lights.On()), describe(lights.On(Room = "Hall")), describe(lights.On(5)))
 }
 `,
 	})
-	assert.Equal(t, "on|30|in|Living|true|on|30|in|Hall", buildAndRun(t, projectDir))
+	assert.Equal(t, "on|30|in|Living|on|30|in|Hall|on|5|in|Living", buildAndRun(t, projectDir))
 }

@@ -329,7 +329,6 @@ func (e *encoder) writeSealedVariant(v transpiler.SealedVariant) {
 	e.writeStringSlice(v.FieldNames)
 	e.writeTypeSlice(v.FieldTypes)
 	e.writeBool(v.IsDefault)
-	e.writeBool(v.HasFieldDefaults)
 }
 
 func (e *encoder) writeSealedVariantSlice(s []transpiler.SealedVariant) {
@@ -834,7 +833,6 @@ func (d *decoder) readSealedVariantSlice() []transpiler.SealedVariant {
 		out[i].FieldNames = d.readStringSlice()
 		out[i].FieldTypes = d.readTypeSlice()
 		out[i].IsDefault = d.readBool()
-		out[i].HasFieldDefaults = d.readBool()
 	}
 	return out
 }

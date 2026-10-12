@@ -110,9 +110,8 @@ import (
 // from another package would report a zero value it in fact matches.
 //
 // v22: a sealed case's companion Apply records its parameter names and its
-// fields' declared defaults (DefaultExprs), and the case whether it has any
-// (SealedVariant.HasFieldDefaults). A v21 payload lacks them, so a case
-// constructor called without a defaulted field would not fill it.
+// fields' declared defaults (DefaultExprs). A v21 payload lacks them, so a
+// case constructor called without a defaulted field would not fill it.
 const CacheVersion = "v22"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit

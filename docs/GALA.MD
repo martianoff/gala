@@ -1367,28 +1367,8 @@ func main() {
 }
 ```
 
-The default case's fields, if it has any, are their own zero values, unless
-they declare defaults: then the zero value is the default case built with
-them. Matching, `==`, `Equal` and `String` all read it so:
-
-```gala
-sealed type Light {
-    case Off()
-    default case On(Power int = 30, Room string = "Living")
-}
-
-func main() {
-    var l Light
-    Println(l, l == On())   // On(30, Living) true
-}
-```
-
-Field reads and `==` (also on a struct, `Option` or tuple holding such a
-value) see it the same way. Two places do not: hand-written Go reading the
-struct's fields directly sees Go's zero values (it calls `WithDefaults()` to
-read the value as GALA does), and `==` inside generic code over a
-`comparable` type parameter compares the stored form. `Option`'s default case is `None()`, so an
-uninitialized `Option` is `None`.
+The default case's fields, if it has any, are their own zero values. `Option`'s
+default case is `None()`, so an uninitialized `Option` is `None`.
 
 A sealed type **without** a default case has no zero value. A zero value of
 one — it can only come from Go, or from a value nothing constructed — is none
