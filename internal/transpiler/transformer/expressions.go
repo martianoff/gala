@@ -377,10 +377,11 @@ func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx ant
 	}
 	left, right = t.unwrapImmutable(left), t.unwrapImmutable(right)
 	// A sealed type whose zero value is read as its default case built with
-	// field defaults (see normalizeMethodName) holds two representations of
-	// that value; its Equal compares them as one.
+	// field defaults (TypeMetadata.NormalizesZeroValue) holds two
+	// representations of that value, and so does any value holding one; the
+	// generated Equal compares them as one.
 	if tok == token.EQL || tok == token.NEQ {
-		if meta := t.getTypeMeta(t.probeExprType(left).BaseName()); t.sealedNormalizes(meta) {
+		if t.holdsNormalizingValue(t.probeExprType(left), map[string]bool{}) {
 			var eq ast.Expr = &ast.CallExpr{Fun: &ast.SelectorExpr{X: left, Sel: ast.NewIdent("Equal")}, Args: []ast.Expr{right}}
 			if tok == token.NEQ {
 				eq = &ast.UnaryExpr{Op: token.NOT, X: eq}
@@ -391,23 +392,40 @@ func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx ant
 	return &ast.BinaryExpr{X: left, Op: tok, Y: right}, nil
 }
 
-// sealedNormalizes reports whether meta is a sealed type whose default case
-// has field defaults, so that its Go zero value is normalized when read (see
-// normalizeMethodName).
-func (t *galaASTTransformer) sealedNormalizes(meta *transpiler.TypeMetadata) bool {
-	if meta == nil || !meta.IsSealed {
+// holdsNormalizingValue reports whether a GALA value of typ is, or holds in a
+// field or through a type argument, a sealed type whose zero value is
+// normalized (TypeMetadata.NormalizesZeroValue). seen guards recursive types.
+func (t *galaASTTransformer) holdsNormalizingValue(typ transpiler.Type, seen map[string]bool) bool {
+	if transpiler.IsUnusable(typ) {
 		return false
 	}
-	for _, v := range meta.SealedVariants {
-		if !v.IsDefault {
-			continue
+	typ = t.followAliasChain(typ)
+	if gen, ok := typ.(transpiler.GenericType); ok {
+		for _, p := range gen.Params {
+			if t.holdsNormalizingValue(p, seen) {
+				return true
+			}
 		}
-		key := v.Name
-		if meta.Package != "" && meta.Package != "main" && meta.Package != "test" {
-			key = meta.Package + "." + v.Name
+	}
+	name := typ.BaseName()
+	if seen[name] {
+		return false
+	}
+	seen[name] = true
+	meta := t.getTypeMeta(name)
+	if meta == nil {
+		return false
+	}
+	if meta.NormalizesZeroValue() {
+		return true
+	}
+	if meta.IsSealed {
+		return false // its own type arguments were checked above
+	}
+	for _, f := range meta.Fields {
+		if t.holdsNormalizingValue(f, seen) {
+			return true
 		}
-		companion := t.getTypeMeta(key)
-		return companion != nil && companion.Methods["Apply"] != nil && len(companion.Methods["Apply"].DefaultExprs) > 0
 	}
 	return false
 }

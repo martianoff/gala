@@ -1,4 +1,5 @@
 On(30, Living) On(50, Living) On(30, Hall) On(10, Living) On(10, Kitchen)
 Circle(3, circle) Circle(4, circle) Circle(5, big) Square(2)
 On(30, Living) on 30 in Living true
+30 Living true true
 On(30, Living) on 30 in Living true

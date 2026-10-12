@@ -29,6 +29,7 @@ func main() {
 
     val home = Home{Name: "flat"}
     Println(home.L, describe(home.L), home.L == On())
+    Println(home.L.Power, home.L.Room, home == Home("flat", On()), Some(home.L) == Some(On()))
 
     val slots = SliceWithSize[Light](1)
     Println(slots[0], describe(slots[0]), slots[0] != Off())

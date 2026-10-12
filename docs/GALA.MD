@@ -1383,8 +1383,11 @@ func main() {
 }
 ```
 
-(Hand-written Go reading the struct's fields directly sees Go's zero values;
-read a GALA value through GALA.) `Option`'s default case is `None()`, so an
+Field reads and `==` (also on a struct, `Option` or tuple holding such a
+value) see it the same way. Two places do not: hand-written Go reading the
+struct's fields directly sees Go's zero values (it calls `WithDefaults()` to
+read the value as GALA does), and `==` inside generic code over a
+`comparable` type parameter compares the stored form. `Option`'s default case is `None()`, so an
 uninitialized `Option` is `None`.
 
 A sealed type **without** a default case has no zero value. A zero value of

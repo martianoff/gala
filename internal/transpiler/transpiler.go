@@ -421,6 +421,13 @@ func (m *TypeMetadata) HasDefaultCase() bool {
 	return m != nil && slices.ContainsFunc(m.SealedVariants, func(v SealedVariant) bool { return v.IsDefault })
 }
 
+// NormalizesZeroValue reports whether m is a sealed type whose default case
+// has field defaults: its Go zero value holds none of their values, so GALA
+// reads it as that case built with them (the generated WithDefaults method).
+func (m *TypeMetadata) NormalizesZeroValue() bool {
+	return m != nil && slices.ContainsFunc(m.SealedVariants, func(v SealedVariant) bool { return v.IsDefault && v.HasFieldDefaults })
+}
+
 // OpaqueUnderlying returns the type an opaque type is declared over, and false
 // when m is nil, not an opaque type, or its underlying type is unknown.
 func (m *TypeMetadata) OpaqueUnderlying() (Type, bool) {
@@ -566,6 +573,9 @@ type SealedVariant struct {
 	FieldTypes []Type
 	// IsDefault marks the type's `default case`, its zero value.
 	IsDefault bool
+	// HasFieldDefaults reports whether some of the case's fields declare a
+	// default (its companion Apply holds them).
+	HasFieldDefaults bool
 }
 
 type MethodMetadata struct {

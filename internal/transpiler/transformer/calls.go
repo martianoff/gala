@@ -2751,10 +2751,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				if err != nil {
 					return nil, err
 				}
-				return &ast.CallExpr{
-					Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: variantFun}, Sel: ast.NewIdent("Apply")},
-					Args: ordered,
-				}, nil
+				return applyCall(variantFun, ordered), nil
 			}
 		}
 		// 3. Regular GALA struct construction with named args. A named
@@ -2924,6 +2921,14 @@ func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.S
 		return nil, t.uninferredVariantError(sealedVariant{parent, pkgQualifier, bareName}, "(...)", inferred, missing, line, col)
 	}
 	return fun, nil
+}
+
+// applyCall is `Companion{}.Apply(args)`, a call of a companion's Apply.
+func applyCall(companion ast.Expr, args []ast.Expr) ast.Expr {
+	return &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: companion}, Sel: ast.NewIdent("Apply")},
+		Args: args,
+	}
 }
 
 // variantApplyArgs orders the arguments of a call of a sealed case's

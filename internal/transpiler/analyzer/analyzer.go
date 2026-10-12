@@ -1272,7 +1272,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	logPhase("collect-types", phaseStart)
 	phaseStart = time.Now()
 
-	// 1.5 Collect sealed types
+	// 1.5 Collect sealed types. A case whose fields declare defaults is
+	// checked as a function's parameter defaults are, below, through its
+	// companion Apply.
+	type caseDefaults struct {
+		name  string
+		apply *transpiler.MethodMetadata
+		pos   transpiler.SourcePos
+	}
+	var caseDefaultChecks []caseDefaults
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
 			ctx := sealedCtx.(*grammar.SealedTypeDeclarationContext)
@@ -1299,6 +1307,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					}
 					if cm, ok := richAST.Types[companionKey]; ok {
 						cm.DefinedIn = filePath
+						if apply := cm.Methods["Apply"]; apply != nil && len(apply.DefaultExprs) > 0 {
+							caseDefaultChecks = append(caseDefaultChecks, caseDefaults{v.Name, apply, v.Pos})
+						}
 					}
 				}
 			}
@@ -1342,6 +1353,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		spans     map[int]defaultExprSpan
 	}
 	var pendingDefaultChecks []pendingDefaultCheck
+	for _, c := range caseDefaultChecks {
+		pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
+			meta: &transpiler.FunctionMetadata{
+				Name: c.name, ParamTypes: c.apply.ParamTypes, ParamNames: c.apply.ParamNames, DefaultExprs: c.apply.DefaultExprs,
+			},
+			line: c.pos.Line, col: c.pos.Column,
+		})
+	}
 
 	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -2076,6 +2095,9 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	for _, vi := range variants {
 		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos, IsDefault: vi.isDefault}
 		for _, f := range vi.fields {
+			sv.HasFieldDefaults = sv.HasFieldDefaults || f.def != nil
+		}
+		for _, f := range vi.fields {
 			sv.FieldNames = append(sv.FieldNames, f.name)
 			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
 		}
@@ -2127,16 +2149,6 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		for i, f := range vi.fields {
 			applyMeta.ParamTypes = append(applyMeta.ParamTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
 			applyMeta.ParamNames = append(applyMeta.ParamNames, f.name)
-			if f.def == nil && len(applyMeta.DefaultExprs) > 0 {
-				// A field without a default after one with: a positional
-				// construction could not leave the earlier one out.
-				return galaerr.NewCodedSemanticError(
-					galaerr.CodeParamMissingDefaultAfterDefault,
-					vi.pos.Line, vi.pos.Column,
-					fmt.Sprintf("field %q of case %s has no default but follows a field with a default", f.name, vi.name),
-					"move the fields with defaults to the end of the case",
-				)
-			}
 			if f.def != nil {
 				if applyMeta.DefaultExprs == nil {
 					applyMeta.DefaultExprs = make(map[int]transpiler.DefaultExpr)

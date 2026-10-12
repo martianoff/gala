@@ -104,7 +104,7 @@ sealed type Shape {
 		{
 			name:     "the default case's zero value is normalized",
 			body:     `func main() { Println(Off()) }`,
-			contains: []string{"func (s Light) _normalize() Light", "s = s._normalize()", "_Light_On  uint8 = 2"},
+			contains: []string{"func (s Light) WithDefaults() Light", "s = s.WithDefaults()", "_Light_On  uint8 = 2"},
 		},
 		{
 			name:      "a required field left out by name",
@@ -119,7 +119,7 @@ sealed type Shape {
 }
 func main() { Println(B(C = 2)) }`,
 			wantCode:  galaerr.CodeParamMissingDefaultAfterDefault,
-			wantError: `field "C" of case B has no default but follows a field with a default`,
+			wantError: `parameter "C" in B has no default but follows a parameter with a default`,
 		},
 	}
 	for _, tc := range cases {

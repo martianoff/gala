@@ -153,6 +153,12 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string, l
 		xType = t.getExprTypeName(base)
 	}
 
+	// A field of a sealed type whose zero value is normalized is read from
+	// the value as GALA sees it (see normalizeMethodName).
+	if meta := t.getTypeMeta(xType.BaseName()); meta.NormalizesZeroValue() && meta.Fields[selName] != nil {
+		base = &ast.CallExpr{Fun: &ast.SelectorExpr{X: base, Sel: ast.NewIdent(normalizeMethodName)}}
+	}
+
 	// A pointer-receiver method needs an addressable receiver; a val's Get()
 	// is a copy, so it gets an addressable copy instead.
 	if selectsThroughImmutable {
