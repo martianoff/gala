@@ -569,13 +569,7 @@ func (t *galaASTTransformer) generateUnapplyMethod(name string, fields *ast.Fiel
 				X:   ast.NewIdent("p"),
 				Sel: ast.NewIdent(fieldName.Name),
 			})
-			// Zero value trick: *new(Type)
-			zeroVals = append(zeroVals, &ast.StarExpr{
-				X: &ast.CallExpr{
-					Fun:  ast.NewIdent("new"),
-					Args: []ast.Expr{field.Type},
-				},
-			})
+			zeroVals = append(zeroVals, zeroValueExpr(field.Type))
 		}
 	}
 	results = append(results, &ast.Field{Type: ast.NewIdent("bool")})

@@ -198,7 +198,7 @@ func (t *galaASTTransformer) returnGoResults(body *ast.BlockStmt, valueType ast.
 	// if _goResult.IsFailure() { return *new(A), ..., _goResult.GetError() }
 	failure := make([]ast.Expr, 0, len(results))
 	for _, v := range values {
-		failure = append(failure, &ast.StarExpr{X: &ast.CallExpr{Fun: ast.NewIdent("new"), Args: []ast.Expr{v}}})
+		failure = append(failure, zeroValueExpr(v))
 	}
 	failure = append(failure, methodCall(goResultsName, "GetError"))
 	stmts = append(stmts, &ast.IfStmt{

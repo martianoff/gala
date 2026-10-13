@@ -768,6 +768,12 @@ const (
 	// is at most one), or the default case has a field of the sealed type
 	// itself, which a zero value cannot hold.
 	CodeInvalidDefaultCase ErrorCode = "GALA-E0074"
+
+	// E0075: GALA code needs a value of a type that has no default value: an
+	// uninitialized `var`, or a field a construction leaves out, of a sealed
+	// type without a default case (Try, Either, ...), or of a struct holding
+	// one. GALA never creates such a value implicitly.
+	CodeNoDefaultValue ErrorCode = "GALA-E0075"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

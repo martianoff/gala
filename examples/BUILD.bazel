@@ -619,6 +619,15 @@ gala_exec_test(
     expected = "sealed_case_field_defaults.out",
 )
 
+# Default values: an uninitialized var and an omitted field take the type's
+# default value (a default case with its field defaults, declared struct field
+# defaults, Go's zero value otherwise).
+gala_exec_test(
+    name = "default_values",
+    src = "default_values.gala",
+    expected = "default_values.out",
+)
+
 gala_exec_test(
     name = "sealed_default_case",
     src = "sealed_default_case.gala",

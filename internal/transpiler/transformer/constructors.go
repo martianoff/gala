@@ -554,6 +554,8 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 
 	// Transform the elements
 	var elts []ast.Expr
+	given := make(map[string]bool) // the fields a keyed literal names
+	keyed := false
 	if ctx.ElementList() != nil {
 		elemList := ctx.ElementList().(*grammar.ElementListContext)
 		for _, keyedElem := range elemList.AllKeyedElement() {
@@ -569,8 +571,10 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 				if err != nil {
 					return nil, err
 				}
+				keyed = true
 				// Wrap value with NewImmutable() if the field is immutable (val, not var)
 				if keyIdent, ok := key.(*ast.Ident); ok {
+					given[keyIdent.Name] = true
 					if idx, found := fieldIndex[keyIdent.Name]; found {
 						if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
 							// Reject nil assignment to immutable (val) fields — use Option[T] instead
@@ -592,6 +596,28 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 				}
 				elts = append(elts, value)
 			}
+		}
+	}
+
+	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
+		// A sealed type's literal names none of its cases: it is the type's
+		// default value.
+		if meta.IsSealed && len(elts) == 0 {
+			val, err := t.defaultValue(t.astTypeToTranspilerType(typeExpr), line, col, map[string]bool{})
+			if err != nil || val != nil {
+				return val, err
+			}
+		}
+		// The fields a keyed literal leaves out take their declared defaults,
+		// or their types' default values (see fillOmittedStructFields).
+		if len(fields) > 0 && !meta.IsSealed && (len(elts) == 0 || keyed) {
+			omitted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields,
+				func(_ int, name string) bool { return given[name] }, typeArgSubst, line, col, false, nil)
+			if err != nil {
+				return nil, err
+			}
+			elts = append(elts, omitted...)
 		}
 	}
 

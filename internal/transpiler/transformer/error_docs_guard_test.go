@@ -1178,6 +1178,21 @@ func main() {
 			},
 		},
 		{
+			name: "struct literal leaving out a field with no default value",
+			code: galaerr.CodeNoDefaultValue, // GALA-E0075
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Job(Name string, Result Try[int])
+
+func main() {
+    val job = Job{Name: "build"}
+    Println(job.Name)
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

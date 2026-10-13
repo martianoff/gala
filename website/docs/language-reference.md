@@ -736,6 +736,43 @@ sealed type Result[T any] {
 }
 ```
 
+### Default Values {#default-values}
+
+Where GALA code needs a value of a type and none is written, it uses the
+type's **default value**: an uninitialized `var x T`, and a field a
+construction leaves out, in a brace literal or a call.
+
+- A sealed type's default value is its `default case`, built with its fields'
+  declared defaults; a sealed type without a default case has none.
+- A struct's default value has each field at its declared default, or at its
+  field type's default value.
+- Every other type's default value is Go's zero value: numbers, strings,
+  `Option` (`None`), collections, slices, maps, pointers, functions, Go types
+  and type parameters.
+
+```gala
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+struct Home(Name string, L Light, Rooms int = 1)
+
+func main() {
+    var l Light
+    val h = Home{Name: "flat"}
+    Println(l, h.L, h.Rooms)   // On(30, Living) On(30, Living) 1
+}
+```
+
+A type with no default value (`Try`, `Either`, a sealed type without a default
+case, or a struct holding one) must be given a value: GALA never creates one
+implicitly ([`GALA-E0075`](/docs/errors/gala-e0075/)). A field private to another package's struct is that
+package's to set, with a constructor it exports; a construction elsewhere
+leaves it at Go's zero value. Only a value Go creates by
+itself (a fresh slice slot, a missed map lookup, decoding) holds a Go zero
+value no default case built.
+
 ## 5. Interfaces {#5-interfaces}
 
 ```gala

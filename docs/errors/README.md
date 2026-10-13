@@ -93,6 +93,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0072` | Sealed variant with too many fields | [GALA-E0072.md](GALA-E0072.md) |
 | `GALA-E0073` | Invalid named sub-pattern | [GALA-E0073.md](GALA-E0073.md) |
 | `GALA-E0074` | Invalid default case | [GALA-E0074.md](GALA-E0074.md) |
+| `GALA-E0075` | No default value | [GALA-E0075.md](GALA-E0075.md) |
 
 ### Retired codes
 

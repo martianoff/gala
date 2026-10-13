@@ -151,9 +151,9 @@ func main() {
 ```
 
 Fields with defaults come after the fields without them
-([GALA-E0013](/docs/errors/gala-e0013/)). Defaults apply when a value is
-constructed: a default case's zero value holds its fields' zero values, not
-their defaults.
+([GALA-E0013](/docs/errors/gala-e0013/)). A default case's defaults also make
+the type's [default value](/docs/language-reference/#default-values): what an
+uninitialized `var` or an omitted field holds.
 
 ---
 
@@ -181,10 +181,11 @@ func main() {
 
 `Option`'s default case is `None()`, so an uninitialized `Option` is `None`.
 
-A sealed type **without** a default case has no zero value. A zero value of
-one is none of its cases: an exhaustive match without a wildcard panics on it,
-naming the type, rather than reading it as one of the cases (a `case _` or
-binding arm matches it like any value). Leave the default case out when every value must be built
+A sealed type **without** a default case has no default value: GALA code that
+would leave a value of it unset is an error ([GALA-E0075](/docs/errors/gala-e0075/)).
+A Go zero value of one can still come from Go; it is none of its cases, and an
+exhaustive match without a wildcard panics on it, naming the type (a `case _`
+or binding arm matches it like any value). Leave the default case out when every value must be built
 from a case, as for `Try` and `Either`. A sealed type marks at most one case
 `default` ([GALA-E0074](/docs/errors/gala-e0074/)).
 
