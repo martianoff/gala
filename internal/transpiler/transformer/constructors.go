@@ -554,6 +554,8 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 
 	// Transform the elements
 	var elts []ast.Expr
+	given := make(map[string]bool) // the fields a keyed literal names
+	keyed := false
 	if ctx.ElementList() != nil {
 		elemList := ctx.ElementList().(*grammar.ElementListContext)
 		for _, keyedElem := range elemList.AllKeyedElement() {
@@ -569,8 +571,10 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 				if err != nil {
 					return nil, err
 				}
+				keyed = true
 				// Wrap value with NewImmutable() if the field is immutable (val, not var)
 				if keyIdent, ok := key.(*ast.Ident); ok {
+					given[keyIdent.Name] = true
 					if idx, found := fieldIndex[keyIdent.Name]; found {
 						if immutFlags != nil && idx < len(immutFlags) && immutFlags[idx] {
 							// Reject nil assignment to immutable (val) fields — use Option[T] instead
@@ -607,17 +611,9 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 		}
 		// The fields a keyed literal leaves out take their declared defaults,
 		// or their types' default values (see fillOmittedStructFields).
-		if len(fields) > 0 && !meta.IsSealed && (len(elts) == 0 || isKeyValue(elts[0])) {
-			given := make(map[string]bool, len(elts))
-			for _, e := range elts {
-				if kv, ok := e.(*ast.KeyValueExpr); ok {
-					if id, ok := kv.Key.(*ast.Ident); ok {
-						given[id.Name] = true
-					}
-				}
-			}
+		if len(fields) > 0 && !meta.IsSealed && (len(elts) == 0 || keyed) {
 			omitted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields,
-				func(_ int, name string) bool { return given[name] }, typeArgSubst, line, col, false)
+				func(_ int, name string) bool { return given[name] }, typeArgSubst, line, col, false, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -629,11 +625,6 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 		Type: typeExpr,
 		Elts: elts,
 	}, nil
-}
-
-func isKeyValue(e ast.Expr) bool {
-	_, ok := e.(*ast.KeyValueExpr)
-	return ok
 }
 
 // checkIntLiteral rejects the one INT_LIT spelling the lexer admits that Go

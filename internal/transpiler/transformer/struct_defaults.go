@@ -56,7 +56,11 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	typeArgSubst map[string]ast.Expr,
 	line, col int,
 	requireDeclared bool,
+	seen map[string]bool,
 ) ([]ast.Expr, error) {
+	if seen == nil {
+		seen = map[string]bool{}
+	}
 	meta := t.getTypeMeta(resolvedTypeName)
 	if meta == nil {
 		return nil, nil
@@ -68,6 +72,18 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 
 	var missing []string
 	var elts []ast.Expr
+	// emit adds the value a construction gives field i, an unexported field
+	// of another package only if this package could set it.
+	emit := func(i int, fieldName string, val ast.Expr) error {
+		if err := t.checkDefaultSettable(meta, typeName, fieldName, line, col); err != nil {
+			return err
+		}
+		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+			val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
+		}
+		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: val})
+		return nil
+	}
 	for i, fieldName := range fields {
 		if provided(i, fieldName) {
 			continue
@@ -76,7 +92,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 			typeArgs = t.typeArgTypes(typeArgSubst)
 		}
 		def, hasDefault := defaults[fieldName]
-		if hasDefault && isZeroLiteral(def.Text) {
+		if hasDefault && isZeroLiteralOf(def.Text, fieldTypes[fieldName]) {
 			continue // Go's zero value is that default
 		}
 		if !hasDefault {
@@ -85,20 +101,16 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 				continue
 			}
 			fieldType := t.substituteConcreteTypes(fieldTypes[fieldName], meta.TypeParams, orderedTypeArgs(meta.TypeParams, typeArgs))
-			val, err := t.defaultValue(fieldType, line, col, map[string]bool{})
+			val, err := t.defaultValue(fieldType, line, col, seen)
 			if err != nil {
 				return nil, fieldHasNoDefault(err, fieldName, typeName)
 			}
 			if val == nil {
 				continue // Go's zero value is the field's default
 			}
-			if err := t.checkDefaultSettable(meta, typeName, fieldName, line, col); err != nil {
+			if err := emit(i, fieldName, val); err != nil {
 				return nil, err
 			}
-			if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-				val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
-			}
-			elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: val})
 			continue
 		}
 		// Re-parsed and re-transformed per construction site, so a default like
@@ -106,11 +118,6 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		// declaration — the same contract function parameter defaults have.
 		// The field's declared type is the expected type, as it is for a value
 		// passed explicitly.
-		if !requireDeclared {
-			if err := t.checkDefaultSettable(meta, typeName, fieldName, line, col); err != nil {
-				return nil, err
-			}
-		}
 		src := defaultSource{
 			DefaultExpr: def,
 			file:        meta.DefinedIn,
@@ -122,10 +129,9 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		if err != nil {
 			return nil, err
 		}
-		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
-			val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
+		if err := emit(i, fieldName, val); err != nil {
+			return nil, err
 		}
-		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: val})
 	}
 
 	if len(missing) > 0 {
@@ -464,12 +470,26 @@ func fieldHasNoDefault(err error, fieldName, typeName string) error {
 		fmt.Sprintf("give %s a value", fieldName))
 }
 
-// isZeroLiteral reports whether a default's source text is a literal Go's
-// zero value of its type already equals, so the default needs no element.
-func isZeroLiteral(text string) bool {
-	switch strings.TrimSpace(text) {
-	case "0", "0.0", "false", `""`, "``":
-		return true
+// isZeroLiteralOf reports whether a default's source text is the literal Go's
+// zero value of fieldType, a basic type, already equals, so the default needs
+// no element. A default on any other type is lowered as written: it may not
+// be that type's zero value (`0` for an `any` field), or not of the type at
+// all, which lowering reports.
+func isZeroLiteralOf(text string, fieldType transpiler.Type) bool {
+	basic, ok := fieldType.(transpiler.BasicType)
+	if !ok {
+		return false
+	}
+	text = strings.TrimSpace(text)
+	switch basic.Name {
+	case "bool":
+		return text == "false"
+	case "string":
+		return text == `""` || text == "``"
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune":
+		return text == "0"
+	case "float32", "float64":
+		return text == "0" || text == "0.0"
 	}
 	return false
 }

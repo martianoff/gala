@@ -58,6 +58,12 @@ type Point struct {
 			absent: []string{"var o std.Option[int] =", "var p Point =", "Point{X: std.NewImmutable(1), Y"},
 		},
 		{
+			name: "a zero literal default on a non-basic field is lowered as written",
+			body: `struct Holder(V any = 0)
+func main() { Println(Holder{}) }`,
+			contains: []string{"Holder{V: std.NewImmutable[any](0)}"},
+		},
+		{
 			name:      "an uninitialized var of a sealed type without a default case",
 			body:      `func main() { var b Bit; Println(b) }`,
 			wantError: "Bit has no default value: it is a sealed type without a default case",

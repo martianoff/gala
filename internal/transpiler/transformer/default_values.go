@@ -64,7 +64,7 @@ func (t *galaASTTransformer) defaultValue(typ transpiler.Type, line, col int, se
 	}
 	typeExpr := t.typeToExpr(typ)
 	elts, err := t.fillOmittedStructFields(stripPackagePrefix(typ.BaseName()), resolved, fields,
-		func(int, string) bool { return false }, t.structTypeArgSubst(typeExpr, resolved), line, col, false)
+		func(int, string) bool { return false }, t.structTypeArgSubst(typeExpr, resolved), line, col, false, seen)
 	if err != nil || len(elts) == 0 {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func zeroValueExpr(typeExpr ast.Expr) ast.Expr {
 
 // displayTypeName names the type meta describes as a diagnostic shows it.
 func (t *galaASTTransformer) displayTypeName(meta *transpiler.TypeMetadata) string {
-	if meta.Package == "" || meta.Package == t.packageName || meta.Package == "main" || meta.Package == "test" || meta.Package == registry.StdPackageName {
+	if t.isLocalPackage(meta.Package) || meta.Package == registry.StdPackageName {
 		return meta.Name
 	}
 	return transpiler.PackageDisplayName(meta.Package) + "." + meta.Name
