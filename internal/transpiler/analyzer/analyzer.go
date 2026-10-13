@@ -1272,7 +1272,15 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	logPhase("collect-types", phaseStart)
 	phaseStart = time.Now()
 
-	// 1.5 Collect sealed types
+	// 1.5 Collect sealed types. A case whose fields declare defaults is
+	// checked as a function's parameter defaults are, below, through its
+	// companion Apply.
+	type caseDefaults struct {
+		name  string
+		apply *transpiler.MethodMetadata
+		pos   transpiler.SourcePos
+	}
+	var caseDefaultChecks []caseDefaults
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
 			ctx := sealedCtx.(*grammar.SealedTypeDeclarationContext)
@@ -1299,6 +1307,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					}
 					if cm, ok := richAST.Types[companionKey]; ok {
 						cm.DefinedIn = filePath
+						if apply := cm.Methods["Apply"]; apply != nil {
+							apply.DefinedIn = filePath // its field defaults are lowered as declared here
+							if len(apply.DefaultExprs) > 0 {
+								caseDefaultChecks = append(caseDefaultChecks, caseDefaults{v.Name, apply, v.Pos})
+							}
+						}
 					}
 				}
 			}
@@ -1342,6 +1356,24 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		spans     map[int]defaultExprSpan
 	}
 	var pendingDefaultChecks []pendingDefaultCheck
+	for _, c := range caseDefaultChecks {
+		// Each default's own position, so a mismatch underlines it.
+		spans := make(map[int]defaultExprSpan, len(c.apply.DefaultExprs))
+		for i, def := range c.apply.DefaultExprs {
+			text := def.Text
+			if nl := strings.IndexByte(text, '\n'); nl >= 0 {
+				text = text[:nl]
+			}
+			spans[i] = defaultExprSpan{line: def.Pos.Line, startCol: def.Pos.Column, endCol: def.Pos.Column + len([]rune(text))}
+		}
+		pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
+			meta: &transpiler.FunctionMetadata{
+				Name: c.name, ParamTypes: c.apply.ParamTypes, ParamNames: c.apply.ParamNames, DefaultExprs: c.apply.DefaultExprs,
+			},
+			line: c.pos.Line, col: c.pos.Column,
+			spans: spans,
+		})
+	}
 
 	// 2. Collect methods and functions
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
@@ -1969,6 +2001,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	type variantFieldInfo struct {
 		name     string
 		typeName string
+		def      *transpiler.DefaultExpr // the field's declared default, if any
 	}
 	type variantInfo struct {
 		name      string
@@ -2012,7 +2045,12 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
 				fieldTypeStr := fc.Type_().GetText()
-				vi.fields = append(vi.fields, variantFieldInfo{fieldName, fieldTypeStr})
+				field := variantFieldInfo{name: fieldName, typeName: fieldTypeStr}
+				if pd := fc.ParamDefault(); pd != nil {
+					exprCtx := pd.(*grammar.ParamDefaultContext).Expression()
+					field.def = &transpiler.DefaultExpr{Text: transpiler.SourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}
+				}
+				vi.fields = append(vi.fields, field)
 				if allFieldTypes[fieldName] == nil {
 					allFieldTypes[fieldName] = make(map[string]bool)
 				}
@@ -2118,8 +2156,15 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			Name:    "Apply",
 			Package: pkgName,
 		}
-		for _, f := range vi.fields {
+		for i, f := range vi.fields {
 			applyMeta.ParamTypes = append(applyMeta.ParamTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+			applyMeta.ParamNames = append(applyMeta.ParamNames, f.name)
+			if f.def != nil {
+				if applyMeta.DefaultExprs == nil {
+					applyMeta.DefaultExprs = make(map[int]transpiler.DefaultExpr)
+				}
+				applyMeta.DefaultExprs[i] = *f.def
+			}
 		}
 		// Return type is the parent sealed type.
 		//
@@ -4180,6 +4225,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					}
 					if cm, ok := richAST.Types[companionKey]; ok && cm.DefinedIn == "" {
 						cm.DefinedIn = absSibPath
+						if apply := cm.Methods["Apply"]; apply != nil {
+							apply.DefinedIn = absSibPath
+						}
 					}
 				}
 			}

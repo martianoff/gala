@@ -132,6 +132,31 @@ val desc = shape match {
 
 ---
 
+## Case Field Defaults
+
+A case's fields can declare defaults, written as a function's parameter
+defaults are. A constructor call leaves a defaulted field out, by position or
+by name:
+
+```gala
+sealed type Shape {
+    case Circle(Radius int, Label string = "circle")
+    case Square(Side int)
+}
+
+func main() {
+    Println(Circle(3), Circle(Radius = 4), Circle(5, Label = "big"))
+    // Circle(3, circle) Circle(4, circle) Circle(5, big)
+}
+```
+
+Fields with defaults come after the fields without them
+([GALA-E0013](/docs/errors/gala-e0013/)). Defaults apply when a value is
+constructed: a default case's zero value holds its fields' zero values, not
+their defaults.
+
+---
+
 ## Default Case
 
 A sealed type can mark one case `default`. The default case is the type's

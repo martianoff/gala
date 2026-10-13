@@ -1,0 +1,26 @@
+package main
+
+// A sealed case's fields can declare defaults, as a function's parameters
+// can: a constructor call leaves them out by position or by name, and each
+// default is evaluated at the construction.
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+sealed type Shape {
+    case Circle(Radius int, Label string = "circle")
+    case Square(Side int)
+}
+
+func describe(l Light) string = l match {
+    case On(p, r) => s"on $p in $r"
+    case Off()    => "off"
+}
+
+func main() {
+    Println(On(), On(Power = 50), On(Room = "Hall"), On(10), On(10, "Kitchen"))
+    Println(Circle(3), Circle(Radius = 4), Circle(5, Label = "big"), Square(2))
+    Println(describe(On(Power = 5)), describe(Off()))
+}

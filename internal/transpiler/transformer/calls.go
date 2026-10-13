@@ -225,6 +225,20 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 								Args: nil,
 							}, nil
 						}
+					} else if len(methodMeta.DefaultExprs) > 0 || t.sealedVariantOf(typeName).parent != nil {
+						// A sealed case with fields, or an Apply with
+						// parameter defaults, called with no arguments goes
+						// through the same path as a call with arguments:
+						// defaults fill what they cover, and a required field
+						// left out is reported.
+						// The slot's type binds a generic case's type
+						// parameters, as for a call with arguments.
+						pending := t.expectedArgTypes.takeFor(callOwner(suffix))
+						handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(base, typeName, nil, pending,
+							suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
+						if err != nil || handled {
+							return expr, err
+						}
 					} else if len(methodMeta.ParamTypes) == 1 && t.injectedMetaParam(methodMeta.ParamTypes[0]) != noInjectedMeta {
 						// An Apply that takes nothing but an auto-injected
 						// metadata parameter (StructMeta[T] / ValueMeta[T]) is
@@ -1686,6 +1700,28 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		return true, nil, uninferred
 	}
 
+	// Arguments left off the end take their declared defaults: a sealed
+	// case's field defaults, or any companion Apply's parameter defaults. A
+	// case's required field left out is reported as a struct's is.
+	var variant sealedVariant
+	if len(args) != len(methodMeta.ParamTypes) {
+		variant = t.sealedVariantOf(typeName) // scans every type, so only on a mismatch
+	}
+	if len(args) < len(methodMeta.ParamTypes) && (len(methodMeta.DefaultExprs) > 0 || variant.parent != nil) ||
+		len(args) > len(methodMeta.ParamTypes) && variant.parent != nil {
+		var filled []ast.Expr
+		var err error
+		if variant.parent != nil {
+			filled, err = t.variantApplyArgs(fun, origTypeName, methodMeta, methodMeta.ParamNames, args, nil, line, col)
+		} else {
+			filled, err = t.fillDefaultArgsMethod(&ast.CompositeLit{Type: fun}, args, methodMeta, t.astTypeToTranspilerType(fun), nil, line, col)
+		}
+		if err != nil {
+			return true, nil, err
+		}
+		args = filled
+	}
+
 	if isGeneric {
 		// Generic Apply method: use standalone function form.
 		fullName := typeName + "_Apply"
@@ -2678,7 +2714,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 // Go-imported type) and delegates the heavy lifting to a section helper:
 //
 //  1. extractTypeNameFromExpr — decode `fun` into (typeName, qualifiedName)
-//  2. findSealedVariantFields → buildSealedVariantApplyCall (fields=[])
+//  2. findSealedVariantFields → variantApplyArgs (fields=[])
 //  3. buildStructLiteralWithNamedArgs (registered GALA struct)
 //  4. buildGoCompositeLiteralWithNamedArgs (a Go struct of the package's own
 //     .go files or of an imported Go package, checked against its fields;
@@ -2713,11 +2749,36 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return nil, ferr
 			}
 			if found {
-				variantFun, err := t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, namedArgs, line, col)
+				if err := checkUnknownStructFields(qualifiedName, variantFieldNames, argListCtx); err != nil {
+					return nil, err
+				}
+				if err := checkPositionalBeforeNamed(qualifiedName, argListCtx); err != nil {
+					return nil, err
+				}
+				// The positional arguments bind type parameters as the named
+				// ones do.
+				inferArgs := namedArgs
+				if len(args) > 0 {
+					inferArgs = maps.Clone(namedArgs)
+					for i, a := range args {
+						if i < len(variantFieldNames) {
+							inferArgs[variantFieldNames[i]] = a
+						}
+					}
+				}
+				variantFun, err := t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, inferArgs, line, col)
 				if err != nil {
 					return nil, err
 				}
-				return buildSealedVariantApplyCall(variantFun, variantFieldNames, namedArgs), nil
+				var apply *transpiler.MethodMetadata
+				if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
+					apply = meta.Methods["Apply"]
+				}
+				ordered, err := t.variantApplyArgs(variantFun, typeName, apply, variantFieldNames, args, namedArgs, line, col)
+				if err != nil {
+					return nil, err
+				}
+				return applyCall(variantFun, ordered), nil
 			}
 		}
 		// 3. Regular GALA struct construction with named args. A named
@@ -2778,6 +2839,27 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	// 5. No match — the caller used named args against something we can't
 	// construct with them. Emit a positioned semantic error.
 	return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("named arguments only supported for Copy method or struct construction (type: %s)", typeName))
+}
+
+// checkPositionalBeforeNamed reports a positional argument written after a
+// named one in a construction of qualifiedName: positional arguments fill the
+// leading fields, so one after a named argument has no field to take.
+func checkPositionalBeforeNamed(qualifiedName string, argListCtx *grammar.ArgumentListContext) error {
+	named := false
+	for _, argCtx := range argListCtx.AllArgument() {
+		arg := argCtx.(*grammar.ArgumentContext)
+		if arg.Identifier() != nil {
+			named = true
+			continue
+		}
+		if named {
+			return galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField,
+				arg.GetStart().GetLine(), arg.GetStart().GetColumn(),
+				fmt.Sprintf("a positional argument follows a named one in construction of %q", qualifiedName),
+				"put the positional arguments first, or name this one too")
+		}
+	}
+	return nil
 }
 
 // checkUnknownStructFields reports named arguments that match no field of the
@@ -2889,22 +2971,61 @@ func (t *galaASTTransformer) inferVariantTypeArgs(fun ast.Expr, sv *transpiler.S
 	return fun, nil
 }
 
-// buildSealedVariantApplyCall generates `VariantName{}.Apply(args...)`
-// with args reordered to match the Apply method's parameter order.
-// Named args that don't appear in variantFieldNames are silently dropped
-// (the parser should have caught that earlier).
-func buildSealedVariantApplyCall(fun ast.Expr, variantFieldNames []string, namedArgs map[string]ast.Expr) ast.Expr {
-	orderedArgs := make([]ast.Expr, 0, len(variantFieldNames))
-	for _, fieldName := range variantFieldNames {
-		if val, ok := namedArgs[fieldName]; ok {
-			orderedArgs = append(orderedArgs, val)
-		}
-	}
-	receiver := &ast.CompositeLit{Type: fun}
+// applyCall is `Companion{}.Apply(args)`, a call of a companion's Apply.
+func applyCall(companion ast.Expr, args []ast.Expr) ast.Expr {
 	return &ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent("Apply")},
-		Args: orderedArgs,
+		Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: companion}, Sel: ast.NewIdent("Apply")},
+		Args: args,
 	}
+}
+
+// variantApplyArgs orders the arguments of a call of a sealed case's
+// constructor by its fields: the positional ones first, then the named ones,
+// and for a field given neither way its declared default (see the companion
+// Apply's DefaultExprs). A field left out that has no default is reported
+// as for a struct (GALA-E0045).
+func (t *galaASTTransformer) variantApplyArgs(fun ast.Expr, typeName string, apply *transpiler.MethodMetadata, fieldNames []string, args []ast.Expr, namedArgs map[string]ast.Expr, line, col int) ([]ast.Expr, error) {
+	if len(args) > len(fieldNames) {
+		return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
+			fmt.Sprintf("%q has %d fields, but %d arguments are given", typeName, len(fieldNames), len(args)),
+			"remove the extra arguments")
+	}
+	ordered := make([]ast.Expr, len(fieldNames))
+	var missing []string
+	defaults := make(map[string]transpiler.DefaultExpr)
+	for i, name := range fieldNames {
+		if apply != nil {
+			if def, ok := apply.DefaultExprs[i]; ok {
+				defaults[name] = def
+			}
+		}
+		if i < len(args) {
+			if _, twice := namedArgs[name]; twice {
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
+					fmt.Sprintf("field %q of %q is given both by position and by name", name, typeName),
+					"give each field once")
+			}
+			ordered[i] = args[i]
+			continue
+		}
+		if val, ok := namedArgs[name]; ok {
+			ordered[i] = val
+			continue
+		}
+		if _, ok := defaults[name]; !ok {
+			missing = append(missing, name)
+			continue
+		}
+		val, err := t.methodDefaultArg(apply, i, &ast.CompositeLit{Type: fun}, t.astTypeToTranspilerType(fun), nil, line, col)
+		if err != nil {
+			return nil, err
+		}
+		ordered[i] = val
+	}
+	if len(missing) > 0 {
+		return nil, missingStructFieldsError(typeName, missing, defaults, fieldNames, line, col)
+	}
+	return ordered, nil
 }
 
 // buildStructLiteralWithNamedArgs emits `TypeName[TypeArgs]{field: value, ...}`

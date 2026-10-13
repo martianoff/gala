@@ -174,6 +174,29 @@ desk off, dim 0
 hall on at 7
 ```
 
+## Case Field Defaults
+
+A case's fields can declare defaults. A constructor leaves them out by
+position or by name.
+
+```gala
+package main
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+func main() {
+    Println(On(), On(Power = 50), On(10, "Kitchen"))
+}
+```
+
+Output:
+```
+On(30, Living) On(50, Living) On(10, Kitchen)
+```
+
 ## Either Monad
 
 `Either[L, R]` holds one of two values — conventionally `Left` for failure and

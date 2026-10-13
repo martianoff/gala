@@ -1324,6 +1324,29 @@ call with [`GALA-E0018`](errors/GALA-E0018.md). The full set of
 contexts and the propagation mechanism are described in
 [Downward Inference for Generic Sealed-Type Case Constructors](TYPE_INFERENCE.MD#downward-inference-for-generic-sealed-type-case-constructors).
 
+#### Case Field Defaults
+
+A case's fields can declare defaults, written as a function's parameter
+defaults are. A constructor call leaves a defaulted field out, by position or
+by name, and the default is evaluated at each construction:
+
+```gala
+sealed type Shape {
+    case Circle(Radius int, Label string = "circle")
+    case Square(Side int)
+}
+
+func main() {
+    Println(Circle(3), Circle(Radius = 4), Circle(5, Label = "big"))
+    // Circle(3, circle) Circle(4, circle) Circle(5, big)
+}
+```
+
+Fields with defaults come after the fields without
+([`GALA-E0013`](errors/GALA-E0013.md)). Defaults apply when a value is
+constructed: a default case's zero value (below) holds its fields' zero
+values, not their defaults.
+
 #### Default Case
 
 A sealed type can mark one case `default`. The default case is the type's

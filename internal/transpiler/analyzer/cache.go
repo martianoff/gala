@@ -108,7 +108,11 @@ import (
 // v21: a sealed variant records whether it is the type's default case
 // (SealedVariant.IsDefault). A v20 payload lacks it, so a match on such a type
 // from another package would report a zero value it in fact matches.
-const CacheVersion = "v21"
+//
+// v22: a sealed case's companion Apply records its parameter names and its
+// fields' declared defaults (DefaultExprs). A v21 payload lacks them, so a
+// case constructor called without a defaulted field would not fill it.
+const CacheVersion = "v22"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

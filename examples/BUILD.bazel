@@ -611,6 +611,14 @@ gala_exec_test(
 # by position, by name, and nested.
 # A sealed type's `default case` is its zero value (Option's is None): an
 # uninitialized var, an omitted field and a fresh Go slice slot hold it.
+# Sealed case fields with defaults: constructors leave them out by position or
+# by name.
+gala_exec_test(
+    name = "sealed_case_field_defaults",
+    src = "sealed_case_field_defaults.gala",
+    expected = "sealed_case_field_defaults.out",
+)
+
 gala_exec_test(
     name = "sealed_default_case",
     src = "sealed_default_case.gala",
