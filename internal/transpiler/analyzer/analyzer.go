@@ -1309,9 +1309,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						cm.DefinedIn = filePath
 						if apply := cm.Methods["Apply"]; apply != nil {
 							apply.DefinedIn = filePath // its field defaults are lowered as declared here
-						}
-						if apply := cm.Methods["Apply"]; apply != nil && len(apply.DefaultExprs) > 0 {
-							caseDefaultChecks = append(caseDefaultChecks, caseDefaults{v.Name, apply, v.Pos})
+							if len(apply.DefaultExprs) > 0 {
+								caseDefaultChecks = append(caseDefaultChecks, caseDefaults{v.Name, apply, v.Pos})
+							}
 						}
 					}
 				}
@@ -1357,11 +1357,21 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	}
 	var pendingDefaultChecks []pendingDefaultCheck
 	for _, c := range caseDefaultChecks {
+		// Each default's own position, so a mismatch underlines it.
+		spans := make(map[int]defaultExprSpan, len(c.apply.DefaultExprs))
+		for i, def := range c.apply.DefaultExprs {
+			text := def.Text
+			if nl := strings.IndexByte(text, '\n'); nl >= 0 {
+				text = text[:nl]
+			}
+			spans[i] = defaultExprSpan{line: def.Pos.Line, startCol: def.Pos.Column, endCol: def.Pos.Column + len([]rune(text))}
+		}
 		pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
 			meta: &transpiler.FunctionMetadata{
 				Name: c.name, ParamTypes: c.apply.ParamTypes, ParamNames: c.apply.ParamNames, DefaultExprs: c.apply.DefaultExprs,
 			},
 			line: c.pos.Line, col: c.pos.Column,
+			spans: spans,
 		})
 	}
 

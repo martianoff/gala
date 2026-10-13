@@ -151,7 +151,9 @@ func main() {
 ```
 
 Fields with defaults come after the fields without them
-([GALA-E0013](/docs/errors/gala-e0013/)).
+([GALA-E0013](/docs/errors/gala-e0013/)). Defaults apply when a value is
+constructed: a default case's zero value holds its fields' zero values, not
+their defaults.
 
 ---
 

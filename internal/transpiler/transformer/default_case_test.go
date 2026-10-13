@@ -114,8 +114,36 @@ sealed type Shape {
 			wantError: `unknown field "Labl" in construction of "Circle"`,
 		},
 		{
+			name:      "a positional argument after a named one",
+			body:      `func main() { Println(Circle(Label = "x", 5)) }`,
+			wantCode:  galaerr.CodeMissingStructField,
+			wantError: `a positional argument follows a named one in construction of "Circle"`,
+		},
+		{
+			name: "a generic case built by position and by name",
+			body: `sealed type Box[T any] {
+    case Wrap(V T, Tag string = "x")
+    case Nothing()
+}
+func main() { Println(Wrap(5, Tag = "y"), Wrap(6)) }`,
+			contains: []string{`Wrap[int]{}.Apply(5, "y")`, `Wrap[int]{}.Apply(6, "x")`},
+		},
+		{
+			name: "a generic case called empty takes its type from the slot",
+			body: `sealed type Opt[T any] {
+    case Empty(N int = 0)
+    case Full(V T)
+}
+func main() {
+    val o Opt[string] = Empty()
+    Println(o)
+}`,
+			contains: []string{`Empty[string]{}.Apply(0)`},
+		},
+		{
 			name:      "more arguments than fields",
 			body:      `func main() { Println(Circle(1, "a", "b")) }`,
+			wantCode:  galaerr.CodeMissingStructField,
 			wantError: `"Circle" has 2 fields, but 3 arguments are given`,
 		},
 		{
