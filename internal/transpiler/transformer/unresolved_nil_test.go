@@ -45,3 +45,38 @@ func runOrZero(f func() int) int = if (f != nil) f() else 0
 		})
 	}
 }
+
+// TestUnresolvedInventorySkipsGenericFunctionName pins that the name of a
+// generic function written with its type arguments (`F[T](...)`, read as an
+// index before it is a call) is not counted as unresolved: it has a type only
+// once instantiated, which is no failed inference.
+func TestUnresolvedInventorySkipsGenericFunctionName(t *testing.T) {
+	t.Setenv("GALA_WARN_TYPES", "1")
+
+	tests := []struct {
+		name, src, fn string
+	}{
+		{"a GALA generic function", `package main
+
+func Make[T any](n int) Option[T] = None[T]()
+
+func main() { Println(Make[int](2)) }
+`, "Make"},
+		{"a dot-imported Go generic function", `package main
+
+import . "martianoff/gala/go_interop"
+
+func main() { Println(SliceWithSize[int](2)) }
+`, "SliceWithSize"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans, tr := newTranspilerWithTransformer()
+			_, err := trans.Transpile(tt.src, "main.gala")
+			require.NoError(t, err)
+			for _, u := range transformer.UnresolvedTypes(tr) {
+				assert.NotEqual(t, tt.fn, u.Expr, "%s reported as unresolved at line %d", tt.fn, u.Line)
+			}
+		})
+	}
+}

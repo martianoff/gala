@@ -142,7 +142,17 @@ func (t *galaASTTransformer) hasNoTypeByConstruction(expr ast.Expr) bool {
 	if !t.getValType(ident.Name).IsNil() {
 		return false
 	}
-	return t.isPackageQualifier(ident.Name)
+	if t.isPackageQualifier(ident.Name) {
+		return true
+	}
+	// A generic function named without its type arguments (the operand of
+	// `F[T]`, read as an index before it is a call) has a type only once
+	// instantiated.
+	if fm, ok := t.functionByName(ident.Name); ok && len(fm.TypeParams) > 0 {
+		return true
+	}
+	sig := t.lookupGoIdentSignature(ident.Name)
+	return sig != nil && len(sig.TypeParams) > 0
 }
 
 // isPackageQualifier reports whether name refers to a package rather than a

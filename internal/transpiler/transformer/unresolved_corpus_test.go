@@ -104,7 +104,13 @@ import (
 // started being typed: `error` is predeclared, so no package's Go type info
 // records its method set, and every such call bound by a Failure pattern or
 // taken out of an Option went untyped. See error_method_type_test.go.
-const unresolvedBudget = 124
+//
+// Lowered 124 -> 114 when the name of a generic function written with its type
+// arguments (`SliceWithSize[T](n)`, read as an index before it is a call)
+// stopped counting: it has a type only once instantiated, so it is typeless
+// by construction (hasNoTypeByConstruction), not a failed inference. See
+// TestUnresolvedInventorySkipsGenericFunctionName.
+const unresolvedBudget = 114
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.
