@@ -399,7 +399,12 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if err := t.checkVariantTypeArgs(base, exprList.AllExpression()); err != nil {
 		return nil, err
 	}
-	base = t.unwrapImmutable(base)
+	// `F[T]` naming a generic function is its instantiation, not an index of
+	// a value, so the function is no Immutable to unwrap; asking would only
+	// find it typeless until instantiated.
+	if !t.namesFunction(base) {
+		base = t.unwrapImmutable(base)
+	}
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
 	if err != nil {
 		return nil, err
@@ -408,6 +413,25 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 		return &ast.IndexExpr{X: base, Index: indices[0]}, nil
 	}
 	return &ast.IndexListExpr{X: base, Indices: indices}, nil
+}
+
+// namesFunction reports whether expr names a function, GALA or Go, bare or
+// package-qualified, rather than a value. The memoized Go lookup goes first.
+func (t *galaASTTransformer) namesFunction(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return t.lookupGoIdentSignature(e.Name) != nil || t.getFunction(e.Name) != nil
+	case *ast.SelectorExpr:
+		pkg, ok := e.X.(*ast.Ident)
+		if !ok || !t.importManager.IsPackage(pkg.Name) || t.bindingScope(pkg.Name) != nil {
+			return false
+		}
+		if t.getFunction(pkg.Name+"."+e.Sel.Name) != nil {
+			return true
+		}
+		return t.goTypeInfo != nil && t.goTypeInfo.GetFuncSignature(t.goQualifiedName(pkg.Name, e.Sel.Name)) != nil
+	}
+	return false
 }
 
 // applyCallSuffix moved to calls.go

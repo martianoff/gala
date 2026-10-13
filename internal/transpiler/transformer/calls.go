@@ -5140,11 +5140,12 @@ func (t *galaASTTransformer) lookupGoCallSignature(callExpr *ast.CallExpr) *tran
 }
 
 // lookupGoIdentSignature finds the Go function a bare name refers to: one of
-// the package's own hand-written .go files, or of a dot import. A local
-// binding of the name is no Go function. Outside a default declared in
+// the package's own hand-written .go files, or of a dot import. Outside a default declared in
 // another package the answer depends on the name alone, so it is kept.
 func (t *galaASTTransformer) lookupGoIdentSignature(name string) *transpiler.GoFuncSignature {
-	if t.goTypeInfo == nil || t.shadowingScope(name) != nil {
+	// A local binding, or a type parameter of the enclosing declaration,
+	// shadows the function.
+	if t.goTypeInfo == nil || t.shadowingScope(name) != nil || t.activeTypeParams[name] {
 		return nil
 	}
 	memo := !t.loweringForeignDefault()
