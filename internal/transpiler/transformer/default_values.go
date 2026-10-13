@@ -5,8 +5,8 @@ import (
 	"go/ast"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // Default values. GALA code never creates an implicit zero value: where it
