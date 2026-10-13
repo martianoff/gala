@@ -256,28 +256,14 @@ func main() {
 	}
 }
 
-// TestLambdaParamAddressIsConstPtr checks that `&` of a lambda parameter not
-// declared `var` is a read-only ConstPtr, as for a function parameter, and that
-// a `var` lambda parameter's address stays a plain *T.
-func TestLambdaParamAddressIsConstPtr(t *testing.T) {
+// TestLambdaParamAddress checks that `&` of a lambda parameter not declared
+// `var` is rejected, as for a function parameter, and that a `var` lambda
+// parameter's address is a plain *T.
+func TestLambdaParamAddress(t *testing.T) {
 	trans := newTranspiler()
 
-	t.Run("write through the address", func(t *testing.T) {
+	t.Run("address of a lambda parameter", func(t *testing.T) {
 		_, err := trans.Transpile(`package main
-
-func main() {
-    val f = (n int) int => {
-        val p = &n
-        *p = 5
-        n
-    }
-    Println(f(1))
-}`, "")
-		requireSemanticError(t, err, "cannot assign through ConstPtr", "")
-	})
-
-	t.Run("read through the address", func(t *testing.T) {
-		got, err := trans.Transpile(`package main
 
 func main() {
     val f = (n int) int => {
@@ -286,8 +272,7 @@ func main() {
     }
     Println(f(1))
 }`, "")
-		require.NoError(t, err)
-		assert.Contains(t, got, "std.NewConstPtr(&n)")
+		requireSemanticError(t, err, "cannot take the address of n: parameter n is not declared `var`", "declare the parameter `var n`")
 	})
 
 	t.Run("address of a var lambda parameter", func(t *testing.T) {
@@ -302,7 +287,7 @@ func main() {
     Println(f(1))
 }`, "")
 		require.NoError(t, err)
-		assert.NotContains(t, got, "NewConstPtr")
+		assert.Contains(t, got, "std.NewImmutable(&n)")
 	})
 }
 
@@ -533,18 +518,6 @@ func (p Point) Moved() Point {
 }`,
 			want: "func (p Point) Moved() Point",
 		},
-		{
-			name: "address of a value receiver is a ConstPtr",
-			input: `package main
-
-struct Point(X int, Y int)
-
-func (p Point) SumVia() int {
-    val ptr = &p
-    ptr.Deref().X + ptr.Deref().Y
-}`,
-			want: "std.NewConstPtr(&p)",
-		},
 	}
 	for _, tt := range accepted {
 		t.Run(tt.name, func(t *testing.T) {
@@ -554,7 +527,7 @@ func (p Point) SumVia() int {
 		})
 	}
 
-	t.Run("write through the address of a value receiver", func(t *testing.T) {
+	t.Run("address of a value receiver", func(t *testing.T) {
 		_, err := trans.Transpile(`package main
 
 struct Point(X int, Y int)
@@ -564,6 +537,6 @@ func (p Point) Zeroed() Point {
     *ptr = Point(0, 0)
     p
 }`, "")
-		requireSemanticError(t, err, "cannot assign through ConstPtr", "")
+		requireSemanticError(t, err, "cannot take the address of p: receiver p is immutable", "declare a pointer receiver (p *T)")
 	})
 }

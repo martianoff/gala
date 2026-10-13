@@ -2915,7 +2915,7 @@ gala_exec_test(
 )
 
 # `.Copy(...)` on a generic struct keeps the receiver's type arguments:
-# val-bound, if/match arms, pointer and ConstPtr receivers, nested and
+# val-bound, if/match arms, pointer receivers, nested and
 # multi-parameter generics, no overrides, a sealed variant, cross-package.
 gala_library(
     name = "generic_struct_copy_boxes",
@@ -2936,7 +2936,7 @@ gala_exec_test(
 
 # `.Copy(...)` overrides accept any expression — lambdas (zero-arg, untyped
 # params inferred from the field type, block body, void), partial functions,
-# if/match expressions — on plain, generic, pointer, ConstPtr and
+# if/match expressions — on plain, generic, pointer and
 # cross-package receivers.
 gala_library(
     name = "copy_lambda_override_handlers",

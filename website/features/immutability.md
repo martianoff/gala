@@ -1,10 +1,10 @@
 ---
 layout: default
 title: "Golang Immutable Structs — Immutability by Default for Go"
-description: "GALA makes immutability the default in Go. val bindings, immutable struct fields, auto-generated Copy with named args, structural Equal for free, and ConstPtr read-only pointers — eliminating mutation bugs."
+description: "GALA makes immutability the default in Go. val bindings, immutable struct fields, auto-generated Copy with named args, structural Equal for free, and no address for a val — eliminating mutation bugs."
 keywords: "golang immutable struct, go immutable, golang immutability, go const pointer, go immutable fields, golang val var, golang immutable by default, go copy struct, go structural equality, gala immutability"
 permalink: /features/immutability/
-last_modified_at: 2026-10-03
+last_modified_at: 2026-10-12
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Immutability</p>
@@ -150,42 +150,14 @@ No need to implement equality by hand. No risk of forgetting a field.
 
 ---
 
-## ConstPtr[T] — Read-Only Pointers
+## A `val` Has No Address
 
-When you take the address of a `val` variable, GALA gives you a `ConstPtr[T]` instead of a raw `*T`. A `ConstPtr` allows reading but prevents writing through the pointer:
+`&x` is a `*T`, and a `*T` can write. So a `val`, a parameter, a receiver and an immutable field have no address: taking one is [GALA-E0076](/docs/errors/gala-e0076/). To read a value without changing it, pass the value itself; it is already immutable.
 
+<!-- doc-check: error GALA-E0076 -->
 ```gala
 val data = 42
-val ptr = &data       // ConstPtr[int], not *int
-val value = *ptr      // OK: read — returns 42
-// *ptr = 100         // compile error: cannot write through ConstPtr
-```
-
-### Field Access Through ConstPtr
-
-The transpiler auto-dereferences `ConstPtr` for field access:
-
-```gala
-struct Person(Name string, Age int)
-
-val alice = Person("Alice", 30)
-val ptr = &alice
-
-Println(ptr.Name)     // "Alice" — auto-deref, no explicit Deref() needed
-Println(ptr.Age)      // 30
-```
-
-### ConstPtr in Struct Fields
-
-`ConstPtr` is useful for struct fields that hold references to shared, immutable data:
-
-<!-- doc-check: fragment -->
-```gala
-struct Team(Leader ConstPtr[Person], MemberCount int)
-
-val alice = Person("Alice", 30)
-val team = Team(Leader = &alice, MemberCount = 5)
-Println(team.Leader.Name)    // "Alice" — auto-deref through ConstPtr
+val ptr = &data       // error: GALA-E0076
 ```
 
 ### Mutable Pointers
@@ -242,7 +214,7 @@ GALA enforces immutability at three levels:
 |-------|--------------------|--------------------|
 | Variable bindings | `val x = 10`, `x := 10` | `var x = 10` |
 | Struct fields | `Name string` | `var Name string` |
-| Pointers | `ConstPtr[T]` (from `&val`) | `*T` (from `&var`) |
+| Pointers | no address for a `val` (`&val` is an error) | `*T` (from `&var`) |
 
 This layered approach means immutability is not just a convention — it is enforced by the compiler at every point where data flows through your program.
 

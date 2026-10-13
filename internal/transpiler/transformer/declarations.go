@@ -1264,6 +1264,9 @@ func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
 
 func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {
 	name := ctx.Identifier().GetText()
+	if err := t.selfContainingTypeError(name); err != nil {
+		return nil, err
+	}
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 	t.pushScope()
 	defer t.popScope()
@@ -1411,6 +1414,9 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 	}
 
 	if ctx.StructType() != nil {
+		if err := t.selfContainingTypeError(name); err != nil {
+			return nil, err
+		}
 		structCtx := ctx.StructType().(*grammar.StructTypeContext)
 		fields := &ast.FieldList{}
 		var fieldNames []string

@@ -125,15 +125,6 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	// the inferencer can resolve to a struct type.
 	typeObj := t.getExprTypeNameManual(receiver)
 
-	// A ConstPtr[T] receiver (`val p = &v; p.Copy(...)`) copies the pointee:
-	// read its fields through Deref(), exactly as field access does.
-	if t.isConstPtrType(typeObj) {
-		if gen, ok := typeObj.(transpiler.GenericType); ok && len(gen.Params) == 1 {
-			receiver = &ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(transpiler.MethodDeref)}}
-			typeObj = gen.Params[0]
-		}
-	}
-
 	// Strip generic decorations (e.g. "Person[int]" -> "Person") and any pointer
 	// prefix so the name lines up with the structFields map keys.
 	typeName := stripTypeNameDecorations(typeObj.String())
@@ -295,11 +286,10 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 
 // isPlainReceiverPath reports whether reading a Copy receiver more than once
 // is equivalent to reading it once: a variable, a field path off one, and the
-// nullary accessors the transformer inserts — `.Get()` unwrapping an Immutable
-// val or field, `.Deref()` reading through a ConstPtr. A user type's own
-// `Get()`/`Deref()` method may have side effects, so an accessor counts as
-// plain only when its operand is provably the wrapper; anything unproven is
-// bound once instead, which is always correct.
+// nullary accessor the transformer inserts — `.Get()` unwrapping an Immutable
+// val or field. A user type's own `Get()` method may have side effects, so it
+// counts as plain only when its operand is provably the wrapper; anything
+// unproven is bound once instead, which is always correct.
 func (t *galaASTTransformer) isPlainReceiverPath(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.Ident:
@@ -313,12 +303,7 @@ func (t *galaASTTransformer) isPlainReceiverPath(expr ast.Expr) bool {
 		if !ok || len(e.Args) != 0 || !t.isPlainReceiverPath(sel.X) {
 			return false
 		}
-		switch sel.Sel.Name {
-		case transpiler.MethodGet:
-			return t.isImmutableOperand(sel.X)
-		case transpiler.MethodDeref:
-			return t.isConstPtrType(t.getExprTypeName(sel.X))
-		}
+		return sel.Sel.Name == transpiler.MethodGet && t.isImmutableOperand(sel.X)
 	}
 	return false
 }

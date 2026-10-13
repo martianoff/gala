@@ -737,12 +737,9 @@ const (
 	// its `return` leaves the function.
 	CodeReturnInBranchingValue ErrorCode = "GALA-E0069"
 
-	// E0070: the address of an immutable binding (`&x` of a val, a
-	// parameter, a receiver) — a read-only ConstPtr — fills a slot of an
-	// interface type that ConstPtr does not implement: one whose methods are
-	// declared on T or *T. Without the check Go rejected the generated
-	// `std.NewConstPtr(x.Ptr())` as not implementing the interface.
-	CodeConstPtrNotInterface ErrorCode = "GALA-E0070"
+	// E0070 is retired and its number is not reused. It rejected the
+	// read-only pointer that `&x` of an immutable binding produced where an
+	// interface was expected; taking that address is now GALA-E0076.
 
 	// E0071: an alternative pattern `p1 | p2` is malformed: an alternative
 	// binds a name or is the wildcard `_`, `|` shares an operand chain with
@@ -774,6 +771,20 @@ const (
 	// type without a default case (Try, Either, ...), or of a struct holding
 	// one. GALA never creates such a value implicitly.
 	CodeNoDefaultValue ErrorCode = "GALA-E0075"
+
+	// E0076: `&x` takes the address of something immutable: a val, a
+	// parameter not declared `var`, a receiver, an immutable field, or a
+	// field reached through a val. A pointer to it would be a way to change
+	// it, so it has no address; the value is passed itself, or the binding
+	// is declared `var` where a *T is needed.
+	CodeAddressOfImmutable ErrorCode = "GALA-E0076"
+
+	// E0077: a struct or sealed type holds itself by value — through a field
+	// whose type contains it: an Option, Either, Try, tuple, List or another
+	// struct. A Go value cannot contain itself, so Go rejected the generated
+	// type as an invalid recursive type. A sealed case field of the sealed
+	// type itself, a pointer, a slice and a map hold it by reference.
+	CodeSelfContainingType ErrorCode = "GALA-E0077"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

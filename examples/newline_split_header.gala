@@ -6,7 +6,7 @@ package main
 // before.
 
 // The '{' on its own line after the result type.
-func derefAfterBraceOnNextLine(n int) int
+func derefAfterBraceOnNextLine(var n int) int
 {
     val p = &n
     val k = 1

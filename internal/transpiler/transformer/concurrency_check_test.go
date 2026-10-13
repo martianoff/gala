@@ -1059,8 +1059,8 @@ func main() {
 }
 
 // TestSendableCollectionCaptures covers every immutable collection (accept) and
-// its mutable counterpart (reject), nested collections, and the Immutable /
-// ConstPtr wrappers.
+// its mutable counterpart (reject), nested collections, and the Immutable
+// wrapper.
 func TestSendableCollectionCaptures(t *testing.T) {
 	trans := newConcurrencyTranspiler()
 
@@ -1184,19 +1184,6 @@ func run(body Sendable[func() int]) int = body()
 func main() {
     val im = NewImmutable(41)
     Println(run(() => im + 1))
-}`,
-		},
-		{
-			name: "ConstPtr of string",
-			input: `package main
-
-import gi "martianoff/gala/go_interop"
-
-func run(body Sendable[func() int]) int = body()
-
-func main() {
-    val c = NewConstPtr[string](gi.New[string]())
-    Println(run(() => c.Deref().Size()))
 }`,
 		},
 	}

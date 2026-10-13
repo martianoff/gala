@@ -46,7 +46,7 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 - **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time — including nested patterns, guards, and generic extractors. An incomplete `match` is a build error, not a production panic.
 - **No `nil`.** `Option` / `Either` / `Try` replace nil checks and naked error returns.
 - **Compile-time data-race safety.** A value crossing a goroutine boundary must be *deeply immutable*, and the compiler checks it — including what a closure captures. Because GALA is already immutable by default the check is silent in ordinary code; it fires on `collection_mutable` values, `var` fields, raw Go slices/maps/pointers, and opaque Go handles.
-- **Immutable by default.** `val` bindings, immutable struct fields, read-only `ConstPtr[T]`; always concrete types, never a silent `any`.
+- **Immutable by default.** `val` bindings, immutable struct fields, no address for a `val`; always concrete types, never a silent `any`.
 - **Zero-reflection JSON.** `Codec[T]` is backed by a compiler-generated `StructMeta[T]` intrinsic — no `reflect`, no struct tags, and it doubles as a pattern-match extractor.
 
 **Ergonomic — the functional code you want to write, minus the ceremony.**
@@ -376,13 +376,12 @@ val pair = (1, "hello")
 val (x, y) = pair
 ```
 
-**Read-only pointers** — `ConstPtr[T]` prevents accidental mutation through pointers.
+**No pointer into a `val`** — `&x` of a `val` is a compile error, so nothing can change it through a pointer. Only a `var` has an address.
 
 ```gala
-val data = 42
-val ptr = &data       // ConstPtr[int], not *int
-val value = *ptr      // OK: read
-// *ptr = 100         // compile error: cannot write through ConstPtr
+var data = 42
+val ptr = &data       // *int
+*ptr = 100            // OK: data is a var
 ```
 
 **String interpolation** — `s"..."` with auto-inferred format verbs and `f"..."` with explicit format specs. No imports needed.
@@ -539,7 +538,6 @@ This rides on Go's own `//line` directives, so there is no source-map file and n
 | `Future[T]` | Async computation with `Map`, `FlatMap`, `Zip`, `Await`, `WithTimeout`, `Cancel` |
 | `IO[T]` | Lazy, composable effect type — `Suspend`, `Map`, `FlatMap`, `Recover` |
 | `Tuple[A, B]` | Tuples with `(a, b)` syntax and destructuring (up to `Tuple10`) |
-| `ConstPtr[T]` | Read-only pointer with auto-deref field access |
 
 ### Serialization, Regex, IO, Processes
 

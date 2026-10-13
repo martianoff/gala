@@ -58,8 +58,7 @@ must reject.
 | `Array[T]`, `List[T]`, `HashMap[K,V]`, `HashSet[K]`, `TreeMap`/`TreeSet` from **`collection_immutable`** | all type arguments shareable | persistent immutable structures — never mutated, so concurrent reads are safe |
 | `Option[T]`, `Try[T]`, `Either[A,B]` | all type arguments shareable | immutable wrappers |
 | `Tuple2…Tuple10[…]` | all type arguments shareable | immutable product types |
-| `Immutable[T]` | `T` is shareable | see [Immutable / ConstPtr](#immutable--constptr-are-conditional) |
-| `ConstPtr[T]` | `T` is shareable | see [Immutable / ConstPtr](#immutable--constptr-are-conditional) |
+| `Immutable[T]` | `T` is shareable | see [Immutable](#immutable-is-conditional) |
 | A **struct** | every field is an immutable (`val`) field whose type is shareable | a `val` field cannot be reassigned; if its type is also shareable, the whole struct is deeply immutable |
 | A **sealed** type | every field of every variant is shareable | sealed-variant fields are immutable constructor parameters; only their types need checking |
 
@@ -105,10 +104,10 @@ field can be reassigned or mutated while another goroutine reads it. Only a
 struct all of whose fields are `val` **and** whose field types are themselves
 shareable is deeply immutable.
 
-### `Immutable` / `ConstPtr` are conditional
+### `Immutable` is conditional
 
-The `Immutable[T]` and `ConstPtr[T]` wrappers are shareable **iff `T` is
-shareable** — *not* unconditionally.
+The `Immutable[T]` wrapper is shareable **iff `T` is shareable** — *not*
+unconditionally.
 
 ```gala
 type Immutable[T] struct { var value T }
@@ -119,13 +118,10 @@ func (i Immutable[T]) Get() T = i.value
 the stored `T` **by copy**. If `T` is a reference-backed mutable type — say a
 `collection_mutable.Array[int]`, whose value is just a header aliasing a Go
 slice — the copy still aliases the same backing store, so two goroutines could
-mutate/read it concurrently. `ConstPtr[T]` holds a `*T` and only forbids writes
-*through the `ConstPtr`*; it cannot stop another holder of the underlying value
-from mutating it. Hence both are shareable exactly when their payload is.
+mutate/read it concurrently. Hence it is shareable exactly when its payload is.
 
-For the overwhelmingly common uses — `Immutable[int]`, `ConstPtr[string]`,
-`Immutable[Array[int]]` — this still evaluates to shareable, matching the intent
-of the wrappers. It only rejects the genuinely unsound cases such as
+For the overwhelmingly common uses — `Immutable[int]`, `Immutable[Array[int]]` —
+this still evaluates to shareable, matching the intent of the wrapper. It only rejects the genuinely unsound cases such as
 `Immutable[MutableArray[int]]`.
 
 ### Function types are deferred to capture analysis

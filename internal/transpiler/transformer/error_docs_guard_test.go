@@ -1060,29 +1060,36 @@ func main() {
 			},
 		},
 		{
-			name: "address of a val passed where an interface is expected",
-			code: galaerr.CodeConstPtrNotInterface, // GALA-E0070
+			name: "address of a val",
+			code: galaerr.CodeAddressOfImmutable, // GALA-E0076
 			render: func(t *testing.T) string {
 				return renderRepro(t, "main.gala", `package main
 
 struct Counter(var N int)
 
-func (c *Counter) Notify(s string) {
+func bump(c *Counter) {
     c.N = c.N + 1
-}
-
-type Notifier interface {
-    Notify(s string)
-}
-
-func send(n Notifier) {
-    n.Notify("x")
 }
 
 func main() {
     val c = Counter(0)
-    send(&c)
+    bump(&c)
     Println(c.N)
+}
+`)
+			},
+		},
+		{
+			name: "struct holding itself through Option",
+			code: galaerr.CodeSelfContainingType, // GALA-E0077
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Node(value int, next Option[Node])
+
+func main() {
+    val n = Node(1, None[Node]())
+    Println(n.value)
 }
 `)
 			},

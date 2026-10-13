@@ -67,15 +67,9 @@ const (
 	FuncNewEmbeddedFS = "NewEmbeddedFS"
 	FuncCopy          = "Copy"
 	MethodGet        = "Get"
-	MethodPtr        = "Ptr"
 	// FuncAddrOfCopy gives a pointer-receiver method an addressable copy of a
 	// receiver Go cannot address (a val's Get(), a call result).
 	FuncAddrOfCopy = "AddrOfCopy"
-
-	// ConstPtr - read-only pointer wrapper for pointers to immutable values
-	TypeConstPtr    = "ConstPtr"
-	FuncNewConstPtr = "NewConstPtr"
-	MethodDeref     = "Deref"
 
 	// Sendable is the transparent concurrency-boundary marker. A parameter
 	// typed `Sendable[F]` behaves EXACTLY like its inner type `F` for

@@ -57,7 +57,7 @@ are behind — the issue may already be fixed.
   or a code path that silently emits `any` where a concrete type was required.
 - **Soundness holes in the safety guarantees GALA advertises**: escaping the
   data-race/`Sendable` checker, defeating immutability (`val`, immutable fields,
-  `ConstPtr[T]`), or bypassing exhaustiveness checking in a way that turns a
+  parameters and receivers), or bypassing exhaustiveness checking in a way that turns a
   compile-time error into a runtime panic in code that type-checked.
 - **The standard library** (`std`, `collection_*`, `crypto`, `json`, `yaml`, `regex`,
   `io`, `fs`, `path`, `subprocess`, `concurrent`, ...): memory-unsafety, injection

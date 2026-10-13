@@ -37,12 +37,6 @@ func (p Point) ClampedRight(dx int) Point {
     q
 }
 
-// The address of a value receiver is a read-only ConstPtr.
-func (p Point) SumViaPtr() int {
-    val ptr = &p
-    ptr.Deref().X + ptr.Deref().Y
-}
-
 func apply[T any](v T, f func(T) T) T = f(v)
 
 func main() {
@@ -55,7 +49,6 @@ func main() {
     val p = Point(1, 2)
     Println(p.ClampedRight(3).X)
     Println(p.ClampedRight(-3).X)
-    Println(p.SumViaPtr())
 
     // A `var` lambda parameter may be reassigned.
     val clamp = (var n int) int => {

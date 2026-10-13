@@ -33,7 +33,7 @@ The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found 
 
 ### Safe — Go's runtime bugs, caught by the compiler
 
-Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, read-only `ConstPtr`), always-concrete types — never a silent `any` — and zero-reflection typed JSON.
+Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, no address for a `val`), always-concrete types — never a silent `any` — and zero-reflection typed JSON.
 
 That extends to Go's worst production bug class: **data races are a compile error**. A value crossing a goroutine boundary must be deeply immutable, and the transpiler proves it before the program runs — no sampling, no `-race` build, no interleaving you happened not to hit. Because GALA is immutable by default the check is silent in the common case; it fires only on genuinely mutable state ([GALA-E0037]({{ '/features/concurrency-safety/' | relative_url }})).
 
@@ -301,7 +301,6 @@ GALA ships with a standard library of type-safe data structures and monads, all 
 | `Sendable[F]` | Transparent concurrency-boundary marker — compile-time capture safety | [Concurrency safety]({{ '/features/concurrency-safety/' | relative_url }}) |
 | `Validated[E, A]` | Accumulating validation — `Valid` / `Invalid`, `Zip2`…`Zip10` | [Monadic binding]({{ '/features/monadic-binding/' | relative_url }}) |
 | `Tuple[A, B]` | Tuples with `(a, b)` syntax and destructuring, up to `Tuple10` | [Language spec]({{ '/features/pattern-matching/' | relative_url }}) |
-| `ConstPtr[T]` | Read-only pointer with compile-time enforcement | [Immutability]({{ '/features/immutability/' | relative_url }}) |
 | `Codec[T]` | Zero-reflection JSON codec — `Encode`, `Decode`, `Rename`, `Omit`, pattern matching | [JSON codec]({{ '/docs/json/' | relative_url }}) |
 | `Regex` | Regular expressions with `Unapply` for pattern matching | [Regex]({{ '/docs/regex/' | relative_url }}) |
 | `IO[T]` | Lazy composable effects — `Of`, `Suspend`, `Map`, `FlatMap` | [IO effect]({{ '/docs/io/' | relative_url }}) |
@@ -329,7 +328,7 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 | [GALA vs Go]({{ '/vs-go/' | relative_url }}) | Side-by-side comparison with idiomatic Go |
 | [Sealed Types]({{ '/features/sealed-types/' | relative_url }}) | Algebraic data types and closed hierarchies |
 | [Pattern Matching]({{ '/features/pattern-matching/' | relative_url }}) | Exhaustive matching, destructuring, and guards |
-| [Immutability]({{ '/features/immutability/' | relative_url }}) | `val`, immutable structs, `Copy()`, and `ConstPtr[T]` |
+| [Immutability]({{ '/features/immutability/' | relative_url }}) | `val`, immutable structs, and `Copy()` |
 | [Error Handling]({{ '/features/error-handling/' | relative_url }}) | `Option[T]`, `Either[A,B]`, `Try[T]` monads |
 | [Collections]({{ '/features/collections/' | relative_url }}) | Immutable and mutable functional collections |
 | [Concurrency]({{ '/features/concurrency/' | relative_url }}) | `Future[T]`, `Promise[T]`, `ExecutionContext`, cancellation, timeouts, `Race` |

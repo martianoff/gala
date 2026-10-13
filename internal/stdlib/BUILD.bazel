@@ -17,7 +17,6 @@ genrule(
         "//std:ordered_go",
         "//std:try_go",
         "//std:errors_go",
-        "//std:constptr_go",
         "//std:types.go",
         "//std:interfaces.go",
         "//std:embedded_fs.go",
@@ -32,7 +31,6 @@ genrule(
         "//std:ordered.gala",
         "//std:try.gala",
         "//std:errors.gala",
-        "//std:constptr.gala",
         "//std:meta_go",
         "//std:meta.gala",
         # json package

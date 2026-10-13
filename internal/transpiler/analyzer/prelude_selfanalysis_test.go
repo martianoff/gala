@@ -40,7 +40,7 @@ func analyzePkgFile(t *testing.T, searchPaths []string, dir, primary string) err
 // package into the RichAST before the file's own declarations are walked. Each
 // declaration then meets itself, and was reported as a redefinition of itself:
 //
-//	[GALA-E0011] type "ConstPtr" in package "std" redefined (also declared at line 6)
+//	[GALA-E0011] type "Immutable" in package "std" redefined (also declared at line 4)
 //
 // This is the only shape that reproduces it, because `std` is the package the
 // analyzer loads for every file. A synthetic package cannot stand in.
@@ -51,7 +51,7 @@ func TestStdFileIsNotARedefinitionOfItself(t *testing.T) {
 	}
 	stdDir := filepath.Dir(stdFile)
 
-	for _, primary := range []string{"option.gala", "constptr.gala", "try.gala"} {
+	for _, primary := range []string{"option.gala", "immutable.gala", "try.gala"} {
 		t.Run(primary, func(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(stdDir, primary)); err != nil {
 				t.Skipf("%s not staged", primary)

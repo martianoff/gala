@@ -76,7 +76,7 @@ class GalaAnnotator : Annotator {
             "SliceOf",
             // Auto-imported std prelude constructors / converters (distinctive
             // names — see internal/transpiler/registry/std.go and std/*.gala)
-            "NewImmutable", "NewConstPtr", "NewEmbeddedFS",
+            "NewImmutable", "NewEmbeddedFS",
             "FromError", "FromOption", "FromEitherError",
             "PanicStack"
         )
@@ -91,7 +91,7 @@ class GalaAnnotator : Annotator {
             "Either", "Left", "Right",
             "Try", "Success", "Failure",
             // Fundamental value types
-            "Immutable", "ConstPtr", "Void", "EmbeddedFS",
+            "Immutable", "Void", "EmbeddedFS",
             // Tuple family (Tuple is the 2-tuple, Tuple3+ are higher arities)
             "Tuple", "Tuple3", "Tuple4", "Tuple5", "Tuple6",
             "Tuple7", "Tuple8", "Tuple9", "Tuple10",

@@ -218,8 +218,7 @@ func TestPointerToValModification(t *testing.T) {
 	g := generator.NewGoCodeGenerator()
 	trans := newCheckedTranspiler(p, a, tr, g)
 
-	// Test: Modifying through pointer to val should be an error
-	// since it would break immutability guarantees
+	// A val has no address, so it cannot be modified through a pointer.
 	input := `package main
 
 func main() {
@@ -229,5 +228,6 @@ func main() {
 }`
 	_, err := trans.Transpile(input, "")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot assign")
+	assert.Contains(t, err.Error(), "GALA-E0076")
+	assert.Contains(t, err.Error(), "cannot take the address of data")
 }

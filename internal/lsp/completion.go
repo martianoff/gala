@@ -274,7 +274,7 @@ func keywordCompletions() []lsp.CompletionItem {
 		"Println", "Print", "SliceOf",
 		// Auto-imported std prelude constructors / converters
 		// (see internal/transpiler/registry/std.go and std/*.gala).
-		"NewImmutable", "NewConstPtr", "NewEmbeddedFS",
+		"NewImmutable", "NewEmbeddedFS",
 		"FromError", "FromOption", "FromEitherError", "PanicStack",
 	}
 	items := make([]lsp.CompletionItem, 0)

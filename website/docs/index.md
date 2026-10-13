@@ -18,7 +18,7 @@ Welcome to the GALA documentation hub. Here you will find everything you need to
 | [Language Reference]({{ '/docs/language-reference/' | relative_url }}) | Full syntax and semantics reference |
 | [Sealed Types]({{ '/features/sealed-types/' | relative_url }}) | Define closed type hierarchies with exhaustive compile-time checking |
 | [Pattern Matching]({{ '/features/pattern-matching/' | relative_url }}) | Destructure values, apply guards, and produce expression results |
-| [Immutability]({{ '/features/immutability/' | relative_url }}) | `val` bindings, immutable struct fields, `Copy()`, and `ConstPtr[T]` |
+| [Immutability]({{ '/features/immutability/' | relative_url }}) | `val` bindings, immutable struct fields, and `Copy()` |
 | [Type Inference]({{ '/features/type-inference/' | relative_url }}) | What you can leave out — generics, lambda params, accumulators |
 | [Error Handling]({{ '/features/error-handling/' | relative_url }}) | Composable `Option[T]`, `Either[A,B]`, and `Try[T]` monads |
 | [Monadic Binding]({{ '/features/monadic-binding/' | relative_url }}) | `bind` / `also` do-notation, including accumulating `Validated` groups |

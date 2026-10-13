@@ -101,7 +101,7 @@ func (c *Checker) IsShareable(t transpiler.Type) bool {
 // IsShareable is a resolver-free convenience matching the conceptual
 // `IsShareable(t Type) bool` signature. It decides every value-kinded type
 // (primitives, immutable/mutable collections, Option/Try/Either/tuple, the
-// Immutable/ConstPtr wrappers, functions, pointers, slices, maps) correctly, but
+// Immutable wrapper, functions, pointers, slices, maps) correctly, but
 // because it has no MetadataResolver it cannot see the fields of a user-defined
 // struct or sealed type and so returns false for those. Callers that need
 // struct/sealed decisions must use NewChecker(resolver).IsShareable.
@@ -161,8 +161,7 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 		return false
 
 	case transpiler.PointerType:
-		// Bare Go pointer: shared mutable aliasing. (The safe read-only pointer
-		// wrapper is std.ConstPtr, handled as a GenericType.)
+		// Bare Go pointer: shared mutable aliasing.
 		return false
 
 	case transpiler.FuncType:
@@ -299,12 +298,10 @@ func (c *Checker) decideByName(name string, params []transpiler.Type, visited ma
 		// type argument is shareable.
 		return c.allShareable(params, visited), true
 
-	case transpiler.TypeImmutable, transpiler.TypeConstPtr:
-		// Immutable[T] and ConstPtr[T].
-		//
+	case transpiler.TypeImmutable:
 		// DEVIATION FROM SPEC (documented in docs/CONCURRENCY_SAFETY.MD):
-		// the spec lists these as unconditionally shareable. They are only
-		// SOUNDLY shareable when their payload T is itself shareable.
+		// the spec lists Immutable[T] as unconditionally shareable. It is only
+		// SOUNDLY shareable when its payload T is itself shareable.
 		//
 		//   type Immutable[T] struct { var value T }
 		//   func (i Immutable[T]) Get() T = i.value
@@ -313,11 +310,9 @@ func (c *Checker) decideByName(name string, params []transpiler.Type, visited ma
 		// stored T by copy. If T is a reference-backed mutable type (e.g. a
 		// collection_mutable.Array, whose header aliases a Go slice), the copy
 		// still aliases the shared backing store — two goroutines could then
-		// mutate/read it concurrently. ConstPtr[T] holds a *T and only forbids
-		// writes THROUGH the ConstPtr; it cannot stop another holder of the
-		// underlying value from mutating it. So both are shareable exactly when
-		// T is shareable. For the common case (Immutable[int], ConstPtr[string])
-		// this is still true, matching intent, but it refuses the unsound
+		// mutate/read it concurrently. So it is shareable exactly when T is
+		// shareable. For the common case (Immutable[int]) this is still true,
+		// matching intent, but it refuses the unsound
 		// Immutable[MutableArray[int]].
 		return c.allShareable(params, visited), true
 	}

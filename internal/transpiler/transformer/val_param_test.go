@@ -352,10 +352,10 @@ func f(n int) int {
 	}
 }
 
-// TestParamAddressIsConstPtr checks that the address of a parameter not
-// declared `var` is a read-only ConstPtr, as for a val, so the parameter cannot
-// be changed through a pointer; a `var` parameter's address stays a plain *T.
-func TestParamAddressIsConstPtr(t *testing.T) {
+// TestParamAddress checks that the address of a parameter not declared `var`
+// is rejected, as for a val, so the parameter cannot be changed through a
+// pointer; a `var` parameter's address is a plain *T.
+func TestParamAddress(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
@@ -363,35 +363,20 @@ func TestParamAddressIsConstPtr(t *testing.T) {
 	trans := newCheckedTranspiler(p, a, tr, g)
 
 	for _, kw := range []string{"", "val "} {
-		t.Run("write through the address of a "+kw+"parameter", func(t *testing.T) {
+		t.Run("address of a "+kw+"parameter", func(t *testing.T) {
 			_, err := trans.Transpile(`package main
 
 func f(`+kw+`n int) int {
     val p = &n
-    *p = 5
-    n
+    1 + *p
 }`, "")
 			require.Error(t, err)
 			var semErr *galaerr.SemanticError
 			require.ErrorAs(t, err, &semErr)
-			assert.Contains(t, semErr.Msg, "cannot assign through ConstPtr")
+			assert.Equal(t, galaerr.CodeAddressOfImmutable, semErr.Code)
+			assert.Contains(t, semErr.Msg, "cannot take the address of n: parameter n is not declared `var`")
 		})
 	}
-
-	t.Run("reading through the address of a parameter", func(t *testing.T) {
-		got, err := trans.Transpile(`package main
-
-func f(n int) int {
-    val p = &n
-    1 + *p
-}
-
-func main() {
-    Println(f(1))
-}`, "")
-		require.NoError(t, err)
-		assert.Contains(t, got, "std.NewConstPtr(&n)")
-	})
 
 	t.Run("address of a var parameter", func(t *testing.T) {
 		got, err := trans.Transpile(`package main
@@ -406,7 +391,7 @@ func main() {
     Println(f(1))
 }`, "")
 		require.NoError(t, err)
-		assert.NotContains(t, got, "NewConstPtr")
+		assert.Contains(t, got, "std.NewImmutable(&n)")
 	})
 }
 

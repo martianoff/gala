@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "transformer",
     srcs = [
+        "address_of.go",
         "addressable_receiver.go",
         "alternative_pattern.go",
         "bind.go",
@@ -15,7 +16,6 @@ go_library(
         "codec_validate.go",
         "codec_value.go",
         "concurrency_check.go",
-        "constptr_interface.go",
         "constructors.go",
         "declarations.go",
         "default_exprs.go",
@@ -47,6 +47,7 @@ go_library(
         "scope.go",
         "scoped_state.go",
         "sealed.go",
+        "self_containing.go",
         "spread.go",
         "statements.go",
         "string_escapes.go",
@@ -90,6 +91,7 @@ go_test(
     # of the package's tests.
     size = "large",
     srcs = [
+        "address_of_test.go",
         "alias_expected_type_test.go",
         "aliased_go_import_types_test.go",
         "alternative_pattern_test.go",
@@ -119,7 +121,6 @@ go_test(
         "compilation_gate_test.go",
         "concurrency_check_test.go",
         "conflict_test.go",
-        "constptr_interface_test.go",
         "control_clause_composite_lit_test.go",
         "control_flow_test.go",
         "copy_test.go",
@@ -244,6 +245,7 @@ go_test(
         "sealed_string_func_field_test.go",
         "sealed_tuple_widen_test.go",
         "sealed_variant_width_test.go",
+        "self_containing_test.go",
         "sequence_pattern_nested_test.go",
         "shadowed_function_test.go",
         "size_sugar_go_return_test.go",

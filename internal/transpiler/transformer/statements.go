@@ -126,6 +126,9 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	if err != nil {
 		return nil, err
 	}
+	if err := t.immutableFieldWriteError(ctx.Expression(), expr, "increment/decrement"); err != nil {
+		return nil, err
+	}
 
 	// Determine the token (++ or --)
 	tok := token.INC
@@ -227,10 +230,6 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		if err := t.immutableWriteError(ctx, exprCtx, "assign to"); err != nil {
 			return nil, err
 		}
-		// Check for dereference assignment (*ptr = value) where ptr is ConstPtr
-		if t.isConstPtrDerefAssignment(exprCtx) {
-			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot assign through ConstPtr - read-only pointer to immutable value")
-		}
 		if exprCtx.GetChildCount() == 3 && exprCtx.GetChild(1).(antlr.ParseTree).GetText() == "." {
 			selName := exprCtx.GetChild(2).(antlr.ParseTree).GetText()
 			xExpr, err := t.transformExpression(exprCtx.GetChild(0).(grammar.IExpressionContext))
@@ -256,6 +255,11 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	lhsExprs, err := t.transformExpressionList(lhsCtx)
 	if err != nil {
 		return nil, err
+	}
+	for i, target := range lhsExprs {
+		if err := t.immutableFieldWriteError(lhsCtx.Expression(i), target, "assign to"); err != nil {
+			return nil, err
+		}
 	}
 
 	// A single target's type is the RHS's expected type, so
@@ -1312,58 +1316,6 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	return &ast.ForStmt{
 		Body: body,
 	}, nil
-}
-
-// isConstPtrDerefAssignment checks if the expression is a pointer dereference
-// where the pointer type is ConstPtr. Such assignments are not allowed because
-// ConstPtr provides read-only access to the pointed-to value.
-func (t *galaASTTransformer) isConstPtrDerefAssignment(ctx grammar.IExpressionContext) bool {
-	// Navigate through the expression structure to find unary expressions
-	orExpr := ctx.OrExpr()
-	if orExpr == nil {
-		return false
-	}
-	andExprs := orExpr.(*grammar.OrExprContext).AllAndExpr()
-	if len(andExprs) != 1 {
-		return false
-	}
-	eqExprs := andExprs[0].(*grammar.AndExprContext).AllEqualityExpr()
-	if len(eqExprs) != 1 {
-		return false
-	}
-	relExprs := eqExprs[0].(*grammar.EqualityExprContext).AllRelationalExpr()
-	if len(relExprs) != 1 {
-		return false
-	}
-	addExprs := relExprs[0].(*grammar.RelationalExprContext).AllAdditiveExpr()
-	if len(addExprs) != 1 {
-		return false
-	}
-	mulExprs := addExprs[0].(*grammar.AdditiveExprContext).AllMultiplicativeExpr()
-	if len(mulExprs) != 1 {
-		return false
-	}
-	unaryExprs := mulExprs[0].(*grammar.MultiplicativeExprContext).AllUnaryExpr()
-	if len(unaryExprs) != 1 {
-		return false
-	}
-	unaryCtx := unaryExprs[0].(*grammar.UnaryExprContext)
-
-	// Check if this is a dereference (*) operation
-	if unaryOp := unaryCtx.UnaryOp(); unaryOp != nil {
-		if unaryOp.GetText() == "*" {
-			// Get the inner expression (the pointer being dereferenced)
-			innerUnary := unaryCtx.UnaryExpr()
-			if innerUnary != nil {
-				innerExpr, err := t.transformUnaryExpr(innerUnary.(*grammar.UnaryExprContext))
-				if err == nil {
-					typeObj := t.getExprTypeName(innerExpr)
-					return t.isConstPtrType(typeObj)
-				}
-			}
-		}
-	}
-	return false
 }
 
 // singleAssignmentLHSName returns the bare variable name on the LHS of a

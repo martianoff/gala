@@ -100,7 +100,7 @@ When a closure (an explicit lambda, or a by-name thunk such as `Future(counter +
 | `Array[T]`, `List[T]`, `HashMap[K,V]`, `HashSet[K]`, `TreeMap`, `TreeSet` from **`collection_immutable`** | all type arguments shareable | persistent immutable structures |
 | `Option[T]`, `Try[T]`, `Either[A,B]` | all type arguments shareable | immutable wrappers |
 | `Tuple2`…`Tuple10` | all type arguments shareable | immutable product types |
-| `Immutable[T]`, `ConstPtr[T]` | `T` is shareable | the wrapper freezes reassignment, not the pointee |
+| `Immutable[T]` | `T` is shareable | the wrapper freezes reassignment, not the payload |
 | A **struct** | every field is a `val` field of a shareable type | deeply immutable |
 | A **sealed** type | every field of every variant is shareable | variant fields are immutable constructor parameters |
 
@@ -119,7 +119,7 @@ When a closure (an explicit lambda, or a by-name thunk such as `Future(counter +
 
 **Fail closed.** Every "I don't know" resolves to *not shareable*: an unresolved name, an opaque Go type, a bare type parameter. The predicate never lets an unproven value cross.
 
-`Immutable[T]` and `ConstPtr[T]` are deliberately **conditional**, not unconditional. `Immutable[T]` freezes reassignment of the wrapped value, but `Get()` returns the stored `T` by copy — and if `T` is a reference-backed mutable type, the copy still aliases the same backing store. So `Immutable[int]` and `Immutable[Array[int]]` are shareable; `Immutable[collection_mutable.Array[int]]` is not.
+`Immutable[T]` is deliberately **conditional**, not unconditional. `Immutable[T]` freezes reassignment of the wrapped value, but `Get()` returns the stored `T` by copy — and if `T` is a reference-backed mutable type, the copy still aliases the same backing store. So `Immutable[int]` and `Immutable[Array[int]]` are shareable; `Immutable[collection_mutable.Array[int]]` is not.
 
 ---
 
@@ -302,6 +302,6 @@ Honest scope. This is a capture check at marked boundaries, not a whole-program 
 ## Further Reading
 
 - [Concurrency — Futures, cancellation, and structured concurrency]({{ '/features/concurrency/' | relative_url }}) — the `Future[T]` API these boundaries protect
-- [Immutability]({{ '/features/immutability/' | relative_url }}) — `val`, immutable fields, and `ConstPtr[T]`, the substrate the shareability model reads
+- [Immutability]({{ '/features/immutability/' | relative_url }}) — `val` and immutable fields, the substrate the shareability model reads
 - [Compiler DX]({{ '/features/compiler-dx/' | relative_url }}) — how GALA renders diagnostics like E0037
 - [Collections]({{ '/features/collections/' | relative_url }}) — `collection_immutable` vs `collection_mutable`
