@@ -103,3 +103,28 @@ func main() { Println(Holder{}) }`,
 		})
 	}
 }
+
+// TestDefaultValuesLeavePrivateFieldsOfOtherPackages pins that a field private
+// to another package's struct is not given a default here: only that package
+// can set it, so a collection of a type with a default (or with none) keeps
+// its Go zero value, the empty collection.
+func TestDefaultValuesLeavePrivateFieldsOfOtherPackages(t *testing.T) {
+	out, err := transpileBareVariant(t, `package main
+
+import . "martianoff/gala/collection_immutable"
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30)
+}
+
+struct Shelf(Name string, Items List[Light], Tries List[Try[int]])
+
+func main() {
+    var xs List[Light]
+    Println(xs.Size(), Shelf{Name: "a"}.Items.Size())
+}`)
+	require.NoError(t, err)
+	require.Contains(t, out, "var xs List[Light]\n")
+	require.NotContains(t, out, "head:")
+}

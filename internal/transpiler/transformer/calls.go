@@ -3620,19 +3620,6 @@ func (t *galaASTTransformer) unifyFieldArgForInference(fieldType transpiler.Type
 	t.unifyForInference(fieldType, valType, typeParams, inferred)
 }
 
-// orderedTypeArgExprs returns the type-argument expressions for typeParams in
-// declaration order, or nil unless every one of them was inferred.
-func (t *galaASTTransformer) orderedTypeArgExprs(typeParams []string, inferred map[string]transpiler.Type) []ast.Expr {
-	types := orderedTypeArgs(typeParams, inferred)
-	if types == nil {
-		return nil
-	}
-	exprs := make([]ast.Expr, len(types))
-	for i, typ := range types {
-		exprs[i] = t.typeToExpr(typ)
-	}
-	return exprs
-}
 
 // buildGoCompositeLiteralWithNamedArgs emits a plain Go composite literal
 // for a Go-imported or dot-imported type. No Immutable wrapping — the

@@ -12,10 +12,6 @@ most user sealed types), or a struct holding one. GALA never creates such a
 value implicitly: Go's zero value of a sealed type without a default case is
 none of its cases.
 
-It also fires when a construction leaves out a field of another package's
-struct that is private to that package and has a default value: only that
-package can set it.
-
 **Minimal repro.**
 
 ```gala

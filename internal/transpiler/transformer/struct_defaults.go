@@ -72,12 +72,8 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 
 	var missing []string
 	var elts []ast.Expr
-	// emit adds the value a construction gives field i, an unexported field
-	// of another package only if this package could set it.
+	// emit adds the value a construction gives field i.
 	emit := func(i int, fieldName string, val ast.Expr) error {
-		if err := t.checkDefaultSettable(meta, typeName, fieldName, line, col); err != nil {
-			return err
-		}
 		if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
 			val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
 		}
@@ -85,7 +81,9 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		return nil
 	}
 	for i, fieldName := range fields {
-		if provided(i, fieldName) {
+		// A field private to another package is that package's to set, with a
+		// constructor it exports; here it keeps Go's zero value.
+		if provided(i, fieldName) || !visibleFrom(fieldName, meta, t.packageName) {
 			continue
 		}
 		if typeArgs == nil {
@@ -442,7 +440,7 @@ func (t *galaASTTransformer) packageDeclares(pkg, name string) bool {
 }
 
 // orderedTypeArgs lists the type arguments bound in byName in the order of
-// typeParams, nil when one is unbound.
+// typeParams, nil when one is unbound or unresolved.
 func orderedTypeArgs(typeParams []string, byName map[string]transpiler.Type) []transpiler.Type {
 	if len(typeParams) == 0 {
 		return nil
@@ -450,7 +448,7 @@ func orderedTypeArgs(typeParams []string, byName map[string]transpiler.Type) []t
 	out := make([]transpiler.Type, len(typeParams))
 	for i, tp := range typeParams {
 		typ, ok := byName[tp]
-		if !ok {
+		if !ok || transpiler.IsUnusable(typ) {
 			return nil
 		}
 		out[i] = typ
@@ -494,14 +492,3 @@ func isZeroLiteralOf(text string, fieldType transpiler.Type) bool {
 	return false
 }
 
-// checkDefaultSettable reports a field of another package's struct, private to
-// it, whose default a construction here would have to set: only that package
-// can, so the value is built with a constructor it exports.
-func (t *galaASTTransformer) checkDefaultSettable(meta *transpiler.TypeMetadata, typeName, fieldName string, line, col int) error {
-	if visibleFrom(fieldName, meta, t.packageName) {
-		return nil
-	}
-	return galaerr.NewCodedSemanticError(galaerr.CodeNoDefaultValue, line, col,
-		fmt.Sprintf("field %q of %q is left out, and its default value is private to package %s", fieldName, typeName, meta.Package),
-		fmt.Sprintf("build the value with a constructor package %s exports", meta.Package))
-}

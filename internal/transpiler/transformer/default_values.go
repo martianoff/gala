@@ -96,7 +96,7 @@ func (t *galaASTTransformer) sealedDefaultValue(typ transpiler.Type, meta *trans
 		apply = comp.Methods["Apply"]
 	}
 	companion := transpiler.Type(transpiler.NamedType{Package: meta.Package, Name: dv.Name})
-	if meta.Package == "" || meta.Package == "main" || meta.Package == "test" {
+	if t.isLocalPackage(meta.Package) {
 		companion = transpiler.BasicType{Name: dv.Name}
 	}
 	if len(args) > 0 {

@@ -1488,7 +1488,9 @@ func main() {
 
 A type with no default value (`Try`, `Either`, a sealed type without a default
 case, or a struct holding one) must be given a value: GALA never creates one
-implicitly ([`GALA-E0075`](errors/GALA-E0075.md)). Only a value Go creates by
+implicitly ([`GALA-E0075`](errors/GALA-E0075.md)). A field private to another package's struct is that
+package's to set, with a constructor it exports; a construction elsewhere
+leaves it at Go's zero value. Only a value Go creates by
 itself (a fresh slice slot, a missed map lookup, decoding) holds a Go zero
 value no default case built.
 
