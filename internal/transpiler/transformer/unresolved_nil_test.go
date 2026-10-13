@@ -49,8 +49,8 @@ func runOrZero(f func() int) int = if (f != nil) f() else 0
 // TestUnresolvedInventorySkipsGenericFunctionName pins that the name of a
 // generic function written with its type arguments (`F[T](...)`, read as an
 // index before it is a call) is not probed for an Immutable wrapper, so it is
-// not reported unresolved: GALA functions and Go functions the file reaches
-// unqualified alike (see the function-name early-out in unwrapImmutable).
+// not reported unresolved: a GALA or Go function, bare or package-qualified
+// (see namesFunction).
 func TestUnresolvedInventorySkipsGenericFunctionName(t *testing.T) {
 	t.Setenv("GALA_WARN_TYPES", "1")
 
@@ -69,6 +69,12 @@ import . "martianoff/gala/go_interop"
 
 func main() { Println(SliceWithSize[int](2)) }
 `, "SliceWithSize"},
+		{"a package-qualified Go generic function", `package main
+
+import gi "martianoff/gala/go_interop"
+
+func main() { Println(gi.SliceWithSize[int](2)) }
+`, "gi.SliceWithSize"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

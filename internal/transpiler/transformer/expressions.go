@@ -1608,10 +1608,8 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 			// through to Hindley-Milner on every such query.
 			//
 			// getFunction is checked last: it builds a resolver and an imports
-			// slice per call, so the cheap scope and type lookups go first. A
-			// Go function the file reaches unqualified (a dot import's
-			// `SliceWithSize[T](n)`) is one too.
-			if t.getFunction(ident.Name) != nil || t.lookupGoIdentSignature(ident.Name) != nil {
+			// slice per call, so the cheap scope and type lookups go first.
+			if t.getFunction(ident.Name) != nil {
 				return expr
 			}
 		}

@@ -105,10 +105,10 @@ import (
 // records its method set, and every such call bound by a Failure pattern or
 // taken out of an Option went untyped. See error_method_type_test.go.
 //
-// Lowered 124 -> 118 when the function-name early-out in unwrapImmutable
-// covered Go functions too: `SliceWithSize[T](n)` from a dot import parses as
-// an index access, and its base was probed for an Immutable wrapper and
-// reported. See TestUnresolvedInventorySkipsGenericFunctionName.
+// Lowered 124 -> 118 when an index access stopped probing a base that names a
+// function (resolveIndexAccess, namesFunction): `SliceWithSize[T](n)` parses as
+// one, and a Go or package-qualified generic function's name was asked for its
+// type and reported. See TestUnresolvedInventorySkipsGenericFunctionName.
 const unresolvedBudget = 118
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
