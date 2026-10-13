@@ -41,9 +41,9 @@ func main() {
     val e = Labeled(Id = 7)
     Println(e.Id, e.Label)
 
-    // Go-style literals stay partial and never consult defaults. The brace
-    // form is deliberate here and must NOT be rewritten to `Cfg(Name = "f")`:
-    // the contrast between the two spellings is what this example pins.
+    // A brace literal leaves fields out as a call does: they take their
+    // declared defaults. The brace form is deliberate here: that both
+    // spellings give the same value is what this example pins.
     val f = Cfg{Name: "f"}
     Println(f.Name, int(f.Mask), f.Tries)
 }

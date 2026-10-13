@@ -1,6 +1,7 @@
 package concurrent
 
 import (
+    "fmt"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
     . "martianoff/gala/collection_immutable"
@@ -85,6 +86,8 @@ func newPromiseWith[T any](ec go_interop.ExecutionContext, cancel Option[go_inte
     val resolvedCancel = if (cancel.IsDefined()) cancel.Get() else go_interop.NewCancelToken()
     val f = fut[T](
         state = &FutureState[T](
+            // Read only once complete; until then the future has no result.
+            result = Failure[T](fmt.Errorf("future not completed")),
             done = go_interop.NewSignal(),
             once = go_interop.NewOnce(),
             mu = go_interop.NewRWMutex(),

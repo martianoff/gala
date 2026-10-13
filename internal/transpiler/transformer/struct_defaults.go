@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -36,9 +37,12 @@ import (
 // The shorthand's field list is a constructor signature; a block struct is a
 // layout.
 
-// fillOmittedStructFields returns the extra KeyValueExprs a constructor call
-// needs for the fields it did not supply, and reports the first required field
-// it left out.
+// fillOmittedStructFields returns the extra KeyValueExprs a construction needs
+// for the fields it did not supply: a field's declared default, or else its
+// type's default value (see defaultValue), and GALA-E0075 for a field whose
+// type has none. With requireDeclared, a call of a shorthand struct instead
+// reports the fields with no declared default it left out (GALA-E0045): its
+// field list is a constructor signature.
 //
 // provided answers whether the call site gave a value for the field at index i;
 // the named and positional paths compute it differently, so they pass their own
@@ -51,6 +55,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 	provided func(i int, fieldName string) bool,
 	typeArgSubst map[string]ast.Expr,
 	line, col int,
+	requireDeclared bool,
 ) ([]ast.Expr, error) {
 	meta := t.getTypeMeta(resolvedTypeName)
 	if meta == nil {
@@ -67,19 +72,45 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		if provided(i, fieldName) {
 			continue
 		}
-		def, hasDefault := defaults[fieldName]
-		if !hasDefault {
-			missing = append(missing, fieldName)
-			continue
-		}
 		if typeArgs == nil {
 			typeArgs = t.typeArgTypes(typeArgSubst)
+		}
+		def, hasDefault := defaults[fieldName]
+		if hasDefault && isZeroLiteral(def.Text) {
+			continue // Go's zero value is that default
+		}
+		if !hasDefault {
+			if requireDeclared && meta.IsShorthand {
+				missing = append(missing, fieldName)
+				continue
+			}
+			fieldType := t.substituteConcreteTypes(fieldTypes[fieldName], meta.TypeParams, orderedTypeArgs(meta.TypeParams, typeArgs))
+			val, err := t.defaultValue(fieldType, line, col, map[string]bool{})
+			if err != nil {
+				return nil, fieldHasNoDefault(err, fieldName, typeName)
+			}
+			if val == nil {
+				continue // Go's zero value is the field's default
+			}
+			if err := t.checkDefaultSettable(meta, typeName, fieldName, line, col); err != nil {
+				return nil, err
+			}
+			if immutFlags != nil && i < len(immutFlags) && immutFlags[i] {
+				val = t.wrapImmutableFieldValue(val, fieldTypes[fieldName], typeArgSubst)
+			}
+			elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: val})
+			continue
 		}
 		// Re-parsed and re-transformed per construction site, so a default like
 		// `time.Now()` is evaluated at each construction rather than once at
 		// declaration — the same contract function parameter defaults have.
 		// The field's declared type is the expected type, as it is for a value
 		// passed explicitly.
+		if !requireDeclared {
+			if err := t.checkDefaultSettable(meta, typeName, fieldName, line, col); err != nil {
+				return nil, err
+			}
+		}
 		src := defaultSource{
 			DefaultExpr: def,
 			file:        meta.DefinedIn,
@@ -97,9 +128,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fieldName), Value: val})
 	}
 
-	// Only the shorthand form can declare a field optional, so only it can
-	// hold a call site to supplying the rest.
-	if len(missing) > 0 && meta.IsShorthand {
+	if len(missing) > 0 {
 		return nil, missingStructFieldsError(typeName, missing, defaults, fields, line, col)
 	}
 	return elts, nil
@@ -404,4 +433,55 @@ func (t *galaASTTransformer) packageDeclares(pkg, name string) bool {
 		return true
 	}
 	return t.functions[qualified] != nil
+}
+
+// orderedTypeArgs lists the type arguments bound in byName in the order of
+// typeParams, nil when one is unbound.
+func orderedTypeArgs(typeParams []string, byName map[string]transpiler.Type) []transpiler.Type {
+	if len(typeParams) == 0 {
+		return nil
+	}
+	out := make([]transpiler.Type, len(typeParams))
+	for i, tp := range typeParams {
+		typ, ok := byName[tp]
+		if !ok {
+			return nil
+		}
+		out[i] = typ
+	}
+	return out
+}
+
+// fieldHasNoDefault names the field a GALA-E0075 err is about: the value of
+// fieldName that a construction of typeName leaves out.
+func fieldHasNoDefault(err error, fieldName, typeName string) error {
+	var se *galaerr.SemanticError
+	if !errors.As(err, &se) || se.Code != galaerr.CodeNoDefaultValue {
+		return err
+	}
+	return galaerr.NewCodedSemanticError(galaerr.CodeNoDefaultValue, se.Line, se.Column,
+		fmt.Sprintf("field %q of %q is left out, and %s", fieldName, typeName, se.Msg),
+		fmt.Sprintf("give %s a value", fieldName))
+}
+
+// isZeroLiteral reports whether a default's source text is a literal Go's
+// zero value of its type already equals, so the default needs no element.
+func isZeroLiteral(text string) bool {
+	switch strings.TrimSpace(text) {
+	case "0", "0.0", "false", `""`, "``":
+		return true
+	}
+	return false
+}
+
+// checkDefaultSettable reports a field of another package's struct, private to
+// it, whose default a construction here would have to set: only that package
+// can, so the value is built with a constructor it exports.
+func (t *galaASTTransformer) checkDefaultSettable(meta *transpiler.TypeMetadata, typeName, fieldName string, line, col int) error {
+	if visibleFrom(fieldName, meta, t.packageName) {
+		return nil
+	}
+	return galaerr.NewCodedSemanticError(galaerr.CodeNoDefaultValue, line, col,
+		fmt.Sprintf("field %q of %q is left out, and its default value is private to package %s", fieldName, typeName, meta.Package),
+		fmt.Sprintf("build the value with a constructor package %s exports", meta.Package))
 }

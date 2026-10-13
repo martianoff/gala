@@ -788,6 +788,21 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 			return nil, err
 		}
 		spec.Type = typeExpr
+		// An uninitialized var holds its type's default value (see
+		// defaultValue), built once per name.
+		if len(rhsExprs) == 0 {
+			typ := t.astTypeToTranspilerType(typeExpr)
+			for range namesCtx {
+				val, err := t.defaultValue(typ, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), map[string]bool{})
+				if err != nil {
+					return nil, err
+				}
+				if val == nil {
+					break // Go's zero value is the default, for every name alike
+				}
+				spec.Values = append(spec.Values, val)
+			}
+		}
 	}
 
 	return &ast.GenDecl{

@@ -405,7 +405,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 					typeName, resolved, fields,
 					func(int, string) bool { return false },
 					t.structTypeArgSubst(base, resolved),
-					line, col)
+					line, col, true)
 				if derr != nil {
 					return nil, derr
 				}
@@ -1806,7 +1806,7 @@ func (t *galaASTTransformer) buildStructLiteral(typeExpr ast.Expr, typeName, res
 		defaulted, err := t.fillOmittedStructFields(
 			typeName, resolvedTypeName, fields,
 			func(i int, _ string) bool { return i < len(args) },
-			typeArgSubst, line, col)
+			typeArgSubst, line, col, true)
 		if err != nil {
 			return nil, err
 		}
@@ -3078,7 +3078,7 @@ func (t *galaASTTransformer) buildStructLiteralWithNamedArgs(
 	// Fields the call site left out take their declared default; one with no
 	// default is required, and omitting it is an error rather than a silent
 	// Go zero value. See struct_defaults.go.
-	defaulted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, typeArgSubst, line, col)
+	defaulted, err := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, typeArgSubst, line, col, true)
 	if err != nil {
 		return nil, err
 	}
@@ -3146,7 +3146,7 @@ func (t *galaASTTransformer) preferMissingFieldError(
 	provided func(i int, fieldName string) bool,
 	line, col int,
 ) error {
-	if _, missingErr := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, nil, line, col); missingErr != nil {
+	if _, missingErr := t.fillOmittedStructFields(typeName, resolvedTypeName, fields, provided, nil, line, col, true); missingErr != nil {
 		return missingErr
 	}
 	return inferErr

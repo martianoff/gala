@@ -128,6 +128,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0072](/docs/errors/gala-e0072/) | Sealed variant with too many fields | Pattern matching |
 | [GALA-E0073](/docs/errors/gala-e0073/) | Invalid named sub-pattern | Pattern matching |
 | [GALA-E0074](/docs/errors/gala-e0074/) | Invalid default case | Sealed types |
+| [GALA-E0075](/docs/errors/gala-e0075/) | No default value | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 

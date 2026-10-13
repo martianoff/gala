@@ -1,0 +1,29 @@
+package main
+
+// Where GALA code needs a value and none is written (an uninitialized var, a
+// field a construction leaves out), it uses the type's default value: a
+// sealed type's default case built with its field defaults, a struct's
+// declared field defaults, and Go's zero value for everything else.
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+struct Home(Name string, L Light, Rooms int = 1, Note Option[string])
+
+type Point struct {
+    X int
+    Y int
+}
+
+func main() {
+    var l Light
+    Println(l)
+
+    val h = Home{Name: "flat"}
+    Println(h.Name, h.L, h.Rooms, h.Note)
+
+    var p Point
+    Println(p.X, p.Y, Point{X: 3}.Y)
+}

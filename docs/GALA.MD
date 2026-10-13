@@ -739,12 +739,16 @@ The check applies to **shorthand-declared GALA structs only**. Everything that i
 or mirrors a Go struct keeps Go's partial-literal semantics, because Go's
 zero-value contract is what the Go boundary runs on:
 
-| Form | Partial construction | Consults defaults |
-|------|----------------------|-------------------|
-| `struct Cfg(...)` via call syntax — `Cfg(Name = "a")`, `Cfg("a")` | rejected | yes |
-| `struct Cfg(...)` via literal — `Cfg{Name: "a"}` | allowed | no |
-| `type Cfg struct { ... }` — any syntax | allowed | n/a (cannot declare one) |
-| A Go-imported type — `url.URL{...}` or `url.URL(Scheme = "x")` | allowed | n/a |
+| Form | Partial construction | An omitted field takes |
+|------|----------------------|-------------------------|
+| `struct Cfg(...)` via call syntax — `Cfg(Name = "a")`, `Cfg("a")` | rejected | its declared default |
+| `struct Cfg(...)` via literal — `Cfg{Name: "a"}` | allowed | its declared default, else its type's default value |
+| `type Cfg struct { ... }` — any syntax | allowed | its type's default value |
+| A Go-imported type — `url.URL{...}` or `url.URL(Scheme = "x")` | allowed | Go's zero value |
+
+A field whose type has no [default value](#default-values) (`Try`, a sealed
+type without a default case) cannot be left out of any GALA struct
+([`GALA-E0075`](errors/GALA-E0075.md)).
 
 This is the Go-interop boundary, not an inconsistency:
 
@@ -759,9 +763,10 @@ This is the Go-interop boundary, not an inconsistency:
   so requiring every field would leave no way to opt out. The standard library
   depends on this: a HAMT node in `collection_immutable` sets two of its four
   fields and means the rest to be zero.
-- **`Cfg{...}` is a composite literal, not a constructor call.** The braces are
-  Go's spelling, and they behave like Go's: omitted fields take the zero value
-  and no default is consulted. Reach for them when you want exactly that.
+- **`Cfg{...}` is a literal, not a constructor call.** It may leave out a field
+  that has no declared default, and that field takes its type's default value
+  — Go's zero value for a number or a string. A field it leaves out that
+  declares a default still takes it, so no spelling skips a declared default.
 
 The shorthand form is the one place GALA declares a *constructor* rather than a
 *layout*, so it is the one place the language can promise a fully-initialized
@@ -1343,9 +1348,9 @@ func main() {
 ```
 
 Fields with defaults come after the fields without
-([`GALA-E0013`](errors/GALA-E0013.md)). Defaults apply when a value is
-constructed: a default case's zero value (below) holds its fields' zero
-values, not their defaults.
+([`GALA-E0013`](errors/GALA-E0013.md)). A default case's defaults also make
+the type's [default value](#default-values): what an uninitialized `var` or an
+omitted field holds.
 
 #### Default Case
 
@@ -1369,16 +1374,19 @@ func main() {
 }
 ```
 
-The default case's fields, if it has any, are their own zero values. `Option`'s
-default case is `None()`, so an uninitialized `Option` is `None`.
+The default case is also the type's [default value](#default-values), built
+with its fields' declared defaults, wherever GALA code needs one and none is
+written. `Option`'s default case is `None()`, so an uninitialized `Option` is
+`None`.
 
-A sealed type **without** a default case has no zero value. A zero value of
-one — it can only come from Go, or from a value nothing constructed — is none
-of its cases: an exhaustive match without a wildcard panics on it, naming the
-type, rather than reading it as one of the cases. A `case _` or binding arm
-matches it like any value. Give a type a default case when a value of it may
-be left unset; leave it out when every value must be built from a case, as for
-`Try` and `Either`.
+A sealed type **without** a default case has no default value: GALA code that
+would leave a value of it unset is an error
+([`GALA-E0075`](errors/GALA-E0075.md)). A Go zero value of one can still come
+from Go (a fresh slice slot, decoding); it is none of its cases, and an
+exhaustive match without a wildcard panics on it, naming the type, rather than
+reading it as one of the cases. A `case _` or binding arm matches it like any
+value. Give a type a default case when a value of it may be left unset; leave
+it out when every value must be built from a case, as for `Try` and `Either`.
 
 A sealed type marks at most one case `default`, and its default case has no field of the type itself, which a zero value could not hold ([`GALA-E0074`](errors/GALA-E0074.md)).
 
@@ -1448,6 +1456,41 @@ mode match {
 
 #### Standard Library Sealed Types
 The `std` package defines `Option[T]`, `Either[A, B]`, and `Try[T]` as sealed types. See [Standard Library Types](#9-standard-library-types) for details.
+
+### Default Values
+
+Where GALA code needs a value of a type and none is written, it uses the
+type's **default value**: an uninitialized `var x T`, and a field a
+construction leaves out, in a brace literal or a call.
+
+- A sealed type's default value is its `default case`, built with its fields'
+  declared defaults; a sealed type without a default case has none.
+- A struct's default value has each field at its declared default, or at its
+  field type's default value.
+- Every other type's default value is Go's zero value: numbers, strings,
+  `Option` (`None`), collections, slices, maps, pointers, functions, Go types
+  and type parameters.
+
+```gala
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+
+struct Home(Name string, L Light, Rooms int = 1)
+
+func main() {
+    var l Light
+    val h = Home{Name: "flat"}
+    Println(l, h.L, h.Rooms)   // On(30, Living) On(30, Living) 1
+}
+```
+
+A type with no default value (`Try`, `Either`, a sealed type without a default
+case, or a struct holding one) must be given a value: GALA never creates one
+implicitly ([`GALA-E0075`](errors/GALA-E0075.md)). Only a value Go creates by
+itself (a fresh slice slot, a missed map lookup, decoding) holds a Go zero
+value no default case built.
 
 ## 5. Interfaces
 

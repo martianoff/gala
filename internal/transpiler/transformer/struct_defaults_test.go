@@ -87,9 +87,9 @@ func main() {
 			contains: []string{"Cfg{", "Name:", `"n"`, "Tries:", "3"},
 		},
 		{
-			// A Go-style composite literal is not a constructor call. It keeps
-			// Go's semantics: partial, and no defaults consulted.
-			name: "go-style literal stays partial",
+			// A brace literal leaves fields out as a call does: they take
+			// their declared defaults (see defaultValue).
+			name: "brace literal takes declared defaults",
 			input: `package main
 
 struct Cfg(Name string, Tries int = 3)
@@ -98,7 +98,7 @@ func main() {
     val a = Cfg{Name: "a"}
     Println(a.Name, a.Tries)
 }`,
-			absent: []string{"Tries:"},
+			contains: []string{"Tries:", "3"},
 		},
 	}
 
