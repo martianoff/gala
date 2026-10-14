@@ -120,7 +120,7 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.Po
 	return t.liftGoResults(call, suffix)
 }
 
-// resolveFieldAccess handles member access with automatic Immutable/ConstPtr unwrapping.
+// resolveFieldAccess handles member access with automatic Immutable unwrapping.
 // line and col locate selName, for a diagnostic about it.
 func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string, line, col int) (ast.Expr, error) {
 	// `pkg.Name` naming an imported package-level binding is read at once, as
@@ -144,13 +144,6 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string, l
 				xType = gen.Params[0]
 			}
 		}
-	}
-
-	// Also unwrap ConstPtr to access fields (but not ConstPtr's own methods)
-	isConstPtr := t.isConstPtrType(xType)
-	if isConstPtr && selName != "Deref" && selName != "IsNil" && selName != "ptr" {
-		base = t.unwrapConstPtr(base)
-		xType = t.getExprTypeName(base)
 	}
 
 	// A pointer-receiver method needs an addressable receiver; a val's Get()

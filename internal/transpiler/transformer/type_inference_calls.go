@@ -302,19 +302,6 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			return typ
 		}
 	}
-	// `v.Ptr()` on a val is the Immutable wrapper's own Ptr() — emitted for
-	// `&v` as `std.NewConstPtr(v.Ptr())`. A val's stored type is already the
-	// inner type (see inferGetMethodType), so the result is a pointer to it.
-	// Without this the ConstPtr's type argument stayed unresolved (`ConstPtr[T]`)
-	// and field access / Copy through the pointer lost the pointee's type.
-	if sel.Sel.Name == transpiler.MethodPtr && len(e.Args) == 0 {
-		if id, ok := sel.X.(*ast.Ident); ok && t.isVal(id.Name) {
-			if inner := t.getType(id.Name); !transpiler.IsUnusable(inner) {
-				return transpiler.PointerType{Elem: inner}
-			}
-		}
-	}
-
 	if sel.Sel.Name == transpiler.FuncNewImmutable || sel.Sel.Name == transpiler.TypeImmutable {
 		if len(e.Args) > 0 {
 			innerType := t.getExprTypeNameManual(e.Args[0])

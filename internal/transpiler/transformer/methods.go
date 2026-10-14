@@ -125,15 +125,6 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	// the inferencer can resolve to a struct type.
 	typeObj := t.getExprTypeNameManual(receiver)
 
-	// A ConstPtr[T] receiver (`val p = &v; p.Copy(...)`) copies the pointee:
-	// read its fields through Deref(), exactly as field access does.
-	if t.isConstPtrType(typeObj) {
-		if gen, ok := typeObj.(transpiler.GenericType); ok && len(gen.Params) == 1 {
-			receiver = &ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(transpiler.MethodDeref)}}
-			typeObj = gen.Params[0]
-		}
-	}
-
 	// Strip generic decorations (e.g. "Person[int]" -> "Person") and any pointer
 	// prefix so the name lines up with the structFields map keys.
 	typeName := stripTypeNameDecorations(typeObj.String())
@@ -295,11 +286,10 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 
 // isPlainReceiverPath reports whether reading a Copy receiver more than once
 // is equivalent to reading it once: a variable, a field path off one, and the
-// nullary accessors the transformer inserts — `.Get()` unwrapping an Immutable
-// val or field, `.Deref()` reading through a ConstPtr. A user type's own
-// `Get()`/`Deref()` method may have side effects, so an accessor counts as
-// plain only when its operand is provably the wrapper; anything unproven is
-// bound once instead, which is always correct.
+// nullary accessor the transformer inserts — `.Get()` unwrapping an Immutable
+// val or field. A user type's own `Get()` method may have side effects, so it
+// counts as plain only when its operand is provably the wrapper; anything
+// unproven is bound once instead, which is always correct.
 func (t *galaASTTransformer) isPlainReceiverPath(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.Ident:
@@ -309,18 +299,20 @@ func (t *galaASTTransformer) isPlainReceiverPath(expr ast.Expr) bool {
 	case *ast.SelectorExpr:
 		return t.isPlainReceiverPath(e.X)
 	case *ast.CallExpr:
-		sel, ok := e.Fun.(*ast.SelectorExpr)
-		if !ok || len(e.Args) != 0 || !t.isPlainReceiverPath(sel.X) {
-			return false
-		}
-		switch sel.Sel.Name {
-		case transpiler.MethodGet:
-			return t.isImmutableOperand(sel.X)
-		case transpiler.MethodDeref:
-			return t.isConstPtrType(t.getExprTypeName(sel.X))
-		}
+		x, ok := t.immutableGetOperand(e)
+		return ok && t.isPlainReceiverPath(x)
 	}
 	return false
+}
+
+// immutableGetOperand returns x when call is `x.Get()` unwrapping an
+// Immutable — a val, an immutable field or an Immutable[T] value.
+func (t *galaASTTransformer) immutableGetOperand(call *ast.CallExpr) (ast.Expr, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != transpiler.MethodGet || len(call.Args) != 0 || !t.isImmutableOperand(sel.X) {
+		return nil, false
+	}
+	return sel.X, true
 }
 
 // isImmutableOperand reports whether x is an Immutable wrapper: a val binding

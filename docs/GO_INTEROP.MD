@@ -206,7 +206,7 @@ sort.Sort(words)
 val health = http.HandlerFunc((w, r) => w.WriteHeader(http.StatusNoContent))
 ```
 
-**Pointer receivers.** When the methods mutate, declare them on `*T` and pass the address of a **`var`**. `&x` of a `val` is a read-only `ConstPtr[T]`, not a `*T`, so it does not satisfy the interface. Here a GALA collector receives the Go library's `warehouse.Notifier` calls:
+**Pointer receivers.** When the methods mutate, declare them on `*T` and pass the address of a **`var`**. A `val` has no address: `&x` of one is [GALA-E0076](errors/GALA-E0076.md). Here a GALA collector receives the Go library's `warehouse.Notifier` calls:
 
 <!-- doc-source: examples/go_interop/gala_calls_go/main.gala -->
 <!-- doc-check: fragment -->
@@ -956,7 +956,7 @@ A checklist of what differs from writing Go. The first ones are covered in the p
 
 - **A `(T, error)` call is a `Try[T]`, not a `T`**, and `(A, B)` is a Tuple ([table](#go-functions-that-return-several-results)). Using one as the plain value is [GALA-E0049](errors/GALA-E0049.md). `val (data, err) = os.ReadFile(p)` is an error too, because a `Try` is not a Tuple: `val data, err = os.ReadFile(p)`, without parentheses, gives Go's raw values. Don't wrap a `(T, error)` call in `Try(...)`. It is already a `Try`.
 - **No `if` initializer.** `if n, err := strconv.Atoi(s); err != nil` is [GALA-E0047](errors/GALA-E0047.md). Use `match` or `GetOrElse`.
-- **Pass `&x` of a `var` to Go**, never of a `val`, which gives a read-only `ConstPtr[T]` ([pointer receivers](#implementing-go-interfaces)).
+- **Pass `&x` of a `var` to Go.** A `val`, a parameter and a receiver have no address: `&x` of one is [GALA-E0076](errors/GALA-E0076.md) ([pointer receivers](#implementing-go-interfaces)).
 - **No-copy Go types live in a `var`.** With `val sb = strings.Builder{}`, the call `sb.WriteString(...)` is [GALA-E0053](errors/GALA-E0053.md) because the pointer method would run on a copy. Write `var sb strings.Builder`, and the same for `bytes.Buffer`, `sync.Mutex` and the `sync/atomic` types.
 - **Immutability is shallow for Go values.** A `val`, or an immutable field, that holds a Go slice, map or pointer shares it, so Go code (or an index assignment) can still change what it points to. `sort.Sort(words)` above sorts the slice inside an immutable field. Convert to `Array`/`HashMap` when the contents must not change.
 - **No slice or map literals, slice expressions, bare builtins, `chan`, `select`, `go` or `defer`.** Each has a replacement ([slices and maps](#go-slices-and-maps), [Go features without GALA syntax](#go-features-that-have-no-gala-syntax)), and the compiler error names it.

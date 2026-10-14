@@ -216,7 +216,8 @@ A function, method or lambda parameter is an immutable binding, like a `val`:
 reassigning it — with `=`, a compound assignment such as `+=`, or `++`/`--` —
 is a compile error, `cannot assign to immutable variable data`, whose hint is
 ``declare it `var data` to reassign it``. Mark a parameter `var` to make it
-reassignable. Its address (`&data`) is a read-only `ConstPtr`, as for a `val`.
+reassignable. Like a `val`, it has no address: `&data` is
+[GALA-E0076](/docs/errors/gala-e0076/) unless it is declared `var`.
 Writing `val` is allowed but redundant: `val label string` means
 exactly the same as `label string`. A method's receiver is never reassignable
 (see [Receivers](#receivers)).
@@ -362,9 +363,10 @@ A receiver can never be rebound. `p = ...`, a compound assignment and
 `for _, p = range ...` are compile errors, `cannot assign to receiver p`
 (`p++` is `cannot increment/decrement receiver p`), whose hint is ``a receiver cannot be rebound; copy it into a local `var` (`var c = p`) if you need a mutable copy``.
 This holds for value and pointer receivers alike; there is no `var` receiver,
-and `val` on a receiver is allowed but redundant. The address of a receiver
-(`&p`) is a read-only `ConstPtr`, as for a parameter — for a pointer receiver,
-a `ConstPtr` to the pointer.
+and `val` on a receiver is allowed but redundant. Like a parameter, a receiver
+has no address: `&p` is [GALA-E0076](/docs/errors/gala-e0076/). A pointer receiver
+is already a pointer, and the address of one of its fields (`&p.count`) is a
+plain `*T`.
 
 Mutation *through* the receiver is unaffected: a method may write the
 receiver's `var` fields and call its mutating methods. Through a pointer
@@ -1024,7 +1026,8 @@ opt.ForEach((x) => { Println(x) })
 
 A lambda parameter is immutable unless it is declared `var`, the same rule as
 for a function parameter (see [Parameters](#parameters)): reassigning it is
-`cannot assign to immutable variable x`, and `&x` is a read-only `ConstPtr`.
+`cannot assign to immutable variable x`, and `&x` is
+[GALA-E0076](/docs/errors/gala-e0076/).
 
 ```gala
 val clamp = (var n int) int => {
@@ -1460,15 +1463,16 @@ val ptr1 = &data     // immutable pointer binding
 // ptr1 = &other     // ERROR: cannot reassign immutable pointer
 ```
 
-### ConstPtr - Read-Only Pointers
+### Taking the Address of a Value
+`&x` is a `*T`, and a `*T` can write, so only something that can change has an address: a `var`, a `var` field of a `var`, a field of a pointee, a composite literal (`&Config(...)`). The address of a `val`, a parameter not declared `var`, a receiver, an immutable field or a field reached through a `val` is [GALA-E0076](/docs/errors/gala-e0076/). Pass the value itself, or declare the binding `var` where Go needs a `*T`.
+
+<!-- doc-check: error GALA-E0076 -->
 ```gala
 val data = 42
-val ptr = &data  // ptr is ConstPtr[int]
-val value = *ptr // OK: read
-// *ptr = 100    // ERROR: cannot write through ConstPtr
+val ptr = &data  // error: GALA-E0076
 ```
 
-A `ConstPtr` implements no interface of the value's type. Passing `&c` of a `val` where an interface such as `Notifier` is expected, and only `*Counter` implements it, is [GALA-E0070](/docs/errors/gala-e0070/); declare the value `var` to pass a `*Counter`.
+Immutable linked data is a sealed type (`case End()` / `case Cons(head int, tail IntList)`), which needs no pointers. A type that holds itself by value any other way, such as `struct Node(next Option[Node])`, is [GALA-E0077](/docs/errors/gala-e0077/).
 
 ### Pointer-Receiver Methods on a `val`
 A method with a pointer receiver (a GALA `func (c *Counter) Bump()`, or Go's `url.URL.String`) can be called on a `val`, a field reached through one, a call result or a literal. Go only calls such a method on an addressable value, so it runs on a fresh copy and whatever it assigns to the receiver's own fields is lost. A `var`, a function parameter and a pattern binding are addressable, so there the method changes the variable itself.

@@ -3,7 +3,6 @@ load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_test")
 load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
 exports_files([
-    "constptr.gala",
     "either.gala",
     "errors.gala",
     "hashable.gala",
@@ -92,12 +91,6 @@ gala_bootstrap_transpile(
 )
 
 gala_bootstrap_transpile(
-    name = "constptr_go",
-    src = "constptr.gala",
-    out = "constptr.gen.go",
-)
-
-gala_bootstrap_transpile(
     name = "meta_go",
     src = "meta.gala",
     out = "meta.gen.go",
@@ -106,7 +99,6 @@ gala_bootstrap_transpile(
 go_library(
     name = "std",
     srcs = [
-        "constptr.gen.go",
         "either.gen.go",
         "embedded_fs.go",
         "errors.gen.go",

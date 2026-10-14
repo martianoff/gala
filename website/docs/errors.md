@@ -123,16 +123,17 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0067](/docs/errors/gala-e0067/) | Type argument cannot be inferred | Types |
 | [GALA-E0068](/docs/errors/gala-e0068/) | Match or if-expression value has no type | Type inference |
 | [GALA-E0069](/docs/errors/gala-e0069/) | `return` in a match or if-expression whose value is used | Control flow |
-| [GALA-E0070](/docs/errors/gala-e0070/) | Read-only pointer where an interface is expected | Immutability |
 | [GALA-E0071](/docs/errors/gala-e0071/) | Invalid alternative pattern | Pattern matching |
 | [GALA-E0072](/docs/errors/gala-e0072/) | Sealed variant with too many fields | Pattern matching |
 | [GALA-E0073](/docs/errors/gala-e0073/) | Invalid named sub-pattern | Pattern matching |
 | [GALA-E0074](/docs/errors/gala-e0074/) | Invalid default case | Sealed types |
 | [GALA-E0075](/docs/errors/gala-e0075/) | No default value | Types |
+| [GALA-E0076](/docs/errors/gala-e0076/) | Address of an immutable value | Immutability |
+| [GALA-E0077](/docs/errors/gala-e0077/) | Type holds itself by value | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
-One code is retired: **GALA-E0016** rejected a generic struct field named like another generic type of its package, such as `struct Box[T any](Mode Mode[T])`. Such fields are accepted now, and the number is not reused.
+Two codes are retired, and their numbers are not reused. **GALA-E0016** rejected a generic struct field named like another generic type of its package, such as `struct Box[T any](Mode Mode[T])`; such fields are accepted now. **GALA-E0070** rejected the read-only `ConstPtr` that `&x` of a `val` used to produce where an interface was expected; taking that address is now [GALA-E0076](/docs/errors/gala-e0076/).
 
 ---
 
@@ -158,7 +159,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value, [E0067](/docs/errors/gala-e0067/) a type argument nothing determines, often a Go package whose types were not loaded. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
-**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body, [E0056](/docs/errors/gala-e0056/) malformed tuple destructuring, [E0060](/docs/errors/gala-e0060/) `val _ =` that binds nothing, [E0066](/docs/errors/gala-e0066/) a declaration named like a dot-imported name.
+**Declarations** — [E0011](/docs/errors/gala-e0011/), [E0012](/docs/errors/gala-e0012/), [E0013](/docs/errors/gala-e0013/), [E0014](/docs/errors/gala-e0014/), [E0034](/docs/errors/gala-e0034/), [E0045](/docs/errors/gala-e0045/) missing required struct field, [E0048](/docs/errors/gala-e0048/) method on an alias to a non-local type, [E0052](/docs/errors/gala-e0052/) named function inside a body, [E0056](/docs/errors/gala-e0056/) malformed tuple destructuring, [E0060](/docs/errors/gala-e0060/) `val _ =` that binds nothing, [E0066](/docs/errors/gala-e0066/) a declaration named like a dot-imported name, [E0077](/docs/errors/gala-e0077/) a type that holds itself by value.
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
@@ -176,7 +177,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Control flow** — [E0015](/docs/errors/gala-e0015/) bare `return` in a match whose value is used · [E0059](/docs/errors/gala-e0059/) `break` or `continue` that cannot reach its loop (outside a loop, in a lambda, or in a match or if-expression whose value is used) · [E0069](/docs/errors/gala-e0069/) a `return` that would leave only a match or if-expression whose value is used.
 
-**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder · [E0070](/docs/errors/gala-e0070/) a `val`'s read-only address where an interface is expected. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
+**Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder · [E0076](/docs/errors/gala-e0076/) the address of a `val`, a parameter or a receiver. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 
 **Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/), [E0024](/docs/errors/gala-e0024/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
 

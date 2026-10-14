@@ -64,9 +64,6 @@ func tuple2(a, b transpiler.Type) transpiler.Type {
 func immutableW(t transpiler.Type) transpiler.Type {
 	return generic(named("std", transpiler.TypeImmutable), t)
 }
-func constPtr(t transpiler.Type) transpiler.Type {
-	return generic(named("std", transpiler.TypeConstPtr), t)
-}
 
 // --- metadata fixtures -------------------------------------------------------
 
@@ -300,12 +297,10 @@ func TestIsShareable(t *testing.T) {
 		{"Tuple2[int,string]", tuple2(basic("int"), basic("string")), true},
 		{"Tuple2[int,MutableArray]", tuple2(basic("int"), mutArray(basic("int"))), false},
 
-		// Immutable / ConstPtr wrappers (conditional on payload — see deviation note)
+		// Immutable wrapper (conditional on payload — see deviation note)
 		{"Immutable[int]", immutableW(basic("int")), true},
 		{"Immutable[Array[int]]", immutableW(immArray(basic("int"))), true},
 		{"Immutable[MutableArray[int]]", immutableW(mutArray(basic("int"))), false},
-		{"ConstPtr[int]", constPtr(basic("int")), true},
-		{"ConstPtr[MutableArray[int]]", constPtr(mutArray(basic("int"))), false},
 
 		// structs
 		{"struct all-val-shareable", basic("Point"), true},

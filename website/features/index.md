@@ -46,7 +46,7 @@ func area(s Shape) float64 = s match {
 | [Sealed Types](/features/sealed-types/) | Closed type hierarchies — algebraic data types with auto-generated constructors and extractors, so a value is exactly one of a known set of variants. |
 | [Pattern Matching](/features/pattern-matching/) | `match` expressions with struct destructuring, guards, nested and sequence patterns, custom extractors, and compiler-enforced exhaustiveness. |
 | [Type Inference](/features/type-inference/) | Lambda parameters, generic type arguments, and fold accumulators inferred from context — always resolving to a concrete Go type, never `any`. |
-| [Immutability](/features/immutability/) | `val` bindings, immutable struct fields, generated `Copy()` with named arguments, structural `Equal`, and read-only `ConstPtr[T]`. |
+| [Immutability](/features/immutability/) | `val` bindings, immutable struct fields, generated `Copy()` with named arguments, and structural `Equal`. |
 
 ## Expressions and Effects
 

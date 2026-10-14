@@ -278,10 +278,16 @@ func (t *galaASTTransformer) isMutableVar(name string) bool {
 type fixedBinding uint8
 
 const (
-	notFixed      fixedBinding = iota
-	fixedParam                 // a function, method or lambda parameter not declared `var`
-	fixedReceiver              // a method receiver, which is never reassignable
+	notFixed             fixedBinding = iota
+	fixedParam                        // a function, method or lambda parameter not declared `var`
+	fixedReceiver                     // a value receiver, which is never reassignable
+	fixedPointerReceiver              // a pointer receiver, which is never reassignable either
 )
+
+// isReceiver reports whether the binding is a receiver, value or pointer.
+func (f fixedBinding) isReceiver() bool {
+	return f == fixedReceiver || f == fixedPointerReceiver
+}
 
 // addParam binds a function, method or lambda parameter. A parameter is
 // always a plain Go parameter — an explicit `val` is a no-op marker, never a
@@ -299,10 +305,14 @@ func (t *galaASTTransformer) addParam(name string, typeName transpiler.Type, rea
 
 // addReceiver binds a method receiver: a plain Go receiver that can never be
 // rebound, whatever its type. Mutation through it (writing a `var` field,
-// calling a mutating method) is untouched; only `recv = ...` and a writable
-// `&recv` are refused.
-func (t *galaASTTransformer) addReceiver(name string, typeName transpiler.Type) {
-	t.addFixed(name, typeName, fixedReceiver)
+// calling a mutating method) is untouched; only `recv = ...` and `&recv` are
+// refused. pointer says the receiver is declared `*T`; typeName is then T.
+func (t *galaASTTransformer) addReceiver(name string, typeName transpiler.Type, pointer bool) {
+	kind := fixedReceiver
+	if pointer {
+		kind = fixedPointerReceiver
+	}
+	t.addFixed(name, typeName, kind)
 }
 
 func (t *galaASTTransformer) addFixed(name string, typeName transpiler.Type, kind fixedBinding) {

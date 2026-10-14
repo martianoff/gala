@@ -26,38 +26,12 @@ Original node1.next.value: 20
 Copied node1.next.value: 20
 Same next pointer (shallow copy): true
 
-Address of val: node.value=42, ptr.value=42
-Same value: true
+Immutable list as a sealed type:
+  values = 10 20 30
 
-Linked list built with val nodes (using ConstPtr):
-  Node 1: value = 10
-  Node 2: value = 20
-  Node 3: value = 30
-
-ConstPtr function parameters:
-  Value from function: 42
-  Node value via ConstPtr: 42
-  Nested node value: 99
-
-ConstPtr with complex structs:
+Read-only access by value:
   Team leader: Alice
   Leader name via function: Alice
   Member count: 5
-
-ConstPtr nil checking:
-  Nil ConstPtr IsNil: true
-  Valid ConstPtr IsNil: false
-
-ConstPtr dereference with *ptr syntax:
-  *ptr = 42
-  (*nodePtr).value = 100
-  nodePtr.value = 100
-
-ConstPtr auto-deref (preferred style):
-  team.leader.name = Alice
-  team.leader.age = 30
-  team.leader.Deref().name = Alice
-  node1.next.value = 20
-  node1.next.Deref().value = 20
 
 === All tests completed ===

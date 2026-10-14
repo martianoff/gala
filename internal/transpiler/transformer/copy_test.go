@@ -324,13 +324,13 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
 			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
 		},
 		{
-			name: "ConstPtr receiver copies through Deref",
+			name: "receiver is a val holding a pointer",
 			body: `func main() {
-    val b = Box[int](Item = 1, N = 1)
+    var b = Box[int](Item = 1, N = 1)
     val p = &b
     val c = p.Copy(N = 2)
 }`,
-			wants: []string{"Box[int]{Item: std.Copy(p.Get().Deref().Item)"},
+			wants: []string{"Box[int]{Item: std.Copy(p.Get().Item)"},
 		},
 		{
 			// The no-override form calls the generated Copy(); its result
@@ -343,15 +343,15 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
 			wants: []string{"b.Get().Copy().N.Get()"},
 		},
 		{
-			// `&v` on a val types as ConstPtr[Box[int]] (not ConstPtr[T]), so
-			// a field read through it still unwraps the Immutable field.
-			name: "field access through a ConstPtr to a val",
+			// `&v` of a var types as *Box[int] (not *T), so a field read
+			// through it still unwraps the Immutable field.
+			name: "field access through a pointer held by a val",
 			body: `func main() {
-    val b = Box[int](Item = 1, N = 1)
+    var b = Box[int](Item = 1, N = 1)
     val p = &b
     val n = p.N
 }`,
-			wants: []string{"p.Get().Deref().N.Get()"},
+			wants: []string{"p.Get().N.Get()"},
 		},
 	}
 
@@ -451,9 +451,9 @@ struct Cell[T any](Value T, Map func(T) T)
 			wants: []string{"Map: std.NewImmutable(func(v int) int {"},
 		},
 		{
-			name: "ConstPtr receiver",
+			name: "receiver is a val holding a pointer",
 			body: `func main() {
-    val c = Cell[int](Value = 1, Map = (v) => v)
+    var c = Cell[int](Value = 1, Map = (v) => v)
     val p = &c
     val d = p.Copy(Map = (v) => v * 2)
 }`,

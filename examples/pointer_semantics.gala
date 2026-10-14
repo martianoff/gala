@@ -110,142 +110,47 @@ func testCopyLinkedList() {
     fmt.Printf("Same next pointer (shallow copy): %v\n", node1.next == copied.next)
 }
 
-// Test: Address of val variable (uses Ptr() method)
-func testAddressOfValVariable() {
-    val node = MutableNode(value = 42, next = nil)
-    val ptr = &node  // Takes address of immutable value via Ptr()
-
-    fmt.Printf("Address of val: node.value=%d, ptr.value=%d\n", node.value, ptr.value)
-    fmt.Printf("Same value: %v\n", node.value == ptr.value)
+// Test: An immutable linked list is a sealed type, not a chain of pointers.
+// Its values are shared by value; nothing can change them.
+sealed type IntList {
+    case End()
+    case Cons(head int, tail IntList)
 }
 
-// Test: Linked list with val nodes using ConstPtr
-// When building immutable data structures, use ConstPtr for pointer fields.
-// This prevents write-through modification of pointed-to values.
-type ImmutableNode struct {
-    value int
-    var next ConstPtr[ImmutableNode]  // ConstPtr for read-only pointer
+func listValues(l IntList) string = l match {
+    case End() => ""
+    case Cons(h, End()) => s"$h"
+    case Cons(h, t) => s"$h ${listValues(t)}"
 }
 
-func testLinkedListWithValNodes() {
-    val node3 = ImmutableNode(value = 30, next = NewConstPtr[ImmutableNode](nil))
-    val node2 = ImmutableNode(value = 20, next = &node3)
-    val node1 = ImmutableNode(value = 10, next = &node2)
-
-    fmt.Println("Linked list built with val nodes (using ConstPtr):")
-    fmt.Printf("  Node 1: value = %d\n", node1.value)
-    fmt.Printf("  Node 2: value = %d\n", node1.next.value)
-    fmt.Printf("  Node 3: value = %d\n", node1.next.next.value)
+func testImmutableList() {
+    val list = Cons(10, Cons(20, Cons(30, End())))
+    Println("Immutable list as a sealed type:")
+    Println(s"  values = ${listValues(list)}")
 }
 
-// Test: Passing ConstPtr to functions
-// Functions can accept ConstPtr parameters for read-only access
-func readNodeValue(ptr ConstPtr[MutableNode]) int = ptr.value
-
-func printNodeInfo(ptr ConstPtr[MutableNode]) {
-    fmt.Printf("  Node value via ConstPtr: %d\n", ptr.value)
-}
-
-func testConstPtrFunctionParams() {
-    val node = MutableNode(value = 42, next = nil)
-    val ptr = &node  // ConstPtr[MutableNode]
-
-    fmt.Println("ConstPtr function parameters:")
-
-    // Pass ConstPtr to function
-    val value = readNodeValue(ptr)
-    fmt.Printf("  Value from function: %d\n", value)
-
-    // Pass &val directly to function
-    printNodeInfo(&node)
-
-    // Pass ConstPtr from struct field
-    val node2 = ImmutableNode(value = 99, next = NewConstPtr[ImmutableNode](nil))
-    val node1 = ImmutableNode(value = 100, next = &node2)
-    fmt.Printf("  Nested node value: %d\n", node1.next.value)
-}
-
-// Test: ConstPtr with complex structs
+// Test: Read-only access to a val is the val itself. A val has no address, so
+// a function reads it by value and a struct holds it by value.
 type Person struct {
     name string
     var age int
 }
 
 type Team struct {
-    leader ConstPtr[Person]  // Read-only pointer to leader
+    leader Person
     var memberCount int
 }
 
-func getLeaderName(team ConstPtr[Team]) string = team.leader.name
+func leaderName(team Team) string = team.leader.name
 
-func testConstPtrWithComplexStructs() {
+func testReadOnlyByValue() {
     val alice = Person(name = "Alice", age = 30)
-    val team = Team(leader = &alice, memberCount = 5)
+    val team = Team(leader = alice, memberCount = 5)
 
-    fmt.Println("ConstPtr with complex structs:")
-    fmt.Printf("  Team leader: %s\n", team.leader.name)
-    fmt.Printf("  Leader name via function: %s\n", getLeaderName(&team))
-    fmt.Printf("  Member count: %d\n", team.memberCount)
-}
-
-// Test: ConstPtr nil checking
-func testConstPtrNilCheck() {
-    val nilPtr = NewConstPtr[MutableNode](nil)
-    val node = MutableNode(value = 42, next = nil)
-    val validPtr = &node
-
-    fmt.Println("ConstPtr nil checking:")
-    fmt.Printf("  Nil ConstPtr IsNil: %v\n", nilPtr.IsNil())
-    fmt.Printf("  Valid ConstPtr IsNil: %v\n", validPtr.IsNil())
-}
-
-// Test: Reading ConstPtr with *ptr syntax
-// The * operator on ConstPtr automatically calls Deref()
-func testConstPtrDerefSyntax() {
-    val data = 42
-    val ptr = &data  // ConstPtr[int]
-
-    // Read using *ptr syntax (transpiles to ptr.Deref())
-    val value1 = *ptr
-    fmt.Println("ConstPtr dereference with *ptr syntax:")
-    fmt.Printf("  *ptr = %d\n", value1)
-
-    // Also works with structs
-    val node = MutableNode(value = 100, next = nil)
-    val nodePtr = &node  // ConstPtr[MutableNode]
-
-    // Access struct field through dereferenced pointer
-    val nodeValue = (*nodePtr).value
-    fmt.Printf("  (*nodePtr).value = %d\n", nodeValue)
-
-    // Direct field access also works (auto-deref)
-    fmt.Printf("  nodePtr.value = %d\n", nodePtr.value)
-}
-
-// Test: Auto-deref syntax for ConstPtr field access (preferred style)
-// Use ptr.field instead of ptr.Deref().field for cleaner code
-func testConstPtrAutoDeref() {
-    val alice = Person(name = "Alice", age = 30)
-    val team = Team(leader = &alice, memberCount = 5)
-
-    fmt.Println("ConstPtr auto-deref (preferred style):")
-
-    // PREFERRED: Direct field access through ConstPtr (auto-deref)
-    fmt.Printf("  team.leader.name = %s\n", team.leader.name)
-    fmt.Printf("  team.leader.age = %d\n", team.leader.age)
-
-    // EXPLICIT: Using Deref() - works but verbose
-    fmt.Printf("  team.leader.Deref().name = %s\n", team.leader.Deref().name)
-
-    // Nested ConstPtr access
-    val node2 = ImmutableNode(value = 20, next = NewConstPtr[ImmutableNode](nil))
-    val node1 = ImmutableNode(value = 10, next = &node2)
-
-    // PREFERRED: Chain field access through ConstPtr
-    fmt.Printf("  node1.next.value = %d\n", node1.next.value)
-
-    // EXPLICIT: Using Deref() - works but verbose
-    fmt.Printf("  node1.next.Deref().value = %d\n", node1.next.Deref().value)
+    Println("Read-only access by value:")
+    Println(s"  Team leader: ${team.leader.name}")
+    Println(s"  Leader name via function: ${leaderName(team)}")
+    Println(s"  Member count: ${team.memberCount}")
 }
 
 func main() {
@@ -276,25 +181,10 @@ func main() {
     testCopyLinkedList()
     fmt.Println()
 
-    testAddressOfValVariable()
+    testImmutableList()
     fmt.Println()
 
-    testLinkedListWithValNodes()
-    fmt.Println()
-
-    testConstPtrFunctionParams()
-    fmt.Println()
-
-    testConstPtrWithComplexStructs()
-    fmt.Println()
-
-    testConstPtrNilCheck()
-    fmt.Println()
-
-    testConstPtrDerefSyntax()
-    fmt.Println()
-
-    testConstPtrAutoDeref()
+    testReadOnlyByValue()
 
     fmt.Println()
     fmt.Println("=== All tests completed ===")

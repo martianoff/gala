@@ -221,7 +221,8 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	if src.recv != "" {
 		t.pushScope()
 		defer t.popScope()
-		t.addReceiver(src.recv, src.recvType)
+		_, pointer := src.recvType.(transpiler.PointerType)
+		t.addReceiver(src.recv, src.recvType, pointer)
 	}
 
 	// Reported at the use site, in the file being transformed, wherever the

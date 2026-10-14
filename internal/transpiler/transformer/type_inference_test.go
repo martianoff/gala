@@ -88,13 +88,13 @@ func main() {
 			input: `package main
 
 func main() {
-    val x = 1
+    var x = 1
     var y = &x
     var z = *y
 }`,
 			expected: []string{
-				"var y = std.NewConstPtr(x.Ptr())", // Taking address of val returns ConstPtr
-				"var z = y.Deref()",                // Deref ConstPtr uses Deref() method
+				"var y = &x",
+				"var z = *y",
 			},
 		},
 		{

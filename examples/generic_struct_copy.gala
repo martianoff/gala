@@ -43,11 +43,9 @@ func main() {
     Println(s"if: ${same.N} ${pick(c, true).N} ${pick(c, false).N}")
     Println(s"match: ${step(c, Inc()).N} ${step(c, Keep()).N}")
 
-    // pointer receivers: a Go pointer (`&` of a var) and a ConstPtr (`&` of a val)
+    // pointer receiver: the address of a var
     var m = Box(Item = "m", N = 1)
     Println(s"ptr: ${viaPtr(&m).N}")
-    val cp = &c
-    Println(s"constptr: ${cp.Copy(N = 7).N} ${cp.Item}")
 
     // nested and multi-parameter generics
     val nested = Box(Item = ArrayOf(1, 2, 3), N = 0).Copy(N = 3)

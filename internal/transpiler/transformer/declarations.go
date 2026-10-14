@@ -856,7 +856,8 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// For non-pointer receivers, try to preserve type parameters for lambda type inference
 		// Pointer receivers keep using the simple type to avoid field lookup issues
 		typeForScope := receiverType
-		if _, isPointer := recvTypeExpr.(*ast.StarExpr); !isPointer {
+		_, isPointer := recvTypeExpr.(*ast.StarExpr)
+		if !isPointer {
 			if fullType := t.astTypeToTranspilerType(recvTypeExpr); !fullType.IsNil() {
 				typeForScope = fullType
 			}
@@ -864,7 +865,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 		// The receiver is a plain Go receiver that can never be rebound; an
 		// explicit `val` is a no-op marker for it.
-		t.addReceiver(recvName, typeForScope)
+		t.addReceiver(recvName, typeForScope, isPointer)
 
 		receiver = &ast.FieldList{
 			List: []*ast.Field{
@@ -1264,6 +1265,9 @@ func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
 
 func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.StructShorthandDeclarationContext) ([]ast.Decl, error) {
 	name := ctx.Identifier().GetText()
+	if err := t.selfContainingTypeError(name, ctx.Identifier().GetStart()); err != nil {
+		return nil, err
+	}
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 	t.pushScope()
 	defer t.popScope()
@@ -1411,6 +1415,9 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 	}
 
 	if ctx.StructType() != nil {
+		if err := t.selfContainingTypeError(name, ctx.Identifier().GetStart()); err != nil {
+			return nil, err
+		}
 		structCtx := ctx.StructType().(*grammar.StructTypeContext)
 		fields := &ast.FieldList{}
 		var fieldNames []string

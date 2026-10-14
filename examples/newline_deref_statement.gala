@@ -8,9 +8,9 @@ package main
 // it is still a binary operator that continues the line before.
 
 // A deref expression after a val: `&n` and `*p + 1` are two statements, not
-// `&n * p + 1`.
+// `&n * p + 1`. The address is taken of a var.
 func derefAfterVal() int {
-    val n = 1
+    var n = 1
     val p = &n
     *p + 1
 }
@@ -25,7 +25,7 @@ func derefAssignAfterCall() int {
 }
 
 // A deref as the trailing value of a block, right after a val.
-func derefTrailing(n int) int {
+func derefTrailing(var n int) int {
     Println(s"doubled ${n * 2}")
     val p = &n
     *p

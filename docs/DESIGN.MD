@@ -120,9 +120,9 @@ automatically. See [GALA.MD §12](GALA.MD#12-immutability-under-the-hood).
 read-only binding for runtime values (`const` is compile-time only), so to make `val`
 *mean* immutable we needed a representation Go can't silently mutate. Wrapping is that
 representation: a `std.Immutable[T]` exposes no setter, so reassignment is impossible by
-construction rather than by convention. Pointer bindings get the same treatment via
-`ConstPtr[T]` (a C++-`const T*` analogue), which is why taking the address of a `val`
-yields a read-only pointer.
+construction rather than by convention. For the same reason a `val` has no address:
+`&x` would be a `*T` to write through, so taking it is a compile error, and only a `var`
+can be pointed to.
 
 **What it costs.**
 - **A layer of indirection.** Wrapping and `.Get()` unwrapping add a level between the
@@ -278,7 +278,7 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
 
 Most individual costs above are instances of one underlying tax: **GALA buys
 expressiveness with a layer between you and Go.** That layer is the transpiler, the
-`Immutable`/`ConstPtr` wrappers, the monad adapters, and the persistent-collection
+`Immutable` wrapper, the monad adapters, and the persistent-collection
 representations. The payoff is real (enforced immutability, exhaustive matching, readable
 functional pipelines); the recurring price is indirection that you usually don't see but
 occasionally must reason about — when profiling a hot loop, when reading a stack trace

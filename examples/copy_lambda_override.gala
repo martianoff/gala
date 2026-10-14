@@ -73,12 +73,10 @@ func main() {
     val words = Cell[string](Value = "go", Map = (v) => v + "!")
     Println(s"generic string: ${words.Copy(Map = (v) => v + "?").Map(words.Value)}")
 
-    // Pointer and ConstPtr receivers.
+    // A pointer receiver.
     var mb = Box(N = 7, F = () => 7)
     val mp = &mb
     Println(s"pointer: ${mp.Copy(F = () => mp.N * 2).F()}")
-    val cp = &b
-    Println(s"constptr: ${cp.Copy(F = () => 9).F()}")
 
     // Every field overridden: the receiver is still evaluated, exactly once.
     val only = Calc(Label = "only", Op = (x) => x, Pair = (n, s) => s)

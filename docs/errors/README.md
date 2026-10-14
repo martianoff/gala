@@ -88,18 +88,20 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0067` | Type argument cannot be inferred | [GALA-E0067.md](GALA-E0067.md) |
 | `GALA-E0068` | Match or if-expression value has no type | [GALA-E0068.md](GALA-E0068.md) |
 | `GALA-E0069` | `return` in a match or if-expression whose value is used | [GALA-E0069.md](GALA-E0069.md) |
-| `GALA-E0070` | Read-only pointer where an interface is expected | [GALA-E0070.md](GALA-E0070.md) |
 | `GALA-E0071` | Invalid alternative pattern | [GALA-E0071.md](GALA-E0071.md) |
 | `GALA-E0072` | Sealed variant with too many fields | [GALA-E0072.md](GALA-E0072.md) |
 | `GALA-E0073` | Invalid named sub-pattern | [GALA-E0073.md](GALA-E0073.md) |
 | `GALA-E0074` | Invalid default case | [GALA-E0074.md](GALA-E0074.md) |
 | `GALA-E0075` | No default value | [GALA-E0075.md](GALA-E0075.md) |
+| `GALA-E0076` | Address of an immutable value | [GALA-E0076.md](GALA-E0076.md) |
+| `GALA-E0077` | Type holds itself by value | [GALA-E0077.md](GALA-E0077.md) |
 
 ### Retired codes
 
 | Code | Was | Why it went |
 |------|-----|-------------|
 | `GALA-E0016` | Generic struct field named like another generic type of its package | Such fields are accepted now: `struct Box[T any](Mode Mode[T])` compiles. The number is not reused. |
+| `GALA-E0070` | Read-only pointer where an interface is expected | `ConstPtr` was removed: `&x` of a `val`, a parameter or a receiver is now [GALA-E0076](GALA-E0076.md). The number is not reused. |
 
 ## Adding a new code
 

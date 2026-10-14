@@ -45,7 +45,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [String Interpolation](#string-interpolation)
 11. [Go Built-in Functions](#11-go-built-in-functions)
 12. [Immutability Under the Hood](#12-immutability-under-the-hood)
-    - [ConstPtr - Read-Only Pointers](#constptr---read-only-pointers)
+    - [Taking the Address of a Value](#taking-the-address-of-a-value)
 13. [GALA Packages](#13-gala-packages)
 14. [Embedding Files](#14-embedding-files)
 15. [Testing](#15-testing)
@@ -320,7 +320,8 @@ A function, method or lambda parameter is an immutable binding, like a `val`:
 reassigning it — with `=`, a compound assignment such as `+=`, or `++`/`--` —
 is a compile error, `cannot assign to immutable variable data`, whose hint is
 ``declare it `var data` to reassign it``. Mark a parameter `var` to make it
-reassignable. Its address (`&data`) is a read-only `ConstPtr`, as for a `val`.
+reassignable. Like a `val`, it has no address: `&data` is
+[GALA-E0076](errors/GALA-E0076.md) unless it is declared `var`.
 Writing `val` is allowed but redundant: `val label string` means
 exactly the same as `label string`. A method's receiver is never reassignable
 (see [Receivers](#receivers)).
@@ -604,9 +605,10 @@ A receiver can never be rebound. `p = ...`, a compound assignment and
 `for _, p = range ...` are compile errors, `cannot assign to receiver p`
 (`p++` is `cannot increment/decrement receiver p`), whose hint is ``a receiver cannot be rebound; copy it into a local `var` (`var c = p`) if you need a mutable copy``.
 This holds for value and pointer receivers alike; there is no `var` receiver,
-and `val` on a receiver is allowed but redundant. The address of a receiver
-(`&p`) is a read-only `ConstPtr`, as for a parameter — for a pointer receiver,
-a `ConstPtr` to the pointer.
+and `val` on a receiver is allowed but redundant. Like a parameter, a receiver
+has no address: `&p` is [GALA-E0076](errors/GALA-E0076.md). A pointer receiver
+is already a pointer, and the address of one of its fields (`&p.count`) is a
+plain `*T`.
 
 Mutation *through* the receiver is unaffected: a method may write the
 receiver's `var` fields and call its mutating methods. Through a pointer
@@ -2268,7 +2270,8 @@ opt.ForEach((x) => {
 
 A lambda parameter is immutable unless it is declared `var`, the same rule as
 for a function parameter (see [Parameters](#parameters)): reassigning it is
-`cannot assign to immutable variable x`, and `&x` is a read-only `ConstPtr`.
+`cannot assign to immutable variable x`, and `&x` is
+[GALA-E0076](errors/GALA-E0076.md).
 
 ```gala
 val clamp = (var n int) int => {
@@ -4379,9 +4382,10 @@ val node = BadNode(next = nil)
 | Optional data | `var data *T` | May be nil initially, assigned later |
 | Cache/memo | `var cached *Result` | Lazily populated pointer |
 
-#### Building Linked Structures with val Nodes
+#### Building Linked Structures
 
-You can build linked structures using `val` node bindings:
+A linked structure of pointers is built from `var` nodes, since only a `var`
+has an address:
 
 ```gala
 // Node with immutable value but mutable pointer for navigation
@@ -4390,10 +4394,9 @@ type Node struct {
     var next *Node
 }
 
-// Build a linked list with immutable nodes
-val node3 = Node(value = 30, next = nil)
-val node2 = Node(value = 20, next = &node3)
-val node1 = Node(value = 10, next = &node2)
+var node3 = Node(value = 30, next = nil)
+var node2 = Node(value = 20, next = &node3)
+var node1 = Node(value = 10, next = &node2)
 
 // Traverse the list
 var current *Node = &node1
@@ -4403,128 +4406,60 @@ for current != nil {
 }
 ```
 
-### ConstPtr - Read-Only Pointers
-
-GALA provides `ConstPtr[T]` for read-only pointer semantics, similar to C++'s `const T*`. When you take the address of a `val` variable, you get a `ConstPtr[T]` instead of a raw `*T`. This prevents accidental modification of immutable data through pointers.
-
-#### Basic Usage
+Immutable linked data is a sealed type, which needs no pointers at all:
 
 ```gala
-val data = 42
-val ptr = &data  // ptr is ConstPtr[int], not *int
-
-// Read through ConstPtr using *ptr syntax
-val value = *ptr  // Returns 42
-
-// Compile error: cannot write through ConstPtr
-// *ptr = 100  // ERROR: cannot assign through ConstPtr
-```
-
-#### Auto-Deref Field Access (Preferred Style)
-
-When accessing fields through `ConstPtr`, use direct field access syntax. The transpiler automatically inserts `Deref()` calls:
-
-<!-- doc-check: fragment -->
-```gala
-val alice = Person(name = "Alice", age = 30)
-val team = Team(leader = &alice, memberCount = 5)
-
-// PREFERRED: Direct field access (auto-deref)
-fmt.Println(team.leader.name)  // "Alice"
-fmt.Println(team.leader.age)   // 30
-
-// VERBOSE: Explicit Deref() - works but not recommended
-fmt.Println(team.leader.Deref().name)  // "Alice"
-```
-
-This works with nested ConstPtr access too:
-
-<!-- doc-check: fragment -->
-```gala
-val node2 = ImmutableNode(value = 20, next = NewConstPtr[ImmutableNode](nil))
-val node1 = ImmutableNode(value = 10, next = &node2)
-
-// PREFERRED: Chain field access naturally
-fmt.Println(node1.next.value)  // 20
-
-// VERBOSE: Explicit Deref()
-fmt.Println(node1.next.Deref().value)  // 20
-```
-
-#### Reading with *ptr Syntax (Preferred)
-
-The `*` operator on `ConstPtr` works for reading, just like regular pointers:
-
-<!-- doc-check: fragment -->
-```gala
-val data = 42
-val ptr = &data  // ConstPtr[int]
-
-// PREFERRED: Use *ptr for primitives
-val value = *ptr  // 42
-
-val node = MutableNode(value = 100, next = nil)
-val nodePtr = &node  // ConstPtr[MutableNode]
-
-// PREFERRED styles for reading:
-val v1 = *nodePtr            // Dereference to get the struct
-val v2 = nodePtr.value       // Auto-deref field access
-val v3 = (*nodePtr).value    // Explicit dereference then field
-
-// VERBOSE (not recommended):
-val v4 = nodePtr.Deref().value  // Explicit Deref() call
-
-// Writing is blocked at compile time:
-// *ptr = 100  // ERROR: cannot assign through ConstPtr
-```
-
-#### ConstPtr in Struct Fields
-
-Use `ConstPtr[T]` for pointer fields when you want read-only access to pointed data:
-
-```gala
-type Person struct {
-    name string
-    var age int
+sealed type IntList {
+    case End()
+    case Cons(head int, tail IntList)
 }
 
-type Team struct {
-    leader ConstPtr[Person]  // Read-only pointer to leader
-    var memberCount int
-}
-
-val alice = Person(name = "Alice", age = 30)
-val team = Team(leader = &alice, memberCount = 5)
-
-// Can read through ConstPtr using auto-deref
-fmt.Println(team.leader.name)  // "Alice"
+val list = Cons(10, Cons(20, Cons(30, End())))
 ```
 
-#### Passing ConstPtr to Functions
+A case field whose type is the sealed type itself is held by reference. A
+type that holds itself by value any other way — `struct Node(next
+Option[Node])`, a `Tuple` or `List` of itself — has no finite size and is
+[GALA-E0077](errors/GALA-E0077.md).
 
-Functions can accept `ConstPtr[T]` parameters to guarantee they won't modify the pointed-to data:
+### Taking the Address of a Value
 
-<!-- doc-check: fragment -->
+`&x` is a `*T`, and a `*T` can write. So only something that can change has an
+address: a `var`, a `var` field of a `var`, a field of a pointee, a composite
+literal (`&Config(...)`). Taking the address of anything immutable is
+[GALA-E0076](errors/GALA-E0076.md):
+
+| Operand | Example | Instead |
+|---------|---------|---------|
+| a `val` | `val c = Counter(0); bump(&c)` | pass `c` itself, or declare it `var c` |
+| a parameter not declared `var` | `func f(n int) { g(&n) }` | pass `n`, or declare the parameter `var n` |
+| a receiver | `func (c Counter) F() { g(&c) }` | pass `c`, or declare a pointer receiver (`c *Counter`) |
+| an immutable field | `var o = Obj(1); &o.n` for `struct Obj(n int)` | read `o.n`, or declare the field `var n` |
+| a field reached through a `val` | `val o = Obj(1); &o.n` | declare it `var o` |
+
+<!-- doc-check: error GALA-E0076 -->
 ```gala
-// Function accepts read-only pointer - use auto-deref for field access
-func getPersonName(p ConstPtr[Person]) string = p.name
+package main
 
-// Function that explicitly requires mutable access
-func incrementAge(p *Person) {
-    p.age = p.age + 1
+struct Counter(var N int)
+
+func bump(c *Counter) {
+    c.N = c.N + 1
 }
 
-val alice = Person(name = "Alice", age = 30)
-val name = getPersonName(&alice)  // OK: &val returns ConstPtr
-
-// incrementAge(&alice)  // Would need explicit conversion or var binding
+func main() {
+    val c = Counter(0)
+    bump(&c)   // error: GALA-E0076
+}
 ```
 
-A `ConstPtr` has only its own methods, so it implements no interface of the
-value's type. Passing `&c` of a `val` where an interface is expected and only
-`*Counter` implements it (pointer-receiver methods, the usual shape of an
-`io.Writer`-like or callback interface) is [GALA-E0070](errors/GALA-E0070.md);
-declare the value `var` to pass a `*Counter`.
+A `val` that holds a pointer is a fixed binding to data that can still change,
+as with C++'s `T* const`: `val p = &counter` (of a `var counter`) cannot be
+rebound, but `p.N = 5` and `*p = Counter(0)` write through it.
+
+To read a value without changing it, pass the value: a `val`, a parameter and a
+struct field are already immutable, and GALA's collections are persistent, so
+sharing them by value is cheap and nothing can change them underneath you.
 
 #### Pointer-Receiver Methods on a `val`
 
@@ -4574,63 +4509,13 @@ any `sync` or `sync/atomic` type (`Mutex`, `WaitGroup`, `Once`, `atomic.Int64`,
 struct holding one of them — plus `strings.Builder` and `bytes.Buffer`. Hold
 such a value in a `var` field or local, or behind a pointer (`&sync.Mutex{}`).
 
-#### Building Immutable Data Structures
-
-Use `ConstPtr` for truly immutable linked structures:
-
-```gala
-type ImmutableNode struct {
-    value int
-    var next ConstPtr[ImmutableNode]  // Read-only link to next
-}
-
-val node3 = ImmutableNode(value = 30, next = NewConstPtr[ImmutableNode](nil))
-val node2 = ImmutableNode(value = 20, next = &node3)
-val node1 = ImmutableNode(value = 10, next = &node2)
-
-// Traverse using auto-deref field access
-fmt.Println(node1.next.value)       // 20
-fmt.Println(node1.next.next.value)  // 30
-```
-
-#### ConstPtr Methods
-
-| Method | Description |
-|--------|-------------|
-| `Deref() T` | Read the pointed-to value (prefer `*ptr` syntax) |
-| `IsNil() bool` | Check if pointer is nil |
-| `NewConstPtr[T](p *T)` | Create ConstPtr from raw pointer |
-
-#### Preferred Syntax Summary
-
-| Operation | Preferred | Verbose (avoid) |
-|-----------|-----------|-----------------|
-| Dereference primitive | `*ptr` | `ptr.Deref()` |
-| Access field | `ptr.field` | `ptr.Deref().field` |
-| Explicit dereference | `(*ptr).field` | `ptr.Deref().field` |
-| Nil check | `ptr.IsNil()` | - |
-
-#### Nil Checking
-
-<!-- doc-check: fragment -->
-```gala
-val nilPtr = NewConstPtr[int](nil)
-val validPtr = &someValue
-
-fmt.Println(nilPtr.IsNil())    // true
-fmt.Println(validPtr.IsNil())  // false
-```
-
 #### Comparison with C++
 
 | C++ Concept | C++ Syntax | GALA Equivalent |
 |-------------|------------|-----------------|
 | Mutable pointer to mutable data | `T*` | `var ptr *T` |
 | Const pointer to mutable data | `T* const` | `val ptr *T` (where target is `var`) |
-| Mutable pointer to const data | `const T*` | `var ptr ConstPtr[T]` |
-| Const pointer to const data | `const T* const` | `val ptr ConstPtr[T]` |
-
-**Note:** Taking the address of a `val` variable (`&val`) automatically returns `ConstPtr[T]`, while taking the address of a `var` variable (`&var`) returns `*T`. This ensures that pointers to immutable data cannot be accidentally used to modify that data.
+| Read-only data | `const T`, `const T*` | a `val` of `T`, passed by value |
 
 ### val vs var with Go Functions
 
