@@ -1424,7 +1424,11 @@ off := lights.NewLightOff()
 
 A sealed type without a default case gets no `New<T>()`, and its doc comment
 lists its case constructors instead. A constructor is not generated under a
-name the package already declares.
+name the package's non-test files already declare (in GALA or hand-written
+Go), or that two of its sealed types would both generate; a case constructor is skipped when any name it needs (its
+options included) is taken. See the
+[Go interop guide](GO_INTEROP.MD#sealed-types-have-go-constructors) for the
+generated Godoc.
 
 #### Wildcard Catch-All in Sealed Match
 When you only care about a subset of variants, use `case _ =>` as a catch-all instead of listing every variant. This is valid for exhaustive matching:

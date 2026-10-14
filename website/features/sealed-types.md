@@ -225,7 +225,11 @@ off := lights.NewLightOff()
 
 A sealed type without a default case gets no `New<T>()`, and its doc comment
 lists its case constructors instead. A constructor is not generated under a
-name the package already declares.
+name the package's non-test files already declare (in GALA or hand-written
+Go), or that two of its sealed types would both generate; a case constructor is skipped when any name it needs (its
+options included) is taken. The
+[Go interop guide](/docs/go-interop/#sealed-types-have-go-constructors) shows
+the generated Godoc.
 
 ---
 

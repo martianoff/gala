@@ -205,10 +205,15 @@ func quoteJoin(names []string) string {
 	for i, n := range names {
 		q[i] = strconv.Quote(n)
 	}
-	if len(q) < 2 {
-		return strings.Join(q, "")
+	return andJoin(q)
+}
+
+// andJoin renders a list as `a, b and c`.
+func andJoin(parts []string) string {
+	if len(parts) < 2 {
+		return strings.Join(parts, "")
 	}
-	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 // isShorthandStruct reports whether a type came from the shorthand form and

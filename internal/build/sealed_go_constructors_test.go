@@ -35,3 +35,35 @@ func main() {
 	})
 	assert.Equal(t, "On(30,|Living)|On(5,|Living)|Off()", buildAndRun(t, projectDir))
 }
+
+// TestBuild_SealedGoConstructorDeclaredInGo: a constructor name a hand-written
+// .go file of the package declares is left to it.
+func TestBuild_SealedGoConstructorDeclaredInGo(t *testing.T) {
+	projectDir := newForeignGenGoProject(t, "example.com/goctorsdecl", map[string]string{
+		"lights/lights.gala": `package lights
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30)
+}
+`,
+		"lights/ctor.go": `package lights
+
+// NewLight starts a Light switched off.
+func NewLight() Light { return NewLightOff() }
+
+func Describe() string {
+	return NewLight().String() + " " + NewLightOn().String()
+}
+`,
+		"main.gala": `package main
+
+import "example.com/goctorsdecl/lights"
+
+func main() {
+    Println(lights.Describe())
+}
+`,
+	})
+	assert.Equal(t, "Off()|On(30)", buildAndRun(t, projectDir))
+}

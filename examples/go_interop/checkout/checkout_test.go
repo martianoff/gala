@@ -38,12 +38,13 @@ func ExampleCouponLabel() {
 	// unknown coupon
 }
 
-// Example_fromGo builds GALA values directly from Go: a sealed-type case
-// through its Apply, an immutable struct through its constructor function,
-// an Array from a Go slice, and reads an immutable field with Get.
+// Example_fromGo builds GALA values directly from Go: a sealed type through
+// its generated constructors, an immutable struct through its constructor
+// function, an Array from a Go slice, and reads an immutable field with Get.
 func Example_fromGo() {
-	discount := pricing.Percent{}.Apply(50)
+	discount := pricing.NewDiscountPercent(pricing.WithDiscountPercentPct(50))
 	fmt.Println(discount, discount.Apply(900))
+	fmt.Println(pricing.NewDiscountPercent(), pricing.NewDiscount())
 
 	item := pricing.NewLineItem("C-3", 475, 2)
 	fmt.Println(item.SKU.Get(), item.Qty.Get())
@@ -55,6 +56,7 @@ func Example_fromGo() {
 	fmt.Println(receipt.TotalCents, receipt.Lines, receipt.Note)
 	// Output:
 	// Percent(50) 450
+	// Percent(10) NoDiscount()
 	// C-3 2
 	// 2 1000
 	// 900 2 AmountOff(100)

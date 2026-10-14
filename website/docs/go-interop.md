@@ -4,7 +4,7 @@ title: "Go Interop Guide — Mixing GALA and Go in One Application"
 description: "How to write applications that mix GALA and Go in both directions: calling Go from GALA, calling GALA from Go, one package with .gala and .go files, building with gala build and Bazel, using GALA from plain Go modules (go.gala.fyi/stdlib and gala export), plus the gotchas and limitations. Every example is a tested program."
 keywords: "gala go interop guide, call go from gala, call gala from go, mixed gala go project, gala go package, gala bazel go_library, gala io.Writer, gala json.Marshaler, gala std.Immutable go, go.gala.fyi/stdlib, gala stdlib go module, gala export, import gala library from go"
 permalink: /docs/go-interop/
-last_modified_at: 2026-10-09
+last_modified_at: 2026-10-13
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / Go Interop Guide</p>
@@ -313,7 +313,7 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 | `func Subtotal(items Array[LineItem]) int64` | the same function. Default parameter values exist only for GALA callers, so Go passes every argument |
 | `struct LineItem(SKU string, ...)` (fields not `var`) | `type LineItem struct { SKU std.Immutable[string]; ... }`. Read with `item.SKU.Get()`. There is no generated constructor |
 | `var` field, e.g. `type Receipt struct { var TotalCents int64 }` | a plain Go field `TotalCents int64` |
-| `sealed type Discount { case Percent(Pct int64) ... }` | one struct `Discount` (unexported tag), plus an empty struct per case: `Percent{}.Apply(10)` builds one, `Percent{}.Unapply(d)` returns `std.Option[int64]` |
+| `sealed type Discount { case Percent(Pct int64) ... }` | one struct `Discount` (unexported tag), an empty struct per case (`Percent{}.Unapply(d)` returns `std.Option[int64]`), and [generated constructors](#sealed-types-have-go-constructors): `NewDiscountPercent(...)` builds a case |
 | `Option[T]`, `Try[T]`, `Either[L, R]` | `std.Option[T]` etc.: `IsDefined()`, `IsSuccess()`, `Get()`, `GetError()`, `GetOrElse(x)` |
 | a generic method, e.g. `Option.Map[U]` | a free function `std.Option_Map(o, f)` (Go methods cannot have type parameters) |
 | `Array[T]`, `List[T]`, `HashMap[K, V]` | `collection_immutable.Array[T]` etc.: `ArrayOf`, `ArrayFromSlice`, `.Size()`, `.ToGoSlice()` |
@@ -322,9 +322,61 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 
 Every type also gets `Copy()`, `Equal(other)` and, for sealed types, `String()`.
 
+### Sealed types have Go constructors
+
+Go can make a value without running any GALA code: `Discount{}` is a composite literal and `var d Discount` a zero value. Neither applies the defaults GALA declares. So an exported sealed type comes with constructors for Go callers, and its Godoc says to use them:
+
+| Generated | When | What it does |
+|-----------|------|--------------|
+| `NewT()` | `T` has a `default case` | returns `T`'s default value: the default case, with every field default applied |
+| `NewT<Case>(...)` | for each exported case | builds that case. Each field without a default is a parameter, in order. The fields with a default are options |
+| `With<T><Case><Field>(v)` | for each field with a default | an option for `NewT<Case>` that sets that field; the other fields keep their defaults |
+
+`Discount` in the [example below](#a-gala-library-with-a-go-facing-api) declares `default case NoDiscount()` and `case Percent(Pct int64 = 10)`, so Go sees:
+
+```go
+// Discount is a sealed type: one Go struct, a type per case, and generated
+// Go constructors. NoDiscount is its default; Percent's Pct defaults to 10.
+// Use NewDiscount for the default value (NoDiscount), or a case constructor: NewDiscountNoDiscount, NewDiscountPercent, NewDiscountAmountOff.
+type Discount struct { /* unexported fields */ }
+
+// NewDiscount returns Discount's default value: NoDiscount, what GALA uses where none is given.
+func NewDiscount() Discount
+
+// NewDiscountNoDiscount returns the NoDiscount case of Discount.
+func NewDiscountNoDiscount() Discount
+
+// NewDiscountPercent returns the Percent case of Discount, each option applied over its field defaults (Pct 10).
+func NewDiscountPercent(_opts ...DiscountPercentOption) Discount
+
+// WithDiscountPercentPct sets Percent's Pct (default 10).
+func WithDiscountPercentPct(v int64) DiscountPercentOption
+
+// NewDiscountAmountOff returns the AmountOff case of Discount.
+func NewDiscountAmountOff(cents int64) Discount
+```
+
+Calling them from Go:
+
+```go
+pricing.NewDiscount()                                            // NoDiscount()
+pricing.NewDiscountPercent()                                     // Percent(10)
+pricing.NewDiscountPercent(pricing.WithDiscountPercentPct(50))   // Percent(50)
+pricing.NewDiscountAmountOff(100)                                // AmountOff(100)
+```
+
+- **No default case, no `NewT`.** The Godoc then says the type has no default value and that its zero value is none of its cases. A GALA `match` on such a zero value panics.
+- **A composite literal skips field defaults.** If the default case has field defaults, the Godoc warns that `T{}` holds Go's zero values instead. Use `NewT()`.
+- **Generic types work the same way.** `sealed type Box[T any] { case Full(Value T) ... }` gives `func NewBoxFull[T any](value T) Box[T]`. An option carries all of the type's parameters, and Go cannot infer them from an option's argument, so write them out: `NewBoxFull("a", WithBoxFullCount[string](2))`.
+- **Parameter names are the field names in lowerCamelCase.** A name that is a Go keyword or an imported package gets a trailing underscore (`type_`).
+- **A name that is already taken is not generated.** If the package declares `NewDiscount` itself, in a `.gala` file or a hand-written `.go` file, or two sealed types would generate the same name, that constructor is left out. Test files are not consulted, so a test that declares one of these names fails with "redeclared". Every name a case constructor needs (its options included) must be free, or the whole case constructor is skipped. Go code then uses `Percent{}.Apply(...)`, which takes every field.
+- **Only exported sealed types and exported cases get constructors**, because an unexported one cannot be called from another package anyway.
+
+The language reference covers the [rules for constructors](https://github.com/martianoff/gala/blob/master/docs/GALA.MD#go-constructors).
+
 ### A GALA library with a Go-facing API
 
-[`pricing/pricing.gala`](https://github.com/martianoff/gala/blob/master/examples/go_interop/pricing/pricing.gala) is a GALA library written to be called from Go. It provides a constructor function for its immutable struct, uses `var` fields on the struct Go reads most, and returns `Option` and `Try`:
+[`pricing/pricing.gala`](https://github.com/martianoff/gala/blob/master/examples/go_interop/pricing/pricing.gala) is a GALA library written to be called from Go. It provides a constructor function for its immutable struct, gives its sealed type a default case and a field default, uses `var` fields on the struct Go reads most, and returns `Option` and `Try`:
 
 <!-- doc-source: examples/go_interop/pricing/pricing.gala -->
 ```gala
@@ -349,10 +401,11 @@ type Receipt struct {
     var Note string
 }
 
-// Discount is a sealed type: one Go struct plus a constructor type per case.
+// Discount is a sealed type: one Go struct, a type per case, and generated
+// Go constructors. NoDiscount is its default; Percent's Pct defaults to 10.
 sealed type Discount {
-    case NoDiscount()
-    case Percent(Pct int64)
+    default case NoDiscount()
+    case Percent(Pct int64 = 10)
     case AmountOff(Cents int64)
 }
 
@@ -469,8 +522,9 @@ The Go `Example` tests in [`checkout_test.go`](https://github.com/martianoff/gal
 <!-- doc-source: examples/go_interop/checkout/checkout_test.go -->
 ```go
 func Example_fromGo() {
-	discount := pricing.Percent{}.Apply(50)
+	discount := pricing.NewDiscountPercent(pricing.WithDiscountPercentPct(50))
 	fmt.Println(discount, discount.Apply(900))
+	fmt.Println(pricing.NewDiscountPercent(), pricing.NewDiscount())
 
 	item := pricing.NewLineItem("C-3", 475, 2)
 	fmt.Println(item.SKU.Get(), item.Qty.Get())
@@ -482,6 +536,7 @@ func Example_fromGo() {
 	fmt.Println(receipt.TotalCents, receipt.Lines, receipt.Note)
 	// Output:
 	// Percent(50) 450
+	// Percent(10) NoDiscount()
 	// C-3 2
 	// 2 1000
 	// 900 2 AmountOff(100)
@@ -490,6 +545,7 @@ func Example_fromGo() {
 
 **Designing a GALA API for Go callers:**
 
+- Give a sealed type a `default case` when it has a natural default, and declare field defaults. Go then gets `NewT()` and options on `NewT<Case>`, and doesn't need to know the defaults.
 - Export a `NewX(...)` function for each immutable struct Go must build. The alternative, `X{F: std.NewImmutable(v)}`, works but is noisy.
 - Use `var` fields, or the block form `type X struct { var F T }`, on result types that Go reads a lot.
 - Offer a Go-friendly accessor (`Describe` above) for sealed types instead of making every caller chain `Unapply` calls.
@@ -925,6 +981,7 @@ A checklist of what differs from writing Go. The first ones are covered in the p
 
 - **Immutable fields are `std.Immutable[T]`.** Go reads them with `.Get()` and cannot assign them. Go can build a struct with `std.NewImmutable(v)` per field, but an exported `NewX` constructor reads better. Generating one is a proposed extension ([#688](https://github.com/martianoff/gala/issues/688)).
 - **Encoders see the value.** `encoding/json`, YAML libraries (`gopkg.in/yaml.v2`, `v3`) and `fmt` encode, decode and print an exported immutable field as the value it holds, and the field's struct tag applies to that value. To `encoding/json` the field is a struct, so `omitempty` never leaves it out; use `omitzero`. A `json.Decoder`'s `DisallowUnknownFields` and `UseNumber` do not reach inside the field.
+- **Build sealed values with the generated constructors** (`NewT()`, `NewT<Case>(...)`), [not a composite literal](#sealed-types-have-go-constructors). `T{}` skips field defaults, and for a type without a default case it is none of its cases.
 - **Sealed cases are told apart with `Unapply`**, because the variant tag is unexported: `(pricing.Percent{}).Unapply(d).IsDefined()`. A GALA helper such as `Describe` above is friendlier.
 - **Generic methods are free functions.** `opt.Map(f)` in GALA is `std.Option_Map(opt, f)` in Go, and `arr.FoldLeft(z, f)` is `collection_immutable.Array_FoldLeft(arr, z, f)`.
 - **Default and named arguments are GALA-only.** Go passes every parameter, in order.

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"martianoff/gala/internal/transpiler"
 )
@@ -20,7 +22,9 @@ import (
 //     parameter, a field with one an option (With<T><Case><Field>) applied
 //     over its default.
 //
-// A constructor whose name the package already declares is not generated.
+// A constructor is not generated when the package already declares one of the
+// names it needs, or when two sealed types of the package would generate the
+// same name.
 
 // sealedGoConstructors returns the Go constructors of the exported sealed type
 // name (cases variants, type parameters tParams), with the Apply methods its
@@ -29,6 +33,9 @@ func (t *galaASTTransformer) sealedGoConstructors(name string, variants []sealed
 	if !ast.IsExported(name) {
 		return nil, "", nil
 	}
+	// The constructors are declared with the type's parameters, so its field
+	// defaults are lowered with them in scope.
+	defer t.bindTypeParams(fieldListOrNil(tParams)...)()
 	parentType := t.buildGenericTypeExpr(name, tParams)
 	var out []ast.Decl
 	var defaultCase *sealedVariantInfo
@@ -42,29 +49,32 @@ func (t *galaASTTransformer) sealedGoConstructors(name string, variants []sealed
 		if !ast.IsExported(vi.name) {
 			continue
 		}
-		ctorName := "New" + name + vi.name
-		if !t.goNameFree(ctorName) {
-			continue
-		}
 		apply := findCompanionApply(decls, vi.name)
 		if apply == nil {
 			continue
 		}
+		ctorName := goCaseCtorName(name, vi.name)
 		ctorDecls, err := t.sealedCaseConstructor(name, vi, ctorName, apply, parentType, tParams, line, col)
 		if err != nil {
 			return nil, "", err
 		}
-		out = append(out, ctorDecls...)
-		caseCtors = append(caseCtors, ctorName)
+		if ctorDecls != nil {
+			out = append(out, ctorDecls...)
+			caseCtors = append(caseCtors, ctorName)
+		}
 	}
 
 	var doc strings.Builder
-	if defaultCase != nil && t.goNameFree("New"+name) {
-		parent := transpiler.Type(transpiler.BasicType{Name: name})
-		if tParams != nil {
-			parent = transpiler.GenericType{Base: parent, Params: typeParamTypes(tParams)}
+	zeroLit := types.ExprString(parentType) + "{}"
+	switch {
+	case defaultCase == nil:
+		fmt.Fprintf(&doc, "%s has no default value", name)
+		if len(caseCtors) > 0 {
+			fmt.Fprintf(&doc, ": create it with a case constructor, %s", strings.Join(caseCtors, ", "))
 		}
-		val, err := t.defaultValue(parent, line, col, map[string]bool{})
+		fmt.Fprintf(&doc, ". Its zero value %s is none of its cases.", zeroLit)
+	case t.goNameAvailable("New" + name):
+		val, err := t.defaultValue(genericType(name, tParams), line, col, map[string]bool{})
 		if err != nil {
 			return nil, "", err
 		}
@@ -72,46 +82,36 @@ func (t *galaASTTransformer) sealedGoConstructors(name string, variants []sealed
 			val = &ast.CompositeLit{Type: parentType}
 		}
 		described := t.describeDefaultCase(*defaultCase)
-		out = append(out, &ast.FuncDecl{
-			Doc: docCommentGroup(fmt.Sprintf("New%s returns %s's default value: %s, what GALA uses where it needs a %s and none is given.",
-				name, name, described, name)),
-			Name: ast.NewIdent("New" + name),
-			Type: &ast.FuncType{TypeParams: tParams, Params: &ast.FieldList{}, Results: &ast.FieldList{List: []*ast.Field{{Type: parentType}}}},
-			Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{val}}}},
-		})
-		fmt.Fprintf(&doc, "Create a %s with New%s, its default value (%s)", name, name, described)
-		if len(caseCtors) > 0 {
-			fmt.Fprintf(&doc, ", or with a case constructor: %s", strings.Join(caseCtors, ", "))
+		ctorDoc := fmt.Sprintf("New%s returns %s's default value", name, name)
+		fmt.Fprintf(&doc, "Use New%s for the default value", name)
+		if described != "" {
+			ctorDoc += ": " + described
+			fmt.Fprintf(&doc, " (%s)", described)
 		}
-		fmt.Fprintf(&doc, ". A composite literal does not apply GALA's field defaults: %s{} is %s with every field at Go's zero value.", name, defaultCase.name)
-	} else if defaultCase == nil {
-		fmt.Fprintf(&doc, "%s has no default value", name)
+		out = append(out, goCtorDecl("New"+name, ctorDoc+", what GALA uses where none is given.",
+			tParams, &ast.FieldList{}, parentType, []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{val}}}))
 		if len(caseCtors) > 0 {
-			fmt.Fprintf(&doc, ": create it with a case constructor, %s", strings.Join(caseCtors, ", "))
+			fmt.Fprintf(&doc, ", or a case constructor: %s", strings.Join(caseCtors, ", "))
 		}
-		fmt.Fprintf(&doc, ". Its zero value %s{} is none of its cases.", name)
+		doc.WriteString(".")
+		if apply := t.companionApply(defaultCase.name); apply != nil && len(apply.DefaultExprs) > 0 {
+			fmt.Fprintf(&doc, " A composite literal %s does not apply GALA's field defaults: its fields hold Go's zero values.", zeroLit)
+		}
 	}
 	return out, doc.String(), nil
 }
 
 // sealedCaseConstructor is NewT<Case> for case vi of sealed type parent: the
 // parameters of its companion's Apply, those with a declared default as
-// options over it.
+// options over it. It returns no declarations when a name it needs is taken.
 func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVariantInfo, ctorName string, apply *ast.FuncDecl, parentType ast.Expr, tParams *ast.FieldList, line, col int) ([]ast.Decl, error) {
-	var applyMeta *transpiler.MethodMetadata
-	if comp := t.getTypeMeta(vi.name); comp != nil {
-		applyMeta = comp.Methods["Apply"]
-	}
+	applyMeta := t.companionApply(vi.name)
 	companionType := t.buildGenericTypeExpr(vi.name, tParams)
-	companion := transpiler.Type(transpiler.BasicType{Name: vi.name})
-	if tParams != nil {
-		companion = transpiler.GenericType{Base: companion, Params: typeParamTypes(tParams)}
-	}
 
 	type param struct {
 		name string
 		typ  ast.Expr
-		def  *transpiler.DefaultExpr
+		def  string // the declared default, as written; "" when required
 		i    int
 	}
 	var required, optional []param
@@ -121,10 +121,10 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 			p := param{name: n.Name, typ: f.Type, i: i}
 			if applyMeta != nil {
 				if d, ok := applyMeta.DefaultExprs[i]; ok {
-					p.def = &d
+					p.def = strings.TrimSpace(d.Text)
 				}
 			}
-			if p.def != nil {
+			if p.def != "" {
 				optional = append(optional, p)
 			} else {
 				required = append(required, p)
@@ -133,58 +133,81 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 		}
 	}
 
+	optionName, argsName := goOptionTypeName(parent, vi.name), goArgsTypeName(parent, vi.name)
+	names := []string{ctorName}
+	if len(optional) > 0 {
+		names = append(names, optionName, argsName)
+		for _, p := range optional {
+			names = append(names, goWithName(parent, vi.name, p.name))
+		}
+	}
+	for _, n := range names {
+		if !t.goNameAvailable(n) {
+			return nil, nil
+		}
+	}
+
+	args := make([]ast.Expr, i)
+	var inits []ast.Expr
+	for _, p := range optional {
+		val, err := t.methodDefaultArg(applyMeta, p.i, &ast.CompositeLit{Type: companionType}, genericType(vi.name, tParams), nil, line, col)
+		if err != nil {
+			return nil, err
+		}
+		inits = append(inits, &ast.KeyValueExpr{Key: ast.NewIdent(p.name), Value: val})
+		args[p.i] = &ast.SelectorExpr{X: ast.NewIdent("_args"), Sel: ast.NewIdent(p.name)}
+	}
+	// A parameter must not shadow a name the defaults read, nor take another
+	// parameter's name.
+	taken := map[string]bool{}
+	for _, init := range inits {
+		ast.Inspect(init, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				taken[id.Name] = true
+			}
+			return true
+		})
+	}
 	var decls []ast.Decl
 	params := &ast.FieldList{}
 	for _, p := range required {
-		params.List = append(params.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(goParamName(p.name))}, Type: p.typ})
-	}
-	args := make([]ast.Expr, i)
-	for _, p := range required {
-		args[p.i] = ast.NewIdent(goParamName(p.name))
+		pname := t.goParamName(p.name)
+		for taken[pname] {
+			pname += "_"
+		}
+		taken[pname] = true
+		params.List = append(params.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(pname)}, Type: p.typ})
+		args[p.i] = ast.NewIdent(pname)
 	}
 	var body []ast.Stmt
 	if len(optional) > 0 {
-		optionName := parent + vi.name + "Option"
-		argsName := lowerFirst(parent) + vi.name + "Args"
 		argsType := t.buildGenericTypeExpr(argsName, tParams)
+		argsPtr := &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("_args")}, Type: &ast.StarExpr{X: argsType}}}}
 		optionType := t.buildGenericTypeExpr(optionName, tParams)
 		argsFields := &ast.FieldList{}
-		inits := []ast.Expr{}
 		for _, p := range optional {
 			argsFields.List = append(argsFields.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(p.name)}, Type: p.typ})
-			val, err := t.methodDefaultArg(applyMeta, p.i, &ast.CompositeLit{Type: companionType}, companion, nil, line, col)
-			if err != nil {
-				return nil, err
-			}
-			inits = append(inits, &ast.KeyValueExpr{Key: ast.NewIdent(p.name), Value: val})
-			args[p.i] = &ast.SelectorExpr{X: ast.NewIdent("_args"), Sel: ast.NewIdent(p.name)}
 		}
 		decls = append(decls,
 			&ast.GenDecl{Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{Name: ast.NewIdent(argsName), TypeParams: tParams, Type: &ast.StructType{Fields: argsFields}}}},
 			&ast.GenDecl{
 				Doc: docCommentGroup(fmt.Sprintf("%s sets a field of %s left out of %s; its fields' defaults apply otherwise.", optionName, vi.name, ctorName)),
 				Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{Name: ast.NewIdent(optionName), TypeParams: tParams,
-					Type: &ast.FuncType{Params: &ast.FieldList{List: []*ast.Field{{Type: &ast.StarExpr{X: argsType}}}}}}},
+					Type: &ast.FuncType{Params: argsPtr}}},
 			})
 		for _, p := range optional {
-			withName := "With" + parent + vi.name + p.name
-			if !t.goNameFree(withName) {
-				continue
+			withName := goWithName(parent, vi.name, p.name)
+			set := &ast.FuncLit{
+				Type: &ast.FuncType{Params: argsPtr},
+				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.AssignStmt{
+					Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("_args"), Sel: ast.NewIdent(p.name)}},
+					Tok: token.ASSIGN, Rhs: []ast.Expr{ast.NewIdent("v")},
+				}}},
 			}
-			decls = append(decls, &ast.FuncDecl{
-				Doc:  docCommentGroup(fmt.Sprintf("%s sets %s's %s (default %s).", withName, vi.name, p.name, strings.TrimSpace(p.def.Text))),
-				Name: ast.NewIdent(withName),
-				Type: &ast.FuncType{TypeParams: tParams,
-					Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("v")}, Type: p.typ}}},
-					Results: &ast.FieldList{List: []*ast.Field{{Type: optionType}}}},
-				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{&ast.FuncLit{
-					Type: &ast.FuncType{Params: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("_args")}, Type: &ast.StarExpr{X: argsType}}}}},
-					Body: &ast.BlockStmt{List: []ast.Stmt{&ast.AssignStmt{
-						Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("_args"), Sel: ast.NewIdent(p.name)}},
-						Tok: token.ASSIGN, Rhs: []ast.Expr{ast.NewIdent("v")},
-					}}},
-				}}}}},
-			})
+			decls = append(decls, goCtorDecl(withName,
+				fmt.Sprintf("%s sets %s's %s (default %s).", withName, vi.name, p.name, p.def),
+				tParams, &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("v")}, Type: p.typ}}}, optionType,
+				[]ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{set}}}))
 		}
 		params.List = append(params.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent("_opts")}, Type: &ast.Ellipsis{Elt: optionType}})
 		body = append(body,
@@ -197,35 +220,30 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 
 	doc := fmt.Sprintf("%s returns the %s case of %s", ctorName, vi.name, parent)
 	if len(optional) > 0 {
-		var defs []string
-		for _, p := range optional {
-			defs = append(defs, fmt.Sprintf("%s %s", p.name, strings.TrimSpace(p.def.Text)))
+		defs := make([]string, len(optional))
+		for j, p := range optional {
+			defs[j] = p.name + " " + p.def
 		}
 		doc += fmt.Sprintf(", each option applied over its field defaults (%s)", strings.Join(defs, ", "))
 	}
 	doc += "."
-	if caseDoc := t.caseDoc(vi.name); caseDoc != "" {
-		doc += "\n\n" + caseDoc
+	if comp := t.getTypeMeta(vi.name); comp != nil && comp.Doc != "" {
+		doc += "\n\n" + comp.Doc
 	}
-	decls = append(decls, &ast.FuncDecl{
-		Doc:  docCommentGroup(doc),
-		Name: ast.NewIdent(ctorName),
-		Type: &ast.FuncType{TypeParams: tParams, Params: params, Results: &ast.FieldList{List: []*ast.Field{{Type: parentType}}}},
-		Body: &ast.BlockStmt{List: body},
-	})
-	return decls, nil
+	return append(decls, goCtorDecl(ctorName, doc, tParams, params, parentType, body)), nil
 }
 
 // describeDefaultCase renders default case vi as its doc reads it, e.g.
-// `On with Power 30 and Room "Living"`, or `Off`.
+// `On with Power 30 and Room "Living"`, or `Off`; "" for a case Go cannot
+// name.
 func (t *galaASTTransformer) describeDefaultCase(vi sealedVariantInfo) string {
+	if !ast.IsExported(vi.name) {
+		return ""
+	}
 	if len(vi.fields) == 0 {
 		return vi.name
 	}
-	var apply *transpiler.MethodMetadata
-	if comp := t.getTypeMeta(vi.name); comp != nil {
-		apply = comp.Methods["Apply"]
-	}
+	apply := t.companionApply(vi.name)
 	parts := make([]string, len(vi.fields))
 	for i, f := range vi.fields {
 		value := "its zero value"
@@ -236,25 +254,82 @@ func (t *galaASTTransformer) describeDefaultCase(vi sealedVariantInfo) string {
 		}
 		parts[i] = f.name + " " + value
 	}
-	if len(parts) == 1 {
-		return vi.name + " with " + parts[0]
-	}
-	return vi.name + " with " + strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+	return vi.name + " with " + andJoin(parts)
 }
 
-// caseDoc returns the doc comment written on the case named name, if any.
-func (t *galaASTTransformer) caseDoc(name string) string {
+// companionApply returns the metadata of the Apply method of the case named
+// name's companion, nil when there is none.
+func (t *galaASTTransformer) companionApply(name string) *transpiler.MethodMetadata {
 	if comp := t.getTypeMeta(name); comp != nil {
-		return comp.Doc
+		return comp.Methods["Apply"]
 	}
-	return ""
+	return nil
 }
 
-// goNameFree reports whether this package declares nothing named name, so a
-// generated constructor may take it.
-func (t *galaASTTransformer) goNameFree(name string) bool {
+// goNameAvailable reports whether a Go constructor may take name: this
+// package declares nothing named so, in GALA or in a hand-written .go file,
+// and no other of its sealed types would generate it.
+func (t *galaASTTransformer) goNameAvailable(name string) bool {
 	key := ownFunctionKey(t.packageName, name)
-	return t.functions[key] == nil && t.typeMetas[key] == nil && t.richAST.PackageVals[name] == nil
+	if _, ok := t.structFields[key]; ok {
+		return false
+	}
+	if own := t.richAST.OwnImportPath; own != "" && t.goTypeInfo.HasQualified(own+"."+name) {
+		return false
+	}
+	return t.functions[key] == nil && t.typeMetas[key] == nil && t.richAST.PackageVals[name] == nil && t.goCtorClaimed()[name] <= 1
+}
+
+// goCtorClaimed counts, for each name, the sealed types of this package
+// (across all its files) whose Go constructors would use it.
+func (t *galaASTTransformer) goCtorClaimed() map[string]int {
+	if t.goCtorClaims != nil {
+		return t.goCtorClaims
+	}
+	claims := map[string]int{}
+	for key, meta := range t.typeMetas {
+		if len(meta.SealedVariants) == 0 || !ast.IsExported(meta.Name) || key != ownFunctionKey(t.packageName, meta.Name) {
+			continue
+		}
+		if meta.HasDefaultCase() {
+			claims["New"+meta.Name]++
+		}
+		for _, v := range meta.SealedVariants {
+			if !ast.IsExported(v.Name) {
+				continue
+			}
+			claims[goCaseCtorName(meta.Name, v.Name)]++
+			comp := t.typeMetas[ownFunctionKey(t.packageName, v.Name)]
+			if comp == nil || comp.Methods["Apply"] == nil || len(comp.Methods["Apply"].DefaultExprs) == 0 {
+				continue
+			}
+			apply := comp.Methods["Apply"]
+			claims[goOptionTypeName(meta.Name, v.Name)]++
+			claims[goArgsTypeName(meta.Name, v.Name)]++
+			for i := range apply.DefaultExprs {
+				if i < len(apply.ParamNames) {
+					claims[goWithName(meta.Name, v.Name, apply.ParamNames[i])]++
+				}
+			}
+		}
+	}
+	t.goCtorClaims = claims
+	return claims
+}
+
+func goCaseCtorName(parent, c string) string    { return "New" + parent + c }
+func goOptionTypeName(parent, c string) string  { return parent + c + "Option" }
+func goArgsTypeName(parent, c string) string    { return lowerFirst(parent) + c + "Args" }
+func goWithName(parent, c, field string) string { return "With" + parent + c + field }
+
+// goCtorDecl is a generic-aware function declaration returning result.
+func goCtorDecl(name, doc string, tParams, params *ast.FieldList, result ast.Expr, body []ast.Stmt) *ast.FuncDecl {
+	return &ast.FuncDecl{
+		Doc:  docCommentGroup(doc),
+		Name: ast.NewIdent(name),
+		Type: &ast.FuncType{TypeParams: tParams, Params: params, Results: &ast.FieldList{List: []*ast.Field{{Type: result}}}},
+		Body: &ast.BlockStmt{List: body},
+	}
 }
 
 // findCompanionApply returns the Apply method generated for the companion
@@ -266,9 +341,10 @@ func findCompanionApply(decls []ast.Decl, companion string) *ast.FuncDecl {
 			continue
 		}
 		recv := fn.Recv.List[0].Type
-		if idx, ok := recv.(*ast.IndexExpr); ok {
+		switch idx := recv.(type) {
+		case *ast.IndexExpr:
 			recv = idx.X
-		} else if idx, ok := recv.(*ast.IndexListExpr); ok {
+		case *ast.IndexListExpr:
 			recv = idx.X
 		}
 		if id, ok := recv.(*ast.Ident); ok && id.Name == companion {
@@ -278,32 +354,37 @@ func findCompanionApply(decls []ast.Decl, companion string) *ast.FuncDecl {
 	return nil
 }
 
-// typeParamTypes lists the type parameters tParams declares, as types.
-func typeParamTypes(tParams *ast.FieldList) []transpiler.Type {
-	var out []transpiler.Type
+// genericType is the type name instantiated with the type parameters tParams
+// declares.
+func genericType(name string, tParams *ast.FieldList) transpiler.Type {
+	base := transpiler.Type(transpiler.BasicType{Name: name})
+	if tParams == nil {
+		return base
+	}
+	var params []transpiler.Type
 	for _, f := range tParams.List {
 		for _, n := range f.Names {
-			out = append(out, transpiler.BasicType{Name: n.Name})
+			params = append(params, transpiler.BasicType{Name: n.Name})
 		}
 	}
-	return out
+	return transpiler.GenericType{Base: base, Params: params}
 }
 
 // goParamName is a field name as a Go parameter name: lower-case first, with
-// an underscore after one that is then a Go keyword (`Type` -> `type_`).
-func goParamName(field string) string {
+// an underscore after one that is then a Go keyword or an imported package's
+// name (`Type` -> `type_`).
+func (t *galaASTTransformer) goParamName(field string) string {
 	name := lowerFirst(field)
-	if token.IsKeyword(name) {
+	if token.IsKeyword(name) || t.importManager.IsPackage(name) {
 		name += "_"
 	}
 	return name
 }
 
 func lowerFirst(s string) string {
-	if s == "" {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 {
 		return s
 	}
-	r := []rune(s)
-	r[0] = unicode.ToLower(r[0])
-	return string(r)
+	return string(unicode.ToLower(r)) + s[size:]
 }
