@@ -238,6 +238,7 @@ func describe(l Light) string = l match {
 
 import "martianoff/gala/std"
 
+// Light has no default value: create it with a case constructor, NewLightOn, NewLightOff. Its zero value Light{} is none of its cases.
 type Light struct {
 	_variant uint8
 }
@@ -287,6 +288,16 @@ func (s Light) String() string {
 	default:
 		return "Light(<unknown>)"
 	}
+}
+
+// NewLightOn returns the On case of Light.
+func NewLightOn() Light {
+	return On{}.Apply()
+}
+
+// NewLightOff returns the Off case of Light.
+func NewLightOff() Light {
+	return Off{}.Apply()
 }
 func describe(l Light) string {
 	return func(obj Light) string {
@@ -324,6 +335,7 @@ func describe(l Light) string = l match {
 
 import "martianoff/gala/std"
 
+// Light has no default value: create it with a case constructor, NewLightOn, NewLightOff. Its zero value Light{} is none of its cases.
 type Light struct {
 	_variant uint8
 }
@@ -373,6 +385,16 @@ func (s Light) String() string {
 	default:
 		return "Light(<unknown>)"
 	}
+}
+
+// NewLightOn returns the On case of Light.
+func NewLightOn() Light {
+	return On{}.Apply()
+}
+
+// NewLightOff returns the Off case of Light.
+func NewLightOff() Light {
+	return Off{}.Apply()
 }
 func describe(l Light) string {
 	return func(obj Light) string {

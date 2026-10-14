@@ -157,7 +157,9 @@ func (t *galaASTTransformer) attachDocComments(ctx grammar.ITopLevelDeclarationC
 	case ctx.SealedTypeDeclaration() != nil:
 		sctx := ctx.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
 		if decl, _ := findTypeSpec(decls, sctx.Identifier().GetText()); decl != nil {
-			decl.Doc = doc
+			// The written doc first, then the constructor guidance the
+			// lowering put there (see sealedGoConstructors).
+			decl.Doc = joinDocs(doc, decl.Doc)
 		}
 		// Each case is a companion type of its own name; its doc goes there.
 		for _, c := range sctx.AllSealedCase() {
@@ -241,4 +243,18 @@ func findValueDecl(decls []ast.Decl, name string) *ast.GenDecl {
 		}
 	}
 	return nil
+}
+
+// joinDocs is first followed by second; either may be nil. No blank line
+// parts them: the //line directive is laid out above a doc only while the
+// doc fits in the GALA lines above the declaration (see
+// transpiler.insertLineDirectives), and a blank line would take one.
+func joinDocs(first, second *ast.CommentGroup) *ast.CommentGroup {
+	switch {
+	case first == nil:
+		return second
+	case second == nil:
+		return first
+	}
+	return &ast.CommentGroup{List: append(append([]*ast.Comment{}, first.List...), second.List...)}
 }
