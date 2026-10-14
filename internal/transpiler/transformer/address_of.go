@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -22,30 +23,37 @@ import (
 // operand is the operand's lowering, used for the field paths a bare name
 // does not cover.
 func (t *galaASTTransformer) immutableAddressError(ctx *grammar.UnaryExprContext, operandCtx *grammar.UnaryExprContext, operand ast.Expr) error {
-	text := transpiler.SourceText(operandCtx)
+	name, fixed := "", notFixed
+	if postfix, ok := operandCtx.PostfixExpr().(*grammar.PostfixExprContext); ok && operandCtx.UnaryOp() == nil {
+		name, fixed = t.immutablePostfixBinding(postfix)
+	}
 	var why, hint string
-	if name := simpleIdentifierName(operandCtx); name != "" {
-		switch {
-		case t.isVal(name):
-			why = fmt.Sprintf("%s is a val", name)
-			hint = fmt.Sprintf("pass %s itself; declare it `var %s` where a pointer is needed", name, name)
-		case t.fixedBindingOf(name) == fixedParam:
-			why = fmt.Sprintf("parameter %s is not declared `var`", name)
-			hint = fmt.Sprintf("pass %s itself; declare the parameter `var %s` where a pointer is needed", name, name)
-		case t.fixedBindingOf(name) == fixedReceiver:
-			why = fmt.Sprintf("receiver %s is immutable", name)
-			hint = fmt.Sprintf("pass %s itself; declare a pointer receiver (%s *T) where a pointer is needed", name, name)
-		}
-	} else {
+	switch {
+	case fixed == fixedParam:
+		why, hint = fmt.Sprintf("parameter %s is not declared `var`", name), addressHint(name, fmt.Sprintf("declare the parameter `var %s`", name))
+	case fixed == fixedReceiver:
+		why, hint = fmt.Sprintf("receiver %s is immutable", name), addressHint(name, fmt.Sprintf("declare a pointer receiver (%s *T)", name))
+	case strings.Contains(name, "."):
+		why, hint = fmt.Sprintf("%s is a val", name), addressHint(name, "copy it into a local `var`")
+	case name != "":
+		why, hint = fmt.Sprintf("%s is a val", name), addressHint(name, fmt.Sprintf("declare it `var %s`", name))
+	default:
 		why, hint = t.immutablePathReason(operand)
 	}
 	if why == "" {
 		return nil
 	}
+	text := transpiler.SourceText(operandCtx)
 	tok := ctx.GetStart()
 	return galaerr.NewCodedSemanticError(galaerr.CodeAddressOfImmutable, tok.GetLine(), tok.GetColumn(),
 		fmt.Sprintf("cannot take the address of %s: %s", text, why), hint,
 	).WithSpan(tok.GetColumn() + 1 + len([]rune(text)))
+}
+
+// addressHint is the hint for the address of the immutable binding name: how
+// to make it addressable.
+func addressHint(name, how string) string {
+	return fmt.Sprintf("pass %s itself; %s where a pointer is needed", name, how)
 }
 
 // immutableFieldWriteError reports a write (`o.n = v`, `o.n++`) to a field
@@ -71,6 +79,8 @@ func (t *galaASTTransformer) immutableFieldWriteError(targetCtx antlr.ParserRule
 // cannot resolve, which may be one.
 func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint string) {
 	switch e := expr.(type) {
+	case *ast.CompositeLit:
+		return "", "" // a fresh value
 	case *ast.ParenExpr:
 		return t.immutablePathReason(e.X)
 	case *ast.SelectorExpr:
@@ -81,11 +91,11 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 		return t.immutablePathReason(e.X)
 	case *ast.CallExpr:
 		// `.Get()` is how a val, an immutable field or an imported val is read.
-		sel, ok := e.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != transpiler.MethodGet || len(e.Args) != 0 || !t.isImmutableOperand(sel.X) {
+		x, ok := t.immutableGetOperand(e)
+		if !ok {
 			return "", ""
 		}
-		switch x := sel.X.(type) {
+		switch x := x.(type) {
 		case *ast.Ident:
 			return fmt.Sprintf("it is reached through val %s", x.Name),
 				fmt.Sprintf("declare it `var %s`", x.Name)

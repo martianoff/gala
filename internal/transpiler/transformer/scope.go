@@ -299,8 +299,8 @@ func (t *galaASTTransformer) addParam(name string, typeName transpiler.Type, rea
 
 // addReceiver binds a method receiver: a plain Go receiver that can never be
 // rebound, whatever its type. Mutation through it (writing a `var` field,
-// calling a mutating method) is untouched; only `recv = ...` and a writable
-// `&recv` are refused.
+// calling a mutating method) is untouched; only `recv = ...` and `&recv` are
+// refused.
 func (t *galaASTTransformer) addReceiver(name string, typeName transpiler.Type) {
 	t.addFixed(name, typeName, fixedReceiver)
 }

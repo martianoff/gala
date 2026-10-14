@@ -125,8 +125,8 @@ func listValues(l IntList) string = l match {
 
 func testImmutableList() {
     val list = Cons(10, Cons(20, Cons(30, End())))
-    fmt.Println("Immutable list as a sealed type:")
-    fmt.Printf("  values = %s\n", listValues(list))
+    Println("Immutable list as a sealed type:")
+    Println(s"  values = ${listValues(list)}")
 }
 
 // Test: Read-only access to a val is the val itself. A val has no address, so
@@ -147,10 +147,10 @@ func testReadOnlyByValue() {
     val alice = Person(name = "Alice", age = 30)
     val team = Team(leader = alice, memberCount = 5)
 
-    fmt.Println("Read-only access by value:")
-    fmt.Printf("  Team leader: %s\n", team.leader.name)
-    fmt.Printf("  Leader name via function: %s\n", leaderName(team))
-    fmt.Printf("  Member count: %d\n", team.memberCount)
+    Println("Read-only access by value:")
+    Println(s"  Team leader: ${team.leader.name}")
+    Println(s"  Leader name via function: ${leaderName(team)}")
+    Println(s"  Member count: ${team.memberCount}")
 }
 
 func main() {

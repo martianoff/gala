@@ -80,3 +80,14 @@ func TestSelfContainingType(t *testing.T) {
 		})
 	}
 }
+
+// TestSelfContainingGenericTerminates checks that the walk ends on a generic
+// type that holds itself by value, reached from another declaration.
+func TestSelfContainingGenericTerminates(t *testing.T) {
+	_, err := newTranspiler().Transpile("package main\n\nstruct Box[T any](v Option[Box[T]])\nstruct User(b Box[int])\n", "")
+	require.Error(t, err)
+	var semErr *galaerr.SemanticError
+	require.ErrorAs(t, err, &semErr)
+	assert.Equal(t, galaerr.CodeSelfContainingType, semErr.Code)
+	assert.Contains(t, semErr.Msg, "Box")
+}

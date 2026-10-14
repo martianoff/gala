@@ -299,13 +299,20 @@ func (t *galaASTTransformer) isPlainReceiverPath(expr ast.Expr) bool {
 	case *ast.SelectorExpr:
 		return t.isPlainReceiverPath(e.X)
 	case *ast.CallExpr:
-		sel, ok := e.Fun.(*ast.SelectorExpr)
-		if !ok || len(e.Args) != 0 || !t.isPlainReceiverPath(sel.X) {
-			return false
-		}
-		return sel.Sel.Name == transpiler.MethodGet && t.isImmutableOperand(sel.X)
+		x, ok := t.immutableGetOperand(e)
+		return ok && t.isPlainReceiverPath(x)
 	}
 	return false
+}
+
+// immutableGetOperand returns x when call is `x.Get()` unwrapping an
+// Immutable — a val, an immutable field or an Immutable[T] value.
+func (t *galaASTTransformer) immutableGetOperand(call *ast.CallExpr) (ast.Expr, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != transpiler.MethodGet || len(call.Args) != 0 || !t.isImmutableOperand(sel.X) {
+		return nil, false
+	}
+	return sel.X, true
 }
 
 // isImmutableOperand reports whether x is an Immutable wrapper: a val binding

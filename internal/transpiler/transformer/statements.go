@@ -1355,7 +1355,11 @@ func (t *galaASTTransformer) isDirectVariableExpression(ctx grammar.IExpressionC
 // var, a field or index through a val, a call). fixed reports a parameter or
 // a receiver, and which.
 func (t *galaASTTransformer) immutableBindingName(ctx grammar.IExpressionContext) (name string, fixed fixedBinding) {
-	postfix := LeadingPostfixExpr(ctx, true)
+	return t.immutablePostfixBinding(LeadingPostfixExpr(ctx, true))
+}
+
+// immutablePostfixBinding is immutableBindingName for a postfix expression.
+func (t *galaASTTransformer) immutablePostfixBinding(postfix *grammar.PostfixExprContext) (name string, fixed fixedBinding) {
 	primary := PrimaryOf(postfix)
 	if primary == nil || primary.Identifier() == nil {
 		return "", notFixed
