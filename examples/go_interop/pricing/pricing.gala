@@ -23,10 +23,11 @@ type Receipt struct {
     var Note string
 }
 
-// Discount is a sealed type: one Go struct plus a constructor type per case.
+// Discount is a sealed type: one Go struct, a type per case, and generated
+// Go constructors. NoDiscount is its default; Percent's Pct defaults to 10.
 sealed type Discount {
-    case NoDiscount()
-    case Percent(Pct int64)
+    default case NoDiscount()
+    case Percent(Pct int64 = 10)
     case AmountOff(Cents int64)
 }
 

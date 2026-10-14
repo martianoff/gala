@@ -140,6 +140,7 @@ var accumulatedStateFields = []string{
 	"typeNameCache",
 	"typeNameCacheEpoch",
 	"typeNameCacheImportRev",
+	"goCtorClaims",
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the

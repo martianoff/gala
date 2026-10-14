@@ -1390,6 +1390,46 @@ it out when every value must be built from a case, as for `Try` and `Either`.
 
 A sealed type marks at most one case `default`, and its default case has no field of the type itself, which a zero value could not hold ([`GALA-E0074`](errors/GALA-E0074.md)).
 
+#### Go Constructors
+
+Go can build a value without calling any GALA code, as a composite literal or a
+zero value, and so skip the field defaults GALA applies. An exported sealed
+type therefore gets constructors for Go callers, and its doc comment says to
+use them:
+
+- `New<T>()` returns the type's [default value](#default-values), when it has a
+  default case;
+- `New<T><Case>(...)` builds a case: each field without a default is a
+  parameter, and each field with one is an option, `With<T><Case><Field>(v)`,
+  applied over its default.
+
+For
+
+```gala
+package lights
+
+sealed type Light {
+    case Off()
+    default case On(Power int = 30, Room string = "Living")
+}
+```
+
+a Go caller writes:
+
+```go
+l := lights.NewLight()                                  // On(30, Living)
+dim := lights.NewLightOn(lights.WithLightOnPower(5))    // On(5, Living)
+off := lights.NewLightOff()
+```
+
+A sealed type without a default case gets no `New<T>()`, and its doc comment
+lists its case constructors instead. A constructor is not generated under a
+name the package's non-test files already declare (in GALA or hand-written
+Go), or that two of its sealed types would both generate; a case constructor is skipped when any name it needs (its
+options included) is taken. See the
+[Go interop guide](GO_INTEROP.MD#sealed-types-have-go-constructors) for the
+generated Godoc.
+
 #### Wildcard Catch-All in Sealed Match
 When you only care about a subset of variants, use `case _ =>` as a catch-all instead of listing every variant. This is valid for exhaustive matching:
 

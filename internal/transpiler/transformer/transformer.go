@@ -114,6 +114,7 @@ type galaASTTransformer struct {
 	typeNameCache          typeNameMemo                                  // name-normalization memo shared by functionTypeEnv and buildTypeEnv; see sharedTypeNameMemo
 	typeNameCacheEpoch     uint32                                        // typeEnvEpoch the memo above was filled at
 	typeNameCacheImportRev uint64                                        // importManager.Revision the memo above was filled at
+	goCtorClaims           map[string]int                                // Go constructor name -> how many of this package's sealed types would generate it; see goCtorClaimed
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
 	// declares, so a sub-pattern's statements can be split into declarations
@@ -242,6 +243,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.resultGenericMethods = make(map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
+	t.goCtorClaims = nil
 	t.hasOpaque = anyOpaque(richAST.Types)
 	t.companionObjects = richAST.CompanionObjects
 	if t.companionObjects == nil {

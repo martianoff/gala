@@ -98,7 +98,7 @@ sealed type Dir {
 			_, parseErr := parser.ParseFile(token.NewFileSet(), "main.go", got, parser.AllErrors)
 			require.NoError(t, parseErr, "generated Go must parse:\n%s", got)
 
-			assert.NotContains(t, got, "RightToLeft{}.Apply()",
+			assert.NotContains(t, got, "== RightToLeft{}.Apply()",
 				"composite literal in a control clause must be parenthesized:\n%s", got)
 		})
 	}

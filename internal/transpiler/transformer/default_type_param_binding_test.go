@@ -126,3 +126,40 @@ func describe[T any](v Option[T] = None[T]()) string = v match {
 		})
 	}
 }
+
+// TestDefaultInferredFromCarriedTypeParam: a default that leaves its type
+// argument to the declared type (`None()` for an `Option[T]` parameter) is
+// lowered at a call inside a generic declaration that binds T to a type
+// parameter of its own, of the same name or another.
+func TestDefaultInferredFromCarriedTypeParam(t *testing.T) {
+	trans := newDefaultsTranspiler()
+
+	const decls = `package main
+
+func pick[T any](v T, d Option[T] = None()) Option[T] = d.OrElse(Some(v))
+
+struct Slot[T any](V T, Extra Option[T] = None())
+
+sealed type Box[T any] {
+    case Full(V T, Extra Option[T] = None())
+    default case Empty()
+}
+`
+	cases := []struct {
+		name     string
+		body     string
+		contains string
+	}{
+		{"function, same name", `func f[T any](v T) Option[T] = pick(v)`, "pick(v, std.None[T]{}.Apply())"},
+		{"function, another name", `func f[U any](u U) Option[U] = pick(u)`, "pick(u, std.None[U]{}.Apply())"},
+		{"struct, same name", `func f[T any](v T) Slot[T] = Slot(v)`, "std.None[T]{}.Apply()"},
+		{"sealed case, same name", `func f[T any](v T) Box[T] = Full(v)`, "Full[T]{}.Apply(v, std.None[T]{}.Apply())"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+"\n"+tc.body+"\n\nfunc main() { Println(f(1)) }", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tc.contains)
+		})
+	}
+}

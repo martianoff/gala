@@ -241,7 +241,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	}
 	var expr ast.Expr
 	if err == nil {
-		expr, err = t.transformWithDeclaredType(exprCtx, src.declared, src.typeParams)
+		expr, err = t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())
 	}
 	if err == nil {
 		expr, err = t.qualifyDefaultExpr(expr, src.pkg)
@@ -370,6 +370,19 @@ func placeForeignDefaultError(err error, src defaultSource, useLine, useCol int)
 		se.Line, se.Column = useLine, useCol
 	}
 	return err
+}
+
+// unboundTypeParams is the declaration's type parameters the use site binds
+// to no type argument. One it binds, even to a use-site type parameter of the
+// same name (`T` of `func mk[T any]`), is a type the declared type may carry.
+func (src defaultSource) unboundTypeParams() []string {
+	var out []string
+	for _, name := range src.typeParams {
+		if _, ok := src.typeArgs[name]; !ok {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // transformWithDeclaredType lowers an expression that stands in a slot of a

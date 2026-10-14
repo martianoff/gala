@@ -272,6 +272,16 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		decls = append(decls, interfaceDecl, markerMethod)
 	}
 
+	// 8. Constructors for Go callers, and the doc comment naming them.
+	ctors, guidance, err := t.sealedGoConstructors(name, variants, tParams, decls, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	if err != nil {
+		return nil, err
+	}
+	if decl, _ := findTypeSpec(decls, name); decl != nil && guidance != "" {
+		decl.Doc = docCommentGroup(guidance)
+	}
+	decls = append(decls, ctors...)
+
 	return decls, nil
 }
 

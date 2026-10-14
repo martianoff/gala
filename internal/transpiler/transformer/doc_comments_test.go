@@ -100,7 +100,7 @@ var docCommentDecls = []struct {
 	{"Add", "Add returns the sum of a and b. @Summary Adds two numbers @Router /add [get]", 9},
 	{"Config", "Config is a block-commented struct.", 12},
 	{"Config.Describe", "Describe is a documented method.", 19},
-	{"Shape", "Shape is a documented sealed type.", 22},
+	{"Shape", "Shape is a documented sealed type. Shape has no default value: create it with a case constructor, NewShapeCircle, NewShapeSquare. Its zero value Shape{} is none of its cases.", 22},
 	{"Circle", "Circle is a documented case.", 0}, // a companion type, not line-mapped
 	{"Greeter", "Greeter is a documented interface.", 29},
 	{"Point", "Point is a documented struct.", 35},
