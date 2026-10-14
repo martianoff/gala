@@ -288,3 +288,16 @@ struct Obj(var n int)
 		})
 	}
 }
+
+// TestReceiverAddressHint checks that the hint for `&recv` names the
+// receiver's type, and says a pointer receiver already is the pointer.
+func TestReceiverAddressHint(t *testing.T) {
+	trans := newTranspiler()
+	const decl = "package main\n\nstruct Obj(var n int)\n\n"
+
+	_, err := trans.Transpile(decl+"func (o Obj) F() int {\n    val p = &o\n    p.n\n}\n", "")
+	requireSemanticError(t, err, "cannot take the address of o: receiver o is immutable", "declare a pointer receiver (o *Obj)")
+
+	_, err = trans.Transpile(decl+"func (o *Obj) F() int {\n    val pp = &o\n    (*pp).n\n}\n", "")
+	requireSemanticError(t, err, "cannot take the address of o: receiver o is immutable", "o is already a pointer; pass o itself")
+}

@@ -32,7 +32,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0077]: struct Node holds itself by value: field next has type Option[Node], which contains a Node
+error[GALA-E0077]: struct Node holds itself by value: field next has type Option[Node], which contains Node itself
   --> main.gala:3:24
   |
 3 | struct Node(value int, next Option[Node])

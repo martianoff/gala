@@ -1411,7 +1411,7 @@ func (t *galaASTTransformer) immutableNameWriteError(ctx antlr.ParserRuleContext
 	switch {
 	case name == "":
 		return nil
-	case fixed == fixedReceiver:
+	case fixed.isReceiver():
 		err := t.semanticErrorAt(ctx, fmt.Sprintf("cannot %s receiver %s", verb, name))
 		err.Hint = receiverRebindHint(name)
 		return err

@@ -31,8 +31,8 @@ func (t *galaASTTransformer) immutableAddressError(ctx *grammar.UnaryExprContext
 	switch {
 	case fixed == fixedParam:
 		why, hint = fmt.Sprintf("parameter %s is not declared `var`", name), addressHint(name, fmt.Sprintf("declare the parameter `var %s`", name))
-	case fixed == fixedReceiver:
-		why, hint = fmt.Sprintf("receiver %s is immutable", name), addressHint(name, fmt.Sprintf("declare a pointer receiver (%s *T)", name))
+	case fixed.isReceiver():
+		why, hint = fmt.Sprintf("receiver %s is immutable", name), t.receiverAddressHint(name, fixed)
 	case strings.Contains(name, "."):
 		why, hint = fmt.Sprintf("%s is a val", name), addressHint(name, "copy it into a local `var`")
 	case name != "":
@@ -48,6 +48,20 @@ func (t *galaASTTransformer) immutableAddressError(ctx *grammar.UnaryExprContext
 	return galaerr.NewCodedSemanticError(galaerr.CodeAddressOfImmutable, tok.GetLine(), tok.GetColumn(),
 		fmt.Sprintf("cannot take the address of %s: %s", text, why), hint,
 	).WithSpan(tok.GetColumn() + 1 + len([]rune(text)))
+}
+
+// receiverAddressHint is the hint for `&recv`: a pointer receiver is already
+// the pointer, and a value receiver becomes one.
+func (t *galaASTTransformer) receiverAddressHint(name string, fixed fixedBinding) string {
+	if fixed == fixedPointerReceiver {
+		return fmt.Sprintf("%s is already a pointer; pass %s itself", name, name)
+	}
+	typ := t.getValType(name)
+	recv := "T"
+	if !transpiler.IsUnusable(typ) {
+		recv = displayType(typ)
+	}
+	return addressHint(name, fmt.Sprintf("declare a pointer receiver (%s *%s)", name, recv))
 }
 
 // addressHint is the hint for the address of the immutable binding name: how

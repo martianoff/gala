@@ -227,44 +227,6 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "unaryExpr must have unaryOp or postfixExpr")
 }
 
-// simpleIdentifierName returns the identifier a unary expression consists of
-// alone (no operator, no suffixes), or "" for anything else.
-func simpleIdentifierName(ctx *grammar.UnaryExprContext) string {
-	// Must not have a unary operator
-	if ctx.UnaryOp() != nil {
-		return ""
-	}
-	postfix := ctx.PostfixExpr()
-	if postfix == nil {
-		return ""
-	}
-	postfixCtx := postfix.(*grammar.PostfixExprContext)
-	// Must not have any suffixes (calls, member access, etc.)
-	if len(postfixCtx.AllPostfixSuffix()) > 0 {
-		return ""
-	}
-	primaryExpr := postfixCtx.PrimaryExpr()
-	if primaryExpr == nil {
-		return ""
-	}
-	primaryExprCtx, ok := primaryExpr.(*grammar.PrimaryExprContext)
-	if !ok {
-		return ""
-	}
-	primary := primaryExprCtx.Primary()
-	if primary == nil {
-		return ""
-	}
-	primaryCtx, ok := primary.(*grammar.PrimaryContext)
-	if !ok {
-		return ""
-	}
-	if primaryCtx.Identifier() == nil {
-		return ""
-	}
-	return primaryCtx.Identifier().GetText()
-}
-
 // getChildOperatorText safely extracts the operator text from a parse tree child node.
 func getChildOperatorText(ctx antlr.ParserRuleContext, index int) (string, error) {
 	child := ctx.GetChild(index)

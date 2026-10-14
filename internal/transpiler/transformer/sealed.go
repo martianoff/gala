@@ -28,7 +28,7 @@ type sealedFieldInfo struct {
 
 func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedTypeDeclarationContext) ([]ast.Decl, error) {
 	name := ctx.Identifier().GetText()
-	if err := t.selfContainingTypeError(name); err != nil {
+	if err := t.selfContainingTypeError(name, ctx.Identifier().GetStart()); err != nil {
 		return nil, err
 	}
 	t.pushScope()

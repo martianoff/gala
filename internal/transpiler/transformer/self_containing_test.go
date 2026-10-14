@@ -22,7 +22,7 @@ func TestSelfContainingType(t *testing.T) {
 		{
 			name:  "struct through Option",
 			input: "package main\n\nstruct Node(value int, next Option[Node])\n",
-			msg:   "struct Node holds itself by value: field next has type Option[Node], which contains a Node",
+			msg:   "struct Node holds itself by value: field next has type Option[Node], which contains Node itself",
 		},
 		{
 			name:  "struct through a tuple",
@@ -90,4 +90,32 @@ func TestSelfContainingGenericTerminates(t *testing.T) {
 	require.ErrorAs(t, err, &semErr)
 	assert.Equal(t, galaerr.CodeSelfContainingType, semErr.Code)
 	assert.Contains(t, semErr.Msg, "Box")
+}
+
+// TestSelfContainingTypeDetails checks that a type parameter named like a
+// package type is not that type, that a sealed type's error has a position,
+// and that the hint keeps a generic type's parameters.
+func TestSelfContainingTypeDetails(t *testing.T) {
+	trans := newTranspiler()
+
+	t.Run("type parameter named like a package type", func(t *testing.T) {
+		_, err := trans.Transpile("package main\n\nstruct T(b Box[int])\nstruct Box[T any](v T, o Option[T])\n", "")
+		require.NoError(t, err)
+	})
+
+	t.Run("sealed type has a position", func(t *testing.T) {
+		_, err := trans.Transpile("package main\n\nsealed type E {\n    case A()\n    case B(w Option[E])\n}\n", "")
+		var semErr *galaerr.SemanticError
+		require.ErrorAs(t, err, &semErr)
+		assert.Equal(t, galaerr.CodeSelfContainingType, semErr.Code)
+		assert.Equal(t, 3, semErr.Line)
+		assert.Contains(t, semErr.Hint, "give the case field the type itself (`w E`)")
+	})
+
+	t.Run("generic hint keeps the parameters", func(t *testing.T) {
+		_, err := trans.Transpile("package main\n\nsealed type Tree[T any] {\n    case Leaf()\n    case Node(kids Option[Tree[T]], v T)\n}\n", "")
+		var semErr *galaerr.SemanticError
+		require.ErrorAs(t, err, &semErr)
+		assert.Contains(t, semErr.Hint, "`kids *Tree[T]`")
+	})
 }

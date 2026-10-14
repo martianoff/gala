@@ -2,6 +2,9 @@ package transformer
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -17,26 +20,35 @@ import (
 // generated type.
 
 // selfContainingTypeError reports the first field of the type declared as name
-// that holds the type by value, or nil.
-func (t *galaASTTransformer) selfContainingTypeError(name string) error {
+// that holds the type by value, or nil. at locates the declaration, for a
+// field whose own position is not recorded.
+func (t *galaASTTransformer) selfContainingTypeError(name string, at antlr.Token) error {
 	meta := t.getTypeMeta(name)
 	if meta == nil || meta.IsOpaque {
 		return nil
 	}
 	visited := map[string]bool{}
+	params := typeParamSet(meta)
 	for _, field := range meta.FieldNames {
 		typ := meta.Fields[field]
-		if isSealedSelfField(typ, meta) || !t.holdsByValue(typ, meta, visited) {
+		if isSealedSelfField(typ, meta) || !t.holdsByValue(typ, meta, params, visited) {
 			continue
 		}
-		kind := "struct"
+		self := name
+		if len(meta.TypeParams) > 0 {
+			self = name + "[" + strings.Join(meta.TypeParams, ", ") + "]"
+		}
+		kind, fix := "struct", fmt.Sprintf("declare recursive data as a sealed type whose case field has the type itself (`case Cons(head int, tail %s)`)", self)
 		if meta.IsSealed {
-			kind = "sealed type"
+			kind, fix = "sealed type", fmt.Sprintf("give the case field the type itself (`%s %s`), which is held by reference", field, self)
 		}
 		pos := meta.FieldPositions[field]
+		if pos.Line == 0 {
+			pos = transpiler.SourcePos{Line: at.GetLine(), Column: at.GetColumn()}
+		}
 		return galaerr.NewCodedSemanticError(galaerr.CodeSelfContainingType, pos.Line, pos.Column,
-			fmt.Sprintf("%s %s holds itself by value: field %s has type %s, which contains a %s", kind, name, field, displayType(typ), name),
-			fmt.Sprintf("a value cannot contain itself; declare recursive data as a sealed type whose case field has the type itself (`case Cons(head int, tail %s)`), or hold it through a pointer (`%s *%s`)", name, field, name),
+			fmt.Sprintf("%s %s holds itself by value: field %s has type %s, which contains %s itself", kind, name, field, displayType(typ), name),
+			fmt.Sprintf("a value cannot contain itself; %s, or hold it through a pointer (`%s *%s`)", fix, field, self),
 		)
 	}
 	return nil
@@ -45,16 +57,19 @@ func (t *galaASTTransformer) selfContainingTypeError(name string) error {
 // holdsByValue reports whether a value of typ contains a value of the type
 // target describes: it is that type, or a struct or sealed type with a field
 // that holds it. A pointer, slice, map, function, interface or Go type holds
-// nothing by value that GALA declares. visited holds the types already
-// walked for this target.
-func (t *galaASTTransformer) holdsByValue(typ transpiler.Type, target *transpiler.TypeMetadata, visited map[string]bool) bool {
+// nothing by value that GALA declares, and neither does a type parameter in
+// params. visited holds the types already walked for this target.
+func (t *galaASTTransformer) holdsByValue(typ transpiler.Type, target *transpiler.TypeMetadata, params map[string]bool, visited map[string]bool) bool {
 	var args []transpiler.Type
 	switch tt := typ.(type) {
 	case transpiler.BasicType: // a declared type's name may be either
-		if isPrimitiveType(tt.Name) {
+		if isPrimitiveType(tt.Name) || params[tt.Name] {
 			return false
 		}
 	case transpiler.NamedType:
+		if tt.Package == "" && params[tt.Name] {
+			return false
+		}
 	case transpiler.GenericType:
 		args = tt.Params
 	default:
@@ -73,7 +88,7 @@ func (t *galaASTTransformer) holdsByValue(typ transpiler.Type, target *transpile
 	}
 	visited[key] = true
 	if meta.IsOpaque {
-		return meta.Underlying != nil && t.holdsByValue(meta.Underlying, target, visited)
+		return meta.Underlying != nil && t.holdsByValue(meta.Underlying, target, params, visited)
 	}
 	var subst map[string]transpiler.Type
 	if len(meta.TypeParams) > 0 {
@@ -84,6 +99,11 @@ func (t *galaASTTransformer) holdsByValue(typ transpiler.Type, target *transpile
 			}
 		}
 	}
+	// A parameter the arguments did not bind stays a parameter of meta.
+	fieldParams := params
+	if len(subst) < len(meta.TypeParams) {
+		fieldParams = typeParamSet(meta)
+	}
 	for _, field := range meta.FieldNames {
 		fieldType := meta.Fields[field]
 		if isSealedSelfField(fieldType, meta) {
@@ -92,16 +112,25 @@ func (t *galaASTTransformer) holdsByValue(typ transpiler.Type, target *transpile
 		if subst != nil {
 			fieldType = t.substituteInType(fieldType, subst)
 		}
-		if t.holdsByValue(fieldType, target, visited) {
+		if t.holdsByValue(fieldType, target, fieldParams, visited) {
 			return true
 		}
 	}
 	return false
 }
 
+// typeParamSet is the set of meta's type parameter names.
+func typeParamSet(meta *transpiler.TypeMetadata) map[string]bool {
+	set := make(map[string]bool, len(meta.TypeParams))
+	for _, p := range meta.TypeParams {
+		set[p] = true
+	}
+	return set
+}
+
 // isSealedSelfField reports whether a field of type typ in the type meta
 // describes is a sealed case field of the sealed type itself, which the
-// lowering holds through a pointer (see isSelfReferentialSealedField).
+// lowering holds through a pointer.
 func isSealedSelfField(typ transpiler.Type, meta *transpiler.TypeMetadata) bool {
-	return meta.IsSealed && typ != nil && stripPackagePrefix(typ.BaseName()) == meta.Name
+	return meta.IsSealed && typ != nil && isSelfReferentialSealedField(stripPackagePrefix(typ.BaseName()), meta.Name)
 }

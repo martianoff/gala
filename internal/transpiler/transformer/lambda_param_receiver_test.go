@@ -537,6 +537,6 @@ func (p Point) Zeroed() Point {
     *ptr = Point(0, 0)
     p
 }`, "")
-		requireSemanticError(t, err, "cannot take the address of p: receiver p is immutable", "declare a pointer receiver (p *T)")
+		requireSemanticError(t, err, "cannot take the address of p: receiver p is immutable", "declare a pointer receiver (p *Point)")
 	})
 }
