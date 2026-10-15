@@ -114,8 +114,8 @@ import (
 // case constructor called without a defaulted field would not fill it.
 //
 // v23: TypeMetadata records whether a type is a GALA interface
-// (IsInterface), which an interface literal builds, and whether an interface
-// method is variadic (MethodMetadata.Variadic). A v22 payload lacks them.
+// (IsInterface), which an interface literal builds, and whether a method is
+// variadic (MethodMetadata.Variadic). A v22 payload lacks them.
 const CacheVersion = "v23"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit

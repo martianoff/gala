@@ -585,7 +585,7 @@ type MethodMetadata struct {
 	// returns a copy) needs an addressable temporary.
 	PointerReceiver bool
 	// Variadic is true when the last parameter is `...T`; ParamTypes records
-	// it as T. Recorded for interface methods.
+	// it as T.
 	Variadic bool
 	// GoDeclared is true for a method of a type declared in a Go package,
 	// whose metadata the analyzer synthesizes from the Go type. A call of it

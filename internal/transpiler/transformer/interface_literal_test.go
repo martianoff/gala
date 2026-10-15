@@ -12,6 +12,8 @@ import (
 // value of an interface from one function per method, lowered to a private
 // helper struct of this file whose methods call those functions.
 func TestInterfaceLiteral(t *testing.T) {
+	// The helper's name ends in the hash of the file name, main.gala.
+	const helperSuffix = "e5564f09"
 	const decls = `package main
 
 import "fmt"
@@ -51,11 +53,11 @@ func (r MemRepo) Find(id int) Option[User] = Some(User(id, r.name))
     Println(r.Find(1), r.Count())
 }`,
 			contains: []string{
-				"type _Repo_literal_main struct {",
+				"type _Repo_literal_" + helperSuffix + " struct {",
 				"_Count func() int",
 				"_Find  func(int) std.Option[User]",
-				"func (l _Repo_literal_main) Find(p0 int) std.Option[User] {\n\treturn l._Find(p0)\n}",
-				"Repo(&_Repo_literal_main{_Count: func() int {",
+				"func (l *_Repo_literal_" + helperSuffix + ") Find(p0 int) std.Option[User] {\n\treturn l._Find(p0)\n}",
+				"Repo(&_Repo_literal_" + helperSuffix + "{_Count: func() int {",
 				"_Find: func(id int) std.Option[User] {",
 			},
 		},
@@ -73,10 +75,10 @@ func (r MemRepo) Find(id int) Option[User] = Some(User(id, r.name))
 			body: `func wrap[T any](v T) Box[T] = Box(Get = () => v)
 func main() { Println(wrap(1).Get(), Box[string](Get = () => "s").Get()) }`,
 			contains: []string{
-				"type _Box_literal_main[T any] struct {",
-				"func (l _Box_literal_main[T]) Get() T {",
-				"Box[T](&_Box_literal_main[T]{_Get: func() T {",
-				"Box[string](&_Box_literal_main[string]{",
+				"type _Box_literal_" + helperSuffix + "[T any] struct {",
+				"func (l *_Box_literal_" + helperSuffix + "[T]) Get() T {",
+				"Box[T](&_Box_literal_" + helperSuffix + "[T]{_Get: func() T {",
+				"Box[string](&_Box_literal_" + helperSuffix + "[string]{",
 			},
 		},
 		{
@@ -85,7 +87,7 @@ func main() { Println(wrap(1).Get(), Box[string](Get = () => "s").Get()) }`,
     val s = Sink(Write = (s) => Success(s.Size()))
     Println(s.Write("hello"))
 }`,
-			contains: []string{"_Write func(string) (int, error)", "func (l _Sink_literal_main) Write(p0 string) (int, error) {"},
+			contains: []string{"_Write func(string) (int, error)", "func (l *_Sink_literal_" + helperSuffix + ") Write(p0 string) (int, error) {"},
 		},
 		{
 			name: "a variadic method's function takes the slice",
@@ -93,7 +95,7 @@ func main() { Println(wrap(1).Get(), Box[string](Get = () => "s").Get()) }`,
     val l = Logger(Log = (prefix, parts) => Println(prefix, parts.Size()))
     l.Log("n", "a", "b")
 }`,
-			contains: []string{"_Log func(string, []string)", "func (l _Logger_literal_main) Log(p0 string, p1 ...string) {\n\tl._Log(p0, p1)\n}"},
+			contains: []string{"_Log func(string, []string)", "func (l *_Logger_literal_" + helperSuffix + ") Log(p0 string, p1 ...string) {\n\tl._Log(p0, p1)\n}"},
 		},
 		{
 			name: "a Go interface",
@@ -101,7 +103,7 @@ func main() { Println(wrap(1).Get(), Box[string](Get = () => "s").Get()) }`,
     val s = fmt.Stringer(String = () => "hi")
     Println(fmt.Sprint(s))
 }`,
-			contains: []string{"type _fmt_Stringer_literal_main struct {", "fmt.Stringer(&_fmt_Stringer_literal_main{_String: func() string {"},
+			contains: []string{"type _fmt_Stringer_literal_" + helperSuffix + " struct {", "fmt.Stringer(&_fmt_Stringer_literal_" + helperSuffix + "{_String: func() string {"},
 		},
 		{
 			name: "a method left out",
@@ -171,4 +173,27 @@ func main() {
 			}
 		})
 	}
+}
+
+// TestInterfaceLiteralOfGoVariadicMethod pins a Go interface whose method is
+// variadic: its Go signature records the last parameter as its element type,
+// and the helper's method takes it as `...T` again.
+func TestInterfaceLiteralOfGoVariadicMethod(t *testing.T) {
+	goCode, err := transpileInModule(t, map[string]string{
+		"go.mod":       "module example.com/golog\n\ngo 1.25\n",
+		"gala.mod":     "module example.com/golog\n",
+		"logger/lg.go": "package logger\n\ntype Logger interface{ Log(prefix string, parts ...string) }\n",
+		"main.gala": `package main
+
+import "example.com/golog/logger"
+
+func main() {
+    val l = logger.Logger(Log = (prefix, parts) => Println(prefix, parts.Size()))
+    l.Log("n", "a", "b")
+}
+`,
+	}, "main.gala")
+	require.NoError(t, err)
+	require.Contains(t, goCode, "_Log func(string, []string)")
+	require.Contains(t, goCode, ") Log(p0 string, p1 ...string) {\n\tl._Log(p0, p1)\n}")
 }

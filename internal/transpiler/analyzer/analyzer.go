@@ -1437,6 +1437,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 								}
@@ -3530,6 +3531,7 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 				ParamNames:      paramNames,
 				ReturnType:      retType,
 				PointerReceiver: td.PointerMethods[mName],
+				Variadic:        sig.IsVariadic,
 				GoDeclared:      true,
 			}
 		}
@@ -4345,6 +4347,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+								methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 							} else {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 							}
