@@ -8,8 +8,8 @@ import (
 
 // TestLambdaForAnyResult pins a lambda filling a slot whose function type
 // declares the result `any`: the lambda's result is `any`, not its body's type,
-// which Go would not accept there. A generic callee's result still comes from
-// the body.
+// which Go would not accept there, including a result holding `any`. A
+// generic callee's result still comes from the body.
 func TestLambdaForAnyResult(t *testing.T) {
 	cases := []struct {
 		name string
@@ -35,6 +35,27 @@ func main() { Println(run((n) => n * 2)) }`,
     Println(f())
 }`,
 			want: "func() any {",
+		},
+		{
+			name: "a block body returning values of different types",
+			body: `func pick(f func(bool) any) any = f(true)
+func main() {
+    Println(pick((c) => {
+        if c {
+            return 1
+        }
+        return "a"
+    }))
+}`,
+			want: "func(c bool) any {",
+		},
+		{
+			name: "a result holding any",
+			body: `import . "martianoff/gala/collection_immutable"
+
+func many(f func() Array[any]) int = f().Size()
+func main() { Println(many(() => ArrayOf[any](1, "b"))) }`,
+			want: "func() Array[any] {",
 		},
 		{
 			name: "a generic callee infers from the body",

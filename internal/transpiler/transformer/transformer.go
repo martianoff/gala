@@ -419,7 +419,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		if !ok || typeDecl == nil || typeDecl.Identifier() == nil || typeDecl.TypeAlias() == nil {
 			continue
 		}
-		t.fileTypeDeclTargets[typeDecl.Identifier().GetText()] = transpiler.ParseType(aliasText(typeDecl.TypeAlias()))
+		t.fileTypeDeclTargets[typeDecl.Identifier().GetText()] = transpiler.ParseType(galaparser.AliasText(typeDecl.TypeAlias()))
 	}
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
@@ -994,14 +994,6 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 		return ok
 	})
 	return resolved
-}
-
-// aliasText spells the target of `type X Y` as transpiler.ParseType reads it.
-func aliasText(ctx grammar.ITypeAliasContext) string {
-	if a, ok := ctx.(*grammar.TypeAliasContext); ok && a.Type_() != nil {
-		return galaparser.TypeText(a.Type_())
-	}
-	return ctx.GetText()
 }
 
 // getTypeMeta resolves a type name and returns the corresponding TypeMetadata.

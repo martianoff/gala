@@ -4279,29 +4279,29 @@ func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionC
 		// it is: each parameter is `any`, as the callee declares.
 		expectedParamTypes = slices.Repeat([]transpiler.Type{s.typ}, lambdaParamCount(lambdaCtx))
 	}
-	lit, err := t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict)
+	lit, err := t.transformLambdaWithExpectedType(lambdaCtx, expectedRetType, expectedParamTypes, strict, t.declaresAnyResult(s))
 	if err != nil {
 		return nil, err
 	}
-	widenLambdaResultToAny(lit, t.resolveTranspilerTypeAsFuncType(s.typ), s.open, lambdaCtx)
 	return t.spreadLambdaGoResults(lit, s.typ, lambdaCtx)
 }
 
-// widenLambdaResultToAny gives lit, a lambda lowered for a slot of function
-// type ft, the result `any` when ft declares that result. The lambda's result
-// otherwise comes from its body, as `any` in an expectation usually stands for
-// a type not inferred yet, so `() => 1` would be a func() int, which Go does
-// not accept as a func() any. An open slot's `any` is such a placeholder, and
-// a lambda that annotates its result keeps it.
-func widenLambdaResultToAny(lit ast.Expr, ft *transpiler.FuncType, open bool, lambdaCtx *grammar.LambdaExpressionContext) {
-	if open || ft == nil || len(ft.Results) != 1 || !ft.Results[0].IsAny() || lambdaCtx.Type_() != nil {
-		return
+// declaresAnyResult reports whether slot s is a function type whose result the
+// slot itself spells with `any` (`func() any`, `func() Array[any]`), so that a
+// lambda filling it returns that type. In an expectation `any` otherwise
+// stands for a type not inferred yet: a callee's unbound type parameter, or
+// any type of an open slot.
+func (t *galaASTTransformer) declaresAnyResult(s slot) bool {
+	if s.open {
+		return false
 	}
-	fl, ok := lit.(*ast.FuncLit)
-	if !ok || fl.Type.Results == nil || len(fl.Type.Results.List) != 1 {
-		return
+	ft := t.resolveTranspilerTypeAsFuncType(s.typ)
+	if ft == nil || len(ft.Results) != 1 {
+		return false
 	}
-	fl.Type.Results.List[0].Type = ast.NewIdent("any")
+	r := ft.Results[0]
+	return typeNameMatches(r, func(name string) bool { return name == "any" }) &&
+		!typeNameMatches(r, t.isUnboundTypeParam)
 }
 
 // goTypeKey returns the Go type info key of a type named as written: a bare

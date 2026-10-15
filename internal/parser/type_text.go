@@ -18,6 +18,15 @@ func TypeText(ctx grammar.ITypeContext) string {
 	return b.String()
 }
 
+// AliasText spells the target of `type X Y` as TypeText does. Its grammar is
+// `identifier | type`: `type Millis int64` takes the identifier branch.
+func AliasText(ctx grammar.ITypeAliasContext) string {
+	if a, ok := ctx.(*grammar.TypeAliasContext); ok && a.Type_() != nil {
+		return TypeText(a.Type_())
+	}
+	return ctx.GetText()
+}
+
 func writeTypeText(b *strings.Builder, ctx grammar.ITypeContext) {
 	t, ok := ctx.(*grammar.TypeContext)
 	if !ok || t == nil {
@@ -26,6 +35,7 @@ func writeTypeText(b *strings.Builder, ctx grammar.ITypeContext) {
 		}
 		return
 	}
+	start := t.GetStart().GetText()
 	switch {
 	case t.QualifiedIdentifier() != nil:
 		b.WriteString(t.QualifiedIdentifier().GetText())
@@ -44,15 +54,15 @@ func writeTypeText(b *strings.Builder, ctx grammar.ITypeContext) {
 	case t.FUNC() != nil:
 		b.WriteString("func")
 		writeSignatureText(b, t.Signature())
-	case t.GetStart().GetText() == "map":
+	case start == "map":
 		b.WriteString("map[")
 		writeTypeText(b, t.Type_(0))
 		b.WriteByte(']')
 		writeTypeText(b, t.Type_(1))
-	case t.GetStart().GetText() == "[":
+	case start == "[":
 		b.WriteString("[]")
 		writeTypeText(b, t.Type_(0))
-	case t.GetStart().GetText() == "*":
+	case start == "*":
 		b.WriteByte('*')
 		writeTypeText(b, t.Type_(0))
 	default:

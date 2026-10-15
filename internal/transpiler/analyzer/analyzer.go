@@ -2750,7 +2750,7 @@ func (a *galaAnalyzer) signatureResult(sig grammar.ISignatureContext, pkgName st
 	}
 	var results []transpiler.Type
 	for _, typ := range list.AllType_() {
-		results = append(results, a.resolveTypeWithParams(typ.GetText(), pkgName, typeParams))
+		results = append(results, a.resolveTypeWithParams(galaparser.TypeText(typ), pkgName, typeParams))
 	}
 	value, _ := transpiler.GoResultValueOf(results)
 	return value.Type, results
@@ -3764,7 +3764,7 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 // isPointerReceiver reports whether a method receiver is declared as a
 // pointer (`func (c *Counter) Bump()`).
 func isPointerReceiver(recv *grammar.ReceiverContext) bool {
-	return recv.Type_() != nil && strings.HasPrefix(galaparser.TypeText(recv.Type_()), "*")
+	return recv.Type_() != nil && recv.Type_().GetStart().GetText() == "*"
 }
 
 func getBaseTypeName(ctx grammar.ITypeContext) string {
@@ -4564,17 +4564,10 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 // | type`, and both branches name an alias: `type Millis int64` and `type
 // Coord Point` take the identifier branch.
 func typeAliasTarget(typeDecl *grammar.TypeDeclarationContext) string {
-	aliasCtx, ok := typeDecl.TypeAlias().(*grammar.TypeAliasContext)
-	if !ok || aliasCtx == nil {
+	if typeDecl.TypeAlias() == nil {
 		return ""
 	}
-	if aliasCtx.Type_() != nil {
-		return galaparser.TypeText(aliasCtx.Type_())
-	}
-	if aliasCtx.Identifier() != nil {
-		return aliasCtx.Identifier().GetText()
-	}
-	return ""
+	return galaparser.AliasText(typeDecl.TypeAlias())
 }
 
 // fileTypeAliases maps each alias sourceFile declares (`type Millis int64`)
@@ -4717,7 +4710,7 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			}
 			var valType transpiler.Type = transpiler.NilType{}
 			if typeCtx != nil {
-				valType = a.resolveTypeWithParams(typeCtx.GetText(), pkgName, nil)
+				valType = a.resolveTypeWithParams(galaparser.TypeText(typeCtx), pkgName, nil)
 			} else if len(exprs) == len(names) {
 				valType = a.inferPackageValInitType(exprs[i], pkgName, richAST)
 			}
