@@ -82,6 +82,7 @@ var accumulatedStateFields = []string{
 	"structImmutFields",
 	"needsStdImport",
 	"needsFmtImport",
+	"needsFmtAliasImport",
 	"needsUtf8Import",
 	"needsEmbedImport",
 	"typeParamNames",

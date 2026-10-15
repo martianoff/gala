@@ -10,6 +10,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -24,7 +25,7 @@ import (
 func (t *galaASTTransformer) transformLambda(ctx *grammar.LambdaExpressionContext) (ast.Expr, error) {
 	// A lambda in a typed slot never reaches here: the slot lowers it through
 	// lowerAgainst. This is the context-free form.
-	return t.transformLambdaWithExpectedType(ctx, nil, nil, true)
+	return t.transformLambdaWithExpectedType(ctx, nil, nil, true, false)
 }
 
 // ExpectedVoid is a sentinel value indicating the lambda should have no return type
@@ -94,7 +95,12 @@ func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
 // `any`, while one whose slot has no type at all — the callee's signature is
 // unknown — or whose type could not be resolved is GALA-E0033 too: its `any`
 // would reach the output unannounced and fail only in `go build`.
-func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams bool) (ast.Expr, error) {
+//
+// declaredResult says expectedRetType is the result the slot declares, so an
+// `any` in it is that type (`func() any`, `func() Array[any]`); otherwise an
+// `any` there stands for a type not inferred yet, and the body's own result
+// type is used.
+func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
 	t.pushScope()
 	defer t.popScope()
 	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
@@ -108,7 +114,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		for _, pCtx := range allParams {
 			paramCtx := pCtx.(*grammar.ParameterContext)
 			if paramCtx.Type_() != nil {
-				typeText := paramCtx.Type_().GetText()
+				typeText := galaparser.TypeText(paramCtx.Type_())
 				if typeText == "_" {
 					hasWildcardType = true
 				} else {
@@ -194,9 +200,9 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	var retType ast.Expr // nil = void
 	isVoidExpected := expectedRetType == ExpectedVoid
 
-	// Check if expected type is a concrete type (not "any" or containing "any")
-	// We only use the expected type if it's more specific than "any"
-	isConcreteExpectedType := expectedRetType != nil && expectedRetType != ExpectedVoid && !containsAny(expectedRetType)
+	// Use the expected result type when it is concrete: declared by the slot,
+	// or free of `any`, which otherwise stands for a type not inferred yet.
+	isConcreteExpectedType := expectedRetType != nil && expectedRetType != ExpectedVoid && (declaredResult || !containsAny(expectedRetType))
 
 	// True when the caller has supplied a function-shaped expectation that
 	// requires a return value (non-void), even if the precise return type is
@@ -246,10 +252,12 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	defer t.enterReturnSlot(lambdaSlot)()
 
 	// The body is lowered in a fresh context: its expected type is this
-	// lambda's result type, never the slot type the lambda itself fills.
+	// lambda's result type, never the slot type the lambda itself fills. An
+	// `any` in a declared or annotated result is that type, so the body is
+	// lowered against it (`Some(1)` for an Option[any]).
 	var bodySlot slot
 	if retType != nil && retType != ExpectedVoid {
-		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || !containsAny(retType) {
+		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || declaredResult || explicitRetType != nil || !containsAny(retType) {
 			bodySlot = typedSlot(rt)
 		}
 	}

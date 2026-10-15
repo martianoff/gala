@@ -22,6 +22,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//galaerr",
+        "//internal/parser",
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/genheader",

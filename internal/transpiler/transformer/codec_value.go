@@ -81,25 +81,11 @@ func (t *galaASTTransformer) injectedMetaParam(ty transpiler.Type) injectedMeta 
 // isInterfaceWithMethods reports whether meta describes an interface whose
 // methods are exactly want (name → parameter count).
 func isInterfaceWithMethods(meta *transpiler.TypeMetadata, want map[string]int) bool {
-	if !isGalaInterfaceMeta(meta) || len(meta.Methods) != len(want) {
+	if !meta.IsInterface || len(meta.Methods) != len(want) {
 		return false
 	}
 	for name, arity := range want {
 		if m, ok := meta.Methods[name]; !ok || len(m.ParamTypes) != arity {
-			return false
-		}
-	}
-	return true
-}
-
-// isGalaInterfaceMeta reports whether meta has the shape of a GALA interface:
-// no fields, and methods without a receiver.
-func isGalaInterfaceMeta(meta *transpiler.TypeMetadata) bool {
-	if len(meta.Fields) > 0 {
-		return false
-	}
-	for _, m := range meta.Methods {
-		if m.ReceiverName != "" {
 			return false
 		}
 	}

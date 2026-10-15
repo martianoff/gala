@@ -17,6 +17,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
@@ -1101,7 +1102,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							"rename or remove the duplicate field",
 						)
 					}
-					meta.Fields[fieldName] = a.resolveTypeWithParams(fctx.Type_().GetText(), pkgName, meta.TypeParams)
+					meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.TypeText(fctx.Type_()), pkgName, meta.TypeParams)
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 					if meta.FieldPositions == nil {
@@ -1160,7 +1161,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
 									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
@@ -1253,7 +1254,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						}
 						fieldType := ""
 						if pctx.Type_() != nil {
-							fieldType = pctx.Type_().GetText()
+							fieldType = galaparser.TypeText(pctx.Type_())
 						}
 						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
 							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
@@ -1424,8 +1425,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						// Detect Go generics instantiation cycle:
 						// If receiver is Container[T] and return is Container[SomeType[T, ...]]
 						// Go would detect infinite type instantiation
-						recvTypeStr := recvCtx.Type_().GetText()
-						retTypeStr := ctx.Signature().Type_().GetText()
+						recvTypeStr := galaparser.TypeText(recvCtx.Type_())
+						retTypeStr := galaparser.TypeText(ctx.Signature().Type_())
 						if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
 							methodMeta.IsGeneric = true
 						}
@@ -1437,7 +1438,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
 									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
@@ -1538,7 +1539,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
-								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, funcMeta.TypeParams))
+								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
 							} else {
 								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 							}
@@ -1655,7 +1656,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			// Extract type name if specified
 			typeName := ""
 			if ctx.Type_() != nil {
-				typeName = ctx.Type_().GetText()
+				typeName = galaparser.TypeText(ctx.Type_())
 			}
 
 			// Extract embed patterns from embedPatterns rule
@@ -2048,7 +2049,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			for _, fieldCtx := range fieldList.AllSealedCaseField() {
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
-				fieldTypeStr := fc.Type_().GetText()
+				fieldTypeStr := galaparser.TypeText(fc.Type_())
 				field := variantFieldInfo{name: fieldName, typeName: fieldTypeStr}
 				if pd := fc.ParamDefault(); pd != nil {
 					exprCtx := pd.(*grammar.ParamDefaultContext).Expression()
@@ -2741,7 +2742,7 @@ func (a *galaAnalyzer) buildTypeResolver(pkgName string) *resolver.TypeResolver 
 // for a signature with no result.
 func (a *galaAnalyzer) signatureResult(sig grammar.ISignatureContext, pkgName string, typeParams []string) (transpiler.Type, []transpiler.Type) {
 	if sig.Type_() != nil {
-		return a.resolveTypeWithParams(sig.Type_().GetText(), pkgName, typeParams), nil
+		return a.resolveTypeWithParams(galaparser.TypeText(sig.Type_()), pkgName, typeParams), nil
 	}
 	list, ok := sig.GoResults().(*grammar.GoResultsContext)
 	if !ok {
@@ -2749,7 +2750,7 @@ func (a *galaAnalyzer) signatureResult(sig grammar.ISignatureContext, pkgName st
 	}
 	var results []transpiler.Type
 	for _, typ := range list.AllType_() {
-		results = append(results, a.resolveTypeWithParams(typ.GetText(), pkgName, typeParams))
+		results = append(results, a.resolveTypeWithParams(galaparser.TypeText(typ), pkgName, typeParams))
 	}
 	value, _ := transpiler.GoResultValueOf(results)
 	return value.Type, results
@@ -3763,7 +3764,7 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 // isPointerReceiver reports whether a method receiver is declared as a
 // pointer (`func (c *Counter) Bump()`).
 func isPointerReceiver(recv *grammar.ReceiverContext) bool {
-	return recv.Type_() != nil && strings.HasPrefix(recv.Type_().GetText(), "*")
+	return recv.Type_() != nil && recv.Type_().GetStart().GetText() == "*"
 }
 
 func getBaseTypeName(ctx grammar.ITypeContext) string {
@@ -4037,7 +4038,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				for _, field := range structType.AllStructField() {
 					fctx := field.(*grammar.StructFieldContext)
 					fieldName := fctx.Identifier().GetText()
-					meta.Fields[fieldName] = a.resolveTypeWithParams(fctx.Type_().GetText(), pkgName, meta.TypeParams)
+					meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.TypeText(fctx.Type_()), pkgName, meta.TypeParams)
 					meta.FieldNames = append(meta.FieldNames, fieldName)
 					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
 					if meta.FieldPositions == nil {
@@ -4082,7 +4083,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
 									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
@@ -4177,7 +4178,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						fieldName := pctx.Identifier().GetText()
 						fieldType := ""
 						if pctx.Type_() != nil {
-							fieldType = pctx.Type_().GetText()
+							fieldType = galaparser.TypeText(pctx.Type_())
 						}
 						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
 							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
@@ -4335,8 +4336,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					// IsGeneric=false from extraction here) would clobber the true
 					// flag and the transpiler would emit method-syntax calls against
 					// a standalone-function definition.
-					recvTypeStr := recvCtx.Type_().GetText()
-					retTypeStr := ctx.Signature().Type_().GetText()
+					recvTypeStr := galaparser.TypeText(recvCtx.Type_())
+					retTypeStr := galaparser.TypeText(ctx.Signature().Type_())
 					if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
 						methodMeta.IsGeneric = true
 					}
@@ -4347,7 +4348,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
-								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
 								methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 							} else {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
@@ -4424,7 +4425,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, funcMeta.TypeParams))
+									funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
 								} else {
 									funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 								}
@@ -4563,17 +4564,10 @@ func validateDefaultParams(funcMeta *transpiler.FunctionMetadata, line, column i
 // | type`, and both branches name an alias: `type Millis int64` and `type
 // Coord Point` take the identifier branch.
 func typeAliasTarget(typeDecl *grammar.TypeDeclarationContext) string {
-	aliasCtx, ok := typeDecl.TypeAlias().(*grammar.TypeAliasContext)
-	if !ok || aliasCtx == nil {
+	if typeDecl.TypeAlias() == nil {
 		return ""
 	}
-	if aliasCtx.Type_() != nil {
-		return aliasCtx.Type_().GetText()
-	}
-	if aliasCtx.Identifier() != nil {
-		return aliasCtx.Identifier().GetText()
-	}
-	return ""
+	return galaparser.AliasText(typeDecl.TypeAlias())
 }
 
 // fileTypeAliases maps each alias sourceFile declares (`type Millis int64`)
@@ -4716,7 +4710,7 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 			}
 			var valType transpiler.Type = transpiler.NilType{}
 			if typeCtx != nil {
-				valType = a.resolveTypeWithParams(typeCtx.GetText(), pkgName, nil)
+				valType = a.resolveTypeWithParams(galaparser.TypeText(typeCtx), pkgName, nil)
 			} else if len(exprs) == len(names) {
 				valType = a.inferPackageValInitType(exprs[i], pkgName, richAST)
 			}

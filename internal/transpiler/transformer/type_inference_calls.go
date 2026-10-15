@@ -231,7 +231,7 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.SelectorExpr, typeArgs []transpiler.Type) transpiler.Type {
 	// GALA's Println/Print are rewritten to fmt.Println/fmt.Print.
 	// Treat them as void — the Go (int, error) return is an implementation detail.
-	if pkgId, ok := sel.X.(*ast.Ident); ok && pkgId.Name == "fmt" {
+	if pkgId, ok := sel.X.(*ast.Ident); ok && (pkgId.Name == "fmt" || pkgId.Name == fmtAlias) {
 		switch sel.Sel.Name {
 		case "Println", "Print":
 			return transpiler.VoidType{}

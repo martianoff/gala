@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -77,7 +78,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			for _, fieldCtx := range fieldList.AllSealedCaseField() {
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
-				fieldTypeText := fc.Type_().GetText()
+				fieldTypeText := galaparser.TypeText(fc.Type_())
 				if allFieldTypes[fieldName] == nil {
 					allFieldTypes[fieldName] = make(map[string]bool)
 				}
@@ -762,7 +763,6 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 	parentType := t.buildGenericTypeExpr(parentName, tParams)
 
 	var cases []ast.Stmt
-	needsFmt := false
 
 	for _, vi := range variants {
 		var retExpr ast.Expr
@@ -794,14 +794,13 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 				// All fields are func-typed: no format verbs remain, use a plain string literal.
 				retExpr = &ast.BasicLit{Kind: token.STRING, Value: formatStr}
 			} else {
-				needsFmt = true
 				allArgs := append([]ast.Expr{
 					&ast.BasicLit{Kind: token.STRING, Value: formatStr},
 				}, args...)
 
 				retExpr = &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("fmt"),
+						X:   t.fmtPackage(),
 						Sel: ast.NewIdent("Sprintf"),
 					},
 					Args: allArgs,
@@ -831,10 +830,6 @@ func (t *galaASTTransformer) generateSealedStringMethod(parentName string, varia
 			},
 		},
 	})
-
-	if needsFmt {
-		t.needsFmtImport = true
-	}
 
 	return &ast.FuncDecl{
 		Recv: &ast.FieldList{
