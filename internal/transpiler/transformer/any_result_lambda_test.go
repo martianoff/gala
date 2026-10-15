@@ -58,6 +58,22 @@ func main() { Println(many(() => ArrayOf[any](1, "b"))) }`,
 			want: "func() Array[any] {",
 		},
 		{
+			name: "a body lowered against a result holding any",
+			body: `func many(f func() Option[any]) bool = f().IsDefined()
+func main() { Println(many(() => Some(1))) }`,
+			want: "std.Some[any]{}.Apply(1)",
+		},
+		{
+			name: "a Go result list holding any",
+			body: `func two(f func() (any, error)) int {
+    val r, err = f()
+    Println(r, err)
+    return 1
+}
+func main() { Println(two(() => Success(1))) }`,
+			want: "func() (any, error) {",
+		},
+		{
 			name: "a generic callee infers from the body",
 			body: `func apply[T any](f func() T) T = f()
 func main() { Println(apply(() => 1)) }`,

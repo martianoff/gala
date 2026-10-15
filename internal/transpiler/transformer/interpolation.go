@@ -25,20 +25,38 @@ func (t *galaASTTransformer) rewriteBuiltinPrintFuncs(base ast.Expr) ast.Expr {
 	}
 }
 
-// fmtAlias is the name generated code imports Go's fmt under when a binding
-// named fmt is in scope, so that a call GALA lowers to fmt (Println, s"...")
-// does not reach the binding.
+// fmtAlias is the name generated code imports Go's fmt under when its own
+// name is taken here, so that a call GALA lowers to fmt (Println, s"...")
+// does not reach what took it.
 const fmtAlias = "_gala_fmt"
 
 // fmtPackage names Go's fmt package where generated code calls it, and makes
-// the file import it under that name.
+// the file import it under that name: the name the file imports fmt under, or
+// fmt, unless a binding, type parameter, function or type has that name.
 func (t *galaASTTransformer) fmtPackage() *ast.Ident {
-	if _, _, bound := t.scopeLookup("fmt"); bound {
+	name := "fmt"
+	imported := false
+	if e, ok := t.importManager.GetByPath("fmt"); ok && e != nil && !e.IsDot && !e.Implicit() {
+		name, imported = e.QualifierFor("fmt"), true
+	}
+	if t.nameTaken(name) {
 		t.needsFmtAliasImport = true
 		return ast.NewIdent(fmtAlias)
 	}
-	t.needsFmtImport = true
-	return ast.NewIdent("fmt")
+	if !imported {
+		t.needsFmtImport = true
+	}
+	return ast.NewIdent(name)
+}
+
+// nameTaken reports whether name, at this point of the file, means something
+// other than a package: a binding in scope, a type parameter, or a function
+// or type of the package.
+func (t *galaASTTransformer) nameTaken(name string) bool {
+	if _, _, bound := t.scopeLookup(name); bound {
+		return true
+	}
+	return t.activeTypeParams[name] || t.isKnownFunctionName(name) || t.getTypeMeta(name) != nil
 }
 
 // isBuiltinPrint reports whether base names GALA's Println or Print builtin —

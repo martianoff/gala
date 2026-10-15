@@ -4286,9 +4286,9 @@ func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionC
 	return t.spreadLambdaGoResults(lit, s.typ, lambdaCtx)
 }
 
-// declaresAnyResult reports whether slot s is a function type whose result the
-// slot itself spells with `any` (`func() any`, `func() Array[any]`), so that a
-// lambda filling it returns that type. In an expectation `any` otherwise
+// declaresAnyResult reports whether slot s is a function type whose results the
+// slot itself spells with `any` (`func() any`, `func() Array[any]`,
+// `func() (any, error)`), so that a lambda filling it returns that type. In an expectation `any` otherwise
 // stands for a type not inferred yet: a callee's unbound type parameter, or
 // any type of an open slot.
 func (t *galaASTTransformer) declaresAnyResult(s slot) bool {
@@ -4296,12 +4296,17 @@ func (t *galaASTTransformer) declaresAnyResult(s slot) bool {
 		return false
 	}
 	ft := t.resolveTranspilerTypeAsFuncType(s.typ)
-	if ft == nil || len(ft.Results) != 1 {
+	if ft == nil || len(ft.Results) == 0 {
 		return false
 	}
-	r := ft.Results[0]
-	return typeNameMatches(r, func(name string) bool { return name == "any" }) &&
-		!typeNameMatches(r, t.isUnboundTypeParam)
+	spellsAny := false
+	for _, r := range ft.Results {
+		if typeNameMatches(r, t.isUnboundTypeParam) {
+			return false
+		}
+		spellsAny = spellsAny || typeNameMatches(r, func(name string) bool { return name == "any" })
+	}
+	return spellsAny
 }
 
 // goTypeKey returns the Go type info key of a type named as written: a bare

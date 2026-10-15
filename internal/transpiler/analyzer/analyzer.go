@@ -17,8 +17,8 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/module"

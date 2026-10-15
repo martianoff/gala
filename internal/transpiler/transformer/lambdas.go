@@ -252,10 +252,12 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	defer t.enterReturnSlot(lambdaSlot)()
 
 	// The body is lowered in a fresh context: its expected type is this
-	// lambda's result type, never the slot type the lambda itself fills.
+	// lambda's result type, never the slot type the lambda itself fills. An
+	// `any` in a declared or annotated result is that type, so the body is
+	// lowered against it (`Some(1)` for an Option[any]).
 	var bodySlot slot
 	if retType != nil && retType != ExpectedVoid {
-		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || !containsAny(retType) {
+		if rt := t.astTypeToTranspilerType(retType); t.resolveTranspilerTypeAsFuncType(rt) != nil || declaredResult || explicitRetType != nil || !containsAny(retType) {
 			bodySlot = typedSlot(rt)
 		}
 	}
