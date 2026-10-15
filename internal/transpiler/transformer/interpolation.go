@@ -19,11 +19,26 @@ func (t *galaASTTransformer) rewriteBuiltinPrintFuncs(base ast.Expr) ast.Expr {
 	if !t.isBuiltinPrint(base) {
 		return base
 	}
-	t.needsFmtImport = true
 	return &ast.SelectorExpr{
-		X:   ast.NewIdent("fmt"),
+		X:   t.fmtPackage(),
 		Sel: ast.NewIdent(base.(*ast.Ident).Name),
 	}
+}
+
+// fmtAlias is the name generated code imports Go's fmt under when a binding
+// named fmt is in scope, so that a call GALA lowers to fmt (Println, s"...")
+// does not reach the binding.
+const fmtAlias = "_gala_fmt"
+
+// fmtPackage names Go's fmt package where generated code calls it, and makes
+// the file import it under that name.
+func (t *galaASTTransformer) fmtPackage() *ast.Ident {
+	if _, _, bound := t.scopeLookup("fmt"); bound {
+		t.needsFmtAliasImport = true
+		return ast.NewIdent(fmtAlias)
+	}
+	t.needsFmtImport = true
+	return ast.NewIdent("fmt")
 }
 
 // isBuiltinPrint reports whether base names GALA's Println or Print builtin —
@@ -160,8 +175,6 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 		args = append(args, goExpr)
 	}
 
-	t.needsFmtImport = true
-
 	allArgs := make([]ast.Expr, 0, 1+len(args))
 	allArgs = append(allArgs, &ast.BasicLit{
 		Kind:  token.STRING,
@@ -171,7 +184,7 @@ func (t *galaASTTransformer) buildSprintfCall(parts []interpolation.Part, isForm
 
 	call := &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
-			X:   ast.NewIdent("fmt"),
+			X:   t.fmtPackage(),
 			Sel: ast.NewIdent("Sprintf"),
 		},
 		Args: allArgs,

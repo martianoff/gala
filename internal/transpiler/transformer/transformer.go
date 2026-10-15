@@ -14,8 +14,8 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/infer"
 	"martianoff/gala/internal/transpiler/registry"
@@ -32,18 +32,19 @@ type TypeTraceEntry struct {
 }
 
 type galaASTTransformer struct {
-	currentScope      *scope
-	packageName       string
-	immutFields       map[string]bool
-	structImmutFields map[string][]bool
-	needsStdImport    bool
-	needsFmtImport    bool
-	needsUtf8Import   bool
-	activeTypeParams  map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
-	typeParamNames    map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
-	structFields      map[string][]string
-	structFieldTypes  map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
-	genericMethods    map[string]map[string]bool            // receiverType -> methodName -> isGeneric
+	currentScope        *scope
+	packageName         string
+	immutFields         map[string]bool
+	structImmutFields   map[string][]bool
+	needsStdImport      bool
+	needsFmtImport      bool
+	needsFmtAliasImport bool // generated code calls fmt under fmtAlias; see fmtPackage
+	needsUtf8Import     bool
+	activeTypeParams    map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
+	typeParamNames      map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
+	structFields        map[string][]string
+	structFieldTypes    map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
+	genericMethods      map[string]map[string]bool            // receiverType -> methodName -> isGeneric
 	// resultGenericMethods holds the name of every known method whose own
 	// type parameters its result mentions (see isResultGenericMethodCall).
 	resultGenericMethods map[string]bool
@@ -235,6 +236,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 	t.needsStdImport = false
 	t.needsFmtImport = false
+	t.needsFmtAliasImport = false
 	t.needsUtf8Import = false
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
@@ -520,6 +522,13 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			// If std was added, it's at index 0. We want fmt to be there too.
 			file.Decls = append([]ast.Decl{importDecl}, file.Decls...)
 		}
+	}
+
+	if t.needsFmtAliasImport {
+		file.Decls = append([]ast.Decl{&ast.GenDecl{Tok: token.IMPORT, Specs: []ast.Spec{&ast.ImportSpec{
+			Name: ast.NewIdent(fmtAlias),
+			Path: &ast.BasicLit{Kind: token.STRING, Value: `"fmt"`},
+		}}}}, file.Decls...)
 	}
 
 	if t.needsUtf8Import {
