@@ -209,6 +209,7 @@ go_test(
         "methods_test.go",
         "multi_file_some_none_test.go",
         "multi_var_test.go",
+        "named_func_type_params_test.go",
         "named_pattern_args_test.go",
         "nested_function_test.go",
         "nested_generic_method_infer_test.go",

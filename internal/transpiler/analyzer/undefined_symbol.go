@@ -17,6 +17,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/registry"
@@ -1508,7 +1509,7 @@ func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext, rec
 		if fd, ok := n.(*grammar.FunctionDeclarationContext); ok && fd.Receiver() != nil {
 			var sigExtra map[string]bool
 			if rc, ok := fd.Receiver().(*grammar.ReceiverContext); ok && rc.Type_() != nil {
-				sigExtra = receiverImports(receiverBaseTypeName(rc.Type_().GetText()))
+				sigExtra = receiverImports(receiverBaseTypeName(galaparser.TypeText(rc.Type_())))
 			}
 			for i := 0; i < n.GetChildCount(); i++ {
 				switch child := n.GetChild(i).(type) {

@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -54,7 +55,7 @@ func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationConte
 	}
 
 	if ctx.Type_() != nil {
-		meta.Underlying = a.resolveTypeWithParams(ctx.Type_().GetText(), pkgName, meta.TypeParams)
+		meta.Underlying = a.resolveTypeWithParams(galaparser.TypeText(ctx.Type_()), pkgName, meta.TypeParams)
 	}
 	richAST.Types[fullTypeName] = meta
 }

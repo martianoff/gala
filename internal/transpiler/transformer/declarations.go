@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"strings"
@@ -112,7 +113,7 @@ func (t *galaASTTransformer) transformEmbedDeclaration(ctx *grammar.EmbedDeclara
 	// Determine type
 	typeName := ""
 	if ctx.Type_() != nil {
-		typeName = ctx.Type_().GetText()
+		typeName = galaparser.TypeText(ctx.Type_())
 	}
 
 	// Extract patterns for type inference (same logic as analyzer)

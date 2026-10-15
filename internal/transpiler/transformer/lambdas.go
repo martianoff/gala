@@ -11,6 +11,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -108,7 +109,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		for _, pCtx := range allParams {
 			paramCtx := pCtx.(*grammar.ParameterContext)
 			if paramCtx.Type_() != nil {
-				typeText := paramCtx.Type_().GetText()
+				typeText := galaparser.TypeText(paramCtx.Type_())
 				if typeText == "_" {
 					hasWildcardType = true
 				} else {

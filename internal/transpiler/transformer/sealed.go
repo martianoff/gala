@@ -9,6 +9,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -77,7 +78,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			for _, fieldCtx := range fieldList.AllSealedCaseField() {
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
-				fieldTypeText := fc.Type_().GetText()
+				fieldTypeText := galaparser.TypeText(fc.Type_())
 				if allFieldTypes[fieldName] == nil {
 					allFieldTypes[fieldName] = make(map[string]bool)
 				}
