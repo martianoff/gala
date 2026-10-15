@@ -1168,6 +1168,7 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 			if err != nil {
 				return nil, err
 			}
+			widenLambdaResultToAny(lit, t.resolveTranspilerTypeAsFuncType(s.typ), s.open, f.lambda)
 			return t.spreadLambdaGoResults(lit, s.typ, f.lambda)
 		}
 		return t.transformExpression(exprCtx)

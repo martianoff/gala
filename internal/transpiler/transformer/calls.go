@@ -4283,7 +4283,25 @@ func (t *galaASTTransformer) lowerLambdaArg(lambdaCtx *grammar.LambdaExpressionC
 	if err != nil {
 		return nil, err
 	}
+	widenLambdaResultToAny(lit, t.resolveTranspilerTypeAsFuncType(s.typ), s.open, lambdaCtx)
 	return t.spreadLambdaGoResults(lit, s.typ, lambdaCtx)
+}
+
+// widenLambdaResultToAny gives lit, a lambda lowered for a slot of function
+// type ft, the result `any` when ft declares that result. The lambda's result
+// otherwise comes from its body, as `any` in an expectation usually stands for
+// a type not inferred yet, so `() => 1` would be a func() int, which Go does
+// not accept as a func() any. An open slot's `any` is such a placeholder, and
+// a lambda that annotates its result keeps it.
+func widenLambdaResultToAny(lit ast.Expr, ft *transpiler.FuncType, open bool, lambdaCtx *grammar.LambdaExpressionContext) {
+	if open || ft == nil || len(ft.Results) != 1 || !ft.Results[0].IsAny() || lambdaCtx.Type_() != nil {
+		return
+	}
+	fl, ok := lit.(*ast.FuncLit)
+	if !ok || fl.Type.Results == nil || len(fl.Type.Results.List) != 1 {
+		return
+	}
+	fl.Type.Results.List[0].Type = ast.NewIdent("any")
 }
 
 // goTypeKey returns the Go type info key of a type named as written: a bare
