@@ -1,0 +1,97 @@
+package main
+
+import (
+    "fmt"
+    "io"
+    "sort"
+    . "martianoff/gala/collection_mutable"
+)
+
+// An interface literal builds a value of an interface from one function per
+// method, each argument named after the method it implements.
+
+struct User(Id int, Name string)
+
+type UserRepo interface {
+    Find(id int) Option[User]
+    Count() int
+}
+
+type Box[T any] interface {
+    Get() T
+    Map(f func(T) T) T
+}
+
+type Logger interface {
+    Log(prefix string, parts ...string)
+}
+
+struct MemRepo(name string)
+func (r MemRepo) Find(id int) Option[User] = Some(User(id, r.name))
+
+func describe(r UserRepo, id int) string = r.Find(id) match {
+    case Some(u) => s"${u.Name} of ${r.Count()}"
+    case None() => s"no user $id"
+}
+
+// The expected result type gives the generic interface its type argument.
+func constant[T any](v T) Box[T] = Box(Get = () => v, Map = (f) => f(v))
+
+func main() {
+    // Lambda parameter types come from the method signatures.
+    val repo = UserRepo(
+        Find = (id) => When(id == 1, User(1, "Ada")),
+        Count = () => 1,
+    )
+    Println(describe(repo, 1))
+    Println(describe(repo, 2))
+
+    // A method value implements a method too.
+    val mem = MemRepo("mem")
+    Println(describe(UserRepo(Find = mem.Find, Count = () => 7), 3))
+
+    // A literal can close over local state.
+    var calls = 0
+    val counting = UserRepo(
+        Find = (id) => {
+            calls = calls + 1
+            None()
+        },
+        Count = () => calls,
+    )
+    counting.Find(1)
+    counting.Find(2)
+    Println(s"calls: ${counting.Count()}")
+
+    // Generic interfaces: type arguments written, or expected.
+    val word = Box[string](Get = () => "gala", Map = (f) => f("gala"))
+    Println(word.Get(), word.Map((s) => s + "!"))
+    Println(constant(20).Map((x) => x * 2))
+
+    // A variadic method's function takes the slice.
+    val logger = Logger(Log = (prefix, parts) => Println(prefix, parts.Size()))
+    logger.Log("parts:", "a", "b", "c")
+
+    // Go interfaces work the same way. A method with a Go result list, such as
+    // io.Writer's Write, takes a lambda returning a Try.
+    Println(fmt.Stringer(String = () => "a Stringer"))
+    var written = 0
+    val w = io.Writer(Write = (p) => {
+        written = written + p.Size()
+        Success(p.Size())
+    })
+    io.WriteString(w, "hello")
+    Println(s"written: $written")
+
+    val xs = ArrayOf("c", "a", "b")
+    sort.Sort(sort.Interface(
+        Len = () => xs.Size(),
+        Less = (i, j) => xs.Get(i) < xs.Get(j),
+        Swap = (i, j) => {
+            val tmp = xs.Get(i)
+            xs.Set(i, xs.Get(j))
+            xs.Set(j, tmp)
+        },
+    ))
+    Println(xs)
+}

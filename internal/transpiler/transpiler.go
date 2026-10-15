@@ -205,10 +205,11 @@ func (r *RichAST) Merge(other *RichAST) {
 		fieldsNeeded := len(v.FieldNames) > 0 && len(existing.FieldNames) == 0
 		typeParamsNeeded := len(v.TypeParams) > 0 && len(existing.TypeParams) == 0
 		sealedNeeded := v.IsSealed && !existing.IsSealed
+		interfaceNeeded := v.IsInterface && !existing.IsInterface
 		opaqueNeeded := v.IsOpaque && (!existing.IsOpaque || (existing.UnderlyingBase == nil && v.UnderlyingBase != nil))
 		docNeeded := v.Doc != "" && existing.Doc == ""
 		fieldDocsNeeded := len(v.FieldDocs) > 0 && len(existing.FieldDocs) == 0
-		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded && !opaqueNeeded &&
+		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded && !interfaceNeeded && !opaqueNeeded &&
 			!docNeeded && !fieldDocsNeeded {
 			continue
 		}
@@ -235,6 +236,9 @@ func (r *RichAST) Merge(other *RichAST) {
 		if typeParamsNeeded {
 			copied.TypeParams = v.TypeParams
 			copied.TypeParamConstraints = v.TypeParamConstraints
+		}
+		if interfaceNeeded {
+			copied.IsInterface = true
 		}
 		if sealedNeeded {
 			copied.IsSealed = v.IsSealed
@@ -390,6 +394,11 @@ type TypeMetadata struct {
 	// them would leave no way to opt out; block structs keep Go's partial
 	// construction.
 	IsShorthand          bool
+	// IsInterface is true for a GALA interface declaration
+	// `type Repo interface { ... }`. Companion objects and fieldless block
+	// structs share an interface's shape (methods, no fields), so the shape
+	// alone cannot tell them apart.
+	IsInterface          bool
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool
@@ -579,6 +588,9 @@ type MethodMetadata struct {
 	// only on an addressable receiver, so a call through a val (whose Get()
 	// returns a copy) needs an addressable temporary.
 	PointerReceiver bool
+	// Variadic is true when the last parameter is `...T`; ParamTypes records
+	// it as T.
+	Variadic bool
 	// GoDeclared is true for a method of a type declared in a Go package,
 	// whose metadata the analyzer synthesizes from the Go type. A call of it
 	// is a Go call: several results are one GALA value (Try/Tuple), which

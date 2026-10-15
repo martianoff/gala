@@ -1395,10 +1395,45 @@ func declaresMethod(named *types.Named, fn *types.Func) bool {
 	return false
 }
 
+// inexactGoType reports whether goTypeToTranspilerType loses part of t: a
+// channel, an anonymous struct, a non-empty interface literal, or an instance
+// of a generic type, anywhere inside t.
+func inexactGoType(t types.Type) bool {
+	switch t := t.(type) {
+	case *types.Basic, *types.TypeParam:
+		return false
+	case *types.Named:
+		return t.TypeArgs().Len() > 0
+	case *types.Alias:
+		return inexactGoType(types.Unalias(t))
+	case *types.Pointer:
+		return inexactGoType(t.Elem())
+	case *types.Slice:
+		return inexactGoType(t.Elem())
+	case *types.Array:
+		return inexactGoType(t.Elem())
+	case *types.Map:
+		return inexactGoType(t.Key()) || inexactGoType(t.Elem())
+	case *types.Signature:
+		return inexactGoType(t.Params()) || inexactGoType(t.Results())
+	case *types.Tuple:
+		for i := 0; i < t.Len(); i++ {
+			if inexactGoType(t.At(i).Type()) {
+				return true
+			}
+		}
+		return false
+	case *types.Interface:
+		return !t.Empty()
+	}
+	return true
+}
+
 // convertSignature converts a types.Signature to a transpiler.GoFuncSignature.
 func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 	result := &transpiler.GoFuncSignature{
 		IsVariadic: sig.Variadic(),
+		Inexact:    inexactGoType(sig.Params()) || inexactGoType(sig.Results()),
 	}
 
 	// Record the declared type-parameter names so a call site can instantiate

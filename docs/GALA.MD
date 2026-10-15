@@ -17,6 +17,7 @@ GALA (Go Alternative LAnguage) is a modern programming language that transpiles 
    - [Type Aliases](#type-aliases)
    - [Opaque Types](#opaque-types)
 5. [Interfaces](#5-interfaces)
+   - [Interface Literals](#interface-literals)
 6. [Control Flow](#6-control-flow)
    - [If Statement and Expression](#if-statement-and-expression)
    - [Match Expression](#match-expression)
@@ -1572,6 +1573,41 @@ func main() {
     fmt.Println(c.Get())
 }
 ```
+
+### Interface Literals
+
+An interface literal builds a value of an interface from functions, one per method, without declaring a struct. Call the interface by name and give each method as a named argument:
+
+```gala
+package main
+
+struct User(Id int, Name string)
+
+type UserRepo interface {
+    Find(id int) Option[User]
+    Count() int
+}
+
+func main() {
+    val repo = UserRepo(
+        Find = (id) => When(id == 1, User(1, "Ada")),
+        Count = () => 1,
+    )
+    Println(repo.Find(1), repo.Count())
+}
+```
+
+- **Every method, by name, once.** Each argument names the method it implements, and the literal gives every method of the interface. A left-out, unknown, repeated or positional argument is an error ([`GALA-E0078`](errors/GALA-E0078.md)).
+- **Lambda types come from the method.** A lambda's parameter and result types are the method's, so `(id) => ...` needs no annotation. Any value of the method's function type works too, such as a method value: `UserRepo(Find = mem.Find, Count = () => 0)`.
+- **Generic interfaces** take their type arguments as written, `Box[string](Get = () => "s")`, or from the expected type: a declared result type, a typed `val`, or a parameter.
+- **A method with a Go result list**, such as `Write(p []byte) (int, error)`, takes a lambda that returns the GALA value of those results, here a `Try[int]`, as a lambda passed to a Go function does.
+- **A variadic method's** last parameter reaches the function as a slice.
+- **Go interfaces** work the same way: `fmt.Stringer(String = () => "hi")`, `io.Writer(Write = ...)`, `sort.Interface(Len = ..., Less = ..., Swap = ...)`.
+- **What a literal cannot implement:** a generic method; an unexported method of an interface from another package, which only that package can implement; and a Go interface that is generic or has a method using a type GALA cannot spell exactly, such as `context.Context`, whose `Done` returns a receive-only channel.
+
+A literal is an ordinary interface value. Its functions can close over local state, including `var`s, so, like any interface value, it cannot be captured by a `Future` body ([`GALA-E0037`](errors/GALA-E0037.md)). It compares equal only to itself, through any copy of it, and never to another literal, even one with the same functions.
+
+Interface literals are how tests fake dependencies: see the [Dependency Injection guide](DEPENDENCY_INJECTION.MD).
 
 ## 6. Control Flow
 
@@ -5609,6 +5645,7 @@ import "github.com/google/uuid"
 - [Why GALA?](WHY_GALA.MD) - The feature-by-feature case for GALA, with side-by-side Go comparisons.
 - [Design and Tradeoffs](DESIGN.MD) - Why GALA is built the way it is, and what each decision costs.
 - [Examples](EXAMPLES.MD) - More examples of GALA code.
+- [Dependency Injection](DEPENDENCY_INJECTION.MD) - Explicit wiring: interfaces as ports, constructor parameters, a composition root, and fakes built with interface literals.
 - [Concurrent](CONCURRENT.MD) - Future, Promise, and ExecutionContext for async programming.
 - [Subprocess](SUBPROCESS.MD) - Spawn and drive external child processes with a goroutine-safe `Process` handle.
 - [Stream](STREAM.MD) - Lazy, potentially infinite sequences.

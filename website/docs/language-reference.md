@@ -787,6 +787,38 @@ struct Rect(width float64, height float64)
 func (r Rect) Area() float64 = r.width * r.height
 ```
 
+### Interface Literals {#interface-literals}
+
+An interface literal builds a value of an interface from functions, one per method, without declaring a struct. Call the interface by name and give each method as a named argument:
+
+```gala
+package main
+
+struct User(Id int, Name string)
+
+type UserRepo interface {
+    Find(id int) Option[User]
+    Count() int
+}
+
+func main() {
+    val repo = UserRepo(
+        Find = (id) => When(id == 1, User(1, "Ada")),
+        Count = () => 1,
+    )
+    Println(repo.Find(1), repo.Count())
+}
+```
+
+- **Every method, by name, once.** A left-out, unknown, repeated or positional argument is an error ([GALA-E0078](/docs/errors/gala-e0078/)).
+- **Lambda types come from the method**, so `(id) => ...` needs no annotation. A method value such as `mem.Find` works too.
+- **Generic interfaces** take their type arguments as written, `Box[string](Get = () => "s")`, or from the expected type.
+- **A method with a Go result list** (`(int, error)`) takes a lambda returning the GALA value of those results, a `Try[int]`. **A variadic method's** last parameter reaches the function as a slice.
+- **Go interfaces** work the same way: `fmt.Stringer(String = () => "hi")`, `io.Writer(Write = ...)`, `sort.Interface(...)`.
+- A literal cannot implement a generic method, an unexported method of another package's interface, or a Go interface that is generic or uses a type GALA cannot spell exactly (`context.Context`'s channel).
+
+A literal is an ordinary interface value: like any interface value it cannot be captured by a `Future` body ([GALA-E0037](/docs/errors/gala-e0037/)), and it compares equal only to itself. Interface literals are how tests fake dependencies: see the [Dependency Injection guide](/docs/dependency-injection/).
+
 ## 6. Control Flow {#6-control-flow}
 
 ### If Statement and Expression

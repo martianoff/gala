@@ -785,6 +785,15 @@ const (
 	// type as an invalid recursive type. A sealed case field of the sealed
 	// type itself, a pointer, a slice and a map hold it by reference.
 	CodeSelfContainingType ErrorCode = "GALA-E0077"
+
+	// E0078: an interface literal `Repo(Find = (id) => ...)` is invalid: an
+	// argument is positional or names no method of the interface, a method is
+	// given twice or left out, the interface is generic and its type
+	// arguments are neither written nor expected, it has a method a literal
+	// cannot implement (a generic method, or an unexported method of another
+	// package), or it is a Go interface that is generic or uses a type GALA
+	// cannot spell exactly.
+	CodeInvalidInterfaceLiteral ErrorCode = "GALA-E0078"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

@@ -1042,6 +1042,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				}
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
+				meta.IsInterface = false
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
@@ -1114,6 +1115,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 			// Extract interface method signatures as type methods
 			if ctx.InterfaceType() != nil {
+				meta.IsInterface = true
 				ifaceType := ctx.InterfaceType().(*grammar.InterfaceTypeContext)
 				// seenSpecs is a per-declaration dedup so re-analysis (which
 				// preserves the Methods map across calls) does not falsely
@@ -1159,6 +1161,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 								}
@@ -1435,6 +1438,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 								}
@@ -3528,6 +3532,7 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 				ParamNames:      paramNames,
 				ReturnType:      retType,
 				PointerReceiver: td.PointerMethods[mName],
+				Variadic:        sig.IsVariadic,
 				GoDeclared:      true,
 			}
 		}
@@ -4046,6 +4051,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				}
 			}
 			if ctx.InterfaceType() != nil {
+				meta.IsInterface = true
 				ifaceType := ctx.InterfaceType().(*grammar.InterfaceTypeContext)
 				for _, ms := range ifaceType.AllMethodSpec() {
 					msCtx := ms.(*grammar.MethodSpecContext)
@@ -4077,6 +4083,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 								}
@@ -4341,6 +4348,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(paramCtx.Type_().GetText(), pkgName, allTypeParams))
+								methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 							} else {
 								methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 							}

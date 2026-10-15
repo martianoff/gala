@@ -309,6 +309,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.IsGeneric)
 	e.writeString(m.DefinedIn)
 	e.writeBool(m.PointerReceiver)
+	e.writeBool(m.Variadic)
 	e.writeBool(m.GoDeclared)
 	e.writeTypeSlice(m.GoResults)
 }
@@ -355,6 +356,7 @@ func (e *encoder) writeTypeMeta(t *transpiler.TypeMetadata) {
 	e.writeStringSourcePosMap(t.FieldPositions)
 	e.writeFieldDefaults(t.FieldDefaults)
 	e.writeBool(t.IsShorthand)
+	e.writeBool(t.IsInterface)
 	e.writeStringSlice(t.TypeParams)
 	e.writeStringStringMap(t.TypeParamConstraints)
 	e.writeBoolSlice(t.ImmutFlags)
@@ -466,6 +468,7 @@ func (e *encoder) writeGoFuncSig(s *transpiler.GoFuncSignature) {
 	}
 	e.writeTypeSlice(s.Returns)
 	e.writeBool(s.IsVariadic)
+	e.writeBool(s.Inexact)
 	e.writeStringSlice(s.TypeParams)
 }
 
@@ -801,6 +804,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.IsGeneric = d.readBool()
 	m.DefinedIn = d.readString()
 	m.PointerReceiver = d.readBool()
+	m.Variadic = d.readBool()
 	m.GoDeclared = d.readBool()
 	m.GoResults = d.readTypeSlice()
 	return m
@@ -853,6 +857,7 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t.FieldPositions = d.readStringSourcePosMap()
 	t.FieldDefaults = d.readFieldDefaults()
 	t.IsShorthand = d.readBool()
+	t.IsInterface = d.readBool()
 	t.TypeParams = d.readStringSlice()
 	t.TypeParamConstraints = d.readStringStringMap()
 	t.ImmutFlags = d.readBoolSlice()
@@ -997,6 +1002,7 @@ func (d *decoder) readGoFuncSig() *transpiler.GoFuncSignature {
 	}
 	s.Returns = d.readTypeSlice()
 	s.IsVariadic = d.readBool()
+	s.Inexact = d.readBool()
 	s.TypeParams = d.readStringSlice()
 	return s
 }

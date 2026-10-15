@@ -3,6 +3,7 @@
 filegroup(
     name = "language_docs",
     srcs = [
+        "DEPENDENCY_INJECTION.MD",
         "EXAMPLES.MD",
         "GALA.MD",
         "GALA_BEST_PRACTICES.MD",
