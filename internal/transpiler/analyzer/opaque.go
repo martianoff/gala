@@ -1,8 +1,8 @@
 package analyzer
 
 import (
-	"martianoff/gala/internal/parser/grammar"
 	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 

@@ -92,7 +92,6 @@ func isInterfaceWithMethods(meta *transpiler.TypeMetadata, want map[string]int) 
 	return true
 }
 
-
 // injectedMetaTypeArg returns the type argument the injected metadata
 // describes: the receiver's type argument in the position of the type
 // parameter the metadata parameter names, so `Apply(meta ValueMeta[V])` on
