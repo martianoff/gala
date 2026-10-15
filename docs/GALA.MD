@@ -1506,12 +1506,13 @@ type's **default value**: an uninitialized `var x T`, and a field a
 construction leaves out, in a brace literal or a call.
 
 - A sealed type's default value is its `default case`, built with its fields'
-  declared defaults; a sealed type without a default case has none.
+  declared defaults (`Option`'s is `None`); a sealed type without a default
+  case has none.
 - A struct's default value has each field at its declared default, or at its
   field type's default value.
 - Every other type's default value is Go's zero value: numbers, strings,
-  `Option` (`None`), collections, slices, maps, pointers, functions, Go types
-  and type parameters.
+  collections, slices, maps, pointers, functions, Go types and type
+  parameters.
 
 ```gala
 sealed type Light {
