@@ -41,6 +41,10 @@ type interfaceLiteral struct {
 	typeArgs     []transpiler.Type
 	typeArgExprs []ast.Expr
 	methods      []string // sorted
+	// goInexact names the methods of a Go interface whose signature GALA
+	// cannot spell exactly (GoFuncSignature.Inexact).
+	goInexact []string
+	goGeneric bool // a generic Go interface, whose constraints are unknown
 }
 
 // interfaceLiteralTarget returns the interface fun names, a GALA interface or
@@ -49,32 +53,42 @@ type interfaceLiteral struct {
 // no interface with methods.
 func (t *galaASTTransformer) interfaceLiteralTarget(fun ast.Expr, expected transpiler.Type) (lit interfaceLiteral, ok bool) {
 	base, written := splitCallFunTypeArgs(fun)
-	var meta *transpiler.TypeMetadata
-	var resolved string
+	var name string
 	switch b := base.(type) {
 	case *ast.Ident:
 		if _, _, bound := t.scopeLookup(b.Name); bound {
 			return lit, false
 		}
-		meta, resolved = t.getTypeMetaResolved(b.Name)
+		name = b.Name
 	case *ast.SelectorExpr:
 		// Only a package-qualified name names a type; `x.M(...)` is a call.
 		pkg, isIdent := b.X.(*ast.Ident)
 		if !isIdent || !t.importManager.IsPackage(pkg.Name) {
 			return lit, false
 		}
-		meta, resolved = t.getTypeMetaResolved(pkg.Name + "." + b.Sel.Name)
-		if meta == nil || !meta.IsInterface {
-			meta, resolved = t.goInterfaceLiteralMeta(base)
+		if _, _, bound := t.scopeLookup(pkg.Name); bound {
+			return lit, false
 		}
+		name = pkg.Name + "." + b.Sel.Name
 	default:
 		return lit, false
 	}
-	if meta == nil || !meta.IsInterface || len(meta.Methods) == 0 {
+	// Most calls name a function: remember the names that are no interface.
+	if t.interfaceLiteralMisses[name] {
 		return lit, false
 	}
-	lit = interfaceLiteral{meta: meta, resolved: resolved, base: base, typeArgExprs: written,
-		methods: slices.Sorted(maps.Keys(meta.Methods))}
+	meta, resolved := t.getTypeMetaResolved(name)
+	if _, qualified := base.(*ast.SelectorExpr); qualified && (meta == nil || !meta.IsInterface) {
+		var goLit interfaceLiteral
+		goLit, meta, resolved = t.goInterfaceLiteralMeta(base)
+		lit.goInexact, lit.goGeneric = goLit.goInexact, goLit.goGeneric
+	}
+	if meta == nil || !meta.IsInterface || len(meta.Methods) == 0 {
+		t.interfaceLiteralMisses[name] = true
+		return lit, false
+	}
+	lit.meta, lit.resolved, lit.base, lit.typeArgExprs = meta, resolved, base, written
+	lit.methods = slices.Sorted(maps.Keys(meta.Methods))
 	for _, w := range written {
 		lit.typeArgs = append(lit.typeArgs, t.astTypeToTranspilerType(w))
 	}
@@ -91,24 +105,29 @@ func (t *galaASTTransformer) interfaceLiteralTarget(fun ast.Expr, expected trans
 
 // goInterfaceLiteralMeta describes the Go interface base names, such as
 // fmt.Stringer, as the metadata of an interface with its exported methods, and
-// returns the key its helper is filed under; nil when base names no Go
-// interface.
-func (t *galaASTTransformer) goInterfaceLiteralMeta(base ast.Expr) (*transpiler.TypeMetadata, string) {
+// returns the key its helper is filed under, with what a literal of it cannot
+// spell (goInexact, goGeneric); nil when base names no Go interface.
+func (t *galaASTTransformer) goInterfaceLiteralMeta(base ast.Expr) (interfaceLiteral, *transpiler.TypeMetadata, string) {
+	var lit interfaceLiteral
 	if t.goTypeInfo == nil {
-		return nil, ""
+		return lit, nil, ""
 	}
 	nt, ok := t.followAliasChain(t.astTypeToTranspilerType(base)).(transpiler.NamedType)
 	if !ok || t.isLocalPackage(nt.Package) {
-		return nil, ""
+		return lit, nil, ""
 	}
 	key := t.goTypeLookupName(nt)
 	td := t.goTypeInfo.GetTypeData(key)
 	if td == nil || td.Kind != "interface" {
-		return nil, ""
+		return lit, nil, ""
 	}
+	lit.goGeneric = len(td.TypeParams) > 0
 	meta := &transpiler.TypeMetadata{Name: nt.Name, Package: nt.Package, IsInterface: true, TypeParams: td.TypeParams,
 		Methods: make(map[string]*transpiler.MethodMetadata, len(td.Methods))}
 	for name, sig := range td.Methods {
+		if sig.Inexact {
+			lit.goInexact = append(lit.goInexact, name)
+		}
 		// A Go signature records a variadic parameter as its element type.
 		m := &transpiler.MethodMetadata{Name: name, Package: nt.Package, ReturnType: transpiler.VoidType{}, Variadic: sig.IsVariadic, GoDeclared: true}
 		for _, p := range sig.Params {
@@ -123,7 +142,8 @@ func (t *galaASTTransformer) goInterfaceLiteralMeta(base ast.Expr) (*transpiler.
 		}
 		meta.Methods[name] = m
 	}
-	return meta, "go:" + key
+	slices.Sort(lit.goInexact)
+	return lit, meta, "go:" + key
 }
 
 // tryTransformInterfaceLiteral lowers a call of an interface's name, an
@@ -145,7 +165,7 @@ func (t *galaASTTransformer) tryTransformInterfaceLiteral(fun ast.Expr, argListC
 		return nil, true, err
 	}
 
-	helper := &ast.CompositeLit{Type: withTypeArgs(ast.NewIdent(t.interfaceLiteralHelper(lit)), lit.typeArgExprs)}
+	helper := &ast.CompositeLit{Type: withTypeArgs(ast.NewIdent(t.interfaceLiteralHelper(lit, line)), lit.typeArgExprs)}
 	for _, m := range lit.methods {
 		helper.Elts = append(helper.Elts, &ast.KeyValueExpr{Key: ast.NewIdent(interfaceLiteralField(m)), Value: given[m]})
 	}
@@ -171,6 +191,14 @@ func invalidInterfaceLiteral(line, col int, msg, hint string) error {
 // one whose type arguments are unknown.
 func (t *galaASTTransformer) checkInterfaceLiteralTarget(lit interfaceLiteral, line, col int) error {
 	name := t.displayTypeName(lit.meta)
+	if lit.goGeneric {
+		return invalidInterfaceLiteral(line, col, fmt.Sprintf("%s is a generic Go interface, and a literal cannot spell its type parameters' constraints", name),
+			fmt.Sprintf("declare a GALA struct that implements %s", name))
+	}
+	if len(lit.goInexact) > 0 {
+		return invalidInterfaceLiteral(line, col, fmt.Sprintf("method %s of %s has a Go type GALA cannot spell exactly (a channel, an anonymous struct, an inline interface or a generic type instance)", lit.goInexact[0], name),
+			fmt.Sprintf("declare a Go or GALA type that implements %s", name))
+	}
 	for _, m := range lit.methods {
 		switch {
 		case len(lit.meta.Methods[m].TypeParams) > 0:
@@ -263,8 +291,10 @@ func interfaceMethodFuncType(m *transpiler.MethodMetadata) transpiler.FuncType {
 func interfaceLiteralField(m string) string { return "_" + m }
 
 // interfaceLiteralHelper returns the name of this file's helper type for the
-// interface lit builds, declaring it on first use.
-func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral) string {
+// interface lit builds, declaring it on first use, at line: Go reports an
+// error in the helper, and a stack trace passes through it, at the literal
+// that declared it.
+func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral, line int) string {
 	if name, ok := t.interfaceLiterals[lit.resolved]; ok {
 		return name
 	}
@@ -286,18 +316,22 @@ func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral) string
 	for _, tp := range meta.TypeParams {
 		constraint := ast.Expr(ast.NewIdent("any"))
 		if c := meta.TypeParamConstraints[tp]; c != "" {
-			constraint = t.typeToExpr(transpiler.ParseType(c))
+			constraint = t.typeToExpr(t.inPackage(transpiler.ParseType(c), meta))
 		}
 		typeParams.List = append(typeParams.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(tp)}, Type: constraint})
 		recvArgs = append(recvArgs, ast.NewIdent(tp))
 	}
 	recvType := &ast.StarExpr{X: withTypeArgs(ast.NewIdent(name), recvArgs)}
 	fields := &ast.FieldList{}
-	decls := []ast.Decl{&ast.GenDecl{Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{
+	var decls []ast.Decl
+	if t.emitLineMarkers() {
+		decls = append(decls, lineMarkerDecl(line))
+	}
+	decls = append(decls, &ast.GenDecl{Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{
 		Name:       ast.NewIdent(name),
 		TypeParams: typeParams,
 		Type:       &ast.StructType{Fields: fields},
-	}}}}
+	}}})
 	for _, m := range lit.methods {
 		mm := meta.Methods[m]
 		ft := interfaceMethodFuncType(mm)
@@ -320,6 +354,9 @@ func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral) string
 		if len(ft.Results) > 0 {
 			body = &ast.ReturnStmt{Results: []ast.Expr{call}}
 		}
+		if t.emitLineMarkers() {
+			decls = append(decls, lineMarkerDecl(line))
+		}
 		decls = append(decls, &ast.FuncDecl{
 			Recv: &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("l")}, Type: recvType}}},
 			Name: ast.NewIdent(m),
@@ -329,4 +366,26 @@ func (t *galaASTTransformer) interfaceLiteralHelper(lit interfaceLiteral) string
 	}
 	t.interfaceLiteralDecls = append(t.interfaceLiteralDecls, decls...)
 	return name
+}
+
+// inPackage qualifies the names typ uses that meta's package declares, so a
+// type written in that package (an imported interface's constraint, as its
+// metadata records it) means the same here.
+func (t *galaASTTransformer) inPackage(typ transpiler.Type, meta *transpiler.TypeMetadata) transpiler.Type {
+	if t.isLocalPackage(meta.Package) {
+		return typ
+	}
+	switch v := typ.(type) {
+	case transpiler.BasicType:
+		if !transpiler.IsPrimitiveType(v.Name) && !slices.Contains(meta.TypeParams, v.Name) && t.getTypeMeta(meta.Package+"."+v.Name) != nil {
+			return transpiler.NamedType{Package: meta.Package, Name: v.Name}
+		}
+	case transpiler.GenericType:
+		params := make([]transpiler.Type, len(v.Params))
+		for i, p := range v.Params {
+			params[i] = t.inPackage(p, meta)
+		}
+		return transpiler.GenericType{Base: t.inPackage(v.Base, meta), Params: params}
+	}
+	return typ
 }

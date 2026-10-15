@@ -205,10 +205,11 @@ func (r *RichAST) Merge(other *RichAST) {
 		fieldsNeeded := len(v.FieldNames) > 0 && len(existing.FieldNames) == 0
 		typeParamsNeeded := len(v.TypeParams) > 0 && len(existing.TypeParams) == 0
 		sealedNeeded := v.IsSealed && !existing.IsSealed
+		interfaceNeeded := v.IsInterface && !existing.IsInterface
 		opaqueNeeded := v.IsOpaque && (!existing.IsOpaque || (existing.UnderlyingBase == nil && v.UnderlyingBase != nil))
 		docNeeded := v.Doc != "" && existing.Doc == ""
 		fieldDocsNeeded := len(v.FieldDocs) > 0 && len(existing.FieldDocs) == 0
-		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded && !opaqueNeeded &&
+		if methodsToAdd == 0 && !fieldsNeeded && !typeParamsNeeded && !sealedNeeded && !interfaceNeeded && !opaqueNeeded &&
 			!docNeeded && !fieldDocsNeeded {
 			continue
 		}
@@ -235,6 +236,9 @@ func (r *RichAST) Merge(other *RichAST) {
 		if typeParamsNeeded {
 			copied.TypeParams = v.TypeParams
 			copied.TypeParamConstraints = v.TypeParamConstraints
+		}
+		if interfaceNeeded {
+			copied.IsInterface = true
 		}
 		if sealedNeeded {
 			copied.IsSealed = v.IsSealed

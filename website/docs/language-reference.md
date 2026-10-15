@@ -815,7 +815,7 @@ func main() {
 - **Generic interfaces** take their type arguments as written, `Box[string](Get = () => "s")`, or from the expected type.
 - **A method with a Go result list** (`(int, error)`) takes a lambda returning the GALA value of those results, a `Try[int]`. **A variadic method's** last parameter reaches the function as a slice.
 - **Go interfaces** work the same way: `fmt.Stringer(String = () => "hi")`, `io.Writer(Write = ...)`, `sort.Interface(...)`.
-- A literal cannot implement a generic method, or an unexported method of another package's interface.
+- A literal cannot implement a generic method, an unexported method of another package's interface, or a Go interface that is generic or uses a type GALA cannot spell exactly (`context.Context`'s channel).
 
 A literal is an ordinary interface value: like any interface value it cannot be captured by a `Future` body ([GALA-E0037](/docs/errors/gala-e0037/)), and it compares equal only to itself. Interface literals are how tests fake dependencies: see the [Dependency Injection guide](/docs/dependency-injection/).
 

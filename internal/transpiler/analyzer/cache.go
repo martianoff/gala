@@ -115,7 +115,9 @@ import (
 //
 // v23: TypeMetadata records whether a type is a GALA interface
 // (IsInterface), which an interface literal builds, and whether a method is
-// variadic (MethodMetadata.Variadic). A v22 payload lacks them.
+// variadic (MethodMetadata.Variadic), and whether a Go signature has a type
+// GALA cannot spell exactly (GoFuncSignature.Inexact). A v22 payload lacks
+// them.
 const CacheVersion = "v23"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit

@@ -120,6 +120,7 @@ var accumulatedStateFields = []string{
 	"structMetas",
 	"interfaceLiterals",
 	"interfaceLiteralDecls",
+	"interfaceLiteralMisses",
 	"valueMetas",
 	"instanceInterfaceNames",
 	"synthesizedReturns",

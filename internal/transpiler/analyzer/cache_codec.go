@@ -468,6 +468,7 @@ func (e *encoder) writeGoFuncSig(s *transpiler.GoFuncSignature) {
 	}
 	e.writeTypeSlice(s.Returns)
 	e.writeBool(s.IsVariadic)
+	e.writeBool(s.Inexact)
 	e.writeStringSlice(s.TypeParams)
 }
 
@@ -1001,6 +1002,7 @@ func (d *decoder) readGoFuncSig() *transpiler.GoFuncSignature {
 	}
 	s.Returns = d.readTypeSlice()
 	s.IsVariadic = d.readBool()
+	s.Inexact = d.readBool()
 	s.TypeParams = d.readStringSlice()
 	return s
 }

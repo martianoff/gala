@@ -16,7 +16,10 @@ func TestInterfaceLiteral(t *testing.T) {
 	const helperSuffix = "e5564f09"
 	const decls = `package main
 
-import "fmt"
+import (
+    "context"
+    "fmt"
+)
 
 struct User(Id int, Name string)
 
@@ -104,6 +107,33 @@ func main() { Println(wrap(1).Get(), Box[string](Get = () => "s").Get()) }`,
     Println(fmt.Sprint(s))
 }`,
 			contains: []string{"type _fmt_Stringer_literal_" + helperSuffix + " struct {", "fmt.Stringer(&_fmt_Stringer_literal_" + helperSuffix + "{_String: func() string {"},
+		},
+		{
+			name: "the helper is marked with the literal's line",
+			body: `func main() {
+    val r = Repo(Find = (id) => None(), Count = () => 1)
+    Println(r.Count())
+}`,
+			contains: []string{"//line main.gala:30\ntype _Repo_literal_" + helperSuffix + " struct {", "//line main.gala:30\nfunc (l *_Repo_literal_" + helperSuffix + ") Count() int {"},
+		},
+		{
+			name: "a package name a local binding shadows calls a method",
+			body: `struct Shadow(n int)
+func (s Shadow) Context(n int) int = s.n + n
+
+func main() {
+    val context = Shadow(1)
+    Println(context.Context(2))
+}`,
+			contains: []string{"context.Get().Context(2)"},
+		},
+		{
+			name: "a Go interface with a type GALA cannot spell exactly",
+			body: `func main() {
+    val c = context.Context(Done = () => nil)
+    Println(c)
+}`,
+			wantError: "method Done of context.Context has a Go type GALA cannot spell exactly",
 		},
 		{
 			name: "a method left out",
@@ -196,4 +226,55 @@ func main() {
 	require.NoError(t, err)
 	require.Contains(t, goCode, "_Log func(string, []string)")
 	require.Contains(t, goCode, ") Log(p0 string, p1 ...string) {\n\tl._Log(p0, p1)\n}")
+}
+
+// TestInterfaceLiteralAcrossPackages pins literals of another package's
+// interfaces: a generic GALA interface's constraint is qualified with its
+// package, and a generic Go interface, whose constraints Go type info does not
+// record, is rejected.
+func TestInterfaceLiteralAcrossPackages(t *testing.T) {
+	files := map[string]string{
+		"go.mod":   "module example.com/xpkg\n\ngo 1.25\n",
+		"gala.mod": "module example.com/xpkg\n",
+		"repo/repo.gala": `package repo
+
+type Keyed interface {
+    Key() string
+}
+
+type Store[T Keyed] interface {
+    Put(v T) string
+}
+`,
+		"gs/gs.go": "package gs\n\ntype Index[K comparable] interface{ Keys() map[K]bool }\n",
+		"main.gala": `package main
+
+import "example.com/xpkg/repo"
+
+struct K(k string)
+func (x K) Key() string = x.k
+
+func main() {
+    val s = repo.Store[K](Put = (v) => v.Key())
+    Println(s.Put(K("z")))
+}
+`,
+	}
+	goCode, err := transpileInModule(t, files, "main.gala")
+	require.NoError(t, err)
+	require.Contains(t, goCode, "[T repo.Keyed] struct {")
+
+	files["main.gala"] = `package main
+
+import "example.com/xpkg/gs"
+
+func main() {
+    val i = gs.Index[string](Keys = () => nil)
+    Println(i)
+}
+`
+	_, err = transpileInModule(t, files, "main.gala")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), string(galaerr.CodeInvalidInterfaceLiteral))
+	require.Contains(t, err.Error(), "gs.Index is a generic Go interface")
 }

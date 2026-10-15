@@ -1042,6 +1042,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				}
 				meta = existing
 				// Clear fields to avoid duplicates if re-analyzing
+				meta.IsInterface = false
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil

@@ -87,6 +87,7 @@ type galaASTTransformer struct {
 	structMetas            map[string]*structMetaConfig                  // StructMeta configs, keyed by the resolved name of their struct
 	interfaceLiterals      map[string]string                             // interface literal helper type name, keyed by the interface's resolved name; see interface_literal.go
 	interfaceLiteralDecls  []ast.Decl                                    // helper type declarations for this file's interface literals
+	interfaceLiteralMisses map[string]bool                               // callee names known to name no interface, so a call of them is no interface literal
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
 	defaultTrees           map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
@@ -270,6 +271,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.tempVarCount = 0
 	t.structMetas = make(map[string]*structMetaConfig)
 	t.interfaceLiterals = make(map[string]string)
+	t.interfaceLiteralMisses = make(map[string]bool)
 	t.interfaceLiteralDecls = nil
 	t.valueMetas = make(map[string]*valueMetaConfig)
 	t.defaultTrees = nil

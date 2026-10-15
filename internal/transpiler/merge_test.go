@@ -115,6 +115,24 @@ func TestMergeNoOpWhenNothingNew(t *testing.T) {
 	}
 }
 
+// TestMergeCarriesIsInterface: an entry merged into one that lacks the
+// interface flag gains it, so a call of the interface's name is still read as
+// an interface literal.
+func TestMergeCarriesIsInterface(t *testing.T) {
+	method := &MethodMetadata{Name: "Find"}
+	existing := &TypeMetadata{Name: "Repo", Methods: map[string]*MethodMetadata{"Find": method}}
+	r := &RichAST{Types: map[string]*TypeMetadata{"Repo": existing}}
+	r.Merge(&RichAST{Types: map[string]*TypeMetadata{
+		"Repo": {Name: "Repo", IsInterface: true, Methods: map[string]*MethodMetadata{"Find": method}},
+	}})
+	if !r.Types["Repo"].IsInterface {
+		t.Fatalf("Merge dropped IsInterface")
+	}
+	if existing.IsInterface {
+		t.Fatalf("Merge mutated the shared existing entry")
+	}
+}
+
 // TestMergeLeavesPackageValsAlone: package-level bindings never travel through
 // Merge — the receiver's own PackageVals are pre-registered unqualified by the
 // transformer, and imported bindings arrive only via AddImportedVals.
