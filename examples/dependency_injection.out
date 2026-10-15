@@ -1,0 +1,7 @@
+[info] greeting Ada
+Hello, Ada (2026)
+no user 2
+[info] greeting user7
+Hello, user7 (2030)
+Hello, user3 (2026)
+logged: List(greeting Ada)

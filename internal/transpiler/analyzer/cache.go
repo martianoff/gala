@@ -112,7 +112,11 @@ import (
 // v22: a sealed case's companion Apply records its parameter names and its
 // fields' declared defaults (DefaultExprs). A v21 payload lacks them, so a
 // case constructor called without a defaulted field would not fill it.
-const CacheVersion = "v22"
+//
+// v23: TypeMetadata records whether a type is a GALA interface
+// (IsInterface), which an interface literal builds, and whether an interface
+// method is variadic (MethodMetadata.Variadic). A v22 payload lacks them.
+const CacheVersion = "v23"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

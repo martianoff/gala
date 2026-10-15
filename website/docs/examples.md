@@ -507,6 +507,30 @@ func main() {
 
 See also: [Language Reference - Interfaces](/docs/language-reference/#5-interfaces)
 
+## Interface Literals
+
+An interface literal builds an interface value from one function per method, without declaring a struct. Tests use it to fake dependencies.
+
+```gala
+package main
+
+type Clock interface {
+    Now() int
+    Zone() string
+}
+
+struct Event(Name string, clock Clock)
+
+func (e Event) Stamp() string = s"${e.Name} at ${e.clock.Now()} ${e.clock.Zone()}"
+
+func main() {
+    val fixed = Clock(Now = () => 12, Zone = () => "UTC")
+    Println(Event("deploy", fixed).Stamp())   // deploy at 12 UTC
+}
+```
+
+See also: [Language Reference - Interface Literals](/docs/language-reference/#interface-literals) and the [Dependency Injection guide](/docs/dependency-injection/)
+
 ## Apply Method Example
 
 ```gala

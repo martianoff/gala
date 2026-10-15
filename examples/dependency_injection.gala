@@ -1,0 +1,71 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Dependency injection in GALA: dependencies are interfaces taken as
+// constructor parameters, wired once in a composition root. Tests swap them
+// with interface literals and Copy. Nothing is resolved implicitly.
+
+struct User(Id int, Name string)
+
+// Ports: what the service needs, as interfaces.
+type UserRepo interface {
+    Find(id int) Option[User]
+}
+
+type Clock interface {
+    Year() int
+}
+
+type Logger interface {
+    Info(msg string)
+}
+
+// An optional dependency gets a default.
+func NoopLogger() Logger = Logger(Info = (msg) => {})
+
+struct Greeter(repo UserRepo, clock Clock, log Logger = NoopLogger())
+
+func (g Greeter) Greet(id int) string = g.repo.Find(id) match {
+    case Some(u) => {
+        g.log.Info(s"greeting ${u.Name}")
+        s"Hello, ${u.Name} (${g.clock.Year()})"
+    }
+    case None() => s"no user $id"
+}
+
+// Adapters: production implementations.
+struct MemRepo(users HashMap[int, User])
+func (r MemRepo) Find(id int) Option[User] = r.users.Get(id)
+
+struct FixedClock(year int)
+func (c FixedClock) Year() int = c.year
+
+struct PrefixLogger(prefix string)
+func (l PrefixLogger) Info(msg string) = Println(s"${l.prefix} $msg")
+
+func main() {
+    // Composition root: the one place that names concrete implementations.
+    val greeter = Greeter(
+        repo = MemRepo(users = HashMapOf((1, User(1, "Ada")))),
+        clock = FixedClock(2026),
+        log = PrefixLogger("[info]"),
+    )
+    Println(greeter.Greet(1))
+    Println(greeter.Greet(2))
+
+    // In a test: fakes are interface literals, and Copy swaps one dependency.
+    val fakeRepo = UserRepo(Find = (id) => Some(User(id, s"user$id")))
+    val testGreeter = greeter.Copy(repo = fakeRepo, clock = Clock(Year = () => 2030))
+    Println(testGreeter.Greet(7))
+
+    // A default stays in place unless a construction gives the dependency.
+    val quiet = Greeter(repo = fakeRepo, clock = FixedClock(2026))
+    Println(quiet.Greet(3))
+
+    // A recording fake checks how a dependency was used.
+    var messages = ListOf[string]()
+    val recording = greeter.Copy(log = Logger(Info = (msg) => { messages = messages.Append(msg) }))
+    recording.Greet(1)
+    Println(s"logged: $messages")
+}

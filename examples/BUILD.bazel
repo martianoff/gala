@@ -629,6 +629,20 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "interface_literal",
+    src = "interface_literal.gala",
+    expected = "interface_literal.out",
+    deps = ["//collection_mutable"],
+)
+
+gala_exec_test(
+    name = "dependency_injection",
+    src = "dependency_injection.gala",
+    expected = "dependency_injection.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "sealed_default_case",
     src = "sealed_default_case.gala",
     expected = "sealed_default_case.out",

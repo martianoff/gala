@@ -85,6 +85,8 @@ type galaASTTransformer struct {
 	unrecordedCallee       ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
 	diagPackageNames       map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas            map[string]*structMetaConfig                  // StructMeta configs, keyed by the resolved name of their struct
+	interfaceLiterals      map[string]string                             // interface literal helper type name, keyed by the interface's resolved name; see interface_literal.go
+	interfaceLiteralDecls  []ast.Decl                                    // helper type declarations for this file's interface literals
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
 	defaultTrees           map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
@@ -267,6 +269,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
 	t.structMetas = make(map[string]*structMetaConfig)
+	t.interfaceLiterals = make(map[string]string)
+	t.interfaceLiteralDecls = nil
 	t.valueMetas = make(map[string]*valueMetaConfig)
 	t.defaultTrees = nil
 	t.richAST = richAST
@@ -436,6 +440,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			file.Decls = append(file.Decls, decls...)
 		}
 	}
+
+	file.Decls = append(file.Decls, t.interfaceLiteralDecls...)
 
 	// Method receivers are validated here, not as each method is transformed,
 	// because t.typeAliases fills as declarations are walked: a method written

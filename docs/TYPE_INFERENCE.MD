@@ -444,6 +444,13 @@ val curried func(int) func(int) int = (a) => (b) => a + b     // a, b inferred a
    parameter the call leaves undetermined (`mk(1)` for `func mk[A any, B
    any](a A) func(func(B) A) A`) types no lambda: it is GALA-E0033.
 
+9. **An interface literal's methods** — in `UserRepo(Find = (id) => ...)`, the
+   lambda given for a method is typed by that method's signature, with a
+   generic interface's type arguments (written, or from the expected type)
+   substituted. A method with a Go result list takes the GALA value of those
+   results, and a variadic method's last parameter is a slice. See
+   [Interface Literals](GALA.MD#interface-literals).
+
 When a lambda parameter has no annotation **and** no expected type can be
 inferred — e.g. a bare `val f = (x) => x + 1` with no declared type — the
 transpiler rejects it with [`GALA-E0033`](errors/GALA-E0033.md) rather than

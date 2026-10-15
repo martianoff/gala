@@ -1200,6 +1200,24 @@ func main() {
 			},
 		},
 		{
+			name: "interface literal leaving out a method",
+			code: galaerr.CodeInvalidInterfaceLiteral, // GALA-E0078
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Clock interface {
+    Now() int
+    Zone() string
+}
+
+func main() {
+    val clock = Clock(Now = () => 12)
+    Println(clock.Now())
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

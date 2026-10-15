@@ -185,6 +185,7 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
   GET("/", (req) => Ok("hello"))
   ```
 - **Avoid `any` in callback signatures** — it forces callers to annotate lambdas.
+- **Take dependencies as constructor parameters.** A service is a shorthand struct whose fields are the interfaces it needs, with a default for an optional one; `main` wires the implementations once. No container, no implicit parameters. See the [Dependency Injection guide](DEPENDENCY_INJECTION.MD).
 - **Keep shared-but-unsupported code in `internal/`** when you ship a library to consumers you do not control. A package under `internal/` is importable only from the tree rooted at that directory's parent, so it can be split, renamed or deleted without breaking anyone:
   ```
   mylib/
@@ -287,6 +288,7 @@ Use the GALA test framework from `martianoff/gala/test` — not Go's `testing`/`
 - **Subtests:** `t.Run("name", (sub) => Eq(sub, ...))` — panic-recovered.
 - **Internal tests** live in the same package (access to unexported names); **external tests** use `package main` and import the lib.
 - **Run with `gala test`** (auto-discovers `_test.gala`, generates the runner). For Bazel, generate the test target with `bazel run //:gazelle` rather than hand-writing it — it emits the `gala_go_test` macro (`gala_test` for output-comparison tests).
+- **Fake a dependency with an interface literal**, not a hand-written fake struct or a mocking library: `UserRepo(Find = (id) => None())` gives every method, typed from the interface, and `service.Copy(repo = fake)` swaps it in. ([Interface Literals](GALA.MD#interface-literals))
 - **When adding a language feature**, add a verification program under `examples/` in addition to unit tests.
 
 ---

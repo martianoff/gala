@@ -2538,6 +2538,12 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 		}
 	}
 
+	// --- Section 0.5: interface literal `Repo(Find = ...)` ---
+	// See interface_literal.go.
+	if expr, handled, err := t.tryTransformInterfaceLiteral(fun, argListCtx, pendingExpected); handled || err != nil {
+		return expr, err
+	}
+
 	// --- Section 1: Copy method short-circuit ---
 	if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Copy" {
 		// Skip the struct-Copy short-circuit when the receiver is a package

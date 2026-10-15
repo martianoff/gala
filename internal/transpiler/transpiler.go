@@ -390,6 +390,11 @@ type TypeMetadata struct {
 	// them would leave no way to opt out; block structs keep Go's partial
 	// construction.
 	IsShorthand          bool
+	// IsInterface is true for a GALA interface declaration
+	// `type Repo interface { ... }`. Companion objects and fieldless block
+	// structs share an interface's shape (methods, no fields), so the shape
+	// alone cannot tell them apart.
+	IsInterface          bool
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool
@@ -579,6 +584,9 @@ type MethodMetadata struct {
 	// only on an addressable receiver, so a call through a val (whose Get()
 	// returns a copy) needs an addressable temporary.
 	PointerReceiver bool
+	// Variadic is true when the last parameter is `...T`; ParamTypes records
+	// it as T. Recorded for interface methods.
+	Variadic bool
 	// GoDeclared is true for a method of a type declared in a Go package,
 	// whose metadata the analyzer synthesizes from the Go type. A call of it
 	// is a Go call: several results are one GALA value (Try/Tuple), which
