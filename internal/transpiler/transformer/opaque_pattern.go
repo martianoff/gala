@@ -269,12 +269,9 @@ func (t *galaASTTransformer) isInterfaceType(typ transpiler.Type) bool {
 		}
 	}
 	// Unlike interfaceMethodNames, a GALA interface with no methods counts:
-	// it holds any value. Its metadata cannot be told from a fieldless block
-	// struct's, which is taken for one too; a value of such a struct only
-	// ever has that struct's own type, so treating it as an interface spells
-	// out the type it already has.
+	// it holds any value.
 	meta := t.getTypeMeta(typ.BaseName())
-	return meta != nil && !meta.IsOpaque && !meta.IsSealed && !meta.IsShorthand && isGalaInterfaceMeta(meta)
+	return meta != nil && meta.IsInterface
 }
 
 // isGoTypeWithoutInfo reports whether typ, through any GALA aliases, is a type
@@ -310,7 +307,7 @@ func (t *galaASTTransformer) interfaceMethodNames(typ transpiler.Type) ([]string
 		}
 	}
 	if meta := t.getTypeMeta(typ.BaseName()); meta != nil {
-		if meta.IsOpaque || meta.IsSealed || meta.IsShorthand || len(meta.Methods) == 0 || !isGalaInterfaceMeta(meta) {
+		if !meta.IsInterface || len(meta.Methods) == 0 {
 			return nil, false
 		}
 		return slices.Collect(maps.Keys(meta.Methods)), true
