@@ -152,7 +152,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 				// A Go result list: the function value has Go's several
 				// results, so a call of it is lifted as Go's are.
 				results = append(results, fm.GoResults...)
-			} else if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
+			} else if fm.ReturnType != nil && !fm.ReturnType.IsNil() && !fm.ReturnType.IsVoid() {
 				results = append(results, fm.ReturnType)
 			}
 			return transpiler.FuncType{Params: params, Results: results}

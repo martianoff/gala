@@ -58,6 +58,7 @@ go_test(
         "hover_coverage_test.go",
         "hover_internal_test.go",
         "hover_variable_test.go",
+        "hover_void_test.go",
         "inlay_hints_internal_test.go",
         "keyword_completions_test.go",
         "member_dot_internal_test.go",

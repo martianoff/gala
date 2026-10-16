@@ -2738,15 +2738,15 @@ func (a *galaAnalyzer) buildTypeResolver(pkgName string) *resolver.TypeResolver 
 
 // signatureResult resolves a declared signature's result: its result type, or
 // for a Go result list (`(int, error)`) the GALA value a call of it is (see
-// transpiler.GoResultValueOf) together with the Go result types. Both are nil
-// for a signature with no result.
+// transpiler.GoResultValueOf) together with the Go result types. A signature
+// with no result is VoidType, with no Go result types.
 func (a *galaAnalyzer) signatureResult(sig grammar.ISignatureContext, pkgName string, typeParams []string) (transpiler.Type, []transpiler.Type) {
 	if sig.Type_() != nil {
 		return a.resolveTypeWithParams(galaparser.TypeText(sig.Type_()), pkgName, typeParams), nil
 	}
 	list, ok := sig.GoResults().(*grammar.GoResultsContext)
 	if !ok {
-		return nil, nil
+		return transpiler.VoidType{}, nil
 	}
 	var results []transpiler.Type
 	for _, typ := range list.AllType_() {
@@ -3519,8 +3519,8 @@ func synthesizeTypeMetadataFromGo(pkgAST *transpiler.RichAST, goInfo *transpiler
 			// A call of the method is a Go call: several results are one
 			// GALA value, Try[T] for (T, error) and a Tuple for (A, B). One
 			// that has no GALA value (an unresolved result, more than ten)
-			// keeps its first result.
-			var retType transpiler.Type
+			// keeps its first result. One with no result is void.
+			var retType transpiler.Type = transpiler.VoidType{}
 			if value, several := transpiler.GoResultValueOf(sig.Returns); several && !value.Type.IsNil() {
 				retType = value.Type
 			} else if len(sig.Returns) > 0 {
@@ -4864,7 +4864,7 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 // knownType returns t, or NilType when t is unknown or absent — a void
 // function's ReturnType is a nil interface.
 func knownType(t transpiler.Type) transpiler.Type {
-	if transpiler.IsUnusable(t) {
+	if transpiler.IsUnusable(t) || t.IsVoid() {
 		return transpiler.NilType{}
 	}
 	return t

@@ -502,13 +502,8 @@ func (t *galaASTTransformer) funcValueCallResult(fnType transpiler.Type) (transp
 // functionCallResultType is the type of e, a call of the GALA function fMeta:
 // its declared result with the type arguments substituted, explicit ones
 // (typeArgs) or ones inferred from the arguments. A function declared with no
-// result is a void call, as a void method is (see
-// resolveMethodCallTypeWithParams); one with a Go result list is typed by its
-// lifted call (see go_results.go).
+// result has the result VoidType, so its call is void.
 func (t *galaASTTransformer) functionCallResultType(e *ast.CallExpr, fMeta *transpiler.FunctionMetadata, typeArgs []transpiler.Type) transpiler.Type {
-	if fMeta.ReturnType == nil && fMeta.GoResults == nil {
-		return transpiler.VoidType{}
-	}
 	retType := fMeta.ReturnType
 	if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
 		retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
