@@ -4861,10 +4861,9 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 	return transpiler.NilType{}
 }
 
-// knownType returns t, or NilType when t is unknown or absent — a void
-// function's ReturnType is a nil interface.
+// knownType returns t, or NilType when t is unknown or void.
 func knownType(t transpiler.Type) transpiler.Type {
-	if transpiler.IsUnusable(t) || t.IsVoid() {
+	if !transpiler.HasResult(t) {
 		return transpiler.NilType{}
 	}
 	return t

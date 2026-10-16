@@ -458,7 +458,7 @@ func resultSuffix(ret transpiler.Type, goResults []transpiler.Type) string {
 	if goResults != nil {
 		return " " + goResultList(goResults)
 	}
-	if ret != nil && !ret.IsNil() && !ret.IsVoid() {
+	if transpiler.HasResult(ret) {
 		return " " + ret.String()
 	}
 	return ""
