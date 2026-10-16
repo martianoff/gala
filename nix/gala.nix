@@ -40,12 +40,12 @@
   # and all four hashes together; the asset names match .github/workflows/
   # release.yml. A release can lag the tree (codegen/grammar changes), in
   # which case `gala-local` is the escape hatch.
-  galaReleaseVersion ? "0.88.0",
+  galaReleaseVersion ? "0.89.0",
   galaReleaseHashes ? {
-    x86_64-linux = "sha256-SHcDT8rj+lWLzuFQZ5k2+qvVyxKa/ZVpXH4647DawnI=";
-    aarch64-linux = "sha256-76QQi5wwYmqBBoYoLbS2AV/O85SoR+XvSHYlFPaA+T8=";
-    x86_64-darwin = "sha256-N3wvDE7/haGVEv/9fAwnJ6D6g+P80RRWh/jIKSiW9E4=";
-    aarch64-darwin = "sha256-mzMRjd5Y5gzMZpeXfyfNbHKzX6ezgx54n3vLMFdGgiM=";
+    x86_64-linux = "sha256-taE3U+xw8ss9gO+T/STUzLCebzQ/DU3Nsq0c7u8Hmp8=";
+    aarch64-linux = "sha256-R8IQA3S0oDzExafqlegqOxdzMmUNUQQFnCvjh/fIyVE=";
+    x86_64-darwin = "sha256-cLBZ/LKgoH8wyA+tui3AY+oUmUPrHoq6P9UDAg6NbvA=";
+    aarch64-darwin = "sha256-GmMOobmbBf0Qi6n6P8jL4MKQqKb+56AGHV2kxo8TW28=";
   },
   # Hash of the vendored Go dependencies in the current go.mod. Run
   # `nix build` once and copy the hash it suggests if this goes stale.
