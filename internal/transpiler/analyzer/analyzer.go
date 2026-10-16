@@ -2276,7 +2276,7 @@ func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
 		}
 
 		// Get the return type of Apply to determine the target container type
-		if applyMethod.ReturnType == nil || applyMethod.ReturnType.IsNil() {
+		if !transpiler.HasResult(applyMethod.ReturnType) {
 			continue
 		}
 

@@ -18,6 +18,19 @@ func log(s string) {
 
 struct Hooks(cb func())
 
+sealed type Shape {
+    case Dot()
+    case Line()
+}
+
+func (h Hooks) fire() {
+    h.cb()
+}
+
+func each(f func(string)) {
+    f("x")
+}
+
 func mk() func() = () => log("mk")
 
 `
@@ -40,6 +53,9 @@ func TestVoidCallIsTypedVoid(t *testing.T) {
 		{"expression lambda calling a void field", "func f() {\n    val h = Hooks(cb = () => log(\"cb\"))\n    val g = () => h.cb()\n    g()\n}"},
 		{"expression lambda calling a returned void function", "func f() {\n    val g = () => mk()()\n    g()\n}"},
 		{"expression lambda calling a void Go method", "func f() {\n    var b strings.Builder\n    val g = (x string) => b.Reset()\n    g(\"a\")\n}"},
+		{"match arms calling void functions in a lambda tail", "func f(s Shape) {\n    val g = () => s match {\n        case Dot() => log(\"dot\")\n        case Line() => mk()()\n    }\n    g()\n}"},
+		{"expression lambda calling a void method", "func f() {\n    val h = Hooks(cb = () => log(\"cb\"))\n    val g = () => h.fire()\n    g()\n}"},
+		{"a void function passed as a value", "func f() {\n    each(log)\n}"},
 		{"if-expression of void function values in a lambda tail", "func f(ok bool) {\n    val h = Hooks(cb = () => log(\"cb\"))\n    val g = () => if (ok) h.cb() else mk()()\n    g()\n}"},
 	}
 	for _, tt := range tests {

@@ -380,6 +380,9 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 			}
 		}
 	}
+	if result == nil {
+		return transpiler.NilType{}
+	}
 	return result
 }
 
