@@ -670,26 +670,15 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	thenStmts, thenExpr, thenTerminates := lowered[0].stmts, lowered[0].expr, lowered[0].terminates
 	elseStmts, elseExpr, elseTerminates := lowered[1].stmts, lowered[1].expr, lowered[1].terminates
 
-	retType := transpiler.Type(transpiler.NilType{})
-	if inferred, err := t.inferIfType(cond, thenExpr, elseExpr); err == nil && !inferred.IsNil() {
-		retType = inferred
-	}
-
-	// HM-based inference cannot model methods on user-defined generic types
-	// (the type env only carries top-level functions and current-scope vals),
-	// so an if-expression like `if (x.IsDue()) x.Advance() else x` falls
-	// through with retType=NilType. Before defaulting to `any`, try per-branch
-	// inference via getExprTypeName and unify — this is the same machinery
-	// used by block-bodied lambdas (unifyBlockReturnTypes) and reliably
-	// resolves the common arm type even when both arms are user methods.
-	if retType.IsNil() {
-		retType = t.unifyBranchTypes(t.getExprTypeName(thenExpr), t.getExprTypeName(elseExpr))
-	}
+	// The if-expression is typed by unifying its branch types, as a
+	// block-bodied lambda's result is (unifyBlockReturnTypes).
+	branchTypes := [2]transpiler.Type{t.getExprTypeName(thenExpr), t.getExprTypeName(elseExpr)}
+	retType := t.unifyBranchTypes(branchTypes[0], branchTypes[1])
 	// A branch typed `any` — the value of a Go API that returns it — is a
 	// known type: the if-expression's value is `any` too.
 	if retType.IsNil() {
-		for _, e := range []ast.Expr{thenExpr, elseExpr} {
-			if bt := t.getExprTypeName(e); bt.IsAny() {
+		for _, bt := range branchTypes {
+			if bt.IsAny() {
 				retType = bt
 				break
 			}
@@ -702,7 +691,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	// has no type the closure could return.
 	if transpiler.IsUnusable(t.branchingResultType(retType, s)) {
 		for i, b := range branches {
-			if !ifBranchHasNoValue(b.(*grammar.IfExprBranchContext)) && !t.getExprTypeName(lowered[i].expr).IsVoid() {
+			if !ifBranchHasNoValue(b.(*grammar.IfExprBranchContext)) && !branchTypes[i].IsVoid() {
 				return nil, unknownBranchTypeError(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 			}
 		}
@@ -1498,8 +1487,7 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 			// an index access, so the base is probed for an Immutable wrapper
 			// on the way past. Asking is not free — a generic function's ident
 			// resolves to NilType, which getExprTypeNameManual declines to
-			// cache, so getExprTypeName re-runs manual inference and then falls
-			// through to Hindley-Milner on every such query.
+			// cache, so every such query re-runs the walk.
 			//
 			// getFunction is checked last: it builds a resolver and an imports
 			// slice per call, so the cheap scope and type lookups go first.

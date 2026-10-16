@@ -227,10 +227,9 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 			// default of an all-constant expression — and a second spelling
 			// here answered `1 * 1.5` with int where that one says float64.
 			//
-			// A result still carrying type parameters is rejected on the same
-			// terms getExprTypeName rejects one: it is a manual answer, and
-			// `b.Get() * 2` on a Box[T] must reach Hindley-Milner for T to be
-			// substituted rather than be emitted as T.
+			// A result still carrying type parameters (`b.Get() * 2` on a
+			// Box[T]) is not returned: the expression takes its left
+			// operand's type expression.
 			if typ := t.arithmeticResultType(e); !transpiler.IsUnusableOrAny(typ) && !t.hasTypeParams(typ) {
 				return t.typeToExpr(typ)
 			}
@@ -755,26 +754,15 @@ func (t *galaASTTransformer) isImmutableType(typ transpiler.Type) bool {
 	return isImm
 }
 
+// getExprTypeName is the type of a lowered expression (see
+// getExprTypeNameManual), recorded for GALA_TRACE_TYPES=1.
 func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
 	if expr == nil {
 		return transpiler.NilType{}
 	}
 
-	// Try manual inference first for speed and simple cases
 	res := t.getExprTypeNameManual(expr)
-	if !res.IsNil() && !t.hasTypeParams(res) && !res.IsAny() {
-		t.traceType(expr, res, "manual")
-		return res
-	}
-
-	// Fallback to Hindley-Milner for more complex cases
-	hmRes, err := t.inferExprType(expr)
-	if err == nil && !hmRes.IsNil() && !hmRes.IsAny() {
-		t.traceType(expr, hmRes, "hindley-milner")
-		return hmRes
-	}
-
-	t.traceType(expr, res, "manual-fallback")
+	t.traceType(expr, res, "manual")
 	return res
 }
 

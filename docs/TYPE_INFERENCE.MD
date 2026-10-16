@@ -7,32 +7,27 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Two-Layer Type Inference Architecture](#two-layer-type-inference-architecture)
-   - [Layer 1: Manual Inference](#layer-1-manual-inference-getexprtypenamemanuall)
-   - [Layer 2: Hindley-Milner Inference](#layer-2-hindley-milner-inference-inferexprtype)
-   - [Main Entry Point: `getExprTypeName`](#main-entry-point-getexprtypename)
-3. [Type System Bridge](#type-system-bridge)
-   - [Type Conversion](#type-conversion)
-   - [Expression Conversion](#expression-conversion)
-   - [Environment Building](#environment-building)
-4. [When to Use Each Method](#when-to-use-each-method)
-5. [Variable Declarations](#variable-declarations)
+2. [Type Inference Architecture](#type-inference-architecture)
+   - [Synthesis: `getExprTypeName`](#synthesis-getexprtypename)
+   - [Checking: Lowering Against a Slot](#checking-lowering-against-a-slot)
+   - [Go Type Information](#go-type-information)
+3. [Variable Declarations](#variable-declarations)
    - [`val` Declarations](#val-declarations)
    - [`var` Declarations](#var-declarations)
-6. [Automatic Unwrapping](#automatic-unwrapping)
+4. [Automatic Unwrapping](#automatic-unwrapping)
    - [Identifier Transformation](#1-identifier-transformation)
    - [Expression Unwrapping](#2-expression-unwrapping)
-7. [Type Resolution](#type-resolution)
-8. [Supported Expressions](#supported-expressions)
-9. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
-10. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
-11. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
-12. [Opaque Types](#opaque-types)
-13. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
-14. [Alternative Patterns](#alternative-patterns)
-15. [Go Type Inference](#go-type-inference)
-16. [Limitations and Edge Cases](#limitations-and-edge-cases)
-17. [Key Files](#key-files)
+5. [Type Resolution](#type-resolution)
+6. [Supported Expressions](#supported-expressions)
+7. [`bind` / `also` Element and Result Inference](#bind--also-element-and-result-inference)
+8. [Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
+9. [Untyped Constants in Immutable Slots](#untyped-constants-in-immutable-slots)
+10. [Opaque Types](#opaque-types)
+11. [Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters)
+12. [Alternative Patterns](#alternative-patterns)
+13. [Go Type Inference](#go-type-inference)
+14. [Limitations and Edge Cases](#limitations-and-edge-cases)
+15. [Key Files](#key-files)
 
 ---
 
@@ -63,30 +58,32 @@ every position.
 
 ---
 
-## Two-Layer Type Inference Architecture
+## Type Inference Architecture
 
-GALA uses a **two-layer type inference system** that combines speed with power:
+Inference works in two directions, the shape of local (bidirectional) type
+inference that Scala, Kotlin and Java use:
 
-```
-Expression
-    ↓
-┌─────────────────────────┐
-│ Layer 1: Manual         │  Fast pattern-based inference
-│ getExprTypeNameManual() │  Handles 90%+ of cases
-└───────────┬─────────────┘
-            │ (if unresolved or has type params)
-            ↓
-┌─────────────────────────┐
-│ Layer 2: Hindley-Milner │  Unification-based inference
-│ inferExprType()         │  Handles generics and lambdas
-└─────────────────────────┘
-```
+- **Synthesis, bottom-up.** The type of an expression is read off its parts:
+  a literal's kind, a binding's recorded type, a function's or method's declared
+  result with its type arguments substituted.
+- **Checking, top-down.** Where the surrounding code fixes the type a value
+  must have — a declared binding, a parameter, a function or lambda result —
+  that type is pushed into the value as it is lowered. This is what types
+  `None()`, a bare sealed variant such as `Empty()`, an untyped lambda's
+  parameters and the branches of a match or if-expression.
 
-### Layer 1: Manual Inference (`getExprTypeNameManual`)
+There is no global constraint solver. Type arguments of a generic call are
+inferred locally, by unifying the call's parameter types with its argument
+types (`inferFuncTypeParamsFromArgs`, `inferMethodTypeParamsFromArgs`).
 
-**Location:** `internal/transpiler/transformer/types.go`
+### Synthesis: `getExprTypeName`
 
-Fast, pattern-based inference that handles common cases without the overhead of unification:
+**Location:** `internal/transpiler/transformer/types.go` (entry point),
+`type_inference.go` and `type_inference_calls.go` (`getExprTypeNameManual`)
+
+`getExprTypeName(expr)` is the entry point for the type of a lowered
+expression. It calls `getExprTypeNameManual`, a memoized walk over the Go AST
+the expression lowered to, and records the result for `GALA_TRACE_TYPES=1`:
 
 | Expression Type | Inference Method |
 |-----------------|------------------|
@@ -94,144 +91,51 @@ Fast, pattern-based inference that handles common cases without the overhead of 
 | Identifiers (`x`) | Scope lookup via `getType()` |
 | Boolean literals | Hardcoded: `true`/`false` → bool |
 | Binary operations | Operator-based: `+`→operand type, `==`→bool |
-| Function calls | Metadata lookup in `RichAST.Functions` |
+| Function calls | Declared result, type arguments substituted; `void` for a function with no result |
 | Struct fields | Metadata lookup in `RichAST.Types` |
-| Method calls | Return type from method metadata |
+| Method calls | Return type from method metadata, receiver and method type arguments substituted |
 | Selector expressions | Package-qualified lookups |
+| A match or if-expression (an IIFE) | The closure's result type; `void` for a closure with no result |
 
-**When it succeeds:** Returns a concrete `transpiler.Type`.
+**When it succeeds:** Returns a concrete `transpiler.Type` (it may name type
+parameters of the enclosing declaration, such as `Box[T]`).
 
-**When it fails:** Returns `NilType` or a type containing unresolved type parameters.
+**When it fails:** Returns `NilType`. Callers either fall back to another
+route or report a coded error (GALA-E0033, GALA-E0067, GALA-E0068, …); a type
+that cannot be resolved is never emitted as `any`.
 
-### Layer 2: Hindley-Milner Inference (`inferExprType`)
+Use `getExprTypeName` for any general type query; the walk's own helpers call
+`getExprTypeNameManual` directly.
 
-**Location:** `internal/transpiler/transformer/bridge.go`
+### Checking: Lowering Against a Slot
 
-Full Hindley-Milner type inference using Algorithm W with unification. Used when:
+**Location:** `internal/transpiler/transformer/expressions.go` (`slot`,
+`lowerAgainst`), `return_slot.go`, `expected_arg_stack.go`
 
-1. Manual inference returns `NilType`
-2. Manual inference returns a type with unresolved type parameters (e.g., `T` instead of `int`)
-3. Manual inference returns `any`
+A `slot` is the type a value is lowered against. `lowerAgainst(expr, slot)`
+lowers an expression in check mode:
 
-**Capabilities:**
-- Generic function instantiation
-- Lambda parameter type inference
-- Constraint solving via unification
-- Polymorphic type schemes
+- a lambda takes its parameter and result types from a function-typed slot;
+- an if-expression or match lowers every branch against the same slot, and
+  the slot type becomes the result type of the closure it lowers to;
+- a plain expression sees the slot type only if it consumes one — a nullary
+  sealed variant, `None()`, an empty collection, an untyped constant.
 
-### Main Entry Point: `getExprTypeName`
+`returnSlot` is the slot a `return` (and the trailing value of a body) fills:
+the result type of the innermost function, lambda, or construct lowered to an
+IIFE. `expectedArgTypes` carries the slot type to the call that fills it, so a
+generic constructor or function whose type parameter only appears in its
+result (`Empty()`, `magic[T]() Option[T]`) gets it from the context. The
+individual contexts are described below under
+[Downward Inference for Generic Sealed-Type Case Constructors](#downward-inference-for-generic-sealed-type-case-constructors)
+and
+[Downward Inference for Generic Function Phantom Type Parameters](#downward-inference-for-generic-function-phantom-type-parameters).
 
-**Location:** `internal/transpiler/transformer/types.go:563`
+### Go Type Information
 
-This is the **primary entry point** for type inference. It implements the two-layer strategy:
-
-```go
-func (t *galaASTTransformer) getExprTypeName(expr ast.Expr) transpiler.Type {
-    // Try manual inference first for speed
-    res := t.getExprTypeNameManual(expr)
-    if !res.IsNil() && !t.hasTypeParams(res) && res.String() != "any" {
-        return res  // Fast path: concrete type found
-    }
-
-    // Fallback to Hindley-Milner for complex cases
-    hmRes, err := t.inferExprType(expr)
-    if err == nil && !hmRes.IsNil() && hmRes.String() != "any" {
-        return hmRes
-    }
-
-    return res  // Return manual result even if incomplete
-}
-```
-
-**Decision flow:**
-1. Call `getExprTypeNameManual(expr)`
-2. If result is concrete (non-nil, no type params, not `any`): return it
-3. Otherwise: call `inferExprType(expr)` via Hindley-Milner
-4. If HM succeeds with concrete type: return it
-5. Otherwise: return the manual result (may be partial)
-
----
-
-## Type System Bridge
-
-The bridge between the transpiler's type system and the Hindley-Milner inference system is in `internal/transpiler/transformer/bridge.go`:
-
-### Type Conversion
-
-| Direction | Function | Purpose |
-|-----------|----------|---------|
-| transpiler → HM | `toInferType()` | Convert for HM inference |
-| HM → transpiler | `fromInferType()` | Convert results back |
-
-### Expression Conversion
-
-`toInferExpr()` converts Go AST expressions to HM expressions:
-
-```go
-ast.BasicLit → infer.Lit
-ast.Ident    → infer.Var
-ast.CallExpr → infer.App (curried)
-ast.BinaryExpr → infer.App(App(op, x), y)
-```
-
-### Environment Building
-
-`buildTypeEnv()` creates the HM type environment from:
-1. Current scope variables (from `Scope.valTypes`)
-2. Functions from `RichAST.Functions`
-3. Built-in operators (arithmetic, comparison)
-
-For generic functions, type parameters are converted to HM type variables and the scheme is generalized.
-
----
-
-## When to Use Each Method
-
-### Use `getExprTypeName` (recommended)
-
-**The primary entry point.** Automatically handles both layers:
-
-```go
-typ := t.getExprTypeName(expr)
-```
-
-Use this for:
-- Variable declarations
-- Return type checking
-- Argument type inference
-- Any general type inference need
-
-### Use `getExprTypeNameManual` directly
-
-Only when you explicitly want to avoid HM inference overhead and can handle partial results:
-
-```go
-typ := t.getExprTypeNameManual(expr)
-if !typ.IsNil() {
-    // Use type
-}
-```
-
-Use cases:
-- Quick checks where you'll retry with full inference if needed
-- Performance-critical loops
-- When you're building input for HM yourself
-
-### Use `inferExprType` directly
-
-Only when you specifically need HM capabilities:
-
-```go
-typ, err := t.inferExprType(expr)
-if err != nil {
-    // Handle inference failure
-}
-```
-
-Use cases:
-- Lambda type inference
-- Complex generic instantiation
-- When manual inference is known to be insufficient
+Calls into Go packages are typed from the Go SDK's type information (see
+[Go Type Inference](#go-type-inference)). The generated Go is finally checked
+by the Go compiler, which reports the type mismatches GALA leaves to it.
 
 ---
 
@@ -359,17 +263,6 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `NewImmutable(x)` | Immutable wrapper type |
 
 > **Note:** `Get` is special-cased only for implicit `Immutable` unwrapping. Every other `Get` is inferred like any other method call, so a user type's own `Get` method (e.g. a `Get() Option[T]` accessor) keeps its declared return type and chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field. A generic receiver — value or pointer — has its type arguments substituted into the declared return type even when they are type parameters of the enclosing generic function: inside `func f[T any](b *Box[T])`, `b.Get()` on `func (b *Box[T]) Get() T` is `T`. A `Get` that cannot be resolved is never typed as the receiver itself.
-
-### Hindley-Milner Inference (`inferExprType`)
-
-Additional capabilities beyond manual:
-
-| Expression | HM Capability |
-|------------|---------------|
-| Generic calls | Type parameter instantiation |
-| Lambdas | Parameter type inference |
-| Complex compositions | Unification-based resolution |
-| Polymorphic functions | Scheme instantiation |
 
 ### Lambda Parameter Type Inference
 
@@ -839,8 +732,8 @@ own and never as its underlying type:
 - A conversion `UserID(n)` (or `billing.UserID(n)`) has type `UserID`; an
   arithmetic expression over a `UserID` and an untyped constant (`id + 1`) has
   type `UserID`, the governing operand's type.
-- The opaque type never enters the alias tables, so unification, method lookup
-  and the Hindley-Milner layer compare it by name: `UserID`, `int64` and
+- The opaque type never enters the alias tables, so unification and method
+  lookup compare it by name: `UserID`, `int64` and
   `OrderID` never unify. A generic call over `UserID` values instantiates its
   type parameter with `UserID` (`ArrayOf(UserID(1))` is an `Array[UserID]`).
 - Its methods are the ones declared on it — in GALA, or in a hand-written `.go`
@@ -1013,7 +906,7 @@ Go discovered in steps 2–5.
 
 - **String-based matching**: Type checks rely heavily on string prefixes and names, which can be fragile when dealing with type aliases or complex generic types.
 - **Recursive Unwrapping**: `unwrapImmutable` currently performs only one level of unwrapping. But multiple wrapping should never happen in the first place.
-- **Partial inference**: When both layers fail, you may get `NilType` or a type with unresolved parameters. Callers must handle these cases.
+- **Partial inference**: When synthesis fails it returns `NilType`. Callers must handle that case, by another route or a coded error.
 - **Generic alias without type arguments**: aliases resolve to their target
   as expected types, except a generic alias written without type arguments,
   which names no type — a lambda converted with a bare `Conv(…)` is GALA-E0033
@@ -1026,7 +919,8 @@ Go discovered in steps 2–5.
 
 | File | Purpose |
 |------|---------|
-| `transformer/types.go` | Main type inference (`getExprTypeName`, `getExprTypeNameManual`) |
-| `transformer/bridge.go` | HM bridge (`toInferType`, `fromInferType`, `inferExprType`) |
+| `transformer/types.go` | Synthesis entry point (`getExprTypeName`) |
+| `transformer/type_inference.go`, `transformer/type_inference_calls.go` | Synthesis walk (`getExprTypeNameManual`), generic call type-argument inference |
+| `transformer/expressions.go` | Check mode (`slot`, `lowerAgainst`) |
+| `transformer/return_slot.go`, `transformer/expected_arg_stack.go` | Result and argument slots for downward inference |
 | `transformer/scope.go` | Type resolution (`getType`) |
-| `infer/` | Hindley-Milner implementation |

@@ -100,13 +100,9 @@ func test() string {
 		},
 		{
 			// Expression-bodied if-expression as a lambda body, where both
-			// arms reference user-defined methods on a generic type. HM
-			// inference can't resolve methods on user-defined generics
-			// (the type env carries only top-level functions and
-			// current-scope vals), so the if-expression's IIFE must fall
-			// back to per-branch inference. Both arms have the same
-			// concrete type after substitution, so the IIFE return must
-			// be that type rather than `any`.
+			// arms reference user-defined methods on a generic type. Both
+			// arms have the same concrete type after substitution, so the
+			// IIFE return must be that type rather than `any`.
 			name: "if-expression with method-call arms infers branch type",
 			input: `package main
 

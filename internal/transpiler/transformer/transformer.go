@@ -17,7 +17,6 @@ import (
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/infer"
 	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler/resolver"
 )
@@ -64,7 +63,6 @@ type galaASTTransformer struct {
 	cachedTypeResolver     *resolver.TypeResolver
 	cachedTypeResolverRev  uint64 // import-manager revision cachedTypeResolver was built at
 	tempVarCount           int
-	inferer                *infer.Inferer
 	returnSlot             returnSlot                                    // result type of the innermost function or lambda body (see return_slot.go)
 	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
@@ -84,7 +82,6 @@ type galaASTTransformer struct {
 	inferenceWarnings      []string                                      // collected type inference warnings
 	unresolvedTypes        []UnresolvedType                              // expressions whose type could not be determined; collected only under GALA_WARN_TYPES=1. See unresolved_types.go.
 	unresolvedSeen         map[ast.Expr]bool                             // AST nodes already recorded, so a re-queried expression is rendered once; diagnostics only
-	unrecordedCallee       ast.Expr                                      // callee whose type the HM bridge is querying, kept out of the inventory; see toInferCallee
 	diagPackageNames       map[string]bool                               // package qualifiers derived from Go type info, for the unresolved-type filter; built lazily, diagnostics only
 	structMetas            map[string]*structMetaConfig                  // StructMeta configs, keyed by the resolved name of their struct
 	interfaceLiterals      map[string]string                             // interface literal helper type name, keyed by the interface's resolved name; see interface_literal.go
@@ -112,13 +109,6 @@ type galaASTTransformer struct {
 	lspLambdaParamHints    []transpiler.LambdaParamHint                  // LSP: positions of lambda params with inferred types
 	lastLine               int                                           // last known ANTLR source line (for error reporting in deeply-nested helpers)
 	lastCol                int                                           // last known ANTLR source column (for error reporting in deeply-nested helpers)
-	typeEnvEpoch           uint32                                        // invalidates funcTypeEnv; see invalidateTypeEnv
-	funcTypeEnv            infer.TypeEnv                                 // cached function-derived half of the Hindley-Milner environment for the current file; see functionTypeEnv
-	funcTypeEnvEpoch       uint32                                        // typeEnvEpoch the cache above was built at
-	funcTypeEnvImportRev   uint64                                        // importManager.Revision the cache above was built at, so an import change rebuilds it without being announced
-	typeNameCache          typeNameMemo                                  // name-normalization memo shared by functionTypeEnv and buildTypeEnv; see sharedTypeNameMemo
-	typeNameCacheEpoch     uint32                                        // typeEnvEpoch the memo above was filled at
-	typeNameCacheImportRev uint64                                        // importManager.Revision the memo above was filled at
 	goCtorClaims           map[string]int                                // Go constructor name -> how many of this package's sealed types would generate it; see goCtorClaimed
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
@@ -150,7 +140,6 @@ func NewGalaASTTransformer() transpiler.ASTTransformer {
 		typeMetas:         make(map[string]*transpiler.TypeMetadata, 64),
 		companionObjects:  make(map[string]*transpiler.CompanionObjectMetadata, 16),
 		importManager:     NewImportManager(),
-		inferer:           infer.NewInferer(),
 		typeAliases:       make(map[string]transpiler.Type, 16),
 		exprTypeCache:     make(map[ast.Expr]transpiler.Type, 256),
 		structMetas:       make(map[string]*structMetaConfig, 16),
@@ -264,12 +253,6 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	for name, underlyingType := range richAST.TypeAliases {
 		t.typeAliases[name] = underlyingType
 	}
-	// t.functions, t.typeMetas, t.typeAliases and the import manager have all
-	// just been replaced, so a cached function environment no longer matches.
-	// The epoch is what covers the import manager too: its replacement starts
-	// its revision back at zero, which a revision stamped before it could
-	// match by accident.
-	t.invalidateTypeEnv()
 	t.goTypeInfo = richAST.GoTypeInfo
 	t.tempVarCount = 0
 	t.structMetas = make(map[string]*structMetaConfig)
@@ -1126,7 +1109,6 @@ func (t *galaASTTransformer) registerEmbeddedFSMetadata() {
 	if _, exists := t.typeMetas[transpiler.TypeEmbeddedFS]; !exists {
 		t.typeMetas[transpiler.TypeEmbeddedFS] = meta
 	}
-	t.invalidateTypeEnv()
 }
 
 // DumpTypeTrace writes all recorded type resolution events to w.

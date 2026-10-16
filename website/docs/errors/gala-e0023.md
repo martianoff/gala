@@ -79,13 +79,12 @@ A `.gen.go` that another generator wrote (oapi-codegen, stringer, a protoc plugi
 
 Undefined names are the most common failure during early development, and the alternative was letting them fall through to the Go compiler, which reports them against generated code. Resolving every identifier at the GALA level keeps the error on the line you wrote, and the stable code lets editors and CI tools attach extra context.
 
-**Scope.** Identifier resolution, in value and type position. A signature type that the analyzer resolved to a package this file did not import gets the more specific [GALA-E0025](/docs/errors/gala-e0025/). Type *mismatches* between names that both resolve are [GALA-E0021](/docs/errors/gala-e0021/), most of which are still left to the Go compiler.
+**Scope.** Identifier resolution, in value and type position. A signature type that the analyzer resolved to a package this file did not import gets the more specific [GALA-E0025](/docs/errors/gala-e0025/). Type *mismatches* between names that both resolve are left to the Go compiler.
 
 ---
 
 ## Related
 
 - [GALA-E0025](/docs/errors/gala-e0025/) — the symbol exists, but its package is not imported here
-- [GALA-E0021](/docs/errors/gala-e0021/) — the name resolves, but its type does not fit
 - [Type Inference](/features/type-inference/)
 - [All GALA error codes](/docs/errors/)

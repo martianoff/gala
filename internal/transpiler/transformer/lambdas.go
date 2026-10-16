@@ -192,6 +192,10 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
 					paramCtx.GetStart().GetLine(), paramCtx.GetStart().GetColumn(), msg, hint)
 			}
+			// A parameter filling a slot typed `any` has that type.
+			if paramCtx.Type_() == nil && !typeApplied && anySlot {
+				t.addParam(paramCtx.Identifier().GetText(), expType, paramCtx.VAR() != nil)
+			}
 			fieldList.List = append(fieldList.List, field)
 		}
 	}
@@ -491,13 +495,14 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		if isNilIdent(expr) {
 			body = &ast.BlockStmt{}
 		}
-		// A match or if-expression with no value makes the lambda return
-		// nothing, as it does at the tail of a block lambda.
-		if isVoidIIFE(expr) {
-			body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
-		}
+		// A void call, or a match or if-expression with no value, makes the
+		// lambda return nothing, as it does at the tail of a block lambda.
 		if body == nil {
-			retType = t.getExprType(expr)
+			if typ := t.getExprType(expr); isVoidIIFE(expr) || isVoidTypeIdent(typ) {
+				body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
+			} else {
+				retType = typ
+			}
 		}
 	}
 	if body != nil {
@@ -1402,9 +1407,6 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
 	// Infer the type of expr for the type parameter
 	exprType := t.getExprTypeNameManual(expr)
-	if transpiler.IsUnusable(exprType) {
-		exprType, _ = t.inferExprType(expr)
-	}
 
 	var someTypeExpr ast.Expr
 	if exprType != nil && !exprType.IsNil() && !exprType.IsAny() {

@@ -492,9 +492,6 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
 	if transpiler.IsUnusable(matchedType) {
-		matchedType, _ = t.inferExprType(subject)
-	}
-	if transpiler.IsUnusable(matchedType) {
 		// Fallback: try to infer the sealed parent type from the case patterns.
 		// If cases are Some/None, the subject must be Option; Success/Failure → Try; etc.
 		matchedType = t.inferMatchedTypeFromCases(caseClauses)

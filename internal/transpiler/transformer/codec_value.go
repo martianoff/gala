@@ -136,15 +136,13 @@ func (t *galaASTTransformer) autoInjectValueMeta(args []ast.Expr, typeArg ast.Ex
 		// Option payloads, ...) need their own _StructMeta_X; finalizeCodecs
 		// closes over anything nested deeper.
 		t.registerNestedStructMetaForType(ty, site)
-		// Visible to type inference; getType resolves unqualified names
-		// through typeMetas, which the cached environment has normalized.
+		// Visible to type inference.
 		t.typeMetas[config.generatedName] = &transpiler.TypeMetadata{
 			Name:    config.generatedName,
 			Package: t.packageName,
 			Methods: map[string]*transpiler.MethodMetadata{},
 			Fields:  make(map[string]transpiler.Type),
 		}
-		t.invalidateTypeEnv()
 	}
 	return append([]ast.Expr{&ast.CompositeLit{Type: ast.NewIdent(config.generatedName)}}, args...), nil
 }

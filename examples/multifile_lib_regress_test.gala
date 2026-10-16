@@ -99,10 +99,9 @@ func main() {
     ifEcho.ForEach((n) => Println(n))
 
     // Map with expression-bodied if-expression body whose arms invoke
-    // methods on a user-defined generic type. HM inference can't model
-    // those methods, so the IIFE must fall back to per-branch type
-    // inference. Without that fallback the lambda return widens to `any`
-    // and Array[any] leaks into Array[State[T]] use sites.
+    // methods on a user-defined generic type. The IIFE is typed from its
+    // branches; otherwise the lambda return widens to `any` and Array[any]
+    // leaks into Array[State[T]] use sites.
     val s1 = multifile_lib_regress.State[int](Tag = "armed", Make = () => 1)
     val s2 = multifile_lib_regress.State[int](Tag = "due",   Make = () => 2)
     val nextStates = multifile_lib_regress.DispatchStates(ArrayOf(s1, s2))

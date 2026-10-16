@@ -663,9 +663,9 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 		paramType := substitutedParamTypes[i]
 
 		// A bare (unapplied) reference to a GENERIC function has no type of its
-		// own: its signature still contains its own type variables, so neither
-		// getExprTypeNameManual nor inferExprType can hand back something that
-		// unifies usefully. Instantiate it against the expected parameter type
+		// own: its signature still contains its own type variables, so
+		// getExprTypeNameManual cannot hand back something that unifies
+		// usefully. Instantiate it against the expected parameter type
 		// first, then unify with the concrete signature.
 		if instFT, ok := t.bareGenericFuncRefType(arg, paramType, foreign); ok {
 			t.unifyForInference(paramType, instFT, freshParamNames, inferredMap)
@@ -674,9 +674,6 @@ func (t *galaASTTransformer) inferMethodTypeParamsFromArgs(methodMeta *transpile
 
 		// Get the actual type of the argument
 		argType := t.getExprTypeNameManual(arg)
-		if transpiler.IsUnusable(argType) {
-			argType, _ = t.inferExprType(arg)
-		}
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
@@ -940,9 +937,6 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 
 		// Get the actual type of the argument
 		argType := t.getExprTypeNameManual(arg)
-		if transpiler.IsUnusable(argType) {
-			argType, _ = t.inferExprType(arg)
-		}
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
@@ -1383,9 +1377,6 @@ func (t *galaASTTransformer) inferGoSignatureTypeArgs(
 
 		argType := t.getExprTypeNameManual(arg)
 		if transpiler.IsUnusable(argType) {
-			argType, _ = t.inferExprType(arg)
-		}
-		if transpiler.IsUnusable(argType) {
 			continue
 		}
 		// A spread call (`SliceOf(xs...)`) passes []T where the variadic
@@ -1429,9 +1420,8 @@ func (t *galaASTTransformer) goFuncValueType(name string, typeArgs []transpiler.
 
 // instantiateGoSignatureReturn substitutes a Go generic signature's type
 // parameters into its first return type. See inferGoSignatureTypeArgs for how
-// the substitution is derived and why it is best-effort; getExprTypeName's
-// existing "still has type params -> try Hindley-Milner" fallback continues to
-// apply to whatever is left un-substituted.
+// the substitution is derived and why it is best-effort; whatever is left
+// un-substituted stays a type parameter of the signature.
 func (t *galaASTTransformer) instantiateGoSignatureReturn(
 	sig *transpiler.GoFuncSignature,
 	args []ast.Expr,

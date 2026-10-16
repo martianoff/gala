@@ -800,17 +800,7 @@ func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
 		}
 	}
 
-	// Try manual type extraction first
-	typ := t.getExprTypeNameManual(expr)
-	if typ != nil && !typ.IsNil() {
-		return typ
-	}
-	// Fall back to HM inference
-	typ, _ = t.inferExprType(expr)
-	if typ != nil && !typ.IsNil() {
-		return typ
-	}
-	return transpiler.NilType{}
+	return t.getExprTypeNameManual(expr)
 }
 
 // isKnownMultiReturnFunction checks if a function is known to return multiple values.

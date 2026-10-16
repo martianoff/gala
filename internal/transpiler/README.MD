@@ -72,11 +72,10 @@ The largest component. Transforms the enriched GALA AST into a Go AST.
 - `methods.go` - Method handling
 - `scope.go` - Variable scope management
 - `imports.go` - Import management
-- `bridge.go` - Hindley-Milner ↔ transpiler.Type conversion
 - `utils.go` - Utility functions
 
 **Key responsibilities:**
-- Type inference (dual-layer: manual + Hindley-Milner fallback)
+- Type inference (local and bidirectional: synthesis plus expected-type checking)
 - Immutable variable handling (auto-wrap/unwrap)
 - Generic method transformation
 - Pattern matching compilation
@@ -109,10 +108,10 @@ Defined in `types.go`:
 
 ## Type Inference
 
-Two-layer system:
+Local, bidirectional inference:
 
-1. **Manual inference** (`getExprTypeNameManual`) - Fast pattern-based inference for common cases
-2. **Hindley-Milner fallback** (`inferExprType`) - Complex inference using unification
+1. **Synthesis** (`getExprTypeName`) - an expression's type from its parts
+2. **Checking** (`lowerAgainst`) - a value lowered against the slot type it fills
 
 See `docs/TYPE_INFERENCE.MD` for detailed rules.
 
@@ -241,5 +240,4 @@ The transformer package has been split into focused files for maintainability:
 | `methods.go` | ~430 | Method handling, generic method extraction |
 | `scope.go` | ~110 | Variable scope management |
 | `imports.go` | ~260 | Import management |
-| `bridge.go` | ~320 | Hindley-Milner ↔ transpiler.Type conversion |
 | `utils.go` | ~80 | Utility functions |

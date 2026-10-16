@@ -69,5 +69,4 @@ Note that the check runs for **literal** defaults only. Non-literal expressions 
 ## Related
 
 - [GALA-E0013](/docs/errors/gala-e0013/) — default parameter ordering
-- [GALA-E0021](/docs/errors/gala-e0021/) — general type mismatch during inference
 - [All GALA error codes](/docs/errors/)

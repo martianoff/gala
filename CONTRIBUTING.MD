@@ -200,7 +200,6 @@ gala/
     transpiler/                    # Pipeline overview: internal/transpiler/README.MD
       analyzer/                    # Package metadata extraction; Go type info via the Go SDK
       concurrency/                 # Data-race safety checks (Shareable, closure captures)
-      infer/                       # Hindley-Milner inference (Layer 2)
       module/                      # Module/import path resolution
       profiler/                    # Optional phase timing (GALA_PROFILE)
       registry/                    # Type and function registries

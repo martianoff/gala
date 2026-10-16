@@ -182,18 +182,20 @@ silently forget.
   investment. For a team new to FP this is a cost before it is a benefit — called out
   honestly in [WHY_GALA.MD](WHY_GALA.MD#when-not-to-use-gala).
 
-### 5. Aggressive local type inference, via a two-layer engine
+### 5. Aggressive local type inference, bottom-up and top-down
 
 **The decision.** Generic params on calls, lambda parameter types, variable types, and
-fold accumulator types are all omitted and inferred. Inference uses two layers: a fast
-"manual" path for the common cases, falling back to a Hindley-Milner solver for the hard
-ones. See [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD).
+fold accumulator types are all omitted and inferred. Inference is local and
+bidirectional: an expression's type is synthesized from its parts, and where the context
+fixes a type (a declared binding, a parameter, a result) that type is pushed down into the
+value. A generic call's type arguments are unified from its arguments. There is no global
+constraint solver. See [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD).
 
 **Why.** Goal 4: annotations the compiler could derive are noise. `Some(42)` over
-`Some[int](42)`, `people.Map((p) => p.Name)` over a spelled-out generic call. The two-layer
-design is itself a trade-off — the manual layer keeps the common path fast and
-predictable, while HM handles the cases where local reasoning isn't enough, so we don't
-pay full constraint-solving cost on every expression.
+`Some[int](42)`, `people.Map((p) => p.Name)` over a spelled-out generic call. Local
+inference is itself a trade-off: it is fast and predictable, and a type comes from a place
+the reader can see, but a value no expected type reaches (an untyped lambda on its own)
+needs an annotation.
 
 **What it costs.**
 - **Inference can fall short across boundaries.** The historically rough edge has been
@@ -260,9 +262,10 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
   insert `.Get()` wherever a `val` binding is used as its underlying value — call arguments,
   struct fields, match scrutinees, interpolation, closures. A mis-wrapped or mis-unwrapped
   value is the classic transpiler-bug shape.
-- **Inference has two named entry points** (see [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD)):
-  `getExprTypeNameManual` (the fast Layer 1 walk) and `inferExprType` (the Hindley-Milner
-  Layer 2 fallback). Most recent fixes land in the cross-package generic region.
+- **Inference runs in two directions** (see [TYPE_INFERENCE.MD](TYPE_INFERENCE.MD)):
+  `getExprTypeName` synthesizes a lowered expression's type, and `lowerAgainst` lowers a
+  value against the slot type it fills. Most recent fixes land in the cross-package
+  generic region.
 - **Go-SDK-assisted inference is optional by design.** The transpiler can consult the Go SDK
   (wired via `.bazelrc` `--action_env=GOROOT`/`PATH` and `no-sandbox` tags) to resolve Go
   signatures — but if the SDK is absent, transpilation still succeeds with a warning and
@@ -317,7 +320,7 @@ Stating the non-goals is part of the design:
 | Immutability via `std.Immutable[T]` | Compiler-enforced `val`; safe sharing | Indirection; inference complexity; copy-not-mutate idiom |
 | Sealed types as tagged structs | Exhaustive matching, cheap integer switch | Wider structs; exhaustiveness is the transpiler's burden |
 | Monads over Go errors | Readable happy path, exhaustive error handling | Two error idioms at the seam; FP learning curve |
-| Two-layer type inference | Minimal annotations | Cross-package generic edges; failure-message complexity |
+| Local bidirectional type inference | Minimal annotations | Cross-package generic edges; failure-message complexity |
 | Reuse Go's ecosystem | No FFI tax | Two collection worlds; explicit interop boundary |
 | Persistent immutable collections | Safe sharing, practical immutability | Not a bare slice; collection-choice decision |
 

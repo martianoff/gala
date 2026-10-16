@@ -248,9 +248,3 @@ an earlier revision of this page listed. Moving it onto the shared
   variables are references rather than fresh bindings;
 - the file-wide stand-down on any Go dot import, now narrowed to a Go
   dot import that contributed no symbols at all.
-
-The inference engine (`internal/transpiler/infer`) also raises this
-code for a name with no binding in its type environment, but its
-diagnostics are advisory — the bridge that feeds it approximates
-selectors, methods and generics, so callers deliberately discard its
-errors. The analyzer pass above is the authoritative source.

@@ -201,35 +201,24 @@ const (
 	// but no matching directory exists in the workspace.
 	CodePackageNotFound ErrorCode = "GALA-E0020"
 
-	// E0021: type unification failure during inference. Two types that
-	// must agree (call argument vs. parameter, both arms of an if, etc.)
-	// could not be reconciled. Covers the inference engine's general
-	// "cannot unify" diagnostics so users see one stable code regardless
-	// of which specific unification site fired.
-	CodeTypeMismatch ErrorCode = "GALA-E0021"
-
-	// E0022: occurs check failure during type unification. A type
-	// variable would have to expand into a type that contains itself
-	// (e.g. `T = List[T]` with no constructor) — Hindley-Milner rejects
-	// these to keep types finite.
-	CodeOccursCheck ErrorCode = "GALA-E0022"
+	// E0021 and E0022 are retired and their numbers are not reused. They
+	// reported unification and occurs-check failures of the Hindley-Milner
+	// engine the transformer once used as a fallback, and were never surfaced.
 
 	// E0023: an identifier used in value position resolves to nothing —
 	// not a binding in an enclosing scope, not a declaration in the
 	// current package (its siblings included), not an export of any
 	// imported package, not a package qualifier, and not a language
 	// builtin. Usually a misspelling, a missing import, or a reference
-	// outside the scope where the name is bound. Raised authoritatively
-	// by the analyzer's scope walk (see the undefined-symbol pass), and
-	// advisorily by the inference engine for a name absent from its type
-	// environment. Distinct from E0025, which polices *which file* the
-	// import was declared in rather than whether the name exists at all.
+	// outside the scope where the name is bound. Raised by the analyzer's
+	// scope walk (see the undefined-symbol pass). Distinct from E0025,
+	// which polices *which file* the import was declared in rather than
+	// whether the name exists at all.
 	CodeUndefinedVariable ErrorCode = "GALA-E0023"
 
-	// E0024: the inference engine encountered an expression node it does
-	// not know how to handle. Indicates a transpiler bug rather than user
-	// error; the user is asked to file an issue with the snippet.
-	CodeInternalInferenceFailure ErrorCode = "GALA-E0024"
+	// E0024 is retired and its number is not reused. It reported an
+	// expression the Hindley-Milner fallback engine could not handle, and was
+	// never surfaced.
 
 	// E0025: a type or function name was used unqualified but does not
 	// resolve through the file's explicit imports, dot imports, std

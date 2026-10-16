@@ -109,5 +109,4 @@ GALA's downward inference relies on a single expected-type signal flowing from t
 
 - [Sealed Types](/features/sealed-types/) — generic sealed hierarchies
 - [Type Inference](/features/type-inference/) — how expected types flow
-- [GALA-E0021](/docs/errors/gala-e0021/) — general unification failures
 - [All GALA error codes](/docs/errors/)

@@ -88,3 +88,22 @@ func main() { Println(apply(() => 1)) }`,
 		})
 	}
 }
+
+// TestLambdaParamForAnySlot pins an unannotated lambda parameter filling a
+// parameter slot typed `any`: it has type `any` in the body, so a match on it
+// is a type switch over `any`.
+func TestLambdaParamForAnySlot(t *testing.T) {
+	trans := newAliasExpectedTranspiler()
+	got, err := trans.Transpile(`package main
+
+struct Click(Row int)
+
+func clicked(hit Option[any]) Click =
+    hit.Map((p) => p match {
+        case c: Click => c
+        case _        => Click(Row = -1)
+    }).GetOrElse(Click(Row = -1))
+`, "")
+	require.NoError(t, err)
+	require.Contains(t, got, "func(p any) Click {")
+}

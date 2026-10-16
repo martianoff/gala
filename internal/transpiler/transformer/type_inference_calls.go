@@ -156,11 +156,13 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if res := t.goResults[e]; res != nil && !res.Type.IsNil() {
 		return res.Type
 	}
-	// Handle IIFE (used by if/match expressions)
-	if fl, ok := e.Fun.(*ast.FuncLit); ok {
-		if fl.Type != nil && fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
+	// Handle IIFE (used by if/match expressions, and a lambda called on the
+	// spot); one with no result is void.
+	if fl, ok := ast.Unparen(e.Fun).(*ast.FuncLit); ok && fl.Type != nil {
+		if fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
 			return t.astTypeToTranspilerType(fl.Type.Results.List[0].Type)
 		}
+		return transpiler.VoidType{}
 	}
 
 	// A conversion to an opaque type, `UserID(n)` or `billing.UserID(n)`, has
@@ -203,24 +205,11 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	// Resolve the type of the fun expression; if it's a FuncType, return its result type.
 	if _, alreadySel := fun.(*ast.SelectorExpr); !alreadySel {
 		if _, alreadyIdent := fun.(*ast.Ident); !alreadyIdent {
-			funType := t.getExprTypeNameManual(e.Fun)
-			if funcType, ok := funType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
-				return funcType.Results[0]
-			}
-			// If the result is a named type (e.g., Filter, Handler), resolve through
-			// type aliases to check if it's a function type alias.
-			// This handles chained calls like Logger()(req, handler) where Logger()
-			// returns Filter which is func(Request, Handler) Future[Response].
-			if !funType.IsNil() {
-				if underlyingType, ok := t.lookupTypeAlias(funType.BaseName()); ok {
-					if funcType, ok := underlyingType.(transpiler.FuncType); ok && len(funcType.Results) > 0 {
-						t.traceType(e, funcType.Results[0], "chained-call-type-alias")
-						return funcType.Results[0]
-					}
-				}
-				if funcType := t.goNamedFuncTypeOf(funType); funcType != nil && len(funcType.Results) > 0 {
-					return funcType.Results[0]
-				}
+			// This handles chained calls like Logger()(req, handler) where
+			// Logger() returns Filter, an alias of func(Request, Handler)
+			// Future[Response].
+			if result, ok := t.funcValueCallResult(t.getExprTypeNameManual(e.Fun)); ok {
+				return result
 			}
 		}
 	}
@@ -350,21 +339,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			pkgName := entry.PkgName
 			fullName := pkgName + "." + sel.Sel.Name
 			if fMeta := t.importedFunction(entry, sel.Sel.Name); fMeta != nil {
-				retType := fMeta.ReturnType
-				// Substitute explicit type arguments if provided
-				if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
-					retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
-				} else if len(fMeta.TypeParams) > 0 {
-					// Try to infer type parameters from arguments
-					inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
-					if len(inferredTypeArgs) > 0 {
-						retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
-					}
-				}
-				if retType == nil {
-					return transpiler.NilType{}
-				}
-				return retType
+				return t.functionCallResultType(e, fMeta, typeArgs)
 			}
 			// Check Go type info (stdlib, local Go files, third-party): by the
 			// import's path where it is recorded under it, else by the
@@ -456,8 +431,13 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		// Fallback: try Go type info for method calls on Go types
 		// e.g., scanner.Text() -> string, req.Header.Set() -> void — and on
 		// GALA types whose Go sibling declares the method.
-		if sig := t.goMethodSignature(xType, sel.Sel.Name); sig != nil && len(sig.Returns) > 0 && sig.Returns[0] != nil && !sig.Returns[0].IsNil() {
-			return sig.Returns[0]
+		if sig := t.goMethodSignature(xType, sel.Sel.Name); sig != nil {
+			if len(sig.Returns) == 0 {
+				return transpiler.VoidType{}
+			}
+			if sig.Returns[0] != nil && !sig.Returns[0].IsNil() {
+				return sig.Returns[0]
+			}
 		}
 	}
 
@@ -490,6 +470,57 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 		return transpiler.BasicType{Name: sel.Sel.Name}
 	}
 	return transpiler.NilType{}
+}
+
+// funcValueCallResult is the type of a call of a value of type fnType: a
+// function type, an alias of one (`type Handler func(Request) Response`), or a
+// Go named function type (`fs.WalkDirFunc`). It is the first result, or void
+// for a function with none. ok is false when fnType is not a function type.
+func (t *galaASTTransformer) funcValueCallResult(fnType transpiler.Type) (transpiler.Type, bool) {
+	if fnType == nil || fnType.IsNil() {
+		return nil, false
+	}
+	funcType, ok := fnType.(transpiler.FuncType)
+	if !ok {
+		if underlying, isAlias := t.lookupTypeAlias(fnType.BaseName()); isAlias {
+			funcType, ok = underlying.(transpiler.FuncType)
+		}
+	}
+	if !ok {
+		goFunc := t.goNamedFuncTypeOf(fnType)
+		if goFunc == nil {
+			return nil, false
+		}
+		funcType = *goFunc
+	}
+	if len(funcType.Results) > 0 {
+		return funcType.Results[0], true
+	}
+	return transpiler.VoidType{}, true
+}
+
+// functionCallResultType is the type of e, a call of the GALA function fMeta:
+// its declared result with the type arguments substituted, explicit ones
+// (typeArgs) or ones inferred from the arguments. A function declared with no
+// result is a void call, as a void method is (see
+// resolveMethodCallTypeWithParams); one with a Go result list is typed by its
+// lifted call (see go_results.go).
+func (t *galaASTTransformer) functionCallResultType(e *ast.CallExpr, fMeta *transpiler.FunctionMetadata, typeArgs []transpiler.Type) transpiler.Type {
+	if fMeta.ReturnType == nil && fMeta.GoResults == nil {
+		return transpiler.VoidType{}
+	}
+	retType := fMeta.ReturnType
+	if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
+		retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
+	} else if len(fMeta.TypeParams) > 0 {
+		if inferred := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos); len(inferred) > 0 {
+			retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferred)
+		}
+	}
+	if retType == nil {
+		return transpiler.NilType{}
+	}
+	return retType
 }
 
 // inferCallIdentType handles type inference for call expressions with identifier function (e.g., funcName()).
@@ -562,52 +593,12 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		return transpiler.BasicType{Name: id.Name}
 	}
 	if fMeta := t.getFunction(id.Name); fMeta != nil {
-		retType := fMeta.ReturnType
-		// Substitute type arguments if the function is generic
-		if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
-			retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
-		} else if len(fMeta.TypeParams) > 0 {
-			// Try to infer type parameters from arguments
-			inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
-			if len(inferredTypeArgs) > 0 {
-				retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
-			}
-		}
-		if retType == nil {
-			return transpiler.NilType{}
-		}
-		return retType
+		return t.functionCallResultType(e, fMeta, typeArgs)
 	}
 
 	// Handle calling a variable of function type (e.g., thunk() where thunk is func() Stream[T])
-	varType := t.getType(id.Name)
-	if !varType.IsNil() {
-		if funcType, ok := varType.(transpiler.FuncType); ok {
-			if len(funcType.Results) > 0 {
-				return funcType.Results[0]
-			}
-			// Void function (no return type) — e.g., func()
-			return transpiler.VoidType{}
-		}
-		// If the variable has a named type (e.g., Handler), check if it's a type alias
-		// for a function type and use the underlying function type's return type.
-		if underlyingType, ok := t.lookupTypeAlias(varType.BaseName()); ok {
-			if funcType, ok := underlyingType.(transpiler.FuncType); ok {
-				if len(funcType.Results) > 0 {
-					t.traceType(e, funcType.Results[0], "type-alias-call")
-					return funcType.Results[0]
-				}
-				// Void function alias (no return type) — e.g., type Callback func()
-				return transpiler.VoidType{}
-			}
-		}
-		// A Go named function type (`fs.WalkDirFunc`).
-		if funcType := t.goNamedFuncTypeOf(varType); funcType != nil {
-			if len(funcType.Results) > 0 {
-				return funcType.Results[0]
-			}
-			return transpiler.VoidType{}
-		}
+	if result, ok := t.funcValueCallResult(t.getType(id.Name)); ok {
+		return result
 	}
 
 	// Handle generic methods transformed to standalone functions: Receiver_Method
