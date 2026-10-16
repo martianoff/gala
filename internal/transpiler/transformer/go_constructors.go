@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"martianoff/gala/internal/transpiler"
 )
@@ -194,7 +195,10 @@ func (t *galaASTTransformer) structGoConstructor(name string, fieldNames []strin
 		return nil, "", err
 	}
 	guidance := fmt.Sprintf("From Go, create it with New%s.", name)
-	if len(meta.FieldDefaults) > 0 {
+	if slices.ContainsFunc(fieldNames, func(f string) bool {
+		d, ok := meta.FieldDefaults[f]
+		return ok && !isZeroLiteralOf(d.Text, fieldTypes[f])
+	}) {
 		guidance += fmt.Sprintf(" A composite literal %s{} does not apply GALA's field defaults: its fields hold Go's zero values.", types.ExprString(structType))
 	}
 	return decls, guidance, nil
@@ -464,7 +468,7 @@ func (t *galaASTTransformer) goCtorClaimed() map[string]int {
 
 func goCaseCtorName(parent, c string) string    { return "New" + parent + c }
 func goOptionTypeName(parent, c string) string  { return parent + c + "Option" }
-func goArgsTypeName(parent, c string) string    { return lowerInitial(parent) + c + "Args" }
+func goArgsTypeName(parent, c string) string    { return lowerFirst(parent) + c + "Args" }
 func goWithName(parent, c, field string) string { return "With" + parent + c + field }
 
 // goCtorDecl is a generic-aware function declaration returning result.
@@ -543,4 +547,14 @@ func lowerInitial(s string) string {
 		runes[i] = unicode.ToLower(runes[i])
 	}
 	return string(runes)
+}
+
+// lowerFirst lower-cases s's first letter only, so distinct exported names
+// stay distinct (`HTTPClient` -> `hTTPClient`, `HttpClient` -> `httpClient`).
+func lowerFirst(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 {
+		return s
+	}
+	return string(unicode.ToLower(r)) + s[size:]
 }

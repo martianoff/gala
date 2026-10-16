@@ -224,6 +224,27 @@ func main() { Println(LineItem("a", 1)) }`,
 			absent: []string{"LineItemOption"},
 		},
 		{
+			name: "defaults that are Go's zero values",
+			src: `package main
+
+struct Cfg(Name string, Tries int = 0, Note string = "")
+
+func main() { Println(Cfg("a")) }`,
+			contains: []string{"// From Go, create it with NewCfg.\ntype Cfg struct", "func NewCfg(name string, _opts ...CfgOption) Cfg {"},
+			absent:   []string{"A composite literal Cfg{}"},
+		},
+		{
+			name: "argument structs of initialisms stay distinct",
+			src: `package main
+
+struct HTTPClient(URL string = "a")
+
+struct HttpClient(URL string = "b")
+
+func main() { Println(HTTPClient(), HttpClient()) }`,
+			contains: []string{"type hTTPClientArgs struct", "type httpClientArgs struct", "func NewHTTPClient(", "func NewHttpClient("},
+		},
+		{
 			name: "a generic struct",
 			src: `package main
 
