@@ -118,7 +118,11 @@ import (
 // variadic (MethodMetadata.Variadic), and whether a Go signature has a type
 // GALA cannot spell exactly (GoFuncSignature.Inexact). A v22 payload lacks
 // them.
-const CacheVersion = "v23"
+//
+// v24: a GALA function or method declared with no result, and a Go method
+// with none, records the result VoidType. A v23 payload records nil, which
+// now means a result that could not be resolved.
+const CacheVersion = "v24"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

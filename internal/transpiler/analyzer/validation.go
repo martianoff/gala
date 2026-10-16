@@ -84,7 +84,7 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 					warnings = append(warnings, *w)
 				}
 			}
-			if methodMeta.ReturnType != nil && !methodMeta.ReturnType.IsNil() {
+			if transpiler.HasResult(methodMeta.ReturnType) {
 				if w := checkTypeExists(ast, methodMeta.ReturnType, methodScope, fmt.Sprintf("%s return", loc)); w != nil {
 					warnings = append(warnings, *w)
 				}
@@ -115,7 +115,7 @@ func validateTypeReferences(ast *transpiler.RichAST) []ValidationWarning {
 				warnings = append(warnings, *w)
 			}
 		}
-		if funcMeta.ReturnType != nil && !funcMeta.ReturnType.IsNil() {
+		if transpiler.HasResult(funcMeta.ReturnType) {
 			if w := checkTypeExists(ast, funcMeta.ReturnType, funcScope, fmt.Sprintf("%s return", loc)); w != nil {
 				warnings = append(warnings, *w)
 			}

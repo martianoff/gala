@@ -137,7 +137,7 @@ func declaredSignature(meta *transpiler.TypeMetadata, m *transpiler.MethodMetada
 		}
 	}
 	sb.WriteString("(" + strings.Join(params, ", ") + ")")
-	if m.ReturnType != nil && !m.ReturnType.IsNil() && !m.ReturnType.IsVoid() {
+	if transpiler.HasResult(m.ReturnType) {
 		sb.WriteString(" " + galaTypeSpelling(meta, m.ReturnType))
 	}
 	return sb.String()

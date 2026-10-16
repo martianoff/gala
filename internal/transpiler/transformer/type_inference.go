@@ -145,17 +145,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 		}
 		// Check if this is a reference to a known GALA function (e.g., passing getAnswer as func() int).
 		if fm, ok := t.functionByName(e.Name); ok && len(fm.TypeParams) == 0 {
-			var params []transpiler.Type
-			params = append(params, fm.ParamTypes...)
-			var results []transpiler.Type
-			if fm.GoResults != nil {
-				// A Go result list: the function value has Go's several
-				// results, so a call of it is lifted as Go's are.
-				results = append(results, fm.GoResults...)
-			} else if fm.ReturnType != nil && !fm.ReturnType.IsNil() {
-				results = append(results, fm.ReturnType)
-			}
-			return transpiler.FuncType{Params: params, Results: results}
+			return t.funcMetaToRawType(fm)
 		}
 		return t.goFuncValueType(e.Name, nil)
 	case *ast.IndexExpr:
@@ -327,15 +317,12 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 		return t.synthesizedMethodResultType(typeMeta, methodName)
 	}
 
+	// A method declared with no result records VoidType; a nil result is one
+	// that could not be resolved. Callers test `!result.IsNil()`, which panics
+	// on a bare nil.
 	result := methodMeta.ReturnType
-	// Void methods (declared without a return type) leave ReturnType as a
-	// nil interface. Callers always do `!result.IsNil()` on the resolver's
-	// return value, which panics on a bare nil. Normalise to VoidType so
-	// "method was found, returns nothing" is representable without tripping
-	// type-inference callers that feed this into match-arm body inference
-	// (where each arm's expression type is queried).
 	if result == nil {
-		result = transpiler.VoidType{}
+		return transpiler.NilType{}
 	}
 
 	// Determine the receiver's concrete generic type params for substitution.
@@ -393,12 +380,8 @@ func (t *galaASTTransformer) resolveMethodCallTypeWithParams(
 			}
 		}
 	}
-
-	// Final safety net: substitution must preserve non-nil type. If any
-	// downstream substitution produced a bare-nil interface we'd reintroduce
-	// the panic; be defensive rather than letting the caller crash.
 	if result == nil {
-		result = transpiler.VoidType{}
+		return transpiler.NilType{}
 	}
 	return result
 }
@@ -472,16 +455,15 @@ func (t *galaASTTransformer) funcMetaToRawType(fm *transpiler.FunctionMetadata) 
 }
 
 // signatureType is the FuncType of a declaration with the given parameter
-// types and result type (nil, NilType or VoidType for none — metadata read
-// back from the cache spells "no result" as VoidType). A declaration with a Go
-// result list (goResults non-nil) has those results instead: its value is a
-// Go function with several results, and a call of that value is lifted as a
-// Go call's is. The parameters are copied.
+// types and result type (VoidType for none, see transpiler.HasResult). A
+// declaration with a Go result list (goResults non-nil) has those results
+// instead: its value is a Go function with several results, and a call of
+// that value is lifted as a Go call's is. The parameters are copied.
 func signatureType(paramTypes []transpiler.Type, returnType transpiler.Type, goResults []transpiler.Type) transpiler.FuncType {
 	ft := transpiler.FuncType{Params: append([]transpiler.Type(nil), paramTypes...)}
 	if goResults != nil {
 		ft.Results = append([]transpiler.Type(nil), goResults...)
-	} else if _, void := returnType.(transpiler.VoidType); !void && returnType != nil && !returnType.IsNil() {
+	} else if transpiler.HasResult(returnType) {
 		ft.Results = []transpiler.Type{returnType}
 	}
 	return ft

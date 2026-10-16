@@ -34,6 +34,12 @@ func IsUnusable(t Type) bool {
 	return t == nil || t.IsNil()
 }
 
+// HasResult reports whether t, a declared result type, is a value: known and
+// not void. A declaration with no result records VoidType.
+func HasResult(t Type) bool {
+	return !IsUnusable(t) && !t.IsVoid()
+}
+
 // ContainsUnusable reports whether t is unusable or holds an unusable type
 // anywhere inside it: go/types resolves `[]box.Box` whose package failed to
 // load to a slice whose ELEMENT is unresolved, so a top-level check alone

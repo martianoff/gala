@@ -439,14 +439,10 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 		b.WriteString("\n**Methods:**\n")
 		for _, name := range slices.Sorted(maps.Keys(meta.Methods)) {
 			m := meta.Methods[name]
-			var ret any = m.ReturnType
-			if m.GoResults != nil {
-				ret = goResultList(m.GoResults)
-			}
-			b.WriteString(fmt.Sprintf("- `%s(%s) %s`\n", name, formatMethodParams(m), ret))
+			b.WriteString(fmt.Sprintf("- `%s(%s)%s`\n", name, formatMethodParams(m), resultSuffix(m.ReturnType, m.GoResults)))
 		}
 		for _, m := range synthesized {
-			b.WriteString(fmt.Sprintf("- `%s(%s) %s` *(synthesized)*\n", m.Name, formatMethodParams(m), m.ReturnType))
+			b.WriteString(fmt.Sprintf("- `%s(%s)%s` *(synthesized)*\n", m.Name, formatMethodParams(m), resultSuffix(m.ReturnType, m.GoResults)))
 		}
 	}
 	if meta.Package != "" {
@@ -462,7 +458,7 @@ func resultSuffix(ret transpiler.Type, goResults []transpiler.Type) string {
 	if goResults != nil {
 		return " " + goResultList(goResults)
 	}
-	if ret != nil && !ret.IsNil() {
+	if transpiler.HasResult(ret) {
 		return " " + ret.String()
 	}
 	return ""

@@ -353,7 +353,7 @@ func (t *galaASTTransformer) callExprReturnType(ce *ast.CallExpr) transpiler.Typ
 		return transpiler.NilType{}
 	}
 	// GALA function metadata first.
-	if fMeta := t.getFunction(id.Name); fMeta != nil && fMeta.ReturnType != nil && !fMeta.ReturnType.IsNil() {
+	if fMeta := t.getFunction(id.Name); fMeta != nil && transpiler.HasResult(fMeta.ReturnType) {
 		return fMeta.ReturnType
 	}
 	// Go function metadata: current package, then dot-imported packages.

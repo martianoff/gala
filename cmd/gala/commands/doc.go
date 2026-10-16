@@ -387,7 +387,7 @@ func namedTypes(names []string, types []transpiler.Type) []docField {
 }
 
 func typeString(ty transpiler.Type) string {
-	if ty == nil || ty.IsNil() {
+	if !transpiler.HasResult(ty) {
 		return ""
 	}
 	return ty.String()

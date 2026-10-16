@@ -3409,8 +3409,9 @@ func (t *galaASTTransformer) uninferredTypeArgErrorNamed(line, col int, name str
 
 // valueYields is ret, the type a companion Apply or generic function returns,
 // as uninferredTypeArgError's yields: never nil, which would mean a struct.
+// A void result yields nothing.
 func valueYields(ret transpiler.Type) transpiler.Type {
-	if ret == nil {
+	if !transpiler.HasResult(ret) {
 		return transpiler.NilType{}
 	}
 	return ret

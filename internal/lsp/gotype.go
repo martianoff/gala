@@ -33,7 +33,7 @@ func cleanGoTypeForDisplay(typeStr string) string {
 // typeDisplayName renders a declared type as the bare name the resolvers key
 // on, or "" when the declaration has none.
 func typeDisplayName(t transpiler.Type) string {
-	if t == nil || t.IsNil() {
+	if !transpiler.HasResult(t) {
 		return ""
 	}
 	return stripTypeParams(cleanGoTypeForDisplay(t.String()))

@@ -774,16 +774,6 @@ func (t *galaASTTransformer) buildMatchBody(clauses []ast.Stmt, defaultBody []as
 
 // inferResultType infers the type of an expression used as a case clause result
 func (t *galaASTTransformer) inferResultType(expr ast.Expr) transpiler.Type {
-	// Check for void IIFE (from nested void match expressions)
-	// A void IIFE is a CallExpr where Fun is a FuncLit with no return type
-	if call, ok := expr.(*ast.CallExpr); ok {
-		if funcLit, ok := call.Fun.(*ast.FuncLit); ok {
-			if funcLit.Type.Results == nil {
-				return transpiler.VoidType{}
-			}
-		}
-	}
-
 	// Check if this is a call to a known multi-return function (like fmt.Printf, fmt.Println)
 	// These should be treated as void for match statement purposes. A call
 	// converted to a Try (see go_results.go) is judged by the call itself.

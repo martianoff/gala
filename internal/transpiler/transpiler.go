@@ -578,7 +578,7 @@ type MethodMetadata struct {
 	Pos          SourcePos // Position of the method name identifier in DefinedIn
 	ParamTypes   []Type
 	ParamNames   []string // Parameter names (for named argument matching)
-	ReturnType   Type
+	ReturnType   Type     // VoidType for no result; nil when it could not be resolved (see HasResult)
 	TypeParams   []string
 	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
 	ReceiverName string              // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
@@ -610,7 +610,7 @@ type FunctionMetadata struct {
 	Pos        SourcePos // Position of the function name identifier in DefinedIn
 	ParamTypes []Type
 	ParamNames []string // Parameter names (for named argument matching and default injection)
-	ReturnType   Type
+	ReturnType   Type   // VoidType for no result; nil when it could not be resolved (see HasResult)
 	TypeParams   []string
 	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
 	DefinedIn    string              // Source file where this function was defined

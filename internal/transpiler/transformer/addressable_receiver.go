@@ -140,7 +140,7 @@ func isPointerOnlyLocker(typeMeta *transpiler.TypeMetadata) bool {
 	pointerOnly := false
 	for _, name := range []string{"Lock", "Unlock"} {
 		m := typeMeta.Methods[name]
-		if m == nil || len(m.ParamTypes) != 0 || (m.ReturnType != nil && !m.ReturnType.IsNil() && !m.ReturnType.IsVoid()) {
+		if m == nil || len(m.ParamTypes) != 0 || transpiler.HasResult(m.ReturnType) {
 			return false
 		}
 		pointerOnly = pointerOnly || m.PointerReceiver
