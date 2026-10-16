@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -126,12 +128,9 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 		tail = comp.Doc
 	}
 	return t.optionsConstructor(goOptionsCtor{
-		name:    ctorName,
-		option:  goOptionTypeName(parent, vi.name),
-		args:    goArgsTypeName(parent, vi.name),
-		with:    func(field string) string { return goWithName(parent, vi.name, field) },
-		subject: vi.name,
-		params:  params,
+		parent:   parent,
+		caseName: vi.name,
+		params:   params,
 		defaultOf: func(i int) (ast.Expr, error) {
 			return t.methodDefaultArg(applyMeta, i, &ast.CompositeLit{Type: companionType}, genericType(vi.name, tParams), nil, line, col)
 		},
@@ -144,18 +143,21 @@ func (t *galaASTTransformer) sealedCaseConstructor(parent string, vi *sealedVari
 }
 
 // structGoConstructor is NewT for the exported shorthand struct name, with
-// paramTypes the Go types its fields are passed as: a field without a default
-// is a parameter, a field with one an option (With<T><Field>) applied over
-// its default. It returns no declarations when the struct has a field Go
-// cannot set or a name it needs is taken, and otherwise the sentence the
-// struct's doc comment gains.
-func (t *galaASTTransformer) structGoConstructor(name string, fieldNames []string, paramTypes []ast.Expr, immutFlags []bool, tParams *ast.FieldList, line, col int) ([]ast.Decl, string, error) {
+// paramTypes the Go types its fields (fieldNames) are passed as: a field
+// without a default is a parameter, a field with one an option
+// (With<T><Field>) applied over its default. It returns no declarations when
+// the struct has a field Go cannot set or a name it needs is taken, and
+// otherwise the sentence the struct's doc comment gains.
+func (t *galaASTTransformer) structGoConstructor(name string, fieldNames []string, paramTypes []ast.Expr, tParams *ast.FieldList, line, col int) ([]ast.Decl, string, error) {
+	if !ast.IsExported(name) {
+		return nil, "", nil
+	}
 	meta := t.getTypeMeta(name)
-	if !ast.IsExported(name) || meta == nil || !structCtorEligible(meta, fieldNames) {
+	if meta == nil || !structCtorEligible(meta, fieldNames) {
 		return nil, "", nil
 	}
 	structType := t.buildGenericTypeExpr(name, tParams)
-	fieldTypes := t.structFieldTypes[name]
+	fieldTypes, immutFlags := t.structFieldTypes[name], t.structImmutFields[name]
 	// A default naming the struct's type parameters means the constructor's.
 	selfArgs := map[string]transpiler.Type{}
 	for _, tp := range meta.TypeParams {
@@ -168,43 +170,30 @@ func (t *galaASTTransformer) structGoConstructor(name string, fieldNames []strin
 			params[i].def = strings.TrimSpace(d.Text)
 		}
 	}
-	ctorName := "New" + name
 	decls, err := t.optionsConstructor(goOptionsCtor{
-		name:    ctorName,
-		option:  goOptionTypeName(name, ""),
-		args:    goArgsTypeName(name, ""),
-		with:    func(field string) string { return goWithName(name, "", field) },
-		subject: name,
-		params:  params,
+		parent: name,
+		params: params,
 		defaultOf: func(i int) (ast.Expr, error) {
-			f := fieldNames[i]
-			src := defaultSource{
-				DefaultExpr: meta.FieldDefaults[f],
-				file:        meta.DefinedIn,
-				pkg:         meta.Package,
-				typeParams:  meta.TypeParams,
-			}
-			t.substituteDeclared(&src, fieldTypes[f], selfArgs)
-			return t.transformDefaultExpr(src, line, col)
+			return t.declaredFieldDefault(meta, fieldNames[i], fieldTypes[fieldNames[i]], selfArgs, line, col)
 		},
 		build: func(args []ast.Expr) ast.Expr {
 			elts := make([]ast.Expr, len(args))
 			for i, arg := range args {
 				if immutFlags[i] {
-					arg = t.newImmutableFor(arg, fieldTypes[fieldNames[i]])
+					arg = t.wrapImmutableFieldValue(arg, fieldTypes[fieldNames[i]], nil)
 				}
 				elts[i] = &ast.KeyValueExpr{Key: ast.NewIdent(fieldNames[i]), Value: arg}
 			}
 			return &ast.CompositeLit{Type: structType, Elts: elts}
 		},
-		doc:     fmt.Sprintf("%s returns a new %s", ctorName, name),
+		doc:     fmt.Sprintf("New%s returns a new %s", name, name),
 		tParams: tParams,
 		result:  structType,
 	})
 	if err != nil || decls == nil {
 		return nil, "", err
 	}
-	guidance := fmt.Sprintf("From Go, create it with %s.", ctorName)
+	guidance := fmt.Sprintf("From Go, create it with New%s.", name)
 	if len(meta.FieldDefaults) > 0 {
 		guidance += fmt.Sprintf(" A composite literal %s{} does not apply GALA's field defaults: its fields hold Go's zero values.", types.ExprString(structType))
 	}
@@ -235,17 +224,30 @@ type goCtorParam struct {
 }
 
 // goOptionsCtor describes a Go constructor whose fields with a default are
-// options over it.
+// options over it: NewT<Case> for case caseName of sealed type parent, or
+// NewT for struct parent when caseName is "".
 type goOptionsCtor struct {
-	name, option, args string
-	with               func(field string) string
-	subject            string // the case or struct the options set
-	params             []goCtorParam
-	defaultOf          func(i int) (ast.Expr, error) // params[i]'s default
-	build              func(args []ast.Expr) ast.Expr
-	doc, docTail       string
-	tParams            *ast.FieldList
-	result             ast.Expr
+	parent, caseName string
+	params           []goCtorParam
+	defaultOf        func(i int) (ast.Expr, error) // params[i]'s default
+	build            func(args []ast.Expr) ast.Expr
+	doc, docTail     string
+	tParams          *ast.FieldList
+	result           ast.Expr
+}
+
+// goCtorNames returns the names the constructor for case c of parent (c ""
+// for a struct) declares: the constructor, and with defaulted fields, its
+// option type, its arguments struct and a With function per field.
+func goCtorNames(parent, c string, defaulted []string) []string {
+	names := []string{goCaseCtorName(parent, c)}
+	if len(defaulted) > 0 {
+		names = append(names, goOptionTypeName(parent, c), goArgsTypeName(parent, c))
+		for _, f := range defaulted {
+			names = append(names, goWithName(parent, c, f))
+		}
+	}
+	return names
 }
 
 // optionsConstructor builds c: the constructor, and when a parameter has a
@@ -266,17 +268,20 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 		}
 	}
 	tParams := c.tParams
-	names := []string{c.name}
-	if len(optional) > 0 {
-		names = append(names, c.option, c.args)
-		for _, p := range optional {
-			names = append(names, c.with(p.name))
-		}
+	defaulted := make([]string, len(optional))
+	for i, p := range optional {
+		defaulted[i] = p.name
 	}
-	for _, n := range names {
+	for _, n := range goCtorNames(c.parent, c.caseName, defaulted) {
 		if !t.goNameAvailable(n) {
 			return nil, nil
 		}
+	}
+	name := goCaseCtorName(c.parent, c.caseName)
+	option, argsName := goOptionTypeName(c.parent, c.caseName), goArgsTypeName(c.parent, c.caseName)
+	subject := c.caseName
+	if subject == "" {
+		subject = c.parent
 	}
 
 	args := make([]ast.Expr, len(c.params))
@@ -313,22 +318,22 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 	}
 	var body []ast.Stmt
 	if len(optional) > 0 {
-		argsType := t.buildGenericTypeExpr(c.args, tParams)
+		argsType := t.buildGenericTypeExpr(argsName, tParams)
 		argsPtr := &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("_args")}, Type: &ast.StarExpr{X: argsType}}}}
-		optionType := t.buildGenericTypeExpr(c.option, tParams)
+		optionType := t.buildGenericTypeExpr(option, tParams)
 		argsFields := &ast.FieldList{}
 		for _, p := range optional {
 			argsFields.List = append(argsFields.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(p.name)}, Type: p.typ})
 		}
 		decls = append(decls,
-			&ast.GenDecl{Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{Name: ast.NewIdent(c.args), TypeParams: tParams, Type: &ast.StructType{Fields: argsFields}}}},
+			&ast.GenDecl{Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{Name: ast.NewIdent(argsName), TypeParams: tParams, Type: &ast.StructType{Fields: argsFields}}}},
 			&ast.GenDecl{
-				Doc: docCommentGroup(fmt.Sprintf("%s sets a field of %s left out of %s; its fields' defaults apply otherwise.", c.option, c.subject, c.name)),
-				Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{Name: ast.NewIdent(c.option), TypeParams: tParams,
+				Doc: docCommentGroup(fmt.Sprintf("%s sets a field of %s left out of %s; its fields' defaults apply otherwise.", option, subject, name)),
+				Tok: token.TYPE, Specs: []ast.Spec{&ast.TypeSpec{Name: ast.NewIdent(option), TypeParams: tParams,
 					Type: &ast.FuncType{Params: argsPtr}}},
 			})
 		for _, p := range optional {
-			withName := c.with(p.name)
+			withName := goWithName(c.parent, c.caseName, p.name)
 			set := &ast.FuncLit{
 				Type: &ast.FuncType{Params: argsPtr},
 				Body: &ast.BlockStmt{List: []ast.Stmt{&ast.AssignStmt{
@@ -337,7 +342,7 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 				}}},
 			}
 			decls = append(decls, goCtorDecl(withName,
-				fmt.Sprintf("%s sets %s's %s (default %s).", withName, c.subject, p.name, p.def),
+				fmt.Sprintf("%s sets %s's %s (default %s).", withName, subject, p.name, p.def),
 				tParams, &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent("v")}, Type: p.typ}}}, optionType,
 				[]ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{set}}}))
 		}
@@ -362,7 +367,7 @@ func (t *galaASTTransformer) optionsConstructor(c goOptionsCtor) ([]ast.Decl, er
 	if c.docTail != "" {
 		doc += "\n\n" + c.docTail
 	}
-	return append(decls, goCtorDecl(c.name, doc, tParams, params, c.result, body)), nil
+	return append(decls, goCtorDecl(name, doc, tParams, params, c.result, body)), nil
 }
 
 // describeDefaultCase renders default case vi as its doc reads it, e.g.
@@ -420,17 +425,12 @@ func (t *galaASTTransformer) goCtorClaimed() map[string]int {
 	}
 	claims := map[string]int{}
 	for key, meta := range t.typeMetas {
-		if !ast.IsExported(meta.Name) || key != ownFunctionKey(t.packageName, meta.Name) {
+		if meta.Package != t.packageName || !ast.IsExported(meta.Name) || key != ownFunctionKey(t.packageName, meta.Name) {
 			continue
 		}
 		if structCtorEligible(meta, meta.FieldNames) {
-			claims["New"+meta.Name]++
-			if len(meta.FieldDefaults) > 0 {
-				claims[goOptionTypeName(meta.Name, "")]++
-				claims[goArgsTypeName(meta.Name, "")]++
-				for f := range meta.FieldDefaults {
-					claims[goWithName(meta.Name, "", f)]++
-				}
+			for _, n := range goCtorNames(meta.Name, "", slices.Sorted(maps.Keys(meta.FieldDefaults))) {
+				claims[n]++
 			}
 			continue
 		}
@@ -444,18 +444,17 @@ func (t *galaASTTransformer) goCtorClaimed() map[string]int {
 			if !ast.IsExported(v.Name) {
 				continue
 			}
-			claims[goCaseCtorName(meta.Name, v.Name)]++
-			comp := t.typeMetas[ownFunctionKey(t.packageName, v.Name)]
-			if comp == nil || comp.Methods["Apply"] == nil || len(comp.Methods["Apply"].DefaultExprs) == 0 {
-				continue
-			}
-			apply := comp.Methods["Apply"]
-			claims[goOptionTypeName(meta.Name, v.Name)]++
-			claims[goArgsTypeName(meta.Name, v.Name)]++
-			for i := range apply.DefaultExprs {
-				if i < len(apply.ParamNames) {
-					claims[goWithName(meta.Name, v.Name, apply.ParamNames[i])]++
+			var defaulted []string
+			if comp := t.typeMetas[ownFunctionKey(t.packageName, v.Name)]; comp != nil && comp.Methods["Apply"] != nil {
+				apply := comp.Methods["Apply"]
+				for i := range apply.DefaultExprs {
+					if i < len(apply.ParamNames) {
+						defaulted = append(defaulted, apply.ParamNames[i])
+					}
 				}
+			}
+			for _, n := range goCtorNames(meta.Name, v.Name, defaulted) {
+				claims[n]++
 			}
 		}
 	}

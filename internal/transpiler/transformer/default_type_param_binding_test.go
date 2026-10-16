@@ -63,8 +63,9 @@ func main() { Println(viaParam(true)) }`, "orFallback(u, std.None[U]{}.Apply())"
 			got, err := trans.Transpile(decls+"\n"+tc.body, "")
 			require.NoError(t, err)
 			assert.Contains(t, got, tc.contains)
-			// The declarations lower no default themselves, so any None[T]
-			// is a use site naming the callee's T.
+			// The declarations lower no default themselves (slot is
+			// unexported, so it has no Go constructor applying its defaults),
+			// so any None[T] is a use site naming the callee's T.
 			assert.NotContains(t, got, "None[T]")
 		})
 	}

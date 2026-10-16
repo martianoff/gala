@@ -1403,12 +1403,12 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	}
 
 	// A constructor for Go callers, and the doc comment naming it.
-	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, immutFlags, tParams, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	if err != nil {
 		return nil, err
 	}
-	if guidance != "" {
-		decls[0].(*ast.GenDecl).Doc = docCommentGroup(guidance)
+	if decl, _ := findTypeSpec(decls, name); decl != nil && guidance != "" {
+		decl.Doc = docCommentGroup(guidance)
 	}
 	decls = append(decls, ctor...)
 

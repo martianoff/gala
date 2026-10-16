@@ -11,12 +11,7 @@ import (
 // NewT<Case> per exported case with options for the defaulted fields, none
 // for an unexported type, and none under a name the package already declares.
 func TestSealedGoConstructors(t *testing.T) {
-	cases := []struct {
-		name     string
-		src      string
-		contains []string
-		absent   []string
-	}{
+	runGoCtorCases(t, []goCtorCase{
 		{
 			name: "a default case with field defaults",
 			src: `package main
@@ -187,19 +182,7 @@ sealed type Name {
 func main() { Println(Of(strings.ToUpper("a"))) }`,
 			contains: []string{"func NewNameOf(strings_ string) Name {"},
 		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := transpileBareVariant(t, tc.src)
-			require.NoError(t, err)
-			for _, want := range tc.contains {
-				require.Contains(t, out, want)
-			}
-			for _, not := range tc.absent {
-				require.NotContains(t, out, not)
-			}
-		})
-	}
+	})
 }
 
 // TestStructGoConstructors pins the constructor an exported shorthand struct
@@ -208,12 +191,7 @@ func main() { Println(Of(strings.ToUpper("a"))) }`,
 // Go cannot set, an unexported struct, a block-form struct and a name the
 // package declares get none.
 func TestStructGoConstructors(t *testing.T) {
-	cases := []struct {
-		name     string
-		src      string
-		contains []string
-		absent   []string
-	}{
+	runGoCtorCases(t, []goCtorCase{
 		{
 			name: "required fields and defaults",
 			src: `package main
@@ -255,6 +233,7 @@ func main() { Println(Box(1)) }`,
 			contains: []string{
 				"A composite literal Box[T]{} does not apply GALA's field defaults",
 				"func NewBox[T any](value T, _opts ...BoxOption[T]) Box[T] {",
+				"_args := boxArgs[T]{Extra: std.None[T]{}.Apply()}",
 				"func WithBoxExtra[T any](v std.Option[T]) BoxOption[T] {",
 			},
 		},
@@ -311,31 +290,14 @@ sealed type Shape {
 func main() { Println(ShapeCircle(1), Circle(1)) }`,
 			absent: []string{"func NewShapeCircle("},
 		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := transpileBareVariant(t, tc.src)
-			require.NoError(t, err)
-			for _, want := range tc.contains {
-				require.Contains(t, out, want)
-			}
-			for _, not := range tc.absent {
-				require.NotContains(t, out, not)
-			}
-		})
-	}
+	})
 }
 
 // TestSealedGoPredicates pins the exported predicates Go callers test a
 // sealed value's case with: one per exported case of an exported type, none
 // under a name the type already declares as a method or field.
 func TestSealedGoPredicates(t *testing.T) {
-	cases := []struct {
-		name     string
-		src      string
-		contains []string
-		absent   []string
-	}{
+	runGoCtorCases(t, []goCtorCase{
 		{
 			name: "each exported case",
 			src: `package main
@@ -394,7 +356,20 @@ sealed type mode {
 func main() { Println(On()) }`,
 			absent: []string{"func (s mode) IsOn()"},
 		},
-	}
+	})
+}
+
+// goCtorCase is a source whose generated Go contains each of contains and none
+// of absent.
+type goCtorCase struct {
+	name     string
+	src      string
+	contains []string
+	absent   []string
+}
+
+func runGoCtorCases(t *testing.T, cases []goCtorCase) {
+	t.Helper()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := transpileBareVariant(t, tc.src)

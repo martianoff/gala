@@ -111,19 +111,7 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 			}
 			continue
 		}
-		// Re-parsed and re-transformed per construction site, so a default like
-		// `time.Now()` is evaluated at each construction rather than once at
-		// declaration — the same contract function parameter defaults have.
-		// The field's declared type is the expected type, as it is for a value
-		// passed explicitly.
-		src := defaultSource{
-			DefaultExpr: def,
-			file:        meta.DefinedIn,
-			pkg:         meta.Package,
-			typeParams:  meta.TypeParams,
-		}
-		t.substituteDeclared(&src, fieldTypes[fieldName], typeArgs)
-		val, err := t.transformDefaultExpr(src, line, col)
+		val, err := t.declaredFieldDefault(meta, fieldName, fieldTypes[fieldName], typeArgs, line, col)
 		if err != nil {
 			return nil, err
 		}
@@ -136,6 +124,24 @@ func (t *galaASTTransformer) fillOmittedStructFields(
 		return nil, missingStructFieldsError(typeName, missing, defaults, fields, line, col)
 	}
 	return elts, nil
+}
+
+// declaredFieldDefault lowers the declared default of field (of type
+// fieldType) of the struct meta describes, its type parameters bound to
+// typeArgs. It is re-parsed and re-transformed per construction site, so a
+// default like `time.Now()` is evaluated at each construction rather than once
+// at declaration — the same contract function parameter defaults have. The
+// field's declared type is the expected type, as it is for a value passed
+// explicitly.
+func (t *galaASTTransformer) declaredFieldDefault(meta *transpiler.TypeMetadata, field string, fieldType transpiler.Type, typeArgs map[string]transpiler.Type, line, col int) (ast.Expr, error) {
+	src := defaultSource{
+		DefaultExpr: meta.FieldDefaults[field],
+		file:        meta.DefinedIn,
+		pkg:         meta.Package,
+		typeParams:  meta.TypeParams,
+	}
+	t.substituteDeclared(&src, fieldType, typeArgs)
+	return t.transformDefaultExpr(src, line, col)
 }
 
 // unknownStructFieldError reports a named argument that matches no field.

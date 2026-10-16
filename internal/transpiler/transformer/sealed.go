@@ -733,8 +733,8 @@ func (t *galaASTTransformer) sealedGoPredicates(parentName string, variants []se
 		}
 	}
 	var out []ast.Decl
-	for _, vi := range variants {
-		name := "Is" + vi.name
+	for i, vi := range variants {
+		name := names[i]
 		if !ast.IsExported(vi.name) || declared[name] {
 			continue
 		}
