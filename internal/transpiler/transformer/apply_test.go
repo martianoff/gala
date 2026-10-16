@@ -77,6 +77,7 @@ func main() {
 
 import "martianoff/gala/std"
 
+// From Go, create it with NewAppend.
 type Append struct {
 	Name std.Immutable[string]
 }
@@ -95,6 +96,11 @@ func (s Append) Unapply(v any) (std.Immutable[string], bool) {
 		return p.Name, true
 	}
 	return *new(std.Immutable[string]), false
+}
+
+// NewAppend returns a new Append.
+func NewAppend(name string) Append {
+	return Append{Name: std.NewImmutable(name)}
 }
 func (a Append) Apply(param string) string {
 	return param + a.Name.Get()

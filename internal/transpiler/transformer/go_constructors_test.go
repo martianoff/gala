@@ -201,3 +201,210 @@ func main() { Println(Of(strings.ToUpper("a"))) }`,
 		})
 	}
 }
+
+// TestStructGoConstructors pins the constructor an exported shorthand struct
+// gets for Go callers: its fields without a default as parameters, those with
+// one as options over it, each immutable field wrapped. A struct with a field
+// Go cannot set, an unexported struct, a block-form struct and a name the
+// package declares get none.
+func TestStructGoConstructors(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		contains []string
+		absent   []string
+	}{
+		{
+			name: "required fields and defaults",
+			src: `package main
+
+// Item is a cart line.
+struct Item(SKU string, Qty int = 1, var Note string = "n")
+
+func main() { Println(Item("a")) }`,
+			contains: []string{
+				"// Item is a cart line.\n// From Go, create it with NewItem. A composite literal Item{} does not apply GALA's field defaults: its fields hold Go's zero values.\ntype Item struct",
+				"// NewItem returns a new Item, each option applied over its field defaults (Qty 1, Note \"n\").",
+				"func NewItem(sku string, _opts ...ItemOption) Item {",
+				"_args := itemArgs{Qty: 1, Note: \"n\"}",
+				"return Item{SKU: std.NewImmutable(sku), Qty: std.NewImmutable(_args.Qty), Note: _args.Note}",
+				"// WithItemQty sets Item's Qty (default 1).\nfunc WithItemQty(v int) ItemOption {",
+				"func WithItemNote(v string) ItemOption {",
+			},
+		},
+		{
+			name: "no defaults",
+			src: `package main
+
+struct LineItem(SKU string, UnitCents int64)
+
+func main() { Println(LineItem("a", 1)) }`,
+			contains: []string{
+				"// From Go, create it with NewLineItem.\ntype LineItem struct",
+				"func NewLineItem(sku string, unitCents int64) LineItem {\n\treturn LineItem{SKU: std.NewImmutable(sku), UnitCents: std.NewImmutable(unitCents)}",
+			},
+			absent: []string{"LineItemOption"},
+		},
+		{
+			name: "a generic struct",
+			src: `package main
+
+struct Box[T any](Value T, Extra Option[T] = None())
+
+func main() { Println(Box(1)) }`,
+			contains: []string{
+				"A composite literal Box[T]{} does not apply GALA's field defaults",
+				"func NewBox[T any](value T, _opts ...BoxOption[T]) Box[T] {",
+				"func WithBoxExtra[T any](v std.Option[T]) BoxOption[T] {",
+			},
+		},
+		{
+			name: "an unexported field",
+			src: `package main
+
+struct Mixed(A int, b int)
+
+func main() { Println(Mixed(1, 2)) }`,
+			absent: []string{"func NewMixed"},
+		},
+		{
+			name: "an unexported struct",
+			src: `package main
+
+struct item(A int)
+
+func main() { Println(item(1)) }`,
+			absent: []string{"func Newitem", "func NewItem"},
+		},
+		{
+			name: "a block-form struct",
+			src: `package main
+
+type Cfg struct {
+    Name string
+}
+
+func main() { Println(Cfg(Name = "a")) }`,
+			absent: []string{"func NewCfg"},
+		},
+		{
+			name: "a name the package declares",
+			src: `package main
+
+struct LineItem(SKU string, Qty int)
+
+func NewLineItem(sku string) LineItem = LineItem(sku, 1)
+
+func main() { Println(NewLineItem("a")) }`,
+			absent: []string{"From Go, create it with", "func NewLineItem(sku string, qty int)"},
+		},
+		{
+			name: "a struct and a sealed case generating one name",
+			src: `package main
+
+struct ShapeCircle(R int)
+
+sealed type Shape {
+    case Circle(R int)
+}
+
+func main() { Println(ShapeCircle(1), Circle(1)) }`,
+			absent: []string{"func NewShapeCircle("},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := transpileBareVariant(t, tc.src)
+			require.NoError(t, err)
+			for _, want := range tc.contains {
+				require.Contains(t, out, want)
+			}
+			for _, not := range tc.absent {
+				require.NotContains(t, out, not)
+			}
+		})
+	}
+}
+
+// TestSealedGoPredicates pins the exported predicates Go callers test a
+// sealed value's case with: one per exported case of an exported type, none
+// under a name the type already declares as a method or field.
+func TestSealedGoPredicates(t *testing.T) {
+	cases := []struct {
+		name     string
+		src      string
+		contains []string
+		absent   []string
+	}{
+		{
+			name: "each exported case",
+			src: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+    case dot()
+}
+
+func main() { Println(Circle(1)) }`,
+			contains: []string{
+				"// IsCircle reports whether s is the Circle case of Shape.\nfunc (s Shape) IsCircle() bool {\n\treturn s._variant == _Shape_Circle",
+				"func (s Shape) IsSquare() bool {",
+				"func (s Shape) isdot() bool {",
+			},
+			absent: []string{"func (s Shape) Isdot()"},
+		},
+		{
+			name: "a method the type declares",
+			src: `package main
+
+sealed type Res {
+    case Ok(V int)
+    case Bad(E string)
+}
+
+func (r Res) IsOk() bool = r.isOk()
+
+func main() { Println(Ok(1).IsOk()) }`,
+			contains: []string{"func (s Res) IsBad() bool {", "func (r Res) IsOk() bool {"},
+			absent:   []string{"func (s Res) IsOk() bool {"},
+		},
+		{
+			name: "a field named like a predicate",
+			src: `package main
+
+sealed type Flag {
+    case On(IsOff bool)
+    case Off()
+}
+
+func main() { Println(On(true)) }`,
+			contains: []string{"func (s Flag) IsOn() bool {"},
+			absent:   []string{"func (s Flag) IsOff() bool {"},
+		},
+		{
+			name: "an unexported type",
+			src: `package main
+
+sealed type mode {
+    case On()
+    case Off()
+}
+
+func main() { Println(On()) }`,
+			absent: []string{"func (s mode) IsOn()"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := transpileBareVariant(t, tc.src)
+			require.NoError(t, err)
+			for _, want := range tc.contains {
+				require.Contains(t, out, want)
+			}
+			for _, not := range tc.absent {
+				require.NotContains(t, out, not)
+			}
+		})
+	}
+}

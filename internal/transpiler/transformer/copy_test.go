@@ -125,6 +125,7 @@ func selectChained(o Outer, idx int) Inner = o.Tab.Copy(Selected = idx)`,
 
 import "martianoff/gala/std"
 
+// From Go, create it with NewInner.
 type Inner struct {
 	Selected std.Immutable[int]
 }
@@ -145,6 +146,12 @@ func (s Inner) Unapply(v any) (std.Immutable[int], bool) {
 	return *new(std.Immutable[int]), false
 }
 
+// NewInner returns a new Inner.
+func NewInner(selected int) Inner {
+	return Inner{Selected: std.NewImmutable(selected)}
+}
+
+// From Go, create it with NewOuter.
 type Outer struct {
 	Tab std.Immutable[Inner]
 }
@@ -163,6 +170,11 @@ func (s Outer) Unapply(v any) (std.Immutable[Inner], bool) {
 		return p.Tab, true
 	}
 	return *new(std.Immutable[Inner]), false
+}
+
+// NewOuter returns a new Outer.
+func NewOuter(tab Inner) Outer {
+	return Outer{Tab: std.NewImmutable(tab)}
 }
 func selectChained(o Outer, idx int) Inner {
 	return func(_ Inner) Inner {

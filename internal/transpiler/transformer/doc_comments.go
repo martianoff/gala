@@ -136,7 +136,9 @@ func (t *galaASTTransformer) attachDocComments(ctx grammar.ITopLevelDeclarationC
 		if decl == nil {
 			return
 		}
-		decl.Doc = doc
+		// The written doc first, then the constructor guidance the lowering
+		// put there (see structGoConstructor).
+		decl.Doc = joinDocs(doc, decl.Doc)
 		params := sctx.Parameters().(*grammar.ParametersContext)
 		if params.ParameterList() == nil {
 			return

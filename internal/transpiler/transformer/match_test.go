@@ -273,6 +273,16 @@ func (s Light) isOn() bool {
 func (s Light) isOff() bool {
 	return s._variant == _Light_Off
 }
+
+// IsOn reports whether s is the On case of Light.
+func (s Light) IsOn() bool {
+	return s._variant == _Light_On
+}
+
+// IsOff reports whether s is the Off case of Light.
+func (s Light) IsOff() bool {
+	return s._variant == _Light_Off
+}
 func (s Light) Copy() Light {
 	return Light{_variant: std.Copy(s._variant)}
 }
@@ -368,6 +378,16 @@ func (s Light) isOn() bool {
 	return s._variant == _Light_On
 }
 func (s Light) isOff() bool {
+	return s._variant == _Light_Off
+}
+
+// IsOn reports whether s is the On case of Light.
+func (s Light) IsOn() bool {
+	return s._variant == _Light_On
+}
+
+// IsOff reports whether s is the Off case of Light.
+func (s Light) IsOff() bool {
 	return s._variant == _Light_Off
 }
 func (s Light) Copy() Light {
@@ -579,6 +599,7 @@ func unwrap(h Holder) int {
 
 import "martianoff/gala/std"
 
+// From Go, create it with NewCell.
 type Cell[T any] struct {
 	Value std.Immutable[T]
 }
@@ -606,10 +627,16 @@ func (s Cell[T]) Unapply(v any) (std.Immutable[T], bool) {
 	}
 	return *new(std.Immutable[T]), false
 }
+
+// NewCell returns a new Cell.
+func NewCell[T any](value T) Cell[T] {
+	return Cell[T]{Value: std.NewImmutable(value)}
+}
 func (c Cell[T]) Get() std.Option[T] {
 	return std.Some[T]{}.Apply(c.Value.Get())
 }
 
+// From Go, create it with NewHolder.
 type Holder struct {
 	Cell std.Immutable[Cell[int]]
 }
@@ -628,6 +655,11 @@ func (s Holder) Unapply(v any) (std.Immutable[Cell[int]], bool) {
 		return p.Cell, true
 	}
 	return *new(std.Immutable[Cell[int]]), false
+}
+
+// NewHolder returns a new Holder.
+func NewHolder(cell Cell[int]) Holder {
+	return Holder{Cell: std.NewImmutable(cell)}
 }
 func unwrap(h Holder) int {
 	return func(obj std.Option[int]) int {

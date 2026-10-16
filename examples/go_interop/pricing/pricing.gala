@@ -13,8 +13,9 @@ import (
 )
 
 // LineItem is GALA-native: its fields are immutable, so Go sees each one as
-// a std.Immutable[T] and builds a LineItem through NewLineItem.
-struct LineItem(SKU string, UnitCents int64, Qty int)
+// a std.Immutable[T] and builds a LineItem through the generated NewLineItem.
+// Qty defaults to 1.
+struct LineItem(SKU string, UnitCents int64, Qty int = 1)
 
 // Receipt is Go-shaped: `var` fields are plain Go fields.
 type Receipt struct {
@@ -33,9 +34,6 @@ sealed type Discount {
 
 // ErrEmptyCart is a plain Go error value that Go can test with errors.Is.
 var ErrEmptyCart = errors.New("empty cart")
-
-// NewLineItem is the constructor Go callers use.
-func NewLineItem(sku string, unitCents int64, qty int) LineItem = LineItem(sku, unitCents, qty)
 
 // Subtotal sums an immutable Array of items.
 func Subtotal(items Array[LineItem]) int64 =

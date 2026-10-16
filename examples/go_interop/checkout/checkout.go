@@ -23,7 +23,7 @@ type Line struct {
 func toItems(lines []Line) collection_immutable.Array[pricing.LineItem] {
 	items := make([]pricing.LineItem, 0, len(lines))
 	for _, l := range lines {
-		items = append(items, pricing.NewLineItem(l.SKU, l.UnitCents, l.Qty))
+		items = append(items, pricing.NewLineItem(l.SKU, l.UnitCents, pricing.WithLineItemQty(l.Qty)))
 	}
 	return collection_immutable.ArrayFromSlice(items)
 }
@@ -37,14 +37,14 @@ func Total(lines []Line, coupon string) (int64, error) {
 	return result.Get().TotalCents, nil
 }
 
-// Describe reads a GALA sealed value from Go: each case's Unapply reports
-// whether the value is that case, and returns its fields.
+// Describe reads a GALA sealed value from Go: IsPercent and IsAmountOff test
+// its case, and the case's Unapply returns its fields.
 func Describe(d pricing.Discount) string {
-	if pct := (pricing.Percent{}).Unapply(d); pct.IsDefined() {
-		return fmt.Sprintf("%d%% off", pct.Get())
-	}
-	if off := (pricing.AmountOff{}).Unapply(d); off.IsDefined() {
-		return fmt.Sprintf("%d cents off", off.Get())
+	switch {
+	case d.IsPercent():
+		return fmt.Sprintf("%d%% off", pricing.Percent{}.Unapply(d).Get())
+	case d.IsAmountOff():
+		return fmt.Sprintf("%d cents off", pricing.AmountOff{}.Unapply(d).Get())
 	}
 	return "no discount"
 }

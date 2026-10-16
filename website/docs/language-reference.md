@@ -419,6 +419,8 @@ A named argument that names no field is [GALA-E0045](/docs/errors/gala-e0045/), 
 
 Outside its own package, a struct is constructible by call syntax only when every field the call sets is exported. For the shorthand form that is every field, since an omitted one takes its default in the same literal, so `lib.Box(1)` for `struct Box(N int, seen bool = false)` is [GALA-E0043](/docs/errors/gala-e0043/). Call a constructor function the package exports, or start from the zero value `lib.Box{}`.
 
+For Go callers, which build a struct as a composite literal and so skip its defaults, an exported shorthand struct whose fields are all exported gets a constructor `New<T>(...)`: each field without a default is a parameter, and each field with one is an option, `With<T><Field>(v)`, applied over its default. `struct Cfg(Name string, Tries int = 3)` gives Go `NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package already declares. See the [Go interop guide](/docs/go-interop/#shorthand-structs-have-go-constructors).
+
 ### Automatic Copy and Equal Methods
 
 <!-- doc-check: fragment -->
