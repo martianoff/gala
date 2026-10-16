@@ -192,6 +192,10 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
 					paramCtx.GetStart().GetLine(), paramCtx.GetStart().GetColumn(), msg, hint)
 			}
+			// A parameter filling a slot typed `any` has that type.
+			if paramCtx.Type_() == nil && !typeApplied && anySlot {
+				t.addParam(paramCtx.Identifier().GetText(), expType, paramCtx.VAR() != nil)
+			}
 			fieldList.List = append(fieldList.List, field)
 		}
 	}
