@@ -74,10 +74,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0018](/docs/errors/gala-e0018/) | Cannot infer the type parameter of a sealed variant constructor | Type inference |
 | [GALA-E0019](/docs/errors/gala-e0019/) | Empty parenthesized expression `()` used as a value | Expressions |
 | [GALA-E0020](/docs/errors/gala-e0020/) | Package not found | Packages |
-| [GALA-E0021](/docs/errors/gala-e0021/) | Type mismatch (unification failure) | Type inference |
-| [GALA-E0022](/docs/errors/gala-e0022/) | Occurs check failed (infinite type) | Type inference |
 | [GALA-E0023](/docs/errors/gala-e0023/) | Undefined variable | Type inference |
-| [GALA-E0024](/docs/errors/gala-e0024/) | Internal inference failure (transpiler bug) | Internal |
 | [GALA-E0025](/docs/errors/gala-e0025/) | Unresolved cross-package symbol (missing import) | Packages |
 | [GALA-E0026](/docs/errors/gala-e0026/) | Ambiguous sealed-variant reference across dot imports | Packages |
 | [GALA-E0027](/docs/errors/gala-e0027/) | Top-level function redeclared in the same package | Declarations |
@@ -134,23 +131,21 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
-Two codes are retired, and their numbers are not reused. **GALA-E0016** rejected a generic struct field named like another generic type of its package, such as `struct Box[T any](Mode Mode[T])`; such fields are accepted now. **GALA-E0070** rejected the read-only `ConstPtr` that `&x` of a `val` used to produce where an interface was expected; taking that address is now [GALA-E0076](/docs/errors/gala-e0076/).
+Five codes are retired, and their numbers are not reused. **GALA-E0016** rejected a generic struct field named like another generic type of its package, such as `struct Box[T any](Mode Mode[T])`; such fields are accepted now. **GALA-E0070** rejected the read-only `ConstPtr` that `&x` of a `val` used to produce where an interface was expected; taking that address is now [GALA-E0076](/docs/errors/gala-e0076/). **GALA-E0021**, **GALA-E0022** and **GALA-E0024** belonged to a Hindley-Milner fallback engine that was removed; none of them ever reached a user.
 
 ---
 
 ## Codes you will not see in practice
 
-Five codes exist in the compiler but no valid source reaches them. Each still has a page, because a stable code is worth documenting even when it is a backstop:
+Three codes exist in the compiler but no valid source reaches them. Each still has a page, because a stable code is worth documenting even when it is a backstop:
 
 | Code | Why you will not see it |
 |------|-------------------------|
 | [GALA-E0009](/docs/errors/gala-e0009/) | Fires only if the grammar and the pattern transformer disagree — a transpiler bug. |
 | [GALA-E0017](/docs/errors/gala-e0017/) | A recovered panic inside the transformer — a transpiler bug. |
-| [GALA-E0022](/docs/errors/gala-e0022/) | The shapes that would provoke an occurs-check failure are rejected earlier, or left to Go. |
-| [GALA-E0024](/docs/errors/gala-e0024/) | A missing case inside the inference engine — a transpiler bug. |
 | [GALA-E0026](/docs/errors/gala-e0026/) | Its precondition is a strict subset of [GALA-E0032](/docs/errors/gala-e0032/)'s, which is checked first. |
 
-[GALA-E0021](/docs/errors/gala-e0021/) is a related case: the code exists, but everyday type mismatches transpile cleanly and surface from the **Go compiler** afterwards, pointing back at your `.gala` line. GALA's inference deliberately leaves type checking to Go.
+Everyday type mismatches transpile cleanly and surface from the **Go compiler** afterwards, pointing back at your `.gala` line. GALA's inference deliberately leaves type checking to Go.
 
 ---
 
@@ -164,7 +159,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
-**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0021](/docs/errors/gala-e0021/), [E0022](/docs/errors/gala-e0022/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one, [E0068](/docs/errors/gala-e0068/) a match or if-expression whose value is used but has no type. See [Type Inference](/features/type-inference/).
+**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one, [E0068](/docs/errors/gala-e0068/) a match or if-expression whose value is used but has no type. See [Type Inference](/features/type-inference/).
 
 **Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type · [E0065](/docs/errors/gala-e0065/) an opaque-type pattern with other than one sub-pattern. Start with [Opaque Types](/docs/language-reference/#opaque-types).
 
@@ -180,7 +175,7 @@ Five codes exist in the compiler but no valid source reaches them. Each still ha
 
 **Immutability and concurrency safety** — [E0001](/docs/errors/gala-e0001/), [E0037](/docs/errors/gala-e0037/), [E0053](/docs/errors/gala-e0053/) pointer method on a copy of a lock or builder · [E0076](/docs/errors/gala-e0076/) the address of a `val`, a parameter or a receiver. See [Immutability](/features/immutability/) and [Concurrency Safety](/features/concurrency-safety/).
 
-**Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/), [E0024](/docs/errors/gala-e0024/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
+**Transpiler bugs** — [E0009](/docs/errors/gala-e0009/), [E0017](/docs/errors/gala-e0017/). These mean the transpiler hit a case it does not handle; please [file an issue](https://github.com/martianoff/gala/issues) with the source snippet.
 
 ---
 

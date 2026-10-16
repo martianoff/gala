@@ -193,23 +193,3 @@ func TestCachedTypeResolverLifecycle(t *testing.T) {
 		}
 	})
 }
-
-func TestTypeNameMemoIsBuildLocal(t *testing.T) {
-	tr := NewGalaASTTransformer().(*galaASTTransformer)
-	tr.packageName = "main"
-	tr.importManager = NewImportManager()
-	tr.importManager.Add("example.com/a", "", true, "a")
-	tr.typeMetas = make(map[string]*transpiler.TypeMetadata)
-
-	memo := &typeNameMemo{}
-	if got := tr.normalizeTypeNameMemoized("Thing", memo); got != "Thing" {
-		t.Fatalf("initial normalization = %q, want Thing", got)
-	}
-	tr.typeMetas["a.Thing"] = &transpiler.TypeMetadata{Name: "Thing"}
-	if got := tr.normalizeTypeNameMemoized("Thing", memo); got != "Thing" {
-		t.Fatalf("memoized normalization = %q, want Thing", got)
-	}
-	if got := tr.normalizeTypeNameMemoized("Thing", &typeNameMemo{}); got != "a.Thing" {
-		t.Fatalf("fresh normalization = %q, want a.Thing", got)
-	}
-}

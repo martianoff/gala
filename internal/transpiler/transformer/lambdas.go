@@ -1402,9 +1402,6 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
 	// Infer the type of expr for the type parameter
 	exprType := t.getExprTypeNameManual(expr)
-	if transpiler.IsUnusable(exprType) {
-		exprType, _ = t.inferExprType(expr)
-	}
 
 	var someTypeExpr ast.Expr
 	if exprType != nil && !exprType.IsNil() && !exprType.IsAny() {

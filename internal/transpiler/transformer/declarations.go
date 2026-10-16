@@ -1565,9 +1565,6 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 					)
 				}
 				t.typeAliases[name] = underlyingType
-				// A newly visible alias can change how an unqualified name
-				// normalizes, which is baked into the cached function env.
-				t.invalidateTypeEnv()
 			}
 		}
 

@@ -73,7 +73,6 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"loweringDefault":       func(t *galaASTTransformer) { t.loweringDefault = &defaultLowering{} },
 	"pendingMatchStmtBlock": func(t *galaASTTransformer) { t.pendingMatchStmtBlock = &ast.BlockStmt{} },
 	"tryThunkLambda":        func(t *galaASTTransformer) { t.tryThunkLambda = &grammar.LambdaExpressionContext{} },
-	"unrecordedCallee":      func(t *galaASTTransformer) { t.unrecordedCallee = ast.NewIdent("f") },
 	"hoistedPre":            func(t *galaASTTransformer) { t.hoistedPre = []ast.Stmt{&ast.EmptyStmt{}} },
 	"localDeclaration":      func(t *galaASTTransformer) { t.localDeclaration = true },
 }

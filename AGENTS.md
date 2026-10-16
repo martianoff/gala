@@ -68,7 +68,6 @@ below apply to every change, whoever or whatever wrote it.
 |-----------|---------|
 | `internal/parser/grammar` | ANTLR4 grammar `gala.g4` (parser `.go` is Bazel-generated) |
 | `internal/transpiler/analyzer` | Package metadata extraction; Go type info via the Go SDK |
-| `internal/transpiler/infer` | Hindley-Milner inference (Layer 2) |
 | `internal/transpiler/transformer` | GALA AST to Go AST transformation |
 | `internal/transpiler/generator` | Go code generation from AST |
 | `internal/lsp` | Language server (`gala lsp`) |

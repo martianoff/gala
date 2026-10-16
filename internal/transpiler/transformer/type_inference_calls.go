@@ -156,11 +156,12 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if res := t.goResults[e]; res != nil && !res.Type.IsNil() {
 		return res.Type
 	}
-	// Handle IIFE (used by if/match expressions)
-	if fl, ok := e.Fun.(*ast.FuncLit); ok {
-		if fl.Type != nil && fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
+	// Handle IIFE (used by if/match expressions); one with no result is void.
+	if fl, ok := e.Fun.(*ast.FuncLit); ok && fl.Type != nil {
+		if fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
 			return t.astTypeToTranspilerType(fl.Type.Results.List[0].Type)
 		}
+		return transpiler.VoidType{}
 	}
 
 	// A conversion to an opaque type, `UserID(n)` or `billing.UserID(n)`, has
@@ -350,21 +351,7 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 			pkgName := entry.PkgName
 			fullName := pkgName + "." + sel.Sel.Name
 			if fMeta := t.importedFunction(entry, sel.Sel.Name); fMeta != nil {
-				retType := fMeta.ReturnType
-				// Substitute explicit type arguments if provided
-				if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
-					retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
-				} else if len(fMeta.TypeParams) > 0 {
-					// Try to infer type parameters from arguments
-					inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
-					if len(inferredTypeArgs) > 0 {
-						retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
-					}
-				}
-				if retType == nil {
-					return transpiler.NilType{}
-				}
-				return retType
+				return t.functionCallResultType(e, fMeta, typeArgs)
 			}
 			// Check Go type info (stdlib, local Go files, third-party): by the
 			// import's path where it is recorded under it, else by the
@@ -492,6 +479,30 @@ func (t *galaASTTransformer) inferCallSelectorType(e *ast.CallExpr, sel *ast.Sel
 	return transpiler.NilType{}
 }
 
+// functionCallResultType is the type of e, a call of the GALA function fMeta:
+// its declared result with the type arguments substituted, explicit ones
+// (typeArgs) or ones inferred from the arguments. A function declared with no
+// result is a void call, as a void method is (see
+// resolveMethodCallTypeWithParams); one with a Go result list is typed by its
+// lifted call (see go_results.go).
+func (t *galaASTTransformer) functionCallResultType(e *ast.CallExpr, fMeta *transpiler.FunctionMetadata, typeArgs []transpiler.Type) transpiler.Type {
+	if fMeta.ReturnType == nil && fMeta.GoResults == nil {
+		return transpiler.VoidType{}
+	}
+	retType := fMeta.ReturnType
+	if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
+		retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
+	} else if len(fMeta.TypeParams) > 0 {
+		if inferred := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos); len(inferred) > 0 {
+			retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferred)
+		}
+	}
+	if retType == nil {
+		return transpiler.NilType{}
+	}
+	return retType
+}
+
 // inferCallIdentType handles type inference for call expressions with identifier function (e.g., funcName()).
 func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, typeArgs []transpiler.Type) transpiler.Type {
 	if id.Name == transpiler.FuncNewImmutable || id.Name == transpiler.TypeImmutable {
@@ -562,21 +573,7 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 		return transpiler.BasicType{Name: id.Name}
 	}
 	if fMeta := t.getFunction(id.Name); fMeta != nil {
-		retType := fMeta.ReturnType
-		// Substitute type arguments if the function is generic
-		if len(typeArgs) > 0 && len(fMeta.TypeParams) > 0 {
-			retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, typeArgs)
-		} else if len(fMeta.TypeParams) > 0 {
-			// Try to infer type parameters from arguments
-			inferredTypeArgs := t.inferFuncTypeParamsFromArgs(fMeta, e.Args, e.Ellipsis != token.NoPos)
-			if len(inferredTypeArgs) > 0 {
-				retType = t.substituteConcreteTypes(fMeta.ReturnType, fMeta.TypeParams, inferredTypeArgs)
-			}
-		}
-		if retType == nil {
-			return transpiler.NilType{}
-		}
-		return retType
+		return t.functionCallResultType(e, fMeta, typeArgs)
 	}
 
 	// Handle calling a variable of function type (e.g., thunk() where thunk is func() Stream[T])

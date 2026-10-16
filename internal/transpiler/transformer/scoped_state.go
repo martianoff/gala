@@ -55,7 +55,6 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"matchInStatementPos", t.matchInStatementPos},
 		{"pendingMatchStmtBlock", t.pendingMatchStmtBlock != nil},
 		{"tryThunkLambda", t.tryThunkLambda != nil},
-		{"unrecordedCallee", t.unrecordedCallee != nil},
 		{"hoistedPre", len(t.hoistedPre) != 0},
 		{"localDeclaration", t.localDeclaration},
 	}
@@ -99,7 +98,6 @@ var accumulatedStateFields = []string{
 	"cachedTypeResolver",
 	"cachedTypeResolverRev",
 	"tempVarCount",
-	"inferer",
 	"typeAliases",
 	"fileTypeDeclTargets",
 	"goTypeInfo",
@@ -137,13 +135,6 @@ var accumulatedStateFields = []string{
 	"lspLambdaParamHints",
 	"lastLine",
 	"lastCol",
-	"typeEnvEpoch",
-	"funcTypeEnv",
-	"funcTypeEnvEpoch",
-	"funcTypeEnvImportRev",
-	"typeNameCache",
-	"typeNameCacheEpoch",
-	"typeNameCacheImportRev",
 	"goCtorClaims",
 }
 

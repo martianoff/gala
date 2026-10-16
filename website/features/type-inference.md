@@ -253,15 +253,15 @@ The general rule: **omit types inside function bodies, annotate types at functio
 
 ---
 
-## Two-Layer Inference Architecture
+## How Inference Works
 
-Under the hood, GALA uses a two-layer inference system:
+Under the hood, GALA's inference is local and works in two directions:
 
-1. **Layer 1 (Pattern-based)** — Fast inference that handles 90%+ of cases: literals, scope lookups, function call return types, struct field types, and operator results.
+1. **Bottom-up** — an expression's type is read off its parts: literals, scope lookups, function and method result types, struct field types, and operator results.
 
-2. **Layer 2 (Hindley-Milner)** — Full unification-based inference for complex cases: generic function instantiation, lambda parameter inference, and polymorphic type schemes.
+2. **Top-down** — where the context fixes a type (a declared binding, a parameter, a function or lambda result), that type is pushed into the value. This is what types `None()`, a bare sealed variant like `Empty()`, an empty collection, an untyped lambda's parameters, and the branches of a match or if-expression.
 
-The compiler tries Layer 1 first for speed. If it returns an unresolved type (containing type parameters like `T`), Layer 2 takes over with Algorithm W unification. This two-layer approach keeps compile times fast while handling complex generic code correctly.
+A generic call's type arguments are inferred by unifying its parameter types with its arguments. There is no global constraint solver, so every inferred type comes from a place you can see in the code, and errors point at the expression that needs a type.
 
 ---
 

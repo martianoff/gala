@@ -46,6 +46,5 @@ This site previously produced an untracked error with no source span, so users c
 ## Related
 
 - [GALA-E0017](/docs/errors/gala-e0017/) — internal transpiler panic
-- [GALA-E0024](/docs/errors/gala-e0024/) — internal inference failure
 - [Pattern Matching](/features/pattern-matching/) — the supported pattern shapes
 - [All GALA error codes](/docs/errors/)

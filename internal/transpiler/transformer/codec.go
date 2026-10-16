@@ -515,9 +515,6 @@ func (t *galaASTTransformer) registerStructMetaTypeMeta(config *structMetaConfig
 		FieldNames: nil,
 	}
 	t.typeMetas[key] = meta
-	// getType resolves unqualified names through typeMetas, which the cached
-	// function environment has already normalized.
-	t.invalidateTypeEnv()
 }
 
 // autoInjectStructMeta prepends the StructMeta value for T before the existing

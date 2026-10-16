@@ -4937,9 +4937,6 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		}
 		argType := t.getExprTypeNameManual(expr)
 		if transpiler.IsUnusable(argType) {
-			argType, _ = t.inferExprType(expr)
-		}
-		if transpiler.IsUnusable(argType) {
 			continue
 		}
 		t.unifyForInference(paramTypes[a.slot], argType, typeParams, inferredMap)

@@ -39,10 +39,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0018` | Sealed variant type parameter cannot be inferred | [GALA-E0018.md](GALA-E0018.md) |
 | `GALA-E0019` | Empty parenthesized expression | [GALA-E0019.md](GALA-E0019.md) |
 | `GALA-E0020` | Package not found | [GALA-E0020.md](GALA-E0020.md) |
-| `GALA-E0021` | Type mismatch (unification failure) | [GALA-E0021.md](GALA-E0021.md) |
-| `GALA-E0022` | Occurs check failure | [GALA-E0022.md](GALA-E0022.md) |
 | `GALA-E0023` | Undefined symbol | [GALA-E0023.md](GALA-E0023.md) |
-| `GALA-E0024` | Internal inference failure | [GALA-E0024.md](GALA-E0024.md) |
 | `GALA-E0025` | Unresolved cross-package symbol | [GALA-E0025.md](GALA-E0025.md) |
 | `GALA-E0026` | Ambiguous sealed-variant reference | [GALA-E0026.md](GALA-E0026.md) |
 | `GALA-E0027` | Function redeclared | [GALA-E0027.md](GALA-E0027.md) |
@@ -102,6 +99,9 @@ rather than inventing an example — trust the notice at the top of the page.
 | Code | Was | Why it went |
 |------|-----|-------------|
 | `GALA-E0016` | Generic struct field named like another generic type of its package | Such fields are accepted now: `struct Box[T any](Mode Mode[T])` compiles. The number is not reused. |
+| `GALA-E0021` | Type mismatch (unification failure) | Removed with the Hindley-Milner fallback engine; it never reached users. The number is not reused. |
+| `GALA-E0022` | Occurs check failure | Removed with the Hindley-Milner fallback engine; it never reached users. The number is not reused. |
+| `GALA-E0024` | Internal inference failure | Removed with the Hindley-Milner fallback engine; it never reached users. The number is not reused. |
 | `GALA-E0070` | Read-only pointer where an interface is expected | `ConstPtr` was removed: `&x` of a `val`, a parameter or a receiver is now [GALA-E0076](GALA-E0076.md). The number is not reused. |
 
 ## Adding a new code

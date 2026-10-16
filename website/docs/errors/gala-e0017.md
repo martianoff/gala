@@ -46,5 +46,4 @@ Before this code, an unguarded panic surfaced as a raw Go stack trace from the C
 ## Related
 
 - [GALA-E0009](/docs/errors/gala-e0009/) — unrecognized pattern syntax
-- [GALA-E0024](/docs/errors/gala-e0024/) — internal inference failure
 - [All GALA error codes](/docs/errors/)
