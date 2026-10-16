@@ -156,8 +156,9 @@ func (t *galaASTTransformer) inferCallExprType(e *ast.CallExpr) transpiler.Type 
 	if res := t.goResults[e]; res != nil && !res.Type.IsNil() {
 		return res.Type
 	}
-	// Handle IIFE (used by if/match expressions); one with no result is void.
-	if fl, ok := e.Fun.(*ast.FuncLit); ok && fl.Type != nil {
+	// Handle IIFE (used by if/match expressions, and a lambda called on the
+	// spot); one with no result is void.
+	if fl, ok := ast.Unparen(e.Fun).(*ast.FuncLit); ok && fl.Type != nil {
 		if fl.Type.Results != nil && len(fl.Type.Results.List) > 0 {
 			return t.astTypeToTranspilerType(fl.Type.Results.List[0].Type)
 		}

@@ -228,7 +228,8 @@ func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {
 			// here answered `1 * 1.5` with int where that one says float64.
 			//
 			// A result still carrying type parameters (`b.Get() * 2` on a
-			// Box[T]) is typed from the left operand instead.
+			// Box[T]) is not returned: the expression takes its left
+			// operand's type expression.
 			if typ := t.arithmeticResultType(e); !transpiler.IsUnusableOrAny(typ) && !t.hasTypeParams(typ) {
 				return t.typeToExpr(typ)
 			}

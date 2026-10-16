@@ -491,13 +491,14 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		if isNilIdent(expr) {
 			body = &ast.BlockStmt{}
 		}
-		// A match or if-expression with no value makes the lambda return
-		// nothing, as it does at the tail of a block lambda.
-		if isVoidIIFE(expr) {
-			body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
-		}
+		// A void call, or a match or if-expression with no value, makes the
+		// lambda return nothing, as it does at the tail of a block lambda.
 		if body == nil {
-			retType = t.getExprType(expr)
+			if typ := t.getExprType(expr); isVoidIIFE(expr) || isVoidTypeIdent(typ) {
+				body = &ast.BlockStmt{List: []ast.Stmt{&ast.ExprStmt{X: expr}}}
+			} else {
+				retType = typ
+			}
 		}
 	}
 	if body != nil {
