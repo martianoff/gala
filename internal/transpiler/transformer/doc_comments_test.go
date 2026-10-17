@@ -98,7 +98,7 @@ var docCommentDecls = []struct {
 	galaLine int
 }{
 	{"Add", "Add returns the sum of a and b. @Summary Adds two numbers @Router /add [get]", 9},
-	{"Config", "Config is a block-commented struct.", 12},
+	{"Config", "Config is a block-commented struct. From Go, create it with NewConfig.", 12},
 	{"Config.Describe", "Describe is a documented method.", 19},
 	{"Shape", "Shape is a documented sealed type. Shape has no default value: create it with a case constructor, NewShapeCircle, NewShapeSquare. Its zero value Shape{} is none of its cases.", 22},
 	{"Circle", "Circle is a documented case.", 0}, // a companion type, not line-mapped

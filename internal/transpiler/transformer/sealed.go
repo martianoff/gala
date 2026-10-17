@@ -241,11 +241,11 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		decls = append(decls, companionDecls...)
 	}
 
-	// 4. Generate IsXxx() methods on parent
+	// 4. Generate isXxx() methods on parent, and IsXxx() for Go callers
 	for _, vi := range variants {
-		isMethod := t.generateSealedIsMethod(name, vi, tParams)
-		decls = append(decls, isMethod)
+		decls = append(decls, t.generateSealedIsMethod(name, "is"+vi.name, "", vi, tParams))
 	}
+	decls = append(decls, t.sealedGoPredicates(name, variants, parentFields, tParams)...)
 
 	// 5. Generate Copy, Equal methods on parent — skip if user-defined
 	hasCopy, hasEqual, _ := t.userDefinedMethodFlags(name)
@@ -714,12 +714,44 @@ func (t *galaASTTransformer) buildNoneType(elemType ast.Expr) ast.Expr {
 	}
 }
 
-// generateSealedIsMethod generates a private isXxx() method on the parent sealed type.
+// sealedGoPredicates returns, for each exported case of the exported sealed
+// type parentName, the method Go callers test it with: `d.IsPercent()`. A
+// predicate is left out when the type declares a method or has a field of its
+// name.
+func (t *galaASTTransformer) sealedGoPredicates(parentName string, variants []sealedVariantInfo, parentFields *ast.FieldList, tParams *ast.FieldList) []ast.Decl {
+	if !ast.IsExported(parentName) {
+		return nil
+	}
+	names := make([]string, 0, len(variants))
+	for _, vi := range variants {
+		names = append(names, "Is"+vi.name)
+	}
+	declared := t.declaresMethods(parentName, names...)
+	for _, f := range parentFields.List {
+		for _, n := range f.Names {
+			declared[n.Name] = true
+		}
+	}
+	var out []ast.Decl
+	for i, vi := range variants {
+		name := names[i]
+		if !ast.IsExported(vi.name) || declared[name] {
+			continue
+		}
+		doc := fmt.Sprintf("%s reports whether s is the %s case of %s.", name, vi.name, parentName)
+		out = append(out, t.generateSealedIsMethod(parentName, name, doc, vi, tParams))
+	}
+	return out
+}
+
+// generateSealedIsMethod generates the method name testing whether the parent
+// sealed type is case vi, with doc comment doc ("" for none).
 // e.g., func (s Shape) isCircle() bool { return s._variant == _Shape_Circle }
-func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
+func (t *galaASTTransformer) generateSealedIsMethod(parentName, name, doc string, vi sealedVariantInfo, tParams *ast.FieldList) *ast.FuncDecl {
 	parentType := t.buildGenericTypeExpr(parentName, tParams)
 
 	return &ast.FuncDecl{
+		Doc: docCommentGroup(doc),
 		Recv: &ast.FieldList{
 			List: []*ast.Field{
 				{
@@ -728,7 +760,7 @@ func (t *galaASTTransformer) generateSealedIsMethod(parentName string, vi sealed
 				},
 			},
 		},
-		Name: ast.NewIdent("is" + vi.name),
+		Name: ast.NewIdent(name),
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{},
 			Results: &ast.FieldList{

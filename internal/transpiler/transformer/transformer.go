@@ -109,7 +109,7 @@ type galaASTTransformer struct {
 	lspLambdaParamHints    []transpiler.LambdaParamHint                  // LSP: positions of lambda params with inferred types
 	lastLine               int                                           // last known ANTLR source line (for error reporting in deeply-nested helpers)
 	lastCol                int                                           // last known ANTLR source column (for error reporting in deeply-nested helpers)
-	goCtorClaims           map[string]int                                // Go constructor name -> how many of this package's sealed types would generate it; see goCtorClaimed
+	goCtorClaims           map[string]int                                // Go constructor name -> how many of this package's sealed types and shorthand structs would generate it; see goCtorClaimed
 
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
 	// declares, so a sub-pattern's statements can be split into declarations

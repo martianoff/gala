@@ -1287,6 +1287,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	fields := &ast.FieldList{}
 	var fieldNames []string
 	var immutFlags []bool
+	var paramTypes []ast.Expr // each field's type as a Go constructor takes it
 	if paramsCtx.ParameterList() != nil {
 		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
@@ -1299,6 +1300,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			if err != nil {
 				return nil, err
 			}
+			paramType := field.Type
 
 			if isVal {
 				// A field declared Immutable[T] with no keyword is stored as that
@@ -1311,6 +1313,8 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 						X:     t.stdIdent("Immutable"),
 						Index: field.Type,
 					}
+				} else if idx, ok := paramType.(*ast.IndexExpr); ok {
+					paramType = idx.Index // stored as declared, set from its element
 				}
 			}
 
@@ -1318,6 +1322,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			for _, n := range field.Names {
 				fieldNames = append(fieldNames, n.Name)
 				immutFlags = append(immutFlags, isVal)
+				paramTypes = append(paramTypes, paramType)
 				if isVal {
 					t.immutFields[n.Name] = true
 				}
@@ -1396,6 +1401,16 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			decls = append(decls, unapplyMethod)
 		}
 	}
+
+	// A constructor for Go callers, and the doc comment naming it.
+	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	if err != nil {
+		return nil, err
+	}
+	if decl, _ := findTypeSpec(decls, name); decl != nil && guidance != "" {
+		decl.Doc = docCommentGroup(guidance)
+	}
+	decls = append(decls, ctor...)
 
 	return decls, nil
 }

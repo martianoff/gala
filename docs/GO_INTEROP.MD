@@ -298,9 +298,9 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 | GALA | Go sees |
 |------|---------|
 | `func Subtotal(items Array[LineItem]) int64` | the same function. Default parameter values exist only for GALA callers, so Go passes every argument |
-| `struct LineItem(SKU string, ...)` (fields not `var`) | `type LineItem struct { SKU std.Immutable[string]; ... }`. Read with `item.SKU.Get()`. There is no generated constructor |
+| `struct LineItem(SKU string, ...)` (fields not `var`) | `type LineItem struct { SKU std.Immutable[string]; ... }` and a [generated constructor](#shorthand-structs-have-go-constructors) `NewLineItem(...)`. Read a field with `item.SKU.Get()` |
 | `var` field, e.g. `type Receipt struct { var TotalCents int64 }` | a plain Go field `TotalCents int64` |
-| `sealed type Discount { case Percent(Pct int64) ... }` | one struct `Discount` (unexported tag), an empty struct per case (`Percent{}.Unapply(d)` returns `std.Option[int64]`), and [generated constructors](#sealed-types-have-go-constructors): `NewDiscountPercent(...)` builds a case |
+| `sealed type Discount { case Percent(Pct int64) ... }` | one struct `Discount` (unexported tag), an empty struct per case (`Percent{}.Unapply(d)` returns `std.Option[int64]`), [generated constructors](#sealed-types-have-go-constructors) (`NewDiscountPercent(...)` builds a case) and [case predicates](#testing-a-sealed-values-case-from-go) (`d.IsPercent()`) |
 | `Option[T]`, `Try[T]`, `Either[L, R]` | `std.Option[T]` etc.: `IsDefined()`, `IsSuccess()`, `Get()`, `GetError()`, `GetOrElse(x)` |
 | a generic method, e.g. `Option.Map[U]` | a free function `std.Option_Map(o, f)` (Go methods cannot have type parameters) |
 | `Array[T]`, `List[T]`, `HashMap[K, V]` | `collection_immutable.Array[T]` etc.: `ArrayOf`, `ArrayFromSlice`, `.Size()`, `.ToGoSlice()` |
@@ -355,15 +355,59 @@ pricing.NewDiscountAmountOff(100)                                // AmountOff(10
 - **No default case, no `NewT`.** The Godoc then says the type has no default value and that its zero value is none of its cases. A GALA `match` on such a zero value panics.
 - **A composite literal skips field defaults.** If the default case has field defaults, the Godoc warns that `T{}` holds Go's zero values instead. Use `NewT()`.
 - **Generic types work the same way.** `sealed type Box[T any] { case Full(Value T) ... }` gives `func NewBoxFull[T any](value T) Box[T]`. An option carries all of the type's parameters, and Go cannot infer them from an option's argument, so write them out: `NewBoxFull("a", WithBoxFullCount[string](2))`.
-- **Parameter names are the field names in lowerCamelCase.** A name that is a Go keyword or an imported package gets a trailing underscore (`type_`).
-- **A name that is already taken is not generated.** If the package declares `NewDiscount` itself, in a `.gala` file or a hand-written `.go` file, or two sealed types would generate the same name, that constructor is left out. Test files are not consulted, so a test that declares one of these names fails with "redeclared". Every name a case constructor needs (its options included) must be free, or the whole case constructor is skipped. Go code then uses `Percent{}.Apply(...)`, which takes every field.
+- **Parameter names are the field names in lowerCamelCase**, a leading initialism lower-cased as Go spells it (`SKU` → `sku`, `URLPath` → `urlPath`). A name that is a Go keyword or an imported package gets a trailing underscore (`type_`).
+- **A name that is already taken is not generated.** If the package declares `NewDiscount` itself, in a `.gala` file or a hand-written `.go` file, or two of its types would generate the same name, that constructor is left out. Test files are not consulted, so a test that declares one of these names fails with "redeclared". Every name a case constructor needs (its options included) must be free, or the whole case constructor is skipped. Go code then uses `Percent{}.Apply(...)`, which takes every field.
 - **Only exported sealed types and exported cases get constructors**, because an unexported one cannot be called from another package anyway.
+
+### Shorthand structs have Go constructors
+
+For the same reason, an exported shorthand struct gets `New<T>(...)`: each field without a default is a parameter, in order, and each field with one is an option, `With<T><Field>(v)`, applied over its default. The constructor wraps each immutable field in `std.Immutable`, so Go passes plain values. `LineItem` in the [example below](#a-gala-library-with-a-go-facing-api) declares `struct LineItem(SKU string, UnitCents int64, Qty int = 1)`, so Go sees:
+
+```go
+// LineItem is GALA-native: its fields are immutable, so Go sees each one as
+// a std.Immutable[T] and builds a LineItem through the generated NewLineItem.
+// Qty defaults to 1.
+// From Go, create it with NewLineItem. A composite literal LineItem{} does not apply GALA's field defaults: its fields hold Go's zero values.
+type LineItem struct {
+	SKU       std.Immutable[string]
+	UnitCents std.Immutable[int64]
+	Qty       std.Immutable[int]
+}
+
+// NewLineItem returns a new LineItem, each option applied over its field defaults (Qty 1).
+func NewLineItem(sku string, unitCents int64, _opts ...LineItemOption) LineItem
+
+// WithLineItemQty sets LineItem's Qty (default 1).
+func WithLineItemQty(v int) LineItemOption
+```
+
+```go
+pricing.NewLineItem("A-1", 1000)                              // Qty 1
+pricing.NewLineItem("A-1", 1000, pricing.WithLineItemQty(3))  // Qty 3
+```
+
+The naming rules above apply. A struct with an unexported field gets no constructor, since GALA lets only its own package set that field; export one by hand when Go needs it. A struct without fields, or a block-form struct (`type Cfg struct { ... }`), which has no field defaults, gets none either: Go builds it with a composite literal.
+
+### Testing a sealed value's case from Go
+
+Each exported case of an exported sealed type has a predicate `Is<Case>()`, so Go can test a value's case in an `if` or a `switch` and read its fields with the case's `Unapply`:
+
+```go
+switch {
+case d.IsPercent():
+	return fmt.Sprintf("%d%% off", pricing.Percent{}.Unapply(d).Get())
+case d.IsAmountOff():
+	return fmt.Sprintf("%d cents off", pricing.AmountOff{}.Unapply(d).Get())
+}
+```
+
+A predicate is not generated when the type declares a method of that name or has a field of it; the standard library's `Either.IsLeft()` and `Try.IsSuccess()` are its own methods, and `Option` gains `IsSome()` and `IsNone()` next to `IsDefined()` and `IsEmpty()`. Constructors and predicates are for Go callers: GALA code builds values by calling the type and tests a case with `match`.
 
 The language reference covers the [rules for constructors](GALA.MD#go-constructors).
 
 ### A GALA library with a Go-facing API
 
-[`pricing/pricing.gala`](../examples/go_interop/pricing/pricing.gala) is a GALA library written to be called from Go. It provides a constructor function for its immutable struct, gives its sealed type a default case and a field default, uses `var` fields on the struct Go reads most, and returns `Option` and `Try`:
+[`pricing/pricing.gala`](../examples/go_interop/pricing/pricing.gala) is a GALA library written to be called from Go. It gives its immutable struct and its sealed type field defaults, its sealed type a default case, uses `var` fields on the struct Go reads most, and returns `Option` and `Try`:
 
 <!-- doc-source: examples/go_interop/pricing/pricing.gala -->
 ```gala
@@ -378,8 +422,9 @@ import (
 )
 
 // LineItem is GALA-native: its fields are immutable, so Go sees each one as
-// a std.Immutable[T] and builds a LineItem through NewLineItem.
-struct LineItem(SKU string, UnitCents int64, Qty int)
+// a std.Immutable[T] and builds a LineItem through the generated NewLineItem.
+// Qty defaults to 1.
+struct LineItem(SKU string, UnitCents int64, Qty int = 1)
 
 // Receipt is Go-shaped: `var` fields are plain Go fields.
 type Receipt struct {
@@ -398,9 +443,6 @@ sealed type Discount {
 
 // ErrEmptyCart is a plain Go error value that Go can test with errors.Is.
 var ErrEmptyCart = errors.New("empty cart")
-
-// NewLineItem is the constructor Go callers use.
-func NewLineItem(sku string, unitCents int64, qty int) LineItem = LineItem(sku, unitCents, qty)
 
 // Subtotal sums an immutable Array of items.
 func Subtotal(items Array[LineItem]) int64 =
@@ -465,7 +507,7 @@ type Line struct {
 func toItems(lines []Line) collection_immutable.Array[pricing.LineItem] {
 	items := make([]pricing.LineItem, 0, len(lines))
 	for _, l := range lines {
-		items = append(items, pricing.NewLineItem(l.SKU, l.UnitCents, l.Qty))
+		items = append(items, pricing.NewLineItem(l.SKU, l.UnitCents, pricing.WithLineItemQty(l.Qty)))
 	}
 	return collection_immutable.ArrayFromSlice(items)
 }
@@ -479,14 +521,14 @@ func Total(lines []Line, coupon string) (int64, error) {
 	return result.Get().TotalCents, nil
 }
 
-// Describe reads a GALA sealed value from Go: each case's Unapply reports
-// whether the value is that case, and returns its fields.
+// Describe reads a GALA sealed value from Go: IsPercent and IsAmountOff test
+// its case, and the case's Unapply returns its fields.
 func Describe(d pricing.Discount) string {
-	if pct := (pricing.Percent{}).Unapply(d); pct.IsDefined() {
-		return fmt.Sprintf("%d%% off", pct.Get())
-	}
-	if off := (pricing.AmountOff{}).Unapply(d); off.IsDefined() {
-		return fmt.Sprintf("%d cents off", off.Get())
+	switch {
+	case d.IsPercent():
+		return fmt.Sprintf("%d%% off", pricing.Percent{}.Unapply(d).Get())
+	case d.IsAmountOff():
+		return fmt.Sprintf("%d cents off", pricing.AmountOff{}.Unapply(d).Get())
 	}
 	return "no discount"
 }
@@ -513,10 +555,10 @@ func Example_fromGo() {
 	fmt.Println(discount, discount.Apply(900))
 	fmt.Println(pricing.NewDiscountPercent(), pricing.NewDiscount())
 
-	item := pricing.NewLineItem("C-3", 475, 2)
+	item := pricing.NewLineItem("C-3", 475, pricing.WithLineItemQty(2))
 	fmt.Println(item.SKU.Get(), item.Qty.Get())
 
-	items := collection_immutable.ArrayOf(item, pricing.NewLineItem("D-4", 50, 1))
+	items := collection_immutable.ArrayOf(item, pricing.NewLineItem("D-4", 50))
 	fmt.Println(items.Size(), pricing.Subtotal(items))
 
 	receipt := pricing.Checkout(items, "OFF100").Get()

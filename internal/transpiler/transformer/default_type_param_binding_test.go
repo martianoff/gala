@@ -28,7 +28,7 @@ func orFallback[T any](x T, fallback Option[T] = None[T]()) Option[T] = fallback
 
 func pick[T any](d Option[T] = None[T]()) Option[T] = d
 
-struct Slot[T any](Value Option[T] = None[T](), Label string = "slot")
+struct slot[T any](Value Option[T] = None[T](), Label string = "slot")
 
 struct Box[T any](V T)
 
@@ -48,7 +48,7 @@ func (b Box[T]) With[U any](u Option[U] = None[U]()) Tuple[T, Option[U]] = (b.V,
     val p Option[int] = pick()
     Println(p)
 }`, "pick(std.None[int]{}.Apply())"},
-		{"struct type argument", `func main() { Println(Slot[int](Label = "a").Value) }`, "std.None[int]{}.Apply()"},
+		{"struct type argument", `func main() { Println(slot[int](Label = "a").Value) }`, "std.None[int]{}.Apply()"},
 		{"receiver type argument", `func main() { Println(Box(V = 7).Or()) }`, "std.None[int]{}.Apply()"},
 		{"caller with a type parameter of the same name", `func inner[T any](t T) string = describe[int]() + s" $t"
 
@@ -63,8 +63,9 @@ func main() { Println(viaParam(true)) }`, "orFallback(u, std.None[U]{}.Apply())"
 			got, err := trans.Transpile(decls+"\n"+tc.body, "")
 			require.NoError(t, err)
 			assert.Contains(t, got, tc.contains)
-			// The declarations lower no default themselves, so any None[T]
-			// is a use site naming the callee's T.
+			// The declarations lower no default themselves (slot is
+			// unexported, so it has no Go constructor applying its defaults),
+			// so any None[T] is a use site naming the callee's T.
 			assert.NotContains(t, got, "None[T]")
 		})
 	}

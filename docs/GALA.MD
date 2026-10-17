@@ -736,6 +736,15 @@ even when that field has a default: `lib.Box(1)` for
 [GALA-E0043](errors/GALA-E0043.md). Call a constructor function the package
 exports, or start from the zero value `lib.Box{}`.
 
+For Go callers, which build a struct as a composite literal and so skip its
+defaults, an exported shorthand struct whose fields are all exported gets a
+constructor `New<T>(...)`: each field without a default is a parameter, and
+each field with one is an option, `With<T><Field>(v)`, applied over its
+default. `struct Cfg(Name string, Tries int = 3)` gives Go
+`NewCfg("a", WithCfgTries(5))`. It is not generated under a name the package
+already declares. See the
+[Go interop guide](GO_INTEROP.MD#shorthand-structs-have-go-constructors).
+
 ##### What stays partial, and why
 
 The check applies to **shorthand-declared GALA structs only**. Everything that is
@@ -1428,8 +1437,12 @@ off := lights.NewLightOff()
 A sealed type without a default case gets no `New<T>()`, and its doc comment
 lists its case constructors instead. A constructor is not generated under a
 name the package's non-test files already declare (in GALA or hand-written
-Go), or that two of its sealed types would both generate; a case constructor is skipped when any name it needs (its
-options included) is taken. See the
+Go), or that two of its types would both generate; a case constructor is skipped when any name it needs (its
+options included) is taken.
+
+Each exported case also gets a predicate for Go callers, `Is<Case>()`, true
+when the value is that case: `d.IsPercent()`. It is not generated when the
+type declares a method of that name or has a field of it. See the
 [Go interop guide](GO_INTEROP.MD#sealed-types-have-go-constructors) for the
 generated Godoc.
 

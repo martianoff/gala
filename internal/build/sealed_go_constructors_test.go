@@ -67,3 +67,40 @@ func main() {
 	})
 	assert.Equal(t, "Off()|On(30)", buildAndRun(t, projectDir))
 }
+
+// TestBuild_StructGoConstructorAndCasePredicates builds a package whose
+// hand-written Go creates its immutable struct with the generated constructor,
+// which applies the GALA field defaults, and tests a sealed value's case with
+// the generated predicates.
+func TestBuild_StructGoConstructorAndCasePredicates(t *testing.T) {
+	projectDir := newForeignGenGoProject(t, "example.com/gostructctor", map[string]string{
+		"cart/cart.gala": `package cart
+
+struct Item(SKU string, Qty int = 1)
+
+sealed type Discount {
+    default case NoDiscount()
+    case Percent(Pct int64)
+}
+`,
+		"cart/describe.go": `package cart
+
+import "fmt"
+
+func Describe() string {
+	a, b := NewItem("A"), NewItem("B", WithItemQty(3))
+	d := NewDiscountPercent(10)
+	return fmt.Sprintln(a.SKU.Get(), a.Qty.Get(), b.Qty.Get(), d.IsPercent(), d.IsNoDiscount(), NewDiscount().IsNoDiscount())
+}
+`,
+		"main.gala": `package main
+
+import "example.com/gostructctor/cart"
+
+func main() {
+    Println(cart.Describe())
+}
+`,
+	})
+	assert.Equal(t, "A|1|3|true|false|true", buildAndRun(t, projectDir))
+}
