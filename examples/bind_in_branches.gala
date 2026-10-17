@@ -1,0 +1,67 @@
+package main
+
+// `bind` inside a braced branch of an if-expression, and inside a match arm,
+// whose value is consumed (a val initializer, a bind RHS). Each branch's
+// monad is the type of the slot the if or match fills, not the enclosing
+// function's result type. std is dot-imported explicitly, so the FlatMap
+// helpers are emitted unqualified.
+
+import . "martianoff/gala/std"
+
+struct Person(Name string, Age int)
+
+func half(n int) Option[int] = When(n % 2 == 0, n / 2)
+
+// The if-expression is Option[bool]; the function returns Option[Person].
+func makePerson(name string, age int, ok bool) Option[Person] {
+    bind _ = if (ok) { bind _ = if (age > 0) half(age) else None(); Some(true) } else Some(false)
+    Some(Person(name, age))
+}
+
+// A bind chain in the then-branch, a plain value in the else-branch.
+func quarter(n int, enabled bool) Option[int] {
+    val q = if (enabled) { bind a = half(n); bind b = half(a); Some(b) } else Some(n)
+    q.Map(_ * 10)
+}
+
+// A bind chain in the else-branch, after a plain statement.
+func describe(n int) string {
+    val r = if (n < 0) Some("negative") else { val k = n + 2; bind h = half(k); Some(s"half of $k is $h") }
+    r.GetOrElse("odd")
+}
+
+// A bind chain in a match arm whose value is a val.
+func classify(n int) Option[bool] {
+    val o = n match {
+        case 0 => Some(false)
+        case _ => { bind h = half(n); Some(h > 1) }
+    }
+    o
+}
+
+// A bind chain in a match arm that is itself bound.
+func nested(n int) Option[int] {
+    bind x = n match {
+        case 0 => Some(0)
+        case _ => { bind h = half(n); Some(h + 1) }
+    }
+    Some(x * 100)
+}
+
+func main() {
+    Println(makePerson("John", 24, true))
+    Println(makePerson("Jane", 0, true))
+    Println(makePerson("Doe", 0, false))
+    Println(quarter(8, true))
+    Println(quarter(6, true))
+    Println(quarter(3, false))
+    Println(describe(4))
+    Println(describe(3))
+    Println(describe(-1))
+    Println(classify(0))
+    Println(classify(4))
+    Println(classify(3))
+    Println(nested(0))
+    Println(nested(6))
+    Println(nested(5))
+}

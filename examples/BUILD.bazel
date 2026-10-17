@@ -213,6 +213,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "bind_in_branches",
+    src = "bind_in_branches.gala",
+    expected = "bind_in_branches.out",
+)
+
+gala_exec_test(
     name = "bind_notation_user_monad",
     src = "bind_notation_user_monad.gala",
     expected = "bind_notation_user_monad.out",

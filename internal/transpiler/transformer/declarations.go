@@ -101,6 +101,15 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		stmt, err := t.transformSimpleStatement(simpleCtx.(*grammar.SimpleStatementContext))
 		return nil, stmt, err
 	}
+	// A block lowers a `bind` and the `also`s after it as one FlatMap chain
+	// before reaching its statements one by one, so either one here has no
+	// chain to belong to.
+	if ad := ctx.AlsoDeclaration(); ad != nil {
+		return nil, nil, t.semanticErrorAt(ad, "`also` must follow a `bind`")
+	}
+	if bd := ctx.BindDeclaration(); bd != nil {
+		return nil, nil, t.semanticErrorAt(bd, "`bind` is not supported here")
+	}
 	return nil, nil, nil
 }
 

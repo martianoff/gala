@@ -338,3 +338,41 @@ func run() Try[int] {
 	assert.Contains(t, got, "FlatMap",
 		"the discard bind should still lower to a FlatMap chain:\n%s", got)
 }
+
+// A `bind` in a braced if-expression branch lowers the rest of the branch to a
+// FlatMap chain typed by the branch's monad (Option[bool]), not the function's.
+func TestBindInIfExpressionBranch(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func run(n int) Option[int] {
+    val ok = if (n > 0) { bind y = Some(n); Some(y > 1) } else { Some(false) }
+    ok.Map((b) => n)
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "std.Option_FlatMap[bool, int](", "the branch lowers to a FlatMap chain:\n%s", got)
+	assert.Contains(t, got, ") std.Option[bool] {", "the chain is typed by the branch's monad:\n%s", got)
+}
+
+// With std dot-imported, a bare `Option_FlatMap[R, A]` is typed Option[R], not
+// Option[R, A], so a match arm holding a bind chain agrees with its siblings.
+func TestBindInMatchArmWithDotImportedStd(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+import . "martianoff/gala/std"
+
+func run(n int) Option[bool] {
+    val o = n match {
+        case 0 => Some(false)
+        case _ => { bind h = Some(n); Some(h > 1) }
+    }
+    o
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "Option_FlatMap[bool, int](", "the arm lowers to a FlatMap chain:\n%s", got)
+}
