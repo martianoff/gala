@@ -232,6 +232,7 @@ func (r *RichAST) Merge(other *RichAST) {
 			copied.Fields = v.Fields
 			copied.FieldNames = v.FieldNames
 			copied.ImmutFlags = v.ImmutFlags
+			copied.StoredAsDeclared = v.StoredAsDeclared
 		}
 		if typeParamsNeeded {
 			copied.TypeParams = v.TypeParams

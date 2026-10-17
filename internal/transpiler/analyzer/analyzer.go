@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -3846,6 +3847,9 @@ func (d *packageDecls) recordShorthandField(meta *transpiler.TypeMetadata, field
 // construction passes its element.
 func (d *packageDecls) markStoredAsDeclared(aliasStep func(transpiler.Type) (transpiler.Type, bool)) {
 	for _, f := range d.keywordlessFields {
+		if slices.Contains(f.meta.TypeParams, f.declared.String()) {
+			continue // the struct's type parameter, not an alias it shadows
+		}
 		if elem, ok := transpiler.ImmutableElem(walkTypeChain(f.declared, aliasStep)); ok {
 			f.meta.Fields[f.meta.FieldNames[f.index]] = elem
 			f.meta.StoredAsDeclared[f.index] = true

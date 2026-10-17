@@ -1316,7 +1316,7 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 				if meta != nil && i < len(meta.StoredAsDeclared) {
 					stored = meta.StoredAsDeclared[i]
 				} else {
-					stored = param.VAL() == nil && transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type))
+					stored = param.VAL() == nil && transpiler.IsImmutableType(t.followAliasChain(t.astTypeToTranspilerType(field.Type)))
 				}
 				if !stored {
 					field.Type = &ast.IndexExpr{
@@ -1325,8 +1325,8 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 					}
 				} else if idx, ok := paramType.(*ast.IndexExpr); ok {
 					paramType = idx.Index // set from its element
-				} else if meta != nil && meta.Fields[param.Identifier().GetText()] != nil {
-					paramType = t.typeToExpr(meta.Fields[param.Identifier().GetText()]) // an alias: set from its element
+				} else if elem := t.storedFieldElem(meta, param.Identifier().GetText()); elem != nil {
+					paramType = t.typeToExpr(elem) // an alias: set from its element
 				}
 			}
 
@@ -1356,8 +1356,8 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			if existing, ok := t.structFieldTypes[name][pName]; ok && !existing.IsNil() {
 				continue
 			}
-			if meta != nil && meta.Fields[pName] != nil && !meta.Fields[pName].IsNil() {
-				t.structFieldTypes[name][pName] = meta.Fields[pName]
+			if elem := t.storedFieldElem(meta, pName); elem != nil {
+				t.structFieldTypes[name][pName] = elem
 				continue
 			}
 			var pType transpiler.Type = transpiler.NilType{}
@@ -1428,6 +1428,15 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	decls = append(decls, ctor...)
 
 	return decls, nil
+}
+
+// storedFieldElem is the type the analyzer records for field of the struct
+// meta describes, nil when it has none.
+func (t *galaASTTransformer) storedFieldElem(meta *transpiler.TypeMetadata, field string) transpiler.Type {
+	if meta == nil || meta.Fields[field] == nil || meta.Fields[field].IsNil() {
+		return nil
+	}
+	return meta.Fields[field]
 }
 
 func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {

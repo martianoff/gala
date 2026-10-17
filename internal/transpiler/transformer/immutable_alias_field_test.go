@@ -35,3 +35,17 @@ func main() {
 	require.Contains(t, out, "S{X: std.NewImmutable(1), Y: std.NewImmutable(2), Z: std.NewImmutable(3), M: std.NewImmutable(Millis(4)), Late: std.NewImmutable(\"a\"), W: std.NewImmutable(std.NewImmutable(5)), G: std.NewImmutable(true)}")
 	require.Contains(t, out, "func NewS(x int, y int, z IInt, m Millis, late string, w std.Immutable[int], g bool) S {")
 }
+
+// TestImmutableAliasFieldTypeParam: a struct's type parameter named like an
+// alias of Immutable is the type parameter, wrapped like any field.
+func TestImmutableAliasFieldTypeParam(t *testing.T) {
+	out, err := transpileBareVariant(t, `package main
+
+type IInt Immutable[int]
+
+struct Box[IInt any](V IInt)
+
+func main() { Println(Box[string]("a").V) }`)
+	require.NoError(t, err)
+	require.Contains(t, out, "type Box[IInt any] struct {\n\tV std.Immutable[IInt]\n}")
+}
