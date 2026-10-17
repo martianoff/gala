@@ -635,11 +635,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		s.hoist = ""
 	}
 	if s.hoist == "" {
-		iifeType := s.typ
-		if s.open {
-			iifeType = nil
-		}
-		defer t.enterIIFEReturnSlot(iifeType)()
+		defer t.enterIIFEReturnSlot(s.closedType())()
 	}
 
 	// A branch with no slot type to lower against is typed by the other one
@@ -1018,13 +1014,27 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		return nil, ast.NewIdent("nil"), false, nil
 	}
 
+	// A `bind` takes over the rest of the branch (see lowerIfExprBranchBind).
+	bindAt := slices.IndexFunc(stmts, func(s grammar.IStatementContext) bool { return bindDeclFromStatement(s) != nil })
+	end := len(stmts) - 1
+	if bindAt >= 0 {
+		end = bindAt
+	}
+
 	var preceding []ast.Stmt
-	for _, stmtCtx := range stmts[:len(stmts)-1] {
+	for _, stmtCtx := range stmts[:end] {
 		stmt, pre, err := t.transformStatement(stmtCtx.(*grammar.StatementContext))
 		if err != nil {
 			return nil, nil, false, err
 		}
 		preceding = append(append(preceding, pre...), stmt)
+	}
+	if bindAt >= 0 {
+		expr, err := t.lowerIfExprBranchBind(stmts[bindAt:], s)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		return preceding, expr, false, nil
 	}
 
 	// Try to extract expression from the last statement:
@@ -1065,6 +1075,41 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		return preceding, branchExpr, true, nil
 	}
 	return preceding, ast.NewIdent("nil"), false, nil
+}
+
+// lowerIfExprBranchBind lowers stmts, the rest of an if-expression branch from
+// its first `bind`, to a FlatMap chain over the branch's monad: the type of the
+// slot s the if-expression fills, or, when that is not known, the branch's
+// trailing value. Never the enclosing function's result type — the
+// if-expression's value need not be what the function returns. The chain's
+// bound names are local to the branch.
+func (t *galaASTTransformer) lowerIfExprBranchBind(stmts []grammar.IStatementContext, s slot) (ast.Expr, error) {
+	// The statements after the `bind` run inside its FlatMap callback, which a
+	// `return`, `break` or `continue` could only leave, not the function or
+	// loop it names.
+	for _, stmt := range stmts[1:] {
+		if escapesConstruct(t, stmt) {
+			return nil, t.semanticErrorAt(stmt.(*grammar.StatementContext),
+				"a `return`, `break` or `continue` after a `bind` in an if-expression branch cannot leave the enclosing function or loop: "+
+					"the rest of the branch runs inside the bind's FlatMap callback. Move it before the `bind`")
+		}
+	}
+	typ := s.closedType()
+	t.pushScope()
+	defer t.popScope()
+	// A hoisted if-expression enters no IIFE slot of its own, so the chain's
+	// result would otherwise come from the enclosing function's.
+	defer t.enterIIFEReturnSlot(typ)()
+	return t.desugarBindChain(stmts, t.newBindResult(typ))
+}
+
+// closedType is the slot's type, or nil when the slot is open: an open type's
+// placeholders are no result type.
+func (s slot) closedType() transpiler.Type {
+	if s.open {
+		return nil
+	}
+	return s.typ
 }
 
 // slot is the type a value is lowered against (see lowerAgainst), with the

@@ -534,7 +534,10 @@ func (t *galaASTTransformer) inferCallIdentType(e *ast.CallExpr, id *ast.Ident, 
 	}
 	if parentType := t.resolveStdConstructorParentType(id.Name, false); parentType != "" {
 		baseType := transpiler.NamedType{Package: registry.StdPackageName, Name: parentType}
-		if len(typeArgs) > 0 {
+		// A monomorphized method (bare `Option_FlatMap[U, T]` under a std dot
+		// import) lists method then receiver type args, not the parent's: the
+		// same guard as inferCallSelectorType.
+		if len(typeArgs) > 0 && t.stdCallTypeArgsAreParentParams(id.Name) {
 			return transpiler.GenericType{Base: baseType, Params: typeArgs}
 		}
 		// `Type_Method` shaped names (e.g. `Try_Map`, `Option_FlatMap`) refer to
