@@ -1084,6 +1084,16 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 // if-expression's value need not be what the function returns. The chain's
 // bound names are local to the branch.
 func (t *galaASTTransformer) lowerIfExprBranchBind(stmts []grammar.IStatementContext, s slot) (ast.Expr, error) {
+	// The statements after the `bind` run inside its FlatMap callback, which a
+	// `return`, `break` or `continue` could only leave, not the function or
+	// loop it names.
+	for _, stmt := range stmts[1:] {
+		if escapesConstruct(t, stmt) {
+			return nil, t.semanticErrorAt(stmt.(*grammar.StatementContext),
+				"a `return`, `break` or `continue` after a `bind` in an if-expression branch cannot leave the enclosing function or loop: "+
+					"the rest of the branch runs inside the bind's FlatMap callback. Move it before the `bind`")
+		}
+	}
 	typ := s.closedType()
 	t.pushScope()
 	defer t.popScope()

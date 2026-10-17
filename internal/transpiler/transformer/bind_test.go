@@ -376,3 +376,41 @@ func run(n int) Option[bool] {
 	assert.NoError(t, err)
 	assert.Contains(t, got, "Option_FlatMap[bool, int](", "the arm lowers to a FlatMap chain:\n%s", got)
 }
+
+// After a `bind` in an if-expression branch, a `return` runs inside the bind's
+// FlatMap callback and could not leave the function, so it is rejected.
+func TestBindInIfExpressionBranchRejectsReturn(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func run(n int, c bool) Option[int] {
+    val v = if (c) {
+        bind a = Some(n)
+        if (a > 3) {
+            return None()
+        }
+        Some(a)
+    } else Some(0)
+    v
+}
+`
+	_, err := trans.Transpile(input, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "after a `bind` in an if-expression branch cannot leave the enclosing function")
+}
+
+// A block that ends in its `bind` has no value for the chain to produce.
+func TestBindBlockEndingInBindIsRejected(t *testing.T) {
+	trans := newBindTranspiler()
+	for name, body := range map[string]string{
+		"function body":        "bind a = Some(n)",
+		"if-expression branch": "val q = if (n > 0) { bind a = Some(n) } else Some(1)\n    q",
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := "package main\n\nfunc run(n int) Option[int] {\n    " + body + "\n}\n"
+			_, err := trans.Transpile(input, "")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "a `bind` block must end with a value expression")
+		})
+	}
+}

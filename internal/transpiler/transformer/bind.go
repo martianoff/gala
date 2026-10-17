@@ -263,6 +263,9 @@ func (t *galaASTTransformer) newBindResult(typ transpiler.Type) *bindResult {
 // FlatMap/Zip call expression of type res.typ (the block's monad M[R]).
 func (t *galaASTTransformer) desugarBindChain(stmts []grammar.IStatementContext, res *bindResult) (ast.Expr, error) {
 	group, rest := collectBindGroup(stmts)
+	if len(rest) == 0 {
+		return nil, t.semanticErrorAt(group[len(group)-1].ctx, "a `bind` block must end with a value expression")
+	}
 
 	prepped := make([]preppedBind, len(group))
 	for i, e := range group {
