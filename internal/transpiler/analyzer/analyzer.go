@@ -1015,6 +1015,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		a.currentOwnTypes = nil
 	}()
 
+	// decls remembers which file of this package declared each method and each
+	// top-level function, for the duration of this call. Section 2 below fills
+	// it from the file being analyzed; the sibling-metadata pass (section 2.5)
+	// adds the siblings and rejects any declaration that collides with one
+	// already recorded from another file. Section 1 and the siblings queue the
+	// shorthand fields whose type may name an alias of Immutable.
+	decls := newPackageDecls(filePath)
+
 	// 1. Collect all types
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
@@ -1047,6 +1055,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
+				meta.StoredAsDeclared = nil
 				meta.FieldPositions = nil
 				meta.FieldDocs = nil
 				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
@@ -1200,6 +1209,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
+				meta.StoredAsDeclared = nil
 				meta.FieldPositions = nil
 				meta.FieldDocs = nil
 				meta.FieldDefaults = nil
@@ -1256,8 +1266,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						if pctx.Type_() != nil {
 							fieldType = galaparser.TypeText(pctx.Type_())
 						}
-						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
-							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
+						declared := a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
+						meta.Fields[fieldName] = transpiler.ShorthandFieldType(declared, pctx.VAL() != nil || pctx.VAR() != nil)
+						decls.queueKeywordlessField(meta, fieldName, declared, pctx)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 						if meta.FieldPositions == nil {
@@ -1344,13 +1355,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 		a.analyzeOpaqueType(octx, pkgName, filePath, richAST, docs)
 	}
-
-	// decls remembers which file of this package declared each method and each
-	// top-level function, for the duration of this call. Section 2 below fills
-	// it from the file being analyzed; the sibling-metadata pass (section 2.5)
-	// adds the siblings and rejects any declaration that collides with one
-	// already recorded from another file.
-	decls := newPackageDecls(filePath)
 
 	// pendingDefaultChecks validates each function's parameter defaults after
 	// section 2.5, when every declared type of the package can be resolved.
@@ -1639,6 +1643,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	underlying := a.declaredTypeUnderlying(ownAliases, pkgName, richAST)
 	recordOpaqueBases(richAST, pkgName, underlying)
+	decls.unwrapImmutableAliasFields(aliasStep(ownAliases, pkgName, richAST))
 	if len(pendingDefaultChecks) > 0 {
 		for _, check := range pendingDefaultChecks {
 			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
@@ -3812,6 +3817,53 @@ type packageDecls struct {
 	// receivers holds the methods whose receiver spells type arguments, for
 	// renameReceiverTypeParams once every type of the package is known.
 	receivers []receiverDecl
+	// keywordlessFields holds the shorthand fields declared without `val` or
+	// `var`, for unwrapImmutableAliasFields once every alias is known.
+	keywordlessFields []shorthandField
+}
+
+// shorthandField is the field named field of the shorthand struct meta
+// describes.
+type shorthandField struct {
+	meta  *transpiler.TypeMetadata
+	field string
+}
+
+// queueKeywordlessField records field of meta, declared by pctx as type
+// declared, as stored as declared when it has no keyword and is spelled
+// Immutable[T] (which ShorthandFieldType records as T). It queues one with no keyword whose
+// type is spelled otherwise: that type may be an alias of Immutable, which
+// only resolves once the package's aliases are known.
+func (d *packageDecls) queueKeywordlessField(meta *transpiler.TypeMetadata, field string, declared transpiler.Type, pctx *grammar.ParameterContext) {
+	if pctx.VAL() != nil || pctx.VAR() != nil {
+		return
+	}
+	if gt, ok := declared.(transpiler.GenericType); ok && len(gt.Params) == 1 && transpiler.IsImmutableType(declared) {
+		meta.StoredAsDeclared = append(meta.StoredAsDeclared, field)
+		return
+	}
+	d.keywordlessFields = append(d.keywordlessFields, shorthandField{meta, field})
+}
+
+// unwrapImmutableAliasFields records each queued field whose type is an alias
+// of Immutable[T] as T, as ShorthandFieldType records a field spelled
+// Immutable[T]: the field is stored as the alias, already immutable, and a
+// construction passes its element. aliases follows one alias step.
+func (d *packageDecls) unwrapImmutableAliasFields(aliases func(transpiler.Type) (transpiler.Type, bool)) {
+	for _, f := range d.keywordlessFields {
+		typ := f.meta.Fields[f.field]
+		for hop := 0; hop < 32; hop++ {
+			next, ok := aliases(typ)
+			if !ok {
+				break
+			}
+			typ = next
+		}
+		if gt, ok := typ.(transpiler.GenericType); ok && len(gt.Params) == 1 && transpiler.IsImmutableType(typ) {
+			f.meta.Fields[f.field] = gt.Params[0]
+			f.meta.StoredAsDeclared = append(f.meta.StoredAsDeclared, f.field)
+		}
+	}
 }
 
 // receiverDecl is a method's metadata, the names its receiver gives its
@@ -4180,8 +4232,9 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						if pctx.Type_() != nil {
 							fieldType = galaparser.TypeText(pctx.Type_())
 						}
-						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
-							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
+						declared := a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams)
+						meta.Fields[fieldName] = transpiler.ShorthandFieldType(declared, pctx.VAL() != nil || pctx.VAR() != nil)
+						decls.queueKeywordlessField(meta, fieldName, declared, pctx)
 						meta.FieldNames = append(meta.FieldNames, fieldName)
 						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
 						if meta.FieldPositions == nil {
@@ -4568,6 +4621,32 @@ func typeAliasTarget(typeDecl *grammar.TypeDeclarationContext) string {
 		return ""
 	}
 	return galaparser.AliasText(typeDecl.TypeAlias())
+}
+
+// aliasStep returns a resolver that follows a non-generic type one alias
+// declaration further, through this file's own aliases (local) and those of
+// its siblings and imports. Unlike declaredTypeUnderlying it never sees
+// through an opaque or a Go named type, which are distinct types.
+func aliasStep(local map[string]transpiler.Type, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) (transpiler.Type, bool) {
+	return func(typ transpiler.Type) (transpiler.Type, bool) {
+		if typ == nil || typ.IsNil() {
+			return nil, false
+		}
+		if _, generic := typ.(transpiler.GenericType); generic {
+			return nil, false
+		}
+		name := typ.BaseName()
+		for _, key := range []string{name, strings.TrimPrefix(name, pkgName+".")} {
+			next, ok := local[key]
+			if !ok {
+				next, ok = richAST.TypeAliases[key]
+			}
+			if ok && !next.IsNil() && next.BaseName() != name {
+				return next, true
+			}
+		}
+		return nil, false
+	}
 }
 
 // fileTypeAliases maps each alias sourceFile declares (`type Millis int64`)

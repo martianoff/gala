@@ -402,6 +402,10 @@ type TypeMetadata struct {
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool
+	// StoredAsDeclared lists the shorthand fields declared without a keyword
+	// as Immutable[T] or an alias of it. Such a field is stored as declared,
+	// not wrapped in another Immutable, and Fields records it as T.
+	StoredAsDeclared []string
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen

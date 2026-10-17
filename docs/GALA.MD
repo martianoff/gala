@@ -4362,7 +4362,7 @@ Go's reflection-based encoders and `fmt` see an immutable value as the value it 
 
 ### Struct Fields Declared `Immutable[T]`
 
-A shorthand struct field is a `val` field, stored as a `std.Immutable[T]`. One declared `Immutable[T]` is stored as that `Immutable[T]` rather than wrapped twice, so it is the same field as one declared `T`: it takes a `T` positionally, by name, as a `Copy` override or as its default, and reading it yields a `T`. A `var` field declared `Immutable[T]`, one written with an explicit `val`, or a block-form (`type ... struct { }`) field, holds the `Immutable[T]` it names, so its value is that `Immutable[T]`.
+A shorthand struct field is a `val` field, stored as a `std.Immutable[T]`. One declared `Immutable[T]` is stored as that `Immutable[T]` rather than wrapped twice, so it is the same field as one declared `T`: it takes a `T` positionally, by name, as a `Copy` override or as its default, and reading it yields a `T`. The same holds for a field declared with an alias of `Immutable[T]` (`type Count Immutable[int]`), wherever the alias is declared. A `var` field declared `Immutable[T]`, one written with an explicit `val`, or a block-form (`type ... struct { }`) field, holds the `Immutable[T]` it names, so its value is that `Immutable[T]`.
 
 ```gala
 struct Counter(Label string, Hits Immutable[int64] = 1)
