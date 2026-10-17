@@ -9,7 +9,6 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
-	"slices"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -1289,8 +1288,12 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	var fieldNames []string
 	var immutFlags []bool
 	var paramTypes []ast.Expr // each field's type as a Go constructor takes it
+	// The analyzer's record of the struct, which sees every alias of the
+	// package. structFieldTypes is keyed by the qualified name outside package
+	// main, so the bare name misses it there.
+	meta := t.getTypeMeta(name)
 	if paramsCtx.ParameterList() != nil {
-		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+		for i, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
 			isVal := param.VAR() == nil // Default to immutable if VAR is not present
 
@@ -1306,19 +1309,24 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			if isVal {
 				// A field declared Immutable[T] with no keyword, or an alias of
 				// it, is stored as declared, not wrapped again, and recorded as
-				// T. The analyzer, which sees every alias of the package,
-				// decides (StoredAsDeclared), so the layout and the recorded
-				// type agree. An explicit `val` field is always wrapped.
-				fieldName := param.Identifier().GetText()
-				if !t.storedAsDeclared(name, fieldName) {
+				// T. The analyzer decides (StoredAsDeclared), so the layout and
+				// the recorded type agree. An explicit `val` field is always
+				// wrapped.
+				var stored bool
+				if meta != nil && i < len(meta.StoredAsDeclared) {
+					stored = meta.StoredAsDeclared[i]
+				} else {
+					stored = param.VAL() == nil && transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type))
+				}
+				if !stored {
 					field.Type = &ast.IndexExpr{
 						X:     t.stdIdent("Immutable"),
 						Index: field.Type,
 					}
 				} else if idx, ok := paramType.(*ast.IndexExpr); ok {
 					paramType = idx.Index // set from its element
-				} else if meta := t.getTypeMeta(name); meta != nil && meta.Fields[fieldName] != nil {
-					paramType = t.typeToExpr(meta.Fields[fieldName])
+				} else if meta != nil && meta.Fields[param.Identifier().GetText()] != nil {
+					paramType = t.typeToExpr(meta.Fields[param.Identifier().GetText()]) // an alias: set from its element
 				}
 			}
 
@@ -1342,14 +1350,13 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
 			pName := param.Identifier().GetText()
-			// The analyzer (transformer.go:162) already populates structFieldTypes
-			// with correctly-resolved types; only fall back to resolving the
-			// declared type here when it is missing (e.g., for shapes the
-			// analyzer didn't model).
+			// The analyzer's types are resolved correctly; only fall back to
+			// resolving the declared type here when it has none (e.g., for
+			// shapes the analyzer didn't model).
 			if existing, ok := t.structFieldTypes[name][pName]; ok && !existing.IsNil() {
 				continue
 			}
-			if meta := t.getTypeMeta(name); meta != nil && meta.Fields[pName] != nil && !meta.Fields[pName].IsNil() {
+			if meta != nil && meta.Fields[pName] != nil && !meta.Fields[pName].IsNil() {
 				t.structFieldTypes[name][pName] = meta.Fields[pName]
 				continue
 			}
@@ -1421,14 +1428,6 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	decls = append(decls, ctor...)
 
 	return decls, nil
-}
-
-// storedAsDeclared reports whether field of shorthand struct name is stored
-// as declared rather than wrapped in an Immutable (see
-// transpiler.TypeMetadata.StoredAsDeclared).
-func (t *galaASTTransformer) storedAsDeclared(name, field string) bool {
-	meta := t.getTypeMeta(name)
-	return meta != nil && slices.Contains(meta.StoredAsDeclared, field)
 }
 
 func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {
