@@ -122,7 +122,11 @@ import (
 // v24: a GALA function or method declared with no result, and a Go method
 // with none, records the result VoidType. A v23 payload records nil, which
 // now means a result that could not be resolved.
-const CacheVersion = "v24"
+//
+// v25: TypeMetadata lists the shorthand fields stored as declared
+// (StoredAsDeclared): an Immutable[T] field, or one of an alias of it, with no
+// keyword. A v24 payload lacks it.
+const CacheVersion = "v25"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

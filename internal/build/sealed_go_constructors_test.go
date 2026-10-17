@@ -104,3 +104,37 @@ func main() {
 	})
 	assert.Equal(t, "A|1|3|true|false|true", buildAndRun(t, projectDir))
 }
+
+// TestBuild_ImmutableAliasFieldAcrossFiles builds shorthand structs whose
+// fields are typed with an alias of Immutable declared in a sibling file and
+// in an imported package: each is stored as declared, and both GALA and the
+// generated Go constructor pass its element.
+func TestBuild_ImmutableAliasFieldAcrossFiles(t *testing.T) {
+	projectDir := newForeignGenGoProject(t, "example.com/immalias", map[string]string{
+		"lib/types.gala": `package lib
+
+type IInt Immutable[int]
+`,
+		"lib/item.gala": `package lib
+
+struct Item(N IInt)
+`,
+		"lib/describe.go": `package lib
+
+import "fmt"
+
+func Describe() string { return fmt.Sprint(NewItem(4).N.Get()) }
+`,
+		"main.gala": `package main
+
+import "example.com/immalias/lib"
+
+struct Box(V lib.IInt)
+
+func main() {
+    Println(lib.Item(1).N, Box(2).V, lib.Describe())
+}
+`,
+	})
+	assert.Equal(t, "1|2|4", buildAndRun(t, projectDir))
+}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1015,6 +1016,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		a.currentOwnTypes = nil
 	}()
 
+	// decls remembers which file of this package declared each method and each
+	// top-level function, for the duration of this call. Section 2 below fills
+	// it from the file being analyzed; the sibling-metadata pass (section 2.5)
+	// adds the siblings and rejects any declaration that collides with one
+	// already recorded from another file. Section 1 and the siblings queue the
+	// shorthand fields whose type may name an alias of Immutable.
+	decls := newPackageDecls(filePath)
+
 	// 1. Collect all types
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
@@ -1047,6 +1056,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
+				meta.StoredAsDeclared = nil
 				meta.FieldPositions = nil
 				meta.FieldDocs = nil
 				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
@@ -1200,6 +1210,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				meta.Fields = make(map[string]transpiler.Type)
 				meta.FieldNames = nil
 				meta.ImmutFlags = nil
+				meta.StoredAsDeclared = nil
 				meta.FieldPositions = nil
 				meta.FieldDocs = nil
 				meta.FieldDefaults = nil
@@ -1256,10 +1267,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						if pctx.Type_() != nil {
 							fieldType = galaparser.TypeText(pctx.Type_())
 						}
-						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
-							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
-						meta.FieldNames = append(meta.FieldNames, fieldName)
-						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
+						decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx)
 						if meta.FieldPositions == nil {
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
@@ -1344,13 +1352,6 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 		a.analyzeOpaqueType(octx, pkgName, filePath, richAST, docs)
 	}
-
-	// decls remembers which file of this package declared each method and each
-	// top-level function, for the duration of this call. Section 2 below fills
-	// it from the file being analyzed; the sibling-metadata pass (section 2.5)
-	// adds the siblings and rejects any declaration that collides with one
-	// already recorded from another file.
-	decls := newPackageDecls(filePath)
 
 	// pendingDefaultChecks validates each function's parameter defaults after
 	// section 2.5, when every declared type of the package can be resolved.
@@ -1639,6 +1640,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 	underlying := a.declaredTypeUnderlying(ownAliases, pkgName, richAST)
 	recordOpaqueBases(richAST, pkgName, underlying)
+	decls.markStoredAsDeclared(aliasStep(ownAliases, pkgName, richAST))
 	if len(pendingDefaultChecks) > 0 {
 		for _, check := range pendingDefaultChecks {
 			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
@@ -3812,6 +3814,47 @@ type packageDecls struct {
 	// receivers holds the methods whose receiver spells type arguments, for
 	// renameReceiverTypeParams once every type of the package is known.
 	receivers []receiverDecl
+	// keywordlessFields holds the shorthand fields declared without `val` or
+	// `var`, for markStoredAsDeclared once every alias is known.
+	keywordlessFields []shorthandField
+}
+
+// shorthandField is the field at index of the shorthand struct meta
+// describes, declared as type declared.
+type shorthandField struct {
+	meta     *transpiler.TypeMetadata
+	index    int
+	declared transpiler.Type
+}
+
+// recordShorthandField records field of the shorthand struct meta, declared
+// by pctx as type declared, and queues one with no keyword for
+// markStoredAsDeclared.
+func (d *packageDecls) recordShorthandField(meta *transpiler.TypeMetadata, field string, declared transpiler.Type, pctx *grammar.ParameterContext) {
+	hasKeyword := pctx.VAL() != nil || pctx.VAR() != nil
+	meta.Fields[field] = transpiler.ShorthandFieldType(declared, hasKeyword)
+	meta.FieldNames = append(meta.FieldNames, field)
+	meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
+	meta.StoredAsDeclared = append(meta.StoredAsDeclared, false)
+	if !hasKeyword {
+		d.keywordlessFields = append(d.keywordlessFields, shorthandField{meta, len(meta.FieldNames) - 1, declared})
+	}
+}
+
+// markStoredAsDeclared marks each queued field whose declared type is
+// Immutable[T], or follows aliases (one step of aliasStep at a time) to it,
+// as stored as declared, and records it as T: it is already immutable, and a
+// construction passes its element.
+func (d *packageDecls) markStoredAsDeclared(aliasStep func(transpiler.Type) (transpiler.Type, bool)) {
+	for _, f := range d.keywordlessFields {
+		if slices.Contains(f.meta.TypeParams, f.declared.String()) {
+			continue // the struct's type parameter, not an alias it shadows
+		}
+		if elem, ok := transpiler.ImmutableElem(walkTypeChain(f.declared, aliasStep)); ok {
+			f.meta.Fields[f.meta.FieldNames[f.index]] = elem
+			f.meta.StoredAsDeclared[f.index] = true
+		}
+	}
 }
 
 // receiverDecl is a method's metadata, the names its receiver gives its
@@ -4180,10 +4223,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						if pctx.Type_() != nil {
 							fieldType = galaparser.TypeText(pctx.Type_())
 						}
-						meta.Fields[fieldName] = transpiler.ShorthandFieldType(
-							a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil || pctx.VAR() != nil)
-						meta.FieldNames = append(meta.FieldNames, fieldName)
-						meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
+						decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx)
 						if meta.FieldPositions == nil {
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
@@ -4570,6 +4610,71 @@ func typeAliasTarget(typeDecl *grammar.TypeDeclarationContext) string {
 	return galaparser.AliasText(typeDecl.TypeAlias())
 }
 
+// aliasStep returns a resolver that follows a type one alias declaration
+// further, through this file's own aliases (local) and those of its siblings
+// and imports, instantiating a generic alias with the type's arguments.
+// Unlike declaredTypeUnderlying it never sees through an opaque or a Go
+// named type, which are distinct types.
+func aliasStep(local map[string]transpiler.Type, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) (transpiler.Type, bool) {
+	ownPrefix := pkgName + "."
+	return func(typ transpiler.Type) (transpiler.Type, bool) {
+		if typ == nil || typ.IsNil() {
+			return nil, false
+		}
+		var args []transpiler.Type
+		if gt, ok := typ.(transpiler.GenericType); ok {
+			typ, args = gt.Base, gt.Params
+		}
+		name := typ.BaseName()
+		for _, key := range []string{name, strings.TrimPrefix(name, ownPrefix)} {
+			target, ok := lookupAlias(local, richAST, key)
+			if !ok {
+				continue
+			}
+			var params []string
+			if meta := richAST.Types[key]; meta != nil {
+				params = meta.TypeParams
+			} else if meta := richAST.Types[ownPrefix+key]; meta != nil {
+				params = meta.TypeParams
+			}
+			if len(params) != len(args) {
+				return nil, false
+			}
+			subst := make(map[string]transpiler.Type, len(params))
+			for i, p := range params {
+				subst[p] = args[i]
+			}
+			return transpiler.SubstituteTypeParams(target, subst), true
+		}
+		return nil, false
+	}
+}
+
+// lookupAlias returns the target of the alias named name: one this file
+// declares (local), or one of its siblings or imports.
+func lookupAlias(local map[string]transpiler.Type, richAST *transpiler.RichAST, name string) (transpiler.Type, bool) {
+	if next, ok := local[name]; ok {
+		return next, true
+	}
+	if next, ok := richAST.TypeAliases[name]; ok && !next.IsNil() {
+		return next, true
+	}
+	return nil, false
+}
+
+// walkTypeChain follows typ through step until step stops. The hop bound
+// stops a chain that refers back to itself.
+func walkTypeChain(typ transpiler.Type, step func(transpiler.Type) (transpiler.Type, bool)) transpiler.Type {
+	for hop := 0; hop < 16; hop++ {
+		next, ok := step(typ)
+		if !ok || next.String() == typ.String() {
+			break
+		}
+		typ = next
+	}
+	return typ
+}
+
 // fileTypeAliases maps each alias sourceFile declares (`type Millis int64`)
 // to the type it names.
 func (a *galaAnalyzer) fileTypeAliases(sourceFile *grammar.SourceFileContext, pkgName string) map[string]transpiler.Type {
@@ -4598,10 +4703,7 @@ func (a *galaAnalyzer) fileTypeAliases(sourceFile *grammar.SourceFileContext, pk
 // name, and holds the siblings' under their bare names.
 func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, pkgName string, richAST *transpiler.RichAST) func(transpiler.Type) transpiler.Type {
 	declared := func(name string) (transpiler.Type, bool) {
-		if next, ok := local[name]; ok {
-			return next, true
-		}
-		if next, ok := richAST.TypeAliases[name]; ok && !next.IsNil() {
+		if next, ok := lookupAlias(local, richAST, name); ok {
 			return next, true
 		}
 		// An opaque type is distinct, but an untyped constant default fits
@@ -4637,17 +4739,7 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 		}
 		return typ, false
 	}
-	return func(typ transpiler.Type) transpiler.Type {
-		// The hop bound stops a chain that refers back to itself.
-		for hop := 0; hop < 16; hop++ {
-			next, ok := step(typ)
-			if !ok || next.String() == typ.String() {
-				break
-			}
-			typ = next
-		}
-		return typ
-	}
+	return func(typ transpiler.Type) transpiler.Type { return walkTypeChain(typ, step) }
 }
 
 // extractPackageVals records package-level `val`/`var` declarations from a

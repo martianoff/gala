@@ -1288,8 +1288,12 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	var fieldNames []string
 	var immutFlags []bool
 	var paramTypes []ast.Expr // each field's type as a Go constructor takes it
+	// The analyzer's record of the struct, which sees every alias of the
+	// package. structFieldTypes is keyed by the qualified name outside package
+	// main, so the bare name misses it there.
+	meta := t.getTypeMeta(name)
 	if paramsCtx.ParameterList() != nil {
-		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+		for i, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
 			isVal := param.VAR() == nil // Default to immutable if VAR is not present
 
@@ -1303,18 +1307,26 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 			paramType := field.Type
 
 			if isVal {
-				// A field declared Immutable[T] with no keyword is stored as that
-				// Immutable[T], not wrapped again. The same check
-				// (transpiler.IsImmutableType) has ShorthandFieldType record it
-				// as T, so the layout and the recorded type agree. An explicit
-				// `val` field is always wrapped, as ShorthandFieldType records.
-				if param.VAL() != nil || !transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type)) {
+				// A field declared Immutable[T] with no keyword, or an alias of
+				// it, is stored as declared, not wrapped again, and recorded as
+				// T. The analyzer decides (StoredAsDeclared), so the layout and
+				// the recorded type agree. An explicit `val` field is always
+				// wrapped.
+				var stored bool
+				if meta != nil && i < len(meta.StoredAsDeclared) {
+					stored = meta.StoredAsDeclared[i]
+				} else {
+					stored = param.VAL() == nil && transpiler.IsImmutableType(t.followAliasChain(t.astTypeToTranspilerType(field.Type)))
+				}
+				if !stored {
 					field.Type = &ast.IndexExpr{
 						X:     t.stdIdent("Immutable"),
 						Index: field.Type,
 					}
 				} else if idx, ok := paramType.(*ast.IndexExpr); ok {
-					paramType = idx.Index // stored as declared, set from its element
+					paramType = idx.Index // set from its element
+				} else if elem := t.storedFieldElem(meta, param.Identifier().GetText()); elem != nil {
+					paramType = t.typeToExpr(elem) // an alias: set from its element
 				}
 			}
 
@@ -1338,11 +1350,14 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			param := pCtx.(*grammar.ParameterContext)
 			pName := param.Identifier().GetText()
-			// The analyzer (transformer.go:162) already populates structFieldTypes
-			// with correctly-resolved types; only fall back to resolving the
-			// declared type here when it is missing (e.g., for shapes the
-			// analyzer didn't model).
+			// The analyzer's types are resolved correctly; only fall back to
+			// resolving the declared type here when it has none (e.g., for
+			// shapes the analyzer didn't model).
 			if existing, ok := t.structFieldTypes[name][pName]; ok && !existing.IsNil() {
+				continue
+			}
+			if elem := t.storedFieldElem(meta, pName); elem != nil {
+				t.structFieldTypes[name][pName] = elem
 				continue
 			}
 			var pType transpiler.Type = transpiler.NilType{}
@@ -1413,6 +1428,15 @@ func (t *galaASTTransformer) transformStructShorthandDeclaration(ctx *grammar.St
 	decls = append(decls, ctor...)
 
 	return decls, nil
+}
+
+// storedFieldElem is the type the analyzer records for field of the struct
+// meta describes, nil when it has none.
+func (t *galaASTTransformer) storedFieldElem(meta *transpiler.TypeMetadata, field string) transpiler.Type {
+	if meta == nil || meta.Fields[field] == nil || meta.Fields[field].IsNil() {
+		return nil
+	}
+	return meta.Fields[field]
 }
 
 func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {

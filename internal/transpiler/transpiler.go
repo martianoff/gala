@@ -232,6 +232,7 @@ func (r *RichAST) Merge(other *RichAST) {
 			copied.Fields = v.Fields
 			copied.FieldNames = v.FieldNames
 			copied.ImmutFlags = v.ImmutFlags
+			copied.StoredAsDeclared = v.StoredAsDeclared
 		}
 		if typeParamsNeeded {
 			copied.TypeParams = v.TypeParams
@@ -402,6 +403,11 @@ type TypeMetadata struct {
 	TypeParams           []string
 	TypeParamConstraints map[string]string // TypeParam name -> constraint (e.g., "T" -> "comparable")
 	ImmutFlags           []bool
+	// StoredAsDeclared marks, by position, the shorthand fields declared
+	// without a keyword as Immutable[T] or an alias of it. Such a field is
+	// stored as declared, not wrapped in another Immutable, and Fields records
+	// it as T.
+	StoredAsDeclared []bool
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
@@ -509,10 +515,18 @@ type DefaultExpr struct {
 // synthesized from generated Go records a val field the same way: as the T its
 // Immutable[T] holds.)
 func ShorthandFieldType(declared Type, hasKeyword bool) Type {
-	if gt, ok := declared.(GenericType); ok && !hasKeyword && len(gt.Params) == 1 && IsImmutableType(declared) {
-		return gt.Params[0]
+	if elem, ok := ImmutableElem(declared); ok && !hasKeyword {
+		return elem
 	}
 	return declared
+}
+
+// ImmutableElem returns T for typ Immutable[T].
+func ImmutableElem(typ Type) (Type, bool) {
+	if gt, ok := typ.(GenericType); ok && len(gt.Params) == 1 && IsImmutableType(typ) {
+		return gt.Params[0], true
+	}
+	return nil, false
 }
 
 // IsImmutableType reports whether typ is std.Immutable[T] (under any package
