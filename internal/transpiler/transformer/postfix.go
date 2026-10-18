@@ -452,7 +452,7 @@ func (t *galaASTTransformer) transformPrimaryExpr(ctx *grammar.PrimaryExprContex
 	}
 
 	if pf := ctx.PartialFunctionLiteral(); pf != nil {
-		return t.transformPartialFunctionLiteral(pf.(*grammar.PartialFunctionLiteralContext), nil)
+		return t.transformPartialFunctionLiteral(pf.(*grammar.PartialFunctionLiteralContext), slot{})
 	}
 
 	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "primaryExpr must have primary, lambda, if expression, or partial function")

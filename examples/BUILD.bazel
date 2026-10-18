@@ -389,6 +389,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Regression: a partial-function literal takes its parameter and result types
+# from the function type of the slot it fills (a typed val or var, a return
+# value, a struct field, a parameter), never lowering its parameter as `any`.
+gala_exec_test(
+    name = "typed_partial_function",
+    src = "typed_partial_function.gala",
+    expected = "typed_partial_function.out",
+)
+
 # Regression: a partial function whose result is the enclosing declaration's
 # type parameter. Collect must return Array[T], not Array[any].
 gala_exec_test(
