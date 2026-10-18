@@ -119,10 +119,10 @@ func (g *progGen) name(prefix string) string {
 	return fmt.Sprintf("%s%d", prefix, g.next)
 }
 
-// domain is the domain's declarations: a whole file of package pkg when
-// header is set, the declarations alone otherwise.
-func domain(pkg, imports string, header bool) string {
-	decls := fmt.Sprintf(`sealed type Shape {
+// domain is the domain's declarations, with std's names spelled with the
+// qualifier sp.
+func domain(sp string) string {
+	return fmt.Sprintf(`sealed type Shape {
     case Circle(R int)
     case Rect(W int, H int)
     case Empty()
@@ -151,11 +151,9 @@ func Pick[T any](b Box[T], d T) T = b match {
     case Full(v) => v
     case Nothing() => d
 }
-`, limit)
-	if !header {
-		return decls
-	}
-	return "package " + pkg + "\n\n" + imports + decls
+
+func Half(n int) %[2]sOption[int] = if (n %% 2 == 0) %[2]sSome(n / 2) else %[2]sNone[int]()
+`, limit, sp)
 }
 
 // stdImport is the import of std in style s ("" for the implicit one), and
@@ -195,10 +193,7 @@ func generateProgram(data []byte) program {
 	}
 
 	var p program
-	lib := domain("lib", stdLine, true)
-	if stdLine != "" {
-		lib = domain("lib", stdLine+"\n", true)
-	}
+	lib := "package lib\n\n" + stdLine + "\n" + domain(sp)
 	libImport := ""
 	if style != samePackage {
 		h := fnv.New64a()
@@ -230,7 +225,7 @@ func generateProgram(data []byte) program {
 	b.WriteString(libImport)
 	b.WriteString("\n")
 	if style == samePackage {
-		b.WriteString(domain("main", "", false))
+		b.WriteString(domain(sp))
 		b.WriteString("\n")
 	}
 	for _, f := range g.funcs {
@@ -274,6 +269,14 @@ func (g *progGen) statement() {
 		a, n := g.name("a"), g.name("n")
 		g.body = append(g.body, fmt.Sprintf("val (%s, %s) = %s", a, n, g.expr(t)))
 		g.print(fmt.Sprintf("%sArea(%s) + %s", g.q, a, n), area(t.fields[0])+t.fields[1].n)
+	case 4:
+		// A std value returned across the package boundary.
+		n := g.pick(9)
+		want := -1
+		if n%2 == 0 {
+			want = n / 2
+		}
+		g.print(fmt.Sprintf("%sHalf(%d).GetOrElse(-1)", g.q, n), want)
 	default:
 		g.match()
 	}
@@ -428,10 +431,10 @@ func (g *progGen) expr(v value) string {
 	panic("unknown kind")
 }
 
-// binder is a name a pattern binds, with the int expression the arm's body
+// binder is a name a pattern binds, as the int expression the arm's body
 // reads it through.
 type binder struct {
-	name, use string
+	use string
 }
 
 // pattern is a generated pattern: its source, whether it matches a value
@@ -460,7 +463,7 @@ func (g *progGen) pattern(k valueKind, depth int, noBind bool) pattern {
 		name := g.name("b")
 		return pattern{
 			src:         name,
-			binders:     []binder{{name, use(name)}},
+			binders:     []binder{{use(name)}},
 			match:       func(v value) (bool, []int) { return true, []int{eval(v)} },
 			irrefutable: true,
 		}
@@ -618,7 +621,7 @@ func (g *progGen) pattern(k valueKind, depth int, noBind bool) pattern {
 		if !noBind && g.pick(2) == 0 {
 			name := g.name("rest")
 			rest = name + "..."
-			binders = append(binders, binder{name, name + ".Size()"})
+			binders = append(binders, binder{name + ".Size()"})
 		}
 		srcs = append(srcs, rest)
 		bindsRest := rest != "_..."

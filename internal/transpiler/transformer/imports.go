@@ -612,9 +612,14 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, path, pkgName string,
 		exports[name] = true
 	}
 	// A Go package (the SDK's, or a module dependency's) is known through its
-	// type info, keyed by import path and by package name.
+	// type info, keyed by import path and, when no GALA package of that name
+	// exported anything, by package name: a GALA `strings` is not Go's.
 	if gi := richAST.GoTypeInfo; gi != nil {
-		for _, prefix := range []string{path + ".", pkgName + "."} {
+		prefixes := []string{path + "."}
+		if len(exports) == 0 {
+			prefixes = append(prefixes, pkgName+".")
+		}
+		for _, prefix := range prefixes {
 			addGoTypeInfoNames(exports, prefix, gi.Functions)
 			addGoTypeInfoNames(exports, prefix, gi.Types)
 			addGoTypeInfoNames(exports, prefix, gi.Variables)
@@ -627,7 +632,9 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, path, pkgName string,
 	}
 	found := false
 	inspectReferences(file, func(ident *ast.Ident) bool {
-		found = exports[ident.Name]
+		// Only an exported name can refer to another package's declaration;
+		// an unexported one spelled the same is a local.
+		found = exports[ident.Name] && ast.IsExported(ident.Name)
 		return !found
 	})
 	return found

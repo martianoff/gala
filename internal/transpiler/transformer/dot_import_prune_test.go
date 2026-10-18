@@ -24,6 +24,14 @@ func main() {
     Println(1)
 }
 `, false},
+		// A local named like one of std's unexported declarations does not
+		// refer to std: only exported names cross a package boundary.
+		{"std unused, a local named like an unexported std name", "martianoff/gala/std", `
+func main() {
+    var isDefined = 3
+    Println(isDefined)
+}
+`, false},
 		{"std used by a type", "martianoff/gala/std", `
 func get(o Option[int]) int = o.GetOrElse(2)
 `, true},

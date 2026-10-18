@@ -1285,7 +1285,7 @@ func (t *galaASTTransformer) classifyExpr(exprCtx grammar.IExpressionContext) ex
 	if pf := t.barePartialFunction(exprCtx); pf != nil {
 		return exprForm{partial: pf}
 	}
-	if i :=t.findIfExpressionInExpression(exprCtx); i != nil {
+	if i := t.findIfExpressionInExpression(exprCtx); i != nil {
 		return exprForm{ifExpr: i}
 	}
 	return exprForm{match: t.bareMatchPostfix(exprCtx)}

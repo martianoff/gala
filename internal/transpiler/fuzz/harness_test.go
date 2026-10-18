@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/token"
 	"os"
@@ -40,6 +41,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
+	"martianoff/gala/internal/transpiler/gooracle"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -97,11 +99,70 @@ func repoRoot(tb testing.TB) string {
 
 // newTranspiler builds a fresh pipeline for every input so that no state can
 // leak from one input into the next — the analyzer's package cache is global
-// and warm after the first call, so this costs little.
+// and warm after the first call, so this costs little. It resolves packages
+// in the repository and in generatedRoot, where generated libraries live.
 func newTranspiler(tb testing.TB) *transpiler.GalaToGoTranspiler {
 	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, []string{repoRoot(tb)})
+	a := analyzer.NewGalaAnalyzer(p, []string{repoRoot(tb), generatedRoot(tb)})
 	return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+}
+
+var (
+	generatedOnce sync.Once
+	generatedDir  string
+	generatedErr  error
+)
+
+// generatedRoot is the directory generated library packages are written
+// under, as <root>/<import path>; one per process.
+func generatedRoot(tb testing.TB) string {
+	tb.Helper()
+	generatedOnce.Do(func() {
+		generatedDir, generatedErr = os.MkdirTemp("", "gala-fuzz-generated-")
+	})
+	if generatedErr != nil {
+		tb.Fatal(generatedErr)
+	}
+	return generatedDir
+}
+
+var (
+	importerOnce sync.Once
+	oracleImp    *gooracle.Importer
+)
+
+// oracleImporter returns the importer that type-checks generated Go: the Go
+// standard library from the SDK, GALA packages — the repository's and the
+// generated ones — transpiled from source. Without a Go SDK the check is
+// skipped, except under Bazel, which always provides one: there a missing SDK
+// is a broken setup that would otherwise pass without checking anything.
+func oracleImporter(tb testing.TB) *gooracle.Importer {
+	tb.Helper()
+	importerOnce.Do(func() {
+		if !analyzer.GoImporterAvailable() {
+			return
+		}
+		oracleImp = gooracle.NewImporter(gooracle.ImporterConfig{
+			Go:         importer.ForCompiler(token.NewFileSet(), "source", nil),
+			ModulePath: "martianoff/gala",
+			Root:       repoRoot(tb),
+			ExtraRoots: []string{generatedRoot(tb)},
+			Transpile:  newTranspiler(tb).Transpile,
+		})
+	})
+	if oracleImp == nil {
+		requireUnderBazel(tb, "no Go SDK: generated Go cannot be type-checked")
+	}
+	return oracleImp
+}
+
+// requireUnderBazel skips the test with reason, or fails it under Bazel.
+func requireUnderBazel(tb testing.TB, reason string) {
+	tb.Helper()
+	if os.Getenv("TEST_SRCDIR") != "" {
+		tb.Fatal(reason)
+	}
+	tb.Skip(reason)
 }
 
 // warmUp loads the standard library into the analyzer's process-wide cache

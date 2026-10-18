@@ -62,19 +62,23 @@ func TestCopyOverridesCrossPackage(t *testing.T) {
 	}
 	for _, im := range imports {
 		q := im.q
-		bodies := []struct{ name, body, want string }{
-			{"call result", `Println(` + q + `Point(2, 3).Copy(Y = 9))`, q + "Point{X: std.Copy("},
-			{"val", "val p = " + q + "Point(2, 3)\n    Println(p.Copy(X = 9))", q + "Point{X: std.NewImmutable(9), Y: std.Copy(p.Get().Y)}"},
-			{"field", "val h = " + q + "Holder(" + q + "Point(1, 2), \"h\")\n    Println(h.P.Copy(X = 9))", q + "Point{X: std.NewImmutable(9)"},
-			{"function result", `Println(` + q + `Origin().Copy(Y = 4))`, q + "Point{X: std.Copy("},
-			{"generic struct call result", `Println(` + q + `Pair(1, "a").Copy(First = 2))`, q + "Pair[int, string]{First: std.NewImmutable(2)"},
-			{"generic struct val", "val pr = " + q + "Pair(1, \"a\")\n    Println(pr.Copy(Second = \"b\"))", q + "Pair[int, string]{First: std.Copy(pr.Get().First)"},
-			{"all fields overridden", `Println(` + q + `Point(2, 3).Copy(X = 1, Y = 2))`, q + "Point{X: std.NewImmutable(1)"},
+		bodies := []struct{ name, decl, body, want string }{
+			{"call result", "", `Println(` + q + `Point(2, 3).Copy(Y = 9))`, q + "Point{X: std.Copy("},
+			{"val", "", "val p = " + q + "Point(2, 3)\n    Println(p.Copy(X = 9))", q + "Point{X: std.NewImmutable(9), Y: std.Copy(p.Get().Y)}"},
+			{"field", "", "val h = " + q + "Holder(" + q + "Point(1, 2), \"h\")\n    Println(h.P.Copy(X = 9))", q + "Point{X: std.NewImmutable(9)"},
+			{"function result", "", `Println(` + q + `Origin().Copy(Y = 4))`, q + "Point{X: std.Copy("},
+			{"generic struct call result", "", `Println(` + q + `Pair(1, "a").Copy(First = 2))`, q + "Pair[int, string]{First: std.NewImmutable(2)"},
+			{"generic struct val", "", "val pr = " + q + "Pair(1, \"a\")\n    Println(pr.Copy(Second = \"b\"))", q + "Pair[int, string]{First: std.Copy(pr.Get().First)"},
+			{"all fields overridden", "", `Println(` + q + `Point(2, 3).Copy(X = 1, Y = 2))`, q + "Point{X: std.NewImmutable(1)"},
+			// Types spelled with the import qualifier in this file's own
+			// declarations: a result type and a field type.
+			{"local function result", "func mk() " + q + "Point = " + q + "Point(1, 2)\n\n", "Println(mk().Copy(X = 6))", q + "Point{X: std.NewImmutable(6)"},
+			{"local struct field", "struct W(P " + q + "Point)\n\n", "val w = W(" + q + "Point(1, 2))\n    Println(w.P.Copy(X = 7))", q + "Point{X: std.NewImmutable(7)"},
 		}
 		for _, b := range bodies {
 			tests = append(tests, testCase{
 				name: im.name + "/" + b.name,
-				src:  "package main\n\n" + im.imp + "\n\nfunc main() {\n    " + b.body + "\n}\n",
+				src:  "package main\n\n" + im.imp + "\n\n" + b.decl + "func main() {\n    " + b.body + "\n}\n",
 				want: b.want,
 			})
 		}

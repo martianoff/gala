@@ -147,6 +147,15 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		return nil, galaerr.NewSemanticErrorAt(argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn(), "cannot use Copy overrides: type of receiver unknown")
 	}
 
+	// The type may be spelled with an import alias (`l.Point`, from a
+	// signature or a field), while struct fields are keyed by the package's
+	// own name: resolve it the way every other type lookup does.
+	if resolved, found := t.resolveTypeName(typeName, func(name string) bool {
+		_, ok := t.structFields[name]
+		return ok
+	}); found {
+		typeName = resolved
+	}
 	fields, ok := t.structFields[typeName]
 	if !ok {
 		// If it's not a struct type but we have overrides, compilation error
