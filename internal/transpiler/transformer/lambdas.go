@@ -1270,6 +1270,21 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	t.addVar(paramName, paramType)
 
 	var clauses []ast.Stmt
+	// A parameter whose cases name the variants of its sealed view (see
+	// sealedViewForCases) is matched as that view, read once on entry.
+	casesParam := paramName
+	param := ast.NewIdent(paramName)
+	viewExpr, casesType, err := t.matchViewSubject(param, paramType, caseClauses, ctx)
+	if err != nil {
+		return nil, err
+	}
+	if viewExpr != ast.Expr(param) {
+		casesParam = "_pf_view"
+		t.addVar(casesParam, casesType)
+		clauses = append(clauses, &ast.AssignStmt{
+			Lhs: []ast.Expr{ast.NewIdent(casesParam)}, Tok: token.DEFINE, Rhs: []ast.Expr{viewExpr},
+		})
+	}
 	var resultTypes []transpiler.Type
 	var casePatterns []string
 
@@ -1280,7 +1295,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		patternText := patCtx.GetText()
 
 		// Even wildcard case gets wrapped in Some for partial functions
-		clause, resultType, err := t.transformPartialCaseClause(ccCtx, paramName, paramType, resultElem)
+		clause, resultType, err := t.transformPartialCaseClause(ccCtx, casesParam, casesType, resultElem)
 		if err != nil {
 			return nil, err
 		}

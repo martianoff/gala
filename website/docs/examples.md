@@ -353,6 +353,35 @@ func main() {
 
 See also: [Language Reference - Extractors and Unapply](/docs/language-reference/#extractors-and-unapply)
 
+## Sealed View Example
+
+A type with `MatchView() S`, `S` sealed, is matched with `S`'s variants:
+
+```gala
+package main
+
+sealed type Level {
+    case Low()
+    case Mid(N int)
+    case High()
+}
+
+struct Reading(v int)
+
+func (r Reading) MatchView() Level = if (r.v < 10) Low() else if (r.v < 100) Mid(r.v) else High()
+
+func level(r Reading) string = r match {
+    case Low() | High() => "edge"
+    case Mid(n)         => s"mid $n"
+}
+
+func main() {
+    Println(level(Reading(1)), level(Reading(42)))
+}
+```
+
+See also: [Language Reference - Sealed Views](/docs/language-reference/#sealed-views)
+
 ## Matching Against Constants (Stable Identifiers)
 
 A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name never compares with a value: it binds (unless it names a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard.

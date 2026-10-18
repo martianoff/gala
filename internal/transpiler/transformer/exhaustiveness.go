@@ -36,6 +36,7 @@ const tupleCtorName = "()"
 type coverage struct {
 	t     *galaASTTransformer
 	ctors map[string][]covCtor
+	views map[string]transpiler.Type // sealedViewOf per type, nil included
 }
 
 // coverageOf decides whether the unguarded case patterns cover every value
@@ -45,7 +46,7 @@ type coverage struct {
 // some of its values. guardedMissing reports whether a guarded case names one
 // of the missing constructors.
 func (t *galaASTTransformer) coverageOf(matchedType transpiler.Type, clauses []*grammar.CaseClauseContext) (enumerable, exhaustive bool, missing []string, guardedMissing bool) {
-	c := &coverage{t: t, ctors: map[string][]covCtor{}}
+	c := &coverage{t: t, ctors: map[string][]covCtor{}, views: map[string]transpiler.Type{}}
 	ctors, ok := c.constructors(matchedType, false)
 	if !ok {
 		return false, false, nil, false
@@ -91,6 +92,9 @@ func (c *coverage) covers(rows [][]covCell, types []transpiler.Type) bool {
 		return len(rows) > 0
 	}
 	rows = c.expandAlternatives(rows)
+	if view := c.columnView(rows, types[0]); view != nil {
+		types = append([]transpiler.Type{view}, types[1:]...)
+	}
 	for _, row := range rows {
 		if c.allWildcards(row, types) {
 			return true
@@ -115,6 +119,31 @@ func (c *coverage) covers(rows [][]covCell, types []transpiler.Type) bool {
 		}
 	}
 	return c.covers(def, rest)
+}
+
+// columnView returns the sealed view of typ when a row's first pattern reads
+// it (see subPatternView), so the column is enumerated by the view's
+// variants; a binding beside it still matches every value. It returns nil
+// otherwise.
+func (c *coverage) columnView(rows [][]covCell, typ transpiler.Type) transpiler.Type {
+	if transpiler.IsUnusable(typ) {
+		return nil
+	}
+	key := typ.String()
+	view, ok := c.views[key]
+	if !ok {
+		view = c.t.sealedViewOf(typ)
+		c.views[key] = view
+	}
+	if view == nil {
+		return nil
+	}
+	for _, row := range rows {
+		if row[0] != nil && row[0] != covRefutable && c.t.namesViewVariant(row[0], typ, view) {
+			return view
+		}
+	}
+	return nil
 }
 
 // allWildcards reports whether every pattern of row matches every value.

@@ -1735,7 +1735,7 @@ Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case 
 
 A few edge cases:
 
-- **Variants and extractors come first.** A name that is a zero-field variant of the matched sealed type, or a standalone zero-field extractor (`case None`, `case Debug`, `case endFrame`), matches that variant, whatever the case of its first letter, even if a value has the same name. A variant of some other sealed type is an ordinary binding.
+- **Variants and extractors come first.** A name that is a zero-field variant of the matched sealed type, or a standalone zero-field extractor (`case None`, `case Debug`, `case endFrame`), matches that variant, whatever the case of its first letter, even if a value has the same name. A variant of some other sealed type is an ordinary binding — unless the subject has a [sealed view](#sealed-views) onto that type.
 - **Lowercase values never compare.** Any other lowercase identifier is a fresh binding, even when an outer value has the same name: it shadows that value and matches everything. To compare against a lowercase value, use a guard (below).
 - **A name cannot appear twice in one pattern.** `case (X, X)` and `case (x, x)` are rejected, because a name bound earlier in the same pattern is not a value to compare with. To match equal parts, use `case (a, b) if a == b`.
 - **Unknown names bind.** A capitalized identifier that names no value, variant or extractor still binds, as shown in [Basic Sealed Type](#basic-sealed-type).
@@ -2034,6 +2034,76 @@ See `examples/mixed_guard_extractor.gala` for a runnable version.
 Each variant pattern must bind the exact number of fields the variant
 declares — use `_` for fields you don't care about. See
 [docs/errors/GALA-E0004.md](errors/GALA-E0004.md).
+
+#### Sealed Views
+
+A type that is not itself sealed can still be matched with a sealed type's
+variants. Give it a method `MatchView() S`, where `S` is a sealed type, and a
+`match` whose cases name `S`'s variants reads the subject through `MatchView()`:
+
+```gala
+package main
+
+// A maybe-absent int stored without Option's tag: a negative value is absent.
+struct MaybeInt(raw int)
+
+func (m MaybeInt) MatchView() Option[int] = When(m.raw >= 0, m.raw)
+
+func describe(m MaybeInt) string = m match {
+    case Some(n) => s"some $n"
+    case None    => "none"
+}
+
+func main() {
+    Println(describe(MaybeInt(7)), describe(MaybeInt(-1)))
+}
+```
+
+The match is a match over `S`: binding types, guards, nested patterns,
+alternatives and exhaustiveness ([GALA-E0002](errors/GALA-E0002.md)) are
+exactly those of matching an `S` value, and a bare zero-field variant such as
+`case None` is the variant, not a binding. The subject of the match is
+evaluated and viewed once. `MatchView` is an ordinary method call: a small
+one, like the one above, is inlined by Go and allocates nothing. Keep it cheap
+and free of side effects, since a [sub-pattern](#sub-pattern-views) calls it
+each time a case tests that position.
+
+The rules:
+
+- **Recognized by shape.** Any type with a `MatchView()` method taking no
+  arguments and no type parameters, whose result is a sealed type, has a view:
+  `Option`, `Either`, `Try` or a sealed type of your own. A generic type works
+  too (`func (f Found[T]) MatchView() Option[T]`), and so does a pointer
+  receiver.
+- **Only when a case names a variant of the view.** A match whose cases name
+  none — `case MaybeInt(r)`, `case _` — is an ordinary match over the subject's
+  own type. When the subject's type is sealed itself, its own variants win.
+- **Every case applies to the view.** Once a match reads the view, a case that
+  only applies to the subject — its own extractor, a literal, a typed pattern
+  of another type — or a binding of the whole subject (`case other =>`, which
+  would bind the view) is [GALA-E0079](errors/GALA-E0079.md). Use `_` for the
+  rest; a subject held in a variable is still in scope by that name. A stable
+  identifier holding a value of the view type (`case Zero =>` with
+  `val Zero = Some(0)`) compares with the view.
+- **Partial functions too.** `{ case Some(n) => n }` over a `MaybeInt` reads
+  the view of its argument the same way.
+
+##### Sub-pattern views
+
+A field of an extractor or an element of a tuple pattern is not the subject of
+the match, so it is not switched to its view as a whole. Each sub-pattern
+decides for itself: one that names a variant of its value's view tests that
+value's `MatchView()` — `case Some(Some(n))` over an `Option[MaybeInt]`, or
+`case (Some(a), None)` over two `MaybeInt`s — and every alternative of it is
+a variant of the view, `_` or a stable identifier. Any other sub-pattern in the
+same position, in the same case or another one, matches the value itself:
+`case (Some(a), b)` binds `b` as a `MaybeInt`. Exhaustiveness counts the
+view's variants for a position where a sub-pattern names one; a pattern of the
+value's own type there (`case (MaybeInt(r), _)`) counts as covering none of
+them, so such a match needs a `case _`.
+
+The method is named `MatchView`, not `View`, so it does not collide with the
+`View()` methods that UI components commonly declare.
 
 #### Pattern Matching Filters (Guards)
 Similar to Scala, GALA supports additional `if` conditions in pattern match clauses, often referred to as guards. These filters allow you to apply additional constraints to the extracted variables.

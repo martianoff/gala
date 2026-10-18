@@ -1,0 +1,151 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A type with a method `MatchView() S`, where S is a sealed type, can be
+// matched with S's variants: the match tests `subject.MatchView()`. These cases
+// assert the RUNTIME answer — a bare `case None` read as a binding would match
+// every value and still compile.
+
+// MaybeInt is a maybe-absent int stored without Option's tag: a negative raw
+// value is absent.
+struct MaybeInt(raw int)
+
+func (m MaybeInt) MatchView() Option[int] = When(m.raw >= 0, m.raw)
+
+// Found is a generic type viewed as Option[T].
+struct Found[T any](ok bool, value T)
+
+func (f Found[T]) MatchView() Option[T] = When(f.ok, f.value)
+
+// Level is the user sealed type Reading is viewed as.
+sealed type Level {
+    case Low()
+    case Mid(N int)
+    case High()
+}
+
+// Reading is viewed as a Level.
+struct Reading(v int)
+
+func (r Reading) MatchView() Level = if (r.v < 10) Low() else if (r.v < 100) Mid(r.v) else High()
+
+// Sensor is viewed as an Option whose Some carries a Level, for nested
+// patterns.
+struct Sensor(raw int)
+
+func (s Sensor) MatchView() Option[Level] = When(s.raw >= 0, Reading(s.raw).MatchView())
+
+// Counter is viewed through a pointer receiver.
+type Counter struct {
+    var hits int
+}
+
+func (c *Counter) MatchView() Option[int] = When(c.hits != 0, c.hits)
+
+// Exhaustive without a default: the match is over Option[int].
+func describe(m MaybeInt) string = m match {
+    case Some(n) => s"some $n"
+    case None()  => "none"
+}
+
+// A bare `case None` names the variant; it is not a catch-all binding.
+func describeBare(m MaybeInt) string = m match {
+    case None    => "none"
+    case Some(n) => s"some $n"
+}
+
+// Guards, and a default after them.
+func sign(m MaybeInt) string = m match {
+    case Some(n) if n == 0 => "zero"
+    case Some(n) if n > 50 => "big"
+    case _                 => "other"
+}
+
+func found[T any](f Found[T]) string = f match {
+    case Some(v) => s"found $v"
+    case None()  => "missing"
+}
+
+func level(r Reading) string = r match {
+    case Low() | High() => "edge"
+    case Mid(n)         => s"mid $n"
+}
+
+func sensor(s Sensor) string = s match {
+    case Some(Mid(n)) => s"sensor mid $n"
+    case Some(Low())  => "sensor low"
+    case Some(High()) => "sensor high"
+    case None()       => "sensor off"
+}
+
+func counter(c *Counter) string = c match {
+    case Some(n) => s"hits $n"
+    case None()  => "no hits"
+}
+
+// A sub-pattern reads the view of its own value; a binding beside it binds
+// the value itself.
+func pair(a MaybeInt, b MaybeInt) string = (a, b) match {
+    case (Some(x), Some(y)) => s"both $x $y"
+    case (Some(x), None)    => s"first $x"
+    case (_, other)         => s"second: ${describe(other)}"
+}
+
+func wrapped(o Option[MaybeInt]) string = o match {
+    case Some(Some(n)) => s"wrapped $n"
+    case Some(None)    => "wrapped none"
+    case None()        => "no wrapper"
+}
+
+var reads = 0
+
+// The subject is evaluated, and viewed, once.
+func next() MaybeInt {
+    reads = reads + 1
+    MaybeInt(reads)
+}
+
+func main() {
+    Println(describe(MaybeInt(7)))
+    Println(describe(MaybeInt(-1)))
+    Println(describeBare(MaybeInt(3)))
+    Println(describeBare(MaybeInt(-1)))
+    Println(sign(MaybeInt(0)))
+    Println(sign(MaybeInt(99)))
+    Println(sign(MaybeInt(5)))
+    Println(sign(MaybeInt(-1)))
+    Println(found(Found(true, "x")))
+    Println(found(Found(false, 0)))
+    Println(level(Reading(1)))
+    Println(level(Reading(42)))
+    Println(level(Reading(500)))
+    Println(sensor(Sensor(42)))
+    Println(sensor(Sensor(3)))
+    Println(sensor(Sensor(1000)))
+    Println(sensor(Sensor(-1)))
+    Println(pair(MaybeInt(1), MaybeInt(2)))
+    Println(pair(MaybeInt(1), MaybeInt(-1)))
+    Println(pair(MaybeInt(-1), MaybeInt(2)))
+    Println(pair(MaybeInt(-1), MaybeInt(-1)))
+    Println(wrapped(Some(MaybeInt(5))))
+    Println(wrapped(Some(MaybeInt(-5))))
+    Println(wrapped(None()))
+    val c = &Counter{}
+    Println(counter(c))
+    c.hits = 2
+    Println(counter(c))
+    Println(next() match {
+        case Some(n) => s"read $n"
+        case None()  => "nothing"
+    })
+    Println(s"reads $reads")
+    // A statement-position match.
+    MaybeInt(4) match {
+        case Some(n) => Println(s"statement $n")
+        case None()  => Println("statement none")
+    }
+    // A partial function views its argument the same way.
+    val present = ArrayOf(MaybeInt(1), MaybeInt(-1), MaybeInt(2)).Collect({ case Some(n) => n * 10 })
+    Println(present.MkString(","))
+}

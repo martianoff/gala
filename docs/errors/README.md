@@ -93,6 +93,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0076` | Address of an immutable value | [GALA-E0076.md](GALA-E0076.md) |
 | `GALA-E0077` | Type holds itself by value | [GALA-E0077.md](GALA-E0077.md) |
 | `GALA-E0078` | Invalid interface literal | [GALA-E0078.md](GALA-E0078.md) |
+| `GALA-E0079` | Invalid sealed-view match | [GALA-E0079.md](GALA-E0079.md) |
 | `GALA-E0080` | Pointer that may be nil where a Ptr is needed | [GALA-E0080.md](GALA-E0080.md) |
 
 ### Retired codes
