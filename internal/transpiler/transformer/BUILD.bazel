@@ -98,6 +98,7 @@ go_test(
         "any_result_lambda_test.go",
         "apply_expected_type_test.go",
         "apply_test.go",
+        "arm_no_value_test.go",
         "assignment_test.go",
         "auto_method_override_test.go",
         "bare_funcref_test.go",

@@ -1314,6 +1314,11 @@ func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar
 	return nil
 }
 
+// partialArmNoValueMsg reports a partial-function arm that finishes without a
+// value (see yieldsNoValue): the case matched, so the function must return
+// Some of a value, not fall through to None.
+const partialArmNoValueMsg = "this case of the partial function produces no value; end it in a value, since a partial function returns `Some(value)` when a case matches"
+
 // transformPartialCaseClause transforms a case clause for partial function
 // The result expression is wrapped in Some(...)
 func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
@@ -1350,6 +1355,9 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 		if err != nil {
 			return nil, nil, err
 		}
+		if at := t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), b.List); at != nil {
+			return nil, nil, t.semanticErrorAt(at, partialArmNoValueMsg)
+		}
 		// A trailing expression is the arm's value, lowered like a match
 		// arm's tail; it was left as a bare statement, so the arm had no
 		// result and the whole literal failed with "no case branches".
@@ -1375,16 +1383,19 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			if err != nil {
 				return nil, nil, err
 			}
-			// Wrap in Some(expr)
-			someCall := t.wrapInSome(expr)
-			body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{someCall}}}
-			resultType = t.inferResultType(expr)
-		} else {
-			stmt, err := t.transformSimpleStatement(ctx.GetBodyStmt())
-			if err != nil {
-				return nil, nil, err
+			if t.exprYieldsNoValue(expr) {
+				return nil, nil, t.semanticErrorAt(ctx.GetBodyStmt(), partialArmNoValueMsg)
 			}
-			body = []ast.Stmt{stmt}
+			// Lowered like the tail of a block arm: a diverging call stays a
+			// statement, and any other value is returned wrapped in Some.
+			tail, typ := t.lowerMatchArmTailExpr(expr)
+			body = t.wrapBlockReturnsInSome([]ast.Stmt{tail})
+			if _, ok := tail.(*ast.ReturnStmt); ok {
+				resultType = typ
+			}
+		} else {
+			// An assignment or increment yields no value.
+			return nil, nil, t.semanticErrorAt(ctx.GetBodyStmt(), partialArmNoValueMsg)
 		}
 	}
 

@@ -278,6 +278,67 @@ func (t *galaASTTransformer) lowerMatchArmTailExpr(expr ast.Expr) (ast.Stmt, tra
 	return t.markSynthesizedArmReturn(&ast.ReturnStmt{Results: []ast.Expr{expr}}), t.inferResultType(expr)
 }
 
+// yieldsNoValue reports whether stmts, the lowered body of a match or
+// partial-function arm, can finish without a value: the body is empty, or it
+// ends in a statement that neither yields a value nor leaves — a void call, a
+// void IIFE, a declaration, an assignment, a loop with a condition, or an if
+// with no `else` or with a branch that itself yields no value. An arm that
+// returns, breaks, continues or calls a diverging function (`Panic`) needs no
+// value. stmts may hold the arm's tail before or after lowerMatchArmTailExpr
+// turned it into a synthesized return.
+func (t *galaASTTransformer) yieldsNoValue(stmts []ast.Stmt) bool {
+	if len(stmts) == 0 {
+		return true
+	}
+	switch last := stmts[len(stmts)-1].(type) {
+	case *ast.ExprStmt:
+		return t.exprYieldsNoValue(last.X)
+	case *ast.ReturnStmt:
+		return t.isSynthesizedArmReturn(last) && len(last.Results) == 1 && t.exprYieldsNoValue(last.Results[0])
+	case *ast.BranchStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.LabeledStmt:
+		return false
+	case *ast.BlockStmt:
+		return t.yieldsNoValue(last.List)
+	case *ast.ForStmt:
+		return last.Cond != nil
+	case *ast.IfStmt:
+		if last.Body == nil || last.Else == nil || t.yieldsNoValue(last.Body.List) {
+			return true
+		}
+		return t.yieldsNoValue([]ast.Stmt{last.Else})
+	}
+	return true
+}
+
+// exprYieldsNoValue reports whether expr, the trailing expression of an arm,
+// produces no value: a void call or a void IIFE (a match whose every arm is
+// void). A diverging call needs none, and an expression whose type is not
+// known is taken to have one.
+func (t *galaASTTransformer) exprYieldsNoValue(expr ast.Expr) bool {
+	if t.isNoReturnCallExpr(expr) {
+		return false
+	}
+	if isVoidIIFE(expr) {
+		return true
+	}
+	typ := t.inferResultType(expr)
+	return typ != nil && typ.IsVoid()
+}
+
+// noValueArmAt returns where an arm whose block body is blockCtx, lowered to
+// stmts, finishes without a value (see yieldsNoValue): its last statement, or
+// the block itself when it is empty. It returns nil when the arm yields a
+// value or leaves.
+func (t *galaASTTransformer) noValueArmAt(blockCtx *grammar.BlockContext, stmts []ast.Stmt) antlr.ParserRuleContext {
+	if !t.yieldsNoValue(stmts) {
+		return nil
+	}
+	if srcStmts := blockCtx.AllStatement(); len(srcStmts) > 0 {
+		return srcStmts[len(srcStmts)-1].(*grammar.StatementContext)
+	}
+	return blockCtx
+}
+
 // lowerPanicWrapperToBuiltin rewrites a call to the go_builtins.Panic wrapper
 // (bare `Panic` via dot-import, or qualified `go_builtins.Panic`) into a call
 // to Go's builtin `panic`. It is applied at no-return TAIL positions (match-arm
@@ -1259,8 +1320,10 @@ func (t *galaASTTransformer) collectReferencedIdents(nodes []ast.Node) map[strin
 }
 
 // transformCaseClauseWithType transforms a case clause and returns its result
-// type. armSlot is the slot the match fills (see transformCaseBodyStmt).
-func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (ast.Stmt, transpiler.Type, error) {
+// type, and where the arm finishes without a value (nil when it yields one or
+// leaves; see yieldsNoValue). armSlot is the slot the match fills (see
+// transformCaseBodyStmt).
+func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type, armSlot slot) (ast.Stmt, transpiler.Type, antlr.ParserRuleContext, error) {
 	t.pushScope()
 	defer t.popScope()
 	t.currentScope.caseArm = true
@@ -1268,7 +1331,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	patCtx := ctx.Pattern()
 	cond, bindings, err := t.transformPatternWithType(patCtx, ast.NewIdent(paramName), matchedType)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Transform guard expression separately so we can check variable references in it
@@ -1276,7 +1339,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	if ctx.GetGuard() != nil {
 		guardExpr, err = t.transformExpression(ctx.GetGuard())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		cond = &ast.BinaryExpr{
 			X:  cond,
@@ -1287,15 +1350,17 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 
 	var body []ast.Stmt
 	var resultType transpiler.Type
+	var noValue antlr.ParserRuleContext
 
 	if ctx.GetBodyBlock() != nil {
 		// The case body's block last expression becomes the arm's value, so
 		// it is value-consumed (not statement-position).
 		b, err := t.transformValueBlock(ctx.GetBodyBlock().(*grammar.BlockContext), armSlot)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		body = b.List
+		noValue = t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), body)
 		// In GALA, a block used as an expression returns its last expression.
 		// Convert the last expression statement to a return statement.
 		if len(body) > 0 {
@@ -1332,10 +1397,13 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	} else if ctx.GetBodyStmt() != nil {
 		bodyStmts, bodyType, err := t.transformCaseBodyStmt(ctx.GetBodyStmt(), armSlot)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		body = bodyStmts
 		resultType = bodyType
+		if t.yieldsNoValue(body) {
+			noValue = ctx.GetBodyStmt()
+		}
 	}
 
 	// Check for unused pattern variables: user vars that appear in bindings but
@@ -1356,7 +1424,7 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 			if !refs[varName] {
 				line := ctx.GetStart().GetLine()
 				col := ctx.GetStart().GetColumn()
-				return nil, nil, galaerr.NewSemanticErrorAt(line, col,
+				return nil, nil, nil, galaerr.NewSemanticErrorAt(line, col,
 					fmt.Sprintf("unused variable '%s' in match branch — use '_' to discard this value", varName))
 			}
 		}
@@ -1372,20 +1440,48 @@ func (t *galaASTTransformer) transformCaseClauseWithType(ctx *grammar.CaseClause
 	if len(bindings) > 0 {
 		return &ast.BlockStmt{
 			List: append(bindings, ifStmt),
-		}, resultType, nil
+		}, resultType, noValue, nil
 	}
 
-	return ifStmt, resultType, nil
+	return ifStmt, resultType, noValue, nil
 }
 
 // matchArm is one lowered case clause of a match: a regular arm's clause, or
 // the default arm's body. hasResult reports whether the arm contributes
-// resultType to the match's result type.
+// resultType to the match's result type. noValue is where the arm finishes
+// without a value (see yieldsNoValue), nil when it yields one or leaves.
 type matchArm struct {
 	clause      ast.Stmt
 	defaultBody []ast.Stmt
 	resultType  transpiler.Type
 	hasResult   bool
+	noValue     antlr.ParserRuleContext
+}
+
+// checkMixedArmValues rejects a match whose value is used where one arm yields
+// a value and another finishes without one (an empty block, a trailing
+// declaration, assignment or void call). The match would then have no value on
+// that arm's path. An arm that leaves (a `return`, `break` or diverging call)
+// needs no value, and a match none of whose arms yields one is left to the
+// lowering of a void match.
+func (t *galaASTTransformer) checkMixedArmValues(arms []matchArm) error {
+	var noValue antlr.ParserRuleContext
+	valueSeen := false
+	for _, arm := range arms {
+		switch {
+		case arm.noValue != nil:
+			if noValue == nil {
+				noValue = arm.noValue
+			}
+		case arm.resultType != nil && !arm.resultType.IsVoid() && !arm.resultType.IsNil():
+			valueSeen = true
+		}
+	}
+	if valueSeen && noValue != nil {
+		return t.semanticErrorAt(noValue,
+			"this arm of the `match` produces no value, but another arm does; end every arm in a value, since the match's value is used")
+	}
+	return nil
 }
 
 // lowerDefaultMatchArm lowers the default arm of a match (a wildcard, or the
@@ -1416,6 +1512,7 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 			return matchArm{}, err
 		}
 		arm.defaultBody = append(bindingStmts, b.List...)
+		arm.noValue = t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), b.List)
 		if len(b.List) > 0 {
 			last := len(arm.defaultBody) - 1
 			switch lastStmt := b.List[len(b.List)-1].(type) {
@@ -1447,6 +1544,9 @@ func (t *galaASTTransformer) lowerDefaultMatchArm(ctx *grammar.CaseClauseContext
 		}
 		arm.defaultBody = append(bindingStmts, bodyStmts...)
 		arm.resultType, arm.hasResult = bodyType, true
+		if t.yieldsNoValue(bodyStmts) {
+			arm.noValue = ctx.GetBodyStmt()
+		}
 	}
 	return arm, nil
 }
