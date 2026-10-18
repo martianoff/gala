@@ -126,6 +126,7 @@ var accumulatedStateFields = []string{
 	"loopControlSites",
 	"branchingCalls",
 	"userReturns",
+	"voidCalls",
 	"hoisted",
 	"escapeCache",
 	"userLoops",
