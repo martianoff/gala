@@ -2075,6 +2075,7 @@ val res2 = arr match {
 ##### Rest Pattern Variants
 - `_...` - Match and discard remaining elements (wildcard rest)
 - `name...` - Match and capture remaining elements as a sequence
+- No rest - Match exactly that many elements: `Array(x, y)` matches a two-element array only, and `List()` the empty list
 
 ```gala
 val list = ListOf("a", "b", "c", "d")
@@ -2103,7 +2104,7 @@ type Seq[T any] interface {
 }
 ```
 
-The pattern generates a size check (`Size() >= N`) before extracting elements, ensuring safe access. The rest pattern (`...`) captures remaining elements using `SeqDrop(N)`.
+The pattern generates a size check before extracting elements, ensuring safe access: `Size() == N` for a pattern of `N` elements and no rest, `Size() >= N` for one with a rest. The rest pattern (`...`) captures remaining elements using `SeqDrop(N)`.
 
 ### `bind` / `also` — Monadic Binding
 

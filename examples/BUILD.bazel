@@ -2810,6 +2810,15 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# A sequence pattern without a rest matches exactly as many elements; with a
+# rest, at least as many.
+gala_exec_test(
+    name = "sequence_pattern_exact_length",
+    src = "sequence_pattern_exact_length.gala",
+    expected = "sequence_pattern_exact_length.out",
+    deps = ["//collection_immutable"],
+)
+
 # Parenthesized tuple patterns nested in sealed variants (Some/Right/Success
 # and a user variant), struct extractors, sequence elements and tuples.
 gala_exec_test(

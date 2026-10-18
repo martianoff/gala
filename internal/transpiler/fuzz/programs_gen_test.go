@@ -605,8 +605,9 @@ func (g *progGen) pattern(k valueKind, depth int, noBind bool) pattern {
 			irrefutable: s.irrefutable && n.irrefutable,
 		}
 	case kArr:
-		// A sequence pattern: leading element sub-patterns, then a rest
-		// that matches any remaining elements, discarded or bound.
+		// A sequence pattern: leading element sub-patterns, and a rest
+		// that matches any remaining elements, discarded or bound — or none,
+		// and the pattern matches exactly as many elements.
 		g.usesArrays = true
 		n := g.pick(3)
 		subs := make([]pattern, n)
@@ -617,19 +618,29 @@ func (g *progGen) pattern(k valueKind, depth int, noBind bool) pattern {
 			srcs = append(srcs, subs[i].src)
 			binders = append(binders, subs[i].binders...)
 		}
-		rest := "_..."
-		if !noBind && g.pick(2) == 0 {
+		// The rest: none (exactly n elements), discarded, or bound.
+		rest, bindsRest := "", false
+		switch g.pick(3) {
+		case 1:
+			rest = "_..."
+		case 2:
+			if noBind {
+				rest = "_..."
+				break
+			}
 			name := g.name("rest")
-			rest = name + "..."
+			rest, bindsRest = name+"...", true
 			binders = append(binders, binder{name + ".Size()"})
 		}
-		srcs = append(srcs, rest)
-		bindsRest := rest != "_..."
+		if rest != "" {
+			srcs = append(srcs, rest)
+		}
+		exact := rest == ""
 		return pattern{
 			src:     g.cp + "Array(" + strings.Join(srcs, ", ") + ")",
 			binders: binders,
 			match: func(v value) (bool, []int) {
-				if len(v.fields) < n {
+				if len(v.fields) < n || exact && len(v.fields) != n {
 					return false, nil
 				}
 				var bound []int

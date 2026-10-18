@@ -286,6 +286,7 @@ val res = arr match {
 
 - `_...` — match and discard remaining elements
 - `name...` — match and capture remaining elements as a sequence
+- no rest — match exactly that many elements: `Array(x, y)` matches a two-element array only, and `List()` the empty list
 
 ```gala
 val list = ListOf("a", "b", "c", "d")

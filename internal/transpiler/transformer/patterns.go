@@ -1178,7 +1178,7 @@ func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restNam
 	return
 }
 
-// generateSeqPatternMatch generates code for sequence pattern matching with rest patterns.
+// generateSeqPatternMatch generates code for sequence pattern matching.
 // It orchestrates the extracted helpers scanSeqPatternArgs, emitSizeCheck,
 // emitNonRestBindings, and emitRestBinding.
 //
@@ -1200,13 +1200,9 @@ func scanSeqPatternArgs(args []grammar.IArgumentContext) (restIndex int, restNam
 //	}
 //	if _tmp_ok && <Some(n) condition> { ... body }
 func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *grammar.ArgumentListContext, matchedType transpiler.Type) (ast.Expr, []ast.Stmt, error) {
-	if argList == nil {
-		return ast.NewIdent("true"), nil, nil
-	}
-
-	args := argList.AllArgument()
-	if len(args) == 0 {
-		return ast.NewIdent("true"), nil, nil
+	var args []grammar.IArgumentContext
+	if argList != nil {
+		args = argList.AllArgument()
 	}
 
 	restPatternIndex, restPatternName, nonRestCount := scanSeqPatternArgs(args)
@@ -1216,8 +1212,11 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 		return nil, nil, galaerr.NewSemanticErrorAt(argList.GetStart().GetLine(), argList.GetStart().GetColumn(), "rest pattern (...) must be the last argument in a sequence pattern")
 	}
 
-	// Emit the size check and seed the statement+condition accumulators.
-	sizeCheckStmt, sizeCheckName := t.emitSizeCheck(objExpr, nonRestCount)
+	// Emit the size check and seed the statement+condition accumulators. A
+	// pattern with a rest matches a sequence at least as long as its other
+	// sub-patterns; one without matches exactly as many elements, so `List()`
+	// is the empty sequence.
+	sizeCheckStmt, sizeCheckName := t.emitSizeCheck(objExpr, nonRestCount, restPatternIndex < 0)
 	stmts := []ast.Stmt{sizeCheckStmt}
 	conds := []ast.Expr{ast.NewIdent(sizeCheckName)}
 
@@ -1256,12 +1255,15 @@ func (t *galaASTTransformer) generateSeqPatternMatch(objExpr ast.Expr, argList *
 	return finalCond, stmts, nil
 }
 
-// emitSizeCheck generates `_tmpN := obj.Size() >= nonRestCount` and returns
-// both the statement and the temp variable name (so callers can reference it
-// in the guarded block condition). Extracted from generateSeqPatternMatch as
-// part of A2 cont.
-func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, nonRestCount int) (ast.Stmt, string) {
+// emitSizeCheck generates `_tmpN := obj.Size() == count` (exact) or
+// `_tmpN := obj.Size() >= count` and returns both the statement and the temp
+// variable name (so callers can reference it in the guarded block condition).
+func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, count int, exact bool) (ast.Stmt, string) {
 	sizeCheckName := t.nextTempVar()
+	op := token.GEQ
+	if exact {
+		op = token.EQL
+	}
 	stmt := t.patternDefine([]string{sizeCheckName}, []ast.Expr{ast.NewIdent("bool")}, &ast.BinaryExpr{
 		X: &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
@@ -1269,8 +1271,8 @@ func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, nonRestCount int) (
 				Sel: ast.NewIdent("Size"),
 			},
 		},
-		Op: token.GEQ,
-		Y:  &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", nonRestCount)},
+		Op: op,
+		Y:  &ast.BasicLit{Kind: token.INT, Value: fmt.Sprintf("%d", count)},
 	})
 	return stmt, sizeCheckName
 }
