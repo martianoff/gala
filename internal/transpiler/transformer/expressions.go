@@ -1,6 +1,7 @@
 package transformer
 
 import (
+	"fmt"
 	"github.com/antlr4-go/antlr/v4"
 	"go/ast"
 	"go/token"
@@ -666,9 +667,23 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	thenExpr, elseExpr := lowered[0].expr, lowered[1].expr
 
 	// The if-expression is typed by unifying its branch types, as a
-	// block-bodied lambda's result is (unifyBlockReturnTypes).
+	// block-bodied lambda's result is (unifyBlockReturnTypes). A branch with
+	// no value (empty, or a void call) does not take part: its type is not
+	// the value's.
 	branchTypes := [2]transpiler.Type{t.getExprTypeName(thenExpr), t.getExprTypeName(elseExpr)}
-	retType := t.unifyBranchTypes(branchTypes[0], branchTypes[1])
+	unified := branchTypes
+	novalue := 0
+	for i, bt := range unified {
+		if bt.IsVoid() || lowered[i].noValue {
+			unified[i] = transpiler.NilType{}
+			novalue++
+		}
+	}
+	retType := t.unifyBranchTypes(unified[0], unified[1])
+	if novalue == len(unified) {
+		// No branch has a value: the if-expression is void.
+		retType = transpiler.VoidType{}
+	}
 	// A branch typed `any` — the value of a Go API that returns it — is a
 	// known type: the if-expression's value is `any` too.
 	if retType.IsNil() {
@@ -720,7 +735,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	}
 
 	// The if-expression's value is used, so every branch must produce one.
-	if err := t.checkIfBranchValues(branches, lowered); err != nil {
+	if err := t.checkIfBranchValues(branches, lowered, true); err != nil {
 		return nil, err
 	}
 
@@ -731,7 +746,11 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	// one would be dead code returning a placeholder), or its trailing if/else
 	// chain returns the value from each of its branches.
 	body := func(b loweredIfBranch) *ast.BlockStmt {
-		if b.needsValueReturn() {
+		switch {
+		case b.needsValueReturn() && t.isNoReturnCallExpr(b.expr):
+			// A diverging call (`Panic`) has no value to return.
+			return &ast.BlockStmt{List: append(b.stmts, &ast.ExprStmt{X: b.expr})}
+		case b.needsValueReturn():
 			return &ast.BlockStmt{List: append(b.stmts, &ast.ReturnStmt{Results: []ast.Expr{b.expr}})}
 		}
 		return &ast.BlockStmt{List: b.stmts}
@@ -805,17 +824,35 @@ func (b loweredIfBranch) needsValueReturn() bool {
 	return !b.terminates && !b.valueInStmts
 }
 
+// noValueBranch is a branch whose statements stmts produce no value: its
+// expr is the placeholder `nil`.
+func noValueBranch(stmts []ast.Stmt) loweredIfBranch {
+	return loweredIfBranch{stmts: stmts, expr: ast.NewIdent("nil"), noValue: true}
+}
+
 // checkIfBranchValues rejects a branch of an if-expression whose value is
 // used that produces no value — nothing could be returned for it. A branch
-// that terminates or leaves needs no value.
-func (t *galaASTTransformer) checkIfBranchValues(branches []grammar.IIfExprBranchContext, lowered [2]loweredIfBranch) error {
+// that terminates or leaves needs no value. typed says the if-expression has
+// a type: then every other branch needs a value. Otherwise one is needed only
+// next to a branch that has one; with none, the if-expression has no type at
+// all, which GALA-E0068 reports.
+func (t *galaASTTransformer) checkIfBranchValues(branches []grammar.IIfExprBranchContext, lowered [2]loweredIfBranch, typed bool) error {
+	missing := -1
+	valued := false
 	for i, b := range lowered {
-		if !b.needsValueReturn() || t.leaves(b.stmts) {
-			continue
+		switch {
+		case !b.needsValueReturn() || t.leaves(b.stmts):
+			valued = valued || b.valueInStmts
+		case b.noValue || (t.getExprTypeName(b.expr).IsVoid() && !t.isNoReturnCallExpr(b.expr)):
+			if missing < 0 {
+				missing = i
+			}
+		default:
+			valued = true
 		}
-		if b.noValue || (t.getExprTypeName(b.expr).IsVoid() && !t.isNoReturnCallExpr(b.expr)) {
-			return t.noValueBranchError(branches[i].(*grammar.IfExprBranchContext))
-		}
+	}
+	if missing >= 0 && (typed || valued) {
+		return t.noValueBranchError(branches[missing].(*grammar.IfExprBranchContext))
 	}
 	return nil
 }
@@ -833,7 +870,7 @@ func (t *galaASTTransformer) noValueBranchError(branch *grammar.IfExprBranchCont
 // none. The value's type is that of the branches that store one (see
 // hoistedType).
 func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext, cond ast.Expr, s slot, branches [2]loweredIfBranch) (ast.Expr, error) {
-	if err := t.checkIfBranchValues(ctx.AllIfExprBranch(), branches); err != nil {
+	if err := t.checkIfBranchValues(ctx.AllIfExprBranch(), branches, false); err != nil {
 		return nil, err
 	}
 	var types [2]transpiler.Type
@@ -859,6 +896,8 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 		case b.valueInStmts:
 			// Each branch of its trailing if/else chain stores its value.
 			return &ast.BlockStmt{List: t.storeArmValues(b.stmts, s.hoist, typ)}
+		case !b.terminates && t.isNoReturnCallExpr(b.expr):
+			return &ast.BlockStmt{List: append(b.stmts, &ast.ExprStmt{X: b.expr})}
 		case !b.terminates:
 			return &ast.BlockStmt{List: append(b.stmts, t.storeValue(b.expr, s.hoist, typ)...)}
 		}
@@ -1030,9 +1069,8 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	// Path: statement → declaration → simpleStatement → expression
 	blockCtx := ctx.Block().(*grammar.BlockContext)
 	stmts := blockCtx.AllStatement()
-	noValue := loweredIfBranch{expr: ast.NewIdent("nil"), noValue: true}
 	if len(stmts) == 0 {
-		return noValue, nil
+		return noValueBranch(nil), nil
 	}
 
 	// A `bind` takes over the rest of the branch (see lowerIfExprBranchBind).
@@ -1106,8 +1144,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		}
 		return loweredIfBranch{stmts: preceding, expr: branchExpr, terminates: true}, nil
 	}
-	noValue.stmts = preceding
-	return noValue, nil
+	return noValueBranch(preceding), nil
 }
 
 // lowerIfExprBranchTailIf lowers the if/else chain ifCtx at the tail of an
@@ -1115,20 +1152,18 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 // a value, the chain returns it from each branch; otherwise the chain is a
 // statement and the if-expression branch has no value.
 func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifCtx *grammar.IfStatementContext, s slot) (loweredIfBranch, error) {
-	stmt, err := t.transformIfStatementWithTail(ifCtx, tailBranch, s)
+	promoted, ok, err := t.lowerTailIf(ifCtx, s, t.armReturn)
 	if err != nil {
 		return loweredIfBranch{}, err
 	}
-	ifStmt := stmt.(*ast.IfStmt)
-	promoted, ok := t.promoteIfBranchValues(ifStmt, t.armReturn)
 	if !ok {
-		if err := t.checkMixedBranchValues(ifCtx, ifStmt); err != nil {
+		if err := t.checkUnpromotedBranchTails(ifCtx, promoted); err != nil {
 			return loweredIfBranch{}, err
 		}
-		if err := t.checkUnpromotedBranchTails(ifCtx, ifStmt); err != nil {
-			return loweredIfBranch{}, err
-		}
-		return loweredIfBranch{stmts: []ast.Stmt{ifStmt}, expr: ast.NewIdent("nil"), noValue: true}, nil
+		return noValueBranch([]ast.Stmt{promoted}), nil
+	}
+	if err := t.checkChainValueTypes(ifCtx, promoted); err != nil {
+		return loweredIfBranch{}, err
 	}
 	result := t.armBranchResult(promoted, s)
 	if result == nil {
@@ -1136,6 +1171,37 @@ func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifCtx *grammar.IfStatementC
 		return loweredIfBranch{stmts: []ast.Stmt{promoted}, terminates: true}, nil
 	}
 	return loweredIfBranch{stmts: []ast.Stmt{promoted}, expr: result, valueInStmts: true}, nil
+}
+
+// checkChainValueTypes rejects a promoted if/else chain (ifCtx its source)
+// whose branch values have types that do not unify: each is a value of the
+// one block the chain ends.
+func (t *galaASTTransformer) checkChainValueTypes(ifCtx *grammar.IfStatementContext, promoted *ast.IfStmt) error {
+	var unified transpiler.Type = transpiler.NilType{}
+	var err error
+	ast.Inspect(promoted, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok || err != nil {
+			return false
+		}
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 || !t.isSynthesizedArmReturn(ret) {
+			return true
+		}
+		typ := t.getExprTypeName(ret.Results[0])
+		if transpiler.IsUnusableOrAny(typ) || typ.IsVoid() {
+			return true
+		}
+		if transpiler.IsUnusable(unified) {
+			unified = typ
+		} else if next := t.unifyBranchTypes(unified, typ); !next.IsNil() {
+			unified = next
+		} else {
+			err = t.semanticErrorAt(ifCtx, fmt.Sprintf(
+				"the branches of this `if` end in values of different types, %s and %s; end them in values of one type", unified, typ))
+		}
+		return true
+	})
+	return err
 }
 
 // lowerIfExprBranchBind lowers stmts, the rest of an if-expression branch from

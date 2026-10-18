@@ -125,6 +125,7 @@ detector (`--@rules_go//go/config:race`).
 | `FuzzStringLiterals` | arbitrary content in `"…"`, `` `…` ``, `s"…"`, `f"…"`, `'…'` | a positioned diagnostic or parseable Go; where the spec fixes a value, the emitted Go literal evaluates to the bytes Go's `strconv.Unquote` gives |
 | `FuzzTranspileNoCrash` | arbitrary bytes, mutated examples | no panic, hang or internal error (GALA-E0017); diagnostics positioned inside the input; accepted input yields parseable Go with no leaked markers, identical across two runs |
 | `FuzzSourceEncoding` | examples with a leading BOM, non-ASCII comments, raw vs escaped non-ASCII in strings | both spellings give the same Go (ignoring comments and literal spelling), or the same diagnostics on the same lines |
+| `FuzzValueBlocks` | generated programs nesting `bind`, if-expressions, `match`, lambdas, partial functions and trailing `if`/`else`, valid and invalid | a positioned diagnostic, or Go that type-checks against the standard library |
 
 `bazel test //internal/transpiler/fuzz:fuzz_test` runs each target over its seed
 corpus — the `f.Add` seeds plus `testdata/fuzz/<Target>/*` — as an ordinary unit

@@ -579,17 +579,18 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			// or if-expression whose arm it is. When that is not known, a
 			// block whose value is consumed takes it from its own trailing
 			// value, and fills the enclosing lambda's slot with it.
+			hoisted := lastValueExpected.hoist != ""
 			typ := t.returnSlot.typ
 			if tail != tailReturn {
 				if closed := lastValueExpected.closedType(); !transpiler.IsUnusable(closed) {
 					typ = closed
-				} else if lastValueExpected.hoist != "" {
+				} else if hoisted {
 					// An arm lowered as statements has no slot of its own: the
 					// function's result type is not the arm's.
 					typ = nil
 				}
 			}
-			if lastValueExpected.hoist != "" {
+			if hoisted {
 				if err := t.checkNoEscapeAfterBind(allStmts[i:], "a match arm"); err != nil {
 					return nil, err
 				}
@@ -601,7 +602,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			if err != nil {
 				return nil, err
 			}
-			if lastValueExpected.hoist != "" {
+			if hoisted {
 				// The chain is the arm's value, which the arm stores: a
 				// `return` there would leave the function.
 				block.List = append(block.List, &ast.ExprStmt{X: expr})
@@ -978,11 +979,11 @@ func (t *galaASTTransformer) sourceFunctionName(ctx *grammar.FunctionDeclaration
 	return strings.TrimPrefix(receiverTypeName, t.packageName+".") + "." + name
 }
 
-// missingReturnError reports a function body that can finish without the value
-// its result type promises, at the body's last statement (or its closing brace
-// when it is empty).
-func (t *galaASTTransformer) missingReturnError(body *grammar.BlockContext, name string, result transpiler.Type) error {
-	msg := fmt.Sprintf("function %s returns %s, but its body can finish without a value; end it in the value to return, or add a `return`", name, result)
+// missingReturnError reports a body that can finish without the value its
+// result type promises — subject is "function F" or "this lambda" — at the
+// body's last statement (or its closing brace when it is empty).
+func (t *galaASTTransformer) missingReturnError(body *grammar.BlockContext, subject, result string) error {
+	msg := fmt.Sprintf("%s returns %s, but its body can finish without a value; end it in the value to return, or add a `return`", subject, result)
 	if stmts := body.AllStatement(); len(stmts) > 0 {
 		return t.semanticErrorAt(stmts[len(stmts)-1], msg)
 	}
@@ -1522,4 +1523,22 @@ func checkIfInitializer(ctx *grammar.IfStatementContext) error {
 		"`if` takes no initializer statement",
 		"wrap the call in `Try(...)` and `match` on `Success(v)` / `Failure(e)` — a Go `(T, error)` return is auto-wrapped",
 	).WithSpan(col + len("if"))
+}
+
+// lowerTailIf lowers ifCtx, the if/else chain at the tail of a block whose
+// value is used, against s, and promotes it to carry its branches' values
+// (promoteIfBranchValues, with mkReturn). When it cannot be — a branch ends
+// in no value, or the chain has no `else` — it returns the chain as lowered
+// and promoted false, unless one branch has a value and another none, which
+// is an error.
+func (t *galaASTTransformer) lowerTailIf(ifCtx *grammar.IfStatementContext, s slot, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.IfStmt, bool, error) {
+	stmt, err := t.transformIfStatementWithTail(ifCtx, tailBranch, s)
+	if err != nil {
+		return nil, false, err
+	}
+	ifStmt := stmt.(*ast.IfStmt)
+	if promoted, ok := t.promoteIfBranchValues(ifStmt, mkReturn); ok {
+		return promoted, true, nil
+	}
+	return ifStmt, false, t.checkMixedBranchValues(ifCtx, ifStmt)
 }

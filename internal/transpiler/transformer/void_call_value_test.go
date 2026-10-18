@@ -55,7 +55,7 @@ func TestVoidCallValueIsAnError(t *testing.T) {
 		{"function as an operand", "func main() {\n    val n = 1 + v()\n    Println(n)\n}", "`v()` produces no value", 16, 16, false},
 		{"function as a constructor argument", "func main() {\n    Println(Box(v()))\n}", "`v()` produces no value", 16, 16, false},
 		{"function as a lambda's value", "func main() {\n    val g = () => {\n        Println(\"g\")\n        v()\n    }\n    val h = (x int) => x + g()\n    Println(h(1))\n}", "`g()` produces no value", 20, 27, true},
-		{"function as a returned value","func f() int {\n    return v()\n}", "`v()` produces no value", 16, 11, false},
+		{"function as a returned value", "func f() int {\n    return v()\n}", "`v()` produces no value", 16, 11, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

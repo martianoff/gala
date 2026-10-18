@@ -245,6 +245,9 @@ func firstReferencedName(expr ast.Expr, names map[string]bool) string {
 type bindResult struct {
 	typ   transpiler.Type
 	monad string // the block's monad (lookup base name)
+	// inferred: typ was taken from one of the block's values, which every
+	// other value must then agree with.
+	inferred bool
 }
 
 // newBindResult starts a bind block whose result type is typ (nil when not
@@ -578,16 +581,11 @@ func (t *galaASTTransformer) lowerBindTailIf(ifCtx *grammar.IfStatementContext, 
 	if transpiler.IsUnusable(res.typ) {
 		res.typ = t.returnShape()
 	}
-	stmt, err := t.transformIfStatementWithTail(ifCtx, tailBranch, typedSlot(res.typ))
+	promoted, ok, err := t.lowerTailIf(ifCtx, typedSlot(res.typ), plainReturn)
 	if err != nil {
 		return nil, err
 	}
-	ifStmt := stmt.(*ast.IfStmt)
-	promoted, ok := t.promoteIfBranchValues(ifStmt, plainReturn)
 	if !ok {
-		if err := t.checkMixedBranchValues(ifCtx, ifStmt); err != nil {
-			return nil, err
-		}
 		return nil, t.semanticErrorAt(ifCtx, "a `bind` block must end with a value expression; this `if` ends it, so it needs an `else` and every branch must end in a value")
 	}
 	// Each branch's value is a value of the block.
@@ -649,12 +647,15 @@ func (t *galaASTTransformer) checkBindValue(at antlr.ParserRuleContext, value as
 		if !t.isSettledType(typ) {
 			return t.semanticErrorAt(at, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
 		}
-		res.typ = typ
+		res.typ, res.inferred = typ, true
 	} else if !t.isSettledType(typ) || typ.IsAny() {
 		return nil
 	}
 	if base := t.monadBaseName(typ); base != res.monad {
 		return t.semanticErrorAt(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, got "+typ.String())
+	}
+	if res.inferred && t.followAliasChain(res.typ).String() != typ.String() {
+		return t.semanticErrorAt(at, "the values of this `bind` block have different types, "+res.typ.String()+" and "+typ.String()+"; end them in values of one type")
 	}
 	return nil
 }
