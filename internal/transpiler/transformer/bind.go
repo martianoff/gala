@@ -331,7 +331,16 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 		if terr != nil {
 			return preppedBind{}, terr
 		}
-		elemType = t.astTypeToTranspilerType(te)
+		annotated := t.astTypeToTranspilerType(te)
+		// The FlatMap callback takes exactly the monad's element type, so the
+		// annotation must name it.
+		if !transpiler.IsUnusable(elemType) && t.isSettledType(elemType) &&
+			t.followAliasChain(annotated).String() != t.followAliasChain(elemType).String() {
+			return preppedBind{}, t.semanticErrorAt(e.ctx,
+				"`"+e.name+"` is annotated "+annotated.String()+", but "+recvType.String()+" binds a value of type "+elemType.String()+
+					"; annotate it "+elemType.String()+" or drop the annotation")
+		}
+		elemType = annotated
 	}
 
 	// Same-monad requirement: the clause's monad must match the block's monad.
@@ -521,7 +530,8 @@ func (t *galaASTTransformer) typeHasMethod(lookupBaseName, method string) bool {
 
 // buildBindBody builds the body block of a bind continuation lambda from the
 // statements following a `bind`. Regular statements are emitted as-is; a nested
-// `bind` recurses; the trailing statement becomes `return <value>`.
+// `bind` recurses; the trailing statement becomes `return <value>`, or, when it
+// is an if/else chain, returns its value from each branch.
 func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, res *bindResult) (*ast.BlockStmt, error) {
 	body := &ast.BlockStmt{}
 	for i, s := range stmts {
@@ -537,6 +547,14 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 			return body, nil
 		}
 		if i == len(stmts)-1 {
+			if ifCtx := ifStatementOf(s.(*grammar.StatementContext)); ifCtx != nil {
+				stmt, err := t.lowerBindTailIf(ifCtx, res)
+				if err != nil {
+					return nil, err
+				}
+				body.List = append(body.List, stmt)
+				return body, nil
+			}
 			expr, err := t.transformTrailingBindValue(s, res)
 			if err != nil {
 				return nil, err
@@ -551,6 +569,42 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 		body.List = append(append(body.List, pre...), stmt)
 	}
 	return body, nil
+}
+
+// lowerBindTailIf lowers the if/else chain at the tail of a `bind` block: each
+// of its branches ends in the block's value, which the continuation returns.
+func (t *galaASTTransformer) lowerBindTailIf(ifCtx *grammar.IfStatementContext, res *bindResult) (ast.Stmt, error) {
+	// A `return` in the chain may have filled the lambda's slot meanwhile.
+	if transpiler.IsUnusable(res.typ) {
+		res.typ = t.returnShape()
+	}
+	stmt, err := t.transformIfStatementWithTail(ifCtx, tailBranch, typedSlot(res.typ))
+	if err != nil {
+		return nil, err
+	}
+	ifStmt := stmt.(*ast.IfStmt)
+	promoted, ok := t.promoteIfBranchValues(ifStmt, plainReturn)
+	if !ok {
+		if err := t.checkMixedBranchValues(ifCtx, ifStmt); err != nil {
+			return nil, err
+		}
+		return nil, t.semanticErrorAt(ifCtx, "a `bind` block must end with a value expression; this `if` ends it, so it needs an `else` and every branch must end in a value")
+	}
+	// Each branch's value is a value of the block.
+	var checkErr error
+	ast.Inspect(promoted, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok || checkErr != nil {
+			return false
+		}
+		if ret, ok := n.(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+			checkErr = t.checkBindValue(ifCtx, ret.Results[0], res)
+		}
+		return true
+	})
+	if checkErr != nil {
+		return nil, checkErr
+	}
+	return promoted, nil
 }
 
 // transformTrailingBindValue transforms the block's trailing value expression
@@ -574,17 +628,35 @@ func (t *galaASTTransformer) transformTrailingBindValue(stmtCtx grammar.IStateme
 		return nil, err
 	}
 	expr = t.unwrapImmutable(expr)
-	if transpiler.IsUnusable(res.typ) {
-		typ := t.followAliasChain(t.getExprTypeName(expr))
-		if !t.isSettledType(typ) {
-			return nil, t.semanticErrorAt(sc, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
-		}
-		if base := t.monadBaseName(typ); base != res.monad {
-			return nil, t.semanticErrorAt(sc, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, got "+typ.String())
-		}
-		res.typ = typ
+	if err := t.checkBindValue(sc, expr, res); err != nil {
+		return nil, err
 	}
 	return expr, nil
+}
+
+// checkBindValue checks value, a value of a `bind` block written at at,
+// against the block's monad: it must be a value of that monad. When the
+// block's result type is not known yet, value's type becomes it.
+func (t *galaASTTransformer) checkBindValue(at antlr.ParserRuleContext, value ast.Expr, res *bindResult) error {
+	if t.isNoReturnCallExpr(value) {
+		return nil
+	}
+	typ := t.followAliasChain(t.getExprTypeName(value))
+	if typ.IsVoid() || isVoidIIFE(value) {
+		return t.semanticErrorAt(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, but `"+at.GetText()+"` produces no value")
+	}
+	if transpiler.IsUnusable(res.typ) {
+		if !t.isSettledType(typ) {
+			return t.semanticErrorAt(at, "cannot infer the result type of this `bind` block: annotate the enclosing lambda's result type (e.g. `(x int) Try[int] => { ... }`)")
+		}
+		res.typ = typ
+	} else if !t.isSettledType(typ) || typ.IsAny() {
+		return nil
+	}
+	if base := t.monadBaseName(typ); base != res.monad {
+		return t.semanticErrorAt(at, "a `bind` block over "+res.monad+" must end with a "+res.monad+" value, got "+typ.String())
+	}
+	return nil
 }
 
 // monadBaseName returns the lookup base name of a monad type, normalized the
@@ -603,4 +675,20 @@ func (t *galaASTTransformer) monadElemType(monadType transpiler.Type) transpiler
 		return transpiler.NilType{}
 	}
 	return transpiler.ParseType(args[len(args)-1])
+}
+
+// checkNoEscapeAfterBind rejects a `return`, `break` or `continue` after the
+// leading `bind` of stmts, the rest of a block in where whose value is not the
+// enclosing function's: those statements run inside the bind's FlatMap
+// callback, which such a statement could only leave, not the function or
+// loop it names.
+func (t *galaASTTransformer) checkNoEscapeAfterBind(stmts []grammar.IStatementContext, where string) error {
+	for _, stmt := range stmts[1:] {
+		if escapesConstruct(t, stmt) {
+			return t.semanticErrorAt(stmt.(*grammar.StatementContext),
+				"a `return`, `break` or `continue` after a `bind` in "+where+" cannot leave the enclosing function or loop: "+
+					"the statements after the `bind` run inside its FlatMap callback. Move it before the `bind`")
+		}
+	}
+	return nil
 }

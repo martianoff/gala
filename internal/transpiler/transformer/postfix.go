@@ -545,9 +545,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	switch {
 	case hoist != "":
 	case !stmtPosition:
-		defer t.enterIIFEReturnSlot(s.typ)()
-	case !transpiler.IsUnusable(s.typ):
-		defer t.enterReturnSlot(returnSlot{typ: s.typ})()
+		defer t.enterIIFEReturnSlot(s.closedType())()
+	case !transpiler.IsUnusable(s.closedType()):
+		defer t.enterReturnSlot(returnSlot{typ: s.closedType()})()
 	}
 
 	// Validate sealed-variant pattern arity before transforming arms. An

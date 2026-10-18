@@ -708,6 +708,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "trailing_if_values",
+    src = "trailing_if_values.gala",
+    expected = "trailing_if_values.out",
+)
+
+gala_exec_test(
     name = "type_alias_conversion",
     src = "type_alias_conversion.gala",
     expected = "type_alias_conversion.out",

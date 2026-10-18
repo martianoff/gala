@@ -108,6 +108,7 @@ go_test(
         "binding_named_like_type_test.go",
         "blank_declaration_test.go",
         "block_function_tail_test.go",
+        "branch_tail_values_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
         "codec_cross_pkg_test.go",

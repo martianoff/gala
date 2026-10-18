@@ -258,14 +258,17 @@ func (t *galaASTTransformer) buildTailBranch(
 	// Block branch: reuse the shared branch transform and append a terminal
 	// return when it does not already terminate. Tail self-calls hidden inside
 	// block branches are not detected in this slice.
-	stmts, expr, terminates, err := t.transformIfExprBranch(branchCtx, t.tailResultSlot(tc))
+	b, err := t.transformIfExprBranch(branchCtx, t.tailResultSlot(tc))
 	if err != nil {
 		return nil, false, err
 	}
-	if !terminates {
-		stmts = append(stmts, &ast.ReturnStmt{Results: []ast.Expr{t.wrapWithAssertion(expr, tc.retType)}})
+	if b.noValue && !t.leaves(b.stmts) {
+		return nil, false, t.noValueBranchError(branchCtx)
 	}
-	return stmts, false, nil
+	if b.needsValueReturn() {
+		return append(b.stmts, &ast.ReturnStmt{Results: []ast.Expr{t.wrapWithAssertion(b.expr, tc.retType)}}), false, nil
+	}
+	return b.stmts, false, nil
 }
 
 // buildTailCallStep detects whether exprCtx is a direct call to tc.funcName with

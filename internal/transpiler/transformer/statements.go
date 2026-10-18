@@ -564,24 +564,51 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`also` must follow a `bind`")
 		}
 		if bindDeclFromStatement(stmtCtx) != nil {
-			// The block's monad is the result type of the enclosing function
-			// or lambda. When that is not known, a block whose value is
-			// consumed takes it from its own trailing value, and fills the
-			// enclosing lambda's slot with it.
-			res := t.newBindResult(t.returnSlot.typ)
-			if transpiler.IsUnusable(res.typ) && !lastStmtIsValue {
-				return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`bind` requires the enclosing function to declare a monad return type")
+			if !lastStmtIsValue {
+				// The chain is the block's value, and nothing reads the
+				// value of this block.
+				if transpiler.IsUnusable(t.returnSlot.typ) {
+					return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`bind` requires the enclosing function to declare a monad return type")
+				}
+				return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext),
+					"`bind` is not allowed in a block whose value is not used, such as the body of an `if` statement or a loop: "+
+						"its chain would be computed and thrown away. Use it in a function or lambda body, an if-expression branch or a match arm")
 			}
+			// The block's monad is the type of the value the block fills: the
+			// result type of the enclosing function or lambda, or of the match
+			// or if-expression whose arm it is. When that is not known, a
+			// block whose value is consumed takes it from its own trailing
+			// value, and fills the enclosing lambda's slot with it.
+			typ := t.returnSlot.typ
+			if tail != tailReturn {
+				if closed := lastValueExpected.closedType(); !transpiler.IsUnusable(closed) {
+					typ = closed
+				} else if lastValueExpected.hoist != "" {
+					// An arm lowered as statements has no slot of its own: the
+					// function's result type is not the arm's.
+					typ = nil
+				}
+			}
+			if lastValueExpected.hoist != "" {
+				if err := t.checkNoEscapeAfterBind(allStmts[i:], "a match arm"); err != nil {
+					return nil, err
+				}
+				// The chain's continuations are functions of their own.
+				defer t.enterIIFEReturnSlot(typ)()
+			}
+			res := t.newBindResult(typ)
 			expr, err := t.desugarBindChain(allStmts[i:], res)
 			if err != nil {
 				return nil, err
 			}
-			if lastStmtIsValue {
-				t.tryFillReturnSlot(res.typ)
-				block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
-			} else {
+			if lastValueExpected.hoist != "" {
+				// The chain is the arm's value, which the arm stores: a
+				// `return` there would leave the function.
 				block.List = append(block.List, &ast.ExprStmt{X: expr})
+				return block, nil
 			}
+			t.tryFillReturnSlot(res.typ)
+			block.List = append(block.List, &ast.ReturnStmt{Results: []ast.Expr{expr}})
 			return block, nil
 		}
 		// A bare `subject match { ... }` whose value is discarded by the
@@ -635,7 +662,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 			if tail == tailReturn {
 				branchTail = tailReturn
 			}
-			stmt, err = t.transformIfStatementWithTail(ifCtx, branchTail)
+			stmt, err = t.transformIfStatementWithTail(ifCtx, branchTail, lastValueExpected)
 			if ifStmt, ok := stmt.(*ast.IfStmt); ok && err == nil && tail == tailValue {
 				// The consumer promotes the chain only when every branch
 				// ends in a value; otherwise its branch tails are discarded.
@@ -1430,13 +1457,14 @@ func receiverRebindHint(name string) string {
 }
 
 func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {
-	return t.transformIfStatementWithTail(ctx, tailDiscarded)
+	return t.transformIfStatementWithTail(ctx, tailDiscarded, slot{})
 }
 
 // transformIfStatementWithTail lowers an if-statement whose branch blocks end
 // as tail says: tailDiscarded for an if run for its effect, or the branch tail
-// of a value block's trailing if/else.
-func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStatementContext, tail blockTail) (ast.Stmt, error) {
+// of a value block's trailing if/else. s is the slot that value block fills:
+// each branch's value is lowered against it, as the block's own would be.
+func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStatementContext, tail blockTail, s slot) (ast.Stmt, error) {
 	if err := checkIfInitializer(ctx); err != nil {
 		return nil, err
 	}
@@ -1445,7 +1473,7 @@ func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStateme
 	if err != nil {
 		return nil, err
 	}
-	body, err := t.transformBlockWithTail(ctx.Block(0).(*grammar.BlockContext), tail, slot{})
+	body, err := t.transformBlockWithTail(ctx.Block(0).(*grammar.BlockContext), tail, s)
 	if err != nil {
 		return nil, err
 	}
@@ -1456,13 +1484,13 @@ func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStateme
 
 	if ctx.ELSE() != nil {
 		if ctx.Block(1) != nil {
-			elseBody, err := t.transformBlockWithTail(ctx.Block(1).(*grammar.BlockContext), tail, slot{})
+			elseBody, err := t.transformBlockWithTail(ctx.Block(1).(*grammar.BlockContext), tail, s)
 			if err != nil {
 				return nil, err
 			}
 			stmt.Else = elseBody
 		} else if ctx.IfStatement() != nil {
-			elseIf, err := t.transformIfStatementWithTail(ctx.IfStatement().(*grammar.IfStatementContext), tail)
+			elseIf, err := t.transformIfStatementWithTail(ctx.IfStatement().(*grammar.IfStatementContext), tail, s)
 			if err != nil {
 				return nil, err
 			}
