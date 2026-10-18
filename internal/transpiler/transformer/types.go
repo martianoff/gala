@@ -617,6 +617,13 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 			return transpiler.NilType{}
 		}
 		named := transpiler.NamedType{Package: x.Name, Name: e.Sel.Name}
+		// The qualifier is whatever name this file binds the import to; a
+		// type names its package by the package's own name, which is how
+		// struct and type metadata are keyed. Under `import l "pkg/lib"`
+		// the literal `l.Point{...}` is a `lib.Point`.
+		if entry, ok := t.importManager.GetByAlias(x.Name); ok && !entry.IsDot && entry.PkgName != "" {
+			named.Package = entry.PkgName
+		}
 		// Preserve the import path so this AST->type round trip stays lossless.
 		// Without it a foreign package whose name collides with the current GALA
 		// package (io/fs — package "fs" — inside GALA's own `fs`) becomes

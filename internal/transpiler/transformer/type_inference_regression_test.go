@@ -327,7 +327,7 @@ func test() int {
 			// When a GALA-analyzed dot-imported package is not referenced, it should
 			// be removed. Tested with the std package using a simple case that
 			// does not reference any std types.
-			name: "unused dot import of std is kept (conservative)",
+			name: "unused dot import of std is removed",
 			input: `package main
 
 import . "martianoff/gala/std"
@@ -335,8 +335,8 @@ import . "martianoff/gala/std"
 func test() int {
     return 42
 }`,
-			// std dot import is always kept as a conservative choice
-			contains: []string{
+			// std gets no special case: Go rejects an unused import.
+			notContains: []string{
 				`"martianoff/gala/std"`,
 			},
 		},

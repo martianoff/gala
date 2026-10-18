@@ -11,6 +11,8 @@ go_test(
         "harness_test.go",
         "no_crash_test.go",
         "source_encoding_test.go",
+        "programs_gen_test.go",
+        "programs_test.go",
         "string_literals_test.go",
         "value_blocks_test.go",
     ],

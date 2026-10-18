@@ -2,15 +2,9 @@ package fuzz_test
 
 import (
 	"fmt"
-	"go/importer"
-	"go/token"
 	"math/rand"
 	"strings"
-	"sync"
 	"testing"
-
-	"martianoff/gala/internal/transpiler/analyzer"
-	"martianoff/gala/internal/transpiler/gooracle"
 )
 
 // FuzzValueBlocks generates whole programs from the fuzz input and checks
@@ -52,9 +46,6 @@ func checkTypeChecks(t *testing.T, src string) {
 		return
 	}
 	imp := oracleImporter(t)
-	if imp == nil {
-		return
-	}
 	tc := imp.TypeCheck("generated.go", res.Go)
 	if tc.Skipped != "" {
 		t.Fatalf("generated Go could not be type-checked: %s\ninput:\n%s", tc.Skipped, src)
@@ -63,34 +54,6 @@ func checkTypeChecks(t *testing.T, src string) {
 		t.Fatalf("the transpiler accepted the program, but the Go it generated does not type-check:\n  %s\ninput:\n%s\ngenerated:\n%s",
 			strings.Join(tc.Errors, "\n  "), src, res.Go)
 	}
-}
-
-var (
-	importerOnce sync.Once
-	oracleImp    *gooracle.Importer
-)
-
-// oracleImporter returns the importer that type-checks generated Go: the Go
-// standard library from the SDK, GALA packages transpiled from source. It is
-// nil when no Go SDK is available.
-func oracleImporter(tb testing.TB) *gooracle.Importer {
-	tb.Helper()
-	importerOnce.Do(func() {
-		if !analyzer.GoImporterAvailable() {
-			return
-		}
-		tr := newTranspiler(tb)
-		oracleImp = gooracle.NewImporter(gooracle.ImporterConfig{
-			Go:         importer.ForCompiler(token.NewFileSet(), "source", nil),
-			ModulePath: "martianoff/gala",
-			Root:       repoRoot(tb),
-			Transpile:  tr.Transpile,
-		})
-	})
-	if oracleImp == nil {
-		tb.Skip("no Go SDK: generated Go cannot be type-checked")
-	}
-	return oracleImp
 }
 
 // valueGen turns fuzz bytes into a GALA program. Each choice consumes one

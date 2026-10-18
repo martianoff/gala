@@ -1,0 +1,54 @@
+package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Rect(W int, H int)
+    case Empty()
+}
+
+sealed type Box[T any] {
+    case Full(V T)
+    case Nothing()
+}
+
+struct Rules(Pick func(Shape) Option[int])
+
+// A partial function takes its parameter and result types from the function
+// type of the slot it fills: a typed val or var, a return value, a struct
+// field or a parameter.
+func describe() func(Shape) Option[string] = {
+    case Circle(r) => s"circle ${r}"
+    case Rect(H = 3) => "rect of height 3"
+}
+
+func applyTo(s Shape, f func(Shape) Option[int]) int = f(s).GetOrElse(-1)
+
+func main() {
+    val pf func(int) Option[int] = { case 1 => 10 case 2 => 20 }
+    Println(pf(1).GetOrElse(-1), pf(2).GetOrElse(-1), pf(3).GetOrElse(-1))
+
+    var ps func(Shape) Option[int] = { case Circle(r) => r case Empty() => 0 }
+    Println(ps(Circle(3)).GetOrElse(-1), ps(Empty()).GetOrElse(-1), ps(Rect(1, 2)).GetOrElse(-1))
+
+    val named func(Shape) Option[int] = { case Rect(H = 3) => 3 case Rect(W = w) => w }
+    Println(named(Rect(7, 3)).GetOrElse(-1), named(Rect(7, 4)).GetOrElse(-1), named(Circle(1)).GetOrElse(-1))
+
+    val boxed func(Box[Option[int]]) Option[int] = { case Full(Some(2)) => 1 case Nothing() => 2 }
+    Println(boxed(Full(Some(2))).GetOrElse(-1), boxed(Nothing[Option[int]]()).GetOrElse(-1), boxed(Full(Some(5))).GetOrElse(-1))
+
+    val pair func(Tuple[Shape, int]) Option[int] = { case (Circle(1), 2) => 1 case (Empty(), n) => n }
+    Println(pair((Circle(1), 2)).GetOrElse(-1), pair((Empty(), 9)).GetOrElse(-1), pair((Circle(2), 2)).GetOrElse(-1))
+
+    val wide func(int) Option[int64] = { case 1 => 10 }
+    Println(wide(1).GetOrElse(-1), wide(2).GetOrElse(-1))
+
+    val adder func(int) Option[func(int) int] = { case 1 => (x) => x + 1 }
+    Println(adder(1).Get()(41))
+
+    Println(describe()(Circle(4)).GetOrElse("none"), describe()(Rect(1, 3)).GetOrElse("none"), describe()(Empty()).GetOrElse("none"))
+
+    val rules = Rules(Pick = { case Rect(w, _) => w })
+    Println(rules.Pick(Rect(4, 5)).GetOrElse(-1), rules.Pick(Empty()).GetOrElse(-1))
+
+    Println(applyTo(Circle(2), { case Circle(r) => r * 10 }), applyTo(Empty(), { case Circle(r) => r }))
+}

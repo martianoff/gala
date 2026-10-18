@@ -1267,6 +1267,7 @@ func typedSlot(typ transpiler.Type) slot { return slot{typ: typ} }
 type exprForm struct {
 	grouped grammar.IExpressionContext // e for `(e)`
 	lambda  *grammar.LambdaExpressionContext
+	partial *grammar.PartialFunctionLiteralContext
 	ifExpr  *grammar.IfExpressionContext
 	match   *grammar.PostfixExprContext
 }
@@ -1281,25 +1282,44 @@ func (t *galaASTTransformer) classifyExpr(exprCtx grammar.IExpressionContext) ex
 	if l := t.findLambdaInExpression(exprCtx); l != nil {
 		return exprForm{lambda: l}
 	}
+	if pf := t.barePartialFunction(exprCtx); pf != nil {
+		return exprForm{partial: pf}
+	}
 	if i := t.findIfExpressionInExpression(exprCtx); i != nil {
 		return exprForm{ifExpr: i}
 	}
 	return exprForm{match: t.bareMatchPostfix(exprCtx)}
 }
 
-// needsExpectedType reports whether exprCtx is a lambda, an if-expression or a
-// match, possibly parenthesized.
+// needsExpectedType reports whether exprCtx is a lambda, a partial function, an
+// if-expression or a match, possibly parenthesized.
 func (t *galaASTTransformer) needsExpectedType(exprCtx grammar.IExpressionContext) bool {
 	f := t.classifyExpr(exprCtx)
 	if f.grouped != nil {
 		return t.needsExpectedType(f.grouped)
 	}
-	return f.lambda != nil || f.ifExpr != nil || f.match != nil
+	return f.lambda != nil || f.partial != nil || f.ifExpr != nil || f.match != nil
+}
+
+// barePartialFunction returns the partial-function literal exprCtx consists
+// of, with no operator or postfix suffix applied to it, or nil.
+func (t *galaASTTransformer) barePartialFunction(exprCtx grammar.IExpressionContext) *grammar.PartialFunctionLiteralContext {
+	postfix := t.barePostfix(exprCtx)
+	if postfix == nil || postfix.GetChildCount() != 1 {
+		return nil
+	}
+	prim, ok := postfix.PrimaryExpr().(*grammar.PrimaryExprContext)
+	if !ok {
+		return nil
+	}
+	pf, _ := prim.PartialFunctionLiteral().(*grammar.PartialFunctionLiteralContext)
+	return pf
 }
 
 // lowerAgainst lowers exprCtx in check mode against the slot it fills. A lambda
 // takes its parameter and result types from a function type (strict is
-// transformLambdaWithExpectedType's untyped-parameter policy); an if-expression
+// transformLambdaWithExpectedType's untyped-parameter policy), and so does a
+// partial function (see transformPartialFunctionLiteral); an if-expression
 // or match lowers each branch against the same slot (branch lambdas strictly);
 // a plain expression sees the slot type only if it consumes it
 // (consumesSlotType). A lambda body is never lowered against the outer slot:
@@ -1325,6 +1345,8 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 			return t.spreadLambdaGoResults(lit, s.typ, f.lambda)
 		}
 		return t.transformExpression(exprCtx)
+	case f.partial != nil:
+		return t.transformPartialFunctionLiteral(f.partial, t.partialFunctionSlot(s))
 	case f.ifExpr != nil:
 		return t.transformIfExpressionAgainst(f.ifExpr, s)
 	case f.match != nil:

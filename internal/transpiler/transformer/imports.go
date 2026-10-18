@@ -485,7 +485,6 @@ func (m *ImportManager) GetTransitiveImports() map[string]string {
 // a SelectorExpr (qualified reference), a used dot import, or a blank import.
 // Dot imports are only kept if their package was marked as used via MarkDotImportUsed
 // or if the AST contains identifiers matching the package's exported symbols.
-// The std dot import is always kept.
 //
 // It rewrites the generated file only. The manager keeps every entry it was
 // given, including the ones just dropped from the output, so pruning leaves
@@ -520,8 +519,9 @@ func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST)
 				continue
 			}
 			if importSpec.Name != nil && importSpec.Name.Name == "." {
-				// Only keep dot imports that are actually used.
-				// Always keep std (implicitly used everywhere).
+				// Only keep dot imports that are actually used. Every package,
+				// std included, is judged the same way: Go rejects an unused
+				// dot import like any other.
 				path := strings.Trim(importSpec.Path.Value, "\"")
 				pkgName := ""
 				if entry, ok := m.GetByPath(path); ok && entry != nil {
@@ -531,7 +531,7 @@ func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST)
 					parts := strings.Split(path, "/")
 					pkgName = parts[len(parts)-1]
 				}
-				if pkgName == "std" || m.usedDotImports[pkgName] || m.dotImportUsedInAST(file, pkgName, richAST) {
+				if m.usedDotImports[pkgName] || m.dotImportUsedInAST(file, path, pkgName, richAST) {
 					kept = append(kept, spec)
 				}
 				continue
@@ -577,7 +577,12 @@ func (m *ImportManager) PruneUnused(file *ast.File, richAST *transpiler.RichAST)
 // dotImportUsedInAST checks if the generated AST contains unqualified identifiers
 // matching exported symbols from the given dot-imported package. This catches
 // function calls and other references not tracked by MarkDotImportUsed.
-func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richAST *transpiler.RichAST) bool {
+//
+// Only identifiers in a referring position count: the selected name of a
+// qualified reference (`fmt.Println`), a struct field or a declared name is not
+// a reference to the dot-imported package, even when it is spelled like one of
+// its exports.
+func (m *ImportManager) dotImportUsedInAST(file *ast.File, path, pkgName string, richAST *transpiler.RichAST) bool {
 	if richAST == nil {
 		return true // be conservative if no metadata available
 	}
@@ -603,35 +608,103 @@ func (m *ImportManager) dotImportUsedInAST(file *ast.File, pkgName string, richA
 			exports[sym] = true
 		}
 	}
-	for _, entry := range m.dotImports {
-		if entry.PkgName == pkgName {
-			for name := range richAST.ImportedVals[entry.Path] {
-				exports[name] = true
-			}
+	for name := range richAST.ImportedVals[path] {
+		exports[name] = true
+	}
+	// A Go package (the SDK's, or a module dependency's) is known through its
+	// type info, keyed by import path and, when no GALA package of that name
+	// exported anything, by package name: a GALA `strings` is not Go's.
+	if gi := richAST.GoTypeInfo; gi != nil {
+		prefixes := []string{path + "."}
+		if len(exports) == 0 {
+			prefixes = append(prefixes, pkgName+".")
+		}
+		for _, prefix := range prefixes {
+			addGoTypeInfoNames(exports, prefix, gi.Functions)
+			addGoTypeInfoNames(exports, prefix, gi.Types)
+			addGoTypeInfoNames(exports, prefix, gi.Variables)
+			addGoTypeInfoNames(exports, prefix, gi.Constants)
+			addGoTypeInfoNames(exports, prefix, gi.TypeAliases)
 		}
 	}
 	if len(exports) == 0 {
 		return true // conservatively keep — can't determine if symbols are used
 	}
-	// Scan AST for matching unqualified identifiers. Walk through generic
-	// instantiation wrappers (IndexExpr for `Foo[A]`, IndexListExpr for
-	// `Foo[A, B]`) so that files referencing only generic types from the
-	// dot-imported package still anchor the import.
 	found := false
-	ast.Inspect(file, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-		expr, ok := n.(ast.Expr)
-		if !ok {
-			return true
-		}
-		if ident := unwrapToBaseIdent(expr); ident != nil && exports[ident.Name] {
-			found = true
-		}
+	inspectReferences(file, func(ident *ast.Ident) bool {
+		// Only an exported name can refer to another package's declaration;
+		// an unexported one spelled the same is a local.
+		found = exports[ident.Name] && ast.IsExported(ident.Name)
 		return !found
 	})
 	return found
+}
+
+// addGoTypeInfoNames adds to names the bare name of every key of entries that
+// starts with prefix (`strings.ToUpper` -> ToUpper for prefix `strings.`).
+func addGoTypeInfoNames[V any](names map[string]bool, prefix string, entries map[string]V) {
+	for key := range entries {
+		if name, ok := strings.CutPrefix(key, prefix); ok && name != "" && !strings.Contains(name, ".") {
+			names[name] = true
+		}
+	}
+}
+
+// inspectReferences calls visit for every identifier of file that may refer
+// to a package-level name of a dot import, until visit returns false. It
+// skips the names that cannot: the package clause, import names, the selected
+// name of a selector (`fmt.Println`, `x.Field`), struct field and method
+// names, and the names a declaration introduces.
+func inspectReferences(file *ast.File, visit func(*ast.Ident) bool) {
+	done := false
+	var walk func(n ast.Node) bool
+	walk = func(n ast.Node) bool {
+		if done || n == nil {
+			return false
+		}
+		switch n := n.(type) {
+		case *ast.Ident:
+			done = !visit(n)
+			return false
+		case *ast.ImportSpec:
+			return false
+		case *ast.SelectorExpr:
+			ast.Inspect(n.X, walk)
+			return false
+		case *ast.Field:
+			// Struct fields, interface methods, parameters and results: only
+			// the type refers to anything.
+			ast.Inspect(n.Type, walk)
+			return false
+		case *ast.FuncDecl:
+			if n.Recv != nil {
+				ast.Inspect(n.Recv, walk)
+			}
+			ast.Inspect(n.Type, walk)
+			if n.Body != nil {
+				ast.Inspect(n.Body, walk)
+			}
+			return false
+		case *ast.TypeSpec:
+			if n.TypeParams != nil {
+				ast.Inspect(n.TypeParams, walk)
+			}
+			ast.Inspect(n.Type, walk)
+			return false
+		case *ast.ValueSpec:
+			if n.Type != nil {
+				ast.Inspect(n.Type, walk)
+			}
+			for _, v := range n.Values {
+				ast.Inspect(v, walk)
+			}
+			return false
+		}
+		return true
+	}
+	for _, decl := range file.Decls {
+		ast.Inspect(decl, walk)
+	}
 }
 
 // ValidateDotImports detects when multiple dot-imported packages export symbols with the

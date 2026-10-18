@@ -32,6 +32,11 @@ type ImporterConfig struct {
 	// resolved this way, the standard library included.
 	ModulePath string
 	Root       string
+	// ExtraRoots are looked in first for a GALA package: an import of path
+	// is the package in <root>/path under the first extra root that has it.
+	// Packages generated outside the repository, such as a fuzz input's,
+	// live there.
+	ExtraRoots []string
 	// Transpile turns the package's .gala files into Go.
 	Transpile TranspileFunc
 }
@@ -51,6 +56,9 @@ type Importer struct {
 type importResult struct {
 	pkg *types.Package
 	err error
+	// sources are the Go files of a GALA package, by file name: its
+	// generated Go and the hand-written Go beside it.
+	sources map[string]string
 }
 
 var _ types.Importer = (*Importer)(nil)
@@ -96,32 +104,38 @@ func (i *Importer) Import(path string) (*types.Package, error) {
 	}
 	i.mu.Unlock()
 
-	pkg, err := i.load(path)
+	pkg, sources, err := i.load(path)
 
 	i.mu.Lock()
-	i.cache[path] = importResult{pkg, err}
+	i.cache[path] = importResult{pkg, err, sources}
 	i.mu.Unlock()
 	return pkg, err
 }
 
-func (i *Importer) load(path string) (*types.Package, error) {
+func (i *Importer) load(path string) (*types.Package, map[string]string, error) {
 	if path == "unsafe" {
-		return types.Unsafe, nil
+		return types.Unsafe, nil, nil
+	}
+	for _, root := range i.cfg.ExtraRoots {
+		dir := filepath.Join(root, filepath.FromSlash(path))
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return i.loadGala(path, dir)
+		}
 	}
 	if i.cfg.ModulePath != "" && strings.HasPrefix(path, i.cfg.ModulePath+"/") {
 		return i.loadGala(path, filepath.Join(i.cfg.Root, filepath.FromSlash(strings.TrimPrefix(path, i.cfg.ModulePath+"/"))))
 	}
 	if i.cfg.Go == nil {
-		return nil, &UnresolvedImportError{path, "no Go SDK available to the oracle"}
+		return nil, nil, &UnresolvedImportError{path, "no Go SDK available to the oracle"}
 	}
 	if !isStdlibPath(path) {
-		return nil, &UnresolvedImportError{path, "not in the Go standard library"}
+		return nil, nil, &UnresolvedImportError{path, "not in the Go standard library"}
 	}
 	pkg, err := i.cfg.Go.Import(path)
 	if err != nil {
-		return nil, &UnresolvedImportError{path, err.Error()}
+		return nil, nil, &UnresolvedImportError{path, err.Error()}
 	}
-	return pkg, nil
+	return pkg, nil, nil
 }
 
 // isStdlibPath reports whether path looks like a standard-library import: no
@@ -131,13 +145,14 @@ func isStdlibPath(path string) bool {
 	return !strings.Contains(first, ".")
 }
 
-func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
+func (i *Importer) loadGala(path, dir string) (*types.Package, map[string]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, &UnresolvedImportError{path, "no package directory at " + dir}
+		return nil, nil, &UnresolvedImportError{path, "no package directory at " + dir}
 	}
 
 	var files []*ast.File
+	sources := map[string]string{}
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, "_test.gala") {
@@ -148,15 +163,15 @@ func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
 		switch {
 		case strings.HasSuffix(name, ".gala"):
 			if i.cfg.Transpile == nil {
-				return nil, &UnresolvedImportError{path, "no transpiler configured"}
+				return nil, nil, &UnresolvedImportError{path, "no transpiler configured"}
 			}
 			raw, err := os.ReadFile(full)
 			if err != nil {
-				return nil, &PackageError{path, err}
+				return nil, nil, &PackageError{path, err}
 			}
 			src, err = i.cfg.Transpile(string(raw), full)
 			if err != nil {
-				return nil, &PackageError{path, fmt.Errorf("transpiling %s: %w", name, err)}
+				return nil, nil, &PackageError{path, fmt.Errorf("transpiling %s: %w", name, err)}
 			}
 			full = genheader.OutputName(full)
 		case strings.HasSuffix(name, ".go"):
@@ -165,7 +180,7 @@ func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
 			}
 			raw, err := os.ReadFile(full)
 			if err != nil {
-				return nil, &PackageError{path, err}
+				return nil, nil, &PackageError{path, err}
 			}
 			// A file left behind by an earlier transpile of this directory
 			// duplicates the .gala it came from (see genheader).
@@ -178,12 +193,13 @@ func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
 		}
 		f, err := parser.ParseFile(i.fset, full, src, parser.SkipObjectResolution)
 		if err != nil {
-			return nil, &PackageError{path, err}
+			return nil, nil, &PackageError{path, err}
 		}
 		files = append(files, f)
+		sources[filepath.Base(full)] = src
 	}
 	if len(files) == 0 {
-		return nil, &UnresolvedImportError{path, "no Go or GALA sources in " + dir}
+		return nil, nil, &UnresolvedImportError{path, "no Go or GALA sources in " + dir}
 	}
 
 	var errs []string
@@ -201,9 +217,9 @@ func (i *Importer) loadGala(path, dir string) (*types.Package, error) {
 		if len(errs) > 5 {
 			errs = append(errs[:5], fmt.Sprintf("... and %d more", len(errs)-5))
 		}
-		return nil, &PackageError{path, errors.New(strings.Join(errs, "\n  "))}
+		return nil, nil, &PackageError{path, errors.New(strings.Join(errs, "\n  "))}
 	}
-	return pkg, nil
+	return pkg, sources, nil
 }
 
 // TypeResult is the outcome of type-checking one file.
@@ -263,4 +279,15 @@ func (i *Importer) TypeCheck(filename, src string) TypeResult {
 	}
 	conf.Check(file.Name.Name, fset, []*ast.File{file}, nil)
 	return res
+}
+
+// Sources returns the Go files of the GALA package at path, by file name —
+// its generated Go and the hand-written Go beside it — once Import or
+// TypeCheck has loaded it. ok is false for a package not loaded, or not a
+// GALA package.
+func (i *Importer) Sources(path string) (sources map[string]string, ok bool) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	r, loaded := i.cache[path]
+	return r.sources, loaded && r.sources != nil
 }

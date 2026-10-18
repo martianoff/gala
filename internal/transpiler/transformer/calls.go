@@ -4465,7 +4465,7 @@ func (t *galaASTTransformer) transformArgument(exprCtx grammar.IExpressionContex
 	expectedType := s.typ
 	// Try to find a partial function literal in this expression
 	if pfCtx := t.findPartialFunctionInExpression(exprCtx); pfCtx != nil {
-		return t.transformPartialFunctionLiteral(pfCtx, funcSlot)
+		return t.transformPartialFunctionLiteral(pfCtx, slot{typ: funcSlot, open: s.open})
 	}
 
 	// Try to find a lambda in this expression

@@ -1,0 +1,29 @@
+package main
+
+// A sequence pattern without a rest matches exactly as many elements as it
+// lists; with a rest (`_...` or `name...`) it matches at least as many.
+
+import . "martianoff/gala/collection_immutable"
+
+func describe(a Array[int]) string = a match {
+    case Array() => "empty"
+    case Array(x) => s"one: $x"
+    case Array(x, y) => s"two: $x $y"
+    case Array(x, y, rest...) => s"two and ${rest.Size()} more: $x $y"
+    case _ => "unreachable"
+}
+
+func firstOfAtLeastOne(l List[string]) string = l match {
+    case List(h, _...) => h
+    case _ => "none"
+}
+
+func main() {
+    Println(describe(ArrayOf[int]()))
+    Println(describe(ArrayOf(1)))
+    Println(describe(ArrayOf(1, 2)))
+    Println(describe(ArrayOf(1, 2, 3)))
+    Println(describe(ArrayOf(1, 2, 3, 4)))
+    Println(firstOfAtLeastOne(ListOf("a", "b")))
+    Println(firstOfAtLeastOne(ListOf[string]()))
+}

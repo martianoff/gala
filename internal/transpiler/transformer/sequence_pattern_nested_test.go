@@ -49,11 +49,12 @@ func transpileSequencePattern(t *testing.T, body string) (string, error) {
 }
 
 // guardBlockOf returns the body of the first `if <sizeCheck> { ... }` block
-// that follows the size check `<name> := obj.Size() >= N`, so a test can
-// assert what runs inside the guard and what runs after it.
+// that follows the size check `<name> := obj.Size() == N` (`>= N` for a
+// pattern with a rest), so a test can assert what runs inside the guard and
+// what runs after it.
 func guardBlockOf(t *testing.T, code string) (guard string, after string) {
 	t.Helper()
-	m := regexp.MustCompile(`(_tmp_\d+) := obj\.Size\(\) >= \d+`).FindStringSubmatch(code)
+	m := regexp.MustCompile(`(_tmp_\d+) := obj\.Size\(\) (?:==|>=) \d+`).FindStringSubmatch(code)
 	require.NotNil(t, m, "size check not found in:\n%s", code)
 	start := strings.Index(code, "if "+m[1]+" {")
 	require.NotEqual(t, -1, start, "size guard not found in:\n%s", code)
@@ -318,4 +319,23 @@ func TestGenericStructPatternOnAnySubjectNeedsTypeArgs(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot match generic struct 'Box' against a value of an interface or type-parameter type")
 	assert.Contains(t, err.Error(), "case Box[T](...)")
+}
+
+// A sequence pattern without a rest matches exactly as many elements as it
+// lists, `Array()` the empty sequence; one with a rest matches at least as
+// many.
+func TestSequencePatternLength(t *testing.T) {
+	for _, tc := range []struct{ pattern, body, check string }{
+		{"Array(x, y)", "x + y", "obj.Size() == 2"},
+		{"Array()", "0", "obj.Size() == 0"},
+		{"Array(x, _...)", "x", "obj.Size() >= 1"},
+		{"Array(x, rest...)", "x + rest.Size()", "obj.Size() >= 1"},
+		{"Array(_...)", "0", "obj.Size() >= 0"},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			got, err := transpileSequencePattern(t, "func f(a Array[int]) int = a match {\n    case "+tc.pattern+" => "+tc.body+"\n    case _ => -1\n}")
+			require.NoError(t, err)
+			assert.Contains(t, got, tc.check)
+		})
+	}
 }

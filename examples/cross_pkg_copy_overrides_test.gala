@@ -1,0 +1,34 @@
+package main
+
+import sh "martianoff/gala/examples/cross_pkg_copy_overrides/shapes"
+import "martianoff/gala/examples/cross_pkg_copy_overrides/shapes"
+
+// `.Copy(field = value)` on another package's struct, through an import alias
+// and the package's own name. Through the alias a constructor-call receiver was
+// rejected with "Copy overrides only supported for struct types"; a sealed
+// value, or a struct with a private field, compiled to Go that read fields the
+// importing package cannot name.
+func describe(s shapes.Shape) string = s match {
+    case shapes.Circle(r) => s"circle $r"
+    case shapes.Square(n) => s"square $n"
+}
+
+func main() {
+    val a = sh.Point(2, 3).Copy(Y = 2)
+    val p = shapes.Point(2, 3)
+    Println(a, p.Copy(X = 9), shapes.Point(1, 1).Copy(Y = 4))
+
+    val h = sh.Holder(sh.Point(1, 2), "h")
+    Println(h.P.Copy(X = 7), sh.Origin().Copy(Y = 5), sh.Point(4, 4).Copy(X = 0, Y = 1))
+
+    val pr = sh.Pair(1, "a")
+    Println(pr.Copy(Second = "b"), sh.Pair(true, 2.5).Copy(First = false))
+
+    val c = sh.Circle(1)
+    val bigger = c.Copy(R = 10)
+    Println(describe(c), describe(bigger), describe(shapes.Square(3).Copy(S = 4)))
+
+    val acc = sh.NewAccount("alice", 100)
+    val renamed = acc.Copy(Name = "bob")
+    Println(renamed.Name, renamed.Balance(), acc.Name)
+}

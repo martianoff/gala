@@ -1196,7 +1196,44 @@ func (t *galaASTTransformer) findLambdaInExpression(exprCtx grammar.IExpressionC
 	return lambdaExpr.(*grammar.LambdaExpressionContext)
 }
 
-func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.PartialFunctionLiteralContext, expectedType transpiler.Type) (ast.Expr, error) {
+// partialFunctionSlot is slot s seen by a partial-function literal filling it:
+// its type is the function type s names — directly, through a GALA alias or as
+// a Go named function type — or nil when s names none.
+func (t *galaASTTransformer) partialFunctionSlot(s slot) slot {
+	if ft := t.resolveTranspilerTypeAsFuncType(s.typ); ft != nil {
+		s.typ = *ft
+	} else {
+		s.typ = nil
+	}
+	return s
+}
+
+// partialFunctionResultElem is the element type X of the `Option[X]` result of
+// s's function type, which the arms of a partial function filling s produce,
+// or nil when s does not give one: s is open, X holds an unresolved type or a
+// callee's unbound type parameter, or X spells a placeholder `any` (user-written
+// `any` counts, see declaresAnyResult).
+func (t *galaASTTransformer) partialFunctionResultElem(s slot) transpiler.Type {
+	ft, ok := s.typ.(transpiler.FuncType)
+	if !ok || s.open || len(ft.Results) != 1 {
+		return nil
+	}
+	elem := t.unwrapOptionType(ft.Results[0])
+	if transpiler.ContainsUnusable(elem) || t.mentionsUnboundTypeParam(elem) {
+		return nil
+	}
+	if typeNameMatches(elem, func(name string) bool { return name == "any" }) && !t.declaresAnyResult(s) {
+		return nil
+	}
+	return elem
+}
+
+// transformPartialFunctionLiteral lowers a partial-function literal filling
+// slot s, whose type is a function type or nil (see partialFunctionSlot). The
+// slot's function type gives the literal its parameter type, which the
+// patterns are matched against, and the element type of its Option result
+// (see partialFunctionResultElem), which each arm's value is lowered against.
+func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.PartialFunctionLiteralContext, s slot) (ast.Expr, error) {
 	caseClauses := ctx.AllCaseClause()
 	if len(caseClauses) == 0 {
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "partial function must have at least one case")
@@ -1204,11 +1241,10 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 
 	// Try to infer parameter type from expected function type or from patterns
 	var paramType transpiler.Type
-	if expectedType != nil {
-		if funcType, ok := expectedType.(transpiler.FuncType); ok && len(funcType.Params) > 0 {
-			paramType = funcType.Params[0]
-		}
+	if funcType, ok := s.typ.(transpiler.FuncType); ok && len(funcType.Params) > 0 {
+		paramType = funcType.Params[0]
 	}
+	resultElem := t.partialFunctionResultElem(s)
 
 	// If we couldn't infer from context, try to infer from the patterns themselves
 	if transpiler.IsUnusable(paramType) {
@@ -1237,7 +1273,7 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		patternText := patCtx.GetText()
 
 		// Even wildcard case gets wrapped in Some for partial functions
-		clause, resultType, err := t.transformPartialCaseClause(ccCtx, paramName, paramType)
+		clause, resultType, err := t.transformPartialCaseClause(ccCtx, paramName, paramType, resultElem)
 		if err != nil {
 			return nil, err
 		}
@@ -1250,11 +1286,16 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 		}
 	}
 
-	// Infer common inner result type T from all branches. A match used as a
-	// lambda's value is value-producing, so arms must unify (discardValue=false).
-	innerResultType, err := t.inferCommonResultType(resultTypes, casePatterns, ctx, false)
-	if err != nil {
-		return nil, err
+	// Infer common inner result type T from all branches, unless the slot
+	// gives it. A match used as a lambda's value is value-producing, so arms
+	// must unify (discardValue=false).
+	innerResultType := resultElem
+	if innerResultType == nil {
+		var err error
+		innerResultType, err = t.inferCommonResultType(resultTypes, casePatterns, ctx, false)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// The enclosing declaration's type parameters can be named here
@@ -1333,8 +1374,10 @@ func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar
 const partialArmNoValueMsg = "this case of the partial function produces no value; end it in a value, since a partial function returns `Some(value)` when a case matches"
 
 // transformPartialCaseClause transforms a case clause for partial function
-// The result expression is wrapped in Some(...)
-func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
+// The result expression is wrapped in Some(...). resultElem, when not nil, is
+// the Option element type the slot gives the literal: the arm's value is
+// lowered against it and wrapped in Some of it.
+func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType, resultElem transpiler.Type) (ast.Stmt, transpiler.Type, error) {
 	t.pushScope()
 	defer t.popScope()
 	t.currentScope.caseArm = true
@@ -1364,7 +1407,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	if ctx.GetBodyBlock() != nil {
 		// Partial function arm body: the trailing expression is wrapped in
 		// Some(...) below, so it is value-consumed.
-		b, err := t.transformBlockWithTail(ctx.GetBodyBlock().(*grammar.BlockContext), tailExpr, slot{})
+		b, err := t.transformBlockWithTail(ctx.GetBodyBlock().(*grammar.BlockContext), tailExpr, typedSlot(resultElem))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1380,7 +1423,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			}
 		}
 		// Wrap the last expression/return in Some
-		body = t.wrapBlockReturnsInSome(b.List)
+		body = t.wrapBlockReturnsInSome(b.List, resultElem)
 		// Infer type from the original (unwrapped) last statement
 		if len(b.List) > 0 {
 			if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
@@ -1392,7 +1435,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 				return nil, nil, err
 			}
-			expr, err := t.transformExpression(exprCtx)
+			expr, err := t.lowerAgainst(exprCtx, typedSlot(resultElem), true)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1402,7 +1445,7 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			// Lowered like the tail of a block arm: a diverging call stays a
 			// statement, and any other value is returned wrapped in Some.
 			tail, typ := t.lowerMatchArmTailExpr(expr)
-			body = t.wrapBlockReturnsInSome([]ast.Stmt{tail})
+			body = t.wrapBlockReturnsInSome([]ast.Stmt{tail}, resultElem)
 			if _, ok := tail.(*ast.ReturnStmt); ok {
 				resultType = typ
 			}
@@ -1427,10 +1470,13 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 	return ifStmt, resultType, nil
 }
 
-// wrapInSome generates: Some[T]{}.Apply(expr)
-func (t *galaASTTransformer) wrapInSome(expr ast.Expr) ast.Expr {
-	// Infer the type of expr for the type parameter
-	exprType := t.getExprTypeNameManual(expr)
+// wrapInSome generates: Some[T]{}.Apply(expr), with T elem when not nil and
+// the type of expr otherwise.
+func (t *galaASTTransformer) wrapInSome(expr ast.Expr, elem transpiler.Type) ast.Expr {
+	exprType := elem
+	if exprType == nil {
+		exprType = t.getExprTypeNameManual(expr)
+	}
 
 	var someTypeExpr ast.Expr
 	if exprType != nil && !exprType.IsNil() && !exprType.IsAny() {
@@ -1482,7 +1528,8 @@ func (t *galaASTTransformer) generateNoneReturn(innerType transpiler.Type) ast.S
 }
 
 // wrapBlockReturnsInSome wraps the final return/expression in a block with Some
-func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt {
+// (see wrapInSome for elem).
+func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt, elem transpiler.Type) []ast.Stmt {
 	if len(stmts) == 0 {
 		return stmts
 	}
@@ -1494,7 +1541,7 @@ func (t *galaASTTransformer) wrapBlockReturnsInSome(stmts []ast.Stmt) []ast.Stmt
 	last := result[len(result)-1]
 	if ret, ok := last.(*ast.ReturnStmt); ok && len(ret.Results) > 0 {
 		result[len(result)-1] = &ast.ReturnStmt{
-			Results: []ast.Expr{t.wrapInSome(ret.Results[0])},
+			Results: []ast.Expr{t.wrapInSome(ret.Results[0], elem)},
 		}
 	}
 
