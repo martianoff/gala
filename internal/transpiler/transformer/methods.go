@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -174,6 +176,10 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		typeArgs = t.typeArgTypes(subst)
 	}
 
+	// Another package's struct may keep fields this package cannot name — a
+	// private field, or a sealed type's variant tag.
+	meta := t.getTypeMeta(typeName)
+
 	// 2. Parse overrides
 	overrides := make(map[string]ast.Expr)
 	overrideTypes := make(map[string]transpiler.Type)
@@ -192,6 +198,10 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		}
 		if !found {
 			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(), fmt.Sprintf("struct %s has no field %s", typeName, fieldName))
+		}
+		if meta != nil && !visibleFrom(fieldName, meta, t.packageName) {
+			return nil, galaerr.NewSemanticErrorAt(arg.GetStart().GetLine(), arg.GetStart().GetColumn(),
+				fmt.Sprintf("field %s of %s is unexported, so only package %s can set it", fieldName, typeName, meta.Package))
 		}
 		// A lambda override parses as the argument rule's lambdaExpression
 		// alternative rather than as a pattern, so read the argument the way
@@ -219,6 +229,40 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		overrides[fieldName] = val
 		overrideTypes[fieldName] = expected
 	}
+	immutFlags := t.structImmutFields[typeName]
+	for i, fn := range fields {
+		if val, ok := overrides[fn]; ok && i < len(immutFlags) && immutFlags[i] {
+			overrides[fn] = t.newImmutableFor(val, overrideTypes[fn])
+		}
+	}
+
+	// A kept field this package cannot name cannot be read into a new
+	// literal, so copy the receiver with its own Copy() and assign the
+	// overrides — every one of them visible, as checked above — to the copy.
+	if meta != nil && slices.ContainsFunc(fields, func(f string) bool { return !visibleFrom(f, meta, t.packageName) }) {
+		cp := ast.NewIdent(t.nextTempVar())
+		var body []ast.Stmt
+		for _, fn := range fields {
+			if val, ok := overrides[fn]; ok {
+				body = append(body, &ast.AssignStmt{
+					Lhs: []ast.Expr{&ast.SelectorExpr{X: cp, Sel: ast.NewIdent(fn)}},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{val},
+				})
+			}
+		}
+		body = append(body, &ast.ReturnStmt{Results: []ast.Expr{cp}})
+		return &ast.CallExpr{
+			Fun: &ast.FuncLit{
+				Type: &ast.FuncType{
+					Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{cp}, Type: resultType}}},
+					Results: &ast.FieldList{List: []*ast.Field{{Type: t.copyResultTypeExpr(typeName, typeObj)}}},
+				},
+				Body: &ast.BlockStmt{List: body},
+			},
+			Args: []ast.Expr{&ast.CallExpr{Fun: &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent("Copy")}}},
+		}, nil
+	}
 
 	// 3. Construct new struct instance. Each kept field reads the receiver, so
 	// a receiver that is not a plain variable path (e.g. `f().Copy(...)`) would
@@ -235,16 +279,11 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		source = ast.NewIdent(t.nextTempVar())
 	}
 	var elts []ast.Expr
-	immutFlags := t.structImmutFields[typeName]
-	for i, fn := range fields {
+	for _, fn := range fields {
 		if val, ok := overrides[fn]; ok {
-			finalVal := val
-			if i < len(immutFlags) && immutFlags[i] {
-				finalVal = t.newImmutableFor(val, overrideTypes[fn])
-			}
 			elts = append(elts, &ast.KeyValueExpr{
 				Key:   ast.NewIdent(fn),
-				Value: finalVal,
+				Value: val,
 			})
 		} else {
 			elts = append(elts, &ast.KeyValueExpr{

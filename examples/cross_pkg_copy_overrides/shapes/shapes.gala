@@ -1,0 +1,20 @@
+package shapes
+
+struct Point(X int, Y int)
+
+struct Pair[A any, B any](First A, Second B)
+
+struct Holder(P Point, Name string)
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+struct Account(Name string, balance int)
+
+func Origin() Point = Point(0, 0)
+
+func NewAccount(name string, balance int) Account = Account(name, balance)
+
+func (a Account) Balance() int = a.balance

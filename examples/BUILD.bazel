@@ -43,6 +43,8 @@ filegroup(
         "cross_pkg_namedarg/lib/lib.gala",
         "cross_pkg_namedarg/main.gala",
         "cross_pkg_namedarg/widget/widget.gala",
+        "cross_pkg_copy_overrides/shapes/shapes.gala",
+        "cross_pkg_copy_overrides_test.gala",
         "cross_pkg_sealed_qualified_match/event/event.gala",
         "cross_pkg_sealed_qualified_match_test.gala",
         "cross_pkg_sealed_var/step/step.gala",
@@ -2830,6 +2832,22 @@ gala_exec_test(
     expected = "cross_pkg_sealed_var_test.out",
     gala_deps = [":cross_pkg_sealed_var_step"],
     deps = ["//collection_immutable"],
+)
+
+# Copy with overrides on another package's struct, sealed value and struct
+# with a private field, through an import alias and the package's own name.
+gala_library(
+    name = "cross_pkg_copy_overrides_shapes",
+    srcs = ["cross_pkg_copy_overrides/shapes/shapes.gala"],
+    importpath = "martianoff/gala/examples/cross_pkg_copy_overrides/shapes",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "cross_pkg_copy_overrides_test",
+    src = "cross_pkg_copy_overrides_test.gala",
+    expected = "cross_pkg_copy_overrides_test.out",
+    gala_deps = [":cross_pkg_copy_overrides_shapes"],
 )
 
 # An alias of a generic std type, local or imported, binds the type arguments
