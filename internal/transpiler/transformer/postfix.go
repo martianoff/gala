@@ -67,6 +67,13 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		}
 	}
 
+	// A call that produces no value may only stand alone (see void_calls.go).
+	if len(suffixes) > 0 {
+		if last := suffixes[len(suffixes)-1].(*grammar.PostfixSuffixContext); last.Identifier() == nil && last.GetStart().GetText() == "(" {
+			t.recordVoidCall(ctx, result)
+		}
+	}
+
 	return result, nil
 }
 
