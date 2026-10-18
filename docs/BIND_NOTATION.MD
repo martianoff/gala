@@ -108,7 +108,8 @@ func processOrder(id int) Try[Receipt] {
   `M[R]` — write the constructor explicitly (`Success(...)` / `Some(...)` /
   `Right(...)` / `Valid(...)` / your own). It is transformed with `M[R]` pushed as the
   expected type, so those constructors infer their type arguments and you rarely need
-  to spell them out.
+  to spell them out. The block may also end in an `if`/`else` chain whose every branch
+  ends in such a value (a branch may hold a `bind` of its own).
 
 Bound names are ordinary immutable `val`s. There is no `bind`-specific mutability: a
 `bind`/`also` name behaves exactly like a `val name = …` local, including single-unwrap

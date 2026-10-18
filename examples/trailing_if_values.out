@@ -1,0 +1,6 @@
+Some(1) Some(400) None() None()
+units tens negative
+Some(6) Some(1) None() None()
+Some(0) Some(6) None()
+Some(2) None()
+zero Some(true) Some(false) None()

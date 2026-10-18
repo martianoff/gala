@@ -67,6 +67,11 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		}
 	}
 
+	// A call that produces no value may only stand alone (see void_calls.go).
+	if n := len(suffixes); n > 0 && isCallSuffix(suffixes[n-1]) {
+		t.recordVoidCall(ctx, result)
+	}
+
 	return result, nil
 }
 
@@ -545,9 +550,9 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	switch {
 	case hoist != "":
 	case !stmtPosition:
-		defer t.enterIIFEReturnSlot(s.typ)()
-	case !transpiler.IsUnusable(s.typ):
-		defer t.enterReturnSlot(returnSlot{typ: s.typ})()
+		defer t.enterIIFEReturnSlot(s.closedType())()
+	case !transpiler.IsUnusable(s.closedType()):
+		defer t.enterReturnSlot(returnSlot{typ: s.closedType()})()
 	}
 
 	// Validate sealed-variant pattern arity before transforming arms. An
@@ -620,7 +625,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			if isBinding[i] {
 				armType = subjectType
 			}
-			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
+			arm.clause, arm.resultType, arm.noValue, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
 			arm.hasResult = arm.resultType != nil
 		}
 		if err != nil {
@@ -669,6 +674,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	loopControl := t.escapingLoopControl(clauses, defaultBody)
 	if loopControl != nil && !stmtPosition && hoist == "" {
 		return nil, t.loopControlInValueError("a match", loopControl)
+	}
+	if !stmtPosition {
+		if err := t.checkMixedArmValues(arms); err != nil {
+			return nil, err
+		}
 	}
 
 	// Infer common result type from all branches. In statement position the

@@ -414,3 +414,102 @@ func TestBindBlockEndingInBindIsRejected(t *testing.T) {
 		})
 	}
 }
+
+// Programs a `bind` makes invalid are rejected with a GALA diagnostic rather
+// than lowered to Go that does not compile, or that silently drops the chain.
+func TestBindMisuseIsRejected(t *testing.T) {
+	trans := newBindTranspiler()
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{
+			name: "trailing value of another type",
+			body: "bind y = Some(n)\n    Println(y)",
+			want: "must end with a std.Option value, but `Println(y)` produces no value",
+		},
+		{
+			name: "in the body of an if statement",
+			body: "if (n == 1) {\n        bind y = Some(1)\n        Some(y)\n    }\n    Some(n)",
+			want: "`bind` is not allowed in a block whose value is not used",
+		},
+		{
+			name: "in a loop body",
+			body: "for i := 0; i < 2; i++ {\n        bind y = Some(i)\n        Some(y)\n    }\n    Some(n)",
+			want: "`bind` is not allowed in a block whose value is not used",
+		},
+		{
+			name: "annotation that does not match the bound value",
+			body: "bind y string = Some(n)\n    Some(5)",
+			want: "`y` is annotated string, but std.Option[int] binds a value of type int",
+		},
+		{
+			name: "trailing if with no else",
+			body: "bind y = Some(n)\n    if (y > 1) { Some(y) }",
+			want: "a `bind` block must end with a value expression; this `if` ends it",
+		},
+		{
+			name: "return after a bind in a match arm lowered as statements",
+			body: "val r = n match {\n        case 0 => { return None() }\n        case _ => {\n            bind h = Some(n)\n            if (h > 3) { return None() }\n            Some(h)\n        }\n    }\n    r",
+			want: "after a `bind` in a match arm cannot leave the enclosing function",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "package main\n\nfunc run(n int) Option[int] {\n    " + tc.body + "\n}\n"
+			_, err := trans.Transpile(input, "")
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+// A `bind` block may end in an if/else chain: each branch ends in the
+// block's value, typed by the block's monad (so `None()` needs no type
+// argument), and may hold a `bind` of its own.
+func TestBindBlockEndingInIfElse(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func run(n int) Option[int] {
+    bind y = Some(n)
+    if (y > 5) {
+        None()
+    } else if (y > 2) {
+        bind z = Some(y * 2)
+        Some(z)
+    } else {
+        Some(y)
+    }
+}
+`
+	got, err := trans.Transpile(input, "")
+	if assert.NoError(t, err) {
+		assert.Contains(t, got, "return std.None[int]{}.Apply()", "the None() branch is typed by the block:\n%s", got)
+		assert.Equal(t, 2, strings.Count(got, "Option_FlatMap[int, int]("), "the nested bind lowers inside its branch:\n%s", got)
+	}
+}
+
+// A `bind` in an arm of a match lowered as statements (another arm returns)
+// is typed by the match, and its chain is stored as the arm's value rather
+// than returned from the function.
+func TestBindInHoistedMatchArm(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+func run(n int) string {
+    val r = n match {
+        case 0 => { return "zero" }
+        case _ => {
+            bind h = Some(n)
+            Some(h > 2)
+        }
+    }
+    s"$r"
+}
+`
+	got, err := trans.Transpile(input, "")
+	if assert.NoError(t, err) {
+		assert.Contains(t, got, "Option_FlatMap[bool, int](", "the chain is typed by the match:\n%s", got)
+		assert.NotContains(t, got, "return std.Option_FlatMap", "the chain is the arm's value, not the function's:\n%s", got)
+	}
+}

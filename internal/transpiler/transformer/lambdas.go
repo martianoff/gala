@@ -275,6 +275,17 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		if inferredRet != nil {
 			retType = inferredRet
 		}
+		// A lambda with a known result type must produce it on every path,
+		// as a function declared with one must (see missingReturnError).
+		if !isVoidExpected && retType != nil && !isVoidTypeIdent(retType) && !isTerminatingStmt(body) {
+			var result string
+			if ctx.Type_() != nil {
+				result = ctx.Type_().GetText()
+			} else {
+				result = t.astTypeToTranspilerType(retType).String()
+			}
+			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), "this lambda", result)
+		}
 	} else if ctx.Expression() != nil {
 		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
@@ -375,7 +386,9 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	// used as value". Leaving it as a bare expression statement lets the
 	// lambda's return type fall through to void.
 	if !isVoidExpected && len(b.List) > 0 {
-		if expectsReturnValue {
+		// A `return` that gave the lambda its result type makes it a lambda
+		// with a value, whose trailing value is a result value too.
+		if expectsReturnValue || (!transpiler.IsUnusable(t.returnSlot.typ) && returnsValue(b)) {
 			// A trailing bare expression, a trailing `match` and a trailing
 			// `if (c) { a } else { b }` all carry the block's value; the shared
 			// helper covers each shape.
@@ -1314,6 +1327,11 @@ func (t *galaASTTransformer) inferPartialFunctionParamType(caseClauses []grammar
 	return nil
 }
 
+// partialArmNoValueMsg reports a partial-function arm that finishes without a
+// value (see yieldsNoValue): the case matched, so the function must return
+// Some of a value, not fall through to None.
+const partialArmNoValueMsg = "this case of the partial function produces no value; end it in a value, since a partial function returns `Some(value)` when a case matches"
+
 // transformPartialCaseClause transforms a case clause for partial function
 // The result expression is wrapped in Some(...)
 func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseContext, paramName string, matchedType transpiler.Type) (ast.Stmt, transpiler.Type, error) {
@@ -1350,6 +1368,9 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 		if err != nil {
 			return nil, nil, err
 		}
+		if at := t.noValueArmAt(ctx.GetBodyBlock().(*grammar.BlockContext), b.List); at != nil {
+			return nil, nil, t.semanticErrorAt(at, partialArmNoValueMsg)
+		}
 		// A trailing expression is the arm's value, lowered like a match
 		// arm's tail; it was left as a bare statement, so the arm had no
 		// result and the whole literal failed with "no case branches".
@@ -1375,16 +1396,19 @@ func (t *galaASTTransformer) transformPartialCaseClause(ctx *grammar.CaseClauseC
 			if err != nil {
 				return nil, nil, err
 			}
-			// Wrap in Some(expr)
-			someCall := t.wrapInSome(expr)
-			body = []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{someCall}}}
-			resultType = t.inferResultType(expr)
-		} else {
-			stmt, err := t.transformSimpleStatement(ctx.GetBodyStmt())
-			if err != nil {
-				return nil, nil, err
+			if t.exprYieldsNoValue(expr) {
+				return nil, nil, t.semanticErrorAt(ctx.GetBodyStmt(), partialArmNoValueMsg)
 			}
-			body = []ast.Stmt{stmt}
+			// Lowered like the tail of a block arm: a diverging call stays a
+			// statement, and any other value is returned wrapped in Some.
+			tail, typ := t.lowerMatchArmTailExpr(expr)
+			body = t.wrapBlockReturnsInSome([]ast.Stmt{tail})
+			if _, ok := tail.(*ast.ReturnStmt); ok {
+				resultType = typ
+			}
+		} else {
+			// An assignment or increment yields no value.
+			return nil, nil, t.semanticErrorAt(ctx.GetBodyStmt(), partialArmNoValueMsg)
 		}
 	}
 
@@ -1969,4 +1993,20 @@ func replaceLastStmt(blk *ast.BlockStmt, stmt ast.Stmt) *ast.BlockStmt {
 	copy(list, blk.List)
 	list[len(list)-1] = stmt
 	return &ast.BlockStmt{Lbrace: blk.Lbrace, List: list, Rbrace: blk.Rbrace}
+}
+
+// returnsValue reports whether body holds a `return` with a value, outside
+// any nested function literal.
+func returnsValue(body *ast.BlockStmt) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			found = found || len(n.Results) > 0
+		}
+		return !found
+	})
+	return found
 }

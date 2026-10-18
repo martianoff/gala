@@ -1,0 +1,86 @@
+package main
+
+// A trailing `if`/`else` chain is the value of the block it ends: a `bind`
+// block, a branch of an if-expression, a match arm or a lambda body. Each
+// branch's value takes its type from what the block fills, so `None()` needs
+// no type argument.
+
+import . "martianoff/gala/std"
+
+func half(n int) Option[int] = When(n % 2 == 0, n / 2)
+
+// A `bind` block ending in an if/else chain.
+func scaled(n int) Option[int] {
+    bind h = half(n)
+    if (h > 10) {
+        None()
+    } else if (h > 2) {
+        Some(h * 100)
+    } else {
+        Some(h)
+    }
+}
+
+// A branch of an if-expression ending in an if/else chain.
+func bucket(n int) string {
+    val b = if (n >= 0) {
+        val tens = n / 10
+        if (tens == 0) { "units" } else { "tens" }
+    } else {
+        "negative"
+    }
+    b
+}
+
+// A `bind` in an if-expression branch, ending in an if/else chain that holds
+// another `bind`.
+func nested(n int) Option[int] {
+    val o = if (n > 0) {
+        bind h = half(n)
+        if (h > 1) { bind q = half(h); Some(q + h) } else { Some(h) }
+    } else {
+        None()
+    }
+    o
+}
+
+// A match arm and a lambda body ending in an if/else chain with a `None()`
+// branch.
+func armValue(n int) Option[int] {
+    val r Option[int] = n match {
+        case 0 => Some(0)
+        case _ => {
+            if (n > 5) { None() } else { Some(n * 2) }
+        }
+    }
+    r
+}
+
+func lambdaValue(n int) Option[int] {
+    val pick = (m int) Option[int] => {
+        if (m > 5) { None() } else { Some(m + 1) }
+    }
+    pick(n)
+}
+
+// A match lowered as statements (one arm returns), whose other arm is a
+// `bind` block: the chain is typed by the match, not by the function.
+func early(n int) string {
+    val r = n match {
+        case 0 => { return "zero" }
+        case _ => {
+            bind h = half(n)
+            Some(h > 2)
+        }
+    }
+    s"$r"
+}
+
+func main() {
+    Println(s"${scaled(2)} ${scaled(8)} ${scaled(40)} ${scaled(3)}")
+    Println(s"${bucket(4)} ${bucket(42)} ${bucket(-1)}")
+    Println(s"${nested(8)} ${nested(2)} ${nested(3)} ${nested(-2)}")
+    Println(s"${armValue(0)} ${armValue(3)} ${armValue(9)}")
+    Println(s"${lambdaValue(1)} ${lambdaValue(9)}")
+    Println(s"${early(0)} ${early(8)} ${early(2)} ${early(3)}")
+}
