@@ -620,7 +620,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 			if isBinding[i] {
 				armType = subjectType
 			}
-			arm.clause, arm.resultType, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
+			arm.clause, arm.resultType, arm.noValue, err = t.transformCaseClauseWithType(ccCtx, paramName, armType, armSlot)
 			arm.hasResult = arm.resultType != nil
 		}
 		if err != nil {
@@ -669,6 +669,11 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	loopControl := t.escapingLoopControl(clauses, defaultBody)
 	if loopControl != nil && !stmtPosition && hoist == "" {
 		return nil, t.loopControlInValueError("a match", loopControl)
+	}
+	if !stmtPosition {
+		if err := t.checkMixedArmValues(arms); err != nil {
+			return nil, err
+		}
 	}
 
 	// Infer common result type from all branches. In statement position the
