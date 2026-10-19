@@ -44,7 +44,8 @@ grep -A20 "func IsPrimitiveType" internal/transpiler/types.go
 list in `internal/transpiler/registry/std.go` (`StdPackageInfo().Types`) — ONLY
 types that are auto-imported (available without explicit `import`). These are the
 core sealed types and their constructors, the `Tuple`/`Tuple3..10` family, and
-fundamental types like `Immutable`, `Void`, `EmbeddedFS`, the
+fundamental types like `Immutable`, `Void`, `EmbeddedFS`, the pointer types
+`Ptr` and `OptionPtr`, the
 collection traits (`Traversable`, `Iterable`, `Seq`, `Ordered`, `Hashable`), and
 the reflection-free codec metadata types (`StructMeta`, `FieldEncoder`,
 `FieldDecoder`). Dynamic per-type completion for these comes from the LSP server

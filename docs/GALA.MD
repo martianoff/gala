@@ -4475,7 +4475,8 @@ Option[Node])`, a `Tuple` or `List` of itself — has no finite size and is
 
 ### Taking the Address of a Value
 
-`&x` is a `*T`, and a `*T` can write. So only something that can change has an
+`&x` is a pointer — a [`Ptr[T]`](#non-null-pointers-ptrt-and-optionptrt) —
+and a pointer can write. So only something that can change has an
 address: a `var`, a `var` field of a `var`, a field of a pointee, a composite
 literal (`&Config(...)`). Taking the address of anything immutable is
 [GALA-E0076](errors/GALA-E0076.md):
@@ -4567,6 +4568,139 @@ such a value in a `var` field or local, or behind a pointer (`&sync.Mutex{}`).
 | Mutable pointer to mutable data | `T*` | `var ptr *T` |
 | Const pointer to mutable data | `T* const` | `val ptr *T` (where target is `var`) |
 | Read-only data | `const T`, `const T*` | a `val` of `T`, passed by value |
+
+### Non-null Pointers: `Ptr[T]` and `OptionPtr[T]`
+
+GALA has three pointer types:
+
+| Type | Can be nil | Use |
+|------|------------|-----|
+| `Ptr[T]` | never | a pointer created and used in GALA code |
+| `OptionPtr[T]` | it is empty instead | a pointer that may be absent |
+| `*T` | yes | Go interop: what Go functions take and return |
+
+**`Ptr[T]`** is a pointer that is never nil. It is a compile-time marker: the
+generated Go spells it `*T`, so a `Ptr[T]` has the fields and methods of what
+it points to, can be a method receiver (`func (c Ptr[Counter]) Bump()` is Go's
+`func (c *Counter) Bump()`), and passes to Go as a `*T`. `&x` and
+`&Struct(...)` are `Ptr[T]` values, so a binding inferred from one is a `Ptr`:
+
+```gala
+package main
+
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Bump() {
+    c.N = c.N + 1
+}
+
+func bumpTwice(c Ptr[Counter]) {
+    c.Bump()
+    c.Bump()
+}
+
+func main() {
+    var c = Counter(0)
+    val p = &c          // Ptr[Counter]
+    bumpTwice(p)
+    Println(c.N)        // 2
+}
+```
+
+A `Ptr[T]` fills a `*T` slot as it is. The other way is checked: `nil`, or a
+`*T` that may be nil, never fills a `Ptr[T]`, and a `Ptr` is not compared with
+nil ([GALA-E0080](errors/GALA-E0080.md)). A pointer from Go becomes a `Ptr` at
+the boundary, once:
+
+- `RequirePtr(p)` returns `p` as a `Ptr[T]` and panics with a GALA message when
+  it is nil;
+- `OptionPtrOf(p)` returns an `OptionPtr[T]`, empty when `p` is nil.
+
+A `Ptr` has no default value: an uninitialized `var p Ptr[T]`, or a `Ptr` field
+left out of a construction, is [GALA-E0075](errors/GALA-E0075.md). A codec
+rejects a `Ptr` field like any pointer ([GALA-E0050](errors/GALA-E0050.md)), a
+`Ptr` is not shareable across a concurrency boundary, and a typed pattern
+cannot test for one (`case p: Ptr[T]`), since Go's type test accepts a nil
+`*T`.
+
+Because `&x` is a `Ptr`, a `var` that later takes a pointer from Go, or nil, is
+declared with the nullable type:
+
+```gala
+package main
+
+struct Node(Value int, var Next *Node)
+
+func main() {
+    var tail = Node(Value = 2, Next = nil)
+    var head = Node(Value = 1, Next = &tail)
+    var current *Node = &head
+    for current != nil {
+        Println(current.Value)
+        current = current.Next
+    }
+}
+```
+
+**Entry checks.** Go code can call GALA code with a nil pointer, so where Go
+can be the caller a `Ptr` parameter is checked on entry, as Kotlin checks the
+parameters of its public functions:
+
+- an exported function or method checks each `Ptr` parameter;
+- a lambda with a `Ptr[T]` parameter checks it when it fills a function slot
+  whose parameter is a `*T` — a Go callback such as `func(*T)`.
+
+The check panics with the function and parameter name. A call between GALA
+functions needs no check, so an unexported function has none.
+
+What the type cannot see: a Go function writing a struct field, reflection,
+Go generic code's `var zero T` (`go_interop.New[Ptr[T]]()` among them), a
+`Ptr` converted to `any`, a function value taking a `Ptr` (a named function, or
+a lambda already bound to a `val`) passed where a `func(*T)` is expected, a
+`Ptr` receiver (a method declared on `Ptr[T]` can be called on a `*T`, and its
+receiver is not checked on entry), and a Go call's several results assigned at
+once (`p, err = goCall()`).
+
+**`OptionPtr[T]`** is an ordinary std struct holding a `*T`: the size of one
+pointer, where an `Option[Ptr[T]]` also carries a tag. Its zero value is empty,
+so a field of this type left out of a brace literal is empty. Every nil check
+is inside it, and what it hands out is a `Ptr[T]`:
+
+| Member | Result |
+|--------|--------|
+| `OptionPtrOf(p *T)` | empty when `p` is nil |
+| `SomePtr(p Ptr[T])` | holds `p` |
+| `EmptyOptionPtr[T]()` | empty |
+| `IsDefined()`, `IsEmpty()` | `bool` |
+| `Get()` | `Ptr[T]`; panics when empty |
+| `GetOrElse(other Ptr[T])` | `Ptr[T]` |
+| `OrElse(other OptionPtr[T])` | `OptionPtr[T]` |
+| `Map(f func(Ptr[T]) U)` | `Option[U]` |
+| `FlatMap(f func(Ptr[T]) OptionPtr[U])` | `OptionPtr[U]` |
+| `ForEach(f func(Ptr[T]))` | — |
+| `ToOption()` | `Option[Ptr[T]]` |
+
+```gala
+package main
+
+struct Node(Value int, Next OptionPtr[Node])
+
+func sum(n Ptr[Node]) int = n.Value + n.Next.Map((next) => sum(next)).GetOrElse(0)
+
+func last(n Ptr[Node]) Ptr[Node] = n.Next.ToOption() match {
+    case Some(next) => last(next)
+    case None() => n
+}
+
+func main() {
+    val tail = &Node{Value: 3}
+    val head = &Node(1, SomePtr(&Node(2, SomePtr(tail))))
+    Println(sum(head))         // 6
+    Println(last(head).Value)  // 3
+}
+```
+
+`OptionPtr` is matched through `ToOption()`.
 
 ### val vs var with Go Functions
 
@@ -4693,7 +4827,7 @@ func main() {
 
 Two dot-imported packages that export the same name are rejected with [GALA-E0032](errors/GALA-E0032.md); qualify or alias one of them. This is by design for packages that deliberately re-export another's API — `concurrent` is a facade over `go_interop`'s execution-context helpers, so dot-importing both is never meaningful. See [Using `go_interop` in the same file](CONCURRENT.MD#using-go_interop-in-the-same-file).
 
-A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
+A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `Ptr`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
 
 A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](errors/GALA-E0066.md), because Go forbids it; import that package under a name, or rename the declaration.
 

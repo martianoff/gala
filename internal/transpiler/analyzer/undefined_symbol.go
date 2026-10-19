@@ -556,6 +556,14 @@ func (a *galaAnalyzer) importedTopLevelNames(imports []fileImport) map[string]bo
 	for name, isType := range a.packageTopLevelNames(registry.StdPackageName) {
 		out[name] = out[name] || isType
 	}
+	// A prelude package registers type names its sources do not declare, such
+	// as the `Ptr[T]` marker, which a type argument in an expression names
+	// (`None[Ptr[T]]()`). See typeNameExists.
+	for _, pkg := range registry.Global.PreludePackages() {
+		for _, name := range pkg.Types {
+			out[name] = true
+		}
+	}
 	return out
 }
 
@@ -1509,7 +1517,7 @@ func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext, rec
 		if fd, ok := n.(*grammar.FunctionDeclarationContext); ok && fd.Receiver() != nil {
 			var sigExtra map[string]bool
 			if rc, ok := fd.Receiver().(*grammar.ReceiverContext); ok && rc.Type_() != nil {
-				sigExtra = receiverImports(receiverBaseTypeName(galaparser.TypeText(rc.Type_())))
+				sigExtra = receiverImports(receiverBaseTypeName(rc.Type_()))
 			}
 			for i := 0; i < n.GetChildCount(); i++ {
 				switch child := n.GetChild(i).(type) {
@@ -1809,10 +1817,11 @@ func goKeyPackages[V any](m map[string]V, name string) map[string]bool {
 	return out
 }
 
-// receiverBaseTypeName reduces a receiver's type text (`*Box[T]`) to the bare
-// type name (`Box`).
-func receiverBaseTypeName(text string) string {
-	text = strings.TrimLeft(text, "*")
+// receiverBaseTypeName reduces a receiver's type (`*Box[T]`, `Ptr[Box[T]]`)
+// to the bare type name (`Box`).
+func receiverBaseTypeName(ctx grammar.ITypeContext) string {
+	elem, _ := galaparser.PointerElem(ctx)
+	text := galaparser.TypeText(elem)
 	if i := strings.IndexByte(text, '['); i >= 0 {
 		text = text[:i]
 	}

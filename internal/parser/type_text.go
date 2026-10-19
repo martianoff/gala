@@ -18,6 +18,42 @@ func TypeText(ctx grammar.ITypeContext) string {
 	return b.String()
 }
 
+// PtrTypeName is the name of GALA's non-null pointer marker, `Ptr[T]`.
+const PtrTypeName = "Ptr"
+
+// IsPtrTypeName reports whether name, the base of a generic type `name[T]`,
+// names the non-null pointer marker: `Ptr` unqualified or as `std.Ptr`.
+func IsPtrTypeName(name string) bool {
+	return name == PtrTypeName || name == "std."+PtrTypeName
+}
+
+// PtrElem returns the type argument of GALA's non-null pointer annotation
+// `Ptr[T]` (or `std.Ptr[T]`), or nil when ctx is not one.
+func PtrElem(ctx grammar.ITypeContext) grammar.ITypeContext {
+	if ctx == nil || ctx.QualifiedIdentifier() == nil || ctx.TypeArguments() == nil ||
+		!IsPtrTypeName(ctx.QualifiedIdentifier().GetText()) {
+		return nil
+	}
+	list, ok := ctx.TypeArguments().TypeList().(*grammar.TypeListContext)
+	if !ok || list == nil || len(list.AllType_()) != 1 {
+		return nil
+	}
+	return list.Type_(0)
+}
+
+// PointerElem returns the element type of a pointer type annotation, `*T` or
+// the non-null `Ptr[T]`, and true; for any other type it returns (ctx, false).
+// A receiver is a pointer receiver exactly when its type is one of the two.
+func PointerElem(ctx grammar.ITypeContext) (grammar.ITypeContext, bool) {
+	if elem := PtrElem(ctx); elem != nil {
+		return elem, true
+	}
+	if ctx != nil && ctx.GetStart() != nil && ctx.GetStart().GetText() == "*" && len(ctx.AllType_()) == 1 {
+		return ctx.Type_(0), true
+	}
+	return ctx, false
+}
+
 // AliasText spells the target of `type X Y` as TypeText does. Its grammar is
 // `identifier | type`: `type Millis int64` takes the identifier branch.
 func AliasText(ctx grammar.ITypeAliasContext) string {

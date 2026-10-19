@@ -3,6 +3,8 @@ package transpiler
 import (
 	"slices"
 	"strings"
+
+	"martianoff/gala/internal/parser"
 )
 
 // Type represents a structured type in GALA/Go.
@@ -91,6 +93,57 @@ func UnwrapSendable(t Type) (Type, bool) {
 		return t, false
 	}
 	return g.Params[0], true
+}
+
+// IsPtr reports whether t is GALA's non-null pointer `Ptr[T]`.
+func IsPtr(t Type) bool {
+	p, ok := t.(PointerType)
+	return ok && p.NonNull
+}
+
+// IsNullablePtr reports whether t is a plain, nullable `*T`.
+func IsNullablePtr(t Type) bool {
+	p, ok := t.(PointerType)
+	return ok && !p.NonNull
+}
+
+// DisplayType is t as GALA source spells it: a non-null pointer reads
+// `Ptr[T]` where String reads `*T`. Every other kind reads as String does.
+func DisplayType(t Type) string {
+	switch v := t.(type) {
+	case nil:
+		return ""
+	case PointerType:
+		if v.NonNull {
+			return parser.PtrTypeName + "[" + DisplayType(v.Elem) + "]"
+		}
+		return "*" + DisplayType(v.Elem)
+	case ArrayType:
+		return "[]" + DisplayType(v.Elem)
+	case MapType:
+		return "map[" + DisplayType(v.Key) + "]" + DisplayType(v.Elem)
+	case GenericType:
+		return DisplayType(v.Base) + "[" + displayTypes(v.Params) + "]"
+	case FuncType:
+		s := "func(" + displayTypes(v.Params) + ")"
+		switch len(v.Results) {
+		case 0:
+			return s
+		case 1:
+			return s + " " + DisplayType(v.Results[0])
+		}
+		return s + " (" + displayTypes(v.Results) + ")"
+	}
+	return t.String()
+}
+
+// displayTypes is DisplayType of each of ts, comma-separated.
+func displayTypes(ts []Type) string {
+	parts := make([]string, len(ts))
+	for i, p := range ts {
+		parts[i] = DisplayType(p)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // IsSendable reports whether t is a `Sendable[F]` boundary marker.
@@ -190,8 +243,15 @@ func (t MapType) BaseName() string   { return "map" }
 func (t MapType) GetPackage() string { return "" }
 
 // PointerType represents a pointer type.
+//
+// NonNull marks GALA's non-null pointer `Ptr[T]`: a compile-time marker that
+// erases to `*T` in generated Go. String and BaseName, which name lookups
+// read, are the same for both; DisplayType spells it `Ptr[T]`, and ParseType
+// reads that spelling back. Only the checks that keep a nil out of a `Ptr`
+// read the marker (see IsPtr).
 type PointerType struct {
-	Elem Type
+	Elem    Type
+	NonNull bool
 }
 
 func (t PointerType) String() string {
@@ -381,8 +441,11 @@ func ParseType(s string) Type {
 	}
 	if strings.Contains(s, "[") && strings.HasSuffix(s, "]") {
 		idx := strings.Index(s, "[")
-		base := ParseType(s[:idx])
 		parts := splitTopLevel(s[idx+1 : len(s)-1])
+		if parser.IsPtrTypeName(s[:idx]) && len(parts) == 1 {
+			return PointerType{Elem: ParseType(parts[0]), NonNull: true}
+		}
+		base := ParseType(s[:idx])
 		if len(parts) == 0 {
 			parts = []string{""}
 		}
@@ -435,7 +498,7 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 	case MapType:
 		return MapType{Key: SubstituteTypeParams(v.Key, subst), Elem: SubstituteTypeParams(v.Elem, subst)}
 	case PointerType:
-		return PointerType{Elem: SubstituteTypeParams(v.Elem, subst)}
+		return PointerType{Elem: SubstituteTypeParams(v.Elem, subst), NonNull: v.NonNull}
 	case FuncType:
 		params := make([]Type, len(v.Params))
 		for i, p := range v.Params {

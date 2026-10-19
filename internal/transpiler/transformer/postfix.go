@@ -407,6 +407,10 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if err != nil {
 		return nil, err
 	}
+	// A `Ptr[T]` type argument (`None[Ptr[T]]()`) is the Go type `*T`.
+	if len(indices) == 1 && t.namesPtrType(base) {
+		return t.ptrStar(indices[0]), nil
+	}
 	if len(indices) == 1 {
 		return &ast.IndexExpr{X: base, Index: indices[0]}, nil
 	}

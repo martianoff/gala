@@ -276,6 +276,15 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	if err != nil {
 		return nil, err
 	}
+	// `a, b = x, y` lowers its values with no slot; a nil, or a pointer that
+	// may be nil, still never fills a Ptr target.
+	if len(lhsExprs) > 1 && len(rhsExprs) == len(lhsExprs) {
+		for i, rhs := range rhsExprs {
+			if err := t.checkPtrSlot(rhs, t.getExprTypeName(lhsExprs[i]), rhsListCtx.Expression(i)); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	unwrappedRhs := make([]ast.Expr, len(rhsExprs))
 	for i, r := range rhsExprs {

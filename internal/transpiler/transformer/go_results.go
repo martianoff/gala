@@ -685,5 +685,5 @@ func (t *galaASTTransformer) goResultMisuse(res *goResult, what string, ctx antl
 
 // displayType renders a type as GALA source spells it.
 func displayType(typ transpiler.Type) string {
-	return strings.ReplaceAll(typ.String(), registry.StdPackageName+".", "")
+	return strings.ReplaceAll(transpiler.DisplayType(typ), registry.StdPackageName+".", "")
 }

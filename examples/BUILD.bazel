@@ -4359,3 +4359,20 @@ gala_exec_test(
     expected = "nested_wildcard_type_pattern.out",
     deps = ["//collection_immutable"],
 )
+
+# Ptr[T]: `&x` is a non-null pointer, RequirePtr checks a Go pointer at the
+# boundary, and a lambda with a Ptr parameter filling a `*T` slot checks it on
+# entry; both nil paths panic with the GALA message.
+gala_exec_test(
+    name = "ptr_checked",
+    src = "ptr_checked.gala",
+    expected = "ptr_checked.out",
+)
+
+# OptionPtr[T]: a pointer that may be absent, the size of one pointer; a field
+# left out of a brace literal is empty.
+gala_exec_test(
+    name = "option_ptr",
+    src = "option_ptr.gala",
+    expected = "option_ptr.out",
+)

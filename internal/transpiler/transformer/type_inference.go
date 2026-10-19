@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -205,7 +206,7 @@ func (t *galaASTTransformer) getExprTypeNameManualUncached(expr ast.Expr) transp
 			}
 			return transpiler.BasicType{Name: "bool"}
 		case token.AND:
-			return transpiler.PointerType{Elem: t.getExprTypeNameManual(e.X)}
+			return transpiler.PointerType{Elem: t.getExprTypeNameManual(e.X), NonNull: true}
 		case token.MUL:
 			xType := t.getExprTypeNameManual(e.X)
 			if ptr, ok := xType.(transpiler.PointerType); ok {
@@ -1109,7 +1110,7 @@ func (t *galaASTTransformer) substituteInTypeDepth(typ transpiler.Type, paramMap
 	case transpiler.ArrayType:
 		return transpiler.ArrayType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
 	case transpiler.PointerType:
-		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo)}
+		return transpiler.PointerType{Elem: t.substituteInTypeDepth(v.Elem, paramMap, depth, qualifiedToo), NonNull: v.NonNull}
 	case transpiler.MapType:
 		return transpiler.MapType{
 			Key:  t.substituteInTypeDepth(v.Key, paramMap, depth, qualifiedToo),
@@ -1262,6 +1263,10 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 			return x.Name + "." + e.Sel.Name
 		}
 	case *ast.StarExpr:
+		// The `*T` of a non-null Ptr[T] reads back as one (ParseType).
+		if t.isPtrTypeExpr(e) {
+			return galaparser.PtrTypeName + "[" + t.exprToTypeString(e.X) + "]"
+		}
 		return "*" + t.exprToTypeString(e.X)
 	case *ast.IndexExpr:
 		return t.exprToTypeString(e.X) + "[" + t.exprToTypeString(e.Index) + "]"

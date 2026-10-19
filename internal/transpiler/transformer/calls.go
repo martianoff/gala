@@ -486,7 +486,7 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr, 
 // a type that declares method, or to its end.
 func (t *galaASTTransformer) methodReceiverType(recv transpiler.Type, method string) transpiler.Type {
 	if ptr, ok := recv.(transpiler.PointerType); ok {
-		return transpiler.PointerType{Elem: t.methodReceiverType(ptr.Elem, method)}
+		return transpiler.PointerType{Elem: t.methodReceiverType(ptr.Elem, method), NonNull: ptr.NonNull}
 	}
 	return t.walkAliasChain(recv, func(typ transpiler.Type) bool {
 		return t.typeHasMethod(typ.BaseName(), method)

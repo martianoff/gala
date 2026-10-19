@@ -16,7 +16,7 @@ last_modified_at: 2026-10-02
 nests) whose type the codec cannot serialize, or for a `T` that is itself one of
 the shapes below:
 
-- a function, a pointer, or a Go slice or map (`[]T`, `map[K]V`)
+- a function, a pointer (`*T` or `Ptr[T]`), or a Go slice or map (`[]T`, `map[K]V`)
 - a sealed type
 - a generic struct, a struct with no fields, or any type that is neither a scalar
   nor a GALA struct

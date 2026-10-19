@@ -615,6 +615,29 @@ func main() {
 }
 ```
 
+## Non-null Pointers: `Ptr` and `OptionPtr`
+
+`&x` is a `Ptr[T]`, a pointer that is never nil; a pointer that may be absent is an `OptionPtr[T]`; a Go `*T` becomes one or the other once, at the boundary.
+
+```gala
+package main
+
+struct Node(Value int, Next OptionPtr[Node])
+
+func (n Ptr[Node]) Sum() int = n.Value + n.Next.Map((next) => next.Sum()).GetOrElse(0)
+
+// A Go-style lookup: nil when nothing is found.
+func find(found bool, n *Node) *Node = if (found) n else nil
+
+func main() {
+    val tail = &Node{Value: 3}
+    val head = &Node(1, SomePtr(&Node(2, SomePtr(tail))))
+    Println(head.Sum())                                  // 6
+    Println(RequirePtr(find(true, head)).Value)          // 1
+    Println(OptionPtrOf(find(false, head)).IsEmpty())    // true
+}
+```
+
 ## Using External Libraries
 
 GALA allows you to organize your code into multiple packages and import them as needed.

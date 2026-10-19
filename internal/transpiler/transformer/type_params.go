@@ -7,6 +7,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -137,8 +138,9 @@ func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
 
 // receiverTypeParamNames is the names of receiverTypeParams.
 func receiverTypeParamNames(ctx grammar.ITypeContext) []string {
+	ctx, _ = galaparser.PointerElem(ctx) // *Box[T], Ptr[Box[T]]
 	for ctx != nil && ctx.QualifiedIdentifier() == nil && len(ctx.AllType_()) == 1 {
-		ctx = ctx.Type_(0) // *Box[T]
+		ctx = ctx.Type_(0)
 	}
 	if ctx == nil || ctx.TypeArguments() == nil {
 		return nil

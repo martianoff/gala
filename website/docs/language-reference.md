@@ -1499,7 +1499,7 @@ val ptr1 = &data     // immutable pointer binding
 ```
 
 ### Taking the Address of a Value
-`&x` is a `*T`, and a `*T` can write, so only something that can change has an address: a `var`, a `var` field of a `var`, a field of a pointee, a composite literal (`&Config(...)`). The address of a `val`, a parameter not declared `var`, a receiver, an immutable field or a field reached through a `val` is [GALA-E0076](/docs/errors/gala-e0076/). Pass the value itself, or declare the binding `var` where Go needs a `*T`.
+`&x` is a pointer (a [`Ptr[T]`](#non-null-pointers-ptrt-and-optionptrt)), and a pointer can write, so only something that can change has an address: a `var`, a `var` field of a `var`, a field of a pointee, a composite literal (`&Config(...)`). The address of a `val`, a parameter not declared `var`, a receiver, an immutable field or a field reached through a `val` is [GALA-E0076](/docs/errors/gala-e0076/). Pass the value itself, or declare the binding `var` where Go needs a `*T`.
 
 <!-- doc-check: error GALA-E0076 -->
 ```gala
@@ -1533,6 +1533,42 @@ func main() {
 
 The copy is shallow: writes through a map, slice or pointer the value holds reach data the `val` shares. A value that must not be copied is rejected instead with [GALA-E0053](/docs/errors/gala-e0053/): any `sync` or `sync/atomic` type, a type whose pointer has `Lock()`/`Unlock()`, a `noCopy` marker, a struct holding one of them, `strings.Builder` and `bytes.Buffer`. Hold such a value in a `var` or behind a pointer (`&sync.Mutex{}`).
 
+### Non-null Pointers: `Ptr[T]` and `OptionPtr[T]`
+`Ptr[T]` is a pointer that is never nil; `OptionPtr[T]` is a pointer that may be absent; a plain `*T` is the nullable Go interop type. `Ptr[T]` is a compile-time marker that erases to `*T` in generated Go, so it has the fields and methods of what it points to, can be a receiver (`func (c Ptr[Counter]) Bump()`), and passes to Go as a `*T`. `&x` and `&Struct(...)` are `Ptr[T]` values.
+
+```gala
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Bump() {
+    c.N = c.N + 1
+}
+
+func main() {
+    var c = Counter(0)
+    val p = &c        // Ptr[Counter]
+    p.Bump()
+    Println(c.N)      // 1
+}
+```
+
+A `Ptr[T]` fills a `*T` slot as it is. `nil`, or a `*T` that may be nil, never fills a `Ptr[T]`, and a `Ptr` is not compared with nil ([GALA-E0080](/docs/errors/gala-e0080/)). A pointer from Go becomes a `Ptr` once, at the boundary: `RequirePtr(p)` panics with a GALA message on nil, and `OptionPtrOf(p)` gives an `OptionPtr[T]` that is empty on nil. A `Ptr` has no default value ([GALA-E0075](/docs/errors/gala-e0075/)), a codec rejects it ([GALA-E0050](/docs/errors/gala-e0050/)), and a typed pattern cannot test for one. A `var` that later takes a Go pointer, or nil, is declared with the nullable type: `var current *Node = &head`.
+
+Where Go can be the caller, a `Ptr` parameter is checked on entry: in an exported function or method, and in a lambda with a `Ptr[T]` parameter filling a function slot whose parameter is a `*T` (a Go callback). Calls between GALA functions are not checked. Not covered: Go writing a struct field, reflection, Go generic code's `var zero T`, a `Ptr` converted to `any`, a function value taking a `Ptr` (a named function or a lambda bound to a `val`) passed as a `func(*T)`, a method on a `Ptr[T]` receiver called on a `*T`, and `p, err = goCall()`.
+
+`OptionPtr[T]` is a std struct holding a `*T`, the size of one pointer, whose zero value is empty. `OptionPtrOf(p)`, `SomePtr(ptr)` and `EmptyOptionPtr[T]()` build one; `IsDefined`, `IsEmpty`, `Get`, `GetOrElse`, `OrElse`, `Map`, `FlatMap`, `ForEach` and `ToOption` mirror `Option`, and every pointer they hand out is a `Ptr[T]`. Match one through `ToOption()`.
+
+```gala
+struct Node(Value int, Next OptionPtr[Node])
+
+func sum(n Ptr[Node]) int = n.Value + n.Next.Map((next) => sum(next)).GetOrElse(0)
+
+func main() {
+    val tail = &Node{Value: 3}
+    val head = &Node(1, SomePtr(&Node(2, SomePtr(tail))))
+    Println(sum(head))  // 6
+}
+```
+
 ## 13. GALA Packages {#13-gala-packages}
 
 GALA supports Go-style imports with aliases and dot imports.
@@ -1547,7 +1583,7 @@ func main() {
 }
 ```
 
-A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
+A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `Ptr`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
 
 A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](/docs/errors/gala-e0066/), because Go forbids it; import that package under a name, or rename the declaration.
 

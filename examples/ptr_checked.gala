@@ -1,0 +1,62 @@
+package main
+
+// Ptr[T]: a pointer that is never nil. `&x` is one, it erases to `*T` in the
+// generated Go, and a pointer from Go becomes one only through RequirePtr.
+
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Bump() {
+    c.N = c.N + 1
+}
+
+func bumpTwice(c Ptr[Counter]) {
+    c.Bump()
+    c.Bump()
+}
+
+// A Go-style function: its pointer may be nil.
+func goLookup(found bool, c *Counter) *Counter {
+    if found {
+        return c
+    }
+    return nil
+}
+
+// Fills a Go-style function slot: the callback may be handed a nil pointer.
+func visit(f func(*Counter), c *Counter) = f(c)
+
+func describe(t Try[int]) string = t match {
+    case Success(n) => s"ok $n"
+    case Failure(e) => s"panic: ${e.Error()}"
+}
+
+func main() {
+    var c = Counter(0)
+    val p = &c
+    bumpTwice(p)
+    Println(s"after bumpTwice: ${c.N}")
+
+    // A Ptr fills a *T slot as it is.
+    val back = goLookup(true, p)
+    Println(s"Go pointer is nil: ${back == nil}")
+
+    // A *T from Go is checked once, at the boundary.
+    val checked = RequirePtr(back)
+    checked.Bump()
+    Println(s"through RequirePtr: ${c.N}")
+    Println(describe(Try(RequirePtr(goLookup(false, p)).N)))
+
+    // A lambda with a Ptr parameter, called from a slot whose parameter is a
+    // *T, checks it on entry.
+    visit((q Ptr[Counter]) => q.Bump(), p)
+    Println(s"after visit: ${c.N}")
+    Println(describe(Try(() => {
+        visit((q Ptr[Counter]) => q.Bump(), goLookup(false, p))
+        c.N
+    })))
+
+    // The address of a composite literal is a Ptr too.
+    val fresh = &Counter(10)
+    fresh.Bump()
+    Println(s"fresh: ${fresh.N}")
+}
