@@ -14,7 +14,6 @@ type Stream[T any] struct {
     tailThunk func() Stream[T]
     evaluated bool
     cachedHead Option[T]
-    var cachedTail OptionPtr[Stream[T]]
 }
 
 // empty returns an empty stream.
@@ -24,7 +23,6 @@ func empty[T any]() Stream[T] {
         tailThunk = () => empty[T](),
         evaluated = true,
         cachedHead = None[T](),
-        cachedTail = EmptyOptionPtr[Stream[T]](),
     )
 }
 
@@ -35,7 +33,6 @@ func cons[T any](head T, tail func() Stream[T]) Stream[T] {
         tailThunk = tail,
         evaluated = false,
         cachedHead = Some(head),
-        cachedTail = EmptyOptionPtr[Stream[T]](),
     )
 }
 
@@ -46,7 +43,6 @@ func lazyStream[T any](headThunk func() Option[T], tailThunk func() Stream[T]) S
         tailThunk = tailThunk,
         evaluated = false,
         cachedHead = None[T](),
-        cachedTail = EmptyOptionPtr[Stream[T]](),
     )
 }
 
@@ -157,15 +153,7 @@ func (s Stream[T]) Head() Option[T] {
 func (s Stream[T]) HeadOrElse(defaultVal T) T = s.Head().GetOrElse(defaultVal)
 
 // Tail returns the tail of the stream.
-func (s Stream[T]) Tail() Stream[T] = s.cachedTail match {
-    case Some(cached) => *cached
-    case None() => {
-        // Using var because we need a mutable reference for the pointer assignment
-        var tail = s.tailThunk()
-        s.cachedTail = SomePtr(&tail)
-        tail
-    }
-}
+func (s Stream[T]) Tail() Stream[T] = s.tailThunk()
 
 // IsEmpty returns true if the stream is empty.
 func (s Stream[T]) IsEmpty() bool = s.Head().IsEmpty()

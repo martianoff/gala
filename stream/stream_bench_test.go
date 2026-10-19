@@ -23,9 +23,8 @@ func BenchmarkStreamMapFilterTake(b *testing.B) {
 	}
 }
 
-func BenchmarkStreamRetraverse(b *testing.B) {
+func BenchmarkStreamForEach(b *testing.B) {
 	s := Range(0, 10000)
-	sinkInt = s.Size()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

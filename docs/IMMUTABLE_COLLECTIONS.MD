@@ -1317,6 +1317,9 @@ bazel run //collection_immutable:perf_gala
 
 # Go native slices benchmark (immutable style)
 bazel run //collection_immutable:perf_go
+
+# Go testing.B benchmarks with allocations per op (B/op, allocs/op)
+bazel run //collection_immutable:collections_bench -- -test.bench=. -test.benchmem -test.run='^$'
 ```
 
 ### Sequence Results (ns/op) - 10,000 Elements

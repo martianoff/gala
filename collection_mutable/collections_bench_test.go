@@ -17,25 +17,58 @@ func benchKeys() []int {
 	return keys
 }
 
+func fillArray() *Array[int] {
+	a := EmptyArray[int]()
+	for j := 0; j < benchSize; j++ {
+		a.Append(j)
+	}
+	return a
+}
+
+func fillHashMap(keys []int) *HashMap[int, int] {
+	m := EmptyHashMap[int, int]()
+	for _, k := range keys {
+		m.Put(k, k)
+	}
+	return m
+}
+
+func fillHashSet(keys []int) *HashSet[int] {
+	s := EmptyHashSet[int]()
+	for _, k := range keys {
+		s.Add(k)
+	}
+	return s
+}
+
+func fillTreeMap(keys []int) *TreeMap[int, int] {
+	m := EmptyTreeMap[int, int]()
+	for _, k := range keys {
+		m.Put(k, k)
+	}
+	return m
+}
+
+func fillTreeSet(keys []int) *TreeSet[int] {
+	s := EmptyTreeSet[int]()
+	for _, k := range keys {
+		s.Add(k)
+	}
+	return s
+}
+
 var sinkInt int
 var sinkBool bool
 
 func BenchmarkArrayAppend(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		a := EmptyArray[int]()
-		for j := 0; j < benchSize; j++ {
-			a.Append(j)
-		}
-		sinkInt = a.Size()
+		sinkInt = fillArray().Size()
 	}
 }
 
 func BenchmarkArrayGetSet(b *testing.B) {
-	a := EmptyArray[int]()
-	for j := 0; j < benchSize; j++ {
-		a.Append(j)
-	}
+	a := fillArray()
 	keys := benchKeys()
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -89,20 +122,13 @@ func BenchmarkHashMapPut(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		m := EmptyHashMap[int, int]()
-		for _, k := range keys {
-			m.Put(k, k)
-		}
-		sinkInt = m.Size()
+		sinkInt = fillHashMap(keys).Size()
 	}
 }
 
 func BenchmarkHashMapGet(b *testing.B) {
 	keys := benchKeys()
-	m := EmptyHashMap[int, int]()
-	for _, k := range keys {
-		m.Put(k, k)
-	}
+	m := fillHashMap(keys)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -116,10 +142,7 @@ func BenchmarkHashMapPutRemove(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		m := EmptyHashMap[int, int]()
-		for _, k := range keys {
-			m.Put(k, k)
-		}
+		m := fillHashMap(keys)
 		for _, k := range keys {
 			m.Remove(k)
 		}
@@ -131,20 +154,13 @@ func BenchmarkHashSetAdd(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		s := EmptyHashSet[int]()
-		for _, k := range keys {
-			s.Add(k)
-		}
-		sinkInt = s.Size()
+		sinkInt = fillHashSet(keys).Size()
 	}
 }
 
 func BenchmarkHashSetContains(b *testing.B) {
 	keys := benchKeys()
-	s := EmptyHashSet[int]()
-	for _, k := range keys {
-		s.Add(k)
-	}
+	s := fillHashSet(keys)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -158,20 +174,13 @@ func BenchmarkTreeMapPut(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		m := EmptyTreeMap[int, int]()
-		for _, k := range keys {
-			m.Put(k, k)
-		}
-		sinkInt = m.Size()
+		sinkInt = fillTreeMap(keys).Size()
 	}
 }
 
 func BenchmarkTreeMapGet(b *testing.B) {
 	keys := benchKeys()
-	m := EmptyTreeMap[int, int]()
-	for _, k := range keys {
-		m.Put(k, k)
-	}
+	m := fillTreeMap(keys)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -185,10 +194,7 @@ func BenchmarkTreeMapPutRemove(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		m := EmptyTreeMap[int, int]()
-		for _, k := range keys {
-			m.Put(k, k)
-		}
+		m := fillTreeMap(keys)
 		for _, k := range keys {
 			m.Remove(k)
 		}
@@ -197,10 +203,7 @@ func BenchmarkTreeMapPutRemove(b *testing.B) {
 }
 
 func BenchmarkTreeMapForEach(b *testing.B) {
-	m := EmptyTreeMap[int, int]()
-	for _, k := range benchKeys() {
-		m.Put(k, k)
-	}
+	m := fillTreeMap(benchKeys())
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -212,20 +215,13 @@ func BenchmarkTreeSetAdd(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		s := EmptyTreeSet[int]()
-		for _, k := range keys {
-			s.Add(k)
-		}
-		sinkInt = s.Size()
+		sinkInt = fillTreeSet(keys).Size()
 	}
 }
 
 func BenchmarkTreeSetContains(b *testing.B) {
 	keys := benchKeys()
-	s := EmptyTreeSet[int]()
-	for _, k := range keys {
-		s.Add(k)
-	}
+	s := fillTreeSet(keys)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -239,10 +235,7 @@ func BenchmarkTreeSetAddRemove(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		s := EmptyTreeSet[int]()
-		for _, k := range keys {
-			s.Add(k)
-		}
+		s := fillTreeSet(keys)
 		for _, k := range keys {
 			s.Remove(k)
 		}
