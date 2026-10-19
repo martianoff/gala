@@ -1,0 +1,16 @@
+map: 2
+fold: 11
+touch: true
+var hits: 3
+field map: 20
+field fold: 2
+field hits: 2
+val map: 2
+val fold: -3
+val hits: 0
+result map: 49
+result fold: 7
+pointer map: 101
+pointer hits: 4
+bind: 21
+also: 3

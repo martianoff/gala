@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -32,6 +33,33 @@ func (t *galaASTTransformer) addressableReceiver(recv ast.Expr, recvType transpi
 	if !t.hasPointerReceiverMethod(recvType, method) || t.isAddressable(recv) {
 		return recv, nil
 	}
+	return t.addressedCopy(recv, recvType, method, line, col)
+}
+
+// loweredMethodReceiver returns the receiver argument of a call of a method
+// lowered to a function that takes its receiver as the first argument (see
+// emitGenericMethodFreeFunc). Go takes the address of an addressable operand
+// only for a method call, so a pointer-receiver method called on a value gets
+// `&recv` when recv is addressable, and otherwise an addressed copy (or
+// GALA-E0053) as addressableReceiver gives a method call. A receiver that is
+// a pointer already is passed as it is.
+func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType transpiler.Type, m *transpiler.MethodMetadata, method string, line, col int) (ast.Expr, error) {
+	if m == nil || !m.PointerReceiver {
+		return recv, nil
+	}
+	if _, _, _, isValue := t.receiverTypeInfo(recvType); !isValue {
+		return recv, nil
+	}
+	if t.isAddressable(recv) {
+		return &ast.UnaryExpr{Op: token.AND, X: recv}, nil
+	}
+	return t.addressedCopy(recv, recvType, method, line, col)
+}
+
+// addressedCopy hands recv, a value that cannot be addressed, to a
+// pointer-receiver method as `std.AddrOfCopy(recv)`, or reports GALA-E0053
+// when its type must not be copied.
+func (t *galaASTTransformer) addressedCopy(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
 	if reason := t.noCopyReason(recvType, make(map[string]bool)); reason != "" {
 		typeName := receiverBase(recvType).String()
 		why := fmt.Sprintf("%s must not be copied", reason)
@@ -169,7 +197,7 @@ func isPointerOnlyGoLocker(goData *transpiler.GoTypeData) bool {
 // for a value (non-pointer) receiver type T — a GALA type, or a Go type from
 // the analyzer's Go type info. Methods lowered to free functions (a method
 // with its own type parameters, or one flagged IsGeneric) take their receiver
-// as an ordinary argument and are left alone.
+// as an ordinary argument and are left to loweredMethodReceiver.
 func (t *galaASTTransformer) hasPointerReceiverMethod(recvType transpiler.Type, method string) bool {
 	_, meta, goData, _ := t.receiverTypeInfo(recvType)
 	if meta != nil {

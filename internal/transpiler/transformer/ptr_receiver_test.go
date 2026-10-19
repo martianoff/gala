@@ -160,7 +160,7 @@ func TestPtrReceiverAllowed(t *testing.T) {
 		{name: "RequirePtr", body: "RequirePtr(lookup(true)).Bump()"},
 		{name: "OptionPtr", body: "OptionPtrOf(lookup(true)).ForEach((c) => c.Bump())"},
 		{name: "Ptr method value", body: "var c = Counter(0)\n    val f = (&c).Count\n    Println(f())"},
-		{name: "generic receiver", body: "var b = Box(1)\n    Println(b.Get(), (&b).Map((v) => v + 1))"},
+		{name: "generic receiver", body: "var b = Box(1)\n    Println(b.Get(), b.Map((v) => v + 1))"},
 		{
 			name:  "Ptr receiver calling its own methods",
 			decls: "func (c Ptr[Counter]) Twice() {\n    c.Bump()\n    c.Bump()\n}\n",
@@ -229,13 +229,59 @@ func main() {
     var c = Counter(0)
     c.Bump()
     var b = Box(1)
-    Println(c.peek(), (&b).Map((v) => v + 1))
+    Println(c.peek(), b.Map((v) => v + 1))
 }`, "")
 	require.NoError(t, err)
 	assert.Contains(t, out, `panic("Counter.Bump: receiver c is a Ptr[Counter], but the caller passed nil")`)
 	assert.Contains(t, out, `panic("Box.Map: receiver b is a Ptr[Box[T]], but the caller passed nil")`)
 	assert.NotContains(t, out, "Counter.peek: receiver")
 	assert.NotContains(t, out, "parameter b is a")
+}
+
+// TestLoweredPointerReceiverAddress checks the receiver argument of a generic
+// method on a `*T` or `Ptr[T]` receiver, which is lowered to a function: an
+// addressable value is passed by its address, as Go does for a method call; a
+// val or a call result through an addressed copy, as a method call on it
+// gets; a pointer as it is (#800).
+func TestLoweredPointerReceiverAddress(t *testing.T) {
+	const decls = `struct Box[T any](var V T)
+
+func (b *Box[T]) Map[U any](f func(T) U) U = f(b.V)
+
+func (b Ptr[Box[T]]) Fold[U any](zero U, f func(U, T) U) U = f(zero, b.V)
+
+func (b *Box[T]) Touch[U any]() Option[U] = None[U]()
+
+func (b Box[T]) Show[U any](f func(T) U) U = f(b.V)
+
+struct Holder(var box Box[int], fixed Box[int])
+
+func newBox() Box[int] = Box(7)
+`
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "var, *T", body: "var b = Box(1)\n    Println(b.Map((v) => v + 1))", want: "Box_Map(&b, "},
+		{name: "var, Ptr", body: "var b = Box(1)\n    Println(b.Fold(0, (acc, v) => acc + v))", want: "Box_Fold(&b, "},
+		{name: "var, no arguments", body: "var b = Box(1)\n    Println(b.Touch[string]())", want: "Box_Touch[string, int](&b)"},
+		{name: "var field through a var", body: "var h = Holder(Box(1), Box(2))\n    Println(h.box.Map((v) => v + 1))", want: "Box_Map(&h.box, "},
+		{name: "val field through a var", body: "var h = Holder(Box(1), Box(2))\n    Println(h.fixed.Fold(0, (acc, v) => acc + v))", want: "Box_Fold(std.AddrOfCopy(h.fixed.Get()), "},
+		{name: "val", body: "val b = Box(1)\n    Println(b.Map((v) => v + 1))", want: "Box_Map(std.AddrOfCopy(b.Get()), "},
+		{name: "call result", body: "Println(newBox().Fold(0, (acc, v) => acc + v))", want: "Box_Fold(std.AddrOfCopy(newBox()), "},
+		{name: "pointer", body: "var b = Box(1)\n    val p = &b\n    Println(p.Map((v) => v + 1))", want: "Box_Map(p.Get(), "},
+		{name: "address written out", body: "var b = Box(1)\n    Println((&b).Map((v) => v + 1))", want: "Box_Map((&b), "},
+		{name: "value receiver", body: "var b = Box(1)\n    Println(b.Show((v) => v + 1))", want: "Box_Show(b, "},
+	}
+	trans := newTranspiler()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := trans.Transpile("package main\n\n"+decls+"\nfunc main() {\n    "+tt.body+"\n}\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, out, tt.want)
+		})
+	}
 }
 
 // TestPtrReceiverCrossPackage checks that a Ptr receiver declared in another
