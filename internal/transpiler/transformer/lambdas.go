@@ -502,7 +502,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		}
 		return body, nil, nil
 	}
-	expr, err := t.lowerAgainst(ctx.Expression(), bodySlot, true)
+	expr, err := t.lowerResultAgainst(ctx.Expression(), bodySlot, true)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -403,7 +403,7 @@ func (t *galaASTTransformer) transformWithDeclaredType(exprCtx grammar.IExpressi
 	if transpiler.IsUnusable(declared) || typeMentionsTypeParam(declared, typeParams) {
 		return t.transformExpression(exprCtx)
 	}
-	if exprCtx.GetText() == "nil" {
+	if isNilLiteral(exprCtx) {
 		return ast.NewIdent("nil"), nil
 	}
 	return t.transformArgument(exprCtx, typedSlot(declared), true)

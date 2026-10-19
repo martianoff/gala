@@ -1162,7 +1162,7 @@ func (t *galaASTTransformer) isUnwrittenValRead(exprCtx grammar.IExpressionConte
 // retType is the declared result type; a void function's body is
 // transformVoidExpressionBody's.
 func (t *galaASTTransformer) transformExpressionBodiedFunction(exprCtx grammar.IExpressionContext, retType ast.Expr) (*ast.BlockStmt, error) {
-	expr, err := t.lowerAgainst(exprCtx, typedSlot(t.astTypeToTranspilerType(retType)), false)
+	expr, err := t.lowerResultAgainst(exprCtx, typedSlot(t.astTypeToTranspilerType(retType)), false)
 	if err != nil {
 		return nil, err
 	}

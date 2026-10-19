@@ -46,9 +46,4 @@ func main() {
 var shared = Node{Value: 7}
 
 // A Go-style lookup: nil when nothing is found.
-func goFind(found bool) *Node {
-    if found {
-        return &shared
-    }
-    return nil
-}
+func goFind(found bool) *Node = if (found) &shared else nil

@@ -1662,7 +1662,7 @@ func (t *galaASTTransformer) transformCaseBodyStmt(ctx grammar.ISimpleStatementC
 		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
 			return nil, nil, err
 		}
-		expr, err := t.lowerAgainst(exprCtx, armSlot, true)
+		expr, err := t.lowerResultAgainst(exprCtx, armSlot, true)
 		if err != nil {
 			return nil, nil, err
 		}

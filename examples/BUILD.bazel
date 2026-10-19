@@ -4388,3 +4388,11 @@ gala_exec_test(
     src = "option_ptr.gala",
     expected = "option_ptr.out",
 )
+
+# A `nil` result value takes the declared result type in every result position:
+# the expression body, an if-branch, a match arm and a block's trailing value.
+gala_exec_test(
+    name = "trailing_nil_result",
+    src = "trailing_nil_result.gala",
+    expected = "trailing_nil_result.out",
+)
