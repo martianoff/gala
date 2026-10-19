@@ -515,7 +515,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// A subject whose cases name the variants of its sealed view (see
 	// sealedViewForCases) is matched as that view: the match tests
 	// `subject.MatchView()`, evaluated once, as a value of the sealed type.
-	subject, matchedType, err := t.matchViewSubject(subject, matchedType, caseClauses, ctx)
+	subject, matchedType, _, err := t.matchViewSubject(subject, matchedType, caseClauses, ctx)
 	if err != nil {
 		return nil, err
 	}

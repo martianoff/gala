@@ -20,30 +20,19 @@ const sealedViewMethod = "MatchView"
 // sealedViewOf returns the sealed type S that typ views itself as through
 // `MatchView() S`, with typ's type arguments substituted, or nil when typ has
 // no such method: no parameters, no type parameters of its own, and a sealed
-// result. A pointer type is viewed through the type it points to, as Go's
-// method set does; an alias through the method declared on the alias itself,
-// or else on the type it names.
+// result. The method is found as a call `typ.MatchView()` finds it (see
+// methodReceiverType): through a pointer, and along an alias chain.
 func (t *galaASTTransformer) sealedViewOf(typ transpiler.Type) transpiler.Type {
+	if ptr, ok := typ.(transpiler.PointerType); transpiler.IsUnusable(typ) || ok && transpiler.IsUnusable(ptr.Elem) {
+		return nil
+	}
+	typ = t.methodReceiverType(typ, sealedViewMethod)
+	if ptr, ok := typ.(transpiler.PointerType); ok {
+		typ = ptr.Elem
+	}
 	if transpiler.IsUnusable(typ) {
 		return nil
 	}
-	if ptr, ok := typ.(transpiler.PointerType); ok {
-		if transpiler.IsUnusable(ptr.Elem) {
-			return nil
-		}
-		typ = ptr.Elem
-	}
-	if view := t.declaredSealedView(typ); view != nil {
-		return view
-	}
-	if target := t.followAliasChain(typ); target.BaseName() != typ.BaseName() {
-		return t.declaredSealedView(target)
-	}
-	return nil
-}
-
-// declaredSealedView is sealedViewOf for a MatchView declared on typ itself.
-func (t *galaASTTransformer) declaredSealedView(typ transpiler.Type) transpiler.Type {
 	meta, resolved := t.getTypeMetaResolved(typ.BaseName())
 	if meta == nil {
 		return nil
@@ -170,8 +159,8 @@ func (t *galaASTTransformer) checkSealedViewPattern(pat grammar.IPatternContext,
 
 // checkViewAlternatives rejects an alternative of pat, a pattern matched
 // against the view of a value of typ, that does not apply to the view. Each
-// one is a variant of the view, `_`, or a stable identifier, compared with the
-// view by ==.
+// one is a variant of the view, `_`, or a stable identifier holding a value
+// of the view type, compared with the view by ==.
 func (t *galaASTTransformer) checkViewAlternatives(pat grammar.IExpressionContext, typ, view transpiler.Type) error {
 	for _, alt := range t.flatAlternatives(pat) {
 		text := alt.GetText()
@@ -184,9 +173,14 @@ func (t *galaASTTransformer) checkViewAlternatives(pat grammar.IExpressionContex
 		}
 		if name == text {
 			if t.isStableIdentifierPattern(name) {
-				continue
+				// Compared with the view by ==, so it holds a view value.
+				if t.namesViewType(t.getExprTypeNameManual(ast.NewIdent(name)), view) {
+					continue
+				}
+				return sealedViewPatternError(alt, typ, view,
+					fmt.Sprintf("`%s` is not a value of %s", name, displayType(view)))
 			}
-			if t.isSimpleIdentifier(name) && !t.bareNameTests(name, view) {
+			if extractor, _ := t.bareExtractor(name, view); t.isSimpleIdentifier(name) && extractor == nil {
 				return sealedViewPatternError(alt, typ, view,
 					fmt.Sprintf("`case %s` would bind the %s view, not the %s itself", name, displayType(view), displayType(typ)))
 			}
@@ -219,17 +213,17 @@ func sealedViewPatternError(at antlr.ParserRuleContext, subjectType, view transp
 // matchViewSubject returns what a match over subject, a value of subjectType,
 // tests: subject.MatchView() and the view type when its cases read the
 // subject's sealed view (see sealedViewForCases), and subject and subjectType
-// unchanged otherwise. at locates the match.
-func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType transpiler.Type, caseClauses []grammar.ICaseClauseContext, at antlr.ParserRuleContext) (ast.Expr, transpiler.Type, error) {
+// unchanged otherwise; viewed reports which. at locates the match.
+func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType transpiler.Type, caseClauses []grammar.ICaseClauseContext, at antlr.ParserRuleContext) (ast.Expr, transpiler.Type, bool, error) {
 	view, err := t.sealedViewForCases(subjectType, caseClauses)
 	if err != nil || view == nil {
-		return subject, subjectType, err
+		return subject, subjectType, false, err
 	}
 	viewExpr, err := t.viewSubject(subject, subjectType, at.GetStart().GetLine(), at.GetStart().GetColumn())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return viewExpr, view, nil
+	return viewExpr, view, true, nil
 }
 
 // viewSubject returns the expression a match over a sealed view tests: the

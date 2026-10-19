@@ -120,7 +120,7 @@ func TestSealedViewMatchLowering(t *testing.T) {
     case (Some(_), _) => a
     case (_, other)   => other
 }`,
-			want:      []string{"(obj.V1.Get().MatchView())", "other := obj.V2.Get()"},
+			want:      []string{":= obj.V1.Get().MatchView()", "other := obj.V2.Get()"},
 			wantViews: 1,
 		},
 	}
@@ -185,6 +185,19 @@ func TestSealedViewMatchErrors(t *testing.T) {
 }`,
 			code: galaerr.CodeInvalidSealedViewMatch,
 			msg:  "`7` is not a variant of Level",
+		},
+		{
+			name: "stable identifier of the subject type",
+			body: `func f(m MaybeInt) int {
+    val Empty = MaybeInt(-1)
+    m match {
+        case Some(n) => n
+        case Empty   => 0
+        case _       => 1
+    }
+}`,
+			code: galaerr.CodeInvalidSealedViewMatch,
+			msg:  "`Empty` is not a value of Option[int]",
 		},
 		{
 			name: "binding in a partial function",

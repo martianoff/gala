@@ -74,7 +74,15 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		if err != nil {
 			return nil, nil, err
 		}
-		return t.transformExpressionPatternWithType(patExprCtx, viewObj, view)
+		// Read the view once for the whole sub-pattern, its alternatives
+		// included.
+		viewVar := t.nextTempVar()
+		cond, stmts, err := t.transformExpressionPatternWithType(patExprCtx, ast.NewIdent(viewVar), view)
+		if err != nil {
+			return nil, nil, err
+		}
+		read := t.patternDefine([]string{viewVar}, []ast.Expr{t.knownTypeExpr(view)}, viewObj)
+		return cond, blankAssignTempVar(append([]ast.Stmt{read}, stmts...), viewVar), nil
 	}
 
 	if strings.Contains(text, "|") {

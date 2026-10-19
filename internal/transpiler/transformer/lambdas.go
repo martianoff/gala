@@ -1273,12 +1273,11 @@ func (t *galaASTTransformer) transformPartialFunctionLiteral(ctx *grammar.Partia
 	// A parameter whose cases name the variants of its sealed view (see
 	// sealedViewForCases) is matched as that view, read once on entry.
 	casesParam := paramName
-	param := ast.NewIdent(paramName)
-	viewExpr, casesType, err := t.matchViewSubject(param, paramType, caseClauses, ctx)
+	viewExpr, casesType, viewed, err := t.matchViewSubject(ast.NewIdent(paramName), paramType, caseClauses, ctx)
 	if err != nil {
 		return nil, err
 	}
-	if viewExpr != ast.Expr(param) {
+	if viewed {
 		casesParam = "_pf_view"
 		t.addVar(casesParam, casesType)
 		clauses = append(clauses, &ast.AssignStmt{
