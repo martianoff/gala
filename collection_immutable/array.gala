@@ -461,10 +461,7 @@ func (a Array[T]) Append(value T) Array[T] {
     var treeLen = a.length - a.prefix.Size()
 
     if treeLen == 0 {
-        var values []T
-        values = go_interop.SliceAppend(values, value)
-        var leaf = &arrayNode[T](values = values, isLeaf = true)
-        return Array[T](root = SomePtr(leaf), length = a.length + 1, depth = 1, prefix = a.prefix)
+        return Array[T](root = SomePtr(newSubtree[T](value, 1)), length = a.length + 1, depth = 1, prefix = a.prefix)
     }
 
     var result = appendToTree[T](a.root.Get(), treeLen, value, a.depth)

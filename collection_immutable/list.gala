@@ -576,7 +576,7 @@ func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) m
     for current.length > 0 {
         val elem = current.head
         val k = key(elem)
-        val group = if (go_interop.MapContains(result, k)) result[k] else emptyList[V]()
+        val group = result[k] // a missing key gives the zero List, which is empty
         result[k] = consList[V](value(elem), group)
         current = *current.tail.Get()
     }

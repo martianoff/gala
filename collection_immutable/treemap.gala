@@ -392,27 +392,36 @@ func treeMapRemove[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], key K
     }
 
     // Node has two children, find successor (min of right subtree)
-    val succ = treeMapMinNode[K, V](node.right.Get())
-    val newRight = treeMapRemoveMin[K, V](node.right.Get())
+    val right = node.right.Get()
+    val succ = treeMapMinNode[K, V](right)
+    val newRight = treeMapRemoveMin[K, V](right)
     return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = succ.key, value = succ.value, left = node.left, right = newRight, color = node.color)))
 }
 
 // treeMapMinNode finds the node with the minimum key in a subtree.
-func treeMapMinNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] = node.left match {
-    case Some(left) => treeMapMinNode[K, V](left)
-    case None() => node
+func treeMapMinNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] {
+    var current = node
+    for current.left.IsDefined() {
+        current = current.left.Get()
+    }
+    current
 }
 
 // treeMapMaxNode finds the node with the maximum key in a subtree.
-func treeMapMaxNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] = node.right match {
-    case Some(right) => treeMapMaxNode[K, V](right)
-    case None() => node
+func treeMapMaxNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] {
+    var current = node
+    for current.right.IsDefined() {
+        current = current.right.Get()
+    }
+    current
 }
 
 // treeMapRemoveMin removes the minimum key from a subtree.
-func treeMapRemoveMin[K comparable, V any](node Ptr[treeMapNode[K, V]]) OptionPtr[treeMapNode[K, V]] = node.left match {
-    case Some(left) => SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = treeMapRemoveMin[K, V](left), right = node.right, color = node.color)))
-    case None() => node.right
+func treeMapRemoveMin[K comparable, V any](node Ptr[treeMapNode[K, V]]) OptionPtr[treeMapNode[K, V]] {
+    if node.left.IsEmpty() {
+        return node.right
+    }
+    SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = treeMapRemoveMin[K, V](node.left.Get()), right = node.right, color = node.color)))
 }
 
 // === Min/Max Operations ===

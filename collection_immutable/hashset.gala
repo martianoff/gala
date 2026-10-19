@@ -32,7 +32,7 @@ type hashSetNode[T comparable] struct {
 
 // HashSet represents an immutable set.
 type HashSet[T comparable] struct {
-    root   OptionPtr[hashSetNode[T]] // empty when the set is
+    root   OptionPtr[hashSetNode[T]] // empty when the set is empty
     size   int
 }
 
@@ -282,10 +282,14 @@ func insertIntoInternalNode[T comparable](node Ptr[hashSetNode[T]], elem T, hash
 
 // Remove removes an element from the set. Returns a new set without the element. O(eC).
 func (s HashSet[T]) Remove(elem T) HashSet[T] {
+    if s.root.IsEmpty() {
+        return s
+    }
+    val root = s.root.Get()
     val hashCode = hash[T](elem)
 
     // Check if contains (single hash computation)
-    if s.root.IsEmpty() || !containsInNode[T](s.root.Get(), elem, hashCode, 0) {
+    if !containsInNode[T](root, elem, hashCode, 0) {
         return s
     }
 
@@ -293,8 +297,7 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
         return EmptyHashSet[T]()
     }
 
-    val newRoot = removeFromNode[T](s.root.Get(), elem, hashCode, 0)
-    return HashSet[T](root = newRoot, size = s.size - 1)
+    return HashSet[T](root = removeFromNode[T](root, elem, hashCode, 0), size = s.size - 1)
 }
 
 // removeFromNode removes an element from a node, returning the new node, or

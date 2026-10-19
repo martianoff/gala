@@ -394,21 +394,27 @@ func removeTree[T comparable](tree OptionPtr[treeNode[T]], elem T) OptionPtr[tre
     }
 
     // Node has two children, find successor (min of right subtree)
-    val successor = findMinTree[T](node.right.Get())
-    val newRight = removeMinTree[T](node.right.Get())
+    val right = node.right.Get()
+    val successor = findMinTree[T](right)
+    val newRight = removeMinTree[T](right)
     return SomePtr(balanceTree[T](&treeNode[T](value = successor, left = node.left, right = newRight, color = node.color)))
 }
 
 // findMinTree finds the minimum element in a subtree.
-func findMinTree[T comparable](node Ptr[treeNode[T]]) T = node.left match {
-    case Some(left) => findMinTree[T](left)
-    case None() => node.value
+func findMinTree[T comparable](node Ptr[treeNode[T]]) T {
+    var current = node
+    for current.left.IsDefined() {
+        current = current.left.Get()
+    }
+    current.value
 }
 
 // removeMinTree removes the minimum element from a subtree.
-func removeMinTree[T comparable](node Ptr[treeNode[T]]) OptionPtr[treeNode[T]] = node.left match {
-    case Some(left) => SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = removeMinTree[T](left), right = node.right, color = node.color)))
-    case None() => node.right
+func removeMinTree[T comparable](node Ptr[treeNode[T]]) OptionPtr[treeNode[T]] {
+    if node.left.IsEmpty() {
+        return node.right
+    }
+    SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = removeMinTree[T](node.left.Get()), right = node.right, color = node.color)))
 }
 
 // Min returns the minimum element in the set. O(log n).
@@ -438,9 +444,12 @@ func (s TreeSet[T]) Max() T {
 }
 
 // findMaxTree finds the maximum element in a subtree.
-func findMaxTree[T comparable](node Ptr[treeNode[T]]) T = node.right match {
-    case Some(right) => findMaxTree[T](right)
-    case None() => node.value
+func findMaxTree[T comparable](node Ptr[treeNode[T]]) T {
+    var current = node
+    for current.right.IsDefined() {
+        current = current.right.Get()
+    }
+    current.value
 }
 
 // MaxOption returns the maximum element wrapped in Option. O(log n).

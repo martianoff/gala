@@ -31,7 +31,7 @@ type hashMapNode[K comparable, V any] struct {
 
 // HashMap represents an immutable map.
 type HashMap[K comparable, V any] struct {
-    root   OptionPtr[hashMapNode[K, V]] // empty when the map is
+    root   OptionPtr[hashMapNode[K, V]] // empty when the map is empty
     size   int
 }
 
@@ -320,10 +320,14 @@ func insertIntoInternalNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]],
 
 // Remove removes a key from the map. Returns a new map. O(eC).
 func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
+    if m.root.IsEmpty() {
+        return m
+    }
+    val root = m.root.Get()
     val hashCode = hashMapHash[K](key)
 
     // Check if contains
-    if m.root.IsEmpty() || !containsKeyInNode[K, V](m.root.Get(), key, hashCode, 0) {
+    if !containsKeyInNode[K, V](root, key, hashCode, 0) {
         return m
     }
 
@@ -331,8 +335,7 @@ func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
         return EmptyHashMap[K, V]()
     }
 
-    val newRoot = removeFromNodeMap[K, V](m.root.Get(), key, hashCode, 0)
-    return HashMap[K, V](root = newRoot, size = m.size - 1)
+    return HashMap[K, V](root = removeFromNodeMap[K, V](root, key, hashCode, 0), size = m.size - 1)
 }
 
 // removeFromNodeMap removes a key from a node, returning the new node, or
