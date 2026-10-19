@@ -23,12 +23,11 @@ func main() {
     Println(s"head next is defined: ${head.Next.IsDefined()}")
 
     head.Next.ForEach((n) => Println(s"after head: ${n.Value}"))
-    Println(s"second after head: ${head.Next.FlatMap((n) => n.Next).Get().Value}")
+    Println(s"second after head: ${head.Next.FlatMap((n) => n.Next).Map((n) => n.Value).GetOrElse(0)}")
     Println(s"or else: ${tail.Next.GetOrElse(head).Value}")
-    Println(s"orElse: ${tail.Next.OrElse(SomePtr(middle)).Get().Value}")
+    Println(s"orElse: ${tail.Next.OrElse(SomePtr(middle)).Map((n) => n.Value).GetOrElse(0)}")
 
-    val fromGo = OptionPtrOf(goFind(false))
-    Println(s"from Go: $fromGo")
+    Println(s"from Go: ${OptionPtrOf(goFind(false))}")
     Println(s"from Go found: ${OptionPtrOf(goFind(true))}")
     Println(s"empty: ${EmptyOptionPtr[Node]()}")
 }
