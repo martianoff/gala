@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -1263,8 +1264,8 @@ func (t *galaASTTransformer) exprToTypeString(expr ast.Expr) string {
 		}
 	case *ast.StarExpr:
 		// The `*T` of a non-null Ptr[T] reads back as one (ParseType).
-		if t.ptrStars[e] {
-			return transpiler.TypePtr + "[" + t.exprToTypeString(e.X) + "]"
+		if t.isPtrTypeExpr(e) {
+			return galaparser.PtrTypeName + "[" + t.exprToTypeString(e.X) + "]"
 		}
 		return "*" + t.exprToTypeString(e.X)
 	case *ast.IndexExpr:

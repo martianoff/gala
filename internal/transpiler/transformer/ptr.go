@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -34,10 +35,10 @@ const ptrMayBeAbsentHint = "a pointer that may be absent is an OptionPtr[T] (Emp
 func (t *galaASTTransformer) namesPtrType(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.Ident:
-		return e.Name == transpiler.TypePtr && t.bindingScope(e.Name) == nil
+		return e.Name == galaparser.PtrTypeName && t.bindingScope(e.Name) == nil
 	case *ast.SelectorExpr:
 		pkg, ok := e.X.(*ast.Ident)
-		return ok && e.Sel.Name == transpiler.TypePtr && t.bindingScope(pkg.Name) == nil &&
+		return ok && e.Sel.Name == galaparser.PtrTypeName && t.bindingScope(pkg.Name) == nil &&
 			registry.Global.IsPreludePackage(pkg.Name)
 	}
 	return false
@@ -61,10 +62,7 @@ func (t *galaASTTransformer) isPtrTypeExpr(typeExpr ast.Expr) bool {
 
 // ptrError is a GALA-E0080 at ctx.
 func ptrError(ctx antlr.ParserRuleContext, msg, hint string) error {
-	tok := ctx.GetStart()
-	text := transpiler.SourceText(ctx)
-	return galaerr.NewCodedSemanticError(galaerr.CodePtrNullability, tok.GetLine(), tok.GetColumn(), msg, hint).
-		WithSpan(tok.GetColumn() + len([]rune(text)))
+	return spanError(galaerr.CodePtrNullability, ctx, ctx, msg, hint)
 }
 
 // checkPtrSlot rejects a value that may be nil filling a slot whose type has
@@ -76,6 +74,7 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 		return nil
 	}
 	expected = t.followAliasChain(expected)
+	// Most slots hold no Ptr: skip the expression's type inference for them.
 	if !hasPtr(expected) {
 		return nil
 	}
@@ -83,7 +82,7 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 		if !transpiler.IsPtr(expected) {
 			return nil
 		}
-		return ptrError(exprCtx, fmt.Sprintf("cannot use nil as %s: a Ptr is never nil", transpiler.DisplayType(expected)), ptrMayBeAbsentHint)
+		return ptrError(exprCtx, fmt.Sprintf("cannot use nil as %s: a Ptr is never nil", displayType(expected)), ptrMayBeAbsentHint)
 	}
 	actual := t.probeExprType(expr)
 	if transpiler.IsUnusable(actual) || !nullableWherePtr(expected, actual) {
@@ -95,7 +94,7 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 		hint = "build the value from Ptr values: `&x`, or RequirePtr(p) for a pointer from Go"
 	}
 	return ptrError(exprCtx,
-		fmt.Sprintf("cannot use %s (%s) as %s: a pointer that may be nil cannot fill a Ptr", text, transpiler.DisplayType(actual), transpiler.DisplayType(expected)),
+		fmt.Sprintf("cannot use %s (%s) as %s: a pointer that may be nil cannot fill a Ptr", text, displayType(actual), displayType(expected)),
 		hint)
 }
 
@@ -188,7 +187,7 @@ func (t *galaASTTransformer) checkPtrNilComparison(tok token.Token, ctx antlr.Pa
 		return nil
 	}
 	return ptrError(ctx,
-		fmt.Sprintf("%s compares a %s with nil, but a Ptr is never nil", transpiler.SourceText(ctx), transpiler.DisplayType(typ)),
+		fmt.Sprintf("%s compares a %s with nil, but a Ptr is never nil", transpiler.SourceText(ctx), displayType(typ)),
 		"drop the comparison; "+ptrMayBeAbsentHint)
 }
 
@@ -205,19 +204,16 @@ func (t *galaASTTransformer) ptrEntryChecks(params *ast.FieldList, owner string,
 	var checks []ast.Stmt
 	pos := 0
 	for _, field := range params.List {
-		if len(field.Names) == 0 {
-			pos++
+		if !t.isPtrTypeExpr(field.Type) {
+			pos += max(len(field.Names), 1)
 			continue
 		}
+		typ := displayType(t.astTypeToTranspilerType(field.Type))
 		for _, n := range field.Names {
-			if n.Name != "_" && t.isPtrTypeExpr(field.Type) && guarded(pos) {
-				typ := transpiler.DisplayType(t.astTypeToTranspilerType(field.Type))
-				msg := fmt.Sprintf("%s: parameter %s is a %s, but the caller passed nil", owner, n.Name, typ)
+			if n.Name != "_" && guarded(pos) {
 				checks = append(checks, &ast.IfStmt{
 					Cond: &ast.BinaryExpr{X: ast.NewIdent(n.Name), Op: token.EQL, Y: ast.NewIdent("nil")},
-					Body: &ast.BlockStmt{List: []ast.Stmt{
-						&ast.ExprStmt{X: &ast.CallExpr{Fun: ast.NewIdent("panic"), Args: []ast.Expr{stringLit(msg)}}},
-					}},
+					Body: &ast.BlockStmt{List: panicStmt(fmt.Sprintf("%s: parameter %s is a %s, but the caller passed nil", owner, n.Name, typ))},
 				})
 			}
 			pos++

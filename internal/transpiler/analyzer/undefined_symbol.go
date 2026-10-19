@@ -1821,7 +1821,7 @@ func goKeyPackages[V any](m map[string]V, name string) map[string]bool {
 // to the bare type name (`Box`).
 func receiverBaseTypeName(ctx grammar.ITypeContext) string {
 	elem, _ := galaparser.PointerElem(ctx)
-	text := strings.TrimLeft(galaparser.TypeText(elem), "*")
+	text := galaparser.TypeText(elem)
 	if i := strings.IndexByte(text, '['); i >= 0 {
 		text = text[:i]
 	}

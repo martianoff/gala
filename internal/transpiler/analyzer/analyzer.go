@@ -2486,7 +2486,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	}
 
 	// GALA's non-null pointer `Ptr[T]` is a pointer type, marked non-null.
-	if idx := strings.Index(typeName, "["); idx != -1 && transpiler.IsPtrTypeName(typeName[:idx]) {
+	if idx := strings.IndexByte(typeName, '['); idx != -1 && galaparser.IsPtrTypeName(typeName[:idx]) {
 		if _, args := extractBaseAndArgs(typeName); len(args) == 1 {
 			elemType := a.resolveTypeWithParams(strings.TrimSpace(args[0]), pkgName, typeParams)
 			return transpiler.PointerType{Elem: elemType, NonNull: true}

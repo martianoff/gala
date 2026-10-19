@@ -553,7 +553,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	// to `*T` accepts a nil one.
 	if typ := t.astTypeToTranspilerType(typeExpr); hasPtr(typ) {
 		return nil, nil, ptrError(ctx,
-			fmt.Sprintf("a typed pattern cannot test for %s: a pointer from a dynamic value may be nil", transpiler.DisplayType(typ)),
+			fmt.Sprintf("a typed pattern cannot test for %s: a pointer from a dynamic value may be nil", displayType(typ)),
 			"match the nullable pointer type (`case p: *T`) and pass it through RequirePtr(p) or OptionPtrOf(p)")
 	}
 

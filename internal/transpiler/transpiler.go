@@ -81,11 +81,6 @@ const (
 	// parameters; the checker keys off this type, never off specific function
 	// names.
 	TypeSendable = "Sendable"
-
-	// Ptr is GALA's non-null pointer: `Ptr[T]` erases to `*T` in generated
-	// Go, and a nil never fills it. `&x` produces one; a Go `*T` becomes one
-	// only through RequirePtr or OptionPtrOf. See transpiler.PointerType.
-	TypePtr = "Ptr"
 )
 
 // EmbedDirective represents a single `embed val` declaration parsed from GALA source.

@@ -1046,7 +1046,7 @@ func (t *galaASTTransformer) codecStructMeta(ty transpiler.Type, pkg string) (*s
 		return nil, unsupportedShape("functions have no serialized form")
 	case transpiler.PointerType:
 		if transpiler.IsPtr(ty) {
-			return nil, unsupportedShape("%s has a pointer shape, and pointers are not encoded; store the value itself", transpiler.DisplayType(ty))
+			return nil, unsupportedShape("%s has a pointer shape, and pointers are not encoded; store the value itself", displayType(ty))
 		}
 		return nil, unsupportedShape("pointers are not encoded; store the value itself")
 	case transpiler.ArrayType, transpiler.MapType:

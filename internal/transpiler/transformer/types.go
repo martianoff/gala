@@ -588,7 +588,10 @@ func (t *galaASTTransformer) getBaseTypeAndArgs(typ ast.Expr) (string, []string)
 func (t *galaASTTransformer) typeArgToString(arg ast.Expr) string {
 	switch e := arg.(type) {
 	case *ast.StarExpr:
-		// Handle pointer types like *Array[T]
+		// Handle pointer types like *Array[T], and a Ptr[T]'s *T
+		if t.isPtrTypeExpr(e) {
+			return galaparser.PtrTypeName + "[" + t.typeArgToString(e.X) + "]"
+		}
 		return "*" + t.typeArgToString(e.X)
 	case *ast.Ident:
 		return e.Name
@@ -657,7 +660,7 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		}
 		return transpiler.GenericType{Base: base, Params: params}
 	case *ast.StarExpr:
-		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X), NonNull: t.ptrStars[e]}
+		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X), NonNull: t.isPtrTypeExpr(e)}
 	case *ast.ArrayType:
 		return transpiler.ArrayType{Elem: t.astTypeToTranspilerType(e.Elt)}
 	case *ast.MapType:

@@ -4654,8 +4654,12 @@ The check panics with the function and parameter name. A call between GALA
 functions needs no check, so an unexported function has none.
 
 What the type cannot see: a Go function writing a struct field, reflection,
-Go generic code's `var zero T`, a `Ptr` converted to `any`, and a GALA function
-(rather than a lambda) passed as a Go callback.
+Go generic code's `var zero T` (`go_interop.New[Ptr[T]]()` among them), a
+`Ptr` converted to `any`, a function value taking a `Ptr` (a named function, or
+a lambda already bound to a `val`) passed where a `func(*T)` is expected, a
+`Ptr` receiver (a method declared on `Ptr[T]` can be called on a `*T`, and its
+receiver is not checked on entry), and a Go call's several results assigned at
+once (`p, err = goCall()`).
 
 **`OptionPtr[T]`** is an ordinary std struct holding a `*T`: the size of one
 pointer, where an `Option[Ptr[T]]` also carries a tag. Its zero value is empty,

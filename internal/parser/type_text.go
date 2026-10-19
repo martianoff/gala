@@ -18,15 +18,20 @@ func TypeText(ctx grammar.ITypeContext) string {
 	return b.String()
 }
 
+// PtrTypeName is the name of GALA's non-null pointer marker, `Ptr[T]`.
+const PtrTypeName = "Ptr"
+
+// IsPtrTypeName reports whether name, the base of a generic type `name[T]`,
+// names the non-null pointer marker: `Ptr` unqualified or as `std.Ptr`.
+func IsPtrTypeName(name string) bool {
+	return name == PtrTypeName || name == "std."+PtrTypeName
+}
+
 // PtrElem returns the type argument of GALA's non-null pointer annotation
 // `Ptr[T]` (or `std.Ptr[T]`), or nil when ctx is not one.
 func PtrElem(ctx grammar.ITypeContext) grammar.ITypeContext {
-	if ctx == nil || ctx.QualifiedIdentifier() == nil || ctx.TypeArguments() == nil {
-		return nil
-	}
-	switch ctx.QualifiedIdentifier().GetText() {
-	case "Ptr", "std.Ptr":
-	default:
+	if ctx == nil || ctx.QualifiedIdentifier() == nil || ctx.TypeArguments() == nil ||
+		!IsPtrTypeName(ctx.QualifiedIdentifier().GetText()) {
 		return nil
 	}
 	list, ok := ctx.TypeArguments().TypeList().(*grammar.TypeListContext)
