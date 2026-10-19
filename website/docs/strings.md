@@ -441,7 +441,7 @@ bazel run //strings:perf_go
 
 ```gala
 type Str struct {
-    runes *lazy.Lazy[Array[rune]]   // deferred until first functional op
+    runes Ptr[lazy.Lazy[Array[rune]]]   // deferred until first functional op
     str string                       // always available
 }
 ```
