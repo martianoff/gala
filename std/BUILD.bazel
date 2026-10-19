@@ -10,7 +10,9 @@ exports_files([
     "iterable.gala",
     "meta.gala",
     "option.gala",
+    "option_ptr.gala",
     "ordered.gala",
+    "ptr.gala",
     "seq.gala",
     "try.gala",
     "tuple.gala",
@@ -34,6 +36,18 @@ gala_bootstrap_transpile(
     name = "option_go",
     src = "option.gala",
     out = "option.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "option_ptr_go",
+    src = "option_ptr.gala",
+    out = "option_ptr.gen.go",
+)
+
+gala_bootstrap_transpile(
+    name = "ptr_go",
+    src = "ptr.gala",
+    out = "ptr.gen.go",
 )
 
 gala_bootstrap_transpile(
@@ -108,7 +122,9 @@ go_library(
         "iterable.gen.go",
         "meta.gen.go",
         "option.gen.go",
+        "option_ptr.gen.go",
         "ordered.gen.go",
+        "ptr.gen.go",
         "seq.gen.go",
         "try.gen.go",
         "tuple.gen.go",

@@ -87,6 +87,7 @@ var accumulatedStateFields = []string{
 	"typeParamNames",
 	"structFields",
 	"structFieldTypes",
+	"ptrStars",
 	"genericMethods",
 	"resultGenericMethods",
 	"functions",

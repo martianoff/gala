@@ -1426,7 +1426,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						// Detect Go generics instantiation cycle:
 						// If receiver is Container[T] and return is Container[SomeType[T, ...]]
 						// Go would detect infinite type instantiation
-						recvTypeStr := galaparser.TypeText(recvCtx.Type_())
+						recvTypeStr := receiverTypeText(recvCtx.Type_())
 						retTypeStr := galaparser.TypeText(ctx.Signature().Type_())
 						if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
 							methodMeta.IsGeneric = true
@@ -2483,6 +2483,14 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	if strings.HasPrefix(typeName, "*") {
 		elemType := a.resolveTypeWithParams(typeName[1:], pkgName, typeParams)
 		return transpiler.PointerType{Elem: elemType}
+	}
+
+	// GALA's non-null pointer `Ptr[T]` is a pointer type, marked non-null.
+	if idx := strings.Index(typeName, "["); idx != -1 && transpiler.IsPtrTypeName(typeName[:idx]) {
+		if _, args := extractBaseAndArgs(typeName); len(args) == 1 {
+			elemType := a.resolveTypeWithParams(strings.TrimSpace(args[0]), pkgName, typeParams)
+			return transpiler.PointerType{Elem: elemType, NonNull: true}
+		}
 	}
 
 	// Handle map types: map[K]V — split at the bracket that closes the key.
@@ -3766,12 +3774,25 @@ func (a *galaAnalyzer) extractGoFileExports(files []os.FileInfo, dirPath, relPat
 // isPointerReceiver reports whether a method receiver is declared as a
 // pointer (`func (c *Counter) Bump()`).
 func isPointerReceiver(recv *grammar.ReceiverContext) bool {
-	return recv.Type_() != nil && recv.Type_().GetStart().GetText() == "*"
+	_, isPtr := galaparser.PointerElem(recv.Type_())
+	return isPtr
+}
+
+// receiverTypeText spells a receiver type as TypeText does, with a non-null
+// `Ptr[T]` receiver spelled `*T`: both are the Go receiver `*T`.
+func receiverTypeText(ctx grammar.ITypeContext) string {
+	if elem := galaparser.PtrElem(ctx); elem != nil {
+		return "*" + galaparser.TypeText(elem)
+	}
+	return galaparser.TypeText(ctx)
 }
 
 func getBaseTypeName(ctx grammar.ITypeContext) string {
 	if ctx == nil {
 		return ""
+	}
+	if elem := galaparser.PtrElem(ctx); elem != nil {
+		return getBaseTypeName(elem)
 	}
 	if ctx.QualifiedIdentifier() != nil {
 		// Get the full qualified name (e.g., "std.Option" or just "Option")
@@ -4376,7 +4397,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					// IsGeneric=false from extraction here) would clobber the true
 					// flag and the transpiler would emit method-syntax calls against
 					// a standalone-function definition.
-					recvTypeStr := galaparser.TypeText(recvCtx.Type_())
+					recvTypeStr := receiverTypeText(recvCtx.Type_())
 					retTypeStr := galaparser.TypeText(ctx.Signature().Type_())
 					if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
 						methodMeta.IsGeneric = true

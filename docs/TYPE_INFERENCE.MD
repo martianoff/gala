@@ -254,7 +254,7 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `f(args)` | Function metadata lookup |
 | `x.Method()` | Method metadata lookup |
 | `x + y`, `x == y` | Operator-based |
-| `&x` | → `PointerType{Elem: type(x)}` |
+| `&x` | → `Ptr[type(x)]`: `PointerType{Elem: type(x), NonNull: true}`, a non-null pointer that erases to `*T` |
 | `*p` | Dereference pointer type |
 | `arr[i]` | Array element type |
 | `Some(x)`, `None[T]()` | Option type construction |

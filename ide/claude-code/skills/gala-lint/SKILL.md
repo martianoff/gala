@@ -1542,6 +1542,35 @@ Do not flag:
 - an alias that exists to match a Go API's parameter type (Go interop), where the
   Go side needs the raw type.
 
+### 14c. Pointers: `Ptr[T]` and `OptionPtr[T]` (MEDIUM priority)
+
+`&x` is a `Ptr[T]`, a pointer that is never nil; `OptionPtr[T]` is a pointer that
+may be absent; a plain `*T` is for Go interop.
+
+**Rule `option-ptr-field`.** Flag a struct or sealed-case field of type
+`Option[Ptr[T]]`. Suggest `OptionPtr[T]`: the same meaning in one pointer, where
+`Option` adds a tag (a 16-byte slot instead of 8), and a field left out of a brace
+literal is already empty.
+
+**Rule `nullable-internal-pointer`.** Flag a `*T` parameter, result or field of a
+non-exported GALA function or type whose values are only ever `&x` addresses
+(no Go call produces them, no `nil` is passed or stored). Suggest `Ptr[T]`. A
+`*T` that does take `nil` to mean "absent" is an `OptionPtr[T]`.
+
+```gala
+// FLAG — Option adds a tag to every node; OptionPtr is one pointer
+struct Node(Value int, Next Option[Ptr[Node]])
+
+// FIX
+struct Node(Value int, Next OptionPtr[Node])
+```
+
+Do not flag a `*T` at the Go boundary (an exported function Go calls, a field a
+Go library fills, a Go callback's parameter); there `RequirePtr(p)` or
+`OptionPtrOf(p)` converts it once, where it enters GALA code.
+
+**Check**: `grep -nE 'Option\[(std\.)?Ptr\[' -r --include='*.gala' .`
+
 ## Directories to Skip
 
 - `bazel-*` (build outputs)

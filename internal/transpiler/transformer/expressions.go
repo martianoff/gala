@@ -275,6 +275,9 @@ func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx ant
 	if err := t.checkGoResultOperands(op, ctx, left, right); err != nil {
 		return nil, err
 	}
+	if err := t.checkPtrNilComparison(tok, ctx, left, right); err != nil {
+		return nil, err
+	}
 	return &ast.BinaryExpr{X: t.unwrapImmutable(left), Op: tok, Y: t.unwrapImmutable(right)}, nil
 }
 
@@ -1386,6 +1389,10 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 	// slot is not a type the value has to have.
 	if !s.open {
 		if err := t.checkOpaqueMismatch(expr, s.typ, exprCtx); err != nil {
+			return nil, err
+		}
+		// A nil, or a pointer that may be nil, never fills a Ptr.
+		if err := t.checkPtrSlot(expr, s.typ, exprCtx); err != nil {
 			return nil, err
 		}
 	}

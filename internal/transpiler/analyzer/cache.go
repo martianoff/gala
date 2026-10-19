@@ -126,7 +126,10 @@ import (
 // v25: TypeMetadata lists the shorthand fields stored as declared
 // (StoredAsDeclared): an Immutable[T] field, or one of an alias of it, with no
 // keyword. A v24 payload lacks it.
-const CacheVersion = "v25"
+//
+// v26: a non-null pointer `Ptr[T]` is recorded with its own type tag. A v25
+// payload records every pointer as a nullable `*T`.
+const CacheVersion = "v26"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

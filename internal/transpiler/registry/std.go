@@ -21,6 +21,9 @@ func StdPackageInfo() PackageInfo {
 			// Transparent concurrency-boundary marker (see docs/CONCURRENCY_SAFETY.MD).
 			// It has no runtime representation; `Sendable[F]` is exactly `F`.
 			"Sendable",
+			// Non-null pointer marker (see docs/GALA.MD, Pointers). It has no
+			// runtime representation of its own; `Ptr[T]` erases to `*T`.
+			"Ptr",
 			// Companion objects also act as types
 			"Some", "None", "Left", "Right", "Success", "Failure",
 		},

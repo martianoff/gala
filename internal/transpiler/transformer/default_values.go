@@ -32,6 +32,12 @@ func (t *galaASTTransformer) defaultValue(typ transpiler.Type, line, col int, se
 		return nil, nil
 	}
 	typ = t.followAliasChain(typ)
+	if transpiler.IsPtr(typ) {
+		name := transpiler.DisplayType(typ)
+		return nil, galaerr.NewCodedSemanticError(galaerr.CodeNoDefaultValue, line, col,
+			fmt.Sprintf("%s has no default value: a Ptr is never nil", name),
+			fmt.Sprintf("give the value a pointer (`&x`); %s", ptrMayBeAbsentHint))
+	}
 	switch typ.(type) {
 	case transpiler.PointerType, transpiler.ArrayType, transpiler.MapType, transpiler.FuncType:
 		return nil, nil

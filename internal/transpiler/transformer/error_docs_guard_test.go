@@ -1218,6 +1218,26 @@ func main() {
 			},
 		},
 		{
+			name: "pointer that may be nil passed for a Ptr",
+			code: galaerr.CodePtrNullability, // GALA-E0080
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Counter(var N int)
+
+func bump(c Ptr[Counter]) {
+    c.N = c.N + 1
+}
+
+func lookup(id int) *Counter = nil
+
+func main() {
+    bump(lookup(1))
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

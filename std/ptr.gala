@@ -1,0 +1,18 @@
+package std
+
+import . "martianoff/gala/go_builtins"
+
+// Ptr[T] is a pointer that is never nil. It is a compile-time marker with no
+// runtime representation of its own: generated Go spells it `*T`, so a Ptr
+// has the fields and methods of the value it points to and passes to Go as a
+// `*T`. `&x` is a Ptr. A `*T` from Go becomes one through RequirePtr, or an
+// OptionPtr through OptionPtrOf; a nil never fills a Ptr.
+
+// RequirePtr returns p as a Ptr[T]: a pointer from Go, checked once at the
+// boundary. It panics when p is nil.
+func RequirePtr[T any](p *T) Ptr[T] {
+    if p == nil {
+        Panic("RequirePtr: the pointer is nil")
+    }
+    &*p
+}

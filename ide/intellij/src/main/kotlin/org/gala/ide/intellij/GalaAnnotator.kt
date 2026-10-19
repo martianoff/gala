@@ -92,6 +92,8 @@ class GalaAnnotator : Annotator {
             "Try", "Success", "Failure",
             // Fundamental value types
             "Immutable", "Void", "EmbeddedFS",
+            // Pointers: the non-null marker and the pointer that may be absent
+            "Ptr", "OptionPtr",
             // Tuple family (Tuple is the 2-tuple, Tuple3+ are higher arities)
             "Tuple", "Tuple3", "Tuple4", "Tuple5", "Tuple6",
             "Tuple7", "Tuple8", "Tuple9", "Tuple10",

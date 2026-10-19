@@ -122,6 +122,15 @@ func copyFile(src string, dst string) Try[int] = Try(() => {
 - **Still use `Map`/`match`/`Recover`/`GetOrElse` where they fit** — a single transform is `Map`, extracting a result is `match` or `GetOrElse`, and error recovery is `Recover`/`RecoverWith`. `bind`/`also` is for *sequencing* several fallible steps, not a replacement for those.
 - **Pattern-match to extract:** `case Some(x) =>` / `case None =>`. Do not call `.Get()` without first checking.
 
+### Pointers
+
+([Non-null Pointers](GALA.MD#non-null-pointers-ptrt-and-optionptrt))
+
+- **`Ptr[T]` for a pointer GALA code creates and uses** — receivers (`func (c Ptr[Counter]) Bump()`), parameters, fields. `&x` is already one; it is never nil, so it is never checked.
+- **`OptionPtr[T]` for a pointer that may be absent**, not a `*T` with nil checks. In a struct field prefer it over `Option[Ptr[T]]`, which also carries a tag.
+- **`*T` only at the Go boundary.** Turn a Go pointer into a `Ptr` once, where it enters GALA code: `RequirePtr(p)` when nil is a bug, `OptionPtrOf(p)` when nil means absent.
+- **Never compare a `Ptr` with nil** — it is a compile error (GALA-E0080); a `var` that has to take nil or a Go pointer is declared `*T`.
+
 ### Go calls that return several results
 
 ([§9 Go functions that return several results](GALA.MD#go-functions-that-return-several-results))

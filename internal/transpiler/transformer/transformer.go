@@ -44,6 +44,9 @@ type galaASTTransformer struct {
 	structFields        map[string][]string
 	structFieldTypes    map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
 	genericMethods      map[string]map[string]bool            // receiverType -> methodName -> isGeneric
+	// ptrStars holds the `*T` expressions emitted for a non-null `Ptr[T]`, so a
+	// type read back from generated Go keeps the marker (see ptr.go).
+	ptrStars map[*ast.StarExpr]bool
 	// resultGenericMethods holds the name of every known method whose own
 	// type parameters its result mentions (see isResultGenericMethodCall).
 	resultGenericMethods map[string]bool
@@ -235,6 +238,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.typeParamNames = nil
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)
+	t.ptrStars = nil
 	t.patternDefineTypes = nil
 	t.genericMethods = make(map[string]map[string]bool)
 	t.resultGenericMethods = make(map[string]bool)

@@ -18,6 +18,37 @@ func TypeText(ctx grammar.ITypeContext) string {
 	return b.String()
 }
 
+// PtrElem returns the type argument of GALA's non-null pointer annotation
+// `Ptr[T]` (or `std.Ptr[T]`), or nil when ctx is not one.
+func PtrElem(ctx grammar.ITypeContext) grammar.ITypeContext {
+	if ctx == nil || ctx.QualifiedIdentifier() == nil || ctx.TypeArguments() == nil {
+		return nil
+	}
+	switch ctx.QualifiedIdentifier().GetText() {
+	case "Ptr", "std.Ptr":
+	default:
+		return nil
+	}
+	list, ok := ctx.TypeArguments().TypeList().(*grammar.TypeListContext)
+	if !ok || list == nil || len(list.AllType_()) != 1 {
+		return nil
+	}
+	return list.Type_(0)
+}
+
+// PointerElem returns the element type of a pointer type annotation, `*T` or
+// the non-null `Ptr[T]`, and true; for any other type it returns (ctx, false).
+// A receiver is a pointer receiver exactly when its type is one of the two.
+func PointerElem(ctx grammar.ITypeContext) (grammar.ITypeContext, bool) {
+	if elem := PtrElem(ctx); elem != nil {
+		return elem, true
+	}
+	if ctx != nil && ctx.GetStart() != nil && ctx.GetStart().GetText() == "*" && len(ctx.AllType_()) == 1 {
+		return ctx.Type_(0), true
+	}
+	return ctx, false
+}
+
 // AliasText spells the target of `type X Y` as TypeText does. Its grammar is
 // `identifier | type`: `type Millis int64` takes the identifier branch.
 func AliasText(ctx grammar.ITypeAliasContext) string {

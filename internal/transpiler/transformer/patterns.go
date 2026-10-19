@@ -549,6 +549,13 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	if err != nil {
 		return nil, nil, err
 	}
+	// A dynamic type test cannot tell a Ptr from a nil `*T`: Go's assertion
+	// to `*T` accepts a nil one.
+	if typ := t.astTypeToTranspilerType(typeExpr); hasPtr(typ) {
+		return nil, nil, ptrError(ctx,
+			fmt.Sprintf("a typed pattern cannot test for %s: a pointer from a dynamic value may be nil", transpiler.DisplayType(typ)),
+			"match the nullable pointer type (`case p: *T`) and pass it through RequirePtr(p) or OptionPtrOf(p)")
+	}
 
 	// Check if this is a wildcard generic pattern (e.g., Wrap[_] -> Wrap[any])
 	// Only use interface-based matching when objExpr has a concrete generic type,

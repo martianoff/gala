@@ -19,9 +19,9 @@ the type has no default value. That happens for:
   or a call;
 
 when the type is a sealed type without a `default case` (`Try`, `Either`,
-most user sealed types), or a struct holding one. GALA never creates such a
-value implicitly: Go's zero value of a sealed type without a default case is
-none of its cases.
+most user sealed types), a non-null pointer `Ptr[T]`, or a struct holding one
+of them. GALA never creates such a value implicitly: Go's zero value of a
+sealed type without a default case is none of its cases, and a `Ptr`'s is nil.
 
 **Minimal repro.**
 

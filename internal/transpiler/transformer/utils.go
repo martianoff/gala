@@ -308,7 +308,10 @@ func (t *galaASTTransformer) qualifyTypeExpr(expr ast.Expr) ast.Expr {
 			Indices: indices,
 		}
 	case *ast.StarExpr:
-		// Pointer type: *T
+		// Pointer type: *T, a Ptr[T] staying one.
+		if t.isPtrTypeExpr(e) {
+			return t.ptrStar(t.qualifyTypeExpr(e.X))
+		}
 		return &ast.StarExpr{X: t.qualifyTypeExpr(e.X)}
 	case *ast.ArrayType:
 		// Array/slice type: []T

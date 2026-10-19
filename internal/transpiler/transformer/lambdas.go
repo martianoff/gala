@@ -311,6 +311,13 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		}
 	}
 
+	// A lambda whose Ptr parameter fills a nullable `*T` parameter of its slot
+	// (a Go function type) can be called with nil.
+	body = withPtrEntryChecks(body, t.ptrEntryChecks(fieldList, "lambda", func(pos int) bool {
+		return pos < len(expectedParamTypes) && !transpiler.IsUnusable(expectedParamTypes[pos]) &&
+			transpiler.IsNullablePtr(t.followAliasChain(expectedParamTypes[pos]))
+	}))
+
 	return &ast.FuncLit{
 		Type: funcType,
 		Body: body,

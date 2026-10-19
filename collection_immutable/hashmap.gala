@@ -235,7 +235,7 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
         }
 
         // Create a new internal node and distribute elements
-        var newNode = &hashMapNode[K, V](bitmap = uint32(0), isLeaf = false)
+        var newNode *hashMapNode[K, V] = &hashMapNode[K, V](bitmap = uint32(0), isLeaf = false)
 
         // Add existing entries
         for i := 0; i < node.keys.Size(); i++ {

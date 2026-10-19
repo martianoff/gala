@@ -1051,6 +1051,10 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		body = t.returnGoResults(body, funcType.Results.List[0].Type, goResults)
 		funcType.Results = goResults
 	}
+	// Go code can call an exported function or method with a nil pointer.
+	if ast.IsExported(name) {
+		body = withPtrEntryChecks(body, t.ptrEntryChecks(funcType.Params, funcSlot.funcName, func(int) bool { return true }))
+	}
 
 	return &ast.FuncDecl{
 		Recv: receiver,

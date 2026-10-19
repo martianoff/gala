@@ -276,6 +276,7 @@ func keywordCompletions() []lsp.CompletionItem {
 		// (see internal/transpiler/registry/std.go and std/*.gala).
 		"NewImmutable", "NewEmbeddedFS",
 		"FromError", "FromOption", "FromEitherError", "PanicStack",
+		"RequirePtr", "OptionPtrOf", "SomePtr", "EmptyOptionPtr",
 	}
 	items := make([]lsp.CompletionItem, 0)
 	for _, kw := range keywords {

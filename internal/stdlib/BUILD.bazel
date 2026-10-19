@@ -8,6 +8,8 @@ genrule(
     srcs = [
         # std package - transpiled Go
         "//std:option_go",
+        "//std:option_ptr_go",
+        "//std:ptr_go",
         "//std:immutable_go",
         "//std:tuple_go",
         "//std:either_go",
@@ -22,6 +24,7 @@ genrule(
         "//std:embedded_fs.go",
         # std package - GALA source (for analyzer)
         "//std:option.gala",
+        "//std:option_ptr.gala",
         "//std:immutable.gala",
         "//std:tuple.gala",
         "//std:either.gala",
@@ -29,6 +32,7 @@ genrule(
         "//std:seq.gala",
         "//std:hashable.gala",
         "//std:ordered.gala",
+        "//std:ptr.gala",
         "//std:try.gala",
         "//std:errors.gala",
         "//std:meta_go",

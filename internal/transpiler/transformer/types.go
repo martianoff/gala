@@ -3,6 +3,7 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -64,6 +65,14 @@ func (t *galaASTTransformer) rewriteStdTupleIdent(ident ast.Expr, n int) ast.Exp
 func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
 	if ctx == nil {
 		return nil, nil
+	}
+	// The non-null pointer `Ptr[T]` is `*T` in generated Go (see ptr.go).
+	if elem := galaparser.PtrElem(ctx); elem != nil {
+		typ, err := t.transformType(elem)
+		if err != nil {
+			return nil, err
+		}
+		return t.ptrStar(typ), nil
 	}
 	// Handle qualified identifier types (e.g., std.Option[T] or just Option[T])
 	if ctx.QualifiedIdentifier() != nil {
@@ -319,6 +328,9 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	case transpiler.ArrayType:
 		return &ast.ArrayType{Elt: t.typeToExpr(v.Elem)}
 	case transpiler.PointerType:
+		if v.NonNull {
+			return t.ptrStar(t.typeToExpr(v.Elem))
+		}
 		return &ast.StarExpr{X: t.typeToExpr(v.Elem)}
 	case transpiler.MapType:
 		return &ast.MapType{Key: t.typeToExpr(v.Key), Value: t.typeToExpr(v.Elem)}
@@ -645,7 +657,7 @@ func (t *galaASTTransformer) astTypeToTranspilerType(expr ast.Expr) transpiler.T
 		}
 		return transpiler.GenericType{Base: base, Params: params}
 	case *ast.StarExpr:
-		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X)}
+		return transpiler.PointerType{Elem: t.astTypeToTranspilerType(e.X), NonNull: t.ptrStars[e]}
 	case *ast.ArrayType:
 		return transpiler.ArrayType{Elem: t.astTypeToTranspilerType(e.Elt)}
 	case *ast.MapType:

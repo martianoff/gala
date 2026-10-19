@@ -47,6 +47,7 @@ const (
 	typeTagFunc    uint8 = 7
 	typeTagNilType uint8 = 8 // concrete NilType{}
 	typeTagVoid    uint8 = 9
+	typeTagPtr     uint8 = 10 // non-null pointer Ptr[T]
 )
 
 // encodeCachedRichAST serializes c using the binary codec. The returned
@@ -252,7 +253,11 @@ func (e *encoder) writeType(t transpiler.Type) {
 		e.writeType(v.Key)
 		e.writeType(v.Elem)
 	case transpiler.PointerType:
-		e.writeByte(typeTagPointer)
+		if v.NonNull {
+			e.writeByte(typeTagPtr)
+		} else {
+			e.writeByte(typeTagPointer)
+		}
 		e.writeType(v.Elem)
 	case transpiler.FuncType:
 		e.writeByte(typeTagFunc)
@@ -733,6 +738,8 @@ func (d *decoder) readType() transpiler.Type {
 		return transpiler.MapType{Key: k, Elem: v}
 	case typeTagPointer:
 		return transpiler.PointerType{Elem: d.readType()}
+	case typeTagPtr:
+		return transpiler.PointerType{Elem: d.readType(), NonNull: true}
 	case typeTagFunc:
 		np := d.readUvarint()
 		var params []transpiler.Type

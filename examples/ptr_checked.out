@@ -1,0 +1,7 @@
+after bumpTwice: 2
+Go pointer is nil: false
+through RequirePtr: 3
+panic: RequirePtr: the pointer is nil
+after visit: 4
+panic: lambda: parameter q is a Ptr[Counter], but the caller passed nil
+fresh: 11

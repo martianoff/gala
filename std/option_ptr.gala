@@ -1,0 +1,60 @@
+package std
+
+import . "martianoff/gala/go_builtins"
+
+// OptionPtr[T] is a pointer that may be absent. It is the size of one
+// pointer, where an Option[Ptr[T]] also carries a tag, and its zero value is
+// empty, so a struct field of this type left out is absent. All of its nil
+// checks are inside it: what it hands out is a Ptr[T].
+struct OptionPtr[T any](p *T)
+
+// OptionPtrOf returns p as an OptionPtr: empty when p is nil. It is how a
+// pointer from Go that may be nil enters GALA.
+func OptionPtrOf[T any](p *T) OptionPtr[T] = OptionPtr(p)
+
+// SomePtr returns an OptionPtr holding p.
+func SomePtr[T any](p Ptr[T]) OptionPtr[T] = OptionPtr[T](p)
+
+// EmptyOptionPtr returns an empty OptionPtr.
+func EmptyOptionPtr[T any]() OptionPtr[T] = OptionPtr[T](nil)
+
+// IsDefined reports whether the OptionPtr holds a pointer.
+func (o OptionPtr[T]) IsDefined() bool = o.p != nil
+
+// IsEmpty reports whether the OptionPtr is empty.
+func (o OptionPtr[T]) IsEmpty() bool = o.p == nil
+
+// Get returns the pointer. It panics when the OptionPtr is empty.
+func (o OptionPtr[T]) Get() Ptr[T] {
+    if o.p == nil {
+        Panic("OptionPtr.Get on an empty OptionPtr")
+    }
+    &*o.p
+}
+
+// GetOrElse returns the pointer, or defaultValue when the OptionPtr is empty.
+func (o OptionPtr[T]) GetOrElse(defaultValue Ptr[T]) Ptr[T] = if (o.p == nil) defaultValue else &*o.p
+
+// OrElse returns this OptionPtr when it holds a pointer, otherwise alternative.
+func (o OptionPtr[T]) OrElse(alternative OptionPtr[T]) OptionPtr[T] = if (o.p == nil) alternative else o
+
+// ForEach applies f to the pointer, when the OptionPtr holds one.
+func (o OptionPtr[T]) ForEach(f func(Ptr[T])) {
+    if o.p != nil {
+        f(&*o.p)
+    }
+}
+
+// Map returns Some of f applied to the pointer, or None when the OptionPtr is
+// empty.
+func (o OptionPtr[T]) Map[U any](f func(Ptr[T]) U) Option[U] = if (o.p == nil) None[U]() else Some(f(&*o.p))
+
+// FlatMap returns f applied to the pointer, or an empty OptionPtr when this
+// one is empty.
+func (o OptionPtr[T]) FlatMap[U any](f func(Ptr[T]) OptionPtr[U]) OptionPtr[U] = if (o.p == nil) EmptyOptionPtr[U]() else f(&*o.p)
+
+// ToOption returns the pointer as an Option: Some(pointer) or None.
+func (o OptionPtr[T]) ToOption() Option[Ptr[T]] = if (o.p == nil) None[Ptr[T]]() else Some(&*o.p)
+
+// String returns "SomePtr(<value>)" or "EmptyOptionPtr".
+func (o OptionPtr[T]) String() string = if (o.p == nil) "EmptyOptionPtr" else s"SomePtr(${*o.p})"

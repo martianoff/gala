@@ -3,6 +3,7 @@ package analyzer
 import (
 	"slices"
 
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -72,6 +73,7 @@ func renameReceiverTypeParams(meta *transpiler.MethodMetadata, recvNames, typeTy
 // written and in order: [U] for `Box[U]` and `*Box[U]`, nil for a
 // non-generic receiver.
 func receiverTypeArgNames(ctx grammar.ITypeContext) []string {
+	ctx, _ = galaparser.PointerElem(ctx)
 	for ctx != nil && ctx.QualifiedIdentifier() == nil {
 		if len(ctx.AllType_()) != 1 {
 			return nil

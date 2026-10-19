@@ -783,6 +783,14 @@ const (
 	// package), or it is a Go interface that is generic or uses a type GALA
 	// cannot spell exactly.
 	CodeInvalidInterfaceLiteral ErrorCode = "GALA-E0078"
+
+	// E0080: a value that may be nil is used where a non-null `Ptr[T]` is
+	// needed — `nil`, or a nullable `*T`, fills a `Ptr[T]` slot (an argument,
+	// a val/var declaration or assignment, a return, a constructor field) —
+	// or a `Ptr[T]` is compared with nil or tested by a typed pattern, which
+	// asks whether it is nil. A Go pointer becomes a Ptr through RequirePtr,
+	// or an OptionPtr through OptionPtrOf.
+	CodePtrNullability ErrorCode = "GALA-E0080"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

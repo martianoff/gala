@@ -197,7 +197,7 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
         }
 
         // Create a new internal node and distribute elements
-        var newNode = &hashSetNode[T](bitmap = uint32(0), isLeaf = false)
+        var newNode *hashSetNode[T] = &hashSetNode[T](bitmap = uint32(0), isLeaf = false)
 
         // Add existing entries
         for i := 0; i < node.entries.Size(); i++ {

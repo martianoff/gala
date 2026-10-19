@@ -93,6 +93,49 @@ func UnwrapSendable(t Type) (Type, bool) {
 	return g.Params[0], true
 }
 
+// IsPtr reports whether t is GALA's non-null pointer `Ptr[T]`.
+func IsPtr(t Type) bool {
+	p, ok := t.(PointerType)
+	return ok && p.NonNull
+}
+
+// IsNullablePtr reports whether t is a plain, nullable `*T`.
+func IsNullablePtr(t Type) bool {
+	p, ok := t.(PointerType)
+	return ok && !p.NonNull
+}
+
+// IsPtrTypeName reports whether name, the base of a generic type `name[T]`,
+// names GALA's non-null pointer marker: `Ptr` unqualified or as `std.Ptr`.
+func IsPtrTypeName(name string) bool {
+	return name == TypePtr || name == "std."+TypePtr
+}
+
+// DisplayType is t as GALA source spells it: a non-null pointer reads
+// `Ptr[T]` where String, which is the Go spelling, reads `*T`.
+func DisplayType(t Type) string {
+	switch v := t.(type) {
+	case nil:
+		return ""
+	case PointerType:
+		if v.NonNull {
+			return TypePtr + "[" + DisplayType(v.Elem) + "]"
+		}
+		return "*" + DisplayType(v.Elem)
+	case ArrayType:
+		return "[]" + DisplayType(v.Elem)
+	case MapType:
+		return "map[" + DisplayType(v.Key) + "]" + DisplayType(v.Elem)
+	case GenericType:
+		parts := make([]string, len(v.Params))
+		for i, p := range v.Params {
+			parts[i] = DisplayType(p)
+		}
+		return DisplayType(v.Base) + "[" + strings.Join(parts, ", ") + "]"
+	}
+	return t.String()
+}
+
 // IsSendable reports whether t is a `Sendable[F]` boundary marker.
 func IsSendable(t Type) bool {
 	_, ok := UnwrapSendable(t)
@@ -190,8 +233,14 @@ func (t MapType) BaseName() string   { return "map" }
 func (t MapType) GetPackage() string { return "" }
 
 // PointerType represents a pointer type.
+//
+// NonNull marks GALA's non-null pointer `Ptr[T]`: a compile-time marker that
+// erases to `*T` in generated Go, so String, BaseName and code generation are
+// the same for both. Only the checks that keep a nil out of a `Ptr` read it
+// (see IsPtr).
 type PointerType struct {
-	Elem Type
+	Elem    Type
+	NonNull bool
 }
 
 func (t PointerType) String() string {
@@ -381,8 +430,11 @@ func ParseType(s string) Type {
 	}
 	if strings.Contains(s, "[") && strings.HasSuffix(s, "]") {
 		idx := strings.Index(s, "[")
-		base := ParseType(s[:idx])
 		parts := splitTopLevel(s[idx+1 : len(s)-1])
+		if IsPtrTypeName(s[:idx]) && len(parts) == 1 {
+			return PointerType{Elem: ParseType(parts[0]), NonNull: true}
+		}
+		base := ParseType(s[:idx])
 		if len(parts) == 0 {
 			parts = []string{""}
 		}
@@ -435,7 +487,7 @@ func SubstituteTypeParams(t Type, subst map[string]Type) Type {
 	case MapType:
 		return MapType{Key: SubstituteTypeParams(v.Key, subst), Elem: SubstituteTypeParams(v.Elem, subst)}
 	case PointerType:
-		return PointerType{Elem: SubstituteTypeParams(v.Elem, subst)}
+		return PointerType{Elem: SubstituteTypeParams(v.Elem, subst), NonNull: v.NonNull}
 	case FuncType:
 		params := make([]Type, len(v.Params))
 		for i, p := range v.Params {
