@@ -1,0 +1,79 @@
+package main
+
+// A method on a Ptr[T] receiver runs only on a pointer that is never nil.
+// GALA calls it on an addressable value (through `&x`), on a Ptr, or on a Go
+// pointer checked with RequirePtr, and rejects a call on a *T that may be nil
+// (GALA-E0080). An exported one also checks its receiver on entry, for a nil
+// that arrives from outside GALA's checks.
+
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Bump() {
+    c.N = c.N + 1
+}
+
+func (c Ptr[Counter]) Count() int = c.N
+
+type Bumper interface {
+    Bump()
+}
+
+struct Box[T any](var V T)
+
+func (b Ptr[Box[T]]) Set(v T) {
+    b.V = v
+}
+
+// A Go-style lookup: its pointer may be nil.
+func goLookup(found bool, c *Counter) *Counter = if (found) c else nil
+
+// A method on the nullable *Counter: a *Counter that may be nil is a Named.
+func (c *Counter) Name() string = "counter"
+
+type Named interface {
+    Name() string
+}
+
+// Asks a Named whether it is also a Bumper, as Go code would.
+func bumpNamed(n Named) = n match {
+    case b: Bumper => b.Bump()
+    case _ => Println(s"${n.Name()} is not a Bumper")
+}
+
+func describe(t Try[int]) string = t match {
+    case Success(n) => s"ok $n"
+    case Failure(e) => s"panic: ${e.Error()}"
+}
+
+func main() {
+    var c = Counter(0)
+    c.Bump()
+    val p = &c
+    p.Bump()
+    Println(s"count: ${c.Count()}")
+
+    // A method value on a Ptr.
+    val count = p.Count
+    Println(s"method value: ${count()}")
+
+    // A Go pointer is checked once, then the method runs on it.
+    RequirePtr(goLookup(true, p)).Bump()
+    OptionPtrOf(goLookup(false, p)).ForEach((q) => q.Bump())
+    Println(s"after lookups: ${c.N}")
+
+    // A Ptr fills an interface whose method has a Ptr receiver.
+    val b Bumper = p
+    b.Bump()
+    Println(s"through the interface: ${c.N}")
+
+    var box = Box(1)
+    box.Set(5)
+    Println(s"box: ${box.V}")
+
+    // A nil *Counter that reaches Bump through a type test on another
+    // interface is caught on entry.
+    Println(describe(Try(() => {
+        bumpNamed(goLookup(false, p))
+        c.N
+    })))
+}

@@ -8,6 +8,12 @@ would let a nil into one, or asks whether one is nil:
 - a nullable `*T` fills a `Ptr[T]` — typically a pointer a Go function
   returned — or sits where a type expects a `Ptr` inside it
   (`Some(p)` for an `Option[Ptr[T]]`);
+- a method declared on a `Ptr[T]` receiver is called on a `*T` that may be nil,
+  or taken from one as a method value (`p.Bump`); the receiver of a `*T`
+  method is such a pointer, and so is a match through a sealed view whose
+  `MatchView` has a `Ptr` receiver;
+- a `*T` that may be nil fills an interface that has a method `T` declares on
+  a `Ptr` receiver: a call through the interface would run it on that pointer;
 - a `Ptr[T]` is compared with nil (`p == nil`, `p != nil`);
 - a typed pattern tests a dynamic value for a `Ptr` (`case p: Ptr[T]`): Go's
   type test accepts a nil `*T`.

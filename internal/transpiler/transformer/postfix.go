@@ -81,8 +81,7 @@ func (t *galaASTTransformer) applyPostfixSuffix(base ast.Expr, suffix *grammar.P
 		if err := t.checkGoResultMember(base, name, suffix); err != nil {
 			return nil, err
 		}
-		id := suffix.Identifier().GetStart()
-		return t.resolveFieldAccess(base, name, id.GetLine(), id.GetColumn())
+		return t.resolveFieldAccess(base, suffix)
 	}
 
 	childCount := suffix.GetChildCount()
@@ -125,9 +124,30 @@ func (t *galaASTTransformer) applyGoCallSuffix(base ast.Expr, suffix *grammar.Po
 	return t.liftGoResults(call, suffix)
 }
 
-// resolveFieldAccess handles member access with automatic Immutable unwrapping.
-// line and col locate selName, for a diagnostic about it.
-func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string, line, col int) (ast.Expr, error) {
+// receiverSource returns the receiver of the member access suffix — the
+// postfix expression's primary through the suffix before it — as the contexts
+// spanning it and its source text. The grammar puts a suffix only in a
+// postfix expression.
+func receiverSource(suffix *grammar.PostfixSuffixContext) (from, to antlr.ParserRuleContext, text string) {
+	postfix := suffix.GetParent().(*grammar.PostfixExprContext)
+	from = postfix.PrimaryExpr()
+	to = from
+	parts := []string{transpiler.SourceText(from)}
+	for _, s := range postfix.AllPostfixSuffix() {
+		if s == suffix {
+			break
+		}
+		to = s
+		parts = append(parts, transpiler.SourceText(s))
+	}
+	return from, to, strings.Join(parts, "")
+}
+
+// resolveFieldAccess handles member access `base.name` (the suffix) with
+// automatic Immutable unwrapping.
+func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
+	selName := suffix.Identifier().GetText()
+	line, col := suffix.Identifier().GetStart().GetLine(), suffix.Identifier().GetStart().GetColumn()
 	// `pkg.Name` naming an imported package-level binding is read at once, as
 	// transformPrimary reads a same-package one: a val types as Immutable[T]
 	// (inferSelectorExprType), so unwrapImmutable adds the .Get().
@@ -152,8 +172,12 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, selName string, l
 	}
 
 	// A pointer-receiver method needs an addressable receiver; a val's Get()
-	// is a copy, so it gets an addressable copy instead.
+	// is a copy, so it gets an addressable copy instead. A method on a Ptr
+	// receiver needs one that is never nil.
 	if selectsThroughImmutable {
+		if err := t.checkPtrReceiver(base, xType, selName, suffix); err != nil {
+			return nil, err
+		}
 		var err error
 		if base, err = t.addressableReceiver(base, xType, selName, line, col); err != nil {
 			return nil, err

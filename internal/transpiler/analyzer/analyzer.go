@@ -1401,6 +1401,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						Pos:             transpiler.PosFromToken(ctx.Identifier().GetStart()),
 						ReceiverName:    recvCtx.Identifier().GetText(),
 						PointerReceiver: isPointerReceiver(recvCtx),
+						PtrReceiver:     isPtrReceiver(recvCtx),
 					}
 					if ctx.TypeParameters() != nil {
 						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
@@ -3778,6 +3779,12 @@ func isPointerReceiver(recv *grammar.ReceiverContext) bool {
 	return isPtr
 }
 
+// isPtrReceiver reports whether a method receiver is declared as a non-null
+// pointer (`func (c Ptr[Counter]) Bump()`).
+func isPtrReceiver(recv *grammar.ReceiverContext) bool {
+	return galaparser.PtrElem(recv.Type_()) != nil
+}
+
 // receiverTypeText spells a receiver type as TypeText does, with a non-null
 // `Ptr[T]` receiver spelled `*T`: both are the Go receiver `*T`.
 func receiverTypeText(ctx grammar.ITypeContext) string {
@@ -4369,6 +4376,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					Pos:             sibPos,
 					ReceiverName:    recvCtx.Identifier().GetText(),
 					PointerReceiver: isPointerReceiver(recvCtx),
+					PtrReceiver:     isPtrReceiver(recvCtx),
 					DefinedIn:       absSibPath,
 				}
 				if ctx.TypeParameters() != nil {

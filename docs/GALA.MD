@@ -4713,24 +4713,65 @@ func main() {
 }
 ```
 
+**Methods on a `Ptr[T]` receiver.** A method declared on `Ptr[T]` is called
+only on a value that is never nil: a `T` that can be addressed (a `var`, which
+the call reaches as `&x`), a `val` (through an addressed copy), a `Ptr[T]`, or
+`RequirePtr(p)`. Selecting it on a `*T` that may be nil is
+[GALA-E0080](errors/GALA-E0080.md), for a call (`p.Bump()`) and a method value
+(`p.Bump`) alike, and so are matching such a `*T` through a
+[sealed view](#sealed-views) whose `MatchView` has a `Ptr` receiver, and
+passing it where an interface is expected when the interface has a method `T`
+declares on a `Ptr` receiver. The receiver of a `*T` method is such a pointer
+too. A method declared on `*T` can still be called on any `*T`.
+
+```gala
+package main
+
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Bump() {
+    c.N = c.N + 1
+}
+
+func lookup(found bool, c Ptr[Counter]) *Counter {
+    if found {
+        return c
+    }
+    return nil
+}
+
+func main() {
+    var c = Counter(0)
+    c.Bump()                            // through &c
+    RequirePtr(lookup(true, &c)).Bump() // checked once
+    // lookup(true, &c).Bump()          // GALA-E0080: may be nil
+    Println(c.N)                        // 2
+}
+```
+
+The receiver's non-nullness is part of the method's metadata, so it holds for
+a method of another package too.
+
 **Entry checks.** Go code can call GALA code with a nil pointer, so where Go
 can be the caller a `Ptr` parameter is checked on entry, as Kotlin checks the
 parameters of its public functions:
 
-- an exported function or method checks each `Ptr` parameter;
+- an exported function or method checks each `Ptr` parameter, and an exported
+  method its `Ptr` receiver;
 - a lambda with a `Ptr[T]` parameter checks it when it fills a function slot
   whose parameter is a `*T` — a Go callback such as `func(*T)`.
 
-The check panics with the function and parameter name. A call between GALA
-functions needs no check, so an unexported function has none.
+The check panics with the function and parameter (or receiver) name. A call
+between GALA functions needs no check, so an unexported function or method has
+none.
 
 What the type cannot see: a Go function writing a struct field, reflection,
 Go generic code's `var zero T` (`go_interop.New[Ptr[T]]()` among them), a
-`Ptr` converted to `any`, a function value taking a `Ptr` (a named function, or
-a lambda already bound to a `val`) passed where a `func(*T)` is expected, a
-`Ptr` receiver (a method declared on `Ptr[T]` can be called on a `*T`, and its
-receiver is not checked on entry), and a Go call's several results assigned at
-once (`p, err = goCall()`).
+`Ptr` converted to `any`, a `*T` held as `any` or as an interface without a
+`Ptr`-receiver method and then tested for one that has one
+(`case b: Bumper`), a function value taking a `Ptr` (a named function, or
+a lambda already bound to a `val`) passed where a `func(*T)` is expected, and a
+Go call's several results assigned at once (`p, err = goCall()`).
 
 **`OptionPtr[T]`** is an ordinary std struct holding a `*T`: the size of one
 pointer, where an `Option[Ptr[T]]` also carries a tag. Its zero value is empty,

@@ -1,0 +1,6 @@
+count: 2
+method value: 2
+after lookups: 3
+through the interface: 4
+box: 5
+panic: Counter.Bump: receiver c is a Ptr[Counter], but the caller passed nil

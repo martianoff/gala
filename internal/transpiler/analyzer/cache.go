@@ -129,7 +129,12 @@ import (
 //
 // v26: a non-null pointer `Ptr[T]` is recorded with its own type tag. A v25
 // payload records every pointer as a nullable `*T`.
-const CacheVersion = "v26"
+//
+// v27: a method records whether its receiver is a non-null `Ptr[T]`
+// (MethodMetadata.PtrReceiver). A v26 payload lacks it, so a method of
+// another package declared on a Ptr receiver could be called on a nullable
+// `*T`.
+const CacheVersion = "v27"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 )
@@ -76,7 +78,7 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 	expected = t.followAliasChain(expected)
 	// Most slots hold no Ptr: skip the expression's type inference for them.
 	if !hasPtr(expected) {
-		return nil
+		return t.checkPtrInterfaceSlot(expr, expected, exprCtx)
 	}
 	if isNilIdent(expr) {
 		if !transpiler.IsPtr(expected) {
@@ -96,6 +98,108 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 	return ptrError(exprCtx,
 		fmt.Sprintf("cannot use %s (%s) as %s: a pointer that may be nil cannot fill a Ptr", text, displayType(actual), displayType(expected)),
 		hint)
+}
+
+// ptrReceiverMethodNames returns the names of the methods of types declared
+// on a `Ptr` receiver. Only a method of one of these names can need a
+// non-null receiver, so the receiver checks skip every other one.
+func ptrReceiverMethodNames(types map[string]*transpiler.TypeMetadata) map[string]bool {
+	var names map[string]bool
+	for _, meta := range types {
+		for name, m := range meta.Methods {
+			if m == nil || !m.PtrReceiver {
+				continue
+			}
+			if names == nil {
+				names = make(map[string]bool)
+			}
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// nullablePtrReceiver reports whether recvType is a pointer that may be nil
+// whose type declares method on a `Ptr` receiver, and returns the pointer. A
+// `T` value is addressed (`&x` is a Ptr) and a Ptr already is one.
+func (t *galaASTTransformer) nullablePtrReceiver(recvType transpiler.Type, method string) (transpiler.PointerType, bool) {
+	ptr, ok := recvType.(transpiler.PointerType)
+	if !ok || ptr.NonNull || !t.ptrReceiverMethods[method] {
+		return ptr, false
+	}
+	_, meta, _, ok := t.receiverTypeInfo(t.methodReceiverType(ptr.Elem, method))
+	if !ok || meta == nil {
+		return ptr, false
+	}
+	m := meta.Methods[method]
+	return ptr, m != nil && m.PtrReceiver
+}
+
+// ptrOf displays the `Ptr` to ptr's element.
+func ptrOf(ptr transpiler.PointerType) string {
+	return displayType(transpiler.PointerType{Elem: ptr.Elem, NonNull: true})
+}
+
+// checkPtrReceiver rejects selecting a method declared on a `Ptr[T]`
+// receiver — a call `p.M()` or a method value `p.M` — on a pointer that may be
+// nil (GALA-E0080): the receiver fills a Ptr slot. recv is the lowered
+// receiver and recvType its type; suffix is the member access.
+func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, suffix *grammar.PostfixSuffixContext) error {
+	ptr, ok := t.nullablePtrReceiver(recvType, method)
+	if !ok {
+		return nil
+	}
+	from, to, text := receiverSource(suffix)
+	hint := fmt.Sprintf("call it on RequirePtr(%s), which panics on nil; a pointer that may be nil is kept as OptionPtrOf(%s)", text, text)
+	if id, isIdent := recv.(*ast.Ident); isIdent && t.fixedBindingOf(id.Name) == fixedPointerReceiver {
+		hint = fmt.Sprintf("declare the receiver `%s %s`, or call it on RequirePtr(%s)", id.Name, ptrOf(ptr), text)
+	}
+	return spanError(galaerr.CodePtrNullability, from, to,
+		fmt.Sprintf("cannot call %s on %s (%s): %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr", method, text, displayType(ptr), method, ptrOf(ptr)),
+		hint)
+}
+
+// checkPtrViewReceiver rejects a match through the sealed view of a pointer
+// that may be nil when its MatchView has a `Ptr` receiver (GALA-E0080), as
+// checkPtrReceiver rejects calling it. at locates the match.
+func (t *galaASTTransformer) checkPtrViewReceiver(subjectType transpiler.Type, at antlr.ParserRuleContext) error {
+	ptr, ok := t.nullablePtrReceiver(subjectType, sealedViewMethod)
+	if !ok {
+		return nil
+	}
+	return ptrError(at,
+		fmt.Sprintf("cannot match a %s through %s: %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr",
+			displayType(ptr), sealedViewMethod, sealedViewMethod, ptrOf(ptr)),
+		"match RequirePtr(p), which panics on nil, or an OptionPtrOf(p)")
+}
+
+// checkPtrInterfaceSlot rejects a pointer that may be nil filling an
+// interface slot (GALA-E0080) when its type implements a method of the
+// interface on a `Ptr` receiver: a call through the interface would run that
+// method on whatever pointer the interface holds.
+func (t *galaASTTransformer) checkPtrInterfaceSlot(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
+	if len(t.ptrReceiverMethods) == 0 || isNilIdent(expr) {
+		return nil
+	}
+	methods, _ := t.interfaceMethodNames(expected)
+	methods = slices.DeleteFunc(methods, func(m string) bool { return !t.ptrReceiverMethods[m] })
+	if len(methods) == 0 {
+		return nil
+	}
+	actual := t.probeExprType(expr)
+	slices.Sort(methods)
+	for _, m := range methods {
+		ptr, ok := t.nullablePtrReceiver(actual, m)
+		if !ok {
+			continue
+		}
+		text := transpiler.SourceText(exprCtx)
+		return ptrError(exprCtx,
+			fmt.Sprintf("cannot use %s (%s) as %s: its method %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr",
+				text, displayType(ptr), displayType(expected), m, ptrOf(ptr)),
+			fmt.Sprintf("pass RequirePtr(%s); RequirePtr panics on nil", text))
+	}
+	return nil
 }
 
 // hasPtr reports whether typ has a `Ptr` anywhere in it.
@@ -211,15 +315,34 @@ func (t *galaASTTransformer) ptrEntryChecks(params *ast.FieldList, owner string,
 		typ := displayType(t.astTypeToTranspilerType(field.Type))
 		for _, n := range field.Names {
 			if n.Name != "_" && guarded(pos) {
-				checks = append(checks, &ast.IfStmt{
-					Cond: &ast.BinaryExpr{X: ast.NewIdent(n.Name), Op: token.EQL, Y: ast.NewIdent("nil")},
-					Body: &ast.BlockStmt{List: panicStmt(fmt.Sprintf("%s: parameter %s is a %s, but the caller passed nil", owner, n.Name, typ))},
-				})
+				checks = append(checks, ptrNilCheck(n.Name, fmt.Sprintf("%s: parameter %s is a %s, but the caller passed nil", owner, n.Name, typ)))
 			}
 			pos++
 		}
 	}
 	return checks
+}
+
+// ptrReceiverEntryCheck returns, for a `Ptr` receiver recv of an exported
+// method, the statement `if r == nil { panic(...) }`. GALA never calls such a
+// method on a pointer that may be nil (checkPtrReceiver) nor turns one into an
+// interface it implements (checkPtrSlot), so only Go code can call it with a
+// nil receiver.
+func (t *galaASTTransformer) ptrReceiverEntryCheck(recv *ast.Field, owner string) []ast.Stmt {
+	if recv == nil || !t.isPtrTypeExpr(recv.Type) || len(recv.Names) != 1 || recv.Names[0].Name == "_" {
+		return nil
+	}
+	name := recv.Names[0].Name
+	typ := displayType(t.astTypeToTranspilerType(recv.Type))
+	return []ast.Stmt{ptrNilCheck(name, fmt.Sprintf("%s: receiver %s is a %s, but the caller passed nil", owner, name, typ))}
+}
+
+// ptrNilCheck is `if name == nil { panic(msg) }`.
+func ptrNilCheck(name, msg string) ast.Stmt {
+	return &ast.IfStmt{
+		Cond: &ast.BinaryExpr{X: ast.NewIdent(name), Op: token.EQL, Y: ast.NewIdent("nil")},
+		Body: &ast.BlockStmt{List: panicStmt(msg)},
+	}
 }
 
 // withPtrEntryChecks prepends checks to body.

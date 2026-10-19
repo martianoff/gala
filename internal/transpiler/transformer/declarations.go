@@ -863,14 +863,13 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()
 
-		// For non-pointer receivers, try to preserve type parameters for lambda type inference
-		// Pointer receivers keep using the simple type to avoid field lookup issues
+		// The receiver is in scope with its declared type: a pointer
+		// receiver as a `*T` or a `Ptr[T]`, so its nullability is checked
+		// wherever it is used.
 		typeForScope := receiverType
 		_, isPointer := recvTypeExpr.(*ast.StarExpr)
-		if !isPointer {
-			if fullType := t.astTypeToTranspilerType(recvTypeExpr); !fullType.IsNil() {
-				typeForScope = fullType
-			}
+		if fullType := t.astTypeToTranspilerType(recvTypeExpr); !fullType.IsNil() {
+			typeForScope = fullType
 		}
 
 		// The receiver is a plain Go receiver that can never be rebound; an
@@ -1052,8 +1051,20 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		funcType.Results = goResults
 	}
 	// Go code can call an exported function or method with a nil pointer.
+	// A method lowered to a function takes its receiver as the first
+	// parameter, which is checked as the receiver.
 	if ast.IsExported(name) {
-		body = withPtrEntryChecks(body, t.ptrEntryChecks(funcType.Params, funcSlot.funcName, func(int) bool { return true }))
+		var recvField *ast.Field
+		recvLowered := ctx.Receiver() != nil && receiver == nil
+		switch {
+		case recvLowered:
+			recvField = funcType.Params.List[0]
+		case receiver != nil:
+			recvField = receiver.List[0]
+		}
+		checks := t.ptrReceiverEntryCheck(recvField, funcSlot.funcName)
+		checks = append(checks, t.ptrEntryChecks(funcType.Params, funcSlot.funcName, func(pos int) bool { return !recvLowered || pos > 0 })...)
+		body = withPtrEntryChecks(body, checks)
 	}
 
 	return &ast.FuncDecl{

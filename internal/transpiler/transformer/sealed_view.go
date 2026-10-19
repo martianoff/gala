@@ -227,6 +227,9 @@ func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType tran
 // subject's MatchView() call, taken through an addressable receiver when the
 // method has a pointer receiver. at locates the match.
 func (t *galaASTTransformer) viewSubject(subject ast.Expr, subjectType transpiler.Type, at antlr.ParserRuleContext) (ast.Expr, error) {
+	if err := t.checkPtrViewReceiver(subjectType, at); err != nil {
+		return nil, err
+	}
 	recv, err := t.addressableReceiver(subject, subjectType, sealedViewMethod, at.GetStart().GetLine(), at.GetStart().GetColumn())
 	if err != nil {
 		return nil, err
