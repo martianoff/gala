@@ -1,7 +1,6 @@
 package transformer_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -103,6 +102,47 @@ func TestSealedViewMatchLowering(t *testing.T) {
 }`,
 			want:      []string{"func(obj std.Option[int]) string", "}(m.MatchView())"},
 			wantViews: 1,
+		},
+		{
+			name: "package-level stable identifier of the view type",
+			body: `func f(m MaybeInt) string = m match {
+    case Zero => "zero"
+    case None => "none"
+    case _    => "other"
+}
+
+val Zero Option[int] = Some(0)`,
+			want:      []string{"func(obj std.Option[int]) string", "}(m.MatchView())"},
+			wantViews: 1,
+		},
+		{
+			name: "column mixing a view variant with the value's own extractor",
+			body: `func f(o Option[MaybeInt]) int = o match {
+    case Some(Some(x))     => x
+    case Some(MaybeInt(r)) => r
+    case None()            => 0
+}`,
+			want:      []string{"MatchView()"},
+			wantViews: 1,
+		},
+		{
+			name: "column mixing a view variant with the value's own sealed variants",
+			body: `sealed type Dir {
+    case Up()
+    case Down()
+}
+
+func (d Dir) MatchView() Option[int] = None()
+
+func f(o Option[Dir]) int = o match {
+    case Some(Some(x)) => x
+    case Some(Up())    => 1
+    case Some(Down())  => 2
+    case None()        => 0
+}`,
+			want: []string{"MatchView()"},
+			// Dir's MatchView declaration, and the call.
+			wantViews: 2,
 		},
 		{
 			name: "sub-pattern reads the view of its own value",
@@ -246,6 +286,23 @@ func TestSealedViewMatchErrors(t *testing.T) {
 			msg:  "missing cases: Some(...)",
 		},
 		{
+			name: "missing own variant in a column mixing it with a view variant",
+			body: `sealed type Dir {
+    case Up()
+    case Down()
+}
+
+func (d Dir) MatchView() Option[int] = None()
+
+func f(o Option[Dir]) int = o match {
+    case Some(Some(x)) => x
+    case Some(Up())    => 1
+    case None()        => 0
+}`,
+			code: galaerr.CodeNonExhaustiveMatch,
+			msg:  "missing cases: Some(...)",
+		},
+		{
 			name: "missing variant of a user sealed view",
 			body: `func f(g Gauge) int = g match {
     case High(n) => n
@@ -282,8 +339,8 @@ func main() {}
 	_, err := transpileBareVariant(t, src)
 	require.Error(t, err)
 	var se *galaerr.SemanticError
-	if errors.As(err, &se) {
-		require.NotEqual(t, galaerr.CodeInvalidSealedViewMatch, se.Code)
-	}
+	require.ErrorAs(t, err, &se)
+	// `Some` is checked against NotAView itself, which it does not extract.
+	require.Contains(t, se.Msg, "cannot infer type parameters for extractor 'std.Some'", se.Error())
 	require.NotContains(t, err.Error(), "MatchView")
 }

@@ -124,7 +124,10 @@ func (c *coverage) covers(rows [][]covCell, types []transpiler.Type) bool {
 // columnView returns the sealed view of typ when a row's first pattern reads
 // it (see subPatternView), so the column is enumerated by the view's
 // variants; a binding beside it still matches every value. It returns nil
-// otherwise.
+// otherwise, and when another row's first pattern tests the value itself —
+// its own variant or extractor — since each sub-pattern decides for itself:
+// the column is then enumerated by typ, and a pattern over the view covers
+// none of its constructors.
 func (c *coverage) columnView(rows [][]covCell, typ transpiler.Type) transpiler.Type {
 	if transpiler.IsUnusable(typ) {
 		return nil
@@ -138,12 +141,20 @@ func (c *coverage) columnView(rows [][]covCell, typ transpiler.Type) transpiler.
 	if view == nil {
 		return nil
 	}
+	readsView := false
 	for _, row := range rows {
-		if row[0] != nil && row[0] != covRefutable && c.t.namesViewVariant(row[0], typ, view) {
-			return view
+		switch cell := row[0]; {
+		case cell == covRefutable || c.isWildcard(cell, typ):
+		case c.t.namesViewVariant(cell, typ, view):
+			readsView = true
+		default:
+			return nil
 		}
 	}
-	return nil
+	if !readsView {
+		return nil
+	}
+	return view
 }
 
 // allWildcards reports whether every pattern of row matches every value.

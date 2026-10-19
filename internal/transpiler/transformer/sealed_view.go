@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"slices"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -69,14 +70,10 @@ func (t *galaASTTransformer) sealedViewForCases(subjectType transpiler.Type, cas
 	if view == nil {
 		return nil, nil
 	}
-	usesView := false
-	for _, cc := range caseClauses {
-		if exprPat, ok := cc.(*grammar.CaseClauseContext).Pattern().(*grammar.ExpressionPatternContext); ok &&
-			t.namesViewVariant(exprPat.Expression(), subjectType, view) {
-			usesView = true
-			break
-		}
-	}
+	usesView := slices.ContainsFunc(caseClauses, func(cc grammar.ICaseClauseContext) bool {
+		exprPat, ok := cc.(*grammar.CaseClauseContext).Pattern().(*grammar.ExpressionPatternContext)
+		return ok && t.namesViewVariant(exprPat.Expression(), subjectType, view)
+	})
 	if !usesView {
 		return nil, nil
 	}
@@ -172,9 +169,9 @@ func (t *galaASTTransformer) checkViewAlternatives(pat grammar.IExpressionContex
 			continue
 		}
 		if name == text {
-			if t.isStableIdentifierPattern(name) {
+			if valueType, stable := t.stablePatternValueType(alt); stable {
 				// Compared with the view by ==, so it holds a view value.
-				if t.namesViewType(t.getExprTypeNameManual(ast.NewIdent(name)), view) {
+				if t.namesViewType(valueType, view) {
 					continue
 				}
 				return sealedViewPatternError(alt, typ, view,
@@ -219,7 +216,7 @@ func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType tran
 	if err != nil || view == nil {
 		return subject, subjectType, false, err
 	}
-	viewExpr, err := t.viewSubject(subject, subjectType, at.GetStart().GetLine(), at.GetStart().GetColumn())
+	viewExpr, err := t.viewSubject(subject, subjectType, at)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -228,9 +225,9 @@ func (t *galaASTTransformer) matchViewSubject(subject ast.Expr, subjectType tran
 
 // viewSubject returns the expression a match over a sealed view tests: the
 // subject's MatchView() call, taken through an addressable receiver when the
-// method has a pointer receiver. line and col locate the match.
-func (t *galaASTTransformer) viewSubject(subject ast.Expr, subjectType transpiler.Type, line, col int) (ast.Expr, error) {
-	recv, err := t.addressableReceiver(subject, subjectType, sealedViewMethod, line, col)
+// method has a pointer receiver. at locates the match.
+func (t *galaASTTransformer) viewSubject(subject ast.Expr, subjectType transpiler.Type, at antlr.ParserRuleContext) (ast.Expr, error) {
+	recv, err := t.addressableReceiver(subject, subjectType, sealedViewMethod, at.GetStart().GetLine(), at.GetStart().GetColumn())
 	if err != nil {
 		return nil, err
 	}

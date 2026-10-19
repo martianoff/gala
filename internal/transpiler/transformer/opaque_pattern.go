@@ -189,33 +189,44 @@ func (t *galaASTTransformer) isTypeParamSubject(typ transpiler.Type) bool {
 }
 
 // opaqueTypeOfPatternValue returns the opaque type of the value a sub-pattern
-// compares with when it names one — a stable identifier (`Debug`, see
-// isStableIdentifierPattern) or a qualified value (`billing.Guest`) — or nil.
-// A lowercase name binds instead, and other expressions are left to the
-// pattern they are.
+// compares with when it names one (see stablePatternValueType), or nil.
 func (t *galaASTTransformer) opaqueTypeOfPatternValue(expr grammar.IExpressionContext) *transpiler.TypeMetadata {
+	typ, ok := t.stablePatternValueType(expr)
+	if !ok {
+		return nil
+	}
+	return t.opaqueMeta(typ)
+}
+
+// stablePatternValueType returns the type of the value a sub-pattern compares
+// with when it names one — a stable identifier (`Debug`, see
+// isStableIdentifierPattern) or a qualified value (`billing.Guest`) — read
+// through a val's Immutable wrapper; ok is false for any other pattern. A
+// lowercase name binds instead, and other expressions are left to the pattern
+// they are.
+func (t *galaASTTransformer) stablePatternValueType(expr grammar.IExpressionContext) (typ transpiler.Type, ok bool) {
 	text := expr.GetText()
 	qualifier, bare := splitPackageQualifier(text)
 	if !token.IsIdentifier(bare) || (qualifier != "" && !token.IsIdentifier(qualifier)) {
-		return nil
+		return nil, false
 	}
 	if qualifier != "" {
 		goExpr, err := t.transformExpression(expr)
 		if err != nil {
-			return nil
+			return nil, false
 		}
-		return t.opaqueMeta(unwrapGalaType(t.probeExprType(goExpr)))
+		return unwrapGalaType(t.probeExprType(goExpr)), true
 	}
 	if !t.isSimpleIdentifier(text) || !t.isStableIdentifierPattern(text) {
-		return nil
+		return nil, false
 	}
-	typ := t.getType(text)
+	typ = t.getType(text)
 	if transpiler.IsUnusable(typ) && t.richAST != nil {
 		if pv := t.richAST.PackageVals[text]; pv != nil {
 			typ = pv.Type
 		}
 	}
-	return t.opaqueMeta(unwrapGalaType(typ))
+	return unwrapGalaType(typ), true
 }
 
 // hasOpenTypeArg reports whether the type arguments of typ, a subject of the

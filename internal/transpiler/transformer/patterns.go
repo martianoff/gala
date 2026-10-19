@@ -70,7 +70,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	if view, err := t.subPatternView(patExprCtx, matchedType); err != nil {
 		return nil, nil, err
 	} else if view != nil {
-		viewObj, err := t.viewSubject(objExpr, matchedType, patExprCtx.GetStart().GetLine(), patExprCtx.GetStart().GetColumn())
+		viewObj, err := t.viewSubject(objExpr, matchedType, patExprCtx)
 		if err != nil {
 			return nil, nil, err
 		}
