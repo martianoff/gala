@@ -144,6 +144,15 @@ go_test(
     ],
 )
 
+# Go benchmarks (time and allocations per op). Run with:
+#   bazel run //collection_mutable:collections_bench -- -test.bench=. -test.benchmem -test.run='^$'
+go_test(
+    name = "collections_bench",
+    srcs = ["collections_bench_test.go"],
+    embed = [":collection_mutable"],
+    deps = ["//std"],
+)
+
 # Performance benchmarks - GALA mutable collections
 gala_binary(
     name = "perf_gala",
