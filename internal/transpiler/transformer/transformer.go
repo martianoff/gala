@@ -70,6 +70,7 @@ type galaASTTransformer struct {
 	typeAliases            map[string]transpiler.Type                    // type alias name -> underlying type (e.g., "Handler" -> func(string) Future[string])
 	fileTypeDeclTargets    map[string]transpiler.Type                    // this file's `type X Y` declarations, name -> target parsed as written; complete before any declaration is transformed
 	hasOpaque              bool                                          // some known type is an opaque type; gates every opaque-type check
+	ptrReceiverMethods     map[string]bool                               // names of the known methods on a Ptr receiver; gates the receiver nullability checks
 	goTypeInfo             *transpiler.GoTypeInfo                        // type info from Go packages (stdlib, local Go files, third-party)
 	filePath               string                                        // source file path (for error reporting)
 	richAST                *transpiler.RichAST                           // reference to the primary RichAST for live metadata access
@@ -246,6 +247,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.typeMetas = richAST.Types
 	t.goCtorClaims = nil
 	t.hasOpaque = anyOpaque(richAST.Types)
+	t.ptrReceiverMethods = ptrReceiverMethodNames(richAST.Types)
 	t.companionObjects = richAST.CompanionObjects
 	if t.companionObjects == nil {
 		t.companionObjects = make(map[string]*transpiler.CompanionObjectMetadata)

@@ -602,6 +602,10 @@ type MethodMetadata struct {
 	// only on an addressable receiver, so a call through a val (whose Get()
 	// returns a copy) needs an addressable temporary.
 	PointerReceiver bool
+	// PtrReceiver is true for `func (r Ptr[T]) M()`, a receiver that is never
+	// nil (PointerReceiver is true as well). Such a method is selected only on
+	// a value that cannot be nil (GALA-E0080).
+	PtrReceiver bool
 	// Variadic is true when the last parameter is `...T`; ParamTypes records
 	// it as T.
 	Variadic bool

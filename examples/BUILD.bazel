@@ -4396,3 +4396,13 @@ gala_exec_test(
     src = "trailing_nil_result.gala",
     expected = "trailing_nil_result.out",
 )
+
+# A method on a Ptr[T] receiver: called on an addressable var, a Ptr,
+# RequirePtr and through an interface; an exported one checks its receiver on
+# entry, so a nil reaching it through an interface type test panics with the
+# GALA message.
+gala_exec_test(
+    name = "ptr_receiver",
+    src = "ptr_receiver.gala",
+    expected = "ptr_receiver.out",
+)

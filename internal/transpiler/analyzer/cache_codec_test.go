@@ -140,6 +140,7 @@ func buildSyntheticCache() *CachedRichAST {
 			Methods: map[string]*transpiler.MethodMetadata{
 				"M1": {
 					PointerReceiver: true,
+					PtrReceiver:     true,
 					Name:            "M1", Package: "synthetic",
 					ParamTypes:   []transpiler.Type{transpiler.BasicType{Name: "int"}},
 					ReturnType:   transpiler.BasicType{Name: "string"},
