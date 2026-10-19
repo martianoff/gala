@@ -1,0 +1,20 @@
+package ptr_cycle_lowered_lib
+
+// Box holds one value.
+struct Box[T any](V T)
+
+// Wrap boxes the box. Its result is Box with another type argument, so it is
+// lowered to a function (a Go instantiation cycle).
+func (b Ptr[Box[T]]) Wrap() Ptr[Box[Ptr[Box[T]]]] = &Box(b)
+
+// WrapStar is Wrap on a *Box receiver.
+func (b *Box[T]) WrapStar() *Box[*Box[T]] = &Box(b)
+
+// Pair boxes the value twice, by value.
+func (b *Box[T]) Pair() Box[Tuple[T, T]] = Box((b.V, b.V))
+
+// Split is Pair as a Go result list.
+func (b *Box[T]) Split() (Box[Tuple[T, T]], error) = Success(Box((b.V, b.V)))
+
+// NewBox returns a Box.
+func NewBox[T any](v T) Ptr[Box[T]] = &Box(v)

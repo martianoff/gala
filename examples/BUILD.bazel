@@ -1046,6 +1046,22 @@ gala_library(
     visibility = ["//visibility:public"],
 )
 
+# A method lowered to a function to avoid a Go instantiation cycle, declared on
+# a Ptr or *T receiver in another package, is called as that function.
+gala_library(
+    name = "ptr_cycle_lowered_lib",
+    srcs = ["ptr_cycle_lowered_lib/box.gala"],
+    importpath = "martianoff/gala/examples/ptr_cycle_lowered_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "ptr_cycle_lowered_crosspkg",
+    src = "ptr_cycle_lowered_crosspkg.gala",
+    expected = "ptr_cycle_lowered_crosspkg.out",
+    deps = [":ptr_cycle_lowered_lib"],
+)
+
 gala_exec_test(
     name = "when_generic_lib_test",
     src = "when_generic_lib_test.gala",

@@ -930,6 +930,9 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	wouldCauseCycle := false
 	if receiver != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
 		returnType := funcType.Results.List[0].Type
+		if goResults != nil {
+			returnType = goResults.List[0].Type // Go returns the results, not their GALA value
+		}
 		wouldCauseCycle = t.causesInstantiationCycle(originalRecvTypeExpr, returnType)
 	}
 
