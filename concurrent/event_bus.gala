@@ -44,7 +44,7 @@ type eventBusState[T any] struct {
 // EventBus is the public handle. Copy-by-value is safe and intentional:
 // every copy refers to the same underlying state.
 type EventBus[T any] struct {
-    var state *eventBusState[T]
+    state Ptr[eventBusState[T]]
 }
 
 // NewEventBus returns an unbounded bus. Push always succeeds.

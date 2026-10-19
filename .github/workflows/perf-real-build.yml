@@ -94,10 +94,10 @@ jobs:
       # together: older gala_tui releases contain code that newer GALA checks
       # correctly reject (0.15.2 still has a `val _ =`, GALA-E0060).
       GALA_TUI_REF: c46554dd1e24a2074c4b99dd2294f30cbe955489
-      # gala_team master after it adopted GALA 0.85.0 and gala_tui 0.15.4
-      # (martianoff/gala-team#143), with its match arms giving their values
-      # directly rather than through `return` (martianoff/gala-team#144).
-      GALA_TEAM_REF: "d5f543eb77f535f76861c774ef01458a7b10b4ff"
+      # gala_team master after its test driver takes the JSON decoder as a
+      # std FieldDecoder rather than a raw *JsonDecoderImpl, whose methods now
+      # have Ptr receivers (martianoff/gala-team#146).
+      GALA_TEAM_REF: "44e03ea2c32ca47fbbadb9bc780ec7a1720758dc"
       WARM_BUDGET_SECONDS: "500"
       COLD_BUDGET_SECONDS: "850"
 

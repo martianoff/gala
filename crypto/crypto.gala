@@ -54,7 +54,7 @@ type Hasher struct {
 
 // Update feeds more bytes into the running hash and returns the receiver
 // for chaining: h.Update(a).Update(b).Finish().
-func (h *Hasher) Update(data Array[byte]) *Hasher {
+func (h Ptr[Hasher]) Update(data Array[byte]) Ptr[Hasher] {
     h.h.Write(data.ToGoSlice())
     return h
 }
@@ -62,13 +62,13 @@ func (h *Hasher) Update(data Array[byte]) *Hasher {
 // Finish returns the current digest. The hasher remains usable, but
 // continuing to feed bytes will produce a digest of the full stream so
 // far rather than just what came after Finish.
-func (h *Hasher) Finish() Digest {
+func (h Ptr[Hasher]) Finish() Digest {
     val sum = h.h.Sum(nil)
     return Digest(bytes = ArrayFromSlice(sum))
 }
 
 // Algorithm returns the human-readable algorithm name (e.g. "SHA-256").
-func (h *Hasher) Algorithm() string = h.algorithm
+func (h Ptr[Hasher]) Algorithm() string = h.algorithm
 
 // ---- algorithm objects ---------------------------------------------------
 
@@ -84,7 +84,7 @@ func (s Sha256) Hash(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
-func (s Sha256) NewHasher() *Hasher {
+func (s Sha256) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "SHA-256", h = sha256.New())
 }
 
@@ -100,7 +100,7 @@ func (s Sha512) Hash(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
-func (s Sha512) NewHasher() *Hasher {
+func (s Sha512) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "SHA-512", h = sha512.New())
 }
 
@@ -117,7 +117,7 @@ func (s Sha1) Hash(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
-func (s Sha1) NewHasher() *Hasher {
+func (s Sha1) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "SHA-1", h = sha1.New())
 }
 
@@ -134,7 +134,7 @@ func (s Md5) Hash(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(h.Sum(nil)))
 }
 
-func (s Md5) NewHasher() *Hasher {
+func (s Md5) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "MD5", h = md5.New())
 }
 
@@ -157,7 +157,7 @@ func (h HmacSha256) Sum(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(mac.Sum(nil)))
 }
 
-func (h HmacSha256) NewHasher() *Hasher {
+func (h HmacSha256) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "HMAC-SHA256", h = hmac.New(sha256.New, h.Key.ToGoSlice()))
 }
 
@@ -173,7 +173,7 @@ func (h HmacSha512) Sum(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(mac.Sum(nil)))
 }
 
-func (h HmacSha512) NewHasher() *Hasher {
+func (h HmacSha512) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "HMAC-SHA512", h = hmac.New(sha512.New, h.Key.ToGoSlice()))
 }
 
@@ -190,7 +190,7 @@ func (h HmacSha1) Sum(data Array[byte]) Digest {
     return Digest(bytes = ArrayFromSlice(mac.Sum(nil)))
 }
 
-func (h HmacSha1) NewHasher() *Hasher {
+func (h HmacSha1) NewHasher() Ptr[Hasher] {
     return &Hasher(algorithm = "HMAC-SHA1", h = hmac.New(sha1.New, h.Key.ToGoSlice()))
 }
 

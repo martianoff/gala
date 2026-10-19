@@ -265,7 +265,7 @@ val sb3 = NewStringBuilderFromString("hello")  // from Go string
 
 ### Appending (chainable)
 
-All append methods return `*StringBuilder` for chaining:
+All append methods return `Ptr[StringBuilder]` for chaining:
 
 ```gala
 // Str-based
@@ -424,7 +424,7 @@ bazel run //strings:perf_go
 
 ```gala
 type Str struct {
-    runes *lazy.Lazy[Array[rune]]   // deferred until first functional op
+    runes Ptr[lazy.Lazy[Array[rune]]]   // deferred until first functional op
     str string                       // always available
 }
 ```

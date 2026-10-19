@@ -43,7 +43,7 @@ type processState struct {
 // (Kill / Wait from one, ReadLine from another) but each ReadLine /
 // WriteLine call itself is sequential — the caller serialises reads.
 type Process struct {
-    var state *processState
+    state Ptr[processState]
 }
 
 // Spawn launches the child process described by opts and returns Try[Process].

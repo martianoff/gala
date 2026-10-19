@@ -1,4 +1,4 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("@rules_gala//gala:defs.bzl", "gala_bootstrap_transpile", "gala_library", "gala_test")
 load("//internal/stdlib:shipped_sources.bzl", "stdlib_shipped_sources")
 
@@ -38,6 +38,18 @@ gala_test(
     deps = [
         ":stream",
         "//collection_immutable",
+    ],
+)
+
+# Go benchmarks (time and allocations per op). Run with:
+#   bazel run //stream:stream_bench -- -test.bench=. -test.benchmem -test.run='^$'
+go_test(
+    name = "stream_bench",
+    srcs = ["stream_bench_test.go"],
+    embed = [":stream"],
+    deps = [
+        "//collection_immutable",
+        "//std",
     ],
 )
 

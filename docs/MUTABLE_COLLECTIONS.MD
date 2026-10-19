@@ -1243,6 +1243,9 @@ bazel run //collection_mutable:perf_gala
 
 # Go native benchmark
 bazel run //collection_mutable:perf_go
+
+# Go testing.B benchmarks with allocations per op (B/op, allocs/op)
+bazel run //collection_mutable:collections_bench -- -test.bench=. -test.benchmem -test.run='^$'
 ```
 
 ### Array vs Go Slice (ns/op) - 10,000 Elements

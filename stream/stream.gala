@@ -14,42 +14,35 @@ type Stream[T any] struct {
     tailThunk func() Stream[T]
     evaluated bool
     cachedHead Option[T]
-    var cachedTail *Stream[T]
 }
 
 // empty returns an empty stream.
 func empty[T any]() Stream[T] {
-    var nilTail *Stream[T] = nil
     return Stream[T](
         headThunk = () => None[T](),
         tailThunk = () => empty[T](),
         evaluated = true,
         cachedHead = None[T](),
-        cachedTail = nilTail,
     )
 }
 
 // cons creates a stream with head and lazy tail.
 func cons[T any](head T, tail func() Stream[T]) Stream[T] {
-    var nilTail *Stream[T] = nil
     return Stream[T](
         headThunk = () => Some(head),
         tailThunk = tail,
         evaluated = false,
         cachedHead = Some(head),
-        cachedTail = nilTail,
     )
 }
 
 // lazyStream creates a fully lazy stream where even the head is not computed until accessed.
 func lazyStream[T any](headThunk func() Option[T], tailThunk func() Stream[T]) Stream[T] {
-    var nilTail *Stream[T] = nil
     return Stream[T](
         headThunk = headThunk,
         tailThunk = tailThunk,
         evaluated = false,
         cachedHead = None[T](),
-        cachedTail = nilTail,
     )
 }
 
@@ -160,15 +153,7 @@ func (s Stream[T]) Head() Option[T] {
 func (s Stream[T]) HeadOrElse(defaultVal T) T = s.Head().GetOrElse(defaultVal)
 
 // Tail returns the tail of the stream.
-func (s Stream[T]) Tail() Stream[T] {
-    if s.cachedTail != nil {
-        return *s.cachedTail
-    }
-    // Using var because we need a mutable reference for the pointer assignment
-    var tail = s.tailThunk()
-    s.cachedTail = &tail
-    return tail
-}
+func (s Stream[T]) Tail() Stream[T] = s.tailThunk()
 
 // IsEmpty returns true if the stream is empty.
 func (s Stream[T]) IsEmpty() bool = s.Head().IsEmpty()

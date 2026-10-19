@@ -461,6 +461,7 @@ func findFirstEven(arr *Array[int]) string {
 ```shell
 bazel run //collection_mutable:perf_gala
 bazel run //collection_mutable:perf_go
+bazel run //collection_mutable:collections_bench -- -test.bench=. -test.benchmem -test.run='^$'
 ```
 
 ---

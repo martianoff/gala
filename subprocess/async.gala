@@ -14,7 +14,7 @@ import (
 //
 // A closure crossing a concurrent.Future boundary may only capture deeply
 // immutable (Shareable) state, and Process — a value handle wrapping a
-// mutex/once/signal-backed *processState — is documented goroutine-safe but not
+// mutex/once/signal-backed Ptr[processState] — is documented goroutine-safe but not
 // statically provable as such, so app code cannot legally capture it into a
 // Future. The subprocess package OWNS that goroutine-safety invariant (Kill /
 // Wait from one goroutine, ReadLine from another) and already imports
