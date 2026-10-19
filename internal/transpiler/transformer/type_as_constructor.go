@@ -149,7 +149,7 @@ func (t *galaASTTransformer) isKnownFunctionName(name string) bool {
 //	Array{root: 1, length: 2, depth: 3}
 //
 // mapping three arguments onto the first three of Array's four PRIVATE fields
-// — `root` is a `*arrayNode[T]`, so the literal assigns an int to a pointer.
+// — `root` is an `OptionPtr[arrayNode[T]]`, so the literal assigns an int to it.
 // The subset rule that allows a prefix of fields to be supplied is what let a
 // Scala-shaped call through; requiring the fields to be nameable from the call
 // site is what stops it. Go would reject the literal anyway, so nothing that

@@ -441,9 +441,11 @@ func appendToNode[T any](node Ptr[arrayNode[T]], index int, value T, depth int) 
     val childIndex = (index >> (branchingBits * (depth - 1))) & branchingMask
     if childIndex < node.children.Size() {
         newNode.children[childIndex] = appendToNode[T](node.children[childIndex], index, value, depth - 1)
-    } else {
+    } else if childIndex == node.children.Size() {
         // The tree fills left to right, so a missing child is the next one
         newNode.children = go_interop.SliceAppend(newNode.children, newSubtree[T](value, depth - 1))
+    } else {
+        go_builtins.Panic(f"Array: append at index $index skips child slot ${node.children.Size()}")
     }
     return newNode
 }
@@ -512,10 +514,12 @@ func (a Array[T]) consolidateWithPrefix(newPrefix []T) Array[T] {
     }
 
     // Add tree elements
-    var treeLen = a.length - a.prefix.Size()
-    for i := 0; i < treeLen; i++ {
-        builder.Add(getFromNode[T](a.root.Get(), i, a.depth))
-    }
+    val treeLen = a.length - a.prefix.Size()
+    a.root.ForEach((root) => {
+        for i := 0; i < treeLen; i++ {
+            builder.Add(getFromNode[T](root, i, a.depth))
+        }
+    })
 
     return builder.Result()
 }
