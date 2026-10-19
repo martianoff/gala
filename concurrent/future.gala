@@ -47,7 +47,7 @@ type FutureState[T any] struct {
 // runs the body on GlobalEC(); a panic in the body becomes a Failure. The
 // internal state is built through the private `fut` case constructor.
 sealed type Future[T any] {
-    case fut(state *FutureState[T])
+    case fut(state Ptr[FutureState[T]])
 }
 
 // Promise is a writable, single-assignment container that completes a Future.
@@ -260,9 +260,7 @@ func (f Future[T]) AwaitFor(timeout Duration) Option[Try[T]] {
 // Cancel does not itself complete this Future, and cancelling an already
 // completed Future has no effect on its stored result.
 func (f Future[T]) Cancel() {
-    if f.state != nil {
-        go_interop.Cancel(f.state.cancel)
-    }
+    go_interop.Cancel(f.state.cancel)
 }
 
 // WithTimeout returns a new Future that completes with this Future's result
@@ -675,12 +673,7 @@ func ReduceLeft[T any](futures Array[Future[T]], op func(T, T) T) Future[T] {
 type Completed[T any] struct {}
 
 // Unapply awaits the Future and extracts its Try result for pattern matching.
-func (c Completed[T]) Unapply(f Future[T]) Option[Try[T]] {
-    if f.state == nil {
-        return None[Try[T]]()
-    }
-    return Some(f.Await())
-}
+func (c Completed[T]) Unapply(f Future[T]) Option[Try[T]] = Some(f.Await())
 
 // Succeeded is an extractor for pattern matching on successful Futures.
 // It awaits the Future and extracts the value if successful.
@@ -694,14 +687,9 @@ func (c Completed[T]) Unapply(f Future[T]) Option[Try[T]] {
 type Succeeded[T any] struct {}
 
 // Unapply awaits the Future and extracts its value if successful.
-func (s Succeeded[T]) Unapply(f Future[T]) Option[T] {
-    if f.state == nil {
-        return None[T]()
-    }
-    return f.Await() match {
-        case Success(v) => Some(v)
-        case Failure(_) => None[T]()
-    }
+func (s Succeeded[T]) Unapply(f Future[T]) Option[T] = f.Await() match {
+    case Success(v) => Some(v)
+    case Failure(_) => None[T]()
 }
 
 // Failed is an extractor for pattern matching on failed Futures.
@@ -716,14 +704,9 @@ func (s Succeeded[T]) Unapply(f Future[T]) Option[T] {
 type Failed[T any] struct {}
 
 // Unapply awaits the Future and extracts its error if failed.
-func (fa Failed[T]) Unapply(f Future[T]) Option[error] {
-    if f.state == nil {
-        return None[error]()
-    }
-    return f.Await() match {
-        case Success(_) => None[error]()
-        case Failure(e) => Some(e)
-    }
+func (fa Failed[T]) Unapply(f Future[T]) Option[error] = f.Await() match {
+    case Success(_) => None[error]()
+    case Failure(e) => Some(e)
 }
 
 // === Sequence Pattern Matching Support ===

@@ -325,7 +325,7 @@ val sb3 = NewStringBuilderFromString("hello")  // from Go string
 
 ### Appending (Chainable)
 
-All append methods return `*StringBuilder` for chaining:
+All append methods return `Ptr[StringBuilder]` for chaining:
 
 <!-- doc-check: fragment -->
 ```gala

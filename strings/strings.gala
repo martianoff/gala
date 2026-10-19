@@ -125,7 +125,7 @@ func Join(parts Array[string], sep string) string =
 
 // Str is an immutable string wrapper storing runes lazily and a cached Go string.
 type Str struct {
-    runes *lazy.Lazy[Array[rune]]
+    runes Ptr[lazy.Lazy[Array[rune]]]
     str string
 }
 
@@ -511,59 +511,59 @@ type StringBuilder struct {
 }
 
 // NewStringBuilder creates an empty StringBuilder.
-func NewStringBuilder() *StringBuilder = &StringBuilder{parts: cm.EmptyArray[string]()}
+func NewStringBuilder() Ptr[StringBuilder] = &StringBuilder{parts: cm.EmptyArray[string]()}
 
 // NewStringBuilderFrom creates a StringBuilder initialized from a Str.
-func NewStringBuilderFrom(s Str) *StringBuilder {
+func NewStringBuilderFrom(s Str) Ptr[StringBuilder] {
     var parts = cm.EmptyArray[string]()
     parts.Append(s.str)
     return &StringBuilder{parts: parts}
 }
 
 // NewStringBuilderFromString creates a StringBuilder initialized from a Go string.
-func NewStringBuilderFromString(s string) *StringBuilder {
+func NewStringBuilderFromString(s string) Ptr[StringBuilder] {
     var parts = cm.EmptyArray[string]()
     parts.Append(s)
     return &StringBuilder{parts: parts}
 }
 
 // Append appends a Str and returns the builder for chaining.
-func (sb *StringBuilder) Append(s Str) *StringBuilder {
+func (sb Ptr[StringBuilder]) Append(s Str) Ptr[StringBuilder] {
     sb.parts.Append(s.str)
     return sb
 }
 
 // AppendRune appends a rune and returns the builder for chaining.
-func (sb *StringBuilder) AppendRune(r rune) *StringBuilder {
+func (sb Ptr[StringBuilder]) AppendRune(r rune) Ptr[StringBuilder] {
     sb.parts.Append(string(r))
     return sb
 }
 
 // AppendLine appends a Str followed by a newline and returns the builder for chaining.
-func (sb *StringBuilder) AppendLine(s Str) *StringBuilder {
+func (sb Ptr[StringBuilder]) AppendLine(s Str) Ptr[StringBuilder] {
     sb.parts.Append(s.str)
     sb.parts.Append("\n")
     return sb
 }
 
 // AppendString appends a Go string and returns the builder for chaining.
-func (sb *StringBuilder) AppendString(s string) *StringBuilder {
+func (sb Ptr[StringBuilder]) AppendString(s string) Ptr[StringBuilder] {
     sb.parts.Append(s)
     return sb
 }
 
 // AppendStringLine appends a Go string followed by a newline and returns the builder for chaining.
-func (sb *StringBuilder) AppendStringLine(s string) *StringBuilder {
+func (sb Ptr[StringBuilder]) AppendStringLine(s string) Ptr[StringBuilder] {
     sb.parts.Append(s)
     sb.parts.Append("\n")
     return sb
 }
 
 // ToStr returns the built string as a Str by merging all chunks.
-func (sb *StringBuilder) ToStr() Str = strFromString(sb.ToString())
+func (sb Ptr[StringBuilder]) ToStr() Str = strFromString(sb.ToString())
 
 // ToString returns the built string as a Go string.
-func (sb *StringBuilder) ToString() string {
+func (sb Ptr[StringBuilder]) ToString() string {
     if sb.parts.Length() == 0 {
         return ""
     }
@@ -571,22 +571,22 @@ func (sb *StringBuilder) ToString() string {
 }
 
 // String implements the Go Stringer interface.
-func (sb *StringBuilder) String() string = sb.ToString()
+func (sb Ptr[StringBuilder]) String() string = sb.ToString()
 
 // Length returns the total byte length of the built string.
-func (sb *StringBuilder) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.Size())
+func (sb Ptr[StringBuilder]) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.Size())
 
 // RuneCount returns the total number of runes in the built string.
-func (sb *StringBuilder) RuneCount() int =
+func (sb Ptr[StringBuilder]) RuneCount() int =
     sb.parts.FoldLeft(0, (acc, p) => acc + utf8.RuneCountInString(p))
 
 // IsEmpty returns true if the builder has no content.
-func (sb *StringBuilder) IsEmpty() bool = sb.parts.Length() == 0
+func (sb Ptr[StringBuilder]) IsEmpty() bool = sb.parts.Length() == 0
 
 // NonEmpty returns true if the builder has content.
-func (sb *StringBuilder) NonEmpty() bool = sb.parts.Length() > 0
+func (sb Ptr[StringBuilder]) NonEmpty() bool = sb.parts.Length() > 0
 
 // Reset clears the builder content.
-func (sb *StringBuilder) Reset() {
+func (sb Ptr[StringBuilder]) Reset() {
     sb.parts = cm.EmptyArray[string]()
 }
