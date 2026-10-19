@@ -26,21 +26,18 @@ import (
 type hashSetNode[T comparable] struct {
     bitmap   uint32
     entries  []T                   // Direct entries at this node (for leaf collisions)
-    children []*hashSetNode[T]     // Child nodes (for internal nodes)
+    children []Ptr[hashSetNode[T]]     // Child nodes (for internal nodes)
     isLeaf   bool
 }
 
 // HashSet represents an immutable set.
 type HashSet[T comparable] struct {
-    root   *hashSetNode[T]
+    root   OptionPtr[hashSetNode[T]] // empty when the set is
     size   int
 }
 
 // EmptyHashSet returns an empty HashSet.
-func EmptyHashSet[T comparable]() HashSet[T] {
-    var nilRoot *hashSetNode[T] = nil
-    return HashSet[T](root = nilRoot, size = 0)
-}
+func EmptyHashSet[T comparable]() HashSet[T] = HashSet[T](root = EmptyOptionPtr[hashSetNode[T]](), size = 0)
 
 // HashSetOf creates a HashSet from variadic arguments.
 // Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
@@ -132,15 +129,15 @@ func popcount(var x uint32) int {
 
 // Contains checks if the set contains the given element. O(eC).
 func (s HashSet[T]) Contains(elem T) bool {
-    if s.root == nil {
+    if s.root.IsEmpty() {
         return false
     }
     val hashCode = hash[T](elem)
-    return containsInNode[T](s.root, elem, hashCode, 0)
+    return containsInNode[T](s.root.Get(), elem, hashCode, 0)
 }
 
 // containsInNode searches for an element in a node.
-func containsInNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) bool {
+func containsInNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) bool {
     if node.isLeaf {
         // Check entries at this leaf
         for i := 0; i < node.entries.Size(); i++ {
@@ -162,28 +159,23 @@ func containsInNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32,
 
 // Add adds an element to the set. Returns a new set with the element. O(eC).
 func (s HashSet[T]) Add(elem T) HashSet[T] {
+    if s.root.IsEmpty() {
+        // Create new leaf node
+        val leaf = &hashSetNode[T](entries = go_interop.SliceOf(elem), isLeaf = true)
+        return HashSet[T](root = SomePtr(leaf), size = s.size + 1)
+    }
+    val root = s.root.Get()
     val hashCode = hash[T](elem)
 
     // Check if already contains (single hash computation)
-    if s.root != nil && containsInNode[T](s.root, elem, hashCode, 0) {
+    if containsInNode[T](root, elem, hashCode, 0) {
         return s
     }
-
-    var newRoot *hashSetNode[T]
-    if s.root == nil {
-        // Create new leaf node
-        var entries []T
-        entries = go_interop.SliceAppend(entries, elem)
-        newRoot = &hashSetNode[T](entries = entries, isLeaf = true)
-    } else {
-        newRoot = addToNode[T](s.root, elem, hashCode, 0)
-    }
-
-    return HashSet[T](root = newRoot, size = s.size + 1)
+    return HashSet[T](root = SomePtr(addToNode[T](root, elem, hashCode, 0)), size = s.size + 1)
 }
 
 // addToNode adds an element to a node, returning a new node.
-func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
+func addToNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) Ptr[hashSetNode[T]] {
     if node.isLeaf {
         // Add to leaf's entries or expand to internal node
         if level >= 6 {
@@ -197,7 +189,7 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
         }
 
         // Create a new internal node and distribute elements
-        var newNode *hashSetNode[T] = &hashSetNode[T](bitmap = uint32(0), isLeaf = false)
+        var newNode Ptr[hashSetNode[T]] = &hashSetNode[T](bitmap = uint32(0), isLeaf = false)
 
         // Add existing entries
         for i := 0; i < node.entries.Size(); i++ {
@@ -220,7 +212,7 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
         val newLeaf = &hashSetNode[T](entries = newEntries, isLeaf = true)
 
         // Copy children and insert new leaf
-        var newChildren []*hashSetNode[T]
+        var newChildren []Ptr[hashSetNode[T]]
         for i := 0; i < idx; i++ {
             newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
@@ -236,7 +228,7 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
     val newChild = addToNode[T](node.children[idx], elem, hashCode, level + 1)
 
     // Copy children with updated child
-    var newChildren []*hashSetNode[T]
+    var newChildren []Ptr[hashSetNode[T]]
     for i := 0; i < node.children.Size(); i++ {
         if i == idx {
             newChildren = go_interop.SliceAppend(newChildren, newChild)
@@ -249,7 +241,7 @@ func addToNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, leve
 }
 
 // insertIntoInternalNode inserts an element into an internal node.
-func insertIntoInternalNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
+func insertIntoInternalNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) Ptr[hashSetNode[T]] {
     val bit = bitpos(hashCode, level)
     val idx = index(node.bitmap, bit)
 
@@ -260,7 +252,7 @@ func insertIntoInternalNode[T comparable](node *hashSetNode[T], elem T, hashCode
         val newLeaf = &hashSetNode[T](entries = newEntries, isLeaf = true)
 
         // Copy children and insert new leaf
-        var newChildren []*hashSetNode[T]
+        var newChildren []Ptr[hashSetNode[T]]
         for i := 0; i < idx; i++ {
             newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
@@ -276,7 +268,7 @@ func insertIntoInternalNode[T comparable](node *hashSetNode[T], elem T, hashCode
     val newChild = addToNode[T](node.children[idx], elem, hashCode, level + 1)
 
     // Copy children with updated child
-    var newChildren []*hashSetNode[T]
+    var newChildren []Ptr[hashSetNode[T]]
     for i := 0; i < node.children.Size(); i++ {
         if i == idx {
             newChildren = go_interop.SliceAppend(newChildren, newChild)
@@ -293,7 +285,7 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
     val hashCode = hash[T](elem)
 
     // Check if contains (single hash computation)
-    if s.root == nil || !containsInNode[T](s.root, elem, hashCode, 0) {
+    if s.root.IsEmpty() || !containsInNode[T](s.root.Get(), elem, hashCode, 0) {
         return s
     }
 
@@ -301,12 +293,13 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
         return EmptyHashSet[T]()
     }
 
-    val newRoot = removeFromNode[T](s.root, elem, hashCode, 0)
+    val newRoot = removeFromNode[T](s.root.Get(), elem, hashCode, 0)
     return HashSet[T](root = newRoot, size = s.size - 1)
 }
 
-// removeFromNode removes an element from a node, returning a new node.
-func removeFromNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32, level int) *hashSetNode[T] {
+// removeFromNode removes an element from a node, returning the new node, or
+// empty when no element is left under it.
+func removeFromNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) OptionPtr[hashSetNode[T]] {
     if node.isLeaf {
         var newEntries []T
         for i := 0; i < node.entries.Size(); i++ {
@@ -315,46 +308,46 @@ func removeFromNode[T comparable](node *hashSetNode[T], elem T, hashCode uint32,
             }
         }
         if newEntries.Size() == 0 {
-            return nil
+            return EmptyOptionPtr[hashSetNode[T]]()
         }
-        return &hashSetNode[T](entries = newEntries, isLeaf = true)
+        return SomePtr(&hashSetNode[T](entries = newEntries, isLeaf = true))
     }
 
     val bit = bitpos(hashCode, level)
     val idx = index(node.bitmap, bit)
 
     if (node.bitmap & bit) == 0 {
-        return node
+        return SomePtr(node)
     }
 
     val newChild = removeFromNode[T](node.children[idx], elem, hashCode, level + 1)
 
-    if newChild == nil {
+    if newChild.IsEmpty() {
         // Child is now empty, remove it
         if popcount(node.bitmap) == 1 {
-            return nil
+            return EmptyOptionPtr[hashSetNode[T]]()
         }
 
-        var newChildren []*hashSetNode[T]
+        var newChildren []Ptr[hashSetNode[T]]
         for i := 0; i < node.children.Size(); i++ {
             if i != idx {
                 newChildren = go_interop.SliceAppend(newChildren, node.children[i])
             }
         }
-        return &hashSetNode[T](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false)
+        return SomePtr(&hashSetNode[T](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false))
     }
 
     // Copy children with updated child
-    var newChildren []*hashSetNode[T]
+    var newChildren []Ptr[hashSetNode[T]]
     for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = go_interop.SliceAppend(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild.Get())
         } else {
             newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
-    return &hashSetNode[T](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+    return SomePtr(&hashSetNode[T](bitmap = node.bitmap, children = newChildren, isLeaf = false))
 }
 
 // AddAll adds all elements from another set. Returns a new set.
@@ -406,13 +399,11 @@ func (s HashSet[T]) SubsetOf(other HashSet[T]) bool {
 
 // ForEach applies a function to each element for side effects.
 func (s HashSet[T]) ForEach(f func(T)) {
-    if s.root != nil {
-        forEachInNode[T](s.root, f)
-    }
+    s.root.ForEach((root) => forEachInNode[T](root, f))
 }
 
 // forEachInNode traverses a node and applies f to each element.
-func forEachInNode[T comparable](node *hashSetNode[T], f func(T)) {
+func forEachInNode[T comparable](node Ptr[hashSetNode[T]], f func(T)) {
     if node.isLeaf {
         for i := 0; i < node.entries.Size(); i++ {
             f(node.entries[i])

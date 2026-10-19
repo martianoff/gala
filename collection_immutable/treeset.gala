@@ -29,21 +29,20 @@ val treeBlack int = 1
 // treeNode represents a node in the Red-Black tree.
 type treeNode[T comparable] struct {
     value T
-    left  *treeNode[T]
-    right *treeNode[T]
+    left  OptionPtr[treeNode[T]]
+    right OptionPtr[treeNode[T]]
     color int
 }
 
 // TreeSet represents an immutable sorted set.
 type TreeSet[T comparable] struct {
-    root *treeNode[T]
+    root OptionPtr[treeNode[T]]
     size int
 }
 
 // EmptyTreeSet returns an empty TreeSet.
 func EmptyTreeSet[T comparable]() TreeSet[T] {
-    var nilRoot *treeNode[T] = nil
-    return TreeSet[T](root = nilRoot, size = 0)
+    return TreeSet[T](root = EmptyOptionPtr[treeNode[T]](), size = 0)
 }
 
 // TreeSetOf creates a TreeSet from variadic arguments.
@@ -258,13 +257,9 @@ func panicNotOrdered(v any) int {
     go_builtins.Panic(f"TreeSet: type ${v}%T must implement std.Ordered interface")
 }
 
-// isRedNode checks if a node is red (nil nodes are black).
-func isRedNode[T comparable](node *treeNode[T]) bool {
-    if node == nil {
-        return false
-    }
-    return node.color == treeRed
-}
+// isRedNode checks if a node is red (empty nodes are black).
+func isRedNode[T comparable](tree OptionPtr[treeNode[T]]) bool =
+    tree.IsDefined() && tree.Get().color == treeRed
 
 // Contains checks if the set contains the given element. O(log n).
 func (s TreeSet[T]) Contains(elem T) bool {
@@ -272,10 +267,11 @@ func (s TreeSet[T]) Contains(elem T) bool {
 }
 
 // containsTree searches for an element in the tree.
-func containsTree[T comparable](node *treeNode[T], elem T) bool {
-    if node == nil {
+func containsTree[T comparable](tree OptionPtr[treeNode[T]], elem T) bool {
+    if tree.IsEmpty() {
         return false
     }
+    val node = tree.Get()
     val cmp = compare[T](elem, node.value)
     if cmp < 0 {
         return containsTree[T](node.left, elem)
@@ -294,55 +290,62 @@ func (s TreeSet[T]) Add(elem T) TreeSet[T] {
     val newRoot = insertTree[T](s.root, elem)
     // Root is always black
     val blackRoot = &treeNode[T](value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeBlack)
-    return TreeSet[T](root = blackRoot, size = s.size + 1)
+    return TreeSet[T](root = SomePtr(blackRoot), size = s.size + 1)
 }
 
 // insertTree inserts an element into the tree and rebalances.
-func insertTree[T comparable](node *treeNode[T], elem T) *treeNode[T] {
-    if node == nil {
+func insertTree[T comparable](tree OptionPtr[treeNode[T]], elem T) Ptr[treeNode[T]] {
+    if tree.IsEmpty() {
         return &treeNode[T](value = elem, color = treeRed)
     }
+    val node = tree.Get()
 
     val cmp = compare[T](elem, node.value)
-    var newNode *treeNode[T]
     if cmp < 0 {
         val newLeft = insertTree[T](node.left, elem)
-        newNode = &treeNode[T](value = node.value, left = newLeft, right = node.right, color = node.color)
-    } else if cmp > 0 {
-        val newRight = insertTree[T](node.right, elem)
-        newNode = &treeNode[T](value = node.value, left = node.left, right = newRight, color = node.color)
-    } else {
-        return node
+        return balanceTree[T](&treeNode[T](value = node.value, left = SomePtr(newLeft), right = node.right, color = node.color))
     }
-
-    return balanceTree[T](newNode)
+    if cmp > 0 {
+        val newRight = insertTree[T](node.right, elem)
+        return balanceTree[T](&treeNode[T](value = node.value, left = node.left, right = SomePtr(newRight), color = node.color))
+    }
+    return node
 }
 
 // balanceTree rebalances the tree after insertion (Okasaki's balance function).
-func balanceTree[T comparable](node *treeNode[T]) *treeNode[T] {
+// A red child is never empty, so each case reads the red nodes it tested.
+func balanceTree[T comparable](node Ptr[treeNode[T]]) Ptr[treeNode[T]] {
     // Case 1: Left child is red and has red left child
-    if isRedNode[T](node.left) && isRedNode[T](node.left.left) {
-        val newLeft = &treeNode[T](value = node.left.left.value, left = node.left.left.left, right = node.left.left.right, color = treeBlack)
-        val newRight = &treeNode[T](value = node.value, left = node.left.right, right = node.right, color = treeBlack)
-        return &treeNode[T](value = node.left.value, left = newLeft, right = newRight, color = treeRed)
+    if isRedNode[T](node.left) && isRedNode[T](node.left.Get().left) {
+        val l = node.left.Get()
+        val ll = l.left.Get()
+        val newLeft = &treeNode[T](value = ll.value, left = ll.left, right = ll.right, color = treeBlack)
+        val newRight = &treeNode[T](value = node.value, left = l.right, right = node.right, color = treeBlack)
+        return &treeNode[T](value = l.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeRed)
     }
     // Case 2: Left child is red and has red right child
-    if isRedNode[T](node.left) && isRedNode[T](node.left.right) {
-        val newLeft = &treeNode[T](value = node.left.value, left = node.left.left, right = node.left.right.left, color = treeBlack)
-        val newRight = &treeNode[T](value = node.value, left = node.left.right.right, right = node.right, color = treeBlack)
-        return &treeNode[T](value = node.left.right.value, left = newLeft, right = newRight, color = treeRed)
+    if isRedNode[T](node.left) && isRedNode[T](node.left.Get().right) {
+        val l = node.left.Get()
+        val lr = l.right.Get()
+        val newLeft = &treeNode[T](value = l.value, left = l.left, right = lr.left, color = treeBlack)
+        val newRight = &treeNode[T](value = node.value, left = lr.right, right = node.right, color = treeBlack)
+        return &treeNode[T](value = lr.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeRed)
     }
     // Case 3: Right child is red and has red left child
-    if isRedNode[T](node.right) && isRedNode[T](node.right.left) {
-        val newLeft = &treeNode[T](value = node.value, left = node.left, right = node.right.left.left, color = treeBlack)
-        val newRight = &treeNode[T](value = node.right.value, left = node.right.left.right, right = node.right.right, color = treeBlack)
-        return &treeNode[T](value = node.right.left.value, left = newLeft, right = newRight, color = treeRed)
+    if isRedNode[T](node.right) && isRedNode[T](node.right.Get().left) {
+        val r = node.right.Get()
+        val rl = r.left.Get()
+        val newLeft = &treeNode[T](value = node.value, left = node.left, right = rl.left, color = treeBlack)
+        val newRight = &treeNode[T](value = r.value, left = rl.right, right = r.right, color = treeBlack)
+        return &treeNode[T](value = rl.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeRed)
     }
     // Case 4: Right child is red and has red right child
-    if isRedNode[T](node.right) && isRedNode[T](node.right.right) {
-        val newLeft = &treeNode[T](value = node.value, left = node.left, right = node.right.left, color = treeBlack)
-        val newRight = &treeNode[T](value = node.right.right.value, left = node.right.right.left, right = node.right.right.right, color = treeBlack)
-        return &treeNode[T](value = node.right.value, left = newLeft, right = newRight, color = treeRed)
+    if isRedNode[T](node.right) && isRedNode[T](node.right.Get().right) {
+        val r = node.right.Get()
+        val rr = r.right.Get()
+        val newLeft = &treeNode[T](value = node.value, left = node.left, right = r.left, color = treeBlack)
+        val newRight = &treeNode[T](value = rr.value, left = rr.left, right = rr.right, color = treeBlack)
+        return &treeNode[T](value = r.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeRed)
     }
     return node
 }
@@ -355,67 +358,57 @@ func (s TreeSet[T]) Remove(elem T) TreeSet[T] {
     if s.size == 1 {
         return EmptyTreeSet[T]()
     }
-    val newRoot = removeTree[T](s.root, elem)
-    if newRoot == nil {
-        return EmptyTreeSet[T]()
+    return removeTree[T](s.root, elem) match {
+        case Some(newRoot) => {
+            // Root is always black
+            val blackRoot = &treeNode[T](value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeBlack)
+            TreeSet[T](root = SomePtr(blackRoot), size = s.size - 1)
+        }
+        case None() => EmptyTreeSet[T]()
     }
-    // Root is always black
-    val blackRoot = &treeNode[T](value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeBlack)
-    return TreeSet[T](root = blackRoot, size = s.size - 1)
 }
 
 // removeTree removes an element from the tree.
-func removeTree[T comparable](node *treeNode[T], elem T) *treeNode[T] {
-    if node == nil {
-        return nil
+func removeTree[T comparable](tree OptionPtr[treeNode[T]], elem T) OptionPtr[treeNode[T]] {
+    if tree.IsEmpty() {
+        return tree
     }
+    val node = tree.Get()
 
     val cmp = compare[T](elem, node.value)
     if cmp < 0 {
         val newLeft = removeTree[T](node.left, elem)
-        return balanceRemoveTree[T](&treeNode[T](value = node.value, left = newLeft, right = node.right, color = node.color))
+        return SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = newLeft, right = node.right, color = node.color)))
     }
     if cmp > 0 {
         val newRight = removeTree[T](node.right, elem)
-        return balanceRemoveTree[T](&treeNode[T](value = node.value, left = node.left, right = newRight, color = node.color))
+        return SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = node.left, right = newRight, color = node.color)))
     }
 
     // Found the element to remove
-    if node.left == nil {
+    if node.left.IsEmpty() {
         return node.right
     }
-    if node.right == nil {
+    if node.right.IsEmpty() {
         return node.left
     }
 
     // Node has two children, find successor (min of right subtree)
-    val successor = findMinTree[T](node.right)
-    val newRight = removeMinTree[T](node.right)
-    return balanceRemoveTree[T](&treeNode[T](value = successor, left = node.left, right = newRight, color = node.color))
+    val successor = findMinTree[T](node.right.Get())
+    val newRight = removeMinTree[T](node.right.Get())
+    return SomePtr(balanceTree[T](&treeNode[T](value = successor, left = node.left, right = newRight, color = node.color)))
 }
 
 // findMinTree finds the minimum element in a subtree.
-func findMinTree[T comparable](node *treeNode[T]) T {
-    if node.left == nil {
-        return node.value
-    }
-    return findMinTree[T](node.left)
+func findMinTree[T comparable](node Ptr[treeNode[T]]) T = node.left match {
+    case Some(left) => findMinTree[T](left)
+    case None() => node.value
 }
 
 // removeMinTree removes the minimum element from a subtree.
-func removeMinTree[T comparable](node *treeNode[T]) *treeNode[T] {
-    if node.left == nil {
-        return node.right
-    }
-    return balanceRemoveTree[T](&treeNode[T](value = node.value, left = removeMinTree[T](node.left), right = node.right, color = node.color))
-}
-
-// balanceRemoveTree rebalances after removal (simplified version).
-func balanceRemoveTree[T comparable](node *treeNode[T]) *treeNode[T] {
-    if node == nil {
-        return nil
-    }
-    return balanceTree[T](node)
+func removeMinTree[T comparable](node Ptr[treeNode[T]]) OptionPtr[treeNode[T]] = node.left match {
+    case Some(left) => SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = removeMinTree[T](left), right = node.right, color = node.color)))
+    case None() => node.right
 }
 
 // Min returns the minimum element in the set. O(log n).
@@ -424,7 +417,7 @@ func (s TreeSet[T]) Min() T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.Min on empty set")
     }
-    return findMinTree[T](s.root)
+    return findMinTree[T](s.root.Get())
 }
 
 // MinOption returns the minimum element wrapped in Option. O(log n).
@@ -441,15 +434,13 @@ func (s TreeSet[T]) Max() T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.Max on empty set")
     }
-    return findMaxTree[T](s.root)
+    return findMaxTree[T](s.root.Get())
 }
 
 // findMaxTree finds the maximum element in a subtree.
-func findMaxTree[T comparable](node *treeNode[T]) T {
-    if node.right == nil {
-        return node.value
-    }
-    return findMaxTree[T](node.right)
+func findMaxTree[T comparable](node Ptr[treeNode[T]]) T = node.right match {
+    case Some(right) => findMaxTree[T](right)
+    case None() => node.value
 }
 
 // MaxOption returns the maximum element wrapped in Option. O(log n).
@@ -509,16 +500,15 @@ func (s TreeSet[T]) SubsetOf(other TreeSet[T]) bool {
 
 // ForEach applies a function to each element in sorted order.
 func (s TreeSet[T]) ForEach(f func(T)) {
-    if s.root != nil {
-        forEachTree[T](s.root, f)
-    }
+    forEachTree[T](s.root, f)
 }
 
 // forEachTree traverses the tree in-order and applies f.
-func forEachTree[T comparable](node *treeNode[T], f func(T)) {
-    if node == nil {
+func forEachTree[T comparable](tree OptionPtr[treeNode[T]], f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     forEachTree[T](node.left, f)
     f(node.value)
     forEachTree[T](node.right, f)
@@ -660,10 +650,11 @@ func (s TreeSet[T]) Range(from T, to T) TreeSet[T] {
 }
 
 // rangeTree traverses only nodes within the range.
-func rangeTree[T comparable](node *treeNode[T], from T, to T, f func(T)) {
-    if node == nil {
+func rangeTree[T comparable](tree OptionPtr[treeNode[T]], from T, to T, f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmpFrom = compare[T](node.value, from)
     val cmpTo = compare[T](node.value, to)
 
@@ -688,10 +679,11 @@ func (s TreeSet[T]) RangeFrom(from T) TreeSet[T] {
 }
 
 // rangeFromTree traverses only nodes >= from.
-func rangeFromTree[T comparable](node *treeNode[T], from T, f func(T)) {
-    if node == nil {
+func rangeFromTree[T comparable](tree OptionPtr[treeNode[T]], from T, f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmp = compare[T](node.value, from)
     if cmp > 0 {
         rangeFromTree[T](node.left, from, f)
@@ -712,10 +704,11 @@ func (s TreeSet[T]) RangeTo(to T) TreeSet[T] {
 }
 
 // rangeToTree traverses only nodes <= to.
-func rangeToTree[T comparable](node *treeNode[T], to T, f func(T)) {
-    if node == nil {
+func rangeToTree[T comparable](tree OptionPtr[treeNode[T]], to T, f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmp = compare[T](node.value, to)
     rangeToTree[T](node.left, to, f)
     if cmp <= 0 {
@@ -746,10 +739,11 @@ func (s TreeSet[T]) ToList() List[T] {
 }
 
 // forEachTreeReverse traverses the tree in reverse order.
-func forEachTreeReverse[T comparable](node *treeNode[T], f func(T)) {
-    if node == nil {
+func forEachTreeReverse[T comparable](tree OptionPtr[treeNode[T]], f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     forEachTreeReverse[T](node.right, f)
     f(node.value)
     forEachTreeReverse[T](node.left, f)

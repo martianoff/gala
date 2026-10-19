@@ -25,21 +25,18 @@ type hashMapNode[K comparable, V any] struct {
     bitmap   uint32
     keys     []K
     values   []V
-    children []*hashMapNode[K, V]
+    children []Ptr[hashMapNode[K, V]]
     isLeaf   bool
 }
 
 // HashMap represents an immutable map.
 type HashMap[K comparable, V any] struct {
-    root   *hashMapNode[K, V]
+    root   OptionPtr[hashMapNode[K, V]] // empty when the map is
     size   int
 }
 
 // EmptyHashMap returns an empty HashMap.
-func EmptyHashMap[K comparable, V any]() HashMap[K, V] {
-    var nilRoot *hashMapNode[K, V] = nil
-    return HashMap[K, V](root = nilRoot, size = 0)
-}
+func EmptyHashMap[K comparable, V any]() HashMap[K, V] = HashMap[K, V](root = EmptyOptionPtr[hashMapNode[K, V]](), size = 0)
 
 // IsEmpty returns true if the map is empty.
 func (m HashMap[K, V]) IsEmpty() bool = m.size == 0
@@ -107,15 +104,15 @@ func hashMapPopcount(var x uint32) int {
 
 // Contains checks if the map contains the given key. O(eC).
 func (m HashMap[K, V]) Contains(key K) bool {
-    if m.root == nil {
+    if m.root.IsEmpty() {
         return false
     }
     val hashCode = hashMapHash[K](key)
-    return containsKeyInNode[K, V](m.root, key, hashCode, 0)
+    return containsKeyInNode[K, V](m.root.Get(), key, hashCode, 0)
 }
 
 // containsKeyInNode searches for a key in a node.
-func containsKeyInNode[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) bool {
+func containsKeyInNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) bool {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             if node.keys[i] == key {
@@ -136,15 +133,15 @@ func containsKeyInNode[K comparable, V any](node *hashMapNode[K, V], key K, hash
 
 // Get returns the value for a key wrapped in Option. O(eC).
 func (m HashMap[K, V]) Get(key K) Option[V] {
-    if m.root == nil {
+    if m.root.IsEmpty() {
         return None[V]()
     }
     val hashCode = hashMapHash[K](key)
-    return getFromNodeMap[K, V](m.root, key, hashCode, 0)
+    return getFromNodeMap[K, V](m.root.Get(), key, hashCode, 0)
 }
 
 // getFromNodeMap searches for a key in a node and returns its value.
-func getFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) Option[V] {
+func getFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) Option[V] {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             if node.keys[i] == key {
@@ -178,30 +175,21 @@ func (m HashMap[K, V]) Apply(key K) V {
 
 // Put adds or updates a key-value pair. Returns a new map. O(eC).
 func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
+    if m.root.IsEmpty() {
+        val leaf = &hashMapNode[K, V](keys = go_interop.SliceOf(key), values = go_interop.SliceOf(value), isLeaf = true)
+        return HashMap[K, V](root = SomePtr(leaf), size = m.size + 1)
+    }
+    val root = m.root.Get()
     val hashCode = hashMapHash[K](key)
 
     // Check if key exists (to determine if size changes)
-    var sizeChange = 1
-    if m.root != nil && containsKeyInNode[K, V](m.root, key, hashCode, 0) {
-        sizeChange = 0
-    }
-
-    var newRoot *hashMapNode[K, V]
-    if m.root == nil {
-        var keys []K
-        var values []V
-        keys = go_interop.SliceAppend(keys, key)
-        values = go_interop.SliceAppend(values, value)
-        newRoot = &hashMapNode[K, V](keys = keys, values = values, isLeaf = true)
-    } else {
-        newRoot = putToNode[K, V](m.root, key, value, hashCode, 0)
-    }
-
-    return HashMap[K, V](root = newRoot, size = m.size + sizeChange)
+    val sizeChange = if (containsKeyInNode[K, V](root, key, hashCode, 0)) 0 else 1
+    val newRoot = putToNode[K, V](root, key, value, hashCode, 0)
+    return HashMap[K, V](root = SomePtr(newRoot), size = m.size + sizeChange)
 }
 
 // putToNode adds an entry to a node, returning a new node.
-func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, hashCode uint32, level int) *hashMapNode[K, V] {
+func putToNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
     if node.isLeaf {
         // Check if key already exists - update value
         for i := 0; i < node.keys.Size(); i++ {
@@ -235,7 +223,7 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
         }
 
         // Create a new internal node and distribute elements
-        var newNode *hashMapNode[K, V] = &hashMapNode[K, V](bitmap = uint32(0), isLeaf = false)
+        var newNode Ptr[hashMapNode[K, V]] = &hashMapNode[K, V](bitmap = uint32(0), isLeaf = false)
 
         // Add existing entries
         for i := 0; i < node.keys.Size(); i++ {
@@ -260,7 +248,7 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
         val newLeaf = &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
 
         // Copy children and insert new leaf
-        var newChildren []*hashMapNode[K, V]
+        var newChildren []Ptr[hashMapNode[K, V]]
         for i := 0; i < idx; i++ {
             newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
@@ -276,7 +264,7 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
     val newChild = putToNode[K, V](node.children[idx], key, value, hashCode, level + 1)
 
     // Copy children with updated child
-    var newChildren []*hashMapNode[K, V]
+    var newChildren []Ptr[hashMapNode[K, V]]
     for i := 0; i < node.children.Size(); i++ {
         if i == idx {
             newChildren = go_interop.SliceAppend(newChildren, newChild)
@@ -289,7 +277,7 @@ func putToNode[K comparable, V any](node *hashMapNode[K, V], key K, value V, has
 }
 
 // insertIntoInternalNodeMap inserts an entry into an internal node.
-func insertIntoInternalNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, value V, hashCode uint32, level int) *hashMapNode[K, V] {
+func insertIntoInternalNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
     val bit = hashMapBitpos(hashCode, level)
     val idx = hashMapIndex(node.bitmap, bit)
 
@@ -302,7 +290,7 @@ func insertIntoInternalNodeMap[K comparable, V any](node *hashMapNode[K, V], key
         val newLeaf = &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
 
         // Copy children and insert new leaf
-        var newChildren []*hashMapNode[K, V]
+        var newChildren []Ptr[hashMapNode[K, V]]
         for i := 0; i < idx; i++ {
             newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
@@ -318,7 +306,7 @@ func insertIntoInternalNodeMap[K comparable, V any](node *hashMapNode[K, V], key
     val newChild = putToNode[K, V](node.children[idx], key, value, hashCode, level + 1)
 
     // Copy children with updated child
-    var newChildren []*hashMapNode[K, V]
+    var newChildren []Ptr[hashMapNode[K, V]]
     for i := 0; i < node.children.Size(); i++ {
         if i == idx {
             newChildren = go_interop.SliceAppend(newChildren, newChild)
@@ -335,7 +323,7 @@ func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
     val hashCode = hashMapHash[K](key)
 
     // Check if contains
-    if m.root == nil || !containsKeyInNode[K, V](m.root, key, hashCode, 0) {
+    if m.root.IsEmpty() || !containsKeyInNode[K, V](m.root.Get(), key, hashCode, 0) {
         return m
     }
 
@@ -343,12 +331,13 @@ func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
         return EmptyHashMap[K, V]()
     }
 
-    val newRoot = removeFromNodeMap[K, V](m.root, key, hashCode, 0)
+    val newRoot = removeFromNodeMap[K, V](m.root.Get(), key, hashCode, 0)
     return HashMap[K, V](root = newRoot, size = m.size - 1)
 }
 
-// removeFromNodeMap removes a key from a node, returning a new node.
-func removeFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hashCode uint32, level int) *hashMapNode[K, V] {
+// removeFromNodeMap removes a key from a node, returning the new node, or
+// empty when no entry is left under it.
+func removeFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) OptionPtr[hashMapNode[K, V]] {
     if node.isLeaf {
         var newKeys []K
         var newValues []V
@@ -359,46 +348,46 @@ func removeFromNodeMap[K comparable, V any](node *hashMapNode[K, V], key K, hash
             }
         }
         if newKeys.Size() == 0 {
-            return nil
+            return EmptyOptionPtr[hashMapNode[K, V]]()
         }
-        return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
+        return SomePtr(&hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true))
     }
 
     val bit = hashMapBitpos(hashCode, level)
     val idx = hashMapIndex(node.bitmap, bit)
 
     if (node.bitmap & bit) == 0 {
-        return node
+        return SomePtr(node)
     }
 
     val newChild = removeFromNodeMap[K, V](node.children[idx], key, hashCode, level + 1)
 
-    if newChild == nil {
+    if newChild.IsEmpty() {
         // Child is now empty, remove it
         if hashMapPopcount(node.bitmap) == 1 {
-            return nil
+            return EmptyOptionPtr[hashMapNode[K, V]]()
         }
 
-        var newChildren []*hashMapNode[K, V]
+        var newChildren []Ptr[hashMapNode[K, V]]
         for i := 0; i < node.children.Size(); i++ {
             if i != idx {
                 newChildren = go_interop.SliceAppend(newChildren, node.children[i])
             }
         }
-        return &hashMapNode[K, V](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false)
+        return SomePtr(&hashMapNode[K, V](bitmap = node.bitmap & (^bit), children = newChildren, isLeaf = false))
     }
 
     // Copy children with updated child
-    var newChildren []*hashMapNode[K, V]
+    var newChildren []Ptr[hashMapNode[K, V]]
     for i := 0; i < node.children.Size(); i++ {
         if i == idx {
-            newChildren = go_interop.SliceAppend(newChildren, newChild)
+            newChildren = go_interop.SliceAppend(newChildren, newChild.Get())
         } else {
             newChildren = go_interop.SliceAppend(newChildren, node.children[i])
         }
     }
 
-    return &hashMapNode[K, V](bitmap = node.bitmap, children = newChildren, isLeaf = false)
+    return SomePtr(&hashMapNode[K, V](bitmap = node.bitmap, children = newChildren, isLeaf = false))
 }
 
 // Updated is an alias for Put.
@@ -408,13 +397,11 @@ func (m HashMap[K, V]) Updated(key K, value V) HashMap[K, V] = m.Put(key, value)
 
 // ForEachKV applies a function to each key-value pair for side effects.
 func (m HashMap[K, V]) ForEachKV(f func(K, V)) {
-    if m.root != nil {
-        forEachInNodeMapKV[K, V](m.root, f)
-    }
+    m.root.ForEach((root) => forEachInNodeMapKV[K, V](root, f))
 }
 
 // forEachInNodeMapKV traverses a node and applies f to each entry.
-func forEachInNodeMapKV[K comparable, V any](node *hashMapNode[K, V], f func(K, V)) {
+func forEachInNodeMapKV[K comparable, V any](node Ptr[hashMapNode[K, V]], f func(K, V)) {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             f(node.keys[i], node.values[i])
@@ -517,15 +504,13 @@ func (m HashMap[K, V]) FoldLeftKV[U any](initial U, f func(U, K, V) U) U {
 
 // Exists returns true if any entry satisfies the predicate.
 // Uses early exit for performance.
-func (m HashMap[K, V]) Exists(p func(K, V) bool) bool {
-    if m.root == nil {
-        return false
-    }
-    return existsInNodeMap[K, V](m.root, p)
+func (m HashMap[K, V]) Exists(p func(K, V) bool) bool = m.root match {
+    case Some(root) => existsInNodeMap[K, V](root, p)
+    case None() => false
 }
 
 // existsInNodeMap searches for an entry satisfying p with early exit.
-func existsInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) bool) bool {
+func existsInNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], p func(K, V) bool) bool {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             if p(node.keys[i], node.values[i]) {
@@ -544,15 +529,13 @@ func existsInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) 
 
 // ForAll returns true if all entries satisfy the predicate.
 // Uses early exit for performance.
-func (m HashMap[K, V]) ForAll(p func(K, V) bool) bool {
-    if m.root == nil {
-        return true
-    }
-    return forAllInNodeMap[K, V](m.root, p)
+func (m HashMap[K, V]) ForAll(p func(K, V) bool) bool = m.root match {
+    case Some(root) => forAllInNodeMap[K, V](root, p)
+    case None() => true
 }
 
 // forAllInNodeMap checks if all entries satisfy p with early exit.
-func forAllInNodeMap[K comparable, V any](node *hashMapNode[K, V], p func(K, V) bool) bool {
+func forAllInNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], p func(K, V) bool) bool {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             if !p(node.keys[i], node.values[i]) {

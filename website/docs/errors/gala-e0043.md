@@ -98,7 +98,7 @@ Array{root: 1, length: 2, depth: 3}
 ```
 
 It mapped three arguments onto the first three fields of a type the calling
-package cannot name, assigning an `int` to `root`, which is a `*arrayNode[T]`.
+package cannot name, assigning an `int` to `root`, which is an `OptionPtr[arrayNode[T]]`.
 Go then rejected the result in its own vocabulary — either as an undefined type
 or as
 

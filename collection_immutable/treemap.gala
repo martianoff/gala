@@ -31,21 +31,20 @@ val treeMapBlack int = 1
 type treeMapNode[K comparable, V any] struct {
     key   K
     value V
-    left  *treeMapNode[K, V]
-    right *treeMapNode[K, V]
+    left  OptionPtr[treeMapNode[K, V]]
+    right OptionPtr[treeMapNode[K, V]]
     color int
 }
 
 // TreeMap represents an immutable sorted map.
 type TreeMap[K comparable, V any] struct {
-    root *treeMapNode[K, V]
+    root OptionPtr[treeMapNode[K, V]]
     size int
 }
 
 // EmptyTreeMap returns an empty TreeMap.
 func EmptyTreeMap[K comparable, V any]() TreeMap[K, V] {
-    var nilRoot *treeMapNode[K, V] = nil
-    return TreeMap[K, V](root = nilRoot, size = 0)
+    return TreeMap[K, V](root = EmptyOptionPtr[treeMapNode[K, V]](), size = 0)
 }
 
 // TreeMapOf creates a TreeMap from key-value tuples.
@@ -213,13 +212,9 @@ func treeMapPanicNotOrdered(v any) int {
     go_builtins.Panic(f"TreeMap: type ${v}%T must implement std.Ordered interface")
 }
 
-// isRedTreeMapNode checks if a node is red (nil nodes are black).
-func isRedTreeMapNode[K comparable, V any](node *treeMapNode[K, V]) bool {
-    if node == nil {
-        return false
-    }
-    return node.color == treeMapRed
-}
+// isRedTreeMapNode checks if a node is red (empty nodes are black).
+func isRedTreeMapNode[K comparable, V any](tree OptionPtr[treeMapNode[K, V]]) bool =
+    tree.IsDefined() && tree.Get().color == treeMapRed
 
 // === Query Operations ===
 
@@ -229,10 +224,11 @@ func (m TreeMap[K, V]) Contains(key K) bool {
 }
 
 // treeMapContainsKey searches for a key in the tree.
-func treeMapContainsKey[K comparable, V any](node *treeMapNode[K, V], key K) bool {
-    if node == nil {
+func treeMapContainsKey[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], key K) bool {
+    if tree.IsEmpty() {
         return false
     }
+    val node = tree.Get()
     val cmp = treeMapCompare[K](key, node.key)
     if cmp < 0 {
         return treeMapContainsKey[K, V](node.left, key)
@@ -249,10 +245,11 @@ func (m TreeMap[K, V]) Get(key K) Option[V] {
 }
 
 // treeMapGetValue searches for a key and returns its value.
-func treeMapGetValue[K comparable, V any](node *treeMapNode[K, V], key K) Option[V] {
-    if node == nil {
+func treeMapGetValue[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], key K) Option[V] {
+    if tree.IsEmpty() {
         return None[V]()
     }
+    val node = tree.Get()
     val cmp = treeMapCompare[K](key, node.key)
     if cmp < 0 {
         return treeMapGetValue[K, V](node.left, key)
@@ -285,58 +282,65 @@ func (m TreeMap[K, V]) Put(key K, value V) TreeMap[K, V] {
     // Root is always black
     val blackRoot = &treeMapNode[K, V](key = newRoot.key, value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeMapBlack)
     if existed {
-        return TreeMap[K, V](root = blackRoot, size = m.size)
+        return TreeMap[K, V](root = SomePtr(blackRoot), size = m.size)
     }
-    return TreeMap[K, V](root = blackRoot, size = m.size + 1)
+    return TreeMap[K, V](root = SomePtr(blackRoot), size = m.size + 1)
 }
 
 // treeMapInsert inserts or updates a key-value pair and rebalances.
-func treeMapInsert[K comparable, V any](node *treeMapNode[K, V], key K, value V) *treeMapNode[K, V] {
-    if node == nil {
+func treeMapInsert[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], key K, value V) Ptr[treeMapNode[K, V]] {
+    if tree.IsEmpty() {
         return &treeMapNode[K, V](key = key, value = value, color = treeMapRed)
     }
+    val node = tree.Get()
 
     val cmp = treeMapCompare[K](key, node.key)
-    var newNode *treeMapNode[K, V]
     if cmp < 0 {
         val newLeft = treeMapInsert[K, V](node.left, key, value)
-        newNode = &treeMapNode[K, V](key = node.key, value = node.value, left = newLeft, right = node.right, color = node.color)
-    } else if cmp > 0 {
-        val newRight = treeMapInsert[K, V](node.right, key, value)
-        newNode = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = newRight, color = node.color)
-    } else {
-        // Key exists, update value
-        return &treeMapNode[K, V](key = node.key, value = value, left = node.left, right = node.right, color = node.color)
+        return treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = SomePtr(newLeft), right = node.right, color = node.color))
     }
-
-    return treeMapBalance[K, V](newNode)
+    if cmp > 0 {
+        val newRight = treeMapInsert[K, V](node.right, key, value)
+        return treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = SomePtr(newRight), color = node.color))
+    }
+    // Key exists, update value
+    return &treeMapNode[K, V](key = node.key, value = value, left = node.left, right = node.right, color = node.color)
 }
 
 // treeMapBalance rebalances the tree after insertion (Okasaki's balance function).
-func treeMapBalance[K comparable, V any](node *treeMapNode[K, V]) *treeMapNode[K, V] {
+// A red child is never empty, so each case reads the red nodes it tested.
+func treeMapBalance[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] {
     // Case 1: Left child is red and has red left child
-    if isRedTreeMapNode[K, V](node.left) && isRedTreeMapNode[K, V](node.left.left) {
-        val newLeft = &treeMapNode[K, V](key = node.left.left.key, value = node.left.left.value, left = node.left.left.left, right = node.left.left.right, color = treeMapBlack)
-        val newRight = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left.right, right = node.right, color = treeMapBlack)
-        return &treeMapNode[K, V](key = node.left.key, value = node.left.value, left = newLeft, right = newRight, color = treeMapRed)
+    if isRedTreeMapNode[K, V](node.left) && isRedTreeMapNode[K, V](node.left.Get().left) {
+        val l = node.left.Get()
+        val ll = l.left.Get()
+        val newLeft = &treeMapNode[K, V](key = ll.key, value = ll.value, left = ll.left, right = ll.right, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = node.key, value = node.value, left = l.right, right = node.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = l.key, value = l.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeMapRed)
     }
     // Case 2: Left child is red and has red right child
-    if isRedTreeMapNode[K, V](node.left) && isRedTreeMapNode[K, V](node.left.right) {
-        val newLeft = &treeMapNode[K, V](key = node.left.key, value = node.left.value, left = node.left.left, right = node.left.right.left, color = treeMapBlack)
-        val newRight = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left.right.right, right = node.right, color = treeMapBlack)
-        return &treeMapNode[K, V](key = node.left.right.key, value = node.left.right.value, left = newLeft, right = newRight, color = treeMapRed)
+    if isRedTreeMapNode[K, V](node.left) && isRedTreeMapNode[K, V](node.left.Get().right) {
+        val l = node.left.Get()
+        val lr = l.right.Get()
+        val newLeft = &treeMapNode[K, V](key = l.key, value = l.value, left = l.left, right = lr.left, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = node.key, value = node.value, left = lr.right, right = node.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = lr.key, value = lr.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeMapRed)
     }
     // Case 3: Right child is red and has red left child
-    if isRedTreeMapNode[K, V](node.right) && isRedTreeMapNode[K, V](node.right.left) {
-        val newLeft = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = node.right.left.left, color = treeMapBlack)
-        val newRight = &treeMapNode[K, V](key = node.right.key, value = node.right.value, left = node.right.left.right, right = node.right.right, color = treeMapBlack)
-        return &treeMapNode[K, V](key = node.right.left.key, value = node.right.left.value, left = newLeft, right = newRight, color = treeMapRed)
+    if isRedTreeMapNode[K, V](node.right) && isRedTreeMapNode[K, V](node.right.Get().left) {
+        val r = node.right.Get()
+        val rl = r.left.Get()
+        val newLeft = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = rl.left, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = r.key, value = r.value, left = rl.right, right = r.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = rl.key, value = rl.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeMapRed)
     }
     // Case 4: Right child is red and has red right child
-    if isRedTreeMapNode[K, V](node.right) && isRedTreeMapNode[K, V](node.right.right) {
-        val newLeft = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = node.right.left, color = treeMapBlack)
-        val newRight = &treeMapNode[K, V](key = node.right.right.key, value = node.right.right.value, left = node.right.right.left, right = node.right.right.right, color = treeMapBlack)
-        return &treeMapNode[K, V](key = node.right.key, value = node.right.value, left = newLeft, right = newRight, color = treeMapRed)
+    if isRedTreeMapNode[K, V](node.right) && isRedTreeMapNode[K, V](node.right.Get().right) {
+        val r = node.right.Get()
+        val rr = r.right.Get()
+        val newLeft = &treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = r.left, color = treeMapBlack)
+        val newRight = &treeMapNode[K, V](key = rr.key, value = rr.value, left = rr.left, right = rr.right, color = treeMapBlack)
+        return &treeMapNode[K, V](key = r.key, value = r.value, left = SomePtr(newLeft), right = SomePtr(newRight), color = treeMapRed)
     }
     return node
 }
@@ -352,76 +356,63 @@ func (m TreeMap[K, V]) Remove(key K) TreeMap[K, V] {
     if m.size == 1 {
         return EmptyTreeMap[K, V]()
     }
-    val newRoot = treeMapRemove[K, V](m.root, key)
-    if newRoot == nil {
-        return EmptyTreeMap[K, V]()
+    return treeMapRemove[K, V](m.root, key) match {
+        case Some(newRoot) => {
+            // Root is always black
+            val blackRoot = &treeMapNode[K, V](key = newRoot.key, value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeMapBlack)
+            TreeMap[K, V](root = SomePtr(blackRoot), size = m.size - 1)
+        }
+        case None() => EmptyTreeMap[K, V]()
     }
-    // Root is always black
-    val blackRoot = &treeMapNode[K, V](key = newRoot.key, value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeMapBlack)
-    return TreeMap[K, V](root = blackRoot, size = m.size - 1)
 }
 
 // treeMapRemove removes a key from the tree.
-func treeMapRemove[K comparable, V any](node *treeMapNode[K, V], key K) *treeMapNode[K, V] {
-    if node == nil {
-        return nil
+func treeMapRemove[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], key K) OptionPtr[treeMapNode[K, V]] {
+    if tree.IsEmpty() {
+        return tree
     }
+    val node = tree.Get()
 
     val cmp = treeMapCompare[K](key, node.key)
     if cmp < 0 {
         val newLeft = treeMapRemove[K, V](node.left, key)
-        return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = newLeft, right = node.right, color = node.color))
+        return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = newLeft, right = node.right, color = node.color)))
     }
     if cmp > 0 {
         val newRight = treeMapRemove[K, V](node.right, key)
-        return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = newRight, color = node.color))
+        return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = newRight, color = node.color)))
     }
 
     // Found the key to remove
-    if node.left == nil {
+    if node.left.IsEmpty() {
         return node.right
     }
-    if node.right == nil {
+    if node.right.IsEmpty() {
         return node.left
     }
 
     // Node has two children, find successor (min of right subtree)
-    val succKey = treeMapFindMinKey[K, V](node.right)
-    val succValue = treeMapGetValue[K, V](node.right, succKey).Get()
-    val newRight = treeMapRemoveMin[K, V](node.right)
-    return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = succKey, value = succValue, left = node.left, right = newRight, color = node.color))
+    val succ = treeMapMinNode[K, V](node.right.Get())
+    val newRight = treeMapRemoveMin[K, V](node.right.Get())
+    return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = succ.key, value = succ.value, left = node.left, right = newRight, color = node.color)))
 }
 
-// treeMapFindMinKey finds the minimum key in a subtree.
-func treeMapFindMinKey[K comparable, V any](node *treeMapNode[K, V]) K {
-    if node.left == nil {
-        return node.key
-    }
-    return treeMapFindMinKey[K, V](node.left)
+// treeMapMinNode finds the node with the minimum key in a subtree.
+func treeMapMinNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] = node.left match {
+    case Some(left) => treeMapMinNode[K, V](left)
+    case None() => node
 }
 
-// treeMapFindMaxKey finds the maximum key in a subtree.
-func treeMapFindMaxKey[K comparable, V any](node *treeMapNode[K, V]) K {
-    if node.right == nil {
-        return node.key
-    }
-    return treeMapFindMaxKey[K, V](node.right)
+// treeMapMaxNode finds the node with the maximum key in a subtree.
+func treeMapMaxNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMapNode[K, V]] = node.right match {
+    case Some(right) => treeMapMaxNode[K, V](right)
+    case None() => node
 }
 
 // treeMapRemoveMin removes the minimum key from a subtree.
-func treeMapRemoveMin[K comparable, V any](node *treeMapNode[K, V]) *treeMapNode[K, V] {
-    if node.left == nil {
-        return node.right
-    }
-    return treeMapBalanceRemove[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = treeMapRemoveMin[K, V](node.left), right = node.right, color = node.color))
-}
-
-// treeMapBalanceRemove rebalances after removal.
-func treeMapBalanceRemove[K comparable, V any](node *treeMapNode[K, V]) *treeMapNode[K, V] {
-    if node == nil {
-        return nil
-    }
-    return treeMapBalance[K, V](node)
+func treeMapRemoveMin[K comparable, V any](node Ptr[treeMapNode[K, V]]) OptionPtr[treeMapNode[K, V]] = node.left match {
+    case Some(left) => SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = treeMapRemoveMin[K, V](left), right = node.right, color = node.color)))
+    case None() => node.right
 }
 
 // === Min/Max Operations ===
@@ -432,7 +423,7 @@ func (m TreeMap[K, V]) MinKey() K {
     if m.size == 0 {
         go_builtins.Panic("TreeMap.MinKey on empty map")
     }
-    return treeMapFindMinKey[K, V](m.root)
+    return treeMapMinNode[K, V](m.root.Get()).key
 }
 
 // MinKeyOption returns the minimum key wrapped in Option. O(log n).
@@ -449,7 +440,7 @@ func (m TreeMap[K, V]) MaxKey() K {
     if m.size == 0 {
         go_builtins.Panic("TreeMap.MaxKey on empty map")
     }
-    return treeMapFindMaxKey[K, V](m.root)
+    return treeMapMaxNode[K, V](m.root.Get()).key
 }
 
 // MaxKeyOption returns the maximum key wrapped in Option. O(log n).
@@ -466,8 +457,8 @@ func (m TreeMap[K, V]) MinEntry() Tuple[K, V] {
     if m.size == 0 {
         go_builtins.Panic("TreeMap.MinEntry on empty map")
     }
-    val key = treeMapFindMinKey[K, V](m.root)
-    return (key, m.Apply(key))
+    val node = treeMapMinNode[K, V](m.root.Get())
+    return (node.key, node.value)
 }
 
 // MinEntryOption returns the entry with the minimum key wrapped in Option. O(log n).
@@ -484,8 +475,8 @@ func (m TreeMap[K, V]) MaxEntry() Tuple[K, V] {
     if m.size == 0 {
         go_builtins.Panic("TreeMap.MaxEntry on empty map")
     }
-    val key = treeMapFindMaxKey[K, V](m.root)
-    return (key, m.Apply(key))
+    val node = treeMapMaxNode[K, V](m.root.Get())
+    return (node.key, node.value)
 }
 
 // MaxEntryOption returns the entry with the maximum key wrapped in Option. O(log n).
@@ -508,10 +499,11 @@ func (m TreeMap[K, V]) Range(from K, to K) TreeMap[K, V] {
 }
 
 // treeMapRangeInOrder traverses nodes with keys in [from, to].
-func treeMapRangeInOrder[K comparable, V any](node *treeMapNode[K, V], from K, to K, f func(K, V)) {
-    if node == nil {
+func treeMapRangeInOrder[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], from K, to K, f func(K, V)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmpFrom = treeMapCompare[K](node.key, from)
     val cmpTo = treeMapCompare[K](node.key, to)
 
@@ -536,10 +528,11 @@ func (m TreeMap[K, V]) RangeFrom(from K) TreeMap[K, V] {
 }
 
 // treeMapRangeFromInOrder traverses nodes with keys >= from.
-func treeMapRangeFromInOrder[K comparable, V any](node *treeMapNode[K, V], from K, f func(K, V)) {
-    if node == nil {
+func treeMapRangeFromInOrder[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], from K, f func(K, V)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmp = treeMapCompare[K](node.key, from)
     if cmp > 0 {
         treeMapRangeFromInOrder[K, V](node.left, from, f)
@@ -560,10 +553,11 @@ func (m TreeMap[K, V]) RangeTo(to K) TreeMap[K, V] {
 }
 
 // treeMapRangeToInOrder traverses nodes with keys <= to.
-func treeMapRangeToInOrder[K comparable, V any](node *treeMapNode[K, V], to K, f func(K, V)) {
-    if node == nil {
+func treeMapRangeToInOrder[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], to K, f func(K, V)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmp = treeMapCompare[K](node.key, to)
     treeMapRangeToInOrder[K, V](node.left, to, f)
     if cmp <= 0 {
@@ -578,16 +572,15 @@ func treeMapRangeToInOrder[K comparable, V any](node *treeMapNode[K, V], to K, f
 
 // ForEachKV applies a function to each key-value pair in sorted key order.
 func (m TreeMap[K, V]) ForEachKV(f func(K, V)) {
-    if m.root != nil {
-        treeMapForEachKV[K, V](m.root, f)
-    }
+    treeMapForEachKV[K, V](m.root, f)
 }
 
 // treeMapForEachKV traverses the tree in-order and applies f.
-func treeMapForEachKV[K comparable, V any](node *treeMapNode[K, V], f func(K, V)) {
-    if node == nil {
+func treeMapForEachKV[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], f func(K, V)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     treeMapForEachKV[K, V](node.left, f)
     f(node.key, node.value)
     treeMapForEachKV[K, V](node.right, f)
@@ -732,10 +725,11 @@ func (m TreeMap[K, V]) Values() List[V] {
 }
 
 // treeMapForEachKVReverse traverses the tree in reverse order.
-func treeMapForEachKVReverse[K comparable, V any](node *treeMapNode[K, V], f func(K, V)) {
-    if node == nil {
+func treeMapForEachKVReverse[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], f func(K, V)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     treeMapForEachKVReverse[K, V](node.right, f)
     f(node.key, node.value)
     treeMapForEachKVReverse[K, V](node.left, f)
