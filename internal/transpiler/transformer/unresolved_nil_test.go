@@ -87,3 +87,93 @@ func main() { Println(gi.SliceWithSize[int](2)) }
 		})
 	}
 }
+
+// TestUnresolvedInventoryTypesResultNil pins that a `nil` that is a function's
+// or lambda's result value takes the declared result type however it is
+// written: as the expression body, a branch of an if-expression or a match arm
+// in result position, or the trailing value of a block body, not only as
+// `return nil` (#799).
+func TestUnresolvedInventoryTypesResultNil(t *testing.T) {
+	t.Setenv("GALA_WARN_TYPES", "1")
+
+	const header = `package main
+
+struct Node(Value int)
+
+`
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"return nil", `func find(found bool, n *Node) *Node {
+    if found {
+        return n
+    }
+    return nil
+}
+`},
+		{"expression body", `func none() *Node = nil
+`},
+		{"if-expression body", `func find(found bool, n *Node) *Node = if (found) n else nil
+`},
+		{"match body", `func find(found bool, n *Node) *Node = found match {
+    case true => n
+    case _    => nil
+}
+`},
+		{"trailing value", `func find(found bool, n *Node) *Node {
+    if found {
+        return n
+    }
+    nil
+}
+`},
+		{"trailing if-expression", `func find(found bool, n *Node) *Node {
+    val ok = found
+    if (ok) n else nil
+}
+`},
+		{"trailing match", `func find(found bool, n *Node) *Node {
+    val ok = found
+    ok match {
+        case true => n
+        case _    => nil
+    }
+}
+`},
+		{"nested block in a branch", `func find(found bool, n *Node) *Node = if (found) n else {
+    val m = n
+    nil
+}
+`},
+		{"lambda with a declared result", `func pick() func(bool) *Node = (b bool) *Node => {
+    val ok = b
+    nil
+}
+`},
+		{"method trailing value", `func (n *Node) self(found bool) *Node {
+    if found {
+        return n
+    }
+    nil
+}
+`},
+		{"error result", `func check(ok bool) error {
+    if ok {
+        return nil
+    }
+    nil
+}
+`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trans, tr := newTranspilerWithTransformer()
+			_, err := trans.Transpile(header+tt.src, "main.gala")
+			require.NoError(t, err)
+			for _, u := range transformer.UnresolvedTypes(tr) {
+				assert.NotEqual(t, "nil", u.Expr, "nil reported as unresolved at line %d", u.Line)
+			}
+		})
+	}
+}

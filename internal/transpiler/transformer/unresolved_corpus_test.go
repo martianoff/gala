@@ -109,7 +109,15 @@ import (
 // function (resolveIndexAccess, namesFunction): `SliceWithSize[T](n)` parses as
 // one, and a Go or package-qualified generic function's name was asked for its
 // type and reported. See TestUnresolvedInventorySkipsGenericFunctionName.
-const unresolvedBudget = 118
+//
+// Lowered 118 -> 117 when a `nil` result value started taking the declared
+// result type wherever it is written (the expression body, an if-branch, a
+// match arm, a block's trailing value), not only as `return nil`: a Go-style
+// lookup ending in `if (found) p else nil` reported its `nil`. The `nil`
+// entries left are placeholders of deferred lambda returns and a `nil`
+// argument, which keeps no type by design. See
+// TestUnresolvedInventoryTypesResultNil.
+const unresolvedBudget = 117
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

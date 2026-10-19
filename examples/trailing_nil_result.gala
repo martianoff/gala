@@ -1,0 +1,74 @@
+package main
+
+import "errors"
+
+// A `nil` that is a function's or lambda's result value takes the declared
+// result type however it is written: as `return nil`, as the expression body,
+// as a branch of an if-expression or an arm of a match, or as the trailing
+// value of a block body.
+
+// Node is the value the Go-style lookups below find, or not.
+struct Node(Value int)
+
+var shared = Node{Value: 7}
+
+func describe(n *Node) string = if (n == nil) "nil" else s"node ${n.Value}"
+
+func none() *Node = nil
+
+func byIf(found bool) *Node = if (found) &shared else nil
+
+func byMatch(found bool) *Node = found match {
+    case true => &shared
+    case _    => nil
+}
+
+func byTrailing(found bool) *Node {
+    if found {
+        return &shared
+    }
+    nil
+}
+
+func byTrailingIf(found bool) *Node {
+    val ok = found
+    if (ok) &shared else nil
+}
+
+func byTrailingMatch(found bool) *Node {
+    val ok = found
+    ok match {
+        case true => &shared
+        case _    => nil
+    }
+}
+
+func byNestedBlock(found bool) *Node = if (found) &shared else {
+    Println("not found")
+    nil
+}
+
+func validate(n int) error {
+    if n < 0 {
+        return errors.New("negative")
+    }
+    nil
+}
+
+func main() {
+    Println(describe(none()))
+    Println(s"${describe(byIf(true))} ${describe(byIf(false))}")
+    Println(s"${describe(byMatch(true))} ${describe(byMatch(false))}")
+    Println(s"${describe(byTrailing(true))} ${describe(byTrailing(false))}")
+    Println(s"${describe(byTrailingIf(true))} ${describe(byTrailingIf(false))}")
+    Println(s"${describe(byTrailingMatch(true))} ${describe(byTrailingMatch(false))}")
+    Println(describe(byNestedBlock(false)))
+
+    val pick = (found bool) *Node => {
+        val ok = found
+        if (ok) &shared else nil
+    }
+    Println(s"${describe(pick(true))} ${describe(pick(false))}")
+
+    Println(s"${validate(1) == nil} ${validate(-1)}")
+}

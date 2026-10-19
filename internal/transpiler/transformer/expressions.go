@@ -1045,6 +1045,15 @@ func isNilIdent(expr ast.Expr) bool {
 	return ok && ident.Name == "nil"
 }
 
+// isNilLiteral reports whether exprCtx is the source literal `nil`: a single
+// token, checked without rendering the expression's text.
+func isNilLiteral(exprCtx grammar.IExpressionContext) bool {
+	if exprCtx == nil || exprCtx.GetStart() == nil {
+		return false
+	}
+	return exprCtx.GetStart() == exprCtx.GetStop() && exprCtx.GetStart().GetText() == "nil"
+}
+
 // transformIfExprBranch lowers an if-expression branch, an expression or a
 // block, against s, the if-expression's slot (see lowerAgainst). A block's
 // value is its trailing expression, or its trailing if/else chain; its other
@@ -1061,7 +1070,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 			}
 			return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
 		}
-		expr, err := t.lowerAgainst(exprCtx, s, true)
+		expr, err := t.lowerResultAgainst(exprCtx, s, true)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -1110,7 +1119,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 			}
 			return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
 		}
-		expr, err := t.lowerAgainst(exprCtx, s, true)
+		expr, err := t.lowerResultAgainst(exprCtx, s, true)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -1397,6 +1406,48 @@ func (t *galaASTTransformer) lowerAgainst(exprCtx grammar.IExpressionContext, s 
 		}
 	}
 	return expr, nil
+}
+
+// lowerResultAgainst is lowerAgainst for a result value: the value a function
+// or lambda returns (`return v`, its expression body, its trailing value), or
+// a branch of an if-expression or an arm of a match, which its IIFE returns
+// wherever the construct itself sits. A bare `nil` there takes the slot's
+// type, as Go gives an untyped nil the type of the result it is returned as.
+// `nil` has no type of its own, so whatever asks for the value's type
+// afterwards — the void check on a function's trailing value, the branch
+// unification of an if-expression, the common type of a match's arms — would
+// otherwise find none.
+//
+// A `nil` that is itself a call argument or a tuple element is lowered by
+// lowerAgainst and keeps no type: the call reads it as untyped (an explicit
+// nil to a by-name parameter is a thunk returning nil, and a generic call
+// spells its type argument out).
+func (t *galaASTTransformer) lowerResultAgainst(exprCtx grammar.IExpressionContext, s slot, strict bool) (ast.Expr, error) {
+	expr, err := t.lowerAgainst(exprCtx, s, strict)
+	if err != nil {
+		return nil, err
+	}
+	// The type is cached on the expression node, which is fresh for each
+	// `nil` written. A slot type nil cannot have gives it nothing, so the
+	// mismatch stays visible.
+	if isNilIdent(expr) && !s.open && t.holdsNil(s.typ) {
+		t.exprTypeCache[expr] = s.typ
+	}
+	return expr, nil
+}
+
+// holdsNil reports whether typ is a type `nil` can have: a pointer, slice,
+// map, function, or an interface other than `any`. A Ptr is a struct, never
+// nil.
+func (t *galaASTTransformer) holdsNil(typ transpiler.Type) bool {
+	if typeHasMaskedPart(typ) || typ.IsAny() {
+		return false
+	}
+	switch t.followAliasChain(typ).(type) {
+	case transpiler.PointerType, transpiler.ArrayType, transpiler.MapType, transpiler.FuncType:
+		return true
+	}
+	return t.isInterfaceType(typ)
 }
 
 // branchingResultType picks the result type of an if-expression or match from

@@ -247,7 +247,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		}
 
 		// Terminal value: return it.
-		e, err := t.lowerAgainst(exprCtx, t.tailResultSlot(tc), false)
+		e, err := t.lowerResultAgainst(exprCtx, t.tailResultSlot(tc), false)
 		if err != nil {
 			return nil, false, err
 		}
