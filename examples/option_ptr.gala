@@ -7,9 +7,17 @@ struct Node(Value int, Next OptionPtr[Node])
 
 func sum(n Ptr[Node]) int = n.Value + n.Next.Map((next) => sum(next)).GetOrElse(0)
 
-func last(n Ptr[Node]) Ptr[Node] = n.Next.ToOption() match {
+// An OptionPtr is matched with Option's variants through its MatchView.
+func last(n Ptr[Node]) Ptr[Node] = n.Next match {
     case Some(next) => last(next)
-    case None() => n
+    case None()     => n
+}
+
+// A bare `case None` is the variant, not a binding that matches everything.
+func describeNext(n Ptr[Node]) string = n.Next match {
+    case None                         => "no next"
+    case Some(next) if next.Value > 2 => s"big next ${next.Value}"
+    case Some(next)                   => s"next ${next.Value}"
 }
 
 func main() {
@@ -19,6 +27,9 @@ func main() {
 
     Println(s"sum: ${sum(head)}")
     Println(s"last: ${last(head).Value}")
+    Println(describeNext(head))
+    Println(describeNext(middle))
+    Println(describeNext(tail))
     Println(s"tail next is empty: ${tail.Next.IsEmpty()}")
     Println(s"head next is defined: ${head.Next.IsDefined()}")
 

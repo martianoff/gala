@@ -56,5 +56,10 @@ func (o OptionPtr[T]) FlatMap[U any](f func(Ptr[T]) OptionPtr[U]) OptionPtr[U] =
 // ToOption returns the pointer as an Option: Some(pointer) or None.
 func (o OptionPtr[T]) ToOption() Option[Ptr[T]] = if (o.p == nil) None[Ptr[T]]() else Some(&*o.p)
 
+// MatchView gives OptionPtr the sealed view Option[Ptr[T]], so a match on an
+// OptionPtr uses Option's variants: `case Some(p)` and `case None()`,
+// checked for exhaustiveness.
+func (o OptionPtr[T]) MatchView() Option[Ptr[T]] = o.ToOption()
+
 // String returns "SomePtr(<value>)" or "EmptyOptionPtr".
 func (o OptionPtr[T]) String() string = if (o.p == nil) "EmptyOptionPtr" else s"SomePtr(${*o.p})"

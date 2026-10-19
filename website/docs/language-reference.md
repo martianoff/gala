@@ -1579,7 +1579,7 @@ A `Ptr[T]` fills a `*T` slot as it is. `nil`, or a `*T` that may be nil, never f
 
 Where Go can be the caller, a `Ptr` parameter is checked on entry: in an exported function or method, and in a lambda with a `Ptr[T]` parameter filling a function slot whose parameter is a `*T` (a Go callback). Calls between GALA functions are not checked. Not covered: Go writing a struct field, reflection, Go generic code's `var zero T`, a `Ptr` converted to `any`, a function value taking a `Ptr` (a named function or a lambda bound to a `val`) passed as a `func(*T)`, a method on a `Ptr[T]` receiver called on a `*T`, and `p, err = goCall()`.
 
-`OptionPtr[T]` is a std struct holding a `*T`, the size of one pointer, whose zero value is empty. `OptionPtrOf(p)`, `SomePtr(ptr)` and `EmptyOptionPtr[T]()` build one; `IsDefined`, `IsEmpty`, `Get`, `GetOrElse`, `OrElse`, `Map`, `FlatMap`, `ForEach` and `ToOption` mirror `Option`, and every pointer they hand out is a `Ptr[T]`. Match one through `ToOption()`.
+`OptionPtr[T]` is a std struct holding a `*T`, the size of one pointer, whose zero value is empty. `OptionPtrOf(p)`, `SomePtr(ptr)` and `EmptyOptionPtr[T]()` build one; `IsDefined`, `IsEmpty`, `Get`, `GetOrElse`, `OrElse`, `Map`, `FlatMap`, `ForEach` and `ToOption` mirror `Option`, and every pointer they hand out is a `Ptr[T]`. Match one directly with `case Some(p)` / `case None()`: its `MatchView()` gives it the [sealed view](#sealed-views) `Option[Ptr[T]]`, so the match is checked for exhaustiveness.
 
 ```gala
 struct Node(Value int, Next OptionPtr[Node])

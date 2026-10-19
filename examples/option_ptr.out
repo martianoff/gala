@@ -1,5 +1,8 @@
 sum: 6
 last: 3
+next 2
+big next 3
+no next
 tail next is empty: true
 head next is defined: true
 after head: 2

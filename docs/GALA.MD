@@ -4749,6 +4749,7 @@ is inside it, and what it hands out is a `Ptr[T]`:
 | `FlatMap(f func(Ptr[T]) OptionPtr[U])` | `OptionPtr[U]` |
 | `ForEach(f func(Ptr[T]))` | — |
 | `ToOption()` | `Option[Ptr[T]]` |
+| `MatchView()` | `Option[Ptr[T]]`, its [sealed view](#sealed-views) |
 
 ```gala
 package main
@@ -4757,9 +4758,9 @@ struct Node(Value int, Next OptionPtr[Node])
 
 func sum(n Ptr[Node]) int = n.Value + n.Next.Map((next) => sum(next)).GetOrElse(0)
 
-func last(n Ptr[Node]) Ptr[Node] = n.Next.ToOption() match {
+func last(n Ptr[Node]) Ptr[Node] = n.Next match {
     case Some(next) => last(next)
-    case None() => n
+    case None()     => n
 }
 
 func main() {
@@ -4770,7 +4771,10 @@ func main() {
 }
 ```
 
-`OptionPtr` is matched through `ToOption()`.
+An `OptionPtr` is matched with `Option`'s variants directly — `case Some(p)`
+binds `p` as a `Ptr[T]`, and a match without `case _` must cover `Some` and
+`None` — because `MatchView()` gives it the sealed view `Option[Ptr[T]]` (see
+[Sealed Views](#sealed-views)).
 
 ### val vs var with Go Functions
 
