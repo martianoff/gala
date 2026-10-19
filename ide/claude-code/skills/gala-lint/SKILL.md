@@ -1569,7 +1569,14 @@ Do not flag a `*T` at the Go boundary (an exported function Go calls, a field a
 Go library fills, a Go callback's parameter); there `RequirePtr(p)` or
 `OptionPtrOf(p)` converts it once, where it enters GALA code.
 
-**Check**: `grep -nE 'Option\[(std\.)?Ptr\[' -r --include='*.gala' .`
+**Rule `option-ptr-to-option-match`** (LOW). Flag `p.ToOption() match { ... }`
+on an `OptionPtr`. Match it directly — `p match { case Some(x) => ...; case None() => ... }`
+— since its `MatchView()` gives it the sealed view `Option[Ptr[T]]`; the match is
+the same and exhaustiveness-checked.
+
+**Check**: `grep -nE 'Option\[(std\.)?Ptr\[' -r --include='*.gala' .` and
+`grep -nE '\.ToOption\(\) match' -r --include='*.gala' .` (keep only hits on an
+`OptionPtr`).
 
 ## Directories to Skip
 

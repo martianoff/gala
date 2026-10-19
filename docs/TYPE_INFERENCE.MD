@@ -840,6 +840,17 @@ An alternative pattern `p1 | p2` ([GALA.MD](GALA.MD#alternative-patterns)) is ty
 
 `transformer/alternative_pattern.go` splits the pattern and lowers each alternative through the ordinary pattern path.
 
+## Sealed Views
+
+A match over a subject of type `V` whose `MatchView()` returns a sealed type `S` ([GALA.MD](GALA.MD#sealed-views)) is typed as a match over `S` when a case names a variant of `S`:
+
+- **The view type is `MatchView`'s declared result**, with `V`'s type arguments substituted: `Found[string]` with `func (f Found[T]) MatchView() Option[T]` is matched as `Option[string]`.
+- **Every case is typed against `S`**, so `case Some(n)` binds `n` as `S`'s element type, nested patterns read `S`'s fields, and exhaustiveness counts `S`'s variants.
+- **A view is chosen only by a variant name.** A case naming a variant of `V`'s own sealed type, or no variant at all, keeps the match over `V`.
+- **A sub-pattern of type `V` is typed the same way, on its own.** `Some(None)` against `Option[MaybeInt]` types `None` against `Option[int]`; a binding in another position stays `V`.
+
+`transformer/sealed_view.go` recognizes the view and checks the cases; `buildMatchExpressionFromClauses` and `transformPartialFunctionLiteral` then lower the match against `subject.MatchView()`, `transformExpressionPatternWithType` lowers a sub-pattern against `field.MatchView()`, and the exhaustiveness check enumerates such a position by the view's variants.
+
 ## Go Type Inference
 
 When the Go SDK is available (via `GOROOT` or `PATH`), the transpiler can infer types from Go standard library and third-party packages:

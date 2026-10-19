@@ -784,6 +784,13 @@ const (
 	// cannot spell exactly.
 	CodeInvalidInterfaceLiteral ErrorCode = "GALA-E0078"
 
+	// E0079: a match reads its subject through the subject's sealed view —
+	// a case names a variant of the sealed type its `MatchView()` returns —
+	// and another case does not apply to that view: an extractor, literal or
+	// typed pattern of another type, or a binding of the whole subject, which
+	// would bind the view rather than the subject.
+	CodeInvalidSealedViewMatch ErrorCode = "GALA-E0079"
+
 	// E0080: a value that may be nil is used where a non-null `Ptr[T]` is
 	// needed — `nil`, or a nullable `*T`, fills a `Ptr[T]` slot (an argument,
 	// a val/var declaration or assignment, a return, a constructor field) —

@@ -512,6 +512,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot infer type of matched expression")
 	}
+	// A subject whose cases name the variants of its sealed view (see
+	// sealedViewForCases) is matched as that view: the match tests
+	// `subject.MatchView()`, evaluated once, as a value of the sealed type.
+	subject, matchedType, _, err := t.matchViewSubject(subject, matchedType, caseClauses, ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// A subject typed by an alias (`type Checked Try[Email]`) is matched as
 	// the type the alias names: its variants, extractors and exhaustiveness.
 	// A binding of the whole subject keeps the type as written, so methods

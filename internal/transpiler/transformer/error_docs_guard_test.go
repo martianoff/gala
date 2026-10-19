@@ -1238,6 +1238,27 @@ func main() {
 			},
 		},
 		{
+			name: "binding of the whole subject in a sealed-view match",
+			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Slot(raw int)
+
+func (s Slot) MatchView() Option[int] = When(s.raw >= 0, s.raw)
+
+func describe(s Slot) string = s match {
+    case Some(n) => s"slot $n"
+    case other   => "empty"
+}
+
+func main() {
+    Println(describe(Slot(3)))
+}
+`)
+			},
+		},
+		{
 			name: "opaque type over another opaque type",
 			code: galaerr.CodeInvalidOpaqueUnderlying, // GALA-E0062
 			render: func(t *testing.T) string {

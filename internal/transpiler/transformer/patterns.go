@@ -64,6 +64,27 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		return ast.NewIdent("true"), nil, nil
 	}
 
+	// A sub-pattern naming a variant of its value's sealed view tests the
+	// view (see subPatternView). A whole case pattern is already matched
+	// against the view when it reads one (see sealedViewForCases).
+	if view, err := t.subPatternView(patExprCtx, matchedType); err != nil {
+		return nil, nil, err
+	} else if view != nil {
+		viewObj, err := t.viewSubject(objExpr, matchedType, patExprCtx)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Read the view once for the whole sub-pattern, its alternatives
+		// included.
+		viewVar := t.nextTempVar()
+		cond, stmts, err := t.transformExpressionPatternWithType(patExprCtx, ast.NewIdent(viewVar), view)
+		if err != nil {
+			return nil, nil, err
+		}
+		read := t.patternDefine([]string{viewVar}, []ast.Expr{t.knownTypeExpr(view)}, viewObj)
+		return cond, blankAssignTempVar(append([]ast.Stmt{read}, stmts...), viewVar), nil
+	}
+
 	if strings.Contains(text, "|") {
 		if alts, err := t.patternAlternatives(patExprCtx); err != nil {
 			return nil, nil, err
@@ -378,10 +399,17 @@ func (t *galaASTTransformer) isBindingPatternOf(text string, matchedType transpi
 // the name resolves to, never by its capitalization — `case endFrame =>`
 // against a sealed type that declares `case endFrame()` matches that variant.
 // A variant of some OTHER sealed type is not a test of a value whose type is
-// known: the name binds, as sealedVariantOfMatchedType documents.
+// known: the name binds, as sealedVariantOfMatchedType documents — unless it
+// is a variant of the value's sealed view (see sealedViewOf).
 func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.Type) bool {
 	if variant, _ := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
 		return true
+	}
+	// So does a variant of the value's sealed view (see subPatternView).
+	if view := t.sealedViewOf(matchedType); view != nil {
+		if variant, _ := t.sealedVariantOfMatchedType(name, view); variant != nil {
+			return true
+		}
 	}
 	meta, _ := t.bareExtractor(name, matchedType)
 	return meta != nil

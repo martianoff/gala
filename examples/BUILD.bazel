@@ -683,6 +683,18 @@ gala_exec_test(
     expected = "bare_variant_pattern.out",
 )
 
+# A type with `MatchView() S`, S sealed, matched with S's variants: Option and
+# user sealed views, generic and pointer receivers, nested patterns, guards,
+# alternatives, a partial function, and a bare `case None` that must be the
+# variant rather than a catch-all binding. Asserts RUNTIME OUTPUT, since a
+# binding there would compile and answer wrongly.
+gala_exec_test(
+    name = "sealed_view_match",
+    src = "sealed_view_match.gala",
+    expected = "sealed_view_match.out",
+    deps = ["//collection_immutable"],
+)
+
 # A capitalized identifier naming an in-scope value is a stable identifier: the
 # arm compares for equality instead of binding. Asserts RUNTIME OUTPUT for the
 # same reason as bare_variant_pattern: a binding would be a silent catch-all.

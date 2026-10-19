@@ -955,6 +955,30 @@ val parity = 42 match {
 }
 ```
 
+#### Sealed Views
+
+A type with a method `MatchView() S`, where `S` is a sealed type, can be matched with `S`'s variants. When a case names one, the match reads the subject through `MatchView()`, once:
+
+```gala
+package main
+
+// A maybe-absent int stored without Option's tag: a negative value is absent.
+struct MaybeInt(raw int)
+
+func (m MaybeInt) MatchView() Option[int] = When(m.raw >= 0, m.raw)
+
+func describe(m MaybeInt) string = m match {
+    case Some(n) => s"some $n"
+    case None    => "none"
+}
+
+func main() {
+    Println(describe(MaybeInt(7)), describe(MaybeInt(-1)))
+}
+```
+
+The match is a match over `S`: binding types, guards, nested patterns, alternatives and exhaustiveness ([GALA-E0002](/docs/errors/gala-e0002/)) are those of an `S` value, and a bare `case None` is the variant, not a binding. The method is recognized by shape — no arguments, no type parameters, a sealed result — so it works for `Option`, `Either`, `Try` and your own sealed types, for generic types and pointer receivers. A match whose cases name none of the view's variants is an ordinary match over the subject. Once a match reads the view, a case that only applies to the subject (its own extractor, a literal, a typed pattern of another type) or a binding of the whole subject is [GALA-E0079](/docs/errors/gala-e0079/). Partial functions `{ case Some(n) => n }` read the view of their argument the same way. A sub-pattern decides for itself: `case Some(Some(n))` over an `Option[MaybeInt]` or `case (Some(a), None)` over two `MaybeInt`s reads the view at that position, while any other sub-pattern there (`case (Some(a), b)`) matches the value itself; exhaustiveness counts the view's variants for such a position, or the value's own constructors when a pattern of the value's own type shares it. `MatchView` is an ordinary method call: a small one is inlined by Go and allocates nothing. Keep it cheap and free of side effects, since a sub-pattern calls it each time a case tests that position.
+
 #### Pattern Matching Filters (Guards)
 
 <!-- doc-check: fragment -->
@@ -1555,7 +1579,7 @@ A `Ptr[T]` fills a `*T` slot as it is. `nil`, or a `*T` that may be nil, never f
 
 Where Go can be the caller, a `Ptr` parameter is checked on entry: in an exported function or method, and in a lambda with a `Ptr[T]` parameter filling a function slot whose parameter is a `*T` (a Go callback). Calls between GALA functions are not checked. Not covered: Go writing a struct field, reflection, Go generic code's `var zero T`, a `Ptr` converted to `any`, a function value taking a `Ptr` (a named function or a lambda bound to a `val`) passed as a `func(*T)`, a method on a `Ptr[T]` receiver called on a `*T`, and `p, err = goCall()`.
 
-`OptionPtr[T]` is a std struct holding a `*T`, the size of one pointer, whose zero value is empty. `OptionPtrOf(p)`, `SomePtr(ptr)` and `EmptyOptionPtr[T]()` build one; `IsDefined`, `IsEmpty`, `Get`, `GetOrElse`, `OrElse`, `Map`, `FlatMap`, `ForEach` and `ToOption` mirror `Option`, and every pointer they hand out is a `Ptr[T]`. Match one through `ToOption()`.
+`OptionPtr[T]` is a std struct holding a `*T`, the size of one pointer, whose zero value is empty. `OptionPtrOf(p)`, `SomePtr(ptr)` and `EmptyOptionPtr[T]()` build one; `IsDefined`, `IsEmpty`, `Get`, `GetOrElse`, `OrElse`, `Map`, `FlatMap`, `ForEach` and `ToOption` mirror `Option`, and every pointer they hand out is a `Ptr[T]`. Match one directly with `case Some(p)` / `case None()`: its `MatchView()` gives it the [sealed view](#sealed-views) `Option[Ptr[T]]`, so the match is checked for exhaustiveness.
 
 ```gala
 struct Node(Value int, Next OptionPtr[Node])

@@ -383,6 +383,31 @@ val result = jsonStr match {
 
 ---
 
+## Sealed Views
+
+A type that is not sealed itself can still be matched with a sealed type's variants: give it a method `MatchView() S`, `S` sealed. A match whose cases name `S`'s variants reads the subject through `MatchView()`, once, and is checked for exhaustiveness over `S`:
+
+```gala
+package main
+
+struct MaybeInt(raw int)
+
+func (m MaybeInt) MatchView() Option[int] = When(m.raw >= 0, m.raw)
+
+func describe(m MaybeInt) string = m match {
+    case Some(n) => s"some $n"
+    case None    => "none"
+}
+
+func main() {
+    Println(describe(MaybeInt(7)), describe(MaybeInt(-1)))
+}
+```
+
+See [Sealed Views](/docs/language-reference/#sealed-views) for the rules.
+
+---
+
 ## Boolean Exhaustive Match
 
 Matching on a boolean with both `true` and `false` branches is exhaustive — no `case _` needed:
