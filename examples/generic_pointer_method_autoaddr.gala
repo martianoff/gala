@@ -1,0 +1,90 @@
+package main
+
+// A generic method on a pointer receiver is lowered to a function that takes
+// the receiver as its first argument. Called on an addressable value, it runs
+// on that value through its address, as a method call does; called on a val
+// or a call result, it runs on an addressed copy, so the original is unchanged.
+
+// Box holds a value and counts the calls made on it.
+struct Box[T any](var V T, var Hits int)
+
+// Map counts the call on the box it runs on, then maps its value.
+func (b *Box[T]) Map[U any](f func(T) U) U {
+    b.Hits = b.Hits + 1
+    f(b.V)
+}
+
+// Fold is Map on a Ptr receiver, folding the value into zero.
+func (b Ptr[Box[T]]) Fold[U any](zero U, f func(U, T) U) U {
+    b.Hits = b.Hits + 1
+    f(zero, b.V)
+}
+
+// Touch is a generic method without arguments: it counts the call.
+func (b *Box[T]) Touch[U any]() Option[U] {
+    b.Hits = b.Hits + 1
+    None[U]()
+}
+
+// Holder reaches a box through a field.
+struct Holder(var box Box[int])
+
+func newBox() Box[int] = Box(V = 7, Hits = 0)
+
+// Cell is a monad whose FlatMap and Zip2 have pointer receivers.
+struct Cell[T any](var V T)
+
+// FlatMap applies f to the cell's value.
+func (c *Cell[T]) FlatMap[U any](f func(T) Cell[U]) Cell[U] = f(c.V)
+
+// Zip2 pairs the values of two cells.
+func (c *Cell[T]) Zip2[U any](o Cell[U]) Cell[Tuple[T, U]] = Cell(Tuple(c.V, o.V))
+
+// A bind over a parameter and a var: both are addressable.
+func sumCells(x Cell[int]) Cell[int] {
+    var y = Cell(20)
+    bind a = x
+    bind b = y
+    Cell(a + b)
+}
+
+// An also group over call results: the Zip and its FlatMap run on copies.
+func zipCells() Cell[int] {
+    bind a = Cell(1)
+    also b = Cell(2)
+    Cell(a + b)
+}
+
+func main() {
+    // A var: every call counts on the var itself.
+    var b = Box(V = 1, Hits = 0)
+    Println(s"map: ${b.Map(_ + 1)}")
+    Println(s"fold: ${b.Fold(10, (acc, v) => acc + v)}")
+    Println(s"touch: ${b.Touch[string]().IsEmpty()}")
+    Println(s"var hits: ${b.Hits}")
+
+    // A field reached through a var.
+    var h = Holder(box = Box(V = 2, Hits = 0))
+    Println(s"field map: ${h.box.Map(_ * 10)}")
+    Println(s"field fold: ${h.box.Fold("", (acc, v) => s"$acc$v")}")
+    Println(s"field hits: ${h.box.Hits}")
+
+    // A val: each call runs on a copy, and the val keeps its count.
+    val c = Box(V = 3, Hits = 0)
+    Println(s"val map: ${c.Map(_ - 1)}")
+    Println(s"val fold: ${c.Fold(0, (acc, v) => acc - v)}")
+    Println(s"val hits: ${c.Hits}")
+
+    // A call result: runs on a copy of it.
+    Println(s"result map: ${newBox().Map((v) => v * v)}")
+    Println(s"result fold: ${newBox().Fold(1, (acc, v) => acc * v)}")
+
+    // A pointer is passed as it is.
+    val p = &b
+    Println(s"pointer map: ${p.Map(_ + 100)}")
+    Println(s"pointer hits: ${b.Hits}")
+
+    // bind and also lower to the same functions.
+    Println(s"bind: ${sumCells(Cell(1)).V}")
+    Println(s"also: ${zipCells().V}")
+}

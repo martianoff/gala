@@ -4406,3 +4406,11 @@ gala_exec_test(
     src = "ptr_receiver.gala",
     expected = "ptr_receiver.out",
 )
+
+# A generic method on a *T or Ptr[T] receiver, lowered to a function, called
+# on a var, a field reached through a var, a val, a call result and a pointer.
+gala_exec_test(
+    name = "generic_pointer_method_autoaddr",
+    src = "generic_pointer_method_autoaddr.gala",
+    expected = "generic_pointer_method_autoaddr.out",
+)

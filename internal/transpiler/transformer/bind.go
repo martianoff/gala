@@ -119,6 +119,8 @@ type preppedBind struct {
 	recvType       transpiler.Type
 	lookupBaseName string
 	elemType       transpiler.Type
+	typeMeta       *transpiler.TypeMetadata // the monad's
+	ctx            antlr.ParserRuleContext  // the clause
 }
 
 // collectBindGroup splits the leading `bind` and any consecutive `also` clauses
@@ -357,7 +359,15 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 		return preppedBind{}, t.semanticErrorAt(e.ctx, "cannot `bind` a "+lookupBaseName+" inside a "+res.monad+" block (heterogeneous bind is not supported)")
 	}
 
-	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType}, nil
+	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType, typeMeta, e.ctx}, nil
+}
+
+// bindReceiver is the receiver argument of the lowered call of p's monad's
+// `method` on recv — p's value, or the Zip of p's group: for a method on a
+// pointer receiver, its address or an addressed copy (loweredMethodReceiver),
+// which a diagnostic places at p's clause.
+func (t *galaASTTransformer) bindReceiver(p preppedBind, recv ast.Expr, recvType transpiler.Type, method string) (ast.Expr, error) {
+	return t.loweredMethodReceiver(recv, recvType, p.typeMeta.Methods[method], method, p.ctx.GetStart().GetLine(), p.ctx.GetStart().GetColumn())
 }
 
 // buildSequential chains the clauses as nested FlatMaps (each bound name stays in
@@ -395,8 +405,12 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 		body.List = append([]ast.Stmt{t.bindRebindStmt(p.name, rawParam)}, body.List...)
 	}
 
+	recv, err := t.bindReceiver(p, p.recvExpr, p.recvType, "FlatMap")
+	if err != nil {
+		return nil, err
+	}
 	lambda := t.bindLambda(rawParam, p.elemType, res.typ, body)
-	return t.emitGenericMethodFreeFunc("FlatMap", p.recvExpr, p.recvType, p.lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
+	return t.emitGenericMethodFreeFunc("FlatMap", recv, p.recvType, p.lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
 }
 
 // bindRawParamName returns the internal name of the raw FlatMap callback
@@ -436,7 +450,11 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		zipTypeArgs = append(zipTypeArgs, t.typeToExpr(prepped[i].elemType))
 		zipArgs = append(zipArgs, prepped[i].recvExpr)
 	}
-	zipCall := t.emitGenericMethodFreeFunc(zipName, prepped[0].recvExpr, prepped[0].recvType, prepped[0].lookupBaseName, zipTypeArgs, nil, zipArgs, false)
+	zipRecv, err := t.bindReceiver(prepped[0], prepped[0].recvExpr, prepped[0].recvType, zipName)
+	if err != nil {
+		return nil, err
+	}
+	zipCall := t.emitGenericMethodFreeFunc(zipName, zipRecv, prepped[0].recvType, prepped[0].lookupBaseName, zipTypeArgs, nil, zipArgs, false)
 
 	// The Zip result element is a std tuple TupleN[A0, A1, ...]; the whole Zip
 	// result is M[TupleN]. Build both as transpiler types.
@@ -481,8 +499,12 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 	}
 	lambdaBody.List = append(lambdaBody.List, restBody.List...)
 
+	flatMapRecv, err := t.bindReceiver(prepped[0], zipCall, zipResultType, "FlatMap")
+	if err != nil {
+		return nil, err
+	}
 	lambda := t.bindLambda(tupleParam, tupleType, res.typ, lambdaBody)
-	return t.emitGenericMethodFreeFunc("FlatMap", zipCall, zipResultType, prepped[0].lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
+	return t.emitGenericMethodFreeFunc("FlatMap", flatMapRecv, zipResultType, prepped[0].lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
 }
 
 // bindLambda builds `func(param paramType) M[R] { body }`.

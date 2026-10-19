@@ -117,7 +117,13 @@ import (
 // entries left are placeholders of deferred lambda returns and a `nil`
 // argument, which keeps no type by design. See
 // TestUnresolvedInventoryTypesResultNil.
-const unresolvedBudget = 117
+//
+// Lowered 117 -> 73 when a generic method written with its type arguments
+// (`opt.Map[int](f)`, read as an index before it is a call) stopped being
+// probed for an Immutable wrapper, as a generic function's name already was
+// (namesGenericMethod): every such call reported its method selector. See
+// TestUnresolvedInventorySkipsGenericFunctionName.
+const unresolvedBudget = 73
 
 // TestUnresolvedTypeInventory transpiles the single-file example corpus with
 // the unresolved-type inventory enabled and holds the total to a budget.

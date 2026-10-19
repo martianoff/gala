@@ -76,6 +76,39 @@ func run() Box[int] {
 	assert.NotContains(t, got, "std.Box_FlatMap", "user monad must not be std-qualified")
 }
 
+// A monad whose FlatMap and Zip have pointer receivers gets each lowered call's
+// receiver as a method call would: an addressable value by its address, a call
+// result through an addressed copy (#800).
+func TestBindOverPointerReceiverMonad(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+struct Cell[T any](var V T)
+
+func (c *Cell[T]) FlatMap[U any](f func(T) Cell[U]) Cell[U] = f(c.V)
+
+func (c *Cell[T]) Zip2[U any](o Cell[U]) Cell[Tuple[T, U]] = Cell(Tuple(c.V, o.V))
+
+func sum() Cell[int] {
+    var x = Cell(1)
+    bind a = x
+    bind b = Cell(2)
+    Cell(a + b)
+}
+
+func zip() Cell[int] {
+    bind a = Cell(1)
+    also b = Cell(2)
+    Cell(a + b)
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "Cell_FlatMap[int, int](&x, ")
+	assert.Contains(t, got, "Cell_FlatMap[int, int](std.AddrOfCopy(Cell[int]{V: 2}), ")
+	assert.Contains(t, got, "Cell_FlatMap[int, std.Tuple[int, int]](std.AddrOfCopy(Cell_Zip2[int, int](std.AddrOfCopy(Cell[int]{V: 1}), Cell[int]{V: 2})), ")
+}
+
 // `bind` on a value whose type has no FlatMap method is rejected.
 func TestBindRejectsNonMonad(t *testing.T) {
 	trans := newBindTranspiler()

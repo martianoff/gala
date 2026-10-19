@@ -869,6 +869,10 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		}
 	}
 
+	nameLine, nameCol := methodNamePos(anchor)
+	if receiver, err = t.loweredMethodReceiver(receiver, recvType, methodMeta, method, nameLine, nameCol); err != nil {
+		return true, nil, err
+	}
 	return true, t.emitGenericMethodFreeFunc(method, receiver, recvType, lookupBaseName, typeArgs, methodMeta, mArgs, hasSpread), nil
 }
 
@@ -1098,7 +1102,12 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 	if t.genericGoResultCalls == nil {
 		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
 	}
-	params := append([]transpiler.Type{recvType}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
+	// A pointer receiver takes the address loweredMethodReceiver gave it.
+	recvParam := recvType
+	if _, isPtr := recvType.(transpiler.PointerType); m.PointerReceiver && !isPtr {
+		recvParam = transpiler.PointerType{Elem: recvType}
+	}
+	params := append([]transpiler.Type{recvParam}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
 	t.genericGoResultCalls[call] = goResultsSignature(params, nil, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
 }
 
@@ -1153,6 +1162,31 @@ func (t *galaASTTransformer) resultOnlyMethodTypeArgs(anchor antlr.ParserRuleCon
 		return nil, err
 	}
 	return nil, t.uninferredTypeArgErrorNamed(line, col, name, valueYields(yields()), methodMeta.TypeParams, resolved, missing)
+}
+
+// methodNamePos locates the name of the method a call selects: the last member
+// suffix before the call's argument list; anchor is that list, or the `()` of
+// a call with no arguments. It falls back to anchor's start.
+func methodNamePos(anchor antlr.ParserRuleContext) (line, col int) {
+	line, col = anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
+	for n := antlr.Tree(anchor); n != nil; n = n.GetParent() {
+		call, ok := n.(*grammar.PostfixSuffixContext)
+		if !ok {
+			continue
+		}
+		if postfix, ok := call.GetParent().(*grammar.PostfixExprContext); ok {
+			for _, s := range postfix.AllPostfixSuffix() {
+				if s == call {
+					break
+				}
+				if id := s.Identifier(); id != nil {
+					line, col = id.GetStart().GetLine(), id.GetStart().GetColumn()
+				}
+			}
+		}
+		break
+	}
+	return line, col
 }
 
 // methodCallName spells the callee of a method call for a diagnostic as the

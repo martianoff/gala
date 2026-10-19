@@ -1,7 +1,10 @@
 package transformer_test
 
 import (
+	"strings"
 	"testing"
+
+	"martianoff/gala/galaerr"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,6 +54,8 @@ struct Box[T any](v T)
 
 func (b *Box[T]) Touch() int = 1
 
+func (b *Box[T]) Peek[U any](f func(T) U) U = f(b.v)
+
 type halfLock struct {
     var held bool
 }
@@ -87,6 +92,7 @@ func makeWG() sync.WaitGroup = sync.WaitGroup{}
 		{"GALA type with pointer Lock/Unlock", "val s = spinLock{}\n    s.Lock()", "spinLock must not be copied"},
 		{"GALA type with value Lock and pointer Unlock", "val h = halfLock{}\n    h.Unlock()", "halfLock must not be copied"},
 		{"generic GALA struct instantiated with a Mutex", "val b = Box[sync.Mutex](sync.Mutex{})\n    Println(b.Touch())", "Box contains sync.Mutex"},
+		{"generic method on a generic GALA struct instantiated with a Mutex", "val b = Box[sync.Mutex](sync.Mutex{})\n    Println(b.Peek((m) => 1))", "Box contains sync.Mutex"},
 		{"GALA struct with a noCopy marker", "val m = Marked(noCopy{}, 1)\n    Println(m.Touch())", "Marked contains noCopy"},
 		{"Go struct with lock fields", "val s = http.Server{}\n    Println(s.Close())", "http.Server contains "},
 	}
@@ -110,6 +116,7 @@ func makeWG() sync.WaitGroup = sync.WaitGroup{}
 		{"var Mutex is addressable", "var m = sync.Mutex{}\n    m.Lock()", "m.Lock()"},
 		{"pointer to a Mutex", "val m = &sync.Mutex{}\n    m.Lock()", "m.Get().Lock()"},
 		{"generic GALA struct of a copyable type", "val b = Box[int](1)\n    Println(b.Touch())", "std.AddrOfCopy(b.Get()).Touch()"},
+		{"generic method on a var holding a Mutex", "var b = Box[sync.Mutex](sync.Mutex{})\n    Println(b.Peek((m) => 1))", "Box_Peek(&b, "},
 		{"var Builder is addressable", "var sb = strings.Builder{}\n    sb.WriteString(\"x\")", "sb.WriteString(\"x\")"},
 	}
 	for _, tc := range accepted {
@@ -117,6 +124,29 @@ func makeWG() sync.WaitGroup = sync.WaitGroup{}
 			out, err := trans.Transpile(noCopySource(decls, tc.body), "nocopy_test.gala")
 			require.NoError(t, err)
 			assert.Contains(t, out, tc.mustContain)
+		})
+	}
+}
+
+// TestNoCopyReceiverRejectedAtMethodName checks that GALA-E0053 points at the
+// method name whether or not the method is lowered to a function.
+func TestNoCopyReceiverRejectedAtMethodName(t *testing.T) {
+	const decls = `
+struct Box[T any](v T)
+
+func (b *Box[T]) Touch() int = 1
+
+func (b *Box[T]) Peek[U any](f func(T) U) U = f(b.v)
+`
+	for _, call := range []string{"Touch()", "Peek((m) => 1)", "Peek[int]((m) => 1)"} {
+		t.Run(call, func(t *testing.T) {
+			src := noCopySource(decls, "val b = Box[sync.Mutex](sync.Mutex{})\n    Println(b."+call+")")
+			_, err := newDefaultsTranspiler().Transpile(src, "nocopy_test.gala")
+			var semErr *galaerr.SemanticError
+			require.ErrorAs(t, err, &semErr)
+			assert.Equal(t, galaerr.CodeNoCopyReceiverCopied, semErr.Code)
+			line := strings.Split(src, "\n")[semErr.Line-1]
+			assert.True(t, strings.HasPrefix(line[semErr.Column:], call[:4]), "error at %q", line[semErr.Column:])
 		})
 	}
 }

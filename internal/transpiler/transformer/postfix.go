@@ -424,7 +424,7 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	// `F[T]` naming a generic function is its instantiation, not an index of
 	// a value, so the function is no Immutable to unwrap; asking would only
 	// find it typeless until instantiated.
-	if !t.namesFunction(base) {
+	if !t.namesFunction(base) && !t.namesGenericMethod(base) {
 		base = t.unwrapImmutable(base)
 	}
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
@@ -458,6 +458,21 @@ func (t *galaASTTransformer) namesFunction(expr ast.Expr) bool {
 		return t.goTypeInfo != nil && t.goTypeInfo.GetFuncSignature(t.goQualifiedName(pkg.Name, e.Sel.Name)) != nil
 	}
 	return false
+}
+
+// namesGenericMethod reports whether expr selects a method with its own type
+// parameters on a value (`b.Map` in `b.Map[int](f)`): `[...]` instantiates
+// it, as namesFunction's functions.
+func (t *galaASTTransformer) namesGenericMethod(expr ast.Expr) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	if pkg, isIdent := sel.X.(*ast.Ident); isIdent && t.importManager.IsPackage(pkg.Name) && t.bindingScope(pkg.Name) == nil {
+		return false
+	}
+	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, sel.Sel.Name)
+	return t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), sel.Sel.Name)
 }
 
 // applyCallSuffix moved to calls.go
