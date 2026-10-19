@@ -2098,9 +2098,10 @@ value's `MatchView()` — `case Some(Some(n))` over an `Option[MaybeInt]`, or
 a variant of the view, `_` or a stable identifier. Any other sub-pattern in the
 same position, in the same case or another one, matches the value itself:
 `case (Some(a), b)` binds `b` as a `MaybeInt`. Exhaustiveness counts the
-view's variants for a position where a sub-pattern names one; a pattern of the
-value's own type there (`case (MaybeInt(r), _)`) counts as covering none of
-them, so such a match needs a `case _`.
+view's variants for a position where the sub-patterns read the view. A position
+that also holds a pattern of the value's own type (`Some(MaybeInt(r))`, or an
+own variant of a sealed type with a view) is counted by the value's own
+constructors instead, and the view patterns there cover none of them.
 
 The method is named `MatchView`, not `View`, so it does not collide with the
 `View()` methods that UI components commonly declare.
