@@ -217,7 +217,7 @@ func viaFlatMap(s string) Try[int] =
         Success(h * 2)
     })
 `,
-			contains: []string{"func(_bind_h int) std.Try[int] {", "std.Success[int]{}.Apply(h.Get() * 2)"},
+			contains: []string{"func(h int) std.Try[int] {", "std.Success[int]{}.Apply(h * 2)"},
 		},
 		{
 			name: "bind in a Try thunk uses the thunk's result, not the enclosing Try",
@@ -227,7 +227,7 @@ func viaThunk(s string) Try[Try[int]] = Try(() => {
     Success(n + 1)
 })
 `,
-			contains:    []string{"func() std.Try[int] {", "std.Try_FlatMap[int, int](parse(s), func(_bind_n int) std.Try[int] {"},
+			contains:    []string{"func() std.Try[int] {", "std.Try_FlatMap[int, int](parse(s), func(n int) std.Try[int] {"},
 			notContains: []string{"std.Try[std.Try[std.Try[int]]]", "std.Success[std.Try[int]]"},
 		},
 		{
@@ -241,7 +241,7 @@ func viaTyped(s string) Option[string] {
     return f(s).ToOption().Map((v) => s"$v")
 }
 `,
-			contains: []string{"func(_bind_n int) std.Try[int] {"},
+			contains: []string{"func(n int) std.Try[int] {"},
 		},
 		{
 			name: "nested lambdas each have their own slot",
@@ -267,7 +267,7 @@ func run(s string) Try[int] {
     Success(n + 1)
 }
 `,
-			contains: []string{"std.Try_FlatMap[int, int](parse(s), func(_bind_n int) std.Try[int] {"},
+			contains: []string{"std.Try_FlatMap[int, int](parse(s), func(n int) std.Try[int] {"},
 		},
 	}
 	for _, tt := range tests {

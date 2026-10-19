@@ -247,17 +247,25 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 	}
 
+	// The Go type of the annotation, if any (see valDeclaredType).
+	var declType ast.Expr
+	if ctx.Type_() != nil {
+		if declType, err = t.transformType(ctx.Type_()); err != nil {
+			return nil, err
+		}
+	}
+
 	// Handle multi-return from a single expression: val data, err = io.ReadAll(r.Body)
-	// We must capture all return values with a single call, then wrap each in NewImmutable.
-	// Generated code:
+	// We must capture all return values with a single call, then bind each.
+	// Generated code, in a function:
 	//   var (
 	//       _tmp_1, _tmp_2 = io.ReadAll(r.Body)
-	//       data = NewImmutable(_tmp_1)
-	//       err  = NewImmutable(_tmp_2)
+	//       data = _tmp_1
+	//       err  = _tmp_2
 	//   )
 	//
-	// At package level the temps are __val_data_0, __val_data_1 (see
-	// packageTempAnchor). Without a type annotation, a `_` name takes its value
+	// At package level each name is boxed (`data = NewImmutable(__val_data_0)`)
+	// and the temps are __val_data_0, __val_data_1 (see packageTempAnchor). Without a type annotation, a `_` name takes its value
 	// into `_` and binds nothing; with one, it still goes through a temp so its
 	// value is checked against the annotation.
 	if isMultiReturnFromSingleExpr {
@@ -300,7 +308,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			callReturns = t.resolveGoCallReturnTypes(callValue)
 		}
 
-		// Create specs for each named variable, wrapping the temp in NewImmutable
+		// Create specs for each named variable, taking its temp
 		for i, idCtx := range namesCtx {
 			name := idCtx.GetText()
 			if tempNames[i] == "_" {
@@ -321,42 +329,12 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				typeName = qName
 			}
 
-			t.addVal(name, typeName)
-
-			var fun ast.Expr = t.stdIdent("NewImmutable")
-			if ctx.Type_() != nil {
-				typeExpr, err := t.transformType(ctx.Type_())
-				if err != nil {
-					return nil, err
-				}
-				fun = &ast.IndexExpr{
-					X:     fun,
-					Index: typeExpr,
-				}
-			}
-
-			valSpec := &ast.ValueSpec{
-				Names: []*ast.Ident{ast.NewIdent(name)},
-				Values: []ast.Expr{
-					&ast.CallExpr{
-						Fun:  fun,
-						Args: []ast.Expr{ast.NewIdent(tempNames[i])},
-					},
-				},
-			}
-
-			if ctx.Type_() != nil {
-				typeExpr, err := t.transformType(ctx.Type_())
-				if err != nil {
-					return nil, err
-				}
-				valSpec.Type = &ast.IndexExpr{
-					X:     t.stdIdent("Immutable"),
-					Index: typeExpr,
-				}
-			}
-
-			specs = append(specs, valSpec)
+			t.bindVal(name, typeName)
+			specs = append(specs, &ast.ValueSpec{
+				Names:  []*ast.Ident{ast.NewIdent(name)},
+				Type:   t.valDeclaredType(declType),
+				Values: []ast.Expr{t.valInitializer(declType, ast.NewIdent(tempNames[i]))},
+			})
 		}
 
 		return &ast.GenDecl{
@@ -389,7 +367,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeName = qName
 		}
 
-		t.addVal(name, typeName)
+		t.bindVal(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
 
 		var val ast.Expr
@@ -405,44 +383,59 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			return nil, t.semanticErrorAt(ctx, "variable assigned to None() must have an explicit type")
 		}
 
-		var fun ast.Expr = t.stdIdent("NewImmutable")
-		if ctx.Type_() != nil {
-			typeExpr, err := t.transformType(ctx.Type_())
-			if err != nil {
-				return nil, err
-			}
-			fun = &ast.IndexExpr{
-				X:     fun,
-				Index: typeExpr,
-			}
-		}
-
-		wrappedValues = append(wrappedValues, &ast.CallExpr{
-			Fun:  fun,
-			Args: []ast.Expr{val},
-		})
-	}
-
-	spec := &ast.ValueSpec{
-		Names:  idents,
-		Values: wrappedValues,
-	}
-
-	if ctx.Type_() != nil {
-		typeExpr, err := t.transformType(ctx.Type_())
-		if err != nil {
-			return nil, err
-		}
-		spec.Type = &ast.IndexExpr{
-			X:     t.stdIdent("Immutable"),
-			Index: typeExpr,
-		}
+		wrappedValues = append(wrappedValues, t.valInitializer(declType, val))
 	}
 
 	return &ast.GenDecl{
 		Tok:   token.VAR,
-		Specs: []ast.Spec{spec},
+		Specs: []ast.Spec{&ast.ValueSpec{Names: idents, Type: t.valDeclaredType(declType), Values: wrappedValues}},
 	}, nil
+}
+
+// A val declared at package level is stored in a std.Immutable[T] box, read
+// as `name.Get()`, so another package reads it through the same accessor. A
+// local val is a plain Go variable: GALA rejects every write to a val and
+// taking its address, so a box would only add a wrapper call to every read —
+// and inline cost to every function declaring one. The helpers below lower a
+// val declaration for the scope it is declared in.
+
+// boxesVals reports whether a val declared here is boxed: the declaration is
+// at package level.
+func (t *galaASTTransformer) boxesVals() bool {
+	return t.currentScope == nil || t.currentScope.parent == nil
+}
+
+// bindVal binds a val declared here, boxed or plain as boxesVals says.
+func (t *galaASTTransformer) bindVal(name string, typeName transpiler.Type) {
+	if t.boxesVals() {
+		t.addVal(name, typeName)
+		return
+	}
+	t.addLocalVal(name, typeName)
+}
+
+// valInitializer is the initializer of a val declared here with the declared
+// type declType (nil when inferred): value itself for a local val, else
+// `std.NewImmutable[declType](value)`.
+func (t *galaASTTransformer) valInitializer(declType, value ast.Expr) ast.Expr {
+	if !t.boxesVals() {
+		return value
+	}
+	var fun ast.Expr = t.stdIdent(transpiler.FuncNewImmutable)
+	if declType != nil {
+		fun = &ast.IndexExpr{X: fun, Index: declType}
+	}
+	return &ast.CallExpr{Fun: fun, Args: []ast.Expr{value}}
+}
+
+// valDeclaredType is the Go type of a val declared here with the declared
+// type declType: nil when inferred, declType for a local val, else
+// `std.Immutable[declType]`.
+func (t *galaASTTransformer) valDeclaredType(declType ast.Expr) ast.Expr {
+	if declType == nil || !t.boxesVals() {
+		return declType
+	}
+	return &ast.IndexExpr{X: t.stdIdent(transpiler.TypeImmutable), Index: declType}
 }
 
 // transformTupleDestructure lowers tuple destructuring, `val (a, b) = tuple`
@@ -450,9 +443,12 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 //
 //	var (
 //	    __tuple_N = tuple
-//	    a = __tuple_N.V1        // val: the field, already an Immutable[T]
-//	    b = __tuple_N.V2.Get()  // var: the field's value, a plain Go variable
+//	    a = __tuple_N.V1.Get()  // the field's value, a plain Go variable
+//	    b = __tuple_N.V2.Get()
 //	)
+//
+// At package level a val is boxed, so it takes the field, already an
+// Immutable[T], as it is: `a = __tuple_N.V1`.
 //
 // The grammar lets the declaration carry a type annotation and, for var, omit
 // the initializer; neither has a meaning here (GALA-E0056).
@@ -557,22 +553,27 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 		}
 
 		// Access tuple field: __tuple_N.V1, __tuple_N.V2, etc.
-		// Tuple fields are already Immutable[T], so a val takes the field as
-		// it is and a var takes its value.
+		// Tuple fields are already Immutable[T], so a boxed (package-level)
+		// val takes the field as it is, and a local val or a var its value.
 		var value ast.Expr = &ast.SelectorExpr{
 			X:   ast.NewIdent(tempName),
 			Sel: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
 		}
-		if mutable {
+		switch {
+		case mutable:
 			// As transformVarDeclaration registers a var's type.
 			if qName := t.lookupTypeName(componentType.String()); !qName.IsNil() {
 				componentType = qName
 			}
 			t.addVar(name, componentType)
 			t.markMutable(name)
-			value = &ast.CallExpr{Fun: &ast.SelectorExpr{X: value, Sel: ast.NewIdent(transpiler.MethodGet)}}
-		} else {
+		case t.boxesVals():
 			t.addVal(name, componentType)
+		default:
+			t.addLocalVal(name, componentType)
+		}
+		if !t.isBoxedVal(name) {
+			value = &ast.CallExpr{Fun: &ast.SelectorExpr{X: value, Sel: ast.NewIdent(transpiler.MethodGet)}}
 		}
 
 		spec := &ast.ValueSpec{

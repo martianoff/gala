@@ -1486,6 +1486,8 @@ Go's *predeclared* identifiers — `int`, `string`, `error`, `len`, `min`, `max`
 
 ## 12. Immutability Under the Hood {#12-immutability-under-the-hood}
 
+A stored immutable value — a struct field or a package-level `val` — is a `std.Immutable[T]` in the generated Go. A local `val` is a plain Go variable: GALA rejects writing it, writing a field through it and `&` of it, and a pointer-receiver method called on it runs on a copy.
+
 ### Package-Level Bindings
 A package-level `val` is a `std.Immutable[T]` in the generated Go but reads as a plain `T` everywhere — its own file, sibling files, and other packages (qualified, aliased, or dot-imported). A package-level `var` stays a plain, reassignable variable.
 

@@ -68,7 +68,7 @@ func TestShorthandImmutableTypedField(t *testing.T) {
 		{
 			name:     "reading the field yields the wrapped value",
 			body:     "func main() {\n    val b = Box(1)\n    val n = b.X\n    Println(s\"${b.X} ${n + b.X}\")\n}\n",
-			contains: []string{"std.NewImmutable(b.Get().X.Get())"},
+			contains: []string{"var n = b.X.Get()"},
 		},
 	}
 	for _, tt := range tests {

@@ -704,27 +704,20 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 // inferBlockReturnType tries to infer the return type from a block's return statements.
 // Returns nil if no concrete type can be inferred.
 func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr {
-	// Build a map of val variable types from declarations in this block.
-	// When we see `var result = std.NewImmutable(X)`, we record the type of X for `result`.
+	// Build a map of the types of the locals this block declares, for return
+	// expressions the scope can no longer type: `var result = X` (a val is a
+	// plain local) and `var result = std.NewImmutable(X)` both record X's type.
 	valTypes := make(map[string]ast.Expr)
 	for _, stmt := range block.List {
-		// Handle val declarations: var result = std.NewImmutable(X)
+		// var declarations: `var result = X`, `var result T = X`
 		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
 			if genDecl, ok := declStmt.Decl.(*ast.GenDecl); ok && genDecl.Tok == token.VAR {
 				for _, spec := range genDecl.Specs {
 					if valueSpec, ok := spec.(*ast.ValueSpec); ok {
 						for i, name := range valueSpec.Names {
 							if i < len(valueSpec.Values) {
-								val := valueSpec.Values[i]
-								// Check if this is a std.NewImmutable(X) call
-								if callExpr, ok := val.(*ast.CallExpr); ok {
-									if t.isNewImmutableCall(callExpr) && len(callExpr.Args) > 0 {
-										// Store the type of the inner expression
-										innerType := t.getExprType(callExpr.Args[0])
-										if innerType != nil {
-											valTypes[name.Name] = innerType
-										}
-									}
+								if typ := t.declaredLocalType(valueSpec.Type, valueSpec.Values[i]); typ != nil {
+									valTypes[name.Name] = typ
 								}
 							}
 						}
@@ -732,20 +725,12 @@ func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr
 				}
 			}
 		}
-		// Also handle short var declarations: result := std.NewImmutable(X)
+		// Short var declarations: `result := X`
 		if assignStmt, ok := stmt.(*ast.AssignStmt); ok && assignStmt.Tok == token.DEFINE {
 			for i, lhs := range assignStmt.Lhs {
 				if ident, ok := lhs.(*ast.Ident); ok && i < len(assignStmt.Rhs) {
-					rhs := assignStmt.Rhs[i]
-					// Check if this is a std.NewImmutable(X) call
-					if callExpr, ok := rhs.(*ast.CallExpr); ok {
-						if t.isNewImmutableCall(callExpr) && len(callExpr.Args) > 0 {
-							// Store the type of the inner expression
-							innerType := t.getExprType(callExpr.Args[0])
-							if innerType != nil {
-								valTypes[ident.Name] = innerType
-							}
-						}
+					if typ := t.declaredLocalType(nil, assignStmt.Rhs[i]); typ != nil {
+						valTypes[ident.Name] = typ
 					}
 				}
 			}
@@ -810,10 +795,16 @@ func (t *galaASTTransformer) inferReturnExprType(expr ast.Expr, valTypes map[str
 			return inferredType
 		}
 	}
-	// Fallback: try to infer type using valTypes for .Get() calls on val variables.
-	// Only use this for top-level .Get() expressions (e.g., return result.Get()),
-	// NOT for nested .Get() calls inside other expressions — otherwise we'd return
-	// the inner val type instead of the outer expression type.
+	// Fallback: type a returned local from the block's declarations, read bare
+	// (`return result`) or, for a boxed val, through its wrapper
+	// (`return result.Get()`). Only the top-level expression qualifies, NOT a
+	// .Get() nested inside another expression — otherwise we'd return the
+	// inner val type instead of the outer expression type.
+	if ident, ok := expr.(*ast.Ident); ok {
+		if typ, ok := valTypes[ident.Name]; ok {
+			return typ
+		}
+	}
 	if callExpr, ok := expr.(*ast.CallExpr); ok && len(callExpr.Args) == 0 {
 		if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
 			if ident, ok := selExpr.X.(*ast.Ident); ok {
@@ -967,6 +958,19 @@ func (t *galaASTTransformer) findValGetType(expr ast.Expr, valTypes map[string]a
 		return t.findValGetType(e.X, valTypes)
 	}
 	return nil
+}
+
+// declaredLocalType types a local declared `var name typ = value` (typ may be
+// nil) or `name := value`: the declared type, else the value's, seen through a
+// std.NewImmutable wrapper. nil when neither can be typed.
+func (t *galaASTTransformer) declaredLocalType(typ, value ast.Expr) ast.Expr {
+	if typ != nil {
+		return typ
+	}
+	if call, ok := value.(*ast.CallExpr); ok && t.isNewImmutableCall(call) && len(call.Args) > 0 {
+		value = call.Args[0]
+	}
+	return t.getExprType(value)
 }
 
 // isNewImmutableCall checks if a call expression is a call to std.NewImmutable

@@ -25,7 +25,7 @@ func main() {
     Print(fmt.x)
     Println(s"x=${fmt.x}")
 }`,
-			contains: []string{`_gala_fmt "fmt"`, "_gala_fmt.Print(fmt.Get().x.Get())", `_gala_fmt.Sprintf("x=%d", fmt.Get().x.Get())`},
+			contains: []string{`_gala_fmt "fmt"`, "_gala_fmt.Print(fmt.x.Get())", `_gala_fmt.Sprintf("x=%d", fmt.x.Get())`},
 		},
 		{
 			name: "a parameter named fmt",

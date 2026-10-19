@@ -215,9 +215,10 @@ func (t *galaASTTransformer) declaredGoResultsSignature(call *ast.CallExpr) *tra
 		return sig
 	}
 	fun, _ := splitCallFunTypeArgs(call.Fun)
-	// A val is called through its Immutable wrapper: `get.Get()()`.
+	// A boxed (package-level) val is called through its Immutable wrapper:
+	// `get.Get()()`.
 	if sel := immutableGetReceiver(fun); sel != nil {
-		if id, ok := sel.X.(*ast.Ident); ok && t.isVal(id.Name) {
+		if id, ok := sel.X.(*ast.Ident); ok && t.isBoxedVal(id.Name) {
 			fun = id
 		}
 	}
@@ -288,9 +289,10 @@ func (t *galaASTTransformer) isImmutableUnwrapCall(expr ast.Expr) bool {
 		return false
 	}
 	// A val's scope entry records the unwrapped type, so the wrapper is
-	// recognised by the name being a val. A user-written `v.Get()` on a val
-	// arrives as `v.Get().Get()`, whose receiver is a call, not the name.
-	if id, ok := sel.X.(*ast.Ident); ok && t.isVal(id.Name) {
+	// recognised by the name being a boxed (package-level) val. A user-written
+	// `v.Get()` on one arrives as `v.Get().Get()`, whose receiver is a call,
+	// not the name; on a local val, a plain variable, it is the value's own Get.
+	if id, ok := sel.X.(*ast.Ident); ok && t.isBoxedVal(id.Name) {
 		return true
 	}
 	return t.isImmutableType(t.getExprTypeName(sel.X))
@@ -335,9 +337,13 @@ func (t *galaASTTransformer) goResultOf(expr ast.Expr) *goResult {
 		if res := t.goResults[call]; res != nil {
 			return typedGoResult(res)
 		}
-		// A val read through its Immutable wrapper: `data.Get()`.
+		// A package-level val read through its Immutable wrapper: `data.Get()`.
+		// On a local val, which is a plain variable, that is a call of the
+		// value's own Get.
 		if sel := immutableGetReceiver(call); sel != nil {
-			expr = sel.X
+			if id, ok := sel.X.(*ast.Ident); ok && t.isBoxedVal(id.Name) {
+				expr = sel.X
+			}
 		}
 	}
 	if id, ok := expr.(*ast.Ident); ok && (t.isVal(id.Name) || t.isVar(id.Name)) {

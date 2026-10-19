@@ -268,9 +268,9 @@ func newBox() Box[int] = Box(7)
 		{name: "var, no arguments", body: "var b = Box(1)\n    Println(b.Touch[string]())", want: "Box_Touch[string, int](&b)"},
 		{name: "var field through a var", body: "var h = Holder(Box(1), Box(2))\n    Println(h.box.Map((v) => v + 1))", want: "Box_Map(&h.box, "},
 		{name: "val field through a var", body: "var h = Holder(Box(1), Box(2))\n    Println(h.fixed.Fold(0, (acc, v) => acc + v))", want: "Box_Fold(std.AddrOfCopy(h.fixed.Get()), "},
-		{name: "val", body: "val b = Box(1)\n    Println(b.Map((v) => v + 1))", want: "Box_Map(std.AddrOfCopy(b.Get()), "},
+		{name: "val", body: "val b = Box(1)\n    Println(b.Map((v) => v + 1))", want: "Box_Map(std.AddrOfCopy(b), "},
 		{name: "call result", body: "Println(newBox().Fold(0, (acc, v) => acc + v))", want: "Box_Fold(std.AddrOfCopy(newBox()), "},
-		{name: "pointer", body: "var b = Box(1)\n    val p = &b\n    Println(p.Map((v) => v + 1))", want: "Box_Map(p.Get(), "},
+		{name: "pointer", body: "var b = Box(1)\n    val p = &b\n    Println(p.Map((v) => v + 1))", want: "Box_Map(p, "},
 		{name: "address written out", body: "var b = Box(1)\n    Println((&b).Map((v) => v + 1))", want: "Box_Map((&b), "},
 		{name: "value receiver", body: "var b = Box(1)\n    Println(b.Show((v) => v + 1))", want: "Box_Show(b, "},
 	}

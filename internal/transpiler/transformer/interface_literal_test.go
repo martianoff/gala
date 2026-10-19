@@ -71,7 +71,7 @@ func (r MemRepo) Find(id int) Option[User] = Some(User(id, r.name))
     val r = Repo(Count = () => 0, Find = mem.Find)
     Println(r.Find(1))
 }`,
-			contains: []string{"_Find: mem.Get().Find"},
+			contains: []string{"_Find: mem.Find"},
 		},
 		{
 			name: "the expected type gives a generic interface its type arguments",
@@ -125,7 +125,7 @@ func main() {
     val context = Shadow(1)
     Println(context.Context(2))
 }`,
-			contains: []string{"context.Get().Context(2)"},
+			contains: []string{"context.Context(2)"},
 		},
 		{
 			name: "a Go interface with a type GALA cannot spell exactly",

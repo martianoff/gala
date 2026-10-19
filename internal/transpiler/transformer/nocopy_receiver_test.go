@@ -111,11 +111,11 @@ func makeWG() sync.WaitGroup = sync.WaitGroup{}
 		body        string
 		mustContain string
 	}{
-		{"url.URL val runs on a copy", "val u = url.URL(Scheme = \"https\", Host = \"x\")\n    Println(u.String())", "std.AddrOfCopy(u.Get()).String()"},
-		{"time.Time val runs on a copy", "val tm = time.Now()\n    Println(tm.UnmarshalText(go_interop.ToBytes(\"x\")))", "std.AddrOfCopy(tm.Get()).UnmarshalText("},
+		{"url.URL val runs on a copy", "val u = url.URL(Scheme = \"https\", Host = \"x\")\n    Println(u.String())", "std.AddrOfCopy(u).String()"},
+		{"time.Time val runs on a copy", "val tm = time.Now()\n    Println(tm.UnmarshalText(go_interop.ToBytes(\"x\")))", "std.AddrOfCopy(tm).UnmarshalText("},
 		{"var Mutex is addressable", "var m = sync.Mutex{}\n    m.Lock()", "m.Lock()"},
-		{"pointer to a Mutex", "val m = &sync.Mutex{}\n    m.Lock()", "m.Get().Lock()"},
-		{"generic GALA struct of a copyable type", "val b = Box[int](1)\n    Println(b.Touch())", "std.AddrOfCopy(b.Get()).Touch()"},
+		{"pointer to a Mutex", "val m = &sync.Mutex{}\n    m.Lock()", "m.Lock()"},
+		{"generic GALA struct of a copyable type", "val b = Box[int](1)\n    Println(b.Touch())", "std.AddrOfCopy(b).Touch()"},
 		{"generic method on a var holding a Mutex", "var b = Box[sync.Mutex](sync.Mutex{})\n    Println(b.Peek((m) => 1))", "Box_Peek(&b, "},
 		{"var Builder is addressable", "var sb = strings.Builder{}\n    sb.WriteString(\"x\")", "sb.WriteString(\"x\")"},
 	}

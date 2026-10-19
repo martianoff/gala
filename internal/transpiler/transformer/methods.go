@@ -369,7 +369,7 @@ func (t *galaASTTransformer) immutableGetOperand(call *ast.CallExpr) (ast.Expr, 
 func (t *galaASTTransformer) isImmutableOperand(x ast.Expr) bool {
 	switch e := x.(type) {
 	case *ast.Ident:
-		if t.isVal(e.Name) {
+		if t.isBoxedVal(e.Name) {
 			return true
 		}
 	case *ast.SelectorExpr:

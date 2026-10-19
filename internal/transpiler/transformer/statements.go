@@ -355,7 +355,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 			t.addVar(name, typeName)
 			t.markMutable(name)
 		} else {
-			t.addVal(name, typeName)
+			t.addLocalVal(name, typeName)
 		}
 		lhs = append(lhs, ast.NewIdent(name))
 
@@ -366,15 +366,8 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")
 		}
 
-		if mutable {
-			// For mutable variables (e.g., for loop init), don't wrap in Immutable
-			rhs = append(rhs, val)
-		} else {
-			rhs = append(rhs, &ast.CallExpr{
-				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{val},
-			})
-		}
+		// A local val is a plain Go variable, as a var is (see addLocalVal).
+		rhs = append(rhs, val)
 	}
 
 	return &ast.AssignStmt{
@@ -446,13 +439,10 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	specs := []ast.Spec{&ast.ValueSpec{Names: tempIdents, Values: []ast.Expr{callValue}}}
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
-		t.addVal(name, typeOf(i))
+		t.addLocalVal(name, typeOf(i))
 		specs = append(specs, &ast.ValueSpec{
-			Names: []*ast.Ident{ast.NewIdent(name)},
-			Values: []ast.Expr{&ast.CallExpr{
-				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{tempIdents[i]},
-			}},
+			Names:  []*ast.Ident{ast.NewIdent(name)},
+			Values: []ast.Expr{tempIdents[i]},
 		})
 	}
 	return &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: specs}}, nil

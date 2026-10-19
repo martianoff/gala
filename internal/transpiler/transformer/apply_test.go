@@ -60,8 +60,8 @@ func (a Append) Apply(param string) string {
 	return param + a.Name.Get()
 }
 func main() {
-	var a = std.NewImmutable(Append{Name: std.NewImmutable("cherry")})
-	var res = std.NewImmutable(a.Get().Apply("apple"))
+	var a = Append{Name: std.NewImmutable("cherry")}
+	var res = a.Apply("apple")
 }`,
 		},
 		{
@@ -106,7 +106,7 @@ func (a Append) Apply(param string) string {
 	return param + a.Name.Get()
 }
 func main() {
-	var res = std.NewImmutable(Append{Name: std.NewImmutable("cherry")}.Apply("apple"))
+	var res = Append{Name: std.NewImmutable("cherry")}.Apply("apple")
 }`,
 		},
 		{
@@ -119,8 +119,6 @@ func main() {
     val res = Implode("apple")
 }`,
 			expected: `package main
-
-import "martianoff/gala/std"
 
 type Implode struct {
 }
@@ -144,7 +142,7 @@ func (i Implode) Apply(param string) string {
 	return param + "!"
 }
 func main() {
-	var res = std.NewImmutable(Implode{}.Apply("apple"))
+	var res = Implode{}.Apply("apple")
 }`,
 		},
 		{
@@ -157,8 +155,6 @@ func main() {
     val res = Identity[int](10)
 }`,
 			expected: `package main
-
-import "martianoff/gala/std"
 
 type Identity[T any] struct {
 }
@@ -190,7 +186,7 @@ func (i Identity[T]) Apply(v T) T {
 	return v
 }
 func main() {
-	var res = std.NewImmutable(Identity[int]{}.Apply(10))
+	var res = Identity[int]{}.Apply(10)
 }`,
 		},
 	}

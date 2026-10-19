@@ -95,6 +95,13 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 	switch e := expr.(type) {
 	case *ast.CompositeLit:
 		return "", "" // a fresh value
+	case *ast.Ident:
+		// A local val is a plain Go variable, so Go would let the write
+		// through; a package-level one is read through `.Get()` (below).
+		if t.isPlainVal(e.Name) {
+			return fmt.Sprintf("it is reached through val %s", e.Name),
+				fmt.Sprintf("declare it `var %s`", e.Name)
+		}
 	case *ast.ParenExpr:
 		return t.immutablePathReason(e.X)
 	case *ast.SelectorExpr:

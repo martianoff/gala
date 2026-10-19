@@ -39,7 +39,7 @@ func main() {
 }
 `,
 			check: func(t *testing.T, got string) {
-				assert.True(t, strings.Contains(got, "pair.Get().V1.Get()"), "pair.V1 should unwrap to pair.Get().V1.Get(), got:\n%s", got)
+				assert.True(t, strings.Contains(got, "fmt.Println(pair.V1.Get())"), "pair.V1 should unwrap to pair.V1.Get(), got:\n%s", got)
 			},
 		},
 		{
@@ -57,7 +57,7 @@ func main() {
 			check: func(t *testing.T, got string) {
 				fmt.Println("=== tuple literal field access ===")
 				fmt.Println(got)
-				assert.True(t, strings.Contains(got, "pair.Get().V1.Get()"), "pair.V1 should unwrap to pair.Get().V1.Get(), got:\n%s", got)
+				assert.True(t, strings.Contains(got, "fmt.Println(pair.V1.Get())"), "pair.V1 should unwrap to pair.V1.Get(), got:\n%s", got)
 			},
 		},
 		{

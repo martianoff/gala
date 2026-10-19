@@ -21,9 +21,9 @@ func newBindTranspiler() *checkedTranspiler {
 }
 
 // A `bind` block lowers to a nested FlatMap chain. Every bound name stays in
-// scope for later statements. Each bound name is a GALA `val` (immutable): the
-// raw FlatMap callback parameter is rebound to an Immutable-backed local
-// (`name := std.NewImmutable(_bind_name)`) and later reads unwrap it via `.Get()`.
+// scope for later statements. Each bound name is a GALA `val` (immutable), and a
+// local val is a plain Go variable, so the FlatMap callback parameter is the
+// bound name itself and later reads use it bare.
 func TestBindSequentialDesugarsToFlatMap(t *testing.T) {
 	trans := newBindTranspiler()
 	input := `package main
@@ -39,15 +39,14 @@ func run(x int) Try[int] {
 `
 	got, err := trans.Transpile(input, "")
 	assert.NoError(t, err)
-	// Outer FlatMap: result element int, source element int. The callback takes the
-	// raw element as `_bind_a` and rebinds it to the immutable `a`.
-	assert.Contains(t, got, "std.Try_FlatMap[int, int](half(x), func(_bind_a int) std.Try[int] {")
-	assert.Contains(t, got, "a := std.NewImmutable(_bind_a)")
-	// Inner FlatMap over the second bind, `a` still in scope and read via `.Get()`.
-	assert.Contains(t, got, "std.Try_FlatMap[int, int](half(a.Get()), func(_bind_b int) std.Try[int] {")
-	assert.Contains(t, got, "b := std.NewImmutable(_bind_b)")
-	// Trailing value returned, both bound names read as immutable vals (`.Get()`).
-	assert.Contains(t, got, "std.Success[int]{}.Apply(a.Get() + b.Get())")
+	// Outer FlatMap: result element int, source element int. The callback's
+	// parameter is the bound val `a`, with no rebinding and no Immutable box.
+	assert.Contains(t, got, "std.Try_FlatMap[int, int](half(x), func(a int) std.Try[int] {")
+	assert.NotContains(t, got, "_bind_")
+	// Inner FlatMap over the second bind, `a` still in scope and read bare.
+	assert.Contains(t, got, "std.Try_FlatMap[int, int](half(a), func(b int) std.Try[int] {")
+	// Trailing value returned, both bound names read bare.
+	assert.Contains(t, got, "std.Success[int]{}.Apply(a + b)")
 }
 
 // The desugaring is structural: a user-defined monad with no relationship to std
@@ -140,19 +139,18 @@ func run(x int, y int) Option[int] {
 `
 	got, err := trans.Transpile(input, "")
 	assert.NoError(t, err)
-	assert.Contains(t, got, "std.Option_FlatMap[int, int](look(x), func(_bind_a int) std.Option[int] {")
-	assert.Contains(t, got, "a := std.NewImmutable(_bind_a)")
-	assert.Contains(t, got, "std.Option_FlatMap[int, int](look(y), func(_bind_b int) std.Option[int] {")
-	assert.Contains(t, got, "b := std.NewImmutable(_bind_b)")
-	// Both bound names are immutable vals, read via `.Get()`.
-	assert.Contains(t, got, "std.Some[int]{}.Apply(a.Get() + b.Get())")
+	assert.Contains(t, got, "std.Option_FlatMap[int, int](look(x), func(a int) std.Option[int] {")
+	assert.Contains(t, got, "std.Option_FlatMap[int, int](look(y), func(b int) std.Option[int] {")
+	// Both bound names are immutable vals, plain locals read bare.
+	assert.Contains(t, got, "std.Some[int]{}.Apply(a + b)")
 }
 
 // An `also` group over a monad that provides a `Zip` lowers to `ZipN(...).FlatMap`.
 // The Zip result is a std tuple whose fields are Immutable-wrapped, so each bound
-// name is a `val` bound STRAIGHT to the field (no extra NewImmutable wrap) and read
-// via `.Get()`. Binding raw (a double NewImmutable) would be an Immutable[Immutable]
-// type error downstream — this asserts the field is unwrapped exactly once.
+// name is a plain local `val` holding the field's value (`a := _zip.V1.Get()`)
+// and read bare. Re-wrapping the field (a double NewImmutable) would be an
+// Immutable[Immutable] type error downstream — this asserts the field is
+// unwrapped exactly once.
 func TestAlsoOverZipUnwrapsTupleFieldsAsVals(t *testing.T) {
 	trans := newBindTranspiler()
 	input := `package main
@@ -180,12 +178,12 @@ func run() Box[int] {
 	got, err := trans.Transpile(input, "")
 	assert.NoError(t, err)
 	assert.Contains(t, got, "Box_Zip2[int, int]", "an `also` group over a Zip-providing monad lowers through ZipN")
-	// Tuple fields are already Immutable, so the val is bound to the field directly.
-	assert.Contains(t, got, "a := _zip.V1")
-	assert.Contains(t, got, "b := _zip.V2")
+	// Tuple fields are Immutable, so the val takes the field's value.
+	assert.Contains(t, got, "a := _zip.V1.Get()")
+	assert.Contains(t, got, "b := _zip.V2.Get()")
 	assert.NotContains(t, got, "std.NewImmutable(_zip.V1)", "tuple fields are already Immutable; must not be re-wrapped")
-	// Bound names are immutable vals, read via `.Get()`.
-	assert.Contains(t, got, "a.Get() + b.Get()")
+	// Bound names are immutable vals, plain locals read bare.
+	assert.Contains(t, got, "Wrap[int]{}.Apply(a + b)")
 }
 
 // `also` with no preceding `bind` is rejected.
@@ -292,7 +290,7 @@ func run() Box[int] {
 	assert.Equal(t, 2, strings.Count(got, "Box_Zip2[int, int]("),
 		"each of the two `also` groups lowers through its own Zip2")
 	// All four bindings are in scope for the trailing value.
-	assert.Contains(t, got, "a.Get() + b.Get() + c.Get() + d.Get()")
+	assert.Contains(t, got, "Wrap[int]{}.Apply(a + b + c + d)")
 }
 
 // `bind` on a user-defined type that has other methods but no FlatMap is rejected

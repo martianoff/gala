@@ -134,9 +134,10 @@ func main() {
 }
 
 // TestT5ImmutableAutoUnwrapInInterpolation asserts that when an
-// Immutable[T]-wrapped value (i.e. a `val`-bound binding) flows into a
-// string interpolation, the transpiler unwraps it with .Get() so the
-// interpolation reads the underlying value rather than the wrapper.
+// Immutable[T]-wrapped value (a package-level `val`; a local val is a plain
+// Go variable) flows into a string interpolation, the transpiler unwraps it
+// with .Get() so the interpolation reads the underlying value rather than the
+// wrapper.
 //
 // Without the auto-unwrap, `s"hello $name"` would call String() on the
 // Immutable wrapper (printing its address/struct form) instead of the
@@ -147,8 +148,9 @@ func TestT5ImmutableAutoUnwrapInInterpolation(t *testing.T) {
 	trans := newTranspiler()
 	input := `package main
 
+val name = "world"
+
 func main() {
-    val name = "world"
     val s = s"hello $name"
     _ = s
 }`
@@ -164,14 +166,15 @@ func main() {
 
 // TestT5ImmutableAutoUnwrapInTupleAccess asserts the same auto-unwrap
 // contract for tuple element access: reading `.V1` / `.V2` on a
-// `val`-bound tuple must unwrap the surrounding Immutable before
-// projecting the field.
+// package-level `val`-bound tuple must unwrap the surrounding Immutable
+// before projecting the field.
 func TestT5ImmutableAutoUnwrapInTupleAccess(t *testing.T) {
 	trans := newTranspiler()
 	input := `package main
 
+val pair = ("a", 42)
+
 func main() {
-    val pair = ("a", 42)
     val first = pair.V1
     _ = first
 }`

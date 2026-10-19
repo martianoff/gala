@@ -40,7 +40,7 @@ func main() {
     var b = Box(41)
     Println(viaPointer(&b, 0))
 }`,
-			wantContains: "std.Some[T]{}.Apply(v.Get())",
+			wantContains: "std.Some[T]{}.Apply(v)",
 			wantAbsent:   "Some[*Box[T]]",
 		},
 		{
@@ -59,7 +59,7 @@ func viaValue[T any](c Cell[T], fallback T) T {
 func main() {
     Println(viaValue(Cell("x"), "y"))
 }`,
-			wantContains: "std.Some[T]{}.Apply(v.Get())",
+			wantContains: "std.Some[T]{}.Apply(v)",
 			wantAbsent:   "Some[Cell[T]]",
 		},
 		{

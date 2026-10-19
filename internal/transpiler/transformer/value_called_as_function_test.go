@@ -118,15 +118,15 @@ func TestCallableValuesStillWork(t *testing.T) {
 		{"val holding a lambda", `Println(Inc(1))`, "Inc.Get()(1)"},
 		{"val of a named function type", `Println(Twice(1))`, "Twice.Get()(1)"},
 		{"val with an Apply method", `Println(AddTwo(1))`, "AddTwo.Get().Apply(1)"},
-		{"local lambda val", "val f = (x int) => x + 1\n    Println(f(1))", "f.Get()(1)"},
+		{"local lambda val", "val f = (x int) => x + 1\n    Println(f(1))", "f(1)"},
 		{"field of function type", `Println(Red.F(1))`, "Red.Get().F.Get()(1)"},
-		{"val with a zero-argument Apply method", "val tick = Ticker(3)\n    Println(tick())", "tick.Get().Apply()"},
+		{"val with a zero-argument Apply method", "val tick = Ticker(3)\n    Println(tick())", "tick.Apply()"},
 		// The user's own .Get() on a var field has the shape of a val field's
 		// unwrap; the call is of what it returned, not of the field.
-		{"call of a var field's Get", "val s = Slot(Some((x int) => x + 1))\n    Println(s.H.Get()(1))", "s.Get().H.Get()(1)"},
+		{"call of a var field's Get", "val s = Slot(Some((x int) => x + 1))\n    Println(s.H.Get()(1))", "s.H.Get()(1)"},
 		// A field typed by a type parameter is not judged, even when the
 		// parameter shares its name with a struct.
-		{"field typed by a type parameter", "val b = Box((x int) => x + 1)\n    Println(b.V(1))", "b.Get().V.Get()(1)"},
+		{"field typed by a type parameter", "val b = Box((x int) => x + 1)\n    Println(b.V(1))", "b.V.Get()(1)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

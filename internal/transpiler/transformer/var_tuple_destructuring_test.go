@@ -71,14 +71,14 @@ func main() {
 			contains: []string{"__tuple_hits.V1.Get()", "hits = hits + 1"},
 		},
 		{
-			name: "val destructuring keeps the Immutable field",
+			name: "local val destructuring takes the field's value",
 			body: `
 func main() {
     val (a, b) = (1, 2)
     Println(a + b)
 }
 `,
-			contains: []string{"__tuple_1.V1\n", "__tuple_1.V2\n"},
+			contains: []string{"__tuple_1.V1.Get()\n", "__tuple_1.V2.Get()\n", "Println(a + b)"},
 		},
 	}
 	for _, tt := range tests {

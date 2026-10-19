@@ -210,13 +210,19 @@ func (t *galaASTTransformer) hasPointerReceiverMethod(recvType transpiler.Type, 
 
 // isAddressable reports whether Go can take the address of expr, following
 // the language spec: a variable, a pointer indirection, a field selector of
-// an addressable struct or of a pointer, or a slice index. When the answer
+// an addressable struct or of a pointer, or a slice index — except that a
+// local val, and a field reached through one, counts as not addressable. When the answer
 // depends on a type the transformer cannot resolve it reports true, so an
 // unknown shape is emitted unchanged, exactly as before.
 func (t *galaASTTransformer) isAddressable(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.CallExpr, *ast.CompositeLit, *ast.BasicLit, *ast.FuncLit, *ast.TypeAssertExpr:
 		return false
+	case *ast.Ident:
+		// A local val is a plain Go variable Go could address, but a val is
+		// never written: a pointer-receiver method gets a copy of it, as it
+		// gets a copy of a package-level val read through `.Get()`.
+		return !t.isPlainVal(e.Name)
 	case *ast.ParenExpr:
 		return t.isAddressable(e.X)
 	case *ast.SelectorExpr:

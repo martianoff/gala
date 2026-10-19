@@ -54,7 +54,7 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 				"    x.Rename(\"there\")\n" +
 				"    return x.Hello()\n" +
 				"}\n",
-			want:   []string{"std.AddrOfCopy(x.Get()).Rename(\"there\")"},
+			want:   []string{"std.AddrOfCopy(x).Rename(\"there\")"},
 			absent: []string{"\tx.Get().Rename("},
 		},
 		{
@@ -77,7 +77,7 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 				"    val b = newBag()\n" +
 				"    return b.items.Size() + b.text.Size()\n" +
 				"}\n",
-			want:   []string{"len(b.items)", "len(b.Get().items)", "utf8.RuneCountInString(b.Get().text)"},
+			want:   []string{"len(b.items)", "return len(b.items) + utf8.RuneCountInString(b.text)"},
 			absent: []string{".Size()"},
 		},
 		{
@@ -129,7 +129,7 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 			name:    "a Go-declared pointer method on a GALA struct through a val runs on a copy",
 			goSrc:   goSiblingMethods,
 			galaSrc: "struct Repo(Name string)\n\nfunc touch() {\n    val r = Repo(\"x\")\n    r.Touch()\n}\n",
-			want:    []string{"std.AddrOfCopy(r.Get()).Touch()"},
+			want:    []string{"std.AddrOfCopy(r).Touch()"},
 		},
 	}
 	layouts := []struct {

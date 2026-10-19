@@ -31,8 +31,8 @@ func (b Box) Pick[T any](first T, second T, useSecond bool = false) T = if (useS
 		want    string // in the generated Go, when the call is valid
 		wantErr string // in the error, when it is not
 	}{
-		{name: "named arguments reordered", call: `b.Pick(second = "b", first = "a", useSecond = true)`, want: `Box_Pick(b.Get(), "a", "b", true)`},
-		{name: "omitted default filled", call: `b.Pick("a", "b")`, want: `Box_Pick(b.Get(), "a", "b", false)`},
+		{name: "named arguments reordered", call: `b.Pick(second = "b", first = "a", useSecond = true)`, want: `Box_Pick(b, "a", "b", true)`},
+		{name: "omitted default filled", call: `b.Pick("a", "b")`, want: `Box_Pick(b, "a", "b", false)`},
 		{name: "lambda bound by name", call: `b.Fold(f = (acc, x) => acc + x, initial = 10)`, want: `func(acc int, x int) int`},
 		{name: "unknown parameter", call: `b.Pick("a", "b", third = true)`, wantErr: `unknown parameter "third" in call to Pick`},
 		{name: "missing required argument", call: `b.Pick(second = "b")`, wantErr: `missing required argument "first" (parameter 1) in call to Pick`},

@@ -55,10 +55,8 @@ func main() {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 func main() {
-	z := std.NewImmutable(30)
+	z := 30
 }
 `,
 		},
@@ -71,10 +69,8 @@ func main() {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 func main() {
-	a, b := std.NewImmutable(1), std.NewImmutable(2)
+	a, b := 1, 2
 }
 `,
 		},
@@ -120,8 +116,10 @@ func main() {
 
 	// Should use temp variables that capture the multi-return
 	assert.Contains(t, output, "_tmp_")
-	// Each val should be wrapped in NewImmutable
-	assert.Contains(t, output, "std.NewImmutable(")
+	// Each local val takes its temp as a plain Go variable
+	assert.Regexp(t, `num\s+= _tmp_1`, output)
+	assert.Regexp(t, `err\s+= _tmp_2`, output)
+	assert.NotContains(t, output, "std.NewImmutable(")
 }
 
 func TestImmutableAssignmentError(t *testing.T) {

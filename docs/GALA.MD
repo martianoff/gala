@@ -4408,7 +4408,7 @@ never on the GALA surface.
 
 ## 12. Immutability Under the Hood
 
-When GALA transpiles to Go, immutable values are wrapped in a `std.Immutable[T]` container to ensure safety and provide consistent semantics, especially for struct fields and global variables.
+When GALA transpiles to Go, an immutable value that is stored — a struct field or a package-level `val` — is wrapped in a `std.Immutable[T]` container, so Go code and other packages read it through one accessor. A local `val` is a plain Go variable: GALA already rejects writing it, writing a field reached through it and taking its address, and a pointer-receiver method called on it runs on a copy, so it needs no wrapper at run time.
 
 ### Package-Level Bindings
 
@@ -4820,44 +4820,37 @@ binds `p` as a `Ptr[T]`, and a match without `case _` must cover `Some` and
 
 ### val vs var with Go Functions
 
-When calling Go functions that return values, `val` wraps the result in `std.Immutable[T]`. This is fine for values used only within GALA, but causes type mismatches when passing Go values back to other Go functions.
+A local `val` holds a Go call's result as the raw Go value, exactly as a `var` does, so it can be passed straight back to Go APIs.
 
-A single name bound to a Go call that returns several results gets one GALA value — `val data = os.ReadFile(path)` is a `Try[[]byte]` (see [Go functions that return several results](#go-functions-that-return-several-results)). A binding of **several names** takes Go's results one by one, as raw Go values.
-
-**Use `var` for Go multi-return values** when you need to pass the results back to Go APIs:
+A single name bound to a Go call that returns several results gets one GALA value — `val data = os.ReadFile(path)` is a `Try[[]byte]` (see [Go functions that return several results](#go-functions-that-return-several-results)). A binding of **several names** takes Go's results one by one, as raw Go values:
 
 <!-- doc-check: fragment -->
 ```gala
 import "net/http"
 import "io"
 
-// CORRECT: Use var for Go multi-return values
-var goReq, reqErr = http.NewRequest("GET", url, nil)
+val goReq, reqErr = http.NewRequest("GET", url, nil)
 if reqErr != nil {
     return Left[ApiError, HttpResponse](NetworkError(Message = reqErr.Error()))
 }
-goReq.Header.Set("Content-Type", "application/json")  // goReq is raw *http.Request
+goReq.Header.Set("Content-Type", "application/json")  // goReq is a *http.Request
 
-var resp, doErr = http.DefaultClient.Do(goReq)  // Works: goReq is not wrapped
+val resp, doErr = http.DefaultClient.Do(goReq)
 if doErr != nil {
     return Left[ApiError, HttpResponse](NetworkError(Message = doErr.Error()))
 }
-var bodyBytes, readErr = io.ReadAll(resp.Body)
-
-// WRONG: val wraps in Immutable, breaking Go API calls
-// val goReq, reqErr = http.NewRequest("GET", url, nil)
-// http.DefaultClient.Do(goReq)  // ERROR: goReq is Immutable[*http.Request], not *http.Request
+val bodyBytes, readErr = io.ReadAll(resp.Body)
 ```
 
 **When to use `val` vs `var` with Go functions:**
 
 | Scenario | Use | Why |
 |----------|-----|-----|
-| Go value used only in GALA | `val` | Immutability safety, `.Get()` auto-unwrapped |
-| Go value passed back to Go APIs | `var` | Avoids `Immutable[T]` wrapping, stays as raw Go type |
+| Go value used or passed back to Go APIs | `val` | Immutable binding, raw Go value |
 | Go `(value, error)` return handled in GALA | `val x = call` | `x` is a `Try[T]`: match on it, `.GetOrElse`, `.Map` |
-| Go `(value, error)` return passed back to Go | `var v, err = call` | Both values stay as raw Go types |
-| Go struct fields to mutate | `var` | Allows `goStruct.Field = newValue` |
+| Go `(value, error)` return passed back to Go | `val v, err = call` | Both values are raw Go types |
+| Go struct value whose fields you write | `var` | A field reached through a `val` cannot be written |
+| Go value whose pointer-receiver methods must change it | `var` | On a `val`, such a method runs on a copy |
 
 ## 13. GALA Packages
 

@@ -133,8 +133,8 @@ func main() {
     val late = later(m) > Millis(1000)
     Println(back, zero, late, m.Seconds(), m == 1500, m.Compare(zero), m.Hash() > 0, later(42))
 }`)
-	assert.Contains(t, out, "std.NewImmutable(Millis(1500))")
-	assert.Contains(t, out, "std.NewImmutable(int64(m.Get()))")
+	assert.Contains(t, out, "var m = Millis(1500)")
+	assert.Contains(t, out, "var back = int64(m)")
 	assert.Contains(t, out, "return m + 500")
 }
 
