@@ -6,7 +6,12 @@ import . "martianoff/gala/go_builtins"
 // pointer, where an Option[Ptr[T]] also carries a tag, and its zero value is
 // empty, so a struct field of this type left out is absent. All of its nil
 // checks are inside it: what it hands out is a Ptr[T].
-struct OptionPtr[T any](p *T)
+//
+// p is never reassigned; it is declared `var` so the generated Go reads the
+// pointer directly instead of through an Immutable wrapper. That keeps
+// IsDefined, Get and SomePtr cheap enough for Go to inline the small methods
+// built on them, such as a linked list's Append.
+struct OptionPtr[T any](var p *T)
 
 // OptionPtrOf returns p as an OptionPtr: empty when p is nil. It is how a
 // pointer from Go that may be nil enters GALA.
