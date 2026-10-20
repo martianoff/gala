@@ -131,6 +131,21 @@ jobs:
       - name: Export GOROOT
         run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
 
+      # Compiling gala_tui's root package peaks at 14–17 GB RSS and the runner
+      # has 16 GB, so without more swap the runner is killed mid-build
+      # ("shutdown signal", exit 143). rules_go runs the compiler with its own
+      # fixed environment, so GOMEMLIMIT (used by the CLI downstream lanes)
+      # can't reach it through --action_env; extra swap lets the peak spill
+      # instead.
+      - name: Add swap
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
