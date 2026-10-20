@@ -36,7 +36,7 @@ func (b Box) Double() int {
     d
 }
 `,
-			contains: []string{"return d.Get()"},
+			contains: []string{"return d\n"},
 		},
 		{
 			name: "trailing None() takes the result type",
@@ -141,7 +141,7 @@ func twice(n int) int {
     return d
 }
 `,
-			contains: []string{"return d.Get()"},
+			contains: []string{"return d\n"},
 		},
 		{
 			name: "early returns work alongside an implicit trailing value",

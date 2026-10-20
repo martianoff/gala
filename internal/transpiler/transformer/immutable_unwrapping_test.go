@@ -34,11 +34,9 @@ func main() {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 func main() {
-	var x = std.NewImmutable(1)
-	var y = x.Get()
+	var x = 1
+	var y = x
 }`,
 		},
 		{
@@ -51,11 +49,9 @@ func main() {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 func main() {
-	var x = std.NewImmutable(1)
-	var z = std.NewImmutable(x.Get())
+	var x = 1
+	var z = x
 }`,
 		},
 		{
@@ -68,11 +64,31 @@ func foo(x int) int {
 }`,
 			expected: `package main
 
+func foo(x int) int {
+	var y = 1
+	return y
+}`,
+		},
+		{
+			// A package-level val stays boxed: every read unwraps it.
+			name: "assign package-level val to local val and var",
+			input: `package main
+
+val x = 1
+
+func main() {
+    val z = x
+    var y = x
+}`,
+			expected: `package main
+
 import "martianoff/gala/std"
 
-func foo(x int) int {
-	var y = std.NewImmutable(1)
-	return y.Get()
+var x = std.NewImmutable(1)
+
+func main() {
+	var z = x.Get()
+	var y = x.Get()
 }`,
 		},
 		{

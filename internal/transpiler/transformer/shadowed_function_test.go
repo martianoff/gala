@@ -43,7 +43,7 @@ func TestLocalBindingShadowsPackageFunction(t *testing.T) {
     val r = Some(f(true))
     return r
 }`,
-			want: []string{"std.Some[bool]{}.Apply(f.Get()(true))"},
+			want: []string{"std.Some[bool]{}.Apply(f(true))"},
 		},
 		{
 			name: "nested scope shadows a function only inside it",
@@ -56,7 +56,7 @@ func TestLocalBindingShadowsPackageFunction(t *testing.T) {
     val outer = Some(f(1))
     return outer
 }`,
-			want: []string{`std.Some[string]{}.Apply(f.Get()("hi"))`, "std.Some[int]{}.Apply(f(1))"},
+			want: []string{`std.Some[string]{}.Apply(f("hi"))`, "std.Some[int]{}.Apply(f(1))"},
 		},
 		{
 			// An interface method's parameter names bind only within that

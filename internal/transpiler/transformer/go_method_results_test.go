@@ -138,7 +138,7 @@ func TestOwnGoFuncMultiResultsLifted(t *testing.T) {
 		{
 			name:     "a local binding of the name is the callee",
 			body:     "func count() int {\n    val CountInt = () => 7\n    val r = CountInt()\n    r + 1\n}",
-			want:     "CountInt.Get()()",
+			want:     "var r = CountInt()",
 			unlifted: true,
 		},
 	}

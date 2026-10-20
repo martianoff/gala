@@ -17,7 +17,7 @@ import (
 )
 
 // This file contains lambda expression and partial function transformation logic extracted from expressions.go
-// Functions: transformLambda, transformLambdaWithExpectedType, inferBlockReturnType, isNewImmutableCall,
+// Functions: transformLambda, transformLambdaWithExpectedType, inferBlockReturnType,
 //            findPartialFunction*, findLambdaInExpression, transformPartialFunctionLiteral,
 //            inferPartialFunctionParamType, transformPartialCaseClause, wrapInSome, generateNoneReturn,
 //            wrapBlockReturnsInSome
@@ -704,57 +704,11 @@ func (t *galaASTTransformer) tryWrapGoMultiReturnWithErrorPanic(expr ast.Expr) (
 // inferBlockReturnType tries to infer the return type from a block's return statements.
 // Returns nil if no concrete type can be inferred.
 func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr {
-	// Build a map of val variable types from declarations in this block.
-	// When we see `var result = std.NewImmutable(X)`, we record the type of X for `result`.
-	valTypes := make(map[string]ast.Expr)
-	for _, stmt := range block.List {
-		// Handle val declarations: var result = std.NewImmutable(X)
-		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
-			if genDecl, ok := declStmt.Decl.(*ast.GenDecl); ok && genDecl.Tok == token.VAR {
-				for _, spec := range genDecl.Specs {
-					if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-						for i, name := range valueSpec.Names {
-							if i < len(valueSpec.Values) {
-								val := valueSpec.Values[i]
-								// Check if this is a std.NewImmutable(X) call
-								if callExpr, ok := val.(*ast.CallExpr); ok {
-									if t.isNewImmutableCall(callExpr) && len(callExpr.Args) > 0 {
-										// Store the type of the inner expression
-										innerType := t.getExprType(callExpr.Args[0])
-										if innerType != nil {
-											valTypes[name.Name] = innerType
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		// Also handle short var declarations: result := std.NewImmutable(X)
-		if assignStmt, ok := stmt.(*ast.AssignStmt); ok && assignStmt.Tok == token.DEFINE {
-			for i, lhs := range assignStmt.Lhs {
-				if ident, ok := lhs.(*ast.Ident); ok && i < len(assignStmt.Rhs) {
-					rhs := assignStmt.Rhs[i]
-					// Check if this is a std.NewImmutable(X) call
-					if callExpr, ok := rhs.(*ast.CallExpr); ok {
-						if t.isNewImmutableCall(callExpr) && len(callExpr.Args) > 0 {
-							// Store the type of the inner expression
-							innerType := t.getExprType(callExpr.Args[0])
-							if innerType != nil {
-								valTypes[ident.Name] = innerType
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Collect return types from ALL return paths (including nested if/else blocks).
+	// Collect return types from ALL return paths (including nested if/else
+	// blocks), typing a returned local by its declaration in this block when
+	// the scope no longer can.
 	var returnTypes []ast.Expr
-	t.collectReturnTypes(block, valTypes, &returnTypes)
+	t.collectReturnTypes(block, &blockLocals{t: t, block: block}, &returnTypes)
 
 	if len(returnTypes) == 0 {
 		return nil
@@ -769,7 +723,7 @@ func (t *galaASTTransformer) inferBlockReturnType(block *ast.BlockStmt) ast.Expr
 
 // collectReturnTypes recursively walks a block statement collecting inferred return
 // types from every return statement, including those nested inside if/else blocks.
-func (t *galaASTTransformer) collectReturnTypes(block *ast.BlockStmt, valTypes map[string]ast.Expr, out *[]ast.Expr) {
+func (t *galaASTTransformer) collectReturnTypes(block *ast.BlockStmt, locals *blockLocals, out *[]ast.Expr) {
 	if block == nil {
 		return
 	}
@@ -777,53 +731,51 @@ func (t *galaASTTransformer) collectReturnTypes(block *ast.BlockStmt, valTypes m
 		switch s := stmt.(type) {
 		case *ast.ReturnStmt:
 			if len(s.Results) > 0 {
-				if typ := t.inferReturnExprType(s.Results[0], valTypes); typ != nil {
+				if typ := t.inferReturnExprType(s.Results[0], locals); typ != nil {
 					*out = append(*out, typ)
 				}
 			}
 		case *ast.IfStmt:
 			// Recurse into if body and else branch
-			t.collectReturnTypes(s.Body, valTypes, out)
+			t.collectReturnTypes(s.Body, locals, out)
 			if s.Else != nil {
 				switch els := s.Else.(type) {
 				case *ast.BlockStmt:
-					t.collectReturnTypes(els, valTypes, out)
+					t.collectReturnTypes(els, locals, out)
 				case *ast.IfStmt:
 					// else-if chain: wrap in a synthetic block for recursion
-					t.collectReturnTypes(&ast.BlockStmt{List: []ast.Stmt{els}}, valTypes, out)
+					t.collectReturnTypes(&ast.BlockStmt{List: []ast.Stmt{els}}, locals, out)
 				}
 			}
 		case *ast.BlockStmt:
-			t.collectReturnTypes(s, valTypes, out)
+			t.collectReturnTypes(s, locals, out)
 		}
 	}
 }
 
-// inferReturnExprType infers the type of a single return expression, trying
-// valTypes-based inference first, then falling back to getExprType.
-func (t *galaASTTransformer) inferReturnExprType(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
-	// First try direct type inference (getExprTypeName) — this is the most reliable
-	// as it uses the full type inference pipeline.
-	inferredType := t.getExprType(expr)
-	if inferredType != nil {
-		if ident, ok := inferredType.(*ast.Ident); !ok || ident.Name != "any" {
-			return inferredType
+// inferReturnExprType infers the type of a single return expression with
+// getExprType, falling back to the block's declaration of a returned local.
+func (t *galaASTTransformer) inferReturnExprType(expr ast.Expr, locals *blockLocals) ast.Expr {
+	// A local the block declares (`return result`) is typed by its
+	// declaration: the block's scope is gone by now, so the name may resolve
+	// to an outer binding it shadows.
+	if ident, ok := expr.(*ast.Ident); ok {
+		if typ, declared := locals.typeOf(ident.Name); declared {
+			return concreteReturnType(typ)
 		}
 	}
-	// Fallback: try to infer type using valTypes for .Get() calls on val variables.
-	// Only use this for top-level .Get() expressions (e.g., return result.Get()),
-	// NOT for nested .Get() calls inside other expressions — otherwise we'd return
-	// the inner val type instead of the outer expression type.
-	if callExpr, ok := expr.(*ast.CallExpr); ok && len(callExpr.Args) == 0 {
-		if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
-			if ident, ok := selExpr.X.(*ast.Ident); ok {
-				if typ, ok := valTypes[ident.Name]; ok {
-					return typ
-				}
-			}
-		}
+	// Otherwise direct type inference (getExprTypeName), which uses the full
+	// type inference pipeline.
+	return concreteReturnType(t.getExprType(expr))
+}
+
+// concreteReturnType is typ, or nil when it is unknown or `any`, which says
+// nothing about a block's return type.
+func concreteReturnType(typ ast.Expr) ast.Expr {
+	if ident, ok := typ.(*ast.Ident); ok && ident.Name == "any" {
+		return nil
 	}
-	return nil
+	return typ
 }
 
 // unifyBlockReturnTypes takes a list of inferred return type expressions and attempts
@@ -923,62 +875,58 @@ func isSimpleOrPrimitive(typ transpiler.Type) bool {
 	return transpiler.IsPrimitiveType(name) || name == "any"
 }
 
-// inferExprTypeWithValTypes tries to infer the type of an expression,
-// using valTypes to resolve .Get() calls on local val variables.
-// This handles expressions like `x.Get() + 2` where x is a val declared in the block.
-// It recursively searches for .Get() calls and uses valTypes for lookup,
-// delegating other type inference to the existing getExprType.
-func (t *galaASTTransformer) inferExprTypeWithValTypes(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
-	// Try to find a .Get() call on a val variable anywhere in the expression
-	if typ := t.findValGetType(expr, valTypes); typ != nil {
-		return typ
-	}
-	return nil
+// blockLocals types the locals a block declares, for a returned name the
+// scope can no longer type. The declarations are typed on the first lookup
+// only: most return expressions are typed directly.
+type blockLocals struct {
+	t     *galaASTTransformer
+	block *ast.BlockStmt
+	types map[string]ast.Expr // nil until the first lookup
 }
 
-// findValGetType recursively searches for .Get() calls on val variables in the expression.
-// Returns the type from valTypes if found, nil otherwise.
-func (t *galaASTTransformer) findValGetType(expr ast.Expr, valTypes map[string]ast.Expr) ast.Expr {
-	switch e := expr.(type) {
-	case *ast.BinaryExpr:
-		// Check left operand first, then right
-		if typ := t.findValGetType(e.X, valTypes); typ != nil {
-			return typ
-		}
-		return t.findValGetType(e.Y, valTypes)
-	case *ast.CallExpr:
-		// Check for .Get() call on a val variable
-		if selExpr, ok := e.Fun.(*ast.SelectorExpr); ok && selExpr.Sel.Name == "Get" {
-			if ident, ok := selExpr.X.(*ast.Ident); ok {
-				if typ, ok := valTypes[ident.Name]; ok {
-					return typ
+// typeOf returns the type of the local name declared in the block — `var name
+// T = x`, `var name = x` or `name := x` — and whether the block declares it;
+// the type is nil when the declaration cannot be typed.
+func (b *blockLocals) typeOf(name string) (ast.Expr, bool) {
+	if b.types == nil {
+		b.types = make(map[string]ast.Expr)
+		for _, stmt := range b.block.List {
+			switch s := stmt.(type) {
+			case *ast.DeclStmt:
+				genDecl, ok := s.Decl.(*ast.GenDecl)
+				if !ok || genDecl.Tok != token.VAR {
+					continue
+				}
+				for _, spec := range genDecl.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok && len(vs.Names) == len(vs.Values) {
+						for i, n := range vs.Names {
+							b.record(n.Name, vs.Type, vs.Values[i])
+						}
+					}
+				}
+			case *ast.AssignStmt:
+				if s.Tok != token.DEFINE || len(s.Lhs) != len(s.Rhs) {
+					continue
+				}
+				for i, lhs := range s.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						b.record(id.Name, nil, s.Rhs[i])
+					}
 				}
 			}
 		}
-		// Check arguments
-		for _, arg := range e.Args {
-			if typ := t.findValGetType(arg, valTypes); typ != nil {
-				return typ
-			}
-		}
-	case *ast.ParenExpr:
-		return t.findValGetType(e.X, valTypes)
-	case *ast.UnaryExpr:
-		return t.findValGetType(e.X, valTypes)
 	}
-	return nil
+	typ, declared := b.types[name]
+	return typ, declared
 }
 
-// isNewImmutableCall checks if a call expression is a call to std.NewImmutable
-func (t *galaASTTransformer) isNewImmutableCall(call *ast.CallExpr) bool {
-	if selExpr, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if selExpr.Sel.Name == "NewImmutable" {
-			if ident, ok := selExpr.X.(*ast.Ident); ok {
-				return registry.Global.IsPreludePackage(ident.Name)
-			}
-		}
+// record types name by its declared type, else by its value's (nil when
+// that cannot be typed).
+func (b *blockLocals) record(name string, typ, value ast.Expr) {
+	if typ == nil {
+		typ = b.t.getExprType(value)
 	}
-	return false
+	b.types[name] = typ
 }
 
 // findPartialFunctionInExpression traverses the expression tree to find a partial function literal

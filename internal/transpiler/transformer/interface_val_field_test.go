@@ -62,7 +62,7 @@ struct Framed(Label string, S Shape = Square(1.0))
 			name: "error, named, from a variable",
 			body: `val nf = NotFound(Key = "k")
     Println(Report(Code = 1, Cause = nf).Cause)`,
-			contains: []string{"Cause: std.NewImmutable[error](nf.Get())"},
+			contains: []string{"Cause: std.NewImmutable[error](nf)"},
 		},
 		{
 			name: "Copy override",

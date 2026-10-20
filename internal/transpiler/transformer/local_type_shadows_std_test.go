@@ -87,7 +87,7 @@ func Peek(o Ordered) int = o match {
 }
 
 func Real(n int) string = Some(n).Map((v) => s"$v").GetOrElse("")`,
-			want:    []string{"func Wrap(n int) Ordered", "func Unwrap(o Ordered) int", "var o std.Immutable[Ordered]", "func Peek(o Ordered) int", "std.Some"},
+			want:    []string{"func Wrap(n int) Ordered", "func Unwrap(o Ordered) int", "var o Ordered = Ordered{", "func Peek(o Ordered) int", "std.Some"},
 			notWant: []string{"std.Ordered"},
 		},
 		{

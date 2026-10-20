@@ -71,14 +71,14 @@ func main() {
 			contains: []string{"__tuple_hits.V1.Get()", "hits = hits + 1"},
 		},
 		{
-			name: "val destructuring keeps the Immutable field",
+			name: "local val destructuring takes the field's value",
 			body: `
 func main() {
     val (a, b) = (1, 2)
     Println(a + b)
 }
 `,
-			contains: []string{"__tuple_1.V1\n", "__tuple_1.V2\n"},
+			contains: []string{"__tuple_1.V1.Get()\n", "__tuple_1.V2.Get()\n", "Println(a + b)"},
 		},
 	}
 	for _, tt := range tests {
@@ -152,5 +152,6 @@ func main() {
 	assert.NotContains(t, got, "__tuple_2")
 	assert.NotContains(t, got, "_ = __tuple")
 	assert.NotContains(t, got, "_ = std.NewImmutable(_)")
-	assert.Regexp(t, `_tmp_[0-9]+, _tmp_[0-9]+ = strconv\.Atoi\("3"\)`, got)
+	// A local val takes the results directly: it is not boxed.
+	assert.Contains(t, got, `var m, g = strconv.Atoi("3")`)
 }

@@ -34,10 +34,10 @@ GALA implements a custom type inference and unwrapping system to handle its uniq
 ## Overview
 
 GALA distinguishes between immutable variables (`val`) and mutable variables (`var`). In the generated Go code:
-- `val` variables are represented as `std.Immutable[T]`.
-- `var` variables are represented as their raw types `T`.
+- a local `val` and a `var` are plain Go variables of their raw type `T`; GALA itself rejects writing a `val` or taking its address;
+- a package-level `val` and a `val` struct field are represented as `std.Immutable[T]`.
 
-The transpiler is responsible for automatically wrapping values into `std.Immutable` and unwrapping them using the `.Get()` method.
+The transpiler is responsible for automatically wrapping values into `std.Immutable` where one is stored and unwrapping them using the `.Get()` method.
 
 ### `.Size()` / `.ByteSize()` sugar (replaces bare `len`)
 
@@ -144,16 +144,24 @@ by the Go compiler, which reports the type mismatches GALA leaves to it.
 ### `val` Declarations
 When a variable is declared using `val`:
 1. The transpiler infers the type of the right-hand side (RHS) expression.
-2. It wraps the RHS with a call to `std.NewImmutable(rhs)`.
-3. The variable is added to the transpiler's scope as an immutable variable.
+2. In a function, the RHS is the variable's value as it is; at package level, it is wrapped with a call to `std.NewImmutable(rhs)`, so another package reads it through the same accessor.
+3. The variable is added to the transpiler's scope as an immutable variable. Writing it, writing a field reached through it, and `&` of it are rejected; a pointer-receiver method called on it runs on a copy (`std.AddrOfCopy(x)`).
 
 Example:
 ```gala
-val x = 1
+val Limit = 10
+
+func main() {
+    val x = 1
+}
 ```
 Transpiles to:
 ```go
-var x = std.NewImmutable(1)
+var Limit = std.NewImmutable(10)
+
+func main() {
+    var x = 1
+}
 ```
 
 ### `var` Declarations
@@ -164,13 +172,19 @@ When a variable is declared using `var`:
 
 Example:
 ```gala
-val x = 1
-var y = x
+val Limit = 10
+
+func main() {
+    var y = Limit
+}
 ```
 Transpiles to:
 ```go
-var x = std.NewImmutable(1)
-var y = x.Get()
+var Limit = std.NewImmutable(10)
+
+func main() {
+    var y = Limit.Get()
+}
 ```
 
 ---
@@ -180,17 +194,25 @@ var y = x.Get()
 GALA uses two complementary mechanisms for automatic unwrapping of `Immutable` values:
 
 ### 1. Identifier Transformation
-The most common form of unwrapping happens at the identifier level. In `internal/transpiler/transformer/expressions.go`, the `transformPrimary` method checks if an identifier refers to a variable declared with `val`. If it does, the identifier is automatically transformed into a call to its `.Get()` method.
+The most common form of unwrapping happens at the identifier level. In `internal/transpiler/transformer/constructors.go`, the `transformPrimary` method checks if an identifier refers to a package-level `val`, which is boxed. If it does, the identifier is automatically transformed into a call to its `.Get()` method. A local `val` is read by its bare name.
 
 Example:
 ```gala
-val x = 1
-val y = x + 1
+val Limit = 10
+
+func next() int {
+    val y = Limit + 1
+    y
+}
 ```
 Transpiles to:
 ```go
-var x = std.NewImmutable(1)
-var y = std.NewImmutable(x.Get() + 1)
+var Limit = std.NewImmutable(10)
+
+func next() int {
+    var y = Limit.Get() + 1
+    return y
+}
 ```
 
 ### 2. Expression Unwrapping
@@ -259,7 +281,7 @@ The `getType(name)` method in scope.go implements this resolution order.
 | `arr[i]` | Array element type |
 | `Some(x)`, `None[T]()` | Option type construction |
 | `Left(x)`, `Right(x)` | Either type construction |
-| `expr.Get()` | On a `val`, an immutable field, or an `Immutable[T]`: the unwrapped inner type. Otherwise an ordinary method call: a generic container element (`Array[T].Get(i)` → `T`), a user-declared `Get` method's return type (value or pointer receiver, generic or not), or a Go type's `Get` from Go type info (`url.Values.Get` → `string`) |
+| `expr.Get()` | On a package-level `val`, an immutable field, or an `Immutable[T]`: the unwrapped inner type. Otherwise an ordinary method call: a generic container element (`Array[T].Get(i)` → `T`), a user-declared `Get` method's return type (value or pointer receiver, generic or not), or a Go type's `Get` from Go type info (`url.Values.Get` → `string`) |
 | `NewImmutable(x)` | Immutable wrapper type |
 
 > **Note:** `Get` is special-cased only for implicit `Immutable` unwrapping. Every other `Get` is inferred like any other method call, so a user type's own `Get` method (e.g. a `Get() Option[T]` accessor) keeps its declared return type and chained higher-order calls on the result (`expr.Get().FlatMap(...)`, `.Map(...)`) keep their concrete element type instead of widening to `any`. Pointer receivers (`func (b *Buffer) Get() Cell`) resolve the same way, so field chains on the result (`b.Get().St.Bold`) unwrap each immutable field. A generic receiver — value or pointer — has its type arguments substituted into the declared return type even when they are type parameters of the enclosing generic function: inside `func f[T any](b *Box[T])`, `b.Get()` on `func (b *Box[T]) Get() T` is `T`. A `Get` that cannot be resolved is never typed as the receiver itself.

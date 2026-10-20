@@ -176,7 +176,7 @@ func main() {
     *p = 2
     Println(x)
 }`,
-			want: "std.NewImmutable(&x)",
+			want: "var p = &x",
 		},
 		{
 			name: "composite literal",
@@ -188,7 +188,7 @@ func main() {
     val p = &Obj(1)
     Println(p.n)
 }`,
-			want: "std.NewImmutable(&Obj{n: 1})",
+			want: "var p = &Obj{n: 1}",
 		},
 		{
 			name: "var field of a var",
@@ -202,7 +202,7 @@ func main() {
     *p = 2
     Println(o.n)
 }`,
-			want: "std.NewImmutable(&o.n)",
+			want: "var p = &o.n",
 		},
 		{
 			name: "field of the pointee of a val",
@@ -217,7 +217,7 @@ func main() {
     *p = 2
     Println(o.n)
 }`,
-			want: "std.NewImmutable(&ptr.Get().n)",
+			want: "var p = &ptr.n",
 		},
 		{
 			name: "field of a pointer receiver",

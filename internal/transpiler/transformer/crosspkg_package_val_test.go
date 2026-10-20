@@ -118,7 +118,7 @@ func main() {
 }`,
 			contains: []string{
 				"show(colors.Green.Get())",
-				"std.NewImmutable[colors.Color](colors.Green.Get())",
+				"var c colors.Color = colors.Green.Get()",
 				"colors.Greeting.Get()",
 				"colors.Default.Get().Name.Get()",
 				"colors.Hits = colors.Hits + 1",

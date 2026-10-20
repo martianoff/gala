@@ -169,12 +169,12 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a call of a value with several results is one value",
 			body:     "func once() int {\n    val get = sync.OnceValues(() => strconv.Atoi(\"5\"))\n    get().GetOrElse(0)\n}",
-			contains: []string{"std.GoTry(get.Get()())"},
+			contains: []string{"std.GoTry(get())"},
 		},
 		{
 			name:     "a call of a value with several results is one value as an argument",
 			body:     "func once() string {\n    val get = sync.OnceValues(() => strconv.Atoi(\"5\"))\n    Println(get())\n    describe(get())\n}\n\nfunc describe(t Try[int]) string = t.String()",
-			contains: []string{"fmt.Println(std.GoTry(get.Get()()))", "describe(std.GoTry(get.Get()()))"},
+			contains: []string{"fmt.Println(std.GoTry(get()))", "describe(std.GoTry(get()))"},
 		},
 		{
 			name:     "a bare Go call is lifted into a thunk returning its results",
@@ -195,7 +195,7 @@ func TestLambdaReturnsGoResults(t *testing.T) {
 		{
 			name:     "a function value with the results is passed as it is",
 			body:     "func once() int {\n    val get = sync.OnceValues(strconv.Atoi(\"5\"))\n    run(get)\n}",
-			contains: []string{"run(get.Get())"},
+			contains: []string{"run(get)"},
 		},
 		{
 			name:     "a call of a struct field with several results is one value",

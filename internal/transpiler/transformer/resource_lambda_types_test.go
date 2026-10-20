@@ -144,29 +144,29 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 		{
 			name: "a val bound to a lambda",
 			gala: "func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
-			want: "apply.Get()(func(s string) string {",
+			want: "apply(func(s string) string {",
 		},
 		{
 			name: "a val with a declared function type",
 			gala: "func run() string {\n    val apply func(func(string) string) string = (h) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
-			want: "apply.Get()(func(s string) string {",
+			want: "apply(func(s string) string {",
 		},
 		{
 			name: "a placeholder lambda",
 			gala: "func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    apply(_ + \"!\")\n}\n",
-			want: "apply.Get()(func(__p0 string) string {",
+			want: "apply(func(__p0 string) string {",
 		},
 		{
 			name: "a val shadowing a package function of the same name",
 			gala: "func apply(n int) int = n + 1\n\n" +
 				"func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    apply((s) => s + \"!\")\n}\n",
-			want: "apply.Get()(func(s string) string {",
+			want: "apply(func(s string) string {",
 		},
 		{
 			name: "a val typed by a generic alias",
 			gala: "type Visitor[T any] func(func(T))\n\n" +
 				"func run(v Visitor[int]) {\n    val visit Visitor[int] = v\n    visit((n) => Println(n + 1))\n}\n",
-			want: "visit.Get()(func(n int) {",
+			want: "visit(func(n int) {",
 		},
 		{
 			name: "a generic call's result over the enclosing declaration's same-named type parameter",
@@ -201,7 +201,7 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 			name: "a val holding a function a call returned",
 			gala: "func mk() func(func(int) int) int = (h) => h(2)\n\n" +
 				"func run() int {\n    val apply = mk()\n    apply((n) => n * 10)\n}\n",
-			want: "apply.Get()(func(n int) int {",
+			want: "apply(func(n int) int {",
 		},
 		{
 			name: "the result of a call, called directly",
@@ -219,12 +219,12 @@ func TestLambdaArgOfFuncValuedCallee(t *testing.T) {
 			name: "a val over the enclosing declaration's type parameter",
 			gala: "func run[T any](x T, g func(T) string) string {\n" +
 				"    val apply = (h func(T) string) => h(x)\n    apply((v) => g(v))\n}\n",
-			want: "apply.Get()(func(v T) string {",
+			want: "apply(func(v T) string {",
 		},
 		{
 			name: "a parenthesized val",
 			gala: "func run() string {\n    val apply = (h func(string) string) => h(\"x\")\n    val r = (apply)((s) => s + \"!\")\n    r\n}\n",
-			want: "(apply.Get())(func(s string) string {",
+			want: "(apply)(func(s string) string {",
 		},
 		{
 			name: "an imported package-level val",
@@ -353,7 +353,7 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 			name: "a value of a zero-parameter type is not a thunk",
 			gala: "import \"context\"\n\nfunc stop(c context.CancelFunc) = c()\n\n" +
 				"func run() {\n    val ctx, cancel = context.WithCancel(context.Background())\n    Println(ctx.Err())\n    stop(cancel)\n}\n",
-			want: "stop(cancel.Get())",
+			want: "stop(cancel)",
 		},
 		{
 			name: "nil for a zero-parameter type is not a thunk",
@@ -368,12 +368,15 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 		{
 			name: "the result of calling a value of the type",
 			gala: "import \"io/fs\"\n\nfunc run(f fs.WalkDirFunc) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
-			want: "err.Get().Error()",
+			want: "err.Error()",
 		},
 		{
 			name: "the result of calling a value of a GALA alias of the type",
 			gala: "import \"io/fs\"\n\ntype Walk fs.WalkDirFunc\n\nfunc run(f Walk) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
-			want: "err.Get().Error()",
+			// The call's result type is not recorded on `err` through the
+			// alias, so the receiver keeps the val's boxed root (see
+			// sealPlainValPath); the method call itself is the same.
+			want: "std.NewImmutable(err).Get().Error()",
 		},
 	}
 	for _, tc := range cases {

@@ -398,7 +398,7 @@ func main() {
     show(q)
     show(OptionPtrOf(find(p)).Get())
 }`,
-			want: []string{"std.RequirePtr(find(p.Get()))", "show(q.Get())"},
+			want: []string{"std.RequirePtr(find(p))", "show(q)"},
 		},
 		{
 			name: "Ptr in collections, generic structs, sealed cases and generic receivers",

@@ -88,7 +88,7 @@ var x = std.NewImmutable(std.Some[int]{}.Apply(10))
 
 func test() {
 	x.Get().ForEach(func(v int) {
-		var y = std.NewImmutable(v * 2)
+		var y = v * 2
 	})
 }
 `,

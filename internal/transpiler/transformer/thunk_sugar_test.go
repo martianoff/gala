@@ -145,7 +145,7 @@ func main() {
 	// existing is already func() int — it must be passed through as the thunk
 	// value itself (here unwrapped from its Immutable val slot via .Get()),
 	// never re-wrapped into `func() func() int`.
-	assert.Contains(t, body, "runTwice(existing.Get())", "an existing thunk must be passed through unwrapped")
+	assert.Contains(t, body, "runTwice(existing)", "an existing thunk must be passed through unwrapped")
 	assert.NotContains(t, body, "func() func() int", "must not double-wrap an existing thunk")
 }
 

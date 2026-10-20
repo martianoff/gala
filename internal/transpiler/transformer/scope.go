@@ -30,14 +30,20 @@ type scope struct {
 	sendable map[string]bool
 	// fixedParams records the parameters lowered to a plain Go parameter that
 	// GALA still forbids reassigning: every function, method or lambda
-	// parameter not marked `var`, and every receiver. A local `val` is boxed
-	// and rejected through vals; a parameter is never boxed, so this set is how
-	// the assignment check finds it. See fixedBindingOf. Allocated on first use.
+	// parameter not marked `var`, and every receiver. A `val` is rejected
+	// through vals; a parameter is not a val, so this set is how the
+	// assignment check finds it. See fixedBindingOf. Allocated on first use.
 	fixedParams map[string]fixedBinding
 	// goResults records the names bound to a Go call converted to one GALA
 	// value (`val data = os.ReadFile(p)`), so a misuse of the name can say
 	// where its Try came from. Allocated on first use.
 	goResults map[string]*goResult
+	// boxedVals records the vals stored in a std.Immutable[T] box and read as
+	// `name.Get()`: the package-level vals, this package's and imported ones
+	// (see addBoxedVal). Every other val is a plain Go variable. The flag is
+	// set by whatever emitted the declaration, so a read always matches it.
+	// Allocated on first use.
+	boxedVals map[string]bool
 	parent    *scope
 }
 
@@ -57,13 +63,29 @@ func (t *galaASTTransformer) popScope() {
 	}
 }
 
+// addVal binds a val declared as a plain Go variable: a local val. A val
+// declared in a std.Immutable[T] box is bound with addBoxedVal.
 func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 	if t.currentScope != nil {
 		t.currentScope.vals[name] = true
 		t.currentScope.valTypes[name] = typeName
 		delete(t.currentScope.fixedParams, name)
+		delete(t.currentScope.boxedVals, name)
 	}
 	t.recordLSPVarType(name, typeName)
+}
+
+// addBoxedVal binds a val declared in a std.Immutable[T] box, read as
+// `name.Get()`: a package-level val.
+func (t *galaASTTransformer) addBoxedVal(name string, typeName transpiler.Type) {
+	t.addVal(name, typeName)
+	if t.currentScope == nil {
+		return
+	}
+	if t.currentScope.boxedVals == nil {
+		t.currentScope.boxedVals = make(map[string]bool)
+	}
+	t.currentScope.boxedVals[name] = true
 }
 
 func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
@@ -71,6 +93,7 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = false
 		t.currentScope.valTypes[name] = typeName
 		delete(t.currentScope.fixedParams, name)
+		delete(t.currentScope.boxedVals, name)
 	}
 	t.recordLSPVarType(name, typeName)
 }
@@ -249,6 +272,54 @@ func (t *galaASTTransformer) isVal(name string) bool {
 	return bound && isVal
 }
 
+// A val declared at package level — this package's, or one registered from
+// an import — is stored in a std.Immutable[T] box, so Go code and other
+// packages read it through one accessor, `name.Get()`. A val declared in a
+// function, a local val, is a plain Go variable: GALA rejects writing it,
+// writing a field reached through it and taking its address, so a box would
+// add only a wrapper call per read and inline cost to every function that
+// declares one.
+
+// valsAreBoxed reports whether a val declaration lowered here is boxed: the
+// current scope is the package scope.
+func (t *galaASTTransformer) valsAreBoxed() bool {
+	return t.currentScope == nil || t.currentScope.parent == nil
+}
+
+// addDeclaredVal binds a val whose declaration is lowered here, boxed or
+// plain as valsAreBoxed says.
+func (t *galaASTTransformer) addDeclaredVal(name string, typeName transpiler.Type) {
+	if t.valsAreBoxed() {
+		t.addBoxedVal(name, typeName)
+		return
+	}
+	t.addVal(name, typeName)
+}
+
+// valKind resolves name to its binding and reports whether it is a val and
+// whether that val is boxed (see addBoxedVal).
+func (t *galaASTTransformer) valKind(name string) (isVal, boxed bool) {
+	s := t.bindingScope(name)
+	if s == nil || !s.vals[name] {
+		return false, false
+	}
+	return true, s.boxedVals[name]
+}
+
+// isBoxedVal reports whether name resolves to a val stored in a
+// std.Immutable[T] box and read as `name.Get()`: a package-level val.
+func (t *galaASTTransformer) isBoxedVal(name string) bool {
+	_, boxed := t.valKind(name)
+	return boxed
+}
+
+// isPlainVal reports whether name resolves to a local val: immutable, but a
+// plain Go variable rather than a std.Immutable[T] box.
+func (t *galaASTTransformer) isPlainVal(name string) bool {
+	isVal, boxed := t.valKind(name)
+	return isVal && !boxed
+}
+
 func (t *galaASTTransformer) isVar(name string) bool {
 	_, isVal, bound := t.scopeLookup(name)
 	return bound && !isVal
@@ -399,6 +470,7 @@ type binding struct {
 	pkg, name string
 	typ       transpiler.Type // element type; NilType when unknown
 	isVal     bool
+	boxed     bool // a val read through its std.Immutable box: `name.Get()`
 }
 
 // String is the binding's source spelling: `name` or `pkg.name`.
@@ -414,16 +486,16 @@ func (b binding) String() string {
 func (t *galaASTTransformer) lookupBinding(pkg, name string) (binding, bool) {
 	if pkg != "" {
 		if pv := t.importedPackageVal(pkg, name); pv != nil {
-			return binding{pkg: pkg, name: name, typ: pv.Type, isVal: pv.IsVal}, true
+			return binding{pkg: pkg, name: name, typ: pv.Type, isVal: pv.IsVal, boxed: pv.IsVal}, true
 		}
 		return binding{}, false
 	}
 	typ, isVal, bound := t.scopeLookup(name)
-	return binding{name: name, typ: typ, isVal: isVal}, bound
+	return binding{name: name, typ: typ, isVal: isVal, boxed: t.isBoxedVal(name)}, bound
 }
 
 // bindingRef resolves the binding expr reads: the reference itself (`name`,
-// `pkg.Name`) or a val's `.Get()` unwrap of it.
+// `pkg.Name`) or a boxed val's `.Get()` unwrap of it.
 func (t *galaASTTransformer) bindingRef(expr ast.Expr) (binding, bool) {
 	switch e := expr.(type) {
 	case *ast.CallExpr:
@@ -437,7 +509,7 @@ func (t *galaASTTransformer) bindingRef(expr ast.Expr) (binding, bool) {
 			return binding{}, false
 		}
 		b, ok := t.bindingRef(get.X)
-		return b, ok && b.isVal
+		return b, ok && b.boxed
 	case *ast.Ident:
 		return t.lookupBinding("", e.Name)
 	case *ast.SelectorExpr:
@@ -448,13 +520,13 @@ func (t *galaASTTransformer) bindingRef(expr ast.Expr) (binding, bool) {
 	return binding{}, false
 }
 
-// bindingRead builds the Go expression reading b, with a val unwrapped from its
-// std.Immutable[T].
+// bindingRead builds the Go expression reading b, with a boxed val unwrapped
+// from its std.Immutable[T].
 func (t *galaASTTransformer) bindingRead(b binding) ast.Expr {
 	if b.pkg != "" {
 		return t.unwrapImmutable(&ast.SelectorExpr{X: ast.NewIdent(b.pkg), Sel: ast.NewIdent(b.name)})
 	}
-	if b.isVal {
+	if b.boxed {
 		return &ast.CallExpr{Fun: &ast.SelectorExpr{X: ast.NewIdent(b.name), Sel: ast.NewIdent(transpiler.MethodGet)}}
 	}
 	return ast.NewIdent(b.name)
@@ -463,7 +535,7 @@ func (t *galaASTTransformer) bindingRead(b binding) ast.Expr {
 // registerPackageVal binds a package-level val/var in the current scope.
 func (t *galaASTTransformer) registerPackageVal(name string, meta *transpiler.PackageValMetadata) {
 	if meta.IsVal {
-		t.addVal(name, meta.Type)
+		t.addBoxedVal(name, meta.Type)
 	} else {
 		t.addVar(name, meta.Type)
 	}

@@ -665,7 +665,7 @@ func (t *galaASTTransformer) inferGetMethodType(e *ast.CallExpr, sel *ast.Select
 	var isVal bool
 	var isImmutableFieldAccess bool
 	if id, ok := sel.X.(*ast.Ident); ok {
-		if t.isVal(id.Name) {
+		if t.isBoxedVal(id.Name) {
 			isVal = true
 			// For vals, the stored type is already the inner type (e.g., Array[int] not Immutable[Array[int]])
 			// So x.Get() returns the stored type directly

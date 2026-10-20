@@ -64,11 +64,11 @@ func TestCopyOverridesCrossPackage(t *testing.T) {
 		q := im.q
 		bodies := []struct{ name, decl, body, want string }{
 			{"call result", "", `Println(` + q + `Point(2, 3).Copy(Y = 9))`, q + "Point{X: std.Copy("},
-			{"val", "", "val p = " + q + "Point(2, 3)\n    Println(p.Copy(X = 9))", q + "Point{X: std.NewImmutable(9), Y: std.Copy(p.Get().Y)}"},
+			{"val", "", "val p = " + q + "Point(2, 3)\n    Println(p.Copy(X = 9))", q + "Point{X: std.NewImmutable(9), Y: std.Copy(p.Y)}"},
 			{"field", "", "val h = " + q + "Holder(" + q + "Point(1, 2), \"h\")\n    Println(h.P.Copy(X = 9))", q + "Point{X: std.NewImmutable(9)"},
 			{"function result", "", `Println(` + q + `Origin().Copy(Y = 4))`, q + "Point{X: std.Copy("},
 			{"generic struct call result", "", `Println(` + q + `Pair(1, "a").Copy(First = 2))`, q + "Pair[int, string]{First: std.NewImmutable(2)"},
-			{"generic struct val", "", "val pr = " + q + "Pair(1, \"a\")\n    Println(pr.Copy(Second = \"b\"))", q + "Pair[int, string]{First: std.Copy(pr.Get().First)"},
+			{"generic struct val", "", "val pr = " + q + "Pair(1, \"a\")\n    Println(pr.Copy(Second = \"b\"))", q + "Pair[int, string]{First: std.Copy(pr.First)"},
 			{"all fields overridden", "", `Println(` + q + `Point(2, 3).Copy(X = 1, Y = 2))`, q + "Point{X: std.NewImmutable(1)"},
 			// Types spelled with the import qualifier in this file's own
 			// declarations: a result type and a field type.
@@ -95,7 +95,7 @@ func main() {
     val p = lib.Point(2, 3)
     Println(a, p.Copy(X = 9), lib.Point(1, 1).Copy(Y = 4))
 }`,
-		want: "Point{X: std.NewImmutable(9), Y: std.Copy(p.Get().Y)}",
+		want: "Point{X: std.NewImmutable(9), Y: std.Copy(p.Y)}",
 	})
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -127,7 +127,7 @@ func main() {
     val s = l.Circle(1)
     Println(s.Copy(R = 2))
 }`,
-			contains: []string{" l.Shape) l.Shape {", ".R = std.NewImmutable(2)", "(s.Get().Copy())"},
+			contains: []string{" l.Shape) l.Shape {", ".R = std.NewImmutable(2)", "(s.Copy())"},
 		},
 		{
 			name: "sealed variant through a qualified import",
@@ -150,7 +150,7 @@ func main() {
     val s = Circle(1)
     Println(s.Copy(R = 2))
 }`,
-			contains: []string{" Shape) Shape {", ".R = std.NewImmutable(2)", "(s.Get().Copy())"},
+			contains: []string{" Shape) Shape {", ".R = std.NewImmutable(2)", "(s.Copy())"},
 		},
 		{
 			name: "struct with a private field",
@@ -162,7 +162,7 @@ func main() {
     val acc = a.NewAccount("x", 5)
     Println(acc.Copy(Name = "y").Name)
 }`,
-			contains: []string{" a.Account) a.Account {", `.Name = std.NewImmutable("y")`, "(acc.Get().Copy())"},
+			contains: []string{" a.Account) a.Account {", `.Name = std.NewImmutable("y")`, "(acc.Copy())"},
 		},
 	}
 	for _, tc := range tests {

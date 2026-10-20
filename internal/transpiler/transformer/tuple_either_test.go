@@ -88,7 +88,7 @@ func main() {
 }`,
 			expected: []string{
 				// Explicit type args include both method type arg and receiver type args
-				"std.Either_Map[int, int, string](e.Get()",
+				"std.Either_Map[int, int, string](e, ",
 			},
 		},
 		{

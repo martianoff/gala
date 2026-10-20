@@ -389,19 +389,16 @@ func (t *galaASTTransformer) bindClauseReceiver(p preppedBind, method string) (a
 // fail-fast fallback for an `also` group with no Zip.
 func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []grammar.IStatementContext, res *bindResult) (ast.Expr, error) {
 	p := prepped[0]
-	// The bound name is a GALA `val` (immutable), so register it with addVal and
-	// have reads emit `.Get()`. The FlatMap callback param, however, is a RAW `A`,
-	// so we bind it to a distinct raw parameter and rebind that raw value to the
-	// Immutable-backed val (`name := NewImmutable(<rawParam>)`) at the top of the
-	// lambda body — the same shape a plain `val name = <expr>` produces.
-	rawParam := bindRawParamName(p.name)
-
 	// The clause's receiver is lowered before its name is bound and before the
 	// clauses after it, so an error in it is reported first.
 	recv, err := t.bindClauseReceiver(p, "FlatMap")
 	if err != nil {
 		return nil, err
 	}
+	// The bound name is a local GALA `val`, which is a plain Go variable, so
+	// the FlatMap callback parameter is the val itself. A `_`-named bind
+	// sequences the monadic effect but discards its value; its parameter is
+	// Go's blank `_`.
 	t.addVal(p.name, p.elemType)
 	var body *ast.BlockStmt
 	if len(prepped) > 1 {
@@ -416,41 +413,12 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 			return nil, err
 		}
 	}
-	// A `_`-named bind sequences the monadic effect but discards its value, so
-	// there is no val to rebind — emitting `_ := NewImmutable(...)` would be
-	// invalid Go ("no new variables on left side of :="). The raw FlatMap
-	// callback param stays unused (legal for a Go func parameter).
-	if p.name != "_" {
-		body.List = append([]ast.Stmt{t.bindRebindStmt(p.name, rawParam)}, body.List...)
-	}
-
-	lambda := t.bindLambda(rawParam, p.elemType, res.typ, body)
+	lambda := t.bindLambda(p.name, p.elemType, res.typ, body)
 	return t.emitGenericMethodFreeFunc("FlatMap", recv, p.recvType, p.lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
 }
 
-// bindRawParamName returns the internal name of the raw FlatMap callback
-// parameter that backs the immutable bound `name`.
-func bindRawParamName(name string) string {
-	return "_bind_" + name
-}
-
-// bindRebindStmt builds `name := NewImmutable(rawParam)` — it lifts the raw
-// FlatMap callback value into the Immutable[T] storage a GALA `val` expects, so
-// the bound name behaves exactly like any other immutable local.
-func (t *galaASTTransformer) bindRebindStmt(name, rawParam string) ast.Stmt {
-	t.needsStdImport = true
-	return &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent(name)},
-		Tok: token.DEFINE,
-		Rhs: []ast.Expr{&ast.CallExpr{
-			Fun:  t.stdIdent(transpiler.FuncNewImmutable),
-			Args: []ast.Expr{ast.NewIdent(rawParam)},
-		}},
-	}
-}
-
 // buildAlsoZip lowers an `also` group to `M_Zip{N}(e0, e1, ...).FlatMap((g) => {
-// a0 := g.V1; a1 := g.V2; ...; <continuation> })`. The Zip runs the clauses
+// a0 := g.V1.Get(); a1 := g.V2.Get(); ...; <continuation> })`. The Zip runs the clauses
 // independently (per the type: concurrently for Future, accumulating for
 // Validated); the FlatMap threads all bound names into the continuation.
 func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.IStatementContext, res *bindResult, zipName string) (ast.Expr, error) {
@@ -522,17 +490,14 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		return nil, err
 	}
 
-	// FlatMap lambda: func(g TupleN) M[R] { a0 := g.V1; ...; <continuation> }.
+	// FlatMap lambda: func(g TupleN) M[R] { a0 := g.V1.Get(); ...; <continuation> }.
 	const tupleParam = "_zip"
 	lambdaBody := &ast.BlockStmt{}
 	for i, p := range prepped {
 		// std tuples store their fields Immutable-wrapped (Tuple.Vi is
-		// Immutable[Ai]), so binding the field straight to a GALA `val` needs no
-		// extra wrapping — the same shape transformTupleDestructure produces for
-		// `val (a, b) = tuple`. Registering the name as a val (not a raw var) is
-		// what makes reads emit `.Get()`, unwrapping the field exactly once; a raw
-		// var would leave the field Immutable-wrapped and a downstream constructor
-		// would wrap it a second time (Immutable[Immutable[T]]).
+		// Immutable[Ai]); the bound GALA `val` is a plain local holding the
+		// field's value — the same shape transformTupleDestructure produces for
+		// `val (a, b) = tuple`.
 		// A `_`-named clause contributes its effect to the Zip but discards its
 		// value, so we skip extracting the tuple field — `_ := _zip.Vi` would be
 		// invalid Go ("no new variables on left side of :=").
@@ -540,10 +505,11 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 			continue
 		}
 		t.addVal(p.name, p.elemType)
+		field := &ast.SelectorExpr{X: ast.NewIdent(tupleParam), Sel: ast.NewIdent("V" + strconv.Itoa(i+1))}
 		lambdaBody.List = append(lambdaBody.List, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(p.name)},
 			Tok: token.DEFINE,
-			Rhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent(tupleParam), Sel: ast.NewIdent("V" + strconv.Itoa(i+1))}},
+			Rhs: []ast.Expr{&ast.CallExpr{Fun: &ast.SelectorExpr{X: field, Sel: ast.NewIdent(transpiler.MethodGet)}}},
 		})
 	}
 	restBody, err := t.buildBindBody(rest, res)

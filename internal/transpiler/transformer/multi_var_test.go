@@ -55,10 +55,8 @@ func main() {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 func main() {
-	z := std.NewImmutable(30)
+	z := 30
 }
 `,
 		},
@@ -71,10 +69,8 @@ func main() {
 }`,
 			expected: `package main
 
-import "martianoff/gala/std"
-
 func main() {
-	a, b := std.NewImmutable(1), std.NewImmutable(2)
+	a, b := 1, 2
 }
 `,
 		},
@@ -118,10 +114,10 @@ func main() {
 	count := strings.Count(output, "strconv.Atoi(")
 	assert.Equal(t, 1, count, "strconv.Atoi() should be called exactly once, but found %d occurrences in:\n%s", count, output)
 
-	// Should use temp variables that capture the multi-return
-	assert.Contains(t, output, "_tmp_")
-	// Each val should be wrapped in NewImmutable
-	assert.Contains(t, output, "std.NewImmutable(")
+	// Local vals are plain Go variables, so they take the results directly.
+	assert.Contains(t, output, `var num, err = strconv.Atoi("42")`)
+	assert.NotContains(t, output, "_tmp_")
+	assert.NotContains(t, output, "std.NewImmutable(")
 }
 
 func TestImmutableAssignmentError(t *testing.T) {

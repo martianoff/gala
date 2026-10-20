@@ -177,7 +177,7 @@ func main() {
     val box = Box(2)
     Println(box.Scale())
 }`,
-			contains: []string{"return x * box.Get().K.Get()"},
+			contains: []string{"return x * box.K.Get()"},
 			absent:   []string{"x * b.K"},
 		},
 		{
@@ -438,7 +438,7 @@ func main() {
 		require.NoError(t, err)
 		body := out[strings.Index(out, "func main()"):]
 		assert.Contains(t, body, "return lib.Twice(a)")
-		assert.Contains(t, body, "return lib.Twice(x) + g.Get().K.Get()")
+		assert.Contains(t, body, "return lib.Twice(x) + g.K.Get()")
 	})
 
 	// A default that is a reference to the declaring package's function is

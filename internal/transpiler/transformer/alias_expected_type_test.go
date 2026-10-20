@@ -163,13 +163,13 @@ func TestAliasExpectedTypeOtherPositions(t *testing.T) {
 		{
 			name:  "generic alias in a val annotation, then a method of the type it names",
 			input: "func f() int {\n    val r Res[int] = Failure(errors.New(\"bad\"))\n    r.GetOrElse(0)\n}",
-			want:  []string{"std.Failure[int]{}", "r.Get().GetOrElse(0)"},
+			want:  []string{"std.Failure[int]{}", "r.GetOrElse(0)"},
 		},
 		{
 			name:  "method of the type an alias names, on an alias-typed value",
 			input: "func f() string {\n    val c Checked = Failure(errors.New(\"bad\"))\n    c.GetOrElse(Email(\"z\")).v\n}",
 			// The method's result type is known, so its val field unwraps.
-			want: []string{"c.Get().GetOrElse(Email{v: std.NewImmutable(\"z\")}).v.Get()"},
+			want: []string{"c.GetOrElse(Email{v: std.NewImmutable(\"z\")}).v.Get()"},
 		},
 		{
 			name:  "a match subject typed by an alias with its own methods keeps them",
@@ -189,7 +189,7 @@ func TestAliasExpectedTypeOtherPositions(t *testing.T) {
 		{
 			name:  "a method declared on the alias itself still wins",
 			input: "struct Point(X int, Y int)\ntype Coord Point\nfunc (c Coord) Sum() int = c.X + c.Y\nfunc f() int {\n    val c Coord = Coord(1, 2)\n    c.Sum()\n}",
-			want:  []string{"c.Get().Sum()"},
+			want:  []string{"c.Sum()"},
 		},
 	}
 	for _, tt := range tests {
@@ -233,7 +233,7 @@ type Res[T any] Try[T]
 		{
 			"val annotation and a method of the type it names",
 			"func f() lib.Email {\n    val c lib.Checked = Failure(errors.New(\"bad\"))\n    c.GetOrElse(lib.Email(\"z\"))\n}",
-			[]string{"std.Failure[lib.Email]{}", "c.Get().GetOrElse("},
+			[]string{"std.Failure[lib.Email]{}", "c.GetOrElse("},
 		},
 		{
 			"bind",

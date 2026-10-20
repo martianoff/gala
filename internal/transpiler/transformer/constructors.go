@@ -27,8 +27,8 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		}
 		ident := ast.NewIdent(name)
 		// First check if it's a local variable - if so, don't try to resolve as std type
-		if t.isVal(name) || t.isVar(name) {
-			if t.isVal(name) {
+		if t.bindingScope(name) != nil {
+			if _, boxed := t.valKind(name); boxed {
 				return &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
 						X:   ident,

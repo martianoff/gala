@@ -207,7 +207,7 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 			if err := t.immutableAddressError(ctx, innerUnary, expr); err != nil {
 				return nil, err
 			}
-			return &ast.UnaryExpr{Op: token.AND, X: expr}, nil
+			return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}, nil
 		}
 		if opText == "*" {
 			return &ast.StarExpr{X: expr}, nil

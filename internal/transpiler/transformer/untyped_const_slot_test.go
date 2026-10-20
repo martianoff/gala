@@ -49,7 +49,7 @@ func TestUntypedConstGenericSlot(t *testing.T) {
 		{"only the type arguments up to the constant's are spelled", "func g() int64 = First(5, \"x\")", `First[int64](5, "x")`},
 		{"a typed argument binds the parameter", "func g(y int64) int64 = Same(y, 2)", "Same(y, 2)"},
 		{"the slot agrees with the default", "func g() int = Id(6)", "return Id(6)"},
-		{"no slot", "func g() int {\n    val x = Id(7)\n    x\n}", "std.NewImmutable(Id(7))"},
+		{"no slot", "func g() int {\n    val x = Id(7)\n    x\n}", "var x = Id(7)"},
 		{"an any slot", "func g() any = Id(8)", "return Id(8)"},
 		{"a string constant in a slot of its default", "func g() string = echo(Id(\"s\"))", `echo(Id("s"))`},
 	}

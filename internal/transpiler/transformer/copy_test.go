@@ -342,7 +342,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     val p = &b
     val c = p.Copy(N = 2)
 }`,
-			wants: []string{"Box[int]{Item: std.Copy(p.Get().Item)"},
+			wants: []string{"Box[int]{Item: std.Copy(p.Item)"},
 		},
 		{
 			// The no-override form calls the generated Copy(); its result
@@ -352,7 +352,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     val b = Box[string](Item = "x", N = 1)
     val n = b.Copy().N
 }`,
-			wants: []string{"b.Get().Copy().N.Get()"},
+			wants: []string{"b.Copy().N.Get()"},
 		},
 		{
 			// `&v` of a var types as *Box[int] (not *T), so a field read
@@ -363,7 +363,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     val p = &b
     val n = p.N
 }`,
-			wants: []string{"p.Get().N.Get()"},
+			wants: []string{"p.N.Get()"},
 		},
 	}
 
@@ -522,7 +522,7 @@ func mk() P = P(1, 2)
     val p = P(1, 2)
     Println(p.Copy(N = 3, M = 4).N)
 }`,
-			wants: []string{"func(_ P) P {\n\t\treturn P{N: std.NewImmutable(3), M: std.NewImmutable(4)}\n\t}(p.Get())"},
+			wants: []string{"func(_ P) P {\n\t\treturn P{N: std.NewImmutable(3), M: std.NewImmutable(4)}\n\t}(p)"},
 		},
 		{
 			name:  "call receiver is bound once",
@@ -548,9 +548,9 @@ func f(src *Src) P = src.Get().Copy(N = 9)`,
 			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(9), M: std.Copy(_tmp_1.M)}\n\t}(src.Get())"},
 		},
 		{
-			name:    "val receiver unwrapped by the transformer is not bound",
+			name:    "val receiver is a plain local and is not bound",
 			body:    "func f() P {\n    val p = P(1, 2)\n    return p.Copy(N = 5)\n}",
-			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.Get().M)}"},
+			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.M)}"},
 			notWant: "_tmp_",
 		},
 		{

@@ -10,12 +10,12 @@ import (
 )
 
 // Go calls a pointer-receiver method (`func (u *URL) String()`) only on an
-// addressable operand. A val is stored as std.Immutable[T] and read through
-// Get(), which returns a copy — a call result, not addressable — so
-// `val u = url.URL(...); u.String()` lowered to `u.Get().String()` and Go
-// rejected it with "cannot call pointer method String on url.URL". The same
-// holds for a field reached through a val (`w.Get().link.Get()`), for any
-// other call result, and for a composite literal.
+// addressable operand. A package-level val is read through Get(), which
+// returns a copy — a call result, not addressable — and the same holds for an
+// immutable field (`w.link.Get()`), any other call result and a composite
+// literal. A local val is a plain Go variable Go could address, but calling a
+// mutating method on it in place would change the val, so it counts as not
+// addressable too (isAddressable).
 //
 // Such a receiver is handed to the method as `std.AddrOfCopy(recv)`: a pointer
 // to a fresh copy. The method runs on that copy, so a mutating method cannot
@@ -31,7 +31,7 @@ import (
 // the method name.
 func (t *galaASTTransformer) addressableReceiver(recv ast.Expr, recvType transpiler.Type, method string, line, col int) (ast.Expr, error) {
 	if !t.hasPointerReceiverMethod(recvType, method) || t.isAddressable(recv) {
-		return recv, nil
+		return t.sealPlainValPath(recv), nil
 	}
 	return t.addressedCopy(recv, recvType, method, line, col)
 }
@@ -51,7 +51,7 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 		return recv, nil
 	}
 	if t.isAddressable(recv) {
-		return &ast.UnaryExpr{Op: token.AND, X: recv}, nil
+		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(recv)}, nil
 	}
 	return t.addressedCopy(recv, recvType, method, line, col)
 }
@@ -210,13 +210,19 @@ func (t *galaASTTransformer) hasPointerReceiverMethod(recvType transpiler.Type, 
 
 // isAddressable reports whether Go can take the address of expr, following
 // the language spec: a variable, a pointer indirection, a field selector of
-// an addressable struct or of a pointer, or a slice index. When the answer
+// an addressable struct or of a pointer, or a slice index — except that a
+// local val, and a field reached through one, counts as not addressable. When the answer
 // depends on a type the transformer cannot resolve it reports true, so an
 // unknown shape is emitted unchanged, exactly as before.
 func (t *galaASTTransformer) isAddressable(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.CallExpr, *ast.CompositeLit, *ast.BasicLit, *ast.FuncLit, *ast.TypeAssertExpr:
 		return false
+	case *ast.Ident:
+		// A local val is a plain Go variable Go could address, but a val is
+		// never written: a pointer-receiver method gets a copy of it, as it
+		// gets a copy of a package-level val read through `.Get()`.
+		return !t.isPlainVal(e.Name)
 	case *ast.ParenExpr:
 		return t.isAddressable(e.X)
 	case *ast.SelectorExpr:

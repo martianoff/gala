@@ -33,14 +33,14 @@ func TestTypelessBindingLookup(t *testing.T) {
 	}
 }
 
-// TestBindingRefOnlyFirstGet: only a `.Get()` directly on a val is its
+// TestBindingRefOnlyFirstGet: only a `.Get()` directly on a boxed val is its
 // Immutable unwrap. In `opt.Get().Get()` the outer call is Option's own Get,
 // so the expression does not read the binding `opt` any more.
 func TestBindingRefOnlyFirstGet(t *testing.T) {
 	tr := NewGalaASTTransformer().(*galaASTTransformer)
 	tr.pushScope()
 	defer tr.popScope()
-	tr.addVal("opt", transpiler.GenericType{
+	tr.addBoxedVal("opt", transpiler.GenericType{
 		Base:   transpiler.NamedType{Package: "std", Name: "Option"},
 		Params: []transpiler.Type{transpiler.NamedType{Name: "Box"}},
 	})
@@ -53,6 +53,15 @@ func TestBindingRefOnlyFirstGet(t *testing.T) {
 	}
 	if b, ok := tr.bindingRef(get(get(ast.NewIdent("opt")))); ok {
 		t.Fatalf("opt.Get().Get() is Option.Get on the unwrapped value, not a read of opt; got %+v", b)
+	}
+
+	// A local val is a plain variable: `local.Get()` is Option's own Get.
+	tr.addVal("local", transpiler.GenericType{
+		Base:   transpiler.NamedType{Package: "std", Name: "Option"},
+		Params: []transpiler.Type{transpiler.NamedType{Name: "Box"}},
+	})
+	if b, ok := tr.bindingRef(get(ast.NewIdent("local"))); ok {
+		t.Fatalf("local.Get() is Option.Get on a plain local val, not its unwrap; got %+v", b)
 	}
 }
 

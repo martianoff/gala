@@ -29,7 +29,7 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
 		contains []string
 	}{
 		{"val binding, (T, error)", "    val n = strconv.Atoi(\"1\")\n    Println(n)",
-			[]string{`std.NewImmutable(std.GoTry(strconv.Atoi("1")))`}},
+			[]string{`var n = std.GoTry(strconv.Atoi("1"))`}},
 		{"val binding, (A, B, error)", "    val hp = net.SplitHostPort(\"h:1\")\n    Println(hp)",
 			[]string{`std.GoTry2(net.SplitHostPort("h:1"))`}},
 		{"val binding, (A, B, C)", "    val c = strings.Cut(\"a=b\", \"=\")\n    Println(c)",

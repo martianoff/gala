@@ -26,7 +26,7 @@ func TestPointerReceiverMethodOnNonAddressableReceiver(t *testing.T) {
 		{
 			name:        "Go pointer method on a val",
 			body:        `val u = url.URL(Scheme = "https", Host = "example.com")` + "\n    Println(u.String())",
-			mustContain: []string{"std.AddrOfCopy(u.Get()).String()"},
+			mustContain: []string{"std.AddrOfCopy(u).String()"},
 		},
 		{
 			name:        "Go pointer method on a composite literal",
@@ -36,12 +36,12 @@ func TestPointerReceiverMethodOnNonAddressableReceiver(t *testing.T) {
 		{
 			name:        "Go pointer method on a field reached through a val",
 			body:        `val w = Wrapper(link = url.URL(Scheme = "http", Host = "x"), label = "w")` + "\n    Println(w.link.String())",
-			mustContain: []string{"std.AddrOfCopy(w.Get().link.Get()).String()"},
+			mustContain: []string{"std.AddrOfCopy(w.link.Get()).String()"},
 		},
 		{
 			name:        "GALA pointer method on a val",
 			body:        `val c = Counter(n = 1)` + "\n    Println(c.Bump())",
-			mustContain: []string{"std.AddrOfCopy(c.Get()).Bump()"},
+			mustContain: []string{"std.AddrOfCopy(c).Bump()"},
 		},
 		{
 			name:        "GALA pointer method on a function result",
@@ -62,7 +62,7 @@ func TestPointerReceiverMethodOnNonAddressableReceiver(t *testing.T) {
 		{
 			name:           "value-receiver method is unchanged",
 			body:           `val c = Counter(n = 1)` + "\n    Println(c.Peek())",
-			mustContain:    []string{"c.Get().Peek()"},
+			mustContain:    []string{"c.Peek()"},
 			mustNotContain: []string{"AddrOfCopy"},
 		},
 	}

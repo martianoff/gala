@@ -129,6 +129,7 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	if err := t.immutableFieldWriteError(ctx.Expression(), expr, "increment/decrement"); err != nil {
 		return nil, err
 	}
+	expr = t.sealPlainValPath(expr)
 
 	// Determine the token (++ or --)
 	tok := token.INC
@@ -260,6 +261,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		if err := t.immutableFieldWriteError(lhsCtx.Expression(i), target, "assign to"); err != nil {
 			return nil, err
 		}
+		lhsExprs[i] = t.sealPlainValPath(target)
 	}
 
 	// A single target's type is the RHS's expected type, so
@@ -366,15 +368,8 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")
 		}
 
-		if mutable {
-			// For mutable variables (e.g., for loop init), don't wrap in Immutable
-			rhs = append(rhs, val)
-		} else {
-			rhs = append(rhs, &ast.CallExpr{
-				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{val},
-			})
-		}
+		// A local val is a plain Go variable, as a var is (see valsAreBoxed).
+		rhs = append(rhs, val)
 	}
 
 	return &ast.AssignStmt{
@@ -439,23 +434,16 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 		return &ast.AssignStmt{Lhs: lhs, Tok: token.DEFINE, Rhs: []ast.Expr{callValue}}, nil
 	}
 
-	tempIdents := make([]*ast.Ident, len(idsCtx))
-	for i := range idsCtx {
-		tempIdents[i] = ast.NewIdent(t.nextTempVar())
-	}
-	specs := []ast.Spec{&ast.ValueSpec{Names: tempIdents, Values: []ast.Expr{callValue}}}
+	// A val binding is a `var` declaration, which, unlike `:=`, needs no new
+	// name on its left: `_, _ := f()` is not Go.
+	names := make([]*ast.Ident, len(idsCtx))
 	for i, idCtx := range idsCtx {
 		name := idCtx.GetText()
 		t.addVal(name, typeOf(i))
-		specs = append(specs, &ast.ValueSpec{
-			Names: []*ast.Ident{ast.NewIdent(name)},
-			Values: []ast.Expr{&ast.CallExpr{
-				Fun:  t.stdIdent("NewImmutable"),
-				Args: []ast.Expr{tempIdents[i]},
-			}},
-		})
+		names[i] = ast.NewIdent(name)
 	}
-	return &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: specs}}, nil
+	spec := &ast.ValueSpec{Names: names, Values: []ast.Expr{callValue}}
+	return &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{spec}}}, nil
 }
 
 // forClauseSlots splits a `for init; cond; post` clause into its two statement
@@ -1148,7 +1136,8 @@ func (t *galaASTTransformer) checkUnpromotedBranchTails(ifCtx *grammar.IfStateme
 // checkValueUsed rejects an expression statement whose value is discarded
 // without any effect: a bare name, literal, field access or operator
 // expression. Go accepts only calls and receives as expression statements; a
-// bare `val` name also lowers to a call (its `.Get()`), which Go would accept
+// bare package-level `val` name or immutable field lowers to a call (its
+// `.Get()`), which Go would accept
 // silently, so the GALA source decides. stmt is exprCtx's lowering.
 func (t *galaASTTransformer) checkValueUsed(exprCtx grammar.IExpressionContext, stmt ast.Stmt) error {
 	return t.checkValueUsedHint(exprCtx, stmt, functionDiscardHint)

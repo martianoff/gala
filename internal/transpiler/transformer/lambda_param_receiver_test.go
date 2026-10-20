@@ -287,7 +287,7 @@ func main() {
     Println(f(1))
 }`, "")
 		require.NoError(t, err)
-		assert.Contains(t, got, "std.NewImmutable(&n)")
+		assert.Contains(t, got, "var p = &n")
 	})
 }
 
