@@ -436,6 +436,11 @@ func TestPtrReceiverBind(t *testing.T) {
 			result: "Lazy[int]",
 			body:   "bind a = Lazy(1)\n    also b = Lazy(2)\n    also c = Lazy(3)\n    Lazy(a + b + c)",
 		},
+		{
+			name:   "also passing Ptrs to a variadic Ptr Zip parameter",
+			result: "Vee[int]",
+			body:   "var q = Vee(2)\n    var r = Vee(3)\n    bind a = Vee(1)\n    also b = &q\n    also c = &r\n    Vee(a + b + c)",
+		},
 		{name: "also on values", body: "bind a = Cell(1)\n    also b = Cell(2)\n    Cell(a + b)"},
 		{
 			name:   "also passing a Ptr to a Ptr Zip parameter",
