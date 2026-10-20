@@ -142,6 +142,7 @@ go_test(
         "array_differential_test.go",
         "list_differential_test.go",
         "map_set_differential_test.go",
+        "rbtree_invariant_test.go",
     ],
     embed = [":collection_immutable"],
     deps = [
