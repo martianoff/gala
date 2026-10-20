@@ -208,6 +208,7 @@ func (rn packageRenamer) method(m *MethodMetadata) *MethodMetadata {
 		c.ReturnType = rn.typ(m.ReturnType)
 	}
 	c.GoResults = rn.types(m.GoResults)
+	c.TypeParamConstraints = mapEntries(m.TypeParamConstraints, same, rn.key)
 	return &c
 }
 
@@ -222,6 +223,7 @@ func (rn packageRenamer) function(f *FunctionMetadata) *FunctionMetadata {
 		c.ReturnType = rn.typ(f.ReturnType)
 	}
 	c.GoResults = rn.types(f.GoResults)
+	c.TypeParamConstraints = mapEntries(f.TypeParamConstraints, same, rn.key)
 	return &c
 }
 

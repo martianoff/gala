@@ -141,7 +141,12 @@ import (
 // `Ptr[Box[Ptr[Box[T]]]]`) or the result is the first of a Go result list. A
 // v27 payload lacks the flag, so a call of one from another package would be
 // emitted as a method call.
-const CacheVersion = "v28"
+//
+// v29: a generic function or method records the constraint of each type
+// parameter (TypeParamConstraints). A v28 payload lacks them, so a nullable
+// `*T` could be the type argument of a type parameter of another package
+// whose constraint has a method T declares on a `Ptr[T]` receiver.
+const CacheVersion = "v29"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

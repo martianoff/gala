@@ -18,6 +18,13 @@ type Bumper interface {
     Bump()
 }
 
+// A type parameter constrained by Bumper takes a Ptr[Counter]; a *Counter that
+// may be nil is no type argument of it (GALA-E0080).
+func bumpTwice[B Bumper](b B) {
+    b.Bump()
+    b.Bump()
+}
+
 struct Box[T any](var V T)
 
 func (b Ptr[Box[T]]) Set(v T) {
@@ -65,6 +72,10 @@ func main() {
     val b Bumper = p
     b.Bump()
     Println(s"through the interface: ${c.N}")
+
+    // A Ptr type argument, inferred.
+    bumpTwice(p)
+    Println(s"through a type parameter: ${c.N}")
 
     var box = Box(1)
     box.Set(5)

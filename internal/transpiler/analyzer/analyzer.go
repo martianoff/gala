@@ -1152,15 +1152,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						Doc:       docAt(docs, msCtx.GetStart()),
 						DefinedIn: filePath,
 					}
-					if msCtx.TypeParameters() != nil {
-						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
-						if tpList := tpCtx.TypeParameterList(); tpList != nil {
-							for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-								tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-								methodMeta.TypeParams = append(methodMeta.TypeParams, tpId.GetText())
-							}
-						}
-					}
+					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(msCtx.TypeParameters(), pkgName)
 					var allTypeParams []string
 					allTypeParams = append(allTypeParams, meta.TypeParams...)
 					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
@@ -1403,15 +1395,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 						PointerReceiver: isPointerReceiver(recvCtx),
 						PtrReceiver:     isPtrReceiver(recvCtx),
 					}
-					if ctx.TypeParameters() != nil {
-						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-						if tpList := tpCtx.TypeParameterList(); tpList != nil {
-							for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-								tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-								methodMeta.TypeParams = append(methodMeta.TypeParams, tpId.GetText())
-							}
-						}
-					}
+					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
 
 					// Collect receiver's type parameters to include when resolving types
 					// e.g., for "func (s Some[T]) Unapply(o Option[T])", we need to know T is a type param
@@ -1517,15 +1501,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					DefinedIn: filePath,
 				}
 				// Collect type parameters first so we can resolve param types correctly
-				if ctx.TypeParameters() != nil {
-					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-					if tpList := tpCtx.TypeParameterList(); tpList != nil {
-						for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-							tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-							funcMeta.TypeParams = append(funcMeta.TypeParams, tpId.GetText())
-						}
-					}
-				}
+				funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
 				funcMeta.ReturnType, funcMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, funcMeta.TypeParams)
 				// Source spans of each default expression, keyed by param index.
 				// Used to give the E0014 (default type mismatch) diagnostic an
@@ -1978,27 +1954,19 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	}
 
 	// Collect type parameters from the sealed type
-	var typeParams []string
-	if ctx.TypeParameters() != nil {
-		tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-		if tpList := tpCtx.TypeParameterList(); tpList != nil {
-			for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-				tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-				typeParams = append(typeParams, tpId.GetText())
-			}
-		}
-	}
+	typeParams, typeParamConstraints := typeParamsOf(ctx.TypeParameters())
 
 	// Create parent type metadata with all variant fields merged + _variant
 	parentMeta := &transpiler.TypeMetadata{
-		Name:       typeName,
-		Package:    pkgName,
-		Doc:        docAt(docs, ctx.GetStart()),
-		Pos:        transpiler.PosFromToken(ctx.Identifier().GetStart()),
-		Methods:    make(map[string]*transpiler.MethodMetadata),
-		Fields:     make(map[string]transpiler.Type),
-		IsSealed:   true,
-		TypeParams: typeParams,
+		Name:                 typeName,
+		Package:              pkgName,
+		Doc:                  docAt(docs, ctx.GetStart()),
+		Pos:                  transpiler.PosFromToken(ctx.Identifier().GetStart()),
+		Methods:              make(map[string]*transpiler.MethodMetadata),
+		Fields:               make(map[string]transpiler.Type),
+		IsSealed:             true,
+		TypeParams:           typeParams,
+		TypeParamConstraints: typeParamConstraints,
 	}
 
 	// Process each case to collect fields (two passes: collect, then resolve conflicts)
@@ -2146,13 +2114,14 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		}
 
 		companionMeta := &transpiler.TypeMetadata{
-			Name:       companionName,
-			Package:    pkgName,
-			Doc:        vi.doc,
-			Pos:        vi.pos,
-			Methods:    make(map[string]*transpiler.MethodMetadata),
-			Fields:     make(map[string]transpiler.Type),
-			TypeParams: typeParams,
+			Name:                 companionName,
+			Package:              pkgName,
+			Doc:                  vi.doc,
+			Pos:                  vi.pos,
+			Methods:              make(map[string]*transpiler.MethodMetadata),
+			Fields:               make(map[string]transpiler.Type),
+			TypeParams:           typeParams,
+			TypeParamConstraints: typeParamConstraints,
 		}
 
 		// Apply method: takes the variant's fields, returns parent type
@@ -3804,6 +3773,48 @@ func isPtrReceiver(recv *grammar.ReceiverContext) bool {
 	return galaparser.PtrElem(recv.Type_()) != nil
 }
 
+// typeParamsOf returns the names of the type parameters of a function or
+// method declaration, in order, and the constraint each is declared with
+// (`B Bumper` maps B to Bumper); both are nil when it declares none.
+func typeParamsOf(ctx grammar.ITypeParametersContext) ([]string, map[string]string) {
+	if ctx == nil {
+		return nil, nil
+	}
+	list, ok := ctx.TypeParameterList().(*grammar.TypeParameterListContext)
+	if !ok {
+		return nil, nil
+	}
+	var names []string
+	var constraints map[string]string
+	for _, tp := range list.AllTypeParameter() {
+		ids := tp.(*grammar.TypeParameterContext).AllIdentifier()
+		names = append(names, ids[0].GetText())
+		if len(ids) > 1 {
+			if constraints == nil {
+				constraints = make(map[string]string)
+			}
+			constraints[ids[0].GetText()] = ids[1].GetText()
+		}
+	}
+	return names, constraints
+}
+
+// declaredTypeParams is typeParamsOf for a function or method of package
+// pkgName, with each constraint resolved where it is declared — the
+// package's own type, a dot-import's or std's — and recorded qualified
+// ("api.Bumper") unless it is the package's own in main or test, so a caller
+// in another package finds the same interface. `any` and `comparable` are
+// kept as they are.
+func (a *galaAnalyzer) declaredTypeParams(ctx grammar.ITypeParametersContext, pkgName string) ([]string, map[string]string) {
+	names, constraints := typeParamsOf(ctx)
+	for tp, c := range constraints {
+		if c != "any" && c != "comparable" {
+			constraints[tp] = a.resolveBaseName(c, pkgName).String()
+		}
+	}
+	return names, constraints
+}
+
 func getBaseTypeName(ctx grammar.ITypeContext) string {
 	if ctx == nil {
 		return ""
@@ -4145,15 +4156,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						Pos:       transpiler.PosFromToken(msCtx.Identifier().GetStart()),
 						DefinedIn: absSibPath,
 					}
-					if msCtx.TypeParameters() != nil {
-						tpCtx := msCtx.TypeParameters().(*grammar.TypeParametersContext)
-						if tpList := tpCtx.TypeParameterList(); tpList != nil {
-							for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-								tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-								methodMeta.TypeParams = append(methodMeta.TypeParams, tpId.GetText())
-							}
-						}
-					}
+					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(msCtx.TypeParameters(), pkgName)
 					var allTypeParams []string
 					allTypeParams = append(allTypeParams, meta.TypeParams...)
 					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
@@ -4389,15 +4392,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					PtrReceiver:     isPtrReceiver(recvCtx),
 					DefinedIn:       absSibPath,
 				}
-				if ctx.TypeParameters() != nil {
-					tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-					if tpList := tpCtx.TypeParameterList(); tpList != nil {
-						for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-							tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-							methodMeta.TypeParams = append(methodMeta.TypeParams, tpId.GetText())
-						}
-					}
-				}
+				methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
 
 				var typeTypeParams []string
 				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
@@ -4484,15 +4479,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						Pos:       sibPos,
 						DefinedIn: absSibPath,
 					}
-					if ctx.TypeParameters() != nil {
-						tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-						if tpList := tpCtx.TypeParameterList(); tpList != nil {
-							for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-								tpId := tp.(*grammar.TypeParameterContext).Identifier(0)
-								funcMeta.TypeParams = append(funcMeta.TypeParams, tpId.GetText())
-							}
-						}
-					}
+					funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
 					funcMeta.ReturnType, funcMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, funcMeta.TypeParams)
 					if ctx.Signature().Parameters() != nil {
 						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)

@@ -768,6 +768,11 @@ func (t *galaASTTransformer) injectFuncPhantomTypeArgs(fun ast.Expr, funcMeta *t
 	if missing != nil {
 		return nil, t.uninferredCallTypeArgError(line, col, fun, funcMeta.ReturnType, funcMeta.TypeParams, resolved, missing, args)
 	}
+	// The slot's type arguments are checked as written ones are; the
+	// arguments' are checked where the arguments are (checkPtrCallTypeArgs).
+	if err := t.checkPtrSlotTypeArgs(t.argCalleeName(fun), funcMeta, resolved, argBound, line, col); err != nil {
+		return nil, err
+	}
 	return instantiated, nil
 }
 

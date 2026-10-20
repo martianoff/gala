@@ -619,6 +619,9 @@ type MethodMetadata struct {
 	// these results, and a call of the method is a Go call: ReturnType holds
 	// its GALA value (Try/Tuple).
 	GoResults []Type
+	// TypeParamConstraints maps a type parameter to the constraint it is
+	// declared with (`B Bumper`), named in the declaring package.
+	TypeParamConstraints map[string]string
 }
 
 type FunctionMetadata struct {
@@ -635,6 +638,8 @@ type FunctionMetadata struct {
 	// GoResults is the Go result list the function declares (see
 	// MethodMetadata.GoResults); ReturnType holds a call's GALA value.
 	GoResults []Type
+	// TypeParamConstraints is MethodMetadata.TypeParamConstraints.
+	TypeParamConstraints map[string]string
 }
 
 // CompanionObjectMetadata stores information about companion objects that can be used

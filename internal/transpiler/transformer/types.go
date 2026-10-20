@@ -151,6 +151,9 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 				}
 				argExprs = append(argExprs, ae)
 			}
+			if err := t.checkPtrTypeArgsOfType(qid.GetText(), argExprs, args); err != nil {
+				return nil, err
+			}
 
 			// std.Tuple covers 2 type args; 3+ type args map to std.Tuple3..Tuple10.
 			// Route through the unified helper so every Tuple-arity rewrite site

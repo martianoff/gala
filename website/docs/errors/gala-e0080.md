@@ -25,6 +25,10 @@ would let a nil into one, or asks whether one is nil:
   `MatchView` has a `Ptr` receiver;
 - a `*T` that may be nil fills an interface that has a method `T` declares on
   a `Ptr` receiver: a call through the interface would run it on that pointer;
+- a `*T` that may be nil is the type argument, written or inferred, of a type
+  parameter whose constraint has such a method (`bumpIt(lookup(1))` for
+  `func bumpIt[B Bumper](b B)`, or `Holder[*Counter]`): the generic code would
+  run it on that pointer;
 - a `Ptr[T]` is compared with nil (`p == nil`, `p != nil`);
 - a typed pattern tests a dynamic value for a `Ptr` (`case p: Ptr[T]`): Go's
   type test accepts a nil `*T`.
