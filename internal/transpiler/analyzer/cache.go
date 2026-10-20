@@ -134,7 +134,14 @@ import (
 // (MethodMetadata.PtrReceiver). A v26 payload lacks it, so a method of
 // another package declared on a Ptr receiver could be called on a nullable
 // `*T`.
-const CacheVersion = "v27"
+//
+// v28: a method whose result is its receiver's type with other type
+// arguments is recorded as lowered to a function (MethodMetadata.IsGeneric)
+// also when either is a pointer (`Ptr[Box[T]]` returning
+// `Ptr[Box[Ptr[Box[T]]]]`) or the result is the first of a Go result list. A
+// v27 payload lacks the flag, so a call of one from another package would be
+// emitted as a method call.
+const CacheVersion = "v28"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

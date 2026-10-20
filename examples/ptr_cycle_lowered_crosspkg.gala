@@ -1,0 +1,19 @@
+package main
+
+import "martianoff/gala/examples/ptr_cycle_lowered_lib"
+
+// Methods another package lowers to functions, because each returns its
+// receiver's type with another type argument, are called as those functions
+// here too: on a Ptr receiver, on a *T receiver, with a value result and with
+// a Go result list, through a Ptr and on an addressable value.
+
+func main() {
+    val b = ptr_cycle_lowered_lib.NewBox(1)
+    Println(s"Ptr: ${b.Wrap().V.V}")
+    Println(s"*T: ${b.WrapStar().V.V}")
+    Println(s"value result: ${b.Pair().V.V2}")
+    Println(s"Go results: ${b.Split().Map((p) => p.V.V1).GetOrElse(0)}")
+
+    var v = ptr_cycle_lowered_lib.Box(2)
+    Println(s"on a var: ${v.Pair().V.V1}")
+}

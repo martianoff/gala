@@ -1423,15 +1423,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, allTypeParams)
-					if ctx.Signature().Type_() != nil {
-						// Detect Go generics instantiation cycle:
-						// If receiver is Container[T] and return is Container[SomeType[T, ...]]
-						// Go would detect infinite type instantiation
-						recvTypeStr := receiverTypeText(recvCtx.Type_())
-						retTypeStr := galaparser.TypeText(ctx.Signature().Type_())
-						if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
-							methodMeta.IsGeneric = true
-						}
+					// Detect Go generics instantiation cycle:
+					// If receiver is Container[T] and return is Container[SomeType[T, ...]]
+					// Go would detect infinite type instantiation
+					if a.causesInstantiationCycle(recvCtx.Type_(), ctx.Signature()) {
+						methodMeta.IsGeneric = true
 					}
 
 					if ctx.Signature().Parameters() != nil {
@@ -2358,7 +2354,19 @@ func normalizeTypeName(name string) string {
 // - The return type is the same base type (e.g., MyList)
 // - But with different type arguments (e.g., MyList[Pair[T, int]])
 // Go's compiler detects this as a potential infinite instantiation chain.
-func (a *galaAnalyzer) causesInstantiationCycle(recvTypeStr, retTypeStr string) bool {
+// The return type is the signature's result, or the first of its Go result
+// list, and pointers (`*MyList[T]`, `Ptr[MyList[T]]`) are looked through on
+// both sides, as the transformer's check (which decides the lowering of the
+// declaration) reads them: this records the same decision for importers.
+func (a *galaAnalyzer) causesInstantiationCycle(recvType grammar.ITypeContext, sig grammar.ISignatureContext) bool {
+	retType := sig.Type_()
+	if list, ok := sig.GoResults().(*grammar.GoResultsContext); ok && list != nil {
+		retType = list.Type_(0)
+	}
+	if retType == nil {
+		return false
+	}
+	recvTypeStr, retTypeStr := galaparser.TypeText(pointee(recvType)), galaparser.TypeText(pointee(retType))
 	// Extract base type and type args from receiver
 	recvBase, recvArgs := extractBaseAndArgs(recvTypeStr)
 	if recvBase == "" || len(recvArgs) == 0 {
@@ -2390,6 +2398,17 @@ func (a *galaAnalyzer) causesInstantiationCycle(recvTypeStr, retTypeStr string) 
 	}
 
 	return false
+}
+
+// pointee strips every pointer, `*T` or `Ptr[T]`, from typ.
+func pointee(typ grammar.ITypeContext) grammar.ITypeContext {
+	for {
+		elem, isPtr := galaparser.PointerElem(typ)
+		if !isPtr {
+			return typ
+		}
+		typ = elem
+	}
 }
 
 // findMatchingCloseBracket returns the index of the `]` that matches the `[`
@@ -3785,15 +3804,6 @@ func isPtrReceiver(recv *grammar.ReceiverContext) bool {
 	return galaparser.PtrElem(recv.Type_()) != nil
 }
 
-// receiverTypeText spells a receiver type as TypeText does, with a non-null
-// `Ptr[T]` receiver spelled `*T`: both are the Go receiver `*T`.
-func receiverTypeText(ctx grammar.ITypeContext) string {
-	if elem := galaparser.PtrElem(ctx); elem != nil {
-		return "*" + galaparser.TypeText(elem)
-	}
-	return galaparser.TypeText(ctx)
-}
-
 func getBaseTypeName(ctx grammar.ITypeContext) string {
 	if ctx == nil {
 		return ""
@@ -4397,19 +4407,15 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 				methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, allTypeParams)
-				if ctx.Signature().Type_() != nil {
-					// Mirror the section-2 IsGeneric detection so that sibling-extracted
-					// methods carry the same function-form flag as methods analyzed
-					// directly. Without this, merging a sibling's Analyze result (with
-					// IsGeneric=true) on top of an earlier sibling's result (with
-					// IsGeneric=false from extraction here) would clobber the true
-					// flag and the transpiler would emit method-syntax calls against
-					// a standalone-function definition.
-					recvTypeStr := receiverTypeText(recvCtx.Type_())
-					retTypeStr := galaparser.TypeText(ctx.Signature().Type_())
-					if a.causesInstantiationCycle(recvTypeStr, retTypeStr) {
-						methodMeta.IsGeneric = true
-					}
+				// Mirror the section-2 IsGeneric detection so that sibling-extracted
+				// methods carry the same function-form flag as methods analyzed
+				// directly. Without this, merging a sibling's Analyze result (with
+				// IsGeneric=true) on top of an earlier sibling's result (with
+				// IsGeneric=false from extraction here) would clobber the true
+				// flag and the transpiler would emit method-syntax calls against
+				// a standalone-function definition.
+				if a.causesInstantiationCycle(recvCtx.Type_(), ctx.Signature()) {
+					methodMeta.IsGeneric = true
 				}
 				if ctx.Signature().Parameters() != nil {
 					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)

@@ -339,3 +339,79 @@ func FindBox() *Box[int] = nil
 		})
 	}
 }
+
+// TestCycleLoweredGoResultsMethod checks that a method whose first Go result
+// is its receiver's type with other type arguments is lowered to a function,
+// as one with that single result is: Go reports the instantiation cycle on
+// the results it returns, not on their GALA value.
+func TestCycleLoweredGoResultsMethod(t *testing.T) {
+	out, err := newTranspiler().Transpile(`package main
+
+struct Box[T any](V T)
+
+func (b *Box[T]) Split() (Box[Tuple[T, T]], error) = Success(Box((b.V, b.V)))
+
+func main() {
+    var b = Box(1)
+    Println(b.Split().IsSuccess())
+}`, "")
+	require.NoError(t, err)
+	assert.Contains(t, out, "func Box_Split[T any](b *Box[T]) (Box[std.Tuple[T, T]], error)")
+	assert.Contains(t, out, "Box_Split[int](&b)")
+}
+
+// TestCycleLoweredMethodCrossPackage checks that a method returning its
+// receiver's type with other type arguments, which its package lowers to a
+// function to avoid a Go instantiation cycle, is called as that function from
+// another package, whether the receiver or the result is a Ptr (or two), a
+// *T or a value, or the result is the first of a Go result list (#808). The
+// methods are declared in a file of their own, beside the type's.
+func TestCycleLoweredMethodCrossPackage(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+	write("gala.mod", "module example.com/cyclerecv\n\ngala dev\n")
+	write("box/box.gala", `package box
+
+struct Box[T any](var V T)
+
+func NewBox[T any](v T) Ptr[Box[T]] = &Box(v)
+`)
+	write("box/wrap.gala", `package box
+
+func (b Ptr[Box[T]]) Wrap() Ptr[Box[Ptr[Box[T]]]] = &Box(b)
+
+func (b *Box[T]) WrapStar() *Box[*Box[T]] = &Box(b)
+
+func (b *Box[T]) Pair() Box[Tuple[T, T]] = Box((b.V, b.V))
+
+func (b *Box[T]) Split() (Box[Tuple[T, T]], error) = Success(Box((b.V, b.V)))
+
+func (b *Box[T]) Deep() Ptr[Ptr[Box[Tuple[T, T]]]] {
+    var p = &Box((b.V, b.V))
+    &p
+}
+`)
+	tests := []struct {
+		name, body, want string
+	}{
+		{name: "Ptr receiver and result", body: "Println(b.Wrap().V.V)", want: "box.Box_Wrap[int](b.Get())"},
+		{name: "*T receiver and result", body: "Println(b.WrapStar().V.V)", want: "box.Box_WrapStar[int](b.Get())"},
+		{name: "*T receiver, value result", body: "Println(b.Pair().V.V1)", want: "box.Box_Pair[int](b.Get())"},
+		{name: "Go result list", body: "Println(b.Split().IsSuccess())", want: "box.Box_Split[int](b.Get())"},
+		{name: "pointer to a pointer", body: "Println(b.Deep())", want: "box.Box_Deep[int](b.Get())"},
+		{name: "addressable value", body: "var v = box.Box(2)\n    Println(v.WrapStar().V.V)", want: "box.Box_WrapStar[int](&v)"},
+		{name: "val", body: "val w = box.Box(3)\n    Println(w.Pair().V.V1)", want: "box.Box_Pair[int](std.AddrOfCopy(w.Get()))"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/cyclerecv/box\"\n\nfunc main() {\n    val b = box.NewBox(1)\n    "+tt.body+"\n}\n")
+			require.NoError(t, err)
+			assert.Contains(t, out, tt.want)
+		})
+	}
+}
