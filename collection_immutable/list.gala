@@ -18,9 +18,13 @@ import (
 // List represents an immutable singly-linked list.
 // Every List is either Cons (non-empty) or Nil (empty).
 // A List is empty exactly when its length is 0; only then is tail empty.
+//
+// tail is never reassigned. It is `var` so the generated Go holds the
+// OptionPtr itself rather than an Immutable of it, whose methods Go would
+// otherwise compile once more for every element type.
 type List[T any] struct {
     head    T
-    tail    OptionPtr[List[T]]
+    var tail OptionPtr[List[T]]
     length  int
 }
 

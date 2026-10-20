@@ -27,16 +27,19 @@ val treeRed int = 0
 val treeBlack int = 1
 
 // treeNode represents a node in the Red-Black tree.
+//
+// Its links and TreeSet's root are never reassigned; they are `var` for the
+// reason List's tail is.
 type treeNode[T comparable] struct {
     value T
-    left  OptionPtr[treeNode[T]]
-    right OptionPtr[treeNode[T]]
+    var left  OptionPtr[treeNode[T]]
+    var right OptionPtr[treeNode[T]]
     color int
 }
 
 // TreeSet represents an immutable sorted set.
 type TreeSet[T comparable] struct {
-    root OptionPtr[treeNode[T]]
+    var root OptionPtr[treeNode[T]]
     size int
 }
 
