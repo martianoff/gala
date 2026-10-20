@@ -269,6 +269,7 @@ func checkTreeMap[K cmp.Ordered](p *Prop, what string, m TreeMap[K, int], ref ma
 	if m.Size() != len(ref) || m.IsEmpty() != (len(ref) == 0) {
 		p.Fatalf("%s: Size %d, want %d", what, m.Size(), len(ref))
 	}
+	checkRedBlack(p, what, treeMapShape[K, int](), m.root.Get(), m.Size())
 	keys := SortedKeys(ref)
 	var gotKeys []K
 	m.ForEachKV(func(k K, v int) {
@@ -362,6 +363,22 @@ func TestTreeMapDifferential(t *testing.T) {
 	runTreeMapWorkload(t, StringKeys)
 }
 
+func checkTreeSet[T cmp.Ordered](p *Prop, what string, s TreeSet[T], ref map[T]bool) {
+	p.T.Helper()
+	want := SortedKeys(ref)
+	if s.Size() != len(want) {
+		p.Fatalf("%s: Size %d, want %d", what, s.Size(), len(want))
+	}
+	checkRedBlack(p, what, treeSetShape[T](), s.root.Get(), s.Size())
+	EqSlices(p, what+" ToGoSlice order", s.ToGoSlice(), want)
+	var visited []T
+	s.ForEach(func(x T) { visited = append(visited, x) })
+	EqSlices(p, what+" ForEach order", visited, want)
+	if len(want) > 0 && (s.Min() != want[0] || s.Max() != want[len(want)-1]) {
+		p.Fatalf("%s: Min/Max %v/%v, want %v/%v", what, s.Min(), s.Max(), want[0], want[len(want)-1])
+	}
+}
+
 func runTreeSetWorkload[T cmp.Ordered](t *testing.T, kind KeyKind[T]) {
 	for _, n := range MapSizes {
 		if kind.Skips(n) {
@@ -371,20 +388,7 @@ func runTreeSetWorkload[T cmp.Ordered](t *testing.T, kind KeyKind[T]) {
 			p := NewProp(t, n)
 			s := EmptyTreeSet[T]()
 			ref := map[T]bool{}
-			check := func(what string, s TreeSet[T], ref map[T]bool) {
-				t.Helper()
-				want := SortedKeys(ref)
-				if s.Size() != len(want) {
-					p.Fatalf("%s: Size %d, want %d", what, s.Size(), len(want))
-				}
-				EqSlices(p, what+" ToGoSlice order", s.ToGoSlice(), want)
-				var visited []T
-				s.ForEach(func(x T) { visited = append(visited, x) })
-				EqSlices(p, what+" ForEach order", visited, want)
-				if len(want) > 0 && (s.Min() != want[0] || s.Max() != want[len(want)-1]) {
-					p.Fatalf("%s: Min/Max %v/%v, want %v/%v", what, s.Min(), s.Max(), want[0], want[len(want)-1])
-				}
-			}
+			check := func(what string, s TreeSet[T], ref map[T]bool) { checkTreeSet(p, what, s, ref) }
 			type version struct {
 				s   TreeSet[T]
 				ref map[T]bool

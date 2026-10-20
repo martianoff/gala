@@ -355,49 +355,41 @@ func (s TreeSet[T]) Remove(elem T) TreeSet[T] {
     if !s.Contains(elem) {
         return s
     }
-    if s.size == 1 {
-        return EmptyTreeSet[T]()
-    }
-    return removeTree[T](s.root, elem) match {
-        case Some(newRoot) => {
-            // Root is always black
-            val blackRoot = &treeNode[T](value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeBlack)
-            TreeSet[T](root = SomePtr(blackRoot), size = s.size - 1)
-        }
-        case None() => EmptyTreeSet[T]()
-    }
+    // The root stays black: no rebalancing step turns the top of the tree red.
+    val (root, _) = removeTree(s.root, elem)
+    TreeSet[T](root = root, size = s.size - 1)
 }
 
-// removeTree removes an element from the tree.
-func removeTree[T comparable](tree OptionPtr[treeNode[T]], elem T) OptionPtr[treeNode[T]] {
+// removeTree removes elem from a subtree. Removal copies only the search path
+// and keeps the red-black invariants, except that the subtree may come back one
+// black node short on every path; the bool reports that, and the parent
+// rebalances with fixLeftTree / fixRightTree. A subtree without elem comes back
+// with the same elements, but its search path is still copied, so Remove checks
+// Contains first to hand back the set itself.
+func removeTree[T comparable](tree OptionPtr[treeNode[T]], elem T) Tuple[OptionPtr[treeNode[T]], bool] {
     if tree.IsEmpty() {
-        return tree
+        return (tree, false)
     }
     val node = tree.Get()
-
-    val cmp = compare[T](elem, node.value)
+    val cmp = compare(elem, node.value)
     if cmp < 0 {
-        val newLeft = removeTree[T](node.left, elem)
-        return SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = newLeft, right = node.right, color = node.color)))
+        val (left, shorter) = removeTree(node.left, elem)
+        return fixLeftTree(node.value, node.color, left, node.right, shorter)
     }
     if cmp > 0 {
-        val newRight = removeTree[T](node.right, elem)
-        return SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = node.left, right = newRight, color = node.color)))
+        val (right, shorter) = removeTree(node.right, elem)
+        return fixRightTree(node.value, node.color, node.left, right, shorter)
     }
-
-    // Found the element to remove
     if node.left.IsEmpty() {
-        return node.right
+        return spliceTree(node, node.right)
     }
     if node.right.IsEmpty() {
-        return node.left
+        return spliceTree(node, node.left)
     }
-
-    // Node has two children, find successor (min of right subtree)
+    // Two children: the in-order successor takes this node's place.
     val right = node.right.Get()
-    val successor = findMinTree[T](right)
-    val newRight = removeMinTree[T](right)
-    return SomePtr(balanceTree[T](&treeNode[T](value = successor, left = node.left, right = newRight, color = node.color)))
+    val (newRight, shorter) = removeMinTree(right)
+    fixRightTree(findMinTree(right), node.color, node.left, newRight, shorter)
 }
 
 // findMinTree finds the minimum element in a subtree.
@@ -409,12 +401,101 @@ func findMinTree[T comparable](node Ptr[treeNode[T]]) T {
     current.value
 }
 
-// removeMinTree removes the minimum element from a subtree.
-func removeMinTree[T comparable](node Ptr[treeNode[T]]) OptionPtr[treeNode[T]] {
+// removeMinTree removes the minimum element from a subtree, reporting whether
+// the subtree's black-height dropped, like removeTree.
+func removeMinTree[T comparable](node Ptr[treeNode[T]]) Tuple[OptionPtr[treeNode[T]], bool] {
     if node.left.IsEmpty() {
-        return node.right
+        return spliceTree(node, node.right)
     }
-    SomePtr(balanceTree[T](&treeNode[T](value = node.value, left = removeMinTree[T](node.left.Get()), right = node.right, color = node.color)))
+    val (left, shorter) = removeMinTree(node.left.Get())
+    fixLeftTree(node.value, node.color, left, node.right, shorter)
+}
+
+// spliceTree replaces a node that has at most one child with that child. A
+// red node's paths lose no black node. A black node's only child, if any, is a
+// red leaf, which turns black to keep the count; otherwise the paths through
+// the node are now one black node short.
+func spliceTree[T comparable](node Ptr[treeNode[T]], child OptionPtr[treeNode[T]]) Tuple[OptionPtr[treeNode[T]], bool] =
+    if (isRedNode(child)) (blackenTree(child), false) else (child, node.color == treeBlack)
+
+// fixLeftTree builds a node holding value with the given color and children,
+// where left may be one black node short (shorter). It restores equal
+// black-height by recoloring and at most two rotations, and reports whether the
+// whole subtree is now one black node short.
+func fixLeftTree[T comparable](
+    value T,
+    color int,
+    left OptionPtr[treeNode[T]],
+    right OptionPtr[treeNode[T]],
+    shorter bool,
+) Tuple[OptionPtr[treeNode[T]], bool] {
+    if !shorter {
+        return (mkTree(value, color, left, right), false)
+    }
+    // A subtree that comes back shorter is empty or black, and its sibling has
+    // a higher black-height, so the sibling is not empty.
+    val sib = right.Get()
+    if sib.color == treeRed {
+        // This node is black. Rotate the red sibling up; this node turns red
+        // and its new sibling, sib.left, is black, so the inner fix finishes.
+        val (inner, _) = fixLeftTree(value, treeRed, left, sib.left, true)
+        return (mkTree(sib.value, treeBlack, inner, sib.right), false)
+    }
+    if isRedNode(sib.right) {
+        val lower = mkTree(value, treeBlack, left, sib.left)
+        return (mkTree(sib.value, color, lower, blackenTree(sib.right)), false)
+    }
+    if isRedNode(sib.left) {
+        val sl = sib.left.Get()
+        val lower = mkTree(value, treeBlack, left, sl.left)
+        val upper = mkTree(sib.value, treeBlack, sl.right, sib.right)
+        return (mkTree(sl.value, color, lower, upper), false)
+    }
+    // Black sibling with black children: turn it red. A red node absorbs the
+    // deficit by turning black; a black one passes it up.
+    val redSib = mkTree(sib.value, treeRed, sib.left, sib.right)
+    (mkTree(value, treeBlack, left, redSib), color == treeBlack)
+}
+
+// fixRightTree is the mirror of fixLeftTree for a right child that may be one
+// black node short.
+func fixRightTree[T comparable](
+    value T,
+    color int,
+    left OptionPtr[treeNode[T]],
+    right OptionPtr[treeNode[T]],
+    shorter bool,
+) Tuple[OptionPtr[treeNode[T]], bool] {
+    if !shorter {
+        return (mkTree(value, color, left, right), false)
+    }
+    val sib = left.Get()
+    if sib.color == treeRed {
+        val (inner, _) = fixRightTree(value, treeRed, sib.right, right, true)
+        return (mkTree(sib.value, treeBlack, sib.left, inner), false)
+    }
+    if isRedNode(sib.left) {
+        val lower = mkTree(value, treeBlack, sib.right, right)
+        return (mkTree(sib.value, color, blackenTree(sib.left), lower), false)
+    }
+    if isRedNode(sib.right) {
+        val sr = sib.right.Get()
+        val upper = mkTree(sib.value, treeBlack, sib.left, sr.left)
+        val lower = mkTree(value, treeBlack, sr.right, right)
+        return (mkTree(sr.value, color, upper, lower), false)
+    }
+    val redSib = mkTree(sib.value, treeRed, sib.left, sib.right)
+    (mkTree(value, treeBlack, redSib, right), color == treeBlack)
+}
+
+// mkTree builds a node holding value with the given color and children.
+func mkTree[T comparable](value T, color int, left OptionPtr[treeNode[T]], right OptionPtr[treeNode[T]]) OptionPtr[treeNode[T]] =
+    SomePtr(&treeNode[T](value = value, left = left, right = right, color = color))
+
+// blackenTree returns a red node recolored black, and any other tree as is.
+func blackenTree[T comparable](tree OptionPtr[treeNode[T]]) OptionPtr[treeNode[T]] = tree match {
+    case Some(node) if node.color == treeRed => mkTree(node.value, treeBlack, node.left, node.right)
+    case _ => tree
 }
 
 // Min returns the minimum element in the set. O(log n).

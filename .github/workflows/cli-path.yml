@@ -229,8 +229,15 @@ jobs:
         # whatever change needed it. A red run right after a bump is then
         # attributable to the bump. Adding a project is one entry here.
         #
-        # goflags: gala-tui's root package peaks at ~10 GB RSS while compiling,
-        # so its packages are compiled one at a time, as its own CI does.
+        # goflags: gala-tui's root package peaks at 14–17 GB RSS while
+        # compiling, so its packages are compiled one at a time, as its own CI
+        # does.
+        #
+        # gomemlimit: the runner has 16 GB. Without a limit the compiler's heap
+        # grows past it and the runner is killed ("shutdown signal", exit 143).
+        # GOMEMLIMIT=12GiB makes the compiler's GC work harder instead:
+        # measured on Linux with 4 CPUs, gala-tui's largest compile drops from
+        # ~17 GB to ~12.7 GB for ~7% more time.
         include:
           # gala-tui 0.15.4 (the commit its tag points at). Floors: no
           # `val _ =` (GALA-E0060 rejects it) and every file imports the
@@ -240,6 +247,7 @@ jobs:
             ref: c46554dd1e24a2074c4b99dd2294f30cbe955489
             commands: test
             goflags: -p=1
+            gomemlimit: 12GiB
           # gala-server (martianoff/gala-server, `commands: build test`) is not
           # listed yet: it requires gala-tui v0.11.0, which fails GALA-E0045
           # (missing struct-field defaults) against GALA >= 0.81. Re-add it
@@ -277,6 +285,7 @@ jobs:
         working-directory: downstream
         env:
           GOFLAGS: ${{ matrix.goflags }}
+          GOMEMLIMIT: ${{ matrix.gomemlimit }}
           COMMANDS: ${{ matrix.commands }}
         run: |
           set -euo pipefail

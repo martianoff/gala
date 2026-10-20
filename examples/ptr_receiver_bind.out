@@ -1,0 +1,9 @@
+Ptr: 2
+address: 20
+var: 30
+vals: 20
+OptionPtr: 101 -1
+also: 21
+also through a Ptr Zip: 123
+also into a Ptr parameter: 12
+panic: RequirePtr: the pointer is nil
