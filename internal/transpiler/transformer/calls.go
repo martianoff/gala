@@ -472,7 +472,7 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr, 
 		recvType = qName
 	}
 	if isPtr {
-		recvType = transpiler.PointerType{Elem: recvType}
+		recvType = transpiler.PointerType{Elem: recvType, NonNull: ptr.NonNull}
 	}
 	// Strip pointer prefix for genericMethods lookup since methods are
 	// registered under the base type name without the pointer marker.
