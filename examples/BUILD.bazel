@@ -4433,6 +4433,16 @@ gala_exec_test(
     expected = "ptr_receiver_bind.out",
 )
 
+# bind/also over a monad whose FlatMap or ZipN takes a value: a pointer clause
+# (`&x`, a Ptr, RequirePtr) binds its pointee, as the written-out
+# `(&x).FlatMap(...)` does, and fills a value Zip parameter as its pointee.
+gala_exec_test(
+    name = "value_receiver_bind_ptr",
+    src = "value_receiver_bind_ptr.gala",
+    expected = "value_receiver_bind_ptr.out",
+    deps = ["//validation"],
+)
+
 # A generic method on a *T or Ptr[T] receiver, lowered to a function, called
 # on a var, a field reached through a var, a val, a call result and a pointer.
 gala_exec_test(

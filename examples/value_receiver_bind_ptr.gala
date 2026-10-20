@@ -1,0 +1,99 @@
+package main
+
+import . "martianoff/gala/validation"
+
+// A pointer to a monad value binds as the value it points to when the monad's
+// FlatMap or ZipN takes a value: `bind a = &x` runs `x.FlatMap(...)`, as the
+// written-out `(&x).FlatMap(...)` does, and a pointer filling a value
+// parameter of a Zip is its pointee.
+
+struct Box[T any](V T)
+
+func (b Box[T]) FlatMap[U any](f func(T) Box[U]) Box[U] = f(b.V)
+
+func (b Box[T]) Zip2[U any](o Box[U]) Box[Tuple[T, U]] = Box(Tuple(b.V, o.V))
+
+func (b Box[T]) Zip3[U any, V any](o Box[U], p Box[V]) Box[Tuple3[T, U, V]] = Box(Tuple3(b.V, o.V, p.V))
+
+func viaAddress() Box[int] {
+    var x = Box(1)
+    bind a = &x
+    Box(a + 1)
+}
+
+func viaPtr(p Ptr[Box[int]]) Box[int] {
+    bind a = p
+    bind b = p
+    Box(a * 10 + b)
+}
+
+// A Go-style lookup: its pointer may be nil.
+func find(found bool) *Box[int] = if (found) &Box(4) else nil
+
+func viaRequirePtr() Box[int] {
+    bind a = RequirePtr(find(true))
+    Box(a * 3)
+}
+
+func written(p Ptr[Box[int]]) Box[int] = p.FlatMap((a) => Box(a + 100))
+
+func zipped() Box[int] {
+    var x = Box(1)
+    var y = Box(2)
+    bind a = &x
+    also b = &y
+    Box(a * 10 + b)
+}
+
+func zipped3(p Ptr[Box[int]]) Box[int] {
+    var z = Box(3)
+    bind a = Box(1)
+    also b = p
+    also c = &z
+    Box(a * 100 + b * 10 + c)
+}
+
+// A FlatMap and Zip on Ptr receivers with a value parameter: the first clause
+// is addressed, a pointer in the second fills the value parameter.
+struct Cell[T any](V T)
+
+func (c Ptr[Cell[T]]) FlatMap[U any](f func(T) Cell[U]) Cell[U] = f(c.V)
+
+func (c Ptr[Cell[T]]) Zip2[U any](o Cell[U]) Cell[Tuple[T, U]] = Cell(Tuple(c.V, o.V))
+
+func cellZipped() Cell[int] {
+    var y = Cell(2)
+    bind a = Cell(1)
+    also b = &y
+    Cell(a + b)
+}
+
+// A monad from another package: Validated's FlatMap and Zip2 take values.
+func two() Validated[string, int] = Valid(2)
+
+func validated() Validated[string, int] {
+    var x = two()
+    var y = two()
+    bind a = &x
+    also b = &y
+    Valid(a * 10 + b)
+}
+
+func optionAddress() Option[int] {
+    var o = Some(7)
+    bind a = &o
+    Some(a * 6)
+}
+
+func main() {
+    var shared = Box(4)
+    Println(s"address: ${viaAddress().V}")
+    Println(s"ptr: ${viaPtr(&shared).V}")
+    Println(s"require: ${viaRequirePtr().V}")
+    Println(s"written: ${written(&shared).V}")
+    Println(s"zipped: ${zipped().V}")
+    Println(s"zipped3: ${zipped3(&shared).V}")
+    Println(s"cell: ${cellZipped().V}")
+    Println(s"validated: ${validated()}")
+    Println(s"option: ${optionAddress()}")
+}

@@ -42,10 +42,15 @@ func (t *galaASTTransformer) addressableReceiver(recv ast.Expr, recvType transpi
 // only for a method call, so a pointer-receiver method called on a value gets
 // `&recv` when recv is addressable, and otherwise an addressed copy (or
 // GALA-E0053) as addressableReceiver gives a method call. A receiver that is
-// a pointer already is passed as it is.
+// a pointer already is passed as it is to a pointer-receiver method, and as
+// its pointee to a value-receiver method: Go dereferences a pointer for a
+// method call, but not for an argument.
 func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType transpiler.Type, m *transpiler.MethodMetadata, method string, line, col int) (ast.Expr, error) {
-	if m == nil || !m.PointerReceiver {
+	if m == nil {
 		return recv, nil
+	}
+	if !m.PointerReceiver {
+		return derefPointer(recv, recvType), nil
 	}
 	if _, _, _, isValue := t.receiverTypeInfo(recvType); !isValue {
 		return recv, nil
@@ -54,6 +59,32 @@ func (t *galaASTTransformer) loweredMethodReceiver(recv ast.Expr, recvType trans
 		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(recv)}, nil
 	}
 	return t.addressedCopy(recv, recvType, method, line, col)
+}
+
+// derefPointer is `*expr` when typ is a pointer (`x` for `&x`), and expr
+// otherwise.
+func derefPointer(expr ast.Expr, typ transpiler.Type) ast.Expr {
+	if _, isPtr := typ.(transpiler.PointerType); !isPtr {
+		return expr
+	}
+	if addr, ok := expr.(*ast.UnaryExpr); ok && addr.Op == token.AND {
+		return addr.X
+	}
+	return &ast.StarExpr{X: expr}
+}
+
+// loweredReceiverType is the type of the receiver argument
+// loweredMethodReceiver gives m: a pointer to a value for a pointer receiver,
+// the pointee of a pointer for a value receiver.
+func loweredReceiverType(recvType transpiler.Type, m *transpiler.MethodMetadata) transpiler.Type {
+	ptr, isPtr := recvType.(transpiler.PointerType)
+	switch {
+	case m.PointerReceiver && !isPtr:
+		return transpiler.PointerType{Elem: recvType}
+	case !m.PointerReceiver && isPtr:
+		return ptr.Elem
+	}
+	return recvType
 }
 
 // addressedCopy hands recv, a value that cannot be addressed, to a

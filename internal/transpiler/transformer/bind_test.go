@@ -108,6 +108,89 @@ func zip() Cell[int] {
 	assert.Contains(t, got, "Cell_FlatMap[int, std.Tuple[int, int]](std.AddrOfCopy(Cell_Zip2[int, int](std.AddrOfCopy(Cell[int]{V: 1}), Cell[int]{V: 2})), ")
 }
 
+// A pointer clause over a monad whose FlatMap or Zip takes a value is
+// dereferenced, as Go dereferences the written-out `(&x).FlatMap(...)`: the
+// lowered call takes `*recv`, and a pointer filling a value Zip parameter is
+// its pointee.
+func TestBindPointerClauseOverValueReceiverMonad(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+struct Box[T any](V T)
+
+func (b Box[T]) FlatMap[U any](f func(T) Box[U]) Box[U] = f(b.V)
+
+func (b Box[T]) Zip2[U any](o Box[U]) Box[Tuple[T, U]] = Box(Tuple(b.V, o.V))
+
+struct Cell[T any](V T)
+
+func (c Ptr[Cell[T]]) FlatMap[U any](f func(T) Cell[U]) Cell[U] = f(c.V)
+
+func (c Ptr[Cell[T]]) Zip2[U any](o Cell[U]) Cell[Tuple[T, U]] = Cell(Tuple(c.V, o.V))
+
+func seq(p Ptr[Box[int]]) Box[int] {
+    var x = Box(1)
+    bind a = &x
+    bind b = p
+    Box(a + b)
+}
+
+func zip() Box[int] {
+    var x = Box(1)
+    var y = Box(2)
+    bind a = &x
+    also b = &y
+    Box(a + b)
+}
+
+func cell() Cell[int] {
+    var y = Cell(2)
+    bind a = Cell(1)
+    also b = &y
+    Cell(a + b)
+}
+
+func written(p Ptr[Box[int]]) Box[int] = p.FlatMap((a) => Box(a + 1))
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "Box_FlatMap[int, int](x, ")
+	assert.Contains(t, got, "Box_FlatMap[int, int](*p, ")
+	assert.Contains(t, got, "Box_Zip2[int, int](x, y)")
+	assert.Contains(t, got, "Cell_Zip2[int, int](std.AddrOfCopy(Cell[int]{V: std.NewImmutable(1)}), y)")
+	assert.Contains(t, got, "Box_FlatMap(*p, ")
+}
+
+// Only a parameter of the monad's own value type takes a pointer clause's
+// pointee: an interface parameter the pointer implements takes the pointer.
+func TestAlsoPointerClauseFillsInterfaceZipParamAsIs(t *testing.T) {
+	trans := newBindTranspiler()
+	input := `package main
+
+type Holder[T any] interface {
+    Value() T
+}
+
+struct Box[T any](V T)
+
+func (b Box[T]) FlatMap[U any](f func(T) Box[U]) Box[U] = f(b.V)
+
+func (b Ptr[Box[T]]) Value() T = b.V
+
+func (b Box[T]) Zip2[U any](o Holder[U]) Box[Tuple[T, U]] = Box(Tuple(b.V, o.Value()))
+
+func run() Box[int] {
+    var y = Box(2)
+    bind a = Box(1)
+    also b = &y
+    Box(a + b)
+}
+`
+	got, err := trans.Transpile(input, "")
+	assert.NoError(t, err)
+	assert.Contains(t, got, "Box_Zip2[int, int](Box[int]{V: std.NewImmutable(1)}, &y)")
+}
+
 // `bind` on a value whose type has no FlatMap method is rejected.
 func TestBindRejectsNonMonad(t *testing.T) {
 	trans := newBindTranspiler()

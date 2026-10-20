@@ -455,13 +455,22 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		if zip.Variadic && param >= len(zip.ParamTypes) {
 			param = len(zip.ParamTypes) - 1
 		}
+		arg := prepped[i].recvExpr
 		if param >= 0 && param < len(zip.ParamTypes) {
-			if err := t.checkPtrSlot(prepped[i].recvExpr, t.substituteTranspilerTypeParams(zip.ParamTypes[param], subst), prepped[i].exprCtx); err != nil {
+			paramType := t.substituteTranspilerTypeParams(zip.ParamTypes[param], subst)
+			if err := t.checkPtrSlot(arg, paramType, prepped[i].exprCtx); err != nil {
 				return nil, err
+			}
+			// A clause is a monad value wherever it stands in the group: a
+			// pointer to one fills a parameter of the monad's value type as
+			// its pointee, as the first clause is the receiver of a
+			// value-receiver Zip. (A pointer parameter's base is `*M`.)
+			if t.monadBaseName(t.followAliasChain(paramType)) == prepped[i].lookupBaseName {
+				arg = derefPointer(arg, prepped[i].recvType)
 			}
 		}
 		zipTypeArgs = append(zipTypeArgs, t.typeToExpr(prepped[i].elemType))
-		zipArgs = append(zipArgs, prepped[i].recvExpr)
+		zipArgs = append(zipArgs, arg)
 	}
 	zipCall := t.emitGenericMethodFreeFunc(zipName, zipRecv, prepped[0].recvType, prepped[0].lookupBaseName, zipTypeArgs, nil, zipArgs, false)
 
