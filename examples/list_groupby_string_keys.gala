@@ -5,9 +5,8 @@ import (
 )
 
 // Regression test for gap #6: List.GroupBy with string keys panics in
-// AppendAll. A zero-valued List[T] returned by map[K]List[T] lookups has
-// isEmpty = false (Go bool zero value), which makes Append iterate over a
-// nil tail pointer. GroupBy must treat missing keys as empty lists.
+// AppendAll: GroupBy must treat the zero-valued List[T] that a map[K]List[T]
+// lookup returns for a missing key as an empty list.
 //
 // We stringify each bucket via FoldLeft (returns a concrete type, dodges
 // a separate lambda-inference quirk on map-indexed List values) so this

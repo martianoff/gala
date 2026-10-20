@@ -17,23 +17,22 @@ import (
 
 // List represents an immutable singly-linked list.
 // Every List is either Cons (non-empty) or Nil (empty).
+// A List is empty exactly when its length is 0; only then is tail empty.
 type List[T any] struct {
     head    T
-    tail    *List[T]
+    tail    OptionPtr[List[T]]
     length  int
-    isEmpty bool
 }
 
 // Internal helper to create empty list
 func emptyList[T any]() List[T] {
     var zeroT T
-    var nilTail *List[T] = nil
-    return List[T](head = zeroT, tail = nilTail, length = 0, isEmpty = true)
+    return List[T](head = zeroT, tail = EmptyOptionPtr[List[T]](), length = 0)
 }
 
 // Internal helper to prepend element to list
 func consList[T any](head T, var tail List[T]) List[T] {
-    return List[T](head = head, tail = &tail, length = tail.length + 1, isEmpty = false)
+    return List[T](head = head, tail = SomePtr(&tail), length = tail.length + 1)
 }
 
 // Cons extractor for pattern matching on non-empty lists.
@@ -79,15 +78,15 @@ func ListFromSlice[T any](elements []T) List[T] {
 func EmptyList[T any]() List[T] = emptyList[T]()
 
 // IsEmpty returns true if the list is empty.
-func (l List[T]) IsEmpty() bool = l.isEmpty
+func (l List[T]) IsEmpty() bool = l.length == 0
 
 // NonEmpty returns true if the list is not empty.
-func (l List[T]) NonEmpty() bool = !l.isEmpty
+func (l List[T]) NonEmpty() bool = l.length > 0
 
 // Head returns the first element of the list.
 // Panics if the list is empty.
 func (l List[T]) Head() T {
-    if l.isEmpty {
+    if l.length == 0 {
         go_builtins.Panic("List.Head on empty list")
     }
     return l.head
@@ -95,7 +94,7 @@ func (l List[T]) Head() T {
 
 // HeadOption returns the first element wrapped in Option.
 func (l List[T]) HeadOption() Option[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         return None[T]()
     }
     return Some[T](l.head)
@@ -104,18 +103,18 @@ func (l List[T]) HeadOption() Option[T] {
 // Tail returns all elements except the first.
 // Panics if the list is empty.
 func (l List[T]) Tail() List[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         go_builtins.Panic("List.Tail on empty list")
     }
-    return *l.tail
+    return *l.tail.Get()
 }
 
 // TailOption returns the tail wrapped in Option.
 func (l List[T]) TailOption() Option[List[T]] {
-    if l.isEmpty {
+    if l.length == 0 {
         return None[List[T]]()
     }
-    return Some[List[T]](*l.tail)
+    return Some[List[T]](*l.tail.Get())
 }
 
 // Length returns the number of elements in the list. O(1) - cached.
@@ -129,20 +128,20 @@ func (l List[T]) Prepend(elem T) List[T] = consList[T](elem, l)
 
 // PrependAll prepends all elements from another list. O(m) where m is other's length.
 func (l List[T]) PrependAll(other List[T]) List[T] {
-    if other.isEmpty {
+    if other.length == 0 {
         return l
     }
     // Iterative implementation to avoid lambda type issues
     var result = l
     var stack = emptyList[T]()
     var current = other
-    for !current.isEmpty {
+    for current.length > 0 {
         stack = consList[T](current.head, stack)
-        current = *current.tail
+        current = *current.tail.Get()
     }
-    for !stack.isEmpty {
+    for stack.length > 0 {
         result = result.Prepend(stack.head)
-        stack = *stack.tail
+        stack = *stack.tail.Get()
     }
     return result
 }
@@ -152,20 +151,20 @@ func (l List[T]) Append(elem T) List[T] = l.AppendAll(consList[T](elem, emptyLis
 
 // AppendAll appends all elements from another list. O(n).
 func (l List[T]) AppendAll(other List[T]) List[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         return other
     }
     // Iterative implementation using a stack to reverse, then prepend
     var stack = emptyList[T]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         stack = consList[T](current.head, stack)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     var result = other
-    for !stack.isEmpty {
+    for stack.length > 0 {
         result = consList[T](stack.head, result)
-        stack = *stack.tail
+        stack = *stack.tail.Get()
     }
     return result
 }
@@ -178,7 +177,7 @@ func (l List[T]) Get(index int) T {
     }
     var current = l
     for i := 0; i < index; i++ {
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return current.head
 }
@@ -197,29 +196,29 @@ func (l List[T]) Updated(index int, elem T) List[T] {
         go_builtins.Panic(f"List.Updated: index $index out of bounds [0, ${l.length})")
     }
     if index == 0 {
-        return consList[T](elem, *l.tail)
+        return consList[T](elem, *l.tail.Get())
     }
-    return consList[T](l.head, l.tail.Updated(index - 1, elem))
+    return consList[T](l.head, l.tail.Get().Updated(index - 1, elem))
 }
 
 // Last returns the last element of the list. O(n).
 // Panics if the list is empty.
 func (l List[T]) Last() T {
-    if l.isEmpty {
+    if l.length == 0 {
         go_builtins.Panic("List.Last on empty list")
     }
     var current = l
-    var next = *current.tail
-    for !next.isEmpty {
+    var next = *current.tail.Get()
+    for next.length > 0 {
         current = next
-        next = *current.tail
+        next = *current.tail.Get()
     }
     return current.head
 }
 
 // LastOption returns the last element wrapped in Option.
 func (l List[T]) LastOption() Option[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         return None[T]()
     }
     return Some[T](l.Last())
@@ -228,11 +227,11 @@ func (l List[T]) LastOption() Option[T] {
 // Init returns all elements except the last. O(n).
 // Panics if the list is empty.
 func (l List[T]) Init() List[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         go_builtins.Panic("List.Init on empty list")
     }
-    var tail = *l.tail
-    if tail.isEmpty {
+    var tail = *l.tail.Get()
+    if tail.length == 0 {
         return emptyList[T]()
     }
     return consList[T](l.head, tail.Init())
@@ -240,55 +239,55 @@ func (l List[T]) Init() List[T] {
 
 // Take returns the first n elements. O(n).
 func (l List[T]) Take(n int) List[T] {
-    if n <= 0 || l.isEmpty {
+    if n <= 0 || l.length == 0 {
         return emptyList[T]()
     }
-    return consList[T](l.head, l.tail.Take(n - 1))
+    return consList[T](l.head, l.tail.Get().Take(n - 1))
 }
 
 // Drop returns all elements except the first n. O(n).
 func (l List[T]) Drop(n int) List[T] {
-    if n <= 0 || l.isEmpty {
+    if n <= 0 || l.length == 0 {
         return l
     }
-    return l.tail.Drop(n - 1)
+    return l.tail.Get().Drop(n - 1)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
 func (l List[T]) TakeWhile(p func(T) bool) List[T] {
-    if l.isEmpty || !p(l.head) {
+    if l.length == 0 || !p(l.head) {
         return emptyList[T]()
     }
-    return consList[T](l.head, l.tail.TakeWhile(p))
+    return consList[T](l.head, l.tail.Get().TakeWhile(p))
 }
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
 func (l List[T]) DropWhile(p func(T) bool) List[T] {
-    if l.isEmpty || !p(l.head) {
+    if l.length == 0 || !p(l.head) {
         return l
     }
-    return l.tail.DropWhile(p)
+    return l.tail.Get().DropWhile(p)
 }
 
 // Contains checks if the list contains the given element. O(n).
 func (l List[T]) Contains(elem T) bool {
-    if l.isEmpty {
+    if l.length == 0 {
         return false
     }
     if Equal(l.head, elem) {
         return true
     }
-    return l.tail.Contains(elem)
+    return l.tail.Get().Contains(elem)
 }
 
 // IndexOf returns the index of the first occurrence of elem, or -1 if not found. O(n).
 func (l List[T]) IndexOf(elem T) int {
     var current = l
-    for i := 0; !current.isEmpty; i++ {
+    for i := 0; current.length > 0; i++ {
         if Equal(current.head, elem) {
             return i
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return -1
 }
@@ -297,11 +296,11 @@ func (l List[T]) IndexOf(elem T) int {
 func (l List[T]) LastIndexOf(elem T) int {
     var result = -1
     var current = l
-    for i := 0; !current.isEmpty; i++ {
+    for i := 0; current.length > 0; i++ {
         if Equal(current.head, elem) {
             result = i
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return result
 }
@@ -313,29 +312,29 @@ func (l List[T]) Reverse() List[T] {
 
 // Map applies a function to each element and returns a new list.
 func (l List[T]) Map[U any](f func(T) U) List[U] {
-    if l.isEmpty {
+    if l.length == 0 {
         return emptyList[U]()
     }
-    var tail = *l.tail
+    var tail = *l.tail.Get()
     return consList[U](f(l.head), tail.Map[U](f))
 }
 
 // FlatMap applies a function that returns a list to each element and flattens the result.
 func (l List[T]) FlatMap[U any](f func(T) List[U]) List[U] {
-    if l.isEmpty {
+    if l.length == 0 {
         return emptyList[U]()
     }
-    var tail = *l.tail
+    var tail = *l.tail.Get()
     return f(l.head).AppendAll(tail.FlatMap[U](f))
 }
 
 // Collect applies a partial function to each element and collects the results.
 // Elements for which the function returns None are filtered out.
 func (l List[T]) Collect[U any](pf func(T) Option[U]) List[U] {
-    if l.isEmpty {
+    if l.length == 0 {
         return emptyList[U]()
     }
-    val tail = *l.tail
+    val tail = *l.tail.Get()
     return pf(l.head) match {
         case Some(v) => consList[U](v, tail.Collect[U](pf))
         case None() => tail.Collect[U](pf)
@@ -360,13 +359,13 @@ func (l List[T]) Concat(other Iterable[T]) List[T] {
 
 // Filter returns a new list with only elements that satisfy the predicate.
 func (l List[T]) Filter(p func(T) bool) List[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         return emptyList[T]()
     }
     if p(l.head) {
-        return consList[T](l.head, l.tail.Filter(p))
+        return consList[T](l.head, l.tail.Get().Filter(p))
     }
-    return l.tail.Filter(p)
+    return l.tail.Get().Filter(p)
 }
 
 // FilterNot returns a new list with elements that do not satisfy the predicate.
@@ -382,13 +381,13 @@ func (l List[T]) Partition(p func(T) bool) Tuple[List[T], List[T]] {
     var left = emptyList[T]()
     var right = emptyList[T]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         if p(current.head) {
             left = left.Prepend(current.head)
         } else {
             right = right.Prepend(current.head)
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return (left.Reverse(), right.Reverse())
 }
@@ -397,35 +396,35 @@ func (l List[T]) Partition(p func(T) bool) Tuple[List[T], List[T]] {
 func (l List[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         acc = f(acc, current.head)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return acc
 }
 
 // FoldRight applies a binary operator from right to left.
 func (l List[T]) FoldRight[U any](initial U, f func(T, U) U) U {
-    if l.isEmpty {
+    if l.length == 0 {
         return initial
     }
-    var tail = *l.tail
+    var tail = *l.tail.Get()
     return f(l.head, tail.FoldRight[U](initial, f))
 }
 
 // Reduce applies a binary operator from left to right, starting with the first element.
 // Panics if the list is empty.
 func (l List[T]) Reduce(f func(T, T) T) T {
-    if l.isEmpty {
+    if l.length == 0 {
         go_builtins.Panic("List.Reduce on empty list")
     }
-    var tail = *l.tail
+    var tail = *l.tail.Get()
     return tail.FoldLeft[T](l.head, f)
 }
 
 // ReduceOption is like Reduce but returns None for empty list.
 func (l List[T]) ReduceOption(f func(T, T) T) Option[T] {
-    if l.isEmpty {
+    if l.length == 0 {
         return None[T]()
     }
     return Some[T](l.Reduce(f))
@@ -434,20 +433,20 @@ func (l List[T]) ReduceOption(f func(T, T) T) Option[T] {
 // ForEach applies a function to each element for side effects.
 func (l List[T]) ForEach(f func(T)) {
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         f(current.head)
-        current = *current.tail
+        current = *current.tail.Get()
     }
 }
 
 // Exists returns true if any element satisfies the predicate.
 func (l List[T]) Exists(p func(T) bool) bool {
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         if p(current.head) {
             return true
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return false
 }
@@ -455,11 +454,11 @@ func (l List[T]) Exists(p func(T) bool) bool {
 // ForAll returns true if all elements satisfy the predicate.
 func (l List[T]) ForAll(p func(T) bool) bool {
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         if !p(current.head) {
             return false
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return true
 }
@@ -467,11 +466,11 @@ func (l List[T]) ForAll(p func(T) bool) bool {
 // Find returns the first element that satisfies the predicate.
 func (l List[T]) Find(p func(T) bool) Option[T] {
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         if p(current.head) {
             return Some[T](current.head)
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return None[T]()
 }
@@ -488,12 +487,12 @@ func (l List[T]) Count(p func(T) bool) int {
 
 // Zip combines two lists into a list of tuples. Result length is the minimum of both.
 func (l List[T]) Zip[U any](other List[U]) List[Tuple[T, U]] {
-    if l.isEmpty || other.isEmpty {
+    if l.length == 0 || other.length == 0 {
         return emptyList[Tuple[T, U]]()
     }
     val pair = (l.head, other.head)
-    val lTail = *l.tail
-    val otherTail = *other.tail
+    val lTail = *l.tail.Get()
+    val otherTail = *other.tail.Get()
     return consList[Tuple[T, U]](pair, lTail.Zip[U](otherTail))
 }
 
@@ -501,9 +500,9 @@ func (l List[T]) Zip[U any](other List[U]) List[Tuple[T, U]] {
 func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
     var result = emptyList[Tuple[T, int]]()
     var current = l
-    for i := 0; !current.isEmpty; i++ {
+    for i := 0; current.length > 0; i++ {
         result = consList[Tuple[T, int]]((current.head, i), result)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return result.Reverse()
 }
@@ -514,11 +513,11 @@ func (l List[T]) Distinct() List[T] {
     // seen holds the kept elements in reverse order: O(1) prepends, one final Reverse.
     var seen = emptyList[T]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         if !seen.Contains(current.head) {
             seen = consList[T](current.head, seen)
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return seen.Reverse()
 }
@@ -539,9 +538,9 @@ func (l List[T]) Span(p func(T) bool) Tuple[List[T], List[T]] {
     // Collect the prefix reversed (O(1) prepends) and reverse it once.
     var reversedPrefix = emptyList[T]()
     var current = l
-    for !current.isEmpty && p(current.head) {
+    for current.length > 0 && p(current.head) {
         reversedPrefix = consList[T](current.head, reversedPrefix)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     // current is now the suffix (first element that doesn't satisfy p)
     return (reversedPrefix.Reverse(), current)
@@ -553,12 +552,12 @@ func (l List[T]) PartitionMap[A any, B any](f func(T) Either[A, B]) Tuple[List[A
     var lefts = emptyList[A]()
     var rights = emptyList[B]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         f(current.head) match {
             case Left(l) => lefts = consList[A](l, lefts)
             case Right(r) => rights = consList[B](r, rights)
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return (lefts.Reverse(), rights.Reverse())
 }
@@ -569,21 +568,17 @@ func (l List[T]) GroupBy[K comparable](f func(T) K) map[K]List[T] = l.GroupMap(f
 
 // GroupMap partitions elements and maps values according to discriminator and value functions.
 // Each group keeps the input order. key and value run once per element, in order. O(n).
-//
-// A zero-valued List[V] returned by a missing-key map lookup has isEmpty=false
-// and tail=nil (Go zero values), so it must never be used as a group: branch on
-// MapContains and start a fresh emptyList for new keys.
 func (l List[T]) GroupMap[K comparable, V any](key func(T) K, value func(T) V) map[K]List[V] {
     // Each group is built reversed (O(1) prepends) and reversed once at the end,
     // instead of an O(n) Append per element.
     val result = go_interop.MapEmpty[K, List[V]]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         val elem = current.head
         val k = key(elem)
-        val group = if (go_interop.MapContains(result, k)) result[k] else emptyList[V]()
+        val group = result[k] // a missing key gives the zero List, which is empty
         result[k] = consList[V](value(elem), group)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     for k, group := range result {
         result[k] = group.Reverse()
@@ -596,7 +591,7 @@ func (l List[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T
     var result = go_interop.MapEmpty[K, V]()
     var seen = go_interop.MapEmpty[K, bool]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         val elem = current.head
         val k = key(elem)
         val v = value(elem)
@@ -606,44 +601,44 @@ func (l List[T]) GroupMapReduce[K comparable, V any](key func(T) K, value func(T
             result[k] = v
             seen[k] = true
         }
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return result
 }
 
 // Flatten flattens a list of lists.
 func Flatten[T any](ll List[List[T]]) List[T] {
-    if ll.isEmpty {
+    if ll.length == 0 {
         return emptyList[T]()
     }
-    return ll.head.AppendAll(Flatten[T](*ll.tail))
+    return ll.head.AppendAll(Flatten[T](*ll.tail.Get()))
 }
 
 // ToGoSlice converts the list to a Go slice.
 func (l List[T]) ToGoSlice() []T {
     var result []T
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         result = go_interop.SliceAppend(result, current.head)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return result
 }
 
 // String returns a string representation of the list.
 func (l List[T]) String() string {
-    if l.isEmpty {
+    if l.length == 0 {
         return "List()"
     }
     var result = "List("
     var current = l
     var first = true
-    for !current.isEmpty {
+    for current.length > 0 {
         if !first {
             result = result + ", "
         }
         result = result + s"${current.head}"
-        current = *current.tail
+        current = *current.tail.Get()
         first = false
     }
     return result + ")"
@@ -651,18 +646,18 @@ func (l List[T]) String() string {
 
 // MkString joins elements into a string with separator.
 func (l List[T]) MkString(sep string) string {
-    if l.isEmpty {
+    if l.length == 0 {
         return ""
     }
     var result = ""
     var current = l
     var first = true
-    for !current.isEmpty {
+    for current.length > 0 {
         if !first {
             result = result + sep
         }
         result = result + s"${current.head}"
-        current = *current.tail
+        current = *current.tail.Get()
         first = false
     }
     return result
@@ -672,9 +667,9 @@ func (l List[T]) MkString(sep string) string {
 func (l List[T]) ToArray() Array[T] {
     var builder = newArrayBuilder[T]()
     var current = l
-    for !current.isEmpty {
+    for current.length > 0 {
         builder.Add(current.head)
-        current = *current.tail
+        current = *current.tail.Get()
     }
     return builder.Result()
 }
