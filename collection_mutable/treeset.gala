@@ -206,7 +206,22 @@ func isRedTreeSetNode[T comparable](tree OptionPtr[treeSetNode[T]]) bool =
 // === Query Operations ===
 
 // Contains checks if the set contains the given element. O(log n).
-func (s Ptr[TreeSet[T]]) Contains(elem T) bool = s.findNode(elem).IsDefined()
+// It walks the tree itself: findNode is too large to inline.
+func (s Ptr[TreeSet[T]]) Contains(elem T) bool {
+    var current = s.root
+    for current.IsDefined() {
+        val node = current.Get()
+        val cmp = treeSetCompare[T](elem, node.value)
+        if cmp < 0 {
+            current = node.left
+        } else if cmp > 0 {
+            current = node.right
+        } else {
+            return true
+        }
+    }
+    return false
+}
 
 // === Mutating Operations ===
 
@@ -251,7 +266,7 @@ func (s Ptr[TreeSet[T]]) Add(elem T) bool {
 // fixAfterInsert rebalances the tree after insertion. A red node is never the
 // root, so a node whose parent is red has a grandparent.
 func (s Ptr[TreeSet[T]]) fixAfterInsert(var node Ptr[treeSetNode[T]]) {
-    for node.parent.IsDefined() && isRedTreeSetNode[T](node.parent) {
+    for isRedTreeSetNode[T](node.parent) {
         val parent = node.parent.Get()
         val grand = parent.parent.Get()
         if grand.left == node.parent {

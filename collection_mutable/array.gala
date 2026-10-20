@@ -621,10 +621,14 @@ func (a Ptr[Array[T]]) GroupBy[K comparable](f func(T) K) map[K]Ptr[Array[T]] {
     for i := 0; i < a.elements.Size(); i++ {
         val elem = a.elements[i]
         val key = f(elem)
-        if !go_interop.MapContains(result, key) {
-            result[key] = EmptyArray[T]()
+        val existing, ok = go_interop.MapGet(result, key)
+        if ok {
+            existing.Append(elem)
+        } else {
+            val group = EmptyArray[T]()
+            group.Append(elem)
+            result[key] = group
         }
-        result[key].Append(elem)
     }
     return result
 }

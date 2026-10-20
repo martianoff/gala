@@ -311,7 +311,7 @@ func (m Ptr[TreeMap[K, V]]) Put(key K, value V) bool {
 // fixAfterInsert rebalances the tree after insertion. A red node is never the
 // root, so a node whose parent is red has a grandparent.
 func (m Ptr[TreeMap[K, V]]) fixAfterInsert(var node Ptr[treeMapNode[K, V]]) {
-    for node.parent.IsDefined() && isRedTreeMapNode[K, V](node.parent) {
+    for isRedTreeMapNode[K, V](node.parent) {
         val parent = node.parent.Get()
         val grand = parent.parent.Get()
         if grand.left == node.parent {

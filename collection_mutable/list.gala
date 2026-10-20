@@ -154,7 +154,7 @@ func (l Ptr[List[T]]) Set(index int, value T) {
 // Prepend adds an element to the front. O(1).
 func (l Ptr[List[T]]) Prepend(value T) {
     // prev is left out: an OptionPtr field's zero value is empty
-    val newNode = SomePtr(&listNode[T]{value: value, next: l.head})
+    val newNode = SomePtr(&listNode[T](value = value, next = l.head))
     if l.length == 0 {
         l.tail = newNode
     } else {
@@ -167,7 +167,7 @@ func (l Ptr[List[T]]) Prepend(value T) {
 // Append adds an element to the end. O(1).
 func (l Ptr[List[T]]) Append(value T) {
     // next is left out: an OptionPtr field's zero value is empty
-    val newNode = SomePtr(&listNode[T]{value: value, prev: l.tail})
+    val newNode = SomePtr(&listNode[T](value = value, prev = l.tail))
     if l.length == 0 {
         l.head = newNode
     } else {
@@ -302,12 +302,12 @@ func (l Ptr[List[T]]) Reverse() {
     var current = l.head
     for current.IsDefined() {
         val node = current.Get()
-        var temp = node.next
+        val temp = node.next
         node.next = node.prev
         node.prev = temp
         current = temp
     }
-    var temp = l.head
+    val temp = l.head
     l.head = l.tail
     l.tail = temp
 }
@@ -419,14 +419,9 @@ func (l Ptr[List[T]]) Slice(var start int, var end int) Ptr[List[T]] {
 
 // Clone creates a shallow copy of the list.
 func (l Ptr[List[T]]) Clone() Ptr[List[T]] {
-    var result = EmptyList[T]()
-    var current = l.head
-    for current.IsDefined() {
-        val node = current.Get()
-        result.Append(node.value)
-        current = node.next
-    }
-    return result
+    val result = EmptyList[T]()
+    result.AppendFrom(l)
+    result
 }
 
 // Tail returns all elements except the first.
@@ -550,8 +545,12 @@ func (l Ptr[List[T]]) TakeWhile(p func(T) bool) Ptr[List[T]] {
 func (l Ptr[List[T]]) DropWhile(p func(T) bool) Ptr[List[T]] {
     var current = l.head
     var index = 0
-    for current.IsDefined() && p(current.Get().value) {
-        current = current.Get().next
+    for current.IsDefined() {
+        val node = current.Get()
+        if !p(node.value) {
+            break
+        }
+        current = node.next
         index++
     }
     return l.Drop(index)
@@ -739,10 +738,14 @@ func (l Ptr[List[T]]) GroupBy[K comparable](f func(T) K) map[K]Ptr[List[T]] {
     for current.IsDefined() {
         val node = current.Get()
         val key = f(node.value)
-        if !go_interop.MapContains(result, key) {
-            result[key] = EmptyList[T]()
+        val existing, ok = go_interop.MapGet(result, key)
+        if ok {
+            existing.Append(node.value)
+        } else {
+            val group = EmptyList[T]()
+            group.Append(node.value)
+            result[key] = group
         }
-        result[key].Append(node.value)
         current = node.next
     }
     return result
