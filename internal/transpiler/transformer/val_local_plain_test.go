@@ -122,6 +122,30 @@ func f(x int) Option[int] {
 			contains: []string{"func(a int) std.Option[int] {", "Apply(a + 1)"},
 		},
 		{
+			name: "a lambda's returned local shadows an outer binding",
+			input: `package main
+
+func f(x int) string {
+    val g = () => {
+        val x = "s"
+        return x
+    }
+    g()
+}`,
+			contains: []string{"var g = func() string {", "var x = \"s\"\n"},
+		},
+		{
+			name: "short declaration in a package-level if-expression branch",
+			input: `package main
+
+val Cfg = if (true) {
+    u := "a"
+    u + "/x"
+} else "b"`,
+			contains: []string{"u := \"a\"\n", "u + \"/x\""},
+			boxes:    true,
+		},
+		{
 			name: "package-level val stays boxed",
 			input: `package main
 
@@ -180,6 +204,23 @@ struct Holder(var c Counter)
 		got, err := trans.Transpile(decls+"func f() int {\n    var c = Counter(1)\n    c.Bump()\n}", "")
 		require.NoError(t, err)
 		assert.Contains(t, got, "return c.Bump()")
+	})
+	// An index write, `&` of an element, or a pointer method on an element
+	// cannot be judged in GALA: a Go array and a slice look alike to it. The
+	// path keeps the val's boxed root, a call result, so Go rejects the write
+	// to an array element and accepts the one through a slice, as before.
+	// (The output must stay valid Go for the oracle, so these index a slice;
+	// on a Go array, such as sha256.Sum256's result, Go rejects the same
+	// shape.)
+	t.Run("element write through a val keeps the boxed root", func(t *testing.T) {
+		got, err := trans.Transpile("package main\n\nfunc f(xs []int) {\n    val ys = xs\n    ys[0] = 1\n}", "")
+		require.NoError(t, err)
+		assert.Contains(t, got, "std.NewImmutable(ys).Get()[0] = 1")
+	})
+	t.Run("address of an element of a val keeps the boxed root", func(t *testing.T) {
+		got, err := trans.Transpile("package main\n\nfunc f(xs []int) {\n    val ys = xs\n    val p = &ys[0]\n    *p = 2\n}", "")
+		require.NoError(t, err)
+		assert.Contains(t, got, "&std.NewImmutable(ys).Get()[0]")
 	})
 	t.Run("reassigning a val", func(t *testing.T) {
 		_, err := trans.Transpile(decls+"func f() {\n    val c = Counter(1)\n    c = Counter(2)\n}", "")

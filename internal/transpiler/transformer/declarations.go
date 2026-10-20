@@ -247,11 +247,17 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		}
 	}
 
-	// The Go type of the annotation, if any (see valDeclaredType).
+	// The annotation, if any, as a Go type (see valDeclaredType) and as a
+	// GALA type; a val never boxes a value twice.
 	var declType ast.Expr
+	var annotType transpiler.Type
 	if ctx.Type_() != nil {
 		if declType, err = t.transformType(ctx.Type_()); err != nil {
 			return nil, err
+		}
+		annotType = t.astTypeToTranspilerType(declType)
+		if t.isImmutableType(annotType) {
+			return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
 		}
 	}
 
@@ -270,35 +276,8 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	// nothing; with one, it still goes through a temp so its value is checked
 	// against the annotation.
 	if isMultiReturnFromSingleExpr {
-		boxed := t.valsAreBoxed()
-		anchor := packageTempAnchor(ctx, namesCtx)
-		blankDiscards := ctx.Type_() == nil
-		tempNames := make([]string, len(namesCtx))
-		tempIdents := make([]*ast.Ident, len(namesCtx))
-		for i, idCtx := range namesCtx {
-			switch {
-			case !boxed || blankDiscards && idCtx.GetText() == "_":
-				tempNames[i] = idCtx.GetText()
-			case anchor != "":
-				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
-			default:
-				tempNames[i] = t.nextTempVar()
-			}
-			tempIdents[i] = ast.NewIdent(tempNames[i])
-		}
-
-		// First spec: capture all return values — in the names themselves for
-		// a local val, else in temp variables. A Go call converted to one GALA
-		// value is read back as the call itself.
+		// A Go call converted to one GALA value is read back as the call itself.
 		callValue := t.rawGoCall(t.unwrapImmutable(rhsExprs[0]))
-		tempSpec := &ast.ValueSpec{
-			Names:  tempIdents,
-			Values: []ast.Expr{callValue},
-		}
-		if !boxed {
-			tempSpec.Type = declType
-		}
-		specs := []ast.Spec{tempSpec}
 
 		// Infer each binding's type from the call's multi-return signature when
 		// no explicit annotation is given, so e.g. `val entries, err =
@@ -310,46 +289,64 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 		// of those to a name defers the failure to wherever the name is next
 		// used in a position that needs a concrete type.
 		var callReturns []transpiler.Type
-		if ctx.Type_() == nil {
+		if annotType == nil {
 			callReturns = t.resolveGoCallReturnTypes(callValue)
 		}
-
-		// Bind each name; at package level, declare it from its temp.
-		for i, idCtx := range namesCtx {
-			name := idCtx.GetText()
-			if name == "_" && (!boxed || tempNames[i] == "_") {
-				continue
-			}
-			var typeName transpiler.Type = transpiler.NilType{}
-			if ctx.Type_() != nil {
-				typeExpr, _ := t.transformType(ctx.Type_())
-				typeName = t.astTypeToTranspilerType(typeExpr)
-				if t.isImmutableType(typeName) {
-					return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
+		bind := func(i int, name string) {
+			typeName := annotType
+			if typeName == nil {
+				typeName = transpiler.NilType{}
+				if i < len(callReturns) && callReturns[i] != nil {
+					typeName = callReturns[i]
 				}
-			} else if i < len(callReturns) && callReturns[i] != nil {
-				typeName = callReturns[i]
 			}
-
 			if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 				typeName = qName
 			}
+			t.addDeclaredVal(name, typeName)
+		}
 
-			t.addVal(name, typeName)
-			if !boxed {
+		if !t.valsAreBoxed() {
+			names := make([]*ast.Ident, len(namesCtx))
+			for i, idCtx := range namesCtx {
+				if name := idCtx.GetText(); name != "_" {
+					bind(i, name)
+				}
+				names[i] = ast.NewIdent(idCtx.GetText())
+			}
+			return &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{
+				&ast.ValueSpec{Names: names, Type: declType, Values: []ast.Expr{callValue}},
+			}}, nil
+		}
+
+		anchor := packageTempAnchor(ctx, namesCtx)
+		tempNames := make([]string, len(namesCtx))
+		tempIdents := make([]*ast.Ident, len(namesCtx))
+		for i, idCtx := range namesCtx {
+			switch {
+			case declType == nil && idCtx.GetText() == "_":
+				tempNames[i] = "_"
+			case anchor != "":
+				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
+			default:
+				tempNames[i] = t.nextTempVar()
+			}
+			tempIdents[i] = ast.NewIdent(tempNames[i])
+		}
+		specs := []ast.Spec{&ast.ValueSpec{Names: tempIdents, Values: []ast.Expr{callValue}}}
+		for i, idCtx := range namesCtx {
+			if tempNames[i] == "_" {
 				continue
 			}
+			name := idCtx.GetText()
+			bind(i, name)
 			specs = append(specs, &ast.ValueSpec{
 				Names:  []*ast.Ident{ast.NewIdent(name)},
 				Type:   t.valDeclaredType(declType),
 				Values: []ast.Expr{t.valInitializer(declType, ast.NewIdent(tempNames[i]))},
 			})
 		}
-
-		return &ast.GenDecl{
-			Tok:   token.VAR,
-			Specs: specs,
-		}, nil
+		return &ast.GenDecl{Tok: token.VAR, Specs: specs}, nil
 	}
 
 	var idents []*ast.Ident
@@ -357,12 +354,8 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	for i, idCtx := range namesCtx {
 		name := idCtx.GetText()
 		var typeName transpiler.Type = transpiler.NilType{}
-		if ctx.Type_() != nil {
-			typeExpr, _ := t.transformType(ctx.Type_())
-			typeName = t.astTypeToTranspilerType(typeExpr)
-			if t.isImmutableType(typeName) {
-				return nil, t.semanticErrorAt(ctx, "recursive Immutable wrapping is not allowed")
-			}
+		if annotType != nil {
+			typeName = annotType
 		} else if len(rhsExprs) == len(namesCtx) {
 			typeName = t.getExprTypeName(rhsExprs[i])
 			if t.isImmutableType(typeName) {
@@ -376,7 +369,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeName = qName
 		}
 
-		t.addVal(name, typeName)
+		t.addDeclaredVal(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
 
 		var val ast.Expr
@@ -554,7 +547,7 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 			t.addVar(name, componentType)
 			t.markMutable(name)
 		} else {
-			t.addVal(name, componentType)
+			t.addDeclaredVal(name, componentType)
 		}
 		if mutable || !t.valsAreBoxed() {
 			value = &ast.CallExpr{Fun: &ast.SelectorExpr{X: value, Sel: ast.NewIdent(transpiler.MethodGet)}}

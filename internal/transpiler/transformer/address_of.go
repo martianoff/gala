@@ -139,3 +139,101 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 func reachedThroughVal(name string) (why, hint string) {
 	return fmt.Sprintf("it is reached through val %s", name), fmt.Sprintf("declare it `var %s`", name)
 }
+
+// A local val is a plain Go variable, so Go itself would let a write, an `&`
+// or a pointer-receiver call through any path rooted at it. GALA rejects the
+// ones it can judge (immutablePathReason, addressableReceiver); a path it
+// cannot judge — one that indexes (a Go array and a slice look alike to it)
+// or crosses a value of unresolved type — keeps the val's boxed shape at its
+// root: `std.NewImmutable(x).Get()`, a call result, which Go addresses
+// exactly as it did the boxed val's `x.Get()`. Go then rejects a write to an
+// array element or a struct field, and lets one through a slice, map or
+// pointer.
+
+// sealPlainValPath returns path with its root re-boxed when the path is
+// rooted at a local val, crosses no known pointer, and indexes or crosses a
+// value of unresolved type; otherwise path itself.
+func (t *galaASTTransformer) sealPlainValPath(path ast.Expr) ast.Expr {
+	root, judged := t.plainValPathRoot(path)
+	if root == nil || judged {
+		return path
+	}
+	boxed := &ast.CallExpr{Fun: &ast.SelectorExpr{
+		X:   &ast.CallExpr{Fun: t.stdIdent(transpiler.FuncNewImmutable), Args: []ast.Expr{root}},
+		Sel: ast.NewIdent(transpiler.MethodGet),
+	}}
+	return replacePathRoot(path, boxed)
+}
+
+// plainValPathRoot returns the local val a selector/index path is rooted at,
+// or nil when the path crosses a known pointer or has another root. judged
+// reports that every value on the path has a resolved type and none is
+// indexed, so GALA's own checks already decided it.
+func (t *galaASTTransformer) plainValPathRoot(path ast.Expr) (root *ast.Ident, judged bool) {
+	// Find the root first, without typing anything: most paths are not
+	// rooted at a local val.
+	if id, ok := pathRootIdent(path); !ok || !t.isPlainVal(id.Name) {
+		return nil, false
+	}
+	judged = true
+	for {
+		switch e := path.(type) {
+		case *ast.Ident:
+			return e, judged && !transpiler.IsUnusable(t.getExprTypeName(e))
+		case *ast.ParenExpr:
+			path = e.X
+		case *ast.SelectorExpr:
+			xType := t.getExprTypeName(e.X)
+			if _, isPtr := xType.(transpiler.PointerType); isPtr {
+				return nil, false
+			}
+			judged = judged && !transpiler.IsUnusable(xType)
+			path = e.X
+		case *ast.IndexExpr:
+			switch t.getExprTypeName(e.X).(type) {
+			case transpiler.PointerType:
+				return nil, false
+			case transpiler.MapType:
+				// A map element is written in the shared map, whichever
+				// way the map is reached, and is never addressable.
+				return nil, false
+			}
+			judged = false
+			path = e.X
+		default:
+			return nil, false
+		}
+	}
+}
+
+// replacePathRoot rebuilds a selector/index path with its root ident
+// replaced by root.
+func replacePathRoot(path, root ast.Expr) ast.Expr {
+	switch e := path.(type) {
+	case *ast.ParenExpr:
+		return &ast.ParenExpr{X: replacePathRoot(e.X, root)}
+	case *ast.SelectorExpr:
+		return &ast.SelectorExpr{X: replacePathRoot(e.X, root), Sel: e.Sel}
+	case *ast.IndexExpr:
+		return &ast.IndexExpr{X: replacePathRoot(e.X, root), Index: e.Index}
+	}
+	return root
+}
+
+// pathRootIdent returns the ident a selector/index path starts from.
+func pathRootIdent(path ast.Expr) (*ast.Ident, bool) {
+	for {
+		switch e := path.(type) {
+		case *ast.Ident:
+			return e, true
+		case *ast.ParenExpr:
+			path = e.X
+		case *ast.SelectorExpr:
+			path = e.X
+		case *ast.IndexExpr:
+			path = e.X
+		default:
+			return nil, false
+		}
+	}
+}

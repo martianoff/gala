@@ -129,6 +129,7 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	if err := t.immutableFieldWriteError(ctx.Expression(), expr, "increment/decrement"); err != nil {
 		return nil, err
 	}
+	expr = t.sealPlainValPath(expr)
 
 	// Determine the token (++ or --)
 	tok := token.INC
@@ -260,6 +261,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		if err := t.immutableFieldWriteError(lhsCtx.Expression(i), target, "assign to"); err != nil {
 			return nil, err
 		}
+		lhsExprs[i] = t.sealPlainValPath(target)
 	}
 
 	// A single target's type is the RHS's expected type, so
@@ -1134,7 +1136,8 @@ func (t *galaASTTransformer) checkUnpromotedBranchTails(ifCtx *grammar.IfStateme
 // checkValueUsed rejects an expression statement whose value is discarded
 // without any effect: a bare name, literal, field access or operator
 // expression. Go accepts only calls and receives as expression statements; a
-// bare `val` name also lowers to a call (its `.Get()`), which Go would accept
+// bare package-level `val` name or immutable field lowers to a call (its
+// `.Get()`), which Go would accept
 // silently, so the GALA source decides. stmt is exprCtx's lowering.
 func (t *galaASTTransformer) checkValueUsed(exprCtx grammar.IExpressionContext, stmt ast.Stmt) error {
 	return t.checkValueUsedHint(exprCtx, stmt, functionDiscardHint)

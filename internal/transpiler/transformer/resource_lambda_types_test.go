@@ -373,7 +373,10 @@ func TestGoNamedFuncTypeSlots(t *testing.T) {
 		{
 			name: "the result of calling a value of a GALA alias of the type",
 			gala: "import \"io/fs\"\n\ntype Walk fs.WalkDirFunc\n\nfunc run(f Walk) string {\n    val err = f(\".\", nil, nil)\n    err.Error()\n}\n",
-			want: "err.Error()",
+			// The call's result type is not recorded on `err` through the
+			// alias, so the receiver keeps the val's boxed root (see
+			// sealPlainValPath); the method call itself is the same.
+			want: "std.NewImmutable(err).Get().Error()",
 		},
 	}
 	for _, tc := range cases {

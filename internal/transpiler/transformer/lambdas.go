@@ -756,20 +756,26 @@ func (t *galaASTTransformer) collectReturnTypes(block *ast.BlockStmt, locals *bl
 // inferReturnExprType infers the type of a single return expression with
 // getExprType, falling back to the block's declaration of a returned local.
 func (t *galaASTTransformer) inferReturnExprType(expr ast.Expr, locals *blockLocals) ast.Expr {
-	// First try direct type inference (getExprTypeName) — this is the most reliable
-	// as it uses the full type inference pipeline.
-	inferredType := t.getExprType(expr)
-	if inferredType != nil {
-		if ident, ok := inferredType.(*ast.Ident); !ok || ident.Name != "any" {
-			return inferredType
+	// A local the block declares (`return result`) is typed by its
+	// declaration: the block's scope is gone by now, so the name may resolve
+	// to an outer binding it shadows.
+	if ident, ok := expr.(*ast.Ident); ok {
+		if typ, declared := locals.typeOf(ident.Name); declared {
+			return concreteReturnType(typ)
 		}
 	}
-	// Fallback: a returned local (`return result`), typed by its declaration
-	// in the block. A local val is a plain variable, so it is read bare.
-	if ident, ok := expr.(*ast.Ident); ok {
-		return locals.typeOf(ident.Name)
+	// Otherwise direct type inference (getExprTypeName), which uses the full
+	// type inference pipeline.
+	return concreteReturnType(t.getExprType(expr))
+}
+
+// concreteReturnType is typ, or nil when it is unknown or `any`, which says
+// nothing about a block's return type.
+func concreteReturnType(typ ast.Expr) ast.Expr {
+	if ident, ok := typ.(*ast.Ident); ok && ident.Name == "any" {
+		return nil
 	}
-	return nil
+	return typ
 }
 
 // unifyBlockReturnTypes takes a list of inferred return type expressions and attempts
@@ -879,8 +885,9 @@ type blockLocals struct {
 }
 
 // typeOf returns the type of the local name declared in the block — `var name
-// T = x`, `var name = x` or `name := x` — or nil.
-func (b *blockLocals) typeOf(name string) ast.Expr {
+// T = x`, `var name = x` or `name := x` — and whether the block declares it;
+// the type is nil when the declaration cannot be typed.
+func (b *blockLocals) typeOf(name string) (ast.Expr, bool) {
 	if b.types == nil {
 		b.types = make(map[string]ast.Expr)
 		for _, stmt := range b.block.List {
@@ -909,17 +916,17 @@ func (b *blockLocals) typeOf(name string) ast.Expr {
 			}
 		}
 	}
-	return b.types[name]
+	typ, declared := b.types[name]
+	return typ, declared
 }
 
-// record types name by its declared type, else by its value's.
+// record types name by its declared type, else by its value's (nil when
+// that cannot be typed).
 func (b *blockLocals) record(name string, typ, value ast.Expr) {
 	if typ == nil {
 		typ = b.t.getExprType(value)
 	}
-	if typ != nil {
-		b.types[name] = typ
-	}
+	b.types[name] = typ
 }
 
 // findPartialFunctionInExpression traverses the expression tree to find a partial function literal
