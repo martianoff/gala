@@ -451,12 +451,8 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		// A clause is checked as any argument filling the Zip's parameter: a
 		// pointer that may be nil never fills a Ptr (GALA-E0080). The clauses
 		// past a variadic Zip's last parameter fill it.
-		param := i - 1
-		if zip.Variadic && param >= len(zip.ParamTypes) {
-			param = len(zip.ParamTypes) - 1
-		}
 		arg := prepped[i].recvExpr
-		if param >= 0 && param < len(zip.ParamTypes) {
+		if param := paramIndex(i-1, zip.ParamTypes, zip.Variadic); param >= 0 {
 			paramType := t.substituteTranspilerTypeParams(zip.ParamTypes[param], subst)
 			if err := t.checkPtrSlot(arg, paramType, prepped[i].exprCtx); err != nil {
 				return nil, err

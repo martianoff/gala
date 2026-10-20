@@ -1514,6 +1514,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 							paramCtx := p.(*grammar.ParameterContext)
 							if paramCtx.Type_() != nil {
 								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
+								funcMeta.Variadic = paramCtx.ELLIPSIS() != nil
 							} else {
 								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 							}
@@ -4491,6 +4492,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
 									funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
+									funcMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
 								}

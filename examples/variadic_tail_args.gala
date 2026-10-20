@@ -1,0 +1,46 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+import . "martianoff/gala/go_interop"
+
+// Counter is a mutable count.
+struct Counter(var N int)
+
+// Count is the counter's value.
+func (c Ptr[Counter]) Count() int = c.N
+
+func total(cs ...Ptr[Counter]) int = ArrayOf(cs...).FoldLeft(0, (acc, c) => acc + c.Count())
+
+func pipe(fs ...func(int) int) int = ArrayOf(fs...).FoldLeft(1, (acc, f) => f(acc))
+
+// Group names a set of counters.
+struct Group(Name string)
+
+// Total labels the sum of the counters.
+func (g Group) Total(label string, cs ...Ptr[Counter]) string = s"$label: ${total(cs...)}"
+
+// Pipe applies each function in turn, starting from 1.
+func (g Group) Pipe(fs ...func(int) int) int = pipe(fs...)
+
+func sizes[T any](f func(T) int, xs ...Option[T]) int = ArrayOf(xs...).FoldLeft(0, (acc, o) => acc + o.Map(f).GetOrElse(0))
+
+func lookup(found bool) *Counter = if (found) &Counter(5) else nil
+
+func main() {
+    var a = Counter(1)
+    var b = Counter(2)
+    // Every argument filling a ...Ptr[Counter] is a Ptr: `&x`, or a Go
+    // pointer checked by RequirePtr.
+    Println(total(&a, &b, RequirePtr(lookup(true))))
+    Println(Group("g").Total("group", &a, &b))
+    val cs = SliceOf(&a, &b)
+    Println(total(cs...))
+    // A pointer that may be nil is kept as an OptionPtr.
+    Println(OptionPtrOf(lookup(false)).IsEmpty())
+    // Each lambda filling a variadic parameter takes its parameter types from
+    // the element type.
+    Println(pipe((x) => x + 1, (x) => x * 10, _ + 5))
+    Println(Group("g").Pipe((x) => x * 3, (x) => x - 1))
+    // A later variadic argument binds the type the lambda needs.
+    Println(sizes((s) => s.Size(), None(), Some("abc")))
+}

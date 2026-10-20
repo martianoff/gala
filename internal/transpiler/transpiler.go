@@ -635,6 +635,8 @@ type FunctionMetadata struct {
 	TypeParams   []string
 	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
 	DefinedIn    string              // Source file where this function was defined
+	// Variadic is MethodMetadata.Variadic.
+	Variadic bool
 	// GoResults is the Go result list the function declares (see
 	// MethodMetadata.GoResults); ReturnType holds a call's GALA value.
 	GoResults []Type

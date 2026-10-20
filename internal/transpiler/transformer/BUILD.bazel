@@ -98,6 +98,7 @@ go_test(
         "ptr_receiver_test.go",
         "ptr_type_arg_test.go",
         "ptr_test.go",
+        "variadic_args_test.go",
         "alias_expected_type_test.go",
         "aliased_go_import_types_test.go",
         "alternative_pattern_test.go",
