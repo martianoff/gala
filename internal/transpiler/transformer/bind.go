@@ -119,8 +119,9 @@ type preppedBind struct {
 	recvType       transpiler.Type
 	lookupBaseName string
 	elemType       transpiler.Type
-	typeMeta       *transpiler.TypeMetadata // the monad's
-	ctx            antlr.ParserRuleContext  // the clause
+	typeMeta       *transpiler.TypeMetadata   // the monad's
+	ctx            antlr.ParserRuleContext    // the clause
+	exprCtx        grammar.IExpressionContext // the clause's value
 }
 
 // collectBindGroup splits the leading `bind` and any consecutive `also` clauses
@@ -359,7 +360,7 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 		return preppedBind{}, t.semanticErrorAt(e.ctx, "cannot `bind` a "+lookupBaseName+" inside a "+res.monad+" block (heterogeneous bind is not supported)")
 	}
 
-	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType, typeMeta, e.ctx}, nil
+	return preppedBind{e.name, recvExpr, recvType, lookupBaseName, elemType, typeMeta, e.ctx, e.exprCtx}, nil
 }
 
 // bindReceiver is the receiver argument of the lowered call of p's monad's
@@ -368,6 +369,19 @@ func (t *galaASTTransformer) prepBindEntry(e bindEntry, res *bindResult) (preppe
 // which a diagnostic places at p's clause.
 func (t *galaASTTransformer) bindReceiver(p preppedBind, recv ast.Expr, recvType transpiler.Type, method string) (ast.Expr, error) {
 	return t.loweredMethodReceiver(recv, recvType, p.typeMeta.Methods[method], method, p.ctx.GetStart().GetLine(), p.ctx.GetStart().GetColumn())
+}
+
+// bindClauseReceiver is bindReceiver for p's own value. As for the same call
+// written out, a method on a `Ptr` receiver is never called on a pointer that
+// may be nil (GALA-E0080, checkPtrReceiverAt).
+func (t *galaASTTransformer) bindClauseReceiver(p preppedBind, method string) (ast.Expr, error) {
+	err := t.checkPtrReceiverAt(p.recvExpr, p.recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
+		return p.exprCtx, p.exprCtx, transpiler.SourceText(p.exprCtx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return t.bindReceiver(p, p.recvExpr, p.recvType, method)
 }
 
 // buildSequential chains the clauses as nested FlatMaps (each bound name stays in
@@ -381,10 +395,15 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 	// Immutable-backed val (`name := NewImmutable(<rawParam>)`) at the top of the
 	// lambda body — the same shape a plain `val name = <expr>` produces.
 	rawParam := bindRawParamName(p.name)
-	t.addVal(p.name, p.elemType)
 
+	// The clause's receiver is lowered before its name is bound and before the
+	// clauses after it, so an error in it is reported first.
+	recv, err := t.bindClauseReceiver(p, "FlatMap")
+	if err != nil {
+		return nil, err
+	}
+	t.addVal(p.name, p.elemType)
 	var body *ast.BlockStmt
-	var err error
 	if len(prepped) > 1 {
 		inner, ierr := t.buildSequential(prepped[1:], rest, res)
 		if ierr != nil {
@@ -405,10 +424,6 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 		body.List = append([]ast.Stmt{t.bindRebindStmt(p.name, rawParam)}, body.List...)
 	}
 
-	recv, err := t.bindReceiver(p, p.recvExpr, p.recvType, "FlatMap")
-	if err != nil {
-		return nil, err
-	}
 	lambda := t.bindLambda(rawParam, p.elemType, res.typ, body)
 	return t.emitGenericMethodFreeFunc("FlatMap", recv, p.recvType, p.lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
 }
@@ -444,15 +459,36 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 	// Zip call: method type args are the element types of clauses 1..n-1; the
 	// receiver's own type args (e.g. E, A of Validated[E, A]) are appended by
 	// emitGenericMethodFreeFunc.
-	var zipTypeArgs []ast.Expr
-	var zipArgs []ast.Expr
-	for i := 1; i < n; i++ {
-		zipTypeArgs = append(zipTypeArgs, t.typeToExpr(prepped[i].elemType))
-		zipArgs = append(zipArgs, prepped[i].recvExpr)
-	}
-	zipRecv, err := t.bindReceiver(prepped[0], prepped[0].recvExpr, prepped[0].recvType, zipName)
+	zipRecv, err := t.bindClauseReceiver(prepped[0], zipName)
 	if err != nil {
 		return nil, err
+	}
+	var zipTypeArgs []ast.Expr
+	var zipArgs []ast.Expr
+	zip := prepped[0].typeMeta.Methods[zipName]
+	monad := prepped[0].recvType
+	if ptr, ok := monad.(transpiler.PointerType); ok {
+		monad = ptr.Elem
+	}
+	// The Zip's parameters take the receiver's type arguments and the clauses'
+	// element types (the Zip's own type arguments).
+	subst := typeSubstMap{}
+	for j, tp := range zip.TypeParams {
+		if j+1 < n {
+			subst[tp] = prepped[j+1].elemType
+		}
+	}
+	subst = receiverTypeSubst(prepped[0].typeMeta.TypeParams, monad, subst)
+	for i := 1; i < n; i++ {
+		// A clause is checked as any argument filling the Zip's parameter: a
+		// pointer that may be nil never fills a Ptr (GALA-E0080).
+		if i-1 < len(zip.ParamTypes) {
+			if err := t.checkPtrSlot(prepped[i].recvExpr, t.substituteTranspilerTypeParams(zip.ParamTypes[i-1], subst), prepped[i].exprCtx); err != nil {
+				return nil, err
+			}
+		}
+		zipTypeArgs = append(zipTypeArgs, t.typeToExpr(prepped[i].elemType))
+		zipArgs = append(zipArgs, prepped[i].recvExpr)
 	}
 	zipCall := t.emitGenericMethodFreeFunc(zipName, zipRecv, prepped[0].recvType, prepped[0].lookupBaseName, zipTypeArgs, nil, zipArgs, false)
 
@@ -467,7 +503,19 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		elemStrs[i] = p.elemType.String()
 	}
 	tupleType := transpiler.ParseType(tupleName + "[" + strings.Join(elemStrs, ", ") + "]")
-	zipResultType := t.withElemType(prepped[0].recvType, tupleType)
+	// The Zip's result is the type it declares — M[TupleN], or a pointer to
+	// it — whatever pointer to M the first clause is.
+	zipResultType := t.withElemType(monad, tupleType)
+	if ptr, ok := zip.ReturnType.(transpiler.PointerType); ok {
+		zipResultType = transpiler.PointerType{Elem: zipResultType, NonNull: ptr.NonNull}
+	}
+	if err := t.checkPtrZipResult(zipResultType, zip, prepped[0].ctx, prepped[n-1].ctx); err != nil {
+		return nil, err
+	}
+	flatMapRecv, err := t.bindReceiver(prepped[0], zipCall, zipResultType, "FlatMap")
+	if err != nil {
+		return nil, err
+	}
 
 	// FlatMap lambda: func(g TupleN) M[R] { a0 := g.V1; ...; <continuation> }.
 	const tupleParam = "_zip"
@@ -499,10 +547,6 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 	}
 	lambdaBody.List = append(lambdaBody.List, restBody.List...)
 
-	flatMapRecv, err := t.bindReceiver(prepped[0], zipCall, zipResultType, "FlatMap")
-	if err != nil {
-		return nil, err
-	}
 	lambda := t.bindLambda(tupleParam, tupleType, res.typ, lambdaBody)
 	return t.emitGenericMethodFreeFunc("FlatMap", flatMapRecv, zipResultType, prepped[0].lookupBaseName, t.resultElemTypeArgs(res.typ), nil, []ast.Expr{lambda}, false), nil
 }

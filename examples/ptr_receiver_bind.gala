@@ -1,0 +1,96 @@
+package main
+
+// `bind` and `also` lower to the monad's FlatMap and ZipN calls, so a monad
+// whose FlatMap or ZipN has a Ptr[T] receiver binds only a value that is never
+// nil: a Ptr, `&x`, a var or val (through its address or an addressed copy),
+// or the Ptr inside an OptionPtr. A *T that may be nil is rejected at the
+// clause (GALA-E0080), as `find(false).FlatMap(...)` is; RequirePtr checks one
+// at the clause instead of deep inside FlatMap.
+
+struct Cell[T any](V T)
+
+func (c Ptr[Cell[T]]) FlatMap[U any](f func(T) Cell[U]) Cell[U] = f(c.V)
+
+func (c Ptr[Cell[T]]) Zip2[U any](o Cell[U]) Cell[Tuple[T, U]] = Cell(Tuple(c.V, o.V))
+
+// A Zip may return a Ptr: FlatMap runs on it as it is.
+func (c Ptr[Cell[T]]) Zip3[U any, V any](o Cell[U], p Cell[V]) Ptr[Cell[Tuple3[T, U, V]]] =
+    &Cell(Tuple3(c.V, o.V, p.V))
+
+// A Go-style lookup: its pointer may be nil.
+func find(found bool) *Cell[int] = if (found) &Cell(1) else nil
+
+func viaPtr(found bool) Cell[int] {
+    bind a = RequirePtr(find(found))
+    Cell(a + 1)
+}
+
+func viaAddress() Cell[int] {
+    var c = Cell(2)
+    bind a = &c
+    Cell(a * 10)
+}
+
+func viaVar() Cell[int] {
+    var c = Cell(3)
+    bind a = c
+    Cell(a * 10)
+}
+
+func viaVals() Cell[int] {
+    val c = Cell(4)
+    bind a = c
+    bind b = Cell(5)
+    Cell(a * b)
+}
+
+func viaOptionPtr(found bool) Cell[int] =
+    OptionPtrOf(find(found)).Map((p) => {
+        bind a = p
+        Cell(a + 100)
+    }).GetOrElse(Cell(-1))
+
+func zipped() Cell[int] {
+    bind a = RequirePtr(find(true))
+    also b = Cell(20)
+    Cell(a + b)
+}
+
+func zipped3() Cell[int] {
+    bind a = Cell(1)
+    also b = Cell(2)
+    also c = Cell(3)
+    Cell(a * 100 + b * 10 + c)
+}
+
+struct Pin[T any](V T)
+
+func (p Pin[T]) FlatMap[U any](f func(T) Pin[U]) Pin[U] = f(p.V)
+
+// A Zip parameter may be a Ptr: an `also` clause fills it with `&x` (or a
+// RequirePtr), never with a pointer that may be nil.
+func (p Ptr[Pin[T]]) Zip2[U any](o Ptr[Pin[U]]) Pin[Tuple[T, U]] = Pin(Tuple(p.V, o.V))
+
+func pinned() Pin[int] {
+    var q = Pin(4)
+    bind a = Pin(3)
+    also b = &q
+    Pin(a * b)
+}
+
+func describe(t Try[int]) string = t match {
+    case Success(n) => s"ok $n"
+    case Failure(e) => s"panic: ${e.Error()}"
+}
+
+func main() {
+    Println(s"Ptr: ${viaPtr(true).V}")
+    Println(s"address: ${viaAddress().V}")
+    Println(s"var: ${viaVar().V}")
+    Println(s"vals: ${viaVals().V}")
+    Println(s"OptionPtr: ${viaOptionPtr(true).V} ${viaOptionPtr(false).V}")
+    Println(s"also: ${zipped().V}")
+    Println(s"also through a Ptr Zip: ${zipped3().V}")
+    Println(s"also into a Ptr parameter: ${pinned().V}")
+    Println(describe(Try(viaPtr(false).V)))
+}
