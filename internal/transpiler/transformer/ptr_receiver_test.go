@@ -287,7 +287,8 @@ func newBox() Box[int] = Box(7)
 // ptrBindDecls declares monads for bind/also: Cell's FlatMap and Zip2 have
 // Ptr receivers, Pin's Zip2 has a Ptr receiver and takes a Ptr argument, and
 // Lazy's FlatMap has a Ptr receiver, its Zip2 returns a pointer that may be
-// nil and its Zip3 a Ptr; Tag's Zip2 takes an interface its Ptr implements.
+// nil and its Zip3 a Ptr; Tag's Zip2 takes an interface its Ptr implements,
+// and Vee's Zip3 variadic Ptrs.
 const ptrBindDecls = `struct Cell[T any](V T)
 
 func (c Ptr[Cell[T]]) FlatMap[U any](f func(T) Cell[U]) Cell[U] = f(c.V)
@@ -325,6 +326,14 @@ func (g Tag[T]) FlatMap[U any](f func(T) Tag[U]) Tag[U] = f(g.V)
 func (g Tag[T]) Zip2[U any](o Peeker) Tag[Tuple[T, int]] = Tag(Tuple(g.V, o.Peek()))
 
 func findTag() *Tag[int] = nil
+
+struct Vee[T any](V T)
+
+func (v Vee[T]) FlatMap[U any](f func(T) Vee[U]) Vee[U] = f(v.V)
+
+func (v Vee[T]) Zip3[U any, W any](o ...Ptr[Vee[T]]) Vee[Tuple3[T, T, T]] = Vee(Tuple3(v.V, v.V, v.V))
+
+func findVee() *Vee[int] = nil
 `
 
 // TestPtrReceiverBind checks that the FlatMap and ZipN calls a `bind` or
@@ -388,6 +397,12 @@ func TestPtrReceiverBind(t *testing.T) {
 			result: "Tag[int]",
 			body:   "bind a = Tag(1)\n    also b = findTag()\n    Tag(a + b)",
 			msg:    "cannot use findTag() (*Tag[int]) as Peeker: its method Peek has a Ptr[Tag[int]] receiver",
+		},
+		{
+			name:   "also passed to a variadic Ptr Zip parameter",
+			result: "Vee[int]",
+			body:   "var q = Vee(2)\n    bind a = Vee(1)\n    also b = &q\n    also c = findVee()\n    Vee(a + b + c)",
+			msg:    "cannot use findVee() (*Vee[int]) as Ptr[Vee[int]]",
 		},
 		{
 			name:   "FlatMap on a nullable Zip result",
