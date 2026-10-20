@@ -176,6 +176,7 @@ func buildSyntheticCache() *CachedRichAST {
 			ReturnType:           transpiler.NamedType{Package: "std", Name: "Either"},
 			TypeParams:           []string{"T"},
 			TypeParamConstraints: map[string]string{"T": "Bumper"},
+			Variadic:             true,
 			DefaultExprs:         map[int]transpiler.DefaultExpr{1: {Text: "(s string) => s + \"!\"", Pos: transpiler.SourcePos{Line: 5, Column: 30}}},
 		}
 	}

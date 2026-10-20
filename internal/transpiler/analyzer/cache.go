@@ -146,7 +146,12 @@ import (
 // parameter (TypeParamConstraints). A v28 payload lacks them, so a nullable
 // `*T` could be the type argument of a type parameter of another package
 // whose constraint has a method T declares on a `Ptr[T]` receiver.
-const CacheVersion = "v29"
+//
+// v30: a function records whether its last parameter is variadic
+// (FunctionMetadata.Variadic). A v29 payload lacks it, so the arguments past
+// the first filling a variadic parameter of a function of another package
+// were lowered against no type: a nullable `*T` filled a `...Ptr[T]`.
+const CacheVersion = "v30"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

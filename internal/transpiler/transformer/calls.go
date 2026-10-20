@@ -646,16 +646,12 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		hasPtrConstrained = len(typeArgs) < len(methodMeta.TypeParams) && t.hasPtrConstraint(methodOwner)
 	}
 	checkPtrArg := func(i int, expr ast.Expr, exprCtx antlr.ParserRuleContext, spread bool) error {
-		if !hasPtrConstrained || len(methodMeta.ParamTypes) == 0 {
+		if !hasPtrConstrained {
 			return nil
 		}
-		// A variadic method records its last parameter as the element
-		// type, which every argument past it fills.
-		if i >= len(methodMeta.ParamTypes) {
-			if !methodMeta.Variadic {
-				return nil
-			}
-			i = len(methodMeta.ParamTypes) - 1
+		pi := methodParamIndex(methodMeta, i)
+		if pi < 0 {
+			return nil
 		}
 		argType := t.getExprTypeName(expr)
 		if arr, isArr := argType.(transpiler.ArrayType); spread && isArr {
@@ -665,7 +661,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			return nil
 		}
 		bound := make(map[string]transpiler.Type)
-		t.unifyForInference(t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
+		t.unifyForInference(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), argType, methodMeta.TypeParams, bound)
 		return t.checkPtrBoundTypeArgs(methodOwner, len(typeArgs), bound, argSource(exprCtx, argType), exprCtx)
 	}
 	// The arguments that refer to a generic function, checked once the
@@ -679,7 +675,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	preTransformed := make(map[int]ast.Expr)
 	if methodMeta != nil && typeMeta != nil && len(methodMeta.TypeParams) > 0 && len(typeArgs) < len(methodMeta.TypeParams) {
 		for i, arg := range slots {
-			if i >= len(methodMeta.ParamTypes) {
+			pi := methodParamIndex(methodMeta, i)
+			if pi < 0 {
 				break
 			}
 			if arg == nil {
@@ -703,7 +700,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			if txErr != nil {
 				continue
 			}
-			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[i], typeMeta.TypeParams, recvTypeArgTypes)
+			substitutedParamType := t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes)
 			if t.isGenericFuncRef(expr) {
 				funcRefs = append(funcRefs, funcRefArg{i, expr, exprCtx})
 			}
@@ -765,6 +762,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 				continue
 			}
 			inferredMap := make(map[string]transpiler.Type)
+			if spread {
+				substitutedParamType = spreadArgType(substitutedParamType)
+			}
 			t.unifyForInference(substitutedParamType, argType, methodMeta.TypeParams, inferredMap)
 			if err := checkPtrArg(i, expr, exprCtx, spread); err != nil {
 				return true, nil, err
@@ -854,7 +854,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if cerr := t.checkSendableArg(genMethodCtx, i, exprCtx, lambdaCtx); cerr != nil {
 			return true, nil, cerr
 		}
-		expectedType := t.resolveExpectedArgType(genMethodCtx, i)
+		expectedType := t.expectedArgType(genMethodCtx, i, isSpread)
 		expr, aerr := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, open: len(genMethodCtx.typeSubst) > len(typeSubst)}, false)
 		if aerr != nil {
 			return true, nil, aerr
@@ -867,8 +867,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 		if lambdaCtx != nil {
 			// Harvest newly-inferred method type params from the
 			// lambda's actual result/param types and commit to typeSubst.
-			if methodMeta != nil && typeMeta != nil && i < len(methodMeta.ParamTypes) {
-				if paramFT, ok := methodMeta.ParamTypes[i].(transpiler.FuncType); ok {
+			if pi := methodParamIndex(methodMeta, i); typeMeta != nil && pi >= 0 {
+				if paramFT, ok := methodMeta.ParamTypes[pi].(transpiler.FuncType); ok {
 					substitutedParamFT := t.substituteConcreteTypes(paramFT, typeMeta.TypeParams, recvTypeArgTypes)
 					if actualFT, isFT := t.lambdaActualFuncType(expr).(transpiler.FuncType); isFT {
 						inferredMap := make(map[string]transpiler.Type)
@@ -899,10 +899,11 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 	// A reference to a generic function takes its type arguments from the
 	// parameter it fills, once the method's own are known.
 	for _, ref := range funcRefs {
-		if methodMeta == nil || typeMeta == nil || ref.i >= len(methodMeta.ParamTypes) {
+		pi := methodParamIndex(methodMeta, ref.i)
+		if typeMeta == nil || pi < 0 {
 			continue
 		}
-		param := t.substituteInType(t.substituteConcreteTypes(methodMeta.ParamTypes[ref.i], typeMeta.TypeParams, recvTypeArgTypes), typeSubst)
+		param := t.substituteInType(t.substituteConcreteTypes(methodMeta.ParamTypes[pi], typeMeta.TypeParams, recvTypeArgTypes), typeSubst)
 		if err := t.checkPtrFuncRefSlot(ref.expr, param, ref.at); err != nil {
 			return true, nil, err
 		}
@@ -1502,7 +1503,7 @@ func (t *galaASTTransformer) emitMethodCallWithVoidLambdaHint(
 		// `true` here filters to void function types only, avoiding leaked
 		// unresolved type params in return types.
 		unresolvedCtx := t.buildMethodCallContext(methodMeta, typeSubst, true)
-		expectedType := t.resolveExpectedArgType(unresolvedCtx, i)
+		expectedType := t.expectedArgType(unresolvedCtx, i, isSpread)
 		expr, err := t.lowerArg(exprCtx, lambdaCtx, slot{typ: expectedType, open: true}, false)
 		if err != nil {
 			return nil, err
@@ -1561,7 +1562,7 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 			if cerr := t.checkSendableArg(resolvedMethodCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
 				return nil, cerr
 			}
-			expectedType := t.resolveExpectedArgType(resolvedMethodCtx, argIdx)
+			expectedType := t.expectedArgType(resolvedMethodCtx, argIdx, isSpreadAll)
 			expr, err := t.lowerArg(exprCtx, lambdaCtx, typedSlot(expectedType), false)
 			if err != nil {
 				return nil, err
@@ -1745,10 +1746,10 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		}
 		// Then the Apply method's arguments.
 		for i, arg := range args {
-			if i < len(methodMeta.ParamTypes) {
+			if pi := methodParamIndex(methodMeta, i); pi >= 0 {
 				argType := t.getExprTypeName(arg)
 				if argType != nil && !argType.IsNil() && !argType.IsAny() {
-					t.unifyForInference(methodMeta.ParamTypes[i], argType, typeMeta.TypeParams, inferredMap)
+					t.unifyForInference(methodMeta.ParamTypes[pi], argType, typeMeta.TypeParams, inferredMap)
 				}
 			}
 		}
@@ -2001,7 +2002,7 @@ func (t *galaASTTransformer) transformFunctionArgs(
 		if cerr := t.checkSendableArg(funcCallCtx, argIdx, exprCtx, lambdaCtx); cerr != nil {
 			return nil, nil, false, cerr
 		}
-		expectedType := t.resolveExpectedArgType(funcCallCtx, argIdx)
+		expectedType := t.expectedArgType(funcCallCtx, argIdx, isSpreadAll)
 		if transpiler.IsUnusable(expectedType) && !isSpreadAll {
 			expectedType = t.goParamSlot(goSig, argIdx, exprCtx)
 		}
@@ -2445,6 +2446,7 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 							TypeParams: typeMeta.TypeParams,
 							ParamTypes: applyMeta.ParamTypes,
 							ParamNames: applyMeta.ParamNames,
+							Variadic:   applyMeta.Variadic,
 						}, argListCtx, ctx.applyTypeSubst)
 					}
 				}
@@ -4977,7 +4979,7 @@ func (t *galaASTTransformer) lambdaActualFuncType(expr ast.Expr) transpiler.Type
 // preset holds the type arguments the call writes explicitly — a leading
 // part of the list, as in `Using[Res](r, (x) => …)` — which win over inference.
 func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.FunctionMetadata, argListCtx grammar.IArgumentListContext, preset typeSubstMap) (subst typeSubstMap, placeholders bool) {
-	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, t.callArgs(argListCtx, funcMeta.ParamNames))
+	inferred := t.inferTypeArgsFromNonLambdaArgs(funcMeta.TypeParams, funcMeta.ParamTypes, funcMeta.Variadic, t.callArgs(argListCtx, funcMeta.ParamNames))
 	if len(inferred) == 0 && len(preset) == 0 {
 		// Nothing determines any type parameter: a lambda over them has no
 		// type to take, which is GALA-E0033 rather than an all-`any` guess.
@@ -5004,11 +5006,12 @@ func (t *galaASTTransformer) inferFuncTypeSubstFromArgs(funcMeta *transpiler.Fun
 
 // callArg is one argument of a call: its expression (nil for a direct lambda),
 // the lambda it is or holds (nil when neither), and the index of the parameter
-// or field it fills (-1 when none).
+// or field it fills (-1 when none); spread marks an `xs...` argument.
 type callArg struct {
 	expr   grammar.IExpressionContext
 	lambda *grammar.LambdaExpressionContext
 	slot   int
+	spread bool
 }
 
 // callArgs classifies a call's arguments. A named argument fills the slot of
@@ -5025,14 +5028,14 @@ func (t *galaASTTransformer) callArgs(argListCtx grammar.IArgumentListContext, p
 			slot = argIdx
 			argIdx++
 		}
-		exprCtx, lambdaCtx, _, err := extractArgContent(arg)
+		exprCtx, lambdaCtx, spread, err := extractArgContent(arg)
 		if err != nil {
 			continue
 		}
 		if lambdaCtx == nil {
 			lambdaCtx = t.findLambdaInExpression(exprCtx)
 		}
-		args = append(args, callArg{expr: exprCtx, lambda: lambdaCtx, slot: slot})
+		args = append(args, callArg{expr: exprCtx, lambda: lambdaCtx, slot: slot, spread: spread})
 	}
 	return args
 }
@@ -5043,11 +5046,16 @@ func (t *galaASTTransformer) callArgs(argListCtx grammar.IArgumentListContext, p
 // function-typed slot), unifying each against the type of the slot it fills, so the
 // lambdas can then be lowered against concrete types. Only type parameters an
 // argument determines appear in the result.
-func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, args []callArg) map[string]transpiler.Type {
+func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string, paramTypes []transpiler.Type, variadic bool, args []callArg) map[string]transpiler.Type {
 	inferredMap := make(map[string]transpiler.Type)
 	for _, a := range args {
-		if a.lambda != nil || a.slot < 0 || a.slot >= len(paramTypes) || t.isPlaceholderLambdaArg(a.expr, paramTypes[a.slot]) {
+		pi := paramIndex(a.slot, paramTypes, variadic)
+		if a.lambda != nil || pi < 0 || t.isPlaceholderLambdaArg(a.expr, paramTypes[pi]) {
 			continue
+		}
+		paramType := paramTypes[pi]
+		if a.spread {
+			paramType = spreadArgType(paramType)
 		}
 		expr, err := t.transformExpression(a.expr)
 		if err != nil {
@@ -5057,7 +5065,7 @@ func (t *galaASTTransformer) inferTypeArgsFromNonLambdaArgs(typeParams []string,
 		if transpiler.IsUnusable(argType) {
 			continue
 		}
-		t.unifyForInference(paramTypes[a.slot], argType, typeParams, inferredMap)
+		t.unifyForInference(paramType, argType, typeParams, inferredMap)
 	}
 	return inferredMap
 }
@@ -5098,7 +5106,7 @@ func (t *galaASTTransformer) structCtorTypeSubst(
 	}
 	// A partial explicit list binds its leading type parameters; the
 	// arguments determine the rest.
-	inferred := t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, args)
+	inferred := t.inferTypeArgsFromNonLambdaArgs(typeParams, fieldTypes, false, args)
 	if inferred == nil {
 		return explicit
 	}

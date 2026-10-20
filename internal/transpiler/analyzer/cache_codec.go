@@ -401,6 +401,7 @@ func (e *encoder) writeFuncMeta(f *transpiler.FunctionMetadata) {
 	e.writeStringStringMap(f.TypeParamConstraints)
 	e.writeDefaultExprs(f.DefaultExprs)
 	e.writeString(f.DefinedIn)
+	e.writeBool(f.Variadic)
 	e.writeTypeSlice(f.GoResults)
 }
 
@@ -914,6 +915,7 @@ func (d *decoder) readFuncMeta() *transpiler.FunctionMetadata {
 	f.TypeParamConstraints = d.readStringStringMap()
 	f.DefaultExprs = d.readDefaultExprs()
 	f.DefinedIn = d.readString()
+	f.Variadic = d.readBool()
 	f.GoResults = d.readTypeSlice()
 	return f
 }

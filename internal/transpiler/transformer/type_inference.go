@@ -906,22 +906,11 @@ func (t *galaASTTransformer) argTypeArgs(fMeta *transpiler.FunctionMetadata, arg
 		if arg == nil {
 			continue
 		}
-		var paramType transpiler.Type
-		if i < len(fMeta.ParamTypes) {
-			paramType = fMeta.ParamTypes[i]
-		} else if len(fMeta.ParamTypes) > 0 {
-			// For variadic functions, the last param type applies to remaining args
-			lastParamType := fMeta.ParamTypes[len(fMeta.ParamTypes)-1]
-			// Unwrap slice type for variadic parameters (e.g., ...T becomes T for each arg)
-			if arrType, ok := lastParamType.(transpiler.ArrayType); ok {
-				paramType = arrType.Elem
-			} else {
-				paramType = lastParamType
-			}
-		}
-		if paramType == nil {
+		pi := funcParamIndex(fMeta, i)
+		if pi < 0 || fMeta.ParamTypes[pi] == nil {
 			continue
 		}
+		paramType := fMeta.ParamTypes[pi]
 
 		// Get the actual type of the argument
 		argType := t.getExprTypeNameManual(arg)

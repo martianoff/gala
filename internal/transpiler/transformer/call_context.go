@@ -69,6 +69,49 @@ func (t *galaASTTransformer) buildApplyCallContext(
 	}
 }
 
+// paramIndex is the index in params of the parameter the argIdx-th positional
+// argument fills, or -1 when it fills none. A variadic last parameter is
+// recorded as its element type, which every argument from its position on
+// fills.
+func paramIndex(argIdx int, params []transpiler.Type, variadic bool) int {
+	switch {
+	case argIdx < 0:
+		return -1
+	case argIdx < len(params):
+		return argIdx
+	case variadic && len(params) > 0:
+		return len(params) - 1
+	}
+	return -1
+}
+
+// methodParamIndex is paramIndex for an argument of m, -1 when m is nil.
+func methodParamIndex(m *transpiler.MethodMetadata, argIdx int) int {
+	if m == nil {
+		return -1
+	}
+	return paramIndex(argIdx, m.ParamTypes, m.Variadic)
+}
+
+// funcParamIndex is paramIndex for an argument of f, -1 when f is nil.
+func funcParamIndex(f *transpiler.FunctionMetadata, argIdx int) int {
+	if f == nil {
+		return -1
+	}
+	return paramIndex(argIdx, f.ParamTypes, f.Variadic)
+}
+
+// expectedArgType is resolveExpectedArgType for an argument that may be a
+// spread `xs...`, which fills the variadic parameter with a whole slice
+// (spreadArgType).
+func (t *galaASTTransformer) expectedArgType(ctx callContext, argIdx int, spread bool) transpiler.Type {
+	expected := t.resolveExpectedArgType(ctx, argIdx)
+	if spread {
+		return spreadArgType(expected)
+	}
+	return expected
+}
+
 // resolveExpectedArgType resolves the expected type for a positional argument
 // at the given index. The resolution logic depends on the call kind:
 //
@@ -88,16 +131,16 @@ func (t *galaASTTransformer) buildApplyCallContext(
 func (t *galaASTTransformer) boundaryParamAt(ctx callContext, argIdx int) (raw transpiler.Type, typeParams []string, subst typeSubstMap, ok bool) {
 	switch {
 	case ctx.methodMeta != nil:
-		if argIdx < len(ctx.methodMeta.ParamTypes) {
-			return ctx.methodMeta.ParamTypes[argIdx], ctx.methodMeta.TypeParams, ctx.typeSubst, true
+		if i := methodParamIndex(ctx.methodMeta, argIdx); i >= 0 {
+			return ctx.methodMeta.ParamTypes[i], ctx.methodMeta.TypeParams, ctx.typeSubst, true
 		}
 	case ctx.applyMethodMeta != nil:
-		if argIdx < len(ctx.applyMethodMeta.ParamTypes) {
-			return ctx.applyMethodMeta.ParamTypes[argIdx], ctx.applyTypeParams, ctx.applyTypeSubst, true
+		if i := methodParamIndex(ctx.applyMethodMeta, argIdx); i >= 0 {
+			return ctx.applyMethodMeta.ParamTypes[i], ctx.applyTypeParams, ctx.applyTypeSubst, true
 		}
 	case ctx.funcMeta != nil:
-		if argIdx < len(ctx.funcMeta.ParamTypes) {
-			return ctx.funcMeta.ParamTypes[argIdx], ctx.funcMeta.TypeParams, ctx.typeSubst, true
+		if i := funcParamIndex(ctx.funcMeta, argIdx); i >= 0 {
+			return ctx.funcMeta.ParamTypes[i], ctx.funcMeta.TypeParams, ctx.typeSubst, true
 		}
 	}
 	if ctx.goParamTypes != nil && argIdx < len(ctx.goParamTypes) {
@@ -145,25 +188,24 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 
 	// Method call path
 	if ctx.methodMeta != nil {
+		i := methodParamIndex(ctx.methodMeta, argIdx)
+		if i < 0 {
+			return transpiler.NilType{}
+		}
 		if ctx.unresolvedTP {
 			// Only pass void function types (avoids unresolved type params in return types)
-			if argIdx < len(ctx.methodMeta.ParamTypes) {
-				if ft, ok := ctx.methodMeta.ParamTypes[argIdx].(transpiler.FuncType); ok && len(ft.Results) == 0 {
-					return ft
-				}
+			if ft, ok := ctx.methodMeta.ParamTypes[i].(transpiler.FuncType); ok && len(ft.Results) == 0 {
+				return ft
 			}
 			return transpiler.NilType{}
 		}
 		// Resolved type params: substitute and return.
-		if argIdx < len(ctx.methodMeta.ParamTypes) {
-			return t.maskUnboundMethodTypeParams(t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[argIdx], ctx.typeSubst), ctx)
-		}
-		return transpiler.NilType{}
+		return t.maskUnboundMethodTypeParams(t.substituteTranspilerTypeParams(ctx.methodMeta.ParamTypes[i], ctx.typeSubst), ctx)
 	}
 
 	// Companion-Apply path: Type[T](args) where Type has Apply.
-	if ctx.applyMethodMeta != nil && argIdx < len(ctx.applyMethodMeta.ParamTypes) {
-		paramType := ctx.applyMethodMeta.ParamTypes[argIdx]
+	if ai := methodParamIndex(ctx.applyMethodMeta, argIdx); ai >= 0 {
+		paramType := ctx.applyMethodMeta.ParamTypes[ai]
 		// With concrete substitutions for the type params, substitute and return.
 		if len(ctx.applyTypeSubst) > 0 {
 			return t.substituteTranspilerTypeParams(paramType, ctx.applyTypeSubst)
@@ -204,12 +246,13 @@ func (t *galaASTTransformer) resolveExpectedArgType(ctx callContext, argIdx int)
 // in a function call. It cascades through: GALA func metadata -> Go type info -> struct fields.
 func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx int) transpiler.Type {
 	var expectedType transpiler.Type = transpiler.NilType{}
+	fi := funcParamIndex(ctx.funcMeta, argIdx)
 
-	if ctx.funcMeta != nil && argIdx < len(ctx.funcMeta.ParamTypes) {
+	if fi >= 0 {
 		// A parameter typed by an alias of a function type (`t Thunk[T]` for
 		// `type Thunk[T any] func() T`) is that function type, so it takes
 		// the function-type path, type-parameter masking included.
-		if ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[argIdx]); ft != nil {
+		if ft := t.aliasedFuncType(ctx.funcMeta.ParamTypes[fi]); ft != nil {
 			if len(ctx.typeSubst) > 0 {
 				// Substitute inferred or explicit type args (both void and non-void)
 				expectedType = t.substituteTranspilerTypeParams(*ft, ctx.typeSubst)
@@ -231,17 +274,11 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 
 	// Non-FuncType expected type with resolved generic substitution: propagate
 	// the concrete element type so downstream inference (e.g. sealed-variant
-	// type-arg propagation in transformCallWithArgsCtx) can use it. For
-	// variadic functions, GALA records the trailing param as a single element
-	// type, so any arg index past the declared count falls back to the last
-	// param. Only emit when substitution actually produces a concrete type;
-	// passing through a bare type param like `T` is not useful here.
-	if expectedType.IsNil() && ctx.funcMeta != nil && len(ctx.typeSubst) > 0 && len(ctx.funcMeta.ParamTypes) > 0 {
-		paramIdx := argIdx
-		if paramIdx >= len(ctx.funcMeta.ParamTypes) {
-			paramIdx = len(ctx.funcMeta.ParamTypes) - 1
-		}
-		paramType := ctx.funcMeta.ParamTypes[paramIdx]
+	// type-arg propagation in transformCallWithArgsCtx) can use it. Only emit
+	// when substitution actually produces a concrete type; passing through a
+	// bare type param like `T` is not useful here.
+	if expectedType.IsNil() && fi >= 0 && len(ctx.typeSubst) > 0 {
+		paramType := ctx.funcMeta.ParamTypes[fi]
 		if !paramType.IsNil() {
 			if _, isFunc := paramType.(transpiler.FuncType); !isFunc {
 				substituted := t.substituteTranspilerTypeParams(paramType, ctx.typeSubst)
@@ -259,8 +296,8 @@ func (t *galaASTTransformer) resolveExpectedFuncArgType(ctx callContext, argIdx 
 	// expectedArgTypes push in lowerAgainst) can resolve a zero-arg case
 	// constructor like `NoCmd()` or `None()` against it. Skipping FuncType is
 	// intentional: those have a dedicated path above with masking logic.
-	if expectedType.IsNil() && ctx.funcMeta != nil && argIdx < len(ctx.funcMeta.ParamTypes) {
-		paramType := ctx.funcMeta.ParamTypes[argIdx]
+	if expectedType.IsNil() && fi >= 0 {
+		paramType := ctx.funcMeta.ParamTypes[fi]
 		if !paramType.IsNil() && !typeMentionsTypeParam(paramType, ctx.funcMeta.TypeParams) {
 			if _, isFunc := paramType.(transpiler.FuncType); !isFunc {
 				expectedType = paramType

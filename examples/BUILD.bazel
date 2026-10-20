@@ -1574,6 +1574,19 @@ gala_exec_test(
     expected = "variadic_functions.out",
 )
 
+# Every argument filling a variadic parameter, not only the first, is lowered
+# against its element type: Ptr arguments, a spread slice of Ptr and lambdas
+# past the first, for functions and methods.
+gala_exec_test(
+    name = "variadic_tail_args",
+    src = "variadic_tail_args.gala",
+    expected = "variadic_tail_args.out",
+    deps = [
+        "//collection_immutable",
+        "//go_interop",
+    ],
+)
+
 gala_exec_test(
     name = "inc_dec",
     src = "inc_dec.gala",
