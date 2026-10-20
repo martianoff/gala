@@ -3,7 +3,6 @@ package strings
 import (
     gostrings "strings"
     "unicode"
-    "unicode/utf8"
     . "martianoff/gala/std"
     . "martianoff/gala/collection_immutable"
     cm "martianoff/gala/collection_mutable"
@@ -573,12 +572,13 @@ func (sb Ptr[StringBuilder]) ToString() string {
 // String implements the Go Stringer interface.
 func (sb Ptr[StringBuilder]) String() string = sb.ToString()
 
-// Length returns the total byte length of the built string.
+// Length returns the number of characters (runes) in the built string,
+// matching Str.Length and a string's Size().
 func (sb Ptr[StringBuilder]) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.Size())
 
-// RuneCount returns the total number of runes in the built string.
-func (sb Ptr[StringBuilder]) RuneCount() int =
-    sb.parts.FoldLeft(0, (acc, p) => acc + utf8.RuneCountInString(p))
+// ByteSize returns the number of UTF-8 bytes in the built string, matching
+// a string's ByteSize().
+func (sb Ptr[StringBuilder]) ByteSize() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.ByteSize())
 
 // IsEmpty returns true if the builder has no content.
 func (sb Ptr[StringBuilder]) IsEmpty() bool = sb.parts.Length() == 0

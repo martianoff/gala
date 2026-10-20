@@ -38,10 +38,10 @@ func main() {
     sb4.Reset()
     fmt.Println(sb4.IsEmpty())
 
-    // RuneCount and Length
-    val sb5 = NewStringBuilderFromString("hello")
+    // Length counts characters, ByteSize counts UTF-8 bytes
+    val sb5 = NewStringBuilderFromString("héllo").AppendString(" 日本")
     fmt.Println(sb5.Length())
-    fmt.Println(sb5.RuneCount())
+    fmt.Println(sb5.ByteSize())
 
     // ToStr
     val sb6 = NewStringBuilderFromString("gala")
