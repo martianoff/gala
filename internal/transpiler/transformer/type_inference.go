@@ -1212,7 +1212,7 @@ func (t *galaASTTransformer) getReceiverTypeArgs(recvType transpiler.Type) []ast
 }
 
 // getReceiverTypeArgStrings extracts the printed type arguments of a receiver
-// type, for messages and method-name lookups (bind, unknown methods).
+// type, for messages and method-name lookups (bind).
 // For example, for *Container[int], it returns ["int"].
 func (t *galaASTTransformer) getReceiverTypeArgStrings(recvType transpiler.Type) []string {
 	if transpiler.IsUnusable(recvType) {
