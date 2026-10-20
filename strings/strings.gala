@@ -506,7 +506,7 @@ func max(a int, b int) int {
 // StringBuilder is a mutable string builder for efficient string concatenation.
 // Backed by a mutable Array[string] for O(1) amortized append.
 type StringBuilder struct {
-    var parts *cm.Array[string]
+    var parts Ptr[cm.Array[string]]
 }
 
 // NewStringBuilder creates an empty StringBuilder.

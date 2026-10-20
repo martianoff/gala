@@ -309,7 +309,7 @@ arr.Distinct()  // Array(1, 2, 3)
 
 ### Sorting
 
-Sorting returns a new `*Array[T]`, leaving the original unchanged. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
+Sorting returns a new `Ptr[Array[T]]`, leaving the original unchanged. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
 
 ```gala
 var arr = ArrayOf(3, 1, 4, 1, 5, 9)
@@ -460,7 +460,7 @@ list.Count((x) => x == 2)    // 2
 
 ### Sorting
 
-Sorting returns a new `*List[T]`.
+Sorting returns a new `Ptr[List[T]]`.
 
 ```gala
 var list = ListOf("banana", "apple", "cherry")
@@ -643,7 +643,7 @@ s.HeadOption()            // Some(element) or None for empty set
 
 ### Sorting
 
-Returns `*Array[T]` since sets have no inherent order.
+Returns `Ptr[Array[T]]` since sets have no inherent order.
 
 ```gala
 var s = HashSetOf(5, 3, 1)
@@ -864,7 +864,7 @@ s.Find((x) => x > 3)      // Some(4) - first in sorted order
 
 ### Sorting
 
-Returns `*Array[T]`. `Sorted()` returns elements in natural order (already sorted by tree structure).
+Returns `Ptr[Array[T]]`. `Sorted()` returns elements in natural order (already sorted by tree structure).
 
 ```gala
 var s = TreeSetOf(30, 10, 20)
@@ -1098,9 +1098,9 @@ m.MkString(", ")         // "(a, 1), (b, 2), (c, 3)"
 
 ## Pattern Matching with Mutable Collections
 
-GALA supports pattern matching on mutable collections. Since Array and List are generic structs, you can use type matching.
+GALA supports pattern matching on mutable collections: bind the collection and test it with guards.
 
-### Basic Type Matching
+### Matching with Guards
 
 ```gala
 package main
@@ -1109,12 +1109,11 @@ import (
     . "martianoff/gala/collection_mutable"
 )
 
-func describeArray[T any](arr *Array[T]) string {
+func describeArray[T any](arr Ptr[Array[T]]) string {
     return arr match {
-        case a: *Array[_] if a.IsEmpty() => "empty array"
-        case a: *Array[_] if a.Length() == 1 => s"single element: ${a.Head()}"
-        case a: *Array[_] => s"array with ${a.Length()} elements"
-        case _ => "unknown"
+        case a if a.IsEmpty() => "empty array"
+        case a if a.Length() == 1 => s"single element: ${a.Head()}"
+        case a => s"array with ${a.Length()} elements"
     }
 }
 
@@ -1132,12 +1131,12 @@ func main() {
 ### Processing with Guards
 
 ```gala
-func processNumbers(arr *Array[int]) string {
+func processNumbers(arr Ptr[Array[int]]) string {
     return arr match {
-        case a: *Array[int] if a.IsEmpty() => "no numbers"
-        case a: *Array[int] if a.ForAll((x) => x > 0) => "all positive"
-        case a: *Array[int] if a.ForAll((x) => x < 0) => "all negative"
-        case a: *Array[int] if a.Exists((x) => x == 0) => "contains zero"
+        case a if a.IsEmpty() => "no numbers"
+        case a if a.ForAll((x) => x > 0) => "all positive"
+        case a if a.ForAll((x) => x < 0) => "all negative"
+        case a if a.Exists((x) => x == 0) => "contains zero"
         case _ => "mixed numbers"
     }
 }
@@ -1146,7 +1145,7 @@ func processNumbers(arr *Array[int]) string {
 ### Option Pattern Matching with Collections
 
 ```gala
-func findFirstEven(arr *Array[int]) string {
+func findFirstEven(arr Ptr[Array[int]]) string {
     var found = arr.Find((x) => x % 2 == 0)
     return found match {
         case Some(value) => s"found even: $value"
@@ -1154,7 +1153,7 @@ func findFirstEven(arr *Array[int]) string {
     }
 }
 
-func getMiddleElement[T any](arr *Array[T]) string {
+func getMiddleElement[T any](arr Ptr[Array[T]]) string {
     if arr.Length() < 3 {
         return "array too short"
     }
@@ -1170,18 +1169,18 @@ func getMiddleElement[T any](arr *Array[T]) string {
 ### List Processing with Pattern Matching
 
 ```gala
-func sumList(list *List[int]) int {
+func sumList(list Ptr[List[int]]) int {
     if list.IsEmpty() {
         return 0
     }
     return list.Head() + sumList(list.Tail())
 }
 
-func describeList[T any](list *List[T]) string {
+func describeList[T any](list Ptr[List[T]]) string {
     return list match {
-        case l: *List[_] if l.IsEmpty() => "empty list"
-        case l: *List[_] if l.Length() == 1 => "singleton"
-        case l: *List[_] => s"list[${l.Length()}]"
+        case l if l.IsEmpty() => "empty list"
+        case l if l.Length() == 1 => "singleton"
+        case l => s"list[${l.Length()}]"
     }
 }
 ```
@@ -1189,7 +1188,7 @@ func describeList[T any](list *List[T]) string {
 ### Combining with Tuples
 
 ```gala
-func analyzeArrays(a1 *Array[int], a2 *Array[int]) string {
+func analyzeArrays(a1 Ptr[Array[int]], a2 Ptr[Array[int]]) string {
     var tuple = (a1.Length(), a2.Length())
     return tuple match {
         case (0, 0) => "both empty"

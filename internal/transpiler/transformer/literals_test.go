@@ -160,7 +160,7 @@ import (
 )
 
 type Builder struct {
-    var parts *cm.Array[string]
+    var parts Ptr[cm.Array[string]]
 }
 
 func NewBuilder() *Builder = &Builder{parts: cm.EmptyArray[string]()}
@@ -198,7 +198,7 @@ type Wrapper struct {
 }
 
 type Builder struct {
-    var parts *cm.Array[Wrapper]
+    var parts Ptr[cm.Array[Wrapper]]
 }
 
 func NewBuilder() *Builder = &Builder{parts: cm.EmptyArray[Wrapper]()}
@@ -239,7 +239,7 @@ type Str struct {
 func S(s string) Str = Str{runes: EmptyArray[rune]()}
 
 type StringBuilder struct {
-    var parts *cm.Array[Str]
+    var parts Ptr[cm.Array[Str]]
 }
 
 func NewStringBuilder() *StringBuilder = &StringBuilder{parts: cm.EmptyArray[Str]()}
