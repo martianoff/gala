@@ -585,13 +585,13 @@ func (b *Box[T]) Deep() Ptr[Ptr[Box[Tuple[T, T]]]] {
 	tests := []struct {
 		name, body, want string
 	}{
-		{name: "Ptr receiver and result", body: "Println(b.Wrap().V.V)", want: "box.Box_Wrap[int](b.Get())"},
-		{name: "*T receiver and result", body: "Println(b.WrapStar().V.V)", want: "box.Box_WrapStar[int](b.Get())"},
-		{name: "*T receiver, value result", body: "Println(b.Pair().V.V1)", want: "box.Box_Pair[int](b.Get())"},
-		{name: "Go result list", body: "Println(b.Split().IsSuccess())", want: "box.Box_Split[int](b.Get())"},
-		{name: "pointer to a pointer", body: "Println(b.Deep())", want: "box.Box_Deep[int](b.Get())"},
+		{name: "Ptr receiver and result", body: "Println(b.Wrap().V.V)", want: "box.Box_Wrap[int](b)"},
+		{name: "*T receiver and result", body: "Println(b.WrapStar().V.V)", want: "box.Box_WrapStar[int](b)"},
+		{name: "*T receiver, value result", body: "Println(b.Pair().V.V1)", want: "box.Box_Pair[int](b)"},
+		{name: "Go result list", body: "Println(b.Split().IsSuccess())", want: "box.Box_Split[int](b)"},
+		{name: "pointer to a pointer", body: "Println(b.Deep())", want: "box.Box_Deep[int](b)"},
 		{name: "addressable value", body: "var v = box.Box(2)\n    Println(v.WrapStar().V.V)", want: "box.Box_WrapStar[int](&v)"},
-		{name: "val", body: "val w = box.Box(3)\n    Println(w.Pair().V.V1)", want: "box.Box_Pair[int](std.AddrOfCopy(w.Get()))"},
+		{name: "val", body: "val w = box.Box(3)\n    Println(w.Pair().V.V1)", want: "box.Box_Pair[int](std.AddrOfCopy(w))"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
