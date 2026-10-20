@@ -296,8 +296,8 @@ sb.String()    // Go Stringer interface
 ### State
 
 ```gala
-sb.Length()    // byte length
-sb.RuneCount() // character count
+sb.Length()    // character (rune) count
+sb.ByteSize()  // UTF-8 byte count
 sb.IsEmpty()   // true if no content
 sb.NonEmpty()  // true if has content
 sb.Reset()     // clears content

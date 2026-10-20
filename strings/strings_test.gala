@@ -777,14 +777,24 @@ func TestStringBuilderNonEmpty(t T) T {
     return IsTrue(t1, sb.NonEmpty())
 }
 
-// Test RuneCount
-func TestStringBuilderRuneCount(t T) T {
-    val sb = s.NewStringBuilderFromString("hello")
-    return Eq(t, sb.RuneCount(), 5)
-}
+// Length counts characters and ByteSize counts UTF-8 bytes, across parts (#810).
+// Each input is appended twice, so the counts span more than one part.
+func TestStringBuilderLengthAndByteSize(t T) T = RunCases(t,
+    (sub, input, counts) => {
+        val (runes, bytes) = counts
+        val sb = s.NewStringBuilderFromString(input).AppendString(input)
+        Eq(Eq(sub, sb.Length(), runes * 2), sb.ByteSize(), bytes * 2)
+    },
+    Case[string, Tuple[int, int]](Name = "empty", Input = "", Expected = (0, 0)),
+    Case[string, Tuple[int, int]](Name = "ascii", Input = "hello", Expected = (5, 5)),
+    Case[string, Tuple[int, int]](Name = "latin", Input = "héllo", Expected = (5, 6)),
+    Case[string, Tuple[int, int]](Name = "cjk", Input = "日本語", Expected = (3, 9)),
+    Case[string, Tuple[int, int]](Name = "emoji", Input = "a😀", Expected = (2, 5)),
+)
 
-// Test Length (byte length)
-func TestStringBuilderLength(t T) T {
-    val sb = s.NewStringBuilderFromString("hello")
-    return Eq(t, sb.Length(), 5)
+// A UTF-8 sequence split across two appends is one character of the built string.
+func TestStringBuilderLengthSplitSequence(t T) T {
+    val sb = s.NewStringBuilderFromString("\xe6\x97").AppendString("\xa5")
+    val t1 = Eq(t, sb.ToString(), "日")
+    Eq(Eq(t1, sb.Length(), 1), sb.ByteSize(), 3)
 }
