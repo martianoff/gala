@@ -578,7 +578,8 @@ func (sb Ptr[StringBuilder]) String() string = sb.ToString()
 func (sb Ptr[StringBuilder]) Length() int = sb.ToString().Size()
 
 // ByteSize returns the number of UTF-8 bytes in the built string, matching
-// a string's ByteSize().
+// a string's ByteSize(). Byte counts add up across parts, so it sums them
+// without joining.
 func (sb Ptr[StringBuilder]) ByteSize() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.ByteSize())
 
 // IsEmpty returns true if the builder has no content.
