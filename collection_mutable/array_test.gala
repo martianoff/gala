@@ -321,11 +321,11 @@ func TestArrayLargeMutations(t T) T {
 
 struct Row(Name string, K int)
 
-func rowNames(rows *Array[Row]) string = rows.Map((r) => r.Name).MkString(",")
+func rowNames(rows Ptr[Array[Row]]) string = rows.Map((r) => r.Name).MkString(",")
 
 // stableByK is the expected stable result of sorting by K: every K=0 row, then
 // every K=1 row, each group in input order.
-func stableByK(rows *Array[Row]) string =
+func stableByK(rows Ptr[Array[Row]]) string =
     rowNames(rows.Filter((r) => r.K == 0)) + "," + rowNames(rows.Filter((r) => r.K == 1))
 
 func TestArraySortStability(t T) T {

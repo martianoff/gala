@@ -20,26 +20,23 @@ import (
 // listNode represents a node in the doubly-linked list.
 type listNode[T any] struct {
     var value T
-    var prev  *listNode[T]
-    var next  *listNode[T]
+    var prev  OptionPtr[listNode[T]]
+    var next  OptionPtr[listNode[T]]
 }
 
-// List represents a mutable doubly-linked list.
+// List represents a mutable doubly-linked list. head and tail are empty
+// exactly when the list is.
 type List[T any] struct {
-    var head   *listNode[T]
-    var tail   *listNode[T]
+    var head   OptionPtr[listNode[T]]
+    var tail   OptionPtr[listNode[T]]
     var length int
 }
 
 // EmptyList returns a new empty List.
-func EmptyList[T any]() *List[T] {
-    var nilHead *listNode[T] = nil
-    var nilTail *listNode[T] = nil
-    return &List[T](head = nilHead, tail = nilTail, length = 0)
-}
+func EmptyList[T any]() Ptr[List[T]] = &List[T](head = EmptyOptionPtr[listNode[T]](), tail = EmptyOptionPtr[listNode[T]](), length = 0)
 
 // ListOf creates a List from variadic arguments.
-func ListOf[T any](elements ...T) *List[T] {
+func ListOf[T any](elements ...T) Ptr[List[T]] {
     var list = EmptyList[T]()
     for i := 0; i < elements.Size(); i++ {
         list.Append(elements[i])
@@ -48,7 +45,7 @@ func ListOf[T any](elements ...T) *List[T] {
 }
 
 // ListFromSlice creates a List from a slice.
-func ListFromSlice[T any](elements []T) *List[T] {
+func ListFromSlice[T any](elements []T) Ptr[List[T]] {
     var list = EmptyList[T]()
     for i := 0; i < elements.Size(); i++ {
         list.Append(elements[i])
@@ -59,43 +56,40 @@ func ListFromSlice[T any](elements []T) *List[T] {
 // === Basic Operations ===
 
 // IsEmpty returns true if the list is empty.
-func (l *List[T]) IsEmpty() bool = l.length == 0
+func (l Ptr[List[T]]) IsEmpty() bool = l.length == 0
 
 // NonEmpty returns true if the list is not empty.
-func (l *List[T]) NonEmpty() bool = l.length > 0
+func (l Ptr[List[T]]) NonEmpty() bool = l.length > 0
 
 // Length returns the number of elements. O(1) - cached.
-func (l *List[T]) Length() int = l.length
+func (l Ptr[List[T]]) Length() int = l.length
 
 // Size is an alias for Length.
-func (l *List[T]) Size() int = l.length
+func (l Ptr[List[T]]) Size() int = l.length
 
 // === Access Operations ===
 
-// nodeAt returns the node at the given index. O(n).
-func (l *List[T]) nodeAt(index int) *listNode[T] {
-    if (index < 0) || (index >= l.length) {
-        return nil
-    }
+// nodeAt returns the node at the given index, which the caller has checked is
+// in bounds. O(n).
+func (l Ptr[List[T]]) nodeAt(index int) Ptr[listNode[T]] {
     // Optimize by starting from head or tail depending on index
     if index < l.length / 2 {
-        var current = l.head
+        var current = l.head.Get()
         for i := 0; i < index; i++ {
-            current = current.next
-        }
-        return current
-    } else {
-        var current = l.tail
-        for i := l.length - 1; i > index; i-- {
-            current = current.prev
+            current = current.next.Get()
         }
         return current
     }
+    var current = l.tail.Get()
+    for i := l.length - 1; i > index; i-- {
+        current = current.prev.Get()
+    }
+    return current
 }
 
 // Get returns the element at the given index. O(n).
 // Panics if index is out of bounds.
-func (l *List[T]) Get(index int) T {
+func (l Ptr[List[T]]) Get(index int) T {
     if (index < 0) || (index >= l.length) {
         go_builtins.Panic(f"List.Get: index $index out of bounds [0, ${l.length})")
     }
@@ -104,7 +98,7 @@ func (l *List[T]) Get(index int) T {
 }
 
 // GetOption returns the element at index wrapped in Option.
-func (l *List[T]) GetOption(index int) Option[T] {
+func (l Ptr[List[T]]) GetOption(index int) Option[T] {
     if (index < 0) || (index >= l.length) {
         return None[T]()
     }
@@ -113,43 +107,43 @@ func (l *List[T]) GetOption(index int) Option[T] {
 
 // Head returns the first element. O(1).
 // Panics if the list is empty.
-func (l *List[T]) Head() T {
+func (l Ptr[List[T]]) Head() T {
     if l.length == 0 {
         go_builtins.Panic("List.Head on empty list")
     }
-    return l.head.value
+    return l.head.Get().value
 }
 
 // HeadOption returns the first element wrapped in Option.
-func (l *List[T]) HeadOption() Option[T] {
+func (l Ptr[List[T]]) HeadOption() Option[T] {
     if l.length == 0 {
         return None[T]()
     }
-    return Some[T](l.head.value)
+    return Some[T](l.head.Get().value)
 }
 
 // Last returns the last element. O(1).
 // Panics if the list is empty.
-func (l *List[T]) Last() T {
+func (l Ptr[List[T]]) Last() T {
     if l.length == 0 {
         go_builtins.Panic("List.Last on empty list")
     }
-    return l.tail.value
+    return l.tail.Get().value
 }
 
 // LastOption returns the last element wrapped in Option.
-func (l *List[T]) LastOption() Option[T] {
+func (l Ptr[List[T]]) LastOption() Option[T] {
     if l.length == 0 {
         return None[T]()
     }
-    return Some[T](l.tail.value)
+    return Some[T](l.tail.Get().value)
 }
 
 // === Mutating Operations ===
 
 // Set updates the element at index in place. O(n).
 // Panics if index is out of bounds.
-func (l *List[T]) Set(index int, value T) {
+func (l Ptr[List[T]]) Set(index int, value T) {
     if (index < 0) || (index >= l.length) {
         go_builtins.Panic(f"List.Set: index $index out of bounds [0, ${l.length})")
     }
@@ -158,59 +152,58 @@ func (l *List[T]) Set(index int, value T) {
 }
 
 // Prepend adds an element to the front. O(1).
-func (l *List[T]) Prepend(value T) {
-    var nilPrev *listNode[T] = nil
-    var newNode = &listNode[T](value = value, prev = nilPrev, next = l.head)
-    if l.head != nil {
-        l.head.prev = newNode
+func (l Ptr[List[T]]) Prepend(value T) {
+    // prev is left out: an OptionPtr field's zero value is empty
+    val newNode = SomePtr(&listNode[T](value = value, next = l.head))
+    if l.length == 0 {
+        l.tail = newNode
+    } else {
+        l.head.Get().prev = newNode
     }
     l.head = newNode
-    if l.tail == nil {
-        l.tail = newNode
-    }
     l.length++
 }
 
 // Append adds an element to the end. O(1).
-func (l *List[T]) Append(value T) {
-    var nilNext *listNode[T] = nil
-    var newNode = &listNode[T](value = value, prev = l.tail, next = nilNext)
-    if l.tail != nil {
-        l.tail.next = newNode
+func (l Ptr[List[T]]) Append(value T) {
+    // next is left out: an OptionPtr field's zero value is empty
+    val newNode = SomePtr(&listNode[T](value = value, prev = l.tail))
+    if l.length == 0 {
+        l.head = newNode
+    } else {
+        l.tail.Get().next = newNode
     }
     l.tail = newNode
-    if l.head == nil {
-        l.head = newNode
-    }
     l.length++
 }
 
 // PrependAll prepends all elements from a slice. O(m) where m is slice length.
-func (l *List[T]) PrependAll(values []T) {
+func (l Ptr[List[T]]) PrependAll(values []T) {
     for i := values.Size() - 1; i >= 0; i-- {
         l.Prepend(values[i])
     }
 }
 
 // AppendAll appends all elements from a slice. O(m) where m is slice length.
-func (l *List[T]) AppendAll(values []T) {
+func (l Ptr[List[T]]) AppendAll(values []T) {
     for i := 0; i < values.Size(); i++ {
         l.Append(values[i])
     }
 }
 
 // AppendFrom appends all elements from another List. O(m).
-func (l *List[T]) AppendFrom(other *List[T]) {
+func (l Ptr[List[T]]) AppendFrom(other Ptr[List[T]]) {
     var current = other.head
-    for current != nil {
-        l.Append(current.value)
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        l.Append(node.value)
+        current = node.next
     }
 }
 
 // Insert inserts an element at the given index. O(n).
 // Panics if index is out of bounds (0 <= index <= length).
-func (l *List[T]) Insert(index int, value T) {
+func (l Ptr[List[T]]) Insert(index int, value T) {
     if (index < 0) || (index > l.length) {
         go_builtins.Panic(f"List.Insert: index $index out of bounds [0, ${l.length}]")
     }
@@ -222,9 +215,10 @@ func (l *List[T]) Insert(index int, value T) {
         l.Append(value)
         return
     }
-    var nextNode = l.nodeAt(index)
-    var prevNode = nextNode.prev
-    var newNode = &listNode[T](value = value, prev = prevNode, next = nextNode)
+    // 0 < index < length, so the node at index has a previous node
+    val nextNode = l.nodeAt(index)
+    val prevNode = nextNode.prev.Get()
+    val newNode = SomePtr(&listNode[T](value = value, prev = nextNode.prev, next = prevNode.next))
     prevNode.next = newNode
     nextNode.prev = newNode
     l.length++
@@ -232,7 +226,7 @@ func (l *List[T]) Insert(index int, value T) {
 
 // RemoveAt removes the element at the given index. O(n).
 // Panics if index is out of bounds.
-func (l *List[T]) RemoveAt(index int) T {
+func (l Ptr[List[T]]) RemoveAt(index int) T {
     if (index < 0) || (index >= l.length) {
         go_builtins.Panic(f"List.RemoveAt: index $index out of bounds [0, ${l.length})")
     }
@@ -243,14 +237,14 @@ func (l *List[T]) RemoveAt(index int) T {
 }
 
 // unlinkNode removes a node from the list.
-func (l *List[T]) unlinkNode(node *listNode[T]) {
-    if node.prev != nil {
-        node.prev.next = node.next
+func (l Ptr[List[T]]) unlinkNode(node Ptr[listNode[T]]) {
+    if node.prev.IsDefined() {
+        node.prev.Get().next = node.next
     } else {
         l.head = node.next
     }
-    if node.next != nil {
-        node.next.prev = node.prev
+    if node.next.IsDefined() {
+        node.next.Get().prev = node.prev
     } else {
         l.tail = node.prev
     }
@@ -259,64 +253,61 @@ func (l *List[T]) unlinkNode(node *listNode[T]) {
 
 // RemoveFirst removes the first element. O(1).
 // Panics if the list is empty.
-func (l *List[T]) RemoveFirst() T {
+func (l Ptr[List[T]]) RemoveFirst() T {
     if l.length == 0 {
         go_builtins.Panic("List.RemoveFirst on empty list")
     }
-    var removed = l.head.value
-    l.head = l.head.next
-    if l.head != nil {
-        var nilPrev *listNode[T] = nil
-        l.head.prev = nilPrev
+    val first = l.head.Get()
+    val next = first.next
+    l.head = next
+    if l.length == 1 {
+        l.tail = next
     } else {
-        var nilTail *listNode[T] = nil
-        l.tail = nilTail
+        next.Get().prev = EmptyOptionPtr[listNode[T]]()
     }
     l.length--
-    return removed
+    return first.value
 }
 
 // RemoveLast removes the last element. O(1).
 // Panics if the list is empty.
-func (l *List[T]) RemoveLast() T {
+func (l Ptr[List[T]]) RemoveLast() T {
     if l.length == 0 {
         go_builtins.Panic("List.RemoveLast on empty list")
     }
-    var removed = l.tail.value
-    l.tail = l.tail.prev
-    if l.tail != nil {
-        var nilNext *listNode[T] = nil
-        l.tail.next = nilNext
+    val last = l.tail.Get()
+    val prev = last.prev
+    l.tail = prev
+    if l.length == 1 {
+        l.head = prev
     } else {
-        var nilHead *listNode[T] = nil
-        l.head = nilHead
+        prev.Get().next = EmptyOptionPtr[listNode[T]]()
     }
     l.length--
-    return removed
+    return last.value
 }
 
 // Clear removes all elements. O(1).
-func (l *List[T]) Clear() {
-    var nilHead *listNode[T] = nil
-    var nilTail *listNode[T] = nil
-    l.head = nilHead
-    l.tail = nilTail
+func (l Ptr[List[T]]) Clear() {
+    l.head = EmptyOptionPtr[listNode[T]]()
+    l.tail = EmptyOptionPtr[listNode[T]]()
     l.length = 0
 }
 
 // Reverse reverses the list in place. O(n).
-func (l *List[T]) Reverse() {
+func (l Ptr[List[T]]) Reverse() {
     if l.length <= 1 {
         return
     }
     var current = l.head
-    for current != nil {
-        var temp = current.next
-        current.next = current.prev
-        current.prev = temp
+    for current.IsDefined() {
+        val node = current.Get()
+        val temp = node.next
+        node.next = node.prev
+        node.prev = temp
         current = temp
     }
-    var temp = l.head
+    val temp = l.head
     l.head = l.tail
     l.tail = temp
 }
@@ -324,40 +315,43 @@ func (l *List[T]) Reverse() {
 // === Search Operations ===
 
 // Contains checks if the list contains the given element. O(n).
-func (l *List[T]) Contains(elem T) bool {
+func (l Ptr[List[T]]) Contains(elem T) bool {
     var current = l.head
-    for current != nil {
-        if Equal(current.value, elem) {
+    for current.IsDefined() {
+        val node = current.Get()
+        if Equal(node.value, elem) {
             return true
         }
-        current = current.next
+        current = node.next
     }
     return false
 }
 
 // IndexOf returns the index of the first occurrence of elem, or -1 if not found.
-func (l *List[T]) IndexOf(elem T) int {
+func (l Ptr[List[T]]) IndexOf(elem T) int {
     var current = l.head
     var index = 0
-    for current != nil {
-        if Equal(current.value, elem) {
+    for current.IsDefined() {
+        val node = current.Get()
+        if Equal(node.value, elem) {
             return index
         }
-        current = current.next
+        current = node.next
         index++
     }
     return -1
 }
 
 // LastIndexOf returns the index of the last occurrence of elem, or -1 if not found.
-func (l *List[T]) LastIndexOf(elem T) int {
+func (l Ptr[List[T]]) LastIndexOf(elem T) int {
     var current = l.tail
     var index = l.length - 1
-    for current != nil {
-        if Equal(current.value, elem) {
+    for current.IsDefined() {
+        val node = current.Get()
+        if Equal(node.value, elem) {
             return index
         }
-        current = current.prev
+        current = node.prev
         index--
     }
     return -1
@@ -366,23 +360,24 @@ func (l *List[T]) LastIndexOf(elem T) int {
 // === Structural Operations (return new lists) ===
 
 // Take returns a new List with the first n elements.
-func (l *List[T]) Take(n int) *List[T] {
+func (l Ptr[List[T]]) Take(n int) Ptr[List[T]] {
     if n <= 0 {
         return EmptyList[T]()
     }
     var result = EmptyList[T]()
     var current = l.head
     var count = 0
-    for current != nil && count < n {
-        result.Append(current.value)
-        current = current.next
+    for current.IsDefined() && count < n {
+        val node = current.Get()
+        result.Append(node.value)
+        current = node.next
         count++
     }
     return result
 }
 
 // Drop returns a new List without the first n elements.
-func (l *List[T]) Drop(n int) *List[T] {
+func (l Ptr[List[T]]) Drop(n int) Ptr[List[T]] {
     if n <= 0 {
         return l.Clone()
     }
@@ -390,16 +385,17 @@ func (l *List[T]) Drop(n int) *List[T] {
         return EmptyList[T]()
     }
     var result = EmptyList[T]()
-    var current = l.nodeAt(n)
-    for current != nil {
-        result.Append(current.value)
-        current = current.next
+    var current = SomePtr(l.nodeAt(n))
+    for current.IsDefined() {
+        val node = current.Get()
+        result.Append(node.value)
+        current = node.next
     }
     return result
 }
 
 // Slice returns a new List from start (inclusive) to end (exclusive).
-func (l *List[T]) Slice(var start int, var end int) *List[T] {
+func (l Ptr[List[T]]) Slice(var start int, var end int) Ptr[List[T]] {
     if start < 0 {
         start = 0
     }
@@ -410,29 +406,26 @@ func (l *List[T]) Slice(var start int, var end int) *List[T] {
         return EmptyList[T]()
     }
     var result = EmptyList[T]()
-    var current = l.nodeAt(start)
+    var current = SomePtr(l.nodeAt(start))
     var count = 0
-    for current != nil && count < end - start {
-        result.Append(current.value)
-        current = current.next
+    for current.IsDefined() && count < end - start {
+        val node = current.Get()
+        result.Append(node.value)
+        current = node.next
         count++
     }
     return result
 }
 
 // Clone creates a shallow copy of the list.
-func (l *List[T]) Clone() *List[T] {
-    var result = EmptyList[T]()
-    var current = l.head
-    for current != nil {
-        result.Append(current.value)
-        current = current.next
-    }
-    return result
+func (l Ptr[List[T]]) Clone() Ptr[List[T]] {
+    val result = EmptyList[T]()
+    result.AppendFrom(l)
+    result
 }
 
 // Tail returns all elements except the first.
-func (l *List[T]) Tail() *List[T] {
+func (l Ptr[List[T]]) Tail() Ptr[List[T]] {
     if l.length == 0 {
         go_builtins.Panic("List.Tail on empty list")
     }
@@ -440,7 +433,7 @@ func (l *List[T]) Tail() *List[T] {
 }
 
 // Init returns all elements except the last.
-func (l *List[T]) Init() *List[T] {
+func (l Ptr[List[T]]) Init() Ptr[List[T]] {
     if l.length == 0 {
         go_builtins.Panic("List.Init on empty list")
     }
@@ -448,7 +441,7 @@ func (l *List[T]) Init() *List[T] {
 }
 
 // Reversed returns a new List with elements in reverse order.
-func (l *List[T]) Reversed() *List[T] {
+func (l Ptr[List[T]]) Reversed() Ptr[List[T]] {
     var result = l.Clone()
     result.Reverse()
     return result
@@ -457,97 +450,107 @@ func (l *List[T]) Reversed() *List[T] {
 // === Functional Operations (return new lists) ===
 
 // Map applies a function to each element and returns a new List.
-func (l *List[T]) Map[U any](f func(T) U) *List[U] {
+func (l Ptr[List[T]]) Map[U any](f func(T) U) Ptr[List[U]] {
     var result = EmptyList[U]()
     var current = l.head
-    for current != nil {
-        result.Append(f(current.value))
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        result.Append(f(node.value))
+        current = node.next
     }
     return result
 }
 
 // FlatMap applies a function that returns a List to each element and flattens.
-func (l *List[T]) FlatMap[U any](f func(T) *List[U]) *List[U] {
+func (l Ptr[List[T]]) FlatMap[U any](f func(T) Ptr[List[U]]) Ptr[List[U]] {
     var result = EmptyList[U]()
     var current = l.head
-    for current != nil {
-        result.AppendFrom(f(current.value))
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        result.AppendFrom(f(node.value))
+        current = node.next
     }
     return result
 }
 
 // Collect applies a partial function to each element and collects the results.
-func (l *List[T]) Collect[U any](pf func(T) Option[U]) *List[U] {
+func (l Ptr[List[T]]) Collect[U any](pf func(T) Option[U]) Ptr[List[U]] {
     var result = EmptyList[U]()
     var current = l.head
-    for current != nil {
-        val opt = pf(current.value)
+    for current.IsDefined() {
+        val node = current.Get()
+        val opt = pf(node.value)
         if opt.IsDefined() {
             result.Append(opt.Get())
         }
-        current = current.next
+        current = node.next
     }
     return result
 }
 
 // Filter returns a new List with only elements that satisfy the predicate.
-func (l *List[T]) Filter(p func(T) bool) *List[T] {
+func (l Ptr[List[T]]) Filter(p func(T) bool) Ptr[List[T]] {
     var result = EmptyList[T]()
     var current = l.head
-    for current != nil {
-        if p(current.value) {
-            result.Append(current.value)
+    for current.IsDefined() {
+        val node = current.Get()
+        if p(node.value) {
+            result.Append(node.value)
         }
-        current = current.next
+        current = node.next
     }
     return result
 }
 
 // FilterNot returns a new List with elements that do not satisfy the predicate.
-func (l *List[T]) FilterNot(p func(T) bool) *List[T] = l.Filter((elem T) => !p(elem))
+func (l Ptr[List[T]]) FilterNot(p func(T) bool) Ptr[List[T]] = l.Filter((elem T) => !p(elem))
 
 // Partition splits the list into two based on a predicate. O(n).
 //
 // The obvious implementation — `(l.Filter(p), l.FilterNot(p))` — walks the
 // list twice (2n) and builds two intermediate structures. Single-pass version
 // walks once, Append is O(1) on mutable lists (tail pointer), so total is O(n).
-func (l *List[T]) Partition(p func(T) bool) Tuple[*List[T], *List[T]] {
+func (l Ptr[List[T]]) Partition(p func(T) bool) Tuple[Ptr[List[T]], Ptr[List[T]]] {
     var left = EmptyList[T]()
     var right = EmptyList[T]()
     var current = l.head
-    for current != nil {
-        if p(current.value) {
-            left.Append(current.value)
+    for current.IsDefined() {
+        val node = current.Get()
+        if p(node.value) {
+            left.Append(node.value)
         } else {
-            right.Append(current.value)
+            right.Append(node.value)
         }
-        current = current.next
+        current = node.next
     }
     return (left, right)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
-func (l *List[T]) TakeWhile(p func(T) bool) *List[T] {
+func (l Ptr[List[T]]) TakeWhile(p func(T) bool) Ptr[List[T]] {
     var result = EmptyList[T]()
     var current = l.head
-    for current != nil {
-        if !p(current.value) {
+    for current.IsDefined() {
+        val node = current.Get()
+        if !p(node.value) {
             return result
         }
-        result.Append(current.value)
-        current = current.next
+        result.Append(node.value)
+        current = node.next
     }
     return result
 }
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
-func (l *List[T]) DropWhile(p func(T) bool) *List[T] {
+func (l Ptr[List[T]]) DropWhile(p func(T) bool) Ptr[List[T]] {
     var current = l.head
     var index = 0
-    for current != nil && p(current.value) {
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        if !p(node.value) {
+            break
+        }
+        current = node.next
         index++
     }
     return l.Drop(index)
@@ -556,44 +559,48 @@ func (l *List[T]) DropWhile(p func(T) bool) *List[T] {
 // === Reduction Operations ===
 
 // FoldLeft applies a binary operator from left to right.
-func (l *List[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
+func (l Ptr[List[T]]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     var current = l.head
-    for current != nil {
-        acc = f(acc, current.value)
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        acc = f(acc, node.value)
+        current = node.next
     }
     return acc
 }
 
 // FoldRight applies a binary operator from right to left.
-func (l *List[T]) FoldRight[U any](initial U, f func(T, U) U) U {
+func (l Ptr[List[T]]) FoldRight[U any](initial U, f func(T, U) U) U {
     var acc = initial
     var current = l.tail
-    for current != nil {
-        acc = f(current.value, acc)
-        current = current.prev
+    for current.IsDefined() {
+        val node = current.Get()
+        acc = f(node.value, acc)
+        current = node.prev
     }
     return acc
 }
 
 // Reduce applies a binary operator from left to right, starting with the first element.
 // Panics if the list is empty.
-func (l *List[T]) Reduce(f func(T, T) T) T {
+func (l Ptr[List[T]]) Reduce(f func(T, T) T) T {
     if l.length == 0 {
         go_builtins.Panic("List.Reduce on empty list")
     }
-    var acc = l.head.value
-    var current = l.head.next
-    for current != nil {
-        acc = f(acc, current.value)
-        current = current.next
+    val first = l.head.Get()
+    var acc = first.value
+    var current = first.next
+    for current.IsDefined() {
+        val node = current.Get()
+        acc = f(acc, node.value)
+        current = node.next
     }
     return acc
 }
 
 // ReduceOption is like Reduce but returns None for empty list.
-func (l *List[T]) ReduceOption(f func(T, T) T) Option[T] {
+func (l Ptr[List[T]]) ReduceOption(f func(T, T) T) Option[T] {
     if l.length == 0 {
         return None[T]()
     }
@@ -603,64 +610,69 @@ func (l *List[T]) ReduceOption(f func(T, T) T) Option[T] {
 // === Predicate Operations ===
 
 // ForEach applies a function to each element for side effects.
-func (l *List[T]) ForEach(f func(T)) {
+func (l Ptr[List[T]]) ForEach(f func(T)) {
     var current = l.head
-    for current != nil {
-        f(current.value)
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        f(node.value)
+        current = node.next
     }
 }
 
 // Exists returns true if any element satisfies the predicate.
-func (l *List[T]) Exists(p func(T) bool) bool {
+func (l Ptr[List[T]]) Exists(p func(T) bool) bool {
     var current = l.head
-    for current != nil {
-        if p(current.value) {
+    for current.IsDefined() {
+        val node = current.Get()
+        if p(node.value) {
             return true
         }
-        current = current.next
+        current = node.next
     }
     return false
 }
 
 // ForAll returns true if all elements satisfy the predicate.
-func (l *List[T]) ForAll(p func(T) bool) bool {
+func (l Ptr[List[T]]) ForAll(p func(T) bool) bool {
     var current = l.head
-    for current != nil {
-        if !p(current.value) {
+    for current.IsDefined() {
+        val node = current.Get()
+        if !p(node.value) {
             return false
         }
-        current = current.next
+        current = node.next
     }
     return true
 }
 
 // Find returns the first element that satisfies the predicate.
-func (l *List[T]) Find(p func(T) bool) Option[T] {
+func (l Ptr[List[T]]) Find(p func(T) bool) Option[T] {
     var current = l.head
-    for current != nil {
-        if p(current.value) {
-            return Some[T](current.value)
+    for current.IsDefined() {
+        val node = current.Get()
+        if p(node.value) {
+            return Some[T](node.value)
         }
-        current = current.next
+        current = node.next
     }
     return None[T]()
 }
 
 // FindLast returns the last element that satisfies the predicate.
-func (l *List[T]) FindLast(p func(T) bool) Option[T] {
+func (l Ptr[List[T]]) FindLast(p func(T) bool) Option[T] {
     var current = l.tail
-    for current != nil {
-        if p(current.value) {
-            return Some[T](current.value)
+    for current.IsDefined() {
+        val node = current.Get()
+        if p(node.value) {
+            return Some[T](node.value)
         }
-        current = current.prev
+        current = node.prev
     }
     return None[T]()
 }
 
 // Count returns the number of elements satisfying the predicate.
-func (l *List[T]) Count(p func(T) bool) int {
+func (l Ptr[List[T]]) Count(p func(T) bool) int {
     return l.FoldLeft[int](0, (acc int, elem T) => {
         if p(elem) {
             return acc + 1
@@ -672,62 +684,69 @@ func (l *List[T]) Count(p func(T) bool) int {
 // === Utility Operations ===
 
 // Zip combines two lists into a list of tuples. Result length is the minimum.
-func (l *List[T]) Zip[U any](other *List[U]) *List[Tuple[T, U]] {
+func (l Ptr[List[T]]) Zip[U any](other Ptr[List[U]]) Ptr[List[Tuple[T, U]]] {
     var result = EmptyList[Tuple[T, U]]()
     var currentL = l.head
     var currentO = other.head
-    for currentL != nil && currentO != nil {
-        result.Append((currentL.value, currentO.value))
-        currentL = currentL.next
-        currentO = currentO.next
+    for currentL.IsDefined() && currentO.IsDefined() {
+        val nodeL = currentL.Get()
+        val nodeO = currentO.Get()
+        result.Append((nodeL.value, nodeO.value))
+        currentL = nodeL.next
+        currentO = nodeO.next
     }
     return result
 }
 
 // ZipWithIndex pairs each element with its index.
-func (l *List[T]) ZipWithIndex() *List[Tuple[T, int]] {
+func (l Ptr[List[T]]) ZipWithIndex() Ptr[List[Tuple[T, int]]] {
     var result = EmptyList[Tuple[T, int]]()
     var current = l.head
     var index = 0
-    for current != nil {
-        result.Append((current.value, index))
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        result.Append((node.value, index))
+        current = node.next
         index++
     }
     return result
 }
 
 // Distinct returns a new list with duplicate elements removed.
-func (l *List[T]) Distinct() *List[T] {
+func (l Ptr[List[T]]) Distinct() Ptr[List[T]] {
     var result = EmptyList[T]()
     var current = l.head
-    for current != nil {
-        if !result.Contains(current.value) {
-            result.Append(current.value)
+    for current.IsDefined() {
+        val node = current.Get()
+        if !result.Contains(node.value) {
+            result.Append(node.value)
         }
-        current = current.next
+        current = node.next
     }
     return result
 }
 
 // SplitAt splits the list at the given index.
-func (l *List[T]) SplitAt(n int) Tuple[*List[T], *List[T]] {
+func (l Ptr[List[T]]) SplitAt(n int) Tuple[Ptr[List[T]], Ptr[List[T]]] {
     return (l.Take(n), l.Drop(n))
 }
 
 // GroupBy partitions this list into a map of lists according to a discriminator function.
-func (l *List[T]) GroupBy[K comparable](f func(T) K) map[K]*List[T] {
-    var result = go_interop.MapEmpty[K, *List[T]]()
+func (l Ptr[List[T]]) GroupBy[K comparable](f func(T) K) map[K]Ptr[List[T]] {
+    var result = go_interop.MapEmpty[K, Ptr[List[T]]]()
     var current = l.head
-    for current != nil {
-        var key = f(current.value)
-        var existing = result[key]
-        if existing == nil {
-            existing = EmptyList[T]()
-            result[key] = existing
+    for current.IsDefined() {
+        val node = current.Get()
+        val key = f(node.value)
+        val existing, ok = go_interop.MapGet(result, key)
+        if ok {
+            existing.Append(node.value)
+        } else {
+            val group = EmptyList[T]()
+            group.Append(node.value)
+            result[key] = group
         }
-        existing.Append(current.value)
-        current = current.next
+        current = node.next
     }
     return result
 }
@@ -735,60 +754,64 @@ func (l *List[T]) GroupBy[K comparable](f func(T) K) map[K]*List[T] {
 // === Conversion ===
 
 // ToGoSlice converts the list to a Go slice.
-func (l *List[T]) ToGoSlice() []T {
+func (l Ptr[List[T]]) ToGoSlice() []T {
     var result []T
     var current = l.head
-    for current != nil {
-        result = go_interop.SliceAppend(result, current.value)
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        result = go_interop.SliceAppend(result, node.value)
+        current = node.next
     }
     return result
 }
 
 // ToArray converts the list to a Array.
-func (l *List[T]) ToArray() *Array[T] {
+func (l Ptr[List[T]]) ToArray() Ptr[Array[T]] {
     var result = ArrayWithCapacity[T](l.length)
     var current = l.head
-    for current != nil {
-        result.Append(current.value)
-        current = current.next
+    for current.IsDefined() {
+        val node = current.Get()
+        result.Append(node.value)
+        current = node.next
     }
     return result
 }
 
 // String returns a string representation of the list.
-func (l *List[T]) String() string {
+func (l Ptr[List[T]]) String() string {
     if l.length == 0 {
         return "List()"
     }
     var result = "List("
     var current = l.head
     var first = true
-    for current != nil {
+    for current.IsDefined() {
+        val node = current.Get()
         if !first {
             result = result + ", "
         }
-        result = result + s"${current.value}"
-        current = current.next
+        result = result + s"${node.value}"
+        current = node.next
         first = false
     }
     return result + ")"
 }
 
 // MkString joins elements into a string with separator.
-func (l *List[T]) MkString(sep string) string {
+func (l Ptr[List[T]]) MkString(sep string) string {
     if l.length == 0 {
         return ""
     }
     var result = ""
     var current = l.head
     var first = true
-    for current != nil {
+    for current.IsDefined() {
+        val node = current.Get()
         if !first {
             result = result + sep
         }
-        result = result + s"${current.value}"
-        current = current.next
+        result = result + s"${node.value}"
+        current = node.next
         first = false
     }
     return result
@@ -797,13 +820,13 @@ func (l *List[T]) MkString(sep string) string {
 // === Sorting ===
 
 // Sorted returns a new List with elements sorted in natural order.
-func (l *List[T]) Sorted() *List[T] = l.ToArray().Sorted().ToList()
+func (l Ptr[List[T]]) Sorted() Ptr[List[T]] = l.ToArray().Sorted().ToList()
 
 // SortWith returns a new List sorted using the given comparison function.
-func (l *List[T]) SortWith(less func(T, T) bool) *List[T] = l.ToArray().SortWith(less).ToList()
+func (l Ptr[List[T]]) SortWith(less func(T, T) bool) Ptr[List[T]] = l.ToArray().SortWith(less).ToList()
 
 // SortBy returns a new List sorted by a key extracted from each element.
-func (l *List[T]) SortBy[K comparable](f func(T) K) *List[T] = l.ToArray().SortBy(f).ToList()
+func (l Ptr[List[T]]) SortBy[K comparable](f func(T) K) Ptr[List[T]] = l.ToArray().SortBy(f).ToList()
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
-func (l *List[T]) SeqDrop(n int) any = l.Drop(n)
+func (l Ptr[List[T]]) SeqDrop(n int) any = l.Drop(n)

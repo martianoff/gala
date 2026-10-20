@@ -339,7 +339,7 @@ func main() {
 
 import "martianoff/gala/collection_mutable"
 
-struct Holder[T any](label string, items *collection_mutable.Array[T])
+struct Holder[T any](label string, items Ptr[collection_mutable.Array[T]])
 
 type Held[T any] Holder[T]
 type HeldAgain[T any] Held[T]
@@ -649,7 +649,7 @@ import (
 
 struct Policy(retries int, var override bool)
 
-struct AppModel(team string, statuses Array[int], policy Policy, sessions *cm.Array[int])
+struct AppModel(team string, statuses Array[int], policy Policy, sessions Ptr[cm.Array[int]])
 
 func (m AppModel) label() string = m.team
 
@@ -659,7 +659,7 @@ func runBool(body Sendable[func() bool]) bool = body()
 
 func g(a string, b Array[int]) int = a.Size() + b.Size()
 
-func sz(a *cm.Array[int]) int = a.Size()
+func sz(a Ptr[cm.Array[int]]) int = a.Size()
 
 func consume(x AppModel) int = x.statuses.Size()
 

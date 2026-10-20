@@ -155,7 +155,7 @@ var sum = arr.FoldLeft(0, (acc, x) => acc + x)  // 15
 
 ### Sorting
 
-Sorting returns a new `*Array[T]`, leaving the original unchanged. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
+Sorting returns a new `Ptr[Array[T]]`, leaving the original unchanged. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.
 
 ```gala
 var arr = ArrayOf(3, 1, 4, 1, 5, 9)
@@ -405,15 +405,14 @@ m.FilterInPlace((k, v) => v > 2)
 
 ## Pattern Matching with Mutable Collections
 
-GALA supports pattern matching on mutable collections using type matching and guards.
+GALA supports pattern matching on mutable collections: bind the collection and test it with guards.
 
 ```gala
-func describeArray[T any](arr *Array[T]) string {
+func describeArray[T any](arr Ptr[Array[T]]) string {
     return arr match {
-        case a: *Array[_] if a.IsEmpty() => "empty array"
-        case a: *Array[_] if a.Length() == 1 => s"single element: ${a.Head()}"
-        case a: *Array[_] => s"array with ${a.Length()} elements"
-        case _ => "unknown"
+        case a if a.IsEmpty() => "empty array"
+        case a if a.Length() == 1 => s"single element: ${a.Head()}"
+        case a => s"array with ${a.Length()} elements"
     }
 }
 ```
@@ -421,7 +420,7 @@ func describeArray[T any](arr *Array[T]) string {
 ### Option Pattern Matching with Collections
 
 ```gala
-func findFirstEven(arr *Array[int]) string {
+func findFirstEven(arr Ptr[Array[int]]) string {
     var found = arr.Find((x) => x % 2 == 0)
     return found match {
         case Some(value) => s"found even: $value"

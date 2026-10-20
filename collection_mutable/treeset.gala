@@ -28,27 +28,24 @@ val mutableTreeBlack int = 1
 // treeSetNode represents a node in the Red-Black tree.
 type treeSetNode[T comparable] struct {
     var value  T
-    var left   *treeSetNode[T]
-    var right  *treeSetNode[T]
-    var parent *treeSetNode[T]
+    var left   OptionPtr[treeSetNode[T]]
+    var right  OptionPtr[treeSetNode[T]]
+    var parent OptionPtr[treeSetNode[T]]
     var color  int
 }
 
 // TreeSet represents a mutable sorted set.
 type TreeSet[T comparable] struct {
-    var root *treeSetNode[T]
+    var root OptionPtr[treeSetNode[T]]
     var size int
 }
 
 // EmptyTreeSet returns a new empty TreeSet.
-func EmptyTreeSet[T comparable]() *TreeSet[T] {
-    var nilRoot *treeSetNode[T] = nil
-    return &TreeSet[T](root = nilRoot, size = 0)
-}
+func EmptyTreeSet[T comparable]() Ptr[TreeSet[T]] = &TreeSet[T](root = EmptyOptionPtr[treeSetNode[T]](), size = 0)
 
 // TreeSetOf creates a TreeSet from variadic arguments.
 // Example: TreeSetOf[int](3, 1, 2) creates TreeSet(1, 2, 3)
-func TreeSetOf[T comparable](elements ...T) *TreeSet[T] {
+func TreeSetOf[T comparable](elements ...T) Ptr[TreeSet[T]] {
     var result = EmptyTreeSet[T]()
     for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
@@ -57,7 +54,7 @@ func TreeSetOf[T comparable](elements ...T) *TreeSet[T] {
 }
 
 // TreeSetFromSlice creates a TreeSet from a slice.
-func TreeSetFromSlice[T comparable](elements []T) *TreeSet[T] {
+func TreeSetFromSlice[T comparable](elements []T) Ptr[TreeSet[T]] {
     var result = EmptyTreeSet[T]()
     for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
@@ -68,16 +65,16 @@ func TreeSetFromSlice[T comparable](elements []T) *TreeSet[T] {
 // === Basic Operations ===
 
 // IsEmpty returns true if the set is empty.
-func (s *TreeSet[T]) IsEmpty() bool = s.size == 0
+func (s Ptr[TreeSet[T]]) IsEmpty() bool = s.size == 0
 
 // NonEmpty returns true if the set is not empty.
-func (s *TreeSet[T]) NonEmpty() bool = s.size > 0
+func (s Ptr[TreeSet[T]]) NonEmpty() bool = s.size > 0
 
 // Size returns the number of elements. O(1) - cached.
-func (s *TreeSet[T]) Size() int = s.size
+func (s Ptr[TreeSet[T]]) Size() int = s.size
 
 // Length is an alias for Size.
-func (s *TreeSet[T]) Length() int = s.size
+func (s Ptr[TreeSet[T]]) Length() int = s.size
 
 // === Comparison ===
 
@@ -202,25 +199,23 @@ func treeSetPanicNotOrdered(v any) int {
     go_builtins.Panic(f"TreeSet: type ${v}%T must implement std.Ordered interface")
 }
 
-// isRedTreeSetNode checks if a node is red (nil nodes are black).
-func isRedTreeSetNode[T comparable](node *treeSetNode[T]) bool {
-    if node == nil {
-        return false
-    }
-    return node.color == mutableTreeRed
-}
+// isRedTreeSetNode checks if a node is red (empty nodes are black).
+func isRedTreeSetNode[T comparable](tree OptionPtr[treeSetNode[T]]) bool =
+    tree.IsDefined() && tree.Get().color == mutableTreeRed
 
 // === Query Operations ===
 
 // Contains checks if the set contains the given element. O(log n).
-func (s *TreeSet[T]) Contains(elem T) bool {
-    var node = s.root
-    for node != nil {
+// It walks the tree itself: findNode is too large to inline.
+func (s Ptr[TreeSet[T]]) Contains(elem T) bool {
+    var current = s.root
+    for current.IsDefined() {
+        val node = current.Get()
         val cmp = treeSetCompare[T](elem, node.value)
         if cmp < 0 {
-            node = node.left
+            current = node.left
         } else if cmp > 0 {
-            node = node.right
+            current = node.right
         } else {
             return true
         }
@@ -232,35 +227,34 @@ func (s *TreeSet[T]) Contains(elem T) bool {
 
 // Add adds an element to the set. O(log n).
 // Returns true if the element was added (not already present).
-func (s *TreeSet[T]) Add(elem T) bool {
-    if s.root == nil {
-        s.root = &treeSetNode[T](value = elem, color = mutableTreeBlack)
+func (s Ptr[TreeSet[T]]) Add(elem T) bool {
+    if s.root.IsEmpty() {
+        s.root = SomePtr(&treeSetNode[T](value = elem, color = mutableTreeBlack))
         s.size = 1
         return true
     }
 
-    // Find insertion point
-    var parent *treeSetNode[T] = nil
-    var node = s.root
+    // Find insertion point: the last node on the search path
+    var parent = s.root.Get()
     var cmp = 0
-    for node != nil {
-        parent = node
-        cmp = treeSetCompare[T](elem, node.value)
-        if cmp < 0 {
-            node = node.left
-        } else if cmp > 0 {
-            node = node.right
-        } else {
+    for {
+        cmp = treeSetCompare[T](elem, parent.value)
+        if cmp == 0 {
             return false // Already exists
         }
+        val next = if (cmp < 0) parent.left else parent.right
+        if next.IsEmpty() {
+            break
+        }
+        parent = next.Get()
     }
 
     // Insert new node
-    var newNode = &treeSetNode[T](value = elem, parent = parent, color = mutableTreeRed)
+    val newNode = &treeSetNode[T](value = elem, parent = SomePtr(parent), color = mutableTreeRed)
     if cmp < 0 {
-        parent.left = newNode
+        parent.left = SomePtr(newNode)
     } else {
-        parent.right = newNode
+        parent.right = SomePtr(newNode)
     }
     s.size++
 
@@ -269,99 +263,109 @@ func (s *TreeSet[T]) Add(elem T) bool {
     return true
 }
 
-// fixAfterInsert rebalances the tree after insertion.
-func (s *TreeSet[T]) fixAfterInsert(var node *treeSetNode[T]) {
-    for node != s.root && node.parent.color == mutableTreeRed {
-        if node.parent == node.parent.parent.left {
-            var uncle = node.parent.parent.right
+// fixAfterInsert rebalances the tree after insertion. A red node is never the
+// root, so a node whose parent is red has a grandparent.
+func (s Ptr[TreeSet[T]]) fixAfterInsert(var node Ptr[treeSetNode[T]]) {
+    for isRedTreeSetNode[T](node.parent) {
+        val parent = node.parent.Get()
+        val grand = parent.parent.Get()
+        if grand.left == node.parent {
+            val uncle = grand.right
             if isRedTreeSetNode[T](uncle) {
                 // Case 1: Uncle is red
-                node.parent.color = mutableTreeBlack
-                uncle.color = mutableTreeBlack
-                node.parent.parent.color = mutableTreeRed
-                node = node.parent.parent
+                parent.color = mutableTreeBlack
+                uncle.Get().color = mutableTreeBlack
+                grand.color = mutableTreeRed
+                node = grand
             } else {
-                if node == node.parent.right {
+                if parent.right == SomePtr(node) {
                     // Case 2: Node is right child
-                    node = node.parent
+                    node = parent
                     s.rotateLeft(node)
                 }
                 // Case 3: Node is left child
-                node.parent.color = mutableTreeBlack
-                node.parent.parent.color = mutableTreeRed
-                s.rotateRight(node.parent.parent)
+                val p = node.parent.Get()
+                p.color = mutableTreeBlack
+                val g = p.parent.Get()
+                g.color = mutableTreeRed
+                s.rotateRight(g)
             }
         } else {
-            var uncle = node.parent.parent.left
+            val uncle = grand.left
             if isRedTreeSetNode[T](uncle) {
                 // Case 1: Uncle is red
-                node.parent.color = mutableTreeBlack
-                uncle.color = mutableTreeBlack
-                node.parent.parent.color = mutableTreeRed
-                node = node.parent.parent
+                parent.color = mutableTreeBlack
+                uncle.Get().color = mutableTreeBlack
+                grand.color = mutableTreeRed
+                node = grand
             } else {
-                if node == node.parent.left {
+                if parent.left == SomePtr(node) {
                     // Case 2: Node is left child
-                    node = node.parent
+                    node = parent
                     s.rotateRight(node)
                 }
                 // Case 3: Node is right child
-                node.parent.color = mutableTreeBlack
-                node.parent.parent.color = mutableTreeRed
-                s.rotateLeft(node.parent.parent)
+                val p = node.parent.Get()
+                p.color = mutableTreeBlack
+                val g = p.parent.Get()
+                g.color = mutableTreeRed
+                s.rotateLeft(g)
             }
         }
     }
-    s.root.color = mutableTreeBlack
+    s.root.Get().color = mutableTreeBlack
 }
 
-// rotateLeft performs a left rotation.
-func (s *TreeSet[T]) rotateLeft(x *treeSetNode[T]) {
-    var y = x.right
+// replaceChild points whatever pointed at old (its parent, or the root) at
+// replacement instead.
+func (s Ptr[TreeSet[T]]) replaceChild(old Ptr[treeSetNode[T]], replacement OptionPtr[treeSetNode[T]]) {
+    if old.parent.IsEmpty() {
+        s.root = replacement
+        return
+    }
+    val parent = old.parent.Get()
+    if parent.left == SomePtr(old) {
+        parent.left = replacement
+    } else {
+        parent.right = replacement
+    }
+}
+
+// rotateLeft performs a left rotation. x has a right child.
+func (s Ptr[TreeSet[T]]) rotateLeft(x Ptr[treeSetNode[T]]) {
+    val y = x.right.Get()
     x.right = y.left
-    if y.left != nil {
-        y.left.parent = x
+    if y.left.IsDefined() {
+        y.left.Get().parent = SomePtr(x)
     }
     y.parent = x.parent
-    if x.parent == nil {
-        s.root = y
-    } else if x == x.parent.left {
-        x.parent.left = y
-    } else {
-        x.parent.right = y
-    }
-    y.left = x
-    x.parent = y
+    s.replaceChild(x, SomePtr(y))
+    y.left = SomePtr(x)
+    x.parent = SomePtr(y)
 }
 
-// rotateRight performs a right rotation.
-func (s *TreeSet[T]) rotateRight(x *treeSetNode[T]) {
-    var y = x.left
+// rotateRight performs a right rotation. x has a left child.
+func (s Ptr[TreeSet[T]]) rotateRight(x Ptr[treeSetNode[T]]) {
+    val y = x.left.Get()
     x.left = y.right
-    if y.right != nil {
-        y.right.parent = x
+    if y.right.IsDefined() {
+        y.right.Get().parent = SomePtr(x)
     }
     y.parent = x.parent
-    if x.parent == nil {
-        s.root = y
-    } else if x == x.parent.right {
-        x.parent.right = y
-    } else {
-        x.parent.left = y
-    }
-    y.right = x
-    x.parent = y
+    s.replaceChild(x, SomePtr(y))
+    y.right = SomePtr(x)
+    x.parent = SomePtr(y)
 }
 
 // AddAll adds all elements from a slice.
-func (s *TreeSet[T]) AddAll(elements []T) {
+func (s Ptr[TreeSet[T]]) AddAll(elements []T) {
     for i := 0; i < elements.Size(); i++ {
         s.Add(elements[i])
     }
 }
 
 // AddFrom adds all elements from another TreeSet.
-func (s *TreeSet[T]) AddFrom(other *TreeSet[T]) {
+func (s Ptr[TreeSet[T]]) AddFrom(other Ptr[TreeSet[T]]) {
     other.ForEach((elem T) => {
         s.Add(elem)
     })
@@ -369,171 +373,150 @@ func (s *TreeSet[T]) AddFrom(other *TreeSet[T]) {
 
 // Remove removes an element from the set. O(log n).
 // Returns true if the element was removed (was present).
-func (s *TreeSet[T]) Remove(elem T) bool {
-    var node = s.findNode(elem)
-    if node == nil {
+func (s Ptr[TreeSet[T]]) Remove(elem T) bool {
+    val found = s.findNode(elem)
+    if found.IsEmpty() {
         return false
     }
-    s.deleteNode(node)
+    s.deleteNode(found.Get())
     s.size--
     return true
 }
 
 // findNode finds the node containing the element.
-func (s *TreeSet[T]) findNode(elem T) *treeSetNode[T] {
-    var node = s.root
-    for node != nil {
+func (s Ptr[TreeSet[T]]) findNode(elem T) OptionPtr[treeSetNode[T]] {
+    var current = s.root
+    for current.IsDefined() {
+        val node = current.Get()
         val cmp = treeSetCompare[T](elem, node.value)
         if cmp < 0 {
-            node = node.left
+            current = node.left
         } else if cmp > 0 {
-            node = node.right
+            current = node.right
         } else {
-            return node
+            return current
         }
     }
-    return nil
+    return current
 }
 
 // deleteNode removes a node from the tree.
-func (s *TreeSet[T]) deleteNode(var node *treeSetNode[T]) {
+func (s Ptr[TreeSet[T]]) deleteNode(var node Ptr[treeSetNode[T]]) {
     // If node has two children, replace with successor
-    if node.left != nil && node.right != nil {
-        var successor = s.minNode(node.right)
+    if node.left.IsDefined() && node.right.IsDefined() {
+        val successor = s.minNode(node.right.Get())
         node.value = successor.value
         node = successor
     }
 
     // Node has at most one child
-    var child *treeSetNode[T]
-    if node.left != nil {
-        child = node.left
-    } else {
-        child = node.right
-    }
+    val child = if (node.left.IsDefined()) node.left else node.right
 
-    if child != nil {
-        child.parent = node.parent
-        if node.parent == nil {
-            s.root = child
-        } else if node == node.parent.left {
-            node.parent.left = child
-        } else {
-            node.parent.right = child
-        }
-
+    if child.IsDefined() {
+        child.Get().parent = node.parent
+        s.replaceChild(node, child)
         if node.color == mutableTreeBlack {
-            s.fixAfterDelete(child)
+            s.fixAfterDelete(child.Get())
         }
-    } else if node.parent == nil {
-        s.root = nil
+    } else if node.parent.IsEmpty() {
+        s.root = EmptyOptionPtr[treeSetNode[T]]()
     } else {
+        // The leaf stands in for its missing child while the tree is fixed up
         if node.color == mutableTreeBlack {
             s.fixAfterDelete(node)
         }
-
-        if node.parent != nil {
-            if node == node.parent.left {
-                node.parent.left = nil
-            } else {
-                node.parent.right = nil
-            }
-        }
+        s.replaceChild(node, EmptyOptionPtr[treeSetNode[T]]())
     }
 }
 
-// fixAfterDelete rebalances the tree after deletion.
-func (s *TreeSet[T]) fixAfterDelete(var node *treeSetNode[T]) {
-    for node != s.root && (node == nil || node.color == mutableTreeBlack) {
-        if node == nil {
-            return
-        }
-        if node.parent == nil {
-            return
-        }
-        if node == node.parent.left {
-            var sibling = node.parent.right
-            if sibling != nil && sibling.color == mutableTreeRed {
-                sibling.color = mutableTreeBlack
-                node.parent.color = mutableTreeRed
-                s.rotateLeft(node.parent)
-                sibling = node.parent.right
+// fixAfterDelete rebalances the tree after deletion. Rotations on node's parent
+// or sibling keep node's parent link, so each pass reads it once.
+func (s Ptr[TreeSet[T]]) fixAfterDelete(var node Ptr[treeSetNode[T]]) {
+    for node.parent.IsDefined() && node.color == mutableTreeBlack {
+        val parent = node.parent.Get()
+        if parent.left == SomePtr(node) {
+            var sibling = parent.right
+            if isRedTreeSetNode[T](sibling) {
+                sibling.Get().color = mutableTreeBlack
+                parent.color = mutableTreeRed
+                s.rotateLeft(parent)
+                sibling = parent.right
             }
 
-            if sibling == nil {
-                node = node.parent
-            } else if (!isRedTreeSetNode[T](sibling.left)) && (!isRedTreeSetNode[T](sibling.right)) {
-                sibling.color = mutableTreeRed
-                node = node.parent
+            if sibling.IsEmpty() {
+                node = parent
+            } else if !isRedTreeSetNode[T](sibling.Get().left) && !isRedTreeSetNode[T](sibling.Get().right) {
+                sibling.Get().color = mutableTreeRed
+                node = parent
             } else {
-                if !isRedTreeSetNode[T](sibling.right) {
-                    if sibling.left != nil {
-                        sibling.left.color = mutableTreeBlack
+                if !isRedTreeSetNode[T](sibling.Get().right) {
+                    val sib = sibling.Get()
+                    if sib.left.IsDefined() {
+                        sib.left.Get().color = mutableTreeBlack
                     }
-                    sibling.color = mutableTreeRed
-                    s.rotateRight(sibling)
-                    sibling = node.parent.right
+                    sib.color = mutableTreeRed
+                    s.rotateRight(sib)
+                    sibling = parent.right
                 }
-                if sibling != nil {
-                    sibling.color = node.parent.color
+                if sibling.IsDefined() {
+                    sibling.Get().color = parent.color
                 }
-                node.parent.color = mutableTreeBlack
-                if sibling != nil && sibling.right != nil {
-                    sibling.right.color = mutableTreeBlack
+                parent.color = mutableTreeBlack
+                if sibling.IsDefined() && sibling.Get().right.IsDefined() {
+                    sibling.Get().right.Get().color = mutableTreeBlack
                 }
-                s.rotateLeft(node.parent)
-                node = s.root
+                s.rotateLeft(parent)
+                node = s.root.Get()
             }
         } else {
-            var sibling = node.parent.left
-            if sibling != nil && sibling.color == mutableTreeRed {
-                sibling.color = mutableTreeBlack
-                node.parent.color = mutableTreeRed
-                s.rotateRight(node.parent)
-                sibling = node.parent.left
+            var sibling = parent.left
+            if isRedTreeSetNode[T](sibling) {
+                sibling.Get().color = mutableTreeBlack
+                parent.color = mutableTreeRed
+                s.rotateRight(parent)
+                sibling = parent.left
             }
 
-            if sibling == nil {
-                node = node.parent
-            } else if (!isRedTreeSetNode[T](sibling.right)) && (!isRedTreeSetNode[T](sibling.left)) {
-                sibling.color = mutableTreeRed
-                node = node.parent
+            if sibling.IsEmpty() {
+                node = parent
+            } else if !isRedTreeSetNode[T](sibling.Get().right) && !isRedTreeSetNode[T](sibling.Get().left) {
+                sibling.Get().color = mutableTreeRed
+                node = parent
             } else {
-                if !isRedTreeSetNode[T](sibling.left) {
-                    if sibling.right != nil {
-                        sibling.right.color = mutableTreeBlack
+                if !isRedTreeSetNode[T](sibling.Get().left) {
+                    val sib = sibling.Get()
+                    if sib.right.IsDefined() {
+                        sib.right.Get().color = mutableTreeBlack
                     }
-                    sibling.color = mutableTreeRed
-                    s.rotateLeft(sibling)
-                    sibling = node.parent.left
+                    sib.color = mutableTreeRed
+                    s.rotateLeft(sib)
+                    sibling = parent.left
                 }
-                if sibling != nil {
-                    sibling.color = node.parent.color
+                if sibling.IsDefined() {
+                    sibling.Get().color = parent.color
                 }
-                node.parent.color = mutableTreeBlack
-                if sibling != nil && sibling.left != nil {
-                    sibling.left.color = mutableTreeBlack
+                parent.color = mutableTreeBlack
+                if sibling.IsDefined() && sibling.Get().left.IsDefined() {
+                    sibling.Get().left.Get().color = mutableTreeBlack
                 }
-                s.rotateRight(node.parent)
-                node = s.root
+                s.rotateRight(parent)
+                node = s.root.Get()
             }
         }
     }
-    if node != nil {
-        node.color = mutableTreeBlack
-    }
+    node.color = mutableTreeBlack
 }
 
 // RemoveAll removes all elements from a slice.
-func (s *TreeSet[T]) RemoveAll(elements []T) {
+func (s Ptr[TreeSet[T]]) RemoveAll(elements []T) {
     for i := 0; i < elements.Size(); i++ {
         s.Remove(elements[i])
     }
 }
 
 // Clear removes all elements. O(1).
-func (s *TreeSet[T]) Clear() {
-    s.root = nil
+func (s Ptr[TreeSet[T]]) Clear() {
+    s.root = EmptyOptionPtr[treeSetNode[T]]()
     s.size = 0
 }
 
@@ -541,23 +524,23 @@ func (s *TreeSet[T]) Clear() {
 
 // Min returns the minimum element in the set. O(log n).
 // Panics if the set is empty.
-func (s *TreeSet[T]) Min() T {
+func (s Ptr[TreeSet[T]]) Min() T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.Min on empty set")
     }
-    return s.minNode(s.root).value
+    return s.minNode(s.root.Get()).value
 }
 
 // minNode finds the node with minimum value in subtree.
-func (s *TreeSet[T]) minNode(var node *treeSetNode[T]) *treeSetNode[T] {
-    for node.left != nil {
-        node = node.left
+func (s Ptr[TreeSet[T]]) minNode(var node Ptr[treeSetNode[T]]) Ptr[treeSetNode[T]] {
+    for node.left.IsDefined() {
+        node = node.left.Get()
     }
     return node
 }
 
 // MinOption returns the minimum element wrapped in Option. O(log n).
-func (s *TreeSet[T]) MinOption() Option[T] {
+func (s Ptr[TreeSet[T]]) MinOption() Option[T] {
     if s.size == 0 {
         return None[T]()
     }
@@ -566,23 +549,23 @@ func (s *TreeSet[T]) MinOption() Option[T] {
 
 // Max returns the maximum element in the set. O(log n).
 // Panics if the set is empty.
-func (s *TreeSet[T]) Max() T {
+func (s Ptr[TreeSet[T]]) Max() T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.Max on empty set")
     }
-    return s.maxNode(s.root).value
+    return s.maxNode(s.root.Get()).value
 }
 
 // maxNode finds the node with maximum value in subtree.
-func (s *TreeSet[T]) maxNode(var node *treeSetNode[T]) *treeSetNode[T] {
-    for node.right != nil {
-        node = node.right
+func (s Ptr[TreeSet[T]]) maxNode(var node Ptr[treeSetNode[T]]) Ptr[treeSetNode[T]] {
+    for node.right.IsDefined() {
+        node = node.right.Get()
     }
     return node
 }
 
 // MaxOption returns the maximum element wrapped in Option. O(log n).
-func (s *TreeSet[T]) MaxOption() Option[T] {
+func (s Ptr[TreeSet[T]]) MaxOption() Option[T] {
     if s.size == 0 {
         return None[T]()
     }
@@ -591,7 +574,7 @@ func (s *TreeSet[T]) MaxOption() Option[T] {
 
 // PopMin removes and returns the minimum element. O(log n).
 // Panics if the set is empty.
-func (s *TreeSet[T]) PopMin() T {
+func (s Ptr[TreeSet[T]]) PopMin() T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.PopMin on empty set")
     }
@@ -602,7 +585,7 @@ func (s *TreeSet[T]) PopMin() T {
 
 // PopMax removes and returns the maximum element. O(log n).
 // Panics if the set is empty.
-func (s *TreeSet[T]) PopMax() T {
+func (s Ptr[TreeSet[T]]) PopMax() T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.PopMax on empty set")
     }
@@ -614,24 +597,24 @@ func (s *TreeSet[T]) PopMax() T {
 // === Set Operations ===
 
 // Union returns a new set containing all elements from both sets.
-func (s *TreeSet[T]) Union(other *TreeSet[T]) *TreeSet[T] {
+func (s Ptr[TreeSet[T]]) Union(other Ptr[TreeSet[T]]) Ptr[TreeSet[T]] {
     var result = s.Clone()
     result.AddFrom(other)
     return result
 }
 
 // Intersect returns a new set containing only elements present in both sets.
-func (s *TreeSet[T]) Intersect(other *TreeSet[T]) *TreeSet[T] {
+func (s Ptr[TreeSet[T]]) Intersect(other Ptr[TreeSet[T]]) Ptr[TreeSet[T]] {
     // Iterate over the smaller set for efficiency
     if s.Size() <= other.Size() {
-        return s.FoldLeft[*TreeSet[T]](EmptyTreeSet[T](), (acc *TreeSet[T], elem T) => {
+        return s.FoldLeft[Ptr[TreeSet[T]]](EmptyTreeSet[T](), (acc Ptr[TreeSet[T]], elem T) => {
             if other.Contains(elem) {
                 acc.Add(elem)
             }
             return acc
         })
     }
-    return other.FoldLeft[*TreeSet[T]](EmptyTreeSet[T](), (acc *TreeSet[T], elem T) => {
+    return other.FoldLeft[Ptr[TreeSet[T]]](EmptyTreeSet[T](), (acc Ptr[TreeSet[T]], elem T) => {
         if s.Contains(elem) {
             acc.Add(elem)
         }
@@ -640,8 +623,8 @@ func (s *TreeSet[T]) Intersect(other *TreeSet[T]) *TreeSet[T] {
 }
 
 // Diff returns a new set containing elements in this set but not in other.
-func (s *TreeSet[T]) Diff(other *TreeSet[T]) *TreeSet[T] {
-    return s.FoldLeft[*TreeSet[T]](EmptyTreeSet[T](), (acc *TreeSet[T], elem T) => {
+func (s Ptr[TreeSet[T]]) Diff(other Ptr[TreeSet[T]]) Ptr[TreeSet[T]] {
+    return s.FoldLeft[Ptr[TreeSet[T]]](EmptyTreeSet[T](), (acc Ptr[TreeSet[T]], elem T) => {
         if !other.Contains(elem) {
             acc.Add(elem)
         }
@@ -650,7 +633,7 @@ func (s *TreeSet[T]) Diff(other *TreeSet[T]) *TreeSet[T] {
 }
 
 // SubsetOf returns true if this set is a subset of other.
-func (s *TreeSet[T]) SubsetOf(other *TreeSet[T]) bool {
+func (s Ptr[TreeSet[T]]) SubsetOf(other Ptr[TreeSet[T]]) bool {
     if s.Size() > other.Size() {
         return false
     }
@@ -658,17 +641,17 @@ func (s *TreeSet[T]) SubsetOf(other *TreeSet[T]) bool {
 }
 
 // SupersetOf returns true if this set is a superset of other.
-func (s *TreeSet[T]) SupersetOf(other *TreeSet[T]) bool = other.SubsetOf(s)
+func (s Ptr[TreeSet[T]]) SupersetOf(other Ptr[TreeSet[T]]) bool = other.SubsetOf(s)
 
 // === In-place Set Operations ===
 
 // UnionInPlace adds all elements from other to this set.
-func (s *TreeSet[T]) UnionInPlace(other *TreeSet[T]) {
+func (s Ptr[TreeSet[T]]) UnionInPlace(other Ptr[TreeSet[T]]) {
     s.AddFrom(other)
 }
 
 // IntersectInPlace removes elements not in other.
-func (s *TreeSet[T]) IntersectInPlace(other *TreeSet[T]) {
+func (s Ptr[TreeSet[T]]) IntersectInPlace(other Ptr[TreeSet[T]]) {
     var toRemove []T
     s.ForEach((elem T) => {
         if !other.Contains(elem) {
@@ -679,7 +662,7 @@ func (s *TreeSet[T]) IntersectInPlace(other *TreeSet[T]) {
 }
 
 // DiffInPlace removes elements that are in other.
-func (s *TreeSet[T]) DiffInPlace(other *TreeSet[T]) {
+func (s Ptr[TreeSet[T]]) DiffInPlace(other Ptr[TreeSet[T]]) {
     var toRemove []T
     s.ForEach((elem T) => {
         if other.Contains(elem) {
@@ -692,7 +675,7 @@ func (s *TreeSet[T]) DiffInPlace(other *TreeSet[T]) {
 // === Range Operations ===
 
 // Range returns elements in the range [from, to] inclusive as a new TreeSet.
-func (s *TreeSet[T]) Range(from T, to T) *TreeSet[T] {
+func (s Ptr[TreeSet[T]]) Range(from T, to T) Ptr[TreeSet[T]] {
     var result = EmptyTreeSet[T]()
     s.rangeInOrder(s.root, from, to, (elem T) => {
         result.Add(elem)
@@ -701,10 +684,11 @@ func (s *TreeSet[T]) Range(from T, to T) *TreeSet[T] {
 }
 
 // rangeInOrder traverses nodes within the range in order.
-func (s *TreeSet[T]) rangeInOrder(node *treeSetNode[T], from T, to T, f func(T)) {
-    if node == nil {
+func (s Ptr[TreeSet[T]]) rangeInOrder(tree OptionPtr[treeSetNode[T]], from T, to T, f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmpFrom = treeSetCompare[T](node.value, from)
     val cmpTo = treeSetCompare[T](node.value, to)
 
@@ -720,7 +704,7 @@ func (s *TreeSet[T]) rangeInOrder(node *treeSetNode[T], from T, to T, f func(T))
 }
 
 // RangeFrom returns all elements >= from.
-func (s *TreeSet[T]) RangeFrom(from T) *TreeSet[T] {
+func (s Ptr[TreeSet[T]]) RangeFrom(from T) Ptr[TreeSet[T]] {
     var result = EmptyTreeSet[T]()
     s.rangeFromInOrder(s.root, from, (elem T) => {
         result.Add(elem)
@@ -729,10 +713,11 @@ func (s *TreeSet[T]) RangeFrom(from T) *TreeSet[T] {
 }
 
 // rangeFromInOrder traverses nodes >= from in order.
-func (s *TreeSet[T]) rangeFromInOrder(node *treeSetNode[T], from T, f func(T)) {
-    if node == nil {
+func (s Ptr[TreeSet[T]]) rangeFromInOrder(tree OptionPtr[treeSetNode[T]], from T, f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmp = treeSetCompare[T](node.value, from)
     if cmp > 0 {
         s.rangeFromInOrder(node.left, from, f)
@@ -744,7 +729,7 @@ func (s *TreeSet[T]) rangeFromInOrder(node *treeSetNode[T], from T, f func(T)) {
 }
 
 // RangeTo returns all elements <= to.
-func (s *TreeSet[T]) RangeTo(to T) *TreeSet[T] {
+func (s Ptr[TreeSet[T]]) RangeTo(to T) Ptr[TreeSet[T]] {
     var result = EmptyTreeSet[T]()
     s.rangeToInOrder(s.root, to, (elem T) => {
         result.Add(elem)
@@ -753,10 +738,11 @@ func (s *TreeSet[T]) RangeTo(to T) *TreeSet[T] {
 }
 
 // rangeToInOrder traverses nodes <= to in order.
-func (s *TreeSet[T]) rangeToInOrder(node *treeSetNode[T], to T, f func(T)) {
-    if node == nil {
+func (s Ptr[TreeSet[T]]) rangeToInOrder(tree OptionPtr[treeSetNode[T]], to T, f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     val cmp = treeSetCompare[T](node.value, to)
     s.rangeToInOrder(node.left, to, f)
     if cmp <= 0 {
@@ -770,30 +756,32 @@ func (s *TreeSet[T]) rangeToInOrder(node *treeSetNode[T], to T, f func(T)) {
 // === Iteration ===
 
 // ForEach applies a function to each element in sorted order.
-func (s *TreeSet[T]) ForEach(f func(T)) {
+func (s Ptr[TreeSet[T]]) ForEach(f func(T)) {
     s.inOrder(s.root, f)
 }
 
 // inOrder traverses the tree in sorted order.
-func (s *TreeSet[T]) inOrder(node *treeSetNode[T], f func(T)) {
-    if node == nil {
+func (s Ptr[TreeSet[T]]) inOrder(tree OptionPtr[treeSetNode[T]], f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     s.inOrder(node.left, f)
     f(node.value)
     s.inOrder(node.right, f)
 }
 
 // ForEachReverse applies a function to each element in reverse sorted order.
-func (s *TreeSet[T]) ForEachReverse(f func(T)) {
+func (s Ptr[TreeSet[T]]) ForEachReverse(f func(T)) {
     s.reverseOrder(s.root, f)
 }
 
 // reverseOrder traverses the tree in reverse sorted order.
-func (s *TreeSet[T]) reverseOrder(node *treeSetNode[T], f func(T)) {
-    if node == nil {
+func (s Ptr[TreeSet[T]]) reverseOrder(tree OptionPtr[treeSetNode[T]], f func(T)) {
+    if tree.IsEmpty() {
         return
     }
+    val node = tree.Get()
     s.reverseOrder(node.right, f)
     f(node.value)
     s.reverseOrder(node.left, f)
@@ -802,8 +790,8 @@ func (s *TreeSet[T]) reverseOrder(node *treeSetNode[T], f func(T)) {
 // === Transformation ===
 
 // Filter returns a new TreeSet with only elements that satisfy the predicate.
-func (s *TreeSet[T]) Filter(p func(T) bool) *TreeSet[T] {
-    return s.FoldLeft[*TreeSet[T]](EmptyTreeSet[T](), (acc *TreeSet[T], elem T) => {
+func (s Ptr[TreeSet[T]]) Filter(p func(T) bool) Ptr[TreeSet[T]] {
+    return s.FoldLeft[Ptr[TreeSet[T]]](EmptyTreeSet[T](), (acc Ptr[TreeSet[T]], elem T) => {
         if p(elem) {
             acc.Add(elem)
         }
@@ -812,12 +800,12 @@ func (s *TreeSet[T]) Filter(p func(T) bool) *TreeSet[T] {
 }
 
 // FilterNot returns a new TreeSet with elements that do not satisfy the predicate.
-func (s *TreeSet[T]) FilterNot(p func(T) bool) *TreeSet[T] = s.Filter((elem T) => !p(elem))
+func (s Ptr[TreeSet[T]]) FilterNot(p func(T) bool) Ptr[TreeSet[T]] = s.Filter((elem T) => !p(elem))
 
 // Collect applies a partial function to each element and collects the results.
 // Elements for which the function returns None are filtered out.
 // Returns a mutable Array since the result type may not be comparable.
-func (s *TreeSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
+func (s Ptr[TreeSet[T]]) Collect[U any](pf func(T) Option[U]) Ptr[Array[U]] {
     var result = EmptyArray[U]()
     s.ForEach((elem T) => {
         val opt = pf(elem)
@@ -829,23 +817,23 @@ func (s *TreeSet[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
 }
 
 // Partition splits the set into two sets based on a predicate.
-func (s *TreeSet[T]) Partition(p func(T) bool) Tuple[*TreeSet[T], *TreeSet[T]] {
+func (s Ptr[TreeSet[T]]) Partition(p func(T) bool) Tuple[Ptr[TreeSet[T]], Ptr[TreeSet[T]]] {
     val left = s.Filter(p)
     val right = s.FilterNot(p)
     return (left, right)
 }
 
 // Map applies a function to each element and returns a new set.
-func (s *TreeSet[T]) Map[U comparable](f func(T) U) *TreeSet[U] {
-    return s.FoldLeft[*TreeSet[U]](EmptyTreeSet[U](), (acc *TreeSet[U], elem T) => {
+func (s Ptr[TreeSet[T]]) Map[U comparable](f func(T) U) Ptr[TreeSet[U]] {
+    return s.FoldLeft[Ptr[TreeSet[U]]](EmptyTreeSet[U](), (acc Ptr[TreeSet[U]], elem T) => {
         acc.Add(f(elem))
         return acc
     })
 }
 
 // FlatMap applies a function that returns a set to each element and flattens.
-func (s *TreeSet[T]) FlatMap[U comparable](f func(T) *TreeSet[U]) *TreeSet[U] {
-    return s.FoldLeft[*TreeSet[U]](EmptyTreeSet[U](), (acc *TreeSet[U], elem T) => {
+func (s Ptr[TreeSet[T]]) FlatMap[U comparable](f func(T) Ptr[TreeSet[U]]) Ptr[TreeSet[U]] {
+    return s.FoldLeft[Ptr[TreeSet[U]]](EmptyTreeSet[U](), (acc Ptr[TreeSet[U]], elem T) => {
         acc.AddFrom(f(elem))
         return acc
     })
@@ -854,7 +842,7 @@ func (s *TreeSet[T]) FlatMap[U comparable](f func(T) *TreeSet[U]) *TreeSet[U] {
 // === Reduction Operations ===
 
 // FoldLeft applies a binary operator from left to right (in sorted order).
-func (s *TreeSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
+func (s Ptr[TreeSet[T]]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     s.ForEach((elem T) => {
         acc = f(acc, elem)
@@ -864,7 +852,7 @@ func (s *TreeSet[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 
 // Reduce applies a binary operator, starting with the first element.
 // Panics if the set is empty.
-func (s *TreeSet[T]) Reduce(f func(T, T) T) T {
+func (s Ptr[TreeSet[T]]) Reduce(f func(T, T) T) T {
     if s.size == 0 {
         go_builtins.Panic("TreeSet.Reduce on empty set")
     }
@@ -882,7 +870,7 @@ func (s *TreeSet[T]) Reduce(f func(T, T) T) T {
 }
 
 // ReduceOption is like Reduce but returns None for empty set.
-func (s *TreeSet[T]) ReduceOption(f func(T, T) T) Option[T] {
+func (s Ptr[TreeSet[T]]) ReduceOption(f func(T, T) T) Option[T] {
     if s.size == 0 {
         return None[T]()
     }
@@ -892,17 +880,17 @@ func (s *TreeSet[T]) ReduceOption(f func(T, T) T) Option[T] {
 // === Predicate Operations ===
 
 // Exists returns true if any element satisfies the predicate.
-func (s *TreeSet[T]) Exists(p func(T) bool) bool {
+func (s Ptr[TreeSet[T]]) Exists(p func(T) bool) bool {
     return s.FoldLeft[bool](false, (acc bool, elem T) => acc || p(elem))
 }
 
 // ForAll returns true if all elements satisfy the predicate.
-func (s *TreeSet[T]) ForAll(p func(T) bool) bool {
+func (s Ptr[TreeSet[T]]) ForAll(p func(T) bool) bool {
     return s.FoldLeft[bool](true, (acc bool, elem T) => acc && p(elem))
 }
 
 // Find returns the first element (in sorted order) that satisfies the predicate.
-func (s *TreeSet[T]) Find(p func(T) bool) Option[T] {
+func (s Ptr[TreeSet[T]]) Find(p func(T) bool) Option[T] {
     return s.FoldLeft[Option[T]](None[T](), (acc Option[T], elem T) => {
         if acc.IsEmpty() && p(elem) {
             return Some[T](elem)
@@ -912,7 +900,7 @@ func (s *TreeSet[T]) Find(p func(T) bool) Option[T] {
 }
 
 // Count returns the number of elements satisfying the predicate.
-func (s *TreeSet[T]) Count(p func(T) bool) int {
+func (s Ptr[TreeSet[T]]) Count(p func(T) bool) int {
     return s.FoldLeft[int](0, (acc int, elem T) => {
         if p(elem) {
             return acc + 1
@@ -925,22 +913,22 @@ func (s *TreeSet[T]) Count(p func(T) bool) int {
 
 // Head returns the minimum element (alias for Min).
 // Panics if the set is empty.
-func (s *TreeSet[T]) Head() T = s.Min()
+func (s Ptr[TreeSet[T]]) Head() T = s.Min()
 
 // HeadOption returns the minimum element wrapped in Option.
-func (s *TreeSet[T]) HeadOption() Option[T] = s.MinOption()
+func (s Ptr[TreeSet[T]]) HeadOption() Option[T] = s.MinOption()
 
 // Last returns the maximum element (alias for Max).
 // Panics if the set is empty.
-func (s *TreeSet[T]) Last() T = s.Max()
+func (s Ptr[TreeSet[T]]) Last() T = s.Max()
 
 // LastOption returns the maximum element wrapped in Option.
-func (s *TreeSet[T]) LastOption() Option[T] = s.MaxOption()
+func (s Ptr[TreeSet[T]]) LastOption() Option[T] = s.MaxOption()
 
 // === Conversion ===
 
 // ToGoSlice converts the set to a Go slice in sorted order.
-func (s *TreeSet[T]) ToGoSlice() []T {
+func (s Ptr[TreeSet[T]]) ToGoSlice() []T {
     var result []T
     s.ForEach((elem T) => {
         result = go_interop.SliceAppend(result, elem)
@@ -949,7 +937,7 @@ func (s *TreeSet[T]) ToGoSlice() []T {
 }
 
 // ToArray converts the set to a mutable Array (in sorted order).
-func (s *TreeSet[T]) ToArray() *Array[T] {
+func (s Ptr[TreeSet[T]]) ToArray() Ptr[Array[T]] {
     var result = ArrayWithCapacity[T](s.Size())
     s.ForEach((elem T) => {
         result.Append(elem)
@@ -958,7 +946,7 @@ func (s *TreeSet[T]) ToArray() *Array[T] {
 }
 
 // ToList converts the set to a mutable List (in sorted order).
-func (s *TreeSet[T]) ToList() *List[T] {
+func (s Ptr[TreeSet[T]]) ToList() Ptr[List[T]] {
     // Traverse in reverse order so prepending gives sorted order
     var result = EmptyList[T]()
     s.ForEachReverse((elem T) => {
@@ -968,7 +956,7 @@ func (s *TreeSet[T]) ToList() *List[T] {
 }
 
 // ToHashSet converts the set to a mutable HashSet (loses ordering but gains O(1) lookup).
-func (s *TreeSet[T]) ToHashSet() *HashSet[T] {
+func (s Ptr[TreeSet[T]]) ToHashSet() Ptr[HashSet[T]] {
     var result = EmptyHashSet[T]()
     s.ForEach((elem T) => {
         result.Add(elem)
@@ -977,7 +965,7 @@ func (s *TreeSet[T]) ToHashSet() *HashSet[T] {
 }
 
 // Clone creates a shallow copy of the set.
-func (s *TreeSet[T]) Clone() *TreeSet[T] {
+func (s Ptr[TreeSet[T]]) Clone() Ptr[TreeSet[T]] {
     var result = EmptyTreeSet[T]()
     s.ForEach((elem T) => {
         result.Add(elem)
@@ -986,7 +974,7 @@ func (s *TreeSet[T]) Clone() *TreeSet[T] {
 }
 
 // String returns a string representation of the set in sorted order.
-func (s *TreeSet[T]) String() string {
+func (s Ptr[TreeSet[T]]) String() string {
     if s.size == 0 {
         return "TreeSet()"
     }
@@ -1003,7 +991,7 @@ func (s *TreeSet[T]) String() string {
 }
 
 // MkString joins elements into a string with separator.
-func (s *TreeSet[T]) MkString(sep string) string {
+func (s Ptr[TreeSet[T]]) MkString(sep string) string {
     if s.size == 0 {
         return ""
     }
@@ -1022,10 +1010,10 @@ func (s *TreeSet[T]) MkString(sep string) string {
 // === Sorting ===
 
 // Sorted returns a mutable Array of elements in natural sorted order (already sorted).
-func (s *TreeSet[T]) Sorted() *Array[T] = s.ToArray()
+func (s Ptr[TreeSet[T]]) Sorted() Ptr[Array[T]] = s.ToArray()
 
 // SortWith returns a mutable Array of elements sorted using the given comparison function.
-func (s *TreeSet[T]) SortWith(less func(T, T) bool) *Array[T] = s.ToArray().SortWith(less)
+func (s Ptr[TreeSet[T]]) SortWith(less func(T, T) bool) Ptr[Array[T]] = s.ToArray().SortWith(less)
 
 // SortBy returns a mutable Array of elements sorted by a key extracted from each element.
-func (s *TreeSet[T]) SortBy[K comparable](f func(T) K) *Array[T] = s.ToArray().SortBy(f)
+func (s Ptr[TreeSet[T]]) SortBy[K comparable](f func(T) K) Ptr[Array[T]] = s.ToArray().SortBy(f)

@@ -7,16 +7,16 @@ import (
 )
 
 // Example: Pattern matching with mutable Array
-func describeArray[T any](arr *Array[T]) string {
+func describeArray[T any](arr Ptr[Array[T]]) string {
     return arr match {
-        case a: *Array[T] if a.IsEmpty() => "empty array"
-        case a: *Array[T] if a.Length() == 1 => fmt.Sprintf("single: %v", a.Head())
+        case a if a.IsEmpty() => "empty array"
+        case a if a.Length() == 1 => fmt.Sprintf("single: %v", a.Head())
         case _ => fmt.Sprintf("array[%d]", arr.Length())
     }
 }
 
 // Example: Option pattern matching with Find
-func findAndDescribe(arr *Array[int], pred func(int) bool) string {
+func findAndDescribe(arr Ptr[Array[int]], pred func(int) bool) string {
     var found = arr.Find(pred)
     return found match {
         case Some(v) => fmt.Sprintf("found: %d", v)
@@ -25,18 +25,18 @@ func findAndDescribe(arr *Array[int], pred func(int) bool) string {
 }
 
 // Example: Processing with guards
-func analyzeNumbers(arr *Array[int]) string {
+func analyzeNumbers(arr Ptr[Array[int]]) string {
     return arr match {
-        case a: *Array[int] if a.IsEmpty() => "no numbers"
-        case a: *Array[int] if a.ForAll((x int) => x > 0) => "all positive"
-        case a: *Array[int] if a.ForAll((x int) => x < 0) => "all negative"
-        case a: *Array[int] if a.Exists((x int) => x == 0) => "has zero"
+        case a if a.IsEmpty() => "no numbers"
+        case a if a.ForAll((x int) => x > 0) => "all positive"
+        case a if a.ForAll((x int) => x < 0) => "all negative"
+        case a if a.Exists((x int) => x == 0) => "has zero"
         case _ => "mixed"
     }
 }
 
 // Example: Tuple pattern matching with arrays
-func compareSizes(a1 *Array[int], a2 *Array[int]) string {
+func compareSizes(a1 Ptr[Array[int]], a2 Ptr[Array[int]]) string {
     var sizes = (a1.Length(), a2.Length())
     return sizes match {
         case (0, 0) => "both empty"
@@ -49,16 +49,16 @@ func compareSizes(a1 *Array[int], a2 *Array[int]) string {
 }
 
 // Example: List with pattern matching
-func describeList[T any](list *List[T]) string {
+func describeList[T any](list Ptr[List[T]]) string {
     return list match {
-        case l: *List[T] if l.IsEmpty() => "empty list"
-        case l: *List[T] if l.Length() == 1 => "singleton"
+        case l if l.IsEmpty() => "empty list"
+        case l if l.Length() == 1 => "singleton"
         case _ => fmt.Sprintf("list[%d]", list.Length())
     }
 }
 
 // Example: Sequence pattern matching on Array
-func describeArraySeq(arr *Array[int]) string {
+func describeArraySeq(arr Ptr[Array[int]]) string {
     return arr match {
         case Array(first, second, _...) => fmt.Sprintf("starts with %d, %d", first, second)
         case Array(only, _...) => fmt.Sprintf("starts with %d", only)
@@ -67,7 +67,7 @@ func describeArraySeq(arr *Array[int]) string {
 }
 
 // Example: Extract head and tail from List
-func sumListSeq(list *List[int]) int {
+func sumListSeq(list Ptr[List[int]]) int {
     return list match {
         case List(head, tail...) => head + sumListSeq(tail)
         case _ => 0
@@ -75,7 +75,7 @@ func sumListSeq(list *List[int]) int {
 }
 
 // Example: Building and transforming
-func buildSquares(n int) *Array[int] {
+func buildSquares(n int) Ptr[Array[int]] {
     var arr = ArrayWithCapacity[int](n)
     for i := 1; i <= n; i++ {
         arr.Append(i * i)
@@ -204,7 +204,7 @@ func main() {
     var nums = ArrayOf[int](1, 2, 3, 4, 5, 6, 7, 8, 9)
     var groups = nums.Grouped(3)
     fmt.Println("Groups of 3:")
-    groups.ForEach((g *Array[int]) => {
+    groups.ForEach((g) => {
         fmt.Printf("  %s\n", g.String())
     })
     fmt.Println()

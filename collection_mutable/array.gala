@@ -27,14 +27,14 @@ type Array[T any] struct {
 }
 
 // EmptyArray returns a new empty Array.
-func EmptyArray[T any]() *Array[T] {
+func EmptyArray[T any]() Ptr[Array[T]] {
     var elems []T
     return &Array[T](elements = elems)
 }
 
 // ArrayOf creates an Array from variadic arguments.
 // Pre-allocates capacity for efficiency.
-func ArrayOf[T any](elements ...T) *Array[T] {
+func ArrayOf[T any](elements ...T) Ptr[Array[T]] {
     var elems = go_interop.SliceWithCapacity[T](elements.Size())
     for i := 0; i < elements.Size(); i++ {
         elems = go_interop.SliceAppend(elems, elements[i])
@@ -44,7 +44,7 @@ func ArrayOf[T any](elements ...T) *Array[T] {
 
 // ArrayFromSlice creates an Array from a slice (copies the slice).
 // Pre-allocates capacity for efficiency.
-func ArrayFromSlice[T any](elements []T) *Array[T] {
+func ArrayFromSlice[T any](elements []T) Ptr[Array[T]] {
     var elems = go_interop.SliceWithCapacity[T](elements.Size())
     for i := 0; i < elements.Size(); i++ {
         elems = go_interop.SliceAppend(elems, elements[i])
@@ -54,7 +54,7 @@ func ArrayFromSlice[T any](elements []T) *Array[T] {
 
 // ArrayWithCapacity creates an empty Array with pre-allocated capacity.
 // Use this when you know the approximate size upfront for better performance.
-func ArrayWithCapacity[T any](capacity int) *Array[T] {
+func ArrayWithCapacity[T any](capacity int) Ptr[Array[T]] {
     var elems = go_interop.SliceWithCapacity[T](capacity)
     return &Array[T](elements = elems)
 }
@@ -62,7 +62,7 @@ func ArrayWithCapacity[T any](capacity int) *Array[T] {
 // ArrayTabulate creates an Array of size n where each element is computed by f(index).
 // Pre-allocates capacity for O(n) construction.
 // Example: ArrayTabulate(5, (i) => i * 2) creates Array(0, 2, 4, 6, 8)
-func ArrayTabulate[T any](n int, f func(int) T) *Array[T] {
+func ArrayTabulate[T any](n int, f func(int) T) Ptr[Array[T]] {
     var elems = go_interop.SliceWithCapacity[T](n)
     for i := 0; i < n; i++ {
         elems = go_interop.SliceAppend(elems, f(i))
@@ -72,7 +72,7 @@ func ArrayTabulate[T any](n int, f func(int) T) *Array[T] {
 
 // ArrayFill creates an Array of size n where every element is the same value.
 // Example: ArrayFill(3, "x") creates Array("x", "x", "x")
-func ArrayFill[T any](n int, value T) *Array[T] {
+func ArrayFill[T any](n int, value T) Ptr[Array[T]] {
     var elems = go_interop.SliceWithCapacity[T](n)
     for i := 0; i < n; i++ {
         elems = go_interop.SliceAppend(elems, value)
@@ -83,25 +83,25 @@ func ArrayFill[T any](n int, value T) *Array[T] {
 // === Basic Operations ===
 
 // IsEmpty returns true if the array is empty.
-func (a *Array[T]) IsEmpty() bool = a.elements.Size() == 0
+func (a Ptr[Array[T]]) IsEmpty() bool = a.elements.Size() == 0
 
 // NonEmpty returns true if the array is not empty.
-func (a *Array[T]) NonEmpty() bool = a.elements.Size() > 0
+func (a Ptr[Array[T]]) NonEmpty() bool = a.elements.Size() > 0
 
 // Length returns the number of elements. O(1).
-func (a *Array[T]) Length() int = a.elements.Size()
+func (a Ptr[Array[T]]) Length() int = a.elements.Size()
 
 // Size is an alias for Length.
-func (a *Array[T]) Size() int = a.elements.Size()
+func (a Ptr[Array[T]]) Size() int = a.elements.Size()
 
 // Capacity returns the current capacity of the underlying slice.
-func (a *Array[T]) Capacity() int = go_interop.SliceCap(a.elements)
+func (a Ptr[Array[T]]) Capacity() int = go_interop.SliceCap(a.elements)
 
 // === Access Operations ===
 
 // Get returns the element at the given index. O(1).
 // Panics if index is out of bounds.
-func (a *Array[T]) Get(index int) T {
+func (a Ptr[Array[T]]) Get(index int) T {
     if (index < 0) || (index >= a.elements.Size()) {
         go_builtins.Panic(f"Array.Get: index $index out of bounds [0, ${a.elements.Size()})")
     }
@@ -109,7 +109,7 @@ func (a *Array[T]) Get(index int) T {
 }
 
 // GetOption returns the element at index wrapped in Option.
-func (a *Array[T]) GetOption(index int) Option[T] {
+func (a Ptr[Array[T]]) GetOption(index int) Option[T] {
     if (index < 0) || (index >= a.elements.Size()) {
         return None[T]()
     }
@@ -118,7 +118,7 @@ func (a *Array[T]) GetOption(index int) Option[T] {
 
 // Head returns the first element. O(1).
 // Panics if the array is empty.
-func (a *Array[T]) Head() T {
+func (a Ptr[Array[T]]) Head() T {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.Head on empty array")
     }
@@ -126,7 +126,7 @@ func (a *Array[T]) Head() T {
 }
 
 // HeadOption returns the first element wrapped in Option.
-func (a *Array[T]) HeadOption() Option[T] {
+func (a Ptr[Array[T]]) HeadOption() Option[T] {
     if a.elements.Size() == 0 {
         return None[T]()
     }
@@ -135,7 +135,7 @@ func (a *Array[T]) HeadOption() Option[T] {
 
 // Last returns the last element. O(1).
 // Panics if the array is empty.
-func (a *Array[T]) Last() T {
+func (a Ptr[Array[T]]) Last() T {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.Last on empty array")
     }
@@ -143,7 +143,7 @@ func (a *Array[T]) Last() T {
 }
 
 // LastOption returns the last element wrapped in Option.
-func (a *Array[T]) LastOption() Option[T] {
+func (a Ptr[Array[T]]) LastOption() Option[T] {
     if a.elements.Size() == 0 {
         return None[T]()
     }
@@ -154,7 +154,7 @@ func (a *Array[T]) LastOption() Option[T] {
 
 // Set updates the element at index in place. O(1).
 // Panics if index is out of bounds.
-func (a *Array[T]) Set(index int, value T) {
+func (a Ptr[Array[T]]) Set(index int, value T) {
     if (index < 0) || (index >= a.elements.Size()) {
         go_builtins.Panic(f"Array.Set: index $index out of bounds [0, ${a.elements.Size()})")
     }
@@ -162,35 +162,35 @@ func (a *Array[T]) Set(index int, value T) {
 }
 
 // Append adds an element to the end. O(1) amortized.
-func (a *Array[T]) Append(value T) {
+func (a Ptr[Array[T]]) Append(value T) {
     a.elements = go_interop.SliceAppend(a.elements, value)
 }
 
 // AppendAll appends all elements from a slice. O(m) where m = values.Size().
-func (a *Array[T]) AppendAll(values []T) {
+func (a Ptr[Array[T]]) AppendAll(values []T) {
     a.elements = go_interop.SliceAppendAll(a.elements, values)
 }
 
 // AppendFrom appends all elements from another Array. O(m) where m = other.Length().
-func (a *Array[T]) AppendFrom(other *Array[T]) {
+func (a Ptr[Array[T]]) AppendFrom(other Ptr[Array[T]]) {
     a.elements = go_interop.SliceAppendAll(a.elements, other.elements)
 }
 
 // Prepend adds an element to the front. O(n).
 // Uses single allocation with append+copy for efficiency.
-func (a *Array[T]) Prepend(value T) {
+func (a Ptr[Array[T]]) Prepend(value T) {
     a.elements = go_interop.SlicePrepend(a.elements, value)
 }
 
 // PrependAll prepends all elements from a slice. O(n+m).
 // Uses single allocation for efficiency.
-func (a *Array[T]) PrependAll(values []T) {
+func (a Ptr[Array[T]]) PrependAll(values []T) {
     a.elements = go_interop.SlicePrependAll(a.elements, values)
 }
 
 // Insert inserts an element at the given index. O(n).
 // Panics if index is out of bounds (0 <= index <= length).
-func (a *Array[T]) Insert(index int, value T) {
+func (a Ptr[Array[T]]) Insert(index int, value T) {
     if (index < 0) || (index > a.elements.Size()) {
         go_builtins.Panic(f"Array.Insert: index $index out of bounds [0, ${a.elements.Size()}]")
     }
@@ -199,7 +199,7 @@ func (a *Array[T]) Insert(index int, value T) {
 
 // RemoveAt removes the element at the given index. O(n).
 // Panics if index is out of bounds.
-func (a *Array[T]) RemoveAt(index int) {
+func (a Ptr[Array[T]]) RemoveAt(index int) {
     if (index < 0) || (index >= a.elements.Size()) {
         go_builtins.Panic(f"Array.RemoveAt: index $index out of bounds [0, ${a.elements.Size()})")
     }
@@ -209,7 +209,7 @@ func (a *Array[T]) RemoveAt(index int) {
 // RemoveFirst removes and returns the first element. O(1).
 // Returns a slice view, so underlying memory is not reallocated.
 // Panics if the array is empty.
-func (a *Array[T]) RemoveFirst() T {
+func (a Ptr[Array[T]]) RemoveFirst() T {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.RemoveFirst on empty array")
     }
@@ -221,7 +221,7 @@ func (a *Array[T]) RemoveFirst() T {
 // RemoveLast removes and returns the last element. O(1).
 // Returns a slice view, so underlying memory is not reallocated.
 // Panics if the array is empty.
-func (a *Array[T]) RemoveLast() T {
+func (a Ptr[Array[T]]) RemoveLast() T {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.RemoveLast on empty array")
     }
@@ -232,18 +232,18 @@ func (a *Array[T]) RemoveLast() T {
 }
 
 // Clear removes all elements. O(1).
-func (a *Array[T]) Clear() {
+func (a Ptr[Array[T]]) Clear() {
     var empty []T
     a.elements = empty
 }
 
 // EnsureCapacity grows the slice capacity if needed.
 // Currently a no-op, kept for API compatibility.
-func (a *Array[T]) EnsureCapacity(minCapacity int) {
+func (a Ptr[Array[T]]) EnsureCapacity(minCapacity int) {
 }
 
 // Reverse reverses the array in place. O(n).
-func (a *Array[T]) Reverse() {
+func (a Ptr[Array[T]]) Reverse() {
     var n = a.elements.Size()
     for i := 0; i < n / 2; i++ {
         var temp = a.elements[i]
@@ -255,7 +255,7 @@ func (a *Array[T]) Reverse() {
 // === Search Operations ===
 
 // Contains checks if the array contains the given element. O(n).
-func (a *Array[T]) Contains(elem T) bool {
+func (a Ptr[Array[T]]) Contains(elem T) bool {
     for i := 0; i < a.elements.Size(); i++ {
         if Equal(a.elements[i], elem) {
             return true
@@ -265,7 +265,7 @@ func (a *Array[T]) Contains(elem T) bool {
 }
 
 // IndexOf returns the index of the first occurrence of elem, or -1 if not found.
-func (a *Array[T]) IndexOf(elem T) int {
+func (a Ptr[Array[T]]) IndexOf(elem T) int {
     for i := 0; i < a.elements.Size(); i++ {
         if Equal(a.elements[i], elem) {
             return i
@@ -275,7 +275,7 @@ func (a *Array[T]) IndexOf(elem T) int {
 }
 
 // LastIndexOf returns the index of the last occurrence of elem, or -1 if not found.
-func (a *Array[T]) LastIndexOf(elem T) int {
+func (a Ptr[Array[T]]) LastIndexOf(elem T) int {
     for i := a.elements.Size() - 1; i >= 0; i-- {
         if Equal(a.elements[i], elem) {
             return i
@@ -287,7 +287,7 @@ func (a *Array[T]) LastIndexOf(elem T) int {
 // === Structural Operations (return new arrays) ===
 
 // Take returns a new Array with the first n elements.
-func (a *Array[T]) Take(n int) *Array[T] {
+func (a Ptr[Array[T]]) Take(n int) Ptr[Array[T]] {
     if n <= 0 {
         return EmptyArray[T]()
     }
@@ -302,7 +302,7 @@ func (a *Array[T]) Take(n int) *Array[T] {
 }
 
 // Drop returns a new Array without the first n elements.
-func (a *Array[T]) Drop(n int) *Array[T] {
+func (a Ptr[Array[T]]) Drop(n int) Ptr[Array[T]] {
     if n <= 0 {
         return a.Clone()
     }
@@ -318,7 +318,7 @@ func (a *Array[T]) Drop(n int) *Array[T] {
 }
 
 // Slice returns a new Array from start (inclusive) to end (exclusive).
-func (a *Array[T]) Slice(var start int, var end int) *Array[T] {
+func (a Ptr[Array[T]]) Slice(var start int, var end int) Ptr[Array[T]] {
     if start < 0 {
         start = 0
     }
@@ -337,7 +337,7 @@ func (a *Array[T]) Slice(var start int, var end int) *Array[T] {
 }
 
 // Clone creates a shallow copy of the array.
-func (a *Array[T]) Clone() *Array[T] {
+func (a Ptr[Array[T]]) Clone() Ptr[Array[T]] {
     var elems = go_interop.SliceWithCapacity[T](a.elements.Size())
     for i := 0; i < a.elements.Size(); i++ {
         elems = go_interop.SliceAppend(elems, a.elements[i])
@@ -346,7 +346,7 @@ func (a *Array[T]) Clone() *Array[T] {
 }
 
 // Tail returns all elements except the first.
-func (a *Array[T]) Tail() *Array[T] {
+func (a Ptr[Array[T]]) Tail() Ptr[Array[T]] {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.Tail on empty array")
     }
@@ -354,7 +354,7 @@ func (a *Array[T]) Tail() *Array[T] {
 }
 
 // Init returns all elements except the last.
-func (a *Array[T]) Init() *Array[T] {
+func (a Ptr[Array[T]]) Init() Ptr[Array[T]] {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.Init on empty array")
     }
@@ -362,7 +362,7 @@ func (a *Array[T]) Init() *Array[T] {
 }
 
 // Reversed returns a new Array with elements in reverse order.
-func (a *Array[T]) Reversed() *Array[T] {
+func (a Ptr[Array[T]]) Reversed() Ptr[Array[T]] {
     var result = a.Clone()
     result.Reverse()
     return result
@@ -371,7 +371,7 @@ func (a *Array[T]) Reversed() *Array[T] {
 // === Functional Operations (return new arrays) ===
 
 // Map applies a function to each element and returns a new Array.
-func (a *Array[T]) Map[U any](f func(T) U) *Array[U] {
+func (a Ptr[Array[T]]) Map[U any](f func(T) U) Ptr[Array[U]] {
     var elems = go_interop.SliceWithCapacity[U](a.elements.Size())
     for i := 0; i < a.elements.Size(); i++ {
         elems = go_interop.SliceAppend(elems, f(a.elements[i]))
@@ -380,7 +380,7 @@ func (a *Array[T]) Map[U any](f func(T) U) *Array[U] {
 }
 
 // FlatMap applies a function that returns a Array to each element and flattens.
-func (a *Array[T]) FlatMap[U any](f func(T) *Array[U]) *Array[U] {
+func (a Ptr[Array[T]]) FlatMap[U any](f func(T) Ptr[Array[U]]) Ptr[Array[U]] {
     var result = EmptyArray[U]()
     for i := 0; i < a.elements.Size(); i++ {
         var inner = f(a.elements[i])
@@ -390,7 +390,7 @@ func (a *Array[T]) FlatMap[U any](f func(T) *Array[U]) *Array[U] {
 }
 
 // Collect applies a partial function to each element and collects the results.
-func (a *Array[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
+func (a Ptr[Array[T]]) Collect[U any](pf func(T) Option[U]) Ptr[Array[U]] {
     var result = EmptyArray[U]()
     for i := 0; i < a.elements.Size(); i++ {
         val opt = pf(a.elements[i])
@@ -402,7 +402,7 @@ func (a *Array[T]) Collect[U any](pf func(T) Option[U]) *Array[U] {
 }
 
 // Filter returns a new Array with only elements that satisfy the predicate.
-func (a *Array[T]) Filter(p func(T) bool) *Array[T] {
+func (a Ptr[Array[T]]) Filter(p func(T) bool) Ptr[Array[T]] {
     var result = EmptyArray[T]()
     for i := 0; i < a.elements.Size(); i++ {
         if p(a.elements[i]) {
@@ -413,17 +413,17 @@ func (a *Array[T]) Filter(p func(T) bool) *Array[T] {
 }
 
 // FilterNot returns a new Array with elements that do not satisfy the predicate.
-func (a *Array[T]) FilterNot(p func(T) bool) *Array[T] = a.Filter((elem T) => !p(elem))
+func (a Ptr[Array[T]]) FilterNot(p func(T) bool) Ptr[Array[T]] = a.Filter((elem T) => !p(elem))
 
 // Partition splits the array into two based on a predicate.
-func (a *Array[T]) Partition(p func(T) bool) Tuple[*Array[T], *Array[T]] {
+func (a Ptr[Array[T]]) Partition(p func(T) bool) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {
     val left = a.Filter(p)
     val right = a.FilterNot(p)
     return (left, right)
 }
 
 // TakeWhile returns the longest prefix of elements that satisfy the predicate.
-func (a *Array[T]) TakeWhile(p func(T) bool) *Array[T] {
+func (a Ptr[Array[T]]) TakeWhile(p func(T) bool) Ptr[Array[T]] {
     var result = EmptyArray[T]()
     for i := 0; i < a.elements.Size(); i++ {
         if !p(a.elements[i]) {
@@ -435,7 +435,7 @@ func (a *Array[T]) TakeWhile(p func(T) bool) *Array[T] {
 }
 
 // DropWhile drops the longest prefix of elements that satisfy the predicate.
-func (a *Array[T]) DropWhile(p func(T) bool) *Array[T] {
+func (a Ptr[Array[T]]) DropWhile(p func(T) bool) Ptr[Array[T]] {
     var start = 0
     for start < a.elements.Size() && p(a.elements[start]) {
         start++
@@ -446,7 +446,7 @@ func (a *Array[T]) DropWhile(p func(T) bool) *Array[T] {
 // === Reduction Operations ===
 
 // FoldLeft applies a binary operator from left to right.
-func (a *Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
+func (a Ptr[Array[T]]) FoldLeft[U any](initial U, f func(U, T) U) U {
     var acc = initial
     for i := 0; i < a.elements.Size(); i++ {
         acc = f(acc, a.elements[i])
@@ -455,7 +455,7 @@ func (a *Array[T]) FoldLeft[U any](initial U, f func(U, T) U) U {
 }
 
 // FoldRight applies a binary operator from right to left.
-func (a *Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
+func (a Ptr[Array[T]]) FoldRight[U any](initial U, f func(T, U) U) U {
     var acc = initial
     for i := a.elements.Size() - 1; i >= 0; i-- {
         acc = f(a.elements[i], acc)
@@ -465,7 +465,7 @@ func (a *Array[T]) FoldRight[U any](initial U, f func(T, U) U) U {
 
 // Reduce applies a binary operator from left to right, starting with the first element.
 // Panics if the array is empty.
-func (a *Array[T]) Reduce(f func(T, T) T) T {
+func (a Ptr[Array[T]]) Reduce(f func(T, T) T) T {
     if a.elements.Size() == 0 {
         go_builtins.Panic("Array.Reduce on empty array")
     }
@@ -477,7 +477,7 @@ func (a *Array[T]) Reduce(f func(T, T) T) T {
 }
 
 // ReduceOption is like Reduce but returns None for empty array.
-func (a *Array[T]) ReduceOption(f func(T, T) T) Option[T] {
+func (a Ptr[Array[T]]) ReduceOption(f func(T, T) T) Option[T] {
     if a.elements.Size() == 0 {
         return None[T]()
     }
@@ -487,14 +487,14 @@ func (a *Array[T]) ReduceOption(f func(T, T) T) Option[T] {
 // === Predicate Operations ===
 
 // ForEach applies a function to each element for side effects.
-func (a *Array[T]) ForEach(f func(T)) {
+func (a Ptr[Array[T]]) ForEach(f func(T)) {
     for i := 0; i < a.elements.Size(); i++ {
         f(a.elements[i])
     }
 }
 
 // Exists returns true if any element satisfies the predicate.
-func (a *Array[T]) Exists(p func(T) bool) bool {
+func (a Ptr[Array[T]]) Exists(p func(T) bool) bool {
     for i := 0; i < a.elements.Size(); i++ {
         if p(a.elements[i]) {
             return true
@@ -504,7 +504,7 @@ func (a *Array[T]) Exists(p func(T) bool) bool {
 }
 
 // ForAll returns true if all elements satisfy the predicate.
-func (a *Array[T]) ForAll(p func(T) bool) bool {
+func (a Ptr[Array[T]]) ForAll(p func(T) bool) bool {
     for i := 0; i < a.elements.Size(); i++ {
         if !p(a.elements[i]) {
             return false
@@ -514,7 +514,7 @@ func (a *Array[T]) ForAll(p func(T) bool) bool {
 }
 
 // Find returns the first element that satisfies the predicate.
-func (a *Array[T]) Find(p func(T) bool) Option[T] {
+func (a Ptr[Array[T]]) Find(p func(T) bool) Option[T] {
     for i := 0; i < a.elements.Size(); i++ {
         if p(a.elements[i]) {
             return Some[T](a.elements[i])
@@ -524,7 +524,7 @@ func (a *Array[T]) Find(p func(T) bool) Option[T] {
 }
 
 // FindLast returns the last element that satisfies the predicate.
-func (a *Array[T]) FindLast(p func(T) bool) Option[T] {
+func (a Ptr[Array[T]]) FindLast(p func(T) bool) Option[T] {
     for i := a.elements.Size() - 1; i >= 0; i-- {
         if p(a.elements[i]) {
             return Some[T](a.elements[i])
@@ -534,7 +534,7 @@ func (a *Array[T]) FindLast(p func(T) bool) Option[T] {
 }
 
 // Count returns the number of elements satisfying the predicate.
-func (a *Array[T]) Count(p func(T) bool) int {
+func (a Ptr[Array[T]]) Count(p func(T) bool) int {
     return a.FoldLeft[int](0, (acc int, elem T) => {
         if p(elem) {
             return acc + 1
@@ -546,7 +546,7 @@ func (a *Array[T]) Count(p func(T) bool) int {
 // === Utility Operations ===
 
 // Zip combines two arrays into an array of tuples. Result length is the minimum.
-func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
+func (a Ptr[Array[T]]) Zip[U any](other Ptr[Array[U]]) Ptr[Array[Tuple[T, U]]] {
     var minLen = a.elements.Size()
     if other.elements.Size() < minLen {
         minLen = other.elements.Size()
@@ -559,7 +559,7 @@ func (a *Array[T]) Zip[U any](other *Array[U]) *Array[Tuple[T, U]] {
 }
 
 // ZipWithIndex pairs each element with its index.
-func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
+func (a Ptr[Array[T]]) ZipWithIndex() Ptr[Array[Tuple[T, int]]] {
     var result = EmptyArray[Tuple[T, int]]()
     for i := 0; i < a.elements.Size(); i++ {
         result.Append((a.elements[i], i))
@@ -568,7 +568,7 @@ func (a *Array[T]) ZipWithIndex() *Array[Tuple[T, int]] {
 }
 
 // Distinct returns a new array with duplicate elements removed.
-func (a *Array[T]) Distinct() *Array[T] {
+func (a Ptr[Array[T]]) Distinct() Ptr[Array[T]] {
     var result = EmptyArray[T]()
     for i := 0; i < a.elements.Size(); i++ {
         if !result.Contains(a.elements[i]) {
@@ -579,16 +579,16 @@ func (a *Array[T]) Distinct() *Array[T] {
 }
 
 // SplitAt splits the array at the given index.
-func (a *Array[T]) SplitAt(n int) Tuple[*Array[T], *Array[T]] {
+func (a Ptr[Array[T]]) SplitAt(n int) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {
     return (a.Take(n), a.Drop(n))
 }
 
 // Grouped splits the array into groups of size n.
-func (a *Array[T]) Grouped(n int) *Array[*Array[T]] {
+func (a Ptr[Array[T]]) Grouped(n int) Ptr[Array[Ptr[Array[T]]]] {
     if n <= 0 {
         go_builtins.Panic("Array.Grouped: group size must be positive")
     }
-    var result = EmptyArray[*Array[T]]()
+    var result = EmptyArray[Ptr[Array[T]]]()
     for i := 0; i < a.elements.Size(); i += n {
         var end = i + n
         if end > a.elements.Size() {
@@ -600,14 +600,14 @@ func (a *Array[T]) Grouped(n int) *Array[*Array[T]] {
 }
 
 // Sliding returns a sliding window over the array.
-func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
+func (a Ptr[Array[T]]) Sliding(size int) Ptr[Array[Ptr[Array[T]]]] {
     if size <= 0 {
         go_builtins.Panic("Array.Sliding: window size must be positive")
     }
     if a.elements.Size() < size {
-        return EmptyArray[*Array[T]]()
+        return EmptyArray[Ptr[Array[T]]]()
     }
-    var result = EmptyArray[*Array[T]]()
+    var result = EmptyArray[Ptr[Array[T]]]()
     var limit = a.elements.Size() - size
     for i := 0; i <= limit; i++ {
         result.Append(a.Slice(i, i + size))
@@ -616,17 +616,19 @@ func (a *Array[T]) Sliding(size int) *Array[*Array[T]] {
 }
 
 // GroupBy partitions this array into a map of arrays according to a discriminator function.
-func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
-    var result = go_interop.MapEmpty[K, *Array[T]]()
+func (a Ptr[Array[T]]) GroupBy[K comparable](f func(T) K) map[K]Ptr[Array[T]] {
+    var result = go_interop.MapEmpty[K, Ptr[Array[T]]]()
     for i := 0; i < a.elements.Size(); i++ {
-        var elem = a.elements[i]
-        var key = f(elem)
-        var existing = result[key]
-        if existing == nil {
-            existing = EmptyArray[T]()
-            result[key] = existing
+        val elem = a.elements[i]
+        val key = f(elem)
+        val existing, ok = go_interop.MapGet(result, key)
+        if ok {
+            existing.Append(elem)
+        } else {
+            val group = EmptyArray[T]()
+            group.Append(elem)
+            result[key] = group
         }
-        existing.Append(elem)
     }
     return result
 }
@@ -634,7 +636,7 @@ func (a *Array[T]) GroupBy[K comparable](f func(T) K) map[K]*Array[T] {
 // === Conversion ===
 
 // ToGoSlice returns a copy of the underlying slice.
-func (a *Array[T]) ToGoSlice() []T {
+func (a Ptr[Array[T]]) ToGoSlice() []T {
     var result []T
     for i := 0; i < a.elements.Size(); i++ {
         result = go_interop.SliceAppend(result, a.elements[i])
@@ -643,7 +645,7 @@ func (a *Array[T]) ToGoSlice() []T {
 }
 
 // String returns a string representation of the array.
-func (a *Array[T]) String() string {
+func (a Ptr[Array[T]]) String() string {
     if a.elements.Size() == 0 {
         return "Array()"
     }
@@ -658,7 +660,7 @@ func (a *Array[T]) String() string {
 }
 
 // MkString joins elements into a string with separator.
-func (a *Array[T]) MkString(sep string) string {
+func (a Ptr[Array[T]]) MkString(sep string) string {
     if a.elements.Size() == 0 {
         return ""
     }
@@ -673,7 +675,7 @@ func (a *Array[T]) MkString(sep string) string {
 }
 
 // ToList converts the array to a mutable List.
-func (a *Array[T]) ToList() *List[T] {
+func (a Ptr[Array[T]]) ToList() Ptr[List[T]] {
     var result = EmptyList[T]()
     for i := 0; i < a.elements.Size(); i++ {
         result.Append(a.elements[i])
@@ -692,7 +694,7 @@ func lessToCompare[T any](less func(T, T) bool, x T, y T) int =
 // Sorted returns a new Array with elements sorted in natural order.
 // Elements must be primitive types or implement std.Ordered[T].
 // The sort is stable: equal elements keep their original relative order.
-func (a *Array[T]) Sorted() *Array[T] {
+func (a Ptr[Array[T]]) Sorted() Ptr[Array[T]] {
     val elements = a.elements
     return &Array[T](elements = go_interop.SliceSortedStable(elements, (i, j) => CompareValues(elements[i], elements[j])))
 }
@@ -701,7 +703,7 @@ func (a *Array[T]) Sorted() *Array[T] {
 // The function should return true if x should come before y; it should be a strict
 // ordering (use <, not <=).
 // The sort is stable: elements that compare equal keep their original relative order.
-func (a *Array[T]) SortWith(less func(T, T) bool) *Array[T] {
+func (a Ptr[Array[T]]) SortWith(less func(T, T) bool) Ptr[Array[T]] {
     val elements = a.elements
     return &Array[T](elements = go_interop.SliceSortedStable(elements, (i, j) => lessToCompare(less, elements[i], elements[j])))
 }
@@ -710,7 +712,7 @@ func (a *Array[T]) SortWith(less func(T, T) bool) *Array[T] {
 // Keys must be primitive types or implement std.Ordered.
 // The sort is stable: elements with equal keys keep their original relative order.
 // f runs once per element: keys are computed up front, not on every comparison.
-func (a *Array[T]) SortBy[K comparable](f func(T) K) *Array[T] {
+func (a Ptr[Array[T]]) SortBy[K comparable](f func(T) K) Ptr[Array[T]] {
     val elements = a.elements
     val keys = go_interop.SliceWithSize[K](elements.Size())
     for i := 0; i < elements.Size(); i++ {
@@ -720,4 +722,4 @@ func (a *Array[T]) SortBy[K comparable](f func(T) K) *Array[T] {
 }
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
-func (a *Array[T]) SeqDrop(n int) any = a.Drop(n)
+func (a Ptr[Array[T]]) SeqDrop(n int) any = a.Drop(n)
