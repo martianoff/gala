@@ -791,3 +791,10 @@ func TestStringBuilderLengthAndByteSize(t T) T = RunCases(t,
     Case[string, Tuple[int, int]](Name = "cjk", Input = "日本語", Expected = (3, 9)),
     Case[string, Tuple[int, int]](Name = "emoji", Input = "a😀", Expected = (2, 5)),
 )
+
+// A UTF-8 sequence split across two appends is one character of the built string.
+func TestStringBuilderLengthSplitSequence(t T) T {
+    val sb = s.NewStringBuilderFromString("\xe6\x97").AppendString("\xa5")
+    val t1 = Eq(t, sb.ToString(), "日")
+    Eq(Eq(t1, sb.Length(), 1), sb.ByteSize(), 3)
+}

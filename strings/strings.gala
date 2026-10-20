@@ -573,8 +573,9 @@ func (sb Ptr[StringBuilder]) ToString() string {
 func (sb Ptr[StringBuilder]) String() string = sb.ToString()
 
 // Length returns the number of characters (runes) in the built string,
-// matching Str.Length and a string's Size().
-func (sb Ptr[StringBuilder]) Length() int = sb.parts.FoldLeft(0, (acc, p) => acc + p.Size())
+// matching Str.Length and a string's Size(). It counts the joined string, not
+// each part, so a UTF-8 sequence split across two appends counts once.
+func (sb Ptr[StringBuilder]) Length() int = sb.ToString().Size()
 
 // ByteSize returns the number of UTF-8 bytes in the built string, matching
 // a string's ByteSize().
