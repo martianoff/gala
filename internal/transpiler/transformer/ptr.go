@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"slices"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -76,6 +77,9 @@ func (t *galaASTTransformer) checkPtrSlot(expr ast.Expr, expected transpiler.Typ
 		return nil
 	}
 	expected = t.followAliasChain(expected)
+	if err := t.checkPtrFuncRefSlot(expr, expected, exprCtx); err != nil {
+		return err
+	}
 	// Most slots hold no Ptr: skip the expression's type inference for them.
 	if !hasPtr(expected) {
 		return t.checkPtrInterfaceSlot(expr, expected, exprCtx)
@@ -207,25 +211,435 @@ func (t *galaASTTransformer) checkPtrInterfaceSlot(expr ast.Expr, expected trans
 	if len(t.ptrReceiverMethods) == 0 || isNilIdent(expr) {
 		return nil
 	}
-	methods, _ := t.interfaceMethodNames(expected)
-	methods = slices.DeleteFunc(methods, func(m string) bool { return !t.ptrReceiverMethods[m] })
+	methods := t.ptrInterfaceMethods(expected)
 	if len(methods) == 0 {
 		return nil
 	}
-	actual := t.probeExprType(expr)
+	ptr, m, ok := t.nullablePtrMethod(t.probeExprType(expr), methods)
+	if !ok {
+		return nil
+	}
+	text := transpiler.SourceText(exprCtx)
+	return ptrError(exprCtx,
+		fmt.Sprintf("cannot use %s (%s) as %s: its method %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr",
+			text, displayType(ptr), displayType(expected), m, ptrOf(ptr)),
+		fmt.Sprintf("pass RequirePtr(%s); RequirePtr panics on nil", text))
+}
+
+// ptrInterfaceMethods returns, sorted, the methods of the interface iface
+// that some type declares on a `Ptr` receiver.
+func (t *galaASTTransformer) ptrInterfaceMethods(iface transpiler.Type) []string {
+	methods, _ := t.interfaceMethodNames(iface)
+	methods = slices.DeleteFunc(methods, func(m string) bool { return !t.ptrReceiverMethods[m] })
 	slices.Sort(methods)
+	return methods
+}
+
+// nullablePtrMethod returns the first of methods that typ, a pointer that
+// may be nil, declares on a `Ptr` receiver, and the pointer.
+func (t *galaASTTransformer) nullablePtrMethod(typ transpiler.Type, methods []string) (transpiler.PointerType, string, bool) {
 	for _, m := range methods {
-		ptr, ok := t.nullablePtrReceiver(actual, m)
-		if !ok {
+		if ptr, ok := t.nullablePtrReceiver(typ, m); ok {
+			return ptr, m, true
+		}
+	}
+	return transpiler.PointerType{}, "", false
+}
+
+// typeParamOwner is a generic function, method or type whose type
+// parameters a call or a type fills.
+type typeParamOwner struct {
+	name        string            // as the source names it
+	params      []string          // its type parameters, in order
+	constraints map[string]string // the constraint of each, named in pkg
+	pkg         string            // the declaring package
+}
+
+// ptrConstraint returns the constraint of o's type parameter tp, and its
+// methods some type declares on a `Ptr` receiver, when it has any.
+func (t *galaASTTransformer) ptrConstraint(o typeParamOwner, tp string) (transpiler.Type, []string) {
+	c := o.constraints[tp]
+	if c == "" || c == "any" || c == "comparable" {
+		return nil, nil
+	}
+	// A function's or method's constraint is recorded qualified where it is
+	// not the package's own (declaredTypeParams); a type's as written, in its
+	// own package.
+	var iface transpiler.Type = transpiler.NamedType{Name: c}
+	if dot := strings.LastIndex(c, "."); dot >= 0 {
+		iface = transpiler.NamedType{Package: c[:dot], Name: c[dot+1:]}
+	} else if !t.isLocalPackage(o.pkg) {
+		iface = transpiler.NamedType{Package: o.pkg, Name: c}
+	}
+	key := iface.String()
+	methods, ok := t.ptrConstraintMethods[key]
+	if !ok {
+		methods = t.ptrInterfaceMethods(iface)
+		if t.ptrConstraintMethods == nil {
+			t.ptrConstraintMethods = make(map[string][]string)
+		}
+		t.ptrConstraintMethods[key] = methods
+	}
+	return iface, methods
+}
+
+// hasPtrConstraint reports whether a type parameter of o has a constraint
+// with a method some type declares on a `Ptr` receiver: only then can a type
+// argument of o be rejected, so the checks below skip every other owner
+// before looking at a type argument.
+func (t *galaASTTransformer) hasPtrConstraint(o typeParamOwner) bool {
+	if len(t.ptrReceiverMethods) == 0 {
+		return false
+	}
+	for _, tp := range o.params {
+		if _, methods := t.ptrConstraint(o, tp); len(methods) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// typeArgSource tells where a type argument comes from: written when text is
+// "", else inferred from what text describes — an argument of a pointer type
+// when ptr is set.
+type typeArgSource struct {
+	text string
+	ptr  bool
+}
+
+// argSource is the typeArgSource of a type argument inferred from the
+// argument at at, of type argType.
+func argSource(at antlr.ParserRuleContext, argType transpiler.Type) typeArgSource {
+	_, isPtr := argType.(transpiler.PointerType)
+	return typeArgSource{text: transpiler.SourceText(at), ptr: isPtr}
+}
+
+// checkPtrTypeArg rejects typeArg as the type argument of o's type parameter
+// tp when it is a pointer that may be nil and tp's constraint has a method
+// its type declares on a `Ptr` receiver (GALA-E0080): the generic code calls
+// that method on whatever pointer the type argument holds. at locates the
+// type argument, or what it is inferred from (src).
+func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at antlr.ParserRuleContext) error {
+	msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src)
+	if !bad {
+		return nil
+	}
+	return ptrError(at, msg, hint)
+}
+
+// ptrTypeArgMisuse returns the GALA-E0080 message and hint of checkPtrTypeArg
+// when typeArg cannot be the type argument of o's tp.
+func (t *galaASTTransformer) ptrTypeArgMisuse(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource) (msg, hint string, bad bool) {
+	iface, methods := t.ptrConstraint(o, tp)
+	if len(methods) == 0 {
+		return "", "", false
+	}
+	ptr, m, ok := t.nullablePtrMethod(typeArg, methods)
+	if !ok {
+		return "", "", false
+	}
+	msg = fmt.Sprintf("type argument %s (%s) of %s is %s", tp, displayType(iface), o.name, displayType(ptr))
+	switch {
+	case src.text == "":
+		hint = fmt.Sprintf("make the type argument %s", ptrOf(ptr))
+	case src.ptr:
+		hint = fmt.Sprintf("pass RequirePtr(%s); RequirePtr panics on nil", src.text)
+	default:
+		hint = fmt.Sprintf("make it a %s: `&x`, or RequirePtr(p) for a pointer that may be nil", ptrOf(ptr))
+	}
+	if src.text != "" {
+		msg += ", inferred from " + src.text
+	}
+	msg += fmt.Sprintf(": its method %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr", m, ptrOf(ptr))
+	return msg, hint, true
+}
+
+// checkPtrSlotTypeArgs checks, as checkPtrTypeArg does, the type arguments
+// of the generic function funcMeta (named name) that the slot of a call at
+// line:col fills — those of resolved that no argument binds (argBound).
+func (t *galaASTTransformer) checkPtrSlotTypeArgs(name string, funcMeta *transpiler.FunctionMetadata, resolved map[string]transpiler.Type, argBound map[string]bool, line, col int) error {
+	o := funcTypeParamOwner(name, funcMeta)
+	if !t.hasPtrConstraint(o) {
+		return nil
+	}
+	src := typeArgSource{text: "the type the call is expected to have"}
+	for _, tp := range o.params {
+		typeArg, ok := resolved[tp]
+		if !ok || argBound[tp] {
 			continue
 		}
-		text := transpiler.SourceText(exprCtx)
-		return ptrError(exprCtx,
-			fmt.Sprintf("cannot use %s (%s) as %s: its method %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr",
-				text, displayType(ptr), displayType(expected), m, ptrOf(ptr)),
-			fmt.Sprintf("pass RequirePtr(%s); RequirePtr panics on nil", text))
+		if msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src); bad {
+			return galaerr.NewCodedSemanticError(galaerr.CodePtrNullability, line, col, msg, hint)
+		}
 	}
 	return nil
+}
+
+// checkPtrFuncRefSlot rejects a reference to a generic GALA function (`bumpIt`)
+// filling a slot of function type when the function's type arguments, taken
+// from that type, fail checkPtrTypeArg: the function's body would call a Ptr
+// receiver's method on whatever pointer it is called with.
+func (t *galaASTTransformer) checkPtrFuncRefSlot(expr ast.Expr, expected transpiler.Type, exprCtx antlr.ParserRuleContext) error {
+	expectedFT, isFT := expected.(transpiler.FuncType)
+	if !isFT || len(t.ptrReceiverMethods) == 0 {
+		return nil
+	}
+	fm := t.lookupBareFuncRefMeta(expr)
+	if fm == nil || len(fm.TypeParams) == 0 {
+		return nil
+	}
+	o := funcTypeParamOwner(transpiler.SourceText(exprCtx), fm)
+	if !t.hasPtrConstraint(o) {
+		return nil
+	}
+	bound := make(map[string]transpiler.Type)
+	t.unifyForInference(t.funcMetaToRawType(fm), expectedFT, fm.TypeParams, bound)
+	src := typeArgSource{text: fmt.Sprintf("the function type it fills, %s", displayType(expectedFT))}
+	return t.checkPtrBoundTypeArgs(o, 0, bound, src, exprCtx)
+}
+
+// funcTypeParamOwner is the typeParamOwner of the function m, which name names.
+func funcTypeParamOwner(name string, m *transpiler.FunctionMetadata) typeParamOwner {
+	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
+}
+
+// methodTypeParamOwner is the typeParamOwner of the method m's own type
+// parameters, which name names.
+func methodTypeParamOwner(name string, m *transpiler.MethodMetadata) typeParamOwner {
+	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
+}
+
+// typeTypeParamOwner is the typeParamOwner of the generic type m, which name names.
+func typeTypeParamOwner(name string, m *transpiler.TypeMetadata) typeParamOwner {
+	return typeParamOwner{name: name, params: m.TypeParams, constraints: m.TypeParamConstraints, pkg: m.Package}
+}
+
+// checkPtrWrittenTypeArgs checks the written type arguments args of o, the
+// i-th located by at(i), with checkPtrTypeArg.
+func (t *galaASTTransformer) checkPtrWrittenTypeArgs(o typeParamOwner, args []ast.Expr, at func(i int) antlr.ParserRuleContext) error {
+	if !t.hasPtrConstraint(o) {
+		return nil
+	}
+	for i, arg := range args[:min(len(args), len(o.params))] {
+		if err := t.checkPtrTypeArg(o, o.params[i], t.astTypeToTranspilerType(arg), typeArgSource{}, at(i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkPtrBoundTypeArgs checks, with checkPtrTypeArg, the type arguments
+// bound binds to o's type parameters, inferred from src at at. The first
+// written of o's type parameters are not inferred.
+func (t *galaASTTransformer) checkPtrBoundTypeArgs(o typeParamOwner, written int, bound map[string]transpiler.Type, src typeArgSource, at antlr.ParserRuleContext) error {
+	for i, tp := range o.params {
+		typeArg, ok := bound[tp]
+		if !ok || i < written {
+			continue
+		}
+		if err := t.checkPtrTypeArg(o, tp, typeArg, src, at); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkPtrTypeArgsOfType checks the type arguments args, at ctxs, of the
+// generic type name names in a type (`Holder[*Counter]`) with
+// checkPtrTypeArg.
+func (t *galaASTTransformer) checkPtrTypeArgsOfType(name string, args []ast.Expr, ctxs []grammar.ITypeContext) error {
+	if len(t.ptrReceiverMethods) == 0 || t.activeTypeParams[name] {
+		return nil
+	}
+	meta := t.getTypeMeta(name)
+	if meta == nil || len(meta.TypeParamConstraints) == 0 {
+		return nil
+	}
+	o := typeTypeParamOwner(name, meta)
+	return t.checkPtrWrittenTypeArgs(o, args, func(i int) antlr.ParserRuleContext { return ctxs[i] })
+}
+
+// checkPtrCallTypeArgs checks, with checkPtrTypeArg, the type arguments the
+// arguments of a call of a generic function (funcMeta), or of a construction
+// of a generic struct, bind, and those of a generic function an argument
+// refers to. args are its positional arguments and named its named ones,
+// lowered.
+func (t *galaASTTransformer) checkPtrCallTypeArgs(fun ast.Expr, argListCtx *grammar.ArgumentListContext, args []ast.Expr, named map[string]ast.Expr, callCtx functionCallContext) error {
+	if len(t.ptrReceiverMethods) == 0 {
+		return nil
+	}
+	base, written := splitCallFunTypeArgs(fun)
+	o, names, types, ok := t.callTypeParams(base, callCtx)
+	if !ok || len(o.params) == 0 {
+		return nil
+	}
+	constrained := t.hasPtrConstraint(o)
+	if !constrained && !slices.ContainsFunc(args, t.isGenericFuncRef) && !t.anyGenericFuncRef(named) {
+		return nil
+	}
+	type callArg struct {
+		expr   ast.Expr
+		at     antlr.ParserRuleContext
+		param  transpiler.Type
+		spread bool // `xs...`, whose elements fill param
+	}
+	var plain, funcRefs []callArg
+	pos := 0
+	for _, a := range argListCtx.AllArgument() {
+		argCtx := a.(*grammar.ArgumentContext)
+		arg, idx := ast.Expr(nil), -1
+		if id := argCtx.Identifier(); id != nil {
+			arg, idx = named[id.GetText()], slices.Index(names, id.GetText())
+		} else {
+			if pos < len(args) {
+				arg, idx = args[pos], pos
+			}
+			pos++
+		}
+		// A variadic function records its last parameter as the element
+		// type, which every argument past it fills.
+		if idx >= len(types) && callCtx.funcMeta != nil {
+			idx = len(types) - 1
+		}
+		exprCtx, lambdaCtx, spread, err := extractArgContent(argCtx)
+		if err != nil || arg == nil || idx < 0 || idx >= len(types) || types[idx] == nil {
+			continue
+		}
+		var at antlr.ParserRuleContext
+		switch {
+		case exprCtx != nil:
+			at = exprCtx
+		case lambdaCtx != nil:
+			at = lambdaCtx
+		default:
+			continue
+		}
+		if t.isGenericFuncRef(arg) {
+			funcRefs = append(funcRefs, callArg{arg, at, types[idx], spread})
+		} else {
+			plain = append(plain, callArg{arg, at, types[idx], spread})
+		}
+	}
+	// The call's type arguments: written, then bound by its arguments.
+	all := t.writtenTypeArgs(o.params, written[:min(len(written), len(o.params))])
+	for _, a := range plain {
+		argType := t.probeExprType(a.expr)
+		if arr, isArr := argType.(transpiler.ArrayType); a.spread && isArr {
+			argType = arr.Elem
+		}
+		if transpiler.IsUnusable(argType) {
+			continue
+		}
+		bound := make(map[string]transpiler.Type)
+		t.unifyForInference(a.param, argType, o.params, bound)
+		if err := t.checkPtrBoundTypeArgs(o, len(written), bound, argSource(a.at, argType), a.at); err != nil {
+			return err
+		}
+		for tp, typ := range bound {
+			if _, seen := all[tp]; !seen {
+				all[tp] = typ
+			}
+		}
+	}
+	// A reference to a generic function takes its type arguments from the
+	// parameter it fills once the call's own are known (`apply(bumpIt, p)`
+	// for `func apply[T any](f func(T), x T)`).
+	for _, ref := range funcRefs {
+		if err := t.checkPtrFuncRefSlot(ref.expr, t.followAliasChain(t.substituteInType(ref.param, all)), ref.at); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isGenericFuncRef reports whether expr is a bare reference to a generic
+// GALA function (`bumpIt`), whose type arguments the slot it fills gives.
+func (t *galaASTTransformer) isGenericFuncRef(expr ast.Expr) bool {
+	fm := t.lookupBareFuncRefMeta(expr)
+	return fm != nil && len(fm.TypeParams) > 0
+}
+
+// anyGenericFuncRef reports whether a value of named is isGenericFuncRef.
+func (t *galaASTTransformer) anyGenericFuncRef(named map[string]ast.Expr) bool {
+	for _, e := range named {
+		if t.isGenericFuncRef(e) {
+			return true
+		}
+	}
+	return false
+}
+
+// callTypeParams returns the generic function or struct a call of base
+// calls or constructs, with the names and declared types of what its
+// arguments fill: the function's parameters, the struct's fields, or the
+// parameters of its companion Apply when the arguments do not build the
+// struct itself.
+func (t *galaASTTransformer) callTypeParams(base ast.Expr, callCtx functionCallContext) (typeParamOwner, []string, []transpiler.Type, bool) {
+	if m := callCtx.funcMeta; m != nil {
+		_, name := extractTypeNameFromExpr(base)
+		return funcTypeParamOwner(name, m), m.ParamNames, m.ParamTypes, true
+	}
+	if len(callCtx.structTypeParams) == 0 {
+		return typeParamOwner{}, nil, nil, false
+	}
+	_, name := extractTypeNameFromExpr(base)
+	meta, resolved := t.getTypeMetaResolved(name)
+	if meta == nil {
+		return typeParamOwner{}, nil, nil, false
+	}
+	o := typeTypeParamOwner(name, meta)
+	if !callCtx.structLiteral {
+		if apply := meta.Methods["Apply"]; apply != nil {
+			return o, apply.ParamNames, apply.ParamTypes, true
+		}
+	}
+	resolved = t.resolveStructTypeName(resolved)
+	fields := t.structFields[resolved]
+	types := make([]transpiler.Type, len(fields))
+	for i, f := range fields {
+		types[i] = t.structFieldTypes[resolved][f]
+	}
+	return o, fields, types, true
+}
+
+// writtenTypeArgOwner returns the generic function, method or type that
+// base, the base of an index expression, names, whose type parameters the
+// index's type arguments fill. genericMethod tells that base selects a
+// method with its own type parameters (namesGenericMethod).
+func (t *galaASTTransformer) writtenTypeArgOwner(base ast.Expr, genericMethod bool) (typeParamOwner, bool) {
+	name := ""
+	switch e := base.(type) {
+	case *ast.Ident:
+		if t.bindingScope(e.Name) != nil {
+			return typeParamOwner{}, false
+		}
+		name = e.Name
+	case *ast.SelectorExpr:
+		if pkg, ok := e.X.(*ast.Ident); ok && t.importManager.IsPackage(pkg.Name) && t.bindingScope(pkg.Name) == nil {
+			name = pkg.Name + "." + e.Sel.Name
+			break
+		}
+		// A generic method of the receiver's type (`b.Map[int]`).
+		if !genericMethod {
+			return typeParamOwner{}, false
+		}
+		_, lookupBaseName := t.resolveReceiverTypeAndLookupKey(e.X, e.Sel.Name)
+		if meta, _ := t.getTypeMetaResolved(lookupBaseName); meta != nil {
+			if m := meta.Methods[e.Sel.Name]; m != nil {
+				return methodTypeParamOwner(m.Name, m), true
+			}
+		}
+		return typeParamOwner{}, false
+	default:
+		return typeParamOwner{}, false
+	}
+	if m := t.getFunction(name); m != nil {
+		return funcTypeParamOwner(name, m), true
+	}
+	if m := t.getTypeMeta(name); m != nil && len(m.TypeParams) > 0 {
+		return typeTypeParamOwner(name, m), true
+	}
+	return typeParamOwner{}, false
 }
 
 // hasPtr reports whether typ has a `Ptr` anywhere in it.

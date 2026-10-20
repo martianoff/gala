@@ -424,8 +424,11 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	// `F[T]` naming a generic function is its instantiation, not an index of
 	// a value, so the function is no Immutable to unwrap; asking would only
 	// find it typeless until instantiated.
-	if !t.namesFunction(base) && !t.namesGenericMethod(base) {
-		base = t.unwrapImmutable(base)
+	genericMethod := false
+	if !t.namesFunction(base) {
+		if genericMethod = t.namesGenericMethod(base); !genericMethod {
+			base = t.unwrapImmutable(base)
+		}
 	}
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
 	if err != nil {
@@ -434,6 +437,16 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	// A `Ptr[T]` type argument (`None[Ptr[T]]()`) is the Go type `*T`.
 	if len(indices) == 1 && t.namesPtrType(base) {
 		return t.ptrStar(indices[0]), nil
+	}
+	// A pointer that may be nil is no type argument of a type parameter
+	// whose constraint needs a Ptr receiver.
+	if len(t.ptrReceiverMethods) > 0 {
+		if o, ok := t.writtenTypeArgOwner(base, genericMethod); ok {
+			at := func(i int) antlr.ParserRuleContext { return exprList.Expression(i) }
+			if err := t.checkPtrWrittenTypeArgs(o, indices, at); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if len(indices) == 1 {
 		return &ast.IndexExpr{X: base, Index: indices[0]}, nil

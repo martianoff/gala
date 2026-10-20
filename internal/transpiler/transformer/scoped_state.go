@@ -95,6 +95,7 @@ var accumulatedStateFields = []string{
 	"typeMetas",
 	"hasOpaque",
 	"ptrReceiverMethods",
+	"ptrConstraintMethods",
 	"companionObjects",
 	"importManager",
 	"cachedTypeResolver",

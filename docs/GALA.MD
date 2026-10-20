@@ -4721,8 +4721,15 @@ the call reaches as `&x`), a `val` (through an addressed copy), a `Ptr[T]`, or
 (`p.Bump`) alike, and so are matching such a `*T` through a
 [sealed view](#sealed-views) whose `MatchView` has a `Ptr` receiver, and
 passing it where an interface is expected when the interface has a method `T`
-declares on a `Ptr` receiver. The receiver of a `*T` method is such a pointer
-too. A method declared on `*T` can still be called on any `*T`.
+declares on a `Ptr` receiver, or making it the type argument — written or
+inferred — of a type parameter whose constraint has such a method: of a
+function (`bumpIt(lookup(true))` for `func bumpIt[B Bumper](b B)`), a method,
+or a type (`Holder[*Counter]` for `struct Holder[B Bumper](b B)`), whether it
+is inferred from an argument, from the expected type, or from the function
+type a reference to the function fills (`each(bumpIt)` where `each` takes a
+`func(*Counter)`). A `Ptr[T]` type argument, such as one inferred from `&c`,
+is fine. The receiver of a `*T` method is such a pointer too. A method
+declared on `*T` can still be called on any `*T`.
 
 ```gala
 package main
