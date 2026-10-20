@@ -49,6 +49,10 @@ const generatedHeader = genheader.Header + "\n\n"
 // returns a hard error if it does not parse — so unparseable generated
 // Go can never reach a caller as a success there.
 func (g *goCodeGenerator) Generate(fset *token.FileSet, file *ast.File) (string, error) {
+	// A returned function literal call compiles as a second function; its
+	// body can stand in for the return.
+	inlineReturnedIIFEs(file)
+
 	// Composite literals sitting in an if/for/switch header print as Go that
 	// does not re-parse; go/printer will not parenthesize them on its own.
 	parenthesizeControlClauseLits(file)

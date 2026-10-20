@@ -44,6 +44,9 @@ func main() {
 		{
 			// Hindley-Milner collapsed `func() int` to `int`, so an
 			// if-expression over function values was typed as their result.
+			// Typed as loop's result, the returned if-expression is emitted
+			// as an if statement (see the generator's inlineReturnedIIFEs);
+			// typed as anything else, it would stay a function literal.
 			name: "if-expression over nullary function values keeps the function type",
 			input: `package main
 
@@ -55,7 +58,8 @@ func loop(n int, acc func() int) func() int =
 func main() {
     Println(loop(3, () => 0)())
 }`,
-			mustHave: []string{"return func() func() int {"},
+			mustHave: []string{"return acc"},
+			mustMiss: []string{"return func()"},
 		},
 		{
 			// Both branches void, in statement position: the if-expression is

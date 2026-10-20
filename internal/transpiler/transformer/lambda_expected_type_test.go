@@ -168,15 +168,27 @@ func main() {
 // inside the body of a branch lambda is lowered against the lambda's own result
 // type (`int`), never the slot type the branching expression fills
 // (`func(int) int`).
+//
+// An if-expression a function returns is emitted as an if statement when it is
+// lowered against the function's own result type (see the generator's
+// inlineReturnedIIFEs), and as a function literal of its type otherwise. So
+// slotIIFEs counts the literals of the slot type left where the outer
+// if-expression is not returned; one more would be the inner if-expression
+// lowered against the slot type. innerIIFE says whether the inner
+// if-expression is a `func() int` literal (a block body binds it to a val) or,
+// returned from the lambda, an if statement returning the lambda's ints.
 func TestNestedIfInBranchLambdaBody(t *testing.T) {
 	trans := newDefaultsTranspiler()
 
 	cases := []struct {
-		name  string
-		input string
+		name      string
+		input     string
+		slotIIFEs int
+		innerIIFE bool
 	}{
 		{
-			name: "typed val, expression body",
+			name:      "typed val, expression body",
+			slotIIFEs: 1,
 			input: `package main
 
 func main() {
@@ -186,7 +198,8 @@ func main() {
 }`,
 		},
 		{
-			name: "expression-bodied function, block body",
+			name:      "expression-bodied function, block body",
+			innerIIFE: true,
 			input: `package main
 
 func mk(c bool) func(int) int = if (c) (x) => {
@@ -211,7 +224,9 @@ func main() {
 }`,
 		},
 		{
-			name: "struct field, block body",
+			name:      "struct field, block body",
+			slotIIFEs: 1,
+			innerIIFE: true,
 			input: `package main
 
 struct Holder(F func(int) int)
@@ -231,8 +246,13 @@ func main() {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := trans.Transpile(tc.input, "nested_if_lambda_test.gala")
 			require.NoError(t, err)
-			assert.Equal(t, 1, strings.Count(out, "func() func(int) int {"), "only the outer IIFE returns the slot type")
-			assert.Contains(t, out, "func() int {", "the inner IIFE returns the lambda's result type")
+			assert.Equal(t, tc.slotIIFEs, strings.Count(out, "func() func(int) int {"), "IIFEs of the slot type: the outer if-expression's, unless it is returned")
+			if tc.innerIIFE {
+				assert.Contains(t, out, "func() int {", "the inner IIFE returns the lambda's result type")
+			} else {
+				assert.NotContains(t, out, "func() int {")
+				assert.Contains(t, out, "return 0 - x", "the inner if returns the lambda's result")
+			}
 		})
 	}
 }
@@ -396,7 +416,9 @@ struct Tag[T any](N int)
 
 // TestUserWrittenAnySlot pins that a slot type the user wrote with `any` is
 // not a placeholder: it is the IIFE's fallback when the branches' type cannot
-// be inferred.
+// be inferred. The if-expressions initialize a val: one a function returns
+// leaves no IIFE when its type is the function's result type (see the
+// generator's inlineReturnedIIFEs).
 func TestUserWrittenAnySlot(t *testing.T) {
 	trans := newDefaultsTranspiler()
 
@@ -406,7 +428,35 @@ func TestUserWrittenAnySlot(t *testing.T) {
 		contains string
 	}{
 		{
-			name: "uninferable branches fall back to a map[string]any result",
+			name: "uninferable branches fall back to a map[string]any val",
+			input: `package main
+
+func pickMap(c bool) bool {
+    val m map[string]any = if (c) nil else nil
+    m == nil
+}
+
+func main() {
+    Println(pickMap(true))
+}`,
+			contains: "func() map[string]any {",
+		},
+		{
+			name: "uninferable branches fall back to a []any val",
+			input: `package main
+
+func pickList(c bool) bool {
+    val l []any = if (c) nil else nil
+    l == nil
+}
+
+func main() {
+    Println(pickList(true))
+}`,
+			contains: "func() []any {",
+		},
+		{
+			name: "returned, they are lowered against the function's result type",
 			input: `package main
 
 func pickMap(c bool) map[string]any = if (c) nil else nil
@@ -414,10 +464,10 @@ func pickMap(c bool) map[string]any = if (c) nil else nil
 func main() {
     Println(pickMap(true) == nil)
 }`,
-			contains: "return func() map[string]any {",
+			contains: "func pickMap(c bool) map[string]any {\n\t{\n\t\tif c {",
 		},
 		{
-			name: "uninferable branches fall back to a []any result",
+			name: "returned as a []any, they are lowered against it",
 			input: `package main
 
 func pickList(c bool) []any = if (c) nil else nil
@@ -425,7 +475,7 @@ func pickList(c bool) []any = if (c) nil else nil
 func main() {
     Println(pickList(true) == nil)
 }`,
-			contains: "return func() []any {",
+			contains: "func pickList(c bool) []any {\n\t{\n\t\tif c {",
 		},
 	}
 	for _, tc := range cases {

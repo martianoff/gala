@@ -28,17 +28,20 @@ val treeMapRed int = 0
 val treeMapBlack int = 1
 
 // treeMapNode represents a node in the Red-Black tree.
+//
+// Its links and TreeMap's root are never reassigned; they are `var` for the
+// reason List's tail is.
 type treeMapNode[K comparable, V any] struct {
     key   K
     value V
-    left  OptionPtr[treeMapNode[K, V]]
-    right OptionPtr[treeMapNode[K, V]]
+    var left  OptionPtr[treeMapNode[K, V]]
+    var right OptionPtr[treeMapNode[K, V]]
     color int
 }
 
 // TreeMap represents an immutable sorted map.
 type TreeMap[K comparable, V any] struct {
-    root OptionPtr[treeMapNode[K, V]]
+    var root OptionPtr[treeMapNode[K, V]]
     size int
 }
 

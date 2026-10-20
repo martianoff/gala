@@ -30,8 +30,8 @@ func treeMapShape[K cmp.Ordered, V any]() rbShape[treeMapNode[K, V], K] {
 	return rbShape[treeMapNode[K, V], K]{
 		key:   func(n *treeMapNode[K, V]) K { return n.key.Get() },
 		red:   func(n *treeMapNode[K, V]) bool { return n.color.Get() == treeMapRed.Get() },
-		left:  func(n *treeMapNode[K, V]) std.OptionPtr[treeMapNode[K, V]] { return n.left.Get() },
-		right: func(n *treeMapNode[K, V]) std.OptionPtr[treeMapNode[K, V]] { return n.right.Get() },
+		left:  func(n *treeMapNode[K, V]) std.OptionPtr[treeMapNode[K, V]] { return n.left },
+		right: func(n *treeMapNode[K, V]) std.OptionPtr[treeMapNode[K, V]] { return n.right },
 	}
 }
 
@@ -39,8 +39,8 @@ func treeSetShape[T cmp.Ordered]() rbShape[treeNode[T], T] {
 	return rbShape[treeNode[T], T]{
 		key:   func(n *treeNode[T]) T { return n.value.Get() },
 		red:   func(n *treeNode[T]) bool { return n.color.Get() == treeRed.Get() },
-		left:  func(n *treeNode[T]) std.OptionPtr[treeNode[T]] { return n.left.Get() },
-		right: func(n *treeNode[T]) std.OptionPtr[treeNode[T]] { return n.right.Get() },
+		left:  func(n *treeNode[T]) std.OptionPtr[treeNode[T]] { return n.left },
+		right: func(n *treeNode[T]) std.OptionPtr[treeNode[T]] { return n.right },
 	}
 }
 
@@ -102,7 +102,7 @@ func (w rbTreeMap) put(k int) rbTree    { return rbTreeMap{w.m.Put(k, k)} }
 func (w rbTreeMap) remove(k int) rbTree { return rbTreeMap{w.m.Remove(k)} }
 func (w rbTreeMap) same(other rbTree) bool {
 	o := other.(rbTreeMap)
-	return w.m.root.Get() == o.m.root.Get() && w.m.Size() == o.m.Size()
+	return w.m.root == o.m.root && w.m.Size() == o.m.Size()
 }
 func (w rbTreeMap) check(p *Prop, what string, ref map[int]int) {
 	p.T.Helper()
@@ -115,7 +115,7 @@ func (w rbTreeSet) put(k int) rbTree    { return rbTreeSet{w.s.Add(k)} }
 func (w rbTreeSet) remove(k int) rbTree { return rbTreeSet{w.s.Remove(k)} }
 func (w rbTreeSet) same(other rbTree) bool {
 	o := other.(rbTreeSet)
-	return w.s.root.Get() == o.s.root.Get() && w.s.Size() == o.s.Size()
+	return w.s.root == o.s.root && w.s.Size() == o.s.Size()
 }
 func (w rbTreeSet) check(p *Prop, what string, ref map[int]int) {
 	p.T.Helper()
@@ -273,13 +273,13 @@ func TestRedBlackRemoveMissingKey(t *testing.T) {
 						p.Fatalf("%s: Remove returned a different tree", what)
 					}
 				}
-				mt := treeMapRemove(m.root.Get(), k)
-				st := removeTree(s.root.Get(), k)
+				mt := treeMapRemove(m.root, k)
+				st := removeTree(s.root, k)
 				if mt.V2.Get() || st.V2.Get() {
 					p.Fatalf("%s: a remove helper reports a shorter tree", what)
 				}
-				rbTreeMap{TreeMap[int, int]{root: std.NewImmutable(mt.V1.Get()), size: m.size}}.check(p, what, ref)
-				rbTreeSet{TreeSet[int]{root: std.NewImmutable(st.V1.Get()), size: s.size}}.check(p, what, ref)
+				rbTreeMap{TreeMap[int, int]{root: mt.V1.Get(), size: m.size}}.check(p, what, ref)
+				rbTreeSet{TreeSet[int]{root: st.V1.Get(), size: s.size}}.check(p, what, ref)
 			}
 		})
 	}

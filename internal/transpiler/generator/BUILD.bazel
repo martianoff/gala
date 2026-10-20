@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "docs.go",
         "generator.go",
+        "iife.go",
         "parens.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/generator",
@@ -19,6 +20,7 @@ go_test(
     name = "generator_test",
     srcs = [
         "generator_test.go",
+        "iife_test.go",
         "parens_test.go",
     ],
     embed = [":generator"],

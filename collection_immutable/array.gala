@@ -36,8 +36,10 @@ type arrayNode[T any] struct {
 
 // Array represents an immutable indexed sequence.
 // Uses a prefix buffer for amortized O(1) prepend (Scala-inspired).
+//
+// root is never reassigned; it is `var` for the reason List's tail is.
 type Array[T any] struct {
-    root     OptionPtr[arrayNode[T]] // empty while the tree holds no elements
+    var root OptionPtr[arrayNode[T]] // empty while the tree holds no elements
     length   int           // Total logical length (prefix + tree)
     depth    int
     prefix   []T           // Prepended elements in forward order (prefix[0] is logical index 0)

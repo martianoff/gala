@@ -269,7 +269,7 @@ func checkTreeMap[K cmp.Ordered](p *Prop, what string, m TreeMap[K, int], ref ma
 	if m.Size() != len(ref) || m.IsEmpty() != (len(ref) == 0) {
 		p.Fatalf("%s: Size %d, want %d", what, m.Size(), len(ref))
 	}
-	checkRedBlack(p, what, treeMapShape[K, int](), m.root.Get(), m.Size())
+	checkRedBlack(p, what, treeMapShape[K, int](), m.root, m.Size())
 	keys := SortedKeys(ref)
 	var gotKeys []K
 	m.ForEachKV(func(k K, v int) {
@@ -369,7 +369,7 @@ func checkTreeSet[T cmp.Ordered](p *Prop, what string, s TreeSet[T], ref map[T]b
 	if s.Size() != len(want) {
 		p.Fatalf("%s: Size %d, want %d", what, s.Size(), len(want))
 	}
-	checkRedBlack(p, what, treeSetShape[T](), s.root.Get(), s.Size())
+	checkRedBlack(p, what, treeSetShape[T](), s.root, s.Size())
 	EqSlices(p, what+" ToGoSlice order", s.ToGoSlice(), want)
 	var visited []T
 	s.ForEach(func(x T) { visited = append(visited, x) })

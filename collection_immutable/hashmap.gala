@@ -30,8 +30,10 @@ type hashMapNode[K comparable, V any] struct {
 }
 
 // HashMap represents an immutable map.
+//
+// root is never reassigned; it is `var` for the reason List's tail is.
 type HashMap[K comparable, V any] struct {
-    root   OptionPtr[hashMapNode[K, V]] // empty when the map is empty
+    var root   OptionPtr[hashMapNode[K, V]] // empty when the map is empty
     size   int
 }
 

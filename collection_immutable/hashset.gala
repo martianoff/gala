@@ -31,8 +31,10 @@ type hashSetNode[T comparable] struct {
 }
 
 // HashSet represents an immutable set.
+//
+// root is never reassigned; it is `var` for the reason List's tail is.
 type HashSet[T comparable] struct {
-    root   OptionPtr[hashSetNode[T]] // empty when the set is empty
+    var root   OptionPtr[hashSetNode[T]] // empty when the set is empty
     size   int
 }
 
