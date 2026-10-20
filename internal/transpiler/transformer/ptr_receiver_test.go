@@ -3,6 +3,7 @@ package transformer_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"martianoff/gala/galaerr"
@@ -360,28 +361,23 @@ func main() {
 	assert.Contains(t, out, "Box_Split[int](&b)")
 }
 
-// TestCycleLoweredMethodCrossPackage checks that a method returning its
-// receiver's type with other type arguments, which its package lowers to a
-// function to avoid a Go instantiation cycle, is called as that function from
-// another package, whether the receiver or the result is a Ptr (or two), a
-// *T or a value, or the result is the first of a Go result list (#808). The
-// methods are declared in a file of their own, beside the type's.
-func TestCycleLoweredMethodCrossPackage(t *testing.T) {
-	root := t.TempDir()
-	write := func(rel, content string) {
-		t.Helper()
-		full := filepath.Join(root, filepath.FromSlash(rel))
-		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
-		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
-	}
-	write("gala.mod", "module example.com/cyclerecv\n\ngala dev\n")
-	write("box/box.gala", `package box
+// cycleLoweredBoxSrc declares Box, and calls from the same package to a
+// method that is lowered to a function (Pair) and to one that is not (Self).
+const cycleLoweredBoxSrc = `package box
 
 struct Box[T any](var V T)
 
 func NewBox[T any](v T) Ptr[Box[T]] = &Box(v)
-`)
-	write("box/wrap.gala", `package box
+
+func UsePair[T any](b *Box[T]) Box[Tuple[T, T]] = b.Pair()
+
+func UseSelf[T any](b *Box[T]) *Box[T] = b.Self()
+`
+
+// cycleLoweredMethodsSrc declares Box's methods in a file of their own: the
+// first five return Box with other type arguments, so they are lowered to
+// functions (a Go instantiation cycle); the last three are not.
+const cycleLoweredMethodsSrc = `package box
 
 func (b Ptr[Box[T]]) Wrap() Ptr[Box[Ptr[Box[T]]]] = &Box(b)
 
@@ -395,7 +391,39 @@ func (b *Box[T]) Deep() Ptr[Ptr[Box[Tuple[T, T]]]] {
     var p = &Box((b.V, b.V))
     &p
 }
-`)
+
+func (b *Box[T]) Self() *Box[T] = b
+
+func (b Ptr[Box[T]]) Same() Ptr[Box[T]] = b
+
+func (b *Box[T]) Value() T = b.V
+`
+
+// cycleLoweredFixture writes module example.com/cyclerecv with package box
+// (cycleLoweredBoxSrc and cycleLoweredMethodsSrc) and returns its root.
+func cycleLoweredFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, content := range map[string]string{
+		"gala.mod":      "module example.com/cyclerecv\n\ngala dev\n",
+		"box/box.gala":  cycleLoweredBoxSrc,
+		"box/wrap.gala": cycleLoweredMethodsSrc,
+	} {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+	return root
+}
+
+// TestCycleLoweredMethodCrossPackage checks that a method returning its
+// receiver's type with other type arguments, which its package lowers to a
+// function to avoid a Go instantiation cycle, is called as that function from
+// another package, whether the receiver or the result is a Ptr (or two), a
+// *T or a value, or the result is the first of a Go result list (#808). The
+// methods are declared in a file of their own, beside the type's.
+func TestCycleLoweredMethodCrossPackage(t *testing.T) {
+	root := cycleLoweredFixture(t)
 	tests := []struct {
 		name, body, want string
 	}{
@@ -412,6 +440,65 @@ func (b *Box[T]) Deep() Ptr[Ptr[Box[Tuple[T, T]]]] {
 			out, err := transpileCrossPkg(t, root, "package main\n\nimport \"example.com/cyclerecv/box\"\n\nfunc main() {\n    val b = box.NewBox(1)\n    "+tt.body+"\n}\n")
 			require.NoError(t, err)
 			assert.Contains(t, out, tt.want)
+		})
+	}
+}
+
+// TestCycleLoweringAgreesAcrossPackages checks that the package declaring a
+// method and the packages calling it agree on whether it is lowered to a
+// function to avoid a Go instantiation cycle: the declaration is a function
+// exactly when the calls, from a sibling file of its package and from another
+// package, are. The analyzer decides this once for all of them (#814); a
+// second check in the transformer that read a shape differently would split
+// them, as #808 did.
+func TestCycleLoweringAgreesAcrossPackages(t *testing.T) {
+	root := cycleLoweredFixture(t)
+	declOut, err := transpileCrossPkgFile(t, root, cycleLoweredMethodsSrc, filepath.Join(root, "box", "wrap.gala"))
+	require.NoError(t, err)
+	siblingOut, err := transpileCrossPkgFile(t, root, cycleLoweredBoxSrc, filepath.Join(root, "box", "box.gala"))
+	require.NoError(t, err)
+	assert.Contains(t, siblingOut, "Box_Pair[T](b)", "a sibling file calls the lowered Pair as a function:\n%s", siblingOut)
+	assert.Contains(t, siblingOut, "b.Self()", "a sibling file calls Self as a method:\n%s", siblingOut)
+
+	callerOut, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/cyclerecv/box"
+
+func main() {
+    val b = box.NewBox(1)
+    Println(b.Wrap())
+    Println(b.WrapStar())
+    Println(b.Pair())
+    Println(b.Split().IsSuccess())
+    Println(b.Deep())
+    Println(b.Self())
+    Println(b.Same())
+    Println(b.Value())
+}
+`)
+	require.NoError(t, err)
+
+	tests := []struct {
+		method  string
+		lowered bool
+	}{
+		{method: "Wrap", lowered: true},
+		{method: "WrapStar", lowered: true},
+		{method: "Pair", lowered: true},
+		{method: "Split", lowered: true},
+		{method: "Deep", lowered: true},
+		{method: "Self"},
+		{method: "Same"},
+		{method: "Value"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			assert.Equal(t, tt.lowered, strings.Contains(declOut, "func Box_"+tt.method+"[T any]("), "the declaration is a function:\n%s", declOut)
+			assert.Equal(t, tt.lowered, strings.Contains(callerOut, "box.Box_"+tt.method+"[int]("), "the importer calls a function:\n%s", callerOut)
+			if !tt.lowered {
+				assert.Contains(t, declOut, ") "+tt.method+"() ", "declared as a method:\n%s", declOut)
+				assert.Contains(t, callerOut, "."+tt.method+"()", "called as a method:\n%s", callerOut)
+			}
 		})
 	}
 }
