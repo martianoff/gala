@@ -153,11 +153,12 @@ func (l Ptr[List[T]]) Set(index int, value T) {
 
 // Prepend adds an element to the front. O(1).
 func (l Ptr[List[T]]) Prepend(value T) {
-    val newNode = SomePtr(&listNode[T](value = value, prev = EmptyOptionPtr[listNode[T]](), next = l.head))
-    if l.head.IsDefined() {
-        l.head.Get().prev = newNode
-    } else {
+    // prev is left out: an OptionPtr field's zero value is empty
+    val newNode = SomePtr(&listNode[T]{value: value, next: l.head})
+    if l.length == 0 {
         l.tail = newNode
+    } else {
+        l.head.Get().prev = newNode
     }
     l.head = newNode
     l.length++
@@ -165,11 +166,12 @@ func (l Ptr[List[T]]) Prepend(value T) {
 
 // Append adds an element to the end. O(1).
 func (l Ptr[List[T]]) Append(value T) {
-    val newNode = SomePtr(&listNode[T](value = value, prev = l.tail, next = EmptyOptionPtr[listNode[T]]()))
-    if l.tail.IsDefined() {
-        l.tail.Get().next = newNode
-    } else {
+    // next is left out: an OptionPtr field's zero value is empty
+    val newNode = SomePtr(&listNode[T]{value: value, prev: l.tail})
+    if l.length == 0 {
         l.head = newNode
+    } else {
+        l.tail.Get().next = newNode
     }
     l.tail = newNode
     l.length++
@@ -216,7 +218,7 @@ func (l Ptr[List[T]]) Insert(index int, value T) {
     // 0 < index < length, so the node at index has a previous node
     val nextNode = l.nodeAt(index)
     val prevNode = nextNode.prev.Get()
-    val newNode = SomePtr(&listNode[T](value = value, prev = SomePtr(prevNode), next = SomePtr(nextNode)))
+    val newNode = SomePtr(&listNode[T](value = value, prev = nextNode.prev, next = prevNode.next))
     prevNode.next = newNode
     nextNode.prev = newNode
     l.length++
@@ -256,11 +258,12 @@ func (l Ptr[List[T]]) RemoveFirst() T {
         go_builtins.Panic("List.RemoveFirst on empty list")
     }
     val first = l.head.Get()
-    l.head = first.next
-    if l.head.IsDefined() {
-        l.head.Get().prev = EmptyOptionPtr[listNode[T]]()
+    val next = first.next
+    l.head = next
+    if l.length == 1 {
+        l.tail = next
     } else {
-        l.tail = EmptyOptionPtr[listNode[T]]()
+        next.Get().prev = EmptyOptionPtr[listNode[T]]()
     }
     l.length--
     return first.value
@@ -273,11 +276,12 @@ func (l Ptr[List[T]]) RemoveLast() T {
         go_builtins.Panic("List.RemoveLast on empty list")
     }
     val last = l.tail.Get()
-    l.tail = last.prev
-    if l.tail.IsDefined() {
-        l.tail.Get().next = EmptyOptionPtr[listNode[T]]()
+    val prev = last.prev
+    l.tail = prev
+    if l.length == 1 {
+        l.head = prev
     } else {
-        l.head = EmptyOptionPtr[listNode[T]]()
+        prev.Get().next = EmptyOptionPtr[listNode[T]]()
     }
     l.length--
     return last.value

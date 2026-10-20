@@ -110,7 +110,7 @@ func (m Ptr[HashMap[K, V]]) Put(key K, value V) bool {
     }
 
     // Add new entry at head of bucket
-        m.buckets[idx] = SomePtr(&hashMapEntry[K, V](key = key, value = value, hashCode = hashCode, next = m.buckets[idx]))
+    m.buckets[idx] = SomePtr(&hashMapEntry[K, V](key = key, value = value, hashCode = hashCode, next = m.buckets[idx]))
     m.size++
 
     // Check if resize needed

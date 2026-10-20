@@ -217,7 +217,22 @@ func isRedTreeMapNode[K comparable, V any](tree OptionPtr[treeMapNode[K, V]]) bo
 // === Query Operations ===
 
 // Contains checks if the map contains the given key. O(log n).
-func (m Ptr[TreeMap[K, V]]) Contains(key K) bool = m.findNode(key).IsDefined()
+// Like Get, it walks the tree itself: findNode is too large to inline.
+func (m Ptr[TreeMap[K, V]]) Contains(key K) bool {
+    var current = m.root
+    for current.IsDefined() {
+        val node = current.Get()
+        val cmp = mutableTreeMapCompare[K](key, node.key)
+        if cmp < 0 {
+            current = node.left
+        } else if cmp > 0 {
+            current = node.right
+        } else {
+            return true
+        }
+    }
+    return false
+}
 
 // Get returns the value for a key wrapped in Option. O(log n).
 // It walks the tree itself rather than through findNode: a lookup is the hot
@@ -235,7 +250,7 @@ func (m Ptr[TreeMap[K, V]]) Get(key K) Option[V] {
             return Some[V](node.value)
         }
     }
-    None[V]()
+    return None[V]()
 }
 
 // GetOrElse returns the value for a key, or the default if not found.
@@ -296,7 +311,7 @@ func (m Ptr[TreeMap[K, V]]) Put(key K, value V) bool {
 // fixAfterInsert rebalances the tree after insertion. A red node is never the
 // root, so a node whose parent is red has a grandparent.
 func (m Ptr[TreeMap[K, V]]) fixAfterInsert(var node Ptr[treeMapNode[K, V]]) {
-    for m.root != SomePtr(node) && isRedTreeMapNode[K, V](node.parent) {
+    for node.parent.IsDefined() && isRedTreeMapNode[K, V](node.parent) {
         val parent = node.parent.Get()
         val grand = parent.parent.Get()
         if grand.left == node.parent {
@@ -316,8 +331,9 @@ func (m Ptr[TreeMap[K, V]]) fixAfterInsert(var node Ptr[treeMapNode[K, V]]) {
                 // Case 3: Node is left child
                 val p = node.parent.Get()
                 p.color = mutableTreeMapBlack
-                p.parent.Get().color = mutableTreeMapRed
-                m.rotateRight(p.parent.Get())
+                val g = p.parent.Get()
+                g.color = mutableTreeMapRed
+                m.rotateRight(g)
             }
         } else {
             val uncle = grand.left
@@ -336,8 +352,9 @@ func (m Ptr[TreeMap[K, V]]) fixAfterInsert(var node Ptr[treeMapNode[K, V]]) {
                 // Case 3: Node is right child
                 val p = node.parent.Get()
                 p.color = mutableTreeMapBlack
-                p.parent.Get().color = mutableTreeMapRed
-                m.rotateLeft(p.parent.Get())
+                val g = p.parent.Get()
+                g.color = mutableTreeMapRed
+                m.rotateLeft(g)
             }
         }
     }
@@ -473,19 +490,14 @@ func (m Ptr[TreeMap[K, V]]) deleteNode(var node Ptr[treeMapNode[K, V]]) {
         if node.color == mutableTreeMapBlack {
             m.fixAfterDelete(node)
         }
-        if node.parent.IsDefined() {
-            m.replaceChild(node, EmptyOptionPtr[treeMapNode[K, V]]())
-        }
+        m.replaceChild(node, EmptyOptionPtr[treeMapNode[K, V]]())
     }
 }
 
 // fixAfterDelete rebalances the tree after deletion. Rotations on node's parent
 // or sibling keep node's parent link, so each pass reads it once.
 func (m Ptr[TreeMap[K, V]]) fixAfterDelete(var node Ptr[treeMapNode[K, V]]) {
-    for m.root != SomePtr(node) && node.color == mutableTreeMapBlack {
-        if node.parent.IsEmpty() {
-            return
-        }
+    for node.parent.IsDefined() && node.color == mutableTreeMapBlack {
         val parent = node.parent.Get()
         if parent.left == SomePtr(node) {
             var sibling = parent.right

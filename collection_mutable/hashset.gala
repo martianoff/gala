@@ -127,7 +127,7 @@ func (s Ptr[HashSet[T]]) Add(elem T) bool {
     }
 
     // Add new entry at head of bucket
-        s.buckets[idx] = SomePtr(&hashSetEntry[T](value = elem, hashCode = hashCode, next = s.buckets[idx]))
+    s.buckets[idx] = SomePtr(&hashSetEntry[T](value = elem, hashCode = hashCode, next = s.buckets[idx]))
     s.size++
 
     // Check if resize needed

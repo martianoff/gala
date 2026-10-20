@@ -251,7 +251,7 @@ func (s Ptr[TreeSet[T]]) Add(elem T) bool {
 // fixAfterInsert rebalances the tree after insertion. A red node is never the
 // root, so a node whose parent is red has a grandparent.
 func (s Ptr[TreeSet[T]]) fixAfterInsert(var node Ptr[treeSetNode[T]]) {
-    for s.root != SomePtr(node) && isRedTreeSetNode[T](node.parent) {
+    for node.parent.IsDefined() && isRedTreeSetNode[T](node.parent) {
         val parent = node.parent.Get()
         val grand = parent.parent.Get()
         if grand.left == node.parent {
@@ -271,8 +271,9 @@ func (s Ptr[TreeSet[T]]) fixAfterInsert(var node Ptr[treeSetNode[T]]) {
                 // Case 3: Node is left child
                 val p = node.parent.Get()
                 p.color = mutableTreeBlack
-                p.parent.Get().color = mutableTreeRed
-                s.rotateRight(p.parent.Get())
+                val g = p.parent.Get()
+                g.color = mutableTreeRed
+                s.rotateRight(g)
             }
         } else {
             val uncle = grand.left
@@ -291,8 +292,9 @@ func (s Ptr[TreeSet[T]]) fixAfterInsert(var node Ptr[treeSetNode[T]]) {
                 // Case 3: Node is right child
                 val p = node.parent.Get()
                 p.color = mutableTreeBlack
-                p.parent.Get().color = mutableTreeRed
-                s.rotateLeft(p.parent.Get())
+                val g = p.parent.Get()
+                g.color = mutableTreeRed
+                s.rotateLeft(g)
             }
         }
     }
@@ -408,19 +410,14 @@ func (s Ptr[TreeSet[T]]) deleteNode(var node Ptr[treeSetNode[T]]) {
         if node.color == mutableTreeBlack {
             s.fixAfterDelete(node)
         }
-        if node.parent.IsDefined() {
-            s.replaceChild(node, EmptyOptionPtr[treeSetNode[T]]())
-        }
+        s.replaceChild(node, EmptyOptionPtr[treeSetNode[T]]())
     }
 }
 
 // fixAfterDelete rebalances the tree after deletion. Rotations on node's parent
 // or sibling keep node's parent link, so each pass reads it once.
 func (s Ptr[TreeSet[T]]) fixAfterDelete(var node Ptr[treeSetNode[T]]) {
-    for s.root != SomePtr(node) && node.color == mutableTreeBlack {
-        if node.parent.IsEmpty() {
-            return
-        }
+    for node.parent.IsDefined() && node.color == mutableTreeBlack {
         val parent = node.parent.Get()
         if parent.left == SomePtr(node) {
             var sibling = parent.right
