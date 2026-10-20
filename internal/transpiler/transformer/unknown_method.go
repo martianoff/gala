@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"slices"
 	"sort"
 	"strings"
 
@@ -127,10 +128,10 @@ func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 //
 // A false positive here rejects a program that is actually correct, so the
 // check is deliberately conservative. It says nothing unless the receiver's
-// type is a known GALA type (which alone excludes every Go-interop receiver),
-// its type parameters are all bound to concrete arguments, the name is neither
-// transformer-synthesized nor a function-typed field, and the method set is
-// trustworthy — see the empty-method-set note below.
+// type is a known GALA type (which alone excludes every Go-interop receiver)
+// spelled as an instance of it (see receiverNamesAnInstance), the name is
+// neither transformer-synthesized nor a function-typed field, and the method
+// set is trustworthy — see the empty-method-set note below.
 func (t *galaASTTransformer) unknownMethodError(
 	typeMeta *transpiler.TypeMetadata,
 	method string,
@@ -158,7 +159,7 @@ func (t *galaASTTransformer) unknownMethodError(
 	if _, declared := goMethods[method]; declared {
 		return nil
 	}
-	if !t.receiverTypeIsConcrete(typeMeta, recvType) {
+	if !t.receiverNamesAnInstance(typeMeta, recvType) {
 		return nil
 	}
 	// A field holding a function is called the same way a method is; the field
@@ -232,29 +233,22 @@ func (t *galaASTTransformer) siblingMethodSignature(recv transpiler.Type, method
 	return sig, declared
 }
 
-// receiverTypeIsConcrete reports whether every type parameter of the receiver's
-// type is bound to a real type argument, as opposed to a type parameter (see
-// isActiveTypeParam). Unlike transformRegularMethodCall, which only cares about
-// a callee's unbound placeholder, a parameter the enclosing declaration binds
-// counts as not concrete too, so no unknown-method error is raised inside a
-// generic body.
-func (t *galaASTTransformer) receiverTypeIsConcrete(typeMeta *transpiler.TypeMetadata, recvType transpiler.Type) bool {
+// receiverNamesAnInstance reports whether the receiver's type is an instance
+// of the type typeMeta describes: it carries one type argument per type
+// parameter. Which types those are does not matter. A GALA type's method
+// set does not depend on them, so `Node[T]` inside `func walk[T any]` has
+// exactly the methods of `Node[int]` (#807).
+//
+// A receiver spelled with the wrong number of type arguments (`Res[int,
+// string]` for `type Res[T any] Try[T]`) names no instance of the type, so its
+// method set cannot be judged; Go reports the type itself. Nor is a receiver
+// missing a type argument: one inference produced no type for, even nested.
+func (t *galaASTTransformer) receiverNamesAnInstance(typeMeta *transpiler.TypeMetadata, recvType transpiler.Type) bool {
 	if len(typeMeta.TypeParams) == 0 {
 		return true
 	}
-	// A receiver spelled with the wrong number of type arguments (`Res[int,
-	// string]` for `type Res[T any] Try[T]`) names no instance of the type, so
-	// its method set cannot be judged; Go reports the type itself.
-	args := t.getReceiverTypeArgStrings(recvType)
-	if len(args) != len(typeMeta.TypeParams) {
-		return false
-	}
-	for _, a := range args {
-		if a == "" || t.isActiveTypeParam(a) {
-			return false
-		}
-	}
-	return true
+	args := t.getReceiverTypeArgTypes(recvType)
+	return len(args) == len(typeMeta.TypeParams) && !slices.ContainsFunc(args, transpiler.ContainsUnusable)
 }
 
 // unknownMethodHint suggests the nearest real method by edit distance, and

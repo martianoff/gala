@@ -72,8 +72,8 @@ named. Nothing in it suggested `FoldLeft`.
 the check only fires when the judgement is safe. It says nothing when:
 
 - the receiver's type is not a GALA type — every Go-interop receiver;
-- the receiver's type parameters are not all bound to concrete arguments, so a
-  receiver still mid-inference is never judged;
+- a type argument of the receiver is missing (inference produced no type for
+  it) or the count is wrong, so it names no instance of the type;
 - the method is one the transformer *generates* rather than the user declaring
   it — `Copy`, `Equal`, `Apply`, `Unapply`, `String`, the `is<Variant>`
   predicates, and the codec pair. None of these appear in the type's declared
@@ -86,7 +86,9 @@ the check only fires when the judgement is safe. It says nothing when:
   compiled is fully known and is still checked; its method set includes the
   methods a hand-written `.go` file of that package declares on it.
 
-**Scope.** This code covers a method call on a known, concrete GALA type. It
-does not cover an unknown *function* ([GALA-E0023](GALA-E0023.md)), a type name
+**Scope.** This code covers a method call on a known GALA type, in generic
+code too: a type's methods do not depend on its type arguments, so `Node[T]`
+inside `func walk[T any]` is checked exactly as `Node[int]` is. It does not
+cover an unknown *function* ([GALA-E0023](GALA-E0023.md)), a type name
 called as a constructor ([GALA-E0043](GALA-E0043.md)), or a call with the wrong
 number of arguments to a method that does exist.

@@ -472,7 +472,7 @@ func (t *galaASTTransformer) resolveReceiverTypeAndLookupKey(receiver ast.Expr, 
 		recvType = qName
 	}
 	if isPtr {
-		recvType = transpiler.PointerType{Elem: recvType}
+		recvType = transpiler.PointerType{Elem: recvType, NonNull: ptr.NonNull}
 	}
 	// Strip pointer prefix for genericMethods lookup since methods are
 	// registered under the base type name without the pointer marker.
@@ -1321,8 +1321,8 @@ func (t *galaASTTransformer) transformRegularMethodCall(
 		// judgement can be made safely this is a GALA error (GALA-E0044) rather
 		// than something to hand to `go build`, which would report it against
 		// the generated expression. checkUnknownMethod stands down whenever the
-		// receiver is not fully concrete or the name is transformer-generated;
-		// see unknown_method.go.
+		// receiver's type is not an instance of the type or the name is
+		// transformer-generated; see unknown_method.go.
 		if err := t.checkUnknownMethod(argListCtx, typeMeta, method, recvType); err != nil {
 			return nil, err
 		}

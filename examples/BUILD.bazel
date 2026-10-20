@@ -4423,6 +4423,16 @@ gala_exec_test(
     expected = "ptr_receiver.out",
 )
 
+# bind/also over monads whose FlatMap and Zips have Ptr[T] receivers, a Zip
+# returning a Ptr and a Zip taking one: a Ptr, `&x`, a var, vals and an
+# OptionPtr's element are bound; RequirePtr checks a nil Go pointer at the
+# clause.
+gala_exec_test(
+    name = "ptr_receiver_bind",
+    src = "ptr_receiver_bind.gala",
+    expected = "ptr_receiver_bind.out",
+)
+
 # A generic method on a *T or Ptr[T] receiver, lowered to a function, called
 # on a var, a field reached through a var, a val, a call result and a pointer.
 gala_exec_test(

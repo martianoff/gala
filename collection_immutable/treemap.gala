@@ -353,49 +353,150 @@ func (m TreeMap[K, V]) Remove(key K) TreeMap[K, V] {
     if !m.Contains(key) {
         return m
     }
-    if m.size == 1 {
-        return EmptyTreeMap[K, V]()
-    }
-    return treeMapRemove[K, V](m.root, key) match {
-        case Some(newRoot) => {
-            // Root is always black
-            val blackRoot = &treeMapNode[K, V](key = newRoot.key, value = newRoot.value, left = newRoot.left, right = newRoot.right, color = treeMapBlack)
-            TreeMap[K, V](root = SomePtr(blackRoot), size = m.size - 1)
-        }
-        case None() => EmptyTreeMap[K, V]()
-    }
+    // The root stays black: no rebalancing step turns the top of the tree red.
+    val (root, _) = treeMapRemove(m.root, key)
+    TreeMap[K, V](root = root, size = m.size - 1)
 }
 
-// treeMapRemove removes a key from the tree.
-func treeMapRemove[K comparable, V any](tree OptionPtr[treeMapNode[K, V]], key K) OptionPtr[treeMapNode[K, V]] {
+// treeMapRemove removes key from a subtree. Removal copies only the search
+// path and keeps the red-black invariants, except that the subtree may come
+// back one black node short on every path; the bool reports that, and the
+// parent rebalances with treeMapFixLeft / treeMapFixRight. A subtree without
+// the key comes back with the same entries, but its search path is still
+// copied, so Remove checks Contains first to hand back the map itself.
+func treeMapRemove[K comparable, V any](
+    tree OptionPtr[treeMapNode[K, V]],
+    key K,
+) Tuple[OptionPtr[treeMapNode[K, V]], bool] {
     if tree.IsEmpty() {
-        return tree
+        return (tree, false)
     }
     val node = tree.Get()
-
-    val cmp = treeMapCompare[K](key, node.key)
+    val cmp = treeMapCompare(key, node.key)
     if cmp < 0 {
-        val newLeft = treeMapRemove[K, V](node.left, key)
-        return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = newLeft, right = node.right, color = node.color)))
+        val (left, shorter) = treeMapRemove(node.left, key)
+        return treeMapFixLeft(node, node.color, left, node.right, shorter)
     }
     if cmp > 0 {
-        val newRight = treeMapRemove[K, V](node.right, key)
-        return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = node.left, right = newRight, color = node.color)))
+        val (right, shorter) = treeMapRemove(node.right, key)
+        return treeMapFixRight(node, node.color, node.left, right, shorter)
     }
-
-    // Found the key to remove
     if node.left.IsEmpty() {
-        return node.right
+        return treeMapSplice(node, node.right)
     }
     if node.right.IsEmpty() {
-        return node.left
+        return treeMapSplice(node, node.left)
     }
-
-    // Node has two children, find successor (min of right subtree)
+    // Two children: the in-order successor takes this node's place.
     val right = node.right.Get()
-    val succ = treeMapMinNode[K, V](right)
-    val newRight = treeMapRemoveMin[K, V](right)
-    return SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = succ.key, value = succ.value, left = node.left, right = newRight, color = node.color)))
+    val (newRight, shorter) = treeMapRemoveMin(right)
+    treeMapFixRight(treeMapMinNode(right), node.color, node.left, newRight, shorter)
+}
+
+// treeMapRemoveMin removes the minimum key from a subtree, reporting whether
+// the subtree's black-height dropped, like treeMapRemove.
+func treeMapRemoveMin[K comparable, V any](node Ptr[treeMapNode[K, V]]) Tuple[OptionPtr[treeMapNode[K, V]], bool] {
+    if node.left.IsEmpty() {
+        return treeMapSplice(node, node.right)
+    }
+    val (left, shorter) = treeMapRemoveMin(node.left.Get())
+    treeMapFixLeft(node, node.color, left, node.right, shorter)
+}
+
+// treeMapSplice replaces a node that has at most one child with that child.
+// A red node's paths lose no black node. A black node's only child, if any, is
+// a red leaf, which turns black to keep the count; otherwise the paths through
+// the node are now one black node short.
+func treeMapSplice[K comparable, V any](
+    node Ptr[treeMapNode[K, V]],
+    child OptionPtr[treeMapNode[K, V]],
+) Tuple[OptionPtr[treeMapNode[K, V]], bool] =
+    if (isRedTreeMapNode(child)) (treeMapBlacken(child), false) else (child, node.color == treeMapBlack)
+
+// treeMapFixLeft builds a node holding entry's key and value with the given
+// color and children, where left may be one black node short (shorter). It
+// restores equal black-height by recoloring and at most two rotations, and
+// reports whether the whole subtree is now one black node short.
+func treeMapFixLeft[K comparable, V any](
+    entry Ptr[treeMapNode[K, V]],
+    color int,
+    left OptionPtr[treeMapNode[K, V]],
+    right OptionPtr[treeMapNode[K, V]],
+    shorter bool,
+) Tuple[OptionPtr[treeMapNode[K, V]], bool] {
+    if !shorter {
+        return (treeMapMk(entry, color, left, right), false)
+    }
+    // A subtree that comes back shorter is empty or black, and its sibling has
+    // a higher black-height, so the sibling is not empty.
+    val sib = right.Get()
+    if sib.color == treeMapRed {
+        // This node is black. Rotate the red sibling up; this node turns red
+        // and its new sibling, sib.left, is black, so the inner fix finishes.
+        val (inner, _) = treeMapFixLeft(entry, treeMapRed, left, sib.left, true)
+        return (treeMapMk(sib, treeMapBlack, inner, sib.right), false)
+    }
+    if isRedTreeMapNode(sib.right) {
+        val lower = treeMapMk(entry, treeMapBlack, left, sib.left)
+        return (treeMapMk(sib, color, lower, treeMapBlacken(sib.right)), false)
+    }
+    if isRedTreeMapNode(sib.left) {
+        val sl = sib.left.Get()
+        val lower = treeMapMk(entry, treeMapBlack, left, sl.left)
+        val upper = treeMapMk(sib, treeMapBlack, sl.right, sib.right)
+        return (treeMapMk(sl, color, lower, upper), false)
+    }
+    // Black sibling with black children: turn it red. A red node absorbs the
+    // deficit by turning black; a black one passes it up.
+    val redSib = treeMapMk(sib, treeMapRed, sib.left, sib.right)
+    (treeMapMk(entry, treeMapBlack, left, redSib), color == treeMapBlack)
+}
+
+// treeMapFixRight is the mirror of treeMapFixLeft for a right child that may be
+// one black node short.
+func treeMapFixRight[K comparable, V any](
+    entry Ptr[treeMapNode[K, V]],
+    color int,
+    left OptionPtr[treeMapNode[K, V]],
+    right OptionPtr[treeMapNode[K, V]],
+    shorter bool,
+) Tuple[OptionPtr[treeMapNode[K, V]], bool] {
+    if !shorter {
+        return (treeMapMk(entry, color, left, right), false)
+    }
+    val sib = left.Get()
+    if sib.color == treeMapRed {
+        val (inner, _) = treeMapFixRight(entry, treeMapRed, sib.right, right, true)
+        return (treeMapMk(sib, treeMapBlack, sib.left, inner), false)
+    }
+    if isRedTreeMapNode(sib.left) {
+        val lower = treeMapMk(entry, treeMapBlack, sib.right, right)
+        return (treeMapMk(sib, color, treeMapBlacken(sib.left), lower), false)
+    }
+    if isRedTreeMapNode(sib.right) {
+        val sr = sib.right.Get()
+        val upper = treeMapMk(sib, treeMapBlack, sib.left, sr.left)
+        val lower = treeMapMk(entry, treeMapBlack, sr.right, right)
+        return (treeMapMk(sr, color, upper, lower), false)
+    }
+    val redSib = treeMapMk(sib, treeMapRed, sib.left, sib.right)
+    (treeMapMk(entry, treeMapBlack, redSib, right), color == treeMapBlack)
+}
+
+// treeMapMk builds a node holding entry's key and value with the given color
+// and children.
+func treeMapMk[K comparable, V any](
+    entry Ptr[treeMapNode[K, V]],
+    color int,
+    left OptionPtr[treeMapNode[K, V]],
+    right OptionPtr[treeMapNode[K, V]],
+) OptionPtr[treeMapNode[K, V]] =
+    SomePtr(&treeMapNode[K, V](key = entry.key, value = entry.value, left = left, right = right, color = color))
+
+// treeMapBlacken returns a red node recolored black, and any other tree as is.
+func treeMapBlacken[K comparable, V any](tree OptionPtr[treeMapNode[K, V]]) OptionPtr[treeMapNode[K, V]] = tree match {
+    case Some(node) if node.color == treeMapRed => treeMapMk(node, treeMapBlack, node.left, node.right)
+    case _ => tree
 }
 
 // treeMapMinNode finds the node with the minimum key in a subtree.
@@ -414,14 +515,6 @@ func treeMapMaxNode[K comparable, V any](node Ptr[treeMapNode[K, V]]) Ptr[treeMa
         current = current.right.Get()
     }
     current
-}
-
-// treeMapRemoveMin removes the minimum key from a subtree.
-func treeMapRemoveMin[K comparable, V any](node Ptr[treeMapNode[K, V]]) OptionPtr[treeMapNode[K, V]] {
-    if node.left.IsEmpty() {
-        return node.right
-    }
-    SomePtr(treeMapBalance[K, V](&treeMapNode[K, V](key = node.key, value = node.value, left = treeMapRemoveMin[K, V](node.left.Get()), right = node.right, color = node.color)))
 }
 
 // === Min/Max Operations ===

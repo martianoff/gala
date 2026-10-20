@@ -149,11 +149,21 @@ func ptrOf(ptr transpiler.PointerType) string {
 // nil (GALA-E0080): the receiver fills a Ptr slot. recv is the lowered
 // receiver and recvType its type; suffix is the member access.
 func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler.Type, method string, suffix *grammar.PostfixSuffixContext) error {
+	return t.checkPtrReceiverAt(recv, recvType, method, func() (antlr.ParserRuleContext, antlr.ParserRuleContext, string) {
+		return receiverSource(suffix)
+	})
+}
+
+// checkPtrReceiverAt is checkPtrReceiver for a receiver located by source,
+// which returns the contexts spanning it and its source text and is called
+// only to report the error: a receiver written before a member access, or the
+// value a `bind` or `also` clause lowers to the receiver of FlatMap or ZipN.
+func (t *galaASTTransformer) checkPtrReceiverAt(recv ast.Expr, recvType transpiler.Type, method string, source func() (from, to antlr.ParserRuleContext, text string)) error {
 	ptr, ok := t.nullablePtrReceiver(recvType, method)
 	if !ok {
 		return nil
 	}
-	from, to, text := receiverSource(suffix)
+	from, to, text := source()
 	hint := fmt.Sprintf("call it on RequirePtr(%s), which panics on nil; a pointer that may be nil is kept as OptionPtrOf(%s)", text, text)
 	if id, isIdent := recv.(*ast.Ident); isIdent && t.fixedBindingOf(id.Name) == fixedPointerReceiver {
 		hint = fmt.Sprintf("declare the receiver `%s %s`, or call it on RequirePtr(%s)", id.Name, ptrOf(ptr), text)
@@ -161,6 +171,22 @@ func (t *galaASTTransformer) checkPtrReceiver(recv ast.Expr, recvType transpiler
 	return spanError(galaerr.CodePtrNullability, from, to,
 		fmt.Sprintf("cannot call %s on %s (%s): %s has a %s receiver, and a pointer that may be nil cannot fill a Ptr", method, text, displayType(ptr), method, ptrOf(ptr)),
 		hint)
+}
+
+// checkPtrZipResult rejects an `also` group lowered to `ZipN(...).FlatMap(...)`
+// when the ZipN returns a pointer that may be nil and FlatMap has a `Ptr`
+// receiver (GALA-E0080): the FlatMap would run on whatever the Zip returns.
+// The call is the lowering's, not the user's, so the fix is in the monad.
+// zip is the ZipN and zipResultType its result; from and to span the group.
+func (t *galaASTTransformer) checkPtrZipResult(zipResultType transpiler.Type, zip *transpiler.MethodMetadata, from, to antlr.ParserRuleContext) error {
+	ptr, ok := t.nullablePtrReceiver(zipResultType, "FlatMap")
+	if !ok {
+		return nil
+	}
+	declared, _ := zip.ReturnType.(transpiler.PointerType)
+	return spanError(galaerr.CodePtrNullability, from, to,
+		fmt.Sprintf("cannot bind this group through %s: it returns %s, a pointer that may be nil, and FlatMap has a %s receiver", zip.Name, displayType(ptr), ptrOf(ptr)),
+		fmt.Sprintf("declare %s to return %s or a value, or bind the clauses one after another with `bind`", zip.Name, ptrOf(declared)))
 }
 
 // checkPtrViewReceiver rejects a match through the sealed view of a pointer
