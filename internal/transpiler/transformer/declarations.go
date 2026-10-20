@@ -256,27 +256,29 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	}
 
 	// Handle multi-return from a single expression: val data, err = io.ReadAll(r.Body)
-	// We must capture all return values with a single call, then bind each.
-	// Generated code, in a function:
-	//   var (
-	//       _tmp_1, _tmp_2 = io.ReadAll(r.Body)
-	//       data = _tmp_1
-	//       err  = _tmp_2
-	//   )
+	// In a function the names take the call's results directly:
+	//   var data, err = io.ReadAll(r.Body)
 	//
-	// At package level each name is boxed (`data = NewImmutable(__val_data_0)`)
-	// and the temps are __val_data_0, __val_data_1 (see packageTempAnchor). Without a type annotation, a `_` name takes its value
-	// into `_` and binds nothing; with one, it still goes through a temp so its
-	// value is checked against the annotation.
+	// At package level each name is boxed, so the results are captured in
+	// temps first, named __val_data_0, __val_data_1 (see packageTempAnchor):
+	//   var (
+	//       __val_data_0, __val_data_1 = io.ReadAll(r.Body)
+	//       data = NewImmutable(__val_data_0)
+	//       err  = NewImmutable(__val_data_1)
+	//   )
+	// Without a type annotation, a `_` name takes its value into `_` and binds
+	// nothing; with one, it still goes through a temp so its value is checked
+	// against the annotation.
 	if isMultiReturnFromSingleExpr {
+		boxed := t.valsAreBoxed()
 		anchor := packageTempAnchor(ctx, namesCtx)
 		blankDiscards := ctx.Type_() == nil
 		tempNames := make([]string, len(namesCtx))
 		tempIdents := make([]*ast.Ident, len(namesCtx))
 		for i, idCtx := range namesCtx {
 			switch {
-			case blankDiscards && idCtx.GetText() == "_":
-				tempNames[i] = "_"
+			case !boxed || blankDiscards && idCtx.GetText() == "_":
+				tempNames[i] = idCtx.GetText()
 			case anchor != "":
 				tempNames[i] = fmt.Sprintf("__val_%s_%d", anchor, i)
 			default:
@@ -285,12 +287,16 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			tempIdents[i] = ast.NewIdent(tempNames[i])
 		}
 
-		// First spec: capture all return values in temp variables. A Go call
-		// converted to one GALA value is read back as the call itself.
+		// First spec: capture all return values — in the names themselves for
+		// a local val, else in temp variables. A Go call converted to one GALA
+		// value is read back as the call itself.
 		callValue := t.rawGoCall(t.unwrapImmutable(rhsExprs[0]))
 		tempSpec := &ast.ValueSpec{
 			Names:  tempIdents,
 			Values: []ast.Expr{callValue},
+		}
+		if !boxed {
+			tempSpec.Type = declType
 		}
 		specs := []ast.Spec{tempSpec}
 
@@ -308,10 +314,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			callReturns = t.resolveGoCallReturnTypes(callValue)
 		}
 
-		// Create specs for each named variable, taking its temp
+		// Bind each name; at package level, declare it from its temp.
 		for i, idCtx := range namesCtx {
 			name := idCtx.GetText()
-			if tempNames[i] == "_" {
+			if name == "_" && (!boxed || tempNames[i] == "_") {
 				continue
 			}
 			var typeName transpiler.Type = transpiler.NilType{}
@@ -329,7 +335,10 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 				typeName = qName
 			}
 
-			t.bindVal(name, typeName)
+			t.addVal(name, typeName)
+			if !boxed {
+				continue
+			}
 			specs = append(specs, &ast.ValueSpec{
 				Names:  []*ast.Ident{ast.NewIdent(name)},
 				Type:   t.valDeclaredType(declType),
@@ -367,7 +376,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 			typeName = qName
 		}
 
-		t.bindVal(name, typeName)
+		t.addVal(name, typeName)
 		idents = append(idents, ast.NewIdent(name))
 
 		var val ast.Expr
@@ -392,33 +401,11 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 	}, nil
 }
 
-// A val declared at package level is stored in a std.Immutable[T] box, read
-// as `name.Get()`, so another package reads it through the same accessor. A
-// local val is a plain Go variable: GALA rejects every write to a val and
-// taking its address, so a box would only add a wrapper call to every read —
-// and inline cost to every function declaring one. The helpers below lower a
-// val declaration for the scope it is declared in.
-
-// boxesVals reports whether a val declared here is boxed: the declaration is
-// at package level.
-func (t *galaASTTransformer) boxesVals() bool {
-	return t.currentScope == nil || t.currentScope.parent == nil
-}
-
-// bindVal binds a val declared here, boxed or plain as boxesVals says.
-func (t *galaASTTransformer) bindVal(name string, typeName transpiler.Type) {
-	if t.boxesVals() {
-		t.addVal(name, typeName)
-		return
-	}
-	t.addLocalVal(name, typeName)
-}
-
 // valInitializer is the initializer of a val declared here with the declared
 // type declType (nil when inferred): value itself for a local val, else
-// `std.NewImmutable[declType](value)`.
+// `std.NewImmutable[declType](value)` (see valsAreBoxed).
 func (t *galaASTTransformer) valInitializer(declType, value ast.Expr) ast.Expr {
-	if !t.boxesVals() {
+	if !t.valsAreBoxed() {
 		return value
 	}
 	var fun ast.Expr = t.stdIdent(transpiler.FuncNewImmutable)
@@ -432,7 +419,7 @@ func (t *galaASTTransformer) valInitializer(declType, value ast.Expr) ast.Expr {
 // type declType: nil when inferred, declType for a local val, else
 // `std.Immutable[declType]`.
 func (t *galaASTTransformer) valDeclaredType(declType ast.Expr) ast.Expr {
-	if declType == nil || !t.boxesVals() {
+	if declType == nil || !t.valsAreBoxed() {
 		return declType
 	}
 	return &ast.IndexExpr{X: t.stdIdent(transpiler.TypeImmutable), Index: declType}
@@ -559,20 +546,17 @@ func (t *galaASTTransformer) transformTupleDestructure(decl tupleDeclaration, mu
 			X:   ast.NewIdent(tempName),
 			Sel: ast.NewIdent(fmt.Sprintf("V%d", i+1)),
 		}
-		switch {
-		case mutable:
+		if mutable {
 			// As transformVarDeclaration registers a var's type.
 			if qName := t.lookupTypeName(componentType.String()); !qName.IsNil() {
 				componentType = qName
 			}
 			t.addVar(name, componentType)
 			t.markMutable(name)
-		case t.boxesVals():
+		} else {
 			t.addVal(name, componentType)
-		default:
-			t.addLocalVal(name, componentType)
 		}
-		if !t.isBoxedVal(name) {
+		if mutable || !t.valsAreBoxed() {
 			value = &ast.CallExpr{Fun: &ast.SelectorExpr{X: value, Sel: ast.NewIdent(transpiler.MethodGet)}}
 		}
 

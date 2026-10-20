@@ -64,7 +64,19 @@ func f() int {
     }
     n
 }`,
-			contains: []string{"_tmp_1, _tmp_2 = strconv.Atoi(\"1\")", "= _tmp_1\n", "= _tmp_2\n", "if err != nil {", "return n\n"},
+			contains: []string{"var n, err = strconv.Atoi(\"1\")\n", "if err != nil {", "return n\n"},
+		},
+		{
+			name: "several vals from one Go call, one discarded",
+			input: `package main
+
+import "strconv"
+
+func f() error {
+    val _, err = strconv.Atoi("1")
+    err
+}`,
+			contains: []string{"var _, err = strconv.Atoi(\"1\")\n", "return err\n"},
 		},
 		{
 			name: "short declaration",

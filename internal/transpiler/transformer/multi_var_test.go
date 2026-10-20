@@ -114,11 +114,9 @@ func main() {
 	count := strings.Count(output, "strconv.Atoi(")
 	assert.Equal(t, 1, count, "strconv.Atoi() should be called exactly once, but found %d occurrences in:\n%s", count, output)
 
-	// Should use temp variables that capture the multi-return
-	assert.Contains(t, output, "_tmp_")
-	// Each local val takes its temp as a plain Go variable
-	assert.Regexp(t, `num\s+= _tmp_1`, output)
-	assert.Regexp(t, `err\s+= _tmp_2`, output)
+	// Local vals are plain Go variables, so they take the results directly.
+	assert.Contains(t, output, `var num, err = strconv.Atoi("42")`)
+	assert.NotContains(t, output, "_tmp_")
 	assert.NotContains(t, output, "std.NewImmutable(")
 }
 

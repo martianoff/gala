@@ -99,8 +99,7 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 		// A local val is a plain Go variable, so Go would let the write
 		// through; a package-level one is read through `.Get()` (below).
 		if t.isPlainVal(e.Name) {
-			return fmt.Sprintf("it is reached through val %s", e.Name),
-				fmt.Sprintf("declare it `var %s`", e.Name)
+			return reachedThroughVal(e.Name)
 		}
 	case *ast.ParenExpr:
 		return t.immutablePathReason(e.X)
@@ -118,8 +117,7 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 		}
 		switch x := x.(type) {
 		case *ast.Ident:
-			return fmt.Sprintf("it is reached through val %s", x.Name),
-				fmt.Sprintf("declare it `var %s`", x.Name)
+			return reachedThroughVal(x.Name)
 		case *ast.SelectorExpr:
 			if pkg, ok := x.X.(*ast.Ident); ok && t.importedPackageVal(pkg.Name, x.Sel.Name) != nil {
 				return fmt.Sprintf("it is reached through val %s.%s", pkg.Name, x.Sel.Name),
@@ -134,4 +132,10 @@ func (t *galaASTTransformer) immutablePathReason(expr ast.Expr) (why, hint strin
 		return "it is immutable", "copy it into a local `var`"
 	}
 	return "", ""
+}
+
+// reachedThroughVal is immutablePathReason's answer for a path rooted at the
+// val name.
+func reachedThroughVal(name string) (why, hint string) {
+	return fmt.Sprintf("it is reached through val %s", name), fmt.Sprintf("declare it `var %s`", name)
 }

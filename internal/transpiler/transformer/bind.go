@@ -399,7 +399,7 @@ func (t *galaASTTransformer) buildSequential(prepped []preppedBind, rest []gramm
 	// the FlatMap callback parameter is the val itself. A `_`-named bind
 	// sequences the monadic effect but discards its value; its parameter is
 	// Go's blank `_`.
-	t.addLocalVal(p.name, p.elemType)
+	t.addVal(p.name, p.elemType)
 	var body *ast.BlockStmt
 	if len(prepped) > 1 {
 		inner, ierr := t.buildSequential(prepped[1:], rest, res)
@@ -504,7 +504,7 @@ func (t *galaASTTransformer) buildAlsoZip(prepped []preppedBind, rest []grammar.
 		if p.name == "_" {
 			continue
 		}
-		t.addLocalVal(p.name, p.elemType)
+		t.addVal(p.name, p.elemType)
 		field := &ast.SelectorExpr{X: ast.NewIdent(tupleParam), Sel: ast.NewIdent("V" + strconv.Itoa(i+1))}
 		lambdaBody.List = append(lambdaBody.List, &ast.AssignStmt{
 			Lhs: []ast.Expr{ast.NewIdent(p.name)},

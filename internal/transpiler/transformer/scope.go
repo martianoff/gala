@@ -38,13 +38,6 @@ type scope struct {
 	// value (`val data = os.ReadFile(p)`), so a misuse of the name can say
 	// where its Try came from. Allocated on first use.
 	goResults map[string]*goResult
-	// plainVals records the vals lowered to a plain Go variable instead of a
-	// std.Immutable[T] box: every local val (see addLocalVal). They are vals
-	// in every other respect — vals[name] is true, so a write or `&` is still
-	// rejected — but a read is the bare name, never `name.Get()`. A
-	// package-level val, this package's or an imported one, stays boxed.
-	// Allocated on first use.
-	plainVals map[string]bool
 	parent    *scope
 }
 
@@ -64,31 +57,16 @@ func (t *galaASTTransformer) popScope() {
 	}
 }
 
-// addVal binds a val stored in a std.Immutable[T] box and read as
-// `name.Get()`: a package-level val. A local val is bound with addLocalVal.
+// addVal binds a val. Bound in the package scope it is stored in a
+// std.Immutable[T] box and read as `name.Get()`; bound anywhere else it is a
+// plain Go variable (see valsAreBoxed).
 func (t *galaASTTransformer) addVal(name string, typeName transpiler.Type) {
 	if t.currentScope != nil {
 		t.currentScope.vals[name] = true
 		t.currentScope.valTypes[name] = typeName
 		delete(t.currentScope.fixedParams, name)
-		delete(t.currentScope.plainVals, name)
 	}
 	t.recordLSPVarType(name, typeName)
-}
-
-// addLocalVal binds a local val, lowered to a plain Go variable. GALA already
-// rejects every write to a val and taking its address, so a runtime box would
-// add nothing but a wrapper call per read — and inline cost to every function
-// that declares one.
-func (t *galaASTTransformer) addLocalVal(name string, typeName transpiler.Type) {
-	t.addVal(name, typeName)
-	if t.currentScope == nil {
-		return
-	}
-	if t.currentScope.plainVals == nil {
-		t.currentScope.plainVals = make(map[string]bool)
-	}
-	t.currentScope.plainVals[name] = true
 }
 
 func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
@@ -96,7 +74,6 @@ func (t *galaASTTransformer) addVar(name string, typeName transpiler.Type) {
 		t.currentScope.vals[name] = false
 		t.currentScope.valTypes[name] = typeName
 		delete(t.currentScope.fixedParams, name)
-		delete(t.currentScope.plainVals, name)
 	}
 	t.recordLSPVarType(name, typeName)
 }
@@ -275,19 +252,32 @@ func (t *galaASTTransformer) isVal(name string) bool {
 	return bound && isVal
 }
 
+// A val bound in the package scope — this package's, or one registered from
+// an import — is stored in a std.Immutable[T] box, so Go code and other
+// packages read it through one accessor, `name.Get()`. A val bound in any
+// other scope, a local val, is a plain Go variable: GALA rejects writing it,
+// writing a field reached through it and taking its address, so a box would
+// add only a wrapper call per read and inline cost to every function that
+// declares one.
+
+// valsAreBoxed reports whether a val bound in the current scope is boxed: the
+// current scope is the package scope.
+func (t *galaASTTransformer) valsAreBoxed() bool {
+	return t.currentScope == nil || t.currentScope.parent == nil
+}
+
 // isBoxedVal reports whether name resolves to a val stored in a
-// std.Immutable[T] box and read as `name.Get()`: a package-level val. A local
-// val is a plain Go variable (see addLocalVal).
+// std.Immutable[T] box and read as `name.Get()`: a package-level val.
 func (t *galaASTTransformer) isBoxedVal(name string) bool {
 	s := t.bindingScope(name)
-	return s != nil && s.vals[name] && !s.plainVals[name]
+	return s != nil && s.vals[name] && s.parent == nil
 }
 
 // isPlainVal reports whether name resolves to a local val: immutable, but a
 // plain Go variable rather than a std.Immutable[T] box.
 func (t *galaASTTransformer) isPlainVal(name string) bool {
 	s := t.bindingScope(name)
-	return s != nil && s.vals[name] && s.plainVals[name]
+	return s != nil && s.vals[name] && s.parent != nil
 }
 
 func (t *galaASTTransformer) isVar(name string) bool {
@@ -461,7 +451,7 @@ func (t *galaASTTransformer) lookupBinding(pkg, name string) (binding, bool) {
 		return binding{}, false
 	}
 	typ, isVal, bound := t.scopeLookup(name)
-	return binding{name: name, typ: typ, isVal: isVal, boxed: isVal && !t.isPlainVal(name)}, bound
+	return binding{name: name, typ: typ, isVal: isVal, boxed: isVal && t.isBoxedVal(name)}, bound
 }
 
 // bindingRef resolves the binding expr reads: the reference itself (`name`,

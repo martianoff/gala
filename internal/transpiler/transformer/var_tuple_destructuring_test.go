@@ -152,5 +152,6 @@ func main() {
 	assert.NotContains(t, got, "__tuple_2")
 	assert.NotContains(t, got, "_ = __tuple")
 	assert.NotContains(t, got, "_ = std.NewImmutable(_)")
-	assert.Regexp(t, `_tmp_[0-9]+, _tmp_[0-9]+ = strconv\.Atoi\("3"\)`, got)
+	// A local val takes the results directly: it is not boxed.
+	assert.Contains(t, got, `var m, g = strconv.Atoi("3")`)
 }
