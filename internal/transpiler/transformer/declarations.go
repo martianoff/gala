@@ -903,28 +903,11 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 	// Register function parameters in scope for type inference.
 	t.registerFunctionParametersInScope(ctx.Signature().(*grammar.SignatureContext))
 
-	// Check if method return type would cause Go instantiation cycle
-	// This happens when a method of Container[T] returns Container[SomeType[T, ...]]
-	wouldCauseCycle := false
-	if receiver != nil && funcType.Results != nil && len(funcType.Results.List) > 0 {
-		returnType := funcType.Results.List[0].Type
-		if goResults != nil {
-			returnType = goResults.List[0].Type // Go returns the results, not their GALA value
-		}
-		wouldCauseCycle = t.causesInstantiationCycle(originalRecvTypeExpr, returnType)
-	}
-
-	// Register method as generic if it would cause instantiation cycle
-	// This ensures call sites are also transformed to function calls
-	if wouldCauseCycle && receiverTypeName != "" {
-		if t.genericMethods[receiverTypeName] == nil {
-			t.genericMethods[receiverTypeName] = make(map[string]bool)
-		}
-		t.genericMethods[receiverTypeName][name] = true
-	}
-
-	if receiver != nil && (funcType.TypeParams != nil || wouldCauseCycle || (t.genericMethods[receiverTypeName] != nil && t.genericMethods[receiverTypeName][name])) {
-		// Generic method or method with instantiation cycle: transform to standalone function
+	// A generic method, or one the analyzer recorded as lowered to avoid a Go
+	// instantiation cycle (MethodMetadata.IsGeneric), is a function. The
+	// analyzer's record is the only decision, read here and at every call
+	// site in any package, so they agree (#814).
+	if receiver != nil && (funcType.TypeParams != nil || t.isMethodGenericViaTypeMeta(receiverTypeName, name)) {
 		identName := receiverTypeName
 		if strings.HasPrefix(identName, t.packageName+".") {
 			identName = strings.TrimPrefix(identName, t.packageName+".")

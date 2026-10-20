@@ -4868,7 +4868,9 @@ func (t *galaASTTransformer) isGenericMethodWithImports(lookupBaseName, recvPkg,
 	return false
 }
 
-// isMethodGenericViaTypeMeta checks if a method has type parameters via typeMetas lookup
+// isMethodGenericViaTypeMeta reports whether the method is a function in Go:
+// it has type parameters, or the analyzer recorded it as lowered to avoid an
+// instantiation cycle (MethodMetadata.IsGeneric).
 func (t *galaASTTransformer) isMethodGenericViaTypeMeta(typeName, methodName string) bool {
 	if typeMeta := t.getTypeMeta(typeName); typeMeta != nil {
 		if methodMeta, ok := typeMeta.Methods[methodName]; ok {

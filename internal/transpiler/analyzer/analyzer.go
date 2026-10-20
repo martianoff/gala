@@ -2324,9 +2324,12 @@ func normalizeTypeName(name string) string {
 // - But with different type arguments (e.g., MyList[Pair[T, int]])
 // Go's compiler detects this as a potential infinite instantiation chain.
 // The return type is the signature's result, or the first of its Go result
-// list, and pointers (`*MyList[T]`, `Ptr[MyList[T]]`) are looked through on
-// both sides, as the transformer's check (which decides the lowering of the
-// declaration) reads them: this records the same decision for importers.
+// list (what Go returns), and pointers (`*MyList[T]`, `Ptr[MyList[T]]`) are
+// looked through on both sides.
+//
+// This is the only place the decision is made: the result, recorded as
+// MethodMetadata.IsGeneric, is what the transformer reads both to lower the
+// declaration in its own package and to call it from any package (#814).
 func (a *galaAnalyzer) causesInstantiationCycle(recvType grammar.ITypeContext, sig grammar.ISignatureContext) bool {
 	retType := sig.Type_()
 	if list, ok := sig.GoResults().(*grammar.GoResultsContext); ok && list != nil {
