@@ -1185,12 +1185,7 @@ func (t *galaASTTransformer) recordGenericGoResultCall(call *ast.CallExpr, recvT
 	if t.genericGoResultCalls == nil {
 		t.genericGoResultCalls = make(map[*ast.CallExpr]*transpiler.GoFuncSignature)
 	}
-	// A pointer receiver takes the address loweredMethodReceiver gave it.
-	recvParam := recvType
-	if _, isPtr := recvType.(transpiler.PointerType); m.PointerReceiver && !isPtr {
-		recvParam = transpiler.PointerType{Elem: recvType}
-	}
-	params := append([]transpiler.Type{recvParam}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
+	params := append([]transpiler.Type{loweredReceiverType(recvType, m)}, t.substituteGoTypeParamsIn(m.ParamTypes, subst)...)
 	t.genericGoResultCalls[call] = goResultsSignature(params, nil, t.substituteGoTypeParamsIn(m.GoResults, subst), m.TypeParams)
 }
 

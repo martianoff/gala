@@ -1,0 +1,9 @@
+address: 2
+ptr: 44
+require: 12
+written: 104
+zipped: 12
+zipped3: 143
+cell: 3
+validated: Valid(22)
+option: Some(42)
