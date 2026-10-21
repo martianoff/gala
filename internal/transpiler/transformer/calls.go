@@ -368,8 +368,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// carry a zero-arg Apply method and are already handled above.
 		if typeName := t.getBaseTypeName(base); typeName != "" {
 			resolved := t.resolveStructTypeName(typeName)
-			if fields, ok := t.structFields[resolved]; ok && t.isTypeBaseExpr(base) &&
-				(len(fields) == 0 || t.isGalaStructWithFields(resolved)) {
+			if fields, ok := t.structFields[resolved]; ok && t.isTypeBaseExpr(base) {
 				// A generic struct's type arguments come from the slot the
 				// construction fills, as for one with arguments: no field
 				// can bind them (`func p() Phantom[int] = Phantom()`).
@@ -392,9 +391,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 					return &ast.CompositeLit{Type: base}, nil
 				}
 				// A struct called with no arguments is a real construction
-				// meaning "all defaults". It has to be handled
-				// here with the other zero-argument forms: `Cfg()` carries no
-				// argument list, so it never reaches the positional dispatcher.
+				// meaning "all defaults". It has to be handled here with the
+				// other zero-argument forms: `Cfg()` carries no argument
+				// list, so it never reaches the positional dispatcher.
 				//
 				// Routing it through the same helper as every other
 				// construction is what makes a struct with a required field

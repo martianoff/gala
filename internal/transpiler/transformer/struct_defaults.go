@@ -222,20 +222,6 @@ func andJoin(parts []string) string {
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
-// isGalaStructWithFields reports whether a type is a GALA struct, of either
-// form, that declares at least one field — the shape for which `Cfg()` is a
-// construction meaning "all defaults" rather than a Go type conversion. A
-// shorthand struct takes its declared defaults and reports the required fields
-// left out (GALA-E0045); a block-form struct gives every field its type's
-// default, as it does for the fields a positional call leaves out.
-//
-// A zero-field struct is excluded because the Apply/companion paths already
-// own that spelling.
-func (t *galaASTTransformer) isGalaStructWithFields(resolvedTypeName string) bool {
-	meta := t.getTypeMeta(resolvedTypeName)
-	return meta != nil && len(meta.FieldNames) > 0
-}
-
 // qualifyDefaultExpr rewrites a lowered default expression — of a struct field
 // or of a function or method parameter — so the names in it resolve from the
 // package doing the CALLING or CONSTRUCTING, not the one that declared the
