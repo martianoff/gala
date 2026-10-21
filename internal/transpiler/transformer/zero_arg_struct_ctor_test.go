@@ -112,81 +112,6 @@ func main() {
 			notContains: "= Pair()",
 		},
 		{
-			name: "sealed parent Shape() is GALA-E0043, naming a case",
-			input: `package main
-
-sealed type Shape {
-    case Circle(R int)
-    case Square(S int)
-}
-
-func main() {
-    val s = Shape()
-    Println(s)
-}`,
-			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
-		},
-		{
-			name: "sealed parent Shape(1) is GALA-E0043, naming a case",
-			input: `package main
-
-sealed type Shape {
-    case Circle(R int)
-    case Square(S int)
-}
-
-func main() {
-    val s = Shape(1)
-    Println(s)
-}`,
-			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
-		},
-		{
-			name: "sealed parent Shape(R = 1) is GALA-E0043, naming a case",
-			input: `package main
-
-sealed type Shape {
-    case Circle(R int)
-    case Square(S int)
-}
-
-func main() {
-    val s = Shape(R = 1)
-    Println(s)
-}`,
-			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
-		},
-		{
-			name: "generic sealed parent Box[int](1) is GALA-E0043",
-			input: `package main
-
-sealed type Box[T any] {
-    case Full(V T)
-    case Empty()
-}
-
-func main() {
-    val b = Box[int](1)
-    Println(b)
-}`,
-			wantErr: []string{"GALA-E0043", "Box is a type, not a constructor", "`Full(...)`"},
-		},
-		{
-			name: "generic sealed parent Shape[int]() is GALA-E0043",
-			input: `package main
-
-sealed type Box[T any] {
-    case Full(V T)
-    case Empty()
-}
-
-func main() {
-    val b = Box[int]()
-    Println(b)
-}`,
-			wantErr: []string{"GALA-E0043", "Box is a type, not a constructor", "`Full(...)`"},
-		},
-		{
 			name: "Go struct url.URL() lowers to composite literal",
 			input: `package main
 
@@ -241,6 +166,40 @@ func main() {
 			assert.Contains(t, got, tc.contains)
 			if tc.notContains != "" {
 				assert.NotContains(t, got, tc.notContains, "Foo() must not lower to a Go type conversion")
+			}
+		})
+	}
+
+	// A sealed type is called in no form: a literal of the parent is a value
+	// of none of its cases, so each is GALA-E0043, with a hint naming one.
+	const sealedDecls = `
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+sealed type Box[T any] {
+    case Full(V T)
+    case Empty()
+}
+`
+	sealedCalls := []struct {
+		call, typeName, caseName string
+	}{
+		{"Shape()", "Shape", "Circle"},
+		{"Shape(1)", "Shape", "Circle"},
+		{"Shape(R = 1)", "Shape", "Circle"},
+		{"Box[int]()", "Box", "Full"},
+		{"Box[int](1)", "Box", "Full"},
+	}
+	for _, sc := range sealedCalls {
+		t.Run("sealed parent "+sc.call+" is GALA-E0043", func(t *testing.T) {
+			input := "package main\n" + sealedDecls + "\nfunc main() {\n    val s = " + sc.call + "\n    Println(s)\n}\n"
+			_, err := trans.Transpile(input, "")
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "GALA-E0043")
+				assert.Contains(t, err.Error(), sc.typeName+" is a type, not a constructor")
+				assert.Contains(t, err.Error(), "`"+sc.caseName+"(...)`")
 			}
 		})
 	}

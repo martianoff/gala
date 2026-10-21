@@ -373,12 +373,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			resolved := t.resolveStructTypeName(typeName)
 			meta := t.getTypeMeta(resolved)
 			fields, ok := t.structFields[resolved]
-			if ok && len(fields) > 0 && meta != nil && meta.IsSealed && t.isTypeBaseExpr(base) {
-				line, col, exact := primaryStartOf(suffix)
-				if !exact {
-					line, col = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-				}
-				return nil, t.sealedParentCallError(base, meta, line, col, exact)
+			if ok && meta != nil && meta.IsSealed && t.isTypeBaseExpr(base) {
+				return nil, t.typeAsConstructorErrorAt(base, meta, suffix)
 			}
 			if ok && t.isTypeBaseExpr(base) && (len(fields) == 0 || meta != nil) {
 				// A generic struct's type arguments come from the slot the
@@ -2876,6 +2872,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	// to a same-named GALA type.
 	resolvedTypeName := t.resolveStructTypeName(qualifiedName)
 	if fields, ok := t.structFields[resolvedTypeName]; ok {
+		meta := t.getTypeMeta(resolvedTypeName)
 		// Sealed variant companion (empty struct with Apply method).
 		// Variants are registered with nil fields because the companion
 		// struct is empty; field info lives in the parent sealed type.
@@ -2913,7 +2910,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 					return nil, err
 				}
 				var apply *transpiler.MethodMetadata
-				if meta := t.getTypeMeta(resolvedTypeName); meta != nil {
+				if meta != nil {
 					apply = meta.Methods["Apply"]
 				}
 				ordered, err := t.variantApplyArgs(variantFun, typeName, apply, variantFieldNames, args, namedArgs, line, col)
@@ -2925,12 +2922,8 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		}
 		// A sealed parent is no construction target: its fields are the
 		// merged payloads of its cases, and a literal of it is none of them.
-		if meta := t.getTypeMeta(resolvedTypeName); meta != nil && meta.IsSealed && len(fields) > 0 {
-			fl, fc, exact := primaryStartOf(argListCtx)
-			if !exact {
-				fl, fc = line, col
-			}
-			return nil, t.sealedParentCallError(fun, meta, fl, fc, exact)
+		if meta != nil && meta.IsSealed {
+			return nil, t.typeAsConstructorErrorAt(fun, meta, argListCtx)
 		}
 		// 3. Regular GALA struct construction with named args. A named
 		// argument matching no field is reported as itself: before the
@@ -2943,7 +2936,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		// Another package's struct is not constructible here when the literal
 		// would set a field private to that package.
 		provided := func(_ int, name string) bool { _, ok := namedArgs[name]; return ok }
-		if err := t.checkPrivateFieldCtor(fun, t.getTypeMeta(resolvedTypeName), fields, provided, argListCtx); err != nil {
+		if err := t.checkPrivateFieldCtor(fun, meta, fields, provided, argListCtx); err != nil {
 			return nil, err
 		}
 		return t.buildStructLiteralWithNamedArgs(fun, typeName, resolvedTypeName, fields, namedArgs, callCtx.slotType, line, col)

@@ -79,7 +79,7 @@ func (t *galaASTTransformer) checkTypeUsedAsConstructor(fun ast.Expr, line, col 
 		return nil
 	}
 
-	return typeNotConstructorError(typeName, t.constructorHintFor(typeName, qualifiedName, meta), line, col, exact)
+	return t.typeAsConstructorError(fun, meta, line, col, exact)
 }
 
 // typeNotConstructorError builds the GALA-E0043 diagnostic. With exact, the
@@ -217,12 +217,22 @@ func (t *galaASTTransformer) checkPrivateFieldCtor(fun ast.Expr, meta *transpile
 	return typeNotConstructorError(typeName, privateFieldHint(qualifiedName, meta, field), line, col, exact)
 }
 
-// sealedParentCallError reports a call of the sealed type meta describes,
-// `Shape()`, `Shape(1)` or `Shape(R = 1)`, as GALA-E0043. It takes meta from
-// the caller, so a generic callee (`Shape[int]()`) is reported as well.
-func (t *galaASTTransformer) sealedParentCallError(fun ast.Expr, meta *transpiler.TypeMetadata, line, col int, exact bool) error {
+// typeAsConstructorError reports a call of the type meta describes as
+// GALA-E0043, with the hint constructorHintFor gives for it.
+func (t *galaASTTransformer) typeAsConstructorError(fun ast.Expr, meta *transpiler.TypeMetadata, line, col int, exact bool) error {
 	typeName, qualifiedName := extractTypeNameFromExpr(fun)
 	return typeNotConstructorError(typeName, t.constructorHintFor(typeName, qualifiedName, meta), line, col, exact)
+}
+
+// typeAsConstructorErrorAt is typeAsConstructorError pointed at the callee of
+// the call node belongs to, for a caller that already holds meta: a sealed
+// parent called as `Shape()` or `Shape(R = 1)`, generic or not.
+func (t *galaASTTransformer) typeAsConstructorErrorAt(fun ast.Expr, meta *transpiler.TypeMetadata, node antlr.ParserRuleContext) error {
+	line, col, exact := primaryStartOf(node)
+	if !exact {
+		line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
+	}
+	return t.typeAsConstructorError(fun, meta, line, col, exact)
 }
 
 // sealedParentHint points a call of a sealed type at its cases: a value of a
