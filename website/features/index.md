@@ -4,7 +4,7 @@ title: "GALA Features — Sum Types, Pattern Matching, and Monads for Go"
 description: "Every GALA language feature in one place: sealed sum types, exhaustive pattern matching, Option/Either/Try, bind do-notation, immutability by default, immutable collections, Futures, compile-time data-race safety, and full Go interop."
 keywords: "gala features, golang sum types, golang pattern matching, golang option type, go immutable collections, golang do notation, go data race compile error, golang type inference, go interop language, scala-inspired language for go"
 permalink: /features/
-last_modified_at: 2026-07-26
+last_modified_at: 2026-10-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / Features</p>
@@ -44,9 +44,9 @@ func area(s Shape) float64 = s match {
 | Feature | What it gives you |
 |---------|-------------------|
 | [Sealed Types](/features/sealed-types/) | Closed type hierarchies — algebraic data types with auto-generated constructors and extractors, so a value is exactly one of a known set of variants. |
-| [Pattern Matching](/features/pattern-matching/) | `match` expressions with struct destructuring, guards, nested and sequence patterns, custom extractors, and compiler-enforced exhaustiveness. |
+| [Pattern Matching](/features/pattern-matching/) | `match` expressions with struct destructuring, guards, alternative (`case 1 \| 2`) and named sub-patterns, nested and sequence patterns, custom extractors, and compiler-enforced exhaustiveness. |
 | [Type Inference](/features/type-inference/) | Lambda parameters, generic type arguments, and fold accumulators inferred from context — always resolving to a concrete Go type, never `any`. |
-| [Immutability](/features/immutability/) | `val` bindings, immutable struct fields, generated `Copy()` with named arguments, and structural `Equal`. |
+| [Immutability](/features/immutability/) | `val` bindings, immutable struct fields, generated `Copy()` with named arguments, structural `Equal`, and `Ptr[T]` pointers that are never nil. |
 
 ## Expressions and Effects
 
@@ -68,7 +68,7 @@ func area(s Shape) float64 = s match {
 
 | Feature | What it gives you |
 |---------|-------------------|
-| [Go Interop](/features/go-interop/) | Import any Go package and call it directly. Return types are read from the Go SDK, so there is nothing to declare or generate. |
+| [Go Interop](/features/go-interop/) | Import any Go package and call it directly; return types are read from the Go SDK, so there is nothing to declare. In the other direction, Go code calls GALA through generated constructors, and `gala export` publishes a GALA library as a plain Go module. |
 | [Compiler DX](/features/compiler-dx/) | Framed diagnostics with a caret and a hint, runtime panics that point at `.gala` source positions, and guaranteed tail-call optimisation. |
 | [IDE Support](/features/ide-support/) | IntelliJ/GoLand plugin and a `gala lsp` server for VS Code and Neovim — completion, inlay hints, go-to-definition, and live diagnostics. |
 

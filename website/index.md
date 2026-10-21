@@ -5,7 +5,7 @@ description: "Go, the functional way. Inspired by Scala, GALA is a statically ty
 keywords: "gala language, functional programming go, scala-inspired language for go, golang sum types, golang pattern matching, golang option type, golang algebraic data types, transpile to go, golang functional programming, golang sealed types, golang zero reflection json"
 schema_type: "SoftwareApplication"
 permalink: /
-last_modified_at: 2026-10-03
+last_modified_at: 2026-10-20
 ---
 
 <div class="hero">
@@ -33,7 +33,7 @@ The [2024 Go Developer Survey](https://go.dev/blog/survey2024-h1-results) found 
 
 ### Safe — Go's runtime bugs, caught by the compiler
 
-Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead), immutable by default (`val`, immutable structs, no address for a `val`), always-concrete types — never a silent `any` — and zero-reflection typed JSON.
+Sum types with **exhaustive** pattern matching (an incomplete `match` is a build error, not a production panic), no `nil` (`Option`/`Either`/`Try` instead, and `&x` is a [`Ptr[T]`]({{ '/features/immutability/#pointers-that-are-never-nil-ptrt-and-optionptrt' | relative_url }}) that is never nil yet compiles to a plain `*T`), immutable by default (`val`, immutable structs, no address for a `val`), always-concrete types — never a silent `any` — and zero-reflection typed JSON.
 
 That extends to Go's worst production bug class: **data races are a compile error**. A value crossing a goroutine boundary must be deeply immutable, and the transpiler proves it before the program runs — no sampling, no `-race` build, no interleaving you happened not to hit. Because GALA is immutable by default the check is silent in the common case; it fires only on genuinely mutable state ([GALA-E0037]({{ '/features/concurrency-safety/' | relative_url }})).
 
@@ -239,6 +239,19 @@ val id = uuid.Parse(raw)
 </div>
 
 <div class="feature-card">
+<h3>Go Can Call GALA</h3>
+<p>Exported shorthand structs and sealed types get <code>NewT</code> constructors that apply GALA's field defaults, plus <code>IsCase()</code> predicates. <code>gala export</code> writes a project as a plain Go module over <code>go.gala.fyi/stdlib</code>, so a Go program needs only <code>go get</code>.</p>
+<pre><code>// Go code calling a GALA package
+item := pricing.NewLineItem("C-3", 475,
+    pricing.WithLineItemQty(2))
+fmt.Println(item.Qty.Get()) // 2
+
+d := pricing.NewDiscountPercent()
+fmt.Println(d.IsPercent())  // true</code></pre>
+<p><a href="{{ '/features/go-interop/#calling-gala-from-go' | relative_url }}">Learn about calling GALA from Go</a></p>
+</div>
+
+<div class="feature-card">
 <h3>IDE Support with LSP</h3>
 <p>GoLand/IntelliJ plugin with syntax highlighting, type-aware dot completion, inlay type hints, and structure view. The LSP server adds diagnostics, hover, and go-to-definition — including into Go stdlib and third-party Go module sources.</p>
 <img src="{{ '/assets/images/ide/dot-completion.png' | relative_url }}" alt="GALA code completion in IntelliJ" style="max-width: 100%; border: 1px solid #e1e4e8; border-radius: 4px; margin: 0.5rem 0;">
@@ -339,7 +352,7 @@ All collections support `Map`, `Filter`, `FoldLeft`, `ForEach`, `Exists`, `Find`
 | [YAML Codec]({{ '/docs/yaml/' | relative_url }}) | Zero-reflection YAML serialization with the same builder API |
 | [Regex]({{ '/docs/regex/' | relative_url }}) | Pattern matching with regex extractors |
 | [IO Effect]({{ '/docs/io/' | relative_url }}) | Lazy, composable side effects |
-| [Go Interop]({{ '/features/go-interop/' | relative_url }}) | Using Go libraries and types from GALA |
+| [Go Interop]({{ '/features/go-interop/' | relative_url }}) | Using Go libraries from GALA, and GALA packages from Go |
 | [Playground]({{ '/playground/' | relative_url }}) | Try GALA in your browser — no install needed |
 
 ### Showcase Projects

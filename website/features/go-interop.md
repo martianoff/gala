@@ -4,7 +4,7 @@ title: "GALA Go Interop — Use Any Go Library, Type, and Function"
 description: "GALA transpiles to Go and gives you full access to the Go ecosystem. Import Go packages, call Go functions, use Go types — all with GALA's cleaner syntax. Zero friction interoperability."
 keywords: "gala go interop, gala go libraries, transpile to go, gala import go, gala go types, gala go functions, gala go slices, gala go maps, gala go compatibility"
 permalink: /features/go-interop/
-last_modified_at: 2026-10-04
+last_modified_at: 2026-10-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Go Interop</p>
@@ -13,7 +13,7 @@ last_modified_at: 2026-10-04
 
 GALA transpiles to Go. Every Go package, type, and function is available in GALA code with zero friction. Your existing Go modules, third-party libraries, and tooling all work out of the box.
 
-This page covers calling Go from GALA. For the other direction (Go code calling GALA), packages that mix `.gala` and `.go` files, project layout and the gotchas, see the **[Go Interop Guide](/docs/go-interop/)**.
+This page covers calling Go from GALA, then [the other direction](#calling-gala-from-go) in brief. For packages that mix `.gala` and `.go` files, project layout, building and the gotchas, see the **[Go Interop Guide](/docs/go-interop/)**.
 
 ---
 
@@ -325,6 +325,85 @@ Print("no newline")
 ```
 
 The full table of builtins and their replacements is in the [language reference](/docs/language-reference/#11-go-built-in-functions).
+
+---
+
+## Calling GALA from Go
+
+A GALA package is a Go package after transpilation, so Go code imports it by its import path. The generated Go is shaped for Go callers.
+
+### Implementing Go interfaces
+
+A GALA type implements a Go interface by having its methods. A method that Go calls with several results, such as `io.Writer`'s `Write([]byte) (int, error)`, declares Go's result list and gives the results as one GALA value: a `Try` for `(T, error)`, a Tuple for `(A, B)`. An **interface literal** implements an interface inline, one function per method, with no struct:
+
+```gala
+package main
+
+import "fmt"
+
+struct WriteCounter(var Writes int)
+
+// io.Writer: the method declares Go's result list and gives it as one Try.
+func (c Ptr[WriteCounter]) Write(p []byte) (int, error) {
+    c.Writes = c.Writes + 1
+    Success(p.Size())
+}
+
+func main() {
+    var counter = WriteCounter(0)
+    fmt.Fprintln(&counter, "first")
+    fmt.Fprintln(&counter, "second")
+    Println(counter.Writes)   // 2
+
+    // An interface literal implements a Go interface inline.
+    val greeting = fmt.Stringer(String = () => "hello")
+    Println(s"$greeting, ${greeting.String()}")    // hello, hello
+}
+```
+
+A lambda passed where Go expects a `func() (T, error)` callback gives a `Try` the same way. See [Returning several results to Go](/docs/language-reference/#returning-several-results-to-go) and [Interface Literals](/docs/language-reference/#interface-literals).
+
+### Generated constructors and case predicates
+
+Go can build a struct with a composite literal, which skips the field defaults GALA declares. So an exported shorthand struct whose fields are all exported gets a `NewT(...)` constructor, an exported sealed type gets `NewT()` for its default case and `NewT<Case>(...)` for each case, and a field with a default becomes a `With...(v)` option. Each exported case also gets an `Is<Case>()` predicate. Given this GALA package:
+
+<!-- doc-source: examples/go_interop/pricing/pricing.gala -->
+```gala
+struct LineItem(SKU string, UnitCents int64, Qty int = 1)
+sealed type Discount {
+    default case NoDiscount()
+    case Percent(Pct int64 = 10)
+    case AmountOff(Cents int64)
+}
+```
+
+Go code calls it like this (from a Go example test that CI runs):
+
+<!-- doc-source: examples/go_interop/checkout/checkout_test.go -->
+```go
+discount := pricing.NewDiscountPercent(pricing.WithDiscountPercentPct(50))
+fmt.Println(discount, discount.Apply(900))
+fmt.Println(pricing.NewDiscountPercent(), pricing.NewDiscount())
+item := pricing.NewLineItem("C-3", 475, pricing.WithLineItemQty(2))
+fmt.Println(item.SKU.Get(), item.Qty.Get())
+// Output:
+// Percent(50) 450
+// Percent(10) NoDiscount()
+// C-3 2
+```
+
+A sealed value's case is tested with its predicate, `d.IsPercent()`, and its fields are read with the case's `Unapply`. Doc comments on GALA declarations are carried into the generated Go, so `go doc`, gopls and pkg.go.dev show them, along with notes on the generated constructors.
+
+### Plain Go modules: `go.gala.fyi/stdlib` and `gala export`
+
+`go build` does not transpile `.gala` files, so a plain Go module needs the generated Go. Every GALA release publishes the standard library as the Go module `go.gala.fyi/stdlib` at the same version, and `gala export` writes a GALA project as an ordinary Go module that requires it:
+
+```sh
+go get go.gala.fyi/stdlib@latest   # GALA's collections, Option, Try for Go code
+gala export --out ../shapes-go     # a GALA library as a plain Go module
+```
+
+Publish the exported directory as a module, and Go programs use the library with `go get`, with no GALA toolchain installed. Exporting a project that imports another GALA module is not supported yet. The [Go Interop Guide](/docs/go-interop/#part-5-using-gala-from-a-plain-go-module) covers versions, publishing, and `gala transpile --stdlib-module`.
 
 ---
 

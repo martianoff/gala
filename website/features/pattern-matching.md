@@ -4,7 +4,7 @@ title: "Golang Pattern Matching — Exhaustive Match Expressions for Go"
 description: "GALA brings real pattern matching to Go — struct destructuring, sealed type exhaustive matching, guard clauses, nested patterns, custom extractors, and sequence patterns. Beyond what Go's switch can do."
 keywords: "golang pattern matching, go pattern matching, golang match expression, go switch alternative, go exhaustive match, go destructuring, golang guard clauses, go struct pattern matching, golang case expression"
 permalink: /features/pattern-matching/
-last_modified_at: 2026-10-10
+last_modified_at: 2026-10-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Pattern Matching</p>
@@ -120,6 +120,28 @@ func describe(s Shape) string = s match {
 ```
 
 Forget a variant and the compiler rejects your code.
+
+### What Covers a Variant
+
+A variant counts as covered only when its cases match every value of its fields. A literal sub-pattern such as `Some(0)` covers part of `Some`, and a guarded case covers nothing, since its guard may be false. This match needs its `Some(_)` arm:
+
+```gala
+package main
+
+func sign(o Option[int]) string = o match {
+    case Some(0)          => "zero"
+    case Some(n) if n > 0 => "positive"
+    case Some(_)          => "negative"
+    case None()           => "none"
+}
+
+func main() {
+    Println(sign(Some(-3)), sign(Some(0)), sign(Some(7)), sign(None()))
+    // negative zero positive none
+}
+```
+
+Without `case Some(_)` the build fails with [GALA-E0002](/docs/errors/gala-e0002/), `missing cases: Some(...)`, rather than panicking at run time on a negative number. Nested patterns are checked the same way: for an `Option[Option[int]]`, `Some(Some(_))` and `Some(None())` together cover `Some`.
 
 ---
 

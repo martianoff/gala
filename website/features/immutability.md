@@ -4,7 +4,7 @@ title: "Golang Immutable Structs — Immutability by Default for Go"
 description: "GALA makes immutability the default in Go. val bindings, immutable struct fields, auto-generated Copy with named args, structural Equal for free, and no address for a val — eliminating mutation bugs."
 keywords: "golang immutable struct, go immutable, golang immutability, go const pointer, go immutable fields, golang val var, golang immutable by default, go copy struct, go structural equality, gala immutability"
 permalink: /features/immutability/
-last_modified_at: 2026-10-12
+last_modified_at: 2026-10-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Immutability</p>
@@ -152,7 +152,7 @@ No need to implement equality by hand. No risk of forgetting a field.
 
 ## A `val` Has No Address
 
-`&x` is a `*T`, and a `*T` can write. So a `val`, a parameter, a receiver and an immutable field have no address: taking one is [GALA-E0076](/docs/errors/gala-e0076/). To read a value without changing it, pass the value itself; it is already immutable.
+`&x` is a pointer, and a pointer can write. So a `val`, a parameter, a receiver and an immutable field have no address: taking one is [GALA-E0076](/docs/errors/gala-e0076/). To read a value without changing it, pass the value itself; it is already immutable.
 
 <!-- doc-check: error GALA-E0076 -->
 ```gala
@@ -160,15 +160,76 @@ val data = 42
 val ptr = &data       // error: GALA-E0076
 ```
 
-### Mutable Pointers
-
-When you take the address of a `var` variable, you get a regular `*T` that supports both reading and writing:
+The address of a `var` can be taken, and writes go through it:
 
 ```gala
-var data = 42
-val ptr = &data       // *int (regular pointer)
-*ptr = 100            // OK: can modify data through pointer
+package main
+
+func main() {
+    var data = 42
+    val ptr = &data       // Ptr[int]: never nil, an *int in the generated Go
+    *ptr = 100            // writes data through the pointer
+    Println(data)         // 100
+}
 ```
+
+---
+
+## Pointers That Are Never Nil: `Ptr[T]` and `OptionPtr[T]`
+
+GALA has three pointer types:
+
+| Type | Can be nil | Use |
+|------|------------|-----|
+| `Ptr[T]` | never | a pointer created and used in GALA code; `&x` is one |
+| `OptionPtr[T]` | it is empty instead | a pointer that may be absent |
+| `*T` | yes | Go interop: what Go functions take and return |
+
+`Ptr[T]` is checked at compile time and compiles to a plain Go `*T`, so it costs nothing at run time. It has the fields and methods of what it points to, can be a method receiver, and passes to Go wherever a `*T` is expected. The other direction is checked: `nil`, or a Go `*T` that may be nil, never fills a `Ptr`, and comparing a `Ptr` with nil is an error ([GALA-E0080](/docs/errors/gala-e0080/)).
+
+```gala
+package main
+
+struct Counter(var N int)
+
+func (c Ptr[Counter]) Bump() {
+    c.N = c.N + 1
+}
+
+func main() {
+    var c = Counter(0)
+    val p = &c      // Ptr[Counter]: never nil; *Counter in the generated Go
+    p.Bump()
+    p.Bump()
+    Println(c.N)    // 2
+}
+```
+
+`OptionPtr[T]` is a pointer that may be absent, the size of one pointer. It matches as `Some(p)` / `None()`, with `p` a `Ptr[T]`, and a Go pointer is converted once, where it enters GALA code: `OptionPtrOf(p)` when nil means absent, `RequirePtr(p)` when nil is a bug.
+
+```gala
+package main
+
+import "flag"
+
+struct Node(Value int, Next OptionPtr[Node])
+
+func sum(n Ptr[Node]) int = n.Next match {
+    case Some(next) => n.Value + sum(next)
+    case None()     => n.Value
+}
+
+func main() {
+    val list = &Node(1, SomePtr(&Node(2, SomePtr(&Node(3, EmptyOptionPtr())))))
+    Println(sum(list))        // 6
+
+    // flag.Lookup returns a Go *flag.Flag that is nil when the flag is unknown
+    val port = OptionPtrOf(flag.Lookup("port"))
+    Println(port.IsEmpty())   // true
+}
+```
+
+Exported functions check their `Ptr` parameters for nil on entry, so a nil passed from Go code is caught at the boundary. The full rules are in the [language reference](/docs/language-reference/#non-null-pointers-ptrt-and-optionptrt).
 
 ---
 
@@ -193,13 +254,10 @@ m.Put("b", 2)
 val total = items.FoldLeft(0, (acc, v) => acc + v)
 ```
 
-**Pointer fields in linked structures** — When a pointer must be reassigned:
+**Pointer fields in linked structures** — When a link is set after construction:
 
 ```gala
-type Node struct {
-    Value int
-    var Next *Node    // must be var to allow traversal/modification
-}
+struct Node(Value int, var Next OptionPtr[Node])   // var: the link is set after construction
 ```
 
 The rule of thumb: start with `val` and immutable fields. Switch to `var` only when you have a concrete reason.
@@ -214,7 +272,7 @@ GALA enforces immutability at three levels:
 |-------|--------------------|--------------------|
 | Variable bindings | `val x = 10`, `x := 10` | `var x = 10` |
 | Struct fields | `Name string` | `var Name string` |
-| Pointers | no address for a `val` (`&val` is an error) | `*T` (from `&var`) |
+| Pointers | no address for a `val` (`&val` is an error) | `Ptr[T]` (from `&var`, never nil) |
 
 This layered approach means immutability is not just a convention — it is enforced by the compiler at every point where data flows through your program.
 

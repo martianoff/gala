@@ -4,7 +4,7 @@ title: "Golang Option Type — Option, Either, and Try for Go Error Handling"
 description: "Replace Go's if-err-nil with GALA's Option[T], Either[A,B], and Try[T]. Language-level monadic error handling with Map, FlatMap, Recover, and pattern matching — cleaner than fp-go or manual nil checks."
 keywords: "golang option type, go option monad, go either type, golang error handling alternative, go try monad, golang nil alternative, go monadic error handling, golang result type, go error handling verbose, gala error handling"
 permalink: /features/error-handling/
-last_modified_at: 2026-10-03
+last_modified_at: 2026-10-20
 ---
 
 <p class="breadcrumb"><a href="/">Home</a> / <a href="/features/">Features</a> / Error Handling</p>
@@ -24,11 +24,11 @@ Libraries like [IBM/fp-go](https://github.com/IBM/fp-go) bring Option and Either
 ```gala
 sealed type Option[T any] {
     case Some(Value T)
-    case None()
+    default case None()
 }
 ```
 
-Use `Option` anywhere you would reach for `nil` in Go. It forces the caller to acknowledge the absence case.
+Use `Option` anywhere you would reach for `nil` in Go. It forces the caller to acknowledge the absence case. `None()` is its default case, so an `Option` nobody set is `None`. For pointers the same idea is built in: `&x` is a `Ptr[T]` that is never nil, and a pointer that may be absent is an `OptionPtr[T]` (see [Immutability](/features/immutability/#pointers-that-are-never-nil-ptrt-and-optionptrt)).
 
 ### Creating Options
 

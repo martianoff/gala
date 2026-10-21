@@ -43,8 +43,8 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 ## Why GALA? — Safe, Ergonomic, Compatible
 
 **Safe — Go's runtime bugs, caught by the compiler.**
-- **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time — including nested patterns, guards, and generic extractors. An incomplete `match` is a build error, not a production panic.
-- **No `nil`.** `Option` / `Either` / `Try` replace nil checks and naked error returns.
+- **Sealed types with exhaustive matching.** The compiler rejects incomplete matches at build time — including nested patterns, alternatives, and generic extractors, while a guarded or partial case does not count as covering its variant. An incomplete `match` is a build error, not a production panic.
+- **No `nil`.** `Option` / `Either` / `Try` replace nil checks and naked error returns, and `&x` is a `Ptr[T]` that is never nil: a Go pointer that may be nil is converted once (`RequirePtr` / `OptionPtrOf`) before it can fill one.
 - **Compile-time data-race safety.** A value crossing a goroutine boundary must be *deeply immutable*, and the compiler checks it — including what a closure captures. Because GALA is already immutable by default the check is silent in ordinary code; it fires on `collection_mutable` values, `var` fields, raw Go slices/maps/pointers, and opaque Go handles.
 - **Immutable by default.** `val` bindings, immutable struct fields, no address for a `val`; always concrete types, never a silent `any`.
 - **Zero-reflection JSON.** `Codec[T]` is backed by a compiler-generated `StructMeta[T]` intrinsic — no `reflect`, no struct tags, and it doubles as a pattern-match extractor.
@@ -57,16 +57,19 @@ It's aimed at Go developers who have used Scala, Kotlin, F#, or OCaml and miss t
 
 **Compatible — every Go library, no bindings, native binaries.**
 - **Full Go third-party module interop.** Any Go package works — not just stdlib. Return types are inferred **directly from the Go SDK** (no declaration files), and `(T, error)` returns are wrapped into `Try[T]` automatically.
+- **Go can call GALA, too.** `gala export` writes a GALA library as a plain Go module over [`go.gala.fyi/stdlib`](docs/GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module); Go programs `go get` it and build it with `go build`, no GALA toolchain needed.
 - **Shipped IDE tooling.** GoLand/IntelliJ plugin, an LSP server (`gala lsp`) for VS Code and Neovim, and a Claude Code plugin — diagnostics, hover with docs, go-to-definition, inlay hints, completion, across GALA *and* Go stdlib/third-party types. Batched transpilation and analysis caching keep multi-file rebuilds fast.
 
 ### Recent highlights
 
-- **A Go call is one GALA value** (0.84) — a Go function returning `(T, error)` is a `Try[T]`, and `(A, B)` is a `Tuple[A, B]`. `os.ReadFile(path).GetOrElse(...)` just works; no wrapping, no `if err != nil`.
-- **Blocks return their trailing value** (0.83) — a block-bodied function returns its last expression, so `return` is only for early exits.
-- **Struct field defaults** (0.81) — `struct Config(Host string, Port int = 8080)`; omit a defaulted field at the call site.
-- **A toolchain for agents and editors** (0.75–0.78) — `gala build --json` emits diagnostics as JSON, `gala explain GALA-E0002` prints a code's reference page offline, `gala doc collection_immutable.Array` lists an API from the terminal, and the LSP shows doc comments in hover, completion, and signature help.
-- **[Claude Code plugin](ide/claude-code/README.md)** (0.78) — wires Claude to `gala lsp`, so it sees GALA diagnostics after every edit; `gala new` sets it up for you.
-- **[Compile-time data-race safety](docs/CONCURRENCY_SAFETY.MD)** (0.72) — a closure crossing a `Future` boundary is checked for what it captures ([GALA-E0037](docs/errors/GALA-E0037.md)).
+- **[Non-null pointers](docs/GALA.MD#non-null-pointers-ptrt-and-optionptrt)** (0.92) — `&x` is a `Ptr[T]`: never nil, and a plain Go `*T` in the generated code. A `*T` that may be nil cannot fill one ([GALA-E0080](docs/errors/GALA-E0080.md)) until it goes through `RequirePtr` or `OptionPtrOf`, and exported functions nil-check `Ptr` parameters on entry from Go. `OptionPtr[T]` is the nullable form, the size of one pointer, matched as `Some(p)` / `None()`. The standard library uses both.
+- **[Go can call GALA](#using-gala-from-go)** (0.86–0.90) — the standard library is published as the Go module `go.gala.fyi/stdlib`, and `gala export` writes a GALA project as a plain Go module. Go callers get generated constructors (`NewLineItem(...)`, `With…` options, `IsCase()` predicates), and a GALA method can declare Go's result list, `(int, error)`, to implement `io.Writer` or `json.Marshaler`.
+- **[Interface literals](docs/GALA.MD#interface-literals)** (0.89) — `UserRepo(Find = (id) => None(), Count = () => 0)` builds an interface value inline, with lambda types taken from the interface; Go interfaces such as `fmt.Stringer` work too. Test doubles need no fake struct ([Dependency Injection](docs/DEPENDENCY_INJECTION.MD)).
+- **Stricter, richer matching** (0.88, 0.91) — [alternative patterns](docs/GALA.MD#alternative-patterns) `case 1 | 2` (before 0.88, `1 | 2` was a bitwise OR, so it matched only `3`), [named sub-patterns](docs/GALA.MD#named-sub-patterns) `Rect(Height = h)`, exhaustiveness decided on a pattern matrix (a guarded or partial case no longer covers its variant), and sequence patterns without a rest match an exact length.
+- **No implicit values** (0.88) — `default case Off()` marks a sealed type's zero value, case fields take defaults, an uninitialized `Option` is `None` (it was `Some(0)`), and leaving a value of a type with no default unset is an error ([GALA-E0075](docs/errors/GALA-E0075.md)). `&` of a `val` is an error too ([GALA-E0076](docs/errors/GALA-E0076.md)).
+- **[Opaque types](docs/GALA.MD#opaque-types)** (0.85) — `opaque type UserID int64` is a distinct type with the representation of `int64`: no run-time cost, its own methods, usable as a map key, and encoded by the codecs as the bare scalar.
+
+Also: generic type aliases and doc comments carried into the generated Go for `go doc` and gopls (0.85), local bidirectional type inference in place of the Hindley-Milner fallback (0.89), fuzzing that runs generated programs and checks their output (0.91), and about 1.2 GB less Go compile memory on a large app (0.92). Every change is in the [release notes](https://github.com/martianoff/gala/releases).
 
 ---
 
@@ -339,6 +342,35 @@ struct Config(Host string, Port int = 8080, Debug bool = false)
 val cfg = Config(Host = "db", Debug = true)   // Port = 8080
 ```
 
+**Sealed defaults** — sealed-type cases take field defaults too, and a `default case` is the type's zero value: what an uninitialized `var`, or a field left out of a struct literal, holds. A sealed type without one cannot be left unset (`GALA-E0075`).
+
+```gala
+sealed type Light {
+    case On(Power int = 30)
+    default case Off()
+}
+
+var l Light                         // nothing assigned: the default case
+Println(l, On(), On(Power = 80))    // Off() On(30) On(80)
+```
+
+**Interface literals** — build an interface value inline, one function per method, with the lambda types taken from the interface. It is how GALA fakes a dependency in a test, and Go interfaces work the same way.
+
+```gala
+type UserRepo interface {
+    Find(id int) Option[User]
+    Count() int
+}
+
+val fake = UserRepo(
+    Find = (id) => When(id == 1, User(1, "Ada")),
+    Count = () => 1,
+)
+val label = fmt.Stringer(String = () => "a Go interface, too")
+```
+
+Leaving out a method is `GALA-E0078`. See [Dependency Injection](docs/DEPENDENCY_INJECTION.MD).
+
 **Lambda type inference** — parameter types and method type parameters are inferred from context.
 
 ```gala
@@ -376,13 +408,40 @@ val pair = (1, "hello")
 val (x, y) = pair
 ```
 
-**No pointer into a `val`** — `&x` of a `val` is a compile error, so nothing can change it through a pointer. Only a `var` has an address.
+**Opaque types** — `type X Y` is only an alias; `opaque type X Y` is a distinct type with `Y`'s representation and operators, so IDs and units stop mixing at no run-time cost. Conversion is explicit both ways, and the codecs write the bare scalar.
 
 ```gala
-var data = 42
-val ptr = &data       // *int
-*ptr = 100            // OK: data is a var
+opaque type UserID int64
+opaque type Millis int64
+
+func (m Millis) Seconds() float64 = float64(m) / 1000.0
+
+func lookup(id UserID) string = s"user ${int64(id)}"
+
+val wait = Millis(1500) + 500
+Println(lookup(UserID(42)), wait.Seconds())   // user 42 2
+// lookup(int64(42)) is GALA-E0064: write lookup(UserID(n))
 ```
+
+**Non-null pointers** — `&x` is a `Ptr[T]`, a pointer that is never nil and is a plain `*T` in the generated Go. Only a `var` has an address (`&` of a `val` is `GALA-E0076`), and `OptionPtr[T]` is the pointer that may be absent:
+
+```gala
+struct Node(Value int, Next OptionPtr[Node])   // a nullable link, one pointer wide
+
+func last(n Ptr[Node]) Ptr[Node] = n.Next match {
+    case Some(next) => last(next)
+    case None()     => n
+}
+
+var data = 42
+val p = &data         // Ptr[int]
+*p = 100              // OK: data is a var
+
+val head = &Node(1, SomePtr(&Node(2, EmptyOptionPtr())))
+Println(data, last(head).Value)   // 100 2
+```
+
+A Go `*T` that may be nil cannot fill a `Ptr` (`GALA-E0080`); convert it once where it enters GALA code, with `RequirePtr(p)` (panics on nil) or `OptionPtrOf(p)`.
 
 **String interpolation** — `s"..."` with auto-inferred format verbs and `f"..."` with explicit format specs. No imports needed.
 
@@ -430,6 +489,30 @@ val status = p match {
     case _                             => s"${p.Name} is an adult"
 }
 ```
+
+**Alternative and named sub-patterns** — `|` joins alternatives in one arm (it is never a bitwise OR in a pattern), and `Field = p` matches a field by name. Exhaustiveness sees both: these matches need no `case _`.
+
+```gala
+sealed type Shape {
+    case Circle(Radius int)
+    case Rect(Width int, Height int)
+    case Empty()
+}
+
+func kind(s Shape) string = s match {
+    case Circle(_) | Rect(_, _) => "solid"
+    case Empty()                => "empty"
+}
+
+func height(s Shape) int = s match {
+    case Circle(Radius = r) => 2 * r
+    case Rect(Height = h)   => h
+    case Empty()            => 0
+}
+// kind(Rect(1, 2)) == "solid", height(Rect(5, 3)) == 3
+```
+
+Alternatives bind no names (`case Some(n) | None()` is `GALA-E0071`).
 
 **Collect — filter and transform in one pass.**
 
@@ -581,6 +664,47 @@ gala mod tidy
 ```
 
 Third-party Go modules are first-class. GALA reads the Go SDK to infer return types, and a Go call returning several results is one GALA value: `(T, error)` is a `Try[T]`, `(A, B)` a `Tuple[A, B]`.
+
+### Using GALA from Go
+
+A Go module built with plain `go build` can depend on GALA code. Every GALA release publishes the standard library as the Go module `go.gala.fyi/stdlib` at the same version, and `gala export` writes a GALA project as an ordinary Go module that requires it:
+
+```gala
+package pricing
+
+// LineItem is one priced line of an order.
+struct LineItem(SKU string, UnitCents int64, Qty int = 1)
+
+// Total returns the line's price in cents.
+func (l LineItem) Total() int64 = l.UnitCents * int64(l.Qty)
+```
+
+```bash
+gala export --go-module github.com/you/pricing --out ../pricing-go
+```
+
+Commit the export to that repository at a `vX.Y.Z` tag, and a Go program uses it after `go get github.com/you/pricing`. An exported shorthand struct gets a `New…` constructor that applies its field defaults, with a `With…` option for each defaulted field, and the doc comments are carried into the generated Go for `go doc` and gopls:
+
+```go
+import "github.com/you/pricing"
+
+item := pricing.NewLineItem("A-1", 1000, pricing.WithLineItemQty(3))
+fmt.Println(item.SKU.Get(), item.Total()) // A-1 3000
+```
+
+Exported sealed types get `NewT<Case>(...)` constructors and `IsCase()` predicates the same way. To implement a Go interface whose methods return several results, a GALA method declares Go's result list and gives the `Try` in its body:
+
+```gala
+struct LineCounter(var Lines int)
+
+func (c Ptr[LineCounter]) Write(p []byte) (int, error) {
+    c.Lines = c.Lines + strings.Count(ToString(p), "\n")
+    Success(p.Size())
+}
+// var lc = LineCounter(0); fmt.Fprintf(&lc, "a\nb\nc\n") leaves lc.Lines == 3
+```
+
+Publishing, versions, and the current limits (an exported project cannot yet import another GALA module): [Using GALA from a plain Go module](docs/GO_INTEROP.MD#part-5-using-gala-from-a-plain-go-module).
 
 ---
 
