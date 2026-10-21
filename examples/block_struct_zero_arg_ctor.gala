@@ -1,0 +1,45 @@
+package main
+
+// Calling a block-form struct type with no arguments builds the value, each
+// field taking its type's default — the same thing a positional call does for
+// the fields it leaves out. It used to reach Go as a zero-operand conversion
+// `Box()` and fail in `go build`.
+
+// Box is a block-form struct whose fields all have Go zero defaults.
+type Box struct {
+    N     int
+    Label string
+}
+
+// Tagged has an Option field, which starts out empty.
+type Tagged struct {
+    Name string
+    Note Option[string]
+}
+
+// Pair is a generic block-form struct.
+type Pair[A any, B any] struct {
+    First  A
+    Second B
+}
+
+// emptyPair builds a Pair from its result type alone.
+func emptyPair() Pair[int, string] = Pair()
+
+func main() {
+    val b = Box()
+    Println(b.N, s"[${b.Label}]")
+
+    // Fewer arguments than fields and no arguments at all agree.
+    val partial = Box(7)
+    Println(partial.N, s"[${partial.Label}]")
+
+    // An Option field starts out empty.
+    val t = Tagged()
+    Println(s"[${t.Name}]", t.Note.IsEmpty())
+
+    // A generic block struct takes its type arguments from the slot.
+    val p Pair[int, string] = Pair()
+    Println(p.First, s"[${p.Second}]")
+    Println(emptyPair().First)
+}

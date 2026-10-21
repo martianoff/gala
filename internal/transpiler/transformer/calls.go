@@ -359,17 +359,17 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			}
 		}
 
-		// Zero-field shorthand struct constructed as `Foo()`. A bare `Foo()`
+		// A GALA struct constructed as `Foo()`, of either form. A bare `Foo()`
 		// call lowers to a Go type conversion `Foo(...)`, which requires
 		// exactly one argument ("missing argument in conversion to Foo"), so
-		// emit a composite literal `Foo{}` instead. Non-empty shorthand
-		// structs route through the positional-construction path (their argList
-		// is non-nil); zero-field sealed variants carry a zero-arg Apply method
-		// and are already handled above.
+		// emit a composite literal instead: `Foo{}` for a zero-field struct,
+		// and for one with fields the literal a construction with arguments
+		// builds, every field taking its default. Zero-field sealed variants
+		// carry a zero-arg Apply method and are already handled above.
 		if typeName := t.getBaseTypeName(base); typeName != "" {
 			resolved := t.resolveStructTypeName(typeName)
 			if fields, ok := t.structFields[resolved]; ok && t.isTypeBaseExpr(base) &&
-				(len(fields) == 0 || t.isShorthandStruct(resolved)) {
+				(len(fields) == 0 || t.isGalaStructWithFields(resolved)) {
 				// A generic struct's type arguments come from the slot the
 				// construction fills, as for one with arguments: no field
 				// can bind them (`func p() Phantom[int] = Phantom()`).
@@ -391,8 +391,8 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				if len(fields) == 0 {
 					return &ast.CompositeLit{Type: base}, nil
 				}
-				// A shorthand struct called with no arguments is a real
-				// construction meaning "all defaults". It has to be handled
+				// A struct called with no arguments is a real construction
+				// meaning "all defaults". It has to be handled
 				// here with the other zero-argument forms: `Cfg()` carries no
 				// argument list, so it never reaches the positional dispatcher.
 				//

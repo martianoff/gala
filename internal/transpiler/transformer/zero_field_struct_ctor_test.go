@@ -54,4 +54,62 @@ func main() {
 		assert.NoError(t, err)
 		assert.Contains(t, got, "Mock{N:", "Foo(x) must keep positional struct construction")
 	})
+
+	// A block-form struct with fields called as `Box()` reached Go as the
+	// zero-operand conversion `Box()`. It builds the value instead, each
+	// field taking its type's default, as a positional call does for the
+	// fields it leaves out.
+	t.Run("block-form Box() lowers to composite literal", func(t *testing.T) {
+		input := `package main
+
+type Box struct {
+    N     int
+    Label string
+}
+
+func main() {
+    val b = Box()
+    Println(b.N, b.Label)
+}`
+		got, err := trans.Transpile(input, "")
+		assert.NoError(t, err)
+		assert.Contains(t, got, "Box{}", "a block-form Box() must construct via composite literal")
+		assert.NotContains(t, got, "= Box()", "a block-form Box() must not lower to a Go type conversion")
+	})
+
+	t.Run("block-form Box() with an Option field builds a None", func(t *testing.T) {
+		input := `package main
+
+type Tagged struct {
+    Name string
+    Note Option[string]
+}
+
+func main() {
+    val t = Tagged()
+    Println(t.Name, t.Note.IsEmpty())
+}`
+		got, err := trans.Transpile(input, "")
+		assert.NoError(t, err)
+		assert.Contains(t, got, "var t = Tagged{}")
+		assert.NotContains(t, got, "= Tagged()")
+	})
+
+	t.Run("generic block-form struct takes type args from the slot", func(t *testing.T) {
+		input := `package main
+
+type Pair[A any, B any] struct {
+    First  A
+    Second B
+}
+
+func main() {
+    val p Pair[int, string] = Pair()
+    Println(p.First, p.Second)
+}`
+		got, err := trans.Transpile(input, "")
+		assert.NoError(t, err)
+		assert.Contains(t, got, "Pair[int, string]{}")
+		assert.NotContains(t, got, "= Pair()")
+	})
 }
