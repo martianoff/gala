@@ -311,7 +311,7 @@ go_test(
         "variant_type_names_test.go",
         "void_call_type_test.go",
         "void_call_value_test.go",
-        "zero_field_struct_ctor_test.go",
+        "zero_arg_struct_ctor_test.go",
     ],
     # Gala source files needed by the analyzer for type resolution in tests.
     # Linux CI uses a sandbox so only declared data deps are accessible.

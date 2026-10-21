@@ -4463,3 +4463,12 @@ gala_exec_test(
     src = "generic_pointer_method_autoaddr.gala",
     expected = "generic_pointer_method_autoaddr.out",
 )
+
+# A block-form struct called with no arguments builds the value, every field
+# taking its type's default, instead of reaching Go as a zero-operand
+# conversion (#831).
+gala_exec_test(
+    name = "block_struct_zero_arg_ctor",
+    src = "block_struct_zero_arg_ctor.gala",
+    expected = "block_struct_zero_arg_ctor.out",
+)

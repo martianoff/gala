@@ -222,18 +222,6 @@ func andJoin(parts []string) string {
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
-// isShorthandStruct reports whether a type came from the shorthand form and
-// declares at least one field — the shape for which `Cfg()` is a construction
-// meaning "all defaults" rather than a Go type conversion.
-//
-// A zero-field struct is excluded because the Apply/companion paths already
-// own that spelling, and a block-form struct because it is a Go-shaped layout
-// whose construction Go itself checks.
-func (t *galaASTTransformer) isShorthandStruct(resolvedTypeName string) bool {
-	meta := t.getTypeMeta(resolvedTypeName)
-	return meta != nil && meta.IsShorthand && len(meta.FieldNames) > 0
-}
-
 // qualifyDefaultExpr rewrites a lowered default expression — of a struct field
 // or of a function or method parameter — so the names in it resolve from the
 // package doing the CALLING or CONSTRUCTING, not the one that declared the

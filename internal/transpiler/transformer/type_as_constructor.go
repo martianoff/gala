@@ -210,6 +210,27 @@ func (t *galaASTTransformer) checkPrivateFieldCtor(fun ast.Expr, meta *transpile
 	return typeNotConstructorError(typeName, privateFieldHint(qualifiedName, meta, field), line, col, exact)
 }
 
+// sealedParentCalledError reports a sealed type called with no arguments,
+// `Shape()`. A value of a sealed type is one of its cases, and the parent's
+// literal is none of them, so the call is pointed at a case's constructor.
+func sealedParentCalledError(fun ast.Expr, meta *transpiler.TypeMetadata, node antlr.ParserRuleContext) error {
+	line, col, exact := primaryStartOf(node)
+	if !exact {
+		line, col = node.GetStart().GetLine(), node.GetStart().GetColumn()
+	}
+	typeName, qualifiedName := extractTypeNameFromExpr(fun)
+	hint := fmt.Sprintf("%s is a sealed type: its value is one of its cases, so construct a case instead", qualifiedName)
+	if len(meta.SealedVariants) > 0 {
+		pkgQualifier, _ := splitPackageQualifier(qualifiedName)
+		example := meta.SealedVariants[0].Name
+		if pkgQualifier != "" {
+			example = pkgQualifier + "." + example
+		}
+		hint += fmt.Sprintf(", e.g. `%s(...)`", example)
+	}
+	return typeNotConstructorError(typeName, hint, line, col, exact)
+}
+
 // privateFieldHint says why another package's struct cannot be built by
 // calling its type, naming the field responsible.
 func privateFieldHint(qualifiedName string, meta *transpiler.TypeMetadata, field string) string {

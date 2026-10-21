@@ -359,24 +359,31 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			}
 		}
 
-		// Zero-field shorthand struct constructed as `Foo()`. A bare `Foo()`
+		// A GALA struct constructed as `Foo()`, of either form. A bare `Foo()`
 		// call lowers to a Go type conversion `Foo(...)`, which requires
 		// exactly one argument ("missing argument in conversion to Foo"), so
-		// emit a composite literal `Foo{}` instead. Non-empty shorthand
-		// structs route through the positional-construction path (their argList
-		// is non-nil); zero-field sealed variants carry a zero-arg Apply method
-		// and are already handled above.
+		// emit a composite literal instead: `Foo{}` for a zero-field struct,
+		// and for one with fields the literal a construction with arguments
+		// builds, every field taking its default. Zero-field sealed variants
+		// carry a zero-arg Apply method and are already handled above.
+		//
+		// structFields also holds a sealed parent, whose literal would be a
+		// value of none of its cases; calling it is GALA-E0043.
 		if typeName := t.getBaseTypeName(base); typeName != "" {
 			resolved := t.resolveStructTypeName(typeName)
-			if fields, ok := t.structFields[resolved]; ok && t.isTypeBaseExpr(base) &&
-				(len(fields) == 0 || t.isShorthandStruct(resolved)) {
+			meta := t.getTypeMeta(resolved)
+			fields, ok := t.structFields[resolved]
+			if ok && len(fields) > 0 && meta != nil && meta.IsSealed && t.isTypeBaseExpr(base) {
+				return nil, sealedParentCalledError(base, meta, suffix)
+			}
+			if ok && t.isTypeBaseExpr(base) && (len(fields) == 0 || meta != nil) {
 				// A generic struct's type arguments come from the slot the
 				// construction fills, as for one with arguments: no field
 				// can bind them (`func p() Phantom[int] = Phantom()`).
 				line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-				// Every field takes its default here, so another package's
-				// struct with a private field has no such construction.
-				if err := t.checkPrivateFieldCtor(base, t.getTypeMeta(resolved), fields, func(int, string) bool { return false }, suffix); err != nil {
+				// No field is supplied here, so this rejects another
+				// package's shorthand struct with a private field.
+				if err := t.checkPrivateFieldCtor(base, meta, fields, func(int, string) bool { return false }, suffix); err != nil {
 					return nil, err
 				}
 				typed, err := t.structLiteralType(base, typeName, resolved, t.expectedArgTypes.peek(), line, col,
@@ -391,10 +398,10 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				if len(fields) == 0 {
 					return &ast.CompositeLit{Type: base}, nil
 				}
-				// A shorthand struct called with no arguments is a real
-				// construction meaning "all defaults". It has to be handled
-				// here with the other zero-argument forms: `Cfg()` carries no
-				// argument list, so it never reaches the positional dispatcher.
+				// A struct called with no arguments is a real construction
+				// meaning "all defaults". It has to be handled here with the
+				// other zero-argument forms: `Cfg()` carries no argument
+				// list, so it never reaches the positional dispatcher.
 				//
 				// Routing it through the same helper as every other
 				// construction is what makes a struct with a required field
