@@ -157,6 +157,21 @@ func main() {
 			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
 		},
 		{
+			name: "generic sealed parent Box[int](1) is GALA-E0043",
+			input: `package main
+
+sealed type Box[T any] {
+    case Full(V T)
+    case Empty()
+}
+
+func main() {
+    val b = Box[int](1)
+    Println(b)
+}`,
+			wantErr: []string{"GALA-E0043", "Box is a type, not a constructor", "`Full(...)`"},
+		},
+		{
 			name: "generic sealed parent Shape[int]() is GALA-E0043",
 			input: `package main
 

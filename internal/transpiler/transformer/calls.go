@@ -427,7 +427,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// declares, or one of the package's own hand-written .go files. The
 		// call form is sugar for the Go literal, as it is with named
 		// arguments, so this is `T{}` rather than a zero-operand conversion.
-		if td := t.goStructTypeData(base); td != nil && !t.namesValue(base) {
+		if td := t.goStructTypeData(base); td != nil && t.spellsTypeName(base) {
 			line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
 			if err := goStructTypeArgsError(base, td, line, col); err != nil {
 				return nil, err
@@ -3843,18 +3843,18 @@ func goStructTypeArgsError(fun ast.Expr, td *transpiler.GoTypeData, line, col in
 		qualifiedName, qualifiedName, strings.Join(td.TypeParams, ", ")))
 }
 
-// namesValue reports whether a callee spells a local val or var, or a member
-// of one, rather than a type: `box()` for a val named box, `cfg.Make()` for a
-// val named cfg.
-func (t *galaASTTransformer) namesValue(fun ast.Expr) bool {
+// spellsTypeName reports whether a callee, its type arguments aside, has the
+// shape of a type name: a bare name no local binding claims, or `pkg.Name`
+// for an imported package. A method call on any other receiver
+// (`o.In.Config()`, `mk().Config()`) does not, whatever the method is named.
+func (t *galaASTTransformer) spellsTypeName(fun ast.Expr) bool {
 	base, _ := splitCallFunTypeArgs(fun)
 	switch e := base.(type) {
 	case *ast.Ident:
-		return t.isVal(e.Name) || t.isVar(e.Name)
+		return !t.isVal(e.Name) && !t.isVar(e.Name)
 	case *ast.SelectorExpr:
-		if id, ok := e.X.(*ast.Ident); ok {
-			return t.isVal(id.Name) || t.isVar(id.Name)
-		}
+		id, ok := e.X.(*ast.Ident)
+		return ok && t.importManager.IsPackage(id.Name)
 	}
 	return false
 }

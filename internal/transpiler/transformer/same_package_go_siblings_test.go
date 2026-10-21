@@ -109,6 +109,27 @@ func TestSamePackageGoSiblingDeclarations(t *testing.T) {
 			want:   []string{"Bag{Items: go_interop.SliceOf(\"a\"), Score: func(n int) int {", "Twice: func(m int) int {", "size: 1}"},
 			absent: []string{"NewImmutable"},
 		},
+		{
+			name:    "a Go-declared struct called with no arguments is its zero value",
+			goSrc:   "type Config struct{ N int }\n",
+			galaSrc: "func fresh() Config = Config()\n",
+			want:    []string{"return Config{}"},
+			absent:  []string{"Config()"},
+		},
+		{
+			// A method named like a Go-declared struct is still a method call
+			// on any receiver: a field, a call result, a package-level val.
+			name:  "a zero-argument method named like a Go-declared struct stays a call",
+			goSrc: "type Config struct{ N int }\n",
+			galaSrc: "struct Inner(N int)\n\n" +
+				"func (i Inner) Config() int = i.N\n\n" +
+				"struct Outer(In Inner)\n\n" +
+				"func mk() Inner = Inner(5)\n\n" +
+				"val pkgInner = Inner(9)\n\n" +
+				"func sum(o Outer) int = o.In.Config() + mk().Config() + pkgInner.Config()\n",
+			want:   []string{".In.Get().Config()", "mk().Config()", "pkgInner.Get().Config()"},
+			absent: []string{"Config{}"},
+		},
 		// The declarations-in-GALA, implementations-in-Go split: methods a Go
 		// file declares on a GALA struct are part of its method set, so
 		// GALA-E0044 does not reject them (#615), and a call of one is typed

@@ -61,8 +61,13 @@ func (t *galaASTTransformer) checkTypeUsedAsConstructor(fun ast.Expr, line, col 
 	// name is also what keeps Go type conversions out of this check entirely:
 	// `time.Duration(x)`, `int64(n)` and friends resolve to no GALA type
 	// metadata and are left alone.
+	//
+	// A callee with type arguments (`Box[int](1)`) is checked only for a sealed
+	// type, which no call constructs; for any other generic type such a call
+	// is left alone as before.
+	base, written := splitCallFunTypeArgs(fun)
 	var meta *transpiler.TypeMetadata
-	switch fun.(type) {
+	switch base.(type) {
 	case *ast.Ident:
 		meta = t.getTypeMeta(typeName)
 	case *ast.SelectorExpr:
@@ -70,7 +75,7 @@ func (t *galaASTTransformer) checkTypeUsedAsConstructor(fun ast.Expr, line, col 
 	default:
 		return nil
 	}
-	if meta == nil {
+	if meta == nil || (len(written) > 0 && !meta.IsSealed) {
 		return nil
 	}
 
