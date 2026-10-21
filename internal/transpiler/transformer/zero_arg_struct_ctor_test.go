@@ -16,8 +16,10 @@ import (
 // literal: `Foo{}` for a zero-field shorthand struct, and for a block-form
 // struct with fields the literal in which every field takes its type's
 // default, as a positional call gives the fields it leaves out. Non-empty
-// shorthand structs (`Foo(x)`) already worked and must keep working.
-func TestZeroFieldStructConstructor(t *testing.T) {
+// shorthand structs (`Foo(x)`) already worked and must keep working. A sealed
+// parent is not a plain struct: no literal of it is a value of one of its
+// cases, so `Shape()` is GALA-E0043, pointing at a case.
+func TestZeroArgStructConstructor(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
 	tr := transformer.NewGalaASTTransformer()
@@ -29,6 +31,7 @@ func TestZeroFieldStructConstructor(t *testing.T) {
 		input       string
 		contains    string
 		notContains string
+		wantErr     []string // substrings of the error; empty means success
 	}{
 		{
 			name: "zero-field shorthand Foo() lowers to composite literal",
@@ -76,7 +79,7 @@ func main() {
 			notContains: "= Box()",
 		},
 		{
-			name: "block-form Box() with an Option field builds a None",
+			name: "block-form Box() leaves an Option field at its zero value",
 			input: `package main
 
 type Tagged struct {
@@ -107,11 +110,34 @@ func main() {
 			contains:    "Pair[int, string]{}",
 			notContains: "= Pair()",
 		},
+		{
+			name: "sealed parent Shape() is GALA-E0043, naming a case",
+			input: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+func main() {
+    val s = Shape()
+    Println(s)
+}`,
+			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := trans.Transpile(tc.input, "")
+			if len(tc.wantErr) > 0 {
+				if assert.Error(t, err) {
+					for _, want := range tc.wantErr {
+						assert.Contains(t, err.Error(), want)
+					}
+				}
+				return
+			}
 			assert.NoError(t, err)
 			assert.Contains(t, got, tc.contains)
 			if tc.notContains != "" {
