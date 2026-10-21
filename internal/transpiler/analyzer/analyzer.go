@@ -4955,7 +4955,9 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		// when the arguments match the fields — unless the type is a sealed
 		// parent with an Apply, or those fields are private to another package —
 		// and otherwise its Apply (a sealed case's companion, or the struct's
-		// own). Without an Apply, private fields leave the call unlowered.
+		// own). Without an Apply, private fields leave the call unlowered. A
+		// sealed parent without an Apply is typed as itself here; the
+		// transformer reports any call of one as GALA-E0043.
 		apply := meta.Methods["Apply"]
 		fields := len(meta.FieldNames)
 		private := transformer.PositionalCtorUnavailable(meta, pkgName, meta.FieldNames, args)

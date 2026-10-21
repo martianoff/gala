@@ -1,0 +1,21 @@
+package main
+
+// Calling a Go struct type with no arguments builds its zero value. The call
+// form on a Go type is sugar for the Go literal, as it is with named
+// arguments, so `url.URL()` is `url.URL{}`. It used to reach Go as a
+// zero-operand conversion and fail in `go build`.
+
+import (
+    "net/url"
+    "sync/atomic"
+)
+
+func main() {
+    val u = url.URL()
+    Println(s"[${u.Host}]", u.String() == "")
+
+    // A generic Go struct takes the type arguments the call writes. It is a
+    // `var` because an atomic.Pointer must not be copied.
+    var p = atomic.Pointer[int]()
+    Println(p.Load() == nil)
+}

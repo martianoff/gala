@@ -16,9 +16,10 @@ import (
 // literal: `Foo{}` for a zero-field shorthand struct, and for a block-form
 // struct with fields the literal in which every field takes its type's
 // default, as a positional call gives the fields it leaves out. Non-empty
-// shorthand structs (`Foo(x)`) already worked and must keep working. A sealed
-// parent is not a plain struct: no literal of it is a value of one of its
-// cases, so `Shape()` is GALA-E0043, pointing at a case.
+// shorthand structs (`Foo(x)`) already worked and must keep working. A Go
+// struct's call form is sugar for its literal, so `url.URL()` is `url.URL{}`.
+// A sealed parent is not a plain struct: no literal of it is a value of one of
+// its cases, so calling it in any form is GALA-E0043, pointing at a case.
 func TestZeroArgStructConstructor(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -111,19 +112,42 @@ func main() {
 			notContains: "= Pair()",
 		},
 		{
-			name: "sealed parent Shape() is GALA-E0043, naming a case",
+			name: "Go struct url.URL() lowers to composite literal",
 			input: `package main
 
-sealed type Shape {
-    case Circle(R int)
-    case Square(S int)
-}
+import "net/url"
 
 func main() {
-    val s = Shape()
-    Println(s)
+    val u = url.URL()
+    Println(u.Host == "")
 }`,
-			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
+			contains:    "var u = url.URL{}",
+			notContains: "= url.URL()",
+		},
+		{
+			name: "generic Go struct takes its written type arguments",
+			input: `package main
+
+import "sync/atomic"
+
+func main() {
+    var p = atomic.Pointer[int]()
+    Println(p.Load() == nil)
+}`,
+			contains:    "atomic.Pointer[int]{}",
+			notContains: "= atomic.Pointer[int]()",
+		},
+		{
+			name: "generic Go struct without type arguments is an error",
+			input: `package main
+
+import "sync/atomic"
+
+func main() {
+    var p = atomic.Pointer()
+    Println(p.Load() == nil)
+}`,
+			wantErr: []string{"atomic.Pointer is a generic Go struct: write its type arguments"},
 		},
 	}
 
@@ -142,6 +166,40 @@ func main() {
 			assert.Contains(t, got, tc.contains)
 			if tc.notContains != "" {
 				assert.NotContains(t, got, tc.notContains, "Foo() must not lower to a Go type conversion")
+			}
+		})
+	}
+
+	// A sealed type is called in no form: a literal of the parent is a value
+	// of none of its cases, so each is GALA-E0043, with a hint naming one.
+	const sealedDecls = `
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+sealed type Box[T any] {
+    case Full(V T)
+    case Empty()
+}
+`
+	sealedCalls := []struct {
+		call, typeName, caseName string
+	}{
+		{"Shape()", "Shape", "Circle"},
+		{"Shape(1)", "Shape", "Circle"},
+		{"Shape(R = 1)", "Shape", "Circle"},
+		{"Box[int]()", "Box", "Full"},
+		{"Box[int](1)", "Box", "Full"},
+	}
+	for _, sc := range sealedCalls {
+		t.Run("sealed parent "+sc.call+" is GALA-E0043", func(t *testing.T) {
+			input := "package main\n" + sealedDecls + "\nfunc main() {\n    val s = " + sc.call + "\n    Println(s)\n}\n"
+			_, err := trans.Transpile(input, "")
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "GALA-E0043")
+				assert.Contains(t, err.Error(), sc.typeName+" is a type, not a constructor")
+				assert.Contains(t, err.Error(), "`"+sc.caseName+"(...)`")
 			}
 		})
 	}
