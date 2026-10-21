@@ -16,9 +16,10 @@ import (
 // literal: `Foo{}` for a zero-field shorthand struct, and for a block-form
 // struct with fields the literal in which every field takes its type's
 // default, as a positional call gives the fields it leaves out. Non-empty
-// shorthand structs (`Foo(x)`) already worked and must keep working. A sealed
-// parent is not a plain struct: no literal of it is a value of one of its
-// cases, so `Shape()` is GALA-E0043, pointing at a case.
+// shorthand structs (`Foo(x)`) already worked and must keep working. A Go
+// struct's call form is sugar for its literal, so `url.URL()` is `url.URL{}`.
+// A sealed parent is not a plain struct: no literal of it is a value of one of
+// its cases, so calling it in any form is GALA-E0043, pointing at a case.
 func TestZeroArgStructConstructor(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -124,6 +125,89 @@ func main() {
     Println(s)
 }`,
 			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
+		},
+		{
+			name: "sealed parent Shape(1) is GALA-E0043, naming a case",
+			input: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+func main() {
+    val s = Shape(1)
+    Println(s)
+}`,
+			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
+		},
+		{
+			name: "sealed parent Shape(R = 1) is GALA-E0043, naming a case",
+			input: `package main
+
+sealed type Shape {
+    case Circle(R int)
+    case Square(S int)
+}
+
+func main() {
+    val s = Shape(R = 1)
+    Println(s)
+}`,
+			wantErr: []string{"GALA-E0043", "Shape is a type, not a constructor", "`Circle(...)`"},
+		},
+		{
+			name: "generic sealed parent Shape[int]() is GALA-E0043",
+			input: `package main
+
+sealed type Box[T any] {
+    case Full(V T)
+    case Empty()
+}
+
+func main() {
+    val b = Box[int]()
+    Println(b)
+}`,
+			wantErr: []string{"GALA-E0043", "Box is a type, not a constructor", "`Full(...)`"},
+		},
+		{
+			name: "Go struct url.URL() lowers to composite literal",
+			input: `package main
+
+import "net/url"
+
+func main() {
+    val u = url.URL()
+    Println(u.Host == "")
+}`,
+			contains:    "var u = url.URL{}",
+			notContains: "= url.URL()",
+		},
+		{
+			name: "generic Go struct takes its written type arguments",
+			input: `package main
+
+import "sync/atomic"
+
+func main() {
+    var p = atomic.Pointer[int]()
+    Println(p.Load() == nil)
+}`,
+			contains:    "atomic.Pointer[int]{}",
+			notContains: "= atomic.Pointer[int]()",
+		},
+		{
+			name: "generic Go struct without type arguments is an error",
+			input: `package main
+
+import "sync/atomic"
+
+func main() {
+    var p = atomic.Pointer()
+    Println(p.Load() == nil)
+}`,
+			wantErr: []string{"atomic.Pointer is a generic Go struct: write its type arguments"},
 		},
 	}
 

@@ -4472,3 +4472,11 @@ gala_exec_test(
     src = "block_struct_zero_arg_ctor.gala",
     expected = "block_struct_zero_arg_ctor.out",
 )
+
+# A Go struct called with no arguments builds its zero value, `url.URL{}`,
+# instead of reaching Go as a zero-operand conversion.
+gala_exec_test(
+    name = "go_struct_zero_arg_ctor",
+    src = "go_struct_zero_arg_ctor.gala",
+    expected = "go_struct_zero_arg_ctor.out",
+)

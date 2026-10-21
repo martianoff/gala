@@ -374,7 +374,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			meta := t.getTypeMeta(resolved)
 			fields, ok := t.structFields[resolved]
 			if ok && len(fields) > 0 && meta != nil && meta.IsSealed && t.isTypeBaseExpr(base) {
-				return nil, sealedParentCalledError(base, meta, suffix)
+				line, col, exact := primaryStartOf(suffix)
+				if !exact {
+					line, col = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+				}
+				return nil, t.sealedParentCallError(base, meta, line, col, exact)
 			}
 			if ok && t.isTypeBaseExpr(base) && (len(fields) == 0 || meta != nil) {
 				// A generic struct's type arguments come from the slot the
@@ -418,6 +422,17 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 				}
 				return &ast.CompositeLit{Type: base, Elts: elts}, nil
 			}
+		}
+		// A Go struct constructed as `T()`: one an imported Go package
+		// declares, or one of the package's own hand-written .go files. The
+		// call form is sugar for the Go literal, as it is with named
+		// arguments, so this is `T{}` rather than a zero-operand conversion.
+		if td := t.goStructTypeData(base); td != nil && !t.namesValue(base) {
+			line, col := suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
+			if err := goStructTypeArgsError(base, td, line, col); err != nil {
+				return nil, err
+			}
+			return &ast.CompositeLit{Type: base}, nil
 		}
 		// Zero-argument bare builtin (e.g. `recover()`) is forbidden too. Point
 		// the diagnostic at the callee identifier (the primary expr) so the
@@ -1875,20 +1890,17 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 
 // positionalCallBuildsStructLiteral reports whether a call of the struct type
 // with nargs positional arguments builds a struct literal rather than going
-// to the companion Apply (or being rejected). A full call does, unless the
-// type is sealed and has an Apply: a sealed parent's layout is synthetic. A
-// call with fewer arguments than fields does only when there is no Apply, and
-// then takes the omitted fields' defaults. Neither does when the fields are
-// private to another package.
+// to the companion Apply (or being rejected). A full call does; a call with
+// fewer arguments than fields does only when there is no Apply, and then
+// takes the omitted fields' defaults. Neither does when the fields are
+// private to another package, nor for a sealed parent: its layout is
+// synthetic, and a literal of it is a value of none of its cases.
 func (t *galaASTTransformer) positionalCallBuildsStructLiteral(typeMeta *transpiler.TypeMetadata, fields []string, nargs int) bool {
-	if nargs == 0 || nargs > len(fields) || t.positionalCtorIsUnavailable(typeMeta, fields, nargs) {
+	if nargs == 0 || nargs > len(fields) || typeMeta.IsSealed || t.positionalCtorIsUnavailable(typeMeta, fields, nargs) {
 		return false
 	}
 	_, hasApply := typeMeta.Methods["Apply"]
-	if nargs == len(fields) {
-		return !(typeMeta.IsSealed && hasApply)
-	}
-	return !hasApply
+	return nargs == len(fields) || !hasApply
 }
 
 // buildStructLiteral emits a struct composite literal from positional args,
@@ -2911,6 +2923,15 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				return applyCall(variantFun, ordered), nil
 			}
 		}
+		// A sealed parent is no construction target: its fields are the
+		// merged payloads of its cases, and a literal of it is none of them.
+		if meta := t.getTypeMeta(resolvedTypeName); meta != nil && meta.IsSealed && len(fields) > 0 {
+			fl, fc, exact := primaryStartOf(argListCtx)
+			if !exact {
+				fl, fc = line, col
+			}
+			return nil, t.sealedParentCallError(fun, meta, fl, fc, exact)
+		}
 		// 3. Regular GALA struct construction with named args. A named
 		// argument matching no field is reported as itself: before the
 		// missing-field check, which would otherwise name the field the author
@@ -2940,10 +2961,8 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
 				"%s is a Go struct: construct it with named arguments only, one per field", qualifiedName))
 		}
-		if _, written := splitCallFunTypeArgs(fun); len(written) < len(td.TypeParams) {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-				"%s is a generic Go struct: write its type arguments, e.g. `%s[%s](...)`",
-				qualifiedName, qualifiedName, strings.Join(td.TypeParams, ", ")))
+		if err := goStructTypeArgsError(fun, td, line, col); err != nil {
+			return nil, err
 		}
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
@@ -3809,6 +3828,35 @@ func (t *galaASTTransformer) goStructTypeData(fun ast.Expr) *transpiler.GoTypeDa
 		return td
 	}
 	return nil
+}
+
+// goStructTypeArgsError reports a construction of a generic Go struct that
+// writes fewer type arguments than it declares: no field of a Go literal binds
+// them, so they have to be written.
+func goStructTypeArgsError(fun ast.Expr, td *transpiler.GoTypeData, line, col int) error {
+	if _, written := splitCallFunTypeArgs(fun); len(written) >= len(td.TypeParams) {
+		return nil
+	}
+	_, qualifiedName := extractTypeNameFromExpr(fun)
+	return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+		"%s is a generic Go struct: write its type arguments, e.g. `%s[%s](...)`",
+		qualifiedName, qualifiedName, strings.Join(td.TypeParams, ", ")))
+}
+
+// namesValue reports whether a callee spells a local val or var, or a member
+// of one, rather than a type: `box()` for a val named box, `cfg.Make()` for a
+// val named cfg.
+func (t *galaASTTransformer) namesValue(fun ast.Expr) bool {
+	base, _ := splitCallFunTypeArgs(fun)
+	switch e := base.(type) {
+	case *ast.Ident:
+		return t.isVal(e.Name) || t.isVar(e.Name)
+	case *ast.SelectorExpr:
+		if id, ok := e.X.(*ast.Ident); ok {
+			return t.isVal(id.Name) || t.isVar(id.Name)
+		}
+	}
+	return false
 }
 
 // isGoImportedType checks if an expression refers to a Go-imported type (not a GALA struct).
