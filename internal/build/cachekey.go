@@ -272,8 +272,9 @@ func projectGoInputs(projectDir string) ([]string, error) {
 	return files, nil
 }
 
-// embedInputs resolves //go:embed patterns against dir the way copyEmbedFiles
-// does, expanding matched directories to their files.
+// embedInputs resolves //go:embed patterns against dir, expanding matched
+// directories to their files. The cache key and copyEmbedFiles share it, so
+// the files a key covers are the files a build copies.
 func embedInputs(dir string, patterns []string) []string {
 	var files []string
 	for _, pattern := range patterns {
@@ -287,8 +288,11 @@ func embedInputs(dir string, patterns []string) []string {
 				files = append(files, m)
 				continue
 			}
+			// Only regular files: Go does not embed symlinks or other
+			// irregular entries from a directory, and a dangling one cannot be
+			// read.
 			filepath.Walk(m, func(path string, fi os.FileInfo, err error) error {
-				if err == nil && !fi.IsDir() {
+				if err == nil && fi.Mode().IsRegular() {
 					files = append(files, path)
 				}
 				return nil

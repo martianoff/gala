@@ -700,82 +700,10 @@ func (b *Builder) transpile() error {
 		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
 
-	// Create transpiler pipeline
-	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
-	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
-
-	for _, req := range b.galaMod.GalaRequires() {
-		searchPaths = append(searchPaths, b.effectiveDepDir(req))
-	}
-	p := transpiler.NewAntlrGalaParser()
-	tr := transformer.NewGalaASTTransformer()
-	g := generator.NewGoCodeGenerator()
-
-	// Use BatchAnalyzer to share analyzed package cache across all files.
-	// This avoids redundant re-analysis of imports (std, collection_immutable, etc.).
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
-	batchAnalyzer.SetGoSrcDirs(b.goModuleSrcDirs())
-
-	// Group files by their parent directory so sibling-based type resolution
-	// only sees files that actually share a Go package. A root-level file is
-	// not a sibling of a file in sub/ even though both belong to the same
-	// GALA module.
-	filesByDir := make(map[string][]string)
-	for _, f := range galaFiles {
-		filesByDir[filepath.Dir(f)] = append(filesByDir[filepath.Dir(f)], f)
-	}
-
-	var allEmbedPatterns []string
-
-	for _, galaFile := range galaFiles {
-		content, err := os.ReadFile(galaFile)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", galaFile, err)
-		}
-
-		var siblings []string
-		for _, other := range filesByDir[filepath.Dir(galaFile)] {
-			if other != galaFile {
-				siblings = append(siblings, other)
-			}
-		}
-		batchAnalyzer.SetPackageFiles(siblings)
-
-		t := transpiler.NewGalaToGoTranspiler(p, batchAnalyzer, tr, g)
-
-		goCode, err := t.Transpile(string(content), galaFile)
-		if err != nil {
-			return fmt.Errorf("transpiling %s: %w", galaFile, err)
-		}
-
-		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
-		if err != nil {
-			relPath = filepath.Base(galaFile)
-		}
-
-		// Collect embed patterns from generated Go code. Go resolves a pattern
-		// against the directory of the file that declares it, so each is made
-		// relative to the project directory.
-		relDir := filepath.ToSlash(filepath.Dir(relPath))
-		for _, pattern := range extractEmbedPatterns(goCode) {
-			allEmbedPatterns = append(allEmbedPatterns, path.Join(relDir, pattern))
-		}
-		// Preserve the subdirectory layout in gen/ so each GALA subpackage
-		// lands in its own directory — this is what the Go toolchain needs
-		// to resolve imports like "gala-build-workspace/gen/sub".
-		outName := genheader.OutputName(relPath)
-		outPath := filepath.Join(b.workspace.GenDir, outName)
-
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
-		}
-		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", outName, err)
-		}
-
-		if b.verbose {
-			fmt.Printf("  %s -> %s\n", relPath, outName)
-		}
+	p, batchAnalyzer := b.newTranspilePipeline()
+	allEmbedPatterns, err := b.transpileToGen(p, batchAnalyzer, galaFiles, galaFiles)
+	if err != nil {
+		return err
 	}
 
 	// When the emitted embed patterns differ from the ones the key was computed
@@ -789,10 +717,8 @@ func (b *Builder) transpile() error {
 	}
 
 	// Copy embed source files to the gen directory
-	if len(allEmbedPatterns) > 0 {
-		if err := b.copyEmbedFiles(allEmbedPatterns); err != nil {
-			return fmt.Errorf("copying embed files: %w", err)
-		}
+	if err := b.copyEmbedFiles(allEmbedPatterns); err != nil {
+		return fmt.Errorf("copying embed files: %w", err)
 	}
 
 	// Copy local Go subpackages (e.g., httpcore/) to the gen directory
@@ -860,16 +786,6 @@ func (b *Builder) transpileWithSourceDir() error {
 		return fmt.Errorf("cleaning gen dir: %w", err)
 	}
 
-	// Create transpiler pipeline
-	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
-	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
-	for _, req := range b.galaMod.GalaRequires() {
-		searchPaths = append(searchPaths, b.effectiveDepDir(req))
-	}
-	p := transpiler.NewAntlrGalaParser()
-	tr := transformer.NewGalaASTTransformer()
-	g := generator.NewGoCodeGenerator()
-
 	// Step 1: Transpile library files (project root) into gen/.
 	// Recursive so subpackages (e.g., state/) are included; the consumer
 	// subtree is filtered out below since those files are handled in step 2.
@@ -891,50 +807,10 @@ func (b *Builder) transpileWithSourceDir() error {
 	if b.verbose {
 		fmt.Printf("  Transpiling %d library files...\n", len(libFiles))
 	}
-	// Group library files by directory: only files in the same directory
-	// share a Go package, so sibling-based type resolution must not mix
-	// root-package files with subpackage files (e.g., state/).
-	libFilesByDir := make(map[string][]string)
-	for _, f := range libFiles {
-		libFilesByDir[filepath.Dir(f)] = append(libFilesByDir[filepath.Dir(f)], f)
-	}
-	libBatch := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
-	libBatch.SetGoSrcDirs(b.goModuleSrcDirs())
-	for _, galaFile := range libFiles {
-		content, err := os.ReadFile(galaFile)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", galaFile, err)
-		}
-		var siblings []string
-		for _, other := range libFilesByDir[filepath.Dir(galaFile)] {
-			if other != galaFile {
-				siblings = append(siblings, other)
-			}
-		}
-		libBatch.SetPackageFiles(siblings)
-		t := transpiler.NewGalaToGoTranspiler(p, libBatch, tr, g)
-		goCode, err := t.Transpile(string(content), galaFile)
-		if err != nil {
-			return fmt.Errorf("transpiling %s: %w", galaFile, err)
-		}
-		// Preserve subdirectory layout in gen/ so each GALA subpackage
-		// lands in its own directory — this is what the Go toolchain needs
-		// to resolve imports like "gala-build-workspace/gen/<sub>".
-		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
-		if err != nil {
-			relPath = filepath.Base(galaFile)
-		}
-		outName := genheader.OutputName(relPath)
-		outPath := filepath.Join(b.workspace.GenDir, outName)
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
-		}
-		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", outName, err)
-		}
-		if b.verbose {
-			fmt.Printf("    %s -> %s\n", relPath, outName)
-		}
+	p, libBatch := b.newTranspilePipeline()
+	embedPatterns, err := b.transpileToGen(p, libBatch, libFiles, libFiles)
+	if err != nil {
+		return err
 	}
 
 	// Copy local Go subpackages
@@ -967,31 +843,12 @@ func (b *Builder) transpileWithSourceDir() error {
 	// carry over — so the consumer's `import "<project>"` resolution does
 	// not re-read or re-parse the library files when it analyzePackages
 	// the project's own module.
-	for _, galaFile := range consumerFiles {
-		content, err := os.ReadFile(galaFile)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", galaFile, err)
-		}
-		var siblings []string
-		for _, other := range consumerFiles {
-			if other != galaFile {
-				siblings = append(siblings, other)
-			}
-		}
-		libBatch.SetPackageFiles(siblings)
-		t := transpiler.NewGalaToGoTranspiler(p, libBatch, tr, g)
-		goCode, err := t.Transpile(string(content), galaFile)
-		if err != nil {
-			return fmt.Errorf("transpiling %s: %w", galaFile, err)
-		}
-		outName := genheader.OutputName(filepath.Base(galaFile))
-		outPath := filepath.Join(consumerDir, outName)
-		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", outPath, err)
-		}
-		if b.verbose {
-			fmt.Printf("    %s -> %s\n", filepath.Base(galaFile), filepath.ToSlash(filepath.Join(rel, outName)))
-		}
+	consumerPatterns, err := b.transpileToGen(p, libBatch, consumerFiles, consumerFiles)
+	if err != nil {
+		return err
+	}
+	if err := b.copyEmbedFiles(append(embedPatterns, consumerPatterns...)); err != nil {
+		return fmt.Errorf("copying embed files: %w", err)
 	}
 
 	// Step 3: Rewrite project module imports in consumer files.
@@ -1042,8 +899,8 @@ func (b *Builder) recordSourceHash() {
 	if err != nil {
 		return
 	}
-	// No embed patterns: this path copies every project file into gen/ rather
-	// than resolving patterns, and it never consults the key it records.
+	// No embed patterns: this path never consults the key it records, and the
+	// tree shape in the key keeps a plain build from matching it.
 	hash := b.sourceKey(galaFiles, nil)
 	if hash == "" {
 		return
@@ -1077,57 +934,53 @@ func extractEmbedPatterns(goCode string) []string {
 	return patterns
 }
 
-// copyEmbedFiles copies files matching embed patterns from the project directory
-// to the workspace gen directory, preserving relative paths.
+// embedPatternsOf returns the //go:embed patterns in goCode, the output of the
+// GALA file at relPath (relative to the project directory), each made relative
+// to the project directory: Go resolves a pattern against the directory of the
+// file that declares it.
+func embedPatternsOf(relPath, goCode string) []string {
+	relDir := filepath.ToSlash(filepath.Dir(relPath))
+	patterns := extractEmbedPatterns(goCode)
+	for i, pattern := range patterns {
+		patterns[i] = path.Join(relDir, pattern)
+	}
+	return patterns
+}
+
+// copyEmbedFiles copies the files that embed patterns (relative to the project
+// directory) name into the workspace gen directory, preserving relative paths;
+// a pattern naming a directory copies the tree below it. This is what carries
+// embedded assets the project-wide copy (copyNonGalaFiles) leaves out, such as
+// fixtures under testdata/.
 func (b *Builder) copyEmbedFiles(patterns []string) error {
+	if len(patterns) == 0 {
+		return nil
+	}
 	if b.verbose {
 		fmt.Println("Copying embed source files...")
 	}
 
-	for _, pattern := range patterns {
-		// Resolve the glob pattern relative to the project directory
-		absPattern := filepath.Join(b.workspace.ProjectDir, pattern)
-		matches, err := filepath.Glob(absPattern)
+	for _, srcPath := range embedInputs(b.workspace.ProjectDir, patterns) {
+		relPath, err := filepath.Rel(b.workspace.ProjectDir, srcPath)
 		if err != nil {
-			return fmt.Errorf("expanding embed pattern %q: %w", pattern, err)
+			return fmt.Errorf("computing relative path for %s: %w", srcPath, err)
 		}
 
-		if len(matches) == 0 {
-			// If no glob match, the pattern might refer to a single file;
-			// still try to copy it (Go compiler will report the error if missing)
-			srcPath := filepath.Join(b.workspace.ProjectDir, pattern)
-			if info, statErr := os.Stat(srcPath); statErr == nil && !info.IsDir() {
-				matches = []string{srcPath}
-			}
+		dstPath := filepath.Join(b.workspace.GenDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", filepath.Dir(dstPath), err)
 		}
 
-		for _, srcPath := range matches {
-			relPath, err := filepath.Rel(b.workspace.ProjectDir, srcPath)
-			if err != nil {
-				return fmt.Errorf("computing relative path for %s: %w", srcPath, err)
-			}
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			return fmt.Errorf("reading embed file %s: %w", srcPath, err)
+		}
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			return fmt.Errorf("writing embed file %s: %w", dstPath, err)
+		}
 
-			dstPath := filepath.Join(b.workspace.GenDir, relPath)
-
-			// Create destination directory
-			dstDir := filepath.Dir(dstPath)
-			if err := os.MkdirAll(dstDir, 0755); err != nil {
-				return fmt.Errorf("creating directory %s: %w", dstDir, err)
-			}
-
-			// Copy the file
-			data, err := os.ReadFile(srcPath)
-			if err != nil {
-				return fmt.Errorf("reading embed file %s: %w", srcPath, err)
-			}
-
-			if err := os.WriteFile(dstPath, data, 0644); err != nil {
-				return fmt.Errorf("writing embed file %s: %w", dstPath, err)
-			}
-
-			if b.verbose {
-				fmt.Printf("  embed: %s\n", relPath)
-			}
+		if b.verbose {
+			fmt.Printf("  embed: %s\n", relPath)
 		}
 	}
 
@@ -1971,7 +1824,7 @@ func (b *Builder) transpileTestMain(sourceFiles, testFiles []string) error {
 	return nil
 }
 
-// testGenFileName is the name transpileFilesToDir gives galaFile's output
+// testGenFileName is the name transpileFiles gives galaFile's output
 // (genheader.OutputName). The returned path is relative to the gen dir and
 // uses OS-native separators, mirroring the subdirectory layout of the
 // original .gala source so subpackages land in their own gen/<sub>/ folder.
@@ -2106,7 +1959,7 @@ func (b *Builder) writeLibraryTestHarnesses(testFiles []string) ([]string, error
 // Test files are transpiled alongside source files in the same directory.
 func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
 	// Transpile source files into gen/ as the library package
-	if err := b.transpileFilesToDir(sourceFiles, sourceFiles, b.workspace.GenDir); err != nil {
+	if err := b.transpileFiles(sourceFiles, sourceFiles); err != nil {
 		return fmt.Errorf("transpiling source files: %w", err)
 	}
 
@@ -2118,7 +1971,7 @@ func (b *Builder) transpileTestLibrary(sourceFiles, testFiles []string) error {
 	// Transpile test files into gen/ (same directory, same package as library).
 	// Test files see source files as siblings for type resolution.
 	allFiles := append(sourceFiles, testFiles...)
-	if err := b.transpileFilesToDir(testFiles, allFiles, b.workspace.GenDir); err != nil {
+	if err := b.transpileFiles(testFiles, allFiles); err != nil {
 		return fmt.Errorf("transpiling test files: %w", err)
 	}
 
@@ -2230,13 +2083,40 @@ func rewritePackageToMain(code string) string {
 	return strings.Join(result, "\n")
 }
 
-// transpileFiles transpiles the given files into the workspace gen directory.
-// allSiblings is the full list of files for sibling-based type resolution.
+// transpileFiles transpiles the given files into the workspace gen directory
+// (see transpileToGen) and copies the files their embed patterns name there.
 func (b *Builder) transpileFiles(files []string, allSiblings []string) error {
-	return b.transpileFilesToDir(files, allSiblings, b.workspace.GenDir)
+	p, batchAnalyzer := b.newTranspilePipeline()
+	embedPatterns, err := b.transpileToGen(p, batchAnalyzer, files, allSiblings)
+	if err != nil {
+		return err
+	}
+	if err := b.copyEmbedFiles(embedPatterns); err != nil {
+		return fmt.Errorf("copying embed files: %w", err)
+	}
+	return nil
 }
 
-// transpileFilesToDir transpiles the given files into the specified output directory.
+// newTranspilePipeline returns a parser and a BatchAnalyzer over the project's
+// search paths. Transpiling every file of a build through one BatchAnalyzer
+// shares its analyzed-package cache, so imports (std, collection_immutable,
+// etc.) are not re-analyzed per file.
+func (b *Builder) newTranspilePipeline() (transpiler.GalaParser, *analyzer.BatchAnalyzer) {
+	searchPaths := []string{b.workspace.ProjectDir, b.config.StdlibVersionDir(b.stdlibVersion)}
+	for _, req := range b.galaMod.GalaRequires() {
+		searchPaths = append(searchPaths, b.effectiveDepDir(req))
+	}
+	p := transpiler.NewAntlrGalaParser()
+	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
+	batchAnalyzer.SetGoSrcDirs(b.goModuleSrcDirs())
+	return p, batchAnalyzer
+}
+
+// transpileToGen transpiles the given files into the workspace gen directory
+// and returns the //go:embed patterns their output declares, relative to the
+// project directory (see embedPatternsOf). The files those patterns name are
+// not copied: the caller does that, once it has every pattern. allSiblings is
+// the full list of files for sibling-based type resolution.
 //
 // When the input set spans multiple source directories (e.g. a library with
 // subpackages), each file is only given siblings from the SAME directory.
@@ -2244,21 +2124,10 @@ func (b *Builder) transpileFiles(files []string, allSiblings []string) error {
 // feed the batch analyzer parse trees that disagree on `package <name>`, which
 // in turn bubbles up as an ANTLR prediction-context panic once the analyzer
 // tries to cross-reference those trees. The sub-directory layout is preserved
-// under outDir so that `go test ./...` can see each subpackage as its own Go
-// package.
-func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outDir string) error {
-	stdlibDir := b.config.StdlibVersionDir(b.stdlibVersion)
-	searchPaths := []string{b.workspace.ProjectDir, stdlibDir}
-
-	for _, req := range b.galaMod.GalaRequires() {
-		searchPaths = append(searchPaths, b.effectiveDepDir(req))
-	}
-
-	p := transpiler.NewAntlrGalaParser()
+// under gen/ so that each GALA subpackage is its own Go package there.
+func (b *Builder) transpileToGen(p transpiler.GalaParser, batchAnalyzer *analyzer.BatchAnalyzer, files []string, allSiblings []string) ([]string, error) {
 	tr := transformer.NewGalaASTTransformer()
 	g := generator.NewGoCodeGenerator()
-	batchAnalyzer := analyzer.NewBatchAnalyzer(p, searchPaths, b.workspace.ProjectDir)
-	batchAnalyzer.SetGoSrcDirs(b.goModuleSrcDirs())
 
 	// Group sibling candidates by source directory so we can cheaply look up
 	// "other .gala files in my own package" without re-scanning allSiblings on
@@ -2269,10 +2138,11 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 		siblingsByDir[d] = append(siblingsByDir[d], s)
 	}
 
+	var embedPatterns []string
 	for _, galaFile := range files {
 		content, err := os.ReadFile(galaFile)
 		if err != nil {
-			return fmt.Errorf("reading %s: %w", galaFile, err)
+			return nil, fmt.Errorf("reading %s: %w", galaFile, err)
 		}
 
 		var siblings []string
@@ -2287,32 +2157,34 @@ func (b *Builder) transpileFilesToDir(files []string, allSiblings []string, outD
 
 		goCode, err := t.Transpile(string(content), galaFile)
 		if err != nil {
-			return fmt.Errorf("transpiling %s: %w", galaFile, err)
+			return nil, fmt.Errorf("transpiling %s: %w", galaFile, err)
 		}
 
 		relPath, err := filepath.Rel(b.workspace.ProjectDir, galaFile)
 		if err != nil {
 			relPath = filepath.Base(galaFile)
 		}
-		// Preserve subdirectory layout under outDir. Each GALA subpackage
+		// Preserve subdirectory layout under gen/. Each GALA subpackage
 		// lands in its own directory so Go can resolve imports of the form
 		// "gala-build-workspace/gen/<sub>" cleanly.
 		outName := genheader.OutputName(relPath)
-		outPath := filepath.Join(outDir, outName)
+		outPath := filepath.Join(b.workspace.GenDir, outName)
 
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return fmt.Errorf("creating gen dir for %s: %w", outName, err)
+			return nil, fmt.Errorf("creating gen dir for %s: %w", outName, err)
 		}
 		if err := os.WriteFile(outPath, []byte(goCode), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", outPath, err)
+			return nil, fmt.Errorf("writing %s: %w", outPath, err)
 		}
+
+		embedPatterns = append(embedPatterns, embedPatternsOf(relPath, goCode)...)
 
 		if b.verbose {
 			fmt.Printf("  %s -> %s\n", relPath, outName)
 		}
 	}
 
-	return nil
+	return embedPatterns, nil
 }
 
 // rootPackageName returns the GALA package name declared by a source file that
