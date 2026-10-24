@@ -47,12 +47,14 @@ func findBuilderSource(t *testing.T) string {
 //
 // Regression signature it catches: a future change that reverts to
 // `analyzer.NewGalaAnalyzer*` inside a for loop within
-// transpileWithSourceDir. The test parses builder.go itself, finds the
-// function, walks its body, and asserts:
+// transpileWithSourceDir or the per-file loop it delegates to
+// (transpileToGen). The test parses builder.go itself, finds the
+// functions, walks their bodies, and asserts:
 //
-//  1. NewBatchAnalyzer is called at least once (the optimization is in
+//  1. transpileWithSourceDir gets its analyzer from NewBatchAnalyzer,
+//     directly or through newTranspilePipeline (the optimization is in
 //     place), AND
-//  2. Inside any for-loop in the function body, no NewGalaAnalyzer or
+//  2. Inside any for-loop in those bodies, no NewGalaAnalyzer or
 //     NewGalaAnalyzerWithPackageFiles call appears (the regression is
 //     not present).
 //
@@ -66,63 +68,71 @@ func TestTranspileWithSourceDir_UsesBatchAnalyzer(t *testing.T) {
 		t.Fatalf("parse builder.go: %v", err)
 	}
 
-	var fn *ast.FuncDecl
-	for _, decl := range file.Decls {
-		fd, ok := decl.(*ast.FuncDecl)
-		if !ok {
-			continue
+	fn := findBuilderMethod(t, file, "transpileWithSourceDir")
+
+	// Pass 1: assert the body builds a BatchAnalyzer, itself or through
+	// newTranspilePipeline (which must then call NewBatchAnalyzer).
+	if !callsFunc(fn.Body, "NewBatchAnalyzer") {
+		if !callsFunc(fn.Body, "newTranspilePipeline") || !callsFunc(findBuilderMethod(t, file, "newTranspilePipeline").Body, "NewBatchAnalyzer") {
+			t.Error("transpileWithSourceDir does not call analyzer.NewBatchAnalyzer; the perf fix may have been reverted (gala_tui cold build regressed from ~18s back to ~67s)")
 		}
-		if fd.Name.Name == "transpileWithSourceDir" && fd.Recv != nil {
-			fn = fd
-			break
-		}
-	}
-	if fn == nil {
-		t.Fatal("could not find (b *Builder) transpileWithSourceDir in builder.go")
 	}
 
-	// Pass 1: assert NewBatchAnalyzer is called somewhere in the body.
-	sawBatch := false
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if name := callName(call); strings.HasSuffix(name, ".NewBatchAnalyzer") || name == "NewBatchAnalyzer" {
-			sawBatch = true
-		}
-		return true
-	})
-	if !sawBatch {
-		t.Error("transpileWithSourceDir does not call analyzer.NewBatchAnalyzer; the perf fix may have been reverted (gala_tui cold build regressed from ~18s back to ~67s)")
-	}
-
-	// Pass 2: walk every for-loop inside the function body and assert
+	// Pass 2: walk every for-loop inside the function bodies and assert
 	// no per-file NewGalaAnalyzer* allocation appears within.
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		fl, ok := n.(*ast.RangeStmt)
-		if !ok {
-			return true
-		}
-		ast.Inspect(fl.Body, func(inner ast.Node) bool {
-			call, ok := inner.(*ast.CallExpr)
+	for _, f := range []*ast.FuncDecl{fn, findBuilderMethod(t, file, "transpileToGen")} {
+		ast.Inspect(f.Body, func(n ast.Node) bool {
+			fl, ok := n.(*ast.RangeStmt)
 			if !ok {
 				return true
 			}
-			name := callName(call)
-			short := name
-			if dot := strings.LastIndex(name, "."); dot >= 0 {
-				short = name[dot+1:]
-			}
-			switch short {
-			case "NewGalaAnalyzer", "NewGalaAnalyzerWithPackageFiles", "NewGalaAnalyzerWithBase":
-				pos := fset.Position(call.Pos())
-				t.Errorf("transpileWithSourceDir allocates a fresh analyzer per loop iteration at %s: %s — this is the regression that turned gala_tui cold builds into 67s. Use the shared BatchAnalyzer instead.", pos, name)
-			}
+			ast.Inspect(fl.Body, func(inner ast.Node) bool {
+				call, ok := inner.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch name := callName(call); shortName(name) {
+				case "NewGalaAnalyzer", "NewGalaAnalyzerWithPackageFiles", "NewGalaAnalyzerWithBase":
+					pos := fset.Position(call.Pos())
+					t.Errorf("%s allocates a fresh analyzer per loop iteration at %s: %s — this is the regression that turned gala_tui cold builds into 67s. Use the shared BatchAnalyzer instead.", f.Name.Name, pos, name)
+				}
+				return true
+			})
 			return true
 		})
-		return true
+	}
+}
+
+// findBuilderMethod returns the (b *Builder) method called name in file.
+func findBuilderMethod(t *testing.T, file *ast.File, name string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == name && fd.Recv != nil {
+			return fd
+		}
+	}
+	t.Fatalf("could not find (b *Builder) %s in builder.go", name)
+	return nil
+}
+
+// callsFunc reports whether body calls a function or method named name.
+func callsFunc(body *ast.BlockStmt, name string) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && shortName(callName(call)) == name {
+			found = true
+		}
+		return !found
 	})
+	return found
+}
+
+// shortName strips the qualifier from a callName result ("pkg.Foo" → "Foo").
+func shortName(name string) string {
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		return name[dot+1:]
+	}
+	return name
 }
 
 // TestTranspileWithSourceDir_DiscoversSubpackagesRecursively is a static

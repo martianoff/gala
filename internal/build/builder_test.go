@@ -116,7 +116,7 @@ func TestX() {}
 }
 
 // TestTestGenFileName verifies that the helper matches the naming used by
-// transpileFilesToDir. Subdirectory layout is preserved so that each GALA
+// transpileFiles. Subdirectory layout is preserved so that each GALA
 // subpackage lands in its own gen/<sub>/ folder and Go can resolve
 // cross-package imports without flattening.
 func TestTestGenFileName(t *testing.T) {
