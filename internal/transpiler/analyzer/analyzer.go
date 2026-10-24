@@ -236,6 +236,11 @@ type galaAnalyzer struct {
 	// metadata does not model (package-level val/var, notably). Keyed by
 	// canonical directory path. See importedTopLevelNames.
 	importedNames map[string]map[string]bool
+
+	// paths memoizes symlink resolution for every path comparison the
+	// analyzer makes. See pathCache. Nil (in tests that build the struct
+	// directly) resolves without caching.
+	paths *pathCache
 }
 
 // siblingCacheEntry is the value stored in galaAnalyzer.siblingTreeCache.
@@ -305,6 +310,7 @@ func NewGalaAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot 
 		localGoNames:        make(map[string]map[string]bool),
 		importedNames:       make(map[string]map[string]bool),
 		packageLoadFailures: make(map[string]bool),
+		paths:               newPathCache(),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -334,6 +340,7 @@ func NewGalaAnalyzerWithPackageFiles(p transpiler.GalaParser, searchPaths []stri
 		localGoNames:        make(map[string]map[string]bool),
 		importedNames:       make(map[string]map[string]bool),
 		packageLoadFailures: make(map[string]bool),
+		paths:               newPathCache(),
 		resolver:         module.NewResolver(searchPaths),
 		cache:            newAnalysisCache(resolveCacheRoot(root)),
 	}
@@ -359,6 +366,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		localGoNames:        make(map[string]map[string]bool),
 		importedNames:       make(map[string]map[string]bool),
 		packageLoadFailures: make(map[string]bool),
+		paths:               newPathCache(),
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipUndefinedCheck:  true,
@@ -395,6 +403,7 @@ func NewBatchAnalyzer(p transpiler.GalaParser, searchPaths []string, projectRoot
 			localGoNames:        make(map[string]map[string]bool),
 			importedNames:       make(map[string]map[string]bool),
 			packageLoadFailures: make(map[string]bool),
+			paths:               newPathCache(),
 			resolver:           module.NewResolver(searchPaths),
 			cache:              newAnalysisCache(resolveCacheRoot(root)),
 		},
@@ -531,7 +540,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		// parsed by a previous SetPackageFiles call is not re-parsed.
 		toParse := make([]string, 0, len(a.packageFiles))
 		for _, pf := range a.packageFiles {
-			if isSameFile(pf, filePath) {
+			if a.paths.sameFile(pf, filePath) {
 				continue // skip self (resolves symlinks for Bazel on Linux)
 			}
 			toParse = append(toParse, pf)
@@ -564,7 +573,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		// that happen to share a directory (e.g., examples/). Scanning their imports
 		// would pollute the current file's type resolution with unrelated packages.
 		dirPath := filepath.Dir(filePath)
-		canonDir := canonicalPath(dirPath)
+		canonDir := a.paths.canonical(dirPath)
 
 		// P1 (perf): try the in-memory sibling AST cache first. Reuses parsed
 		// trees across Analyze() calls within the same process, so a 5-file
@@ -960,7 +969,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// validateExplicitImports). Free functions, fields and variants remain
 	// strictly per-file.
 	fileImportSets := make(map[string]map[string]bool)
-	fileImportSets[canonicalPath(filePath)] = explicitImportPkgs
+	fileImportSets[a.paths.canonical(filePath)] = explicitImportPkgs
 	// The GALA packages each file dot-imports. GALA-E0023's version of the
 	// receiver-file allowance needs these alone: a bare name can come from
 	// the receiver file's dot imports, never from its named imports. A Go dot
@@ -974,11 +983,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 		return set
 	}
-	fileDotImportSets := map[string]map[string]bool{canonicalPath(filePath): dotPkgsForFile(fileQuals)}
+	fileDotImportSets := map[string]map[string]bool{a.paths.canonical(filePath): dotPkgsForFile(fileQuals)}
 	for i, q := range siblingQuals {
 		if i < len(siblingPaths) {
-			fileImportSets[canonicalPath(siblingPaths[i])] = importPkgsForFile(q)
-			fileDotImportSets[canonicalPath(siblingPaths[i])] = dotPkgsForFile(q)
+			fileImportSets[a.paths.canonical(siblingPaths[i])] = importPkgsForFile(q)
+			fileDotImportSets[a.paths.canonical(siblingPaths[i])] = dotPkgsForFile(q)
 		}
 	}
 
@@ -1045,7 +1054,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
 				// Error if type is being redefined from a DIFFERENT file.
 				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
-				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 					return nil, typeRedefinedError(typeName, pkgName,
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 						existing.DefinedIn, filePath, existing.Pos)
@@ -1193,7 +1202,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			var meta *transpiler.TypeMetadata
 			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
-				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 					return nil, typeRedefinedError(typeName, pkgName,
 						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 						existing.DefinedIn, filePath, existing.Pos)
@@ -1294,7 +1303,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				fullSealedName = pkgName + "." + sealedName
 			}
 			// Check for redefinition (skip if DefinedIn is empty — type came from cache)
-			if existing, ok := richAST.Types[fullSealedName]; ok && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+			if existing, ok := richAST.Types[fullSealedName]; ok && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 				return nil, typeRedefinedError(sealedName, pkgName,
 					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 					existing.DefinedIn, filePath, existing.Pos)
@@ -1337,7 +1346,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if pkgName != "" && pkgName != "main" && pkgName != "test" {
 			fullTypeName = pkgName + "." + typeName
 		}
-		if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+		if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 			return nil, typeRedefinedError(typeName, pkgName,
 				octx.GetStart().GetLine(), octx.GetStart().GetColumn(),
 				existing.DefinedIn, filePath, existing.Pos)
@@ -1442,7 +1451,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
 							// Error if method already has a user-defined implementation
-							if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+							if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 								return nil, methodRedefinedError(methodName, baseType, pkgName,
 									ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 									existing.DefinedIn, filePath, existing.Pos)
@@ -1549,7 +1558,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				// (placeholder / cache) or refers to this same file
 				// (re-analysis of the same source).
 				if existing, ok := richAST.Functions[fullFuncName]; ok {
-					if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && isSameFile(existing.DefinedIn, absFilePath)) {
+					if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
 						return nil, funcRedeclaredError(funcName, pkgName,
 							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
 							existing.DefinedIn, filePath, existing.Pos)
@@ -1703,10 +1712,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// If not, that's the auto-import fallback we used to silently
 	// take — fail loud so users get a clear "add the import" message.
 	if isTopLevel {
-		canonFile, _ := filepath.Abs(filePath)
-		if real, err := filepath.EvalSymlinks(canonFile); err == nil {
-			canonFile = real
-		}
+		canonFile := a.paths.canonical(filePath)
 		// Build the set of *known GALA package names* that appear as
 		// values in richAST.Packages — those are the only packages we
 		// validate against. Anything else is either a Go-side import
@@ -1718,7 +1724,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				knownGalaPkgs[name] = true
 			}
 		}
-		if errs := validateExplicitImports(richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets, fileQuals); len(errs) > 0 {
+		if errs := validateExplicitImports(a.paths, richAST, canonFile, explicitImportPkgs, knownGalaPkgs, fileImportSets, fileQuals); len(errs) > 0 {
 			return nil, errs[0]
 		}
 
@@ -1757,39 +1763,23 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 // when a bare name didn't resolve. Mirrors Go's compile-time rule that
 // every cross-package symbol needs an explicit import in the file
 // using it. `quals` is this file's import table, for the hint.
-func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool, quals fileQualifiers) []*galaerr.SemanticError {
+func validateExplicitImports(paths *pathCache, richAST *transpiler.RichAST, canonFile string, explicit, knownGala map[string]bool, fileImportSets map[string]map[string]bool, quals fileQualifiers) []*galaerr.SemanticError {
 	var errs []*galaerr.SemanticError
-	// Per-call memo: many TypeMetadata / FunctionMetadata entries share
-	// the same DefinedIn (e.g. all 100+ types declared in one .gala
-	// file). The original closure called filepath.Abs +
-	// filepath.EvalSymlinks once per metadata entry; on the apex
-	// transpile of cmd/main.gala in gala_team, richAST.Types +
-	// richAST.Functions reach ~1000 entries (full transitive closure),
-	// turning this into 1000+ filesystem syscalls. CPU-profile of the
-	// gala-build perf test had filepath.EvalSymlinks at 56% of total
-	// CPU time, with this closure responsible for 26% on its own.
-	// Memoizing by raw input path collapses the cost to one syscall
-	// per unique DefinedIn. The fast-path `abs == canonFile` check
-	// also lets us skip EvalSymlinks entirely when the paths already
-	// match — Bazel sandboxes typically deliver pre-canonicalized
-	// paths, so the symlink resolution is dead work in the common case.
-	resolvedCache := make(map[string]bool)
+	// richAST spans the full transitive closure (~1000 types and
+	// functions on a large project), and many entries share a DefinedIn,
+	// so answers are memoized per raw path; paths caches the resolution
+	// behind them across calls.
+	matches := make(map[string]bool)
 	isThisFile := func(p string) bool {
 		if p == "" {
 			return false
 		}
-		if cached, ok := resolvedCache[p]; ok {
-			return cached
+		m, ok := matches[p]
+		if !ok {
+			m = paths.canonical(p) == canonFile
+			matches[p] = m
 		}
-		abs, _ := filepath.Abs(p)
-		match := abs == canonFile
-		if !match {
-			if real, err := filepath.EvalSymlinks(abs); err == nil {
-				match = real == canonFile
-			}
-		}
-		resolvedCache[p] = match
-		return match
+		return m
 	}
 	check := func(t transpiler.Type, pos transpiler.SourcePos, ctxName string) {
 		walkTypeForUnresolvedPackages(t, explicit, knownGala, quals, &errs, pos, ctxName)
@@ -1840,7 +1830,7 @@ func validateExplicitImports(richAST *transpiler.RichAST, canonFile string, expl
 			// If the receiver type lives in a sibling file, fold in that
 			// file's imports too.
 			if tm.DefinedIn != "" && !isThisFile(tm.DefinedIn) {
-				if typeImports := fileImportSets[canonicalPath(tm.DefinedIn)]; typeImports != nil {
+				if typeImports := fileImportSets[paths.canonical(tm.DefinedIn)]; typeImports != nil {
 					allowed = make(map[string]bool, len(explicit)+len(typeImports))
 					for k := range explicit {
 						allowed[k] = true
@@ -3004,42 +2994,23 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 						"use the same package name across all sibling .gala files, or move the file to a different directory",
 					)
 				}
-				// Canonicalize filePath once — isSameFile resolves symlinks and
-				// runs os.Stat, which is too expensive to call per type.
-				// Same per-call memoization + basename-skip optimization
-				// as validateExplicitImports above: most DefinedIn entries
-				// are obviously different files (different basename) and
-				// don't need a syscall to confirm.
-				canonFile, _ := filepath.Abs(filePath)
-				if real, err := filepath.EvalSymlinks(canonFile); err == nil {
-					canonFile = real
-				}
+				// Called once per type, so answers are memoized per raw path.
+				// A different base name cannot be the same file (bar a
+				// cross-name symlink), so those skip resolution entirely.
+				canonFile := a.paths.canonical(filePath)
 				canonFileBase := filepath.Base(canonFile)
-				canonCache := map[string]string{filePath: canonFile}
+				matches := map[string]bool{filePath: true}
 				sameAsFilePath := func(p string) bool {
 					if p == "" {
 						return false
 					}
-					if c, ok := canonCache[p]; ok {
-						return c == canonFile
+					m, ok := matches[p]
+					if !ok {
+						abs, _ := filepath.Abs(p)
+						m = abs == canonFile || (filepath.Base(abs) == canonFileBase && a.paths.canonical(abs) == canonFile)
+						matches[p] = m
 					}
-					abs, _ := filepath.Abs(p)
-					if abs == canonFile {
-						canonCache[p] = abs
-						return true
-					}
-					// Basename mismatch can never be the same file (modulo
-					// cross-directory symlinks, vanishingly rare); skip
-					// the EvalSymlinks syscall.
-					if filepath.Base(abs) != canonFileBase {
-						canonCache[p] = abs
-						return false
-					}
-					if real, err := filepath.EvalSymlinks(abs); err == nil {
-						abs = real
-					}
-					canonCache[p] = abs
-					return abs == canonFile
+					return m
 				}
 				for typeName, newMeta := range res.Types {
 					if !sameAsFilePath(newMeta.DefinedIn) {
@@ -3602,78 +3573,17 @@ func hasTypeDefinition(meta *transpiler.TypeMetadata) bool {
 	return len(meta.FieldNames) > 0 || (meta.IsSealed && len(meta.SealedVariants) > 0) || meta.IsOpaque
 }
 
-// isSameFile checks whether two paths refer to the same file.
-// Handles relative/absolute paths and Bazel symlinks on Linux.
-//
-// Fast paths (no syscalls beyond the cheap filepath.Abs):
-//
-//   1. absA == absB → same file
-//   2. filepath.Base(absA) != filepath.Base(absB) → can never be the
-//      same file unless one is a symlink to the other across
-//      directories with different basenames (essentially never in
-//      practice). Without this guard, every per-Analyze sibling-
-//      filter loop pays two filepath.EvalSymlinks calls per sibling
-//      just to discover that file_01.gala and file_02.gala are
-//      different — on the gala-build CPU profile this was 22% of
-//      total CPU time (1.54s of 7.12s).
-//
-// Slow path (only reached when basenames match but absolute paths
-// differ — i.e. potential symlink alias) keeps the original three-
-// strategy resolution for correctness on Bazel local_path_override
-// on Linux where the same file is reachable via real and sandbox-
-// symlinked paths.
+// isSameFile reports whether two paths refer to the same file, resolving
+// symlinks without caching. Hot paths use galaAnalyzer.paths instead; see
+// pathCache.sameFile for the rules.
 func isSameFile(pathA, pathB string) bool {
-	if pathA == "" || pathB == "" {
-		return false
-	}
-	absA, err := filepath.Abs(pathA)
-	if err != nil {
-		absA = pathA
-	}
-	absB, err := filepath.Abs(pathB)
-	if err != nil {
-		absB = pathB
-	}
-	if absA == absB {
-		return true
-	}
-	// Basename mismatch → impossible to be the same file in any
-	// realistic filesystem layout. Skip the symlink-resolution
-	// syscalls entirely. The previous unconditional fall-through to
-	// EvalSymlinks burned thousands of syscalls per apex transpile
-	// to discover that obviously-different files were obviously
-	// different.
-	if filepath.Base(absA) != filepath.Base(absB) {
-		return false
-	}
-	// Resolve symlinks (critical for Bazel local_path_override on Linux where
-	// the same file is reachable via symlinked and real paths)
-	realA, errA := filepath.EvalSymlinks(absA)
-	realB, errB := filepath.EvalSymlinks(absB)
-	if errA == nil && errB == nil {
-		return realA == realB
-	}
-	// Fallback: use os.SameFile which compares inodes (works across symlinks)
-	infoA, errA := os.Stat(absA)
-	infoB, errB := os.Stat(absB)
-	if errA == nil && errB == nil {
-		return os.SameFile(infoA, infoB)
-	}
-	return false
+	return (*pathCache)(nil).sameFile(pathA, pathB)
 }
 
-// canonicalPath returns a canonical path by resolving symlinks and making absolute.
-// Falls back to filepath.Abs if symlinks can't be resolved.
+// canonicalPath returns path made absolute with its symlinks resolved, without
+// caching. Hot paths use galaAnalyzer.paths instead; see pathCache.canonical.
 func canonicalPath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return path
-	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return abs
-	}
-	return real
+	return (*pathCache)(nil).canonical(path)
 }
 
 // exportedGoNames returns the package name a Go source declares and the
@@ -4085,7 +3995,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// Skip if existing type was loaded from this same sibling file (via auto-import).
 			// Skip if DefinedIn is empty — the type came from cache and should be overwritable.
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
+				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
 				}
@@ -4212,7 +4122,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				fullTypeName = pkgName + "." + typeName
 			}
 			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
+				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
 				}
@@ -4295,7 +4205,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// Skip if loaded from this same sibling file (via auto-import).
 			// Skip if DefinedIn is empty — the type came from cache.
 			if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
-				if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
+				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 						transpiler.PosFromToken(ctx.Identifier().GetStart()), decls.mainFile)
 				}
@@ -4339,7 +4249,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			fullTypeName = pkgName + "." + typeName
 		}
 		if existing, ok := richAST.Types[fullTypeName]; ok && hasTypeDefinition(existing) {
-			if existing.DefinedIn != "" && !isSameFile(existing.DefinedIn, absSibPath) {
+			if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
 				return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
 					transpiler.PosFromToken(octx.Identifier().GetStart()), decls.mainFile)
 			}
@@ -4380,7 +4290,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				// siblings is left to the Analyze call for one of those two
 				// files, which sees it as this same main-file case.
 				prev, dup := decls.recordMethod(fullBaseType+"."+methodName, absSibPath, sibPos)
-				if dup && isSameFile(prev.file, decls.mainFile) {
+				if dup && a.paths.sameFile(prev.file, decls.mainFile) {
 					return methodRedefinedError(methodName, baseType, pkgName,
 						prev.pos.Line, prev.pos.Column,
 						sibDisplay, decls.mainFile, sibPos)
@@ -4470,7 +4380,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				// analyzed file already declares is a redeclaration, and was
 				// previously dropped here without a word.
 				prev, dup := decls.recordFunc(fullFuncName, absSibPath, sibPos)
-				if dup && isSameFile(prev.file, decls.mainFile) {
+				if dup && a.paths.sameFile(prev.file, decls.mainFile) {
 					return funcRedeclaredError(funcName, pkgName,
 						prev.pos.Line, prev.pos.Column,
 						sibDisplay, decls.mainFile, sibPos)
@@ -5370,7 +5280,7 @@ func (a *galaAnalyzer) filterSiblingsForCurrentFile(
 	var outPaths []string
 	for i, tree := range trees {
 		path := paths[i]
-		if isSameFile(path, filePath) {
+		if a.paths.sameFile(path, filePath) {
 			continue
 		}
 		pkgClause := tree.PackageClause().(*grammar.PackageClauseContext)

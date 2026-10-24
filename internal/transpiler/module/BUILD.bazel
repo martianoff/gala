@@ -17,6 +17,7 @@ go_test(
     srcs = [
         "internal_visibility_test.go",
         "resolver_test.go",
+        "search_path_module_test.go",
     ],
     embed = [":module"],
     deps = [
