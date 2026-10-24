@@ -39,11 +39,43 @@ type Resolver struct {
 	// hundreds of times per worker process.
 	resolveMu    sync.Mutex
 	resolveCache map[string]resolveCacheEntry
+
+	// spModules memoizes findModuleRootForSearchPath per search path, for
+	// the same reason. IsGalaPackage and ResolveGoImportPath run for every
+	// import of every file, and each walks up from every search path
+	// looking for gala.mod and go.mod — a stat per directory level.
+	spModulesMu sync.Mutex
+	spModules   map[string]searchPathModule
 }
 
 type resolveCacheEntry struct {
 	path string
 	err  error
+}
+
+type searchPathModule struct {
+	root string
+	name string
+}
+
+// searchPathModule returns findModuleRootForSearchPath(sp), cached.
+func (r *Resolver) searchPathModule(sp string) (moduleRoot, moduleName string) {
+	r.spModulesMu.Lock()
+	m, ok := r.spModules[sp]
+	r.spModulesMu.Unlock()
+	if ok {
+		return m.root, m.name
+	}
+	// The walk runs unlocked, as in ResolvePackagePath: two callers may
+	// both walk the same path once, but neither waits on the other's I/O.
+	root, name := findModuleRootForSearchPath(sp)
+	r.spModulesMu.Lock()
+	if r.spModules == nil {
+		r.spModules = make(map[string]searchPathModule)
+	}
+	r.spModules[sp] = searchPathModule{root: root, name: name}
+	r.spModulesMu.Unlock()
+	return root, name
 }
 
 // NewResolver creates a Resolver by searching for go.mod and gala.mod.
@@ -381,7 +413,7 @@ func (r *Resolver) resolvePackagePathUncached(importPath string) (string, error)
 	// Also handles VCS host prefix mismatches (e.g., import "martianoff/gala-server"
 	// matching module "github.com/martianoff/gala-server").
 	for _, sp := range r.searchPaths {
-		spModRoot, spModName := findModuleRootForSearchPath(sp)
+		spModRoot, spModName := r.searchPathModule(sp)
 		if spModName == "" || spModRoot == r.moduleRoot {
 			continue // skip primary module (already handled in Strategy 1)
 		}
@@ -578,7 +610,7 @@ func StripModulePrefix(importPath, moduleName string) (relPath string, ok bool) 
 func (r *Resolver) ResolveGoImportPath(importPath string) string {
 	// Check search paths for module roots with VCS prefix differences
 	for _, sp := range r.searchPaths {
-		spModRoot, spModName := findModuleRootForSearchPath(sp)
+		spModRoot, spModName := r.searchPathModule(sp)
 		if spModName == "" || spModRoot == r.moduleRoot {
 			continue
 		}
@@ -666,7 +698,7 @@ func (r *Resolver) IsGalaPackage(importPath string) bool {
 
 	// Check if any search path is a module root whose name matches
 	for _, sp := range r.searchPaths {
-		spModRoot, spModName := findModuleRootForSearchPath(sp)
+		spModRoot, spModName := r.searchPathModule(sp)
 		if spModName == "" || spModName == r.moduleName {
 			continue
 		}

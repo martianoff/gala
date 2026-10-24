@@ -374,7 +374,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	// under this function's eligibility guards, which is why it lives here
 	// rather than standing alone. See checkTypeNames.
 	c.checkTypeNames(sourceFile, func(recvType string) map[string]bool {
-		return receiverFileImports(richAST, recvType, filePath, fileDotImportSets)
+		return receiverFileImports(a.paths, richAST, recvType, filePath, fileDotImportSets)
 	})
 
 	sort.SliceStable(c.errs, func(i, j int) bool {
@@ -577,7 +577,7 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 	if err != nil || dirPath == "" {
 		return nil
 	}
-	key := canonicalPath(dirPath)
+	key := a.paths.canonical(dirPath)
 	if cached, ok := a.importedNames[key]; ok {
 		return cached
 	}
@@ -708,7 +708,7 @@ func (a *galaAnalyzer) undefinedSymbolLocalGoNames(filePath string) map[string]b
 	}
 	// A test file may also use the package's Go test helpers.
 	withTests := strings.HasSuffix(filePath, "_test.gala")
-	key := canonicalPath(filepath.Dir(filePath))
+	key := a.paths.canonical(filepath.Dir(filePath))
 	if withTests {
 		key += "\x00test"
 	}
@@ -797,7 +797,7 @@ func (a *galaAnalyzer) importPathResolvesTo(importPath, dir string) bool {
 	if err != nil || resolved == "" {
 		return false
 	}
-	return canonicalPath(resolved) == canonicalPath(dir)
+	return a.paths.canonical(resolved) == a.paths.canonical(dir)
 }
 
 // hintRoots returns the roots the import hint may scan, each paired with the
@@ -1830,7 +1830,7 @@ func receiverBaseTypeName(ctx grammar.ITypeContext) string {
 
 // receiverFileImports returns the GALA package names imported by the file
 // that declares recvType, when that is a different file from filePath.
-func receiverFileImports(rich *transpiler.RichAST, recvType, filePath string, fileImportSets map[string]map[string]bool) map[string]bool {
+func receiverFileImports(paths *pathCache, rich *transpiler.RichAST, recvType, filePath string, fileImportSets map[string]map[string]bool) map[string]bool {
 	tm := rich.Types[recvType]
 	if tm == nil {
 		tm = rich.Types[rich.PackageName+"."+recvType]
@@ -1838,8 +1838,8 @@ func receiverFileImports(rich *transpiler.RichAST, recvType, filePath string, fi
 	if tm == nil || tm.DefinedIn == "" {
 		return nil
 	}
-	declaring := canonicalPath(tm.DefinedIn)
-	if declaring == canonicalPath(filePath) {
+	declaring := paths.canonical(tm.DefinedIn)
+	if declaring == paths.canonical(filePath) {
 		return nil
 	}
 	return fileImportSets[declaring]
