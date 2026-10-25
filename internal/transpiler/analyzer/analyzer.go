@@ -2492,8 +2492,11 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		}
 	}
 
-	// If it's already package-qualified, handle it
-	if strings.Contains(typeName, ".") {
+	// If it's already package-qualified, handle it. Only the base name counts:
+	// a dot inside the type arguments (`Array[leaf.Command]`) qualifies an
+	// argument, not the base, which still resolves through this file's scope.
+	baseText, _, _ := strings.Cut(typeName, "[")
+	if strings.Contains(baseText, ".") {
 		// For qualified generic types like lazy.Lazy[Array[rune]],
 		// recursively resolve type arguments so inner types get proper prefixes
 		if idx := strings.Index(typeName, "["); idx != -1 {
