@@ -6,3 +6,12 @@ gala_library(
     importpath = "martianoff/gala/examples/default_vals_lib",
     visibility = ["//visibility:public"],
 )
+
+# The package's source for the transformer's example-corpus guards, which
+# transpile examples/default_vals_cross_pkg.gala: //examples:all_gala_sources
+# does not reach into this package, since it has a BUILD file of its own.
+filegroup(
+    name = "gala_sources",
+    srcs = glob(["*.gala"]),
+    visibility = ["//internal/transpiler/transformer:__pkg__"],
+)

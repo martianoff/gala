@@ -345,6 +345,9 @@ go_test(
         # everywhere.
         "//examples:all_gala_sources",
         "//examples:all_go_bridge_sources",
+        # A sibling package with its own BUILD file, which the glob above
+        # does not reach.
+        "//examples/default_vals_lib:gala_sources",
         # The rest of the standard library. Examples importing any of these
         # could not resolve them under the sandbox and were counted as skipped,
         # so the corpus guards covered a fifth less on CI than locally.
