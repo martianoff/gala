@@ -1,0 +1,8 @@
+load("@rules_gala//gala:defs.bzl", "gala_library")
+
+gala_library(
+    name = "default_vals_lib",
+    src = "limits.gala",
+    importpath = "martianoff/gala/examples/default_vals_lib",
+    visibility = ["//visibility:public"],
+)

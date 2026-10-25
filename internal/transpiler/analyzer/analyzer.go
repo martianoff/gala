@@ -3020,6 +3020,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		}
 	}
 	parsedTrees := a.parseFilesConcurrent(candidatePaths)
+	// What the package's defaults mean where they were written, for a use
+	// site in an importing package (see defaultScopeRecorder).
+	scopes := newDefaultScopeRecorder(importPath)
 
 	for i, tree := range parsedTrees {
 		filePath := candidatePaths[i]
@@ -3079,9 +3082,11 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 				}
 				pkgAST.Merge(res)
 				mergeOwnPackageVals(pkgAST, res, sameAsFilePath)
+				scopes.addFile(canonFile, a.qualifiersForFile(tree, res), res)
 			}
 		}
 	}
+	scopes.record(pkgAST, a.paths.canonical)
 
 	// Scan .go files for exported symbols and type information.
 	// Extract GoExports unconditionally. Even in mixed GALA+Go packages

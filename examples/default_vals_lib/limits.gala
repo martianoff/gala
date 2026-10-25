@@ -1,0 +1,32 @@
+package default_vals_lib
+
+import "strings"
+
+// Every default below reads a package-level val or var of this package, or
+// one of this file's imports. A default is lowered at each call or
+// construction site that omits it — in another package, too — so those names
+// must reach the generated Go spelled as that site sees them.
+
+val MaxK = 3
+
+var Level = 1
+
+struct Pos(Line int, Col int)
+
+val NoPos = Pos(0, 0)
+
+// Item's At defaults to a struct-typed val.
+struct Item(Name string, At Pos = NoPos, Depth int = MaxK)
+
+func Analyze(n int, maxK int = MaxK) int = n * maxK
+
+func Leveled(n int, lvl int = Level) int = n + lvl
+
+func Scaled(n int, f func(int) int = (a) => a * MaxK) int = f(n)
+
+// Rule's default calls `strings`, which an importer need not import.
+func Rule(label string, line string = strings.Repeat("=", MaxK)) string = s"$label $line"
+
+struct Box(N int)
+
+func (b Box) Times(k int = MaxK) int = b.N * k
