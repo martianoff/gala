@@ -96,10 +96,15 @@ func Copy[T any](v T) T {
 		return c.Copy()
 	}
 
-	// Fallback to check Copy method via reflection if T is any or interface mismatch
-	if val.IsValid() {
-		copyMeth := val.MethodByName("Copy")
-		if copyMeth.IsValid() && copyMeth.Type().NumIn() == 0 && copyMeth.Type().NumOut() == 1 {
+	// Fallback to check Copy method via reflection if T is any or interface
+	// mismatch. A pointer also has its pointee's value-receiver Copy in its
+	// method set; that Copy copies the pointee, not the pointer, so it is
+	// skipped — calling it copied the whole pointee (for a linked structure,
+	// every node behind the pointer) only to discard or misplace the result.
+	if copyMeth := val.MethodByName("Copy"); copyMeth.IsValid() {
+		mt := copyMeth.Type()
+		pointeeCopy := val.Kind() == reflect.Ptr && mt.NumOut() == 1 && mt.Out(0) == val.Type().Elem()
+		if mt.NumIn() == 0 && mt.NumOut() == 1 && !pointeeCopy {
 			res := copyMeth.Call(nil)[0].Interface()
 			if r, ok := res.(T); ok {
 				return r
