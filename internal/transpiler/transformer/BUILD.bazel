@@ -298,6 +298,7 @@ go_test(
         "type_inference_test.go",
         "type_param_scope_test.go",
         "typed_partial_function_test.go",
+        "unexported_method_cross_pkg_test.go",
         "unknown_method_test.go",
         "unresolved_corpus_test.go",
         "unresolved_nil_test.go",

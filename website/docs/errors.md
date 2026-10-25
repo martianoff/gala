@@ -131,6 +131,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0079](/docs/errors/gala-e0079/) | Invalid sealed-view match | Pattern matching |
 | [GALA-E0080](/docs/errors/gala-e0080/) | Pointer that may be nil where a Ptr is needed | Types |
 | [GALA-E0082](/docs/errors/gala-e0082/) | Wrong number of arguments | Declarations |
+| [GALA-E0083](/docs/errors/gala-e0083/) | Unexported method of another package | Sealed types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -154,7 +155,7 @@ Everyday type mismatches transpile cleanly and surface from the **Go compiler** 
 
 ## By category
 
-**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name, [E0061](/docs/errors/gala-e0061/) a variant used as a type, [E0071](/docs/errors/gala-e0071/) an alternative pattern that binds a name, [E0072](/docs/errors/gala-e0072/) a variant with more than 10 fields, [E0073](/docs/errors/gala-e0073/) a malformed named sub-pattern, [E0074](/docs/errors/gala-e0074/) an invalid default case, [E0079](/docs/errors/gala-e0079/) a case that does not apply to a sealed view. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
+**Pattern matching and sealed types** — [E0002](/docs/errors/gala-e0002/), [E0003](/docs/errors/gala-e0003/), [E0004](/docs/errors/gala-e0004/), [E0005](/docs/errors/gala-e0005/), [E0006](/docs/errors/gala-e0006/), [E0015](/docs/errors/gala-e0015/), [E0018](/docs/errors/gala-e0018/), [E0031](/docs/errors/gala-e0031/), [E0039](/docs/errors/gala-e0039/) bare variant name, [E0061](/docs/errors/gala-e0061/) a variant used as a type, [E0071](/docs/errors/gala-e0071/) an alternative pattern that binds a name, [E0072](/docs/errors/gala-e0072/) a variant with more than 10 fields, [E0073](/docs/errors/gala-e0073/) a malformed named sub-pattern, [E0074](/docs/errors/gala-e0074/) an invalid default case, [E0079](/docs/errors/gala-e0079/) a case that does not apply to a sealed view, [E0083](/docs/errors/gala-e0083/) a sealed type's private `is<Variant>` predicate called from another package. Start with [Pattern Matching](/features/pattern-matching/) and [Sealed Types](/features/sealed-types/).
 
 **Collections and Go interop** — [E0007](/docs/errors/gala-e0007/), [E0008](/docs/errors/gala-e0008/), [E0043](/docs/errors/gala-e0043/) type name called as a constructor, [E0049](/docs/errors/gala-e0049/) a Go call's Try or Tuple used as its plain value, [E0067](/docs/errors/gala-e0067/) a type argument nothing determines, often a Go package whose types were not loaded, [E0080](/docs/errors/gala-e0080/) a pointer that may be nil where a non-null `Ptr` is needed. See [Collections](/features/collections/) and [Go Interop](/features/go-interop/).
 
