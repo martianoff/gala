@@ -451,6 +451,11 @@ project at once. It moves **only** the workspace: the stdlib, GALA module, and
 Go module caches stay where they are, so an isolated build re-downloads nothing.
 Redirecting `GALA_HOME` instead moves the caches too, and pays for it.
 
+The directory may sit inside the project (`--build-dir ./build`, say, for a CI
+cache step): `gala build`, `gala test` and `gala mod tidy` leave build
+workspaces out of the project's sources. Exclude the directory from other tools
+that scan the tree, such as Gazelle.
+
 ### With Bazel
 
 For Bazel projects:

@@ -44,6 +44,7 @@ go_test(
         "aliased_go_subpackage_test.go",
         "apex_perf_test.go",
         "bom_test.go",
+        "build_dir_inside_project_test.go",
         "builder_test.go",
         "cache_dir_test.go",
         "cache_rebuild_test.go",

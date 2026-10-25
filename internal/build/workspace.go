@@ -29,6 +29,20 @@ const (
 	ModeTest Mode = "test"
 )
 
+// workspaceMarker is the file Ensure writes at a workspace's root. It also
+// tells a source walk that the directory is build output, not source: a
+// --build-dir inside the project puts the workspaces in the tree the build
+// copies (see isWorkspaceDir).
+const workspaceMarker = ".gala-workspace"
+
+// isWorkspaceDir reports whether dir is a build workspace. A walk of a
+// project's sources leaves it out: copying it into the workspace's own gen
+// directory, which is inside it, would copy the project into itself, deeper
+// on every build — and during the copy itself — until the disk is full.
+func isWorkspaceDir(dir string) bool {
+	return fileExists(filepath.Join(dir, workspaceMarker))
+}
+
 // Workspace represents a build workspace for a GALA project.
 type Workspace struct {
 	// Config is the build configuration.
@@ -108,27 +122,26 @@ func computeHash(projectDir string) string {
 
 // Ensure creates the workspace directory structure.
 func (w *Workspace) Ensure() error {
-	// Create workspace directories
-	dirs := []string{
-		w.Dir,
-		w.GenDir,
-		w.DepsDir,
+	if err := os.MkdirAll(w.Dir, 0755); err != nil {
+		return fmt.Errorf("creating workspace dir %s: %w", w.Dir, err)
 	}
 
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("creating workspace dir %s: %w", dir, err)
-		}
-	}
-
-	// Write a marker file with project info (for debugging/cleanup)
-	markerPath := filepath.Join(w.Dir, ".gala-workspace")
+	// Write a marker file with project info (for debugging/cleanup). Before
+	// anything goes in the workspace: a concurrent build walking a project
+	// that holds this build dir tells the workspace apart by it.
+	markerPath := filepath.Join(w.Dir, workspaceMarker)
 	markerContent := fmt.Sprintf("project=%s\ncreated=%s\n",
 		w.ProjectDir,
 		time.Now().Format(time.RFC3339))
 
 	if err := os.WriteFile(markerPath, []byte(markerContent), 0644); err != nil {
 		return fmt.Errorf("writing workspace marker: %w", err)
+	}
+
+	for _, dir := range []string{w.GenDir, w.DepsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating workspace dir %s: %w", dir, err)
+		}
 	}
 
 	return nil
@@ -399,7 +412,7 @@ func sweepWorkspaces(config *Config, want func(dir string, marker os.FileInfo) b
 		}
 
 		workspaceDir := filepath.Join(config.BuildDir, entry.Name())
-		marker, statErr := os.Stat(filepath.Join(workspaceDir, ".gala-workspace"))
+		marker, statErr := os.Stat(filepath.Join(workspaceDir, workspaceMarker))
 		if statErr != nil {
 			marker = nil
 		}
@@ -438,7 +451,7 @@ func ListWorkspaces(config *Config) (map[string]string, error) {
 		}
 
 		workspaceDir := filepath.Join(config.BuildDir, entry.Name())
-		markerPath := filepath.Join(workspaceDir, ".gala-workspace")
+		markerPath := filepath.Join(workspaceDir, workspaceMarker)
 
 		content, err := os.ReadFile(markerPath)
 		if err != nil {

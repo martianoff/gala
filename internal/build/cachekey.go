@@ -176,7 +176,8 @@ func computeDepsHash(requires []mod.Require, replaces []mod.Replace, tc toolchai
 // walkCopiedTree visits the files of a source tree the transpile step reads or
 // copies (copyNonGalaFiles is built on it), and is the one definition of that
 // tree: hidden directories, vendor, testdata, bazel-* entries, nested modules
-// (isNestedModuleDir), symlinks and stale transpiler output (a .gen.go whose
+// (isNestedModuleDir), build workspaces (isWorkspaceDir: a --build-dir inside
+// the project), symlinks and stale transpiler output (a .gen.go whose
 // header says the GALA transpiler wrote it) are not part of it. A .gen.go another generator wrote (oapi-codegen,
 // stringer, …) is source of its package and is. Entries that cannot be
 // stat'd are skipped (Bazel junctions on Windows report "Incorrect function").
@@ -200,7 +201,7 @@ func walkCopiedTree(root string, visit func(path string, info os.FileInfo) error
 			return nil
 		}
 		if info.IsDir() {
-			if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" || isNestedModuleDir(path) {
+			if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" || isNestedModuleDir(path) || isWorkspaceDir(path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -299,8 +300,12 @@ func embedInputs(dir string, patterns []string) []string {
 			}
 			// Only regular files: Go does not embed symlinks or other
 			// irregular entries from a directory, and a dangling one cannot be
-			// read.
+			// read. A build workspace below it holds a go.mod, so Go leaves it
+			// out of the embed as another module's tree.
 			filepath.Walk(m, func(path string, fi os.FileInfo, err error) error {
+				if err == nil && fi.IsDir() && path != m && isWorkspaceDir(path) {
+					return filepath.SkipDir
+				}
 				if err == nil && fi.Mode().IsRegular() {
 					files = append(files, path)
 				}
