@@ -62,9 +62,9 @@ func requireOnlyErrorsIn(t *testing.T, err error, file string) {
 // GALA-E0023 "undefined: B" in another file, with a hint to import the package
 // into itself. The sibling's syntax errors are what is reported now.
 func TestSiblingSyntaxErrorReportedInsteadOfUndefined(t *testing.T) {
-	newTranspiler := func(a transpiler.Analyzer) transpiler.Transpiler {
+	newTranspiler := func(a transpiler.Analyzer) *checkedTranspiler {
 		p := transpiler.NewAntlrGalaParser()
-		return transpiler.NewGalaToGoTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+		return newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
 	}
 
 	t.Run("explicit package files", func(t *testing.T) {
