@@ -159,3 +159,26 @@ func main() { Println(f(Local(ArrayOf(mid.WrapCounter())))) }`},
 		})
 	}
 }
+
+// TestSendableCaptureOfUninferredVal: a val whose defining call does not
+// resolve (here a function its package does not declare) has no known type.
+// The check still fails closed, but says the type is unknown instead of
+// reporting a data race on a value it knows nothing about.
+func TestSendableCaptureOfUninferredVal(t *testing.T) {
+	root := sendableCrossPkgFixture(t)
+	_, err := transpileCrossPkg(t, root, `package main
+
+import (
+    . "martianoff/gala/concurrent"
+    "example.com/sendx/mid"
+)
+
+func main() {
+    val v = mid.NoSuchVocabulary()
+    Println(Future(() => v.Names.Size()).Get())
+}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GALA-E0037")
+	assert.Contains(t, err.Error(), `captures "v", whose type could not be inferred`)
+	assert.NotContains(t, err.Error(), "data race on its mutable contents")
+}
