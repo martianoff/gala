@@ -2545,13 +2545,12 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	// If it's already package-qualified, handle it. Only the base name counts:
 	// a dot inside the type arguments (`Array[leaf.Command]`) qualifies an
 	// argument, not the base, which still resolves through this file's scope.
-	baseText, _, _ := strings.Cut(typeName, "[")
+	baseText, _, hasArgs := strings.Cut(typeName, "[")
 	if strings.Contains(baseText, ".") {
 		// For qualified generic types like lazy.Lazy[Array[rune]],
 		// recursively resolve type arguments so inner types get proper prefixes
-		if idx := strings.Index(typeName, "["); idx != -1 {
-			baseQualified := typeName[:idx]
-			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseQualified), a.currentGoTypeInfo())
+		if hasArgs {
+			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseText), a.currentGoTypeInfo())
 
 			_, argStrs := extractBaseAndArgs(typeName)
 			var params []transpiler.Type
@@ -2578,12 +2577,9 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	}
 
 	// Handle generic types: Option[T], Tuple[A, B] - recursively resolve type args
-	if idx := strings.Index(typeName, "["); idx != -1 {
-		baseTypeName := typeName[:idx]
-		argsStr := typeName[idx+1 : len(typeName)-1]
-
+	if hasArgs {
 		// Resolve base type using shared resolver
-		baseType := a.resolveBaseName(baseTypeName, pkgName)
+		baseType := a.resolveBaseName(baseText, pkgName)
 
 		// Parse and recursively resolve type arguments
 		_, argStrs := extractBaseAndArgs(typeName)
@@ -2596,8 +2592,6 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		if len(params) > 0 {
 			return transpiler.GenericType{Base: baseType, Params: params}
 		}
-		// Fall through to handle base type without params (shouldn't happen)
-		_ = argsStr // silence unused variable warning
 	}
 
 	// Resolve non-generic base name using shared resolver
