@@ -9,6 +9,7 @@ go_library(
         "bind.go",
         "branching_calls.go",
         "call_context.go",
+        "call_arity.go",
         "calls.go",
         "codec.go",
         "codec_typed.go",
@@ -117,6 +118,7 @@ go_test(
         "blank_declaration_test.go",
         "block_function_tail_test.go",
         "branch_tail_values_test.go",
+        "call_arity_test.go",
         "chained_flatmap_test.go",
         "codec_boundary_test.go",
         "codec_cross_pkg_test.go",
@@ -128,6 +130,7 @@ go_test(
         "collect_partial_function_test.go",
         "collection_default_param_test.go",
         "compilation_gate_test.go",
+        "concurrency_check_cross_pkg_test.go",
         "concurrency_check_test.go",
         "conflict_test.go",
         "control_clause_composite_lit_test.go",
@@ -140,6 +143,7 @@ go_test(
         "crossfile_package_val_test.go",
         "crossfile_type_alias_test.go",
         "crosspkg_funcref_chain_test.go",
+        "crosspkg_default_val_test.go",
         "crosspkg_package_val_test.go",
         "default_case_test.go",
         "default_immutability_test.go",
@@ -241,6 +245,7 @@ go_test(
         "placeholder_void_context_test.go",
         "pointer_receiver_generic_method_val_test.go",
         "pointer_receiver_test.go",
+        "package_val_inferred_type_test.go",
         "pointer_receiver_val_test.go",
         "private_field_ctor_test.go",
         "qualified_namedarg_shadow_test.go",
@@ -341,6 +346,9 @@ go_test(
         # everywhere.
         "//examples:all_gala_sources",
         "//examples:all_go_bridge_sources",
+        # A sibling package with its own BUILD file, which the glob above
+        # does not reach.
+        "//examples/default_vals_lib:gala_sources",
         # The rest of the standard library. Examples importing any of these
         # could not resolve them under the sandbox and were counted as skipped,
         # so the corpus guards covered a fifth less on CI than locally.

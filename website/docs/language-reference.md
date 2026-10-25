@@ -1137,6 +1137,8 @@ val msg = x match {
 
 val result = x.Map((i) => i * 2)
 val value = x.GetOrElse(0)
+val big = x.Exists((i) => i > 5)     // true; None never satisfies Exists
+val allBig = y.ForAll((i) => i > 5)  // true; None always satisfies ForAll
 ```
 
 ### Tuple

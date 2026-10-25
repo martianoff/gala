@@ -370,6 +370,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "option_exists_forall",
+    src = "option_exists_forall.gala",
+    expected = "option_exists_forall.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "copy_and_equal",
     src = "copy_and_equal.gala",
     expected = "copy_and_equal.out",
@@ -4071,6 +4078,18 @@ gala_exec_test(
     src = "func_typed_defaults.gala",
     expected = "func_typed_defaults.out",
     deps = ["//examples/func_defaults_lib"],
+)
+
+# Defaults declared in another package that read that package's own vals and
+# vars and its own imports — on function and method parameters and on struct
+# fields, built positionally and with named arguments. They used to reach Go
+# bare (`undefined: MaxK`), and an import only the declaring file had was not
+# added.
+gala_exec_test(
+    name = "default_vals_cross_pkg",
+    src = "default_vals_cross_pkg.gala",
+    expected = "default_vals_cross_pkg.out",
+    deps = ["//examples/default_vals_lib"],
 )
 
 # Field chains through a method-call result unwrap immutable fields for

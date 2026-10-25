@@ -1,0 +1,5 @@
+ann: adult=true notMinor=true
+bob: adult=false notMinor=false
+cy: adult=false notMinor=true
+true
+true

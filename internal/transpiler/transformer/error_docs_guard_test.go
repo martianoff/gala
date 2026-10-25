@@ -1254,6 +1254,34 @@ func main() {
 			},
 		},
 		{
+			name: "function called with too few arguments",
+			code: galaerr.CodeArgumentCountMismatch, // GALA-E0082
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func area(width int, height int) int = width * height
+
+func main() {
+    Println(area(3))
+}
+`)
+			},
+		},
+		{
+			name: "struct constructed with too many arguments",
+			code: galaerr.CodeArgumentCountMismatch, // GALA-E0082
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Decision(Id int, State int, Rule int)
+
+func main() {
+    Println(Decision(1, 2, 3, 4))
+}
+`)
+			},
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {

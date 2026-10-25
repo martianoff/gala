@@ -64,6 +64,7 @@ go_test(
         "main_package_test.go",
         "main_root_subpackage_test_test.go",
         "module_cache_immutable_test.go",
+        "nested_module_test.go",
         "nested_subpackage_test.go",
         "sealed_case_defaults_test.go",
         "sealed_go_constructors_test.go",

@@ -121,6 +121,11 @@ type galaASTTransformer struct {
 	// declares, so a sub-pattern's statements can be split into declarations
 	// outside a guard and assignments inside it (see hoistPatternDecls).
 	patternDefineTypes map[*ast.AssignStmt][]ast.Expr
+
+	// valTypes, when non-nil, puts transform in the mode InferPackageValTypes
+	// runs it in: only the file's package-level val/var declarations are
+	// lowered, and the element type each binding takes is recorded here.
+	valTypes map[string]transpiler.Type
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -180,6 +185,75 @@ func (t *galaASTTransformer) resetExprTypeCache() {
 
 func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
 	return t.transform(richAST, false)
+}
+
+// InferPackageValTypes infers the element type of each package-level val and
+// var that the file richAST.Tree declares, with the same expression inference
+// the file's own transform gives them: `val Names = ArrayOf("a", "b")` is an
+// Array[string]. The analyzer records a binding's type from a few initializer
+// shapes only; the other files of the package and its importers see the
+// binding through that record, so without this a binding typed by a generic
+// call or a method chain reaches them with no type, and a lambda passed to one
+// of its methods has nothing to infer its parameters from.
+//
+// Only the val/var declarations are lowered, in source order, each seeing the
+// types settled before it. One whose initializer fails to lower is left out of
+// the result (the file's real transform reports it), as is one whose type is
+// unknown or void. richAST is read, not written: the caller passes a copy whose
+// Types map the transform may extend.
+func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Type {
+	t := NewGalaASTTransformer().(*galaASTTransformer)
+	t.valTypes = make(map[string]transpiler.Type)
+	_, _, _ = t.transform(richAST, false)
+	return t.valTypes
+}
+
+// lowersCleanly lowers one top-level declaration, reporting whether it lowered
+// without an error. A diagnostic raised as a panic counts as an error, so one
+// failing initializer does not cost the declarations after it their types.
+func (t *galaASTTransformer) lowersCleanly(decl grammar.ITopLevelDeclarationContext) (ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
+	_, err := t.transformTopLevelDeclaration(decl)
+	return err == nil
+}
+
+// recordPackageValTypes lowers sourceFile's package-level val/var declarations
+// and records the type each binding takes in t.valTypes (InferPackageValTypes).
+func (t *galaASTTransformer) recordPackageValTypes(sourceFile *grammar.SourceFileContext) {
+	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
+		var idList grammar.IIdentifierListContext
+		switch {
+		case topDeclCtx.ValDeclaration() != nil:
+			vc := topDeclCtx.ValDeclaration().(*grammar.ValDeclarationContext)
+			idList = vc.IdentifierList()
+			if tp := vc.TuplePattern(); tp != nil {
+				idList = tp.(*grammar.TuplePatternContext).IdentifierList()
+			}
+		case topDeclCtx.VarDeclaration() != nil:
+			vc := topDeclCtx.VarDeclaration().(*grammar.VarDeclarationContext)
+			idList = vc.IdentifierList()
+			if tp := vc.TuplePattern(); tp != nil {
+				idList = tp.(*grammar.TuplePatternContext).IdentifierList()
+			}
+		default:
+			continue
+		}
+		if idList == nil {
+			continue // parse-error recovery
+		}
+		if !t.lowersCleanly(topDeclCtx) {
+			continue
+		}
+		for _, id := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
+			if typ, _, bound := t.scopeLookup(id.GetText()); bound && transpiler.HasResult(typ) {
+				t.valTypes[id.GetText()] = typ
+			}
+		}
+	}
 }
 
 func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMetadata bool) (fset *token.FileSet, file *ast.File, err error) {
@@ -413,6 +487,11 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			continue
 		}
 		t.fileTypeDeclTargets[typeDecl.Identifier().GetText()] = transpiler.ParseType(galaparser.AliasText(typeDecl.TypeAlias()))
+	}
+
+	if t.valTypes != nil {
+		t.recordPackageValTypes(sourceFile)
+		return nil, nil, nil
 	}
 
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
@@ -758,7 +837,7 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 	// this cache exists. Rebuilding here rather than only on a nil pointer
 	// also puts the cache back, so an import added mid-walk costs one rebuild
 	// instead of a fresh allocation on every later resolution in the file.
-	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() {
+	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() || t.cachedTypeResolver.PackageName != t.resolutionPackage() {
 		t.cacheTypeResolver()
 	}
 	return t.cachedTypeResolver.Resolve(name, exists)
@@ -782,9 +861,19 @@ func (t *galaASTTransformer) buildTypeResolver() *resolver.TypeResolver {
 		}
 	}
 	return &resolver.TypeResolver{
-		PackageName: t.packageName,
+		PackageName: t.resolutionPackage(),
 		Imports:     imports,
 	}
+}
+
+// resolutionPackage is the package whose declarations a bare name resolves
+// to first: the one being compiled, or, while a default declared in another
+// package is lowered, that package (see transformDefaultExpr).
+func (t *galaASTTransformer) resolutionPackage() string {
+	if t.loweringForeignDefault() {
+		return t.loweringDefault.pkg
+	}
+	return t.packageName
 }
 
 // lookupTypeAlias resolves name to the type it aliases. typeAliases is keyed by

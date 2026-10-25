@@ -504,6 +504,30 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods(rich *RichAST) []*MethodMetadata
 type DefaultExpr struct {
 	Text string
 	Pos  SourcePos
+	// Scope is what a use site in another package needs to resolve the names
+	// Text borrows from where it was written. It is recorded when the
+	// declaring package is loaded as a dependency, and is nil otherwise.
+	Scope *DefaultScope
+}
+
+// DefaultScope is the declaring side of a default value: what its names mean
+// in the file that wrote it. A default is lowered at each use site, so one in
+// another package must spell those names as that site sees them.
+type DefaultScope struct {
+	// PkgPath is the import path of the declaring package.
+	PkgPath string
+	// Imports maps each qualifier of the declaring file that Text names to
+	// the import path the file binds it to: `strings` in
+	// `strings.Repeat("=", 2)` is an import the use site may not have.
+	Imports map[string]string
+	// DotImports maps the import path of each package the declaring file
+	// dot-imports to its package name: `EmptyArray` in
+	// `EmptyArray[Entry]()` is collection_immutable's there.
+	DotImports map[string]string
+	// PrivateVals lists the declaring package's unexported package-level
+	// vals and vars that Text names. They are not visible to another
+	// package, so a use site there reports them.
+	PrivateVals []string
 }
 
 // ShorthandFieldType is the type recorded for a field of the shorthand form
