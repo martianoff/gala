@@ -1238,6 +1238,22 @@ func main() {
 			},
 		},
 		{
+			name: "struct field and method of one name",
+			code: galaerr.CodeFieldNamedLikeMethod, // GALA-E0081
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct User(Name string)
+
+func (u User) Name() string = "user " + u.Name
+
+func main() {
+    Println(User("ada").Name())
+}
+`)
+			},
+		},
+		{
 			name: "function called with too few arguments",
 			code: galaerr.CodeArgumentCountMismatch, // GALA-E0082
 			render: func(t *testing.T) string {

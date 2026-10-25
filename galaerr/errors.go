@@ -799,6 +799,13 @@ const (
 	// or an OptionPtr through OptionPtrOf.
 	CodePtrNullability ErrorCode = "GALA-E0080"
 
+	// E0081: a struct has a field and a method of the same name. Go allows
+	// no field and method of one name on a type, and a struct field is read
+	// by its name, so the pair would reach `go build` as "field and method
+	// with the same name". A sealed case field named like a method is not
+	// this error: it is stored under a Go name of its case.
+	CodeFieldNamedLikeMethod ErrorCode = "GALA-E0081"
+
 	// E0082: a call of a GALA function, method or struct constructor passes
 	// more arguments than the callee takes, or leaves out one that declares no
 	// default. Left to Go, the call was reported against the generated code

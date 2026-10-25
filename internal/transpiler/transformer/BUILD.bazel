@@ -262,6 +262,7 @@ go_test(
         "sealed_apply_dispatch_test.go",
         "sealed_call_arg_widen_test.go",
         "sealed_equal_synth_test.go",
+        "sealed_field_named_like_method_test.go",
         "sealed_string_func_field_test.go",
         "sealed_tuple_widen_test.go",
         "sealed_variant_width_test.go",

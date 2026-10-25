@@ -36,19 +36,26 @@ import (
 // Kept as a single declaration for the same reason ForbiddenBuiltinNames is:
 // the generating sites and the checking site must not be able to drift apart.
 // Each entry names where it is synthesized.
-var synthesizedMethodNames = map[string]bool{
-	"Copy":    true, // methods.go — auto-generated on every struct
-	"Equal":   true, // methods.go
-	"Unapply": true, // methods.go, sealed.go
-	"Apply":   true, // sealed.go — companion constructor
-	"String":  true, // sealed.go
-	// codec.go / codec_typed.go — generated for JSON/YAML codecs
-	"NumFields":    true,
-	"FieldName":    true,
-	"EncodeFields": true,
-	"DecodeFields": true,
-	"FieldIsEmpty": true,
-}
+var synthesizedMethodNames = func() map[string]bool {
+	names := map[string]bool{
+		"Unapply": true, // sealed.go — case companion extractor
+		"Apply":   true, // sealed.go — companion constructor
+		// codec.go / codec_typed.go — generated for JSON/YAML codecs
+		"NumFields":    true,
+		"FieldName":    true,
+		"EncodeFields": true,
+		"DecodeFields": true,
+		"FieldIsEmpty": true,
+	}
+	// methods.go, sealed.go — generated on every struct and sealed type
+	for _, n := range transpiler.StructGeneratedMethods {
+		names[n] = true
+	}
+	for _, n := range transpiler.SealedGeneratedMethods {
+		names[n] = true
+	}
+	return names
+}()
 
 // isSynthesizedMethodName reports whether name is generated rather than
 // declared. The `is<Variant>` predicates are matched by shape because the

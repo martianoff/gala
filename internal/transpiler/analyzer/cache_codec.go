@@ -343,6 +343,7 @@ func (e *encoder) writeSealedVariant(v transpiler.SealedVariant) {
 	e.writeSourcePos(v.Pos)
 	e.writeStringSlice(v.FieldNames)
 	e.writeTypeSlice(v.FieldTypes)
+	e.writeStringSlice(v.GoFieldNames)
 	e.writeBool(v.IsDefault)
 }
 
@@ -865,6 +866,7 @@ func (d *decoder) readSealedVariantSlice() []transpiler.SealedVariant {
 		out[i].Pos = d.readSourcePos()
 		out[i].FieldNames = d.readStringSlice()
 		out[i].FieldTypes = d.readTypeSlice()
+		out[i].GoFieldNames = d.readStringSlice()
 		out[i].IsDefault = d.readBool()
 	}
 	return out

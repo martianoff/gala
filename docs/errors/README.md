@@ -95,6 +95,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0078` | Invalid interface literal | [GALA-E0078.md](GALA-E0078.md) |
 | `GALA-E0079` | Invalid sealed-view match | [GALA-E0079.md](GALA-E0079.md) |
 | `GALA-E0080` | Pointer that may be nil where a Ptr is needed | [GALA-E0080.md](GALA-E0080.md) |
+| `GALA-E0081` | Field and method of one name | [GALA-E0081.md](GALA-E0081.md) |
 | `GALA-E0082` | Wrong number of arguments | [GALA-E0082.md](GALA-E0082.md) |
 | `GALA-E0083` | Unexported method of another package | [GALA-E0083.md](GALA-E0083.md) |
 

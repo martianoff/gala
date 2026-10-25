@@ -605,8 +605,92 @@ type SealedVariant struct {
 	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
+	// GoFieldNames are the names the fields have in the Go struct that holds
+	// every case: a field's own name, or the case name + the field name when
+	// the cases give the field different types or the type has a method of
+	// its name. The analyzer decides them, and the transformer reads them.
+	GoFieldNames []string
 	// IsDefault marks the type's `default case`, its zero value.
 	IsDefault bool
+}
+
+// StructGeneratedMethods and SealedGeneratedMethods are the methods the
+// transformer generates on every struct and every sealed type that does not
+// declare them itself (a struct's Unapply only when all its fields are
+// exported).
+var (
+	StructGeneratedMethods = []string{"Copy", "Equal", "Unapply"}
+	SealedGeneratedMethods = []string{"Copy", "Equal", "String"}
+)
+
+// GeneratedMethodNames returns the names of the methods the transformer
+// generates on the struct or sealed type m, other than the Go case predicates
+// (see SealedGoPredicateNames): StructGeneratedMethods (Unapply only when
+// every field is exported) or SealedGeneratedMethods, the predicates
+// is<Case> of a sealed type, and the instance marker Is<Type> of a generic
+// type.
+func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
+	names := make(map[string]bool, len(m.SealedVariants)+4)
+	if m.IsSealed {
+		for _, n := range SealedGeneratedMethods {
+			names[n] = true
+		}
+		for _, v := range m.SealedVariants {
+			names["is"+v.Name] = true
+		}
+	} else {
+		for _, n := range StructGeneratedMethods {
+			names[n] = true
+		}
+		for _, f := range m.FieldNames {
+			if !token.IsExported(f) {
+				delete(names, "Unapply")
+				break
+			}
+		}
+	}
+	if len(m.TypeParams) > 0 {
+		names["Is"+m.Name] = true
+	}
+	return names
+}
+
+// SealedGoPredicateNames returns the names of the Is<Case> predicates the
+// transformer generates for Go callers of sealed type m: one per exported
+// case of an exported type. A case field of the predicate's name keeps its
+// name, and the predicate is left out.
+func SealedGoPredicateNames(m *TypeMetadata) map[string]bool {
+	names := make(map[string]bool, len(m.SealedVariants))
+	if !token.IsExported(m.Name) {
+		return names
+	}
+	for _, v := range m.SealedVariants {
+		if token.IsExported(v.Name) {
+			names["Is"+v.Name] = true
+		}
+	}
+	return names
+}
+
+// IsGalaField reports whether GALA code reads the field name of type m by
+// that name: every field but, on a sealed type, its case tag and the case
+// fields stored under a Go name of their case (see
+// SealedVariant.GoFieldNames), which never equals the name of a case field.
+func (m *TypeMetadata) IsGalaField(name string) bool {
+	if !m.IsSealed {
+		return true
+	}
+	if name == "_variant" {
+		return false
+	}
+	for _, v := range m.SealedVariants {
+		for i, goName := range v.GoFieldNames {
+			if goName == name && i < len(v.FieldNames) && goName != v.FieldNames[i] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type MethodMetadata struct {

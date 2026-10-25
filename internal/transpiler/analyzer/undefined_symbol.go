@@ -598,7 +598,7 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 		if perr != nil || tree == nil {
 			continue
 		}
-		collectTopLevelDeclaredNames(tree, names)
+		collectTopLevelDeclaredNames(tree, names, nil)
 	}
 	if a.importedNames != nil {
 		a.importedNames[key] = names
@@ -610,8 +610,22 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 // top-level declarations introduce: free functions, types, struct shorthands,
 // sealed types and their case variants, package vals/vars (including
 // tuple-pattern destructuring), and embed bindings. A name's value is true
-// when it names a type.
-func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]bool) {
+// when it names a type. When methods is not nil, it also records there, by
+// receiver type, the name of every method the file declares, in the same walk.
+func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]bool, methods map[string]map[string]bool) {
+	var visitMethod func(fc *grammar.FunctionDeclarationContext)
+	if methods != nil {
+		visitMethod = func(fc *grammar.FunctionDeclarationContext) {
+			base := getBaseTypeName(fc.Receiver().(*grammar.ReceiverContext).Type_())
+			if base == "" {
+				return
+			}
+			if methods[base] == nil {
+				methods[base] = make(map[string]bool)
+			}
+			methods[base][fc.Identifier().GetText()] = true
+		}
+	}
 	forEachTopLevelName(sf, func(id grammar.IIdentifierContext, kind string) {
 		name := id.GetText()
 		if kind == declKindType || kind == declKindVariant {
@@ -619,7 +633,7 @@ func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]
 		} else if !out[name] {
 			out[name] = false
 		}
-	})
+	}, visitMethod)
 }
 
 // The kinds of top-level declaration forEachTopLevelName reports.
@@ -635,7 +649,7 @@ const (
 // functions, types, struct shorthands, sealed types and their case variants,
 // package vals/vars (including tuple-pattern destructuring), and embed
 // bindings.
-func forEachTopLevelName(sf *grammar.SourceFileContext, visit func(id grammar.IIdentifierContext, kind string)) {
+func forEachTopLevelName(sf *grammar.SourceFileContext, visit func(id grammar.IIdentifierContext, kind string), visitMethod func(fc *grammar.FunctionDeclarationContext)) {
 	report := func(id grammar.IIdentifierContext, kind string) {
 		if id != nil {
 			visit(id, kind)
@@ -655,6 +669,8 @@ func forEachTopLevelName(sf *grammar.SourceFileContext, visit func(id grammar.II
 			fc := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
 			if fc.Receiver() == nil {
 				report(fc.Identifier(), declKindFunction)
+			} else if visitMethod != nil {
+				visitMethod(fc)
 			}
 		case topDecl.TypeDeclaration() != nil:
 			report(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier(), declKindType)
