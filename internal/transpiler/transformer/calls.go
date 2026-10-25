@@ -2442,8 +2442,17 @@ func (t *galaASTTransformer) collectFunctionCallContext(fun ast.Expr, argListCtx
 			resolved := t.resolveStructTypeName(resolvedTypeName)
 			if fields, ok := t.structFields[resolved]; ok {
 				if fieldTypes, ok := t.structFieldTypes[resolved]; ok {
-					ctx.structLiteral = argListCtx != nil &&
-						t.positionalCallBuildsStructLiteral(typeMeta, fields, len(argListCtx.AllArgument()))
+					if argListCtx != nil {
+						args := argListCtx.AllArgument()
+						// A call naming a field is a construction whatever its
+						// argument count (handleNamedArgsCall), never Apply: its
+						// positional arguments fill the leading fields.
+						named := slices.ContainsFunc(args, func(a grammar.IArgumentContext) bool {
+							return a.(*grammar.ArgumentContext).Identifier() != nil
+						})
+						ctx.structLiteral = (named && !typeMeta.IsSealed) ||
+							t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args))
+					}
 					ctx.structFieldExpectedTypes = make([]transpiler.Type, len(fields))
 					for i, fieldName := range fields {
 						if ft, ok := fieldTypes[fieldName]; ok {
@@ -2989,6 +2998,9 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		if err := checkUnknownStructFields(qualifiedName, fields, argListCtx); err != nil {
 			return nil, err
 		}
+		if len(args) > len(fields) {
+			return nil, structTooManyArgsError(qualifiedName, fields, len(argListCtx.AllArgument()), line, col)
+		}
 		namedArgs, err := bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, argListCtx)
 		if err != nil {
 			return nil, err
@@ -3020,15 +3032,7 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
 	// Otherwise a Go-imported type with no type info (direct or dot-imported).
-	// Its fields are unknown, so a positional argument has none to bind.
-	goTypeWithPositional := func() error {
-		return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-			"%s is a Go type: construct it with named arguments only, one per field", qualifiedName))
-	}
 	if t.isGoImportedType(fun) {
-		if len(args) > 0 {
-			return nil, goTypeWithPositional()
-		}
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
 	// Dot-imported types (bare or generic). The base of a generic
@@ -3041,9 +3045,6 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	if unwrapToBaseIdent(fun) != nil {
 		for _, pkg := range t.importManager.GetDotImports() {
 			if pkg != "std" && pkg != t.packageName {
-				if len(args) > 0 {
-					return nil, goTypeWithPositional()
-				}
 				return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 			}
 		}
@@ -3078,8 +3079,9 @@ func checkPositionalBeforeNamed(qualifiedName string, argListCtx *grammar.Argume
 // bindPositionalStructArgs binds the positional arguments of a construction
 // that also names some fields to the struct's leading fields, the rule a
 // function call follows for its parameters, and returns them merged with the
-// named ones. A positional argument after a named one, more arguments than
-// fields, and a field given both ways are errors.
+// named ones. A positional argument after a named one, a spread one and a field
+// given both ways are errors; arguments beyond the fields are left for the
+// caller to report.
 func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, argListCtx *grammar.ArgumentListContext) (map[string]ast.Expr, error) {
 	if len(args) == 0 {
 		return namedArgs, nil
@@ -3087,13 +3089,17 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 	if err := checkPositionalBeforeNamed(qualifiedName, argListCtx); err != nil {
 		return nil, err
 	}
-	line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
-	if len(args) > len(fields) {
-		return nil, structTooManyArgsError(qualifiedName, fields, len(args), line, col)
-	}
+	// The positional arguments come first (checked just now), so argument i of
+	// the list is args[i].
+	argCtxs := argListCtx.AllArgument()
 	bound := maps.Clone(namedArgs)
-	for i, arg := range args {
+	for i, arg := range args[:min(len(args), len(fields))] {
+		if argCtx := argCtxs[i].(*grammar.ArgumentContext); argIsSpread(argCtx) {
+			return nil, galaerr.NewSemanticErrorAt(argCtx.GetStart().GetLine(), argCtx.GetStart().GetColumn(),
+				fmt.Sprintf("a spread argument cannot fill field %q in construction of %q", fields[i], qualifiedName))
+		}
 		if _, twice := bound[fields[i]]; twice {
+			line, col := namedArgPos(argListCtx, fields[i])
 			return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
 				fmt.Sprintf("field %q of %q is given both by position and by name", fields[i], qualifiedName),
 				"give each field once")
@@ -3101,6 +3107,16 @@ func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.
 		bound[fields[i]] = arg
 	}
 	return bound, nil
+}
+
+// namedArgPos is the position of the argument naming field in argListCtx.
+func namedArgPos(argListCtx *grammar.ArgumentListContext, field string) (int, int) {
+	for _, a := range argListCtx.AllArgument() {
+		if id := a.(*grammar.ArgumentContext).Identifier(); id != nil && id.GetText() == field {
+			return id.GetStart().GetLine(), id.GetStart().GetColumn()
+		}
+	}
+	return argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
 }
 
 // checkUnknownStructFields reports named arguments that match no field of the
@@ -3241,11 +3257,6 @@ func (t *galaASTTransformer) variantApplyArgs(fun ast.Expr, typeName string, app
 			}
 		}
 		if i < len(args) {
-			if _, twice := namedArgs[name]; twice {
-				return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
-					fmt.Sprintf("field %q of %q is given both by position and by name", name, typeName),
-					"give each field once")
-			}
 			ordered[i] = args[i]
 			continue
 		}
