@@ -210,7 +210,7 @@ func (t *galaASTTransformer) checkSendableCaptures(caps []concurrency.Capture) e
 func (t *galaASTTransformer) checkCaptureShareable(checker *concurrency.Checker, c concurrency.Capture, typ transpiler.Type) error {
 	if c.Whole || len(c.Paths) == 0 {
 		if !checker.IsShareable(typ) {
-			return unshareableValCaptureError(c, typ)
+			return unshareableValCaptureError(checker, c, typ)
 		}
 		return nil
 	}
@@ -220,12 +220,12 @@ func (t *galaASTTransformer) checkCaptureShareable(checker *concurrency.Checker,
 			// A hop could not be resolved (opaque Go type, unknown field): fall
 			// back to the conservative whole-type check for this capture.
 			if !checker.IsShareable(typ) {
-				return unshareableValCaptureError(c, typ)
+				return unshareableValCaptureError(checker, c, typ)
 			}
 			return nil
 		}
 		if !allImmutable || !checker.IsShareable(fieldType) {
-			return unshareableFieldPathCaptureError(c, path, fieldType, allImmutable)
+			return unshareableFieldPathCaptureError(checker, c, path, fieldType, allImmutable)
 		}
 	}
 	return nil
@@ -309,7 +309,7 @@ func unshareableVarCaptureError(c concurrency.Capture) error {
 // a distinct message: a bare `func` type carries no guarantee about its own
 // captures, so the fix is to make the forwarded parameter `Sendable`, whose
 // bound propagates the safety obligation to the caller (the Send-style rule).
-func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) error {
+func unshareableValCaptureError(checker *concurrency.Checker, c concurrency.Capture, typ transpiler.Type) error {
 	if ft, ok := typ.(transpiler.FuncType); ok {
 		return galaerr.NewCodedSemanticError(
 			galaerr.CodeUnshareableCapture,
@@ -318,17 +318,19 @@ func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) erro
 			fmt.Sprintf("declare the parameter as `%s Sendable[%s]` — the Sendable bound requires each caller to pass a closure whose own captures are shareable, and propagates the check to the call site where the closure is written", c.Name, ft.String()),
 		)
 	}
-	if transpiler.ContainsUnusable(typ) {
-		// Nothing is known about the value, so it cannot be shown safe: the
-		// check fails closed. Usually the expression that defined it does not
-		// resolve — a misspelled or missing function of another package — and
-		// saying "not safe to share" would send the reader after a data race
-		// that does not exist.
+	if unknownIsTheCause(checker, typ) {
+		// The value is rejected only because (part of) its type is unknown, so
+		// it cannot be shown safe: the check fails closed. Usually the
+		// expression that defined it does not resolve — a misspelled or missing
+		// function of another package — and saying "not safe to share" would
+		// send the reader after a data race that does not exist. A type whose
+		// known part is itself unshareable (say a Go slice of an unresolved
+		// element) keeps the data-race message.
 		return galaerr.NewCodedSemanticError(
 			galaerr.CodeUnshareableCapture,
 			c.Pos.Line, c.Pos.Column,
-			fmt.Sprintf("closure crossing a concurrency boundary captures %q, whose type could not be inferred, so it cannot be shown safe to share", c.Name),
-			fmt.Sprintf("check that the expression defining %q resolves — an undefined function or a type error leaves its type unknown — or declare its type (`val %s T = ...`)", c.Name, c.Name),
+			fmt.Sprintf("closure crossing a concurrency boundary captures %q, whose type %s", c.Name, uninferredReason),
+			uninferredCaptureHint(c.Name),
 		)
 	}
 	return galaerr.NewCodedSemanticError(
@@ -345,18 +347,17 @@ func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) erro
 // bottoms out at a type that is itself not deeply immutable. The message names
 // the specific offending field path (e.g. `m.sessions`) and why, and the caret
 // points at the captured base identifier.
-func unshareableFieldPathCaptureError(c concurrency.Capture, path string, fieldType transpiler.Type, allImmutable bool) error {
+func unshareableFieldPathCaptureError(checker *concurrency.Checker, c concurrency.Capture, path string, fieldType transpiler.Type, allImmutable bool) error {
 	fullPath := c.Name + "." + path
 	var why, hint string
 	if !allImmutable {
 		why = "it reads through a mutable (`var`) field — a data race, because the enclosing scope may reassign that field while the goroutine reads it"
 		hint = fmt.Sprintf("read only immutable (`val`) fields of %q across the boundary, or snapshot the needed field into an immutable `val` before it", c.Name)
+	} else if unknownIsTheCause(checker, fieldType) {
+		why = "its type " + uninferredReason
+		hint = fmt.Sprintf("check the declared type of field %q — a type that does not resolve leaves it unknown", fullPath)
 	} else {
-		typeDesc := ""
-		if !transpiler.IsUnusable(fieldType) {
-			typeDesc = fmt.Sprintf(" (type %s)", fieldType.String())
-		}
-		why = fmt.Sprintf("its type%s is not safe to share — a data race on its mutable contents", typeDesc)
+		why = fmt.Sprintf("its type (type %s) is not safe to share — a data race on its mutable contents", fieldType.String())
 		hint = fmt.Sprintf("read a deeply-immutable field of %q instead, or snapshot the needed data into an immutable `val` before the boundary", c.Name)
 	}
 	return galaerr.NewCodedSemanticError(
@@ -365,6 +366,49 @@ func unshareableFieldPathCaptureError(c concurrency.Capture, path string, fieldT
 		fmt.Sprintf("closure crossing a concurrency boundary reads field path %q on captured %q, which is not safe to share: %s", fullPath, c.Name, why),
 		hint,
 	)
+}
+
+// uninferredReason is the GALA-E0037 reason for a capture or field path
+// rejected only because its type is (partly) unknown.
+const uninferredReason = "could not be inferred, so it cannot be shown safe to share"
+
+// uninferredCaptureHint is the GALA-E0037 hint for a capture whose type is
+// unknown: the defining expression, not a data race, is what to fix.
+func uninferredCaptureHint(name string) string {
+	return fmt.Sprintf("check that the expression defining %q resolves — an undefined function or a type error leaves its type unknown", name)
+}
+
+// unknownIsTheCause reports whether typ is rejected only because part of it is
+// unknown: with every unknown part taken as a shareable scalar it would pass.
+// An immutable collection of an unresolved element (`Array[<unknown>]`) is
+// such a type; a Go slice of one is not, its known outer type already races.
+func unknownIsTheCause(checker *concurrency.Checker, typ transpiler.Type) bool {
+	return transpiler.ContainsUnusable(typ) && checker.IsShareable(withKnownLeaves(typ))
+}
+
+// withKnownLeaves returns typ with every unknown part replaced by int, walking
+// the composite types transpiler.ContainsUnusable looks inside (a function
+// type is left as it is: a function value is never shareable on its own).
+func withKnownLeaves(typ transpiler.Type) transpiler.Type {
+	if transpiler.IsUnusable(typ) {
+		return transpiler.BasicType{Name: "int"}
+	}
+	switch v := typ.(type) {
+	case transpiler.ArrayType:
+		return transpiler.ArrayType{Elem: withKnownLeaves(v.Elem)}
+	case transpiler.PointerType:
+		v.Elem = withKnownLeaves(v.Elem)
+		return v
+	case transpiler.MapType:
+		return transpiler.MapType{Key: withKnownLeaves(v.Key), Elem: withKnownLeaves(v.Elem)}
+	case transpiler.GenericType:
+		params := make([]transpiler.Type, len(v.Params))
+		for i, p := range v.Params {
+			params[i] = withKnownLeaves(p)
+		}
+		return transpiler.GenericType{Base: withKnownLeaves(v.Base), Params: params}
+	}
+	return typ
 }
 
 // typeCtxIsSendable reports whether a parameter/binding's declared type
