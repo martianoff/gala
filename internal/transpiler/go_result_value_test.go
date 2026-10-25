@@ -62,3 +62,41 @@ func TestMaxTupleArityIsTheWidestTuple(t *testing.T) {
 	_, ok = TupleArityName(MaxTupleArity + 1)
 	assert.False(t, ok)
 }
+
+// A std Tuple written with 3 to 10 type arguments is the std tuple of that
+// arity; every other type is left as it is.
+func TestStdTupleOfArity(t *testing.T) {
+	intT := BasicType{Name: "int"}
+	ints := func(n int) []Type {
+		params := make([]Type, n)
+		for i := range params {
+			params[i] = intT
+		}
+		return params
+	}
+	named := func(pkg, name string, n int) GenericType {
+		return GenericType{Base: NamedType{Package: pkg, Name: name}, Params: ints(n)}
+	}
+	for _, tc := range []struct {
+		name string
+		in   GenericType
+		want GenericType
+	}{
+		{"Tuple of three is Tuple3", named("std", TypeTuple, 3), named("std", TypeTuple3, 3)},
+		{"Tuple of ten is Tuple10", named("std", TypeTuple, 10), named("std", TypeTuple10, 10)},
+		{"Tuple of two stays Tuple", named("std", TypeTuple, 2), named("std", TypeTuple, 2)},
+		{"Tuple of eleven has no arity name", named("std", TypeTuple, 11), named("std", TypeTuple, 11)},
+		{"Tuple3 stays Tuple3", named("std", TypeTuple3, 3), named("std", TypeTuple3, 3)},
+		{"a user type named Tuple", named("main", TypeTuple, 3), named("main", TypeTuple, 3)},
+		{"another std type", named("std", TypeEither, 3), named("std", TypeEither, 3)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, StdTupleOfArity(tc.in))
+		})
+	}
+}
+
+// ParseType reads a std Tuple of three as the Tuple3 a tuple literal has.
+func TestParseTypeSpellsTupleByArity(t *testing.T) {
+	assert.Equal(t, ParseType("std.Tuple3[int, string, bool]"), ParseType("std.Tuple[int, string, bool]"))
+}

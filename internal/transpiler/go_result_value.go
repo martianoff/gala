@@ -138,6 +138,21 @@ func TupleArityName(n int) (name string, ok bool) {
 	return "", false
 }
 
+// StdTupleOfArity spells a std `Tuple` written with 3 to 10 type arguments
+// as the std tuple of that arity: `Tuple[A, B, C]` is `Tuple3[A, B, C]`, the
+// type a tuple literal of three values has. Any other type comes back as is.
+func StdTupleOfArity(gen GenericType) GenericType {
+	base, isNamed := gen.Base.(NamedType)
+	if !isNamed || base.Package != registry.StdPackageName || base.Name != TypeTuple {
+		return gen
+	}
+	if name, ok := TupleArityName(len(gen.Params)); ok {
+		base.Name = name
+		gen.Base = base
+	}
+	return gen
+}
+
 // PlaceholderNames renders binding names for a Go call's n results, the last
 // one `err` when the call fails — `v, err` / `a, b, err` / `a, b, c` — for a
 // hint or hover that shows the multi-name binding `val v, err = call`.

@@ -4582,3 +4582,10 @@ gala_exec_test(
     src = "if_expr_unit_func_param.gala",
     expected = "if_expr_unit_func_param.out",
 )
+
+gala_exec_test(
+    name = "tuple_arity_spelling",
+    src = "tuple_arity_spelling.gala",
+    expected = "tuple_arity_spelling.out",
+    deps = ["//collection_immutable"],
+)
