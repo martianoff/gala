@@ -248,6 +248,7 @@ go_test(
         "package_val_inferred_type_test.go",
         "pointer_receiver_val_test.go",
         "private_field_ctor_test.go",
+        "qualified_import_scope_test.go",
         "qualified_namedarg_shadow_test.go",
         "receiver_type_param_rename_test.go",
         "recursive_immutable_test.go",

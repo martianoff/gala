@@ -75,6 +75,7 @@ var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"tryThunkLambda":        func(t *galaASTTransformer) { t.tryThunkLambda = &grammar.LambdaExpressionContext{} },
 	"hoistedPre":            func(t *galaASTTransformer) { t.hoistedPre = []ast.Stmt{&ast.EmptyStmt{}} },
 	"localDeclaration":      func(t *galaASTTransformer) { t.localDeclaration = true },
+	"signatureDots":         func(t *galaASTTransformer) { t.signatureDots = []string{"collection_immutable"} },
 }
 
 // TestScopedStateResidueCoversEveryScopedField asserts the hand-written

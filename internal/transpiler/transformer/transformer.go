@@ -126,6 +126,12 @@ type galaASTTransformer struct {
 	// runs it in: only the file's package-level val/var declarations are
 	// lowered, and the element type each binding takes is recorded here.
 	valTypes map[string]transpiler.Type
+
+	// signatureDots holds, while the signature of a method is lowered whose
+	// receiver type another file of the package declares, the packages that
+	// file dot-imports: a bare name there may resolve through them
+	// (RichAST.ReceiverDotImports).
+	signatureDots []string
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -774,7 +780,9 @@ var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 //  3. Try current package prefix
 //  4. Try std package prefix
 //  5. Try dot-imported packages
-//  6. Try all explicitly imported packages (non-dot)
+//
+// A named (non-dot) import binds only its qualifier, so step 2 is the only
+// way to reach its names.
 //
 // Returns the resolved name and whether resolution succeeded.
 func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string) bool) (string, bool) {
@@ -818,7 +826,7 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 	}
 
 	// 3. Unqualified name — try resolving through all package prefixes
-	// (current package, std, dot imports, named imports).
+	// (current package, std, dot imports; never a named import).
 	if resolved, found := t.tryResolveSimpleName(typeName, exists); found {
 		return resolved, true
 	}
@@ -840,7 +848,15 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() || t.cachedTypeResolver.PackageName != t.resolutionPackage() {
 		t.cacheTypeResolver()
 	}
-	return t.cachedTypeResolver.Resolve(name, exists)
+	if resolved, ok := t.cachedTypeResolver.Resolve(name, exists); ok {
+		return resolved, true
+	}
+	for _, pkg := range t.signatureDots {
+		if fullName := pkg + "." + name; exists(fullName) {
+			return fullName, true
+		}
+	}
+	return "", false
 }
 
 // cacheTypeResolver snapshots the imports this file resolves names against,
@@ -1092,7 +1108,8 @@ func (t *galaASTTransformer) resolveTypeMetaName(typeName string) string {
 //  2. Current package prefix (the package's own types shadow std's)
 //  3. std package prefix (for standard library types)
 //  4. Dot-imported packages
-//  5. Explicitly imported packages
+//
+// A named import's types are reached only as `pkg.Name`.
 //
 // Returns nil if the type is not found.
 func (t *galaASTTransformer) getTypeMeta(typeName string) *transpiler.TypeMetadata {

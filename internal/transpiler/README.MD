@@ -124,7 +124,8 @@ The transformer uses unified resolution with documented precedence:
 2. Current package prefix (a package's own declarations shadow every import, std included)
 3. std package prefix (for standard library types)
 4. Dot-imported packages
-5. Explicitly imported packages (non-dot)
+
+A named (non-dot) import binds only its qualifier: its names are reached as `pkg.Name`, never bare.
 
 **Key Methods:**
 - `resolveTypeName(name, exists)` - Core resolution with callback

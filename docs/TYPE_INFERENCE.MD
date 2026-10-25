@@ -253,11 +253,11 @@ Type resolution follows a 5-level precedence order (defined in `scope.go`):
 2. **Outer scopes** - Variables from enclosing functions/blocks
 3. **Current package types** - Types defined in the current file
 4. **Prelude packages** - Auto-imported packages (std library)
-5. **Explicitly imported packages** - User imports
+5. **Dot-imported packages** - Packages imported with `import . "..."`
 
 The `getType(name)` method in scope.go implements this resolution order.
 
-**Note**: Dot imports take precedence over aliased imports for unqualified name resolution. If both `. "collection_immutable"` and `cm "collection_mutable"` are imported, bare `Array` resolves to `collection_immutable.Array`.
+**Note**: A named (non-dot) import binds only its qualifier: its names are reached as `pkg.Name`, never bare. If both `. "collection_immutable"` and `cm "collection_mutable"` are imported, bare `Array` is `collection_immutable.Array` and `cm.Array` is the mutable one.
 
 ---
 

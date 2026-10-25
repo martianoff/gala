@@ -152,6 +152,13 @@ type RichAST struct {
 	// package named list share a key.
 	OwnGoTypes map[string]bool
 
+	// ReceiverDotImports holds, by the bare name of each receiver type of this
+	// file's methods that another file of the package declares, the GALA
+	// packages that file dot-imports. A method's signature may name their
+	// types bare, the allowance GALA-E0025 makes for method signatures; its
+	// body may not. Per-file, never merged or cached.
+	ReceiverDotImports map[string][]string
+
 	// Docs is this file's doc-comment table from the parse that produced Tree,
 	// keyed by the character offset of each documented declaration's first
 	// token (see parser.extractDocComments). The transpile pipeline sets it so

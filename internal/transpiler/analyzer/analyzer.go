@@ -989,11 +989,25 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 		return set
 	}
+	// The same dot imports by import path: a package's metadata may end up
+	// filed under its PackageKey rather than its name, and only the path
+	// finds that key (see receiverDotImports).
+	dotPathsForFile := func(q fileQualifiers) []string {
+		var out []string
+		for _, b := range q.dots {
+			if b.IsGala && b.PkgName != "" {
+				out = append(out, b.Path)
+			}
+		}
+		return out
+	}
 	fileDotImportSets := map[string]map[string]bool{a.paths.canonical(filePath): dotPkgsForFile(fileQuals)}
+	fileDotImportPaths := map[string][]string{a.paths.canonical(filePath): dotPathsForFile(fileQuals)}
 	for i, q := range siblingQuals {
 		if i < len(siblingPaths) {
 			fileImportSets[a.paths.canonical(siblingPaths[i])] = importPkgsForFile(q)
 			fileDotImportSets[a.paths.canonical(siblingPaths[i])] = dotPkgsForFile(q)
+			fileDotImportPaths[a.paths.canonical(siblingPaths[i])] = dotPathsForFile(q)
 		}
 	}
 
@@ -1768,6 +1782,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	a.inferPackageValTypes(richAST,
 		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
 		append([]string{absFilePath}, siblingPaths...))
+	if isTopLevel {
+		richAST.ReceiverDotImports = a.receiverDotImports(sourceFile, richAST, filePath, fileDotImportPaths)
+	}
 	return richAST, nil
 }
 
@@ -1815,6 +1832,46 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 			}
 		}
 	}
+}
+
+// receiverDotImports builds RichAST.ReceiverDotImports: for each method of
+// sourceFile whose receiver type another file of the package declares, the
+// GALA packages that file dot-imports, by the name their metadata is filed
+// under (richAST.Packages after ApplyPackageKeys), sorted. Only a top-level
+// analysis needs it: the field is per-file and never merged.
+func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST, filePath string, fileDotImportPaths map[string][]string) map[string][]string {
+	var out map[string][]string
+	seen := make(map[string]bool)
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
+		if !ok || fd == nil {
+			continue
+		}
+		rc, ok := fd.Receiver().(*grammar.ReceiverContext)
+		if !ok || rc == nil || rc.Type_() == nil {
+			continue
+		}
+		recv := receiverBaseTypeName(rc.Type_())
+		if recv == "" || seen[recv] {
+			continue
+		}
+		seen[recv] = true
+		var pkgs []string
+		for _, path := range receiverFileImports(a.paths, richAST, recv, filePath, fileDotImportPaths) {
+			if pkg := richAST.Packages[path]; pkg != "" {
+				pkgs = append(pkgs, pkg)
+			}
+		}
+		if len(pkgs) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(map[string][]string)
+		}
+		slices.Sort(pkgs)
+		out[recv] = slices.Compact(pkgs)
+	}
+	return out
 }
 
 // validateExplicitImports walks the metadata for entries defined in

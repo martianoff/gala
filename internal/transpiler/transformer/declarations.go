@@ -810,6 +810,12 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		defer func() { t.lspCurrentFunc = prevFunc }()
 	}
 
+	// The signature of a method whose receiver type is declared in another
+	// file may name that file's dot-imported types bare (see
+	// RichAST.ReceiverDotImports); the body may not.
+	prevSignatureDots := t.signatureDots
+	defer func() { t.signatureDots = prevSignatureDots }()
+
 	// Receiver
 	var receiver *ast.FieldList
 	var receiverTypeName string
@@ -837,6 +843,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 		recvBaseName := t.getBaseTypeName(recvTypeExpr)
 		t.recordMethodReceiver(recvCtx, recvBaseName)
+		t.signatureDots = t.richAST.ReceiverDotImports[recvBaseName]
 
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()
@@ -902,6 +909,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 	// Register function parameters in scope for type inference.
 	t.registerFunctionParametersInScope(ctx.Signature().(*grammar.SignatureContext))
+	t.signatureDots = prevSignatureDots
 
 	// A generic method, or one the analyzer recorded as lowered to avoid a Go
 	// instantiation cycle (MethodMetadata.IsGeneric), is a function. The
