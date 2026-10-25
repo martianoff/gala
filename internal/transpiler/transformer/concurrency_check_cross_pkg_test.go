@@ -52,7 +52,9 @@ struct MutHolder(C leaf.Counter)
 
 struct Vocabulary(Names Array[string])
 
-func EmptyVocabulary() Vocabulary = Vocabulary(ArrayOf[string]())
+func (v Vocabulary) MaxType() int = v.Names.Size() - 1
+
+func EmptyVocabulary() Vocabulary = Vocabulary(ArrayOf("<INVALID>"))
 
 func WrapCommand() Holder = Holder(leaf.Command("x", None[string]()))
 
@@ -100,6 +102,10 @@ func main() { Println(f(mid.WrapCommand())) }`},
 		{"val inferred from cross-package call returning transitive type", `func main() {
     val h = mid.WrapCommand()
     Println(Future(() => h).Get())
+}`},
+		{"method call on val from cross-package expression-bodied call", `func main() {
+    val v = mid.EmptyVocabulary()
+    Println(Future(() => v.MaxType()).Get())
 }`},
 		{"field path through cross-package val", `func main() {
     val v = mid.EmptyVocabulary()
