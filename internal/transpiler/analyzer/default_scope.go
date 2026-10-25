@@ -61,13 +61,7 @@ func (a *galaAnalyzer) loadDefaultScopeGoTypes(sf *grammar.SourceFileContext, ri
 				continue
 			}
 			loaded[path] = true
-			goInfo := AnalyzeGoPackage(path)
-			if !goTypeInfoNonEmpty(goInfo) {
-				if dir, ok := a.resolveGoSrcDir(path); ok {
-					goInfo = AnalyzeGoFiles(dir, path)
-				}
-			}
-			if keyed := goInfo.KeyedByPath(path); !keyed.IsEmpty() {
+			if keyed := a.analyzeGoImport(path).KeyedByPath(path); !keyed.IsEmpty() {
 				if richAST.GoTypeInfo == nil {
 					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 				}

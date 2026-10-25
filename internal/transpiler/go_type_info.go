@@ -202,21 +202,23 @@ func (g *GoTypeInfo) KeyedByPath(importPath string) *GoTypeInfo {
 		return out
 	}
 	prefix := importPath + "."
-	pick := func(keys []string, add func(k string)) {
-		for _, k := range keys {
-			if strings.HasPrefix(k, prefix) {
-				add(k)
-			}
+	copyPrefixed(out.Functions, g.Functions, prefix)
+	copyPrefixed(out.Types, g.Types, prefix)
+	copyPrefixed(out.Variables, g.Variables, prefix)
+	copyPrefixed(out.Constants, g.Constants, prefix)
+	copyPrefixed(out.UntypedConstants, g.UntypedConstants, prefix)
+	copyPrefixed(out.TypeAliases, g.TypeAliases, prefix)
+	copyPrefixed(out.GalaTypeMethods, g.GalaTypeMethods, prefix)
+	return out
+}
+
+// copyPrefixed copies the entries of src whose key starts with prefix into dst.
+func copyPrefixed[V any](dst, src map[string]V, prefix string) {
+	for k, v := range src {
+		if strings.HasPrefix(k, prefix) {
+			dst[k] = v
 		}
 	}
-	pick(mapKeys(g.Functions), func(k string) { out.Functions[k] = g.Functions[k] })
-	pick(mapKeys(g.Types), func(k string) { out.Types[k] = g.Types[k] })
-	pick(mapKeys(g.Variables), func(k string) { out.Variables[k] = g.Variables[k] })
-	pick(mapKeys(g.Constants), func(k string) { out.Constants[k] = g.Constants[k] })
-	pick(mapKeys(g.UntypedConstants), func(k string) { out.UntypedConstants[k] = g.UntypedConstants[k] })
-	pick(mapKeys(g.TypeAliases), func(k string) { out.TypeAliases[k] = g.TypeAliases[k] })
-	pick(mapKeys(g.GalaTypeMethods), func(k string) { out.GalaTypeMethods[k] = g.GalaTypeMethods[k] })
-	return out
 }
 
 // HasQualified reports whether any entry is recorded under key.

@@ -399,18 +399,26 @@ func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (
 		m.foreign[q] = &ImportEntry{Path: path, PkgName: q, Alias: q, named: true}
 	}
 	var added []*ImportEntry
-	for path, pkgName := range dots {
-		if slices.ContainsFunc(m.dotImports, func(e *ImportEntry) bool { return e.Path == path }) {
+	for _, path := range slices.Sorted(maps.Keys(dots)) { // a stable resolution order
+		if m.IsDotImportedPath(path) {
 			continue
 		}
+		pkgName := dots[path]
 		entry := &ImportEntry{Path: path, PkgName: pkgName, Alias: pkgName, IsDot: true, implicit: true}
 		m.entries = append(m.entries, entry)
 		m.dotImports = append(m.dotImports, entry)
 		added = append(added, entry)
 	}
-	m.revision++
+	// Only the entry set is revision-tracked; the named qualifiers live in
+	// foreign, outside it.
+	if len(added) > 0 {
+		m.revision++
+	}
 	return func() {
 		m.foreign = prev
+		if len(added) == 0 {
+			return
+		}
 		isAdded := func(e *ImportEntry) bool { return slices.Contains(added, e) }
 		m.entries = slices.DeleteFunc(m.entries, isAdded)
 		m.dotImports = slices.DeleteFunc(m.dotImports, isAdded)
@@ -449,6 +457,11 @@ func (m *ImportManager) IsDotImported(pkgName string) bool {
 		}
 	}
 	return false
+}
+
+// IsDotImportedPath reports whether the package at path is dot-imported.
+func (m *ImportManager) IsDotImportedPath(path string) bool {
+	return slices.ContainsFunc(m.dotImports, func(e *ImportEntry) bool { return e.Path == path })
 }
 
 // GetDotImports returns all dot-imported package names.

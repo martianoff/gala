@@ -7,26 +7,36 @@ import "strings"
 // construction site that omits it — in another package, too — so those names
 // must reach the generated Go spelled as that site sees them.
 
+// MaxK is the depth limit most defaults below read.
 val MaxK = 3
 
+// Level is a package-level var, read by Leveled's default; a var on purpose,
+// to cover a default that reads mutable package state.
 var Level = 1
 
+// Pos is a source position.
 struct Pos(Line int, Col int)
 
+// NoPos is the zero position.
 val NoPos = Pos(0, 0)
 
 // Item's At defaults to a struct-typed val.
 struct Item(Name string, At Pos = NoPos, Depth int = MaxK)
 
+// Analyze scales n by maxK, which defaults to MaxK.
 func Analyze(n int, maxK int = MaxK) int = n * maxK
 
+// Leveled adds lvl, which defaults to Level, to n.
 func Leveled(n int, lvl int = Level) int = n + lvl
 
+// Scaled applies f, which defaults to a lambda reading MaxK, to n.
 func Scaled(n int, f func(int) int = (a) => a * MaxK) int = f(n)
 
 // Rule's default calls `strings`, which an importer need not import.
 func Rule(label string, line string = strings.Repeat("=", MaxK)) string = s"$label $line"
 
+// Box holds a number for Times to scale.
 struct Box(N int)
 
+// Times scales the box by k, which defaults to MaxK.
 func (b Box) Times(k int = MaxK) int = b.N * k

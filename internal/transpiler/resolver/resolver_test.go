@@ -16,6 +16,19 @@ func TestResolve_ExactMatch(t *testing.T) {
 	assert.Equal(t, "MyType", resolved)
 }
 
+func TestResolve_SkipBare(t *testing.T) {
+	known := map[string]bool{"Pos": true, "lib.Pos": true, "Only": true}
+	exists := func(name string) bool { return known[name] }
+	r := &TypeResolver{PackageName: "lib", SkipBare: true}
+
+	resolved, ok := r.Resolve("Pos", exists)
+	assert.True(t, ok)
+	assert.Equal(t, "lib.Pos", resolved, "the package's own name, not the bare key")
+
+	_, ok = r.Resolve("Only", exists)
+	assert.False(t, ok, "a name known only bare does not resolve")
+}
+
 func TestResolve_StdPrefix(t *testing.T) {
 	r := &TypeResolver{PackageName: "mypackage"}
 	known := map[string]bool{"std.Option": true}

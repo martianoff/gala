@@ -793,8 +793,10 @@ func (t *galaASTTransformer) resolveTypeName(typeName string, exists func(string
 		return "", false
 	}
 
-	// 1. Try exact match first
-	if exists(typeName) {
+	// 1. Try exact match first — except a bare name in a foreign default
+	// lowered at a bare-keyed use site, which never resolves to the use
+	// site's own declarations (see useSiteBareKeysForeign).
+	if exists(typeName) && (strings.Contains(typeName, ".") || !t.useSiteBareKeysForeign()) {
 		return typeName, true
 	}
 
@@ -845,7 +847,8 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 	// this cache exists. Rebuilding here rather than only on a nil pointer
 	// also puts the cache back, so an import added mid-walk costs one rebuild
 	// instead of a fresh allocation on every later resolution in the file.
-	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() || t.cachedTypeResolver.PackageName != t.resolutionPackage() {
+	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() ||
+		t.cachedTypeResolver.PackageName != t.resolutionPackage() || t.cachedTypeResolver.SkipBare != t.useSiteBareKeysForeign() {
 		t.cacheTypeResolver()
 	}
 	if resolved, ok := t.cachedTypeResolver.Resolve(name, exists); ok {
@@ -879,7 +882,17 @@ func (t *galaASTTransformer) buildTypeResolver() *resolver.TypeResolver {
 	return &resolver.TypeResolver{
 		PackageName: t.resolutionPackage(),
 		Imports:     imports,
+		SkipBare:    t.useSiteBareKeysForeign(),
 	}
+}
+
+// useSiteBareKeysForeign reports whether a default declared in another
+// package is being lowered at a use site that keys its own declarations bare
+// (`main`, `test`; see ownFunctionKey). Those bare keys are the use site's,
+// which the declaring package cannot see, so while the default is lowered a
+// bare name does not resolve to them.
+func (t *galaASTTransformer) useSiteBareKeysForeign() bool {
+	return t.loweringForeignDefault() && ownFunctionKey(t.packageName, "_") == "_"
 }
 
 // resolutionPackage is the package whose declarations a bare name resolves

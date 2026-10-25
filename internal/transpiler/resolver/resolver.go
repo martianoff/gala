@@ -30,6 +30,13 @@ type TypeResolver struct {
 	// Imports lists all imported packages, in declaration order. Only the
 	// dot imports among them take part in resolving a bare name.
 	Imports []PackageInfo
+
+	// SkipBare skips step 1 (the bare name). It is set while a name is
+	// resolved for another package than the one whose declarations are keyed
+	// bare (a `main` or `test` use site lowering a default declared
+	// elsewhere): those bare keys are the use site's own declarations, which
+	// the other package cannot see.
+	SkipBare bool
 }
 
 // Resolve attempts to resolve an unqualified type name by trying various
@@ -40,7 +47,7 @@ type TypeResolver struct {
 // Returns the resolved name and true if found, or ("", false) if not.
 func (r *TypeResolver) Resolve(name string, exists func(string) bool) (string, bool) {
 	// 1. Try bare name without any package prefix
-	if exists(name) {
+	if !r.SkipBare && exists(name) {
 		return name, true
 	}
 

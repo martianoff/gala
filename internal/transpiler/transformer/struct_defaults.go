@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -257,7 +258,7 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 	// A dot import puts the declaring package's names in scope unqualified, so
 	// they resolve here as written and qualifying would invent an identifier
 	// (`struct_defaults_lib.Entry`) that the file never binds.
-	dotted := slices.Contains(t.importManager.GetDotImports(), owningPkg)
+	dotted := t.importManager.IsDotImported(owningPkg)
 	vals := t.declaringPackageVals(src)
 
 	// An unexported name cannot be reached from another package at all, so
@@ -332,11 +333,12 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 // and this file does not dot-import that package too. Otherwise id is
 // returned as is. A qualified selector is recorded in qualified.
 func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler.DefaultScope, qualified map[ast.Node]bool) ast.Expr {
-	for path, pkgName := range scope.DotImports {
+	for _, path := range slices.Sorted(maps.Keys(scope.DotImports)) { // deterministic output
+		pkgName := scope.DotImports[path]
 		if _, isVal := t.importedVals(path)[id.Name]; !isVal && !t.packageDeclares(pkgName, id.Name) {
 			continue
 		}
-		if slices.ContainsFunc(t.importManager.All(), func(e *ImportEntry) bool { return e.IsDot && e.Path == path }) {
+		if t.importManager.IsDotImportedPath(path) {
 			return id
 		}
 		sel := &ast.SelectorExpr{X: ast.NewIdent(t.importQualifier(path, pkgName)), Sel: ast.NewIdent(id.Name)}
