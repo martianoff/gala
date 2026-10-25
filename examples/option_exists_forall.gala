@@ -1,0 +1,17 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// Option.Exists and Option.ForAll ask a predicate about the value an Option
+// may hold: None never satisfies Exists and always satisfies ForAll.
+
+struct User(Name string, Age Option[int])
+
+func isAdult(age int) bool = age >= 18
+
+func main() {
+    val users = ArrayOf(User("ann", Some(34)), User("bob", Some(12)), User("cy", None[int]()))
+    users.ForEach((u) => Println(s"${u.Name}: adult=${u.Age.Exists(isAdult)} notMinor=${u.Age.ForAll(isAdult)}"))
+    Println(Some("gala").Exists(_.Size() == 4))
+    Println(None[string]().ForAll((s) => s.Size() > 100))
+}

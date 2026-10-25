@@ -2563,6 +2563,10 @@ val result = x.Map((i) => i * 2)
 val value = x.GetOrElse(0)
 val alternative = x.OrElse(Some(99))
 
+// Predicates over the value: None never satisfies Exists and always ForAll
+val big = x.Exists((i) => i > 5)        // true
+val allBig = y.ForAll((i) => i > 5)     // true
+
 // Side-effect methods (return original value for chaining)
 x.OnSome((v) => { Println(s"Found: $v") })
  .OnNone(() => { Println("Not found") })
@@ -2582,6 +2586,8 @@ x.OnSome((v) => { Println(s"Found: $v") })
 | `Map[U](f)` | Transform value if Some |
 | `FlatMap[U](f)` | Chain operations returning Option |
 | `Filter(predicate)` | Keep Some if predicate holds |
+| `Exists(predicate)` | True if Some and the predicate holds for its value (None: false) |
+| `ForAll(predicate)` | True if None, or the predicate holds for the value (None: true) |
 
 ### Tuple
 `Tuple[A, B]` represents a pair of values. GALA supports concise parenthesis syntax for tuples (up to Tuple10).
