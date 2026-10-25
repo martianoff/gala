@@ -293,6 +293,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if len(typeArgs) > 0 {
 				recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
 			}
+			// Before the generic and default-filling paths below return, and
+			// for `recv.m[T]()` as much as `recv.m()`.
+			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, suffix); err != nil {
+				return nil, err
+			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
@@ -2741,6 +2746,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// A1: resolve the receiver type to a canonical form and compute the
 	// package-agnostic lookup key used by the generic-method registry.
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
+	// Before the generic rewrite and the regular dispatch, so both are covered.
+	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, argListCtx); err != nil {
+		return nil, err
+	}
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
