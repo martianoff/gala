@@ -146,6 +146,13 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures function val
 
 The caret points at the exact offending capture identifier.
 
+When the captured value's type could not be inferred at all — most often
+because the call that defined it does not resolve, such as a misspelled
+function of another package — the check still rejects the capture, and the
+message says `whose type could not be inferred, so it cannot be shown safe to
+share` instead of reporting a data race. Fix the defining expression (or
+declare the `val`'s type) and the capture is judged by its real type.
+
 **Fix.** Make the capture immutable and shareable:
 
 - **Snapshot to a `val`.** Copy the value into an immutable `val` *before* the
