@@ -1,0 +1,49 @@
+package main
+
+// Matching on a case whose fields have types of a package this file never
+// imports. The generated Go must not import that package either: under Bazel
+// this test depends only on sealed_foreign_field_lib, so a stray import of
+// sealed_foreign_field_cmd_lib fails strict dependency checking.
+
+import (
+    . "martianoff/gala/collection_immutable"
+
+    "martianoff/gala/examples/sealed_foreign_field_lib"
+)
+
+func target(e sealed_foreign_field_lib.Edge) int = e match {
+    case sealed_foreign_field_lib.Actions(t, _) => t
+    case sealed_foreign_field_lib.Eps(t) => t
+    case _ => -1
+}
+
+func commandCount(e sealed_foreign_field_lib.Edge) int = e match {
+    case sealed_foreign_field_lib.Actions(_, cmds) => cmds.Size()
+    case _ => 0
+}
+
+func name(e sealed_foreign_field_lib.Edge) string = e match {
+    case sealed_foreign_field_lib.One(c) => sealed_foreign_field_lib.NameOf(c)
+    case _ => "none"
+}
+
+func targetPlus(e sealed_foreign_field_lib.Edge, k int) int = (e, k) match {
+    case (sealed_foreign_field_lib.Actions(t, _), n) => t + n
+    case _ => 0
+}
+
+func main() {
+    val actions = sealed_foreign_field_lib.MakeActions(3, ArrayOf("a", "b"))
+    val one = sealed_foreign_field_lib.MakeOne("solo")
+    val eps = sealed_foreign_field_lib.MakeEps(7)
+
+    Println(target(actions))
+    Println(target(eps))
+    Println(target(one))
+    Println(commandCount(actions))
+    Println(commandCount(eps))
+    Println(name(one))
+    Println(name(actions))
+    Println(targetPlus(actions, 10))
+    Println(targetPlus(eps, 10))
+}

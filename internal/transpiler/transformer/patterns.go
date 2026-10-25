@@ -81,7 +81,7 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		if err != nil {
 			return nil, nil, err
 		}
-		read := t.patternDefine([]string{viewVar}, []ast.Expr{t.knownTypeExpr(view)}, viewObj)
+		read := t.patternDefine([]string{viewVar}, []patternType{t.lazyKnownType(view)}, viewObj)
 		return cond, blankAssignTempVar(append([]ast.Stmt{read}, stmts...), viewVar), nil
 	}
 
@@ -550,7 +550,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 			} else if matchedType != nil {
 				bindingType = t.knownTypeExpr(matchedType)
 			}
-			assign := t.patternDefine([]string{name}, []ast.Expr{bindingType}, objExpr)
+			assign := t.patternDefine([]string{name}, []patternType{exprType(bindingType)}, objExpr)
 			return ast.NewIdent("true"), []ast.Stmt{assign}, nil
 		}
 	}
@@ -615,7 +615,7 @@ func (t *galaASTTransformer) transformTypedPattern(ctx *grammar.TypedPatternCont
 	okName := t.nextTempVar()
 
 	// v, ok := std.As[T](obj)
-	assign := t.patternDefine([]string{name, okName}, []ast.Expr{typeExpr, ast.NewIdent("bool")}, t.stdAsCall(typeExpr, objExpr))
+	assign := t.patternDefine([]string{name, okName}, []patternType{exprType(typeExpr), boolPatternType}, t.stdAsCall(typeExpr, objExpr))
 
 	return ast.NewIdent(okName), []ast.Stmt{assign}, nil
 }
@@ -677,11 +677,11 @@ func (t *galaASTTransformer) transformWildcardTypedPattern(name, baseName string
 
 	// inst, ok := std.As[WrapInstance](obj) — like a type pattern, it looks
 	// through std's transparent wrappers.
-	assign1 := t.patternDefine([]string{instName, okName}, []ast.Expr{ast.NewIdent(interfaceName), ast.NewIdent("bool")},
+	assign1 := t.patternDefine([]string{instName, okName}, []patternType{exprType(ast.NewIdent(interfaceName)), boolPatternType},
 		t.stdAsCall(ast.NewIdent(interfaceName), objExpr))
 
 	// name := obj (keep original concrete type)
-	assign2 := t.patternDefine([]string{name}, []ast.Expr{t.knownTypeExpr(objType)}, objExpr)
+	assign2 := t.patternDefine([]string{name}, []patternType{t.lazyKnownType(objType)}, objExpr)
 
 	// Condition: ok && inst.IsWrap()
 	cond := &ast.BinaryExpr{
@@ -1299,7 +1299,7 @@ func (t *galaASTTransformer) emitSizeCheck(objExpr ast.Expr, count int, exact bo
 	if exact {
 		op = token.EQL
 	}
-	stmt := t.patternDefine([]string{sizeCheckName}, []ast.Expr{ast.NewIdent("bool")}, &ast.BinaryExpr{
+	stmt := t.patternDefine([]string{sizeCheckName}, []patternType{boolPatternType}, &ast.BinaryExpr{
 		X: &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   objExpr,
@@ -1362,7 +1362,7 @@ func (t *galaASTTransformer) emitNonRestBindings(
 		if nerr != nil {
 			return nil, nil, nil, nerr
 		}
-		decls, guarded, herr := t.hoistPatternDecls(nestedStmts, tempName, elemTypeExpr)
+		decls, guarded, herr := t.hoistPatternDecls(nestedStmts, tempName, exprType(elemTypeExpr))
 		if herr != nil {
 			return nil, nil, nil, herr
 		}
@@ -1731,16 +1731,13 @@ func (t *galaASTTransformer) stripReturnStatement(stmt ast.Stmt) ast.Stmt {
 //
 //	_tmp_opt := Cons[int]{}.Unapply(list)
 //	_tmp_ok := _tmp_opt.IsDefined()
-//	var _tmp_tuple std.Tuple[int, List[int]]
-//	if _tmp_ok {
-//	    _tmp_tuple = _tmp_opt.Get()
-//	}
+//	_tmp_tuple := _tmp_opt.Value.Get() // zero value when None
 //	head := _tmp_tuple.V1
 //	tail := _tmp_tuple.V2
 //	if _tmp_ok { ... body }
 //
 // This eliminates reflection from: UnapplyFull, UnapplyTuple, GetSafe, and As.
-// The .Get() is guarded by IsDefined() to prevent panics.
+// The payload is read from the Option's field, which is the zero value on None, so it never panics.
 func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	extractorName string,
 	extractorMeta *transpiler.TypeMetadata,
@@ -1779,7 +1776,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 
 	// Generate: _tmp_result := Extractor[T]{}.Unapply(obj)
 	resultName := t.nextTempVar()
-	unapplyCall := t.patternDefine([]string{resultName}, []ast.Expr{t.knownTypeExpr(returnType)}, &ast.CallExpr{
+	unapplyCall := t.patternDefine([]string{resultName}, []patternType{t.lazyKnownType(returnType)}, &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   &ast.CompositeLit{Type: extractorTypeExpr},
 			Sel: ast.NewIdent("Unapply"),
@@ -1801,7 +1798,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 		// For Option-returning extractors, check IsDefined and extract inner value
 		// Generate: _tmp_ok := _tmp_result.IsDefined()
 		okName = t.nextTempVar()
-		isDefinedAssign := t.patternDefine([]string{okName}, []ast.Expr{ast.NewIdent("bool")}, &ast.CallExpr{
+		isDefinedAssign := t.patternDefine([]string{okName}, []patternType{boolPatternType}, &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   ast.NewIdent(resultName),
 				Sel: ast.NewIdent("IsDefined"),
@@ -1829,58 +1826,20 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 			}
 		}
 
-		// Generate a guarded .Get() call:
-		// var _tmp_inner InnerType
-		// if _tmp_ok { _tmp_inner = _tmp_result.Get() }
 		innerName := t.nextTempVar()
-
-		// Declare the variable with its type
-		innerTypeExpr := t.typeToExpr(innerType)
-		if innerTypeExpr == nil {
-			innerTypeExpr = ast.NewIdent("any")
+		payloadType := t.lazyType(innerType)
+		payload, err := t.optionPayloadDefine(innerName, resultName, payloadType)
+		if err != nil {
+			return nil, nil, err
 		}
-
-		varDecl := &ast.DeclStmt{
-			Decl: &ast.GenDecl{
-				Tok: token.VAR,
-				Specs: []ast.Spec{
-					&ast.ValueSpec{
-						Names: []*ast.Ident{ast.NewIdent(innerName)},
-						Type:  innerTypeExpr,
-					},
-				},
-			},
-		}
-		allBindings = append(allBindings, varDecl)
-
-		// Generate: if _tmp_ok { _tmp_inner = _tmp_result.Get() }
-		guardedGet := &ast.IfStmt{
-			Cond: ast.NewIdent(okName),
-			Body: &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(innerName)},
-						Tok: token.ASSIGN,
-						Rhs: []ast.Expr{
-							&ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   ast.NewIdent(resultName),
-									Sel: ast.NewIdent("Get"),
-								},
-							},
-						},
-					},
-				},
-			},
-		}
+		allBindings = append(allBindings, payload)
+		// A nested sub-pattern's statements run under an `if ok { ... }`
+		// guard spliced in here (see hoistPatternDecls), after the
+		// declarations they hoist; there is no guard when none do.
 		guardIdx := len(allBindings)
-		allBindings = append(allBindings, guardedGet)
 		// Suppress "declared and not used" for inner temp var in case all pattern args are wildcards
 		allBindings = blankAssignTempVar(allBindings, innerName)
-
-		// Declarations a nested sub-pattern hoists out of the guard; they
-		// are spliced in just before it once every argument is lowered.
-		var hoisted []ast.Stmt
+		var hoisted, guardedStmts []ast.Stmt
 
 		// For each argument pattern, generate direct field access
 		for i, argCtx := range argList.AllArgument() {
@@ -1936,22 +1895,22 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 				}
 
 				// Generate: varName := elemExpr
-				allBindings = append(allBindings, t.patternDefine([]string{varName}, []ast.Expr{t.knownTypeExpr(elemType)}, elemExpr))
+				allBindings = append(allBindings, t.patternDefine([]string{varName}, []patternType{t.lazyKnownType(elemType)}, elemExpr))
 			} else {
 				// Handle nested patterns recursively. The sub-pattern reads
-				// the payload, which is only set when the extractor matched,
+				// the payload, which is a zero value when the extractor did not match,
 				// so it runs inside the guard; its bindings are declared
 				// before the guard so the arm sees them.
 				subCond, subBindings, err := t.transformPatternWithType(arg.Pattern(), elemExpr, elemType)
 				if err != nil {
 					return nil, nil, err
 				}
-				decls, guarded, err := t.hoistPatternDecls(subBindings, innerName, innerTypeExpr)
+				decls, guarded, err := t.hoistPatternDecls(subBindings, innerName, payloadType)
 				if err != nil {
 					return nil, nil, err
 				}
 				hoisted = append(hoisted, decls...)
-				guardedGet.Body.List = append(guardedGet.Body.List, guarded...)
+				guardedStmts = append(guardedStmts, guarded...)
 				// Add sub-condition to the list of conditions to check
 				if subCond != nil {
 					// Check if subCond is just "true" - if so, skip it
@@ -1961,7 +1920,7 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 				}
 			}
 		}
-		allBindings = spliceStmts(allBindings, guardIdx, hoisted)
+		allBindings = spliceStmts(allBindings, guardIdx, assembleSeqPatternGuardBlock(hoisted, okName, guardedStmts))
 	}
 
 	// Build final condition by ANDing all conditions
@@ -2061,7 +2020,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 
 	// Generate: _tmp_result := variableName[.Get()].Unapply(obj)
 	resultName := t.nextTempVar()
-	unapplyCall := t.patternDefine([]string{resultName}, []ast.Expr{t.knownTypeExpr(returnType)}, &ast.CallExpr{
+	unapplyCall := t.patternDefine([]string{resultName}, []patternType{t.lazyKnownType(returnType)}, &ast.CallExpr{
 		Fun: &ast.SelectorExpr{
 			X:   receiverExpr,
 			Sel: ast.NewIdent("Unapply"),
@@ -2080,7 +2039,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 	} else {
 		// For Option-returning extractors, check IsDefined and extract inner value
 		okName = t.nextTempVar()
-		isDefinedAssign := t.patternDefine([]string{okName}, []ast.Expr{ast.NewIdent("bool")}, &ast.CallExpr{
+		isDefinedAssign := t.patternDefine([]string{okName}, []patternType{boolPatternType}, &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   ast.NewIdent(resultName),
 				Sel: ast.NewIdent("IsDefined"),
@@ -2108,50 +2067,16 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 			}
 		}
 
-		// Generate a guarded .Get() call
 		innerName := t.nextTempVar()
-
-		innerTypeExpr := t.typeToExpr(innerType)
-		if innerTypeExpr == nil {
-			innerTypeExpr = ast.NewIdent("any")
+		payloadType := t.lazyType(innerType)
+		payload, err := t.optionPayloadDefine(innerName, resultName, payloadType)
+		if err != nil {
+			return nil, nil, err
 		}
-
-		varDecl := &ast.DeclStmt{
-			Decl: &ast.GenDecl{
-				Tok: token.VAR,
-				Specs: []ast.Spec{
-					&ast.ValueSpec{
-						Names: []*ast.Ident{ast.NewIdent(innerName)},
-						Type:  innerTypeExpr,
-					},
-				},
-			},
-		}
-		allBindings = append(allBindings, varDecl)
-
-		guardedGet := &ast.IfStmt{
-			Cond: ast.NewIdent(okName),
-			Body: &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.AssignStmt{
-						Lhs: []ast.Expr{ast.NewIdent(innerName)},
-						Tok: token.ASSIGN,
-						Rhs: []ast.Expr{
-							&ast.CallExpr{
-								Fun: &ast.SelectorExpr{
-									X:   ast.NewIdent(resultName),
-									Sel: ast.NewIdent("Get"),
-								},
-							},
-						},
-					},
-				},
-			},
-		}
+		allBindings = append(allBindings, payload)
 		guardIdx := len(allBindings)
-		allBindings = append(allBindings, guardedGet)
 		allBindings = blankAssignTempVar(allBindings, innerName)
-		var hoisted []ast.Stmt
+		var hoisted, guardedStmts []ast.Stmt
 
 		for i, argCtx := range argList.AllArgument() {
 			arg := argCtx.(*grammar.ArgumentContext)
@@ -2198,7 +2123,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 					t.currentScope.valTypes[varName] = transpiler.BasicType{Name: "any"}
 				}
 
-				allBindings = append(allBindings, t.patternDefine([]string{varName}, []ast.Expr{t.knownTypeExpr(elemType)}, elemExpr))
+				allBindings = append(allBindings, t.patternDefine([]string{varName}, []patternType{t.lazyKnownType(elemType)}, elemExpr))
 			} else {
 				// As in generateDirectUnapplyPattern: run the sub-pattern
 				// inside the guard, declare its bindings before it.
@@ -2206,12 +2131,12 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 				if err != nil {
 					return nil, nil, err
 				}
-				decls, guarded, err := t.hoistPatternDecls(subBindings, innerName, innerTypeExpr)
+				decls, guarded, err := t.hoistPatternDecls(subBindings, innerName, payloadType)
 				if err != nil {
 					return nil, nil, err
 				}
 				hoisted = append(hoisted, decls...)
-				guardedGet.Body.List = append(guardedGet.Body.List, guarded...)
+				guardedStmts = append(guardedStmts, guarded...)
 				if subCond != nil {
 					if ident, ok := subCond.(*ast.Ident); !ok || ident.Name != "true" {
 						conds = append(conds, subCond)
@@ -2219,7 +2144,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 				}
 			}
 		}
-		allBindings = spliceStmts(allBindings, guardIdx, hoisted)
+		allBindings = spliceStmts(allBindings, guardIdx, assembleSeqPatternGuardBlock(hoisted, okName, guardedStmts))
 	}
 
 	// Build final condition by ANDing all conditions

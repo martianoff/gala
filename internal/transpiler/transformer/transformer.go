@@ -120,7 +120,7 @@ type galaASTTransformer struct {
 	// patternDefineTypes records the Go type of each name a pattern's `:=`
 	// declares, so a sub-pattern's statements can be split into declarations
 	// outside a guard and assignments inside it (see hoistPatternDecls).
-	patternDefineTypes map[*ast.AssignStmt][]ast.Expr
+	patternDefineTypes map[*ast.AssignStmt][]patternType
 
 	// valTypes, when non-nil, puts transform in the mode InferPackageValTypes
 	// runs it in: only the file's package-level val/var declarations are

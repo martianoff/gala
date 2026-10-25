@@ -1,0 +1,26 @@
+package sealed_foreign_field_lib
+
+import (
+    . "martianoff/gala/collection_immutable"
+
+    cmd "martianoff/gala/examples/sealed_foreign_field_cmd_lib"
+)
+
+// Edge has cases whose fields have types of another package.
+sealed type Edge {
+    case Eps(Target int)
+    case Actions(Target int, Commands Array[cmd.Cmd])
+    case One(C cmd.Cmd)
+}
+
+// MakeActions returns an Actions edge with one command per name.
+func MakeActions(target int, names Array[string]) Edge = Actions(target, names.Map(cmd.Cmd(_)))
+
+// MakeOne returns a One edge holding the command name.
+func MakeOne(name string) Edge = One(cmd.Cmd(name))
+
+// MakeEps returns an Eps edge to target.
+func MakeEps(target int) Edge = Eps(target)
+
+// NameOf returns the name of command c.
+func NameOf(c cmd.Cmd) string = c.Name

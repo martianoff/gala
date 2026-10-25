@@ -51,7 +51,7 @@ func main() {
 				"func wrap() std.Option[std.Tuple3[int, int, int]]",
 				"func(obj std.Option[std.Tuple3[int, int, int]])",
 				"std.Some[std.Tuple3[int, int, int]]{}.Unapply",
-				"var _tmp_3 std.Tuple3[int, int, int]",
+				"_tmp_3 := _tmp_1.Value.Get()",
 			},
 			notExpected: []string{
 				// the broken form: 2-arity Tuple with 3 type args

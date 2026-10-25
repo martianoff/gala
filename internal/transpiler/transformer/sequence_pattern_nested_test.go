@@ -143,21 +143,23 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
 
 // A sub-pattern of an Option-returning extractor reads the payload, which is
 // only set when the extractor matched: `Some(Node(v))` against None must not
-// read a field through the nil payload. The sub-pattern runs inside the
-// `if ok { payload = result.Get() ... }` guard; `v` is declared before it.
+// read a field through the nil payload. The payload is read first
+// (`payload := result.Value.Get()`, nil on None) and the sub-pattern runs
+// inside the `if ok { ... }` guard that follows; `v` is declared before it.
 func TestExtractorSubPatternRunsInsideGuard(t *testing.T) {
 	got, err := transpileSequencePattern(t, `func f(o Option[*Node]) int = o match {
     case Some(Node(v)) => v
     case _             => 0
 }`)
 	require.NoError(t, err)
-	m := regexp.MustCompile(`if (_tmp_\d+) \{\n\s*(_tmp_\d+) = (_tmp_\d+)\.Get\(\)`).FindStringSubmatch(got)
+	m := regexp.MustCompile(`(?s)_tmp_\d+ := _tmp_\d+\.IsDefined\(\)\n\s*(_tmp_\d+) := _tmp_\d+\.Value\.Get\(\)\n.*?(if _tmp_\d+ \{\n)`).FindStringSubmatchIndex(got)
 	require.NotNil(t, m, "extractor guard not found in:\n%s", got)
-	start := strings.Index(got, m[0])
+	payload := got[m[2]:m[3]]
+	start := m[4]
 	end := strings.Index(got[start:], "\n\t\t\t}\n")
 	require.NotEqual(t, -1, end)
 	guard := got[start : start+end]
-	assert.Contains(t, guard, m[2]+".V.Get()", "the field read must be inside the guard")
+	assert.Contains(t, guard, payload+".V.Get()", "the field read must be inside the guard")
 	assert.Contains(t, guard, "v = ")
 	assert.Contains(t, got[:start], "var v int", "v must be declared before the guard")
 	assert.NotContains(t, got, "v := ")
