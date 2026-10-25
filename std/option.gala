@@ -111,6 +111,14 @@ func (o Option[T]) Filter(p func(T) bool) Option[T] {
     return None[T]()
 }
 
+// Exists reports whether this option is nonempty and p holds for its value.
+// None never satisfies it.
+func (o Option[T]) Exists(p func(T) bool) bool = o.isSome() && p(o.Value)
+
+// ForAll reports whether p holds for this option's value, if it has one.
+// None satisfies it vacuously.
+func (o Option[T]) ForAll(p func(T) bool) bool = o.isNone() || p(o.Value)
+
 // When returns Some(value) if condition is true, None otherwise.
 func When[T any](condition bool, value T) Option[T] = if (condition) Some(value) else None[T]()
 

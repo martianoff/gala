@@ -74,6 +74,30 @@ func TestNoneFilter(t T) T {
     return IsNone(t, filtered)
 }
 
+func TestOptionExists(t T) T {
+    val t1 = IsTrue(t, std.Some(42).Exists(isPositive))
+    val t2 = IsFalse(t1, std.Some(-5).Exists(isPositive))
+    IsFalse(t2, std.None[int]().Exists(isPositive))
+}
+
+func TestOptionForAll(t T) T {
+    val t1 = IsTrue(t, std.Some(42).ForAll(isPositive))
+    val t2 = IsFalse(t1, std.Some(-5).ForAll(isPositive))
+    IsTrue(t2, std.None[int]().ForAll(isPositive))
+}
+
+// The predicate runs only on a value that is there.
+func TestNoneSkipsPredicate(t T) T {
+    var calls = 0
+    val count = (x int) => {
+        calls = calls + 1
+        return true
+    }
+    val t1 = IsFalse(t, std.None[int]().Exists(count))
+    val t2 = IsTrue(t1, std.None[int]().ForAll(count))
+    Eq(t2, calls, 0)
+}
+
 // === Either Tests ===
 
 func TestLeftGetLeft(t T) T {

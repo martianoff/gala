@@ -110,6 +110,8 @@ val msg = opt match {
 | `Map(f)` | Transform value if Some |
 | `FlatMap(f)` | Chain operations returning Option |
 | `Filter(predicate)` | Keep Some if predicate holds |
+| `Exists(predicate)` | True if Some and the predicate holds (None: false) |
+| `ForAll(predicate)` | True if None or the predicate holds (None: true) |
 | `ForEach(f)` | Apply procedure if nonempty |
 
 ---
