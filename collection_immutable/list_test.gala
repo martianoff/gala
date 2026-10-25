@@ -233,10 +233,8 @@ func TestListDistinctKeepsFirstOccurrence(t T) T =
 
 // Equal lists are distinct Go values, neither primitive nor Hashable:
 // Distinct compares them with Equal.
-func TestListDistinctComparesWithEqual(t T) T {
-    val list = ListOf(ListOf(1, 2), ListOf(3), ListOf(1, 2), ListOf(4))
-    return Eq(t, list.Distinct().Length(), 3)
-}
+func TestListDistinctComparesWithEqual(t T) T =
+    Eq(t, ListOf(ListOf(1, 2), ListOf(3), ListOf(1, 2), ListOf(4)).Distinct().Length(), 3)
 
 // Slice clamps a negative start to 0 instead of widening the slice.
 func TestListSliceNegativeStart(t T) T =

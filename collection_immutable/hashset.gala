@@ -2,6 +2,7 @@ package collection_immutable
 
 import (
     . "martianoff/gala/std"
+    "math"
     "martianoff/gala/go_interop"
     "martianoff/gala/go_builtins"
 )
@@ -94,13 +95,18 @@ func hash[T comparable](value T) uint32 {
         case i: int16 => HashInt(int64(i))
         case u: uint8 => HashUint(uint64(u))
         case u: uint16 => HashUint(uint64(u))
-        case f: float64 => HashUint(uint64(f))
-        case f: float32 => HashUint(uint64(f))
+        case f: float64 => hashFloat(f)
+        case f: float32 => hashFloat(float64(f))
         case h: Hashable => h.Hash()
         case _ => panicNotHashable(v)
     }
     return result
 }
+
+// hashFloat hashes a float by its bits, so fractions spread over the buckets
+// instead of truncating to a handful of integers. The two zeros are == and
+// hash alike; a NaN equals nothing, so where it lands does not matter.
+func hashFloat(f float64) uint32 = if (f == 0) HashUint(0) else HashUint(math.Float64bits(f))
 
 // hashesByValue reports whether v is of a predeclared primitive type that hash
 // hashes by its value. For those types == is Equal, so a HashSet holding them
@@ -133,10 +139,9 @@ func firstOccurrence[T any]() func(T) bool {
     if hashesByValue(zero) {
         var seen = EmptyHashSet[any]()
         return (elem T) => {
-            val next = seen.Add(elem)
-            val added = next.Size() > seen.Size()
-            seen = next
-            added
+            val before = seen.Size()
+            seen = seen.Add(elem)
+            seen.Size() > before
         }
     }
     var kept = EmptyArray[T]()

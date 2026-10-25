@@ -516,6 +516,7 @@ func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
 // Elements are compared with Equal: through a HashSet when T is a primitive
 // type (a number, string or bool), and against each kept element otherwise.
 func (l List[T]) Distinct() List[T] {
+    // A loop rather than Filter, whose recursion is as deep as the list.
     val isFirst = firstOccurrence[T]()
     // kept holds the kept elements in reverse order: O(1) prepends, one final Reverse.
     var kept = emptyList[T]()

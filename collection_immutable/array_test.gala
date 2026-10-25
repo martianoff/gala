@@ -222,28 +222,28 @@ func TestArrayDistinct(t T) T {
 func TestArrayDistinctKeepsFirstOccurrence(t T) T =
     Eq(t, ArrayOf(3, 1, 3, 2, 1).Distinct().MkString(","), "3,1,2")
 
-// Values of different types differ, as in Equal: 1 and int64(1) both stay.
-func TestArrayDistinctMixedPrimitiveTypes(t T) T {
-    val arr = ArrayOf[any](1, int64(1), "1", 1, "1")
-    return Eq(t, arr.Distinct().Length(), 3)
-}
+// T = any takes the Equal path, where values of different types differ:
+// 1 and int64(1) both stay.
+func TestArrayDistinctMixedPrimitiveTypes(t T) T =
+    Eq(t, ArrayOf[any](1, int64(1), "1", 1, "1").Distinct().Length(), 3)
+
+// Floats take the HashSet path, which hashes fractions apart.
+func TestArrayDistinctFloats(t T) T =
+    Eq(t, ArrayOf(0.1, 0.2, 0.1, 0.3, 0.2).Distinct().Length(), 3)
 
 // List is neither primitive nor Hashable, and equal lists are distinct Go
 // values: Distinct compares them with Equal.
-func TestArrayDistinctComparesWithEqual(t T) T {
-    val arr = ArrayOf(ListOf(1, 2), ListOf(3), ListOf(1, 2), ListOf(3), ListOf(4))
-    return Eq(t, arr.Distinct().Length(), 3)
-}
+func TestArrayDistinctComparesWithEqual(t T) T =
+    Eq(t, ArrayOf(ListOf(1, 2), ListOf(3), ListOf(1, 2), ListOf(3), ListOf(4)).Distinct().Length(), 3)
 
-// collidingKey hashes every key alike; Distinct tells keys apart by Equal.
+// A Hashable type is compared with Equal, not through the HashSet, so a Hash
+// that collides for every key does not merge keys Equal tells apart.
 struct collidingKey(N int)
 
 func (k collidingKey) Hash() uint32 = 7
 
-func TestArrayDistinctHashableCollisions(t T) T {
-    val arr = ArrayOf(collidingKey(1), collidingKey(2), collidingKey(1), collidingKey(3), collidingKey(2))
-    return Eq(t, arr.Distinct().Map((k) => k.N).MkString(","), "1,2,3")
-}
+func TestArrayDistinctHashableUsesEqual(t T) T =
+    Eq(t, ArrayOf(collidingKey(1), collidingKey(2), collidingKey(1), collidingKey(3), collidingKey(2)).Distinct().Map((k) => k.N).MkString(","), "1,2,3")
 
 func TestArrayGrouped(t T) T {
     val arr = ArrayOf(1, 2, 3, 4, 5)

@@ -75,7 +75,7 @@ import . "martianoff/gala/collection_immutable"
 | Lookup | O(n) | O(eC) |
 | Update | O(n) | O(eC) |
 | Contains | O(n) | O(n) |
-| Distinct | O(n)** | O(n)** |
+| Distinct | O(n) to O(n²)** | O(n) to O(n²)** |
 | Length | O(1) | O(1) |
 
 \*\* `Distinct` keeps the first occurrence of each element, in order, and compares elements with `Equal`. When the element type is a primitive (number, string, bool) it finds elements through a `HashSet`; for any other element type it compares each element with the kept ones, which is O(n²) in the worst case.

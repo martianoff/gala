@@ -172,7 +172,8 @@ func Equal[T any](v1, v2 T) bool {
 // types differ), without its reflection. A named type is left out: it may
 // declare an Equal of its own.
 func equalPrimitive[T any](v1, v2 T) (eq bool, ok bool) {
-	// The same type list as go_interop's primitiveKey.
+	// The predeclared primitive types; the collection packages' HashSet
+	// hashes the same ones but uintptr and the complex types (hashesByValue).
 	switch a := any(v1).(type) {
 	case bool, string,
 		int, int8, int16, int32, int64,

@@ -2,6 +2,7 @@ package collection_mutable
 
 import (
     . "martianoff/gala/std"
+    "math"
     "martianoff/gala/go_interop"
 )
 
@@ -81,13 +82,18 @@ func hashSetHash[T comparable](value T) uint32 {
         case i: int16 => HashInt(int64(i))
         case u: uint8 => HashUint(uint64(u))
         case u: uint16 => HashUint(uint64(u))
-        case f: float64 => HashUint(uint64(f))
-        case f: float32 => HashUint(uint64(f))
+        case f: float64 => hashFloat(f)
+        case f: float32 => hashFloat(float64(f))
         case h: Hashable => h.Hash()
         case _ => hashSetPanicNotHashable(v)
     }
     return result
 }
+
+// hashFloat hashes a float by its bits, so fractions spread over the buckets
+// instead of truncating to a handful of integers. The two zeros are == and
+// hash alike; a NaN equals nothing, so where it lands does not matter.
+func hashFloat(f float64) uint32 = if (f == 0) HashUint(0) else HashUint(math.Float64bits(f))
 
 // hashesByValue reports whether v is of a predeclared primitive type that
 // hashSetHash hashes by its value. For those types == is Equal, so a HashSet
