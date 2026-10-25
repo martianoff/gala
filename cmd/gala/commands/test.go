@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/build"
 )
 
@@ -65,7 +67,24 @@ func runTest(cmd *cobra.Command, args []string) {
 
 	// Run tests
 	if err := builder.Test(testVerbose); err != nil {
-		fmt.Fprintf(os.Stderr, "Test failed: %v\n", err)
+		if hasGalaDiagnostic(err) {
+			// A compile error: frame it the way `gala build` does, each
+			// diagnostic at its own file — the wrapping text names the file
+			// being transpiled, which for a sibling's syntax error is not
+			// the file the error is in.
+			fmt.Fprintln(os.Stderr, galaerr.RenderRich(err, galaerr.Options{Color: galaerr.ColorEnabled()}))
+		} else {
+			fmt.Fprintf(os.Stderr, "Test failed: %v\n", err)
+		}
 		os.Exit(1)
 	}
+}
+
+// hasGalaDiagnostic reports whether err carries a GALA compile diagnostic, as
+// opposed to a failing test or a `go` tool error.
+func hasGalaDiagnostic(err error) bool {
+	var multi *galaerr.MultiError
+	var sem *galaerr.SemanticError
+	var syn *galaerr.SyntaxError
+	return errors.As(err, &multi) || errors.As(err, &sem) || errors.As(err, &syn)
 }

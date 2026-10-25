@@ -143,6 +143,19 @@ func TestErrorToDiagnosticOtherFileKeepsColumn(t *testing.T) {
 	own := galaerr.NewSemanticErrorInFile(here, 2, 30, "boom")
 	d = errorToDiagnostic(own, x, here)
 	assert.Equal(t, 1, d.Range.Start.Character, "this file's error clamps to its line")
+
+	// A sibling's syntax error: its text does not name its file, so the
+	// diagnostic does.
+	sibling := filepath.Join("pkg", "b.gala")
+	syn := galaerr.WithFilePath(galaerr.NewSyntaxError(2, 30, "bad"), sibling)
+	d = errorToDiagnostic(syn, x, here)
+	assert.Equal(t, 30, d.Range.Start.Character)
+	assert.Equal(t, "[SyntaxError] "+sibling+":2:30 bad", d.Message)
+
+	ownSyn := galaerr.WithFilePath(galaerr.NewSyntaxError(2, 30, "bad"), here)
+	d = errorToDiagnostic(ownSyn, x, here)
+	assert.Equal(t, 1, d.Range.Start.Character, "this file's syntax error clamps to its line")
+	assert.Equal(t, "[SyntaxError] line 2:30 bad", d.Message)
 }
 
 // A CRLF line's "\r" is not part of the line: a past-end column clamps to the

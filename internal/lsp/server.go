@@ -721,14 +721,15 @@ func zeroRange() lsp.Range {
 	}
 }
 
-// errorsToDiagnostics converts an error (possibly MultiError) into diagnostics
-// positioned on the document x indexes, the file at filePath.
+// errorsToDiagnostics converts an error (possibly a MultiError, nested ones
+// included) into diagnostics positioned on the document x indexes, the file at
+// filePath.
 func errorsToDiagnostics(err error, x lineIndex, filePath string) []lsp.Diagnostic {
 	var multiErr *galaerr.MultiError
 	if errors.As(err, &multiErr) {
 		diags := make([]lsp.Diagnostic, 0)
 		for _, subErr := range multiErr.Errors {
-			diags = append(diags, errorToDiagnostic(subErr, x, filePath))
+			diags = append(diags, errorsToDiagnostics(subErr, x, filePath)...)
 		}
 		return diags
 	}
@@ -748,9 +749,23 @@ func errorToDiagnostic(err error, x lineIndex, filePath string) lsp.Diagnostic {
 
 	// Try to extract line info from typed errors
 	var semErr *galaerr.SemanticError
-	if errors.As(err, &semErr) && semErr.Line > 0 {
+	var synErr *galaerr.SyntaxError
+	errFile := ""
+	if errors.As(err, &semErr) {
+		errFile = semErr.FilePath
+	}
+	if semErr != nil && semErr.Line > 0 {
 		line = semErr.Line - 1 // LSP is 0-indexed
 		char = semErr.Column
+	} else if errors.As(err, &synErr) && synErr.Line > 0 {
+		line = synErr.Line - 1
+		char = synErr.Column
+		errFile = synErr.FilePath
+		if errFile != "" && filePath != "" && !sameFilePath(errFile, filePath) {
+			// A sibling's syntax error; unlike SemanticError's, its text does
+			// not name the file it is in.
+			msg = fmt.Sprintf("[%s] %s:%d:%d %s", synErr.ErrType, errFile, synErr.Line, synErr.Column, synErr.Msg)
+		}
 	} else if idx := strings.Index(msg, "[line "); idx >= 0 {
 		// Fallback: parse from error message text
 		var l, c int
@@ -775,7 +790,7 @@ func errorToDiagnostic(err error, x lineIndex, filePath string) lsp.Diagnostic {
 		Start: lsp.Position{Line: line, Character: char},
 		End:   lsp.Position{Line: line, Character: char + 1},
 	}
-	if semErr == nil || semErr.FilePath == "" || filePath == "" || sameFilePath(semErr.FilePath, filePath) {
+	if errFile == "" || filePath == "" || sameFilePath(errFile, filePath) {
 		rng = x.rangeToWire(lsp.Range{
 			Start: lsp.Position{Line: line, Character: x.runeToByte(line, char)},
 			End:   lsp.Position{Line: line, Character: x.runeToByte(line, char+1)},
