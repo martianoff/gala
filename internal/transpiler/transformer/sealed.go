@@ -48,7 +48,6 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 
 	// Parse all variants (two passes: first collect, then resolve field name conflicts)
 	var variants []sealedVariantInfo
-	allFieldTypes := make(map[string]map[string]bool) // field name -> set of type texts (for conflict detection)
 	// The default case takes tag 0, so a Go zero value of the type is that
 	// case with zero fields. Without one, tags start at 1 and a zero value
 	// is no case at all (see exhaustiveDefaultBody).
@@ -79,10 +78,6 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
 				fieldTypeText := galaparser.TypeText(fc.Type_())
-				if allFieldTypes[fieldName] == nil {
-					allFieldTypes[fieldName] = make(map[string]bool)
-				}
-				allFieldTypes[fieldName][fieldTypeText] = true
 				recursive := isSelfReferentialSealedField(fieldTypeText, name)
 				if recursive && sc.DEFAULT() != nil {
 					// The field is held through a pointer, which a zero
@@ -108,24 +103,20 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		variants = append(variants, vi)
 	}
 
-	// Detect field name conflicts: a field name has a conflict when it appears across
-	// variants with different types. In that case, prefix all instances with the variant name.
-	conflictingFields := make(map[string]bool) // field names that need variant-name prefixing
-	for fieldName, typeSet := range allFieldTypes {
-		if len(typeSet) > 1 {
-			conflictingFields[fieldName] = true
-		}
+	// Name each case field in Go as the analyzer laid the type out
+	// (layoutSealedFields), so this struct and every reader of the type's
+	// metadata agree.
+	meta := t.getTypeMeta(name)
+	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) != len(variants) {
+		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("internal error: no metadata for sealed type %s", name))
 	}
-
-	// Second pass: compute structFieldName for each field in each variant
 	for vi := range variants {
+		goNames := meta.SealedVariants[vi].GoFieldNames
+		if len(goNames) != len(variants[vi].fields) {
+			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("internal error: no field layout for case %s of sealed type %s", variants[vi].name, name))
+		}
 		for fi := range variants[vi].fields {
-			f := &variants[vi].fields[fi]
-			if conflictingFields[f.name] {
-				f.structFieldName = variants[vi].name + f.name // e.g., "AddLeft", "SubLeft"
-			} else {
-				f.structFieldName = f.name // no conflict, use original name
-			}
+			variants[vi].fields[fi].structFieldName = goNames[fi]
 		}
 	}
 
@@ -717,7 +708,8 @@ func (t *galaASTTransformer) buildNoneType(elemType ast.Expr) ast.Expr {
 // sealedGoPredicates returns, for each exported case of the exported sealed
 // type parentName, the method Go callers test it with: `d.IsPercent()`. A
 // predicate is left out when the type declares a method or has a field of its
-// name.
+// name (a case field named like a predicate keeps its name; see
+// layoutSealedFields).
 func (t *galaASTTransformer) sealedGoPredicates(parentName string, variants []sealedVariantInfo, parentFields *ast.FieldList, tParams *ast.FieldList) []ast.Decl {
 	if !ast.IsExported(parentName) {
 		return nil
@@ -997,4 +989,31 @@ func (t *galaASTTransformer) sealedCaseParent(caseType transpiler.Type) transpil
 	// Generic parent but case had no/mismatched type args — surface the parent
 	// without args; downstream substitution handles the mismatch.
 	return parentBaseType
+}
+
+// goOnlyFieldError rejects reading by name a field of a sealed type that GALA
+// code has no name for: its case tag, or a case field stored under a Go name
+// of its case (see TypeMetadata.IsGalaField). Such a field holds a value
+// only for its own case.
+func (t *galaASTTransformer) goOnlyFieldError(xType transpiler.Type, selName string, line, col int) error {
+	if xType == nil {
+		return nil
+	}
+	meta := t.getTypeMeta(stripTypeNameDecorations(xType.String()))
+	if meta == nil || meta.IsGalaField(selName) {
+		return nil
+	}
+	if _, isMethod := meta.Methods[selName]; isMethod {
+		return nil
+	}
+	hint := "test which case a value is with `match`"
+	for _, v := range meta.SealedVariants {
+		for i, goName := range v.GoFieldNames {
+			if goName == selName {
+				hint = fmt.Sprintf("read %s's field %s by matching the case: `case %s(...) => ...`", v.Name, v.FieldNames[i], v.Name)
+			}
+		}
+	}
+	return galaerr.NewCodedSemanticError(galaerr.CodeUnknownMethod, line, col,
+		fmt.Sprintf("%s has no field or method %s", meta.Name, selName), hint)
 }

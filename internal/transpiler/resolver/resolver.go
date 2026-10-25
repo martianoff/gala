@@ -19,14 +19,24 @@ type PackageInfo struct {
 //  2. Current package prefix (the package's own declarations shadow imports)
 //  3. std package prefix (for standard library types like Option, Tuple, etc.)
 //  4. Dot-imported packages (they bring names into scope)
-//  5. Named (non-dot) imported packages
+//
+// A named (non-dot) import binds only its qualifier: its names are reached as
+// `pkg.Name`, never bare. Resolving a bare name through one let a type of an
+// imported package stand for a same-named function of the current package.
 type TypeResolver struct {
 	// PackageName is the current package being compiled.
 	PackageName string
 
-	// Imports lists all imported packages, in declaration order.
-	// Dot imports are tried before named imports per the precedence rules.
+	// Imports lists all imported packages, in declaration order. Only the
+	// dot imports among them take part in resolving a bare name.
 	Imports []PackageInfo
+
+	// SkipBare skips step 1 (the bare name). It is set while a name is
+	// resolved for another package than the one whose declarations are keyed
+	// bare (a `main` or `test` use site lowering a default declared
+	// elsewhere): those bare keys are the use site's own declarations, which
+	// the other package cannot see.
+	SkipBare bool
 }
 
 // Resolve attempts to resolve an unqualified type name by trying various
@@ -37,7 +47,7 @@ type TypeResolver struct {
 // Returns the resolved name and true if found, or ("", false) if not.
 func (r *TypeResolver) Resolve(name string, exists func(string) bool) (string, bool) {
 	// 1. Try bare name without any package prefix
-	if exists(name) {
+	if !r.SkipBare && exists(name) {
 		return name, true
 	}
 
@@ -56,20 +66,10 @@ func (r *TypeResolver) Resolve(name string, exists func(string) bool) (string, b
 		return stdName, true
 	}
 
-	// 4. Try dot-imported packages (they bring names into the current scope,
-	// so they take precedence over non-dot imports)
+	// 4. Try dot-imported packages: they bring names into the current scope.
+	// A named import never does (see TypeResolver).
 	for _, imp := range r.Imports {
 		if !imp.IsDot {
-			continue
-		}
-		if fullName := imp.PkgName + "." + name; exists(fullName) {
-			return fullName, true
-		}
-	}
-
-	// 5. Try named (non-dot) imported packages
-	for _, imp := range r.Imports {
-		if imp.IsDot {
 			continue
 		}
 		if fullName := imp.PkgName + "." + name; exists(fullName) {

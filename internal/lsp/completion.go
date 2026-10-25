@@ -452,6 +452,9 @@ func typeSpecificCompletions(richAST *transpiler.RichAST, typeName string, snipp
 
 	// Fields
 	for _, fn := range tm.FieldNames {
+		if !tm.IsGalaField(fn) {
+			continue
+		}
 		ft := tm.Fields[fn]
 		items = append(items, withRef(lsp.CompletionItem{
 			Label:  fn,

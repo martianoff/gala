@@ -175,6 +175,9 @@ func (t *galaASTTransformer) resolveFieldAccess(base ast.Expr, suffix *grammar.P
 	// is a copy, so it gets an addressable copy instead. A method on a Ptr
 	// receiver needs one that is never nil.
 	if selectsThroughImmutable {
+		if err := t.goOnlyFieldError(xType, selName, line, col); err != nil {
+			return nil, err
+		}
 		if err := t.checkPtrReceiver(base, xType, selName, suffix); err != nil {
 			return nil, err
 		}

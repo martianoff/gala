@@ -460,11 +460,10 @@ func scanImports(dir string) (map[string]bool, error) {
 			return err
 		}
 
-		// Skip hidden directories and common non-source directories
+		// Scan the same tree gala build and gala test transpile: no hidden or
+		// non-source directories, and no nested modules.
 		if info.IsDir() {
-			name := info.Name()
-			// Don't skip the root directory "."
-			if name != "." && (strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" || strings.HasPrefix(name, "bazel-") || name == "_gala") {
+			if build.SkipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil

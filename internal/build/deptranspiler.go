@@ -517,8 +517,7 @@ func isGalaModuleDir(dir string) bool {
 			return err
 		}
 		if d.IsDir() {
-			if name := d.Name(); path != dir && (strings.HasPrefix(name, ".") || name == "vendor" ||
-				name == "testdata" || strings.HasPrefix(name, "bazel-") || name == "_gala") {
+			if SkipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil

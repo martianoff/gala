@@ -293,6 +293,11 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if len(typeArgs) > 0 {
 				recvType, lookupBaseName = t.resolveReceiverTypeAndLookupKey(receiver, method)
 			}
+			// Before the generic and default-filling paths below return, and
+			// for `recv.m[T]()` as much as `recv.m()`.
+			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, suffix); err != nil {
+				return nil, err
+			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
@@ -993,7 +998,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 // bindMethodArguments lays a call's arguments out in the method's parameter
 // order: positional arguments first, in order, then each named argument in its
 // parameter's slot. A nil slot is a parameter the call omits, which must have a
-// default.
+// default. A variadic parameter the call omits takes no argument: the slots
+// returned then stop before it, one fewer than the parameters.
 //
 // Without metadata, or for a call of only positional arguments that omits none
 // — including one spreading into a variadic parameter — the arguments are
@@ -1052,6 +1058,10 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 	for i, slot := range slots {
 		if slot != nil {
 			continue
+		}
+		if params.isVariadicSlot(i) {
+			// A variadic parameter left out takes no argument.
+			return slots[:i], nil
 		}
 		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
 			nargs := len(args)
@@ -2736,6 +2746,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// A1: resolve the receiver type to a canonical form and compute the
 	// package-agnostic lookup key used by the generic-method registry.
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
+	// Before the generic rewrite and the regular dispatch, so both are covered.
+	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, argListCtx); err != nil {
+		return nil, err
+	}
 
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
@@ -4365,10 +4379,16 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	}
 
 	// Fill remaining gaps with defaults
+	params := funcParamList(funcMeta.Name, funcMeta)
 	for i, slot := range result {
 		if slot == nil {
+			if params.isVariadicSlot(i) {
+				// A variadic parameter left out takes no argument.
+				result = result[:i]
+				break
+			}
 			if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
-				return nil, funcParamList(funcMeta.Name, funcMeta).missingError(i, -1, line, col)
+				return nil, params.missingError(i, -1, line, col)
 			}
 			expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 			if err != nil {
@@ -4417,10 +4437,16 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 		}
 		result[idx] = expr
 	}
+	params := methodParamList(methodMeta.Name, methodMeta)
 	for i, slot := range result {
 		if slot == nil {
+			if params.isVariadicSlot(i) {
+				// A variadic parameter left out takes no argument.
+				result = result[:i]
+				break
+			}
 			if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-				return nil, methodParamList(methodMeta.Name, methodMeta).missingError(i, -1, line, col)
+				return nil, params.missingError(i, -1, line, col)
 			}
 			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvType, typeSubst, line, col)
 			if err != nil {

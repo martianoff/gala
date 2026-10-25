@@ -213,16 +213,9 @@ func (w *Workspace) GenFiles() ([]string, error) {
 // `package main`, relative to GenDir and slash-separated. The gen root is
 // excluded: it is the project's own package, which callers check separately.
 //
-// Directories mirroring a nested Go module — one carrying its own go.mod in the
-// project — are skipped. Their sources are copied into the workspace but they
-// resolve dependencies through their own module, so they are not buildable here
-// and must never be offered as a build target.
-//
-// TODO: that exclusion belongs at the copy step (copyNonGalaFiles), which today
-// copies a nested module's sources in while dropping its go.mod, silently
-// absorbing it into the workspace module. Skipping it here only stops us
-// offering a target that cannot build; the sources are still compiled by
-// `go build ./gen/...`.
+// Directories mirroring a nested module of the project (isNestedModuleDir) are
+// skipped. The copy into gen/ already leaves those out; a gen/ directory left
+// over from an earlier build is still never offered as a build target.
 func (w *Workspace) MainPackageDirs() ([]string, error) {
 	var dirs []string
 	err := filepath.WalkDir(w.GenDir, func(path string, d fs.DirEntry, err error) error {
@@ -242,7 +235,7 @@ func (w *Workspace) MainPackageDirs() ([]string, error) {
 		if strings.HasPrefix(d.Name(), ".") || d.Name() == "vendor" {
 			return filepath.SkipDir
 		}
-		if _, err := os.Stat(filepath.Join(w.ProjectDir, rel, "go.mod")); err == nil {
+		if isNestedModuleDir(filepath.Join(w.ProjectDir, rel)) {
 			return filepath.SkipDir // a nested module, not part of this build
 		}
 		if PackageNameIn(path) == "main" {

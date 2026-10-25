@@ -162,6 +162,9 @@ func main() { Println(f(Local(ArrayOf(mid.WrapCounter())))) }`},
 			_, err := transpileCrossPkg(t, root, header+tc.body)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "GALA-E0037")
+			// Rejected for its mutable contents, not because its type went unknown.
+			assert.Contains(t, err.Error(), "data race on its mutable contents")
+			assert.NotContains(t, err.Error(), "could not be inferred")
 		})
 	}
 }

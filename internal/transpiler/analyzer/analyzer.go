@@ -132,6 +132,7 @@ type galaAnalyzer struct {
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
+	currentOwnMethods    map[string]map[string]bool     // Method names the package being analyzed declares in GALA, by receiver type, from its source before any is registered
 	currentOwnTypes      map[string]bool                // Top-level names the package being analyzed declares (true: a type), from its source before any is registered — a type declared further down still shadows std's
 	currentDotImportPkgs map[string]bool                // Package names dot-imported by the current file OR any sibling — package-wide on purpose: sibling declarations resolve through it too, and GALA-E0025 (not this set) enforces per-file imports
 	currentQualifiers   fileQualifiers                 // Import table of the file whose declarations are being resolved (see fileQualifiers)
@@ -452,6 +453,27 @@ func (a *galaAnalyzer) SetPackageFiles(files []string) {
 // go/importer (correct for stdlib, which is always on GOROOT).
 func (a *galaAnalyzer) resolveGoSrcDir(importPath string) (string, bool) {
 	return ResolveGoSrcDir(a.goSrcDirs, importPath)
+}
+
+// analyzeGoImport returns the type info of the Go package at path.
+// go/importer "source" mode resolves Go stdlib (always on GOROOT/src) but
+// cannot find a versioned third-party module in the module cache or Bazel's
+// external tree, so it returns nothing for e.g. github.com/google/uuid. When
+// that happens and the package's real .go source directory has been wired in
+// (CLI builder from gala.mod+GOMODCACHE, or the worker's --go-src flag under
+// Bazel), it is parsed directly — the same path that already resolves
+// hand-written local .go files, yielding concrete types instead of falling
+// back to `any`.
+func (a *galaAnalyzer) analyzeGoImport(path string) *transpiler.GoTypeInfo {
+	goInfo := AnalyzeGoPackage(path)
+	if !goTypeInfoNonEmpty(goInfo) {
+		if dir, ok := a.resolveGoSrcDir(path); ok {
+			if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
+				goInfo = srcInfo
+			}
+		}
+	}
+	return goInfo
 }
 
 // ResolveGoSrcDir maps a Go import path to its on-disk .go source directory
@@ -818,23 +840,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			}
 
 			// This is a Go package — analyze it for type info.
-			goInfo := AnalyzeGoPackage(path)
-			// go/importer "source" mode resolves Go stdlib (always on
-			// GOROOT/src) but cannot find a versioned third-party module in
-			// the module cache or Bazel's external tree, so it returns
-			// nothing for e.g. github.com/google/uuid. When that happens and
-			// the package's real .go source directory has been wired in (CLI
-			// builder from gala.mod+GOMODCACHE, or the worker's --go-src flag
-			// under Bazel), parse it directly — the same path that already
-			// resolves hand-written local .go files, yielding concrete types
-			// instead of falling back to `any`.
-			if !goTypeInfoNonEmpty(goInfo) {
-				if dir, ok := a.resolveGoSrcDir(path); ok {
-					if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
-						goInfo = srcInfo
-					}
-				}
-			}
+			goInfo := a.analyzeGoImport(path)
 			if goTypeInfoNonEmpty(goInfo) {
 				if richAST.GoTypeInfo == nil {
 					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
@@ -851,6 +857,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			}
 		}
 	}
+
+	// 0.61 The Go packages the imported packages' defaults name through their
+	// own imports, for lowering those defaults here.
+	a.loadDefaultScopeGoTypes(sourceFile, richAST)
 
 	// 0.62 This file's import table (see fileQualifiers), now that its GALA and
 	// Go imports are loaded, and the import aliases it records (e.g.,
@@ -984,11 +994,25 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 		return set
 	}
+	// The same dot imports by import path: a package's metadata may end up
+	// filed under its PackageKey rather than its name, and only the path
+	// finds that key (see receiverDotImports).
+	dotPathsForFile := func(q fileQualifiers) []string {
+		var out []string
+		for _, b := range q.dots {
+			if b.IsGala && b.PkgName != "" {
+				out = append(out, b.Path)
+			}
+		}
+		return out
+	}
 	fileDotImportSets := map[string]map[string]bool{a.paths.canonical(filePath): dotPkgsForFile(fileQuals)}
+	fileDotImportPaths := map[string][]string{a.paths.canonical(filePath): dotPathsForFile(fileQuals)}
 	for i, q := range siblingQuals {
 		if i < len(siblingPaths) {
 			fileImportSets[a.paths.canonical(siblingPaths[i])] = importPkgsForFile(q)
 			fileDotImportSets[a.paths.canonical(siblingPaths[i])] = dotPkgsForFile(q)
+			fileDotImportPaths[a.paths.canonical(siblingPaths[i])] = dotPathsForFile(q)
 		}
 	}
 
@@ -1009,8 +1033,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	a.currentDotImportPkgs = dotImportPkgs
 	a.currentQualifiers = fileQuals
 	a.currentOwnTypes = make(map[string]bool)
+	a.currentOwnMethods = make(map[string]map[string]bool)
 	for _, sf := range append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...) {
-		collectTopLevelDeclaredNames(sf, a.currentOwnTypes)
+		collectTopLevelDeclaredNames(sf, a.currentOwnTypes, a.currentOwnMethods)
 	}
 	for name := range richAST.OwnGoTypes {
 		// A .go file is not checked for the reserved std names, which keep
@@ -1024,6 +1049,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		a.currentDotImportPkgs = nil
 		a.currentQualifiers = fileQualifiers{}
 		a.currentOwnTypes = nil
+		a.currentOwnMethods = nil
 	}()
 
 	// decls remembers which file of this package declared each method and each
@@ -1686,6 +1712,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// references unwrap their std.Immutable[T] wrapper correctly.
 	a.extractPackageVals(sourceFile, pkgName, richAST, docs, absFilePath)
 
+	// 2c. A struct field and a method of one name, which Go cannot hold.
+	if err := a.fieldNamedLikeMethodError(richAST, pkgName, filePath); err != nil {
+		return nil, err
+	}
+
 	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
 	a.discoverCompanionObjects(richAST)
 
@@ -1755,6 +1786,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
+	if isTopLevel {
+		richAST.ReceiverDotImports = a.receiverDotImports(sourceFile, richAST, filePath, fileDotImportPaths)
+	}
 	if profiler.Enabled && isTopLevel {
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
 	}
@@ -1805,6 +1839,46 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 			}
 		}
 	}
+}
+
+// receiverDotImports builds RichAST.ReceiverDotImports: for each method of
+// sourceFile whose receiver type another file of the package declares, the
+// GALA packages that file dot-imports, by the name their metadata is filed
+// under (richAST.Packages after ApplyPackageKeys), sorted. Only a top-level
+// analysis needs it: the field is per-file and never merged.
+func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST, filePath string, fileDotImportPaths map[string][]string) map[string][]string {
+	var out map[string][]string
+	seen := make(map[string]bool)
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
+		if !ok || fd == nil {
+			continue
+		}
+		rc, ok := fd.Receiver().(*grammar.ReceiverContext)
+		if !ok || rc == nil || rc.Type_() == nil {
+			continue
+		}
+		recv := receiverBaseTypeName(rc.Type_())
+		if recv == "" || seen[recv] {
+			continue
+		}
+		seen[recv] = true
+		var pkgs []string
+		for _, path := range receiverFileImports(a.paths, richAST, recv, filePath, fileDotImportPaths) {
+			if pkg := richAST.Packages[path]; pkg != "" {
+				pkgs = append(pkgs, pkg)
+			}
+		}
+		if len(pkgs) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(map[string][]string)
+		}
+		slices.Sort(pkgs)
+		out[recv] = slices.Compact(pkgs)
+	}
+	return out
 }
 
 // validateExplicitImports walks the metadata for entries defined in
@@ -2084,50 +2158,23 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		}
 	}
 
-	// Detect field name conflicts: same name with different types requires prefixing
-	conflictingFields := make(map[string]bool)
-	for fieldName, typeSet := range allFieldTypes {
-		if len(typeSet) > 1 {
-			conflictingFields[fieldName] = true
-		}
-	}
-
-	// Second pass: register fields with correct struct field names (prefixed if conflicting)
-	addedFields := make(map[string]bool)
-	for _, vi := range variants {
-		for _, f := range vi.fields {
-			structFieldName := f.name
-			if conflictingFields[f.name] {
-				structFieldName = vi.name + f.name // e.g., "AddLeft", "SubLeft"
-			}
-
-			if addedFields[structFieldName] {
-				continue // shared field already added
-			}
-			addedFields[structFieldName] = true
-
-			parentMeta.Fields[structFieldName] = a.resolveTypeWithParams(f.typeName, pkgName, typeParams)
-			parentMeta.FieldNames = append(parentMeta.FieldNames, structFieldName)
-			// Self-referential fields use pointer indirection (not Immutable-wrapped)
-			isRecursive := f.typeName == typeName || strings.HasPrefix(f.typeName, typeName+"[")
-			parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, !isRecursive)
-		}
-	}
-
-	// Add _variant field
-	parentMeta.Fields["_variant"] = transpiler.BasicType{Name: "uint8"}
-	parentMeta.FieldNames = append(parentMeta.FieldNames, "_variant")
-	parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, true)
-
 	// Store variant metadata on parent
-	for _, vi := range variants {
+	byRef := make([][]bool, len(variants))
+	for i, vi := range variants {
 		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos, IsDefault: vi.isDefault}
 		for _, f := range vi.fields {
 			sv.FieldNames = append(sv.FieldNames, f.name)
 			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+			// Self-referential fields use pointer indirection (not Immutable-wrapped)
+			byRef[i] = append(byRef[i], f.typeName == typeName || strings.HasPrefix(f.typeName, typeName+"["))
 		}
 		parentMeta.SealedVariants = append(parentMeta.SealedVariants, sv)
 	}
+
+	// Lay out the Go struct holding every case, now that the type's whole
+	// method set is known (a.currentOwnMethods is read from every file of the
+	// package before any declaration is analyzed).
+	layoutSealedFields(parentMeta, allFieldTypes, a.methodNames(richAST, parentMeta), byRef)
 
 	// Preserve methods from any pre-existing placeholder entry. Sibling
 	// extraction may have processed a method on this sealed type from another
@@ -2547,13 +2594,12 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	// If it's already package-qualified, handle it. Only the base name counts:
 	// a dot inside the type arguments (`Array[leaf.Command]`) qualifies an
 	// argument, not the base, which still resolves through this file's scope.
-	baseText, _, _ := strings.Cut(typeName, "[")
+	baseText, _, hasArgs := strings.Cut(typeName, "[")
 	if strings.Contains(baseText, ".") {
 		// For qualified generic types like lazy.Lazy[Array[rune]],
 		// recursively resolve type arguments so inner types get proper prefixes
-		if idx := strings.Index(typeName, "["); idx != -1 {
-			baseQualified := typeName[:idx]
-			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseQualified), a.currentGoTypeInfo())
+		if hasArgs {
+			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseText), a.currentGoTypeInfo())
 
 			_, argStrs := extractBaseAndArgs(typeName)
 			var params []transpiler.Type
@@ -2580,12 +2626,9 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	}
 
 	// Handle generic types: Option[T], Tuple[A, B] - recursively resolve type args
-	if idx := strings.Index(typeName, "["); idx != -1 {
-		baseTypeName := typeName[:idx]
-		argsStr := typeName[idx+1 : len(typeName)-1]
-
+	if hasArgs {
 		// Resolve base type using shared resolver
-		baseType := a.resolveBaseName(baseTypeName, pkgName)
+		baseType := a.resolveBaseName(baseText, pkgName)
 
 		// Parse and recursively resolve type arguments
 		_, argStrs := extractBaseAndArgs(typeName)
@@ -2598,8 +2641,6 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		if len(params) > 0 {
 			return transpiler.GenericType{Base: baseType, Params: params}
 		}
-		// Fall through to handle base type without params (shouldn't happen)
-		_ = argsStr // silence unused variable warning
 	}
 
 	// Resolve non-generic base name using shared resolver
@@ -3022,6 +3063,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		}
 	}
 	parsedTrees := a.parseFilesConcurrent(candidatePaths)
+	// What the package's defaults mean where they were written, for a use
+	// site in an importing package (see defaultScopeRecorder).
+	scopes := newDefaultScopeRecorder(importPath)
 
 	for i, tree := range parsedTrees {
 		filePath := candidatePaths[i]
@@ -3081,9 +3125,11 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 				}
 				pkgAST.Merge(res)
 				mergeOwnPackageVals(pkgAST, res, sameAsFilePath)
+				scopes.addFile(canonFile, a.qualifiersForFile(tree, res), res)
 			}
 		}
 	}
+	scopes.record(pkgAST, a.paths.canonical)
 
 	// Scan .go files for exported symbols and type information.
 	// Extract GoExports unconditionally. Even in mixed GALA+Go packages

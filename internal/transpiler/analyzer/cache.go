@@ -156,7 +156,16 @@ import (
 // inference types (a generic call, a method chain) records that type in
 // PackageVals. A v30 payload records NilType, so a lambda passed to one of its
 // methods from another package had no parameter type to infer.
-const CacheVersion = "v31"
+//
+// v32: a default value records its declaring side (DefaultExpr.Scope): the
+// package's import path, the imports its text names and the unexported vals
+// it reads. A v31 payload lacks it, so a default lowered in another package
+// would name an import that package lacks, or an unexported val, unqualified.
+//
+// v33: a sealed case records the Go names of its fields
+// (SealedVariant.GoFieldNames), and a field named like a method of its type
+// is stored under a Go name of its case. A v32 payload lacks both.
+const CacheVersion = "v33"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

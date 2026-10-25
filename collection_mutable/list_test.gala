@@ -275,6 +275,9 @@ func TestListDistinct(t T) T {
     return Eq[int](t, distinct.Length(), 3)
 }
 
+func TestListDistinctKeepsFirstOccurrence(t T) T =
+    Eq(t, ListOf("c", "a", "c", "b", "a").Distinct().MkString(","), "c,a,b")
+
 func TestListZip(t T) T {
     val list1 = ListOf(1, 2, 3)
     val list2 = ListOf("a", "b", "c")

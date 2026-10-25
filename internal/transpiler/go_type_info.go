@@ -193,6 +193,34 @@ func (g *GoTypeInfo) AddImportPathKeys(pkgName, importPath string) {
 	copyKeys(mapKeys(g.GalaTypeMethods), func(from, to string) { g.GalaTypeMethods[to] = g.GalaTypeMethods[from] })
 }
 
+// KeyedByPath returns the entries of g recorded under importPath (see
+// AddImportPathKeys) and no others: the type info of a package that is
+// reached by path alone, without claiming its name for the file reading it.
+func (g *GoTypeInfo) KeyedByPath(importPath string) *GoTypeInfo {
+	out := NewGoTypeInfo()
+	if g == nil || importPath == "" {
+		return out
+	}
+	prefix := importPath + "."
+	copyPrefixed(out.Functions, g.Functions, prefix)
+	copyPrefixed(out.Types, g.Types, prefix)
+	copyPrefixed(out.Variables, g.Variables, prefix)
+	copyPrefixed(out.Constants, g.Constants, prefix)
+	copyPrefixed(out.UntypedConstants, g.UntypedConstants, prefix)
+	copyPrefixed(out.TypeAliases, g.TypeAliases, prefix)
+	copyPrefixed(out.GalaTypeMethods, g.GalaTypeMethods, prefix)
+	return out
+}
+
+// copyPrefixed copies the entries of src whose key starts with prefix into dst.
+func copyPrefixed[V any](dst, src map[string]V, prefix string) {
+	for k, v := range src {
+		if strings.HasPrefix(k, prefix) {
+			dst[k] = v
+		}
+	}
+}
+
 // HasQualified reports whether any entry is recorded under key.
 func (g *GoTypeInfo) HasQualified(key string) bool {
 	if g == nil {

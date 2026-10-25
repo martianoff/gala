@@ -53,7 +53,7 @@ func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[stri
 		if pkg := exporter(name); pkg != "" {
 			err = dotImportCollisionError(kind, name, pkg, id)
 		}
-	})
+	}, nil)
 	return err
 }
 

@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"slices"
 	"sort"
 	"strings"
@@ -36,19 +37,26 @@ import (
 // Kept as a single declaration for the same reason ForbiddenBuiltinNames is:
 // the generating sites and the checking site must not be able to drift apart.
 // Each entry names where it is synthesized.
-var synthesizedMethodNames = map[string]bool{
-	"Copy":    true, // methods.go — auto-generated on every struct
-	"Equal":   true, // methods.go
-	"Unapply": true, // methods.go, sealed.go
-	"Apply":   true, // sealed.go — companion constructor
-	"String":  true, // sealed.go
-	// codec.go / codec_typed.go — generated for JSON/YAML codecs
-	"NumFields":    true,
-	"FieldName":    true,
-	"EncodeFields": true,
-	"DecodeFields": true,
-	"FieldIsEmpty": true,
-}
+var synthesizedMethodNames = func() map[string]bool {
+	names := map[string]bool{
+		"Unapply": true, // sealed.go — case companion extractor
+		"Apply":   true, // sealed.go — companion constructor
+		// codec.go / codec_typed.go — generated for JSON/YAML codecs
+		"NumFields":    true,
+		"FieldName":    true,
+		"EncodeFields": true,
+		"DecodeFields": true,
+		"FieldIsEmpty": true,
+	}
+	// methods.go, sealed.go — generated on every struct and sealed type
+	for _, n := range transpiler.StructGeneratedMethods {
+		names[n] = true
+	}
+	for _, n := range transpiler.SealedGeneratedMethods {
+		names[n] = true
+	}
+	return names
+}()
 
 // isSynthesizedMethodName reports whether name is generated rather than
 // declared. The `is<Variant>` predicates are matched by shape because the
@@ -80,10 +88,7 @@ func (t *galaASTTransformer) checkUnknownMethod(
 	if typeMeta == nil {
 		return nil
 	}
-	line, col, exact := methodNameStartOf(argListCtx)
-	if !exact {
-		line, col = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
-	}
+	line, col, exact := callAnchorPos(argListCtx)
 	return t.unknownMethodError(typeMeta, method, recvType, line, col, exact)
 }
 
@@ -116,10 +121,7 @@ func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 		return nil
 	}
 
-	line, col, exact := methodNameStartOf(suffix)
-	if !exact {
-		line, col = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-	}
+	line, col, exact := callAnchorPos(suffix)
 	return t.unknownMethodError(typeMeta, sel.Sel.Name, recvType, line, col, exact)
 }
 
@@ -185,6 +187,85 @@ func (t *galaASTTransformer) unknownMethodError(
 		err = err.WithSpan(col + len([]rune(method)))
 	}
 	return err
+}
+
+// checkMethodVisibility rejects a call of a method another package's GALA type
+// has but does not export (GALA-E0083), for every method call: with or without
+// arguments, generic or not, with defaults filled or not. It runs where the
+// dispatcher first resolves the receiver, before any of those paths returns,
+// because visibility is a property of the method found, not of failing to
+// find one. anchor is the call's argument list, or its `()`.
+//
+// Visibility follows Go: a lower-case method — including the `is<Variant>`
+// predicates every sealed type gets — is private to its package. The call used
+// to be emitted verbatim and Go rejected the generated expression ("cannot
+// refer to unexported method"); a generic one, lowered to the free function
+// `Type_method`, even compiled. Types not declared in GALA source (no
+// DefinedIn: Go-interop types) are left to Go. Only the receiver's base type
+// is consulted: visibility does not depend on its type arguments.
+func (t *galaASTTransformer) checkMethodVisibility(
+	receiver ast.Expr,
+	method string,
+	lookupBaseName string,
+	anchor antlr.ParserRuleContext,
+) error {
+	// Runs for every method call, so the exported (common) case returns before
+	// any metadata lookup.
+	if receiver == nil || method == "" || lookupBaseName == "" || token.IsExported(method) {
+		return nil
+	}
+	// A package-qualified call (`shapes.helper()`) has no receiver value; a
+	// lower-case function of another package is not this check's concern.
+	if id, isIdent := receiver.(*ast.Ident); isIdent && t.importManager.IsPackage(id.Name) {
+		return nil
+	}
+	typeMeta := t.getTypeMeta(lookupBaseName)
+	if typeMeta == nil || typeMeta.DefinedIn == "" || visibleFrom(method, typeMeta, t.packageName) {
+		return nil
+	}
+	if _, declared := typeMeta.Methods[method]; !declared {
+		if _, declared := t.goMethodsOnGalaType(typeMeta)[method]; !declared {
+			return nil
+		}
+	}
+	line, col, exact := callAnchorPos(anchor)
+	pkg := transpiler.PackageDisplayName(typeMeta.Package)
+	hint := fmt.Sprintf("call an exported method (only the capitalized methods of %s are visible outside package %s)", typeMeta.Name, pkg)
+	if pattern, ok := sealedPredicatePattern(typeMeta, method); ok {
+		hint = fmt.Sprintf("match the variant instead (is<Variant> predicates are private to the sealed type's package): `case %s.%s => true`, `case _ => false`", pkg, pattern)
+	}
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeUnexportedMethod, line, col,
+		fmt.Sprintf("%s is an unexported method of %s.%s, so only package %s can call it", method, pkg, typeMeta.Name, pkg),
+		hint,
+	)
+	if exact {
+		err = err.WithSpan(col + len([]rune(method)))
+	}
+	return err
+}
+
+// sealedPredicatePattern returns the case pattern (`B()`, `A(_)`) matching the
+// variant whose `is<Variant>` predicate method names, when typeMeta is a sealed
+// type that has that variant.
+func sealedPredicatePattern(typeMeta *transpiler.TypeMetadata, method string) (string, bool) {
+	if !typeMeta.IsSealed {
+		return "", false
+	}
+	name, ok := strings.CutPrefix(method, "is")
+	if !ok {
+		return "", false
+	}
+	for i := range typeMeta.SealedVariants {
+		if v := &typeMeta.SealedVariants[i]; v.Name == name {
+			wildcards := make([]string, len(v.FieldNames))
+			for j := range wildcards {
+				wildcards[j] = "_"
+			}
+			return name + "(" + strings.Join(wildcards, ", ") + ")", true
+		}
+	}
+	return "", false
 }
 
 // goMethodsOnGalaType returns the methods hand-written .go files of its package
@@ -312,6 +393,16 @@ func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
 		return 0, 0, false
 	}
 	return tok.GetLine(), tok.GetColumn(), true
+}
+
+// callAnchorPos is the position a call diagnostic reports: the called method's
+// name when it can be located (exact), otherwise the start of anchor — the
+// call's argument list or its `()`.
+func callAnchorPos(anchor antlr.ParserRuleContext) (line, col int, exact bool) {
+	if line, col, exact = methodNameStartOf(anchor); exact {
+		return line, col, true
+	}
+	return anchor.GetStart().GetLine(), anchor.GetStart().GetColumn(), false
 }
 
 // calledMemberToken returns the identifier of the `.name` suffix that

@@ -131,6 +131,7 @@ go_test(
         "collection_default_param_test.go",
         "compilation_gate_test.go",
         "concurrency_check_cross_pkg_test.go",
+        "concurrency_check_message_test.go",
         "concurrency_check_test.go",
         "conflict_test.go",
         "control_clause_composite_lit_test.go",
@@ -143,6 +144,7 @@ go_test(
         "crossfile_package_val_test.go",
         "crossfile_type_alias_test.go",
         "crosspkg_funcref_chain_test.go",
+        "crosspkg_default_val_test.go",
         "crosspkg_package_val_test.go",
         "default_case_test.go",
         "default_immutability_test.go",
@@ -247,6 +249,7 @@ go_test(
         "pointer_receiver_test.go",
         "pointer_receiver_val_test.go",
         "private_field_ctor_test.go",
+        "qualified_import_scope_test.go",
         "qualified_namedarg_shadow_test.go",
         "receiver_type_param_rename_test.go",
         "recursive_immutable_test.go",
@@ -261,6 +264,7 @@ go_test(
         "sealed_apply_dispatch_test.go",
         "sealed_call_arg_widen_test.go",
         "sealed_equal_synth_test.go",
+        "sealed_field_named_like_method_test.go",
         "sealed_string_func_field_test.go",
         "sealed_tuple_widen_test.go",
         "sealed_variant_width_test.go",
@@ -297,6 +301,7 @@ go_test(
         "type_inference_test.go",
         "type_param_scope_test.go",
         "typed_partial_function_test.go",
+        "unexported_method_cross_pkg_test.go",
         "unknown_method_test.go",
         "unresolved_corpus_test.go",
         "unresolved_nil_test.go",
@@ -344,6 +349,9 @@ go_test(
         # everywhere.
         "//examples:all_gala_sources",
         "//examples:all_go_bridge_sources",
+        # A sibling package with its own BUILD file, which the glob above
+        # does not reach.
+        "//examples/default_vals_lib:gala_sources",
         # The rest of the standard library. Examples importing any of these
         # could not resolve them under the sandbox and were counted as skipped,
         # so the corpus guards covered a fifth less on CI than locally.

@@ -59,6 +59,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"tryThunkLambda", t.tryThunkLambda != nil},
 		{"hoistedPre", len(t.hoistedPre) != 0},
 		{"localDeclaration", t.localDeclaration},
+		{"signatureDots", t.signatureDots != nil},
 	}
 }
 

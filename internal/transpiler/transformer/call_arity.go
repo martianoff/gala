@@ -27,7 +27,7 @@ import (
 // paramList is the parameter list of a GALA callee, as a call's argument
 // count is checked against it.
 type paramList struct {
-	callee   string // the name the call wrote, for the message
+	callee   string // the callee's declared name, for the message
 	names    []string
 	defaults map[int]transpiler.DefaultExpr
 	variadic bool // the last parameter is `...T`
@@ -89,11 +89,23 @@ func (p paramList) checkPositional(nargs, line, col int) error {
 }
 
 // tooManyError is GALA-E0082 for a call passing nargs arguments, some by
-// name, to a callee that takes fewer.
+// name, to a callee that takes fewer. A variadic callee is reported here only
+// for a call with named arguments, which fill one slot per parameter, so its
+// variadic parameter takes at most one argument.
 func (p paramList) tooManyError(nargs, line, col int) error {
+	expected := p.expected()
+	if p.variadic {
+		expected = fmt.Sprintf("at most %d with named arguments", len(p.names))
+	}
 	return galaerr.NewCodedSemanticError(galaerr.CodeArgumentCountMismatch, line, col,
-		fmt.Sprintf("too many arguments in call to %s: expected %s, got %d", p.callee, p.expected(), nargs),
+		fmt.Sprintf("too many arguments in call to %s: expected %s, got %d", p.callee, expected, nargs),
 		removeExtra(nargs-len(p.names))+"; "+p.signatureHint())
+}
+
+// isVariadicSlot reports whether parameter i is the variadic last one, which
+// a call may leave without an argument although it declares no default.
+func (p paramList) isVariadicSlot(i int) bool {
+	return p.variadic && i == len(p.names)-1
 }
 
 // missingError is GALA-E0082 for a call that leaves parameter i, which

@@ -512,18 +512,22 @@ func (l List[T]) ZipWithIndex() List[Tuple[T, int]] {
 }
 
 // Distinct returns a new list with duplicate elements removed, keeping the first
-// occurrence of each element in its original position (like Array.Distinct). O(n^2).
+// occurrence of each element in its original position (like Array.Distinct).
+// Elements are compared with Equal: through a HashSet when T is a primitive
+// type (a number, string or bool), and against each kept element otherwise.
 func (l List[T]) Distinct() List[T] {
-    // seen holds the kept elements in reverse order: O(1) prepends, one final Reverse.
-    var seen = emptyList[T]()
+    // A loop rather than Filter, whose recursion is as deep as the list.
+    val isFirst = firstOccurrence[T]()
+    // kept holds the kept elements in reverse order: O(1) prepends, one final Reverse.
+    var kept = emptyList[T]()
     var current = l
     for current.length > 0 {
-        if !seen.Contains(current.head) {
-            seen = consList[T](current.head, seen)
+        if isFirst(current.head) {
+            kept = consList[T](current.head, kept)
         }
         current = *current.tail.Get()
     }
-    return seen.Reverse()
+    kept.Reverse()
 }
 
 // SplitAt splits the list at the given index.

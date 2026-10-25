@@ -188,7 +188,34 @@ func main() { Println(Box(1).Pick("a", true, 3)) }`,
 			msg:  []string{"too many arguments in call to Pick: expected 2, got 3"},
 		},
 
+		{
+			name: "variadic callee with named arguments and too many positional ones",
+			src: `func f(a int, rest ...int) int = a
+
+func main() { Println(f(1, 2, 3, rest = 4)) }`,
+			code: galaerr.CodeArgumentCountMismatch,
+			msg:  []string{"too many arguments in call to f: expected at most 2 with named arguments, got 4"},
+		},
+
 		// Calls that are accepted.
+		{
+			name: "generic variadic method called with no variadic arguments",
+			src: `struct Box[T any](V T)
+
+func (b Box[T]) Count[U any](keep bool, us ...U) int = 0
+
+func main() { Println(Box(1).Count[string](true)); Println(Box(1).Count[string](keep = true)) }`,
+		},
+		{
+			name: "named arguments leaving out a variadic parameter",
+			src: `struct Counter(N int)
+
+func (c Counter) Plus(x int, xs ...int) int = c.N + x
+
+func f(a int, rest ...int) int = a
+
+func main() { Println(f(a = 1)); Println(Counter(1).Plus(x = 1)) }`,
+		},
 		{
 			name: "defaults fill what the call leaves out",
 			src: `func add(a int, b int = 2, c int = 3) int = a + b + c
