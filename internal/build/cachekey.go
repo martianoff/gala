@@ -175,8 +175,8 @@ func computeDepsHash(requires []mod.Require, replaces []mod.Replace, tc toolchai
 
 // walkCopiedTree visits the files of a source tree the transpile step reads or
 // copies (copyNonGalaFiles is built on it), and is the one definition of that
-// tree: hidden directories, vendor, testdata, bazel-* entries, symlinks and
-// stale transpiler output (a .gen.go whose header says the GALA transpiler
+// tree: hidden directories, vendor, testdata, bazel-* entries, nested modules
+// (isNestedModuleDir), symlinks and stale transpiler output (a .gen.go whose header says the GALA transpiler
 // wrote it) are not part of it. A .gen.go another generator wrote (oapi-codegen,
 // stringer, …) is source of its package and is. Entries that cannot be
 // stat'd are skipped (Bazel junctions on Windows report "Incorrect function").
@@ -200,7 +200,7 @@ func walkCopiedTree(root string, visit func(path string, info os.FileInfo) error
 			return nil
 		}
 		if info.IsDir() {
-			if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" {
+			if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" || isNestedModuleDir(path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -210,6 +210,15 @@ func walkCopiedTree(root string, visit func(path string, info os.FileInfo) error
 		}
 		return visit(path, info)
 	})
+}
+
+// isNestedModuleDir reports whether the directory at path, below the root of
+// the tree being walked, roots a module of its own: a Go module (go.mod) or a
+// GALA module (gala.mod). Like the go tool's ./..., a build of the enclosing
+// project leaves it out: it resolves its dependencies through its own module
+// file, and is typically built by another tool.
+func isNestedModuleDir(path string) bool {
+	return fileExists(filepath.Join(path, "go.mod")) || fileExists(filepath.Join(path, "gala.mod"))
 }
 
 // dependencyInputs lists every file of a dependency's source tree that its

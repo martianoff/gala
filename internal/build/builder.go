@@ -1478,6 +1478,18 @@ func findGalaFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
+// skipGalaSourceDir reports whether a walk for the GALA sources of the tree at
+// root leaves out the directory at path: hidden directories, vendor, testdata,
+// bazel-* entries, the _gala output directory, and nested modules.
+func skipGalaSourceDir(root, path string) bool {
+	if path == root {
+		return false
+	}
+	name := filepath.Base(path)
+	return strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" ||
+		strings.HasPrefix(name, "bazel-") || name == "_gala" || isNestedModuleDir(path)
+}
+
 // findGalaFilesRecursive finds all .gala files recursively.
 func findGalaFilesRecursive(dir string) ([]string, error) {
 	var files []string
@@ -1487,11 +1499,8 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 			return err
 		}
 
-		// Skip hidden directories and common non-source directories
 		if info.IsDir() {
-			name := info.Name()
-			if name != "." && (strings.HasPrefix(name, ".") || name == "vendor" ||
-				name == "testdata" || strings.HasPrefix(name, "bazel-") || name == "_gala") {
+			if skipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -2258,9 +2267,7 @@ func findGalaTestFilesRecursive(dir string) ([]string, error) {
 		}
 
 		if info.IsDir() {
-			name := info.Name()
-			if name != "." && (strings.HasPrefix(name, ".") || name == "vendor" ||
-				name == "testdata" || strings.HasPrefix(name, "bazel-") || name == "_gala") {
+			if skipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil
