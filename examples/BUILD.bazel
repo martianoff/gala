@@ -4077,16 +4077,13 @@ gala_exec_test(
 
 # Struct construction with positional arguments followed by named ones binds
 # the positional ones to the leading fields and the rest by name, defaults
-# filling the others — as a function call does. Same-package, generic and
-# cross-package structs. The positional ones used to be dropped (GALA-E0045).
+# filling the others — as a function call does. Same-package and generic
+# structs; the cross-package case is in struct_field_defaults_crosspkg. The
+# positional ones used to be dropped (GALA-E0045).
 gala_exec_test(
     name = "struct_mixed_args",
     src = "struct_mixed_args.gala",
     expected = "struct_mixed_args.out",
-    deps = [
-        "//collection_immutable",
-        "//examples/struct_defaults_lib",
-    ],
 )
 
 # Defaults of function type on struct fields and function/method parameters: a

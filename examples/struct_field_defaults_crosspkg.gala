@@ -23,4 +23,8 @@ func main() {
     // Explicit values still win.
     val c = struct_defaults_lib.Config(Name = "c", Tag = "set", Retries = 9)
     Println(c.Name, c.Entries.Size(), c.Tag, c.Retries)
+
+    // Positional, then named: the rest take their defaults.
+    val d = struct_defaults_lib.Config("d", Retries = 5)
+    Println(d.Name, d.Entries.Size(), d.Tag, d.Retries)
 }

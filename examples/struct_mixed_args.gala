@@ -1,10 +1,9 @@
 package main
 
-import . "martianoff/gala/examples/struct_defaults_lib"
-
 // Struct construction binds the leading positional arguments to the first
 // fields and the named ones by name; the fields given neither way take their
-// defaults. It is the rule a function call follows.
+// defaults. It is the rule a function call follows. The cross-package case is
+// in struct_field_defaults_crosspkg.gala.
 struct Cfg(Name string, Tries int = 3, Loud bool = false)
 
 struct Box[T any](Value T, Label string = "box", Count int = 1)
@@ -25,7 +24,4 @@ func main() {
     Println(s"${n.Value} ${n.Label} ${n.Count}")
     val s = Box("x", Label = "named")
     Println(s"${s.Value} ${s.Label} ${s.Count}")
-
-    val cfg = Config("svc", Retries = 9)
-    Println(s"${cfg.Name} ${cfg.Entries.Size()} ${cfg.Tag} ${cfg.Retries}")
 }
