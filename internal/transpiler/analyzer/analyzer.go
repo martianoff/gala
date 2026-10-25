@@ -1756,6 +1756,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
 	}
 
+	richAST.ReceiverDotImports = a.receiverDotImports(sourceFile, richAST, filePath, fileDotImportSets)
 	richAST.ApplyPackageKeys()
 	a.inferPackageValTypes(richAST,
 		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
@@ -1807,6 +1808,36 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 			}
 		}
 	}
+}
+
+// receiverDotImports builds RichAST.ReceiverDotImports: for each method of
+// sourceFile whose receiver type another file of the package declares, the
+// GALA packages that file dot-imports, sorted.
+func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST, filePath string, fileDotImportSets map[string]map[string]bool) map[string][]string {
+	var out map[string][]string
+	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+		fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
+		if !ok || fd == nil {
+			continue
+		}
+		rc, ok := fd.Receiver().(*grammar.ReceiverContext)
+		if !ok || rc == nil || rc.Type_() == nil {
+			continue
+		}
+		recv := receiverBaseTypeName(rc.Type_())
+		if _, done := out[recv]; done || recv == "" {
+			continue
+		}
+		dots := receiverFileImports(a.paths, richAST, recv, filePath, fileDotImportSets)
+		if len(dots) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(map[string][]string)
+		}
+		out[recv] = slices.Sorted(maps.Keys(dots))
+	}
+	return out
 }
 
 // validateExplicitImports walks the metadata for entries defined in

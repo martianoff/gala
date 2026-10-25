@@ -19,13 +19,16 @@ type PackageInfo struct {
 //  2. Current package prefix (the package's own declarations shadow imports)
 //  3. std package prefix (for standard library types like Option, Tuple, etc.)
 //  4. Dot-imported packages (they bring names into scope)
-//  5. Named (non-dot) imported packages
+//
+// A named (non-dot) import binds only its qualifier: its names are reached as
+// `pkg.Name`, never bare. Resolving a bare name through one let a type of an
+// imported package stand for a same-named function of the current package.
 type TypeResolver struct {
 	// PackageName is the current package being compiled.
 	PackageName string
 
-	// Imports lists all imported packages, in declaration order.
-	// Dot imports are tried before named imports per the precedence rules.
+	// Imports lists all imported packages, in declaration order. Only the
+	// dot imports among them take part in resolving a bare name.
 	Imports []PackageInfo
 }
 
@@ -60,16 +63,6 @@ func (r *TypeResolver) Resolve(name string, exists func(string) bool) (string, b
 	// so they take precedence over non-dot imports)
 	for _, imp := range r.Imports {
 		if !imp.IsDot {
-			continue
-		}
-		if fullName := imp.PkgName + "." + name; exists(fullName) {
-			return fullName, true
-		}
-	}
-
-	// 5. Try named (non-dot) imported packages
-	for _, imp := range r.Imports {
-		if imp.IsDot {
 			continue
 		}
 		if fullName := imp.PkgName + "." + name; exists(fullName) {

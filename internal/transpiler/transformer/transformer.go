@@ -126,6 +126,12 @@ type galaASTTransformer struct {
 	// runs it in: only the file's package-level val/var declarations are
 	// lowered, and the element type each binding takes is recorded here.
 	valTypes map[string]transpiler.Type
+
+	// signatureDots holds, while the signature of a method is lowered whose
+	// receiver type another file of the package declares, the packages that
+	// file dot-imports: a bare name there may resolve through them
+	// (RichAST.ReceiverDotImports).
+	signatureDots []string
 }
 
 // NewGalaASTTransformer creates a new instance of ASTTransformer for GALA.
@@ -840,7 +846,15 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() || t.cachedTypeResolver.PackageName != t.resolutionPackage() {
 		t.cacheTypeResolver()
 	}
-	return t.cachedTypeResolver.Resolve(name, exists)
+	if resolved, ok := t.cachedTypeResolver.Resolve(name, exists); ok {
+		return resolved, true
+	}
+	for _, pkg := range t.signatureDots {
+		if fullName := pkg + "." + name; exists(fullName) {
+			return fullName, true
+		}
+	}
+	return "", false
 }
 
 // cacheTypeResolver snapshots the imports this file resolves names against,
