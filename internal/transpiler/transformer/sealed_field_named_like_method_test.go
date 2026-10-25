@@ -102,6 +102,52 @@ func main() {
 			contains: []string{"\tTarget   std.Immutable[int]"},
 			absent:   []string{"EpsilonTarget"},
 		},
+		{
+			name: "fields named like the generated case predicates",
+			src: `package main
+
+sealed type Flag {
+    case Foo(IsBar bool, isBar bool)
+    case Bar()
+}
+
+func main() {
+    Println(Foo(true, false), Bar())
+}
+`,
+			contains: []string{
+				"FooIsBar std.Immutable[bool]",
+				"FooisBar std.Immutable[bool]",
+				"func (s Flag) IsBar() bool",
+				"func (s Flag) isBar() bool",
+			},
+		},
+		{
+			name: "field named like the instance marker of a generic type",
+			src: `package main
+
+sealed type Box[T any] {
+    case Full(Value T, IsBox bool)
+    case Empty()
+}
+
+func main() {
+    Println(Full(1, true))
+}
+`,
+			contains: []string{"FullIsBox std.Immutable[bool]", "IsBox() bool"},
+		},
+		{
+			name: "package-level value reading the method",
+			src: "package main\n\n" + transitionDecl + "\n" + transitionTargetMethod + `
+val target = Atom(2, 7).Target
+
+func main() {
+    Println(target())
+}
+`,
+			contains: []string{"AtomTarget    std.Immutable[int]"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,6 +190,17 @@ func main() {
 func main() {
     val t = Atom(2, 7)
     Println(t.Target(), t)
+}
+`,
+		},
+		{
+			// The sibling's package value is typed while the sibling is read,
+			// before this file's method is registered.
+			name:    "package value in the sibling, method in this file",
+			sibling: "package main\n\n" + transitionDecl + "\nval target = Atom(2, 7).Target\n",
+			main: "package main\n\n" + transitionTargetMethod + `
+func main() {
+    Println(target(), Epsilon(1).Target())
 }
 `,
 		},
@@ -206,14 +263,69 @@ func main() {
 	assert.NotContains(t, out, ".Target.Get()", "generated:\n%s", out)
 }
 
+// TestSealedFieldNamedLikeGoSiblingMethod: a method a hand-written .go file of
+// the package declares on the sealed type is part of its method set too.
+func TestSealedFieldNamedLikeGoSiblingMethod(t *testing.T) {
+	files, galaFile := samePackageModule(".",
+		"package main\n\nfunc (t Transition) Target() int { return 0 }\n",
+		"package main\n\n"+transitionDecl+"\nfunc main() {\n    Println(Atom(2, 7))\n}\n")
+	out, err := transpileInModule(t, files, galaFile)
+	require.NoError(t, err)
+	assert.Contains(t, out, "AtomTarget", "generated:\n%s", out)
+	assert.NotContains(t, out, "\tTarget ", "generated:\n%s", out)
+}
+
+// TestSealedCaseStorageFieldsAreNotGalaFields: a field stored under a Go name
+// of its case is no field GALA code (or the editor) reads by that Go name.
+func TestSealedCaseStorageFieldsAreNotGalaFields(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	tree, _, err := p.Parse("package main\n\n" + transitionDecl + "\n" + transitionTargetMethod)
+	require.NoError(t, err)
+	richAST, err := analyzer.NewGalaAnalyzer(p, getStdSearchPath()).Analyze(tree, nil, "main.gala")
+	require.NoError(t, err)
+	meta := richAST.Types["Transition"]
+	require.NotNil(t, meta)
+	assert.Equal(t, []string{"EpsilonTarget"}, meta.SealedVariants[0].GoFieldNames)
+	assert.Equal(t, []string{"AtomTarget", "Label"}, meta.SealedVariants[1].GoFieldNames)
+	assert.True(t, meta.IsGalaField("Label"))
+	for _, storage := range []string{"EpsilonTarget", "AtomTarget", "_variant", "Target"} {
+		assert.False(t, meta.IsGalaField(storage), storage)
+	}
+}
+
 // TestStructFieldNamedLikeMethod: a struct field is read by its name, so a
 // method of the same name cannot be told apart from it and is GALA-E0081
 // instead of a `go build` failure.
 func TestStructFieldNamedLikeMethod(t *testing.T) {
 	tests := []struct {
 		name, src string
+		field     string
 		line, col int
 	}{
+		{
+			name: "field named like the generated Copy",
+			src: `package main
+
+struct S(Copy int)
+
+func main() {
+    Println(S(1))
+}
+`,
+			field: "Copy", line: 3, col: 9,
+		},
+		{
+			name: "field named like the instance marker of a generic struct",
+			src: `package main
+
+struct Box[T any](Value T, IsBox bool)
+
+func main() {
+    Println(Box(1, true))
+}
+`,
+			field: "IsBox", line: 3, col: 27,
+		},
 		{
 			name: "shorthand struct",
 			src: `package main
@@ -255,7 +367,11 @@ func (s S) Name() string = "x"
 			var se *galaerr.SemanticError
 			require.ErrorAs(t, err, &se)
 			assert.Equal(t, galaerr.CodeFieldNamedLikeMethod, se.Code)
-			assert.Equal(t, "type S has both a field and a method named Name", se.Msg)
+			field := tc.field
+			if field == "" {
+				field = "Name"
+			}
+			assert.Contains(t, se.Msg, "has both a field and a method named "+field)
 			assert.Equal(t, tc.line, se.Line)
 			assert.Equal(t, tc.col, se.Column)
 		})

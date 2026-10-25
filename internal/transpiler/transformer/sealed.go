@@ -48,7 +48,6 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 
 	// Parse all variants (two passes: first collect, then resolve field name conflicts)
 	var variants []sealedVariantInfo
-	allFieldTypes := make(map[string]map[string]bool) // field name -> set of type texts (for conflict detection)
 	// The default case takes tag 0, so a Go zero value of the type is that
 	// case with zero fields. Without one, tags start at 1 and a zero value
 	// is no case at all (see exhaustiveDefaultBody).
@@ -79,10 +78,6 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
 				fieldName := fc.Identifier().GetText()
 				fieldTypeText := galaparser.TypeText(fc.Type_())
-				if allFieldTypes[fieldName] == nil {
-					allFieldTypes[fieldName] = make(map[string]bool)
-				}
-				allFieldTypes[fieldName][fieldTypeText] = true
 				recursive := isSelfReferentialSealedField(fieldTypeText, name)
 				if recursive && sc.DEFAULT() != nil {
 					// The field is held through a pointer, which a zero
@@ -108,30 +103,20 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 		variants = append(variants, vi)
 	}
 
-	// Detect field name conflicts: a field name has a conflict when it appears across
-	// variants with different types, or is the name of a method of the type. In
-	// that case, prefix all instances with the variant name. The analyzer names
-	// the fields the same way (renameSealedFieldsNamedLikeMethods).
-	var methods map[string]*transpiler.MethodMetadata
-	if meta := t.getTypeMeta(name); meta != nil {
-		methods = meta.Methods
+	// Name each case field in Go as the analyzer laid the type out
+	// (layoutSealedFields), so this struct and every reader of the type's
+	// metadata agree.
+	meta := t.getTypeMeta(name)
+	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) != len(variants) {
+		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("internal error: no metadata for sealed type %s", name))
 	}
-	conflictingFields := make(map[string]bool) // field names that need variant-name prefixing
-	for fieldName, typeSet := range allFieldTypes {
-		if len(typeSet) > 1 || transpiler.SealedFieldNamedLikeMethod(fieldName, methods) {
-			conflictingFields[fieldName] = true
-		}
-	}
-
-	// Second pass: compute structFieldName for each field in each variant
 	for vi := range variants {
+		goNames := meta.SealedVariants[vi].GoFieldNames
+		if len(goNames) != len(variants[vi].fields) {
+			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("internal error: no field layout for case %s of sealed type %s", variants[vi].name, name))
+		}
 		for fi := range variants[vi].fields {
-			f := &variants[vi].fields[fi]
-			if conflictingFields[f.name] {
-				f.structFieldName = variants[vi].name + f.name // e.g., "AddLeft", "SubLeft"
-			} else {
-				f.structFieldName = f.name // no conflict, use original name
-			}
+			variants[vi].fields[fi].structFieldName = goNames[fi]
 		}
 	}
 

@@ -581,22 +581,61 @@ type SealedVariant struct {
 	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
+	// GoFieldNames are the names the fields have in the Go struct that holds
+	// every case: a field's own name, or the case name + the field name when
+	// the cases give the field different types or the type has a method of
+	// its name. The analyzer decides them, and the transformer reads them.
+	GoFieldNames []string
 	// IsDefault marks the type's `default case`, its zero value.
 	IsDefault bool
 }
 
-// SealedFieldNamedLikeMethod reports whether a case field named field would
-// share its Go name with a method of its sealed type: one in methods, or Copy,
-// Equal or String, which every sealed type has. Go allows no field and method
-// of one name, so such a field is stored under a Go name of its case
-// (case name + field name), as a field whose type differs between cases is.
-func SealedFieldNamedLikeMethod(field string, methods map[string]*MethodMetadata) bool {
-	switch field {
-	case "Copy", "Equal", "String":
+// StructGeneratedMethods and SealedGeneratedMethods are the methods the
+// transformer generates on every struct and every sealed type that does not
+// declare them itself.
+var (
+	StructGeneratedMethods = []string{"Copy", "Equal", "Unapply"}
+	SealedGeneratedMethods = []string{"Copy", "Equal", "String"}
+)
+
+// GeneratedMethodNames returns the names of the methods the transformer
+// generates on the struct or sealed type m: StructGeneratedMethods or
+// SealedGeneratedMethods, the case predicates is<Case> and Is<Case> of a
+// sealed type, and the instance marker Is<Type> of a generic type.
+func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
+	base := StructGeneratedMethods
+	if m.IsSealed {
+		base = SealedGeneratedMethods
+	}
+	names := make(map[string]bool, len(base)+2*len(m.SealedVariants)+1)
+	for _, n := range base {
+		names[n] = true
+	}
+	for _, v := range m.SealedVariants {
+		names["is"+v.Name] = true
+		names["Is"+v.Name] = true
+	}
+	if len(m.TypeParams) > 0 {
+		names["Is"+m.Name] = true
+	}
+	return names
+}
+
+// IsGalaField reports whether GALA code reads the field name of type m by
+// that name: every field but a sealed type's case tag, and its case fields
+// stored under a Go name of their case (see SealedVariant.GoFieldNames).
+func (m *TypeMetadata) IsGalaField(name string) bool {
+	if !m.IsSealed {
 		return true
 	}
-	_, ok := methods[field]
-	return ok
+	for _, v := range m.SealedVariants {
+		for i, goName := range v.GoFieldNames {
+			if goName == name && i < len(v.FieldNames) && v.FieldNames[i] == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type MethodMetadata struct {

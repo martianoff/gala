@@ -131,6 +131,7 @@ type galaAnalyzer struct {
 	checkedDirs  map[string]bool
 	resolver            *module.Resolver               // Handles module root discovery and package path resolution
 	currentRichAST      *transpiler.RichAST            // Set during Analyze() for cross-reference in resolveTypeWithParams
+	currentOwnMethods    map[string]map[string]bool     // Method names the package being analyzed declares in GALA, by receiver type, from its source before any is registered
 	currentOwnTypes      map[string]bool                // Top-level names the package being analyzed declares (true: a type), from its source before any is registered — a type declared further down still shadows std's
 	currentDotImportPkgs map[string]bool                // Package names dot-imported by the current file OR any sibling — package-wide on purpose: sibling declarations resolve through it too, and GALA-E0025 (not this set) enforces per-file imports
 	currentQualifiers   fileQualifiers                 // Import table of the file whose declarations are being resolved (see fileQualifiers)
@@ -1008,8 +1009,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	a.currentDotImportPkgs = dotImportPkgs
 	a.currentQualifiers = fileQuals
 	a.currentOwnTypes = make(map[string]bool)
+	a.currentOwnMethods = make(map[string]map[string]bool)
 	for _, sf := range append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...) {
 		collectTopLevelDeclaredNames(sf, a.currentOwnTypes)
+		collectDeclaredMethodNames(sf, a.currentOwnMethods)
 	}
 	for name := range richAST.OwnGoTypes {
 		// A .go file is not checked for the reserved std names, which keep
@@ -1023,6 +1026,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		a.currentDotImportPkgs = nil
 		a.currentQualifiers = fileQualifiers{}
 		a.currentOwnTypes = nil
+		a.currentOwnMethods = nil
 	}()
 
 	// decls remembers which file of this package declared each method and each
@@ -1685,14 +1689,8 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// references unwrap their std.Immutable[T] wrapper correctly.
 	a.extractPackageVals(sourceFile, pkgName, richAST, docs, absFilePath)
 
-	// 2c. Every method of the package is known now: name the sealed case
-	// fields that share a method's name, then reject what Go still cannot hold.
-	for _, meta := range richAST.Types {
-		if meta.IsSealed && meta.Package == pkgName {
-			renameSealedFieldsNamedLikeMethods(meta)
-		}
-	}
-	if err := fieldNamedLikeMethodError(richAST, pkgName, filePath); err != nil {
+	// 2c. A struct field and a method of one name, which Go cannot hold.
+	if err := a.fieldNamedLikeMethodError(richAST, pkgName, filePath); err != nil {
 		return nil, err
 	}
 
@@ -2043,50 +2041,23 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 		}
 	}
 
-	// Detect field name conflicts: same name with different types requires prefixing
-	conflictingFields := make(map[string]bool)
-	for fieldName, typeSet := range allFieldTypes {
-		if len(typeSet) > 1 {
-			conflictingFields[fieldName] = true
-		}
-	}
-
-	// Second pass: register fields with correct struct field names (prefixed if conflicting)
-	addedFields := make(map[string]bool)
-	for _, vi := range variants {
-		for _, f := range vi.fields {
-			structFieldName := f.name
-			if conflictingFields[f.name] {
-				structFieldName = vi.name + f.name // e.g., "AddLeft", "SubLeft"
-			}
-
-			if addedFields[structFieldName] {
-				continue // shared field already added
-			}
-			addedFields[structFieldName] = true
-
-			parentMeta.Fields[structFieldName] = a.resolveTypeWithParams(f.typeName, pkgName, typeParams)
-			parentMeta.FieldNames = append(parentMeta.FieldNames, structFieldName)
-			// Self-referential fields use pointer indirection (not Immutable-wrapped)
-			isRecursive := f.typeName == typeName || strings.HasPrefix(f.typeName, typeName+"[")
-			parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, !isRecursive)
-		}
-	}
-
-	// Add _variant field
-	parentMeta.Fields["_variant"] = transpiler.BasicType{Name: "uint8"}
-	parentMeta.FieldNames = append(parentMeta.FieldNames, "_variant")
-	parentMeta.ImmutFlags = append(parentMeta.ImmutFlags, true)
-
 	// Store variant metadata on parent
-	for _, vi := range variants {
+	byRef := make([][]bool, len(variants))
+	for i, vi := range variants {
 		sv := transpiler.SealedVariant{Name: vi.name, Doc: vi.doc, Pos: vi.pos, IsDefault: vi.isDefault}
 		for _, f := range vi.fields {
 			sv.FieldNames = append(sv.FieldNames, f.name)
 			sv.FieldTypes = append(sv.FieldTypes, a.resolveTypeWithParams(f.typeName, pkgName, typeParams))
+			// Self-referential fields use pointer indirection (not Immutable-wrapped)
+			byRef[i] = append(byRef[i], f.typeName == typeName || strings.HasPrefix(f.typeName, typeName+"["))
 		}
 		parentMeta.SealedVariants = append(parentMeta.SealedVariants, sv)
 	}
+
+	// Lay out the Go struct holding every case, now that the type's whole
+	// method set is known (ownMethodNames is read from every file of the
+	// package before any declaration is analyzed).
+	layoutSealedFields(parentMeta, allFieldTypes, a.methodNames(richAST, parentMeta), byRef)
 
 	// Preserve methods from any pre-existing placeholder entry. Sibling
 	// extraction may have processed a method on this sealed type from another

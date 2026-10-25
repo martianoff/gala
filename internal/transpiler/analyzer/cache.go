@@ -151,7 +151,11 @@ import (
 // (FunctionMetadata.Variadic). A v29 payload lacks it, so the arguments past
 // the first filling a variadic parameter of a function of another package
 // were lowered against no type: a nullable `*T` filled a `...Ptr[T]`.
-const CacheVersion = "v30"
+//
+// v31: a sealed case records the Go names of its fields
+// (SealedVariant.GoFieldNames), and a field named like a method of its type
+// is stored under a Go name of its case. A v30 payload lacks both.
+const CacheVersion = "v31"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

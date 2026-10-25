@@ -45,7 +45,7 @@ func describe(t Transition) string = t match {
 }
 
 func main() {
-    val ts = ArrayOf[Transition](Epsilon(1), Atom(2, 7))
+    val ts = ArrayOf(Epsilon(1), Atom(2, 7))
     ts.ForEach((t) => Println(describe(t)))
     ts.ForEach((t) => Println(t))
     val next = ts.Map((t) => t.Target())
