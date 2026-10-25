@@ -74,8 +74,9 @@ func main() {
 For a method the other package declares, call an exported method instead, or
 — if you own that package — export the method by capitalizing its name.
 
-**Rationale.** The call never compiled; Go rejected the generated code with
-`cannot refer to unexported method`, pointing at the generated Go rather than
-your source. A match is also the better test: it is checked for exhaustiveness
+**Rationale.** Go rejected the generated code with `cannot refer to
+unexported method`, pointing at the generated Go rather than your source; a
+lower-case generic method, which is lowered to a free function, was not
+rejected at all. A match is also the better test: it is checked for exhaustiveness
 when it covers every case, and it can bind the variant's fields in the same
 step. See [Sealed Types](../GALA.MD#sealed-types-algebraic-data-types).

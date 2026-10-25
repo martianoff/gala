@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"slices"
 	"sort"
 	"strings"
@@ -80,10 +81,7 @@ func (t *galaASTTransformer) checkUnknownMethod(
 	if typeMeta == nil {
 		return nil
 	}
-	line, col, exact := methodNameStartOf(argListCtx)
-	if !exact {
-		line, col = argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
-	}
+	line, col, exact := callAnchorPos(argListCtx)
 	return t.unknownMethodError(typeMeta, method, recvType, line, col, exact)
 }
 
@@ -116,10 +114,7 @@ func (t *galaASTTransformer) checkUnknownMethodZeroArg(
 		return nil
 	}
 
-	line, col, exact := methodNameStartOf(suffix)
-	if !exact {
-		line, col = suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()
-	}
+	line, col, exact := callAnchorPos(suffix)
 	return t.unknownMethodError(typeMeta, sel.Sel.Name, recvType, line, col, exact)
 }
 
@@ -139,13 +134,7 @@ func (t *galaASTTransformer) unknownMethodError(
 	line, col int,
 	exact bool,
 ) error {
-	if typeMeta == nil {
-		return nil
-	}
-	if err := t.unexportedMethodError(typeMeta, method, line, col, exact); err != nil {
-		return err
-	}
-	if isSynthesizedMethodName(method) || t.isSynthesizedOpaqueMethod(typeMeta, method) {
+	if typeMeta == nil || isSynthesizedMethodName(method) || t.isSynthesizedOpaqueMethod(typeMeta, method) {
 		return nil
 	}
 	// An empty method set is ambiguous: it means either "this type genuinely
@@ -193,19 +182,38 @@ func (t *galaASTTransformer) unknownMethodError(
 	return err
 }
 
-// unexportedMethodError reports a call of a method another package's GALA type
-// has but does not export (GALA-E0083). Visibility follows Go: a lower-case
-// method — including the `is<Variant>` predicates every sealed type gets — is
-// private to its package. The call used to be emitted verbatim and Go rejected
-// the generated expression ("cannot refer to unexported method"). Go-interop
-// types (no DefinedIn) are left to Go, as everywhere else in this file.
-func (t *galaASTTransformer) unexportedMethodError(
-	typeMeta *transpiler.TypeMetadata,
+// checkMethodVisibility rejects a call of a method another package's GALA type
+// has but does not export (GALA-E0083), for every method call: with or without
+// arguments, generic or not, with defaults filled or not. It runs where the
+// dispatcher first resolves the receiver, before any of those paths returns,
+// because visibility is a property of the method found, not of failing to
+// find one. anchor is the call's argument list, or its `()`.
+//
+// Visibility follows Go: a lower-case method — including the `is<Variant>`
+// predicates every sealed type gets — is private to its package. The call used
+// to be emitted verbatim and Go rejected the generated expression ("cannot
+// refer to unexported method"); a generic one, lowered to the free function
+// `Type_method`, even compiled. Types not declared in GALA source (no
+// DefinedIn: Go-interop types) are left to Go. Only the receiver's base type
+// is consulted: visibility does not depend on its type arguments.
+func (t *galaASTTransformer) checkMethodVisibility(
+	receiver ast.Expr,
 	method string,
-	line, col int,
-	exact bool,
+	lookupBaseName string,
+	anchor antlr.ParserRuleContext,
 ) error {
-	if typeMeta.DefinedIn == "" || visibleFrom(method, typeMeta, t.packageName) {
+	// Runs for every method call, so the exported (common) case returns before
+	// any metadata lookup.
+	if receiver == nil || method == "" || lookupBaseName == "" || token.IsExported(method) {
+		return nil
+	}
+	// A package-qualified call (`shapes.helper()`) has no receiver value; a
+	// lower-case function of another package is not this check's concern.
+	if id, isIdent := receiver.(*ast.Ident); isIdent && t.importManager.IsPackage(id.Name) {
+		return nil
+	}
+	typeMeta := t.getTypeMeta(lookupBaseName)
+	if typeMeta == nil || typeMeta.DefinedIn == "" || visibleFrom(method, typeMeta, t.packageName) {
 		return nil
 	}
 	if _, declared := typeMeta.Methods[method]; !declared {
@@ -213,6 +221,7 @@ func (t *galaASTTransformer) unexportedMethodError(
 			return nil
 		}
 	}
+	line, col, exact := callAnchorPos(anchor)
 	pkg := transpiler.PackageDisplayName(typeMeta.Package)
 	hint := fmt.Sprintf("call an exported method (only the capitalized methods of %s are visible outside package %s)", typeMeta.Name, pkg)
 	if pattern, ok := sealedPredicatePattern(typeMeta, method); ok {
@@ -377,6 +386,16 @@ func methodNameStartOf(node antlr.Tree) (line, col int, ok bool) {
 		return 0, 0, false
 	}
 	return tok.GetLine(), tok.GetColumn(), true
+}
+
+// callAnchorPos is the position a call diagnostic reports: the called method's
+// name when it can be located (exact), otherwise the start of anchor — the
+// call's argument list or its `()`.
+func callAnchorPos(anchor antlr.ParserRuleContext) (line, col int, exact bool) {
+	if line, col, exact = methodNameStartOf(anchor); exact {
+		return line, col, true
+	}
+	return anchor.GetStart().GetLine(), anchor.GetStart().GetColumn(), false
 }
 
 // calledMemberToken returns the identifier of the `.name` suffix that

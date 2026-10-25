@@ -39,6 +39,16 @@ func (b Box) Area() int = b.W * b.W
 func (b Box) half() int = b.W / 2
 
 func (b Box) Half() int = b.half()
+
+func (b Box) scale(n int) int = b.W * n
+
+func (b Box) shrink(d int = 2) int = b.W / d
+
+func (b Box) pick[T any](x T) T = x
+
+func (b Box) none[T any]() Option[T] = None[T]()
+
+func (b Box) Scaled() int = b.scale(2) + b.shrink() + b.pick(1) + b.none[int]().GetOrElse(0)
 `)
 	return root
 }
@@ -77,6 +87,38 @@ func TestUnexportedMethodCrossPackage(t *testing.T) {
 			msg:  "half is an unexported method of shapes.Box",
 			hint: "call an exported method (only the capitalized methods of Box are visible outside package shapes)",
 		},
+		{
+			name: "declared unexported method with arguments",
+			body: "func main() { Println(shapes.Box(4).scale(2)) }",
+			msg:  "scale is an unexported method of shapes.Box",
+			hint: "call an exported method",
+		},
+		{
+			name: "unexported method called with every parameter defaulted",
+			body: "func main() { Println(shapes.Box(4).shrink()) }",
+			msg:  "shrink is an unexported method of shapes.Box",
+			hint: "call an exported method",
+		},
+		{
+			name: "unexported method given its defaulted argument",
+			body: "func main() { Println(shapes.Box(4).shrink(4)) }",
+			msg:  "shrink is an unexported method of shapes.Box",
+			hint: "call an exported method",
+		},
+		{
+			// Lowered to the free function Box_pick, which Go would accept.
+			name: "unexported generic method",
+			body: "func main() { Println(shapes.Box(4).pick(3)) }",
+			msg:  "pick is an unexported method of shapes.Box",
+			hint: "call an exported method",
+		},
+		{
+			// No arguments, only written type arguments: `recv.m[T]()`.
+			name: "unexported generic method with type arguments only",
+			body: "func main() { Println(shapes.Box(4).none[int]()) }",
+			msg:  "none is an unexported method of shapes.Box",
+			hint: "call an exported method",
+		},
 	}
 	for _, tc := range rejected {
 		t.Run("rejected/"+tc.name, func(t *testing.T) {
@@ -89,7 +131,7 @@ func TestUnexportedMethodCrossPackage(t *testing.T) {
 	}
 
 	allowed := []struct{ name, body string }{
-		{"exported methods", "func main() { Println(shapes.Box(4).Area(), shapes.Box(4).Half()) }"},
+		{"exported methods", "func main() { Println(shapes.Box(4).Area(), shapes.Box(4).Half(), shapes.Box(4).Scaled()) }"},
 		{"exported function using the predicates", "func main() { Println(shapes.IsRound(shapes.Dot())) }"},
 		{"qualified match instead of a predicate", "func f(s shapes.Shape) bool = s match {\n    case shapes.Dot() => true\n    case _ => false\n}\n\nfunc main() { Println(f(shapes.Dot())) }"},
 	}
