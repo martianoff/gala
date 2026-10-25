@@ -4516,3 +4516,10 @@ gala_exec_test(
     expected = "sealed_field_named_like_method.out",
     deps = ["//collection_immutable"],
 )
+
+# Verification: a function value taking func() out of an if-expression or a match
+gala_exec_test(
+    name = "if_expr_unit_func_param",
+    src = "if_expr_unit_func_param.gala",
+    expected = "if_expr_unit_func_param.out",
+)

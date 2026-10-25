@@ -45,14 +45,19 @@ func checkTypeChecks(t *testing.T, src string) {
 	if checkOutcome(t, src, res) == nil {
 		return
 	}
-	imp := oracleImporter(t)
-	tc := imp.TypeCheck("generated.go", res.Go)
+	requireTypeChecks(t, src, res.Go)
+}
+
+// requireTypeChecks asserts that code, the Go generated for src, type-checks.
+func requireTypeChecks(t *testing.T, src, code string) {
+	t.Helper()
+	tc := oracleImporter(t).TypeCheck("generated.go", code)
 	if tc.Skipped != "" {
 		t.Fatalf("generated Go could not be type-checked: %s\ninput:\n%s", tc.Skipped, src)
 	}
 	if len(tc.Errors) > 0 {
 		t.Fatalf("the transpiler accepted the program, but the Go it generated does not type-check:\n  %s\ninput:\n%s\ngenerated:\n%s",
-			strings.Join(tc.Errors, "\n  "), src, res.Go)
+			strings.Join(tc.Errors, "\n  "), src, code)
 	}
 }
 

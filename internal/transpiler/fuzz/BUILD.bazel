@@ -8,6 +8,7 @@ go_test(
     # The seed pass transpiles a few hundred programs, several of them twice.
     size = "large",
     srcs = [
+        "function_values_test.go",
         "harness_test.go",
         "no_crash_test.go",
         "source_encoding_test.go",
