@@ -2997,6 +2997,12 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		if err := checkUnknownStructFields(qualifiedName, fields, argListCtx); err != nil {
 			return nil, err
 		}
+		if len(args) > 0 {
+			var err error
+			if namedArgs, err = bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, argListCtx); err != nil {
+				return nil, err
+			}
+		}
 		// Another package's struct is not constructible here when the literal
 		// would set a field private to that package.
 		provided := func(_ int, name string) bool { _, ok := namedArgs[name]; return ok }
@@ -3066,6 +3072,31 @@ func checkPositionalBeforeNamed(qualifiedName string, argListCtx *grammar.Argume
 		}
 	}
 	return nil
+}
+
+// bindPositionalStructArgs binds the positional arguments of a construction
+// that also names some fields to the struct's leading fields, the rule a
+// function call follows for its parameters, and returns them merged with the
+// named ones. A positional argument after a named one, more arguments than
+// fields, and a field given both ways are errors.
+func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, argListCtx *grammar.ArgumentListContext) (map[string]ast.Expr, error) {
+	if err := checkPositionalBeforeNamed(qualifiedName, argListCtx); err != nil {
+		return nil, err
+	}
+	line, col := argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()
+	if len(args) > len(fields) {
+		return nil, structTooManyArgsError(qualifiedName, fields, len(args), line, col)
+	}
+	bound := maps.Clone(namedArgs)
+	for i, arg := range args {
+		if _, twice := bound[fields[i]]; twice {
+			return nil, galaerr.NewCodedSemanticError(galaerr.CodeMissingStructField, line, col,
+				fmt.Sprintf("field %q of %q is given both by position and by name", fields[i], qualifiedName),
+				"give each field once")
+		}
+		bound[fields[i]] = arg
+	}
+	return bound, nil
 }
 
 // checkUnknownStructFields reports named arguments that match no field of the
