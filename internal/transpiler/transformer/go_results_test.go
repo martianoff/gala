@@ -42,7 +42,7 @@ func TestGoCallResultsAsOneValue(t *testing.T) {
         case Success(_) => "read"
         case Failure(_) => "failed"
     }
-    Println(m)`, []string{`}(std.GoTry(os.ReadFile("f")))`}},
+    Println(m)`, []string{`obj := std.GoTry(os.ReadFile("f"))`}},
 		{"tuple destructuring of a (A, B, C) call", "    val (k, v, found) = strings.Cut(\"a=b\", \"=\")\n    Println(k, v, found)",
 			[]string{`__tuple_1 = std.GoTuple3(strings.Cut("a=b", "="))`}},
 		{"argument of a GALA function", "    Println(describe(strconv.Atoi(\"1\")))",

@@ -41,7 +41,8 @@ func TestBareVariantPatternIsNotABinding(t *testing.T) {
 	cases := []struct {
 		name string
 		src  string
-		// wantContains is the extractor call the arm must lower to.
+		// wantContains is the extractor call the arm must lower to (for a
+		// generic variant, the call inside its per-file _unapply_ helper).
 		wantContains string
 		// wantAbsent is the binding assignment that must not appear.
 		wantAbsent string
@@ -61,7 +62,7 @@ func main() {
     }
     Println(r)
 }`,
-			wantContains: "std.None[int]{}.Unapply(obj)",
+			wantContains: "std.None[_T0]{}.Unapply(v)",
 			wantAbsent:   "None := obj",
 		},
 		{
@@ -83,7 +84,7 @@ func describe(m Maybe[int]) string = m match {
 func main() {
     Println(describe(Just(42)))
 }`,
-			wantContains: "Nothing[int]{}.Unapply(obj)",
+			wantContains: "Nothing[_T0]{}.Unapply(v)",
 			wantAbsent:   "Nothing := obj",
 		},
 		{

@@ -39,7 +39,8 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x std.Immutable[int] = std.NewImmutable[int](5)
-var res = std.NewImmutable(func(obj int) string {
+var res = std.NewImmutable(func() string {
+	obj := x.Get()
 	if obj == 1 {
 		return "one"
 	} else if obj == 2 {
@@ -47,7 +48,7 @@ var res = std.NewImmutable(func(obj int) string {
 	} else {
 		return "many"
 	}
-}(x.Get()))
+}())
 `,
 		},
 		{
@@ -64,13 +65,14 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(10)
-var res = std.NewImmutable(func(obj int) int {
+var res = std.NewImmutable(func() int {
+	obj := x.Get()
 	if obj == 10 {
 		return 1
 	} else {
 		return 0
 	}
-}(x.Get()))
+}())
 `,
 		},
 		{
@@ -87,13 +89,14 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable("hello")
-var res = std.NewImmutable(func(obj string) string {
+var res = std.NewImmutable(func() string {
+	obj := x.Get()
 	if obj == "hello" {
 		return "world"
 	} else {
 		return "fail"
 	}
-}(x.Get()))
+}())
 `,
 		},
 		{
@@ -110,7 +113,8 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(42)
-var res = std.NewImmutable(func(obj int) int {
+var res = std.NewImmutable(func() int {
+	obj := x.Get()
 	{
 		y := obj
 		if true {
@@ -119,7 +123,7 @@ var res = std.NewImmutable(func(obj int) int {
 			return 0
 		}
 	}
-}(x.Get()))
+}())
 `,
 		},
 		{
@@ -136,9 +140,10 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x std.Immutable[std.Option[int]] = std.NewImmutable[std.Option[int]](std.Some[int]{}.Apply(1))
-var res = std.NewImmutable(func(obj std.Option[int]) int {
+var res = std.NewImmutable(func() int {
+	obj := x.Get()
 	{
-		_tmp_1 := std.Some[int]{}.Unapply(obj)
+		_tmp_1 := _unapply_std_Some(obj)
 		_tmp_2 := _tmp_1.IsDefined()
 		_tmp_3 := _tmp_1.Value.Get()
 		_ = _tmp_3
@@ -149,7 +154,11 @@ var res = std.NewImmutable(func(obj std.Option[int]) int {
 			return 0
 		}
 	}
-}(x.Get()))
+}())
+
+func _unapply_std_Some[_T0 any](v std.Option[_T0]) std.Option[_T0] {
+	return std.Some[_T0]{}.Unapply(v)
+}
 `,
 		},
 		{
@@ -166,9 +175,10 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x std.Immutable[std.Option[any]] = std.NewImmutable[std.Option[any]](std.Some[any]{}.Apply("test"))
-var res = std.NewImmutable(func(obj std.Option[any]) string {
+var res = std.NewImmutable(func() string {
+	obj := x.Get()
 	{
-		_tmp_1 := std.Some[any]{}.Unapply(obj)
+		_tmp_1 := _unapply_std_Some(obj)
 		_tmp_2 := _tmp_1.IsDefined()
 		_tmp_3 := _tmp_1.Value.Get()
 		var s string
@@ -183,7 +193,11 @@ var res = std.NewImmutable(func(obj std.Option[any]) string {
 			return "unknown"
 		}
 	}
-}(x.Get()))
+}())
+
+func _unapply_std_Some[_T0 any](v std.Option[_T0]) std.Option[_T0] {
+	return std.Some[_T0]{}.Unapply(v)
+}
 `,
 		},
 		{
@@ -306,7 +320,8 @@ func NewLightOff() Light {
 	return Off{}.Apply()
 }
 func describe(l Light) string {
-	return func(obj Light) string {
+	{
+		obj := l
 		{
 			_tmp_1 := On{}.Unapply(obj)
 			if _tmp_1 {
@@ -320,7 +335,7 @@ func describe(l Light) string {
 				}
 			}
 		}
-	}(l)
+	}
 }`,
 		},
 		{
@@ -413,7 +428,8 @@ func NewLightOff() Light {
 	return Off{}.Apply()
 }
 func describe(l Light) string {
-	return func(obj Light) string {
+	{
+		obj := l
 		{
 			_tmp_1 := On{}.Unapply(obj)
 			if _tmp_1 {
@@ -427,7 +443,7 @@ func describe(l Light) string {
 				}
 			}
 		}
-	}(l)
+	}
 }`,
 		},
 		{
@@ -455,7 +471,8 @@ func describe(b bool) string = b match {
 			expected: `package main
 
 func describe(b bool) string {
-	return func(obj bool) string {
+	{
+		obj := b
 		if obj == true {
 			return "yes"
 		} else if obj == false {
@@ -463,7 +480,7 @@ func describe(b bool) string {
 		} else {
 			panic("unreachable")
 		}
-	}(b)
+	}
 }`,
 		},
 		{
@@ -509,7 +526,8 @@ val res = x match {
 import "martianoff/gala/std"
 
 var x = std.NewImmutable(42)
-var res = std.NewImmutable(func(obj int) int {
+var res = std.NewImmutable(func() int {
+	obj := x.Get()
 	{
 		y := obj
 		if true && y > 10 {
@@ -518,7 +536,7 @@ var res = std.NewImmutable(func(obj int) int {
 			return 0
 		}
 	}
-}(x.Get()))
+}())
 `,
 		},
 		{
@@ -533,7 +551,8 @@ func describe(b bool) string = b match {
 			expected: `package main
 
 func describe(b bool) string {
-	return func(obj bool) string {
+	{
+		obj := b
 		if obj == true {
 			return "yes"
 		} else if obj == false {
@@ -541,7 +560,7 @@ func describe(b bool) string {
 		} else {
 			return "unknown"
 		}
-	}(b)
+	}
 }`,
 		},
 		{
@@ -658,9 +677,10 @@ func NewHolder(cell Cell[int]) Holder {
 	return Holder{Cell: std.NewImmutable(cell)}
 }
 func unwrap(h Holder) int {
-	return func(obj std.Option[int]) int {
+	{
+		obj := h.Cell.Get().Get()
 		{
-			_tmp_1 := std.Some[int]{}.Unapply(obj)
+			_tmp_1 := _unapply_std_Some(obj)
 			_tmp_2 := _tmp_1.IsDefined()
 			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
@@ -668,7 +688,7 @@ func unwrap(h Holder) int {
 			if _tmp_2 {
 				return v
 			} else {
-				_tmp_4 := std.None[int]{}.Unapply(obj)
+				_tmp_4 := _unapply_std_None(obj)
 				if _tmp_4 {
 					return 0
 				} else {
@@ -676,7 +696,13 @@ func unwrap(h Holder) int {
 				}
 			}
 		}
-	}(h.Cell.Get().Get())
+	}
+}
+func _unapply_std_Some[_T0 any](v std.Option[_T0]) std.Option[_T0] {
+	return std.Some[_T0]{}.Unapply(v)
+}
+func _unapply_std_None[_T0 any](v std.Option[_T0]) bool {
+	return std.None[_T0]{}.Unapply(v)
 }`,
 		},
 		{
@@ -698,9 +724,10 @@ func resolve(opt Option[int]) int {
 import "martianoff/gala/std"
 
 func resolve(opt std.Option[int]) int {
-	return func(obj std.Option[int]) int {
+	{
+		obj := opt
 		{
-			_tmp_1 := std.Some[int]{}.Unapply(obj)
+			_tmp_1 := _unapply_std_Some(obj)
 			_tmp_2 := _tmp_1.IsDefined()
 			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
@@ -708,7 +735,7 @@ func resolve(opt std.Option[int]) int {
 			if _tmp_2 {
 				return n
 			} else {
-				_tmp_4 := std.None[int]{}.Unapply(obj)
+				_tmp_4 := _unapply_std_None(obj)
 				if _tmp_4 {
 					panic("missing")
 				} else {
@@ -716,7 +743,13 @@ func resolve(opt std.Option[int]) int {
 				}
 			}
 		}
-	}(opt)
+	}
+}
+func _unapply_std_Some[_T0 any](v std.Option[_T0]) std.Option[_T0] {
+	return std.Some[_T0]{}.Unapply(v)
+}
+func _unapply_std_None[_T0 any](v std.Option[_T0]) bool {
+	return std.None[_T0]{}.Unapply(v)
 }`,
 		},
 		{
@@ -735,7 +768,8 @@ func describe(code int) string {
 			expected: `package main
 
 func describe(code int) string {
-	return func(obj int) string {
+	{
+		obj := code
 		if obj == 0 {
 			return "ok"
 		} else if obj == 1 {
@@ -743,7 +777,7 @@ func describe(code int) string {
 		} else {
 			panic("invalid")
 		}
-	}(code)
+	}
 }`,
 		},
 	}

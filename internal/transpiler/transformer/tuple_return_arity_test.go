@@ -21,7 +21,9 @@ import (
 // via typeToExpr and emitted as `Option[Tuple[int, int, int]]` (2-arity Tuple
 // with 3 type args) — Go rejected the malformed instantiation. Meanwhile the
 // signature itself emitted Tuple3 correctly because that path already had
-// the rewrite. The two halves disagreed.
+// the rewrite. The two halves disagreed. The IIFE now binds its subject
+// without writing its type, so the cases check a type it still rebuilds: the
+// IIFE's result type, taken from the payload of Some.
 func TestTupleReturnArityRewrite(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -36,21 +38,24 @@ func TestTupleReturnArityRewrite(t *testing.T) {
 		notExpected []string
 	}{
 		{
-			name: "match IIFE parameter type uses TupleN arity",
+			name: "match IIFE result type uses TupleN arity",
 			input: `package main
 
 func wrap() Option[Tuple[int, int, int]] = Some((1, 2, 3))
 
+func zero() Tuple[int, int, int] = (0, 0, 0)
+
 func main() {
-    wrap() match {
-        case Some(_) => Println("ok")
-        case _       => Println("none")
+    val t = wrap() match {
+        case Some(v) => v
+        case _       => zero()
     }
+    Println(t)
 }`,
 			expected: []string{
 				"func wrap() std.Option[std.Tuple3[int, int, int]]",
-				"func(obj std.Option[std.Tuple3[int, int, int]])",
-				"std.Some[std.Tuple3[int, int, int]]{}.Unapply",
+				"func() std.Tuple3[int, int, int] {",
+				"obj := wrap()",
 				"_tmp_3 := _tmp_1.Value.Get()",
 			},
 			notExpected: []string{
@@ -66,15 +71,18 @@ func main() {
 
 func wrap() Option[Tuple[int, int, int, int]] = Some((1, 2, 3, 4))
 
+func zero() Tuple[int, int, int, int] = (0, 0, 0, 0)
+
 func main() {
-    wrap() match {
-        case Some(_) => Println("ok")
-        case _       => Println("none")
+    val t = wrap() match {
+        case Some(v) => v
+        case _       => zero()
     }
+    Println(t)
 }`,
 			expected: []string{
 				"std.Option[std.Tuple4[int, int, int, int]]",
-				"func(obj std.Option[std.Tuple4[int, int, int, int]])",
+				"func() std.Tuple4[int, int, int, int] {",
 			},
 			notExpected: []string{
 				"std.Tuple[int, int, int, int]",

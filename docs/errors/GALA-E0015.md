@@ -52,7 +52,7 @@ prints it absolute.
 immediately-invoked function expression (IIFE):
 
 ```go
-fmt.Println(func(obj ...) string {
+fmt.Println(func() string {
     switch ... {
     case Success:  return string(b)
     case Failure:  fmt.Println(...); return   // <- invalid: IIFE must return string

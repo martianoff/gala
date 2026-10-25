@@ -193,7 +193,7 @@ import "example.com/arity/ev"
 }
 `)
 		require.NoError(t, err)
-		assert.Contains(t, out, "ev.Got[int]{}.Unapply(")
+		assert.Contains(t, out, "ev.Got[_T0]{}.Unapply(v)")
 	})
 	t.Run("wrong arity is reported at the pattern", func(t *testing.T) {
 		_, err := transpile(header + `func f(e ev.Ev[int]) int = e match {

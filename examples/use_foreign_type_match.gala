@@ -1,0 +1,49 @@
+package main
+
+// Matching values whose types name a package this file never imports:
+// Option, Either and a generic sealed type over sealed_foreign_field_cmd_lib's
+// Cmd. The generated Go must not import that package either: under Bazel
+// this test depends only on sealed_foreign_field_lib, so neither the match's
+// function literal nor an extractor call may write Cmd's type.
+
+import lib "martianoff/gala/examples/sealed_foreign_field_lib"
+
+func found(name string) string = lib.Find(name) match {
+    case Some(c) => lib.NameOf(c)
+    case None() => "none"
+}
+
+func parsed(s string) string = lib.Parse(s) match {
+    case Right(c) => s"right ${lib.NameOf(c)}"
+    case Left(why) => s"left $why"
+}
+
+func lookedUp(s string) string = lib.LookUp(s) match {
+    case lib.Found(c) => s"found ${lib.NameOf(c)}"
+    case lib.Missing(key) => s"missing $key"
+    case _ => "linked"
+}
+
+func edgeName(e lib.Edge) string = e match {
+    case lib.One(c) => lib.NameOf(c)
+    case _ => "other"
+}
+
+// A case whose fields include a type of the unimported package, over a type
+// argument this file can name.
+func linked(l lib.Lookup[string]) string = l match {
+    case lib.Linked(v, c) => s"$v -> ${lib.NameOf(c)}"
+    case _ => "unlinked"
+}
+
+func main() {
+    Println(linked(lib.LinkTo("x", "e")))
+    Println(found("a"))
+    Println(found(""))
+    Println(parsed("b"))
+    Println(parsed(""))
+    Println(lookedUp("c"))
+    Println(lookedUp(""))
+    Println(edgeName(lib.MakeOne("d")))
+    Println(edgeName(lib.MakeEps(1)))
+}

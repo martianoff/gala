@@ -87,7 +87,7 @@ func TestSequencePatternNestedSubPatterns(t *testing.T) {
     case Array(Some(Square(s)), rest...) => s + rest.Size()
     case _                               => 0
 }`,
-			inGuard:     []string{"rest = obj.SeqDrop(1)", "Some[Shape]{}.Unapply(", "Square{}.Unapply(", "s = "},
+			inGuard:     []string{"rest = obj.SeqDrop(1)", "_unapply_std_Some", "Square{}.Unapply(", "s = "},
 			notContains: []string{"Some :=", "Square :=", "s := "},
 		},
 		{

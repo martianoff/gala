@@ -126,6 +126,8 @@ var accumulatedStateFields = []string{
 	"interfaceLiterals",
 	"interfaceLiteralDecls",
 	"interfaceLiteralMisses",
+	"unapplyHelpers",
+	"unapplyHelperDecls",
 	"valueMetas",
 	"instanceInterfaceNames",
 	"synthesizedReturns",

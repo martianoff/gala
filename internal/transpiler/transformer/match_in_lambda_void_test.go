@@ -74,13 +74,13 @@ func main() {
 				"return func(m Member) void",
 				"} void {",
 				// The void IIFE must NOT be wrapped in `return ... (CloseSession(m))`.
-				"return func(obj std.Try[bool])",
+				"return func() {",
 			},
 			mustHave: []string{
 				// Lambda is void.
 				"return func(m Member) {",
 				// Match IIFE remains a bare expression statement.
-				"}(CloseSession(m))",
+				"obj := CloseSession(m)",
 			},
 		},
 		{
@@ -109,7 +109,7 @@ func main() {
 `,
 			mustMiss: []string{
 				"} void {",
-				"return func(obj Tag)",
+				"return func() {",
 			},
 			mustHave: []string{
 				"return func(t Tag) {",

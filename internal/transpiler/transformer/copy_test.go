@@ -440,7 +440,7 @@ struct Cell[T any](Value T, Map func(T) T)
     case 1 => 10
     case _ => 0
 })`,
-			wants: []string{"N: std.NewImmutable(func(obj int) int {"},
+			wants: []string{"N: std.NewImmutable(func() int {\n\t\tobj := b.N.Get()"},
 		},
 		{
 			name:  "by-name sugar lifts a plain expression into the func field",

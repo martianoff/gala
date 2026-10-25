@@ -59,7 +59,8 @@ func log(s Shape) {
 			// must strip the "return" values from each arm.
 			mustHave: []string{
 				`func log(s Shape) {`,
-				`func(obj Shape) {`, // IIFE with no result — void dispatch
+				`func() {`, // IIFE with no result — void dispatch
+				`obj := s`,
 				`doStuff()`,
 				`fmt.Println("line")`,
 				`log(inner)`,

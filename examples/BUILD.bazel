@@ -3667,6 +3667,23 @@ gala_library(
     ],
 )
 
+# A match whose arms do not read its subject while a nested match reads its own.
+gala_exec_test(
+    name = "match_nested_subject_unread",
+    src = "match_nested_subject_unread.gala",
+    expected = "match_nested_subject_unread.out",
+)
+
+# Matching Option, Either and a generic sealed type over a type of a package
+# the file never imports: neither the match's function literal nor a generic
+# extractor call may name it.
+gala_exec_test(
+    name = "use_foreign_type_match",
+    src = "use_foreign_type_match.gala",
+    expected = "use_foreign_type_match.out",
+    deps = [":sealed_foreign_field_lib"],
+)
+
 gala_exec_test(
     name = "use_sealed_foreign_field",
     src = "use_sealed_foreign_field.gala",

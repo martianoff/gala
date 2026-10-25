@@ -1,0 +1,28 @@
+package main
+
+// A match whose arms never read its subject, while a nested match reads its
+// own: the outer subject is bound only when an arm reads it, and the inner
+// match's `obj` or a field named `obj` is no read of the outer one.
+
+struct Box(obj int)
+
+func pick(x int, y int, flag bool) string = x match {
+    case _ if flag => y match {
+        case 1 => "one"
+        case _ => "other"
+    }
+    case _ => "z"
+}
+
+func field(x int, b Box) int = x match {
+    case _ if b.obj > 0 => b.obj
+    case _ => -1
+}
+
+func main() {
+    Println(pick(5, 1, true))
+    Println(pick(5, 2, true))
+    Println(pick(5, 1, false))
+    Println(field(0, Box(7)))
+    Println(field(0, Box(0)))
+}

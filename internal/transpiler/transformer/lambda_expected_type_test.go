@@ -297,7 +297,7 @@ func main() {
     })
     Println(p.Done(p.Input))
 }`,
-			contains: []string{"Pipe[int, int]{", "func(obj bool) func(int) int {"},
+			contains: []string{"Pipe[int, int]{", "func() func(int) int {"},
 		},
 		{
 			name: "if-expression in a generic sealed-variant constructor",
@@ -337,6 +337,11 @@ func main() {
 			out, err := trans.Transpile(tc.input, "unbound_branch_test.gala")
 			require.NoError(t, err)
 			body := out[strings.Index(out, "func main()"):]
+			// main alone: the file's generic _unapply_ helpers, declared
+			// after it, constrain their type parameters with `any`.
+			if end := strings.Index(body, "\n}\n"); end >= 0 {
+				body = body[:end+3]
+			}
 			for _, want := range tc.contains {
 				assert.Contains(t, body, want)
 			}
@@ -514,7 +519,7 @@ func main() {
 }`, "block_slot_leak_test.gala")
 	require.NoError(t, err)
 	assert.Contains(t, out, "func() func(string) string {")
-	assert.Equal(t, 1, strings.Count(out, "func() func(int) int {")+strings.Count(out, "func(obj bool) func(int) int {"),
+	assert.Equal(t, 1, strings.Count(out, "func() func(int) int {"),
 		"only the match lowers against func(int) int")
 }
 
@@ -826,7 +831,7 @@ func main() {
     })
     Println(o.F(1))
 }`,
-			contains: []string{"func(obj bool) func(int) int {", "return func(x int) int {"},
+			contains: []string{"func() func(int) int {", "return func(x int) int {"},
 		},
 		{
 			name: "match block arms",
@@ -842,7 +847,7 @@ func main() {
     })
     Println(o.F(1))
 }`,
-			contains: []string{"func(obj bool) func(int) int {", "return func(x int) int {"},
+			contains: []string{"func() func(int) int {", "return func(x int) int {"},
 		},
 		{
 			name: "match arms in a typed val",
@@ -856,7 +861,7 @@ func main() {
     }
     Println(f(1))
 }`,
-			contains: []string{"func(obj bool) func(int) int {", "return func(x int) int {"},
+			contains: []string{"func() func(int) int {", "return func(x int) int {"},
 		},
 		{
 			name: "match arms in an expression-bodied function",
@@ -870,7 +875,7 @@ func pick(up bool) func(int) int = up match {
 func main() {
     Println(pick(false)(1))
 }`,
-			contains: []string{"func(obj bool) func(int) int {", "return func(x int) int {"},
+			contains: []string{"obj := up", "return func(x int) int {"},
 		},
 		{
 			name: "match nested in an if branch",
@@ -886,7 +891,7 @@ func main() {
     } else (x) => x)
     Println(o.F(1))
 }`,
-			contains: []string{"func() func(int) int {", "func(obj bool) func(int) int {"},
+			contains: []string{"func() func(int) int {", "obj := up"},
 		},
 		{
 			name: "if-expression as a Copy override",
@@ -917,7 +922,7 @@ func main() {
     })
     Println(c.F(1))
 }`,
-			contains: []string{"func(obj bool) func(int) int {", "return func(x int) int {"},
+			contains: []string{"func() func(int) int {", "return func(x int) int {"},
 		},
 		{
 			name: "branch lambdas in a generic constructor",

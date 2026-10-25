@@ -24,6 +24,7 @@ go_library(
         "exhaustiveness.go",
         "expected_arg_stack.go",
         "expressions.go",
+        "extractor_call.go",
         "generated_codec_names.go",
         "go_constructors.go",
         "go_results.go",

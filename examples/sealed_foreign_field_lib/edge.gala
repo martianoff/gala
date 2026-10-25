@@ -24,3 +24,22 @@ func MakeEps(target int) Edge = Eps(target)
 
 // NameOf returns the name of command c.
 func NameOf(c cmd.Cmd) string = c.Name
+
+// Lookup is a generic sealed result over a type of another package.
+sealed type Lookup[T any] {
+    case Found(Value T)
+    case Missing(Key string)
+    case Linked(Value T, C cmd.Cmd)
+}
+
+// Find returns the command named name, if there is one.
+func Find(name string) Option[cmd.Cmd] = if (name == "") None[cmd.Cmd]() else Some(cmd.Cmd(name))
+
+// Parse returns the command named s, or why there is none.
+func Parse(s string) Either[string, cmd.Cmd] = if (s == "") Left("empty") else Right(cmd.Cmd(s))
+
+// LookUp returns s as a Found command, or Missing when s is empty.
+func LookUp(s string) Lookup[cmd.Cmd] = if (s == "") Missing[cmd.Cmd]("empty") else Found(cmd.Cmd(s))
+
+// LinkTo links value to the command named name.
+func LinkTo(value string, name string) Lookup[string] = Linked(value, cmd.Cmd(name))
