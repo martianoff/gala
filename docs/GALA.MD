@@ -1442,7 +1442,7 @@ options included) is taken.
 
 Each exported case also gets a predicate for Go callers, `Is<Case>()`, true
 when the value is that case: `d.IsPercent()`. It is not generated when the
-type declares a method of that name or has a field of it. See the
+type declares a method of that name. See the
 [Go interop guide](GO_INTEROP.MD#sealed-types-have-go-constructors) for the
 generated Godoc.
 
