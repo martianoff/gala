@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -379,13 +380,16 @@ func (m *ImportManager) GetByAlias(alias string) (*ImportEntry, bool) {
 	return entry, ok
 }
 
-// WithForeignQualifiers makes each qualifier of imports (qualifier → import
-// path) name its path in source until the returned function is called: a
-// default lowered here was written against its own file's imports, which
-// this file may lack or bind otherwise. Only source names are affected; the
-// generated code still refers to imports through this file's names (see
-// PathForQualifier).
-func (m *ImportManager) WithForeignQualifiers(imports map[string]string) (restore func()) {
+// WithForeignQualifiers puts the imports of the file a default was written in
+// in scope until the returned function is called: each qualifier of imports
+// (qualifier → import path) names its path, and each package of dots (import
+// path → package name) is dot-imported, unless this file dot-imports it
+// already. A default lowered here was written against its own file's
+// imports, which this file may lack or bind otherwise. Only how source names
+// resolve is affected; the generated code refers to packages through this
+// file's own names (see PathForQualifier), which the caller spells once the
+// default is lowered.
+func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (restore func()) {
 	prev := m.foreign
 	m.foreign = make(map[string]*ImportEntry, len(prev)+len(imports))
 	for q, e := range prev {
@@ -394,9 +398,22 @@ func (m *ImportManager) WithForeignQualifiers(imports map[string]string) (restor
 	for q, path := range imports {
 		m.foreign[q] = &ImportEntry{Path: path, PkgName: q, Alias: q, named: true}
 	}
+	var added []*ImportEntry
+	for path, pkgName := range dots {
+		if slices.ContainsFunc(m.dotImports, func(e *ImportEntry) bool { return e.Path == path }) {
+			continue
+		}
+		entry := &ImportEntry{Path: path, PkgName: pkgName, Alias: pkgName, IsDot: true, implicit: true}
+		m.entries = append(m.entries, entry)
+		m.dotImports = append(m.dotImports, entry)
+		added = append(added, entry)
+	}
 	m.revision++
 	return func() {
 		m.foreign = prev
+		isAdded := func(e *ImportEntry) bool { return slices.Contains(added, e) }
+		m.entries = slices.DeleteFunc(m.entries, isAdded)
+		m.dotImports = slices.DeleteFunc(m.dotImports, isAdded)
 		m.revision++
 	}
 }

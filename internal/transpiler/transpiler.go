@@ -520,6 +520,10 @@ type DefaultScope struct {
 	// the import path the file binds it to: `strings` in
 	// `strings.Repeat("=", 2)` is an import the use site may not have.
 	Imports map[string]string
+	// DotImports maps the import path of each package the declaring file
+	// dot-imports to its package name: `EmptyArray` in
+	// `EmptyArray[Entry]()` is collection_immutable's there.
+	DotImports map[string]string
 	// PrivateVals lists the declaring package's unexported package-level
 	// vals and vars that Text names. They are not visible to another
 	// package, so a use site there reports them.

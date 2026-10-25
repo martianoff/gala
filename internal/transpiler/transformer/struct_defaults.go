@@ -277,7 +277,7 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 		_, isVal := vals[id.Name]
 		private := slices.Contains(scope.PrivateVals, id.Name)
 		if !isVal && !private && !t.packageDeclares(owningPkg, id.Name) {
-			return id
+			return t.qualifyDotImported(id, scope, qualified)
 		}
 		if private || !ast.IsExported(id.Name) {
 			unexported(id.Name)
@@ -324,6 +324,26 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 		return true
 	})
 	return holder.X, err
+}
+
+// qualifyDotImported qualifies id, a bare name of a lowered default from
+// another package, when it is a type, function, val or var of a package the
+// default's declaring file dot-imports (`EmptyArray` of collection_immutable)
+// and this file does not dot-import that package too. Otherwise id is
+// returned as is. A qualified selector is recorded in qualified.
+func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler.DefaultScope, qualified map[ast.Node]bool) ast.Expr {
+	for path, pkgName := range scope.DotImports {
+		if _, isVal := t.importedVals(path)[id.Name]; !isVal && !t.packageDeclares(pkgName, id.Name) {
+			continue
+		}
+		if slices.ContainsFunc(t.importManager.All(), func(e *ImportEntry) bool { return e.IsDot && e.Path == path }) {
+			return id
+		}
+		sel := &ast.SelectorExpr{X: ast.NewIdent(t.importQualifier(path, pkgName)), Sel: ast.NewIdent(id.Name)}
+		qualified[sel] = true
+		return sel
+	}
+	return id
 }
 
 // importQualifier is this file's name for the package at path, named pkgName

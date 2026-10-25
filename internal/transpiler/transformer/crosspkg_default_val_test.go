@@ -53,6 +53,14 @@ val NoPos = Pos(0, 0)
 
 struct Item(Name string, At Pos = NoPos)
 `)
+	// A sibling file whose defaults name a dot-imported package's function
+	// and type, and the package's own type.
+	write("lib/bag.gala", `package lib
+
+import . "martianoff/gala/collection_immutable"
+
+struct Bag(Items Array[Pos] = EmptyArray[Pos](), Pick func(Array[Pos]) int = (a) => a.Size())
+`)
 	// Hands out a lib value to a package that does not import lib itself.
 	write("mk/mk.gala", `package mk
 
@@ -256,6 +264,24 @@ func main() {
 		require.NoError(t, err)
 		assert.Contains(t, out, `"example.com/dval/lib"`, "generated:\n%s", out)
 		assert.Contains(t, out, `.Times(lib.MaxK.Get())`, "generated:\n%s", out)
+	})
+
+	// The declaring file dot-imports collection_immutable; the calling file
+	// does not import it at all. The default resolves through the declaring
+	// file's dot import and is qualified here.
+	t.Run("a dot import of the declaring file", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/dval/lib"
+
+func main() {
+    val b = lib.Bag()
+    Println(b.Pick(b.Items))
+}`)
+		require.NoError(t, err)
+		assert.Contains(t, out, `"martianoff/gala/collection_immutable"`, "generated:\n%s", out)
+		assert.Contains(t, out, `collection_immutable.EmptyArray[lib.Pos]()`, "generated:\n%s", out)
+		assert.Contains(t, out, `func(a collection_immutable.Array[lib.Pos]) int`, "generated:\n%s", out)
 	})
 
 	t.Run("an unexported val is reported at the default", func(t *testing.T) {

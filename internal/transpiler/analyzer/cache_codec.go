@@ -203,6 +203,7 @@ func (e *encoder) writeDefaultExpr(d transpiler.DefaultExpr) {
 	if d.Scope != nil {
 		e.writeString(d.Scope.PkgPath)
 		e.writeStringStringMap(d.Scope.Imports)
+		e.writeStringStringMap(d.Scope.DotImports)
 		e.writeStringSlice(d.Scope.PrivateVals)
 	}
 }
@@ -673,6 +674,7 @@ func (d *decoder) readDefaultExpr() transpiler.DefaultExpr {
 	if d.readBool() {
 		scope := &transpiler.DefaultScope{PkgPath: d.readString()}
 		scope.Imports = d.readStringStringMap()
+		scope.DotImports = d.readStringStringMap()
 		scope.PrivateVals = d.readStringSlice()
 		def.Scope = scope
 	}

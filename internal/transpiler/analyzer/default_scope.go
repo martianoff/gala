@@ -107,6 +107,15 @@ func (r *defaultScopeRecorder) record(pkgAST *transpiler.RichAST, canonical func
 			return def
 		}
 		scope := &transpiler.DefaultScope{PkgPath: r.pkgPath}
+		for _, b := range quals.dots {
+			if b.PkgName == "" {
+				continue // the package did not load; nothing resolves through it
+			}
+			if scope.DotImports == nil {
+				scope.DotImports = map[string]string{}
+			}
+			scope.DotImports[b.Path] = b.PkgName
+		}
 		for _, word := range identifierPattern.FindAllString(def.Text, -1) {
 			if b, ok := quals.named[word]; ok {
 				if scope.Imports == nil {

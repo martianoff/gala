@@ -837,7 +837,7 @@ func (t *galaASTTransformer) tryResolveSimpleName(name string, exists func(strin
 	// this cache exists. Rebuilding here rather than only on a nil pointer
 	// also puts the cache back, so an import added mid-walk costs one rebuild
 	// instead of a fresh allocation on every later resolution in the file.
-	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() {
+	if t.cachedTypeResolver == nil || t.cachedTypeResolverRev != t.importManager.Revision() || t.cachedTypeResolver.PackageName != t.resolutionPackage() {
 		t.cacheTypeResolver()
 	}
 	return t.cachedTypeResolver.Resolve(name, exists)
@@ -861,9 +861,19 @@ func (t *galaASTTransformer) buildTypeResolver() *resolver.TypeResolver {
 		}
 	}
 	return &resolver.TypeResolver{
-		PackageName: t.packageName,
+		PackageName: t.resolutionPackage(),
 		Imports:     imports,
 	}
+}
+
+// resolutionPackage is the package whose declarations a bare name resolves
+// to first: the one being compiled, or, while a default declared in another
+// package is lowered, that package (see transformDefaultExpr).
+func (t *galaASTTransformer) resolutionPackage() string {
+	if t.loweringForeignDefault() {
+		return t.loweringDefault.pkg
+	}
+	return t.packageName
 }
 
 // lookupTypeAlias resolves name to the type it aliases. typeAliases is keyed by

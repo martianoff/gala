@@ -224,14 +224,22 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		// locals were not in scope where the default was written), so the
 		// default reads them as its package does — a val through its
 		// `.Get()` unwrap, with its type — and qualifyDefaultExpr then
-		// qualifies them like the package's functions and types.
-		if vals := t.declaringPackageVals(src); len(vals) > 0 {
-			t.pushScope()
-			defer t.popScope()
+		// qualifies them like the package's functions and types. The vals
+		// of the packages its file dot-imports are in scope there too, below
+		// the package's own.
+		t.pushScope()
+		defer t.popScope()
+		register := func(vals map[string]*transpiler.PackageValMetadata) {
 			for name, meta := range vals {
-				if meta != nil {
+				if _, bound := t.currentScope.vals[name]; !bound && meta != nil {
 					t.registerPackageVal(name, meta)
 				}
+			}
+		}
+		register(t.declaringPackageVals(src))
+		if src.Scope != nil {
+			for path := range src.Scope.DotImports {
+				register(t.importedVals(path))
 			}
 		}
 	}
@@ -286,13 +294,14 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 }
 
 // lowerDefault transforms a default's parse tree against its declared type.
-// A foreign default's qualifiers name the imports of the file that wrote it
-// while it is lowered, so `strings.Repeat` types as Go's function even where
-// this file has no `strings`, or binds the name to another package; they are
-// respelled with this file's names afterwards (see qualifyDefaultExpr).
+// While a foreign default is lowered, the imports of the file that wrote it
+// are in scope: `strings.Repeat` types as Go's function even where this file
+// has no `strings`, or binds the name to another package, and `EmptyArray`
+// resolves through that file's dot import of collection_immutable. Their
+// names are respelled with this file's afterwards (see qualifyDefaultExpr).
 func (t *galaASTTransformer) lowerDefault(exprCtx grammar.IExpressionContext, src defaultSource) (ast.Expr, error) {
-	if t.loweringForeignDefault() && src.Scope != nil && len(src.Scope.Imports) > 0 && t.importManager != nil {
-		defer t.importManager.WithForeignQualifiers(src.Scope.Imports)()
+	if t.loweringForeignDefault() && src.Scope != nil && t.importManager != nil {
+		defer t.importManager.WithForeignQualifiers(src.Scope.Imports, src.Scope.DotImports)()
 	}
 	return t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())
 }
@@ -302,11 +311,8 @@ func (t *galaASTTransformer) lowerDefault(exprCtx grammar.IExpressionContext, sr
 // default from another package: found by its recorded import path, or else by
 // this file's import of the package's name. nil when it has none.
 func (t *galaASTTransformer) declaringPackageVals(src defaultSource) map[string]*transpiler.PackageValMetadata {
-	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 {
-		return nil
-	}
 	if src.Scope != nil && src.Scope.PkgPath != "" {
-		return t.richAST.ImportedVals[src.Scope.PkgPath]
+		return t.importedVals(src.Scope.PkgPath)
 	}
 	if t.importManager == nil {
 		return nil
@@ -315,7 +321,16 @@ func (t *galaASTTransformer) declaringPackageVals(src defaultSource) map[string]
 	if !ok {
 		return nil
 	}
-	return t.richAST.ImportedVals[entry.Path]
+	return t.importedVals(entry.Path)
+}
+
+// importedVals returns the exported package-level vals and vars of the GALA
+// package at path, nil when it has none or is unknown here.
+func (t *galaASTTransformer) importedVals(path string) map[string]*transpiler.PackageValMetadata {
+	if t.richAST == nil {
+		return nil
+	}
+	return t.richAST.ImportedVals[path]
 }
 
 // bindDefaultTypeParams puts the use site's type arguments in place of the
