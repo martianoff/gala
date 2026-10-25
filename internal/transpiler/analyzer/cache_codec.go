@@ -884,7 +884,6 @@ func (d *decoder) readTypeMeta() *transpiler.TypeMetadata {
 	t.Underlying = d.readType()
 	t.UnderlyingBase = d.readType()
 	t.DefinedIn = d.readString()
-	t.MarkGoOnlyFields()
 	return t
 }
 

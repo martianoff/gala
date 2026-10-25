@@ -410,7 +410,6 @@ type TypeMetadata struct {
 	StoredAsDeclared []bool
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
-	GoOnlyFields         map[string]bool // Fields of a sealed type GALA code does not read by name (see MarkGoOnlyFields)
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
 	// IsOpaque is true for `opaque type UserID int64`: a distinct Go defined
 	// type whose representation is Underlying. It is never a type alias:
@@ -649,28 +648,25 @@ func SealedGoPredicateNames(m *TypeMetadata) map[string]bool {
 	return names
 }
 
-// MarkGoOnlyFields records which fields of sealed type m GALA code does not
-// read by name: its case tag, and the case fields stored under a Go name of
-// their case (see SealedVariant.GoFieldNames), which never equals the name of
-// a case field.
-func (m *TypeMetadata) MarkGoOnlyFields() {
+// IsGalaField reports whether GALA code reads the field name of type m by
+// that name: every field but, on a sealed type, its case tag and the case
+// fields stored under a Go name of their case (see
+// SealedVariant.GoFieldNames), which never equals the name of a case field.
+func (m *TypeMetadata) IsGalaField(name string) bool {
 	if !m.IsSealed {
-		return
+		return true
 	}
-	m.GoOnlyFields = map[string]bool{"_variant": true}
+	if name == "_variant" {
+		return false
+	}
 	for _, v := range m.SealedVariants {
 		for i, goName := range v.GoFieldNames {
-			if i < len(v.FieldNames) && goName != v.FieldNames[i] {
-				m.GoOnlyFields[goName] = true
+			if goName == name && i < len(v.FieldNames) && goName != v.FieldNames[i] {
+				return false
 			}
 		}
 	}
-}
-
-// IsGalaField reports whether GALA code reads the field name of type m by
-// that name: every field but the ones MarkGoOnlyFields records.
-func (m *TypeMetadata) IsGalaField(name string) bool {
-	return !m.GoOnlyFields[name]
+	return true
 }
 
 type MethodMetadata struct {

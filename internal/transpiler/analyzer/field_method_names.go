@@ -84,7 +84,6 @@ func layoutSealedFields(meta *transpiler.TypeMetadata, fieldTypes map[string]map
 	meta.Fields["_variant"] = transpiler.BasicType{Name: "uint8"}
 	meta.FieldNames = append(meta.FieldNames, "_variant")
 	meta.ImmutFlags = append(meta.ImmutFlags, true)
-	meta.MarkGoOnlyFields()
 }
 
 // fieldNamedLikeMethodError rejects a struct of the package being analyzed
@@ -96,8 +95,16 @@ func layoutSealedFields(meta *transpiler.TypeMetadata, fieldTypes map[string]map
 // layoutSealedFields) it cannot be stored under another.
 func (a *galaAnalyzer) fieldNamedLikeMethodError(richAST *transpiler.RichAST, pkgName, filePath string) error {
 	var first *galaerr.SemanticError
-	report := func(pos transpiler.SourcePos, typeName, name string) {
-		if pos.Line == 0 || first != nil && (first.Line < pos.Line || first.Line == pos.Line && first.Column <= pos.Column) {
+	// DefinedIn may hold filePath spelled another way (absolute, canonical).
+	isThisFile := func(p string) bool { return p == filePath || a.paths.sameFile(p, filePath) }
+	// report keeps the clash nearest the top of filePath. A declaration
+	// without a recorded position is reported at fallback (a position in
+	// filePath) rather than left for `go build` to reject.
+	report := func(pos, fallback transpiler.SourcePos, typeName, name string) {
+		if pos.Line == 0 {
+			pos = fallback
+		}
+		if first != nil && (first.Line < pos.Line || first.Line == pos.Line && first.Column <= pos.Column) {
 			return
 		}
 		first = galaerr.NewCodedSemanticError(galaerr.CodeFieldNamedLikeMethod, pos.Line, pos.Column,
@@ -108,15 +115,16 @@ func (a *galaAnalyzer) fieldNamedLikeMethodError(richAST *transpiler.RichAST, pk
 		if meta.Package != pkgName || meta.IsSealed || meta.IsInterface || !a.currentOwnTypes[meta.Name] {
 			continue
 		}
+		declaredHere := isThisFile(meta.DefinedIn)
 		var other map[string]bool // methods declared outside GALA source
 		for field := range meta.Fields {
 			if a.currentOwnMethods[meta.Name][field] {
-				if m := meta.Methods[field]; m != nil && m.DefinedIn == filePath {
-					report(m.Pos, meta.Name, field)
+				if m := meta.Methods[field]; m != nil && isThisFile(m.DefinedIn) {
+					report(m.Pos, transpiler.SourcePos{Line: 1, Column: 1}, meta.Name, field)
 				}
 				continue
 			}
-			if meta.DefinedIn != filePath {
+			if !declaredHere {
 				continue
 			}
 			if other == nil {
@@ -126,7 +134,7 @@ func (a *galaAnalyzer) fieldNamedLikeMethodError(richAST *transpiler.RichAST, pk
 				}
 			}
 			if other[field] {
-				report(meta.FieldPositions[field], meta.Name, field)
+				report(meta.FieldPositions[field], meta.Pos, meta.Name, field)
 			}
 		}
 	}

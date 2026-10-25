@@ -2,9 +2,8 @@ package main
 
 import . "martianoff/gala/collection_immutable"
 
-// A sealed type's method may share its name with a case field: the field
-// belongs to its case, the method to the whole type.
-
+// Transition is a sealed type whose method may share its name with a case
+// field: the field belongs to its case, the method to the whole type.
 sealed type Transition {
     case Epsilon(Target int)
     case Atom(Target int, Label int)
@@ -16,7 +15,7 @@ func (t Transition) Target() int = t match {
     case Atom(target, _) => target
 }
 
-// Size's field changes type between cases as well as naming the method.
+// Bound's Size field changes type between cases as well as naming the method.
 sealed type Bound {
     case Exact(Size int)
     case Named(Size string)
@@ -27,8 +26,8 @@ func (b Bound) Size() string = b match {
     case Named(name) => s"named $name"
 }
 
-// A generic sealed type, and fields named like the String, Copy and Equal
-// methods every sealed type has.
+// Tagged is a generic sealed type with fields named like the String, Copy and
+// Equal methods every sealed type has.
 sealed type Tagged[T any] {
     case Plain(Value T)
     case Labeled(Value T, String string, Copy int, Equal bool)
@@ -48,7 +47,7 @@ func main() {
     val ts = ArrayOf(Epsilon(1), Atom(2, 7))
     ts.ForEach((t) => Println(describe(t)))
     ts.ForEach((t) => Println(t))
-    val next = ts.Map((t) => t.Target())
+    val next = ts.Map(_.Target())
     Println(next)
     val target = Atom(3, 9).Target
     Println(target())

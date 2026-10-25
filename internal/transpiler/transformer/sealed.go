@@ -993,7 +993,7 @@ func (t *galaASTTransformer) sealedCaseParent(caseType transpiler.Type) transpil
 
 // goOnlyFieldError rejects reading by name a field of a sealed type that GALA
 // code has no name for: its case tag, or a case field stored under a Go name
-// of its case (see TypeMetadata.MarkGoOnlyFields). Such a field holds a value
+// of its case (see TypeMetadata.IsGalaField). Such a field holds a value
 // only for its own case.
 func (t *galaASTTransformer) goOnlyFieldError(xType transpiler.Type, selName string, line, col int) error {
 	if xType == nil {
