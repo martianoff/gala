@@ -281,6 +281,7 @@ go_test(
         "string_escapes_test.go",
         "struct_defaults_test.go",
         "struct_expected_type_test.go",
+        "struct_mixed_args_test.go",
         "struct_pattern_interface_subject_test.go",
         "structs_test.go",
         "tco_test.go",

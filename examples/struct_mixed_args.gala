@@ -1,0 +1,27 @@
+package main
+
+// Struct construction binds the leading positional arguments to the first
+// fields and the named ones by name; the fields given neither way take their
+// defaults. It is the rule a function call follows. The cross-package case is
+// in struct_field_defaults_crosspkg.gala.
+struct Cfg(Name string, Tries int = 3, Loud bool = false)
+
+struct Box[T any](Value T, Label string = "box", Count int = 1)
+
+func connect(host string, port int = 8080, tls bool = true) string = s"$host:$port tls=$tls"
+
+func main() {
+    Println(connect("localhost", tls = false))
+
+    val a = Cfg("a", Loud = true)
+    Println(s"${a.Name} ${a.Tries} ${a.Loud}")
+    val b = Cfg("b", 5, Loud = true)
+    Println(s"${b.Name} ${b.Tries} ${b.Loud}")
+    val c = Cfg("c", Tries = 7)
+    Println(s"${c.Name} ${c.Tries} ${c.Loud}")
+
+    val n = Box(42, Count = 2)
+    Println(s"${n.Value} ${n.Label} ${n.Count}")
+    val s = Box("x", Label = "named")
+    Println(s"${s.Value} ${s.Label} ${s.Count}")
+}
