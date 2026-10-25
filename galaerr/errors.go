@@ -799,12 +799,12 @@ const (
 	// or an OptionPtr through OptionPtrOf.
 	CodePtrNullability ErrorCode = "GALA-E0080"
 
-	// E0081: a method another package's GALA type declares, or synthesizes,
+	// E0083: a method another package's GALA type declares, or synthesizes,
 	// but does not export was called — a lower-case method, such as the
 	// `is<Variant>` predicate every sealed type gets. Visibility follows Go,
 	// so only the declaring package can call it; the call used to reach
 	// `go build` and fail there against the generated expression.
-	CodeUnexportedMethod ErrorCode = "GALA-E0081"
+	CodeUnexportedMethod ErrorCode = "GALA-E0083"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

@@ -194,7 +194,7 @@ func (t *galaASTTransformer) unknownMethodError(
 }
 
 // unexportedMethodError reports a call of a method another package's GALA type
-// has but does not export (GALA-E0081). Visibility follows Go: a lower-case
+// has but does not export (GALA-E0083). Visibility follows Go: a lower-case
 // method — including the `is<Variant>` predicates every sealed type gets — is
 // private to its package. The call used to be emitted verbatim and Go rejected
 // the generated expression ("cannot refer to unexported method"). Go-interop

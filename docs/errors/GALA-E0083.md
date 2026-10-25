@@ -1,4 +1,4 @@
-# GALA-E0081 — Unexported method of another package
+# GALA-E0083 — Unexported method of another package
 
 **When it fires.** A method of a GALA type declared in another package is
 called, but the method is not exported. Visibility follows Go: a method whose
@@ -39,7 +39,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0081]: isCircle is an unexported method of shapes.Shape, so only package shapes can call it
+error[GALA-E0083]: isCircle is an unexported method of shapes.Shape, so only package shapes can call it
   --> main.gala:5:37
   |
 5 | func round(s shapes.Shape) bool = s.isCircle()

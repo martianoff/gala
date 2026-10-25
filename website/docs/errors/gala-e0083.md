@@ -1,15 +1,15 @@
 ---
 layout: default
-title: "GALA-E0081 — Unexported Method of Another Package"
-description: "GALA-E0081 fires when code calls a lower-case method of another package's GALA type, such as a sealed type's isCircle() predicate. Match on the variant instead, or call an exported method."
-keywords: "gala-e0081, gala unexported method, gala sealed type isvariant, gala cannot refer to unexported method, gala match variant, gala visibility"
-permalink: /docs/errors/gala-e0081/
+title: "GALA-E0083 — Unexported Method of Another Package"
+description: "GALA-E0083 fires when code calls a lower-case method of another package's GALA type, such as a sealed type's isCircle() predicate. Match on the variant instead, or call an exported method."
+keywords: "gala-e0083, gala unexported method, gala sealed type isvariant, gala cannot refer to unexported method, gala match variant, gala visibility"
+permalink: /docs/errors/gala-e0083/
 last_modified_at: 2026-10-24
 ---
 
-<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0081</p>
+<p class="breadcrumb"><a href="/">Home</a> / <a href="/docs/">Docs</a> / <a href="/docs/errors/">Error Codes</a> / GALA-E0083</p>
 
-# GALA-E0081 — Unexported method of another package
+# GALA-E0083 — Unexported method of another package
 
 **When it fires.** A method of a GALA type declared in another package is
 called, but the method is not exported. Visibility follows Go: a method whose
@@ -50,7 +50,7 @@ func main() {
 **Error output.**
 
 ```
-error[GALA-E0081]: isCircle is an unexported method of shapes.Shape, so only package shapes can call it
+error[GALA-E0083]: isCircle is an unexported method of shapes.Shape, so only package shapes can call it
   --> main.gala:5:37
   |
 5 | func round(s shapes.Shape) bool = s.isCircle()

@@ -45,7 +45,7 @@ func (b Box) Half() int = b.half()
 
 // TestUnexportedMethodCrossPackage: a lower-case method of another package's
 // GALA type — a sealed type's is<Variant> predicate, or a declared one — is
-// rejected with GALA-E0081 instead of reaching `go build` as "cannot refer to
+// rejected with GALA-E0083 instead of reaching `go build` as "cannot refer to
 // unexported method". Exported methods, and the declaring package's own use of
 // the private ones, are unaffected.
 func TestUnexportedMethodCrossPackage(t *testing.T) {
@@ -82,7 +82,7 @@ func TestUnexportedMethodCrossPackage(t *testing.T) {
 		t.Run("rejected/"+tc.name, func(t *testing.T) {
 			_, err := transpileCrossPkg(t, root, header+tc.body)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "GALA-E0081")
+			assert.Contains(t, err.Error(), "GALA-E0083")
 			assert.Contains(t, err.Error(), tc.msg)
 			assert.Contains(t, err.Error(), tc.hint)
 		})

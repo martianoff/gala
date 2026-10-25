@@ -1242,7 +1242,7 @@ func main() {
 			// is<Variant> predicate to be out of reach, so the repro needs
 			// files on disk.
 			name:   "sealed predicate called from another package",
-			code:   galaerr.CodeUnexportedMethod, // GALA-E0081
+			code:   galaerr.CodeUnexportedMethod, // GALA-E0083
 			render: renderUnexportedPredicateRepro,
 		},
 		{
@@ -1483,7 +1483,7 @@ func main() {
 	return rendered
 }
 
-// renderUnexportedPredicateRepro drives GALA-E0081: main calls the private
+// renderUnexportedPredicateRepro drives GALA-E0083: main calls the private
 // is<Variant> predicate of a sealed type declared in a sibling package.
 func renderUnexportedPredicateRepro(t *testing.T) string {
 	t.Helper()
