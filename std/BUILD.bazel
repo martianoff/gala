@@ -139,6 +139,7 @@ go_test(
     name = "std_go_test",
     srcs = [
         "as_test.go",
+        "copy_test.go",
         "equal_test.go",
         "immutable_encoding_test.go",
         "panic_stack_test.go",
