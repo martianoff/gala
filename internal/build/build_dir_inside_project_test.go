@@ -2,7 +2,6 @@ package build
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -44,6 +43,5 @@ func TestBuild_BuildDirInsideProject(t *testing.T) {
 	// The project's own non-GALA files are still copied.
 	ws, err := NewWorkspace(DefaultConfig(), projectDir, ModeBuild)
 	require.NoError(t, err)
-	_, err = os.Stat(filepath.Join(ws.GenDir, "assets", "a.txt"))
-	require.NoError(t, err, "a project file was not copied into the workspace")
+	require.FileExists(t, filepath.Join(ws.GenDir, "assets", "a.txt"), "a project file was not copied into the workspace")
 }

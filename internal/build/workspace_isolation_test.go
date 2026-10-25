@@ -332,7 +332,7 @@ func TestStaleSweepSkipsBusyWorkspace(t *testing.T) {
 	require.NoError(t, ws.Ensure())
 
 	// Age the marker well past any threshold.
-	marker := filepath.Join(ws.Dir, ".gala-workspace")
+	marker := filepath.Join(ws.Dir, workspaceMarker)
 	old := time.Now().Add(-30 * 24 * time.Hour)
 	require.NoError(t, os.Chtimes(marker, old, old))
 
