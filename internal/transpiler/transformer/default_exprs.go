@@ -300,7 +300,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 // resolves through that file's dot import of collection_immutable. Their
 // names are respelled with this file's afterwards (see qualifyDefaultExpr).
 func (t *galaASTTransformer) lowerDefault(exprCtx grammar.IExpressionContext, src defaultSource) (ast.Expr, error) {
-	if t.loweringForeignDefault() && src.Scope != nil && t.importManager != nil {
+	if t.loweringForeignDefault() && src.Scope != nil && len(src.Scope.Imports)+len(src.Scope.DotImports) > 0 && t.importManager != nil {
 		defer t.importManager.WithForeignQualifiers(src.Scope.Imports, src.Scope.DotImports)()
 	}
 	return t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())
