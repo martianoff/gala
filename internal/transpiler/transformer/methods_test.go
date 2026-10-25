@@ -38,7 +38,7 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{Name: std.Copy(s.Name)}
+	return Person{Name: s.Name}
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.Name, other.Name)
@@ -72,7 +72,7 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{Value: std.Copy(s.Value)}
+	return Box[T]{Value: s.Value}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
@@ -118,7 +118,7 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{Value: std.Copy(s.Value)}
+	return Box[T]{Value: s.Value}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)

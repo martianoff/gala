@@ -827,7 +827,7 @@ val p1 = Person("Alice", 30)
 val p2 = p1.Copy(age = 31) // p2 is Person("Alice", 31)
 ```
 
-If no overrides are provided, it performs a complete copy of the original object.
+If no overrides are provided, it copies every field of the original object. A `val` field is shared with the copy rather than copied again, since nothing can change the value it holds: a `List` or `HashMap` in it costs nothing to carry forward, however large. A `var` field is copied with its type's own `Copy()` when it has one.
 
 An override can be any expression, including a lambda, a partial function, or an `if`/`match` expression. The overridden field's declared type is the expected type, the same as for a named constructor argument, so a lambda's parameter types are inferred from the field. On a generic struct, the receiver's type arguments fill in the field type. The receiver is evaluated exactly once:
 

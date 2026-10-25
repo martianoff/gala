@@ -288,26 +288,12 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		source = ast.NewIdent(t.nextTempVar())
 	}
 	var elts []ast.Expr
-	for _, fn := range fields {
-		if val, ok := overrides[fn]; ok {
-			elts = append(elts, &ast.KeyValueExpr{
-				Key:   ast.NewIdent(fn),
-				Value: val,
-			})
-		} else {
-			elts = append(elts, &ast.KeyValueExpr{
-				Key: ast.NewIdent(fn),
-				Value: &ast.CallExpr{
-					Fun: t.stdIdent(transpiler.FuncCopy),
-					Args: []ast.Expr{
-						&ast.SelectorExpr{
-							X:   source,
-							Sel: ast.NewIdent(fn),
-						},
-					},
-				},
-			})
+	for i, fn := range fields {
+		val, ok := overrides[fn]
+		if !ok {
+			val = t.copyFieldValue(&ast.SelectorExpr{X: source, Sel: ast.NewIdent(fn)}, i < len(immutFlags) && immutFlags[i])
 		}
+		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fn), Value: val})
 	}
 
 	lit := &ast.CompositeLit{
@@ -415,21 +401,27 @@ func (t *galaASTTransformer) initGenericMethods() {
 	t.typeMetas = make(map[string]*transpiler.TypeMetadata)
 }
 
+// copyFieldValue is the value a struct copy carries forward for one field.
+// An immutable field — a val, stored as std.Immutable[T] — is shared: nothing
+// can change the value it holds, so the copy reads it as it is, and a
+// persistent collection in it keeps sharing its structure instead of being
+// walked node by node. A var field goes through std.Copy, which copies it with
+// its own Copy() when it has one.
+func (t *galaASTTransformer) copyFieldValue(field ast.Expr, immutable bool) ast.Expr {
+	if immutable {
+		return field
+	}
+	return &ast.CallExpr{Fun: t.stdIdent(transpiler.FuncCopy), Args: []ast.Expr{field}}
+}
+
 func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var elts []ast.Expr
 	for _, field := range fields.List {
+		immutable := transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type))
 		for _, fieldName := range field.Names {
 			elts = append(elts, &ast.KeyValueExpr{
-				Key: ast.NewIdent(fieldName.Name),
-				Value: &ast.CallExpr{
-					Fun: t.stdIdent("Copy"),
-					Args: []ast.Expr{
-						&ast.SelectorExpr{
-							X:   ast.NewIdent("s"),
-							Sel: ast.NewIdent(fieldName.Name),
-						},
-					},
-				},
+				Key:   ast.NewIdent(fieldName.Name),
+				Value: t.copyFieldValue(&ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(fieldName.Name)}, immutable),
 			})
 		}
 	}

@@ -41,7 +41,7 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{Name: std.Copy(s.Name), Age: std.Copy(s.Age)}
+	return Person{Name: s.Name, Age: s.Age}
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)
@@ -75,7 +75,7 @@ type Config struct {
 }
 
 func (s Config) Copy() Config {
-	return Config{ID: std.Copy(s.ID), Count: std.Copy(s.Count)}
+	return Config{ID: s.ID, Count: std.Copy(s.Count)}
 }
 func (s Config) Equal(other Config) bool {
 	return std.Equal(s.ID, other.ID) && std.Equal(s.Count, other.Count)
@@ -107,7 +107,7 @@ type User struct {
 }
 
 func (s User) Copy() User {
-	return User{Name: std.Copy(s.Name)}
+	return User{Name: s.Name}
 }
 func (s User) Equal(other User) bool {
 	return std.Equal(s.Name, other.Name)
@@ -139,7 +139,7 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)

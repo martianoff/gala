@@ -42,7 +42,7 @@ type Append struct {
 }
 
 func (s Append) Copy() Append {
-	return Append{Name: std.Copy(s.Name)}
+	return Append{Name: s.Name}
 }
 func (s Append) Equal(other Append) bool {
 	return std.Equal(s.Name, other.Name)
@@ -83,7 +83,7 @@ type Append struct {
 }
 
 func (s Append) Copy() Append {
-	return Append{Name: std.Copy(s.Name)}
+	return Append{Name: s.Name}
 }
 func (s Append) Equal(other Append) bool {
 	return std.Equal(s.Name, other.Name)

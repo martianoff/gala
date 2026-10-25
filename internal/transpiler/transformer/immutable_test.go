@@ -67,7 +67,7 @@ type Config struct {
 }
 
 func (s Config) Copy() Config {
-	return Config{ID: std.Copy(s.ID)}
+	return Config{ID: s.ID}
 }
 func (s Config) Equal(other Config) bool {
 	return std.Equal(s.ID, other.ID)
@@ -109,7 +109,7 @@ type Node struct {
 }
 
 func (s Node) Copy() Node {
-	return Node{value: std.Copy(s.value), isEmpty: std.Copy(s.isEmpty)}
+	return Node{value: s.value, isEmpty: s.isEmpty}
 }
 func (s Node) Equal(other Node) bool {
 	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
@@ -143,7 +143,7 @@ type Container[T any] struct {
 }
 
 func (s Container[T]) Copy() Container[T] {
-	return Container[T]{value: std.Copy(s.value), isEmpty: std.Copy(s.isEmpty)}
+	return Container[T]{value: s.value, isEmpty: s.isEmpty}
 }
 func (s Container[T]) Equal(other Container[T]) bool {
 	return std.Equal(s.value, other.value) && std.Equal(s.isEmpty, other.isEmpty)
@@ -188,7 +188,7 @@ type Node struct {
 }
 
 func (s Node) Copy() Node {
-	return Node{value: std.Copy(s.value), next: std.Copy(s.next), isEmpty: std.Copy(s.isEmpty)}
+	return Node{value: s.value, next: s.next, isEmpty: s.isEmpty}
 }
 func (s Node) Equal(other Node) bool {
 	return std.Equal(s.value, other.value) && std.Equal(s.next, other.next) && std.Equal(s.isEmpty, other.isEmpty)

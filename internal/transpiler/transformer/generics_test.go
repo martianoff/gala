@@ -51,7 +51,7 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{Value: std.Copy(s.Value)}
+	return Box[T]{Value: s.Value}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
@@ -92,7 +92,7 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{Value: std.Copy(s.Value)}
+	return Box[T]{Value: s.Value}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)
@@ -135,7 +135,7 @@ type Box[T any] struct {
 }
 
 func (s Box[T]) Copy() Box[T] {
-	return Box[T]{Value: std.Copy(s.Value)}
+	return Box[T]{Value: s.Value}
 }
 func (s Box[T]) Equal(other Box[T]) bool {
 	return std.Equal(s.Value, other.Value)

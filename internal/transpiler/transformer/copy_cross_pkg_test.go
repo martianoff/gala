@@ -63,12 +63,12 @@ func TestCopyOverridesCrossPackage(t *testing.T) {
 	for _, im := range imports {
 		q := im.q
 		bodies := []struct{ name, decl, body, want string }{
-			{"call result", "", `Println(` + q + `Point(2, 3).Copy(Y = 9))`, q + "Point{X: std.Copy("},
-			{"val", "", "val p = " + q + "Point(2, 3)\n    Println(p.Copy(X = 9))", q + "Point{X: std.NewImmutable(9), Y: std.Copy(p.Y)}"},
+			{"call result", "", `Println(` + q + `Point(2, 3).Copy(Y = 9))`, q + "Point{X: _tmp_1.X"},
+			{"val", "", "val p = " + q + "Point(2, 3)\n    Println(p.Copy(X = 9))", q + "Point{X: std.NewImmutable(9), Y: p.Y}"},
 			{"field", "", "val h = " + q + "Holder(" + q + "Point(1, 2), \"h\")\n    Println(h.P.Copy(X = 9))", q + "Point{X: std.NewImmutable(9)"},
-			{"function result", "", `Println(` + q + `Origin().Copy(Y = 4))`, q + "Point{X: std.Copy("},
+			{"function result", "", `Println(` + q + `Origin().Copy(Y = 4))`, q + "Point{X: _tmp_1.X"},
 			{"generic struct call result", "", `Println(` + q + `Pair(1, "a").Copy(First = 2))`, q + "Pair[int, string]{First: std.NewImmutable(2)"},
-			{"generic struct val", "", "val pr = " + q + "Pair(1, \"a\")\n    Println(pr.Copy(Second = \"b\"))", q + "Pair[int, string]{First: std.Copy(pr.First)"},
+			{"generic struct val", "", "val pr = " + q + "Pair(1, \"a\")\n    Println(pr.Copy(Second = \"b\"))", q + "Pair[int, string]{First: pr.First"},
 			{"all fields overridden", "", `Println(` + q + `Point(2, 3).Copy(X = 1, Y = 2))`, q + "Point{X: std.NewImmutable(1)"},
 			// Types spelled with the import qualifier in this file's own
 			// declarations: a result type and a field type.
@@ -95,7 +95,7 @@ func main() {
     val p = lib.Point(2, 3)
     Println(a, p.Copy(X = 9), lib.Point(1, 1).Copy(Y = 4))
 }`,
-		want: "Point{X: std.NewImmutable(9), Y: std.Copy(p.Y)}",
+		want: "Point{X: std.NewImmutable(9), Y: p.Y}",
 	})
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

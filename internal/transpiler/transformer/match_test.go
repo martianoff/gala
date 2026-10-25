@@ -605,7 +605,7 @@ type Cell[T any] struct {
 }
 
 func (s Cell[T]) Copy() Cell[T] {
-	return Cell[T]{Value: std.Copy(s.Value)}
+	return Cell[T]{Value: s.Value}
 }
 func (s Cell[T]) Equal(other Cell[T]) bool {
 	return std.Equal(s.Value, other.Value)
@@ -642,7 +642,7 @@ type Holder struct {
 }
 
 func (s Holder) Copy() Holder {
-	return Holder{Cell: std.Copy(s.Cell)}
+	return Holder{Cell: s.Cell}
 }
 func (s Holder) Equal(other Holder) bool {
 	return std.Equal(s.Cell, other.Cell)

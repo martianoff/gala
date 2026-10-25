@@ -38,7 +38,7 @@ type Point struct {
 }
 
 func (s Point) Copy() Point {
-	return Point{x: std.Copy(s.x), y: std.Copy(s.y)}
+	return Point{x: s.x, y: s.y}
 }
 func (s Point) Equal(other Point) bool {
 	return std.Equal(s.x, other.x) && std.Equal(s.y, other.y)
@@ -90,7 +90,7 @@ type Mixed struct {
 }
 
 func (s Mixed) Copy() Mixed {
-	return Mixed{Name: std.Copy(s.Name), Age: std.Copy(s.Age)}
+	return Mixed{Name: s.Name, Age: std.Copy(s.Age)}
 }
 func (s Mixed) Equal(other Mixed) bool {
 	return std.Equal(s.Name, other.Name) && std.Equal(s.Age, other.Age)

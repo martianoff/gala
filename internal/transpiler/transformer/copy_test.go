@@ -41,14 +41,14 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
 }
 
 var p = std.NewImmutable(Person{name: std.NewImmutable("Alice"), age: std.NewImmutable(30)})
-var p2 = std.NewImmutable(Person{name: std.Copy(p.Get().name), age: std.NewImmutable(31)})
+var p2 = std.NewImmutable(Person{name: p.Get().name, age: std.NewImmutable(31)})
 `,
 		},
 		{
@@ -68,7 +68,7 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name), age: std.Copy(s.age)}
+	return Person{name: s.name, age: s.age}
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name) && std.Equal(s.age, other.age)
@@ -96,7 +96,7 @@ type Person struct {
 }
 
 func (s Person) Copy() Person {
-	return Person{name: std.Copy(s.name)}
+	return Person{name: s.name}
 }
 func (s Person) Equal(other Person) bool {
 	return std.Equal(s.name, other.name)
@@ -131,7 +131,7 @@ type Inner struct {
 }
 
 func (s Inner) Copy() Inner {
-	return Inner{Selected: std.Copy(s.Selected)}
+	return Inner{Selected: s.Selected}
 }
 func (s Inner) Equal(other Inner) bool {
 	return std.Equal(s.Selected, other.Selected)
@@ -157,7 +157,7 @@ type Outer struct {
 }
 
 func (s Outer) Copy() Outer {
-	return Outer{Tab: std.Copy(s.Tab)}
+	return Outer{Tab: s.Tab}
 }
 func (s Outer) Equal(other Outer) bool {
 	return std.Equal(s.Tab, other.Tab)
@@ -301,17 +301,17 @@ struct Entry[K comparable, V any](Key K, Value V, Hits int)
 		{
 			name:  "concrete receiver bound to a val",
 			body:  `val c = Box[string](Item = "x", N = 1).Copy(N = 5)`,
-			wants: []string{"Box[string]{Item: std.Copy(", "N: std.NewImmutable(5)}"},
+			wants: []string{"Box[string]{Item: _tmp_1.Item", "N: std.NewImmutable(5)}"},
 		},
 		{
 			name:  "type-parameter receiver in a generic function",
 			body:  `func bump[T any](b Box[T]) Box[T] = b.Copy(N = b.N + 1)`,
-			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+			wants: []string{"return Box[T]{Item: b.Item"},
 		},
 		{
 			name:  "if-expression arm",
 			body:  `func pick[T any](b Box[T], up bool) Box[T] = if (up) b.Copy(N = b.N + 1) else b`,
-			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+			wants: []string{"return Box[T]{Item: b.Item"},
 		},
 		{
 			name: "match arm",
@@ -323,17 +323,17 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     case Inc()  => b.Copy(N = b.N + 1)
     case Keep() => b
 }`,
-			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+			wants: []string{"return Box[T]{Item: b.Item"},
 		},
 		{
 			name:  "multi-parameter generic",
 			body:  `func hit[K comparable, V any](e Entry[K, V]) Entry[K, V] = e.Copy(Hits = e.Hits + 1)`,
-			wants: []string{"return Entry[K, V]{Key: std.Copy(e.Key)"},
+			wants: []string{"return Entry[K, V]{Key: e.Key"},
 		},
 		{
 			name:  "pointer receiver yields the value type",
 			body:  `func viaPtr[T any](b *Box[T]) Box[T] = b.Copy(N = 0)`,
-			wants: []string{"return Box[T]{Item: std.Copy(b.Item)"},
+			wants: []string{"return Box[T]{Item: b.Item"},
 		},
 		{
 			name: "receiver is a val holding a pointer",
@@ -342,7 +342,7 @@ func step[T any](b Box[T], ev Ev) Box[T] = ev match {
     val p = &b
     val c = p.Copy(N = 2)
 }`,
-			wants: []string{"Box[int]{Item: std.Copy(p.Item)"},
+			wants: []string{"Box[int]{Item: p.Item"},
 		},
 		{
 			// The no-override form calls the generated Copy(); its result
@@ -455,7 +455,7 @@ struct Cell[T any](Value T, Map func(T) T)
 		{
 			name:  "generic struct with a concrete receiver",
 			body:  `func f(c Cell[string]) Cell[string] = c.Copy(Map = (v) => v + "!")`,
-			wants: []string{"Cell[string]{Value: std.Copy(c.Value), Map: std.NewImmutable(func(v string) string {"},
+			wants: []string{"Cell[string]{Value: c.Value, Map: std.NewImmutable(func(v string) string {"},
 		},
 		{
 			name:  "pointer receiver",
@@ -510,12 +510,7 @@ struct P(N int, M int)
 struct Cell[T any](Value T, Map func(T) T)
 func mk() P = P(1, 2)
 `
-	tests := []struct {
-		name    string
-		body    string
-		wants   []string
-		notWant string
-	}{
+	tests := []copyShapeCase{
 		{
 			name: "every field overridden on a local val",
 			body: `func main() {
@@ -527,7 +522,7 @@ func mk() P = P(1, 2)
 		{
 			name:  "call receiver is bound once",
 			body:  `func f() int = mk().Copy(N = 5).M`,
-			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(5), M: std.Copy(_tmp_1.M)}\n\t}(mk())"},
+			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(5), M: _tmp_1.M}\n\t}(mk())"},
 		},
 		{
 			name:  "generic receiver keeps its type arguments",
@@ -545,22 +540,74 @@ func (s *Src) Get() P {
     return P(s.n, 0)
 }
 func f(src *Src) P = src.Get().Copy(N = 9)`,
-			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(9), M: std.Copy(_tmp_1.M)}\n\t}(src.Get())"},
+			wants: []string{"func(_tmp_1 P) P {\n\t\treturn P{N: std.NewImmutable(9), M: _tmp_1.M}\n\t}(src.Get())"},
 		},
 		{
 			name:    "val receiver is a plain local and is not bound",
 			body:    "func f() P {\n    val p = P(1, 2)\n    return p.Copy(N = 5)\n}",
-			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.M)}"},
+			wants:   []string{"return P{N: std.NewImmutable(5), M: p.M}"},
 			notWant: "_tmp_",
 		},
 		{
 			name:    "plain variable path with a kept field is not bound",
 			body:    `func f(p P) P = p.Copy(N = 5)`,
-			wants:   []string{"return P{N: std.NewImmutable(5), M: std.Copy(p.M)}"},
+			wants:   []string{"return P{N: std.NewImmutable(5), M: p.M}"},
 			notWant: "_tmp_",
 		},
 	}
 
+	runCopyShapeCases(t, trans, decls, tests)
+}
+
+// TestCopySharesImmutableFields guards the shape of a struct copy: a val field
+// holds a value nothing can change, so the copy carries the stored
+// std.Immutable forward as it is, and a persistent collection in it keeps
+// sharing its nodes. Only a var field goes through std.Copy. Deep-copying a
+// val field walked an immutable List node by node on every Copy.
+func TestCopySharesImmutableFields(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	tr := transformer.NewGalaASTTransformer()
+	g := generator.NewGoCodeGenerator()
+	trans := newCheckedTranspiler(p, a, tr, g)
+
+	const decls = `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Cfg(State int, Stack List[int], var Hits int)
+`
+	tests := []copyShapeCase{
+		{
+			name:  "generated Copy method",
+			body:  "func main() {}",
+			wants: []string{"return Cfg{State: s.State, Stack: s.Stack, Hits: std.Copy(s.Hits)}"},
+		},
+		{
+			name:  "Copy with an override",
+			body:  `func f(c Cfg, n int) Cfg = c.Copy(State = n)`,
+			wants: []string{"return Cfg{State: std.NewImmutable(n), Stack: c.Stack, Hits: std.Copy(c.Hits)}"},
+		},
+		{
+			name:    "Copy overriding the var field",
+			body:    `func f(c Cfg) Cfg = c.Copy(Hits = 0)`,
+			wants:   []string{"return Cfg{State: c.State, Stack: c.Stack, Hits: 0}"},
+			notWant: "std.Copy(c.",
+		},
+	}
+
+	runCopyShapeCases(t, trans, decls, tests)
+}
+
+type copyShapeCase struct {
+	name    string
+	body    string
+	wants   []string
+	notWant string
+}
+
+func runCopyShapeCases(t *testing.T, trans *checkedTranspiler, decls string, tests []copyShapeCase) {
+	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := trans.Transpile(decls+tt.body, "")
