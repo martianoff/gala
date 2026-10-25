@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -253,6 +254,7 @@ type galaAnalyzer struct {
 type siblingCacheEntry struct {
 	trees   []*grammar.SourceFileContext
 	paths   []string
+	failed  []string // the directory's .gala files that did not parse
 	dirSize int
 }
 
@@ -276,8 +278,12 @@ type parsedFileEntry struct {
 	tree    *grammar.SourceFileContext
 	pkgName string
 	docs    map[int]string // doc comments keyed by declaration start offset
-	mtime   time.Time
-	size    int64
+	// syntaxErr is the parse failure of a file that does not parse (tree is
+	// nil then), stamped with the file's path. Cached like a tree, so a
+	// broken sibling is not re-parsed by every file of its package.
+	syntaxErr error
+	mtime     time.Time
+	size      int64
 }
 
 // resolveCacheRoot returns the project root for the analysis disk cache.
@@ -509,10 +515,39 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 // declaration they document (see parser.extractDocComments). It may be nil —
 // callers that do not care about documentation pass nothing, and every
 // attachment site degrades to an empty Doc rather than failing.
-func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*transpiler.RichAST, error) {
+//
+// A sibling file of the package that does not parse is left out of the
+// analysis, so a name it declares is undefined here. Its syntax errors are
+// therefore what an analysis failure reports, in place of the cascade they
+// cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
+// the phases after analysis to do the same.
+func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
+
+	var siblingSyntaxErrs []error
+	defer func() {
+		if len(siblingSyntaxErrs) == 0 {
+			return
+		}
+		// One flat MultiError: renderers unpack a single level.
+		var all []error
+		for _, e := range siblingSyntaxErrs {
+			var multi *galaerr.MultiError
+			if errors.As(e, &multi) {
+				all = append(all, multi.Errors...)
+			} else {
+				all = append(all, e)
+			}
+		}
+		var sibErr error = &galaerr.MultiError{Errors: all}
+		if err != nil {
+			result, err = nil, sibErr
+		} else if result != nil {
+			result.SiblingSyntaxErrors = sibErr
+		}
+	}()
 
 	var analyzeStart time.Time
 	if profiler.Enabled && isTopLevel {
@@ -568,9 +603,12 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			}
 			toParse = append(toParse, pf)
 		}
-		trees := a.parseFilesConcurrent(toParse)
+		trees, parseErrs := a.parseFilesConcurrent(toParse)
 		for i, otherSF := range trees {
 			if otherSF == nil {
+				if parseErrs[i] != nil {
+					siblingSyntaxErrs = append(siblingSyntaxErrs, parseErrs[i])
+				}
 				continue
 			}
 			pf := toParse[i]
@@ -607,10 +645,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		// changed shape, drop the entry and fall through to a fresh scan.
 		// This is cheap (one ReadDir + count) and catches the common case
 		// where a file was added or removed since the cache was populated.
-		trees, paths, err := a.lookupSiblingCache(canonDir, dirPath, filePath, pkgName)
+		trees, paths, syntaxErrs, err := a.lookupSiblingCache(canonDir, dirPath, filePath, pkgName)
 		if err != nil {
 			return nil, err
 		}
+		siblingSyntaxErrs = append(siblingSyntaxErrs, syntaxErrs...)
 		if trees != nil {
 			siblingTrees = append(siblingTrees, trees...)
 			siblingPaths = append(siblingPaths, paths...)
@@ -646,11 +685,17 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				// and each Parse call constructs its own lexer+parser, so
 				// the only shared state is the global DFA which the antlr
 				// runtime guards internally.
-				trees := a.parseFilesConcurrent(candidatePaths)
+				trees, parseErrs := a.parseFilesConcurrent(candidatePaths)
 				var cacheTrees []*grammar.SourceFileContext
-				var cachePaths []string
+				var cachePaths, failedPaths []string
 				for i, otherSF := range trees {
 					if otherSF == nil {
+						if parseErrs[i] != nil {
+							failedPaths = append(failedPaths, candidatePaths[i])
+							if a.seesSibling(candidatePaths[i], filePath) {
+								siblingSyntaxErrs = append(siblingSyntaxErrs, parseErrs[i])
+							}
+						}
 						continue
 					}
 					cacheTrees = append(cacheTrees, otherSF)
@@ -661,6 +706,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				a.siblingTreeCache[canonDir] = &siblingCacheEntry{
 					trees:   cacheTrees,
 					paths:   cachePaths,
+					failed:  failedPaths,
 					dirSize: galaFileCount,
 				}
 				// Apply per-call filters to the freshly-scanned set.
@@ -3060,7 +3106,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			candidatePaths = append(candidatePaths, filepath.Join(dirPath, f.Name()))
 		}
 	}
-	parsedTrees := a.parseFilesConcurrent(candidatePaths)
+	parsedTrees, _ := a.parseFilesConcurrent(candidatePaths)
 	// What the package's defaults mean where they were written, for a use
 	// site in an importing package (see defaultScopeRecorder).
 	scopes := newDefaultScopeRecorder(importPath)
@@ -5101,10 +5147,10 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // parseFileCached reads, parses, and validates a .gala file's package
 // clause, caching the result on the analyzer keyed by canonical absolute
 // path. Cache entries are invalidated when the file's mtime or size
-// changes between calls. Returns (nil, "", nil) for non-readable or
-// non-parseable files so the caller can decide whether that's fatal —
-// matching the silent-skip behavior of the inline parsing the
-// explicit-package-files branch used to do.
+// changes between calls. Returns (nil, "", nil) for a file that cannot be
+// read or has no package clause, and (nil, "", err) for one that does not
+// parse, err being its syntax error stamped with the file's path; the caller
+// decides whether either is fatal (see Analyze's siblingSyntaxErrs).
 //
 // Used by the explicit-package-files branch in Analyze (to amortize
 // sibling parsing across BatchAnalyzer calls) and by analyzePackage (so
@@ -5122,7 +5168,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		if ok {
 			if entry.mtime.Equal(info.ModTime()) && entry.size == info.Size() {
 				a.parsedFileCacheMu.Unlock()
-				return entry.tree, entry.pkgName, nil
+				return entry.tree, entry.pkgName, entry.syntaxErr
 			}
 			delete(a.parsedFileCache, canonPath)
 		}
@@ -5134,7 +5180,9 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	}
 	tree, docs, err := a.parser.Parse(string(content))
 	if err != nil {
-		return nil, "", nil
+		err = galaerr.WithFilePath(err, path)
+		a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: err, mtime: info.ModTime(), size: info.Size()})
+		return nil, "", err
 	}
 	otherSF, ok := tree.(*grammar.SourceFileContext)
 	if !ok {
@@ -5145,18 +5193,25 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		return nil, "", nil
 	}
 	pkgName := pkgClause.Identifier().GetText()
-	if a.parsedFileCache != nil {
-		a.parsedFileCacheMu.Lock()
-		a.parsedFileCache[canonPath] = &parsedFileEntry{
-			tree:    otherSF,
-			pkgName: pkgName,
-			docs:    docs,
-			mtime:   info.ModTime(),
-			size:    info.Size(),
-		}
-		a.parsedFileCacheMu.Unlock()
-	}
+	a.cacheParsedFile(canonPath, &parsedFileEntry{
+		tree:    otherSF,
+		pkgName: pkgName,
+		docs:    docs,
+		mtime:   info.ModTime(),
+		size:    info.Size(),
+	})
 	return otherSF, pkgName, nil
+}
+
+// cacheParsedFile records a parse result in parsedFileCache, when the analyzer
+// keeps one.
+func (a *galaAnalyzer) cacheParsedFile(canonPath string, entry *parsedFileEntry) {
+	if a.parsedFileCache == nil {
+		return
+	}
+	a.parsedFileCacheMu.Lock()
+	a.parsedFileCache[canonPath] = entry
+	a.parsedFileCacheMu.Unlock()
 }
 
 // docAt returns the doc comment attached to the declaration whose first token is
@@ -5259,8 +5314,9 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 // fresh per mtime+size) are returned without re-parsing — same staleness
 // rule as parseFileCached. Files that fail to parse, fail to stat, or
 // lack a package clause are returned with a nil tree at the matching
-// index, mirroring parseFileCached's silent-skip behaviour so callers
-// can keep their existing slice-position semantics.
+// index, so callers keep their slice-position semantics; the second
+// result holds, at the same index, the syntax error of a file that did
+// not parse.
 //
 // Concurrency: ANTLR's antlr4-go/v4 runtime is NOT thread-safe out of the
 // box, and this function is only safe because the parser layer works
@@ -5287,15 +5343,16 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 // common 5-file package this means 4 parses run concurrently and the
 // last one queues — still ~4× faster than the sequential loop on the
 // cold path that previously dominated `analyze` time.
-func (a *galaAnalyzer) parseFilesConcurrent(paths []string) []*grammar.SourceFileContext {
+func (a *galaAnalyzer) parseFilesConcurrent(paths []string) ([]*grammar.SourceFileContext, []error) {
 	out := make([]*grammar.SourceFileContext, len(paths))
+	errs := make([]error, len(paths))
 	if len(paths) == 0 {
-		return out
+		return out, errs
 	}
 	if len(paths) == 1 {
-		tree, _, _ := a.parseFileCached(paths[0])
-		out[0] = tree
-		return out
+		tree, _, err := a.parseFileCached(paths[0])
+		out[0], errs[0] = tree, err
+		return out, errs
 	}
 	workers := runtime.GOMAXPROCS(0)
 	if workers > len(paths) {
@@ -5315,34 +5372,42 @@ func (a *galaAnalyzer) parseFilesConcurrent(paths []string) []*grammar.SourceFil
 		go func() {
 			defer wg.Done()
 			for i := range idxCh {
-				tree, _, _ := a.parseFileCached(paths[i])
-				out[i] = tree
+				tree, _, err := a.parseFileCached(paths[i])
+				out[i], errs[i] = tree, err
 			}
 		}()
 	}
 	wg.Wait()
-	return out
+	return out, errs
 }
 
 // lookupSiblingCache returns parsed sibling trees from the in-memory
-// cache, filtered for the current file. Returns (nil, nil, nil) on a
-// cache miss so the caller can fall through to a fresh scan. Returns
-// (nil, nil, err) when a cached entry surfaces a still-relevant
-// GALA-E0010 package-name mismatch; the caller propagates the error.
+// cache, filtered for the current file, and the syntax errors of the
+// siblings that do not parse. Returns all nils on a cache miss so the
+// caller can fall through to a fresh scan. Returns a non-nil error when a
+// cached entry surfaces a still-relevant GALA-E0010 package-name mismatch;
+// the caller propagates the error.
 //
 // Validity check: compare the cached dirSize (.gala file count at
 // capture time) against the current ReadDir count. A mismatch drops
 // the entry as stale. This is cheap compared to re-parsing and covers
-// the common mutation modes (file added/removed).
-func (a *galaAnalyzer) lookupSiblingCache(canonDir, dirPath, filePath, pkgName string) ([]*grammar.SourceFileContext, []string, error) {
+// the common mutation modes (file added/removed). A sibling that did not
+// parse is re-checked through parseFileCached (mtime+size), so fixing it
+// drops the entry too: its tree is not in it.
+func (a *galaAnalyzer) lookupSiblingCache(canonDir, dirPath, filePath, pkgName string) ([]*grammar.SourceFileContext, []string, []error, error) {
 	entry, ok := a.siblingTreeCache[canonDir]
 	if !ok {
-		return nil, nil, nil
+		return nil, nil, nil, nil
+	}
+	stale := func() ([]*grammar.SourceFileContext, []string, []error, error) {
+		delete(a.siblingTreeCache, canonDir)
+		delete(a.checkedDirs, canonDir)
+		return nil, nil, nil, nil
 	}
 	// Revalidate: if the directory's .gala count changed, invalidate.
 	files, err := ioutil.ReadDir(dirPath)
 	if err != nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	count := 0
 	for _, f := range files {
@@ -5351,11 +5416,31 @@ func (a *galaAnalyzer) lookupSiblingCache(canonDir, dirPath, filePath, pkgName s
 		}
 	}
 	if count != entry.dirSize {
-		delete(a.siblingTreeCache, canonDir)
-		delete(a.checkedDirs, canonDir)
-		return nil, nil, nil
+		return stale()
 	}
-	return a.filterSiblingsForCurrentFile(entry.trees, entry.paths, filePath, pkgName, dirPath)
+	var syntaxErrs []error
+	for _, path := range entry.failed {
+		_, _, perr := a.parseFileCached(path)
+		if perr == nil {
+			return stale()
+		}
+		if a.seesSibling(path, filePath) {
+			syntaxErrs = append(syntaxErrs, perr)
+		}
+	}
+	trees, paths, err := a.filterSiblingsForCurrentFile(entry.trees, entry.paths, filePath, pkgName, dirPath)
+	return trees, paths, syntaxErrs, err
+}
+
+// seesSibling reports whether the analysis of filePath takes in the package
+// file at path: not when it is filePath itself, nor a test file seen from a
+// file that is not one (the same rule filterSiblingsForCurrentFile applies to
+// the siblings that parse).
+func (a *galaAnalyzer) seesSibling(path, filePath string) bool {
+	if a.paths.sameFile(path, filePath) {
+		return false
+	}
+	return !strings.HasSuffix(path, "_test.gala") || strings.HasSuffix(filePath, "_test.gala")
 }
 
 // filterSiblingsForCurrentFile applies per-Analyze filters to a set of

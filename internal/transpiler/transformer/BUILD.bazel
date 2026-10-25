@@ -272,6 +272,7 @@ go_test(
         "self_containing_test.go",
         "sequence_pattern_nested_test.go",
         "shadowed_function_test.go",
+        "sibling_syntax_error_test.go",
         "size_sugar_go_return_test.go",
         "slot_type_args_test.go",
         "some_wrap_sealed_case_test.go",

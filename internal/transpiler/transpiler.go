@@ -145,6 +145,13 @@ type RichAST struct {
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)
 	PackageDoc       string                              // doc comment above the `package` clause
 
+	// SiblingSyntaxErrors holds the syntax errors (each stamped with its own
+	// file) of the package's other files that did not parse, or nil. Those
+	// files are missing from the analysis, so an error a later phase finds in
+	// this file is likely their cascade; ReportSiblingSyntaxErrors reports
+	// them instead.
+	SiblingSyntaxErrors error
+
 	// OwnGoTypes holds the bare names of the types (and type aliases) the
 	// package's own hand-written .go files declare. GoTypeInfo cannot answer
 	// this: it is keyed by package NAME and also holds every imported Go
@@ -165,6 +172,17 @@ type RichAST struct {
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
 	Docs map[int]string
+}
+
+// ReportSiblingSyntaxErrors returns what to report for err, a failure of a
+// phase after analysis: the package's sibling syntax errors when there are
+// any, err otherwise. Like the Go compiler, a package with a file that does
+// not parse reports that, not the undefined names it leads to elsewhere.
+func (r *RichAST) ReportSiblingSyntaxErrors(err error) error {
+	if err != nil && r != nil && r.SiblingSyntaxErrors != nil {
+		return r.SiblingSyntaxErrors
+	}
+	return err
 }
 
 // Merge combines metadata from another RichAST into this one.
@@ -917,7 +935,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	fset, file, err := t.transformer.Transform(richAST)
 	done()
 	if err != nil {
-		return "", galaerr.WithFilePath(err, filePath)
+		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(err), filePath)
 	}
 
 	done = prof.Phase("generate")

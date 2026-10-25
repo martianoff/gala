@@ -68,6 +68,7 @@ go_test(
         "nested_subpackage_test.go",
         "sealed_case_defaults_test.go",
         "sealed_go_constructors_test.go",
+        "sibling_syntax_error_test.go",
         "sourcehash_test.go",
         "sourcemap_stacktrace_test.go",
         "stdlib_extract_race_test.go",
@@ -84,6 +85,7 @@ go_test(
     ],
     embed = [":build"],
     deps = [
+        "//galaerr",
         "//internal/depman/fetch",
         "//internal/depman/mod",
         "//internal/depman/sum",
