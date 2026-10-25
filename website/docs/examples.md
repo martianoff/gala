@@ -808,6 +808,24 @@ func main() {
 }
 ```
 
+## Option.Exists and Option.ForAll - Predicates on an Optional Value
+
+`Exists` is true when the Option holds a value that satisfies the predicate;
+`ForAll` is true when it holds no value or one that does.
+
+```gala
+package main
+
+func main() {
+    val age = Some(34)
+    val unknown = None[int]()
+
+    Println(age.Exists((a) => a >= 18))      // true
+    Println(unknown.Exists((a) => a >= 18))  // false — None never satisfies Exists
+    Println(unknown.ForAll((a) => a >= 18))  // true — None always satisfies ForAll
+}
+```
+
 ## Try with Function References
 
 When wrapping a zero-argument function, pass the function reference directly instead of wrapping in a lambda:

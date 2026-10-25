@@ -6,6 +6,7 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"io/ioutil"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1752,7 +1753,56 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	}
 
 	richAST.ApplyPackageKeys()
+	a.inferPackageValTypes(richAST,
+		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
+		append([]string{absFilePath}, siblingPaths...))
 	return richAST, nil
+}
+
+// inferPackageValTypes types the package-level bindings extractPackageVals
+// left untyped — an initializer outside the shapes inferPackageValInitType
+// reads, such as a generic call (`ArrayOf("a", "b")`) or a method chain — by
+// the transformer's own inference over the file declaring them
+// (transformer.InferPackageValTypes). The other files of the package see a
+// binding only through this record, and importers through the package's
+// metadata, so without it a lambda passed to one of its methods there has no
+// parameter type to infer.
+//
+// trees and paths are the package's files, in parallel. A binding can read
+// another file's binding, so files are revisited while a pass still types
+// something: each pass types at least one more binding or ends the loop.
+func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees []*grammar.SourceFileContext, paths []string) {
+	untyped := func(path string) bool {
+		for _, pv := range richAST.PackageVals {
+			if pv.Type.IsNil() && a.paths.sameFile(pv.DefinedIn, path) {
+				return true
+			}
+		}
+		return false
+	}
+	for progress := true; progress; {
+		progress = false
+		for i, tree := range trees {
+			if tree == nil || i >= len(paths) || !untyped(paths[i]) {
+				continue
+			}
+			// The transform may register metadata of its own (EmbeddedFS's
+			// methods) in Types; that belongs to its file's transform, not to
+			// this package's record.
+			view := *richAST
+			view.Tree = tree
+			view.FilePath = paths[i]
+			view.Types = maps.Clone(richAST.Types)
+			for name, typ := range transformer.InferPackageValTypes(&view) {
+				if pv := richAST.PackageVals[name]; pv != nil && pv.Type.IsNil() {
+					typed := *pv
+					typed.Type = typ
+					richAST.PackageVals[name] = &typed
+					progress = true
+				}
+			}
+		}
+	}
 }
 
 // validateExplicitImports walks the metadata for entries defined in
@@ -2492,8 +2542,11 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		}
 	}
 
-	// If it's already package-qualified, handle it
-	if strings.Contains(typeName, ".") {
+	// If it's already package-qualified, handle it. Only the base name counts:
+	// a dot inside the type arguments (`Array[leaf.Command]`) qualifies an
+	// argument, not the base, which still resolves through this file's scope.
+	baseText, _, _ := strings.Cut(typeName, "[")
+	if strings.Contains(baseText, ".") {
 		// For qualified generic types like lazy.Lazy[Array[rune]],
 		// recursively resolve type arguments so inner types get proper prefixes
 		if idx := strings.Index(typeName, "["); idx != -1 {

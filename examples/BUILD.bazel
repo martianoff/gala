@@ -370,6 +370,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "option_exists_forall",
+    src = "option_exists_forall.gala",
+    expected = "option_exists_forall.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "copy_and_equal",
     src = "copy_and_equal.gala",
     expected = "copy_and_equal.out",

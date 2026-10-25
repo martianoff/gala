@@ -151,7 +151,12 @@ import (
 // (FunctionMetadata.Variadic). A v29 payload lacks it, so the arguments past
 // the first filling a variadic parameter of a function of another package
 // were lowered against no type: a nullable `*T` filled a `...Ptr[T]`.
-const CacheVersion = "v30"
+//
+// v31: a package-level binding whose initializer only full expression
+// inference types (a generic call, a method chain) records that type in
+// PackageVals. A v30 payload records NilType, so a lambda passed to one of its
+// methods from another package had no parameter type to infer.
+const CacheVersion = "v31"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

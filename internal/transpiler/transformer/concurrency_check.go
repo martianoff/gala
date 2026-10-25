@@ -318,14 +318,23 @@ func unshareableValCaptureError(c concurrency.Capture, typ transpiler.Type) erro
 			fmt.Sprintf("declare the parameter as `%s Sendable[%s]` — the Sendable bound requires each caller to pass a closure whose own captures are shareable, and propagates the check to the call site where the closure is written", c.Name, ft.String()),
 		)
 	}
-	typeDesc := ""
-	if !transpiler.IsUnusable(typ) {
-		typeDesc = fmt.Sprintf(" (type %s)", typ.String())
+	if transpiler.ContainsUnusable(typ) {
+		// Nothing is known about the value, so it cannot be shown safe: the
+		// check fails closed. Usually the expression that defined it does not
+		// resolve — a misspelled or missing function of another package — and
+		// saying "not safe to share" would send the reader after a data race
+		// that does not exist.
+		return galaerr.NewCodedSemanticError(
+			galaerr.CodeUnshareableCapture,
+			c.Pos.Line, c.Pos.Column,
+			fmt.Sprintf("closure crossing a concurrency boundary captures %q, whose type could not be inferred, so it cannot be shown safe to share", c.Name),
+			fmt.Sprintf("check that the expression defining %q resolves — an undefined function or a type error leaves its type unknown — or declare its type (`val %s T = ...`)", c.Name, c.Name),
+		)
 	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeUnshareableCapture,
 		c.Pos.Line, c.Pos.Column,
-		fmt.Sprintf("closure crossing a concurrency boundary captures %q%s, whose type is not safe to share — a data race on its mutable contents", c.Name, typeDesc),
+		fmt.Sprintf("closure crossing a concurrency boundary captures %q (type %s), whose type is not safe to share — a data race on its mutable contents", c.Name, typ.String()),
 		"use an immutable collection (collection_immutable) or snapshot the needed data into an immutable `val`; or restructure so the closure returns the value instead of capturing it",
 	)
 }

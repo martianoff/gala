@@ -799,6 +799,14 @@ const (
 	// or an OptionPtr through OptionPtrOf.
 	CodePtrNullability ErrorCode = "GALA-E0080"
 
+	// E0082: a call of a GALA function, method or struct constructor passes
+	// more arguments than the callee takes, or leaves out one that declares no
+	// default. Left to Go, the call was reported against the generated code
+	// ("not enough arguments in call to … have (…) want (…)"), and a struct
+	// called with too many arguments as GALA-E0043, as if it could not be
+	// constructed at all. A struct field left out is GALA-E0045.
+	CodeArgumentCountMismatch ErrorCode = "GALA-E0082"
+
 	// E0083: a method another package's GALA type declares, or synthesizes,
 	// but does not export was called — a lower-case method, such as the
 	// `is<Variant>` predicate every sealed type gets. Visibility follows Go,

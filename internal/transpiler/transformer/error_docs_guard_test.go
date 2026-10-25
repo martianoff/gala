@@ -1238,6 +1238,34 @@ func main() {
 			},
 		},
 		{
+			name: "function called with too few arguments",
+			code: galaerr.CodeArgumentCountMismatch, // GALA-E0082
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+func area(width int, height int) int = width * height
+
+func main() {
+    Println(area(3))
+}
+`)
+			},
+		},
+		{
+			name: "struct constructed with too many arguments",
+			code: galaerr.CodeArgumentCountMismatch, // GALA-E0082
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct Decision(Id int, State int, Rule int)
+
+func main() {
+    Println(Decision(1, 2, 3, 4))
+}
+`)
+			},
+		},
+		{
 			// The sealed type has to live in another package for its
 			// is<Variant> predicate to be out of reach, so the repro needs
 			// files on disk.

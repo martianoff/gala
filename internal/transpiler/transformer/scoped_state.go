@@ -137,6 +137,7 @@ var accumulatedStateFields = []string{
 	"lspVarTypes",
 	"lspCurrentFunc",
 	"lspLambdaParamHints",
+	"valTypes",
 	"lastLine",
 	"lastCol",
 	"goCtorClaims",
