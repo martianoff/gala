@@ -11,6 +11,10 @@ func (i Immutable[T]) Get() T = i.value
 // GetAny returns the underlying value as any (for interface-based unwrapping).
 func (i Immutable[T]) GetAny() any = i.value
 
+// Copy returns i itself: nothing can change the value it holds, so a copy
+// shares it, and std.Copy of a stored val never walks the value inside.
+func (i Immutable[T]) Copy() Immutable[T] = i
+
 // NewImmutable creates a new Immutable wrapper.
 func NewImmutable[T any](v T) Immutable[T] = Immutable[T](value = v)
 

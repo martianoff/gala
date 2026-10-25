@@ -766,7 +766,13 @@ func (t *galaASTTransformer) structEmptyKind(config *structMetaConfig) emptyInit
 // codecImmutField reports whether field i of config's struct is a val field,
 // stored as Immutable[T] and read through Get().
 func (t *galaASTTransformer) codecImmutField(config *structMetaConfig) func(int) bool {
-	flags := t.structImmutFields[t.resolveStructTypeName(config.typeName)]
+	return t.immutFieldAt(t.resolveStructTypeName(config.typeName))
+}
+
+// immutFieldAt reports whether field i of the struct typeName, in declaration
+// order, is a val field, stored as Immutable[T].
+func (t *galaASTTransformer) immutFieldAt(typeName string) func(int) bool {
+	flags := t.structImmutFields[typeName]
 	return func(i int) bool { return i < len(flags) && flags[i] }
 }
 

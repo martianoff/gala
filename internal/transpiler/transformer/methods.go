@@ -238,9 +238,9 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 		overrides[fieldName] = val
 		overrideTypes[fieldName] = expected
 	}
-	immutFlags := t.structImmutFields[typeName]
+	isImmut := t.immutFieldAt(typeName)
 	for i, fn := range fields {
-		if val, ok := overrides[fn]; ok && i < len(immutFlags) && immutFlags[i] {
+		if val, ok := overrides[fn]; ok && isImmut(i) {
 			overrides[fn] = t.newImmutableFor(val, overrideTypes[fn])
 		}
 	}
@@ -291,7 +291,7 @@ func (t *galaASTTransformer) transformCopyCall(receiver ast.Expr, argListCtx *gr
 	for i, fn := range fields {
 		val, ok := overrides[fn]
 		if !ok {
-			val = t.copyFieldValue(&ast.SelectorExpr{X: source, Sel: ast.NewIdent(fn)}, i < len(immutFlags) && immutFlags[i])
+			val = t.copyFieldValue(&ast.SelectorExpr{X: source, Sel: ast.NewIdent(fn)}, isImmut(i))
 		}
 		elts = append(elts, &ast.KeyValueExpr{Key: ast.NewIdent(fn), Value: val})
 	}
@@ -416,12 +416,13 @@ func (t *galaASTTransformer) copyFieldValue(field ast.Expr, immutable bool) ast.
 
 func (t *galaASTTransformer) generateCopyMethod(name string, fields *ast.FieldList, tParams *ast.FieldList) (*ast.FuncDecl, error) {
 	var elts []ast.Expr
+	isImmut := t.immutFieldAt(name)
 	for _, field := range fields.List {
-		immutable := transpiler.IsImmutableType(t.astTypeToTranspilerType(field.Type))
 		for _, fieldName := range field.Names {
+			i := len(elts)
 			elts = append(elts, &ast.KeyValueExpr{
 				Key:   ast.NewIdent(fieldName.Name),
-				Value: t.copyFieldValue(&ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(fieldName.Name)}, immutable),
+				Value: t.copyFieldValue(&ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent(fieldName.Name)}, isImmut(i)),
 			})
 		}
 	}
