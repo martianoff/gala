@@ -59,8 +59,8 @@ func (r *TypeResolver) Resolve(name string, exists func(string) bool) (string, b
 		return stdName, true
 	}
 
-	// 4. Try dot-imported packages (they bring names into the current scope,
-	// so they take precedence over non-dot imports)
+	// 4. Try dot-imported packages: they bring names into the current scope.
+	// A named import never does (see TypeResolver).
 	for _, imp := range r.Imports {
 		if !imp.IsDot {
 			continue

@@ -94,7 +94,9 @@ func TestResolve_Precedence_CurrentPackageBeforeStd(t *testing.T) {
 	assert.Equal(t, "mypackage.Seq", resolved, "the current package should take precedence over std")
 }
 
-func TestResolve_Precedence_DotImportBeforeNamedImport(t *testing.T) {
+// A bare name reaches the dot import even when a named import declared
+// before it holds a type of the same name.
+func TestResolve_BareNameTakesDotImportNotNamedImport(t *testing.T) {
 	r := &TypeResolver{
 		PackageName: "mypackage",
 		Imports: []PackageInfo{
@@ -110,7 +112,7 @@ func TestResolve_Precedence_DotImportBeforeNamedImport(t *testing.T) {
 
 	resolved, ok := r.Resolve("Array", exists)
 	assert.True(t, ok)
-	assert.Equal(t, "collection_immutable.Array", resolved, "dot import should take precedence over named import")
+	assert.Equal(t, "collection_immutable.Array", resolved, "a bare name resolves through the dot import, never the named one")
 }
 
 func TestResolve_Precedence_CurrentPackageBeforeDotImport(t *testing.T) {

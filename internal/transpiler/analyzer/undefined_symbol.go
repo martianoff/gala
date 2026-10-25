@@ -1828,19 +1828,21 @@ func receiverBaseTypeName(ctx grammar.ITypeContext) string {
 	return text
 }
 
-// receiverFileImports returns the GALA package names imported by the file
-// that declares recvType, when that is a different file from filePath.
-func receiverFileImports(paths *pathCache, rich *transpiler.RichAST, recvType, filePath string, fileImportSets map[string]map[string]bool) map[string]bool {
+// receiverFileImports returns the per-file import entry (a set of GALA
+// package names, a list of import paths) of the file that declares recvType,
+// when that is a different file from filePath.
+func receiverFileImports[V any](paths *pathCache, rich *transpiler.RichAST, recvType, filePath string, fileImportSets map[string]V) V {
+	var zero V
 	tm := rich.Types[recvType]
 	if tm == nil {
 		tm = rich.Types[rich.PackageName+"."+recvType]
 	}
 	if tm == nil || tm.DefinedIn == "" {
-		return nil
+		return zero
 	}
 	declaring := paths.canonical(tm.DefinedIn)
 	if declaring == paths.canonical(filePath) {
-		return nil
+		return zero
 	}
 	return fileImportSets[declaring]
 }

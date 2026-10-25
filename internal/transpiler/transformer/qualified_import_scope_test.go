@@ -69,6 +69,18 @@ import . "martianoff/gala/test"
 
 func TestTarget(t T) T = Eq(t, Target().Generate(1), "go1")
 `)
+	// A method's signature may name a type its receiver type's file
+	// dot-imports, even from a file that imports nothing.
+	write("m/box.gala", `package m
+
+import . "example.com/r/d"
+
+struct Box(f Format)
+`)
+	write("m/methods.gala", `package m
+
+func (b Box) Style() Format = b.f
+`)
 	return root
 }
 
@@ -84,6 +96,8 @@ func TestQualifiedImportTypeDoesNotShadowPackageFunction(t *testing.T) {
 		// It used to lower as the struct literal `Target{}`: Go's "Target is
 		// not a type".
 		{"golang/golang_test.gala", "Target().Generate(1)"},
+		// The receiver file's dot import resolves the signature's bare type.
+		{"m/methods.gala", "Style() d.Format"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.file, func(t *testing.T) {
