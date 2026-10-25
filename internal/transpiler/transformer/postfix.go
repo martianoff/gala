@@ -441,6 +441,9 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	if len(indices) == 1 && t.namesPtrType(base) {
 		return t.ptrStar(indices[0]), nil
 	}
+	// A `Tuple[A, B, C]` type argument (`None[Tuple[A, B, C]]()`) is the
+	// tuple of its arity, `Tuple3[A, B, C]`, as in a type position.
+	base = t.rewriteStdTupleIdent(base, len(indices))
 	// A pointer that may be nil is no type argument of a type parameter
 	// whose constraint needs a Ptr receiver.
 	if len(t.ptrReceiverMethods) > 0 {

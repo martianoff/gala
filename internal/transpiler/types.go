@@ -453,7 +453,7 @@ func ParseType(s string) Type {
 		for i, p := range parts {
 			params[i] = ParseType(p)
 		}
-		return GenericType{Base: base, Params: params}
+		return StdTupleOfArity(GenericType{Base: base, Params: params})
 	}
 	if idx := strings.LastIndex(s, "."); idx != -1 {
 		// Check if it's not a float literal (though ParseType shouldn't be called on literals)

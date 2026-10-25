@@ -43,12 +43,10 @@ func TestTupleReturnArityRewrite(t *testing.T) {
 
 func wrap() Option[Tuple[int, int, int]] = Some((1, 2, 3))
 
-func zero() Tuple[int, int, int] = (0, 0, 0)
-
 func main() {
     val t = wrap() match {
         case Some(v) => v
-        case _       => zero()
+        case _       => (0, 0, 0)
     }
     Println(t)
 }`,
@@ -71,12 +69,10 @@ func main() {
 
 func wrap() Option[Tuple[int, int, int, int]] = Some((1, 2, 3, 4))
 
-func zero() Tuple[int, int, int, int] = (0, 0, 0, 0)
-
 func main() {
     val t = wrap() match {
         case Some(v) => v
-        case _       => zero()
+        case _       => (0, 0, 0, 0)
     }
     Println(t)
 }`,

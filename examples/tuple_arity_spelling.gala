@@ -1,0 +1,49 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// `Tuple[A, B, C]` and `Tuple3[A, B, C]` are one type. A declared tuple of
+// three meets a tuple literal in each branch below.
+
+struct Box(T Tuple[int, string, bool])
+
+sealed type Shape {
+    case Tri(Sides Tuple[int, int, int])
+    case Dot()
+}
+
+struct Pair(Inner Tuple[int, int, int])
+
+func (p Pair) Get() Tuple[int, int, int] = p.Inner
+
+func wrap() Option[Tuple[int, int, int]] = Some((1, 2, 3))
+
+func main() {
+    val fromResult = wrap() match {
+        case Some(t) => t
+        case _ => (0, 0, 0)
+    }
+    Println(fromResult)
+
+    val b = Box((1, "a", true))
+    Println(if (b.T.V3) b.T else (0, "z", false))
+
+    val s Shape = Tri((3, 4, 5))
+    val sides = s match {
+        case Tri(t) => t
+        case _ => (0, 0, 0)
+    }
+    Println(sides)
+
+    val p = Pair((8, 8, 8))
+    Println(if (p.Inner.V1 > 0) p.Get() else (1, 1, 1))
+
+    val head = ArrayOf[Tuple[int, int, int]]((1, 2, 3)).HeadOption() match {
+        case Some(e) => e
+        case _ => (0, 0, 0)
+    }
+    Println(head)
+
+    Println(HashMapOf[string, Tuple[int, int, int]](("k", (1, 1, 2))).Get("k").GetOrElse((0, 0, 0)))
+    Println(None[Tuple[int, int, int]]().GetOrElse((7, 8, 9)))
+}

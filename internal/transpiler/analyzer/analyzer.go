@@ -2649,7 +2649,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 				params = append(params, a.resolveTypeWithParams(strings.TrimSpace(argStr), pkgName, typeParams))
 			}
 			if len(params) > 0 {
-				return transpiler.GenericType{Base: baseType, Params: params}
+				return transpiler.StdTupleOfArity(transpiler.GenericType{Base: baseType, Params: params})
 			}
 		}
 		return a.currentQualifiers.withGoImportPath(transpiler.ParseType(typeName), a.currentGoTypeInfo())
@@ -2681,7 +2681,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 
 		// Only wrap in GenericType if there are params
 		if len(params) > 0 {
-			return transpiler.GenericType{Base: baseType, Params: params}
+			return transpiler.StdTupleOfArity(transpiler.GenericType{Base: baseType, Params: params})
 		}
 	}
 
