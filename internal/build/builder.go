@@ -1478,10 +1478,10 @@ func findGalaFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-// skipGalaSourceDir reports whether a walk for the GALA sources of the tree at
+// SkipGalaSourceDir reports whether a walk for the GALA sources of the tree at
 // root leaves out the directory at path: hidden directories, vendor, testdata,
 // bazel-* entries, the _gala output directory, and nested modules.
-func skipGalaSourceDir(root, path string) bool {
+func SkipGalaSourceDir(root, path string) bool {
 	if path == root {
 		return false
 	}
@@ -1500,7 +1500,7 @@ func findGalaFilesRecursive(dir string) ([]string, error) {
 		}
 
 		if info.IsDir() {
-			if skipGalaSourceDir(dir, path) {
+			if SkipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -2267,7 +2267,7 @@ func findGalaTestFilesRecursive(dir string) ([]string, error) {
 		}
 
 		if info.IsDir() {
-			if skipGalaSourceDir(dir, path) {
+			if SkipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil

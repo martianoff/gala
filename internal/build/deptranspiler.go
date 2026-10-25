@@ -517,7 +517,7 @@ func isGalaModuleDir(dir string) bool {
 			return err
 		}
 		if d.IsDir() {
-			if skipGalaSourceDir(dir, path) {
+			if SkipGalaSourceDir(dir, path) {
 				return filepath.SkipDir
 			}
 			return nil

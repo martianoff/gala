@@ -1,6 +1,7 @@
 package build
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,10 +41,9 @@ var nestedModules = []struct {
 	},
 }
 
+// withFiles adds extra to base and returns base.
 func withFiles(base, extra map[string]string) map[string]string {
-	for name, content := range extra {
-		base[name] = content
-	}
+	maps.Copy(base, extra)
 	return base
 }
 
@@ -116,4 +116,29 @@ func TestFindGalaFiles_SkipNestedModules(t *testing.T) {
 	tests, err := findGalaTestFilesRecursive(projectDir)
 	require.NoError(t, err)
 	assert.Equal(t, []string{filepath.Join(projectDir, "lib_test.gala")}, tests)
+
+	// The tree the transpile copies and the cache key hashes leaves them out too.
+	var copied []string
+	require.NoError(t, walkCopiedTree(projectDir, func(path string, _ os.FileInfo) error {
+		copied = append(copied, path)
+		return nil
+	}))
+	for _, nested := range nestedModules {
+		for _, path := range copied {
+			assert.NotContains(t, path, string(filepath.Separator)+nested.dir+string(filepath.Separator))
+		}
+	}
+}
+
+// A gala.mod whose only GALA code sits in a nested module is not a GALA module:
+// that code belongs to the nested module.
+func TestIsGalaModuleDir_StopsAtNestedModules(t *testing.T) {
+	dir := t.TempDir()
+	writeFixtureFile(t, filepath.Join(dir, "gala.mod"), "module example.com/outer\n\ngala 0.0.0\n")
+	writeFixtureFile(t, filepath.Join(dir, "tool", "gala.mod"), "module example.com/tool\n\ngala 0.0.0\n")
+	writeFixtureFile(t, filepath.Join(dir, "tool", "tool.gala"), "package tool\n")
+	assert.False(t, isGalaModuleDir(dir))
+
+	writeFixtureFile(t, filepath.Join(dir, "sub", "sub.gala"), "package sub\n")
+	assert.True(t, isGalaModuleDir(dir))
 }
