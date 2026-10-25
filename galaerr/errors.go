@@ -813,6 +813,13 @@ const (
 	// called with too many arguments as GALA-E0043, as if it could not be
 	// constructed at all. A struct field left out is GALA-E0045.
 	CodeArgumentCountMismatch ErrorCode = "GALA-E0082"
+
+	// E0083: a method another package's GALA type declares, or synthesizes,
+	// but does not export was called — a lower-case method, such as the
+	// `is<Variant>` predicate every sealed type gets. Visibility follows Go,
+	// so only the declaring package can call it; the call used to reach
+	// `go build` and fail there against the generated expression.
+	CodeUnexportedMethod ErrorCode = "GALA-E0083"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

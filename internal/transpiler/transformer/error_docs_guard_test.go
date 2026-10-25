@@ -1282,6 +1282,14 @@ func main() {
 			},
 		},
 		{
+			// The sealed type has to live in another package for its
+			// is<Variant> predicate to be out of reach, so the repro needs
+			// files on disk.
+			name:   "sealed predicate called from another package",
+			code:   galaerr.CodeUnexportedMethod, // GALA-E0083
+			render: renderUnexportedPredicateRepro,
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {
@@ -1501,6 +1509,50 @@ import "martianoff/gala/cmdpkg"
 func main() {
     val x = cmdpkg.NoCmd()
     Println(x)
+}
+`
+	mainPath := filepath.Join(mainDir, "main.gala")
+	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
+
+	_, err := newDocGuardTranspilerWithPaths(searchRoot).Transpile(mainSrc, mainPath)
+	require.Error(t, err, "repro was expected to fail to compile")
+
+	rendered := galaerr.RenderRich(err, galaerr.Options{
+		FallbackPath:   mainPath,
+		FallbackSource: mainSrc,
+		Color:          false,
+	})
+	rendered = strings.ReplaceAll(rendered, mainPath, "main.gala")
+	rendered = strings.ReplaceAll(rendered, filepath.ToSlash(mainPath), "main.gala")
+	return rendered
+}
+
+// renderUnexportedPredicateRepro drives GALA-E0083: main calls the private
+// is<Variant> predicate of a sealed type declared in a sibling package.
+func renderUnexportedPredicateRepro(t *testing.T) string {
+	t.Helper()
+	searchRoot := t.TempDir()
+	pkgDir := filepath.Join(searchRoot, "shapes")
+	require.NoError(t, os.MkdirAll(pkgDir, 0o755))
+	shapesSrc := `package shapes
+
+sealed type Shape {
+    case Circle(R int)
+    case Dot()
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "shapes.gala"), []byte(shapesSrc), 0o600))
+
+	mainDir := filepath.Join(searchRoot, "main")
+	require.NoError(t, os.MkdirAll(mainDir, 0o755))
+	mainSrc := `package main
+
+import "martianoff/gala/shapes"
+
+func round(s shapes.Shape) bool = s.isCircle()
+
+func main() {
+    Println(round(shapes.Dot()))
 }
 `
 	mainPath := filepath.Join(mainDir, "main.gala")
