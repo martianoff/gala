@@ -122,20 +122,13 @@ func computeHash(projectDir string) string {
 
 // Ensure creates the workspace directory structure.
 func (w *Workspace) Ensure() error {
-	// Create workspace directories
-	dirs := []string{
-		w.Dir,
-		w.GenDir,
-		w.DepsDir,
+	if err := os.MkdirAll(w.Dir, 0755); err != nil {
+		return fmt.Errorf("creating workspace dir %s: %w", w.Dir, err)
 	}
 
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("creating workspace dir %s: %w", dir, err)
-		}
-	}
-
-	// Write a marker file with project info (for debugging/cleanup)
+	// Write a marker file with project info (for debugging/cleanup). Before
+	// anything goes in the workspace: a concurrent build walking a project
+	// that holds this build dir tells the workspace apart by it.
 	markerPath := filepath.Join(w.Dir, workspaceMarker)
 	markerContent := fmt.Sprintf("project=%s\ncreated=%s\n",
 		w.ProjectDir,
@@ -143,6 +136,12 @@ func (w *Workspace) Ensure() error {
 
 	if err := os.WriteFile(markerPath, []byte(markerContent), 0644); err != nil {
 		return fmt.Errorf("writing workspace marker: %w", err)
+	}
+
+	for _, dir := range []string{w.GenDir, w.DepsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating workspace dir %s: %w", dir, err)
+		}
 	}
 
 	return nil

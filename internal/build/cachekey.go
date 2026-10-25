@@ -300,8 +300,12 @@ func embedInputs(dir string, patterns []string) []string {
 			}
 			// Only regular files: Go does not embed symlinks or other
 			// irregular entries from a directory, and a dangling one cannot be
-			// read.
+			// read. A build workspace below it holds a go.mod, so Go leaves it
+			// out of the embed as another module's tree.
 			filepath.Walk(m, func(path string, fi os.FileInfo, err error) error {
+				if err == nil && fi.IsDir() && path != m && isWorkspaceDir(path) {
+					return filepath.SkipDir
+				}
 				if err == nil && fi.Mode().IsRegular() {
 					files = append(files, path)
 				}
