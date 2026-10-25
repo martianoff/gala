@@ -11,6 +11,11 @@ Println(xs.Sum())
 `Array` has no `Sum`. The diagnostic names the nearest real method when the
 call looks like a typo, and otherwise lists methods the type does have.
 
+It also fires, as "has no field or method", when code reads a field of a sealed
+type by a name GALA does not give it: a case field stored under a Go name of
+its case (`EpsilonTarget` for `case Epsilon(Target int)` beside a method
+`Target`). A case field is read by matching its case.
+
 **Minimal repro.**
 
 ```gala

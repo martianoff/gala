@@ -1011,8 +1011,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	a.currentOwnTypes = make(map[string]bool)
 	a.currentOwnMethods = make(map[string]map[string]bool)
 	for _, sf := range append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...) {
-		collectTopLevelDeclaredNames(sf, a.currentOwnTypes)
-		collectDeclaredMethodNames(sf, a.currentOwnMethods)
+		collectTopLevelDeclaredNames(sf, a.currentOwnTypes, a.currentOwnMethods)
 	}
 	for name := range richAST.OwnGoTypes {
 		// A .go file is not checked for the reserved std names, which keep
@@ -2055,7 +2054,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	}
 
 	// Lay out the Go struct holding every case, now that the type's whole
-	// method set is known (ownMethodNames is read from every file of the
+	// method set is known (a.currentOwnMethods is read from every file of the
 	// package before any declaration is analyzed).
 	layoutSealedFields(parentMeta, allFieldTypes, a.methodNames(richAST, parentMeta), byRef)
 

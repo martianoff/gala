@@ -401,7 +401,7 @@ case d.IsAmountOff():
 }
 ```
 
-A predicate is not generated when the type declares a method of that name; the standard library's `Either.IsLeft()` and `Try.IsSuccess()` are its own methods, and `Option` gains `IsSome()` and `IsNone()` next to `IsDefined()` and `IsEmpty()`. Constructors and predicates are for Go callers: GALA code builds values by calling the type and tests a case with `match`.
+A predicate is not generated when the type declares a method of that name or has a field of it; the standard library's `Either.IsLeft()` and `Try.IsSuccess()` are its own methods, and `Option` gains `IsSome()` and `IsNone()` next to `IsDefined()` and `IsEmpty()`. Constructors and predicates are for Go callers: GALA code builds values by calling the type and tests a case with `match`.
 
 The language reference covers the [rules for constructors](GALA.MD#go-constructors).
 

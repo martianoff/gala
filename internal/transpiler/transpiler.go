@@ -410,6 +410,7 @@ type TypeMetadata struct {
 	StoredAsDeclared []bool
 	IsSealed             bool            // True if this type was generated from a sealed type declaration
 	SealedVariants       []SealedVariant // Variant info for sealed types (empty for non-sealed)
+	GoOnlyFields         map[string]bool // Fields of a sealed type GALA code does not read by name (see MarkGoOnlyFields)
 	DefinedIn            string          // Source file where the type definition (fields/variants) was first seen
 	// IsOpaque is true for `opaque type UserID int64`: a distinct Go defined
 	// type whose representation is Underlying. It is never a type alias:
@@ -592,28 +593,38 @@ type SealedVariant struct {
 
 // StructGeneratedMethods and SealedGeneratedMethods are the methods the
 // transformer generates on every struct and every sealed type that does not
-// declare them itself.
+// declare them itself (a struct's Unapply only when all its fields are
+// exported).
 var (
 	StructGeneratedMethods = []string{"Copy", "Equal", "Unapply"}
 	SealedGeneratedMethods = []string{"Copy", "Equal", "String"}
 )
 
 // GeneratedMethodNames returns the names of the methods the transformer
-// generates on the struct or sealed type m: StructGeneratedMethods or
-// SealedGeneratedMethods, the case predicates is<Case> and Is<Case> of a
-// sealed type, and the instance marker Is<Type> of a generic type.
+// generates on the struct or sealed type m, other than the Go case predicates
+// (see SealedGoPredicateNames): StructGeneratedMethods (Unapply only when
+// every field is exported) or SealedGeneratedMethods, the predicates
+// is<Case> of a sealed type, and the instance marker Is<Type> of a generic
+// type.
 func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
-	base := StructGeneratedMethods
+	names := make(map[string]bool, len(m.SealedVariants)+4)
 	if m.IsSealed {
-		base = SealedGeneratedMethods
-	}
-	names := make(map[string]bool, len(base)+2*len(m.SealedVariants)+1)
-	for _, n := range base {
-		names[n] = true
-	}
-	for _, v := range m.SealedVariants {
-		names["is"+v.Name] = true
-		names["Is"+v.Name] = true
+		for _, n := range SealedGeneratedMethods {
+			names[n] = true
+		}
+		for _, v := range m.SealedVariants {
+			names["is"+v.Name] = true
+		}
+	} else {
+		for _, n := range StructGeneratedMethods {
+			names[n] = true
+		}
+		for _, f := range m.FieldNames {
+			if !token.IsExported(f) {
+				delete(names, "Unapply")
+				break
+			}
+		}
 	}
 	if len(m.TypeParams) > 0 {
 		names["Is"+m.Name] = true
@@ -621,21 +632,45 @@ func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
 	return names
 }
 
-// IsGalaField reports whether GALA code reads the field name of type m by
-// that name: every field but a sealed type's case tag, and its case fields
-// stored under a Go name of their case (see SealedVariant.GoFieldNames).
-func (m *TypeMetadata) IsGalaField(name string) bool {
-	if !m.IsSealed {
-		return true
+// SealedGoPredicateNames returns the names of the Is<Case> predicates the
+// transformer generates for Go callers of sealed type m: one per exported
+// case of an exported type. A case field of the predicate's name keeps its
+// name, and the predicate is left out.
+func SealedGoPredicateNames(m *TypeMetadata) map[string]bool {
+	names := make(map[string]bool, len(m.SealedVariants))
+	if !token.IsExported(m.Name) {
+		return names
 	}
 	for _, v := range m.SealedVariants {
+		if token.IsExported(v.Name) {
+			names["Is"+v.Name] = true
+		}
+	}
+	return names
+}
+
+// MarkGoOnlyFields records which fields of sealed type m GALA code does not
+// read by name: its case tag, and the case fields stored under a Go name of
+// their case (see SealedVariant.GoFieldNames), which never equals the name of
+// a case field.
+func (m *TypeMetadata) MarkGoOnlyFields() {
+	if !m.IsSealed {
+		return
+	}
+	m.GoOnlyFields = map[string]bool{"_variant": true}
+	for _, v := range m.SealedVariants {
 		for i, goName := range v.GoFieldNames {
-			if goName == name && i < len(v.FieldNames) && v.FieldNames[i] == name {
-				return true
+			if i < len(v.FieldNames) && goName != v.FieldNames[i] {
+				m.GoOnlyFields[goName] = true
 			}
 		}
 	}
-	return false
+}
+
+// IsGalaField reports whether GALA code reads the field name of type m by
+// that name: every field but the ones MarkGoOnlyFields records.
+func (m *TypeMetadata) IsGalaField(name string) bool {
+	return !m.GoOnlyFields[name]
 }
 
 type MethodMetadata struct {

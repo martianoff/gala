@@ -353,8 +353,6 @@ func main() { Println(Ok(1).IsOk()) }`,
 			absent:   []string{"func (s Res) IsOk() bool {"},
 		},
 		{
-			// The field is stored under a Go name of its case, so the
-			// predicate keeps its name.
 			name: "a field named like a predicate",
 			src: `package main
 
@@ -364,8 +362,8 @@ sealed type Flag {
 }
 
 func main() { Println(On(true)) }`,
-			contains: []string{"func (s Flag) IsOn() bool {", "func (s Flag) IsOff() bool {", "OnIsOff  std.Immutable[bool]"},
-			absent:   []string{"\tIsOff "},
+			contains: []string{"func (s Flag) IsOn() bool {"},
+			absent:   []string{"func (s Flag) IsOff() bool {"},
 		},
 		{
 			name: "an unexported type",

@@ -103,6 +103,9 @@ func main() {
 			absent:   []string{"EpsilonTarget"},
 		},
 		{
+			// isBar() is generated for every case, so the field moves; a field
+			// named like the Go predicate IsBar() keeps its name, and the
+			// predicate is left out.
 			name: "fields named like the generated case predicates",
 			src: `package main
 
@@ -112,15 +115,72 @@ sealed type Flag {
 }
 
 func main() {
-    Println(Foo(true, false), Bar())
+    Println(Foo(true, false), Bar(), Foo(true, false).IsBar)
 }
 `,
 			contains: []string{
-				"FooIsBar std.Immutable[bool]",
+				"\tIsBar    std.Immutable[bool]",
 				"FooisBar std.Immutable[bool]",
-				"func (s Flag) IsBar() bool",
 				"func (s Flag) isBar() bool",
+				"func (s Flag) IsFoo() bool",
 			},
+			absent: []string{"func (s Flag) IsBar() bool"},
+		},
+		{
+			name: "an unexported type has no Go predicates to make room for",
+			src: `package main
+
+sealed type flag {
+    case On(IsOff bool)
+    case Off()
+}
+
+func main() {
+    Println(On(true).IsOff)
+}
+`,
+			contains: []string{"\tIsOff    std.Immutable[bool]"},
+			absent:   []string{"OnIsOff"},
+		},
+		{
+			name: "a case Go name never takes another field's name",
+			src: `package main
+
+sealed type T {
+    case A(Target int)
+    case B(ATarget string)
+}
+
+func (t T) Target() int = t match {
+    case A(n) => n
+    case B(_) => 0
+}
+
+func main() {
+    Println(A(1).Target(), B("b").ATarget)
+}
+`,
+			contains: []string{"ATarget_ std.Immutable[int]", "\tATarget  std.Immutable[string]"},
+		},
+		{
+			name: "a case Go name never takes a Go predicate's name",
+			src: `package main
+
+sealed type Q {
+    case Is(Off bool)
+    case Off()
+}
+
+func (q Q) Off() bool = q match {
+    case Is(o) => o
+    case Off() => true
+}
+
+func main() {
+    Println(Is(true).Off(), Off().Off())
+}
+`,
+			contains: []string{"IsOff_   std.Immutable[bool]", "func (s Q) IsOff() bool"},
 		},
 		{
 			name: "field named like the instance marker of a generic type",
@@ -288,7 +348,7 @@ func TestSealedCaseStorageFieldsAreNotGalaFields(t *testing.T) {
 	assert.Equal(t, []string{"EpsilonTarget"}, meta.SealedVariants[0].GoFieldNames)
 	assert.Equal(t, []string{"AtomTarget", "Label"}, meta.SealedVariants[1].GoFieldNames)
 	assert.True(t, meta.IsGalaField("Label"))
-	for _, storage := range []string{"EpsilonTarget", "AtomTarget", "_variant", "Target"} {
+	for _, storage := range []string{"EpsilonTarget", "AtomTarget", "_variant"} {
 		assert.False(t, meta.IsGalaField(storage), storage)
 	}
 }
@@ -376,4 +436,54 @@ func (s S) Name() string = "x"
 			assert.Equal(t, tc.col, se.Column)
 		})
 	}
+}
+
+// TestSealedCaseStorageFieldIsNotReadable: GALA code cannot read a case
+// field by the Go name it is stored under; that field holds a value only for
+// its own case.
+func TestSealedCaseStorageFieldIsNotReadable(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	_, err := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).
+		Transpile("package main\n\n"+transitionDecl+"\n"+transitionTargetMethod+`
+func main() {
+    Println(Atom(2, 7).AtomTarget)
+}
+`, "main.gala")
+	var se *galaerr.SemanticError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, galaerr.CodeUnknownMethod, se.Code)
+	assert.Equal(t, "Transition has no field or method AtomTarget", se.Msg)
+	assert.Contains(t, se.Hint, "case Atom(...)")
+}
+
+// TestStructFieldNamedLikeUngeneratedMethod: a struct with an unexported field
+// gets no generated Unapply, so a field named Unapply is no clash.
+func TestStructFieldNamedLikeUngeneratedMethod(t *testing.T) {
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	out, err := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator()).
+		Transpile(`package main
+
+struct S(Unapply int, secret int)
+
+func main() {
+    Println(S(1, 2).Unapply)
+}
+`, "main.gala")
+	require.NoError(t, err)
+	checkGeneratedGo(t, out)
+}
+
+// TestStructFieldNamedLikeGoSiblingMethod: a method a hand-written .go file
+// declares on a struct clashes with its field of the same name too.
+func TestStructFieldNamedLikeGoSiblingMethod(t *testing.T) {
+	files, galaFile := samePackageModule(".",
+		"package main\n\nfunc (s S) Name() string { return \"x\" }\n",
+		"package main\n\nstruct S(Name string)\n\nfunc main() {\n    Println(S(\"a\").Name)\n}\n")
+	_, err := transpileInModule(t, files, galaFile)
+	var se *galaerr.SemanticError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, galaerr.CodeFieldNamedLikeMethod, se.Code)
+	assert.Equal(t, 3, se.Line)
 }

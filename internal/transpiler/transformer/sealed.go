@@ -236,7 +236,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	for _, vi := range variants {
 		decls = append(decls, t.generateSealedIsMethod(name, "is"+vi.name, "", vi, tParams))
 	}
-	decls = append(decls, t.sealedGoPredicates(name, variants, tParams)...)
+	decls = append(decls, t.sealedGoPredicates(name, variants, parentFields, tParams)...)
 
 	// 5. Generate Copy, Equal methods on parent — skip if user-defined
 	hasCopy, hasEqual, _ := t.userDefinedMethodFlags(name)
@@ -707,10 +707,10 @@ func (t *galaASTTransformer) buildNoneType(elemType ast.Expr) ast.Expr {
 
 // sealedGoPredicates returns, for each exported case of the exported sealed
 // type parentName, the method Go callers test it with: `d.IsPercent()`. A
-// predicate is left out when the type declares a method of its name. A case
-// field of its name is stored under a Go name of its case (layoutSealedFields),
-// so it never takes the predicate's place.
-func (t *galaASTTransformer) sealedGoPredicates(parentName string, variants []sealedVariantInfo, tParams *ast.FieldList) []ast.Decl {
+// predicate is left out when the type declares a method or has a field of its
+// name (a case field named like a predicate keeps its name; see
+// layoutSealedFields).
+func (t *galaASTTransformer) sealedGoPredicates(parentName string, variants []sealedVariantInfo, parentFields *ast.FieldList, tParams *ast.FieldList) []ast.Decl {
 	if !ast.IsExported(parentName) {
 		return nil
 	}
@@ -719,6 +719,11 @@ func (t *galaASTTransformer) sealedGoPredicates(parentName string, variants []se
 		names = append(names, "Is"+vi.name)
 	}
 	declared := t.declaresMethods(parentName, names...)
+	for _, f := range parentFields.List {
+		for _, n := range f.Names {
+			declared[n.Name] = true
+		}
+	}
 	var out []ast.Decl
 	for i, vi := range variants {
 		name := names[i]
@@ -984,4 +989,31 @@ func (t *galaASTTransformer) sealedCaseParent(caseType transpiler.Type) transpil
 	// Generic parent but case had no/mismatched type args — surface the parent
 	// without args; downstream substitution handles the mismatch.
 	return parentBaseType
+}
+
+// goOnlyFieldError rejects reading by name a field of a sealed type that GALA
+// code has no name for: its case tag, or a case field stored under a Go name
+// of its case (see TypeMetadata.MarkGoOnlyFields). Such a field holds a value
+// only for its own case.
+func (t *galaASTTransformer) goOnlyFieldError(xType transpiler.Type, selName string, line, col int) error {
+	if xType == nil {
+		return nil
+	}
+	meta := t.getTypeMeta(stripTypeNameDecorations(xType.String()))
+	if meta == nil || meta.IsGalaField(selName) {
+		return nil
+	}
+	if _, isMethod := meta.Methods[selName]; isMethod {
+		return nil
+	}
+	hint := "test which case a value is with `match`"
+	for _, v := range meta.SealedVariants {
+		for i, goName := range v.GoFieldNames {
+			if goName == selName {
+				hint = fmt.Sprintf("read %s's field %s by matching the case: `case %s(...) => ...`", v.Name, v.FieldNames[i], v.Name)
+			}
+		}
+	}
+	return galaerr.NewCodedSemanticError(galaerr.CodeUnknownMethod, line, col,
+		fmt.Sprintf("%s has no field or method %s", meta.Name, selName), hint)
 }
