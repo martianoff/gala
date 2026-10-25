@@ -850,19 +850,11 @@ func (a Array[T]) ZipWithIndex() Array[Tuple[T, int]] {
     return builder.Result()
 }
 
-// Distinct returns a new array with duplicate elements removed.
-func (a Array[T]) Distinct() Array[T] {
-    var builder = newArrayBuilder[T]()
-    var seen = EmptyArray[T]()
-    for i := 0; i < a.length; i++ {
-        var elem = a.Get(i)
-        if !seen.Contains(elem) {
-            builder.Add(elem)
-            seen = seen.Append(elem)
-        }
-    }
-    return builder.Result()
-}
+// Distinct returns a new array with duplicate elements removed, keeping the
+// first occurrence of each element in its original position. Elements are
+// compared with Equal: through a HashSet when T is a primitive type (a number,
+// string or bool), and against each kept element otherwise.
+func (a Array[T]) Distinct() Array[T] = a.Filter(firstOccurrence[T]())
 
 // SplitAt splits the array at the given index.
 func (a Array[T]) SplitAt(n int) Tuple[Array[T], Array[T]] = (a.Take(n), a.Drop(n))

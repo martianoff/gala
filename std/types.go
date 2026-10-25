@@ -126,6 +126,9 @@ func Copy[T any](v T) T {
 
 func Equal[T any](v1, v2 T) bool {
 	v1, v2 = unwrapPanic(v1), unwrapPanic(v2)
+	if eq, ok := equalPrimitive(v1, v2); ok {
+		return eq
+	}
 	if e, ok := any(v1).(Equatable[T]); ok {
 		return e.Equal(v2)
 	}
@@ -161,6 +164,23 @@ func Equal[T any](v1, v2 T) bool {
 		}
 	}
 	return true
+}
+
+// equalPrimitive compares v1 and v2 with == when v1's dynamic type is a
+// predeclared primitive type, reporting ok; that is what Equal's reflective
+// path concludes for them (a NaN equals nothing, and values of different
+// types differ), without its reflection. A named type is left out: it may
+// declare an Equal of its own.
+func equalPrimitive[T any](v1, v2 T) (eq bool, ok bool) {
+	// The same type list as go_interop's primitiveKey.
+	switch a := any(v1).(type) {
+	case bool, string,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64, complex64, complex128:
+		return a == any(v2), true
+	}
+	return false, false
 }
 
 // tryRecover executes f with panic recovery, returning a Try.
