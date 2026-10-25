@@ -567,16 +567,11 @@ func (a Ptr[Array[T]]) ZipWithIndex() Ptr[Array[Tuple[T, int]]] {
     return result
 }
 
-// Distinct returns a new array with duplicate elements removed.
-func (a Ptr[Array[T]]) Distinct() Ptr[Array[T]] {
-    var result = EmptyArray[T]()
-    for i := 0; i < a.elements.Size(); i++ {
-        if !result.Contains(a.elements[i]) {
-            result.Append(a.elements[i])
-        }
-    }
-    return result
-}
+// Distinct returns a new array with duplicate elements removed, keeping the
+// first occurrence of each element in its original position. Elements are
+// compared with Equal: through a HashSet when T is a primitive type (a number,
+// string or bool), and against each kept element otherwise.
+func (a Ptr[Array[T]]) Distinct() Ptr[Array[T]] = a.Filter(firstOccurrence[T]())
 
 // SplitAt splits the array at the given index.
 func (a Ptr[Array[T]]) SplitAt(n int) Tuple[Ptr[Array[T]], Ptr[Array[T]]] {

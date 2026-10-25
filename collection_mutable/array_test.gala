@@ -247,6 +247,14 @@ func TestArrayDistinct(t T) T {
     return Eq[int](t, distinct.Length(), 3)
 }
 
+func TestArrayDistinctKeepsFirstOccurrence(t T) T =
+    Eq(t, ArrayOf(3, 1, 3, 2, 1).Distinct().MkString(","), "3,1,2")
+
+// Equal arrays are distinct pointers, neither primitive nor Hashable:
+// Distinct compares them with Equal.
+func TestArrayDistinctComparesWithEqual(t T) T =
+    Eq(t, ArrayOf(ArrayOf(1, 2), ArrayOf(3), ArrayOf(1, 2), ArrayOf(4)).Distinct().Length(), 3)
+
 func TestArrayGrouped(t T) T {
     val arr = ArrayOf(1, 2, 3, 4, 5)
     val grouped = Array_Grouped[int](arr, 2)

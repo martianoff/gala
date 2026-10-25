@@ -2,6 +2,7 @@ package collection_mutable
 
 import (
     . "martianoff/gala/std"
+    "math"
     "martianoff/gala/go_interop"
 )
 
@@ -81,12 +82,59 @@ func hashSetHash[T comparable](value T) uint32 {
         case i: int16 => HashInt(int64(i))
         case u: uint8 => HashUint(uint64(u))
         case u: uint16 => HashUint(uint64(u))
-        case f: float64 => HashUint(uint64(f))
-        case f: float32 => HashUint(uint64(f))
+        case f: float64 => hashFloat(f)
+        case f: float32 => hashFloat(float64(f))
         case h: Hashable => h.Hash()
         case _ => hashSetPanicNotHashable(v)
     }
     return result
+}
+
+// hashFloat hashes a float by its bits, so fractions spread over the buckets
+// instead of truncating to a handful of integers. The two zeros are == and
+// hash alike; a NaN equals nothing, so where it lands does not matter.
+func hashFloat(f float64) uint32 = if (f == 0) HashUint(0) else HashUint(math.Float64bits(f))
+
+// hashesByValue reports whether v is of a predeclared primitive type that
+// hashSetHash hashes by its value. For those types == is Equal, so a HashSet
+// holding them tells values apart exactly as Equal does. A named type is left
+// out: it may declare an Equal of its own.
+func hashesByValue(v any) bool = v match {
+    case _: int => true
+    case _: string => true
+    case _: int64 => true
+    case _: int32 => true
+    case _: uint => true
+    case _: uint64 => true
+    case _: uint32 => true
+    case _: bool => true
+    case _: int8 => true
+    case _: int16 => true
+    case _: uint8 => true
+    case _: uint16 => true
+    case _: float64 => true
+    case _: float32 => true
+    case _ => false
+}
+
+// firstOccurrence returns a predicate that holds for each element the first
+// time an Equal element is seen, for Distinct. It looks elements up in a
+// HashSet when T is a type hashesByValue covers, and otherwise compares each
+// one with Equal against the elements kept so far.
+func firstOccurrence[T any]() func(T) bool {
+    var zero T
+    if hashesByValue(zero) {
+        val seen = EmptyHashSet[any]()
+        return (elem T) => seen.Add(elem)
+    }
+    val kept = EmptyArray[T]()
+    return (elem T) => {
+        if kept.Contains(elem) {
+            return false
+        }
+        kept.Append(elem)
+        true
+    }
 }
 
 // hashSetPanicNotHashable panics with a helpful error message.
