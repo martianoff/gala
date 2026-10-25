@@ -254,7 +254,7 @@ func (t *galaASTTransformer) hasOpenTypeArg(typ transpiler.Type, meta *transpile
 func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) (ast.Expr, ast.Stmt, ast.Expr) {
 	castName := t.nextTempVar()
 	okName := t.nextTempVar()
-	stmt := t.patternDefine([]string{castName, okName}, []ast.Expr{assertType, ast.NewIdent("bool")},
+	stmt := t.patternDefine([]string{castName, okName}, []patternType{exprType(assertType), boolPatternType},
 		t.stdAsCall(assertType, objExpr))
 	return ast.NewIdent(castName), stmt, ast.NewIdent(okName)
 }

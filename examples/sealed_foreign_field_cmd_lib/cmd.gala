@@ -1,0 +1,6 @@
+package sealed_foreign_field_cmd_lib
+
+// Cmd is the field type of a case declared in another package
+// (sealed_foreign_field_lib). use_sealed_foreign_field imports only that
+// package, never this one.
+struct Cmd(Name string)

@@ -140,10 +140,7 @@ var res = std.NewImmutable(func(obj std.Option[int]) int {
 	{
 		_tmp_1 := std.Some[int]{}.Unapply(obj)
 		_tmp_2 := _tmp_1.IsDefined()
-		var _tmp_3 int
-		if _tmp_2 {
-			_tmp_3 = _tmp_1.Get()
-		}
+		_tmp_3 := _tmp_1.Value.Get()
 		_ = _tmp_3
 		y := _tmp_3
 		if _tmp_2 {
@@ -173,11 +170,10 @@ var res = std.NewImmutable(func(obj std.Option[any]) string {
 	{
 		_tmp_1 := std.Some[any]{}.Unapply(obj)
 		_tmp_2 := _tmp_1.IsDefined()
-		var _tmp_3 any
+		_tmp_3 := _tmp_1.Value.Get()
 		var s string
 		var _tmp_4 bool
 		if _tmp_2 {
-			_tmp_3 = _tmp_1.Get()
 			s, _tmp_4 = std.As[string](_tmp_3)
 		}
 		_ = _tmp_3
@@ -666,10 +662,7 @@ func unwrap(h Holder) int {
 		{
 			_tmp_1 := std.Some[int]{}.Unapply(obj)
 			_tmp_2 := _tmp_1.IsDefined()
-			var _tmp_3 int
-			if _tmp_2 {
-				_tmp_3 = _tmp_1.Get()
-			}
+			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
 			v := _tmp_3
 			if _tmp_2 {
@@ -709,10 +702,7 @@ func resolve(opt std.Option[int]) int {
 		{
 			_tmp_1 := std.Some[int]{}.Unapply(obj)
 			_tmp_2 := _tmp_1.IsDefined()
-			var _tmp_3 int
-			if _tmp_2 {
-				_tmp_3 = _tmp_1.Get()
-			}
+			_tmp_3 := _tmp_1.Value.Get()
 			_ = _tmp_3
 			n := _tmp_3
 			if _tmp_2 {

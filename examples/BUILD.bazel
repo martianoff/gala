@@ -3646,6 +3646,37 @@ gala_exec_test(
     deps = [":sealed_widen_call_arg_lib"],
 )
 
+# Matching on a case whose field type comes from a package the matching file
+# never imports. The test depends only on sealed_foreign_field_lib, so if the
+# generated Go imports sealed_foreign_field_cmd_lib, strict deps reject it.
+gala_library(
+    name = "sealed_foreign_field_cmd_lib",
+    srcs = ["sealed_foreign_field_cmd_lib/cmd.gala"],
+    importpath = "martianoff/gala/examples/sealed_foreign_field_cmd_lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "sealed_foreign_field_lib",
+    srcs = ["sealed_foreign_field_lib/edge.gala"],
+    importpath = "martianoff/gala/examples/sealed_foreign_field_lib",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sealed_foreign_field_cmd_lib",
+        "//collection_immutable",
+    ],
+)
+
+gala_exec_test(
+    name = "use_sealed_foreign_field",
+    src = "use_sealed_foreign_field.gala",
+    expected = "use_sealed_foreign_field.out",
+    deps = [
+        ":sealed_foreign_field_lib",
+        "//collection_immutable",
+    ],
+)
+
 # =============================================================================
 # Per-bug multi-file library regression tests.
 # These bugs ONLY manifest in multi-file batch transpilation (gala_library).
