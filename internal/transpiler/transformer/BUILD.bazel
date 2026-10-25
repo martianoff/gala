@@ -242,6 +242,7 @@ go_test(
         "placeholder_void_context_test.go",
         "pointer_receiver_generic_method_val_test.go",
         "pointer_receiver_test.go",
+        "package_val_inferred_type_test.go",
         "pointer_receiver_val_test.go",
         "private_field_ctor_test.go",
         "qualified_namedarg_shadow_test.go",
