@@ -1480,14 +1480,15 @@ func findGalaFiles(dir string) ([]string, error) {
 
 // SkipGalaSourceDir reports whether a walk for the GALA sources of the tree at
 // root leaves out the directory at path: hidden directories, vendor, testdata,
-// bazel-* entries, the _gala output directory, and nested modules.
+// bazel-* entries, the _gala output directory, nested modules, and build
+// workspaces (isWorkspaceDir).
 func SkipGalaSourceDir(root, path string) bool {
 	if path == root {
 		return false
 	}
 	name := filepath.Base(path)
 	return strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" ||
-		strings.HasPrefix(name, "bazel-") || name == "_gala" || isNestedModuleDir(path)
+		strings.HasPrefix(name, "bazel-") || name == "_gala" || isNestedModuleDir(path) || isWorkspaceDir(path)
 }
 
 // findGalaFilesRecursive finds all .gala files recursively.
