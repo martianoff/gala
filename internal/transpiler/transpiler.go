@@ -140,6 +140,8 @@ type RichAST struct {
 	MergedPackages map[string]string
 	ImportPathMap    map[string]string                   // GALA import path -> actual Go module path (when they differ due to VCS host prefix)
 	GoImportNames    map[string]string                   // this file's Go import path -> the package's real name, when the loaded Go package tells it (k8s.io/api/core/v1 -> v1)
+	// PackageImportPaths holds the GALA import paths written by this file or a sibling.
+	PackageImportPaths map[string]bool
 	FilePath         string                              // source file path (for error reporting)
 	SourceContent    string                              // raw source text (for error snippets)
 	AnalysisWarnings []string                            // warnings from package analysis (e.g., unresolved GALA imports)

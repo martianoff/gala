@@ -1,0 +1,19 @@
+package main
+
+// sealed_foreign_field_lib imports sealed_foreign_field_cmd_lib under the
+// alias `cmd`. Its types reach this file by package, not by that alias, which
+// means nothing here: a lambda over a Cmd and a match whose value is an
+// Option of one write the type, so the generated Go imports the package.
+
+import lib "martianoff/gala/examples/sealed_foreign_field_lib"
+
+func main() {
+    Println(lib.Find("a").Map((c) => c.Name).GetOrElse("none"))
+    Println(lib.Find("").Map((c) => c.Name).GetOrElse("none"))
+
+    val found = lib.Find("") match {
+        case Some(c) => Some(c)
+        case None() => lib.Find("b")
+    }
+    Println(found.Map((c) => s"<${c.Name}>").GetOrElse("none"))
+}

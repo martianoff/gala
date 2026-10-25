@@ -70,9 +70,9 @@ import (
 	})
 }
 
-// TestWithGoImportPath: a type written against a Go import is tied to it only
+// TestQualifyGoType: a type written against a Go import is tied to it only
 // when the Go package declares the type, or when its type info is missing.
-func TestWithGoImportPath(t *testing.T) {
+func TestQualifyGoType(t *testing.T) {
 	const src = `package repro
 
 import (
@@ -102,12 +102,46 @@ import (
 		{named("core", "Widget"), ""}, // the k8s package is v1; core is not bound to it
 	}
 	for _, tc := range cases {
-		got := withInfo.withGoImportPath(tc.typ, gi).(transpiler.NamedType)
+		got := withInfo.qualify(tc.typ, gi).(transpiler.NamedType)
 		assert.Equal(t, tc.wantPath, got.ImportPath, tc.typ.String())
 	}
 
 	// Without type info the Go import is taken at its word.
 	noInfo := a.qualifiersForFile(sf, &transpiler.RichAST{})
-	got := noInfo.withGoImportPath(named("strings", "Str"), nil).(transpiler.NamedType)
+	got := noInfo.qualify(named("strings", "Str"), nil).(transpiler.NamedType)
 	assert.Equal(t, "strings", got.ImportPath)
+}
+
+// TestQualifyGalaType: a type written with a GALA import's alias is named
+// by the package, which is what other files that read the metadata know it as.
+func TestQualifyGalaType(t *testing.T) {
+	const src = `package repro
+
+import (
+    cx "martianoff/gala/lab/cmdp"
+    "martianoff/gala/lab/plain"
+    "strings"
+)
+`
+	tree, _, err := transpiler.NewAntlrGalaParser().Parse(src)
+	require.NoError(t, err)
+	sf := tree.(*grammar.SourceFileContext)
+	a := &galaAnalyzer{}
+	q := a.qualifiersForFile(sf, &transpiler.RichAST{
+		Packages: map[string]string{"martianoff/gala/lab/cmdp": "cmdp", "martianoff/gala/lab/plain": "plain"},
+	})
+	named := func(pkg, name string) transpiler.NamedType { return transpiler.NamedType{Package: pkg, Name: name} }
+	for _, tc := range []struct {
+		in, want transpiler.NamedType
+	}{
+		{named("cx", "Cmd"), named("cmdp", "Cmd")},
+		{named("plain", "T"), named("plain", "T")},
+		{named("other", "T"), named("other", "T")}, // no import binds it
+	} {
+		assert.Equal(t, tc.want, q.qualify(tc.in, nil), tc.in.String())
+	}
+
+	paths := map[string]bool{}
+	q.galaImportPaths(paths)
+	assert.Equal(t, map[string]bool{"martianoff/gala/lab/cmdp": true, "martianoff/gala/lab/plain": true}, paths)
 }

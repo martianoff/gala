@@ -9,17 +9,17 @@ package main
 import lib "martianoff/gala/examples/sealed_foreign_field_lib"
 
 func found(name string) string = lib.Find(name) match {
-    case Some(c) => lib.NameOf(c)
+    case Some(c) => c.Name
     case None() => "none"
 }
 
 func parsed(s string) string = lib.Parse(s) match {
-    case Right(c) => s"right ${lib.NameOf(c)}"
+    case Right(c) => s"right ${c.Name}"
     case Left(why) => s"left $why"
 }
 
 func lookedUp(s string) string = lib.LookUp(s) match {
-    case lib.Found(c) => s"found ${lib.NameOf(c)}"
+    case lib.Found(c) => s"found ${c.Name}"
     case lib.Missing(key) => s"missing $key"
     case _ => "linked"
 }
@@ -32,7 +32,7 @@ func edgeName(e lib.Edge) string = e match {
 // A case whose fields include a type of the unimported package, over a type
 // argument this file can name.
 func linked(l lib.Lookup[string]) string = l match {
-    case lib.Linked(v, c) => s"$v -> ${lib.NameOf(c)}"
+    case lib.Linked(v, c) => s"$v -> ${c.Name}"
     case _ => "unlinked"
 }
 

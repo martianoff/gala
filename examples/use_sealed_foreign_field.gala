@@ -23,7 +23,7 @@ func commandCount(e sealed_foreign_field_lib.Edge) int = e match {
 }
 
 func name(e sealed_foreign_field_lib.Edge) string = e match {
-    case sealed_foreign_field_lib.One(c) => sealed_foreign_field_lib.NameOf(c)
+    case sealed_foreign_field_lib.One(c) => c.Name
     case _ => "none"
 }
 
