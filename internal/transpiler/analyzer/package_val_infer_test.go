@@ -36,8 +36,8 @@ val (_, TupE) = (3, "e")
 `
 
 // TestPackageValInitTypes: the element type a package-level binding records
-// for each initializer shape. A comparison is not its operands' type, and a
-// void call has no type — it must be recorded as NilType, never a nil
+// for each initializer shape. A comparison is a bool, not its operands' type,
+// and a void call has no type — it must be recorded as NilType, never a nil
 // interface.
 func TestPackageValInitTypes(t *testing.T) {
 	rich := analyzeSrc(t, packageValSrc)
@@ -53,8 +53,8 @@ func TestPackageValInitTypes(t *testing.T) {
 		{"MkBox", "pv.Box"},
 		{"AddTen", "pv.Adder"},
 		{"N", "int"},
-		{"Eq", ""},
-		{"StrEq", ""},
+		{"Eq", "bool"},
+		{"StrEq", "bool"},
 		{"Void", ""},
 		{"VoidVar", ""},
 	}
@@ -102,22 +102,33 @@ func TestVoidPackageValSurvivesCache(t *testing.T) {
 
 // TestPackageTupleDestructuringIsRecorded: every name a package-level tuple
 // destructuring binds is a package val or var, so a reference from another file
-// of the package unwraps a val's Immutable and leaves a var as it is.
+// of the package unwraps a val's Immutable and leaves a var as it is, and each
+// name takes its component's type.
 func TestPackageTupleDestructuringIsRecorded(t *testing.T) {
 	rich := analyzeSrc(t, packageValSrc)
 	if _, ok := rich.PackageVals["_"]; ok {
 		t.Errorf("the blank identifier is recorded as a package val")
 	}
-	for name, isVal := range map[string]bool{"TupA": true, "TupB": true, "TupC": false, "TupD": false, "TupE": true} {
-		pv := rich.PackageVals[name]
+	tests := []struct {
+		name, typ string
+		isVal     bool
+	}{
+		{"TupA", "int", true},
+		{"TupB", "string", true},
+		{"TupC", "int", false},
+		{"TupD", "string", false},
+		{"TupE", "string", true},
+	}
+	for _, tc := range tests {
+		pv := rich.PackageVals[tc.name]
 		if pv == nil {
-			t.Fatalf("PackageVals missing %s", name)
+			t.Fatalf("PackageVals missing %s", tc.name)
 		}
-		if pv.IsVal != isVal {
-			t.Errorf("%s: IsVal = %v, want %v", name, pv.IsVal, isVal)
+		if pv.IsVal != tc.isVal {
+			t.Errorf("%s: IsVal = %v, want %v", tc.name, pv.IsVal, tc.isVal)
 		}
-		if pv.Type == nil || !pv.Type.IsNil() {
-			t.Errorf("%s: Type = %v, want NilType", name, pv.Type)
+		if pv.Type == nil || pv.Type.String() != tc.typ {
+			t.Errorf("%s: Type = %v, want %s", tc.name, pv.Type, tc.typ)
 		}
 	}
 }
