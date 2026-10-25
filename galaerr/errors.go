@@ -798,6 +798,14 @@ const (
 	// asks whether it is nil. A Go pointer becomes a Ptr through RequirePtr,
 	// or an OptionPtr through OptionPtrOf.
 	CodePtrNullability ErrorCode = "GALA-E0080"
+
+	// E0082: a call of a GALA function, method or struct constructor passes
+	// more arguments than the callee takes, or leaves out one that declares no
+	// default. Left to Go, the call was reported against the generated code
+	// ("not enough arguments in call to … have (…) want (…)"), and a struct
+	// called with too many arguments as GALA-E0043, as if it could not be
+	// constructed at all. A struct field left out is GALA-E0045.
+	CodeArgumentCountMismatch ErrorCode = "GALA-E0082"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

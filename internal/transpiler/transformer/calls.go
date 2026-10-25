@@ -309,7 +309,13 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 
 		// Zero-argument call — check if function has default params that need injection
 		if funcName := t.extractFuncName(base); funcName != "" {
-			if funcMeta := t.getFunction(funcName); funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
+			funcMeta := t.getFunction(funcName)
+			if funcMeta != nil {
+				if err := funcParamList(funcMeta.Name, funcMeta).checkPositional(0, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()); err != nil {
+					return nil, err
+				}
+			}
+			if funcMeta != nil && len(funcMeta.DefaultExprs) > 0 && len(funcMeta.ParamTypes) > 0 {
 				// A result-only type parameter comes from the slot, as for
 				// any call (`parse()` for `parse[T any](s string = "")`).
 				// The slot type is the call's, taken before its defaults are
@@ -346,7 +352,13 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		// argument list never reaches it.
 		if sel, ok := base.(*ast.SelectorExpr); ok && zeroArgLookupBase != "" {
 			if typeMeta := t.getTypeMeta(zeroArgLookupBase); typeMeta != nil {
-				if methodMeta := typeMeta.Methods[sel.Sel.Name]; methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
+				methodMeta := typeMeta.Methods[sel.Sel.Name]
+				if methodMeta != nil && !methodMeta.GoDeclared {
+					if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(0, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn()); err != nil {
+						return nil, err
+					}
+				}
+				if methodMeta != nil && len(methodMeta.DefaultExprs) > 0 && len(methodMeta.ParamTypes) > 0 {
 					// The call takes no type from its slot; its defaults
 					// do not either.
 					t.expectedArgTypes.takeFor(callOwner(suffix))
@@ -985,8 +997,9 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 //
 // Without metadata, or for a call of only positional arguments that omits none
 // — including one spreading into a variadic parameter — the arguments are
-// returned as written. anchor (the argument list, or the `()` of a call with
-// none) locates a diagnostic.
+// returned as written. A positional call with too many arguments, or too few
+// for the parameters without a default, is GALA-E0082. anchor (the argument
+// list, or the `()` of a call with none) locates a diagnostic.
 func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.ParserRuleContext, methodMeta *transpiler.MethodMetadata) ([]*grammar.ArgumentContext, error) {
 	var args []*grammar.ArgumentContext
 	named := false
@@ -997,17 +1010,30 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 			named = named || arg.Identifier() != nil
 		}
 	}
-	if methodMeta == nil || (!named && len(args) >= len(methodMeta.ParamTypes)) {
+	if methodMeta == nil {
 		return args, nil
 	}
-
 	line, col := anchor.GetStart().GetLine(), anchor.GetStart().GetColumn()
+	params := methodParamList(methodMeta.Name, methodMeta)
+	if !named {
+		// A spread argument fills an unknown number of parameters, and a Go
+		// method keeps Go's own check (see call_arity.go).
+		if !slices.ContainsFunc(args, argIsSpread) && !methodMeta.GoDeclared {
+			if err := params.checkPositional(len(args), line, col); err != nil {
+				return nil, err
+			}
+		}
+		if len(args) >= params.fixed() {
+			return args, nil
+		}
+	}
+
 	slots := make([]*grammar.ArgumentContext, len(methodMeta.ParamTypes))
 	next := 0
 	for _, arg := range args {
 		if arg.Identifier() == nil {
 			if next >= len(slots) {
-				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("too many arguments in call to %s", methodMeta.Name))
+				return nil, params.tooManyError(len(args), line, col)
 			}
 			slots[next] = arg
 			next++
@@ -1028,11 +1054,11 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 			continue
 		}
 		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-			paramName := ""
-			if i < len(methodMeta.ParamNames) {
-				paramName = methodMeta.ParamNames[i]
+			nargs := len(args)
+			if named {
+				nargs = -1
 			}
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
+			return nil, params.missingError(i, nargs, line, col)
 		}
 	}
 	return slots, nil
@@ -1590,6 +1616,13 @@ func (t *galaASTTransformer) emitMethodCallWithFullTypes(
 		}
 	}
 	methodFun := &ast.SelectorExpr{X: receiver, Sel: ast.NewIdent(method)}
+	// A Go method keeps Go's own check (see call_arity.go).
+	if len(mNamedArgs) == 0 && !hasSpread && !methodMeta.GoDeclared {
+		if err := methodParamList(methodMeta.Name, methodMeta).checkPositional(len(mArgs),
+			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+			return nil, err
+		}
+	}
 	if len(mNamedArgs) > 0 && len(methodMeta.ParamNames) > 0 {
 		return t.handleNamedArgsMethodCall(methodFun, receiver, mArgs, mNamedArgs, methodMeta, recvType, typeSubst, argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 	}
@@ -1703,9 +1736,14 @@ func (t *galaASTTransformer) tryTransformCompanionApplyOrStructCtor(
 		// rather than being reported as GALA-E0043.
 		// Subset construction fills fields left to right, so it applies only
 		// while there are at least as many fields as arguments. A call with
-		// more arguments than fields is left unhandled and reported by the
-		// type-used-as-constructor check rather than dropping the surplus.
-		if fields, ok := t.structFields[resolvedTypeName]; ok && t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args)) {
+		// more arguments than fields is GALA-E0082 when the struct can be
+		// constructed here at all; otherwise it is left unhandled and reported
+		// by the type-used-as-constructor check, whose hint says why.
+		fields, ok := t.structFields[resolvedTypeName]
+		if ok && len(args) > len(fields) && !typeMeta.IsSealed && !t.positionalCtorIsUnavailable(typeMeta, fields, len(fields)) {
+			return true, nil, structTooManyArgsError(origTypeName, fields, len(args), line, col)
+		}
+		if ok && t.positionalCallBuildsStructLiteral(typeMeta, fields, len(args)) {
 			typedFun, err := t.inferTypeArgsFromPositionalArgs(fun, typeName, resolvedTypeName, fields, args, slotType, line, col)
 			if err != nil {
 				return true, nil, t.preferMissingFieldError(err, typeName, resolvedTypeName, fields, func(i int, _ string) bool { return i < len(args) }, line, col)
@@ -2625,6 +2663,7 @@ func (t *galaASTTransformer) tryTransformValWithApply(fun ast.Expr, args []ast.E
 //	Section 5  Regular function-call context gather     — collectFunctionCallContext
 //	Section 5.5 Value called as a function              — checkValueCalledAsFunction
 //	Section 6  Argument transformation                  — transformFunctionArgs
+//	Section 6.9 Argument count of a GALA function       — paramList.checkPositional
 //	Section 7  Named-args dispatch                      — handleNamedArgs(Func|)Call
 //	Section 8  Default-arg injection                    — fillDefaultArgs
 //	Section 9  StructMeta[T]() intrinsic                — transformStructMetaConstruction
@@ -2755,6 +2794,17 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 				}
 			}
 			return &ast.CallExpr{Fun: fun, Args: args}, nil
+		}
+	}
+
+	// --- Section 6.9: argument count of a GALA function (GALA-E0082) ---
+	// A positional call is checked here; a call with named arguments is
+	// checked as its arguments are laid out (handleNamedArgsFuncCall). A
+	// spread argument fills an unknown number of parameters.
+	if callCtx.funcMeta != nil && len(namedArgs) == 0 && !hasSpread {
+		if err := funcParamList(callCtx.funcMeta.Name, callCtx.funcMeta).checkPositional(len(args),
+			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn()); err != nil {
+			return nil, err
 		}
 	}
 
@@ -4260,9 +4310,7 @@ func (t *galaASTTransformer) fillDefaultArgs(args []ast.Expr, funcMeta *transpil
 	// Fill missing positions with defaults
 	for i := len(args); i < totalParams; i++ {
 		if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-				"missing required argument %q (parameter %d) in call to %s",
-				funcMeta.ParamNames[i], i+1, funcMeta.Name))
+			return nil, funcParamList(funcMeta.Name, funcMeta).missingError(i, len(args), line, col)
 		}
 		expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 		if err != nil {
@@ -4290,9 +4338,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	// Place positional args first
 	for i, arg := range positionalArgs {
 		if i >= totalParams {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-				"too many arguments in call to %s: expected %d, got %d positional + %d named",
-				funcMeta.Name, totalParams, len(positionalArgs), len(namedArgs)))
+			return nil, funcParamList(funcMeta.Name, funcMeta).tooManyError(len(positionalArgs)+len(namedArgs), line, col)
 		}
 		result[i] = arg
 	}
@@ -4322,13 +4368,7 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	for i, slot := range result {
 		if slot == nil {
 			if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
-				paramName := ""
-				if i < len(funcMeta.ParamNames) {
-					paramName = funcMeta.ParamNames[i]
-				}
-				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
-					"missing required argument %q (parameter %d) in call to %s",
-					paramName, i+1, funcMeta.Name))
+				return nil, funcParamList(funcMeta.Name, funcMeta).missingError(i, -1, line, col)
 			}
 			expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 			if err != nil {
@@ -4357,7 +4397,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	result := make([]ast.Expr, totalParams)
 	for i, arg := range positionalArgs {
 		if i >= totalParams {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("too many arguments in call to %s", methodMeta.Name))
+			return nil, methodParamList(methodMeta.Name, methodMeta).tooManyError(len(positionalArgs)+len(namedArgs), line, col)
 		}
 		result[i] = arg
 	}
@@ -4380,11 +4420,7 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 	for i, slot := range result {
 		if slot == nil {
 			if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-				paramName := ""
-				if i < len(methodMeta.ParamNames) {
-					paramName = methodMeta.ParamNames[i]
-				}
-				return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", paramName, i+1, methodMeta.Name))
+				return nil, methodParamList(methodMeta.Name, methodMeta).missingError(i, -1, line, col)
 			}
 			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvType, typeSubst, line, col)
 			if err != nil {
@@ -4404,7 +4440,7 @@ func (t *galaASTTransformer) fillDefaultArgsMethod(callSiteReceiver ast.Expr, ar
 	copy(result, args)
 	for i := len(args); i < totalParams; i++ {
 		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-			return nil, galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf("missing required argument %q (parameter %d) in call to %s", methodMeta.ParamNames[i], i+1, methodMeta.Name))
+			return nil, methodParamList(methodMeta.Name, methodMeta).missingError(i, len(args), line, col)
 		}
 		expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvType, typeSubst, line, col)
 		if err != nil {
