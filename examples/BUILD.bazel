@@ -4080,6 +4080,18 @@ gala_exec_test(
     deps = ["//examples/func_defaults_lib"],
 )
 
+# Defaults declared in another package that read that package's own vals and
+# vars and its own imports — on function and method parameters and on struct
+# fields, built positionally and with named arguments. They used to reach Go
+# bare (`undefined: MaxK`), and an import only the declaring file had was not
+# added.
+gala_exec_test(
+    name = "default_vals_cross_pkg",
+    src = "default_vals_cross_pkg.gala",
+    expected = "default_vals_cross_pkg.out",
+    deps = ["//examples/default_vals_lib"],
+)
+
 # Field chains through a method-call result unwrap immutable fields for
 # value- and pointer-receiver methods, including a method named Get.
 gala_exec_test(

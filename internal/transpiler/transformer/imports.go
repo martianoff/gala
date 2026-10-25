@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,10 @@ type ImportManager struct {
 	// explicitly declared in the source file, e.g., when a lambda parameter type
 	// references a package from a dependency's method signature)
 	transitiveImports map[string]string // path -> alias
+
+	// foreign holds the qualifiers of the file a default being lowered was
+	// declared in (see WithForeignQualifiers); nil otherwise.
+	foreign map[string]*ImportEntry
 
 	// revision changes whenever the entry set, or a field of an existing
 	// entry, changes. It is what lets a consumer that copies entries out of
@@ -360,14 +365,57 @@ func (m *ImportManager) Qualifier(pkgName string) (*ImportEntry, bool) {
 // IsPackage checks if an identifier refers to an imported package.
 // Returns true if the name is a known package alias.
 func (m *ImportManager) IsPackage(name string) bool {
-	_, ok := m.byAlias[name]
+	_, ok := m.GetByAlias(name)
 	return ok
 }
 
-// GetByAlias returns the import entry for a given alias.
+// GetByAlias returns the import entry for a given alias. While a default
+// declared in another file is lowered, the qualifiers that file binds come
+// first (see WithForeignQualifiers).
 func (m *ImportManager) GetByAlias(alias string) (*ImportEntry, bool) {
+	if entry, ok := m.foreign[alias]; ok {
+		return entry, true
+	}
 	entry, ok := m.byAlias[alias]
 	return entry, ok
+}
+
+// WithForeignQualifiers puts the imports of the file a default was written in
+// in scope until the returned function is called: each qualifier of imports
+// (qualifier → import path) names its path, and each package of dots (import
+// path → package name) is dot-imported, unless this file dot-imports it
+// already. A default lowered here was written against its own file's
+// imports, which this file may lack or bind otherwise. Only how source names
+// resolve is affected; the generated code refers to packages through this
+// file's own names (see PathForQualifier), which the caller spells once the
+// default is lowered.
+func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (restore func()) {
+	prev := m.foreign
+	m.foreign = make(map[string]*ImportEntry, len(prev)+len(imports))
+	for q, e := range prev {
+		m.foreign[q] = e
+	}
+	for q, path := range imports {
+		m.foreign[q] = &ImportEntry{Path: path, PkgName: q, Alias: q, named: true}
+	}
+	var added []*ImportEntry
+	for path, pkgName := range dots {
+		if slices.ContainsFunc(m.dotImports, func(e *ImportEntry) bool { return e.Path == path }) {
+			continue
+		}
+		entry := &ImportEntry{Path: path, PkgName: pkgName, Alias: pkgName, IsDot: true, implicit: true}
+		m.entries = append(m.entries, entry)
+		m.dotImports = append(m.dotImports, entry)
+		added = append(added, entry)
+	}
+	m.revision++
+	return func() {
+		m.foreign = prev
+		isAdded := func(e *ImportEntry) bool { return slices.Contains(added, e) }
+		m.entries = slices.DeleteFunc(m.entries, isAdded)
+		m.dotImports = slices.DeleteFunc(m.dotImports, isAdded)
+		m.revision++
+	}
 }
 
 // GetByPath returns the import entry for a given import path.
@@ -386,7 +434,7 @@ func (m *ImportManager) GetByPkgName(pkgName string) (*ImportEntry, bool) {
 // For example, if code has `import libalias "pkg/lib"`, then
 // ResolveAlias("libalias") returns ("lib", true).
 func (m *ImportManager) ResolveAlias(alias string) (string, bool) {
-	entry, ok := m.byAlias[alias]
+	entry, ok := m.GetByAlias(alias)
 	if !ok {
 		return "", false
 	}

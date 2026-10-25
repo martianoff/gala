@@ -637,18 +637,18 @@ func (t *galaASTTransformer) functionByName(name string) (*transpiler.FunctionMe
 // unshadowedFunctionByName is functionByName for a name already known not to
 // be shadowed by a local binding.
 func (t *galaASTTransformer) unshadowedFunctionByName(name string) (*transpiler.FunctionMetadata, bool) {
-	if t.loweringForeignDefault() {
-		if fm, ok := t.functions[name]; ok {
-			return fm, true
-		}
-		fm, ok := t.functions[t.loweringDefault.pkg+"."+name]
-		return fm, ok
-	}
 	if fm, ok := t.functions[name]; ok {
 		return fm, true
 	}
-	if key := ownFunctionKey(t.packageName, name); key != name {
-		if fm, ok := t.functions[key]; ok && fm != nil {
+	// A foreign default's bare names are its own package's, then those of
+	// the packages its file dot-imports (in scope while it is lowered, see
+	// WithForeignQualifiers).
+	if t.loweringForeignDefault() {
+		if fm := t.functions[t.loweringDefault.pkg+"."+name]; fm != nil {
+			return fm, true
+		}
+	} else if key := ownFunctionKey(t.packageName, name); key != name {
+		if fm := t.functions[key]; fm != nil {
 			return fm, true
 		}
 	}

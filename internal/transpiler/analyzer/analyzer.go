@@ -852,6 +852,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	// 0.61 The Go packages the imported packages' defaults name through their
+	// own imports, for lowering those defaults here.
+	a.loadDefaultScopeGoTypes(sourceFile, richAST)
+
 	// 0.62 This file's import table (see fileQualifiers), now that its GALA and
 	// Go imports are loaded, and the import aliases it records (e.g.,
 	// import im "path/to/pkg" → im → actual package name).
@@ -3020,6 +3024,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		}
 	}
 	parsedTrees := a.parseFilesConcurrent(candidatePaths)
+	// What the package's defaults mean where they were written, for a use
+	// site in an importing package (see defaultScopeRecorder).
+	scopes := newDefaultScopeRecorder(importPath)
 
 	for i, tree := range parsedTrees {
 		filePath := candidatePaths[i]
@@ -3079,9 +3086,11 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 				}
 				pkgAST.Merge(res)
 				mergeOwnPackageVals(pkgAST, res, sameAsFilePath)
+				scopes.addFile(canonFile, a.qualifiersForFile(tree, res), res)
 			}
 		}
 	}
+	scopes.record(pkgAST, a.paths.canonical)
 
 	// Scan .go files for exported symbols and type information.
 	// Extract GoExports unconditionally. Even in mixed GALA+Go packages

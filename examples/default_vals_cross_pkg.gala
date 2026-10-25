@@ -1,0 +1,23 @@
+package main
+
+import lim "martianoff/gala/examples/default_vals_lib"
+
+// Defaults declared in another package that read that package's own vals and
+// vars, and its own imports: each is evaluated here, at the call or
+// construction site, against the declaring package's bindings.
+
+func main() {
+    // A caller binding of the same name was not in scope where the default
+    // was written, so it does not stand in for the declaring package's val.
+    val MaxK = 100
+    Println(s"Analyze(2) = ${lim.Analyze(2)}, local MaxK = $MaxK")
+    Println(s"Leveled(2) = ${lim.Leveled(2)}")
+    Println(s"Scaled(2) = ${lim.Scaled(2)}")
+    Println(lim.Rule("rule"))
+    Println(s"Box(4).Times() = ${lim.Box(4).Times()}")
+
+    val positional = lim.Item("x")
+    val named = lim.Item(Name = "y", Depth = 1)
+    Println(s"${positional.Name} at ${positional.At.Line}:${positional.At.Col} depth ${positional.Depth}")
+    Println(s"${named.Name} at ${named.At.Line}:${named.At.Col} depth ${named.Depth}")
+}

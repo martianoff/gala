@@ -193,6 +193,32 @@ func (g *GoTypeInfo) AddImportPathKeys(pkgName, importPath string) {
 	copyKeys(mapKeys(g.GalaTypeMethods), func(from, to string) { g.GalaTypeMethods[to] = g.GalaTypeMethods[from] })
 }
 
+// KeyedByPath returns the entries of g recorded under importPath (see
+// AddImportPathKeys) and no others: the type info of a package that is
+// reached by path alone, without claiming its name for the file reading it.
+func (g *GoTypeInfo) KeyedByPath(importPath string) *GoTypeInfo {
+	out := NewGoTypeInfo()
+	if g == nil || importPath == "" {
+		return out
+	}
+	prefix := importPath + "."
+	pick := func(keys []string, add func(k string)) {
+		for _, k := range keys {
+			if strings.HasPrefix(k, prefix) {
+				add(k)
+			}
+		}
+	}
+	pick(mapKeys(g.Functions), func(k string) { out.Functions[k] = g.Functions[k] })
+	pick(mapKeys(g.Types), func(k string) { out.Types[k] = g.Types[k] })
+	pick(mapKeys(g.Variables), func(k string) { out.Variables[k] = g.Variables[k] })
+	pick(mapKeys(g.Constants), func(k string) { out.Constants[k] = g.Constants[k] })
+	pick(mapKeys(g.UntypedConstants), func(k string) { out.UntypedConstants[k] = g.UntypedConstants[k] })
+	pick(mapKeys(g.TypeAliases), func(k string) { out.TypeAliases[k] = g.TypeAliases[k] })
+	pick(mapKeys(g.GalaTypeMethods), func(k string) { out.GalaTypeMethods[k] = g.GalaTypeMethods[k] })
+	return out
+}
+
 // HasQualified reports whether any entry is recorded under key.
 func (g *GoTypeInfo) HasQualified(key string) bool {
 	if g == nil {
