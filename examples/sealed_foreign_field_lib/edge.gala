@@ -29,6 +29,7 @@ func NameOf(c cmd.Cmd) string = c.Name
 sealed type Lookup[T any] {
     case Found(Value T)
     case Missing(Key string)
+    case Linked(Value T, C cmd.Cmd)
 }
 
 // Find returns the command named name, if there is one.
@@ -39,3 +40,6 @@ func Parse(s string) Either[string, cmd.Cmd] = if (s == "") Left("empty") else R
 
 // LookUp returns s as a Found command, or Missing when s is empty.
 func LookUp(s string) Lookup[cmd.Cmd] = if (s == "") Missing[cmd.Cmd]("empty") else Found(cmd.Cmd(s))
+
+// LinkTo links value to the command named name.
+func LinkTo(value string, name string) Lookup[string] = Linked(value, cmd.Cmd(name))

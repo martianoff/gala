@@ -916,15 +916,14 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// not import, and the generated Go must not import one. A subject whose
 	// type only the cases tell, or that is matched as `any`, keeps the typed
 	// parameter, which converts it.
-	funcLit := &ast.FuncLit{
-		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField},
-		Body: t.buildInlinedMatchBlock(subject, paramName, matchedType, stmts),
-	}
+	funcLit := &ast.FuncLit{Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField}}
 	call := &ast.CallExpr{Fun: funcLit}
 	if typedFromCases || matchedType.IsAny() {
 		funcLit.Type.Params.List = []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(matchedType)}}
 		funcLit.Body = &ast.BlockStmt{List: stmts}
 		call.Args = []ast.Expr{subject}
+	} else {
+		funcLit.Body = t.buildInlinedMatchBlock(subject, paramName, matchedType, stmts)
 	}
 	if !stmtPosition {
 		t.recordBranchingCall(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())

@@ -21,6 +21,7 @@ func parsed(s string) string = lib.Parse(s) match {
 func lookedUp(s string) string = lib.LookUp(s) match {
     case lib.Found(c) => s"found ${lib.NameOf(c)}"
     case lib.Missing(key) => s"missing $key"
+    case _ => "linked"
 }
 
 func edgeName(e lib.Edge) string = e match {
@@ -28,7 +29,15 @@ func edgeName(e lib.Edge) string = e match {
     case _ => "other"
 }
 
+// A case whose fields include a type of the unimported package, over a type
+// argument this file can name.
+func linked(l lib.Lookup[string]) string = l match {
+    case lib.Linked(v, c) => s"$v -> ${lib.NameOf(c)}"
+    case _ => "unlinked"
+}
+
 func main() {
+    Println(linked(lib.LinkTo("x", "e")))
     Println(found("a"))
     Println(found(""))
     Println(parsed("b"))

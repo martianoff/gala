@@ -3,12 +3,11 @@ package transformer
 import (
 	"fmt"
 	"go/ast"
-	"go/token"
-	"hash/fnv"
-	"path/filepath"
+	"slices"
 	"strings"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // extractorUnapplyCall builds the call that runs extractor's Unapply on obj.
@@ -21,11 +20,11 @@ import (
 // them from obj, the call goes through a generic helper declared once per file
 // instead,
 //
-//	func _unapply_std_Right[_T0 any, _T1 any](v std.Either[_T0, _T1]) std.Option[_T1] {
+//	func _unapply_std_Right_1a2b3c4d[_T0 any, _T1 any](v std.Either[_T0, _T1]) std.Option[_T1] {
 //		return std.Right[_T0, _T1]{}.Unapply(v)
 //	}
 //
-// and reads `_unapply_std_Right(obj)`, which names none of them.
+// and reads `_unapply_std_Right_1a2b3c4d(obj)`, which names none of them.
 func (t *galaASTTransformer) extractorUnapplyCall(
 	extractorName string,
 	meta *transpiler.TypeMetadata,
@@ -42,7 +41,7 @@ func (t *galaASTTransformer) extractorUnapplyCall(
 		typeArgs[i] = t.typeToExpr(tp)
 	}
 	return &ast.CallExpr{
-		Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: indexType(t.ident(extractorName), typeArgs)}, Sel: ast.NewIdent("Unapply")},
+		Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: withTypeArgs(t.ident(extractorName), typeArgs)}, Sel: ast.NewIdent("Unapply")},
 		Args: []ast.Expr{objExpr},
 	}
 }
@@ -65,46 +64,47 @@ func (t *galaASTTransformer) unapplyHelper(
 		return "", false
 	}
 	param := unapplyMeta.ParamTypes[0]
-	if t.substituteConcreteTypes(param, meta.TypeParams, inferredTypes).String() != matchedType.String() {
+	if !typeMentionsAllTypeParams(param, meta.TypeParams) ||
+		t.substituteConcreteTypes(param, meta.TypeParams, inferredTypes).String() != matchedType.String() {
 		return "", false
+	}
+	for _, tp := range meta.TypeParams {
+		if c := meta.TypeParamConstraints[tp]; c != "" && c != "any" && c != "comparable" {
+			return "", false
+		}
+	}
+
+	// The file names the extractor (extractorName, as the pattern wrote it),
+	// so no two extractors it matches share that name.
+	if name, ok := t.unapplyHelpers[extractorName]; ok {
+		return name, true
 	}
 	placeholders := make([]transpiler.Type, len(meta.TypeParams))
 	for i := range meta.TypeParams {
 		placeholders[i] = transpiler.BasicType{Name: fmt.Sprintf("_T%d", i)}
 	}
 	param = t.substituteConcreteTypes(param, meta.TypeParams, placeholders)
-	for i, tp := range meta.TypeParams {
-		if c := meta.TypeParamConstraints[tp]; c != "" && c != "any" && c != "comparable" {
-			return "", false
-		}
-		if !mentionsTypeName(param, placeholders[i].String()) {
-			return "", false
-		}
+	result := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, placeholders)
+	// The helper's signature writes every type in it but the type
+	// parameters: a case's field types are in its result. One naming a
+	// package this file does not import would bring the import back.
+	if !t.namesOnlyImportedPackages(param) || !t.namesOnlyImportedPackages(result) {
+		return "", false
 	}
 
-	callee := t.ident(extractorName)
-	name := "_unapply_" + strings.Map(func(r rune) rune {
-		if r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
-			return r
-		}
-		return '_'
-	}, meta.Package+"_"+meta.Name) + t.fileDeclSuffix()
-	if t.unapplyHelpers[name] {
-		return name, true
-	}
-
+	name := "_unapply_" + strings.ReplaceAll(extractorName, ".", "_") + t.codecFileSuffix()
 	typeParams := &ast.FieldList{}
-	typeArgs := make([]ast.Expr, len(placeholders))
-	for i, p := range placeholders {
-		constraint := meta.TypeParamConstraints[meta.TypeParams[i]]
+	typeArgs := make([]ast.Expr, len(meta.TypeParams))
+	for i, tp := range meta.TypeParams {
+		p := placeholders[i].String()
+		constraint := meta.TypeParamConstraints[tp]
 		if constraint == "" {
 			constraint = "any"
 		}
-		typeParams.List = append(typeParams.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(p.String())}, Type: ast.NewIdent(constraint)})
-		typeArgs[i] = ast.NewIdent(p.String())
+		typeParams.List = append(typeParams.List, &ast.Field{Names: []*ast.Ident{ast.NewIdent(p)}, Type: ast.NewIdent(constraint)})
+		typeArgs[i] = ast.NewIdent(p)
 	}
-	result := t.substituteConcreteTypes(unapplyMeta.ReturnType, meta.TypeParams, placeholders)
-	decl := &ast.FuncDecl{
+	t.unapplyHelperDecls = append(t.unapplyHelperDecls, &ast.FuncDecl{
 		Name: ast.NewIdent(name),
 		Type: &ast.FuncType{
 			TypeParams: typeParams,
@@ -112,77 +112,46 @@ func (t *galaASTTransformer) unapplyHelper(
 			Results:    &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(result)}}},
 		},
 		Body: &ast.BlockStmt{List: []ast.Stmt{&ast.ReturnStmt{Results: []ast.Expr{&ast.CallExpr{
-			Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: indexType(callee, typeArgs)}, Sel: ast.NewIdent("Unapply")},
+			Fun:  &ast.SelectorExpr{X: &ast.CompositeLit{Type: withTypeArgs(t.ident(extractorName), typeArgs)}, Sel: ast.NewIdent("Unapply")},
 			Args: []ast.Expr{ast.NewIdent("v")},
 		}}}}},
-	}
-	if t.unapplyHelpers == nil {
-		t.unapplyHelpers = make(map[string]bool)
-	}
-	t.unapplyHelpers[name] = true
-	t.unapplyHelperDecls = append(t.unapplyHelperDecls, decl)
+	})
+	t.unapplyHelpers[extractorName] = name
 	return name, true
 }
 
-// fileDeclSuffix tells apart the package-level helpers that each file of a
-// package declares for itself: `_` and a hash of the file's name, which is
-// unique in its package (its path is not stable across machines), or nothing
-// when the file has no path.
-func (t *galaASTTransformer) fileDeclSuffix() string {
-	if t.filePath == "" {
-		return ""
-	}
-	h := fnv.New32a()
-	h.Write([]byte(filepath.Base(filepath.ToSlash(t.filePath))))
-	return fmt.Sprintf("_%08x", h.Sum32())
-}
-
-// indexType instantiates the generic type x with args: x[a] or x[a, b, ...];
-// x itself when there are none.
-func indexType(x ast.Expr, args []ast.Expr) ast.Expr {
-	switch len(args) {
-	case 0:
-		return x
-	case 1:
-		return &ast.IndexExpr{X: x, Index: args[0]}
-	default:
-		return &ast.IndexListExpr{X: x, Lbrack: token.NoPos, Indices: args}
-	}
-}
-
-// mentionsTypeName reports whether typ names the type name anywhere.
-func mentionsTypeName(typ transpiler.Type, name string) bool {
+// namesOnlyImportedPackages reports whether every package-qualified type in
+// typ is of a package this file can name without a new import: its own, std,
+// or one this file (or, for a GALA package, a sibling file) imports.
+func (t *galaASTTransformer) namesOnlyImportedPackages(typ transpiler.Type) bool {
 	switch v := typ.(type) {
-	case transpiler.BasicType:
-		return v.Name == name
 	case transpiler.NamedType:
-		return v.Package == "" && v.Name == name
-	case transpiler.GenericType:
-		if mentionsTypeName(v.Base, name) {
+		if v.Package == "" || v.Package == t.packageName || v.Package == registry.StdPackageName || t.importManager.IsDotImported(v.Package) {
 			return true
 		}
+		_, ok := t.importManager.Qualifier(v.Package)
+		return ok
+	case transpiler.GenericType:
+		if !t.namesOnlyImportedPackages(v.Base) {
+			return false
+		}
 		for _, p := range v.Params {
-			if mentionsTypeName(p, name) {
-				return true
+			if !t.namesOnlyImportedPackages(p) {
+				return false
 			}
 		}
 	case transpiler.ArrayType:
-		return mentionsTypeName(v.Elem, name)
+		return t.namesOnlyImportedPackages(v.Elem)
 	case transpiler.PointerType:
-		return mentionsTypeName(v.Elem, name)
+		return t.namesOnlyImportedPackages(v.Elem)
 	case transpiler.MapType:
-		return mentionsTypeName(v.Key, name) || mentionsTypeName(v.Elem, name)
+		return t.namesOnlyImportedPackages(v.Key) && t.namesOnlyImportedPackages(v.Elem)
 	case transpiler.FuncType:
-		for _, p := range v.Params {
-			if mentionsTypeName(p, name) {
-				return true
-			}
-		}
-		for _, r := range v.Results {
-			if mentionsTypeName(r, name) {
-				return true
+		for _, p := range append(slices.Clone(v.Params), v.Results...) {
+			if !t.namesOnlyImportedPackages(p) {
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }

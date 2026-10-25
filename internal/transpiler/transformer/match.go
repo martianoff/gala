@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -77,31 +78,54 @@ func (t *galaASTTransformer) buildInlinedMatchBlock(expr ast.Expr, paramName str
 	return &ast.BlockStmt{List: stmts}
 }
 
-// readsName reports whether stmts read the identifier name. The name a `:=`
-// declares is not a read: a nested inlined match declares its own `obj`.
+// readsName reports whether stmts read the identifier name declared before
+// them. Once a statement declares name again (`name := ...`, as a nested
+// inlined match declares its own `obj`), the statements after it read the new
+// one, and so does a function literal with a parameter of that name. A
+// selector's field name is no read.
 func readsName(stmts []ast.Stmt, name string) bool {
+	for _, s := range stmts {
+		if as, ok := s.(*ast.AssignStmt); ok && as.Tok == token.DEFINE && slices.ContainsFunc(as.Lhs, func(l ast.Expr) bool {
+			id, ok := l.(*ast.Ident)
+			return ok && id.Name == name
+		}) {
+			return slices.ContainsFunc(as.Rhs, func(r ast.Expr) bool { return nodeReadsName(r, name) })
+		}
+		if nodeReadsName(s, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeReadsName is readsName for one node: its blocks are scopes of their own.
+func nodeReadsName(n ast.Node, name string) bool {
 	found := false
-	var visit func(ast.Node) bool
-	visit = func(n ast.Node) bool {
+	ast.Inspect(n, func(n ast.Node) bool {
 		if found {
 			return false
 		}
 		switch x := n.(type) {
-		case *ast.AssignStmt:
-			if x.Tok == token.DEFINE {
-				for _, r := range x.Rhs {
-					ast.Inspect(r, visit)
+		case *ast.BlockStmt:
+			found = readsName(x.List, name)
+			return false
+		case *ast.CaseClause:
+			found = slices.ContainsFunc(x.List, func(e ast.Expr) bool { return nodeReadsName(e, name) }) || readsName(x.Body, name)
+			return false
+		case *ast.FuncLit:
+			for _, f := range x.Type.Params.List {
+				if slices.ContainsFunc(f.Names, func(id *ast.Ident) bool { return id.Name == name }) {
+					return false
 				}
-				return false
 			}
+		case *ast.SelectorExpr:
+			found = nodeReadsName(x.X, name)
+			return false
 		case *ast.Ident:
 			found = x.Name == name
 		}
 		return true
-	}
-	for _, s := range stmts {
-		ast.Inspect(s, visit)
-	}
+	})
 	return found
 }
 
