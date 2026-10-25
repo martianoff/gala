@@ -338,12 +338,11 @@ func (t *galaASTTransformer) typeToExpr(typ transpiler.Type) ast.Expr {
 	case transpiler.MapType:
 		return &ast.MapType{Key: t.typeToExpr(v.Key), Value: t.typeToExpr(v.Elem)}
 	case transpiler.FuncType:
-		var params *ast.FieldList
-		if len(v.Params) > 0 {
-			params = &ast.FieldList{}
-			for _, p := range v.Params {
-				params.List = append(params.List, &ast.Field{Type: t.typeToExpr(p)})
-			}
+		// Params is never nil: go/ast's FuncType.End reads it when there are
+		// no results, so a nil list panics the printer on `func()`.
+		params := &ast.FieldList{}
+		for _, p := range v.Params {
+			params.List = append(params.List, &ast.Field{Type: t.typeToExpr(p)})
 		}
 		var results *ast.FieldList
 		if len(v.Results) > 0 {

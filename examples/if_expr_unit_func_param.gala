@@ -1,0 +1,23 @@
+package main
+
+// A lambda that takes a `func()` and comes out of an if-expression or a
+// match: the transpiler spells the value's type, func(func()), into Go.
+
+func main() {
+    val loud = true
+    val cb =
+        if (loud)
+            ((f func()) => f())
+        else
+            ((f func()) => {})
+    cb(Println("called"))
+
+    val pick = 2 match {
+        case 1 => (f func(), g func()) => f()
+        case _ => (f func(), g func()) => g()
+    }
+    pick(Println("first"), Println("second"))
+
+    val thunk = if (loud) Some(() => Println("in option")) else Some(() => {})
+    thunk.ForEach((f) => f())
+}
