@@ -174,6 +174,7 @@ func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
 	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, nil, nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil
+	t.signatureDots = nil
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the
