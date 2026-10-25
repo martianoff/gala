@@ -993,7 +993,8 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 // bindMethodArguments lays a call's arguments out in the method's parameter
 // order: positional arguments first, in order, then each named argument in its
 // parameter's slot. A nil slot is a parameter the call omits, which must have a
-// default.
+// default. A variadic parameter the call omits takes no argument: the slots
+// returned then stop before it, one fewer than the parameters.
 //
 // Without metadata, or for a call of only positional arguments that omits none
 // — including one spreading into a variadic parameter — the arguments are
@@ -1052,6 +1053,10 @@ func bindMethodArguments(argListCtx *grammar.ArgumentListContext, anchor antlr.P
 	for i, slot := range slots {
 		if slot != nil {
 			continue
+		}
+		if params.isVariadicSlot(i) {
+			// A variadic parameter left out takes no argument.
+			return slots[:i], nil
 		}
 		if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
 			nargs := len(args)
@@ -4365,10 +4370,16 @@ func (t *galaASTTransformer) handleNamedArgsFuncCall(
 	}
 
 	// Fill remaining gaps with defaults
+	params := funcParamList(funcMeta.Name, funcMeta)
 	for i, slot := range result {
 		if slot == nil {
+			if params.isVariadicSlot(i) {
+				// A variadic parameter left out takes no argument.
+				result = result[:i]
+				break
+			}
 			if _, hasDefault := funcMeta.DefaultExprs[i]; !hasDefault {
-				return nil, funcParamList(funcMeta.Name, funcMeta).missingError(i, -1, line, col)
+				return nil, params.missingError(i, -1, line, col)
 			}
 			expr, err := t.funcDefaultArg(funcMeta, i, typeSubst, line, col)
 			if err != nil {
@@ -4417,10 +4428,16 @@ func (t *galaASTTransformer) handleNamedArgsMethodCall(
 		}
 		result[idx] = expr
 	}
+	params := methodParamList(methodMeta.Name, methodMeta)
 	for i, slot := range result {
 		if slot == nil {
+			if params.isVariadicSlot(i) {
+				// A variadic parameter left out takes no argument.
+				result = result[:i]
+				break
+			}
 			if _, hasDefault := methodMeta.DefaultExprs[i]; !hasDefault {
-				return nil, methodParamList(methodMeta.Name, methodMeta).missingError(i, -1, line, col)
+				return nil, params.missingError(i, -1, line, col)
 			}
 			expr, err := t.methodDefaultArg(methodMeta, i, callSiteReceiver, recvType, typeSubst, line, col)
 			if err != nil {
