@@ -2955,19 +2955,11 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 				if err := checkUnknownStructFields(qualifiedName, variantFieldNames, argListCtx); err != nil {
 					return nil, err
 				}
-				if err := checkPositionalBeforeNamed(qualifiedName, argListCtx); err != nil {
-					return nil, err
-				}
 				// The positional arguments bind type parameters as the named
 				// ones do.
-				inferArgs := namedArgs
-				if len(args) > 0 {
-					inferArgs = maps.Clone(namedArgs)
-					for i, a := range args {
-						if i < len(variantFieldNames) {
-							inferArgs[variantFieldNames[i]] = a
-						}
-					}
+				inferArgs, err := bindPositionalStructArgs(qualifiedName, variantFieldNames, args, namedArgs, argListCtx)
+				if err != nil {
+					return nil, err
 				}
 				variantFun, err := t.inferVariantTypeArgs(fun, callCtx.variant, callCtx.variantParent, inferArgs, line, col)
 				if err != nil {
@@ -2997,11 +2989,9 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		if err := checkUnknownStructFields(qualifiedName, fields, argListCtx); err != nil {
 			return nil, err
 		}
-		if len(args) > 0 {
-			var err error
-			if namedArgs, err = bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, argListCtx); err != nil {
-				return nil, err
-			}
+		namedArgs, err := bindPositionalStructArgs(qualifiedName, fields, args, namedArgs, argListCtx)
+		if err != nil {
+			return nil, err
 		}
 		// Another package's struct is not constructible here when the literal
 		// would set a field private to that package.
@@ -3030,7 +3020,15 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
 	// Otherwise a Go-imported type with no type info (direct or dot-imported).
+	// Its fields are unknown, so a positional argument has none to bind.
+	goTypeWithPositional := func() error {
+		return galaerr.NewSemanticErrorAt(line, col, fmt.Sprintf(
+			"%s is a Go type: construct it with named arguments only, one per field", qualifiedName))
+	}
 	if t.isGoImportedType(fun) {
+		if len(args) > 0 {
+			return nil, goTypeWithPositional()
+		}
 		return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 	}
 	// Dot-imported types (bare or generic). The base of a generic
@@ -3043,6 +3041,9 @@ func (t *galaASTTransformer) handleNamedArgsCall(fun ast.Expr, args []ast.Expr, 
 	if unwrapToBaseIdent(fun) != nil {
 		for _, pkg := range t.importManager.GetDotImports() {
 			if pkg != "std" && pkg != t.packageName {
+				if len(args) > 0 {
+					return nil, goTypeWithPositional()
+				}
 				return buildGoCompositeLiteralWithNamedArgs(fun, namedArgs, t.sortKeyValueExprs), nil
 			}
 		}
@@ -3080,6 +3081,9 @@ func checkPositionalBeforeNamed(qualifiedName string, argListCtx *grammar.Argume
 // named ones. A positional argument after a named one, more arguments than
 // fields, and a field given both ways are errors.
 func bindPositionalStructArgs(qualifiedName string, fields []string, args []ast.Expr, namedArgs map[string]ast.Expr, argListCtx *grammar.ArgumentListContext) (map[string]ast.Expr, error) {
+	if len(args) == 0 {
+		return namedArgs, nil
+	}
 	if err := checkPositionalBeforeNamed(qualifiedName, argListCtx); err != nil {
 		return nil, err
 	}
