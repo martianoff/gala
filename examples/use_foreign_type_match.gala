@@ -14,13 +14,13 @@ func found(name string) string = lib.Find(name) match {
 }
 
 func parsed(s string) string = lib.Parse(s) match {
-    case Right(c) => "right " + lib.NameOf(c)
-    case Left(why) => "left " + why
+    case Right(c) => s"right ${lib.NameOf(c)}"
+    case Left(why) => s"left $why"
 }
 
 func lookedUp(s string) string = lib.LookUp(s) match {
-    case lib.Found(c) => "found " + lib.NameOf(c)
-    case lib.Missing(key) => "missing " + key
+    case lib.Found(c) => s"found ${lib.NameOf(c)}"
+    case lib.Missing(key) => s"missing $key"
 }
 
 func edgeName(e lib.Edge) string = e match {
