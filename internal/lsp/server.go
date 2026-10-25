@@ -721,14 +721,15 @@ func zeroRange() lsp.Range {
 	}
 }
 
-// errorsToDiagnostics converts an error (possibly MultiError) into diagnostics
-// positioned on the document x indexes, the file at filePath.
+// errorsToDiagnostics converts an error (possibly a MultiError, nested ones
+// included) into diagnostics positioned on the document x indexes, the file at
+// filePath.
 func errorsToDiagnostics(err error, x lineIndex, filePath string) []lsp.Diagnostic {
 	var multiErr *galaerr.MultiError
 	if errors.As(err, &multiErr) {
 		diags := make([]lsp.Diagnostic, 0)
 		for _, subErr := range multiErr.Errors {
-			diags = append(diags, errorToDiagnostic(subErr, x, filePath))
+			diags = append(diags, errorsToDiagnostics(subErr, x, filePath)...)
 		}
 		return diags
 	}

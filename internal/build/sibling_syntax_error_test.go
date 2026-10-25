@@ -10,8 +10,8 @@ import (
 )
 
 // A package file that does not parse must be reported at its own file, line
-// and column by `gala build` and `gala test` (and so by `--json`, which emits
-// galaerr.Diagnostics). It used to be dropped from its siblings' analysis, and
+// and column by `gala build` and `gala test` (and by `gala build --json`, which
+// emits galaerr.Diagnostics). It used to be dropped from its siblings' analysis, and
 // the first file transpiled failed instead with GALA-E0023 "undefined: B" plus
 // a hint to import the package into itself.
 func TestBuild_SiblingSyntaxErrorReportedAtItsFile(t *testing.T) {

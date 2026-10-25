@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -531,20 +530,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if len(siblingSyntaxErrs) == 0 {
 			return
 		}
-		// One flat MultiError: renderers unpack a single level.
-		var all []error
-		for _, e := range siblingSyntaxErrs {
-			var multi *galaerr.MultiError
-			if errors.As(e, &multi) {
-				all = append(all, multi.Errors...)
-			} else {
-				all = append(all, e)
-			}
+		sibErr := siblingSyntaxErrs[0]
+		if len(siblingSyntaxErrs) > 1 {
+			sibErr = &galaerr.MultiError{Errors: siblingSyntaxErrs}
 		}
-		var sibErr error = &galaerr.MultiError{Errors: all}
 		if err != nil {
 			result, err = nil, sibErr
-		} else if result != nil {
+		} else {
 			result.SiblingSyntaxErrors = sibErr
 		}
 	}()
@@ -605,10 +597,13 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 		trees, parseErrs := a.parseFilesConcurrent(toParse)
 		for i, otherSF := range trees {
-			if otherSF == nil {
-				if parseErrs[i] != nil {
-					siblingSyntaxErrs = append(siblingSyntaxErrs, parseErrs[i])
+			if perr := parseErrs[i]; perr != nil {
+				if a.seesSibling(toParse[i], filePath) {
+					siblingSyntaxErrs = append(siblingSyntaxErrs, perr)
 				}
+				continue
+			}
+			if otherSF == nil {
 				continue
 			}
 			pf := toParse[i]
@@ -689,13 +684,14 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 				var cacheTrees []*grammar.SourceFileContext
 				var cachePaths, failedPaths []string
 				for i, otherSF := range trees {
-					if otherSF == nil {
-						if parseErrs[i] != nil {
-							failedPaths = append(failedPaths, candidatePaths[i])
-							if a.seesSibling(candidatePaths[i], filePath) {
-								siblingSyntaxErrs = append(siblingSyntaxErrs, parseErrs[i])
-							}
+					if perr := parseErrs[i]; perr != nil {
+						failedPaths = append(failedPaths, candidatePaths[i])
+						if a.seesSibling(candidatePaths[i], filePath) {
+							siblingSyntaxErrs = append(siblingSyntaxErrs, perr)
 						}
+						continue
+					}
+					if otherSF == nil {
 						continue
 					}
 					cacheTrees = append(cacheTrees, otherSF)
