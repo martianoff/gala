@@ -154,6 +154,7 @@ declared `At time.Time = time.Now()` records the time of each construction.
 
 **Scope.** This code covers an omitted field in shorthand struct construction,
 and a named argument naming no field in any struct construction.
-A missing argument to an ordinary function or method is reported separately, and
+A missing argument to an ordinary function or method, and a construction with
+more arguments than the struct has fields, is [GALA-E0082](GALA-E0082.md), and
 a type name called where it constructs nothing is
 [GALA-E0043](GALA-E0043.md).
