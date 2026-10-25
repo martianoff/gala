@@ -1,6 +1,8 @@
 package transformer
 
 import (
+	"maps"
+
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -141,6 +143,36 @@ var accumulatedStateFields = []string{
 	"lastLine",
 	"lastCol",
 	"goCtorClaims",
+}
+
+// scopedStateSnapshot is the scoped state at one point of the traversal, for
+// putting it back after a recovered panic skipped the restores that would
+// have (lowersCleanly). Fields that are zero between top-level declarations
+// are not saved; restoreScopedState zeroes them.
+type scopedStateSnapshot struct {
+	currentScope     *scope
+	activeTypeParams map[string]bool
+	returnSlot       returnSlot
+	argDepth         int
+}
+
+func (t *galaASTTransformer) saveScopedState() scopedStateSnapshot {
+	return scopedStateSnapshot{
+		currentScope: t.currentScope,
+		// activeTypeParams is extended in place (bindTypeParams), so it is copied.
+		activeTypeParams: maps.Clone(t.activeTypeParams),
+		returnSlot:       t.returnSlot,
+		argDepth:         len(t.expectedArgTypes.stack),
+	}
+}
+
+// restoreScopedState puts back every field scopedStateChecks lists: the saved
+// ones from s, the rest to their zero value.
+func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
+	t.currentScope, t.activeTypeParams, t.returnSlot = s.currentScope, s.activeTypeParams, s.returnSlot
+	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
+	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, nil, nil
+	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the

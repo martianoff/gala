@@ -211,10 +211,18 @@ func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Typ
 // lowersCleanly lowers one top-level declaration, reporting whether it lowered
 // without an error. A diagnostic raised as a panic counts as an error, so one
 // failing initializer does not cost the declarations after it their types.
+// A failed lowering, by panic or by an early error return, can skip the
+// manual restores of the scoped state it had set (see scoped_state.go), so
+// that state is put back here: otherwise the next declaration would be
+// lowered with it, e.g. a match lowered as a discarded statement.
 func (t *galaASTTransformer) lowersCleanly(decl grammar.ITopLevelDeclarationContext) (ok bool) {
+	saved := t.saveScopedState()
 	defer func() {
 		if r := recover(); r != nil {
 			ok = false
+		}
+		if !ok {
+			t.restoreScopedState(saved)
 		}
 	}()
 	_, err := t.transformTopLevelDeclaration(decl)
@@ -225,22 +233,22 @@ func (t *galaASTTransformer) lowersCleanly(decl grammar.ITopLevelDeclarationCont
 // and records the type each binding takes in t.valTypes (InferPackageValTypes).
 func (t *galaASTTransformer) recordPackageValTypes(sourceFile *grammar.SourceFileContext) {
 	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
-		var idList grammar.IIdentifierListContext
+		// val and var declarations share the shape read here.
+		var decl interface {
+			IdentifierList() grammar.IIdentifierListContext
+			TuplePattern() grammar.ITuplePatternContext
+		}
 		switch {
 		case topDeclCtx.ValDeclaration() != nil:
-			vc := topDeclCtx.ValDeclaration().(*grammar.ValDeclarationContext)
-			idList = vc.IdentifierList()
-			if tp := vc.TuplePattern(); tp != nil {
-				idList = tp.(*grammar.TuplePatternContext).IdentifierList()
-			}
+			decl = topDeclCtx.ValDeclaration()
 		case topDeclCtx.VarDeclaration() != nil:
-			vc := topDeclCtx.VarDeclaration().(*grammar.VarDeclarationContext)
-			idList = vc.IdentifierList()
-			if tp := vc.TuplePattern(); tp != nil {
-				idList = tp.(*grammar.TuplePatternContext).IdentifierList()
-			}
+			decl = topDeclCtx.VarDeclaration()
 		default:
 			continue
+		}
+		idList := decl.IdentifierList()
+		if tp := decl.TuplePattern(); tp != nil {
+			idList = tp.IdentifierList()
 		}
 		if idList == nil {
 			continue // parse-error recovery

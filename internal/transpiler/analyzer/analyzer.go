@@ -1748,14 +1748,16 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	}
 
 	logPhase("finalize", phaseStart)
-	if profiler.Enabled && isTopLevel {
-		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
-	}
 
+	phaseStart = time.Now()
 	richAST.ApplyPackageKeys()
 	a.inferPackageValTypes(richAST,
 		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
 		append([]string{absFilePath}, siblingPaths...))
+	logPhase("infer-package-val-types", phaseStart)
+	if profiler.Enabled && isTopLevel {
+		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
+	}
 	return richAST, nil
 }
 

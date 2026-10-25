@@ -100,3 +100,44 @@ func TestScopedStateResidueCoversEveryScopedField(t *testing.T) {
 		})
 	}
 }
+
+// TestRestoreScopedStateCoversEveryScopedField: restoring a snapshot puts the
+// saved scope, type parameters and expected-argument depth back and clears
+// every other scoped field, so a declaration lowered after a failed one
+// (lowersCleanly) starts from the state before it. A scoped field added
+// without a restore shows up here as residue.
+func TestRestoreScopedStateCoversEveryScopedField(t *testing.T) {
+	t.Run("clean snapshot", func(t *testing.T) {
+		tr, ok := NewGalaASTTransformer().(*galaASTTransformer)
+		require.True(t, ok)
+		saved := tr.saveScopedState()
+		for _, name := range scopedStateFieldNames() {
+			setScopedFieldNonZero[name](tr)
+		}
+		require.Len(t, tr.scopedStateResidue(), len(scopedStateFieldNames()))
+
+		tr.restoreScopedState(saved)
+		require.Empty(t, tr.scopedStateResidue())
+	})
+
+	t.Run("saved values come back", func(t *testing.T) {
+		tr, ok := NewGalaASTTransformer().(*galaASTTransformer)
+		require.True(t, ok)
+		tr.pushScope()
+		outer := tr.currentScope
+		tr.activeTypeParams["T"] = true
+		tr.expectedArgTypes.push(transpiler.BasicType{Name: "int"})
+		saved := tr.saveScopedState()
+
+		tr.pushScope()
+		tr.activeTypeParams["U"] = true
+		tr.expectedArgTypes.push(transpiler.BasicType{Name: "string"})
+		tr.matchInStatementPos = true
+
+		tr.restoreScopedState(saved)
+		require.Same(t, outer, tr.currentScope)
+		require.Equal(t, map[string]bool{"T": true}, tr.activeTypeParams)
+		require.Len(t, tr.expectedArgTypes.stack, 1)
+		require.False(t, tr.matchInStatementPos)
+	})
+}

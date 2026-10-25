@@ -15,15 +15,9 @@ import (
 // another val, and a val reading a val of a sibling file.
 func packageValInferredTypeFixture(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	write := func(rel, content string) {
-		t.Helper()
-		full := filepath.Join(root, filepath.FromSlash(rel))
-		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
-		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
-	}
-	write("gala.mod", "module example.com/pv\n\ngala dev\n")
-	write("p/a.gala", `package p
+	return writeGalaModule(t, map[string]string{
+		"gala.mod": "module example.com/pv\n\ngala dev\n",
+		"p/a.gala": `package p
 
 import . "martianoff/gala/collection_immutable"
 
@@ -32,8 +26,10 @@ val Names = ArrayOf("a", "b")
 val Loud = Names.Map((n) => n + "?")
 
 val Lengths = Shouted.Map((s) => s.Size())
-`)
-	write("p/b.gala", `package p
+
+val Wrapped = Some(Shouted)
+`,
+		"p/b.gala": `package p
 
 import . "martianoff/gala/collection_immutable"
 
@@ -44,8 +40,10 @@ func Bang() Array[string] = Names.Map((n) => n + "!")
 func Quiet() Array[string] = Loud.Map((n) => n + ".")
 
 func Total() int = Lengths.FoldLeft(0, (acc, n) => acc + n)
-`)
-	return root
+
+func WrappedSize() int = Wrapped.Map((w) => w.Size()).GetOrElse(0)
+`,
+	})
 }
 
 // TestPackageValInferredTypeAcrossFiles: a package-level val whose type is
@@ -64,6 +62,10 @@ func TestPackageValInferredTypeAcrossFiles(t *testing.T) {
 		out, err := transpileCrossPkgFile(t, root, string(src), path)
 		require.NoError(t, err)
 		assert.Contains(t, out, "func(n string) string", "generated:\n%s", out)
+		// Wrapped's file is visited before the file declaring Shouted, so its
+		// first inference sees Shouted untyped; the type it ends up with must
+		// still name Shouted's element type.
+		assert.Contains(t, out, "func(w Array[string]) int", "generated:\n%s", out)
 	})
 
 	t.Run("declaring file", func(t *testing.T) {
@@ -87,4 +89,56 @@ func main() {
 		require.NoError(t, err)
 		assert.Contains(t, out, "func(n string) string", "generated:\n%s", out)
 	})
+}
+
+// TestPackageValInferenceAfterPanickingInitializer: an initializer whose
+// lowering raises a diagnostic as a panic (here a recursive Immutable inside a
+// statement-position match) must not leave the scoped state it had set behind
+// for the declarations after it. The panic skipped the restore of the
+// statement-position flag, so Label's match was lowered as a discarded
+// statement and Label reached the sibling file with no type.
+func TestPackageValInferenceAfterPanickingInitializer(t *testing.T) {
+	root := writeGalaModule(t, map[string]string{
+		"gala.mod": "module example.com/pvr\n\ngala dev\n",
+		"p/a.gala": `package p
+
+func ident[T any](x T) T = x
+
+func apply[T any](x T, f func(T) T) T = f(x)
+
+val Bad = apply(5, (w) => {
+    w match {
+        case _ => NewImmutable(NewImmutable(w)).Get().Get()
+    }
+    w
+})
+
+val Label = ident(3) match {
+    case _ => "x"
+}
+`,
+		"p/b.gala": `package p
+
+func Shout() string = Some(Label).Map((s) => s + "!").GetOrElse("")
+`,
+	})
+	path := filepath.Join(root, "p", "b.gala")
+	src, err := os.ReadFile(path)
+	require.NoError(t, err)
+	out, err := transpileCrossPkgFile(t, root, string(src), path)
+	require.NoError(t, err)
+	assert.Contains(t, out, "func(s string) string", "generated:\n%s", out)
+}
+
+// writeGalaModule writes files (slash-separated paths relative to the module
+// root) into a fresh temporary directory and returns it.
+func writeGalaModule(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, content := range files {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	}
+	return root
 }
