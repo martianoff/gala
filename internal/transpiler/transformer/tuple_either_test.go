@@ -56,8 +56,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
-				"std.Left[int, string]{}.Unapply(obj)",
-				"std.Right[int, string]{}.Unapply(obj)",
+				"_unapply_std_Left(obj)",
+				"_unapply_std_Right(obj)",
 			},
 		},
 		{
@@ -74,8 +74,8 @@ func main() {
 }`,
 			expected: []string{
 				"std.Left[int, string]{}.Apply",
-				"std.Left[int, string]{}.Unapply(obj)",
-				"std.Right[int, string]{}.Unapply(obj)",
+				"_unapply_std_Left(obj)",
+				"_unapply_std_Right(obj)",
 			},
 		},
 		{
@@ -106,8 +106,12 @@ func main() {
     }
 }`,
 			expected: []string{
-				"std.Either[int, string]",
-				"std.Left[int, string]{}.Unapply(obj)",
+				// The helper is used only when obj is exactly the extractor's
+				// parameter type, so this also shows the subject typed
+				// Either[int, string] (a mistyped subject keeps the
+				// std.Left[...]{} literal).
+				"_unapply_std_Left(obj)",
+				"func _unapply_std_Left[_T0 any, _T1 any](v std.Either[_T0, _T1]) std.Option[_T0]",
 			},
 		},
 	}

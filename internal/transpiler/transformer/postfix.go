@@ -555,10 +555,12 @@ func (t *galaASTTransformer) transformPostfixMatchExpressionAgainst(ctx *grammar
 func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, paramName string, caseClauses []grammar.ICaseClauseContext, ctx antlr.ParserRuleContext, s slot) (ast.Expr, error) {
 	// Get the type of the matched expression
 	matchedType := t.getExprTypeNameManual(subject)
+	typedFromCases := false
 	if transpiler.IsUnusable(matchedType) {
 		// Fallback: try to infer the sealed parent type from the case patterns.
 		// If cases are Some/None, the subject must be Option; Success/Failure → Try; etc.
 		matchedType = t.inferMatchedTypeFromCases(caseClauses)
+		typedFromCases = true
 	}
 	if transpiler.IsUnusable(matchedType) {
 		if len(caseClauses) > 0 {
@@ -908,15 +910,22 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		resultsField = &ast.FieldList{List: []*ast.Field{{Type: t.typeToExpr(resultType)}}}
 	}
 
+	// The function literal binds the subject itself (`obj := subject`, as an
+	// inlined match does) instead of taking it as a parameter, so the
+	// subject's type is never written: it may name a package the file does
+	// not import, and the generated Go must not import one. A subject whose
+	// type only the cases tell, or that is matched as `any`, keeps the typed
+	// parameter, which converts it.
 	funcLit := &ast.FuncLit{
-		Type: &ast.FuncType{
-			Params:  &ast.FieldList{List: []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(matchedType)}}},
-			Results: resultsField,
-		},
-		Body: &ast.BlockStmt{List: stmts},
+		Type: &ast.FuncType{Params: &ast.FieldList{}, Results: resultsField},
+		Body: t.buildInlinedMatchBlock(subject, paramName, matchedType, stmts),
 	}
-
-	call := &ast.CallExpr{Fun: funcLit, Args: []ast.Expr{subject}}
+	call := &ast.CallExpr{Fun: funcLit}
+	if typedFromCases || matchedType.IsAny() {
+		funcLit.Type.Params.List = []*ast.Field{{Names: []*ast.Ident{ast.NewIdent(paramName)}, Type: t.typeToExpr(matchedType)}}
+		funcLit.Body = &ast.BlockStmt{List: stmts}
+		call.Args = []ast.Expr{subject}
+	}
 	if !stmtPosition {
 		t.recordBranchingCall(call, "match", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}

@@ -147,7 +147,7 @@ func Build() Maybe = Some(1)
 
 func Read() int = get(Build())`,
 			want:    []string{"func get(m Maybe) int", "Some{}.Unapply(obj)", "func Build() Maybe {\n\treturn Some{}.Apply(1)"},
-			notWant: []string{"std.Some[int]{}.Unapply", "std.Some[int]{}.Apply(1)"},
+			notWant: []string{"std.Some[int]{}.Unapply", "_unapply_std_Some", "std.Some[int]{}.Apply(1)"},
 		},
 		{
 			name: "go-style struct with a method",

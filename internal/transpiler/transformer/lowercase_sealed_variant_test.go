@@ -231,7 +231,7 @@ func describe(m maybe[frame]) string = m match {
 }
 
 func main() { Println(describe(just[frame](endFrame()))) }`,
-			wantContains: []string{"endFrame{}.Unapply(", "nothing[frame]{}.Unapply(obj)", `matched none of its cases: it is a zero value`},
+			wantContains: []string{"endFrame{}.Unapply(", "nothing[_T0]{}.Unapply(v)", `matched none of its cases: it is a zero value`},
 			wantAbsent:   []string{"endFrame := ", "nothing := obj"},
 		},
 		{

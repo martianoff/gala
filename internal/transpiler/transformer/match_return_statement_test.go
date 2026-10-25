@@ -70,6 +70,8 @@ func main() {
 				// (which would trap `return x` in the lambda).
 				"func(obj std.Option[int]) int",
 				"func(obj std.Option[int]) string",
+				"func() int {",
+				"func() string {",
 			},
 		},
 		{
@@ -104,6 +106,7 @@ func firstOdd(xs Array[int]) int {
 				// The outer match must NOT be lowered as a value-returning
 				// IIFE that would swallow `return x`.
 				"func(obj std.Option[int]) int {",
+				"func() int {",
 			},
 		},
 	}

@@ -211,6 +211,7 @@ func main() {
 			require.NotContains(t, gen, "func(obj int) {", "generated:\n%s", gen)
 			require.NotContains(t, gen, "func(obj main.Cmd) {", "generated:\n%s", gen)
 			require.NotContains(t, gen, "func(obj Cmd) {", "generated:\n%s", gen)
+			require.NotRegexp(t, `func\(\) \{\n\s*(obj :|_ )= `, gen, "generated:\n%s", gen)
 		})
 	}
 }

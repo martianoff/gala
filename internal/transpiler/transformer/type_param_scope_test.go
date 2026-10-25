@@ -69,7 +69,7 @@ func pick(bs Array[*testing.B]) int {
     }
     return r.N
 }`,
-			mustContain: []string{"func(obj std.Option[*testing.B]) *testing.B"},
+			mustContain: []string{"func() *testing.B {", "obj := bs.HeadOption()"},
 			mustNotHave: []string{") any {"},
 		},
 		{
@@ -83,7 +83,7 @@ func firstOr[A any](xs Array[A], d A) A {
     }
     return r
 }`,
-			mustContain: []string{"func(x A) bool", "func(obj std.Option[A]) A"},
+			mustContain: []string{"func(x A) bool", "func() A {"},
 			mustNotHave: []string{"func(x any)", ") any {"},
 		},
 		{

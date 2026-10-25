@@ -92,6 +92,8 @@ type galaASTTransformer struct {
 	interfaceLiterals      map[string]string                             // interface literal helper type name, keyed by the interface's resolved name; see interface_literal.go
 	interfaceLiteralDecls  []ast.Decl                                    // helper type declarations for this file's interface literals
 	interfaceLiteralMisses map[string]bool                               // callee names known to name no interface, so a call of them is no interface literal
+	unapplyHelpers         map[string]bool                               // names of the generic Unapply helpers declared for this file (see unapplyHelper)
+	unapplyHelperDecls     []ast.Decl                                    // their declarations
 	valueMetas             map[string]*valueMetaConfig                   // generated ValueMeta structs (keyed by the value type as spelled in Go)
 	instanceInterfaceNames map[string]string                             // type name -> actual generated interface name (for collision avoidance)
 	defaultTrees           map[defaultTreeKey]grammar.IExpressionContext // parse trees of declared default values, one per default per file (see defaultExprTree)
@@ -357,6 +359,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.interfaceLiterals = make(map[string]string)
 	t.interfaceLiteralMisses = make(map[string]bool)
 	t.interfaceLiteralDecls = nil
+	t.unapplyHelpers = nil
+	t.unapplyHelperDecls = nil
 	t.valueMetas = make(map[string]*valueMetaConfig)
 	t.defaultTrees = nil
 	t.richAST = richAST
@@ -533,6 +537,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 
 	file.Decls = append(file.Decls, t.interfaceLiteralDecls...)
+	file.Decls = append(file.Decls, t.unapplyHelperDecls...)
 
 	// Method receivers are validated here, not as each method is transformed,
 	// because t.typeAliases fills as declarations are walked: a method written

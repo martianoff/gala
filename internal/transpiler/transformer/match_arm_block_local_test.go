@@ -36,7 +36,7 @@ func f(n int) {
     }
     Println(r.Size())
 }
-`, "func(obj int) string {"},
+`, "func() string {"},
 		{"arm reads a var a loop accumulates", `package main
 
 func sumTo(n int) int = n match {
@@ -62,7 +62,7 @@ func f(n int) {
     }
     Println(r)
 }
-`, "func(obj int) float64 {"},
+`, "func() float64 {"},
 		{"trailing if reads a val", `package main
 
 func f(n int) {
@@ -74,7 +74,7 @@ func f(n int) {
     }
     Println(r.Size())
 }
-`, "func(obj int) string {"},
+`, "func() string {"},
 		{"trailing if branches read their own vals", `package main
 
 func f(n int) {
@@ -91,7 +91,7 @@ func f(n int) {
     }
     Println(r.Size())
 }
-`, "func(obj int) string {"},
+`, "func() string {"},
 		{"partial-function arm reads a val", `package main
 
 import . "martianoff/gala/collection_immutable"

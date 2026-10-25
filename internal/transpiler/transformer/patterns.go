@@ -1751,19 +1751,6 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	var allBindings []ast.Stmt
 	var conds []ast.Expr
 
-	// Build the extractor type expression with inferred type parameters
-	// e.g., Cons[int]{}
-	extractorTypeExpr := t.ident(extractorName)
-	if len(inferredTypes) == 1 {
-		extractorTypeExpr = &ast.IndexExpr{X: extractorTypeExpr, Index: t.typeToExpr(inferredTypes[0])}
-	} else if len(inferredTypes) > 1 {
-		indices := make([]ast.Expr, len(inferredTypes))
-		for i, tp := range inferredTypes {
-			indices[i] = t.typeToExpr(tp)
-		}
-		extractorTypeExpr = &ast.IndexListExpr{X: extractorTypeExpr, Indices: indices}
-	}
-
 	// Get the return type of Unapply and substitute type parameters
 	// e.g., Option[Tuple[T, List[T]]] -> Option[Tuple[int, List[int]]]
 	returnType := t.substituteConcreteTypes(unapplyMeta.ReturnType, extractorMeta.TypeParams, inferredTypes)
@@ -1776,13 +1763,8 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 
 	// Generate: _tmp_result := Extractor[T]{}.Unapply(obj)
 	resultName := t.nextTempVar()
-	unapplyCall := t.patternDefine([]string{resultName}, []patternType{t.lazyKnownType(returnType)}, &ast.CallExpr{
-		Fun: &ast.SelectorExpr{
-			X:   &ast.CompositeLit{Type: extractorTypeExpr},
-			Sel: ast.NewIdent("Unapply"),
-		},
-		Args: []ast.Expr{objExpr},
-	})
+	unapplyCall := t.patternDefine([]string{resultName}, []patternType{t.lazyKnownType(returnType)},
+		t.extractorUnapplyCall(extractorName, extractorMeta, inferredTypes, unapplyMeta, objExpr, matchedType))
 	allBindings = append(allBindings, unapplyCall)
 
 	var okName string

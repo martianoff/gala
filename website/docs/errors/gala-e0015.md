@@ -56,7 +56,7 @@ The caret marks the match being used as a value, and the hint names the result t
 A match-as-value lowers to an immediately-invoked function expression:
 
 ```go
-fmt.Println(func(obj ...) string {
+fmt.Println(func() string {
     switch ... {
     case Success: return string(b)
     case Failure: fmt.Println(...); return   // invalid: must return string

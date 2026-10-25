@@ -78,7 +78,7 @@ func TestGenericStructExtractor(t *testing.T) {
     case Box(A(_), _) => "a"
     case _            => "o"
 }`,
-			contains:    []string{"A[int]{}.Unapply(obj.Md.Get())"},
+			contains:    []string{"A[_T0]{}.Unapply(v)", "_A(obj.Md.Get())"},
 			notContains: []string{"A :="},
 		},
 		{
