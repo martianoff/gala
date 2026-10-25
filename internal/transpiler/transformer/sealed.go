@@ -109,10 +109,16 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	}
 
 	// Detect field name conflicts: a field name has a conflict when it appears across
-	// variants with different types. In that case, prefix all instances with the variant name.
+	// variants with different types, or is the name of a method of the type. In
+	// that case, prefix all instances with the variant name. The analyzer names
+	// the fields the same way (renameSealedFieldsNamedLikeMethods).
+	var methods map[string]*transpiler.MethodMetadata
+	if meta := t.getTypeMeta(name); meta != nil {
+		methods = meta.Methods
+	}
 	conflictingFields := make(map[string]bool) // field names that need variant-name prefixing
 	for fieldName, typeSet := range allFieldTypes {
-		if len(typeSet) > 1 {
+		if len(typeSet) > 1 || transpiler.SealedFieldNamedLikeMethod(fieldName, methods) {
 			conflictingFields[fieldName] = true
 		}
 	}

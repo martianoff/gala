@@ -585,6 +585,20 @@ type SealedVariant struct {
 	IsDefault bool
 }
 
+// SealedFieldNamedLikeMethod reports whether a case field named field would
+// share its Go name with a method of its sealed type: one in methods, or Copy,
+// Equal or String, which every sealed type has. Go allows no field and method
+// of one name, so such a field is stored under a Go name of its case
+// (case name + field name), as a field whose type differs between cases is.
+func SealedFieldNamedLikeMethod(field string, methods map[string]*MethodMetadata) bool {
+	switch field {
+	case "Copy", "Equal", "String":
+		return true
+	}
+	_, ok := methods[field]
+	return ok
+}
+
 type MethodMetadata struct {
 	Name         string
 	Package      string

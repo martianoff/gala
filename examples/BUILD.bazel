@@ -4480,3 +4480,13 @@ gala_exec_test(
     src = "go_struct_zero_arg_ctor.gala",
     expected = "go_struct_zero_arg_ctor.out",
 )
+
+# A sealed type's method may share its name with a case field: the field is
+# stored under a Go name of its case, so the one Go struct holding every case
+# has no field and method of one name.
+gala_exec_test(
+    name = "sealed_field_named_like_method",
+    src = "sealed_field_named_like_method.gala",
+    expected = "sealed_field_named_like_method.out",
+    deps = ["//collection_immutable"],
+)

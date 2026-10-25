@@ -1685,6 +1685,17 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// references unwrap their std.Immutable[T] wrapper correctly.
 	a.extractPackageVals(sourceFile, pkgName, richAST, docs, absFilePath)
 
+	// 2c. Every method of the package is known now: name the sealed case
+	// fields that share a method's name, then reject what Go still cannot hold.
+	for _, meta := range richAST.Types {
+		if meta.IsSealed && meta.Package == pkgName {
+			renameSealedFieldsNamedLikeMethods(meta)
+		}
+	}
+	if err := fieldNamedLikeMethodError(richAST, pkgName, filePath); err != nil {
+		return nil, err
+	}
+
 	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
 	a.discoverCompanionObjects(richAST)
 

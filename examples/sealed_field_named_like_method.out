@@ -1,0 +1,12 @@
+epsilon -> 1
+atom 7 -> 2
+Epsilon(1)
+Atom(2, 7)
+Array(1, 2)
+3
+true false
+Atom(2, 7)
+exactly 3 named big
+Labeled(5, five, 1, true) 5 x
+true
+5 five 1 true

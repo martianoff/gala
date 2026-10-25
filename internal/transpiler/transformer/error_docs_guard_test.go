@@ -1238,6 +1238,22 @@ func main() {
 			},
 		},
 		{
+			name: "struct field and method of one name",
+			code: galaerr.CodeFieldNamedLikeMethod, // GALA-E0081
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+struct User(Name string)
+
+func (u User) Name() string = "user " + u.Name
+
+func main() {
+    Println(User("ada").Name())
+}
+`)
+			},
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {
