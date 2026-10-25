@@ -135,6 +135,42 @@ func BenchmarkArrayForEach(b *testing.B) {
 	}
 }
 
+// halfDistinct holds benchSize ints, each value twice.
+func halfDistinct() []int {
+	xs := make([]int, benchSize)
+	for i := range xs {
+		xs[i] = i % (benchSize / 2)
+	}
+	return xs
+}
+
+func BenchmarkArrayDistinct(b *testing.B) {
+	a := ArrayFromSlice(halfDistinct())
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkInt = a.Distinct().Size()
+	}
+}
+
+func BenchmarkListDistinct(b *testing.B) {
+	l := ListFromSlice(halfDistinct())
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkInt = l.Distinct().Size()
+	}
+}
+
+func BenchmarkArrayContains(b *testing.B) {
+	a := buildArray()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = a.Contains(benchSize - 1)
+	}
+}
+
 func BenchmarkHashMapBuild(b *testing.B) {
 	keys := benchKeys()
 	b.ReportAllocs()

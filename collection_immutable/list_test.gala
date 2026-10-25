@@ -231,6 +231,11 @@ func TestListDistinct(t T) T {
 func TestListDistinctKeepsFirstOccurrence(t T) T =
     Eq(t, ListOf(3, 1, 3, 2, 1).Distinct().MkString(","), "3,1,2")
 
+// Equal lists are distinct Go values, neither primitive nor Hashable:
+// Distinct compares them with Equal.
+func TestListDistinctComparesWithEqual(t T) T =
+    Eq(t, ListOf(ListOf(1, 2), ListOf(3), ListOf(1, 2), ListOf(4)).Distinct().Length(), 3)
+
 // Slice clamps a negative start to 0 instead of widening the slice.
 func TestListSliceNegativeStart(t T) T =
     Eq(t, ListOf(10, 20, 30, 40).Slice(-1, 2).MkString(","), "10,20")

@@ -307,6 +307,8 @@ var arr = ArrayOf(1, 2, 2, 3, 3, 3)
 arr.Distinct()  // Array(1, 2, 3)
 ```
 
+`Distinct` keeps the first occurrence of each element, in order, and compares elements with `Equal`. When the element type is a primitive (number, string, bool) it finds elements through a `HashSet`, in O(n) overall; for any other element type it compares each element with the kept ones.
+
 ### Sorting
 
 Sorting returns a new `Ptr[Array[T]]`, leaving the original unchanged. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.

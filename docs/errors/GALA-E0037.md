@@ -146,6 +146,17 @@ error[GALA-E0037]: closure crossing a concurrency boundary captures function val
 
 The caret points at the exact offending capture identifier.
 
+When the captured value's type could not be inferred — most often because the
+call that defined it does not resolve, such as a misspelled function of another
+package — the check still rejects the capture, and the message says `whose type
+could not be inferred, so it cannot be shown safe to share` instead of
+reporting a data race. Fix the defining expression and the capture is judged by
+its real type. This holds whenever the unknown part is what makes the type
+unshareable, as in an immutable `Array` of an unresolved element; a type whose
+known part already races, such as a Go slice of an unresolved element, keeps
+the data-race message. A field path that ends at a field of unknown type says
+`its type could not be inferred` and points at the field's declared type.
+
 **Fix.** Make the capture immutable and shareable:
 
 - **Snapshot to a `val`.** Copy the value into an immutable `val` *before* the

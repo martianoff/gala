@@ -377,6 +377,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "named_args_variadic_omitted",
+    src = "named_args_variadic_omitted.gala",
+    expected = "named_args_variadic_omitted.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "copy_and_equal",
     src = "copy_and_equal.gala",
     expected = "copy_and_equal.out",
@@ -4080,6 +4087,18 @@ gala_exec_test(
     deps = ["//examples/func_defaults_lib"],
 )
 
+# Defaults declared in another package that read that package's own vals and
+# vars and its own imports — on function and method parameters and on struct
+# fields, built positionally and with named arguments. They used to reach Go
+# bare (`undefined: MaxK`), and an import only the declaring file had was not
+# added.
+gala_exec_test(
+    name = "default_vals_cross_pkg",
+    src = "default_vals_cross_pkg.gala",
+    expected = "default_vals_cross_pkg.out",
+    deps = ["//examples/default_vals_lib"],
+)
+
 # Field chains through a method-call result unwrap immutable fields for
 # value- and pointer-receiver methods, including a method named Get.
 gala_exec_test(
@@ -4486,4 +4505,14 @@ gala_exec_test(
     name = "go_struct_zero_arg_ctor",
     src = "go_struct_zero_arg_ctor.gala",
     expected = "go_struct_zero_arg_ctor.out",
+)
+
+# A sealed type's method may share its name with a case field: the field is
+# stored under a Go name of its case, so the one Go struct holding every case
+# has no field and method of one name.
+gala_exec_test(
+    name = "sealed_field_named_like_method",
+    src = "sealed_field_named_like_method.gala",
+    expected = "sealed_field_named_like_method.out",
+    deps = ["//collection_immutable"],
 )

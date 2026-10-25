@@ -1,0 +1,21 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// A call with named arguments may leave a variadic parameter out: it then
+// takes no values, as it does in a positional call.
+
+struct Counter(N int)
+
+// Plus adds x and every value of xs to the counter.
+func (c Counter) Plus(x int, xs ...int) int = ArrayOf(xs...).FoldLeft(c.N + x, (acc, n) => acc + n)
+
+// Label joins a prefix and any number of parts.
+func Label(prefix string, parts ...string) string = prefix + ArrayOf(parts...).MkString(",")
+
+func main() {
+    Println(Label(prefix = "parts:"))
+    Println(Label(prefix = "parts:", parts = "a"))
+    Println(Counter(1).Plus(x = 2))
+    Println(Counter(1).Plus(x = 2, xs = 3))
+}

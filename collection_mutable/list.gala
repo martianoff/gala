@@ -712,19 +712,11 @@ func (l Ptr[List[T]]) ZipWithIndex() Ptr[List[Tuple[T, int]]] {
     return result
 }
 
-// Distinct returns a new list with duplicate elements removed.
-func (l Ptr[List[T]]) Distinct() Ptr[List[T]] {
-    var result = EmptyList[T]()
-    var current = l.head
-    for current.IsDefined() {
-        val node = current.Get()
-        if !result.Contains(node.value) {
-            result.Append(node.value)
-        }
-        current = node.next
-    }
-    return result
-}
+// Distinct returns a new list with duplicate elements removed, keeping the
+// first occurrence of each element in its original position. Elements are
+// compared with Equal: through a HashSet when T is a primitive type (a number,
+// string or bool), and against each kept element otherwise.
+func (l Ptr[List[T]]) Distinct() Ptr[List[T]] = l.Filter(firstOccurrence[T]())
 
 // SplitAt splits the list at the given index.
 func (l Ptr[List[T]]) SplitAt(n int) Tuple[Ptr[List[T]], Ptr[List[T]]] {

@@ -417,15 +417,21 @@ func formatTypeMeta(richAST *transpiler.RichAST, meta *transpiler.TypeMetadata) 
 		b.WriteString("\n" + meta.Doc + "\n")
 	}
 
-	if len(meta.FieldNames) > 0 {
+	var fieldRows []string
+	for i, fn := range meta.FieldNames {
+		if !meta.IsGalaField(fn) {
+			continue
+		}
+		mut := "val"
+		if i < len(meta.ImmutFlags) && !meta.ImmutFlags[i] {
+			mut = "var"
+		}
+		fieldRows = append(fieldRows, fmt.Sprintf("- `%s %s %s`\n", mut, fn, meta.Fields[fn]))
+	}
+	if len(fieldRows) > 0 {
 		b.WriteString("\n**Fields:**\n")
-		for i, fn := range meta.FieldNames {
-			ft := meta.Fields[fn]
-			mut := "val"
-			if i < len(meta.ImmutFlags) && !meta.ImmutFlags[i] {
-				mut = "var"
-			}
-			b.WriteString(fmt.Sprintf("- `%s %s %s`\n", mut, fn, ft))
+		for _, row := range fieldRows {
+			b.WriteString(row)
 		}
 	}
 	if len(meta.SealedVariants) > 0 {

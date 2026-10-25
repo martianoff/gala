@@ -67,6 +67,19 @@ func BenchmarkArrayAppend(b *testing.B) {
 	}
 }
 
+func BenchmarkArrayDistinct(b *testing.B) {
+	xs := make([]int, benchSize)
+	for i := range xs {
+		xs[i] = i % (benchSize / 2) // each value twice
+	}
+	a := ArrayFromSlice(xs)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkInt = a.Distinct().Size()
+	}
+}
+
 func BenchmarkArrayGetSet(b *testing.B) {
 	a := fillArray()
 	keys := benchKeys()

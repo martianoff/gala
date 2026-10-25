@@ -1,0 +1,7 @@
+Analyze(2) = 6, local MaxK = 100
+Leveled(2) = 3
+Scaled(2) = 6
+rule ===
+Box(4).Times() = 12
+x at 0:0 depth 3
+y at 0:0 depth 1

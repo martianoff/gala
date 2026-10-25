@@ -209,7 +209,7 @@ func (h *GalaHandler) definitionLocations(uri, text string, richAST *transpiler.
 	for _, typeMeta := range richAST.Types {
 		// Check regular struct fields
 		for _, fn := range typeMeta.FieldNames {
-			if fn == word {
+			if fn == word && typeMeta.IsGalaField(fn) {
 				if loc := h.fieldDefinitionLocation(typeMeta, word); loc != nil {
 					return []lsp.Location{*loc}, nil
 				}

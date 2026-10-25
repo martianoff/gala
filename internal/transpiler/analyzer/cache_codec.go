@@ -199,6 +199,13 @@ func (e *encoder) writeStringSourcePosMap(m map[string]transpiler.SourcePos) {
 func (e *encoder) writeDefaultExpr(d transpiler.DefaultExpr) {
 	e.writeString(d.Text)
 	e.writeSourcePos(d.Pos)
+	e.writeBool(d.Scope != nil)
+	if d.Scope != nil {
+		e.writeString(d.Scope.PkgPath)
+		e.writeStringStringMap(d.Scope.Imports)
+		e.writeStringStringMap(d.Scope.DotImports)
+		e.writeStringSlice(d.Scope.PrivateVals)
+	}
 }
 
 // writeDefaultExprs emits a parameter-default table: a count, then
@@ -336,6 +343,7 @@ func (e *encoder) writeSealedVariant(v transpiler.SealedVariant) {
 	e.writeSourcePos(v.Pos)
 	e.writeStringSlice(v.FieldNames)
 	e.writeTypeSlice(v.FieldTypes)
+	e.writeStringSlice(v.GoFieldNames)
 	e.writeBool(v.IsDefault)
 }
 
@@ -662,8 +670,16 @@ func (d *decoder) readSourcePos() transpiler.SourcePos {
 }
 
 func (d *decoder) readDefaultExpr() transpiler.DefaultExpr {
-	text := d.readString()
-	return transpiler.DefaultExpr{Text: text, Pos: d.readSourcePos()}
+	def := transpiler.DefaultExpr{Text: d.readString()}
+	def.Pos = d.readSourcePos()
+	if d.readBool() {
+		scope := &transpiler.DefaultScope{PkgPath: d.readString()}
+		scope.Imports = d.readStringStringMap()
+		scope.DotImports = d.readStringStringMap()
+		scope.PrivateVals = d.readStringSlice()
+		def.Scope = scope
+	}
+	return def
 }
 
 // readDefaultExprs reads a table written by writeDefaultExprs; nil when empty.
@@ -850,6 +866,7 @@ func (d *decoder) readSealedVariantSlice() []transpiler.SealedVariant {
 		out[i].Pos = d.readSourcePos()
 		out[i].FieldNames = d.readStringSlice()
 		out[i].FieldTypes = d.readTypeSlice()
+		out[i].GoFieldNames = d.readStringSlice()
 		out[i].IsDefault = d.readBool()
 	}
 	return out

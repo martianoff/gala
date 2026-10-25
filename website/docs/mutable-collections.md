@@ -151,7 +151,12 @@ arr.Collect({ case x if x % 2 == 0 => x * 10 })
 
 // FoldLeft
 var sum = arr.FoldLeft(0, (acc, x) => acc + x)  // 15
+
+// Distinct - first occurrences, in order
+ArrayOf(1, 2, 2, 3, 1).Distinct()  // Array(1, 2, 3)
 ```
+
+`Distinct` keeps the first occurrence of each element, in order, and compares elements with `Equal`. When the element type is a primitive (number, string, bool) it finds elements through a `HashSet`, in O(n) overall; for any other element type it compares each element with the kept ones.
 
 ### Sorting
 

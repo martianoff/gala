@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -182,4 +184,26 @@ func TestGoSumFromDownload(t *testing.T) {
 func TestGoSumFromDownloadMalformed(t *testing.T) {
 	_, err := goSumLinesFromDownload([]byte(`{"Path":"a","Version":"v1.0.0"} {oops`))
 	require.Error(t, err)
+}
+
+// Tidy scans the tree gala build transpiles: a nested module (its own gala.mod
+// or go.mod) has its own requirements, so its imports are not the project's.
+func TestScanImports_SkipsNestedModules(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.gala":              "package main\n\nimport \"example.com/used\"\n",
+		"tool/gala.mod":          "module example.com/tool\n\ngala 0.0.0\n",
+		"tool/tool.gala":         "package tool\n\nimport \"example.com/toolonly\"\n",
+		"differential/go.mod":    "module example.com/differential\n\ngo 1.22\n",
+		"differential/diff.gala": "package differential\n\nimport \"example.com/diffonly\"\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+
+	imports, err := scanImports(dir)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]bool{"example.com/used": true}, imports)
 }

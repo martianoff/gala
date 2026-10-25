@@ -152,6 +152,13 @@ type RichAST struct {
 	// package named list share a key.
 	OwnGoTypes map[string]bool
 
+	// ReceiverDotImports holds, by the bare name of each receiver type of this
+	// file's methods that another file of the package declares, the GALA
+	// packages that file dot-imports. A method's signature may name their
+	// types bare, the allowance GALA-E0025 makes for method signatures; its
+	// body may not. Per-file, never merged or cached.
+	ReceiverDotImports map[string][]string
+
 	// Docs is this file's doc-comment table from the parse that produced Tree,
 	// keyed by the character offset of each documented declaration's first
 	// token (see parser.extractDocComments). The transpile pipeline sets it so
@@ -504,6 +511,30 @@ func (m *TypeMetadata) SynthesizedOpaqueMethods(rich *RichAST) []*MethodMetadata
 type DefaultExpr struct {
 	Text string
 	Pos  SourcePos
+	// Scope is what a use site in another package needs to resolve the names
+	// Text borrows from where it was written. It is recorded when the
+	// declaring package is loaded as a dependency, and is nil otherwise.
+	Scope *DefaultScope
+}
+
+// DefaultScope is the declaring side of a default value: what its names mean
+// in the file that wrote it. A default is lowered at each use site, so one in
+// another package must spell those names as that site sees them.
+type DefaultScope struct {
+	// PkgPath is the import path of the declaring package.
+	PkgPath string
+	// Imports maps each qualifier of the declaring file that Text names to
+	// the import path the file binds it to: `strings` in
+	// `strings.Repeat("=", 2)` is an import the use site may not have.
+	Imports map[string]string
+	// DotImports maps the import path of each package the declaring file
+	// dot-imports to its package name: `EmptyArray` in
+	// `EmptyArray[Entry]()` is collection_immutable's there.
+	DotImports map[string]string
+	// PrivateVals lists the declaring package's unexported package-level
+	// vals and vars that Text names. They are not visible to another
+	// package, so a use site there reports them.
+	PrivateVals []string
 }
 
 // ShorthandFieldType is the type recorded for a field of the shorthand form
@@ -581,8 +612,92 @@ type SealedVariant struct {
 	Pos        SourcePos // Position of the variant identifier in the enclosing sealed type's DefinedIn
 	FieldNames []string
 	FieldTypes []Type
+	// GoFieldNames are the names the fields have in the Go struct that holds
+	// every case: a field's own name, or the case name + the field name when
+	// the cases give the field different types or the type has a method of
+	// its name. The analyzer decides them, and the transformer reads them.
+	GoFieldNames []string
 	// IsDefault marks the type's `default case`, its zero value.
 	IsDefault bool
+}
+
+// StructGeneratedMethods and SealedGeneratedMethods are the methods the
+// transformer generates on every struct and every sealed type that does not
+// declare them itself (a struct's Unapply only when all its fields are
+// exported).
+var (
+	StructGeneratedMethods = []string{"Copy", "Equal", "Unapply"}
+	SealedGeneratedMethods = []string{"Copy", "Equal", "String"}
+)
+
+// GeneratedMethodNames returns the names of the methods the transformer
+// generates on the struct or sealed type m, other than the Go case predicates
+// (see SealedGoPredicateNames): StructGeneratedMethods (Unapply only when
+// every field is exported) or SealedGeneratedMethods, the predicates
+// is<Case> of a sealed type, and the instance marker Is<Type> of a generic
+// type.
+func GeneratedMethodNames(m *TypeMetadata) map[string]bool {
+	names := make(map[string]bool, len(m.SealedVariants)+4)
+	if m.IsSealed {
+		for _, n := range SealedGeneratedMethods {
+			names[n] = true
+		}
+		for _, v := range m.SealedVariants {
+			names["is"+v.Name] = true
+		}
+	} else {
+		for _, n := range StructGeneratedMethods {
+			names[n] = true
+		}
+		for _, f := range m.FieldNames {
+			if !token.IsExported(f) {
+				delete(names, "Unapply")
+				break
+			}
+		}
+	}
+	if len(m.TypeParams) > 0 {
+		names["Is"+m.Name] = true
+	}
+	return names
+}
+
+// SealedGoPredicateNames returns the names of the Is<Case> predicates the
+// transformer generates for Go callers of sealed type m: one per exported
+// case of an exported type. A case field of the predicate's name keeps its
+// name, and the predicate is left out.
+func SealedGoPredicateNames(m *TypeMetadata) map[string]bool {
+	names := make(map[string]bool, len(m.SealedVariants))
+	if !token.IsExported(m.Name) {
+		return names
+	}
+	for _, v := range m.SealedVariants {
+		if token.IsExported(v.Name) {
+			names["Is"+v.Name] = true
+		}
+	}
+	return names
+}
+
+// IsGalaField reports whether GALA code reads the field name of type m by
+// that name: every field but, on a sealed type, its case tag and the case
+// fields stored under a Go name of their case (see
+// SealedVariant.GoFieldNames), which never equals the name of a case field.
+func (m *TypeMetadata) IsGalaField(name string) bool {
+	if !m.IsSealed {
+		return true
+	}
+	if name == "_variant" {
+		return false
+	}
+	for _, v := range m.SealedVariants {
+		for i, goName := range v.GoFieldNames {
+			if goName == name && i < len(v.FieldNames) && goName != v.FieldNames[i] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type MethodMetadata struct {

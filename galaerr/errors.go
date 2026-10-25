@@ -798,6 +798,28 @@ const (
 	// asks whether it is nil. A Go pointer becomes a Ptr through RequirePtr,
 	// or an OptionPtr through OptionPtrOf.
 	CodePtrNullability ErrorCode = "GALA-E0080"
+
+	// E0081: a struct has a field and a method of the same name. Go allows
+	// no field and method of one name on a type, and a struct field is read
+	// by its name, so the pair would reach `go build` as "field and method
+	// with the same name". A sealed case field named like a method is not
+	// this error: it is stored under a Go name of its case.
+	CodeFieldNamedLikeMethod ErrorCode = "GALA-E0081"
+
+	// E0082: a call of a GALA function, method or struct constructor passes
+	// more arguments than the callee takes, or leaves out one that declares no
+	// default. Left to Go, the call was reported against the generated code
+	// ("not enough arguments in call to … have (…) want (…)"), and a struct
+	// called with too many arguments as GALA-E0043, as if it could not be
+	// constructed at all. A struct field left out is GALA-E0045.
+	CodeArgumentCountMismatch ErrorCode = "GALA-E0082"
+
+	// E0083: a method another package's GALA type declares, or synthesizes,
+	// but does not export was called — a lower-case method, such as the
+	// `is<Variant>` predicate every sealed type gets. Visibility follows Go,
+	// so only the declaring package can call it; the call used to reach
+	// `go build` and fail there against the generated expression.
+	CodeUnexportedMethod ErrorCode = "GALA-E0083"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.
