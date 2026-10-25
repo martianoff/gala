@@ -43,6 +43,10 @@ func Joined(s string, sep string = strings.Repeat("=", MaxK)) string = s + sep
 
 func Hidden(n int, k int = secret) int = n + k
 
+func Base(n int) int = n * 7
+
+func Based(n int, k int = Base(2)) int = n + k
+
 struct Box(N int)
 
 func (b Box) Times(k int = MaxK) int = b.N * k
@@ -52,6 +56,8 @@ struct Pos(Line int, Col int)
 val NoPos = Pos(0, 0)
 
 struct Item(Name string, At Pos = NoPos)
+
+func Origin(p Pos = Pos(1, 2)) int = p.Line + p.Col
 `)
 	// A sibling file whose defaults name a dot-imported package's function
 	// and type, and the package's own type.
@@ -282,6 +288,54 @@ func main() {
 		assert.Contains(t, out, `"martianoff/gala/collection_immutable"`, "generated:\n%s", out)
 		assert.Contains(t, out, `collection_immutable.EmptyArray[lib.Pos]()`, "generated:\n%s", out)
 		assert.Contains(t, out, `func(a collection_immutable.Array[lib.Pos]) int`, "generated:\n%s", out)
+	})
+
+	// A `main` use site keys its own functions by bare name; one named like a
+	// function the default calls must not stand in for the declaring
+	// package's.
+	t.Run("a caller function of the same name does not capture a default's call", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/dval/lib"
+
+func Base() string = "local"
+
+func main() {
+    Println(lib.Based(1), Base())
+}`)
+		require.NoError(t, err)
+		assert.Contains(t, out, `lib.Based(1, lib.Base(2))`, "generated:\n%s", out)
+	})
+
+	// The same holds for a name the default constructs a type of, and for a
+	// name it reaches through its file's dot import.
+	t.Run("a caller function named like a type the default constructs does not capture it", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/dval/lib"
+
+func Pos() string = "local"
+
+func main() {
+    Println(lib.Origin())
+}`)
+		require.NoError(t, err)
+		assert.Contains(t, out, `lib.Origin(lib.Pos{Line: std.NewImmutable(1), Col: std.NewImmutable(2)})`, "generated:\n%s", out)
+	})
+
+	t.Run("a caller function named like a dot-imported function does not capture it", func(t *testing.T) {
+		out, err := transpileCrossPkg(t, root, `package main
+
+import "example.com/dval/lib"
+
+func EmptyArray(n int) int = n
+
+func main() {
+    val b = lib.Bag()
+    Println(b.Items.Size(), EmptyArray(1))
+}`)
+		require.NoError(t, err)
+		assert.Contains(t, out, `collection_immutable.EmptyArray[lib.Pos]()`, "generated:\n%s", out)
 	})
 
 	t.Run("an unexported val is reported at the default", func(t *testing.T) {

@@ -454,6 +454,27 @@ func (a *galaAnalyzer) resolveGoSrcDir(importPath string) (string, bool) {
 	return ResolveGoSrcDir(a.goSrcDirs, importPath)
 }
 
+// analyzeGoImport returns the type info of the Go package at path.
+// go/importer "source" mode resolves Go stdlib (always on GOROOT/src) but
+// cannot find a versioned third-party module in the module cache or Bazel's
+// external tree, so it returns nothing for e.g. github.com/google/uuid. When
+// that happens and the package's real .go source directory has been wired in
+// (CLI builder from gala.mod+GOMODCACHE, or the worker's --go-src flag under
+// Bazel), it is parsed directly — the same path that already resolves
+// hand-written local .go files, yielding concrete types instead of falling
+// back to `any`.
+func (a *galaAnalyzer) analyzeGoImport(path string) *transpiler.GoTypeInfo {
+	goInfo := AnalyzeGoPackage(path)
+	if !goTypeInfoNonEmpty(goInfo) {
+		if dir, ok := a.resolveGoSrcDir(path); ok {
+			if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
+				goInfo = srcInfo
+			}
+		}
+	}
+	return goInfo
+}
+
 // ResolveGoSrcDir maps a Go import path to its on-disk .go source directory
 // using the given module-path -> directory table. It first tries an exact
 // match, then the longest registered import-path prefix (a module path),
@@ -818,23 +839,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 			}
 
 			// This is a Go package — analyze it for type info.
-			goInfo := AnalyzeGoPackage(path)
-			// go/importer "source" mode resolves Go stdlib (always on
-			// GOROOT/src) but cannot find a versioned third-party module in
-			// the module cache or Bazel's external tree, so it returns
-			// nothing for e.g. github.com/google/uuid. When that happens and
-			// the package's real .go source directory has been wired in (CLI
-			// builder from gala.mod+GOMODCACHE, or the worker's --go-src flag
-			// under Bazel), parse it directly — the same path that already
-			// resolves hand-written local .go files, yielding concrete types
-			// instead of falling back to `any`.
-			if !goTypeInfoNonEmpty(goInfo) {
-				if dir, ok := a.resolveGoSrcDir(path); ok {
-					if srcInfo := AnalyzeGoFiles(dir, path); goTypeInfoNonEmpty(srcInfo) {
-						goInfo = srcInfo
-					}
-				}
-			}
+			goInfo := a.analyzeGoImport(path)
 			if goTypeInfoNonEmpty(goInfo) {
 				if richAST.GoTypeInfo == nil {
 					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
