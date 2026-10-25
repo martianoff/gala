@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "GALA-E0081 — Field and Method of One Name"
-description: "GALA-E0081 fires when a struct declares a method with the same name as one of its fields. Rename one of them, for example a private field behind a getter."
+description: "GALA-E0081 fires when a struct has a field and a method of one name, declared or generated (Copy, Equal, Unapply). Rename one of them, for example a private field behind a getter."
 keywords: "gala-e0081, gala field and method same name, gala getter, gala struct method name, gala field method collision"
 permalink: /docs/errors/gala-e0081/
 last_modified_at: 2026-10-24
@@ -13,7 +13,9 @@ last_modified_at: 2026-10-24
 
 **When it fires.** A struct declares a method with the same name as one of its
 fields. `u.Name` would then name two things, and Go allows no field and method
-of one name on a type.
+of one name on a type. A field named like a method GALA generates on every
+struct (`Copy`, `Equal`, `Unapply`, and `Is<Type>` on a generic struct) is the
+same error, reported at the field.
 
 **Minimal repro.**
 

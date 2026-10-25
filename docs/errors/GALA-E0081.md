@@ -2,7 +2,9 @@
 
 **When it fires.** A struct declares a method with the same name as one of its
 fields. `u.Name` would then name two things, and Go allows no field and method
-of one name on a type.
+of one name on a type. A field named like a method GALA generates on every
+struct (`Copy`, `Equal`, `Unapply`, and `Is<Type>` on a generic struct) is the
+same error, reported at the field.
 
 **Minimal repro.**
 
