@@ -259,7 +259,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	}
 	var expr ast.Expr
 	if err == nil {
-		expr, err = t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())
+		expr, err = t.lowerDefault(exprCtx, src)
 	}
 	if err == nil {
 		expr, err = t.qualifyDefaultExpr(expr, src)
@@ -283,6 +283,18 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		expr = replaceReceiver(expr, src.recv, src.recvExpr)
 	}
 	return expr, nil
+}
+
+// lowerDefault transforms a default's parse tree against its declared type.
+// A foreign default's qualifiers name the imports of the file that wrote it
+// while it is lowered, so `strings.Repeat` types as Go's function even where
+// this file has no `strings`, or binds the name to another package; they are
+// respelled with this file's names afterwards (see qualifyDefaultExpr).
+func (t *galaASTTransformer) lowerDefault(exprCtx grammar.IExpressionContext, src defaultSource) (ast.Expr, error) {
+	if t.loweringForeignDefault() && src.Scope != nil && len(src.Scope.Imports) > 0 && t.importManager != nil {
+		defer t.importManager.WithForeignQualifiers(src.Scope.Imports)()
+	}
+	return t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())
 }
 
 // declaringPackageVals returns the package-level vals and vars (exported ones:

@@ -38,6 +38,10 @@ type ImportManager struct {
 	// references a package from a dependency's method signature)
 	transitiveImports map[string]string // path -> alias
 
+	// foreign holds the qualifiers of the file a default being lowered was
+	// declared in (see WithForeignQualifiers); nil otherwise.
+	foreign map[string]*ImportEntry
+
 	// revision changes whenever the entry set, or a field of an existing
 	// entry, changes. It is what lets a consumer that copies entries out of
 	// this manager notice that its copy went stale: see Revision.
@@ -360,14 +364,41 @@ func (m *ImportManager) Qualifier(pkgName string) (*ImportEntry, bool) {
 // IsPackage checks if an identifier refers to an imported package.
 // Returns true if the name is a known package alias.
 func (m *ImportManager) IsPackage(name string) bool {
-	_, ok := m.byAlias[name]
+	_, ok := m.GetByAlias(name)
 	return ok
 }
 
-// GetByAlias returns the import entry for a given alias.
+// GetByAlias returns the import entry for a given alias. While a default
+// declared in another file is lowered, the qualifiers that file binds come
+// first (see WithForeignQualifiers).
 func (m *ImportManager) GetByAlias(alias string) (*ImportEntry, bool) {
+	if entry, ok := m.foreign[alias]; ok {
+		return entry, true
+	}
 	entry, ok := m.byAlias[alias]
 	return entry, ok
+}
+
+// WithForeignQualifiers makes each qualifier of imports (qualifier → import
+// path) name its path in source until the returned function is called: a
+// default lowered here was written against its own file's imports, which
+// this file may lack or bind otherwise. Only source names are affected; the
+// generated code still refers to imports through this file's names (see
+// PathForQualifier).
+func (m *ImportManager) WithForeignQualifiers(imports map[string]string) (restore func()) {
+	prev := m.foreign
+	m.foreign = make(map[string]*ImportEntry, len(prev)+len(imports))
+	for q, e := range prev {
+		m.foreign[q] = e
+	}
+	for q, path := range imports {
+		m.foreign[q] = &ImportEntry{Path: path, PkgName: q, Alias: q, named: true}
+	}
+	m.revision++
+	return func() {
+		m.foreign = prev
+		m.revision++
+	}
 }
 
 // GetByPath returns the import entry for a given import path.
@@ -386,7 +417,7 @@ func (m *ImportManager) GetByPkgName(pkgName string) (*ImportEntry, bool) {
 // For example, if code has `import libalias "pkg/lib"`, then
 // ResolveAlias("libalias") returns ("lib", true).
 func (m *ImportManager) ResolveAlias(alias string) (string, bool) {
-	entry, ok := m.byAlias[alias]
+	entry, ok := m.GetByAlias(alias)
 	if !ok {
 		return "", false
 	}

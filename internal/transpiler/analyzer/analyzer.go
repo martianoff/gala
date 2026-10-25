@@ -852,6 +852,10 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		}
 	}
 
+	// 0.61 The Go packages the imported packages' defaults name through their
+	// own imports, for lowering those defaults here.
+	a.loadDefaultScopeGoTypes(sourceFile, richAST)
+
 	// 0.62 This file's import table (see fileQualifiers), now that its GALA and
 	// Go imports are loaded, and the import aliases it records (e.g.,
 	// import im "path/to/pkg" → im → actual package name).

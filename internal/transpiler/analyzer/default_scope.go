@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -35,6 +36,58 @@ func (r *defaultScopeRecorder) addFile(canonFile string, quals fileQualifiers, r
 	for name, pv := range res.PackageVals {
 		if pv != nil && !ast.IsExported(name) {
 			r.privateVals[name] = true
+		}
+	}
+}
+
+// loadDefaultScopeGoTypes loads the Go type info of the Go packages that the
+// defaults of the packages sf imports name through their own files' imports
+// (`strings` in `sep string = strings.Repeat("=", 2)`), so such a default
+// lowered in sf types as it does where it was written. sf need not import
+// them, so they are recorded by import path only: the names sf's own imports
+// bind keep their meaning.
+func (a *galaAnalyzer) loadDefaultScopeGoTypes(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) {
+	imported := map[string]bool{}
+	for _, imp := range scanFileImports(sf) {
+		imported[imp.Path] = true
+	}
+	loaded := map[string]bool{}
+	load := func(def transpiler.DefaultExpr) {
+		if def.Scope == nil || !imported[def.Scope.PkgPath] {
+			return
+		}
+		for _, path := range def.Scope.Imports {
+			if imported[path] || loaded[path] || a.isGalaImport(path) {
+				continue
+			}
+			loaded[path] = true
+			goInfo := AnalyzeGoPackage(path)
+			if !goTypeInfoNonEmpty(goInfo) {
+				if dir, ok := a.resolveGoSrcDir(path); ok {
+					goInfo = AnalyzeGoFiles(dir, path)
+				}
+			}
+			if keyed := goInfo.KeyedByPath(path); !keyed.IsEmpty() {
+				if richAST.GoTypeInfo == nil {
+					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
+				}
+				richAST.GoTypeInfo.Merge(keyed)
+			}
+		}
+	}
+	for _, fm := range richAST.Functions {
+		for _, def := range fm.DefaultExprs {
+			load(def)
+		}
+	}
+	for _, tm := range richAST.Types {
+		for _, def := range tm.FieldDefaults {
+			load(def)
+		}
+		for _, mm := range tm.Methods {
+			for _, def := range mm.DefaultExprs {
+				load(def)
+			}
 		}
 	}
 }
