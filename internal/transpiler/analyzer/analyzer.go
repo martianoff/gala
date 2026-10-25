@@ -598,9 +598,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		trees, parseErrs := a.parseFilesConcurrent(toParse)
 		for i, otherSF := range trees {
 			if perr := parseErrs[i]; perr != nil {
-				if a.seesSibling(toParse[i], filePath) {
-					siblingSyntaxErrs = append(siblingSyntaxErrs, perr)
-				}
+				siblingSyntaxErrs = append(siblingSyntaxErrs, perr)
 				continue
 			}
 			if otherSF == nil {
@@ -644,7 +642,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 		if err != nil {
 			return nil, err
 		}
-		siblingSyntaxErrs = append(siblingSyntaxErrs, syntaxErrs...)
+		if trees != nil || a.checkedDirs[canonDir] { // else the scan below collects them
+			siblingSyntaxErrs = append(siblingSyntaxErrs, syntaxErrs...)
+		}
 		if trees != nil {
 			siblingTrees = append(siblingTrees, trees...)
 			siblingPaths = append(siblingPaths, paths...)

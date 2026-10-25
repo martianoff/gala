@@ -90,6 +90,20 @@ func TestSiblingSyntaxErrorReportedInsteadOfUndefined(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("batch analyzer reports each sibling error once", func(t *testing.T) {
+		aPath, bPath := writeSiblingPackage(t, brokenSibling)
+		ba := analyzer.NewBatchAnalyzer(transpiler.NewAntlrGalaParser(), getStdSearchPath())
+		tr := newTranspiler(ba)
+		var counts []int
+		for range 2 {
+			ba.SetPackageFiles(nil) // directory discovery, with checkedDirs reset
+			_, err := tr.Transpile(usesSibling, aPath)
+			requireOnlyErrorsIn(t, err, bPath)
+			counts = append(counts, len(galaerr.Diagnostics(err)))
+		}
+		require.Equal(t, counts[0], counts[1], "the sibling-cache hit must not report b.gala's errors twice")
+	})
+
 	t.Run("a broken test file is not a sibling of a source file", func(t *testing.T) {
 		aPath, _ := writeSiblingPackage(t, "package p\n\nfunc B() int = 1\n")
 		testPath := filepath.Join(filepath.Dir(aPath), "a_test.gala")
