@@ -129,8 +129,9 @@ func (t *galaASTTransformer) namesOnlyImportedPackages(typ transpiler.Type) bool
 		if v.Package == "" || v.Package == t.packageName || v.Package == registry.StdPackageName || t.importManager.IsDotImported(v.Package) {
 			return true
 		}
-		_, ok := t.importManager.Qualifier(v.Package)
-		return ok
+		// An implicit entry counts only when a sibling imports its package.
+		entry, ok := t.importManager.Qualifier(v.Package)
+		return ok && (!entry.Implicit() || t.richAST != nil && t.richAST.PackageImportPaths[entry.Path])
 	case transpiler.GenericType:
 		if !t.namesOnlyImportedPackages(v.Base) {
 			return false

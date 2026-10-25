@@ -4589,3 +4589,15 @@ gala_exec_test(
     expected = "tuple_arity_spelling.out",
     deps = ["//collection_immutable"],
 )
+
+# A type of a package a dependency imports under an alias, written in a lambda
+# and a match value: the generated Go imports that package by its own name.
+gala_exec_test(
+    name = "use_aliased_foreign_type",
+    src = "use_aliased_foreign_type.gala",
+    expected = "use_aliased_foreign_type.out",
+    deps = [
+        ":sealed_foreign_field_cmd_lib",
+        ":sealed_foreign_field_lib",
+    ],
+)

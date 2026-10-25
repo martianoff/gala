@@ -978,6 +978,11 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	for i, sib := range siblingTrees {
 		siblingQuals[i] = a.qualifiersForFile(sib, richAST)
 	}
+	packageQuals := append([]fileQualifiers{fileQuals}, siblingQuals...)
+	richAST.PackageImportPaths = make(map[string]bool)
+	for _, q := range packageQuals {
+		q.galaImportPaths(richAST.PackageImportPaths)
+	}
 
 	// Build set of dot-imported package names for type resolution.
 	// Collect from main file AND all sibling files so that when resolving types in
@@ -985,7 +990,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	dotImportPkgs := make(map[string]bool)
 	// Every dot import of the package, GALA or Go: package name -> paths.
 	packageDotImports := make(map[string][]string)
-	for _, q := range append([]fileQualifiers{fileQuals}, siblingQuals...) {
+	for _, q := range packageQuals {
 		for _, b := range q.dots {
 			if b.PkgName == "" {
 				continue
@@ -2030,7 +2035,7 @@ func validateExplicitImports(paths *pathCache, richAST *transpiler.RichAST, cano
 // in the file using it. Packages not in `knownGala` are treated as
 // Go-side (validated by the Go compiler) and skipped, as is a type that
 // carries an import path: one written against a Go import (see
-// fileQualifiers.withGoImportPath).
+// fileQualifiers.qualify).
 func walkTypeForUnresolvedPackages(t transpiler.Type, explicit, knownGala map[string]bool, quals fileQualifiers, errs *[]*galaerr.SemanticError, pos transpiler.SourcePos, ctxName string) {
 	if t == nil {
 		return
@@ -2641,7 +2646,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 		// For qualified generic types like lazy.Lazy[Array[rune]],
 		// recursively resolve type arguments so inner types get proper prefixes
 		if hasArgs {
-			baseType := a.currentQualifiers.withGoImportPath(transpiler.ParseType(baseText), a.currentGoTypeInfo())
+			baseType := a.currentQualifiers.qualify(transpiler.ParseType(baseText), a.currentGoTypeInfo())
 
 			_, argStrs := extractBaseAndArgs(typeName)
 			var params []transpiler.Type
@@ -2652,7 +2657,7 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 				return transpiler.StdTupleOfArity(transpiler.GenericType{Base: baseType, Params: params})
 			}
 		}
-		return a.currentQualifiers.withGoImportPath(transpiler.ParseType(typeName), a.currentGoTypeInfo())
+		return a.currentQualifiers.qualify(transpiler.ParseType(typeName), a.currentGoTypeInfo())
 	}
 
 	// Check if it's a type parameter - these should not be prefixed

@@ -22,8 +22,8 @@ type importBinding struct {
 // answers "what does qualifier X mean in this file". Everything that needs a
 // per-file view of the imports derives from it: the GALA-E0025 explicit set,
 // the dot-import set used by type resolution, import aliases, package-level
-// val inference, and the import path recorded on a type written against a Go
-// import.
+// val inference, the package a type written against an import is recorded
+// under (see qualify), and the GALA import paths of the package.
 type fileQualifiers struct {
 	// named maps every qualifier the file binds to its import, ranked as
 	// transpiler.ImportNames describes: when the real name of an unaliased
@@ -90,28 +90,51 @@ func (a *galaAnalyzer) currentGoTypeInfo() *transpiler.GoTypeInfo {
 	return a.currentRichAST.GoTypeInfo
 }
 
-// withGoImportPath records on a package-qualified type written in this file
-// the path of the Go import its qualifier is bound to, so the type stays tied
-// to that import — `*strings.Builder` after `import "strings"` is Go's type
-// even when a GALA package named `strings` is loaded too.
+// qualify ties a package-qualified type written in this file to the import its
+// qualifier is bound to.
 //
-// Only a type the Go package declares is tied to it. When the package's type
-// info was loaded (its real name is known), `strings.Str` — no such Go type —
-// stays untied, so GALA-E0025 still reports it against the GALA package of
-// that name. Without type info the Go import is taken at its word. Other
-// types are returned unchanged.
-func (q fileQualifiers) withGoImportPath(t transpiler.Type, gi *transpiler.GoTypeInfo) transpiler.Type {
+// A GALA import's alias is replaced by the package name the package's metadata
+// is filed under: `cx.Cmd` after `import cx "pkg/cmdp"` is `cmdp.Cmd`. The
+// alias means something only in this file, while the type is recorded in
+// metadata that other files read.
+//
+// A Go import's path is recorded on the type, so `*strings.Builder` after
+// `import "strings"` stays Go's type even when a GALA package named `strings`
+// is loaded too. Only a type the Go package declares is tied to it: when the
+// package's type info was loaded (its real name is known), `strings.Str` — no
+// such Go type — stays untied, so GALA-E0025 still reports it against the GALA
+// package of that name. Without type info the Go import is taken at its word.
+//
+// Other types are returned unchanged.
+func (q fileQualifiers) qualify(t transpiler.Type, gi *transpiler.GoTypeInfo) transpiler.Type {
 	nt, ok := t.(transpiler.NamedType)
 	if !ok || nt.ImportPath != "" || nt.Package == "" {
 		return t
 	}
 	b, ok := q.named[nt.Package]
-	if !ok || b.IsGala {
+	switch {
+	case !ok || (b.IsGala && b.PkgName == ""):
 		return t
-	}
-	if b.PkgName != "" && !gi.DeclaresType(b.PkgName, nt.Name) {
+	case b.IsGala:
+		nt.Package = b.PkgName
+	case b.PkgName != "" && !gi.DeclaresType(b.PkgName, nt.Name):
 		return t
+	default:
+		nt.ImportPath = b.Path
 	}
-	nt.ImportPath = b.Path
 	return nt
+}
+
+// galaImportPaths adds to set the path of every GALA package the file imports.
+func (q fileQualifiers) galaImportPaths(set map[string]bool) {
+	for _, b := range q.named {
+		if b.IsGala {
+			set[b.Path] = true
+		}
+	}
+	for _, b := range q.dots {
+		if b.IsGala {
+			set[b.Path] = true
+		}
+	}
 }
