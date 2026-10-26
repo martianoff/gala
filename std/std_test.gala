@@ -151,3 +151,110 @@ func TestLeftMap(t T) T {
     val mapped = e.Map(doubleInt)
     return Eq(t, mapped.GetLeft(), "error")
 }
+
+// === Hash Tests ===
+
+// unhashable is neither a primitive nor Hashable.
+type unhashable struct {
+    N int
+}
+
+// keyed is Hashable through its own Hash method.
+type keyed struct {
+    N int
+}
+
+func (k keyed) Hash() uint32 = std.HashInt(int64(k.N))
+
+func TestHashValuePrimitives(t T) T {
+    val t1 = Eq(t, std.HashValue(42), std.HashInt(42))
+    val t2 = Eq(t1, std.HashValue("go"), std.HashString("go"))
+    val t3 = Eq(t2, std.HashValue(true), std.HashBool(true))
+    val t4 = Eq(t3, std.HashValue(uint8(7)), std.HashUint(7))
+    Eq(t4, std.HashValue(1.5), std.HashFloat(1.5))
+}
+
+func TestHashFloatSignedZerosHashAlike(t T) T {
+    val negZero = -0.0
+    Eq(t, std.HashFloat(negZero), std.HashFloat(0.0))
+}
+
+func TestHashValueHashable(t T) T = Eq(t, std.HashValue(keyed(N = 3)), std.HashInt(3))
+
+func TestHashValuePanicsOnUnhashable(t T) T = Panics(t, () => {
+    std.HashValue(unhashable(N = 1))
+})
+
+func TestTupleHashEqualForEqualTuples(t T) T {
+    val a = (1, "a")
+    val b = (1, "a")
+    Eq(t, a.Hash(), b.Hash())
+}
+
+func TestTupleHashDependsOnOrder(t T) T {
+    val a = (1, 2)
+    val b = (2, 1)
+    NotEq(t, a.Hash(), b.Hash())
+}
+
+func TestTupleHashCombinesElements(t T) T {
+    val pair = (1, "a")
+    Eq(t, pair.Hash(), std.HashCombine(std.HashInt(1), std.HashString("a")))
+}
+
+func TestNestedTupleHash(t T) T {
+    val a = ((1, 2), (keyed(N = 3), "x"))
+    val b = ((1, 2), (keyed(N = 3), "x"))
+    val c = ((1, 2), (keyed(N = 4), "x"))
+    val t1 = Eq(t, a.Hash(), b.Hash())
+    NotEq(t1, a.Hash(), c.Hash())
+}
+
+func TestTupleOfUnhashablePanics(t T) T = Panics(t, () => {
+    val pair = (1, unhashable(N = 1))
+    pair.Hash()
+})
+
+func TestEveryTupleArityHashes(t T) T {
+    val t3 = (1, 2, 3)
+    val t4 = (1, 2, 3, 4)
+    val t5 = (1, 2, 3, 4, 5)
+    val t6 = (1, 2, 3, 4, 5, 6)
+    val t7 = (1, 2, 3, 4, 5, 6, 7)
+    val t8 = (1, 2, 3, 4, 5, 6, 7, 8)
+    val t9 = (1, 2, 3, 4, 5, 6, 7, 8, 9)
+    val t10 = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    val t10b = (1, 2, 3, 4, 5, 6, 7, 8, 9, 11)
+    val r1 = Eq(t, t3.Hash(), std.HashCombine(std.HashCombine(std.HashInt(1), std.HashInt(2)), std.HashInt(3)))
+    val r2 = Eq(r1, t4.Hash(), std.HashCombine(t3.Hash(), std.HashInt(4)))
+    val r3 = Eq(r2, t5.Hash(), std.HashCombine(t4.Hash(), std.HashInt(5)))
+    val r4 = Eq(r3, t6.Hash(), std.HashCombine(t5.Hash(), std.HashInt(6)))
+    val r5 = Eq(r4, t7.Hash(), std.HashCombine(t6.Hash(), std.HashInt(7)))
+    val r6 = Eq(r5, t8.Hash(), std.HashCombine(t7.Hash(), std.HashInt(8)))
+    val r7 = Eq(r6, t9.Hash(), std.HashCombine(t8.Hash(), std.HashInt(9)))
+    val r8 = Eq(r7, t10.Hash(), std.HashCombine(t9.Hash(), std.HashInt(10)))
+    NotEq(r8, t10.Hash(), t10b.Hash())
+}
+
+func TestOptionHash(t T) T {
+    val t1 = Eq(t, std.Some(1).Hash(), std.Some(1).Hash())
+    val t2 = NotEq(t1, std.Some(1).Hash(), std.Some(2).Hash())
+    val t3 = NotEq(t2, std.Some(0).Hash(), std.None[int]().Hash())
+    val t4 = Eq(t3, std.None[int]().Hash(), std.None[int]().Hash())
+    Eq(t4, std.Some(keyed(N = 5)).Hash(), std.Some(keyed(N = 5)).Hash())
+}
+
+func TestEitherHash(t T) T {
+    val t1 = Eq(t, std.Left[int, int](1).Hash(), std.Left[int, int](1).Hash())
+    val t2 = Eq(t1, std.Right[int, int](1).Hash(), std.Right[int, int](1).Hash())
+    val t3 = NotEq(t2, std.Left[int, int](1).Hash(), std.Right[int, int](1).Hash())
+    NotEq(t3, std.Right[int, int](1).Hash(), std.Right[int, int](2).Hash())
+}
+
+// Equal values must hash alike: the collections compare keys with ==.
+func TestEqualStdValuesHashAlike(t T) T {
+    val pairA = (std.Some("k"), std.Left[int, string](7))
+    val pairB = (std.Some("k"), std.Left[int, string](7))
+    val t1 = IsTrue(t, pairA == pairB)
+    Eq(t1, pairA.Hash(), pairB.Hash())
+}

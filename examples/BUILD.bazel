@@ -1267,6 +1267,16 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "hashable_std_keys",
+    src = "hashable_std_keys.gala",
+    expected = "hashable_std_keys.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
+gala_exec_test(
     name = "hashmap_foreachkv_twoparam",
     src = "hashmap_foreachkv_twoparam.gala",
     expected = "hashmap_foreachkv_twoparam.out",

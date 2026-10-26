@@ -10,6 +10,7 @@ import (
 //
 // Keys must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
 // - Types implementing the std.Hashable interface
 //
 // Performance characteristics:
@@ -46,36 +47,6 @@ func EmptyHashMap[K comparable, V any]() Ptr[HashMap[K, V]] {
     return &HashMap[K, V](buckets = buckets, size = 0, bucketMask = uint32(hashMapInitialBuckets - 1))
 }
 
-// hashMapHash computes a hash code for a key.
-func hashMapHash[K comparable](key K) uint32 {
-    val v any = key
-
-    val result = v match {
-        case i: int => HashInt(int64(i))
-        case s: string => HashString(s)
-        case i: int64 => HashInt(i)
-        case i: int32 => HashInt(int64(i))
-        case u: uint => HashUint(uint64(u))
-        case u: uint64 => HashUint(u)
-        case u: uint32 => HashUint(uint64(u))
-        case b: bool => HashBool(b)
-        case i: int8 => HashInt(int64(i))
-        case i: int16 => HashInt(int64(i))
-        case u: uint8 => HashUint(uint64(u))
-        case u: uint16 => HashUint(uint64(u))
-        case f: float64 => HashUint(uint64(f))
-        case f: float32 => HashUint(uint64(f))
-        case h: Hashable => h.Hash()
-        case _ => hashMapPanicNotHashable(v)
-    }
-    return result
-}
-
-// hashMapPanicNotHashable panics with a helpful error message.
-func hashMapPanicNotHashable(v any) uint32 {
-    go_builtins.Panic(f"HashMap: type ${v}%T must implement std.Hashable interface")
-}
-
 // === Basic Operations ===
 
 // IsEmpty returns true if the map is empty.
@@ -95,7 +66,7 @@ func (m Ptr[HashMap[K, V]]) Length() int = m.size
 // Put adds or updates a key-value pair. O(1) amortized.
 // Returns true if this is a new key, false if updating existing.
 func (m Ptr[HashMap[K, V]]) Put(key K, value V) bool {
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     val idx = int(hashCode & m.bucketMask)
 
     // Check if key already exists
@@ -168,7 +139,7 @@ func (m Ptr[HashMap[K, V]]) GetOrElseUpdate(key K, f func() V) V {
 // Update updates the value for a key using a function.
 // Returns true if the key existed and was updated.
 func (m Ptr[HashMap[K, V]]) Update(key K, f func(V) V) bool {
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     val idx = int(hashCode & m.bucketMask)
 
     var entry = m.buckets[idx]
@@ -186,7 +157,7 @@ func (m Ptr[HashMap[K, V]]) Update(key K, f func(V) V) bool {
 // Remove removes a key from the map. O(1) amortized.
 // Returns true if the key was removed (was present).
 func (m Ptr[HashMap[K, V]]) Remove(key K) bool {
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     val idx = int(hashCode & m.bucketMask)
 
     var prev = EmptyOptionPtr[hashMapEntry[K, V]]()
@@ -226,7 +197,7 @@ func (m Ptr[HashMap[K, V]]) Clear() {
 
 // Contains checks if the map contains the given key. O(1) average.
 func (m Ptr[HashMap[K, V]]) Contains(key K) bool {
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     val idx = int(hashCode & m.bucketMask)
 
     var entry = m.buckets[idx]
@@ -242,7 +213,7 @@ func (m Ptr[HashMap[K, V]]) Contains(key K) bool {
 
 // Get returns the value for a key wrapped in Option. O(1) average.
 func (m Ptr[HashMap[K, V]]) Get(key K) Option[V] {
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     val idx = int(hashCode & m.bucketMask)
 
     var entry = m.buckets[idx]

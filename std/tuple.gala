@@ -9,6 +9,11 @@ type Tuple[A any, B any] struct {
 func (t Tuple[A, B]) String() string =
     s"(${t.V1}, ${t.V2})"
 
+// Hash combines the hashes of the tuple's values (see HashValue), so a tuple
+// of hashable values is a HashSet element or HashMap key. Every arity hashes
+// the same way.
+func (t Tuple[A, B]) Hash() uint32 = HashCombine(HashValue(t.V1), HashValue(t.V2))
+
 // Tuple3 represents a triple of values.
 type Tuple3[A any, B any, C any] struct {
     V1 A
@@ -18,6 +23,8 @@ type Tuple3[A any, B any, C any] struct {
 
 func (t Tuple3[A, B, C]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3})"
+
+func (t Tuple3[A, B, C]) Hash() uint32 = combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3))
 
 // Tuple4 represents a quadruple of values.
 type Tuple4[A any, B any, C any, D any] struct {
@@ -29,6 +36,9 @@ type Tuple4[A any, B any, C any, D any] struct {
 
 func (t Tuple4[A, B, C, D]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4})"
+
+func (t Tuple4[A, B, C, D]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4))
 
 // Tuple5 represents a quintuple of values.
 type Tuple5[A any, B any, C any, D any, E any] struct {
@@ -42,6 +52,9 @@ type Tuple5[A any, B any, C any, D any, E any] struct {
 func (t Tuple5[A, B, C, D, E]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5})"
 
+func (t Tuple5[A, B, C, D, E]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4), HashValue(t.V5))
+
 // Tuple6 represents a sextuple of values.
 type Tuple6[A any, B any, C any, D any, E any, F any] struct {
     V1 A
@@ -54,6 +67,9 @@ type Tuple6[A any, B any, C any, D any, E any, F any] struct {
 
 func (t Tuple6[A, B, C, D, E, F]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5}, ${t.V6})"
+
+func (t Tuple6[A, B, C, D, E, F]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4), HashValue(t.V5), HashValue(t.V6))
 
 // Tuple7 represents a septuple of values.
 type Tuple7[A any, B any, C any, D any, E any, F any, G any] struct {
@@ -69,6 +85,9 @@ type Tuple7[A any, B any, C any, D any, E any, F any, G any] struct {
 func (t Tuple7[A, B, C, D, E, F, G]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5}, ${t.V6}, ${t.V7})"
 
+func (t Tuple7[A, B, C, D, E, F, G]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4), HashValue(t.V5), HashValue(t.V6), HashValue(t.V7))
+
 // Tuple8 represents an octuple of values.
 type Tuple8[A any, B any, C any, D any, E any, F any, G any, H any] struct {
     V1 A
@@ -83,6 +102,9 @@ type Tuple8[A any, B any, C any, D any, E any, F any, G any, H any] struct {
 
 func (t Tuple8[A, B, C, D, E, F, G, H]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5}, ${t.V6}, ${t.V7}, ${t.V8})"
+
+func (t Tuple8[A, B, C, D, E, F, G, H]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4), HashValue(t.V5), HashValue(t.V6), HashValue(t.V7), HashValue(t.V8))
 
 // Tuple9 represents a nonuple of values.
 type Tuple9[A any, B any, C any, D any, E any, F any, G any, H any, I any] struct {
@@ -100,6 +122,9 @@ type Tuple9[A any, B any, C any, D any, E any, F any, G any, H any, I any] struc
 func (t Tuple9[A, B, C, D, E, F, G, H, I]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5}, ${t.V6}, ${t.V7}, ${t.V8}, ${t.V9})"
 
+func (t Tuple9[A, B, C, D, E, F, G, H, I]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4), HashValue(t.V5), HashValue(t.V6), HashValue(t.V7), HashValue(t.V8), HashValue(t.V9))
+
 // Tuple10 represents a decuple of values.
 type Tuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J any] struct {
     V1 A
@@ -116,6 +141,18 @@ type Tuple10[A any, B any, C any, D any, E any, F any, G any, H any, I any, J an
 
 func (t Tuple10[A, B, C, D, E, F, G, H, I, J]) String() string =
     s"(${t.V1}, ${t.V2}, ${t.V3}, ${t.V4}, ${t.V5}, ${t.V6}, ${t.V7}, ${t.V8}, ${t.V9}, ${t.V10})"
+
+func (t Tuple10[A, B, C, D, E, F, G, H, I, J]) Hash() uint32 =
+    combineHashes(HashValue(t.V1), HashValue(t.V2), HashValue(t.V3), HashValue(t.V4), HashValue(t.V5), HashValue(t.V6), HashValue(t.V7), HashValue(t.V8), HashValue(t.V9), HashValue(t.V10))
+
+// combineHashes folds hashes left to right with HashCombine.
+func combineHashes(first uint32, rest ...uint32) uint32 {
+    var h = first
+    for i := 0; i < rest.Size(); i++ {
+        h = HashCombine(h, rest[i])
+    }
+    h
+}
 
 // GoTuple builds a Tuple from 2 values. A Go call returning 2 values and no
 // error is converted with it when used as a value.

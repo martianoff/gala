@@ -2,7 +2,6 @@ package collection_immutable
 
 import (
     . "martianoff/gala/std"
-    "math"
     "martianoff/gala/go_interop"
     "martianoff/gala/go_builtins"
 )
@@ -12,6 +11,7 @@ import (
 //
 // Elements must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
 // - Types implementing the Hashable interface
 //
 // Performance characteristics (eC = effectively constant, log32(n)):
@@ -73,70 +73,13 @@ func (s HashSet[T]) Size() int = s.size
 // Length is an alias for Size.
 func (s HashSet[T]) Length() int = s.size
 
-// hash computes a hash code for a value.
-// Priority:
-// 1. For primitives (int, string, bool, etc.), use built-in efficient hashing
-// 2. If the value implements Hashable, use its Hash() method
-// 3. For other types, panic - they must implement Hashable
-func hash[T comparable](value T) uint32 {
-    val v any = value
-
-    // Check primitives first (common case), then Hashable interface
-    val result = v match {
-        case i: int => HashInt(int64(i))
-        case s: string => HashString(s)
-        case i: int64 => HashInt(i)
-        case i: int32 => HashInt(int64(i))
-        case u: uint => HashUint(uint64(u))
-        case u: uint64 => HashUint(u)
-        case u: uint32 => HashUint(uint64(u))
-        case b: bool => HashBool(b)
-        case i: int8 => HashInt(int64(i))
-        case i: int16 => HashInt(int64(i))
-        case u: uint8 => HashUint(uint64(u))
-        case u: uint16 => HashUint(uint64(u))
-        case f: float64 => hashFloat(f)
-        case f: float32 => hashFloat(float64(f))
-        case h: Hashable => h.Hash()
-        case _ => panicNotHashable(v)
-    }
-    return result
-}
-
-// hashFloat hashes a float by its bits, so fractions spread over the buckets
-// instead of truncating to a handful of integers. The two zeros are == and
-// hash alike; a NaN equals nothing, so where it lands does not matter.
-func hashFloat(f float64) uint32 = if (f == 0) HashUint(0) else HashUint(math.Float64bits(f))
-
-// hashesByValue reports whether v is of a predeclared primitive type that hash
-// hashes by its value. For those types == is Equal, so a HashSet holding them
-// tells values apart exactly as Equal does. A named type is left out: it may
-// declare an Equal of its own.
-func hashesByValue(v any) bool = v match {
-    case _: int => true
-    case _: string => true
-    case _: int64 => true
-    case _: int32 => true
-    case _: uint => true
-    case _: uint64 => true
-    case _: uint32 => true
-    case _: bool => true
-    case _: int8 => true
-    case _: int16 => true
-    case _: uint8 => true
-    case _: uint16 => true
-    case _: float64 => true
-    case _: float32 => true
-    case _ => false
-}
-
 // firstOccurrence returns a predicate that holds for each element the first
 // time an Equal element is seen, for Distinct. It looks elements up in a
-// HashSet when T is a type hashesByValue covers, and otherwise compares each
+// HashSet when T is a type HashesByValue covers, and otherwise compares each
 // one with Equal against the elements kept so far.
 func firstOccurrence[T any]() func(T) bool {
     var zero T
-    if hashesByValue(zero) {
+    if HashesByValue(zero) {
         var seen = EmptyHashSet[any]()
         return (elem T) => {
             val before = seen.Size()
@@ -152,11 +95,6 @@ func firstOccurrence[T any]() func(T) bool {
         kept = kept.Append(elem)
         true
     }
-}
-
-// panicNotHashable panics with a helpful error message for types that don't implement Hashable.
-func panicNotHashable(v any) uint32 {
-    go_builtins.Panic(f"HashSet: type ${v}%T must implement std.Hashable interface")
 }
 
 // bitpos returns the bit position for a hash at a given level.
@@ -186,7 +124,7 @@ func (s HashSet[T]) Contains(elem T) bool {
     if s.root.IsEmpty() {
         return false
     }
-    val hashCode = hash[T](elem)
+    val hashCode = HashValue(elem)
     return containsInNode[T](s.root.Get(), elem, hashCode, 0)
 }
 
@@ -219,7 +157,7 @@ func (s HashSet[T]) Add(elem T) HashSet[T] {
         return HashSet[T](root = SomePtr(leaf), size = s.size + 1)
     }
     val root = s.root.Get()
-    val hashCode = hash[T](elem)
+    val hashCode = HashValue(elem)
 
     // Check if already contains (single hash computation)
     if containsInNode[T](root, elem, hashCode, 0) {
@@ -247,7 +185,7 @@ func addToNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, 
 
         // Add existing entries
         for i := 0; i < node.entries.Size(); i++ {
-            val existingHash = hash[T](node.entries[i])
+            val existingHash = HashValue(node.entries[i])
             newNode = insertIntoInternalNode[T](newNode, node.entries[i], existingHash, level)
         }
 
@@ -340,7 +278,7 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
         return s
     }
     val root = s.root.Get()
-    val hashCode = hash[T](elem)
+    val hashCode = HashValue(elem)
 
     // Check if contains (single hash computation)
     if !containsInNode[T](root, elem, hashCode, 0) {

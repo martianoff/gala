@@ -1,0 +1,38 @@
+package main
+
+import (
+    im "martianoff/gala/collection_immutable"
+    mu "martianoff/gala/collection_mutable"
+)
+
+// Tuple, Option and Either implement std.Hashable, so they work as HashSet
+// elements and HashMap keys without a wrapper type or a string encoding.
+
+func main() {
+    // A set of grid cells keyed by (row, column).
+    val visited = im.HashSetOf((0, 0), (0, 1), (1, 1), (0, 0))
+    Println(s"visited cells: ${visited.Size()}")
+    Println(s"visited (1, 1): ${visited.Contains((1, 1))}")
+    Println(s"visited (1, 0): ${visited.Contains((1, 0))}")
+
+    // Keys nest: a parser table keyed by (state, (symbol, lookahead)).
+    val table = im.HashMapOf(((0, ("expr", Some("+"))), 1), ((0, ("expr", None[string]())), 2))
+    val transitions = table.Put((0, ("expr", Some("+"))), 3)
+    Println(s"transitions: ${transitions.Size()}")
+    Println(s"goto(0, expr, +): ${transitions.GetOrElse((0, ("expr", Some("+"))), -1)}")
+    Println(s"goto(0, expr, eof): ${transitions.GetOrElse((0, ("expr", None[string]())), -1)}")
+    Println(s"goto(1, expr, eof): ${transitions.GetOrElse((1, ("expr", None[string]())), -1)}")
+
+    // Option keys: None is a key like any other.
+    val byNickname = mu.EmptyHashMap[Option[string], string]()
+    byNickname.Put(Some("ace"), "Alice")
+    byNickname.Put(None[string](), "anonymous")
+    Println(s"nickname ace: ${byNickname.GetOrElse(Some("ace"), "?")}")
+    Println(s"no nickname: ${byNickname.GetOrElse(None[string](), "?")}")
+
+    // Either keys: Left(1) and Right(1) are different keys.
+    val outcomes = mu.HashSetOf(Left[int, int](1), Right[int, int](1), Left[int, int](1))
+    Println(s"outcomes: ${outcomes.Size()}")
+    Println(s"has Right(1): ${outcomes.Contains(Right[int, int](1))}")
+    Println(s"has Right(2): ${outcomes.Contains(Right[int, int](2))}")
+}

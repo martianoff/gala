@@ -1,0 +1,12 @@
+visited cells: 3
+visited (1, 1): true
+visited (1, 0): false
+transitions: 2
+goto(0, expr, +): 3
+goto(0, expr, eof): 2
+goto(1, expr, eof): -1
+nickname ace: Alice
+no nickname: anonymous
+outcomes: 2
+has Right(1): true
+has Right(2): false

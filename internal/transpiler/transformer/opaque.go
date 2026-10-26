@@ -404,8 +404,8 @@ func (t *galaASTTransformer) transformOpaqueTypeDeclaration(ctx *grammar.OpaqueT
 
 // scalarHelpers names, for each kind, the std helpers that hash and compare a
 // value, and the conversions applied to it first (innermost first) for each.
-// A float hashes through HashUint of its integer conversion, the rule the
-// collections' own type switch uses.
+// Each kind hashes through the helper HashValue uses for its predeclared type,
+// so an opaque value hashes like its underlying value.
 func scalarHelpers(kind scalarKind) (hash string, hashConv []string, compare, compareConv string) {
 	switch kind {
 	case scalarInt:
@@ -413,7 +413,7 @@ func scalarHelpers(kind scalarKind) (hash string, hashConv []string, compare, co
 	case scalarUint:
 		return "HashUint", []string{"uint64"}, "CompareUint", "uint64"
 	case scalarFloat:
-		return "HashUint", []string{"float64", "uint64"}, "CompareFloat", "float64"
+		return "HashFloat", []string{"float64"}, "CompareFloat", "float64"
 	case scalarString:
 		return "HashString", []string{"string"}, "CompareString", "string"
 	default:

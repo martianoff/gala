@@ -9,6 +9,12 @@ sealed type Either[A any, B any] {
     case Right(RightValue B)
 }
 
+// Hash hashes the value Left or Right holds (see HashValue), mixed with which
+// side holds it, so an Either of hashable types is a HashSet element or
+// HashMap key.
+func (e Either[A, B]) Hash() uint32 =
+    if (e.isLeft()) HashCombine(1, HashValue(e.LeftValue)) else HashCombine(2, HashValue(e.RightValue))
+
 // IsLeft returns true if this is a Left, false otherwise.
 func (e Either[A, B]) IsLeft() bool = e.isLeft()
 

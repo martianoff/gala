@@ -530,7 +530,7 @@ To give a value a name of its own, choose between an alias and a struct with one
 | Distinct type | No — an `int64` is accepted where a `UserID` is expected | Yes — an `int64` is not a `UserID` |
 | Methods of its own | No — [GALA-E0048](/docs/errors/gala-e0048/) | Yes |
 | Arithmetic and ordering | Yes — `id + 1`, `a < b` | No — Go rejects `+` and `<` on a struct; use `.Value` |
-| `HashMap` key | Yes, hashed as its target | Only with a `Hash() uint32` method ([`Hashable`](/docs/immutable-collections/#hashable-interface)); without one, `Put` panics with `HashMap: type main.UserID must implement std.Hashable interface` |
+| `HashMap` key | Yes, hashed as its target | Only with a `Hash() uint32` method ([`Hashable`](/docs/immutable-collections/#hashable-interface)); without one, `Put` panics with `cannot hash type main.UserID: ... must be a primitive or implement std.Hashable interface` |
 | JSON / YAML field, `SnakeCase()` | The bare value: `{"user_id":42}`, `user_id: 42` | An object: `{"user_id":{"value":42}}`, `user_id:` over a nested `value: 42` |
 
 ```gala

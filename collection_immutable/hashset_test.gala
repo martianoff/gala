@@ -332,3 +332,41 @@ func TestHashFunctions(t T) T {
     val combined = HashCombine(h1, h3)
     return IsTrue(t3, combined != 0)
 }
+
+// ============ std Value Type Element Tests ============
+
+func TestHashSetOfTuples(t T) T {
+    val s = HashSetOf((1, "a"), (2, "b"), (1, "a"))
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains((2, "b")))
+    val t3 = IsFalse(t2, s.Contains((2, "a")))
+    Eq(t3, s.Remove((1, "a")).Size(), 1)
+}
+
+func TestHashSetOfNestedTuples(t T) T {
+    val s = HashSetOf(((1, 2), 3), ((1, 2), 3), ((2, 1), 3))
+    val t1 = Eq(t, s.Size(), 2)
+    IsTrue(t1, s.Contains(((2, 1), 3)))
+}
+
+func TestHashSetOfOptions(t T) T {
+    val s = HashSetOf(Some(1), None[int](), Some(1), None[int]())
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(None[int]()))
+    IsFalse(t2, s.Contains(Some(2)))
+}
+
+func TestHashSetOfEithers(t T) T {
+    val s = HashSetOf(Left[int, int](1), Right[int, int](1), Left[int, int](1))
+    val t1 = Eq(t, s.Size(), 2)
+    IsTrue(t1, s.Contains(Right[int, int](1)))
+}
+
+// unhashableKey is neither a primitive nor Hashable.
+type unhashableKey struct {
+    N int
+}
+
+func TestHashSetOfTupleWithUnhashablePanics(t T) T = Panics(t, () => {
+    HashSetOf((1, unhashableKey(N = 1)), (2, unhashableKey(N = 2)))
+})
