@@ -354,3 +354,23 @@ func TestHashMapImmutability(t T) T {
     val t3 = Eq[int](t2, m3.Size(), 0)
     return IsTrue(t3, m1.Contains("a"))
 }
+
+// === std Value Type Key Tests ===
+
+func TestHashMapTupleKeys(t T) T {
+    val m = HashMapOf(((1, "a"), 10), ((2, "b"), 20)).Put((1, "a"), 11)
+    val t1 = Eq(t, m.Size(), 2)
+    val t2 = Eq(t1, m.GetOrElse((1, "a"), 0), 11)
+    val t3 = IsFalse(t2, m.Contains((1, "b")))
+    Eq(t3, m.Remove((2, "b")).Size(), 1)
+}
+
+func TestHashMapOptionAndEitherKeys(t T) T {
+    val byOption = EmptyHashMap[Option[string], int]().Put(Some("x"), 1).Put(None[string](), 2).Put(Some("x"), 3)
+    val byEither = EmptyHashMap[Either[string, int], string]().Put(Left[string, int]("e"), "left").Put(Right[string, int](7), "right")
+    val t1 = Eq(t, byOption.Size(), 2)
+    val t2 = Eq(t1, byOption.GetOrElse(Some("x"), 0), 3)
+    val t3 = Eq(t2, byOption.GetOrElse(None[string](), 0), 2)
+    val t4 = Eq(t3, byEither.GetOrElse(Right[string, int](7), ""), "right")
+    IsFalse(t4, byEither.Contains(Right[string, int](8)))
+}

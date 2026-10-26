@@ -188,7 +188,7 @@ func Equal[T any](v1, v2 T) bool {
 // declare an Equal of its own.
 func equalPrimitive[T any](v1, v2 T) (eq bool, ok bool) {
 	// The predeclared primitive types; the collection packages' HashSet
-	// hashes the same ones but uintptr and the complex types (hashesByValue).
+	// hashes the same ones but uintptr and the complex types (std.HashesByValue).
 	switch a := any(v1).(type) {
 	case bool, string,
 		int, int8, int16, int32, int64,

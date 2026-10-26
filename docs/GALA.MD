@@ -1012,7 +1012,7 @@ one field. They differ in what the compiler checks and in what a codec writes:
 | Distinct type | No — an `int64` is accepted where a `UserID` is expected | Yes — an `int64` is not a `UserID` |
 | Methods of its own | No — [GALA-E0048](errors/GALA-E0048.md) | Yes |
 | Arithmetic and ordering | Yes — `id + 1`, `a < b` | No — Go rejects `+` and `<` on a struct; use `.Value` |
-| `HashMap` key | Yes, hashed as its target | Only with a `Hash() uint32` method ([`Hashable`](#custom-key-types)); without one, `Put` panics with `HashMap: type main.UserID must implement std.Hashable interface` |
+| `HashMap` key | Yes, hashed as its target | Only with a `Hash() uint32` method ([`Hashable`](#custom-key-types)); without one, `Put` panics with `cannot hash type main.UserID: ... must be a primitive or implement std.Hashable interface` |
 | JSON / YAML field, `SnakeCase()` | The bare value: `{"user_id":42}`, `user_id: 42` | An object: `{"user_id":{"value":42}}`, `user_id:` over a nested `value: 42` |
 
 ```gala
@@ -4028,6 +4028,13 @@ fmt.Println(snapshot.Size())  // Still has data
 
 #### Custom Key Types
 
+Primitive keys (numbers, strings, bools) are hashed by value. `Tuple` (every arity), `Option` and `Either` implement `Hashable` by combining the hashes of the values they hold, so they are keys as they are, nested or not, as long as the values inside are hashable:
+
+```gala
+val edges = HashMapOf(((1, 2), "a"), ((2, 3), "b"))
+val byNick = EmptyHashMap[Option[string], string]().Put(None[string](), "anonymous") // immutable HashMap
+```
+
 For custom types as keys, implement the `Hashable` interface:
 
 ```gala
@@ -4045,6 +4052,8 @@ val scores = EmptyHashMap[Person, int]()
 val alice = Person(Name = "Alice", Age = 30)
 val m = scores.Put(alice, 100)
 ```
+
+`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `==`, so a `Hash` method must give `==` values the same hash. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
 
 #### Performance Characteristics
 

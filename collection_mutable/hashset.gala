@@ -2,7 +2,6 @@ package collection_mutable
 
 import (
     . "martianoff/gala/std"
-    "math"
     "martianoff/gala/go_interop"
 )
 
@@ -11,6 +10,7 @@ import (
 //
 // Elements must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
 // - Types implementing the std.Hashable interface
 //
 // Performance characteristics:
@@ -64,66 +64,13 @@ func HashSetFromSlice[T comparable](elements []T) Ptr[HashSet[T]] {
     return result
 }
 
-// hashSetHash computes a hash code for a value.
-// Handles primitives automatically and calls Hash() for Hashable types.
-func hashSetHash[T comparable](value T) uint32 {
-    val v any = value
-
-    val result = v match {
-        case i: int => HashInt(int64(i))
-        case s: string => HashString(s)
-        case i: int64 => HashInt(i)
-        case i: int32 => HashInt(int64(i))
-        case u: uint => HashUint(uint64(u))
-        case u: uint64 => HashUint(u)
-        case u: uint32 => HashUint(uint64(u))
-        case b: bool => HashBool(b)
-        case i: int8 => HashInt(int64(i))
-        case i: int16 => HashInt(int64(i))
-        case u: uint8 => HashUint(uint64(u))
-        case u: uint16 => HashUint(uint64(u))
-        case f: float64 => hashFloat(f)
-        case f: float32 => hashFloat(float64(f))
-        case h: Hashable => h.Hash()
-        case _ => hashSetPanicNotHashable(v)
-    }
-    return result
-}
-
-// hashFloat hashes a float by its bits, so fractions spread over the buckets
-// instead of truncating to a handful of integers. The two zeros are == and
-// hash alike; a NaN equals nothing, so where it lands does not matter.
-func hashFloat(f float64) uint32 = if (f == 0) HashUint(0) else HashUint(math.Float64bits(f))
-
-// hashesByValue reports whether v is of a predeclared primitive type that
-// hashSetHash hashes by its value. For those types == is Equal, so a HashSet
-// holding them tells values apart exactly as Equal does. A named type is left
-// out: it may declare an Equal of its own.
-func hashesByValue(v any) bool = v match {
-    case _: int => true
-    case _: string => true
-    case _: int64 => true
-    case _: int32 => true
-    case _: uint => true
-    case _: uint64 => true
-    case _: uint32 => true
-    case _: bool => true
-    case _: int8 => true
-    case _: int16 => true
-    case _: uint8 => true
-    case _: uint16 => true
-    case _: float64 => true
-    case _: float32 => true
-    case _ => false
-}
-
 // firstOccurrence returns a predicate that holds for each element the first
 // time an Equal element is seen, for Distinct. It looks elements up in a
-// HashSet when T is a type hashesByValue covers, and otherwise compares each
+// HashSet when T is a type HashesByValue covers, and otherwise compares each
 // one with Equal against the elements kept so far.
 func firstOccurrence[T any]() func(T) bool {
     var zero T
-    if hashesByValue(zero) {
+    if HashesByValue(zero) {
         val seen = EmptyHashSet[any]()
         return (elem T) => seen.Add(elem)
     }
@@ -135,11 +82,6 @@ func firstOccurrence[T any]() func(T) bool {
         kept.Append(elem)
         true
     }
-}
-
-// hashSetPanicNotHashable panics with a helpful error message.
-func hashSetPanicNotHashable(v any) uint32 {
-    go_builtins.Panic(f"HashSet: type ${v}%T must implement std.Hashable interface")
 }
 
 // === Basic Operations ===
@@ -161,7 +103,7 @@ func (s Ptr[HashSet[T]]) Length() int = s.size
 // Add adds an element to the set. O(1) amortized.
 // Returns true if the element was added (not already present).
 func (s Ptr[HashSet[T]]) Add(elem T) bool {
-    val hashCode = hashSetHash[T](elem)
+    val hashCode = HashValue(elem)
     val idx = int(hashCode & s.bucketMask)
 
     // Check if already present
@@ -226,7 +168,7 @@ func (s Ptr[HashSet[T]]) AddFrom(other Ptr[HashSet[T]]) {
 // Remove removes an element from the set. O(1) amortized.
 // Returns true if the element was removed (was present).
 func (s Ptr[HashSet[T]]) Remove(elem T) bool {
-    val hashCode = hashSetHash[T](elem)
+    val hashCode = HashValue(elem)
     val idx = int(hashCode & s.bucketMask)
 
     var prev = EmptyOptionPtr[hashSetEntry[T]]()
@@ -273,7 +215,7 @@ func (s Ptr[HashSet[T]]) Clear() {
 
 // Contains checks if the set contains the given element. O(1) average.
 func (s Ptr[HashSet[T]]) Contains(elem T) bool {
-    val hashCode = hashSetHash[T](elem)
+    val hashCode = HashValue(elem)
     val idx = int(hashCode & s.bucketMask)
 
     var entry = s.buckets[idx]

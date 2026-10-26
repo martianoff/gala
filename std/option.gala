@@ -25,6 +25,10 @@ sealed type Option[T any] {
     default case None()
 }
 
+// Hash hashes Some by its value (see HashValue) and None as a constant, so an
+// Option of a hashable type is a HashSet element or HashMap key.
+func (o Option[T]) Hash() uint32 = if (o.isSome()) HashCombine(1, HashValue(o.Value)) else 0
+
 // IsDefined returns true if the option is an instance of Some, false otherwise.
 func (o Option[T]) IsDefined() bool = o.isSome()
 

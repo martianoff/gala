@@ -11,6 +11,7 @@ import (
 //
 // Keys must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
+// - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
 // - Types implementing the Hashable interface
 //
 // Performance characteristics (eC = effectively constant, log32(n)):
@@ -52,36 +53,6 @@ func (m HashMap[K, V]) Size() int = m.size
 // Length is an alias for Size.
 func (m HashMap[K, V]) Length() int = m.size
 
-// hashMapHash computes a hash code for a key.
-func hashMapHash[K comparable](key K) uint32 {
-    val v any = key
-
-    val result = v match {
-        case i: int => HashInt(int64(i))
-        case s: string => HashString(s)
-        case i: int64 => HashInt(i)
-        case i: int32 => HashInt(int64(i))
-        case u: uint => HashUint(uint64(u))
-        case u: uint64 => HashUint(u)
-        case u: uint32 => HashUint(uint64(u))
-        case b: bool => HashBool(b)
-        case i: int8 => HashInt(int64(i))
-        case i: int16 => HashInt(int64(i))
-        case u: uint8 => HashUint(uint64(u))
-        case u: uint16 => HashUint(uint64(u))
-        case f: float64 => HashUint(uint64(f))
-        case f: float32 => HashUint(uint64(f))
-        case h: Hashable => h.Hash()
-        case _ => hashMapPanicNotHashable(v)
-    }
-    return result
-}
-
-// hashMapPanicNotHashable panics with a helpful error message.
-func hashMapPanicNotHashable(v any) uint32 {
-    go_builtins.Panic(f"HashMap: type ${v}%T must implement std.Hashable interface")
-}
-
 // hashMapBitpos returns the bit position for a hash at a given level.
 func hashMapBitpos(hashCode uint32, level int) uint32 {
     var shift = uint(level * 5)
@@ -109,7 +80,7 @@ func (m HashMap[K, V]) Contains(key K) bool {
     if m.root.IsEmpty() {
         return false
     }
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     return containsKeyInNode[K, V](m.root.Get(), key, hashCode, 0)
 }
 
@@ -138,7 +109,7 @@ func (m HashMap[K, V]) Get(key K) Option[V] {
     if m.root.IsEmpty() {
         return None[V]()
     }
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
     return getFromNodeMap[K, V](m.root.Get(), key, hashCode, 0)
 }
 
@@ -182,7 +153,7 @@ func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
         return HashMap[K, V](root = SomePtr(leaf), size = m.size + 1)
     }
     val root = m.root.Get()
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
 
     // Check if key exists (to determine if size changes)
     val sizeChange = if (containsKeyInNode[K, V](root, key, hashCode, 0)) 0 else 1
@@ -229,7 +200,7 @@ func putToNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V,
 
         // Add existing entries
         for i := 0; i < node.keys.Size(); i++ {
-            val existingHash = hashMapHash[K](node.keys[i])
+            val existingHash = HashValue(node.keys[i])
             newNode = insertIntoInternalNodeMap[K, V](newNode, node.keys[i], node.values[i], existingHash, level)
         }
 
@@ -326,7 +297,7 @@ func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
         return m
     }
     val root = m.root.Get()
-    val hashCode = hashMapHash[K](key)
+    val hashCode = HashValue(key)
 
     // Check if contains
     if !containsKeyInNode[K, V](root, key, hashCode, 0) {

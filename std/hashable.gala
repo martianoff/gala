@@ -1,10 +1,20 @@
 package std
 
+import (
+    . "martianoff/gala/go_builtins"
+    "math"
+)
+
 // Hashable is an interface that types can implement to provide custom hash functions.
 // Used by HashSet and HashMap for efficient hashing.
 //
-// Primitive types (int, string, bool, etc.) are handled automatically.
-// Custom types should implement this interface for use in hash-based collections.
+// Primitive types (int, string, bool, etc.) are handled automatically, and the
+// std value types Tuple (every arity), Option and Either implement Hashable by
+// combining the hashes of the values they hold. Custom types should implement
+// this interface for use in hash-based collections.
+//
+// HashSet and HashMap compare keys with ==, so a Hash method must agree with
+// it: values that are == must hash alike.
 //
 // Example:
 //   type Person struct {
@@ -72,6 +82,11 @@ func HashString(s string) uint32 {
     return h
 }
 
+// HashFloat hashes a float64 by its bits, so fractions spread over the buckets
+// instead of truncating to a handful of integers. The two zeros are == and
+// hash alike; a NaN equals nothing, so where it lands does not matter.
+func HashFloat(f float64) uint32 = if (f == 0) HashUint(0) else HashUint(math.Float64bits(f))
+
 // HashBool hashes a boolean value.
 func HashBool(b bool) uint32 {
     if b {
@@ -86,4 +101,57 @@ func HashBool(b bool) uint32 {
 func HashCombine(h1 uint32, h2 uint32) uint32 {
     // 0x9e3779b9 = 2654435769 (golden ratio constant)
     return h1 ^ (h2 + 2654435769 + (h1 << 6) + (h1 >> 2))
+}
+
+// HashValue hashes a value the way HashSet and HashMap hash their keys: a
+// value of a predeclared primitive type by its value, any other value through
+// its Hashable Hash method. It panics for a value that is neither. The std
+// value types hash the values they hold through it too, so a Tuple of Tuples,
+// or an Option of a Hashable type, hashes all the way down. It takes any
+// rather than a type parameter: the switch boxes the value either way, and one
+// function serves every key type instead of an instance per type.
+func HashValue(v any) uint32 = v match {
+    case i: int => HashInt(int64(i))
+    case s: string => HashString(s)
+    case i: int64 => HashInt(i)
+    case i: int32 => HashInt(int64(i))
+    case u: uint => HashUint(uint64(u))
+    case u: uint64 => HashUint(u)
+    case u: uint32 => HashUint(uint64(u))
+    case b: bool => HashBool(b)
+    case i: int8 => HashInt(int64(i))
+    case i: int16 => HashInt(int64(i))
+    case u: uint8 => HashUint(uint64(u))
+    case u: uint16 => HashUint(uint64(u))
+    case f: float64 => HashFloat(f)
+    case f: float32 => HashFloat(float64(f))
+    case h: Hashable => h.Hash()
+    case _ => panicNotHashable(v)
+}
+
+// HashesByValue reports whether v is of a predeclared primitive type that
+// HashValue hashes by its value. For those types == is Equal, so a HashSet
+// holding them tells values apart exactly as Equal does. A named type is left
+// out: it may declare an Equal of its own.
+func HashesByValue(v any) bool = v match {
+    case _: int => true
+    case _: string => true
+    case _: int64 => true
+    case _: int32 => true
+    case _: uint => true
+    case _: uint64 => true
+    case _: uint32 => true
+    case _: bool => true
+    case _: int8 => true
+    case _: int16 => true
+    case _: uint8 => true
+    case _: uint16 => true
+    case _: float64 => true
+    case _: float32 => true
+    case _ => false
+}
+
+// panicNotHashable panics for a value HashValue cannot hash.
+func panicNotHashable(v any) uint32 {
+    Panic(f"cannot hash type ${v}%T: a HashSet element or HashMap key, and every value inside a Tuple, Option or Either one, must be a primitive or implement std.Hashable interface")
 }

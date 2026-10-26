@@ -577,6 +577,7 @@ An immutable set with effectively constant time operations. Uses a Hash Array Ma
 
 **Type Requirements:** T must be `comparable` and either:
 - A **primitive type** (int, string, bool, float, etc.) - hashed automatically
+- A **`Tuple`, `Option` or `Either`** of such values - std implements `Hashable` for them, so `HashSetOf((1, "a"), (2, "b"))` works as is
 - A **custom type** implementing the `Hashable` interface
 
 ### Hashable Interface
@@ -611,7 +612,11 @@ val people = HashSetOf(
 - `HashUint(n uint64) uint32` - Hash unsigned integers
 - `HashString(s string) uint32` - Hash strings
 - `HashBool(b bool) uint32` - Hash booleans
+- `HashFloat(f float64) uint32` - Hash floats by their bits
 - `HashCombine(h1, h2 uint32) uint32` - Combine two hashes (for structs)
+- `HashValue(v any) uint32` - Hash any key value by the rules the collections use (primitives by value, others through `Hashable`)
+
+HashSet compares elements with `==`, so values that are `==` must hash alike. An element that is neither primitive nor `Hashable` compiles, then panics on the first hash.
 
 ### Construction
 

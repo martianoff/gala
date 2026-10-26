@@ -538,3 +538,21 @@ func TestHashMapResize(t T) T {
     }
     return t1
 }
+
+// === std Value Type Key Tests ===
+
+func TestHashMapStdValueTypeKeys(t T) T {
+    val byTuple = HashMapOf(((1, "a"), 10), ((2, "b"), 20))
+    byTuple.Put((1, "a"), 11)
+    val byOption = EmptyHashMap[Option[int], string]()
+    byOption.Put(Some(1), "one")
+    byOption.Put(None[int](), "none")
+    val byEither = EmptyHashMap[Either[int, int], string]()
+    byEither.Put(Left[int, int](1), "left")
+    byEither.Put(Right[int, int](1), "right")
+    val t1 = Eq(t, byTuple.Size(), 2)
+    val t2 = Eq(t1, byTuple.GetOrElse((1, "a"), 0), 11)
+    val t3 = Eq(t2, byOption.GetOrElse(None[int](), ""), "none")
+    val t4 = Eq(t3, byEither.Size(), 2)
+    Eq(t4, byEither.GetOrElse(Right[int, int](1), ""), "right")
+}

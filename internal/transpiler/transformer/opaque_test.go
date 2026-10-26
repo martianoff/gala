@@ -38,7 +38,7 @@ func TestOpaqueTypeDeclaration(t *testing.T) {
 			"std.CompareUint(uint64(s), uint64(other))",
 		}, nil},
 		{"opaque type Ratio float64", []string{
-			"std.HashUint(uint64(float64(s)))",
+			"std.HashFloat(float64(s))",
 			"std.CompareFloat(float64(s), float64(other))",
 		}, nil},
 		{"opaque type Email string", []string{

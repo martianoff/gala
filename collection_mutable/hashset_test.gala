@@ -344,3 +344,17 @@ func TestHashSetLargeRemove(t T) T {
     val t2 = IsFalse(t1, s.Contains(0))
     return IsTrue(t2, s.Contains(5000))
 }
+
+// === std Value Type Element Tests ===
+
+func TestHashSetOfStdValueTypes(t T) T {
+    val tuples = HashSetOf((1, "a"), (2, "b"), (1, "a"))
+    val options = HashSetOf(Some(1), None[int](), Some(1))
+    val eithers = HashSetOf(Left[int, string](1), Right[int, string]("1"), Left[int, string](1))
+    val t1 = Eq(t, tuples.Size(), 2)
+    val t2 = IsTrue(t1, tuples.Contains((2, "b")))
+    val t3 = Eq(t2, options.Size(), 2)
+    val t4 = IsTrue(t3, options.Contains(None[int]()))
+    val t5 = Eq(t4, eithers.Size(), 2)
+    IsTrue(t5, eithers.Remove(Right[int, string]("1")))
+}
