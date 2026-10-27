@@ -820,6 +820,15 @@ const (
 	// so only the declaring package can call it; the call used to reach
 	// `go build` and fail there against the generated expression.
 	CodeUnexportedMethod ErrorCode = "GALA-E0083"
+
+	// E0084: `==` or `!=`, or a stable-identifier pattern, which compares
+	// with `==`, has an operand whose type Go cannot compare: a function, a
+	// Go map, a type parameter constrained by `any`, or a struct, sealed
+	// type, tuple or collection holding one or a Go slice. Left to Go, the
+	// comparison failed against the generated code, naming the internal
+	// `std.Immutable` wrapper of a `val` field. Such values are compared with
+	// Equal.
+	CodeIncomparableOperands ErrorCode = "GALA-E0084"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

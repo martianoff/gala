@@ -560,6 +560,9 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := t.checkComparablePattern(patExprCtx, patExpr, objExpr, matchedType); err != nil {
+		return nil, nil, err
+	}
 	cond := &ast.BinaryExpr{
 		X:  objExpr,
 		Op: token.EQL,

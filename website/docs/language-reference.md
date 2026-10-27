@@ -432,6 +432,8 @@ val same = p1.Equal(p2)    // false
 
 A `Copy` override can be any expression, lambdas included. A lambda's parameter types come from the field's declared type, as with a named constructor argument: `calc.Copy(Op = (x) => x + 1)`.
 
+`==` and `!=` are Go's operators: they compare a struct field by field when Go can compare every field. A struct, sealed type or tuple that holds a function, a Go slice or map, or a collection such as `Array` cannot be compared with `==` ([GALA-E0084](/docs/errors/gala-e0084/)); compare it with `Equal`.
+
 ### Type Aliases {#type-aliases}
 
 `type X Y` declares an **alias**: a second name for an existing type, not a new type. The alias and its target are the same type and are interchangeable everywhere — a value of one *is* a value of the other, with no conversion and no separate identity.
@@ -852,7 +854,7 @@ val desc = flag match {
 A `match` used as a statement (its value discarded) is side-effect dispatch: its arms need not share a type, and each arm is a statement. An arm may make a call, assign or do nothing, but an arm that is, or in braces ends in, a plain value (a literal, name, operator expression or lambda) is rejected as evaluated but not used.
 
 #### Stable Identifiers (Constants in Patterns)
-A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. Lowercase identifiers never compare with a value: they bind (unless they name a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
+A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. The value's type must be comparable: a function value, an `Array`, or a struct that holds one is [GALA-E0084](/docs/errors/gala-e0084/); bind it and compare in a guard, `case v if v.Equal(Answer)`. Lowercase identifiers never compare with a value: they bind (unless they name a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
 ```gala
 type Environment string
 

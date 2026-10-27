@@ -847,6 +847,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()
+		t.constrainReceiverTypeParams(recvTypeParams, t.getTypeMeta(receiverBaseName))
 
 		// The receiver is in scope with its declared type: a pointer
 		// receiver as a `*T` or a `Ptr[T]`, so its nullability is checked

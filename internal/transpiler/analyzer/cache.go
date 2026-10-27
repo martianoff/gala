@@ -165,7 +165,10 @@ import (
 // v33: a sealed case records the Go names of its fields
 // (SealedVariant.GoFieldNames), and a field named like a method of its type
 // is stored under a Go name of its case. A v32 payload lacks both.
-const CacheVersion = "v33"
+//
+// v34: a Go type records whether == cannot compare its values
+// (GoTypeData.Incomparable, GALA-E0084). A v33 payload lacks it.
+const CacheVersion = "v34"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

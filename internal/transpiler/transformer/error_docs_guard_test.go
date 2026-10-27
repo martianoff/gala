@@ -1290,6 +1290,24 @@ func main() {
 			render: renderUnexportedPredicateRepro,
 		},
 		{
+			name: "struct with an Array field compared with ==",
+			code: galaerr.CodeIncomparableOperands, // GALA-E0084
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Post(title string, tags Array[string])
+
+func main() {
+    val a = Post("hello", ArrayOf("intro"))
+    val b = Post("hello", ArrayOf("intro"))
+    Println(a == b)
+}
+`)
+			},
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {

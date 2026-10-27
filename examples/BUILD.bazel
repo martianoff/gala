@@ -1413,6 +1413,15 @@ gala_exec_test(
     expected = "alternative_patterns.out",
 )
 
+# `==` on comparable structs, sealed types, tuples and stable identifiers, and
+# Equal for values holding an Array (GALA-E0084 rejects `==` on those)
+gala_exec_test(
+    name = "comparable_equality",
+    src = "comparable_equality.gala",
+    expected = "comparable_equality.out",
+    deps = ["//collection_immutable"],
+)
+
 # Named sub-patterns `Field = p` in variant and struct patterns
 gala_exec_test(
     name = "named_sub_patterns",

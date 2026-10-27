@@ -47,6 +47,9 @@ type galaASTTransformer struct {
 	// ptrStars holds the `*T` expressions emitted for a non-null `Ptr[T]`, so a
 	// type read back from generated Go keeps the marker (see ptr.go).
 	ptrStars map[*ast.StarExpr]bool
+	// typeParamConstraints is the declared constraint of each active type
+	// parameter that has one: "any", "comparable" or an interface name.
+	typeParamConstraints map[string]string
 	// resultGenericMethods holds the name of every known method whose own
 	// type parameters its result mentions (see isResultGenericMethodCall).
 	resultGenericMethods map[string]bool
@@ -327,6 +330,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.immutFields = make(map[string]bool)
 	t.structImmutFields = make(map[string][]bool)
 	t.activeTypeParams = make(map[string]bool)
+	t.typeParamConstraints = make(map[string]string)
 	t.typeParamNames = nil
 	t.structFields = make(map[string][]string)
 	t.structFieldTypes = make(map[string]map[string]transpiler.Type)

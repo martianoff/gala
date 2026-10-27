@@ -88,6 +88,8 @@ func (t *galaASTTransformer) isUnboundTypeParam(name string) bool {
 // bindTypeParams brings the type parameters a generic declaration declares into
 // scope for the rest of that declaration and returns the function that takes
 // them back out. A name the enclosing scope already bound stays bound on exit.
+// A parameter declared with a constraint (`T comparable`) records it in
+// typeParamConstraints.
 func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 	var added []string
 	for _, field := range params {
@@ -95,14 +97,43 @@ func (t *galaASTTransformer) bindTypeParams(params ...*ast.Field) func() {
 			if !t.activeTypeParams[n.Name] {
 				t.activeTypeParams[n.Name] = true
 				added = append(added, n.Name)
+				if c, ok := field.Type.(*ast.Ident); ok {
+					t.constrainTypeParam(n.Name, c.Name)
+				}
 			}
 		}
 	}
 	return func() {
 		for _, name := range added {
 			delete(t.activeTypeParams, name)
+			delete(t.typeParamConstraints, name)
 		}
 	}
+}
+
+// constrainReceiverTypeParams records the constraints of the type parameters
+// a receiver type declares (`func (b Box[U]) ...`): those meta, the receiver
+// type, declares at the same positions. A receiver repeats no constraint, so
+// bindTypeParams has none for them.
+func (t *galaASTTransformer) constrainReceiverTypeParams(params []*ast.Field, meta *transpiler.TypeMetadata) {
+	if meta == nil {
+		return
+	}
+	for i := range min(len(params), len(meta.TypeParams)) {
+		if c := meta.TypeParamConstraints[meta.TypeParams[i]]; c != "" {
+			for _, n := range params[i].Names {
+				t.constrainTypeParam(n.Name, c)
+			}
+		}
+	}
+}
+
+// constrainTypeParam records constraint as the active type parameter name's.
+func (t *galaASTTransformer) constrainTypeParam(name, constraint string) {
+	if t.typeParamConstraints == nil {
+		t.typeParamConstraints = make(map[string]string)
+	}
+	t.typeParamConstraints[name] = constraint
 }
 
 // typeParamMisuseError reports name, a type parameter of the enclosing
@@ -118,12 +149,13 @@ func (t *galaASTTransformer) typeParamMisuseError(ctx antlr.ParserRuleContext, n
 // signature, a parameter's default — and returns the function that restores
 // the enclosing set.
 func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
-	enclosing := t.activeTypeParams
+	enclosing, constraints := t.activeTypeParams, t.typeParamConstraints
 	t.activeTypeParams = make(map[string]bool, len(names))
+	t.typeParamConstraints = map[string]string{}
 	for _, name := range names {
 		t.activeTypeParams[name] = true
 	}
-	return func() { t.activeTypeParams = enclosing }
+	return func() { t.activeTypeParams, t.typeParamConstraints = enclosing, constraints }
 }
 
 // receiverTypeParams is the type parameters a receiver type declares: the

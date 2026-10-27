@@ -110,38 +110,46 @@ func IsNullablePtr(t Type) bool {
 // DisplayType is t as GALA source spells it: a non-null pointer reads
 // `Ptr[T]` where String reads `*T`. Every other kind reads as String does.
 func DisplayType(t Type) string {
+	return DisplayTypeNamed(t, func(leaf Type) string { return leaf.String() })
+}
+
+// DisplayTypeNamed is DisplayType with each named or basic type, the leaves
+// of t, spelled by name: a diagnostic qualifies them as its file would.
+func DisplayTypeNamed(t Type, name func(leaf Type) string) string {
 	switch v := t.(type) {
 	case nil:
 		return ""
 	case PointerType:
 		if v.NonNull {
-			return parser.PtrTypeName + "[" + DisplayType(v.Elem) + "]"
+			return parser.PtrTypeName + "[" + DisplayTypeNamed(v.Elem, name) + "]"
 		}
-		return "*" + DisplayType(v.Elem)
+		return "*" + DisplayTypeNamed(v.Elem, name)
 	case ArrayType:
-		return "[]" + DisplayType(v.Elem)
+		return "[]" + DisplayTypeNamed(v.Elem, name)
 	case MapType:
-		return "map[" + DisplayType(v.Key) + "]" + DisplayType(v.Elem)
+		return "map[" + DisplayTypeNamed(v.Key, name) + "]" + DisplayTypeNamed(v.Elem, name)
 	case GenericType:
-		return DisplayType(v.Base) + "[" + displayTypes(v.Params) + "]"
+		return DisplayTypeNamed(v.Base, name) + "[" + displayTypes(v.Params, name) + "]"
 	case FuncType:
-		s := "func(" + displayTypes(v.Params) + ")"
+		s := "func(" + displayTypes(v.Params, name) + ")"
 		switch len(v.Results) {
 		case 0:
 			return s
 		case 1:
-			return s + " " + DisplayType(v.Results[0])
+			return s + " " + DisplayTypeNamed(v.Results[0], name)
 		}
-		return s + " (" + displayTypes(v.Results) + ")"
+		return s + " (" + displayTypes(v.Results, name) + ")"
+	case NamedType, BasicType:
+		return name(t)
 	}
 	return t.String()
 }
 
-// displayTypes is DisplayType of each of ts, comma-separated.
-func displayTypes(ts []Type) string {
+// displayTypes is DisplayTypeNamed of each of ts, comma-separated.
+func displayTypes(ts []Type, name func(leaf Type) string) string {
 	parts := make([]string, len(ts))
 	for i, p := range ts {
-		parts[i] = DisplayType(p)
+		parts[i] = DisplayTypeNamed(p, name)
 	}
 	return strings.Join(parts, ", ")
 }

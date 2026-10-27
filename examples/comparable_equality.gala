@@ -1,0 +1,52 @@
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+// `==` compares values Go can compare; a value holding an Array, a function
+// or a Go slice is compared with Equal (`==` on one is GALA-E0084).
+
+struct Point(x int, y int)
+
+struct Post(title string, tags Array[string])
+
+sealed type Shape {
+    case Circle(r int)
+    case Square(side int)
+}
+
+sealed type Path {
+    case Poly(points Array[int])
+    case Dot(x int)
+}
+
+val Origin = Point(0, 0)
+
+val Intro = ArrayOf("intro")
+
+func same[T comparable](a T, b T) bool = a == b
+
+func sameAny[T any](a T, b T) bool = Equal(a, b)
+
+func describe(p Point) string = p match {
+    case Origin => "origin"
+    case _      => "elsewhere"
+}
+
+func tagged(tags Array[string]) string = tags match {
+    case t if t.Equal(Intro) => "intro"
+    case _                   => "other"
+}
+
+func main() {
+    Println(Point(1, 2) == Point(1, 2), Point(1, 2) != Point(2, 1))
+    Println(Circle(1) == Circle(1), Circle(1) == Square(1))
+    Println(Some(3) == Some(3), (1, "a") == (1, "a"))
+    Println(same("x", "x"), sameAny(ArrayOf(1), ArrayOf(1)))
+    Println(describe(Point(0, 0)), describe(Point(1, 0)))
+
+    val a = Post("hello", ArrayOf("intro"))
+    val b = Post("hello", ArrayOf("intro"))
+    Println(a.Equal(b), a.Equal(Post("hello", ArrayOf("news"))))
+    Println(Poly(ArrayOf(1, 2)).Equal(Poly(ArrayOf(1, 2))), Poly(ArrayOf(1)).Equal(Dot(1)))
+    Println(ArrayOf(1, 2).Equal(ArrayOf(1, 2)), tagged(ArrayOf("intro")), tagged(ArrayOf("news")))
+}
