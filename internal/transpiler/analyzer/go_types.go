@@ -1242,6 +1242,10 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	// Set underlying type
 	data.Underlying = goTypeToTranspilerType(typ.Underlying())
 	data.NoCopy = noCopyReason(typ)
+	// A generic type's comparability depends on its type arguments.
+	if named, ok := typ.(*types.Named); !ok || named.TypeParams().Len() == 0 {
+		data.Incomparable = !types.Comparable(typ)
+	}
 
 	// Extract struct fields. Preserve declaration order in FieldOrder so
 	// downstream consumers that build positional composite literals

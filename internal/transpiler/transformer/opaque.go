@@ -9,6 +9,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -185,6 +186,36 @@ func (t *galaASTTransformer) diagTypeName(typ transpiler.Type) string {
 			args[i] = t.diagTypeName(p)
 		}
 		return t.diagTypeName(ty.Base) + "[" + strings.Join(args, ", ") + "]"
+	case transpiler.BasicType:
+		if pkg, name := splitPackageQualifier(ty.Name); pkg != "" {
+			return t.diagQualifier(pkg) + name
+		}
+	case transpiler.ArrayType:
+		return "[]" + t.diagTypeName(ty.Elem)
+	case transpiler.MapType:
+		return "map[" + t.diagTypeName(ty.Key) + "]" + t.diagTypeName(ty.Elem)
+	case transpiler.PointerType:
+		if ty.NonNull {
+			return galaparser.PtrTypeName + "[" + t.diagTypeName(ty.Elem) + "]"
+		}
+		return "*" + t.diagTypeName(ty.Elem)
+	case transpiler.FuncType:
+		params := make([]string, len(ty.Params))
+		for i, p := range ty.Params {
+			params[i] = t.diagTypeName(p)
+		}
+		s := "func(" + strings.Join(params, ", ") + ")"
+		switch len(ty.Results) {
+		case 0:
+			return s
+		case 1:
+			return s + " " + t.diagTypeName(ty.Results[0])
+		}
+		results := make([]string, len(ty.Results))
+		for i, r := range ty.Results {
+			results[i] = t.diagTypeName(r)
+		}
+		return s + " (" + strings.Join(results, ", ") + ")"
 	}
 	return typ.String()
 }

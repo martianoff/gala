@@ -90,6 +90,10 @@ type GoTypeData struct {
 	// ("sync.Mutex" for a struct holding one), or "" when copying is fine.
 	// See noCopyReason in the analyzer.
 	NoCopy string
+	// Incomparable is true when Go's == cannot compare values of this type:
+	// it is, or holds by value, a slice, map or function. It is false when the
+	// type is comparable or that is not known, as for a generic type.
+	Incomparable bool
 }
 
 // NewGoTypeInfo creates an empty GoTypeInfo.

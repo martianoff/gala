@@ -50,6 +50,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		isSet bool
 	}{
 		{"activeTypeParams", len(t.activeTypeParams) != 0},
+		{"typeParamConstraints", len(t.typeParamConstraints) != 0},
 		{"currentScope", t.currentScope != nil},
 		{"returnSlot", t.returnSlot.typ != nil || t.returnSlot.fillable || t.returnSlot.deferred != nil || t.returnSlot.typeParams != nil},
 		{"expectedArgTypes", len(t.expectedArgTypes.stack) != 0},
@@ -153,19 +154,21 @@ var accumulatedStateFields = []string{
 // have (lowersCleanly). Fields that are zero between top-level declarations
 // are not saved; restoreScopedState zeroes them.
 type scopedStateSnapshot struct {
-	currentScope     *scope
-	activeTypeParams map[string]bool
-	returnSlot       returnSlot
-	argDepth         int
+	currentScope         *scope
+	activeTypeParams     map[string]bool
+	typeParamConstraints map[string]string
+	returnSlot           returnSlot
+	argDepth             int
 }
 
 func (t *galaASTTransformer) saveScopedState() scopedStateSnapshot {
 	return scopedStateSnapshot{
 		currentScope: t.currentScope,
 		// activeTypeParams is extended in place (bindTypeParams), so it is copied.
-		activeTypeParams: maps.Clone(t.activeTypeParams),
-		returnSlot:       t.returnSlot,
-		argDepth:         len(t.expectedArgTypes.stack),
+		activeTypeParams:     maps.Clone(t.activeTypeParams),
+		typeParamConstraints: maps.Clone(t.typeParamConstraints),
+		returnSlot:           t.returnSlot,
+		argDepth:             len(t.expectedArgTypes.stack),
 	}
 }
 
@@ -173,6 +176,7 @@ func (t *galaASTTransformer) saveScopedState() scopedStateSnapshot {
 // ones from s, the rest to their zero value.
 func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.currentScope, t.activeTypeParams, t.returnSlot = s.currentScope, s.activeTypeParams, s.returnSlot
+	t.typeParamConstraints = s.typeParamConstraints
 	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
 	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, nil, nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil

@@ -66,6 +66,7 @@ func TestEveryTransformerFieldIsClassified(t *testing.T) {
 // renaming a field breaks the build here instead of silently skipping it.
 var setScopedFieldNonZero = map[string]func(*galaASTTransformer){
 	"activeTypeParams":      func(t *galaASTTransformer) { t.activeTypeParams["T"] = true },
+	"typeParamConstraints":  func(t *galaASTTransformer) { t.constrainTypeParam("T", "any") },
 	"currentScope":          func(t *galaASTTransformer) { t.pushScope() },
 	"returnSlot":            func(t *galaASTTransformer) { t.returnSlot.typ = transpiler.BasicType{Name: "int"} },
 	"expectedArgTypes":      func(t *galaASTTransformer) { t.expectedArgTypes.push(transpiler.BasicType{Name: "int"}) },
@@ -127,17 +128,20 @@ func TestRestoreScopedStateCoversEveryScopedField(t *testing.T) {
 		tr.pushScope()
 		outer := tr.currentScope
 		tr.activeTypeParams["T"] = true
+		tr.constrainTypeParam("T", "comparable")
 		tr.expectedArgTypes.push(transpiler.BasicType{Name: "int"})
 		saved := tr.saveScopedState()
 
 		tr.pushScope()
 		tr.activeTypeParams["U"] = true
+		tr.constrainTypeParam("U", "any")
 		tr.expectedArgTypes.push(transpiler.BasicType{Name: "string"})
 		tr.matchInStatementPos = true
 
 		tr.restoreScopedState(saved)
 		require.Same(t, outer, tr.currentScope)
 		require.Equal(t, map[string]bool{"T": true}, tr.activeTypeParams)
+		require.Equal(t, map[string]string{"T": "comparable"}, tr.typeParamConstraints)
 		require.Len(t, tr.expectedArgTypes.stack, 1)
 		require.False(t, tr.matchInStatementPos)
 	})

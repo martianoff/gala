@@ -850,6 +850,8 @@ val p2 = Person("Alice", 30)
 val same = p1.Equal(p2) // true
 ```
 
+`==` and `!=` are Go's operators: they compare a struct field by field when Go can compare every field. A struct, sealed type or tuple that holds a function, a Go slice or map, or a collection such as `Array` cannot be compared with `==` ([GALA-E0084](errors/GALA-E0084.md)); compare it with `Equal`.
+
 #### Apply Method
 If a struct has an `Apply` method, it can be called like a function. GALA automatically expands `object(args)` to `object.Apply(args)`.
 
@@ -1288,7 +1290,7 @@ This generates:
 - Empty companion structs `Circle{}`, `Rectangle{}`, `Point{}`
 - `Apply` methods on each companion for construction
 - `Unapply` methods for pattern matching
-- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type.
+- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type; otherwise it is [GALA-E0084](errors/GALA-E0084.md).
 
 A variant is a constructor and a pattern, not a type. Every value `Circle(...)` builds is a `Shape`, and GALA has no type for a single variant: narrowing to one is what a `match` arm does. Naming a variant where a type is expected — a parameter, result, field, `val`/`var` annotation, type argument (`Array[Some[int]]`, `ArrayOf[Circle](...)`), typed pattern (`case c: Circle`), receiver or alias target — is rejected with [GALA-E0061](errors/GALA-E0061.md). Take the sealed type instead and match on the variant:
 
@@ -1731,7 +1733,7 @@ func describe(env Environment) string = env match {
 }
 ```
 
-Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`, and in partial functions. A qualified name such as `case math.MaxInt8` is always compared, never bound. Because the comparison is Go's `==`, the value's type must be comparable with the matched type: an `Array`, a `List` or a function value fails in the Go build. A stable-identifier arm is conditional, so the match still needs a `case _` default.
+Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`, and in partial functions. A qualified name such as `case math.MaxInt8` is always compared, never bound. Because the comparison is Go's `==`, the value's type must be comparable with the matched type: a function value, an `Array`, or a struct that holds one is [GALA-E0084](errors/GALA-E0084.md); bind such a value and compare it in a guard, `case v if v.Equal(Answer)`. A stable-identifier arm is conditional, so the match still needs a `case _` default.
 
 A few edge cases:
 
