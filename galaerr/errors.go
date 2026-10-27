@@ -823,8 +823,8 @@ const (
 
 	// E0084: `==` or `!=`, or a stable-identifier pattern, which compares
 	// with `==`, has an operand whose type Go cannot compare: a function, a
-	// Go slice or map, a type parameter constrained by `any`, or a struct,
-	// sealed type, tuple or collection holding one. Left to Go, the
+	// Go map, a type parameter constrained by `any`, or a struct, sealed
+	// type, tuple or collection holding one or a Go slice. Left to Go, the
 	// comparison failed against the generated code, naming the internal
 	// `std.Immutable` wrapper of a `val` field. Such values are compared with
 	// Equal.

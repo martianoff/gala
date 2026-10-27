@@ -1211,6 +1211,18 @@ func GoPackageSourceDir(importPath string) string {
 	return ""
 }
 
+// isGenericGoType reports whether typ, a declared Go type or alias, has type
+// parameters of its own.
+func isGenericGoType(typ types.Type) bool {
+	switch v := typ.(type) {
+	case *types.Named:
+		return v.TypeParams().Len() > 0
+	case *types.Alias:
+		return v.TypeParams().Len() > 0
+	}
+	return false
+}
+
 // extractTypeData creates GoTypeData for a types.TypeName. Its exported fields
 // and methods are recorded and, when own (the type belongs to the package being
 // compiled), the unexported ones that package declares as well.
@@ -1243,7 +1255,7 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 	data.Underlying = goTypeToTranspilerType(typ.Underlying())
 	data.NoCopy = noCopyReason(typ)
 	// A generic type's comparability depends on its type arguments.
-	if named, ok := typ.(*types.Named); !ok || named.TypeParams().Len() == 0 {
+	if !isGenericGoType(typ) {
 		data.Incomparable = !types.Comparable(typ)
 	}
 

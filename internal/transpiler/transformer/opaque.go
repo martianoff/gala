@@ -9,7 +9,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -168,56 +167,36 @@ func (t *galaASTTransformer) opaqueTypeName(typ transpiler.Type, meta *transpile
 	return name + "[" + strings.Join(args, ", ") + "]"
 }
 
-// diagTypeName spells a type argument for a diagnostic, qualified the way
-// this file would write it.
+// diagTypeName spells a type for a diagnostic, each type in it qualified the
+// way this file would write it.
 func (t *galaASTTransformer) diagTypeName(typ transpiler.Type) string {
-	switch ty := typ.(type) {
-	case transpiler.NamedType:
-		if ty.Package != "" {
-			// Only a qualifier as written in this file is an import alias.
-			if actual, ok := t.importManager.ResolveAlias(ty.Package); ok && ty.ImportPath != "" {
-				return t.diagQualifier(actual) + ty.Name
-			}
-			return t.diagQualifier(ty.Package) + ty.Name
-		}
-	case transpiler.GenericType:
-		args := make([]string, len(ty.Params))
-		for i, p := range ty.Params {
-			args[i] = t.diagTypeName(p)
-		}
-		return t.diagTypeName(ty.Base) + "[" + strings.Join(args, ", ") + "]"
-	case transpiler.BasicType:
-		if pkg, name := splitPackageQualifier(ty.Name); pkg != "" {
-			return t.diagQualifier(pkg) + name
-		}
-	case transpiler.ArrayType:
-		return "[]" + t.diagTypeName(ty.Elem)
-	case transpiler.MapType:
-		return "map[" + t.diagTypeName(ty.Key) + "]" + t.diagTypeName(ty.Elem)
-	case transpiler.PointerType:
-		if ty.NonNull {
-			return galaparser.PtrTypeName + "[" + t.diagTypeName(ty.Elem) + "]"
-		}
-		return "*" + t.diagTypeName(ty.Elem)
-	case transpiler.FuncType:
-		params := make([]string, len(ty.Params))
-		for i, p := range ty.Params {
-			params[i] = t.diagTypeName(p)
-		}
-		s := "func(" + strings.Join(params, ", ") + ")"
-		switch len(ty.Results) {
-		case 0:
-			return s
-		case 1:
-			return s + " " + t.diagTypeName(ty.Results[0])
-		}
-		results := make([]string, len(ty.Results))
-		for i, r := range ty.Results {
-			results[i] = t.diagTypeName(r)
-		}
-		return s + " (" + strings.Join(results, ", ") + ")"
+	return transpiler.DisplayTypeNamed(typ, t.diagLeafName)
+}
+
+// diagLeafName is diagTypeName of a named or basic type.
+func (t *galaASTTransformer) diagLeafName(leaf transpiler.Type) string {
+	pkg, name, importPath := leafQualifier(leaf)
+	if pkg == "" {
+		return leaf.String()
 	}
-	return typ.String()
+	// Only a qualifier as written in this file is an import alias.
+	if actual, ok := t.importManager.ResolveAlias(pkg); ok && importPath != "" {
+		return t.diagQualifier(actual) + name
+	}
+	return t.diagQualifier(pkg) + name
+}
+
+// leafQualifier splits a named or basic type into its package qualifier, bare
+// name and import path; pkg is "" when it has none.
+func leafQualifier(leaf transpiler.Type) (pkg, name, importPath string) {
+	switch v := leaf.(type) {
+	case transpiler.NamedType:
+		return v.Package, v.Name, v.ImportPath
+	case transpiler.BasicType:
+		pkg, name = splitPackageQualifier(v.Name)
+		return pkg, name, ""
+	}
+	return "", "", ""
 }
 
 // sameOpaqueType reports whether a and b, both opaque types (described by

@@ -101,11 +101,11 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 		if err != nil {
 			return nil, err
 		}
-		left, tok := result, t.getBinaryToken(opText)
-		if result, err = t.binaryOperation(opText, tok, ctx, left, right); err != nil {
+		tok := t.getBinaryToken(opText)
+		if result, err = t.binaryOperation(opText, tok, ctx, result, right); err != nil {
 			return nil, err
 		}
-		if err := t.checkComparableOperands(tok, relExprs[i-1], relExprs[i], left, right); err != nil {
+		if err := t.checkComparableOperands(relExprs[i-1], relExprs[i], result); err != nil {
 			return nil, err
 		}
 	}

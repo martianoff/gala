@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -74,7 +73,12 @@ func (t *galaASTTransformer) incomparableReason(r *incomparable) string {
 // sourceTypeName is typ as this file's source spells it (diagTypeName), with
 // std's types by their bare name.
 func (t *galaASTTransformer) sourceTypeName(typ transpiler.Type) string {
-	return strings.ReplaceAll(t.diagTypeName(typ), registry.StdPackageName+".", "")
+	return transpiler.DisplayTypeNamed(typ, func(leaf transpiler.Type) string {
+		if pkg, name, _ := leafQualifier(leaf); pkg == registry.StdPackageName {
+			return name
+		}
+		return t.diagLeafName(leaf)
+	})
 }
 
 // typeArg is the type a type parameter of a declaration stands for, with the
@@ -246,27 +250,29 @@ func (c *comparer) declaration(typ transpiler.Type, meta *transpiler.TypeMetadat
 
 // checkComparableOperands rejects `left == right` or `left != right` when an
 // operand's type is known not to be comparable (GALA-E0084). leftCtx and
-// rightCtx are the operands as written; a comparison with nil is left to the
-// checks of nil.
-func (t *galaASTTransformer) checkComparableOperands(tok token.Token, leftCtx, rightCtx antlr.ParserRuleContext, left, right ast.Expr) error {
-	if (tok != token.EQL && tok != token.NEQ) || isNilIdent(left) || isNilIdent(right) {
+// rightCtx are the operands as written, and cmp the lowered comparison, whose
+// operands are read through their Immutable wrapper; a comparison with nil is
+// left to the checks of nil.
+func (t *galaASTTransformer) checkComparableOperands(leftCtx, rightCtx antlr.ParserRuleContext, cmp ast.Expr) error {
+	bin, ok := cmp.(*ast.BinaryExpr)
+	if !ok || (bin.Op != token.EQL && bin.Op != token.NEQ) || isNilIdent(bin.X) || isNilIdent(bin.Y) {
 		return nil
 	}
-	for _, operand := range []ast.Expr{left, right} {
+	tok := bin.Op
+	for _, operand := range []ast.Expr{bin.X, bin.Y} {
 		typ := t.probeExprType(operand)
 		r := t.incomparableType(typ)
 		if r == nil {
 			continue
 		}
 		l, rt := operandText(leftCtx), operandText(rightCtx)
-		self := r.atLeaf() // the operand's type is the leaf
 		var hint string
 		switch {
-		case self && r.kind == kindUnconstrainedParam:
+		case r.kind == kindFunction:
+			hint = functionHint(r)
+		case r.atLeaf() && r.kind == kindUnconstrainedParam:
 			name := t.sourceTypeName(r.leaf)
-			hint = fmt.Sprintf("constrain %s with comparable, `[%s comparable]`; or compare with `Equal(%s, %s)`", name, name, l, rt)
-		case self && r.kind == kindFunction:
-			hint = "a function value cannot be compared, only called: compare the values it returns"
+			hint = fmt.Sprintf("constrain %s with comparable where it is declared (`%s comparable`); or compare with `Equal(%s, %s)`", name, name, l, rt)
 		default:
 			hint = fmt.Sprintf("compare with Equal: `%s`", t.equalCall(typ, l, rt, tok == token.NEQ))
 		}
@@ -274,6 +280,15 @@ func (t *galaASTTransformer) checkComparableOperands(tok token.Token, leftCtx, r
 			fmt.Sprintf("%s cannot compare %s values: %s", tok, t.sourceTypeName(typ), t.incomparableReason(r)), hint)
 	}
 	return nil
+}
+
+// functionHint is the hint for a comparison that reaches a function value,
+// which Go compares with nothing but nil and Equal finds equal to nothing.
+func functionHint(r *incomparable) string {
+	if r.atLeaf() {
+		return "a function value cannot be compared, only called: compare the values it returns"
+	}
+	return "a function value cannot be compared, only called: compare the other fields, or the values the function returns"
 }
 
 // checkComparablePattern rejects a stable-identifier or other value pattern,
@@ -293,19 +308,24 @@ func (t *galaASTTransformer) checkComparablePattern(ctx grammar.IExpressionConte
 			continue
 		}
 		name := transpiler.SourceText(ctx)
+		hint := fmt.Sprintf("bind the value and compare it in a guard: `case v if %s =>`", t.equalCall(typ, "v", name, false))
+		if r.kind == kindFunction {
+			hint = functionHint(r)
+		}
 		return spanError(galaerr.CodeIncomparableOperands, ctx, ctx,
 			fmt.Sprintf("case %s compares the matched value with %s by ==, which cannot compare %s values: %s", name, name, t.sourceTypeName(typ), t.incomparableReason(r)),
-			fmt.Sprintf("bind the value and compare it in a guard: `case v if %s =>`", t.equalCall(typ, "v", name, false)))
+			hint)
 	}
 	return nil
 }
 
 // equalCall is the GALA expression that compares left and right of type typ
 // structurally: their Equal method, which every GALA struct, sealed type and
-// tuple has, or std's Equal. negate prefixes `!`.
+// tuple has, or std's Equal (an opaque type has no Equal method). negate
+// prefixes `!`.
 func (t *galaASTTransformer) equalCall(typ transpiler.Type, left, right string, negate bool) string {
 	call := fmt.Sprintf("Equal(%s, %s)", left, right)
-	if _, meta, _, ok := t.receiverTypeInfo(typ); ok && meta != nil && meta.DefinedIn != "" && !meta.IsInterface {
+	if _, meta, _, ok := t.receiverTypeInfo(typ); ok && meta != nil && meta.DefinedIn != "" && !meta.IsInterface && !meta.IsOpaque {
 		call = fmt.Sprintf("%s.Equal(%s)", left, right)
 	}
 	if negate {

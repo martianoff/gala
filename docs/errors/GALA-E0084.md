@@ -5,11 +5,12 @@ values of a comparable type. The comparison has an operand whose type is not
 one:
 
 - a function value;
-- a Go slice or map;
+- a Go map;
 - a type parameter constrained by `any` (`func same[T any](a T, b T)`);
-- a struct, sealed type or tuple with a field of such a type, or of a type
-  that holds one: `Array` holds a Go slice, so a struct with an `Array` field
-  cannot be compared, and neither can an `Array` itself;
+- a struct, sealed type or tuple with a field of such a type, a Go slice
+  field, or a field of a type that holds one: `Array` holds a Go slice, so a
+  struct with an `Array` field cannot be compared, and neither can an `Array`
+  itself;
 - a Go type that holds one, such as `bytes.Buffer`.
 
 A [stable-identifier pattern](../GALA.MD#stable-identifiers-constants-in-patterns)
@@ -17,7 +18,8 @@ A [stable-identifier pattern](../GALA.MD#stable-identifiers-constants-in-pattern
 way.
 
 A comparison with `nil` is not this error. A type GALA does not know is left
-to the Go compiler.
+to the Go compiler, and so are two Go slices compared directly: Go reports
+`slice can only be compared to nil`.
 
 **Minimal repro.**
 

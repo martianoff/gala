@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "GALA-E0084 — Values That Cannot Be Compared with =="
-description: "GALA-E0084 fires when == or != (or a stable-identifier pattern) compares values Go cannot compare: a function, a Go slice or map, a type parameter constrained by any, or a struct, sealed type, tuple or Array holding one. Compare them with Equal."
+description: "GALA-E0084 fires when == or != (or a stable-identifier pattern) compares values Go cannot compare: a function, a Go map, a type parameter constrained by any, or a struct, sealed type, tuple or Array holding one or a Go slice. Compare them with Equal."
 keywords: "gala-e0084, gala cannot be compared, gala struct containing std.Immutable cannot be compared, gala incomparable types in type set, gala equal, gala == array, gala comparable"
 permalink: /docs/errors/gala-e0084/
 last_modified_at: 2026-10-26
@@ -16,11 +16,12 @@ values of a comparable type. The comparison has an operand whose type is not
 one:
 
 - a function value;
-- a Go slice or map;
+- a Go map;
 - a type parameter constrained by `any` (`func same[T any](a T, b T)`);
-- a struct, sealed type or tuple with a field of such a type, or of a type
-  that holds one: `Array` holds a Go slice, so a struct with an `Array` field
-  cannot be compared, and neither can an `Array` itself;
+- a struct, sealed type or tuple with a field of such a type, a Go slice
+  field, or a field of a type that holds one: `Array` holds a Go slice, so a
+  struct with an `Array` field cannot be compared, and neither can an `Array`
+  itself;
 - a Go type that holds one, such as `bytes.Buffer`.
 
 A [stable-identifier pattern](/docs/language-reference/#stable-identifiers-constants-in-patterns)
@@ -28,7 +29,8 @@ A [stable-identifier pattern](/docs/language-reference/#stable-identifiers-const
 way.
 
 A comparison with `nil` is not this error. A type GALA does not know is left
-to the Go compiler.
+to the Go compiler, and so are two Go slices compared directly: Go reports
+`slice can only be compared to nil`.
 
 **Minimal repro.**
 

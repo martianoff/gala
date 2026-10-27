@@ -51,7 +51,7 @@ func main() {
 
 func main() { Println(same(1, 1)) }`,
 			msg: []string{"== cannot compare T values: T is a type parameter constrained by any",
-				"constrain T with comparable, `[T comparable]`; or compare with `Equal(a, b)`"},
+				"constrain T with comparable where it is declared (`T comparable`); or compare with `Equal(a, b)`"},
 		},
 		{
 			name: "generic struct over a type parameter constrained by any",
@@ -95,6 +95,16 @@ func main() {
     Println(f == f)
 }`,
 			msg: []string{"== cannot compare func(int) int values: func(int) int is a function", "a function value cannot be compared, only called"},
+		},
+		{
+			name: "struct with a function field",
+			src: `struct H(f func(int) int)
+
+func inc(x int) int = x + 1
+
+func main() { Println(H(inc) == H(inc)) }`,
+			msg: []string{"== cannot compare H values: field f has type func(int) int, a function",
+				"compare the other fields, or the values the function returns"},
 		},
 		{
 			name: "Go map",
@@ -152,6 +162,9 @@ func main() { Println(same(1, 1)) }`},
 func (b Box[T]) Holds(x T) bool = b.v == x
 
 func main() { Println(Box(1).Holds(1)) }`},
+		{name: "generic call results inside a function generic in T", src: `func f[T any](x T) bool = ListOf(1).Head() == 1 && Some(2).Get() == 2
+
+func main() { Println(f("a")) }`},
 		{name: "comparisons with nil", src: `func main() {
     var f func(int) int = nil
     var m map[string]int
