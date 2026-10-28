@@ -93,15 +93,24 @@ func TestStructTagEveryFieldReported(t *testing.T) {
 	}
 }
 
-// TestStringOutsideStructFieldsIsNotATag keeps the diagnostic to struct fields:
-// a stray string in a function's parameter list is an ordinary syntax error,
-// and strings in a field's default value or in expressions still parse.
+// TestStringOutsideStructFieldsIsNotATag keeps the diagnostic to a string right
+// after a struct field, on its line: a stray string elsewhere — in a function's
+// parameter list, after a ',' or on a line of its own — is an ordinary syntax
+// error, and strings in a field's default value or in expressions still parse.
 func TestStringOutsideStructFieldsIsNotATag(t *testing.T) {
-	_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\nfunc f(a int \"x\") int = a\n")
-	require.NotEmpty(t, errs)
-	for _, e := range errs {
-		if se, ok := e.(*galaerr.SemanticError); ok {
-			assert.NotEqual(t, galaerr.CodeStructTag, se.Code, "a function parameter has no tag to report: %v", e)
+	notTags := []string{
+		"package main\n\nfunc f(a int \"x\") int = a\n",
+		"package main\n\nstruct S(a int, \"x\")\n",
+		"package main\n\nsealed type Shape {\n    case Circle(Radius float64, \"x\")\n}\n",
+		"package main\n\ntype S struct {\n    A int\n    \"doc\"\n}\n",
+	}
+	for _, in := range notTags {
+		_, _, errs := NewAntlrGalaParser().ParseLenient(in)
+		require.NotEmpty(t, errs, in)
+		for _, e := range errs {
+			if se, ok := e.(*galaerr.SemanticError); ok {
+				assert.NotEqual(t, galaerr.CodeStructTag, se.Code, "no field has a tag here: %s: %v", in, e)
+			}
 		}
 	}
 

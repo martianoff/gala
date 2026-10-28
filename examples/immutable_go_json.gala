@@ -11,6 +11,13 @@ import (
 // decodes as the value it holds, so the struct round-trips with its data.
 struct LineItem(SKU string, UnitCents int64, Qty int)
 
+// Stock uses the block form and mixes an immutable field with a `var` one,
+// which Go sees as a plain field.
+type Stock struct {
+    SKU string
+    var Count int
+}
+
 // Order nests a GALA struct inside another.
 struct Order(ID string, Item LineItem)
 
@@ -25,6 +32,12 @@ func main() {
     var decodedItem LineItem
     Println(FromError(json.Unmarshal(ToBytes(itemJson), &decodedItem)).IsSuccess())
     Println(s"${decodedItem.SKU} ${decodedItem.UnitCents} ${decodedItem.Qty} equal=${decodedItem == item}")
+
+    Println(encode(Stock(SKU = "box", Count = 2)))
+
+    var decodedStock Stock
+    Println(FromError(json.Unmarshal(ToBytes("{\"SKU\":\"crate\",\"Count\":7}"), &decodedStock)).IsSuccess())
+    Println(s"${decodedStock.SKU} ${decodedStock.Count}")
 
     val order = Order("o-9", item)
     val orderJson = encode(order)
