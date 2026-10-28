@@ -49,6 +49,7 @@ func (d *packageDecls) markComparableReceivers(a *galaAnalyzer, richAST *transpi
 	outer := a.currentQualifiers
 	defer func() { a.currentQualifiers = outer }()
 	held := map[*transpiler.TypeMetadata][]bool{}
+	interfaces := interfaceMethodSets(richAST)
 	for changed := true; changed; {
 		changed = false
 		for _, r := range d.receivers {
@@ -64,9 +65,18 @@ func (d *packageDecls) markComparableReceivers(a *galaAnalyzer, richAST *transpi
 			if stored := typeMeta.Methods[r.meta.Name]; stored != nil && stored != r.meta {
 				metas = append(metas, stored)
 			}
+			// A method by which the type implements an interface keeps its Go
+			// method, so a value of the type still implements it; one that
+			// needs a comparable parameter stays the error it was
+			// (GALA-E0084, or Go's).
+			if implementsBy(typeMeta, r.meta.Name, interfaces) {
+				continue
+			}
 			for i, need := range a.comparableNeeds(r, richAST, held) {
+				// A parameter constrained by another interface keeps that
+				// constraint; only one declared `any` is lowered.
 				declared := typeMeta.TypeParams[i]
-				if !need || typeMeta.TypeParamConstraints[declared] == "comparable" {
+				if c := typeMeta.TypeParamConstraints[declared]; !need || (c != "" && c != "any") {
 					continue
 				}
 				for _, m := range metas {
@@ -80,6 +90,43 @@ func (d *packageDecls) markComparableReceivers(a *galaAnalyzer, richAST *transpi
 			}
 		}
 	}
+}
+
+// interfaceMethodSets lists, by method name, the method sets of the
+// interfaces the analysis knows that name it: GALA's and Go's, and Go's error
+// and fmt.Stringer, which Go and fmt look for on any value.
+func interfaceMethodSets(richAST *transpiler.RichAST) map[string][][]string {
+	sets := map[string][][]string{"Error": {{"Error"}}, "String": {{"String"}}}
+	add := func(names []string) {
+		for _, n := range names {
+			sets[n] = append(sets[n], names)
+		}
+	}
+	for _, meta := range richAST.Types {
+		if meta.IsInterface {
+			add(slices.Collect(maps.Keys(meta.Methods)))
+		}
+	}
+	if gi := richAST.GoTypeInfo; gi != nil {
+		for _, data := range gi.Types {
+			if data.Kind == "interface" {
+				add(slices.Collect(maps.Keys(data.Methods)))
+			}
+		}
+	}
+	return sets
+}
+
+// implementsBy reports whether method is one by which the type meta
+// implements an interface of interfaces: the type has every method of an
+// interface that names it.
+func implementsBy(meta *transpiler.TypeMetadata, method string, interfaces map[string][][]string) bool {
+	for _, set := range interfaces[method] {
+		if !slices.ContainsFunc(set, func(n string) bool { return meta.Methods[n] == nil }) {
+			return true
+		}
+	}
+	return false
 }
 
 // comparableScan walks one method for the receiver type parameters it uses
@@ -134,6 +181,10 @@ func (s *comparableScan) resolve(ctx grammar.ITypeContext) transpiler.Type {
 // them are reached (a declaration precedes its uses in the source).
 func (s *comparableScan) walk(tree antlr.Tree) {
 	switch n := tree.(type) {
+	case *grammar.LambdaExpressionContext, *grammar.BlockContext, *grammar.CaseClauseContext:
+		// A scope: what it binds is not seen after it.
+		outer := maps.Clone(s.env)
+		defer func() { s.env = outer }()
 	case *grammar.TypeContext:
 		s.instantiations(s.resolve(n))
 		return // nested types are part of the one just walked
@@ -168,12 +219,15 @@ func (s *comparableScan) walk(tree antlr.Tree) {
 
 func (s *comparableScan) bindAll(ids grammar.IIdentifierListContext, typ grammar.ITypeContext) {
 	list, ok := ids.(*grammar.IdentifierListContext)
-	if !ok || list == nil || typ == nil {
+	if !ok || list == nil {
 		return
 	}
-	t := s.resolve(typ)
 	for _, id := range list.AllIdentifier() {
-		s.env[id.GetText()] = t
+		if typ == nil {
+			delete(s.env, id.GetText()) // an inferred binding shadows the name
+		} else {
+			s.env[id.GetText()] = s.resolve(typ)
+		}
 	}
 }
 

@@ -61,6 +61,32 @@ func (l Link[K]) Same(other Link[K]) bool = l.next == other.next
 func (l Link[K]) SameKey(other Link[K]) bool = l.key == other.key
 
 func (b Bag[A, B]) Renamed() map[B]int = go_interop.MapEmpty[B, int]()
+
+func (b Bag[K, V]) Scoped(k int) bool {
+    b.keys.ForEach((k K) => Println(k))
+    ArrayOf(1).Exists((x) => x == k)
+}
+
+func (b Bag[K, V]) Shadowed(k K) bool = ArrayOf(1).Exists((k) => k == 1)
+
+func (b Bag[K, V]) String() string = if (b.keys.Exists((x) => x == b.keys.Head())) "dup" else "bag"
+
+func (b Bag[K, V]) Lookup(k K) bool = b.keys.Exists((x) => x == k)
+
+struct Named[T Labeled](items Array[T])
+
+func (n Named[T]) Has(x T) bool = n.items.Exists((y) => y == x)
+`
+
+const comparableIface = `package bag
+
+type Labeled interface {
+    Label() string
+}
+
+type Finder interface {
+    Lookup(k int) bool
+}
 `
 
 // TestComparableReceiverParams pins which receiver type parameters a method
@@ -91,6 +117,15 @@ func TestComparableReceiverParams(t *testing.T) {
 		{"bag.Link", "Same", nil},
 		{"bag.Link", "SameKey", []string{"K"}},
 		{"bag.Bag", "Renamed", []string{"V"}},
+		// A lambda parameter is bound only inside its lambda, and an untyped
+		// one shadows the name.
+		{"bag.Bag", "Scoped", nil},
+		{"bag.Bag", "Shadowed", nil},
+		// A method an interface names stays a Go method.
+		{"bag.Bag", "String", nil},
+		{"bag.Bag", "Lookup", nil},
+		// A parameter constrained by another interface is left to Go.
+		{"bag.Named", "Has", nil},
 	}
 	for _, analyzed := range []string{"methods.gala", "types.gala"} {
 		rich := analyzeBagPackage(t, analyzed)
@@ -111,19 +146,19 @@ func analyzeBagPackage(t *testing.T, analyzed string) *transpiler.RichAST {
 	t.Helper()
 	tmp := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(tmp, "gala.mod"), []byte("module example.com/bag\n\ngala dev\n"), 0o644))
-	files := map[string]string{"types.gala": comparableTypes, "methods.gala": comparableMethods}
-	var sibling string
+	files := map[string]string{"types.gala": comparableTypes, "methods.gala": comparableMethods, "iface.gala": comparableIface}
+	var siblings []string
 	for name, src := range files {
 		require.NoError(t, os.WriteFile(filepath.Join(tmp, name), []byte(src), 0o644))
 		if name != analyzed {
-			sibling = filepath.Join(tmp, name)
+			siblings = append(siblings, filepath.Join(tmp, name))
 		}
 	}
 	p := transpiler.NewAntlrGalaParser()
 	batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
 	tree, _, err := p.Parse(files[analyzed])
 	require.NoError(t, err)
-	batch.SetPackageFiles([]string{sibling})
+	batch.SetPackageFiles(siblings)
 	rich, err := batch.Analyze(tree, nil, filepath.Join(tmp, analyzed))
 	require.NoError(t, err)
 	return rich

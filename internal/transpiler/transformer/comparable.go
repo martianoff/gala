@@ -310,7 +310,7 @@ func (t *galaASTTransformer) checkComparableTypeArgs(method string, recvType tra
 		hint := fmt.Sprintf("give %s a type Go can compare with ==: a primitive, or a struct, tuple or Option of such types", tp)
 		if r.atLeaf() && r.kind == kindUnconstrainedParam {
 			name := t.sourceTypeName(r.leaf)
-			hint = fmt.Sprintf("constrain %s with comparable where it is declared (`%s comparable`)", name, name)
+			hint = fmt.Sprintf("if a function declares %s, constrain it `comparable` there; in a method of the type that declares %s, give the value a declared type (a typed parameter or val) so GALA sees that the method needs %s comparable", name, name, name)
 		}
 		err := galaerr.NewCodedSemanticError(galaerr.CodeIncomparableTypeArgument, line, col,
 			fmt.Sprintf("%s.%s needs a comparable %s: %s", typeMeta.Name, method, tp, t.incomparableReason(r)),

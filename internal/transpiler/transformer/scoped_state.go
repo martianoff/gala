@@ -94,6 +94,7 @@ var accumulatedStateFields = []string{
 	"ptrStars",
 	"genericMethods",
 	"resultGenericMethods",
+	"loweredMethodNames",
 	"functions",
 	"galaPkgPaths",
 	"typeMetas",

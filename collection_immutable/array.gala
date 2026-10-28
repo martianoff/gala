@@ -993,7 +993,7 @@ func (a Array[T]) ToList() List[T] {
 // Equal reports whether the two arrays hold Equal elements in the same order.
 // How an array was built (appended, prepended, sliced) does not matter.
 // HashSet and HashMap call it on every hit of an Array key, so it loops
-// instead of zipping: it allocates nothing and stops at the first difference.
+// instead of zipping: no intermediate array, and it stops at the first difference.
 func (a Array[T]) Equal(other Array[T]) bool {
     if a.length != other.length {
         return false

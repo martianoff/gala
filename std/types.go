@@ -202,9 +202,22 @@ func KeyEqual[T any](a, b T) bool {
 	if comparable && t.Kind() != reflect.Interface {
 		return false
 	}
-	// An interface key whose dynamic type declares Equal, or a type Go
-	// cannot compare: Equal finds the method, or compares field by field.
+	// An interface key holds a dynamic type with the same rule: one Go
+	// can compare and without an Equal method is a key by ==.
+	if t.Kind() == reflect.Interface {
+		if dt := reflect.TypeOf(any(a)); dt == nil || (dt.Comparable() && !hasEqualMethod(dt)) {
+			return false
+		}
+	}
+	// A dynamic type that declares Equal, or a type Go cannot compare:
+	// Equal finds the method, or compares field by field.
 	return Equal(a, b)
+}
+
+// hasEqualMethod reports whether t has a method Equal, the one Equal calls.
+func hasEqualMethod(t reflect.Type) bool {
+	_, ok := t.MethodByName("Equal")
+	return ok
 }
 
 // identical reports whether a == b. A comparable struct type can still hold

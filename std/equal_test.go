@@ -84,6 +84,8 @@ func TestKeyEqual(t *testing.T) {
 		{"interface type, different dynamic types", KeyEqual[any](1, int64(1)), false},
 		{"interface type, Equal dynamic values", KeyEqual[any](node{1, &node{2, nil}}, node{1, &node{2, nil}}), true},
 		{"pointer without Equal is a key by identity", KeyEqual(&plain{1}, &plain{1}), false},
+		{"interface holding pointers without Equal", KeyEqual[any](&plain{1}, &plain{1}), false},
+		{"interface holding the same pointer", KeyEqual[any](shared, shared), true},
 		{"same pointer", KeyEqual(shared, shared), true},
 		{"named type without Equal", KeyEqual(color(1), color(1)), true},
 		{"different named values", KeyEqual(color(1), color(2)), false},
