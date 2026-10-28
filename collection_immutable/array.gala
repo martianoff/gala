@@ -260,6 +260,25 @@ func (a Array[T]) Length() int = a.length
 // Size is an alias for Length.
 func (a Array[T]) Size() int = a.length
 
+// Equal reports whether other holds Equal elements in the same order.
+func (a Array[T]) Equal(other Array[T]) bool {
+    if a.length != other.length {
+        return false
+    }
+    for i := 0; i < a.length; i++ {
+        if !Equal(a.Get(i), other.Get(i)) {
+            return false
+        }
+    }
+    true
+}
+
+// Hash hashes the elements in order (std.Hashable), so Equal Arrays hash
+// alike. Each element must be a primitive or Hashable. It visits every
+// element: it is O(n), and not cached. An Array is not a HashSet element or a
+// HashMap key yet: they need comparable keys, and an Array holds a Go slice.
+func (a Array[T]) Hash() uint32 = a.FoldLeft(HashInt(int64(a.length)), (h, elem) => HashCombine(h, HashValue(elem)))
+
 // Helper function to calculate required depth for a given size.
 func requiredDepth(size int) int {
     if size <= branchingFactor {

@@ -370,3 +370,47 @@ type unhashableKey struct {
 func TestHashSetOfTupleWithUnhashablePanics(t T) T = Panics(t, () => {
     HashSetOf((1, unhashableKey(N = 1)), (2, unhashableKey(N = 2)))
 })
+
+// ============ Collection Element Tests ============
+
+func TestHashSetOfLists(t T) T {
+    // Lists built differently are one element when they hold the same values.
+    val s = HashSetOf(ListOf("a", "b"), ListOf("b").Prepend("a"), ListOf("b", "a"))
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(ListOf("b", "a")))
+    Eq(t2, s.Remove(ListOf("b").Prepend("a")).Size(), 1)
+}
+
+func TestHashSetOfHashSets(t T) T {
+    // Sets are equal in any order, so their hash ignores the order too.
+    val s = HashSetOf(HashSetOf(1, 2, 3), HashSetOf(3, 1, 2), HashSetOf(1, 2))
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(HashSetOf(2, 3, 1)))
+    IsFalse(t2, s.Contains(HashSetOf(1, 2, 3, 4)))
+}
+
+func TestHashSetOfNestedCollections(t T) T {
+    val sets = HashSetOf(HashSetOf(ListOf(1, 2), ListOf(3)), HashSetOf(ListOf(3), ListOf(2).Prepend(1)))
+    val t1 = Eq(t, sets.Size(), 1)
+    val pairs = HashSetOf((ListOf(1), "x"), (ListOf(1), "x"), (ListOf(2), "x"))
+    Eq(t1, pairs.Size(), 2)
+}
+
+func TestHashSetOfAnyComparesCollectionsByValue(t T) T {
+    // With an interface element type, Equal is found by reflection.
+    val s = EmptyHashSet[any]().Add(ListOf(1, 2)).Add(ListOf(2).Prepend(1)).Add(HashSetOf(1)).Add(HashSetOf(1))
+    val t1 = Eq(t, s.Size(), 2)
+    IsTrue(t1, s.Contains(ListOf(1, 2)))
+}
+
+func TestCollectionEqualAndHash(t T) T {
+    val built = EmptyArray[int]().Prepend(2).Prepend(1).Append(3)
+    val t1 = IsTrue(t, ArrayOf(1, 2, 3).Equal(built))
+    val t2 = Eq(t1, ArrayOf(1, 2, 3).Hash(), built.Hash())
+    val t3 = IsFalse(t2, ArrayOf(1, 2, 3).Equal(ArrayOf(1, 2)))
+    val t4 = IsTrue(t3, ListOf(1, 2).Equal(ListOf(2).Prepend(1)))
+    val t5 = Eq(t4, ListOf(1, 2).Hash(), ListOf(2).Prepend(1).Hash())
+    val t6 = IsTrue(t5, HashSetOf(1, 2, 3).Equal(HashSetOf(3, 2, 1)))
+    val t7 = Eq(t6, HashSetOf(1, 2, 3).Hash(), HashSetOf(3, 2, 1).Hash())
+    IsFalse(t7, HashSetOf(1, 2).Equal(HashSetOf(1, 3)))
+}

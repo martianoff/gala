@@ -73,7 +73,7 @@ func (m Ptr[HashMap[K, V]]) Put(key K, value V) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && (node.key == key || KeysEqualByValue(node.key, key)) {
             node.value = value
             return false
         }
@@ -145,7 +145,7 @@ func (m Ptr[HashMap[K, V]]) Update(key K, f func(V) V) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && (node.key == key || KeysEqualByValue(node.key, key)) {
             node.value = f(node.value)
             return true
         }
@@ -164,7 +164,7 @@ func (m Ptr[HashMap[K, V]]) Remove(key K) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && (node.key == key || KeysEqualByValue(node.key, key)) {
             if prev.IsEmpty() {
                 m.buckets[idx] = node.next
             } else {
@@ -203,7 +203,7 @@ func (m Ptr[HashMap[K, V]]) Contains(key K) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && (node.key == key || KeysEqualByValue(node.key, key)) {
             return true
         }
         entry = node.next
@@ -219,7 +219,7 @@ func (m Ptr[HashMap[K, V]]) Get(key K) Option[V] {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && (node.key == key || KeysEqualByValue(node.key, key)) {
             return Some[V](node.value)
         }
         entry = node.next

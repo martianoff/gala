@@ -92,7 +92,7 @@ func containsKeyInNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, 
                 return true
             }
         }
-        return false
+        return KeyIndexByValue(node.keys, key) >= 0
     }
 
     val bit = hashMapBitpos(hashCode, level)
@@ -121,7 +121,8 @@ func getFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, has
                 return Some[V](node.values[i])
             }
         }
-        return None[V]()
+        val i = KeyIndexByValue(node.keys, key)
+        return if (i >= 0) Some[V](node.values[i]) else None[V]()
     }
 
     val bit = hashMapBitpos(hashCode, level)
@@ -165,20 +166,19 @@ func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
 func putToNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
     if node.isLeaf {
         // Check if key already exists - update value
-        for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] == key {
-                var newKeys []K
-                var newValues []V
-                for j := 0; j < node.keys.Size(); j++ {
-                    newKeys = go_interop.SliceAppend(newKeys, node.keys[j])
-                    if j == i {
-                        newValues = go_interop.SliceAppend(newValues, value)
-                    } else {
-                        newValues = go_interop.SliceAppend(newValues, node.values[j])
-                    }
+        val found = KeyIndex(node.keys, key)
+        if found >= 0 {
+            var newKeys []K
+            var newValues []V
+            for j := 0; j < node.keys.Size(); j++ {
+                newKeys = go_interop.SliceAppend(newKeys, node.keys[j])
+                if j == found {
+                    newValues = go_interop.SliceAppend(newValues, value)
+                } else {
+                    newValues = go_interop.SliceAppend(newValues, node.values[j])
                 }
-                return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
             }
+            return &hashMapNode[K, V](keys = newKeys, values = newValues, isLeaf = true)
         }
 
         // Add new entry or expand to internal node
@@ -317,8 +317,9 @@ func removeFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, 
     if node.isLeaf {
         var newKeys []K
         var newValues []V
+        val found = KeyIndex(node.keys, key)
         for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] != key {
+            if i != found {
                 newKeys = go_interop.SliceAppend(newKeys, node.keys[i])
                 newValues = go_interop.SliceAppend(newValues, node.values[i])
             }

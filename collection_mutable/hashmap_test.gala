@@ -5,6 +5,7 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
     . "martianoff/gala/std"
+    im "martianoff/gala/collection_immutable"
     "martianoff/gala/go_interop"
 )
 
@@ -555,4 +556,20 @@ func TestHashMapStdValueTypeKeys(t T) T {
     val t3 = Eq(t2, byOption.GetOrElse(None[int](), ""), "none")
     val t4 = Eq(t3, byEither.Size(), 2)
     Eq(t4, byEither.GetOrElse(Right[int, int](1), ""), "right")
+}
+
+// === Collection Key Tests ===
+
+func TestHashMapImmutableListAndHashSetKeys(t T) T {
+    // Keys compare by value: Lists and sets built differently are one key.
+    val byPath = EmptyHashMap[im.List[string], int]()
+    byPath.Put(im.ListOf("a", "b"), 1)
+    byPath.Put(im.ListOf("b").Prepend("a"), 2)
+    val t1 = Eq(t, byPath.Size(), 1)
+    val t2 = Eq(t1, byPath.GetOrElse(im.ListOf("a", "b"), 0), 2)
+    val bySet = EmptyHashMap[im.HashSet[int], string]()
+    bySet.Put(im.HashSetOf(1, 2), "x")
+    bySet.Put(im.HashSetOf(2, 1), "y")
+    val t3 = Eq(t2, bySet.Size(), 1)
+    Eq(t3, bySet.GetOrElse(im.HashSetOf(1, 2), ""), "y")
 }

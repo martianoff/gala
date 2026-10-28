@@ -110,7 +110,7 @@ func (s Ptr[HashSet[T]]) Add(elem T) bool {
     var entry = s.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.value == elem {
+        if node.hashCode == hashCode && (node.value == elem || KeysEqualByValue(node.value, elem)) {
             return false
         }
         entry = node.next
@@ -175,7 +175,7 @@ func (s Ptr[HashSet[T]]) Remove(elem T) bool {
     var entry = s.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.value == elem {
+        if node.hashCode == hashCode && (node.value == elem || KeysEqualByValue(node.value, elem)) {
             if prev.IsEmpty() {
                 s.buckets[idx] = node.next
             } else {
@@ -221,7 +221,7 @@ func (s Ptr[HashSet[T]]) Contains(elem T) bool {
     var entry = s.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.value == elem {
+        if node.hashCode == hashCode && (node.value == elem || KeysEqualByValue(node.value, elem)) {
             return true
         }
         entry = node.next

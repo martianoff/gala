@@ -10,11 +10,14 @@ import (
 //
 // Primitive types (int, string, bool, etc.) are handled automatically, and the
 // std value types Tuple (every arity), Option and Either implement Hashable by
-// combining the hashes of the values they hold. Custom types should implement
-// this interface for use in hash-based collections.
+// combining the hashes of the values they hold, and the immutable List and
+// HashSet by hashing their elements. Custom types should implement this
+// interface for use in hash-based collections.
 //
-// HashSet and HashMap compare keys with ==, so a Hash method must agree with
-// it: values that are == must hash alike.
+// HashSet and HashMap compare keys with ==, and keys that are not == by their
+// Equal method when they have one (KeysEqualByValue), so a List or a struct
+// holding one is a key by value. A Hash method must agree with that: keys that
+// are equal must hash alike.
 //
 // Example:
 //   type Person struct {

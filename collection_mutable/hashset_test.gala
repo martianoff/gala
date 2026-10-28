@@ -4,6 +4,7 @@ import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
     . "martianoff/gala/std"
+    im "martianoff/gala/collection_immutable"
     "martianoff/gala/go_interop"
 )
 
@@ -357,4 +358,13 @@ func TestHashSetOfStdValueTypes(t T) T {
     val t4 = IsTrue(t3, options.Contains(None[int]()))
     val t5 = Eq(t4, eithers.Size(), 2)
     IsTrue(t5, eithers.Remove(Right[int, string]("1")))
+}
+
+// === Collection Element Tests ===
+
+func TestHashSetOfImmutableLists(t T) T {
+    // Lists are elements by value, not by identity.
+    val s = HashSetOf(im.ListOf(1, 2), im.ListOf(2).Prepend(1), im.ListOf(2, 1))
+    val t1 = Eq(t, s.Size(), 2)
+    IsTrue(t1, s.Contains(im.ListOf(1, 2)))
 }

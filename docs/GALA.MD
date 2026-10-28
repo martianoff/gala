@@ -4030,12 +4030,16 @@ fmt.Println(snapshot.Size())  // Still has data
 
 #### Custom Key Types
 
-Primitive keys (numbers, strings, bools) are hashed by value. `Tuple` (every arity), `Option` and `Either` implement `Hashable` by combining the hashes of the values they hold, so they are keys as they are, nested or not, as long as the values inside are hashable:
+Primitive keys (numbers, strings, bools) are hashed by value. `Tuple` (every arity), `Option` and `Either` implement `Hashable` by combining the hashes of the values they hold, so they are keys as they are, nested or not, as long as the values inside are hashable. So do the immutable `List` (in order) and `HashSet` (in any order), which compare by their elements:
 
 ```gala
 val edges = HashMapOf(((1, 2), "a"), ((2, 3), "b"))
 val byNick = EmptyHashMap[Option[string], string]().Put(None[string](), "anonymous") // immutable HashMap
+val byPath = HashMapOf((ListOf("a", "b"), 1))                                         // List keys
+val seen = HashSetOf(ListOf(1, 2), ListOf(2, 1), ListOf(2).Prepend(1))              // 2 elements
 ```
+
+An `Array` is not a key yet: `HashSet` elements and `HashMap` keys must be `comparable`, and an `Array` holds a Go slice. Use a `List`. A collection's `Hash` visits every element (O(n)) and is not cached.
 
 For custom types as keys, implement the `Hashable` interface:
 
@@ -4055,7 +4059,7 @@ val alice = Person(Name = "Alice", Age = 30)
 val m = scores.Put(alice, 100)
 ```
 
-`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `==`, so a `Hash` method must give `==` values the same hash. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
+`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `==`, and keys that are not `==` by their `Equal` method when they have one (every GALA struct has one, the collections included), so a `List` key, or a struct holding one, compares by value. A `Hash` method must give equal keys the same hash. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
 
 #### Performance Characteristics
 

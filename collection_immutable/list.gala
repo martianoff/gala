@@ -127,6 +127,29 @@ func (l List[T]) Length() int = l.length
 // Size is an alias for Length.
 func (l List[T]) Size() int = l.length
 
+// Equal reports whether other holds Equal elements in the same order.
+func (l List[T]) Equal(other List[T]) bool {
+    if l.length != other.length {
+        return false
+    }
+    var a = l
+    var b = other
+    for a.length > 0 {
+        if !Equal(a.head, b.head) {
+            return false
+        }
+        a = *a.tail.Get()
+        b = *b.tail.Get()
+    }
+    true
+}
+
+// Hash hashes the elements in order (std.Hashable), so a List can be a
+// HashSet element or a HashMap key. Each element must be a primitive or
+// Hashable, as a HashSet element must. It visits every element: it is O(n),
+// and not cached.
+func (l List[T]) Hash() uint32 = l.FoldLeft(HashInt(int64(l.length)), (h, elem) => HashCombine(h, HashValue(elem)))
+
 // Prepend adds an element to the front of the list. O(1).
 func (l List[T]) Prepend(elem T) List[T] = consList[T](elem, l)
 
