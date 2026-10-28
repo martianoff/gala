@@ -898,6 +898,19 @@ func (m TreeMap[K, V]) ToHashMap() HashMap[K, V] {
     return m.FoldLeftKV[HashMap[K, V]](EmptyHashMap[K, V](), (acc HashMap[K, V], k K, v V) => acc.Put(k, v))
 }
 
+// === Equality and hashing ===
+
+// Equal reports whether the two maps hold the same keys, each mapped to Equal
+// values. How the trees were balanced does not matter.
+func (m TreeMap[K, V]) Equal(other TreeMap[K, V]) bool =
+    m.size == other.size && m.ForAll((k, v) => other.Get(k).Exists((w) => Equal(v, w)))
+
+// Hash hashes the map the way HashMap does, independently of the order the
+// entries were added in: maps that are Equal hash alike, and a map is a
+// HashSet element or HashMap key. It panics when a key or value cannot be
+// hashed.
+func (m TreeMap[K, V]) Hash() uint32 = unorderedHash(m.size, m.FoldLeftKV(uint32(0), (sum, k, v) => sum + entryHash(k, v)))
+
 // === String ===
 
 // String returns a string representation of the map in sorted key order.
@@ -968,4 +981,4 @@ func (m TreeMap[K, V]) Sorted() Array[Tuple[K, V]] = m.ToArray()
 func (m TreeMap[K, V]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Array[Tuple[K, V]] = m.ToArray().SortWith(less)
 
 // SortBy returns an array of key-value tuples sorted by a key extracted from each entry.
-func (m TreeMap[K, V]) SortBy[S comparable](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)
+func (m TreeMap[K, V]) SortBy[S any](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)

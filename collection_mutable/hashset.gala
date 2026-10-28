@@ -11,6 +11,8 @@ import (
 // Elements must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
 // - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
+// - The immutable collections (Array, List, HashSet, HashMap, TreeSet, TreeMap)
+//   holding values of these kinds; they implement Hashable too
 // - Types implementing the std.Hashable interface
 //
 // Performance characteristics:
@@ -26,28 +28,28 @@ val hashSetInitialBuckets int = 16
 val hashSetLoadFactor float64 = 0.75
 
 // hashSetEntry represents an entry in a bucket.
-type hashSetEntry[T comparable] struct {
+type hashSetEntry[T any] struct {
     value    T
     hashCode uint32
     var next OptionPtr[hashSetEntry[T]]
 }
 
 // HashSet represents a mutable hash-based set.
-type HashSet[T comparable] struct {
+type HashSet[T any] struct {
     var buckets    []OptionPtr[hashSetEntry[T]]
     var size       int
     var bucketMask uint32
 }
 
 // EmptyHashSet returns a new empty HashSet.
-func EmptyHashSet[T comparable]() Ptr[HashSet[T]] {
+func EmptyHashSet[T any]() Ptr[HashSet[T]] {
     var buckets = go_interop.SliceWithSize[OptionPtr[hashSetEntry[T]]](hashSetInitialBuckets)
     return &HashSet[T](buckets = buckets, size = 0, bucketMask = uint32(hashSetInitialBuckets - 1))
 }
 
 // HashSetOf creates a HashSet from variadic arguments.
 // Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
-func HashSetOf[T comparable](elements ...T) Ptr[HashSet[T]] {
+func HashSetOf[T any](elements ...T) Ptr[HashSet[T]] {
     var result = EmptyHashSet[T]()
     for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
@@ -56,7 +58,7 @@ func HashSetOf[T comparable](elements ...T) Ptr[HashSet[T]] {
 }
 
 // HashSetFromSlice creates a HashSet from a slice.
-func HashSetFromSlice[T comparable](elements []T) Ptr[HashSet[T]] {
+func HashSetFromSlice[T any](elements []T) Ptr[HashSet[T]] {
     var result = EmptyHashSet[T]()
     for i := 0; i < elements.Size(); i++ {
         result.Add(elements[i])
@@ -110,7 +112,7 @@ func (s Ptr[HashSet[T]]) Add(elem T) bool {
     var entry = s.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.value == elem {
+        if node.hashCode == hashCode && KeyEqual(node.value, elem) {
             return false
         }
         entry = node.next
@@ -175,7 +177,7 @@ func (s Ptr[HashSet[T]]) Remove(elem T) bool {
     var entry = s.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.value == elem {
+        if node.hashCode == hashCode && KeyEqual(node.value, elem) {
             if prev.IsEmpty() {
                 s.buckets[idx] = node.next
             } else {
@@ -221,7 +223,7 @@ func (s Ptr[HashSet[T]]) Contains(elem T) bool {
     var entry = s.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.value == elem {
+        if node.hashCode == hashCode && KeyEqual(node.value, elem) {
             return true
         }
         entry = node.next
@@ -386,7 +388,7 @@ func (s Ptr[HashSet[T]]) Partition(p func(T) bool) Tuple[Ptr[HashSet[T]], Ptr[Ha
 }
 
 // Map applies a function to each element and returns a new set.
-func (s Ptr[HashSet[T]]) Map[U comparable](f func(T) U) Ptr[HashSet[U]] {
+func (s Ptr[HashSet[T]]) Map[U any](f func(T) U) Ptr[HashSet[U]] {
     return s.FoldLeft[Ptr[HashSet[U]]](EmptyHashSet[U](), (acc Ptr[HashSet[U]], elem T) => {
         acc.Add(f(elem))
         return acc
@@ -394,7 +396,7 @@ func (s Ptr[HashSet[T]]) Map[U comparable](f func(T) U) Ptr[HashSet[U]] {
 }
 
 // FlatMap applies a function that returns a set to each element and flattens.
-func (s Ptr[HashSet[T]]) FlatMap[U comparable](f func(T) Ptr[HashSet[U]]) Ptr[HashSet[U]] {
+func (s Ptr[HashSet[T]]) FlatMap[U any](f func(T) Ptr[HashSet[U]]) Ptr[HashSet[U]] {
     return s.FoldLeft[Ptr[HashSet[U]]](EmptyHashSet[U](), (acc Ptr[HashSet[U]], elem T) => {
         acc.AddFrom(f(elem))
         return acc
@@ -579,4 +581,4 @@ func (s Ptr[HashSet[T]]) Sorted() Ptr[Array[T]] = s.ToArray().Sorted()
 func (s Ptr[HashSet[T]]) SortWith(less func(T, T) bool) Ptr[Array[T]] = s.ToArray().SortWith(less)
 
 // SortBy returns a mutable Array of elements sorted by a key extracted from each element.
-func (s Ptr[HashSet[T]]) SortBy[K comparable](f func(T) K) Ptr[Array[T]] = s.ToArray().SortBy(f)
+func (s Ptr[HashSet[T]]) SortBy[K any](f func(T) K) Ptr[Array[T]] = s.ToArray().SortBy(f)

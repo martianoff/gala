@@ -988,6 +988,29 @@ func (a Array[T]) ToList() List[T] {
     return result
 }
 
+// === Equality and hashing ===
+
+// Equal reports whether the two arrays hold Equal elements in the same order.
+// How an array was built (appended, prepended, sliced) does not matter.
+// HashSet and HashMap call it on every hit of an Array key, so it loops
+// instead of zipping: it allocates nothing and stops at the first difference.
+func (a Array[T]) Equal(other Array[T]) bool {
+    if a.length != other.length {
+        return false
+    }
+    for i := 0; i < a.length; i++ {
+        if !Equal(a.Get(i), other.Get(i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// Hash combines the element hashes (see HashValue) in order, so arrays that
+// are Equal hash alike and an array is a HashSet element or HashMap key. It
+// panics when an element cannot be hashed.
+func (a Array[T]) Hash() uint32 = a.FoldLeft(uint32(0), (h, elem) => HashCombine(h, HashValue(elem)))
+
 // String returns a string representation of the array.
 func (a Array[T]) String() string {
     if a.length == 0 {
@@ -1055,7 +1078,7 @@ func (a Array[T]) SortWith(less func(T, T) bool) Array[T] {
 // Keys must be primitive types or implement std.Ordered.
 // The sort is stable: elements with equal keys keep their original relative order.
 // f runs once per element: keys are computed up front, not on every comparison.
-func (a Array[T]) SortBy[K comparable](f func(T) K) Array[T] {
+func (a Array[T]) SortBy[K any](f func(T) K) Array[T] {
     if a.length <= 1 {
         return a
     }

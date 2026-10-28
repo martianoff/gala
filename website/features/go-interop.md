@@ -291,7 +291,7 @@ Convert between `HashMap` and Go map:
 import "martianoff/gala/collection_immutable"
 
 val hashMap = collection_immutable.HashMapFromGoMap(goMap)
-val backToGoMap = hashMap.ToGoMap()
+val backToGoMap = collection_immutable.HashMapToGoMap(hashMap)
 ```
 
 ### Available Map Functions

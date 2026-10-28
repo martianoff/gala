@@ -258,7 +258,7 @@ func TestHashMapToArray(t T) T {
 
 func TestHashMapToGoMap(t T) T {
     val m = EmptyHashMap[string, int]().Put("a", 1).Put("b", 2)
-    val goMap = m.ToGoMap()
+    val goMap = HashMapToGoMap(m)
     val t1 = Eq[int](t, goMap.Size(), 2)
     return Eq[int](t1, goMap["a"], 1)
 }

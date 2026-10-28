@@ -12,6 +12,8 @@ import (
 // Keys must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
 // - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
+// - The immutable collections (Array, List, HashSet, HashMap, TreeSet, TreeMap)
+//   holding values of these kinds; they implement Hashable too
 // - Types implementing the Hashable interface
 //
 // Performance characteristics (eC = effectively constant, log32(n)):
@@ -22,7 +24,7 @@ import (
 // - Size:       O(1) - cached
 
 // hashMapNode represents a node in the HAMT structure.
-type hashMapNode[K comparable, V any] struct {
+type hashMapNode[K any, V any] struct {
     bitmap   uint32
     keys     []K
     values   []V
@@ -33,13 +35,13 @@ type hashMapNode[K comparable, V any] struct {
 // HashMap represents an immutable map.
 //
 // root is never reassigned; it is `var` for the reason List's tail is.
-type HashMap[K comparable, V any] struct {
+type HashMap[K any, V any] struct {
     var root   OptionPtr[hashMapNode[K, V]] // empty when the map is empty
     size   int
 }
 
 // EmptyHashMap returns an empty HashMap.
-func EmptyHashMap[K comparable, V any]() HashMap[K, V] = HashMap[K, V](root = EmptyOptionPtr[hashMapNode[K, V]](), size = 0)
+func EmptyHashMap[K any, V any]() HashMap[K, V] = HashMap[K, V](root = EmptyOptionPtr[hashMapNode[K, V]](), size = 0)
 
 // IsEmpty returns true if the map is empty.
 func (m HashMap[K, V]) IsEmpty() bool = m.size == 0
@@ -85,10 +87,10 @@ func (m HashMap[K, V]) Contains(key K) bool {
 }
 
 // containsKeyInNode searches for a key in a node.
-func containsKeyInNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) bool {
+func containsKeyInNode[K any, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) bool {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] == key {
+            if KeyEqual(node.keys[i], key) {
                 return true
             }
         }
@@ -114,10 +116,10 @@ func (m HashMap[K, V]) Get(key K) Option[V] {
 }
 
 // getFromNodeMap searches for a key in a node and returns its value.
-func getFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) Option[V] {
+func getFromNodeMap[K any, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) Option[V] {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] == key {
+            if KeyEqual(node.keys[i], key) {
                 return Some[V](node.values[i])
             }
         }
@@ -162,11 +164,11 @@ func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
 }
 
 // putToNode adds an entry to a node, returning a new node.
-func putToNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
+func putToNode[K any, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
     if node.isLeaf {
         // Check if key already exists - update value
         for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] == key {
+            if KeyEqual(node.keys[i], key) {
                 var newKeys []K
                 var newValues []V
                 for j := 0; j < node.keys.Size(); j++ {
@@ -250,7 +252,7 @@ func putToNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V,
 }
 
 // insertIntoInternalNodeMap inserts an entry into an internal node.
-func insertIntoInternalNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
+func insertIntoInternalNodeMap[K any, V any](node Ptr[hashMapNode[K, V]], key K, value V, hashCode uint32, level int) Ptr[hashMapNode[K, V]] {
     val bit = hashMapBitpos(hashCode, level)
     val idx = hashMapIndex(node.bitmap, bit)
 
@@ -313,12 +315,12 @@ func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
 
 // removeFromNodeMap removes a key from a node, returning the new node, or
 // empty when no entry is left under it.
-func removeFromNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) OptionPtr[hashMapNode[K, V]] {
+func removeFromNodeMap[K any, V any](node Ptr[hashMapNode[K, V]], key K, hashCode uint32, level int) OptionPtr[hashMapNode[K, V]] {
     if node.isLeaf {
         var newKeys []K
         var newValues []V
         for i := 0; i < node.keys.Size(); i++ {
-            if node.keys[i] != key {
+            if !KeyEqual(node.keys[i], key) {
                 newKeys = go_interop.SliceAppend(newKeys, node.keys[i])
                 newValues = go_interop.SliceAppend(newValues, node.values[i])
             }
@@ -377,7 +379,7 @@ func (m HashMap[K, V]) ForEachKV(f func(K, V)) {
 }
 
 // forEachInNodeMapKV traverses a node and applies f to each entry.
-func forEachInNodeMapKV[K comparable, V any](node Ptr[hashMapNode[K, V]], f func(K, V)) {
+func forEachInNodeMapKV[K any, V any](node Ptr[hashMapNode[K, V]], f func(K, V)) {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             f(node.keys[i], node.values[i])
@@ -486,7 +488,7 @@ func (m HashMap[K, V]) Exists(p func(K, V) bool) bool = m.root match {
 }
 
 // existsInNodeMap searches for an entry satisfying p with early exit.
-func existsInNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], p func(K, V) bool) bool {
+func existsInNodeMap[K any, V any](node Ptr[hashMapNode[K, V]], p func(K, V) bool) bool {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             if p(node.keys[i], node.values[i]) {
@@ -511,7 +513,7 @@ func (m HashMap[K, V]) ForAll(p func(K, V) bool) bool = m.root match {
 }
 
 // forAllInNodeMap checks if all entries satisfy p with early exit.
-func forAllInNodeMap[K comparable, V any](node Ptr[hashMapNode[K, V]], p func(K, V) bool) bool {
+func forAllInNodeMap[K any, V any](node Ptr[hashMapNode[K, V]], p func(K, V) bool) bool {
     if node.isLeaf {
         for i := 0; i < node.keys.Size(); i++ {
             if !p(node.keys[i], node.values[i]) {
@@ -579,8 +581,10 @@ func (m HashMap[K, V]) Merge(other HashMap[K, V], f func(V, V) V) HashMap[K, V] 
 
 // === Conversion ===
 
-// ToGoMap converts the map to a Go map.
-func (m HashMap[K, V]) ToGoMap() map[K]V {
+// HashMapToGoMap converts m to a Go map. It is a function rather than a
+// method because a Go map needs comparable keys and a HashMap's need not be:
+// an Array key, for one.
+func HashMapToGoMap[K comparable, V any](m HashMap[K, V]) map[K]V {
     var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
         go_interop.MapPut[K, V](result, k, v)
@@ -592,6 +596,19 @@ func (m HashMap[K, V]) ToGoMap() map[K]V {
 func (m HashMap[K, V]) ToList() List[Tuple[K, V]] {
     return m.FoldLeftKV[List[Tuple[K, V]]](emptyList[Tuple[K, V]](), (acc List[Tuple[K, V]], k K, v V) => consList[Tuple[K, V]]((k, v), acc))
 }
+
+// === Equality and hashing ===
+
+// Equal reports whether the two maps hold the same keys, each mapped to Equal
+// values.
+func (m HashMap[K, V]) Equal(other HashMap[K, V]) bool =
+    m.size == other.size && m.ForAll((k, v) => other.Get(k).Exists((w) => Equal(v, w)))
+
+// Hash sums the mixed hashes of the entries (see entryHash), so it does not
+// depend on the order the entries were added in: maps that are Equal hash
+// alike, and a map is a HashSet element or HashMap key. It panics when a key
+// or value cannot be hashed.
+func (m HashMap[K, V]) Hash() uint32 = unorderedHash(m.size, m.FoldLeftKV(uint32(0), (sum, k, v) => sum + entryHash(k, v)))
 
 // String returns a string representation of the map.
 func (m HashMap[K, V]) String() string {
@@ -639,7 +656,7 @@ func (m HashMap[K, V]) Sorted() Array[Tuple[K, V]] = m.ToArray().SortBy((e) => e
 func (m HashMap[K, V]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Array[Tuple[K, V]] = m.ToArray().SortWith(less)
 
 // SortBy returns an array of key-value tuples sorted by a key extracted from each entry.
-func (m HashMap[K, V]) SortBy[S comparable](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)
+func (m HashMap[K, V]) SortBy[S any](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)
 
 // === Additional Operations ===
 
@@ -693,7 +710,7 @@ func (m HashMap[K, V]) Partition(p func(K, V) bool) Tuple[HashMap[K, V], HashMap
 // === Factory Functions ===
 
 // HashMapOf creates a HashMap from key-value tuples.
-func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) HashMap[K, V] {
+func HashMapOf[K any, V any](entries ...Tuple[K, V]) HashMap[K, V] {
     var result = EmptyHashMap[K, V]()
     for i := 0; i < entries.Size(); i++ {
         result = result.Put(entries[i].V1, entries[i].V2)
@@ -702,7 +719,7 @@ func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) HashMap[K, V] {
 }
 
 // HashMapFromSlice creates a HashMap from a slice of tuples.
-func HashMapFromSlice[K comparable, V any](entries []Tuple[K, V]) HashMap[K, V] {
+func HashMapFromSlice[K any, V any](entries []Tuple[K, V]) HashMap[K, V] {
     var result = EmptyHashMap[K, V]()
     for i := 0; i < entries.Size(); i++ {
         result = result.Put(entries[i].V1, entries[i].V2)

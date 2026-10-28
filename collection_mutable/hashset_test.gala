@@ -3,6 +3,7 @@ package main
 import (
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
+    im "martianoff/gala/collection_immutable"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -357,4 +358,19 @@ func TestHashSetOfStdValueTypes(t T) T {
     val t4 = IsTrue(t3, options.Contains(None[int]()))
     val t5 = Eq(t4, eithers.Size(), 2)
     IsTrue(t5, eithers.Remove(Right[int, string]("1")))
+}
+
+// === Immutable collections as elements ===
+
+// Elements are compared with Equal, so equal immutable collections built
+// separately, or in a different order, are one element.
+func TestHashSetOfImmutableCollections(t T) T {
+    val arrays = HashSetOf(im.ArrayOf(1, 2), im.ArrayOf(2, 1))
+    val t1 = IsFalse(t, arrays.Add(im.ArrayOf(2).Prepend(1)))
+    val sets = HashSetOf(im.HashSetOf(1, 2, 3))
+    val t2 = IsFalse(t1, sets.Add(im.HashSetOf(3, 2, 1)))
+    val t3 = Eq(t2, arrays.Size(), 2)
+    val t4 = Eq(t3, sets.Size(), 1)
+    val t5 = IsTrue(t4, arrays.Remove(im.ArrayOf(1).Append(2)))
+    Eq(t5, arrays.Size(), 1)
 }

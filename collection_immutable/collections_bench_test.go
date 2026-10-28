@@ -5,7 +5,12 @@ package collection_immutable
 //
 //	bazel run //collection_immutable:collections_bench -- -test.bench=. -test.benchmem -test.run='^$'
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+
+	"martianoff/gala/std"
+)
 
 const benchSize = 10000
 
@@ -223,6 +228,61 @@ func BenchmarkHashSetContains(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for _, k := range keys {
 			sinkBool = s.Contains(k)
+		}
+	}
+}
+
+// The key benchmarks below look up every key of a set or map keyed by
+// strings or tuples, so each hit also times the key comparison it ends with.
+
+func BenchmarkHashSetContainsString(b *testing.B) {
+	keys := make([]string, benchSize)
+	for i, k := range benchKeys() {
+		keys[i] = "key-" + strconv.Itoa(k)
+	}
+	s := HashSetFromSlice(keys)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, k := range keys {
+			sinkBool = s.Contains(k)
+		}
+	}
+}
+
+func BenchmarkHashMapGetTuple(b *testing.B) {
+	keys := benchKeys()
+	tuples := make([]std.Tuple[int, int], len(keys))
+	m := EmptyHashMap[std.Tuple[int, int], int]()
+	for i, k := range keys {
+		tuples[i] = std.Tuple[int, int]{V1: std.NewImmutable(k), V2: std.NewImmutable(i)}
+		m = m.Put(tuples[i], k)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, t := range tuples {
+			sinkBool = m.Get(t).IsDefined()
+		}
+	}
+}
+
+// BenchmarkHashMapGetTupleMiss looks up tuples the map does not hold. A miss
+// that reaches a leaf compares the key with a different one, which is the
+// comparison's slow path.
+func BenchmarkHashMapGetTupleMiss(b *testing.B) {
+	keys := benchKeys()
+	misses := make([]std.Tuple[int, int], len(keys))
+	m := EmptyHashMap[std.Tuple[int, int], int]()
+	for i, k := range keys {
+		m = m.Put(std.Tuple[int, int]{V1: std.NewImmutable(k), V2: std.NewImmutable(i)}, k)
+		misses[i] = std.Tuple[int, int]{V1: std.NewImmutable(k), V2: std.NewImmutable(-i - 1)}
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, t := range misses {
+			sinkBool = m.Get(t).IsDefined()
 		}
 	}
 }

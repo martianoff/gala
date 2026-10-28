@@ -181,6 +181,34 @@ func Equal[T any](v1, v2 T) bool {
 	return true
 }
 
+// KeyEqual reports whether a and b are the same HashSet element or HashMap
+// key: whether they are Equal. Two values of a type Go can compare that are
+// == are taken as Equal without calling Equal, since Equal is reflexive; that
+// keeps a hit on a Tuple or struct key about as cheap as Go's ==. Pairs that
+// are not ==, which includes == pairs Go tells apart and Equal does not (two
+// separately built Lists, say), go to Equal.
+func KeyEqual[T any](a, b T) bool {
+	if eq, ok := equalPrimitive(a, b); ok {
+		return eq
+	}
+	if t := reflect.TypeFor[T](); t.Kind() != reflect.Interface && t.Comparable() && identical(a, b) {
+		return true
+	}
+	return Equal(a, b)
+}
+
+// identical reports whether a == b. A comparable struct type can still hold
+// an interface whose dynamic value Go cannot compare, which makes == panic;
+// identical then reports false and leaves the pair to Equal.
+func identical[T any](a, b T) (same bool) {
+	defer func() {
+		if recover() != nil {
+			same = false
+		}
+	}()
+	return any(a) == any(b)
+}
+
 // equalPrimitive compares v1 and v2 with == when v1's dynamic type is a
 // predeclared primitive type, reporting ok; that is what Equal's reflective
 // path concludes for them (a NaN equals nothing, and values of different

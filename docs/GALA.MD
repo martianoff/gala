@@ -3891,7 +3891,7 @@ for k, v := range headers {
 
 // Convert between HashMap and Go map
 val hashMap = collection_immutable.HashMapFromGoMap(goMap)
-val backToGoMap = hashMap.ToGoMap()
+val backToGoMap = collection_immutable.HashMapToGoMap(hashMap)
 ```
 
 **Available std.Map Functions:**
@@ -3923,7 +3923,7 @@ to use instead. Writing one in an expression is
 
 ### HashMap
 
-GALA provides both immutable and mutable HashMap implementations for key-value storage. Both support generic key and value types, with keys requiring the `comparable` constraint.
+GALA provides both immutable and mutable HashMap implementations for key-value storage. Both support generic key and value types. A key is a primitive or a [`Hashable`](#custom-key-types) value, and keys are compared with `Equal`, so a key need not be Go-comparable: an `Array` is a key.
 
 #### Immutable HashMap (collection_immutable)
 
@@ -3966,13 +3966,16 @@ fmt.Println(m5.Contains("banana"))  // false
 | `FoldLeft[U](init, f)` | Reduce to single value |
 | `Keys()` | Get HashSet of keys |
 | `Values()` | Get List of values |
-| `ToGoMap()` | Convert to Go map |
+| `Equal(other)` | Same keys mapped to `Equal` values, whatever the insertion order |
+| `Hash()` | Order-independent hash, so a map is itself a key |
 | `Sorted()` | Sort entries by natural key order, returns `Array[Tuple[K, V]]` |
 | `SortWith(less)` | Sort entries with custom comparator |
 | `SortBy(f)` | Sort entries by key function |
 | `MkString(sep)` | Join entries as `"key -> value"` with separator |
 
 `Sorted`, `SortWith` and `SortBy` are stable: entries that compare equal keep their original relative order.
+
+`HashMapToGoMap(m)` converts a map to a Go `map[K]V`. It is a package function, not a method, because a Go map needs comparable keys and a HashMap's keys need not be. It replaces the former `m.ToGoMap()` method, for the mutable HashMap too.
 
 #### Mutable HashMap (collection_mutable)
 
@@ -4037,6 +4040,15 @@ val edges = HashMapOf(((1, 2), "a"), ((2, 3), "b"))
 val byNick = EmptyHashMap[Option[string], string]().Put(None[string](), "anonymous") // immutable HashMap
 ```
 
+The immutable collections are keys too. `Array` and `List` hash their elements in order; `HashSet`, `HashMap`, `TreeSet` and `TreeMap` sum mixed element (or entry) hashes, so their hash does not depend on the order the elements were added in. Their `Equal` compares contents, so a key built separately from an equal one finds the same entry:
+
+```gala
+val seen = HashSetOf(ArrayOf(1, 2), ArrayOf(2).Prepend(1)) // one element
+val groups = HashSetOf(HashSetOf(1, 2, 3), HashSetOf(3, 2, 1)) // one element
+val visits = HashMapOf((ListOf("(", "["), 1)).Put(ListOf("[").Prepend("("), 2)
+visits.Get(ListOf("(", "[")) // Some(2)
+```
+
 For custom types as keys, implement the `Hashable` interface:
 
 ```gala
@@ -4055,7 +4067,7 @@ val alice = Person(Name = "Alice", Age = 30)
 val m = scores.Put(alice, 100)
 ```
 
-`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `==`, so a `Hash` method must give `==` values the same hash. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
+`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `Equal` (`KeyEqual`, which takes `==` values as equal without calling `Equal`), so a `Hash` method must give `Equal` values the same hash. Every struct gets a field-wise `Equal`; a type that declares its own `Equal` must hash consistently with it. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
 
 #### Performance Characteristics
 

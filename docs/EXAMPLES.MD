@@ -1242,6 +1242,37 @@ None()
 A
 ```
 
+## Collections as Keys
+
+The immutable collections are `HashSet` elements and `HashMap` keys. `Equal`
+compares contents, so an equal key built another way finds the same entry.
+`Array` and `List` hash by order; sets and maps hash the same whatever order
+their elements were added in.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val seen = HashSetOf(ArrayOf(1, 2), ArrayOf(2).Prepend(1), ArrayOf(2, 1))
+    Println(seen.Size())                          // 2: order matters for an Array
+
+    val groups = HashSetOf(HashSetOf(1, 2, 3), HashSetOf(3, 2, 1))
+    Println(groups.Size())                        // 1: not for a HashSet
+
+    val visits = HashMapOf((ListOf("(", "["), 1)).Put(ListOf("[").Prepend("("), 2)
+    Println(visits.Get(ListOf("(", "[")))         // Some(2)
+}
+```
+
+Output:
+```
+2
+1
+Some(2)
+```
+
 ## Sorted API - Sorting Collections
 
 All collection types support `Sorted()`, `SortWith()`, and `SortBy()` for flexible sorting. `Sorted`, `SortWith` and `SortBy` are stable: elements that compare equal keep their original relative order.

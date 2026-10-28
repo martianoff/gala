@@ -11,6 +11,8 @@ import (
 // Keys must be either:
 // - Primitive types (int, string, bool, etc.) - hashed automatically
 // - Tuple, Option and Either holding values of these kinds (std implements Hashable for them)
+// - The immutable collections (Array, List, HashSet, HashMap, TreeSet, TreeMap)
+//   holding values of these kinds; they implement Hashable too
 // - Types implementing the std.Hashable interface
 //
 // Performance characteristics:
@@ -27,7 +29,7 @@ val hashMapInitialBuckets int = 16
 val hashMapLoadFactor float64 = 0.75
 
 // hashMapEntry represents an entry in a bucket.
-type hashMapEntry[K comparable, V any] struct {
+type hashMapEntry[K any, V any] struct {
     key      K
     var value    V
     hashCode uint32
@@ -35,14 +37,14 @@ type hashMapEntry[K comparable, V any] struct {
 }
 
 // HashMap represents a mutable hash-based map.
-type HashMap[K comparable, V any] struct {
+type HashMap[K any, V any] struct {
     var buckets    []OptionPtr[hashMapEntry[K, V]]
     var size       int
     var bucketMask uint32
 }
 
 // EmptyHashMap returns a new empty HashMap.
-func EmptyHashMap[K comparable, V any]() Ptr[HashMap[K, V]] {
+func EmptyHashMap[K any, V any]() Ptr[HashMap[K, V]] {
     var buckets = go_interop.SliceWithSize[OptionPtr[hashMapEntry[K, V]]](hashMapInitialBuckets)
     return &HashMap[K, V](buckets = buckets, size = 0, bucketMask = uint32(hashMapInitialBuckets - 1))
 }
@@ -73,7 +75,7 @@ func (m Ptr[HashMap[K, V]]) Put(key K, value V) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && KeyEqual(node.key, key) {
             node.value = value
             return false
         }
@@ -145,7 +147,7 @@ func (m Ptr[HashMap[K, V]]) Update(key K, f func(V) V) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && KeyEqual(node.key, key) {
             node.value = f(node.value)
             return true
         }
@@ -164,7 +166,7 @@ func (m Ptr[HashMap[K, V]]) Remove(key K) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && KeyEqual(node.key, key) {
             if prev.IsEmpty() {
                 m.buckets[idx] = node.next
             } else {
@@ -203,7 +205,7 @@ func (m Ptr[HashMap[K, V]]) Contains(key K) bool {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && KeyEqual(node.key, key) {
             return true
         }
         entry = node.next
@@ -219,7 +221,7 @@ func (m Ptr[HashMap[K, V]]) Get(key K) Option[V] {
     var entry = m.buckets[idx]
     for entry.IsDefined() {
         val node = entry.Get()
-        if node.hashCode == hashCode && node.key == key {
+        if node.hashCode == hashCode && KeyEqual(node.key, key) {
             return Some[V](node.value)
         }
         entry = node.next
@@ -459,8 +461,10 @@ func (m Ptr[HashMap[K, V]]) ValueArray() Ptr[Array[V]] {
 
 // === Conversion ===
 
-// ToGoMap converts the map to a Go map.
-func (m Ptr[HashMap[K, V]]) ToGoMap() map[K]V {
+// HashMapToGoMap converts m to a Go map. It is a function rather than a
+// method because a Go map needs comparable keys and a HashMap's need not be:
+// an Array key, for one.
+func HashMapToGoMap[K comparable, V any](m Ptr[HashMap[K, V]]) map[K]V {
     var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
         go_interop.MapPut[K, V](result, k, v)
@@ -538,7 +542,7 @@ func (m Ptr[HashMap[K, V]]) Sorted() Ptr[Array[Tuple[K, V]]] = m.ToArray().SortB
 func (m Ptr[HashMap[K, V]]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Ptr[Array[Tuple[K, V]]] = m.ToArray().SortWith(less)
 
 // SortBy returns a mutable Array of key-value tuples sorted by a key extracted from each entry.
-func (m Ptr[HashMap[K, V]]) SortBy[S comparable](f func(Tuple[K, V]) S) Ptr[Array[Tuple[K, V]]] = m.ToArray().SortBy(f)
+func (m Ptr[HashMap[K, V]]) SortBy[S any](f func(Tuple[K, V]) S) Ptr[Array[Tuple[K, V]]] = m.ToArray().SortBy(f)
 
 // === Merge Operations ===
 
@@ -615,7 +619,7 @@ func (m Ptr[HashMap[K, V]]) Partition(p func(K, V) bool) Tuple[Ptr[HashMap[K, V]
 // === Factory Functions ===
 
 // HashMapOf creates a HashMap from key-value tuples.
-func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) Ptr[HashMap[K, V]] {
+func HashMapOf[K any, V any](entries ...Tuple[K, V]) Ptr[HashMap[K, V]] {
     var result = EmptyHashMap[K, V]()
     for i := 0; i < entries.Size(); i++ {
         result.Put(entries[i].V1, entries[i].V2)
@@ -624,7 +628,7 @@ func HashMapOf[K comparable, V any](entries ...Tuple[K, V]) Ptr[HashMap[K, V]] {
 }
 
 // HashMapFromSlice creates a HashMap from a slice of tuples.
-func HashMapFromSlice[K comparable, V any](entries []Tuple[K, V]) Ptr[HashMap[K, V]] {
+func HashMapFromSlice[K any, V any](entries []Tuple[K, V]) Ptr[HashMap[K, V]] {
     var result = EmptyHashMap[K, V]()
     for i := 0; i < entries.Size(); i++ {
         result.Put(entries[i].V1, entries[i].V2)

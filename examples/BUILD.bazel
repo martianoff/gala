@@ -1422,6 +1422,18 @@ gala_exec_test(
     deps = ["//collection_immutable"],
 )
 
+# Immutable collections as HashSet elements and HashMap keys: Equal compares
+# contents, and Hash agrees with it
+gala_exec_test(
+    name = "hashable_collections",
+    src = "hashable_collections.gala",
+    expected = "hashable_collections.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 # Named sub-patterns `Field = p` in variant and struct patterns
 gala_exec_test(
     name = "named_sub_patterns",

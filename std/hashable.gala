@@ -10,11 +10,12 @@ import (
 //
 // Primitive types (int, string, bool, etc.) are handled automatically, and the
 // std value types Tuple (every arity), Option and Either implement Hashable by
-// combining the hashes of the values they hold. Custom types should implement
-// this interface for use in hash-based collections.
+// combining the hashes of the values they hold; so do the immutable
+// collections. Custom types should implement this interface for use in
+// hash-based collections.
 //
-// HashSet and HashMap compare keys with ==, so a Hash method must agree with
-// it: values that are == must hash alike.
+// HashSet and HashMap compare keys with Equal (see KeyEqual), so a Hash method
+// must agree with it: values that are Equal must hash alike.
 //
 // Example:
 //   type Person struct {
@@ -153,5 +154,5 @@ func HashesByValue(v any) bool = v match {
 
 // panicNotHashable panics for a value HashValue cannot hash.
 func panicNotHashable(v any) uint32 {
-    Panic(f"cannot hash type ${v}%T: a HashSet element or HashMap key, and every value inside a Tuple, Option or Either one, must be a primitive or implement std.Hashable interface")
+    Panic(f"cannot hash type ${v}%T: a HashSet element or HashMap key, and every value inside a Tuple, Option, Either or collection one, must be a primitive or implement std.Hashable interface")
 }

@@ -26,7 +26,15 @@ type mutMap[K comparable] interface {
 	Contains(key K) bool
 	GetOrElse(key K, defaultValue int) int
 	ForEachKV(f func(K, int))
-	ToGoMap() map[K]int
+}
+
+// toGoMap is m as a Go map: HashMapToGoMap for a HashMap, whose keys need not
+// be comparable and so has no ToGoMap method, and the method for a TreeMap.
+func toGoMap[K comparable](m mutMap[K]) map[K]int {
+	if h, ok := m.(*HashMap[K, int]); ok {
+		return HashMapToGoMap(h)
+	}
+	return m.(*TreeMap[K, int]).ToGoMap()
 }
 
 var (
@@ -41,7 +49,7 @@ func checkMutMap[K comparable](p *Prop, what string, m mutMap[K], ref map[K]int,
 	if m.Size() != len(ref) || m.IsEmpty() != (len(ref) == 0) {
 		p.Fatalf("%s: Size %d, want %d", what, m.Size(), len(ref))
 	}
-	EqMaps(p, what+" ToGoMap", m.ToGoMap(), ref)
+	EqMaps(p, what+" ToGoMap", toGoMap(m), ref)
 	for k, v := range ref {
 		if !m.Contains(k) || m.GetOrElse(k, -1) != v {
 			p.Fatalf("%s: key %v: Contains %v, GetOrElse %d, want %d", what, k, m.Contains(k), m.GetOrElse(k, -1), v)

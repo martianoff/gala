@@ -633,6 +633,31 @@ func (l List[T]) ToGoSlice() []T {
     return result
 }
 
+// === Equality and hashing ===
+
+// Equal reports whether the two lists hold Equal elements in the same order.
+// It walks both lists together, stopping at the first difference.
+func (l List[T]) Equal(other List[T]) bool {
+    if l.length != other.length {
+        return false
+    }
+    var a = l
+    var b = other
+    for a.length > 0 {
+        if !Equal(a.head, b.head) {
+            return false
+        }
+        a = *a.tail.Get()
+        b = *b.tail.Get()
+    }
+    return true
+}
+
+// Hash combines the element hashes (see HashValue) in order, so lists that
+// are Equal hash alike and a list is a HashSet element or HashMap key. It
+// panics when an element cannot be hashed.
+func (l List[T]) Hash() uint32 = l.FoldLeft(uint32(0), (h, elem) => HashCombine(h, HashValue(elem)))
+
 // String returns a string representation of the list.
 func (l List[T]) String() string {
     if l.length == 0 {
@@ -691,7 +716,7 @@ func (l List[T]) Sorted() List[T] = l.ToArray().Sorted().ToList()
 func (l List[T]) SortWith(less func(T, T) bool) List[T] = l.ToArray().SortWith(less).ToList()
 
 // SortBy returns a new list sorted by a key extracted from each element.
-func (l List[T]) SortBy[K comparable](f func(T) K) List[T] = l.ToArray().SortBy(f).ToList()
+func (l List[T]) SortBy[K any](f func(T) K) List[T] = l.ToArray().SortBy(f).ToList()
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
 // Returns the list with the first n elements removed.

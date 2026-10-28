@@ -258,7 +258,8 @@ Prefer GALA's collections in GALA code, and convert at the boundary:
 | Go `[]T` | `Array[T]` / `List[T]` / `HashSet[T]` | `ArrayFromSlice(s)`, `ListFromSlice(s)`, `HashSetFromSlice(s)` (copies), or `ArrayOf(s...)` |
 | `Array` / `List` / `HashSet` / `TreeSet` | Go `[]T` | `.ToGoSlice()` |
 | Go `map[K]V` | `HashMap[K, V]` / `TreeMap[K, V]` | `HashMapFromGoMap(m)`, `TreeMapFromGoMap(m)` |
-| `HashMap` / `TreeMap` | Go `map[K]V` | `.ToGoMap()` |
+| `HashMap` | Go `map[K]V` | `HashMapToGoMap(m)` |
+| `TreeMap` | Go `map[K]V` | `.ToGoMap()` |
 
 <!-- doc-source: examples/go_interop/gala_calls_go/main.gala -->
 <!-- doc-check: fragment -->

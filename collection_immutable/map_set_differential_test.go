@@ -19,7 +19,7 @@ func checkHashMap[K comparable](p *Prop, what string, m HashMap[K, int], ref map
 	if m.Size() != len(ref) || m.Length() != len(ref) || m.IsEmpty() != (len(ref) == 0) {
 		p.Fatalf("%s: Size %d, want %d", what, m.Size(), len(ref))
 	}
-	EqMaps(p, what+" ToGoMap", m.ToGoMap(), ref)
+	EqMaps(p, what+" HashMapToGoMap", HashMapToGoMap(m), ref)
 	for k, v := range ref {
 		if !m.Contains(k) || m.Get(k).GetOrElse(-1) != v {
 			p.Fatalf("%s: key %v: Contains %v Get %v, want %d", what, k, m.Contains(k), m.Get(k), v)

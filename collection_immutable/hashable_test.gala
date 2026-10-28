@@ -1,0 +1,145 @@
+package main
+
+import (
+    . "martianoff/gala/test"
+    . "martianoff/gala/collection_immutable"
+    . "martianoff/gala/std"
+)
+
+// The immutable collections are HashSet elements and HashMap keys: Equal
+// compares their contents, and Hash agrees with it. Each case below pairs two
+// values and says whether they are the same key.
+
+// sameKey checks that Equal gives expected both ways and that Equal values
+// hash alike.
+func sameKey[K Hashable](t T, a K, b K, expected bool) T {
+    val t1 = Eq(t, Equal(a, b), expected)
+    val t2 = Eq(t1, Equal(b, a), expected)
+    if (expected) Eq(t2, a.Hash(), b.Hash()) else t2
+}
+
+// prepended builds an Array by prepending, so its elements sit in the prefix
+// buffer rather than in the tree ArrayOf builds.
+func prepended(elems ...int) Array[int] = ArrayOf(elems...).FoldRight(EmptyArray[int](), (elem, acc) => acc.Prepend(elem))
+
+// appended builds an Array one Append at a time.
+func appended(elems ...int) Array[int] = ArrayOf(elems...).FoldLeft(EmptyArray[int](), (acc, elem) => acc.Append(elem))
+
+func TestArrayEqualAndHash(t T) T = RunCases(t,
+    (sub T, in Tuple[Array[int], Array[int]], expected bool) => sameKey(sub, in.V1, in.V2, expected),
+    Case(Name = "same elements", Input = (ArrayOf(1, 2, 3), ArrayOf(1, 2, 3)), Expected = true),
+    Case(Name = "prepended vs built", Input = (prepended(1, 2, 3), ArrayOf(1, 2, 3)), Expected = true),
+    Case(Name = "dropped head", Input = (ArrayOf(0, 1, 2, 3).Tail(), ArrayOf(1, 2, 3)), Expected = true),
+    Case(Name = "deep tree vs appended", Input = (ArrayTabulate(100, (i) => i), appended(ArrayTabulate(100, (i) => i).ToGoSlice()...)), Expected = true),
+    Case(Name = "both empty", Input = (EmptyArray[int](), ArrayOf(1).Tail()), Expected = true),
+    Case(Name = "order matters", Input = (ArrayOf(1, 2), ArrayOf(2, 1)), Expected = false),
+    Case(Name = "prefix of the other", Input = (ArrayOf(1, 2), ArrayOf(1, 2, 3)), Expected = false),
+    Case(Name = "one element differs", Input = (ArrayTabulate(100, (i) => i), ArrayTabulate(100, (i) => i).Updated(99, -1)), Expected = false),
+)
+
+func TestListEqualAndHash(t T) T = RunCases(t,
+    (sub T, in Tuple[List[string], List[string]], expected bool) => sameKey(sub, in.V1, in.V2, expected),
+    Case(Name = "same elements", Input = (ListOf("a", "b"), ListOf("a", "b")), Expected = true),
+    Case(Name = "prepended vs built", Input = (ListOf("b").Prepend("a"), ListOf("a", "b")), Expected = true),
+    Case(Name = "from an array", Input = (ArrayOf("a", "b").ToList(), ListOf("a", "b")), Expected = true),
+    Case(Name = "both empty", Input = (EmptyList[string](), ListOf("a").Tail()), Expected = true),
+    Case(Name = "order matters", Input = (ListOf("a", "b"), ListOf("b", "a")), Expected = false),
+    Case(Name = "different lengths", Input = (ListOf("a"), ListOf("a", "a")), Expected = false),
+)
+
+// shuffled is 0..n-1 in a non-ascending order.
+func shuffled(n int) Array[int] = ArrayTabulate(n, (i) => (i * 37) % n)
+
+func TestHashSetEqualAndHash(t T) T = RunCases(t,
+    (sub T, in Tuple[HashSet[int], HashSet[int]], expected bool) => sameKey(sub, in.V1, in.V2, expected),
+    Case(Name = "insertion order", Input = (HashSetOf(1, 2, 3), HashSetOf(3, 1, 2)), Expected = true),
+    Case(Name = "duplicates", Input = (HashSetOf(1, 1, 2), HashSetOf(2, 1)), Expected = true),
+    Case(Name = "many, shuffled", Input = (HashSetFromSlice(ArrayTabulate(1000, (i) => i).ToGoSlice()), HashSetFromSlice(shuffled(1000).ToGoSlice())), Expected = true),
+    Case(Name = "after a remove", Input = (HashSetOf(1, 2, 3).Remove(3), HashSetOf(1, 2)), Expected = true),
+    Case(Name = "different element", Input = (HashSetOf(1, 2), HashSetOf(1, 3)), Expected = false),
+    Case(Name = "subset", Input = (HashSetOf(1, 2), HashSetOf(1, 2, 3)), Expected = false),
+)
+
+func TestHashMapEqualAndHash(t T) T = RunCases(t,
+    (sub T, in Tuple[HashMap[string, int], HashMap[string, int]], expected bool) => sameKey(sub, in.V1, in.V2, expected),
+    Case(Name = "insertion order", Input = (HashMapOf(("a", 1), ("b", 2)), HashMapOf(("b", 2), ("a", 1))), Expected = true),
+    Case(Name = "overwritten value", Input = (HashMapOf(("a", 0)).Put("a", 1), HashMapOf(("a", 1))), Expected = true),
+    Case(Name = "different value", Input = (HashMapOf(("a", 1)), HashMapOf(("a", 2))), Expected = false),
+    Case(Name = "different key", Input = (HashMapOf(("a", 1)), HashMapOf(("b", 1))), Expected = false),
+    Case(Name = "extra entry", Input = (HashMapOf(("a", 1)), HashMapOf(("a", 1), ("b", 2))), Expected = false),
+)
+
+func TestTreeSetEqualAndHash(t T) T = RunCases(t,
+    (sub T, in Tuple[TreeSet[int], TreeSet[int]], expected bool) => sameKey(sub, in.V1, in.V2, expected),
+    Case(Name = "insertion order", Input = (TreeSetFromSlice(ArrayTabulate(100, (i) => i).ToGoSlice()), TreeSetFromSlice(shuffled(100).ToGoSlice())), Expected = true),
+    Case(Name = "different element", Input = (TreeSetOf(1, 2), TreeSetOf(1, 3)), Expected = false),
+)
+
+func TestTreeMapEqualAndHash(t T) T = RunCases(t,
+    (sub T, in Tuple[TreeMap[int, string], TreeMap[int, string]], expected bool) => sameKey(sub, in.V1, in.V2, expected),
+    Case(Name = "insertion order", Input = (TreeMapOf((1, "a"), (2, "b"), (3, "c")), TreeMapOf((3, "c"), (1, "a"), (2, "b"))), Expected = true),
+    Case(Name = "different value", Input = (TreeMapOf((1, "a")), TreeMapOf((1, "b"))), Expected = false),
+)
+
+// A key built separately from an equal one finds the same entry.
+
+func TestArrayAsHashSetElement(t T) T {
+    val s = HashSetOf(ArrayOf(1, 2), ArrayOf(2, 1)).Add(prepended(1, 2))
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(appended(1, 2)))
+    IsFalse(t2, s.Contains(ArrayOf(1)))
+}
+
+func TestListAsHashMapKey(t T) T {
+    val m = HashMapOf((ListOf("a", "b"), 1), (ListOf("b", "a"), 2)).Put(ListOf("b").Prepend("a"), 3)
+    val t1 = Eq(t, m.Size(), 2)
+    val t2 = Eq(t1, m.Get(ListOf("a", "b")), Some(3))
+    val t3 = Eq(t2, m.Get(ListOf("b", "a")), Some(2))
+    IsNone(t3, m.Get(ListOf("a")))
+}
+
+func TestHashSetAsHashSetElement(t T) T {
+    val s = HashSetOf(HashSetOf(1, 2, 3), HashSetOf(3, 2, 1), HashSetOf(2, 3, 1), HashSetOf(1, 2))
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(EmptyHashSet[int]().Add(2).Add(1)))
+    IsFalse(t2, s.Contains(HashSetOf(1)))
+}
+
+func TestCollectionsAsHashMapKeys(t T) T {
+    val byArray = HashMapOf((ArrayOf(1, 2), "a")).Put(prepended(1, 2), "b")
+    val bySet = HashMapOf((HashSetOf("x", "y"), 1)).Put(HashSetOf("y", "x"), 2)
+    val byMap = HashMapOf((HashMapOf(("k", 1), ("j", 2)), true))
+    val byTreeSet = HashMapOf((TreeSetOf(3, 1, 2), "t"))
+    val byTreeMap = HashMapOf((TreeMapOf((2, "b"), (1, "a")), "m"))
+    val t1 = Eq(t, byArray.Size(), 1)
+    val t2 = Eq(t1, byArray.Get(ArrayOf(1, 2)), Some("b"))
+    val t3 = Eq(t2, bySet.Size(), 1)
+    val t4 = Eq(t3, bySet.Get(HashSetOf("x", "y")), Some(2))
+    val t5 = Eq(t4, byMap.Get(HashMapOf(("j", 2), ("k", 1))), Some(true))
+    val t6 = Eq(t5, byTreeSet.Get(TreeSetOf(1, 2, 3)), Some("t"))
+    Eq(t6, byTreeMap.Get(TreeMapOf((1, "a"), (2, "b"))), Some("m"))
+}
+
+func TestNestedCollectionKeys(t T) T {
+    val arrays = HashSetOf(ArrayOf(ListOf(1), ListOf(2, 3)), ArrayOf(ListOf(1), ListOf(3).Prepend(2)))
+    val tuples = HashSetOf((ArrayOf(1), HashSetOf("a")), (prepended(1), HashSetOf("a")))
+    val options = HashSetOf(Some(ListOf(1)), Some(ListOf(1)), None[List[int]]())
+    val t1 = Eq(t, arrays.Size(), 1)
+    val t2 = Eq(t1, tuples.Size(), 1)
+    Eq(t2, options.Size(), 2)
+}
+
+// Every subset of 0..9 is a different set, so all 1024 are kept apart, and
+// their hashes, summed per element, still almost never collide.
+func TestHashSetHashSpreadsSubsets(t T) T {
+    val subsets = ArrayTabulate(1024, (bits) => HashSetFromSlice(ArrayTabulate(10, (i) => i).Filter((i) => (bits >> i) & 1 == 1).ToGoSlice()))
+    val t1 = Eq(t, HashSetFromSlice(subsets.ToGoSlice()).Size(), 1024)
+    GreaterOrEq(t1, HashSetFromSlice(subsets.Map((s) => s.Hash()).ToGoSlice()).Size(), 1020)
+}
+
+func TestUnhashableElementPanicsAsKey(t T) T = Panics(t, () => {
+    HashSetOf(ArrayOf(unhashable(N = 1)), ArrayOf(unhashable(N = 2)))
+})
+
+// unhashable is neither a primitive nor Hashable.
+struct unhashable(N int)

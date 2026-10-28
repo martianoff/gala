@@ -37,3 +37,47 @@ func TestEqualPrimitives(t *testing.T) {
 		})
 	}
 }
+
+// node is comparable, but == compares where next points, not what it holds,
+// as with an immutable List; its Equal compares contents.
+type node struct {
+	v    int
+	next *node
+}
+
+func (n node) Equal(o node) bool {
+	return n.v == o.v && (n.next == nil) == (o.next == nil) && (n.next == nil || n.next.Equal(*o.next))
+}
+
+// boxed is comparable as a type, but == panics when it holds a slice.
+type boxed struct{ v any }
+
+func (b boxed) Equal(o boxed) bool { return Equal(b.v, o.v) }
+
+// TestKeyEqual checks that KeyEqual decides as Equal does, through its ==
+// shortcut and around it.
+func TestKeyEqual(t *testing.T) {
+	nan := math.NaN()
+	tests := []struct {
+		name string
+		got  bool
+		want bool
+	}{
+		{"equal ints", KeyEqual(3, 3), true},
+		{"different strings", KeyEqual("a", "b"), false},
+		{"NaN is not equal to itself", KeyEqual(nan, nan), false},
+		{"named type keeps its own Equal", KeyEqual(caseless("ab"), caseless("xy")), true},
+		{"== tuples", KeyEqual(Tuple[int, string]{NewImmutable(1), NewImmutable("a")}, Tuple[int, string]{NewImmutable(1), NewImmutable("a")}), true},
+		{"different tuples", KeyEqual(Tuple[int, string]{NewImmutable(1), NewImmutable("a")}, Tuple[int, string]{NewImmutable(1), NewImmutable("b")}), false},
+		{"not == but Equal", KeyEqual(node{1, &node{2, nil}}, node{1, &node{2, nil}}), true},
+		{"neither == nor Equal", KeyEqual(node{1, &node{2, nil}}, node{1, &node{3, nil}}), false},
+		{"== would panic, Equal", KeyEqual(boxed{[]int{1}}, boxed{[]int{1}}), true},
+		{"== would panic, not Equal", KeyEqual(boxed{[]int{1}}, boxed{[]int{2}}), false},
+		{"interface type, different dynamic types", KeyEqual[any](1, int64(1)), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.got)
+		})
+	}
+}

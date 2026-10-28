@@ -4,6 +4,7 @@ import (
     "fmt"
     . "martianoff/gala/test"
     . "martianoff/gala/collection_mutable"
+    im "martianoff/gala/collection_immutable"
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
 )
@@ -424,7 +425,7 @@ func TestHashMapToGoMap(t T) T {
     val m = EmptyHashMap[string, int]()
     m.Put("a", 1)
     m.Put("b", 2)
-    val goMap = m.ToGoMap()
+    val goMap = HashMapToGoMap(m)
     val t1 = Eq[int](t, goMap.Size(), 2)
     return Eq[int](t1, goMap["a"], 1)
 }
@@ -555,4 +556,16 @@ func TestHashMapStdValueTypeKeys(t T) T {
     val t3 = Eq(t2, byOption.GetOrElse(None[int](), ""), "none")
     val t4 = Eq(t3, byEither.Size(), 2)
     Eq(t4, byEither.GetOrElse(Right[int, int](1), ""), "right")
+}
+
+// === Immutable collections as keys ===
+
+// Keys are compared with Equal, so an equal list built separately finds the
+// same entry.
+func TestHashMapWithListKeys(t T) T {
+    val m = HashMapOf((im.ListOf("a", "b"), 1), (im.ListOf("b", "a"), 3))
+    val t1 = IsFalse(t, m.Put(im.ListOf("b").Prepend("a"), 2))
+    val t2 = Eq(t1, m.Size(), 2)
+    val t3 = Eq(t2, m.Get(im.ListOf("a", "b")), Some(2))
+    Eq(t3, m.Get(im.ListOf("b", "a")), Some(3))
 }

@@ -125,6 +125,12 @@ gala_test(
 )
 
 gala_test(
+    name = "hashable_test",
+    srcs = ["hashable_test.gala"],
+    deps = [":collection_immutable"],
+)
+
+gala_test(
     name = "treemap_test",
     srcs = ["treemap_test.gala"],
     deps = [

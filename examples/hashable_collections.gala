@@ -1,0 +1,50 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    mut "martianoff/gala/collection_mutable"
+)
+
+// Immutable collections are HashSet elements and HashMap keys. Equal compares
+// their contents and Hash agrees with it, so a key built separately from an
+// equal one finds the same entry. Array and List hash by order; HashSet,
+// HashMap, TreeSet and TreeMap do not depend on the order elements were added.
+
+// signature is the sorted set of states a configuration reaches.
+func signature(states ...int) Array[int] = ArrayOf(states...).Sorted()
+
+func main() {
+    // A set of arrays: built by Append, Prepend or ArrayOf, equal arrays are
+    // one element; the order of elements matters.
+    val seen = HashSetOf(signature(3, 1, 2), signature(1, 2, 3), ArrayOf(2).Prepend(1).Append(3))
+    Println(seen.Size(), seen.Contains(ArrayOf(1, 2, 3)), seen.Contains(ArrayOf(3, 2, 1)))
+
+    // A map keyed by lists.
+    val visits = HashMapOf((ListOf("(", "["), 1), (ListOf("["), 1))
+    val more = visits.Put(ListOf("[").Prepend("("), 2)
+    Println(more.Size(), more.Get(ListOf("(", "[")), more.Get(ListOf("[", "(")))
+
+    // A set of sets: insertion order does not matter.
+    val groups = HashSetOf(HashSetOf(1, 2, 3), HashSetOf(3, 2, 1), HashSetOf(2, 1))
+    Println(groups.Size(), groups.Contains(HashSetOf(2, 3, 1)), HashSetOf(1, 2).Hash() == HashSetOf(2, 1).Hash())
+
+    // Interning: equal values share one id.
+    val ids = ArrayOf(signature(2, 1), signature(5), signature(1, 2), signature(5))
+        .FoldLeft(EmptyHashMap[Array[int], int](), (acc, sig) => if (acc.Contains(sig)) acc else acc.Put(sig, acc.Size()))
+    Println(ids.Size(), ids.Get(ArrayOf(1, 2)), ids.Get(ArrayOf(5)))
+
+    // Nested: maps, tree sets and tuples of collections work as keys too.
+    val byMap = HashMapOf((HashMapOf(("a", 1), ("b", 2)), "ab"))
+    val byTree = HashSetOf(TreeSetOf(3, 1, 2), TreeSetOf(1, 2, 3))
+    val byTuple = HashSetOf((ArrayOf(1), ListOf("x")), (ArrayOf(1), ListOf("x")))
+    Println(byMap.Get(HashMapOf(("b", 2), ("a", 1))), byTree.Size(), byTuple.Size())
+
+    // The mutable HashSet and HashMap compare keys the same way.
+    val cache = mut.EmptyHashMap[Array[string], int]()
+    cache.Put(ArrayOf("a", "b"), 1)
+    cache.Put(ArrayOf("b").Prepend("a"), 2)
+    Println(cache.Size(), cache.Get(ArrayOf("a", "b")))
+
+    // Equal on the collections compares contents, however they were built.
+    Println(ArrayOf(1, 2).Equal(ArrayOf(2).Prepend(1)), TreeSetOf(1, 2, 3).Equal(TreeSetOf(3, 2, 1)), ListOf(1).Equal(ListOf(2)))
+}
