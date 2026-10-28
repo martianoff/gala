@@ -177,12 +177,12 @@ func lexWithGalop(input string) (*lexedInput, *GalaErrorListener) {
 
 // tryGalop runs parse, one of galop's entry points, on in. It reports false
 // when galop's parser does not settle the input: a syntax error, or a panic,
-// which it recovers from (logged with GALA_PANIC_STACK=1) so that ANTLR's
+// which it recovers from (see noteGalopPanic) so that ANTLR's
 // parser can parse the input instead.
 func tryGalop[T any](input string, in *lexedInput, parse func(*antlr.CommonTokenStream) (T, bool)) (tree T, ok, panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			logGalopPanic(input, r)
+			noteGalopPanic(input, r)
 			var zero T
 			tree, ok, panicked = zero, false, true
 		}

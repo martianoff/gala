@@ -51,10 +51,10 @@ jobs:
 
   # GALA parses with galop's parser by default and keeps ANTLR's as an option
   # (internal/parser/engine.go). This runs the whole suite on a build with
-  # ANTLR's parser alone, so that option keeps working. It restores the main
-  # job's disk cache: only the parser and what depends on it rebuild. Long tests
-  # get 30 minutes instead of 15, as //internal/build:build_test runs whole CLI
-  # builds (7-10 minutes on a warm cache) and this build has less in the cache.
+  # ANTLR's parser alone, so that option keeps working. It keeps its own
+  # disk cache, so the two jobs never save over each other's. Long tests get 30
+  # minutes instead of 15: //internal/build:build_test runs whole CLI builds,
+  # 7-10 minutes on a warm cache, and this cache is often cold.
   test-antlr:
     name: Build and Test (ANTLR parser)
     runs-on: ubuntu-latest
@@ -77,7 +77,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.14.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}-go${{ steps.setup-go.outputs.go-version }}
+          disk-cache: ${{ github.workflow }}-antlr-go${{ steps.setup-go.outputs.go-version }}
           repository-cache: true
 
       - name: Test

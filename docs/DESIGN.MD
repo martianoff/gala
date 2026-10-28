@@ -281,11 +281,12 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
   - **ANTLR runs on a syntax error.** galop doesn't recover from errors, so ANTLR handles the
     input instead, reading the tokens galop's lexer produced. The errors, their hints and the
     recovered tree the language server analyzes are always ANTLR's. ANTLR also takes over if
-    galop's parser panics, so a galop bug can't take down `gala lsp` or a build.
+    galop's parser panics, so a galop bug can't take down `gala lsp` or a build; the panic is
+    reported on standard error.
   - **ANTLR alone stays an option:** `--parser=antlr` or `GALA_PARSER=antlr` per process, or a
     build with `--//internal/parser:antlr` that leaves galop out (see `internal/parser/engine.go`).
-    Builds for platforms galop publishes no binary for leave it out too; that is temporary,
-    until galop and rules_gala cover linux-arm64 and darwin-amd64.
+    galop runs at build time from release binaries for linux and macOS (amd64 and arm64) and
+    windows-amd64; on any other build host, use that flag.
   - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
     and errors on every GALA source of the repository, and CI runs the suite under each.
 - **Coded diagnostics are the user-facing edge of the inference/exhaustiveness checks.** When

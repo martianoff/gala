@@ -107,9 +107,13 @@ alone. Both give the same tree, so the output must not change; compare
 the two when a parse looks wrong or slow. On the galop project (67 files
 and the stdlib), galop's parser takes transpile time from 3.7 s to 2.0 s
 and a warm `gala build` from 5.1 s to 3.5 s. A Bazel build with
-`--//internal/parser:antlr` leaves galop's parser out altogether. With
-`GALA_PANIC_STACK=1`, a panic in galop's parser (which falls back to
-ANTLR's) is printed with its stack.
+`--//internal/parser:antlr` leaves galop's parser out altogether.
+
+A panic in galop's parser falls back to ANTLR's and prints
+`gala: warning: galop's parser panicked (N so far in this process) ...`
+for the 1st, 10th, 100th, ... panic: each one costs a second parse and is
+a galop bug worth reporting. `GALA_PANIC_STACK=1` prints every one, with
+its stack.
 
 ## When the disk cache eats space
 

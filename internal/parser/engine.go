@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"martianoff/gala/internal/parser/galop"
@@ -29,6 +30,15 @@ const (
 	EngineANTLR Engine = "antlr"
 )
 
+// DefaultEngine is the engine this binary uses unless asked for another:
+// galop's where it is built in, else ANTLR's.
+func DefaultEngine() Engine {
+	if galop.BuiltIn {
+		return EngineGalop
+	}
+	return EngineANTLR
+}
+
 // engineChoice is a resolved engine, or why the requested one is unusable.
 type engineChoice struct {
 	engine Engine
@@ -36,16 +46,18 @@ type engineChoice struct {
 }
 
 var (
-	// requested is the engine name the CLI was asked for (RequestEngine); ""
+	// engineMu guards requested and the resolution of chosen.
+	engineMu sync.Mutex
+	// requested is the engine name the CLI asked for (RequestEngine); ""
 	// defers to GALA_PARSER.
-	requested atomic.Pointer[string]
+	requested string
 	// chosen caches the engine resolved from requested, GALA_PARSER and the
-	// built-in default; nil until the first parse.
+	// default; nil until a parse needs it. Read without the lock.
 	chosen atomic.Pointer[engineChoice]
 )
 
-// ParseEngine returns the engine named s, or why it cannot be used.
-func ParseEngine(s string) (Engine, error) {
+// parseEngine returns the engine named s, or why it cannot be used.
+func parseEngine(s string) (Engine, error) {
 	switch e := Engine(s); e {
 	case EngineANTLR:
 		return e, nil
@@ -59,60 +71,67 @@ func ParseEngine(s string) (Engine, error) {
 }
 
 // RequestEngine asks for the engine named name (the CLI's --parser flag); ""
-// leaves the choice to the GALA_PARSER environment variable, then to the
-// built-in default. The name is checked when a parse needs it, so commands
-// that parse nothing never fail on it.
+// leaves the choice to the GALA_PARSER environment variable, then to
+// DefaultEngine. The name is checked when a parse needs it, so commands that
+// parse nothing never fail on it.
 func RequestEngine(name string) {
-	requested.Store(&name)
+	engineMu.Lock()
+	defer engineMu.Unlock()
+	requested = name
 	chosen.Store(nil)
 }
-
-// SetEngine makes later parses use e.
-func SetEngine(e Engine) { chosen.Store(&engineChoice{engine: e}) }
 
 // currentEngine returns the engine parses use, resolving it on first use.
 func currentEngine() (Engine, error) {
 	if c := chosen.Load(); c != nil {
 		return c.engine, c.err
 	}
-	name := ""
-	if r := requested.Load(); r != nil {
-		name = *r
+	engineMu.Lock()
+	defer engineMu.Unlock()
+	if c := chosen.Load(); c != nil {
+		return c.engine, c.err
 	}
+	name := requested
 	if name == "" {
 		name = os.Getenv("GALA_PARSER")
 	}
-	c := &engineChoice{engine: EngineANTLR}
+	c := &engineChoice{engine: DefaultEngine()}
 	if name != "" {
-		c.engine, c.err = ParseEngine(name)
-	} else if galop.BuiltIn {
-		c.engine = EngineGalop
+		c.engine, c.err = parseEngine(name)
 	}
 	chosen.Store(c)
 	return c.engine, c.err
 }
 
-// CurrentEngine returns the engine parses use; ANTLR's when the requested
-// one is unusable (parses then report why).
-func CurrentEngine() Engine {
-	e, err := currentEngine()
-	if err != nil {
-		return EngineANTLR
-	}
-	return e
-}
+// galopPanics counts the panics galop's parser recovered from.
+var galopPanics atomic.Int64
 
-// logGalopPanic reports, with GALA_PANIC_STACK=1, that galop's parser
-// panicked on input and ANTLR's parsed it instead. The input is named by its
-// size and first line: the parser is given text, not a file.
-func logGalopPanic(input string, r any) {
-	if os.Getenv("GALA_PANIC_STACK") != "1" {
+// noteGalopPanic records that galop's parser panicked on input and ANTLR's
+// parsed it instead. Each panic is a galop bug that costs a second parse, so
+// it is reported on standard error: the first, then the 10th, 100th, ... with
+// the running count. GALA_PANIC_STACK=1 prints every one with its stack. The
+// input is named by its size and first line: the parser is given text, not a
+// file.
+func noteGalopPanic(input string, r any) {
+	n := galopPanics.Add(1)
+	stack := os.Getenv("GALA_PANIC_STACK") == "1"
+	if !stack && !isPowerOf10(n) {
 		return
 	}
 	first, _, _ := strings.Cut(input, "\n")
 	if len(first) > 80 {
 		first = first[:80]
 	}
-	fmt.Fprintf(os.Stderr, "gala: galop's parser panicked on %d bytes starting %q: %v; parsed with ANTLR instead\n%s\n",
-		len(input), first, r, debug.Stack())
+	fmt.Fprintf(os.Stderr, "gala: warning: galop's parser panicked (%d so far in this process) on %d bytes starting %q: %v; parsed with ANTLR's parser instead\n",
+		n, len(input), first, r)
+	if stack {
+		os.Stderr.Write(debug.Stack())
+	}
+}
+
+func isPowerOf10(n int64) bool {
+	for n >= 10 && n%10 == 0 {
+		n /= 10
+	}
+	return n == 1
 }

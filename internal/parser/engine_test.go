@@ -39,17 +39,18 @@ func gatherSources(t *testing.T) []string {
 // withEngine runs f with engine e, then restores the engine.
 func withEngine(e Engine, f func()) {
 	saved := chosen.Load()
-	SetEngine(e)
+	chosen.Store(&engineChoice{engine: e})
 	defer chosen.Store(saved)
 	f()
 }
 
-// render prints what a parse gives: the tree, then the doc comments and the
-// errors.
+// render prints what a parse gives: the tree with every node's position (see
+// positions), then the doc comments and the errors.
 func render(tree antlr.Tree, docs map[int]string, errs []error) string {
 	var b strings.Builder
 	if tree != nil {
 		b.WriteString(antlr.TreesStringTree(tree, grammar.GalaParserStaticData.RuleNames, nil))
+		positions(&b, tree, nil)
 	}
 	lines := make([]int, 0, len(docs))
 	for line := range docs {
@@ -82,6 +83,41 @@ func parseExpressionWith(e Engine, src string) (out string) {
 	return out
 }
 
+// positions prints, for every node under tree, what diagnostics, hover and
+// line markers read from it: a rule's first and last token indexes, a token's
+// type, channel, line, column, character offsets and index, and whether the
+// node's parent link points at the node it hangs from.
+func positions(b *strings.Builder, tree antlr.Tree, parent antlr.Tree) {
+	if parent != nil && tree.GetParent() != parent {
+		fmt.Fprintf(b, "\nwrong parent link under %T", parent)
+	}
+	switch n := tree.(type) {
+	case antlr.TerminalNode:
+		tok := n.GetSymbol()
+		fmt.Fprintf(b, "\ntoken %d/%d %d:%d [%d,%d] #%d", tok.GetTokenType(), tok.GetChannel(),
+			tok.GetLine(), tok.GetColumn(), tok.GetStart(), tok.GetStop(), tok.GetTokenIndex())
+	case antlr.ParserRuleContext:
+		fmt.Fprintf(b, "\nrule %d", n.GetRuleIndex())
+		if start := n.GetStart(); start != nil {
+			fmt.Fprintf(b, " from #%d", start.GetTokenIndex())
+		}
+		if stop := n.GetStop(); stop != nil {
+			fmt.Fprintf(b, " to #%d", stop.GetTokenIndex())
+		}
+	}
+	for i := 0; i < tree.GetChildCount(); i++ {
+		positions(b, tree.GetChild(i), tree)
+	}
+}
+
+// positionInputs exercise what the lexers count positions over: non-ASCII
+// text, CRLF line ends and comments that span lines.
+var positionInputs = []string{
+	"package main\n\n/* a block comment\n   over three lines, with ünïcödé ✓\n*/\nfunc main() {\n    val s = \"héllo wörld ✓ 日本\" // trailing — comment\n    Println(s)\n}\n",
+	"package main\r\n\r\n/* block\r\n   comment */\r\nfunc main() {\r\n    val s = \"ä\"\r\n    Println(s + s\"${s}é\")\r\n}\r\n",
+	"package main\n\n// ünïcödé line comment\nfunc f(a int) int = a /* inline\n multi-line ✓ */ + 1\n",
+}
+
 // breakSource drops a few bytes of src somewhere: mostly a syntax error, at
 // times still valid code.
 func breakSource(r *rand.Rand, src string) string {
@@ -107,13 +143,27 @@ func TestEnginesAgree(t *testing.T) {
 	grammar.GalaParserInit()
 	r := rand.New(rand.NewSource(1))
 	files, accepted, exprs, exprsAccepted := 0, 0, 0, 0
+	for k, input := range positionInputs {
+		want, got := parseFileWith(EngineANTLR, input), parseFileWith(EngineGalop, input)
+		if got != want {
+			t.Errorf("position input %d: the engines disagree\nANTLR: %s\ngalop: %s", k, want, got)
+		}
+		if strings.Contains(want, "error:") {
+			t.Errorf("position input %d does not parse: %.300s", k, want)
+		}
+	}
 	for _, path := range gatherSources(t) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		src := string(data)
-		for k, input := range []string{src, breakSource(r, src), breakSource(r, src)} {
+		inputs := []string{src, breakSource(r, src), breakSource(r, src)}
+		if files%15 == 0 {
+			// Now and then the file with CRLF line ends.
+			inputs = append(inputs, strings.ReplaceAll(src, "\n", "\r\n"))
+		}
+		for k, input := range inputs {
 			want, got := parseFileWith(EngineANTLR, input), parseFileWith(EngineGalop, input)
 			if got != want {
 				t.Errorf("%s (variant %d): the engines disagree\nANTLR: %.300s\ngalop: %.300s", path, k, want, got)
@@ -178,6 +228,12 @@ func TestGalopPanicFallsBack(t *testing.T) {
 	galopSourceFile = func(*antlr.CommonTokenStream) (grammar.ISourceFileContext, bool) { panic("injected") }
 	galopExpression = func(*antlr.CommonTokenStream) (grammar.IExpressionContext, bool) { panic("injected") }
 
+	before := galopPanics.Load()
+	defer func() {
+		if n := galopPanics.Load() - before; n != 2 {
+			t.Errorf("%d galop panics counted, want 2", n)
+		}
+	}()
 	src := "package main\n\nfunc main() {\n    Println(\"hi\")\n}\n"
 	want := parseFileWith(EngineANTLR, src)
 	if got := parseFileWith(EngineGalop, src); got != want {
@@ -236,5 +292,13 @@ func TestBuiltInDefault(t *testing.T) {
 	defer RequestEngine("")
 	if e, err := currentEngine(); err != nil || string(e) != want {
 		t.Fatalf("the default engine is %q (error %v), want %q", e, err, want)
+	}
+}
+
+func TestIsPowerOf10(t *testing.T) {
+	for n, want := range map[int64]bool{1: true, 2: false, 10: true, 11: false, 100: true, 1000: true, 1010: false, 20: false} {
+		if got := isPowerOf10(n); got != want {
+			t.Errorf("isPowerOf10(%d) = %v, want %v", n, got, want)
+		}
 	}
 }

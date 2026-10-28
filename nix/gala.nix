@@ -9,7 +9,7 @@
 #
 #   localAntlr       gala.g4 -> internal/parser/grammar/*.go (ANTLR)
 #   localGalop       gala.g4 -> internal/parser/grammar/gala_galop_*.go (galop,
-#                    where galop publishes a binary; elsewhere ANTLR only)
+#                    unless useGalop = false)
 #   localTranspiled  releaseGalaBin transpiles the local stdlib, one
 #                    `transpile-package` invocation per package (every
 #                    non-test .gala file as that package's input list, which
@@ -38,6 +38,8 @@
   # Escape hatch: transpile the stdlib with cmd/gala_bootstrap built from this
   # tree instead of a downloaded release binary.
   useLocalBootstrap ? false,
+  # Build GALA without galop's parser, parsing with ANTLR's alone.
+  useGalop ? true,
   # Downloaded release binary used to transpile the stdlib. Bump the version
   # and all four hashes together; the asset names match .github/workflows/
   # release.yml. A release can lag the tree (codegen/grammar changes), in
@@ -200,23 +202,31 @@ let
 
   # galop generates its parser for gala.g4 next to ANTLR's, in its antlr
   # flavor (see internal/parser/grammar/BUILD.bazel); GALA parses with it
-  # first. galop publishes binaries for some build platforms only; elsewhere
-  # GALA is built with ANTLR's parser alone, as Bazel does there. That is
-  # temporary: galop 0.2.3 publishes linux-arm64 and darwin-amd64 too. The
+  # first. Its release binary runs at build time, so it is selected by
+  # buildPlatform. With useGalop = false, or on a build platform galop
+  # publishes no binary for, GALA is built with ANTLR's parser alone. The
   # version must equal MODULE.bazel's galop.toolchain version
   # (tools/check_repo_policy.sh checks it).
-  galopVersion = "0.2.2";
+  galopVersion = "0.2.3";
   galopAssets = {
     x86_64-linux = {
       name = "galop-linux-amd64";
-      hash = "sha256-ezgvNwR7j1VGj6AZ7g1bf4Nd+eGWosiOS1zDf+DANHU=";
+      hash = "sha256-x8xcAAsdMcnoyz1mgLSNAg/Le3sIknjRYBQqO192YrQ=";
+    };
+    aarch64-linux = {
+      name = "galop-linux-arm64";
+      hash = "sha256-sfjoSeixXXRrVYoCnVwTV9dkDBmZROK5cevvgmYCN3s=";
+    };
+    x86_64-darwin = {
+      name = "galop-darwin-amd64";
+      hash = "sha256-MjIJ3dR2aJVPNFzS/jq7Um3/Yl+gYL9SqTvfSBIGM6Q=";
     };
     aarch64-darwin = {
       name = "galop-darwin-arm64";
-      hash = "sha256-P/hExrk18T8GVXIKnv2VB/W4/jyQeBcmNK9N5UMY0xM=";
+      hash = "sha256-QvO5etxanXpIuACIQnmdkXJm9H72fMEwPtdWQPNZPHg=";
     };
   };
-  galopAsset = galopAssets.${stdenv.buildPlatform.system} or null;
+  galopAsset = if useGalop then galopAssets.${stdenv.buildPlatform.system} or null else null;
   localGalop =
     if galopAsset == null then
       null

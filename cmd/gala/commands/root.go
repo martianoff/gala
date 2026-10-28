@@ -121,7 +121,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&buildDir, "build-dir", "",
 		"Directory for build workspaces (default: $GALA_BUILD_DIR, else <gala home>/build)")
 	rootCmd.PersistentFlags().StringVar(&parserEngine, "parser", "",
-		`Parser: "galop" (the default; ANTLR reports syntax errors) or "antlr" (default: $GALA_PARSER)`)
+		parserFlagHelp())
 	// Runs after flag parsing, before any command constructs a Config or
 	// parses a file. An unusable parser name fails the parses, not the
 	// commands that parse nothing.
@@ -135,3 +135,11 @@ var (
 	buildDir     string
 	parserEngine string
 )
+
+// parserFlagHelp describes --parser with this build's default engine.
+func parserFlagHelp() string {
+	if parser.DefaultEngine() == parser.EngineGalop {
+		return `Parser: "galop" (ANTLR reports syntax errors) or "antlr" (default: $GALA_PARSER, else galop)`
+	}
+	return `Parser: "antlr", the only one built into this binary (default: $GALA_PARSER, else antlr)`
+}
