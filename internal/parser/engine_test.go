@@ -83,6 +83,24 @@ func parseExpressionWith(e Engine, src string) (out string) {
 	return out
 }
 
+// parseExpressionAtWith parses src with ParseExpressionAt, at line and col,
+// with engine e.
+func parseExpressionAtWith(e Engine, src string, line, col int) (out string) {
+	withEngine(e, func() {
+		expr, err := ParseExpressionAt(src, line, col, "test expression")
+		var tree antlr.Tree
+		var errs []error
+		if expr != nil {
+			tree = expr
+		}
+		if err != nil {
+			errs = []error{err}
+		}
+		out = render(tree, nil, errs)
+	})
+	return out
+}
+
 // positions prints, for every node under tree, what diagnostics, hover and
 // line markers read from it: a rule's first and last token indexes, a token's
 // type, channel, line, column, character offsets and index, and whether the
@@ -189,6 +207,12 @@ func TestEnginesAgree(t *testing.T) {
 				want, got := parseExpressionWith(EngineANTLR, input), parseExpressionWith(EngineGalop, input)
 				if got != want {
 					t.Errorf("%s: expression %q (variant %d): the engines disagree\nANTLR: %.300s\ngalop: %.300s", path, expr, k, want, got)
+				}
+				// As the transpiler re-parses it: at a position in its file.
+				line, col := 1+r.Intn(500), r.Intn(80)
+				want, got = parseExpressionAtWith(EngineANTLR, input, line, col), parseExpressionAtWith(EngineGalop, input, line, col)
+				if got != want {
+					t.Errorf("%s: expression %q (variant %d) at %d:%d: the engines disagree\nANTLR: %.300s\ngalop: %.300s", path, expr, k, line, col, want, got)
 				}
 				exprs++
 				if !strings.Contains(want, "error:") {
