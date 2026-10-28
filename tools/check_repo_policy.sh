@@ -102,6 +102,15 @@ if [[ -n "${PR_BODY+set}" ]]; then
   fi
 fi
 
+# --- 5. one galop version ----------------------------------------------------
+# Bazel gets galop from rules_gala's extension, nix downloads the same release;
+# their versions must not drift apart.
+bazel_galop="$(sed -nE 's/^galop\.toolchain\(version = "([^"]+)"\)/\1/p' MODULE.bazel)"
+nix_galop="$(sed -nE 's/^ *galopVersion = "([^"]+)";/\1/p' nix/gala.nix)"
+if [[ -z "$bazel_galop" || "$bazel_galop" != "$nix_galop" ]]; then
+  fail "galop versions differ: MODULE.bazel galop.toolchain '$bazel_galop', nix/gala.nix galopVersion '$nix_galop'"
+fi
+
 if (( failed )); then
   echo "Repo policy check FAILED." >&2
   exit 1

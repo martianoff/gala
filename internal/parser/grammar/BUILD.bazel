@@ -41,18 +41,28 @@ galop_parser(
     }),
 )
 
-# galop is built in where rules_gala has a galop binary to run: the platforms
-# galop publishes release binaries for. Elsewhere GALA builds with ANTLR's
-# parser alone. This is temporary: galop 0.2.3 publishes linux-arm64 and
-# darwin-amd64 binaries too, and the next rules_gala registers them.
+# galop is built in where rules_gala has a galop binary to run, unless the
+# build asks for ANTLR's parser alone (--//internal/parser:antlr). Elsewhere
+# GALA builds with ANTLR's parser alone.
 selects.config_setting_group(
     name = "galop_enabled",
+    match_all = [
+        ":galop_platform",
+        "//internal/parser:galop_wanted",
+    ],
+    visibility = ["//internal/parser:__subpackages__"],
+)
+
+# The platforms galop publishes release binaries for. This is temporary:
+# galop 0.2.3 publishes linux-arm64 and darwin-amd64 binaries too, and the next
+# rules_gala registers them.
+selects.config_setting_group(
+    name = "galop_platform",
     match_any = [
         ":darwin_arm64",
         ":linux_amd64",
         ":windows_amd64",
     ],
-    visibility = ["//internal/parser:__subpackages__"],
 )
 
 [

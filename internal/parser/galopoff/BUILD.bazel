@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+# gazelle:importpath martianoff/gala/internal/parser/galop
+
+# Stands in for //internal/parser/galop, under its import path, in builds
+# without galop's parser (see //internal/parser:parser).
+go_library(
+    name = "galopoff",
+    srcs = ["galop.go"],
+    importpath = "martianoff/gala/internal/parser/galop",
+    visibility = ["//internal/parser:__pkg__"],
+    deps = [
+        "//internal/parser/grammar",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
+)

@@ -271,6 +271,23 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
   signatures — but if the SDK is absent, transpilation still succeeds with a warning and
   GALA's own type system is unaffected. The graceful degradation keeps GALA's core
   independent of an external toolchain.
+- **Two parsers, one tree.** `gala.g4` is the only grammar. Bazel generates two parsers from it
+  into `internal/parser/grammar`: ANTLR's, and [galop](https://github.com/martianoff/galop)'s
+  in its `antlr` flavor. galop's builds ANTLR's own context types, so the analyzer and
+  transformer don't know which one ran.
+  - **galop parses first.** It settles the grammar's parsing decisions when the parser is
+    generated, and yields exactly ANTLR's tree on every input ANTLR accepts. That roughly
+    halves transpile time.
+  - **ANTLR runs on a syntax error.** galop doesn't recover from errors, so ANTLR handles the
+    input instead, reading the tokens galop's lexer produced. The errors, their hints and the
+    recovered tree the language server analyzes are always ANTLR's. ANTLR also takes over if
+    galop's parser panics, so a galop bug can't take down `gala lsp` or a build.
+  - **ANTLR alone stays an option:** `--parser=antlr` or `GALA_PARSER=antlr` per process, or a
+    build with `--//internal/parser:antlr` that leaves galop out (see `internal/parser/engine.go`).
+    Builds for platforms galop publishes no binary for leave it out too; that is temporary,
+    until galop and rules_gala cover linux-arm64 and darwin-amd64.
+  - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
+    and errors on every GALA source of the repository, and CI runs the suite under each.
 - **Coded diagnostics are the user-facing edge of the inference/exhaustiveness checks.** When
   inference or resolution can't proceed, GALA emits a named, documented `GALA-Exxxx` error
   (see [docs/errors/](errors/)) rather than a vague failure.

@@ -244,6 +244,11 @@ bazel build //internal/parser/grammar:gala_grammar_go
 **Important:** Never hand-edit or check in the generated parser `.go` files. Bazel
 regenerates them from `gala.g4` on every build; `gala.g4` is the only source of truth.
 
+Bazel generates two parsers from it: ANTLR's and [galop](https://github.com/martianoff/galop)'s,
+which GALA parses with first (see [DESIGN.MD](docs/DESIGN.MD#implementation-notes)). If
+galop rejects a grammar change, the build fails. `bazel test //internal/parser:parser_test`
+checks that both parsers still agree on every GALA source of the repository.
+
 Grammar changes also reach the IDE tooling: the IntelliJ plugin is generated from the same
 grammar (`bazel build //ide/intellij:plugin` regenerates and tests it), and new keywords or
 built-in types must be synced into the plugin and LSP server as described in

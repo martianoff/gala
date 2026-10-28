@@ -98,6 +98,19 @@ Enables per-phase timing logs from
 generate, print). Look here first for "what's slow" — heap profiling is
 overkill until phase timing tells you which phase is the suspect.
 
+### `GALA_PARSER=antlr` / `--parser=antlr`
+
+GALA parses with galop's parser and hands input with a syntax error to
+ANTLR's (see [DESIGN.MD](DESIGN.MD#implementation-notes)). `GALA_PARSER=antlr`,
+or the `--parser=antlr` flag of any `gala` command, parses with ANTLR's
+alone. Both give the same tree, so the output must not change; compare
+the two when a parse looks wrong or slow. On the galop project (67 files
+and the stdlib), galop's parser takes transpile time from 3.7 s to 2.0 s
+and a warm `gala build` from 5.1 s to 3.5 s. A Bazel build with
+`--//internal/parser:antlr` leaves galop's parser out altogether. With
+`GALA_PANIC_STACK=1`, a panic in galop's parser (which falls back to
+ANTLR's) is printed with its stack.
+
 ## When the disk cache eats space
 
 Each analyzed package is gob-serialised under
