@@ -14,16 +14,12 @@ import (
 // BuiltIn says galop's parser is linked into this binary.
 const BuiltIn = true
 
-// NewLexer returns galop's lexer for input, its first character at line
-// and column col (as ANTLR counts them; line <= 0 starts at 1:0). Its tokens
-// are ANTLR's lexer's.
-func NewLexer(input antlr.CharStream, line, col int) antlr.Lexer {
+// NewLexer returns galop's lexer for input, and the ANTLR base lexer in it
+// (whose simulator position seeds where the input starts). Its tokens are
+// ANTLR's lexer's.
+func NewLexer(input antlr.CharStream) (antlr.Lexer, *antlr.BaseLexer) {
 	lexer := grammar.NewgalaGalopLexer(input)
-	if sim, ok := lexer.Interpreter.(*antlr.LexerATNSimulator); ok && line > 0 {
-		sim.Line = line
-		sim.CharPositionInLine = col
-	}
-	return lexer
+	return lexer, lexer.BaseLexer
 }
 
 // SourceFile parses stream as a source file. Building the parser fills the

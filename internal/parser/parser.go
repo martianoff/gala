@@ -164,12 +164,31 @@ var (
 	galopExpression = galop.Expression
 )
 
+// seedLexer makes lexer start at line and column col, as ANTLR counts them,
+// so that every token carries its position in an enclosing file. line <= 0
+// leaves it at 1:0. It reports false when the lexer cannot be seeded.
+func seedLexer(lexer *antlr.BaseLexer, line, col int) bool {
+	if line <= 0 {
+		return true
+	}
+	sim, ok := lexer.Interpreter.(*antlr.LexerATNSimulator)
+	if !ok {
+		return false
+	}
+	sim.Line = line
+	sim.CharPositionInLine = col
+	return true
+}
+
 // lexWithGalop lexes input with galop's lexer through the newline-aware token
-// source, from line and column col (see galop.NewLexer). errs collects
-// lexical errors.
+// source, from line and column col (see seedLexer). errs collects lexical
+// errors. It returns nil when galop's lexer cannot be seeded.
 func lexWithGalop(input string, line, col int) (*lexedInput, *GalaErrorListener) {
 	is := antlr.NewInputStream(input)
-	lexer := galop.NewLexer(is, line, col)
+	lexer, base := galop.NewLexer(is)
+	if !seedLexer(base, line, col) {
+		return nil, nil
+	}
 	errs := &GalaErrorListener{}
 	lexer.RemoveErrorListeners()
 	lexer.AddErrorListener(errs)
@@ -203,14 +222,15 @@ func tryGalop[T any](input string, in *lexedInput, parse func(*antlr.CommonToken
 func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 	var reuse *lexedInput
 	if engine == EngineGalop {
-		in, lexErrs := lexWithGalop(input, 0, 0)
-		tree, ok, panicked := tryGalop(input, in, galopSourceFile)
-		clean := len(lexErrs.Errors) == 0 && !panicked
-		if ok && clean {
-			return sourceFileParseResult{input: in.input, tree: tree, tokens: in.stream.GetAllTokens()}
-		}
-		if clean {
-			reuse = in
+		if in, lexErrs := lexWithGalop(input, 0, 0); in != nil {
+			tree, ok, panicked := tryGalop(input, in, galopSourceFile)
+			clean := len(lexErrs.Errors) == 0 && !panicked
+			if ok && clean {
+				return sourceFileParseResult{input: in.input, tree: tree, tokens: in.stream.GetAllTokens()}
+			}
+			if clean {
+				reuse = in
+			}
 		}
 	}
 	result := parseSourceFileAttempt(input, antlr.PredictionModeSLL, reuse)
@@ -218,6 +238,52 @@ func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 		result = parseSourceFileAttempt(input, antlr.PredictionModeLL, reuse)
 	}
 	return result
+}
+
+// galopExpressionAt parses input with galop's parser as exactly one
+// expression starting at line:col. ok says galop's parse is the result. When
+// it is not but galop's lexer read the input without errors, reuse holds its
+// tokens for ANTLR's parse.
+func galopExpressionAt(input string, line, col int) (expr grammar.IExpressionContext, ok bool, reuse *lexedInput) {
+	in, lexErrs := lexWithGalop(input, line, col)
+	if in == nil {
+		return nil, false, nil
+	}
+	expr, ok, panicked := tryGalop(input, in, galopExpression)
+	clean := len(lexErrs.Errors) == 0 && !panicked
+	if ok && clean {
+		return expr, true, nil
+	}
+	if clean {
+		return nil, false, in
+	}
+	return nil, false, nil
+}
+
+// antlrExpressionAt parses input with ANTLR's parser as an expression
+// starting at line:col, from reuse's tokens when given, and returns the
+// expression, the token stream and the lexical and syntax errors.
+func antlrExpressionAt(input string, line, col int, reuse *lexedInput) (grammar.IExpressionContext, *antlr.CommonTokenStream, []error) {
+	errorListener := &GalaErrorListener{}
+	var stream *antlr.CommonTokenStream
+	if reuse != nil {
+		stream = reuse.stream
+		stream.Seek(0)
+	} else {
+		lexer := grammar.NewgalaLexer(antlr.NewInputStream(input))
+		isolateLexerCaches(lexer.BaseLexer)
+		if !seedLexer(lexer.BaseLexer, line, col) {
+			return nil, nil, []error{fmt.Errorf("cannot start ANTLR's lexer at %d:%d", line, col)}
+		}
+		lexer.RemoveErrorListeners()
+		lexer.AddErrorListener(errorListener)
+		stream = newTokenStream(lexer)
+	}
+	psr := grammar.NewgalaParser(stream)
+	isolateParserCaches(psr.BaseParser)
+	psr.RemoveErrorListeners()
+	psr.AddErrorListener(errorListener)
+	return psr.Expression(), stream, errorListener.Errors
 }
 
 // ParseExpression parses a single GALA expression (not a whole source file)
@@ -233,28 +299,16 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 	if err != nil {
 		return nil, []error{err}
 	}
+	var reuse *lexedInput
 	if engine == EngineGalop {
-		in, lexErrs := lexWithGalop(input, 0, 0)
-		if expr, ok, _ := tryGalop(input, in, galopExpression); ok && len(lexErrs.Errors) == 0 {
+		var expr grammar.IExpressionContext
+		var ok bool
+		if expr, ok, reuse = galopExpressionAt(input, 0, 0); ok {
 			return expr, nil
 		}
 	}
-	is := antlr.NewInputStream(input)
-	lexer := grammar.NewgalaLexer(is)
-	isolateLexerCaches(lexer.BaseLexer)
-	stream := newTokenStream(lexer)
-	psr := grammar.NewgalaParser(stream)
-	isolateParserCaches(psr.BaseParser)
-
-	errorListener := &GalaErrorListener{}
-
-	lexer.RemoveErrorListeners()
-	lexer.AddErrorListener(errorListener)
-	psr.RemoveErrorListeners()
-	psr.AddErrorListener(errorListener)
-
-	exprCtx := psr.Expression()
-	return exprCtx, errorListener.Errors
+	expr, _, errs := antlrExpressionAt(input, 0, 0, reuse)
+	return expr, errs
 }
 
 // ParseExpressionAt parses input as exactly one GALA expression whose first
@@ -280,41 +334,21 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 //
 // With galop's engine, galop's lexer is seeded the same way and its parser
 // parses input that is exactly one expression; anything else is parsed by
-// ANTLR as described.
+// ANTLR as described, from galop's tokens when they lexed without errors. If
+// the requested engine is unusable, ANTLR parses: this function reports
+// syntax errors only.
 func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
-	engine, err := currentEngine()
-	if err != nil {
-		return nil, err
-	}
-	if engine == EngineGalop {
-		// galop's expression parse is kept only when it covers the whole
-		// input; anything else gets ANTLR's parse and errors below.
-		in, lexErrs := lexWithGalop(input, line, col)
-		if expr, ok, _ := tryGalop(input, in, galopExpression); ok && len(lexErrs.Errors) == 0 {
+	var reuse *lexedInput
+	if engine, err := currentEngine(); err == nil && engine == EngineGalop {
+		var expr grammar.IExpressionContext
+		var ok bool
+		if expr, ok, reuse = galopExpressionAt(input, line, col); ok {
 			return expr, nil
 		}
 	}
-	lexer := grammar.NewgalaLexer(antlr.NewInputStream(input))
-	isolateLexerCaches(lexer.BaseLexer)
-	if line > 0 {
-		if sim, ok := lexer.Interpreter.(*antlr.LexerATNSimulator); ok {
-			sim.Line = line
-			sim.CharPositionInLine = col
-		}
-	}
-	stream := newTokenStream(lexer)
-	psr := grammar.NewgalaParser(stream)
-	isolateParserCaches(psr.BaseParser)
-
-	errorListener := &GalaErrorListener{}
-	lexer.RemoveErrorListeners()
-	lexer.AddErrorListener(errorListener)
-	psr.RemoveErrorListeners()
-	psr.AddErrorListener(errorListener)
-
-	exprCtx := psr.Expression()
-	if len(errorListener.Errors) > 0 {
-		return nil, errorListener.Errors[0]
+	exprCtx, stream, errs := antlrExpressionAt(input, line, col, reuse)
+	if len(errs) > 0 {
+		return nil, errs[0]
 	}
 	if tok := stream.LT(1); tok != nil && tok.GetTokenType() != antlr.TokenEOF {
 		return nil, galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn(),

@@ -14,7 +14,7 @@ import (
 const BuiltIn = false
 
 // NewLexer is not called when BuiltIn is false.
-func NewLexer(antlr.CharStream, int, int) antlr.Lexer { return nil }
+func NewLexer(antlr.CharStream) (antlr.Lexer, *antlr.BaseLexer) { return nil, nil }
 
 // SourceFile never parses: ok is false.
 func SourceFile(*antlr.CommonTokenStream) (grammar.ISourceFileContext, bool) { return nil, false }
