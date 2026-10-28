@@ -165,10 +165,11 @@ var (
 )
 
 // lexWithGalop lexes input with galop's lexer through the newline-aware token
-// source. errs collects lexical errors.
-func lexWithGalop(input string) (*lexedInput, *GalaErrorListener) {
+// source, from line and column col (see galop.NewLexer). errs collects
+// lexical errors.
+func lexWithGalop(input string, line, col int) (*lexedInput, *GalaErrorListener) {
 	is := antlr.NewInputStream(input)
-	lexer := galop.NewLexer(is)
+	lexer := galop.NewLexer(is, line, col)
 	errs := &GalaErrorListener{}
 	lexer.RemoveErrorListeners()
 	lexer.AddErrorListener(errs)
@@ -202,7 +203,7 @@ func tryGalop[T any](input string, in *lexedInput, parse func(*antlr.CommonToken
 func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 	var reuse *lexedInput
 	if engine == EngineGalop {
-		in, lexErrs := lexWithGalop(input)
+		in, lexErrs := lexWithGalop(input, 0, 0)
 		tree, ok, panicked := tryGalop(input, in, galopSourceFile)
 		clean := len(lexErrs.Errors) == 0 && !panicked
 		if ok && clean {
@@ -233,7 +234,7 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 		return nil, []error{err}
 	}
 	if engine == EngineGalop {
-		in, lexErrs := lexWithGalop(input)
+		in, lexErrs := lexWithGalop(input, 0, 0)
 		if expr, ok, _ := tryGalop(input, in, galopExpression); ok && len(lexErrs.Errors) == 0 {
 			return expr, nil
 		}
@@ -276,7 +277,23 @@ func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionCont
 //     operator silently dropped. A leftover token is reported as a syntax
 //     error naming what, which the caller describes ("interpolated
 //     expression", "default value").
+//
+// With galop's engine, galop's lexer is seeded the same way and its parser
+// parses input that is exactly one expression; anything else is parsed by
+// ANTLR as described.
 func ParseExpressionAt(input string, line, col int, what string) (grammar.IExpressionContext, error) {
+	engine, err := currentEngine()
+	if err != nil {
+		return nil, err
+	}
+	if engine == EngineGalop {
+		// galop's expression parse is kept only when it covers the whole
+		// input; anything else gets ANTLR's parse and errors below.
+		in, lexErrs := lexWithGalop(input, line, col)
+		if expr, ok, _ := tryGalop(input, in, galopExpression); ok && len(lexErrs.Errors) == 0 {
+			return expr, nil
+		}
+	}
 	lexer := grammar.NewgalaLexer(antlr.NewInputStream(input))
 	isolateLexerCaches(lexer.BaseLexer)
 	if line > 0 {
