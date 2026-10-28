@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/grammar"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -26,6 +27,12 @@ func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, map[int]string, error
 		return nil, nil, &galaerr.MultiError{Errors: errs}
 	}
 	return tree, docs, nil
+}
+
+// lexedInput is an input and its complete token stream.
+type lexedInput struct {
+	input  *antlr.InputStream
+	stream *antlr.CommonTokenStream
 }
 
 type sourceFileParseResult struct {
@@ -53,18 +60,29 @@ type sourceFileParseResult struct {
 // mutex-protected DFA set (built once) so DFA state is still reused across
 // files. The deserialized ATN stays shared too (it is read-mostly and guards
 // its own lazily-cached token sets with a mutex).
-func parseSourceFileAttempt(input string, mode int) sourceFileParseResult {
-	is := antlr.NewInputStream(input)
-	lexer := grammar.NewgalaLexer(is)
-	isolateLexerCaches(lexer.BaseLexer)
-	stream := newTokenStream(lexer)
+//
+// lexed, when not nil, is the input already lexed without errors (by galop's
+// lexer, whose tokens are ANTLR's): the parse reads its tokens instead of
+// lexing again.
+func parseSourceFileAttempt(input string, mode int, lexed *lexedInput) sourceFileParseResult {
+	errorListener := &GalaErrorListener{}
+	var is *antlr.InputStream
+	var stream *antlr.CommonTokenStream
+	if lexed != nil {
+		is, stream = lexed.input, lexed.stream
+		stream.Seek(0)
+	} else {
+		is = antlr.NewInputStream(input)
+		lexer := grammar.NewgalaLexer(is)
+		isolateLexerCaches(lexer.BaseLexer)
+		lexer.RemoveErrorListeners()
+		lexer.AddErrorListener(errorListener)
+		stream = newTokenStream(lexer)
+	}
 	parser := grammar.NewgalaParser(stream)
 	isolateParserCaches(parser.BaseParser)
 	parser.GetInterpreter().SetPredictionMode(mode)
 
-	errorListener := &GalaErrorListener{}
-	lexer.RemoveErrorListeners()
-	lexer.AddErrorListener(errorListener)
 	parser.RemoveErrorListeners()
 	parser.AddErrorListener(errorListener)
 
@@ -86,6 +104,10 @@ func parseSourceFileAttempt(input string, mode int) sourceFileParseResult {
 // ParseLenient always returns ANTLR's error-recovered tree alongside any
 // syntax errors. The tree contains error nodes but is structurally valid.
 //
+// With galop's engine (the default, see Engine), galop's parser makes the
+// first attempt. Input it does not parse goes to ANTLR's parser as described
+// below, reading the tokens galop's lexer already produced.
+//
 // Input is parsed twice when it does not parse cleanly: once with SLL
 // prediction, and, if that attempt reported any syntax error, again from the
 // start with full LL prediction. SLL is the cheaper prediction mode and the
@@ -94,24 +116,22 @@ func parseSourceFileAttempt(input string, mode int) sourceFileParseResult {
 // is the LSP's hot path, where invalid input is the normal state rather than the
 // exception.
 //
-// The two attempts are independent: each builds its own lexer, parser and
+// The two attempts are independent: each builds its own parser and
 // prediction-context cache, so a failed attempt leaves no state behind for the
 // retry (see parseSourceFileAttempt). Diagnostics are reported from the
 // retained attempt only, so the errors a caller sees are the LL ones and are
 // unchanged from a single full-prediction parse.
 func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
+	engine, err := currentEngine()
+	if err != nil {
+		return nil, nil, []error{err}
+	}
 	// Drop a leading UTF-8 BOM once, up front: the lexer has no rule for
 	// U+FEFF and would otherwise reject the file outright. Go, which GALA
 	// transpiles to, ignores a leading BOM the same way.
 	input = galaerr.StripBOM(input)
 
-	// A speculative attempt has no reason to walk its tokens for doc
-	// comments: if it is retained they are harvested below, and if it is not
-	// the LL attempt is harvested instead.
-	result := parseSourceFileAttempt(input, antlr.PredictionModeSLL)
-	if len(result.errors) != 0 || result.tree == nil {
-		result = parseSourceFileAttempt(input, antlr.PredictionModeLL)
-	}
+	result := parseSourceFile(input, engine)
 	docs := extractDocComments(result.tokens)
 
 	// The source-text check goes first: an illegal character is the root
@@ -138,12 +158,86 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string
 	return result.tree, docs, errs
 }
 
+// Hooks for galop's parser, replaced by tests.
+var (
+	galopSourceFile = galop.SourceFile
+	galopExpression = galop.Expression
+)
+
+// lexWithGalop lexes input with galop's lexer through the newline-aware token
+// source. errs collects lexical errors.
+func lexWithGalop(input string) (*lexedInput, *GalaErrorListener) {
+	is := antlr.NewInputStream(input)
+	lexer := galop.NewLexer(is)
+	errs := &GalaErrorListener{}
+	lexer.RemoveErrorListeners()
+	lexer.AddErrorListener(errs)
+	return &lexedInput{input: is, stream: newTokenStream(lexer)}, errs
+}
+
+// tryGalop runs parse, one of galop's entry points, on in. It reports false
+// when galop's parser does not settle the input: a syntax error, or a panic,
+// which it recovers from (see noteGalopPanic) so that ANTLR's
+// parser can parse the input instead.
+func tryGalop[T any](input string, in *lexedInput, parse func(*antlr.CommonTokenStream) (T, bool)) (tree T, ok, panicked bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			noteGalopPanic(input, r)
+			var zero T
+			tree, ok, panicked = zero, false, true
+		}
+	}()
+	tree, ok = parse(in.stream)
+	return tree, ok, false
+}
+
+// parseSourceFile parses input with engine. galop's parser gives ANTLR's tree
+// when the input parses. When it does not, ANTLR's parser parses as it does
+// alone, so the errors and the recovered tree are the ones ANTLR's engine
+// gives; it reuses galop's tokens when they lexed without errors (otherwise it
+// lexes again, so lexical and syntax errors interleave as they always have).
+// A speculative attempt has no reason to walk its tokens for doc comments: if
+// it is retained the caller harvests them, and if it is not the LL attempt is
+// harvested instead.
+func parseSourceFile(input string, engine Engine) sourceFileParseResult {
+	var reuse *lexedInput
+	if engine == EngineGalop {
+		in, lexErrs := lexWithGalop(input)
+		tree, ok, panicked := tryGalop(input, in, galopSourceFile)
+		clean := len(lexErrs.Errors) == 0 && !panicked
+		if ok && clean {
+			return sourceFileParseResult{input: in.input, tree: tree, tokens: in.stream.GetAllTokens()}
+		}
+		if clean {
+			reuse = in
+		}
+	}
+	result := parseSourceFileAttempt(input, antlr.PredictionModeSLL, reuse)
+	if len(result.errors) != 0 || result.tree == nil {
+		result = parseSourceFileAttempt(input, antlr.PredictionModeLL, reuse)
+	}
+	return result
+}
+
 // ParseExpression parses a single GALA expression (not a whole source file)
 // and returns its expression context alongside any syntax errors. Like
 // ParseLenient it isolates the ANTLR prediction-context cache so concurrent
 // parses stay race-free; the returned tree is error-recovered when errors are
 // present. Used to re-parse the embedded expressions of an interpolated string.
+// With galop's engine, galop's parser parses input that is exactly one
+// expression; anything else, including an expression followed by more
+// tokens, goes to ANTLR's parser, as with ANTLR's engine.
 func (p *AntlrGalaParser) ParseExpression(input string) (grammar.IExpressionContext, []error) {
+	engine, err := currentEngine()
+	if err != nil {
+		return nil, []error{err}
+	}
+	if engine == EngineGalop {
+		in, lexErrs := lexWithGalop(input)
+		if expr, ok, _ := tryGalop(input, in, galopExpression); ok && len(lexErrs.Errors) == 0 {
+			return expr, nil
+		}
+	}
 	is := antlr.NewInputStream(input)
 	lexer := grammar.NewgalaLexer(is)
 	isolateLexerCaches(lexer.BaseLexer)

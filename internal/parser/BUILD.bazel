@@ -1,9 +1,26 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# `bazel build --//internal/parser:antlr ...` builds GALA with ANTLR's parser
+# alone, leaving galop's out (see engine.go). Without it, galop's parser is
+# built in where galop runs (//internal/parser/grammar:galop_enabled); the
+# CLI's --parser flag and GALA_PARSER then choose per process.
+bool_flag(
+    name = "antlr",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "galop_wanted",
+    flag_values = {":antlr": "false"},
+    visibility = ["//internal/parser:__subpackages__"],
+)
 
 go_library(
     name = "parser",
     srcs = [
         "docs.go",
+        "engine.go",
         "newline.go",
         "parser.go",
         "source_chars.go",
@@ -15,7 +32,11 @@ go_library(
         "//galaerr",
         "//internal/parser/grammar",
         "@com_github_antlr4_go_antlr_v4//:antlr",
-    ],
+    ] + select({
+        # internal/parser/galop, or its stand-in under the same import path.
+        "//internal/parser/grammar:galop_enabled": ["//internal/parser/galop"],
+        "//conditions:default": ["//internal/parser/galopoff"],
+    }),
 )
 
 go_test(
@@ -25,15 +46,28 @@ go_test(
         "bom_test.go",
         "docs_test.go",
         "empty_line_unicode_test.go",
+        "engine_test.go",
         "go_type_in_expression_test.go",
         "grammar_test.go",
         "newline_test.go",
         "parse_expression_at_test.go",
-        "type_text_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
         "source_chars_test.go",
         "struct_tag_test.go",
+        "type_text_test.go",
+    ],
+    # engine_test.go parses every GALA source of the repository with both
+    # engines.
+    data = [
+        "//:all_gala_sources",
+        "//examples:all_gala_sources",
+        "//lazy:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
     ],
     embed = [":parser"],
     deps = [
@@ -42,5 +76,6 @@ go_test(
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
     ],
 )

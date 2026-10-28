@@ -7,7 +7,9 @@
 # import `internal/stdlib`, so it can be built from this tree and serves as the
 # `useLocalBootstrap` escape hatch.
 #
-#   localAntlr       gala.g4 -> internal/parser/grammar/*.go
+#   localAntlr       gala.g4 -> internal/parser/grammar/*.go (ANTLR)
+#   localGalop       gala.g4 -> internal/parser/grammar/gala_galop_*.go (galop,
+#                    unless useGalop = false)
 #   localTranspiled  releaseGalaBin transpiles the local stdlib, one
 #                    `transpile-package` invocation per package (every
 #                    non-test .gala file as that package's input list, which
@@ -36,6 +38,8 @@
   # Escape hatch: transpile the stdlib with cmd/gala_bootstrap built from this
   # tree instead of a downloaded release binary.
   useLocalBootstrap ? false,
+  # Build GALA without galop's parser, parsing with ANTLR's alone.
+  useGalop ? true,
   # Downloaded release binary used to transpile the stdlib. Bump the version
   # and all four hashes together; the asset names match .github/workflows/
   # release.yml. A release can lag the tree (codegen/grammar changes), in
@@ -196,6 +200,75 @@ let
     };
   localAntlr = mkAntlr "local" (repoRoot + "/internal/parser/grammar/gala.g4");
 
+  # galop generates its parser for gala.g4 next to ANTLR's, in its antlr
+  # flavor (see internal/parser/grammar/BUILD.bazel); GALA parses with it
+  # first. Its release binary runs at build time, so it is selected by
+  # buildPlatform. With useGalop = false, or on a build platform galop
+  # publishes no binary for, GALA is built with ANTLR's parser alone. The
+  # version must equal MODULE.bazel's galop.toolchain version
+  # (tools/check_repo_policy.sh checks it).
+  galopVersion = "0.2.3";
+  galopAssets = {
+    x86_64-linux = {
+      name = "galop-linux-amd64";
+      hash = "sha256-x8xcAAsdMcnoyz1mgLSNAg/Le3sIknjRYBQqO192YrQ=";
+    };
+    aarch64-linux = {
+      name = "galop-linux-arm64";
+      hash = "sha256-sfjoSeixXXRrVYoCnVwTV9dkDBmZROK5cevvgmYCN3s=";
+    };
+    x86_64-darwin = {
+      name = "galop-darwin-amd64";
+      hash = "sha256-MjIJ3dR2aJVPNFzS/jq7Um3/Yl+gYL9SqTvfSBIGM6Q=";
+    };
+    aarch64-darwin = {
+      name = "galop-darwin-arm64";
+      hash = "sha256-QvO5etxanXpIuACIQnmdkXJm9H72fMEwPtdWQPNZPHg=";
+    };
+  };
+  galopAsset = if useGalop then galopAssets.${stdenv.buildPlatform.system} or null else null;
+  localGalop =
+    if galopAsset == null then
+      null
+    else
+      stdenv.mkDerivation {
+        pname = "gala-galop-local";
+        inherit version;
+        src = fetchurl {
+          url = "https://github.com/martianoff/galop/releases/download/${galopVersion}/${galopAsset.name}";
+          inherit (galopAsset) hash;
+        };
+        dontUnpack = true;
+        dontConfigure = true;
+        dontInstall = true;
+        buildPhase = ''
+          runHook preBuild
+          install -m755 "$src" galop
+          cp ${repoRoot + "/internal/parser/grammar/gala.g4"} gala.g4
+          mkdir -p "$out/internal/parser/grammar"
+          ./galop -o "$out/internal/parser/grammar" -Xexact-output-dir \
+            -Dlanguage=Go -Dflavor=antlr -package grammar gala.g4
+          runHook postBuild
+        '';
+      };
+  # Copies the generated parsers into a Go source tree. Without galop, the
+  # stand-in package internal/parser/galopoff takes internal/parser/galop's
+  # place, as Bazel's select does.
+  overlayGrammar = ''
+    cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
+  ''
+  + (
+    if localGalop != null then
+      ''
+        cp ${localGalop}/internal/parser/grammar/*.go internal/parser/grammar/
+      ''
+    else
+      ''
+        rm -r internal/parser/galop
+        mv internal/parser/galopoff internal/parser/galop
+      ''
+  );
+
   # Downloaded release binary used to transpile the stdlib. fetchurl does not
   # preserve the executable bit, so wrap it with install -m755. The tool runs
   # at build time, so select the asset by buildPlatform, not hostPlatform.
@@ -237,9 +310,7 @@ let
       preBuild = "";
       postPatch = "";
     };
-    postPatch = ''
-      cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
-    '';
+    postPatch = overlayGrammar;
   };
 
   localTranspiled = mkTranspiled {
@@ -393,8 +464,7 @@ let
     # Overlay the local grammar and pack the stdlib staged by localTranspiled.
     # The stdlib is packed here rather than in localTranspiled so this
     # derivation is the only one that sees the Go source.
-    preBuild = ''
-      cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
+    preBuild = overlayGrammar + ''
       go build -mod=vendor -o "$TMPDIR/stdlib_gen" ./cmd/stdlib_gen
       "$TMPDIR/stdlib_gen" -output internal/stdlib/embedded_gen.go \
         ${localTranspiled}/files/*/*

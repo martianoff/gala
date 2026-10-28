@@ -49,6 +49,45 @@ jobs:
         run: |
           bazel build //ide/intellij:plugin --action_env=PATH
 
+  # GALA parses with galop's parser by default and keeps ANTLR's as an option
+  # (internal/parser/engine.go). This runs the whole suite on a build with
+  # ANTLR's parser alone, so that option keeps working. It keeps its own
+  # disk cache, so the two jobs never save over each other's. Long tests get 30
+  # minutes instead of 15: //internal/build:build_test runs whole CLI builds,
+  # 7-10 minutes on a warm cache, and this cache is often cold.
+  test-antlr:
+    name: Build and Test (ANTLR parser)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Export GOROOT
+        run: echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-antlr-go${{ steps.setup-go.outputs.go-version }}
+          repository-cache: true
+
+      - name: Test
+        run: |
+          bazel test //... --//internal/parser:antlr \
+            --test_env=GALA_EXPECT_DEFAULT_ENGINE=antlr \
+            --test_timeout=-1,-1,1800,-1 \
+            --test_output=errors --verbose_failures \
+            --action_env=GOROOT="$GOROOT" --action_env=PATH
+
   race:
     name: Race Detector
     runs-on: ubuntu-latest

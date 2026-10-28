@@ -353,20 +353,21 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	diagnostics := make([]lsp.Diagnostic, 0) // must be [] not null in JSON
 	x := h.index(text)
 
-	tree, docs, err := h.parser.Parse(text)
-	if err != nil {
-		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
-		// Primary parse failed — try ANTLR's error-recovered partial tree.
-		// If the analyzer can extract type metadata from it, cache the
-		// richAST so completion/hover/definition work while mid-edit.
-		partialTree, partialDocs, _ := h.parser.ParseLenient(text)
-		if partialTree != nil {
+	// One parse gives both the errors and ANTLR's error-recovered tree, so a
+	// keystroke on a broken file parses it once.
+	tree, docs, errs := h.parser.ParseLenient(text)
+	if len(errs) > 0 {
+		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
+		// The parse failed: if the analyzer can extract type metadata from
+		// the partial tree, cache the richAST so completion/hover/definition
+		// work while mid-edit.
+		if tree != nil {
 			h.mu.Lock()
-			h.parseTrees[uri] = partialTree
+			h.parseTrees[uri] = tree
 			h.parseTexts[uri] = text
 			h.mu.Unlock()
 		}
-		h.tryAnalyzePartial(uri, filePath, text, partialTree, partialDocs)
+		h.tryAnalyzePartial(uri, filePath, text, tree, docs)
 		return diagnostics
 	}
 

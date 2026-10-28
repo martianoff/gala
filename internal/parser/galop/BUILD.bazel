@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "galop",
+    srcs = ["galop.go"],
+    importpath = "martianoff/gala/internal/parser/galop",
+    target_compatible_with = select({
+        "//internal/parser/grammar:galop_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//internal/parser:__pkg__"],
+    deps = [
+        "//internal/parser/grammar",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
+)
