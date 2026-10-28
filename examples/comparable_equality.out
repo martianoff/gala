@@ -6,3 +6,5 @@ origin elsewhere
 true false
 true false
 true intro other
+true true false true
+false false true true

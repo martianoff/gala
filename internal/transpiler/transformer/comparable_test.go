@@ -87,6 +87,67 @@ func main() { Println(Poly(ArrayOf(1)) == Dot(1)) }`,
 			msg:  []string{"== cannot compare Array[int] values: Array[int] holds a Go slice", "ArrayOf(1).Equal(ArrayOf(1))"},
 		},
 		{
+			name: "Array vals",
+			src: `func main() {
+    val a = ArrayOf("x")
+    val b = ArrayOf("y")
+    Println(a == b)
+}`,
+			msg: []string{"== cannot compare Array[string] values: Array[string] holds a Go slice", "compare with Equal: `a.Equal(b)`"},
+		},
+		{
+			name: "Array vals, not equal",
+			src: `func main() {
+    val a = ArrayOf("x")
+    val b = ArrayOf("y")
+    Println(a != b)
+}`,
+			msg: []string{"!= cannot compare Array[string] values: Array[string] holds a Go slice", "compare with Equal: `!a.Equal(b)`"},
+		},
+		{
+			name: "Array parameters",
+			src: `func same(a Array[int], b Array[int]) bool = a == b
+
+func main() { Println(same(ArrayOf(1), ArrayOf(1))) }`,
+			msg: []string{"== cannot compare Array[int] values: Array[int] holds a Go slice", "compare with Equal: `a.Equal(b)`"},
+		},
+		{
+			name: "Array parameters, not equal",
+			src: `func differ(a Array[int], b Array[int]) bool = a != b
+
+func main() { Println(differ(ArrayOf(1), ArrayOf(2))) }`,
+			msg: []string{"!= cannot compare Array[int] values: Array[int] holds a Go slice", "compare with Equal: `!a.Equal(b)`"},
+		},
+		{
+			name: "Option of Array parameters",
+			src: `func differ(a Option[Array[int]], b Option[Array[int]]) bool = a != b
+
+func main() { Println(differ(Some(ArrayOf(1)), None[Array[int]]())) }`,
+			msg: []string{"!= cannot compare Option[Array[int]] values: field Value of case Some has type Array[int], which holds a Go slice",
+				"compare with Equal: `!a.Equal(b)`"},
+		},
+		{
+			name: "mutable Array by value",
+			src: `import "martianoff/gala/collection_mutable"
+
+func same(a collection_mutable.Array[int], b collection_mutable.Array[int]) bool = a == b
+
+func main() {
+    val a = collection_mutable.ArrayOf(1)
+    Println(same(*a, *a))
+}`,
+			msg: []string{"== cannot compare collection_mutable.Array[int] values: collection_mutable.Array[int] holds a Go slice"},
+		},
+		{
+			name: "List of Arrays",
+			src: `func main() {
+    val a = ListOf(ArrayOf(1))
+    val b = ListOf(ArrayOf(1))
+    Println(a == b)
+}`,
+			msg: []string{"== cannot compare List[Array[int]] values: List[Array[int]] holds a Go slice", "compare with Equal: `a.Equal(b)`"},
+		},
+		{
 			name: "function values",
 			src: `func inc(x int) int = x + 1
 
@@ -149,6 +210,28 @@ func main() { Println(Node(1, nil) == Node(1, nil)) }`},
 func main() { Println(H(nil) == H(nil)) }`},
 		{name: "Option of int", src: `func main() { Println(Some(1) == Some(1)) }`},
 		{name: "List of int, compared by identity", src: `func main() { Println(ListOf(1) == ListOf(1)) }`},
+		{name: "List vals and parameters", src: `func differ(a List[int], b List[int]) bool = a != b
+
+func main() {
+    val a = ListOf(1)
+    val b = ListOf(1)
+    Println(a == b, differ(a, b))
+}`},
+		{name: "HashMap parameters, HashMap, HashSet and TreeSet vals", src: `func same(a HashMap[string, int], b HashMap[string, int]) bool = a == b
+
+func main() {
+    val m = HashMapOf(("a", 1))
+    val s = HashSetOf(1)
+    val t = TreeSetOf(1)
+    Println(same(m, HashMapOf(("a", 1))), m == HashMapOf(("a", 1)), s != HashSetOf(1), t == TreeSetOf(1))
+}`},
+		{name: "mutable collections by pointer", src: `import "martianoff/gala/collection_mutable"
+
+func main() {
+    val a = collection_mutable.ArrayOf(1)
+    val m = collection_mutable.EmptyHashMap[string, int]()
+    Println(a == collection_mutable.ArrayOf(1), m != collection_mutable.EmptyHashMap[string, int]())
+}`},
 		{name: "interface values", src: `func main() {
     val a any = 1
     val b any = ArrayOf(1)
