@@ -6267,5 +6267,5 @@ Without Go type inference, GALA code that calls Go functions (e.g., `strconv.Ato
 
 1. **Warm cache**: After the first build, subsequent builds of unchanged dependencies are ~10x faster.
 2. **Batch transpilation**: Multi-file packages transpile ~7x faster in batch mode vs per-file.
-3. **Minimize Go imports**: Each Go stdlib/third-party import triggers `go/importer` analysis (~100-600ms). Group Go interop in fewer files when possible.
+3. **Go imports**: `gala build`, `gala run`, `gala test`, `gala export`, `gala transpile` and `gala transpile-package` read the types of imported Go packages from the export data `go list -export -deps` compiles into the Go build cache — one `go list` per batch of imports, so the first run in a cold cache pays that compile. A package with no export data (it does not build, or the SDK's `go` command cannot list it) is read from source instead. The Bazel worker always reads Go packages from source, where each imported Go package costs ~100-600ms; group Go interop in fewer files there.
 4. **Profile first**: Always use `GALA_PROFILE=1` to identify the actual bottleneck before optimizing.

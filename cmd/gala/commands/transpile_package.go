@@ -63,6 +63,7 @@ func init() {
 }
 
 func runTranspilePackage(cmd *cobra.Command, args []string) {
+	useGoExportData()
 	tuneGCOnce()
 	startCPUProfileIfRequested()
 	defer stopCPUProfile()

@@ -20,6 +20,7 @@ import (
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/module"
+	"martianoff/gala/internal/transpiler/profiler"
 )
 
 // goImporter is a cached importer that tries multiple strategies.
@@ -64,8 +65,27 @@ func getGoImporter() types.Importer {
 		// with (see GoCgoEnabled).
 		build.Default.CgoEnabled = GoCgoEnabled()
 
+		fset := token.NewFileSet()
+		source := importer.ForCompiler(fset, "source", nil)
+
+		// Export data when the caller opted in (see UseGoExportData) and the
+		// go command produces export data this build of GALA can read;
+		// otherwise the source importer.
+		if goExportData.Load() {
+			exp := newExportDataImporter(fset, goListExports(goroot, build.Default.CgoEnabled), source)
+			exp.prefetch([]string{"fmt"})
+			if _, err := exp.importExportData("fmt"); err == nil {
+				goImporterInst = exp
+				goImporterAvailable = true
+				return
+			}
+			if profiler.Enabled {
+				fmt.Fprintln(os.Stderr, "  [go-types] no usable Go export data; reading Go packages from source")
+			}
+		}
+
 		// Try source importer first (works with Bazel Go SDK which has source but no .a files)
-		goImporterInst = importer.ForCompiler(token.NewFileSet(), "source", nil)
+		goImporterInst = source
 		if _, err := goImporterInst.Import("fmt"); err == nil {
 			goImporterAvailable = true
 			return
@@ -102,6 +122,20 @@ func (s serialImporter) Import(path string) (*types.Package, error) {
 	goImporterMu.Lock()
 	defer goImporterMu.Unlock()
 	return s.imp.Import(path)
+}
+
+// prefetchGoPackages resolves paths in one batch ahead of importing them one
+// by one, when the shared importer can (the export-data importer lists them
+// with a single `go list`); otherwise it does nothing.
+func prefetchGoPackages(paths []string) {
+	if len(paths) == 0 || getGoImporter() == nil {
+		return
+	}
+	if p, ok := goImporterInst.(*exportDataImporter); ok {
+		goImporterMu.Lock()
+		defer goImporterMu.Unlock()
+		p.prefetch(paths)
+	}
 }
 
 // GoImporterAvailable returns whether the Go type importer is available.
@@ -578,7 +612,8 @@ func analyzeGoFiles(dirPath, importPath, pkgName string) goFilesResult {
 		return result
 	}
 
-	// Type-check the parsed files
+	// Type-check the parsed files, their imports resolved in one batch first.
+	prefetchGoPackages(result.imports)
 	conf := types.Config{
 		Importer: getGoImporter(),
 		Error:    func(err error) {}, // Ignore type-check errors (partial analysis is fine)

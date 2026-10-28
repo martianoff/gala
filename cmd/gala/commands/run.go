@@ -67,6 +67,7 @@ func splitRunArgs(args []string, argsLenAtDash int) (projectDir string, programA
 }
 
 func runRun(cmd *cobra.Command, args []string) {
+	useGoExportData()
 	projectDir, programArgs := splitRunArgs(args, cmd.ArgsLenAtDash())
 
 	// Resolve project root and optional source directory.

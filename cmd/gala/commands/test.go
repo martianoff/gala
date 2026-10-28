@@ -45,6 +45,7 @@ func init() {
 }
 
 func runTest(cmd *cobra.Command, args []string) {
+	useGoExportData()
 	// Determine project directory
 	projectDir := "."
 	if len(args) > 0 {

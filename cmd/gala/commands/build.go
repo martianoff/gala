@@ -47,6 +47,7 @@ func init() {
 }
 
 func runBuild(cmd *cobra.Command, args []string) {
+	useGoExportData()
 	// Determine project directory — walk up to find gala.mod
 	projectDir := "."
 	if len(args) > 0 {
