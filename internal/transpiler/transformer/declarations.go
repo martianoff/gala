@@ -848,6 +848,7 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		receiverType := t.resolveType(recvBaseName)
 		receiverBaseName := receiverType.BaseName()
 		t.constrainReceiverTypeParams(recvTypeParams, t.getTypeMeta(receiverBaseName))
+		t.constrainComparableReceiverParams(recvTypeParams, t.getTypeMeta(receiverBaseName), name)
 
 		// The receiver is in scope with its declared type: a pointer
 		// receiver as a `*T` or a `Ptr[T]`, so its nullability is checked
@@ -933,6 +934,13 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 		// 2. Extract type parameters, with their constraints, from receiver
 		// type and add to typeParams
 		constrained := t.extractTypeParams(originalRecvTypeExpr)
+		// A receiver type parameter the method needs comparable is
+		// constrained so in the function, whatever its type declares.
+		for i, need := range comparableReceiverParams(t.getTypeMeta(receiverTypeName), ctx.Identifier().GetText()) {
+			if need && i < len(constrained) {
+				constrained[i].Type = ast.NewIdent("comparable")
+			}
+		}
 		if len(constrained) > 0 {
 			if funcType.TypeParams == nil {
 				funcType.TypeParams = &ast.FieldList{}

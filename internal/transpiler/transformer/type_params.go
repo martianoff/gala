@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"slices"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -123,6 +124,35 @@ func (t *galaASTTransformer) constrainReceiverTypeParams(params []*ast.Field, me
 		if c := meta.TypeParamConstraints[meta.TypeParams[i]]; c != "" {
 			for _, n := range params[i].Names {
 				t.constrainTypeParam(n.Name, c)
+			}
+		}
+	}
+}
+
+// comparableReceiverParams reports, by position in the receiver's type
+// arguments, which of meta's type parameters the method method needs
+// comparable (MethodMetadata.ComparableTypeParams): the method is a function
+// whose copy of each is constrained comparable.
+func comparableReceiverParams(meta *transpiler.TypeMetadata, method string) []bool {
+	if meta == nil || meta.Methods[method] == nil || len(meta.Methods[method].ComparableTypeParams) == 0 {
+		return nil
+	}
+	need := make([]bool, len(meta.TypeParams))
+	for i, tp := range meta.TypeParams {
+		need[i] = slices.Contains(meta.Methods[method].ComparableTypeParams, tp)
+	}
+	return need
+}
+
+// constrainComparableReceiverParams constrains, in the scope of method's
+// body, the receiver type parameters params (as the receiver names them) that
+// the method needs comparable.
+func (t *galaASTTransformer) constrainComparableReceiverParams(params []*ast.Field, meta *transpiler.TypeMetadata, method string) {
+	need := comparableReceiverParams(meta, method)
+	for i := range min(len(params), len(need)) {
+		if need[i] {
+			for _, n := range params[i].Names {
+				t.constrainTypeParam(n.Name, "comparable")
 			}
 		}
 	}

@@ -1,0 +1,53 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    mut "martianoff/gala/collection_mutable"
+    "martianoff/gala/go_interop"
+)
+
+// A method that uses one of its type's parameters where Go requires a
+// comparable type, while the type declares it `any`, still reads and is
+// called as a method. GALA compiles it to a Go function whose copy of the
+// parameter is constrained comparable; the type's other methods take any
+// type argument.
+
+struct Bag[K any, V any](keys Array[K], vals Array[V])
+
+// Index uses K as a map key.
+func (b Bag[K, V]) Index() map[K]int {
+    var out = go_interop.MapEmpty[K, int]()
+    b.keys.ZipWithIndex().ForEach((t) => go_interop.MapPut(out, t.V1, t.V2))
+    return out
+}
+
+// Has compares K values with ==.
+func (b Bag[K, V]) Has(k K) bool = b.keys.Exists((x) => x == k)
+
+// Distinct calls Index, so it needs K comparable too.
+func (b Bag[K, V]) Distinct() int = b.Index().Size()
+
+// Size needs nothing of K.
+func (b Bag[K, V]) Size() int = b.keys.Size()
+
+func main() {
+    val words = Bag(ArrayOf("a", "b", "a"), ArrayOf(1, 2, 3))
+    Println(words.Index(), words.Has("b"), words.Has("z"), words.Distinct(), words.Size())
+
+    // A method value of such a method.
+    val has = words.Has
+    Println(has("a"))
+
+    // Array keys: every method that does not need K comparable works.
+    val arrays = Bag(ArrayOf(ArrayOf(1), ArrayOf(2)), ArrayOf("x", "y"))
+    Println(arrays.Size())
+
+    // HashMap keys are compared with Equal, so an Array is a key; ToGoMap
+    // builds a Go map, which needs keys Go can compare.
+    val counts = HashMapOf(("a", 1), ("b", 2))
+    val toGo = counts.ToGoMap
+    Println(counts.ToGoMap()["b"], toGo().Size())
+
+    val live = mut.HashMapOf(("x", 10))
+    Println(live.ToGoMap()["x"])
+}

@@ -53,6 +53,10 @@ type GoFuncSignature struct {
 	// from ordinary types, so a call site cannot instantiate the signature and
 	// would materialize the type parameters verbatim into generated Go.
 	TypeParams []string
+	// ComparableTypeParams holds the type parameters, of TypeParams, whose
+	// constraint admits comparable types only (`K comparable`): an argument
+	// for one must be comparable.
+	ComparableTypeParams []string
 }
 
 // GoParam describes a single function parameter.

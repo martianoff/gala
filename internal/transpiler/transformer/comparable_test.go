@@ -63,12 +63,16 @@ func main() { Println(same(1, 1)) }`,
 			msg: []string{"== cannot compare Box[T] values: field v has type T, a type parameter constrained by any", "Box(a).Equal(Box(b))"},
 		},
 		{
-			name: "method comparing values of the receiver's type parameter",
+			// A method comparing values whose declared type is the receiver's
+			// type parameter is lowered with it comparable instead
+			// (comparable_receiver_param_test.go); operands typed only by
+			// inference are not seen there, and stay this error.
+			name: "method comparing inferred values of the receiver's type parameter",
 			src: `struct Box[T any](v T)
 
-func (b Box[T]) Holds(x T) bool = b.v == x
+func (b Box[T]) Repeats(xs Array[T]) bool = xs.Exists((x) => xs.Count((y) => x == y) > 1)
 
-func main() { Println(Box(1).Holds(1)) }`,
+func main() { Println(Box(1).Repeats(ArrayOf(1, 1))) }`,
 			msg: []string{"== cannot compare T values: T is a type parameter constrained by any"},
 		},
 		{

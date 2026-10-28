@@ -837,6 +837,15 @@ const (
 	// a .go file of the package. Reported by the parser's error listener in
 	// place of ANTLR's "extraneous input" message.
 	CodeStructTag ErrorCode = "GALA-E0085"
+
+	// E0086: a call of a method that needs one of its type's parameters to
+	// be comparable, which the type declares `any` — `HashMap.ToGoMap`
+	// builds a Go map keyed by K — on a receiver whose type argument for it
+	// Go cannot compare (`HashMap[Array[int], V]`). GALA lowers such a method
+	// to a function whose type parameter is constrained comparable; left to
+	// Go, the call failed against that function with "does not satisfy
+	// comparable".
+	CodeIncomparableTypeArgument ErrorCode = "GALA-E0086"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

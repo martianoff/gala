@@ -1308,6 +1308,21 @@ func main() {
 			},
 		},
 		{
+			name: "method that needs a comparable type argument called on an Array key",
+			code: galaerr.CodeIncomparableTypeArgument, // GALA-E0086
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+func main() {
+    val m = HashMapOf((ArrayOf(1), 2))
+    Println(m.ToGoMap())
+}
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

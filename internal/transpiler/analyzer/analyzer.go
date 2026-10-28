@@ -1517,6 +1517,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 					// The signature takes its type's parameter names after
 					// section 2.5, when every file's types are known.
 					decls.recordReceiver(methodMeta, recvNames, fullBaseType)
+					decls.recordComparableCandidate(methodMeta, ctx, recvNames, fullBaseType, pkgName, a.currentQualifiers)
 
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
@@ -1685,6 +1686,9 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	phaseStart = time.Now()
 
 	decls.renameReceivers(richAST)
+	decls.markComparableReceivers(a, richAST)
+	logPhase("comparable-receivers", phaseStart)
+	phaseStart = time.Now()
 
 	// Resolved here, while this file's imports are in effect: a target such
 	// as `Array[Millis]` needs them.
@@ -3921,6 +3925,9 @@ type packageDecls struct {
 	// receivers holds the methods whose receiver spells type arguments, for
 	// renameReceiverTypeParams once every type of the package is known.
 	receivers []receiverDecl
+	// comparables holds the methods of generic types, for
+	// markComparableReceivers once every method of the package is known.
+	comparables []comparableDecl
 	// keywordlessFields holds the shorthand fields declared without `val` or
 	// `var`, for markStoredAsDeclared once every alias is known.
 	keywordlessFields []shorthandField
@@ -4491,6 +4498,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					}
 				}
 				decls.recordReceiver(methodMeta, recvNames, fullBaseType)
+				decls.recordComparableCandidate(methodMeta, ctx, recvNames, fullBaseType, pkgName, sibQuals)
 
 				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 					if _, exists := typeMeta.Methods[methodName]; !exists {

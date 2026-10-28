@@ -1434,6 +1434,19 @@ gala_exec_test(
     ],
 )
 
+# Methods that need a receiver type parameter comparable (a map key, ==)
+# while the type declares it any: lowered to functions, still called as methods
+gala_exec_test(
+    name = "comparable_receiver_methods",
+    src = "comparable_receiver_methods.gala",
+    expected = "comparable_receiver_methods.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+        "//go_interop",
+    ],
+)
+
 # Named sub-patterns `Field = p` in variant and struct patterns
 gala_exec_test(
     name = "named_sub_patterns",

@@ -461,10 +461,8 @@ func (m Ptr[HashMap[K, V]]) ValueArray() Ptr[Array[V]] {
 
 // === Conversion ===
 
-// HashMapToGoMap converts m to a Go map. It is a function rather than a
-// method because a Go map needs comparable keys and a HashMap's need not be:
-// an Array key, for one.
-func HashMapToGoMap[K comparable, V any](m Ptr[HashMap[K, V]]) map[K]V {
+// ToGoMap converts the map to a Go map.
+func (m Ptr[HashMap[K, V]]) ToGoMap() map[K]V {
     var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
         go_interop.MapPut[K, V](result, k, v)

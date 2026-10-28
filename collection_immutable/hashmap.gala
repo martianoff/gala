@@ -581,10 +581,8 @@ func (m HashMap[K, V]) Merge(other HashMap[K, V], f func(V, V) V) HashMap[K, V] 
 
 // === Conversion ===
 
-// HashMapToGoMap converts m to a Go map. It is a function rather than a
-// method because a Go map needs comparable keys and a HashMap's need not be:
-// an Array key, for one.
-func HashMapToGoMap[K comparable, V any](m HashMap[K, V]) map[K]V {
+// ToGoMap converts the map to a Go map.
+func (m HashMap[K, V]) ToGoMap() map[K]V {
     var result = go_interop.MapEmpty[K, V]()
     m.ForEachKV((k K, v V) => {
         go_interop.MapPut[K, V](result, k, v)

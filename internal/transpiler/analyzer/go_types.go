@@ -1492,7 +1492,11 @@ func convertSignature(sig *types.Signature) *transpiler.GoFuncSignature {
 	// receiver's are in scope inside the signature, so both are collected.
 	for _, tps := range []*types.TypeParamList{sig.TypeParams(), sig.RecvTypeParams()} {
 		for i := 0; tps != nil && i < tps.Len(); i++ {
-			result.TypeParams = append(result.TypeParams, tps.At(i).Obj().Name())
+			tp := tps.At(i)
+			result.TypeParams = append(result.TypeParams, tp.Obj().Name())
+			if iface, ok := tp.Constraint().Underlying().(*types.Interface); ok && iface.IsComparable() {
+				result.ComparableTypeParams = append(result.ComparableTypeParams, tp.Obj().Name())
+			}
 		}
 	}
 

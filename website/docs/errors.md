@@ -135,6 +135,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0083](/docs/errors/gala-e0083/) | Unexported method of another package | Sealed types |
 | [GALA-E0084](/docs/errors/gala-e0084/) | Values that cannot be compared with == | Types |
 | [GALA-E0085](/docs/errors/gala-e0085/) | Struct tag on a field | Go surface |
+| [GALA-E0086](/docs/errors/gala-e0086/) | Type argument a method needs comparable | Types |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -166,7 +167,7 @@ Everyday type mismatches transpile cleanly and surface from the **Go compiler** 
 
 **Redeclaration** — one name declared twice: [E0011](/docs/errors/gala-e0011/) types · [E0012](/docs/errors/gala-e0012/) methods · [E0027](/docs/errors/gala-e0027/) functions · [E0028](/docs/errors/gala-e0028/) type aliases · [E0029](/docs/errors/gala-e0029/) interface method specs · [E0030](/docs/errors/gala-e0030/) struct fields · [E0031](/docs/errors/gala-e0031/) sealed cases. GALA has no overloading, so a second declaration is always a mistake.
 
-**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one, [E0068](/docs/errors/gala-e0068/) a match or if-expression whose value is used but has no type, [E0084](/docs/errors/gala-e0084/) `==` on values Go cannot compare. See [Type Inference](/features/type-inference/).
+**Type inference** — [E0018](/docs/errors/gala-e0018/), [E0023](/docs/errors/gala-e0023/), [E0033](/docs/errors/gala-e0033/), [E0044](/docs/errors/gala-e0044/) unknown method on a known type, [E0054](/docs/errors/gala-e0054/) a value that is not a function called as one, [E0068](/docs/errors/gala-e0068/) a match or if-expression whose value is used but has no type, [E0084](/docs/errors/gala-e0084/) `==` on values Go cannot compare, [E0086](/docs/errors/gala-e0086/) a method called with a type argument it needs comparable. See [Type Inference](/features/type-inference/).
 
 **Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type · [E0065](/docs/errors/gala-e0065/) an opaque-type pattern with other than one sub-pattern. Start with [Opaque Types](/docs/language-reference/#opaque-types).
 

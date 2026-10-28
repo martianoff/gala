@@ -6,7 +6,10 @@ one:
 
 - a function value;
 - a Go map;
-- a type parameter constrained by `any` (`func same[T any](a T, b T)`);
+- a type parameter constrained by `any` (`func same[T any](a T, b T)`). A
+  method comparing values of its receiver's type parameter is not this error
+  when an operand's type is declared: GALA constrains the parameter
+  `comparable` for that method ([GALA-E0086](GALA-E0086.md));
 - a struct, sealed type or tuple with a field of such a type, a Go slice
   field, or a field of a type that holds one: `Array` holds a Go slice, so a
   struct with an `Array` field cannot be compared, and neither can an `Array`

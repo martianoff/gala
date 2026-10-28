@@ -100,6 +100,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0083` | Unexported method of another package | [GALA-E0083.md](GALA-E0083.md) |
 | `GALA-E0084` | Values that cannot be compared with == | [GALA-E0084.md](GALA-E0084.md) |
 | `GALA-E0085` | Struct tag on a field | [GALA-E0085.md](GALA-E0085.md) |
+| `GALA-E0086` | Type argument a method needs comparable | [GALA-E0086.md](GALA-E0086.md) |
 
 ### Retired codes
 

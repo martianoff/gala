@@ -3891,7 +3891,7 @@ for k, v := range headers {
 
 // Convert between HashMap and Go map
 val hashMap = collection_immutable.HashMapFromGoMap(goMap)
-val backToGoMap = collection_immutable.HashMapToGoMap(hashMap)
+val backToGoMap = hashMap.ToGoMap()
 ```
 
 **Available std.Map Functions:**
@@ -3966,6 +3966,7 @@ fmt.Println(m5.Contains("banana"))  // false
 | `FoldLeft[U](init, f)` | Reduce to single value |
 | `Keys()` | Get HashSet of keys |
 | `Values()` | Get List of values |
+| `ToGoMap()` | Convert to Go map |
 | `Equal(other)` | Same keys mapped to `Equal` values, whatever the insertion order |
 | `Hash()` | Order-independent hash, so a map is itself a key |
 | `Sorted()` | Sort entries by natural key order, returns `Array[Tuple[K, V]]` |
@@ -3974,8 +3975,6 @@ fmt.Println(m5.Contains("banana"))  // false
 | `MkString(sep)` | Join entries as `"key -> value"` with separator |
 
 `Sorted`, `SortWith` and `SortBy` are stable: entries that compare equal keep their original relative order.
-
-`HashMapToGoMap(m)` converts a map to a Go `map[K]V`, for the immutable and the mutable HashMap. It is a package function, not a method, because a Go map needs comparable keys and a HashMap's keys need not be.
 
 #### Mutable HashMap (collection_mutable)
 
@@ -4998,6 +4997,37 @@ func main() {
     fmt.Println(w2.V)
 }
 ```
+
+A method that needs one of its type's parameters to be comparable, while the type declares it `any`, is a standalone function too. GALA works this out from the method itself: it uses the parameter as a map key (`map[K]V`, nested or not), compares values of it with `==` or `!=`, passes it to a type parameter constrained `comparable`, or calls another such method. The function's copy of the parameter is constrained `comparable`, and the method keeps its GALA form:
+
+```gala
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+    "martianoff/gala/go_interop"
+)
+
+struct Bag[K any, V any](keys Array[K], vals Array[V])
+
+// Go: func Bag_Index[K comparable, V any](b Bag[K, V]) map[K]int
+func (b Bag[K, V]) Index() map[K]int {
+    var out = go_interop.MapEmpty[K, int]()
+    b.keys.ZipWithIndex().ForEach((t) => go_interop.MapPut(out, t.V1, t.V2))
+    return out
+}
+
+// Go: func Bag_Has[K comparable, V any](b Bag[K, V], k K) bool
+func (b Bag[K, V]) Has(k K) bool = b.keys.Exists((x) => x == k)
+
+func main() {
+    val b = Bag(ArrayOf("a", "b"), ArrayOf(1, 2))
+    val has = b.Has            // a method value works too
+    Println(b.Index(), has("b")) // map[a:0 b:1] true
+}
+```
+
+Every other method takes any `K`, so a `Bag[Array[int], int]` is fine until it calls `Index`: that call is [GALA-E0086](errors/GALA-E0086.md). `HashMap.ToGoMap` is such a method; its keys are compared with `Equal`, so a `HashMap` takes `Array` keys, and `ToGoMap` needs keys Go can compare. An `==` whose operands are typed only by inference (two untyped lambda parameters) is not seen, and stays [GALA-E0084](errors/GALA-E0084.md); give one operand a declared type.
 
 ### Package Visibility
 

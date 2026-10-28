@@ -168,7 +168,11 @@ import (
 //
 // v34: a Go type records whether == cannot compare its values
 // (GoTypeData.Incomparable, GALA-E0084). A v33 payload lacks it.
-const CacheVersion = "v34"
+// v35: a method records the type parameters it needs comparable
+// (MethodMetadata.ComparableTypeParams), and a Go function those of its
+// type parameters that are (GoFuncSignature.ComparableTypeParams). A v34
+// payload lacks both.
+const CacheVersion = "v35"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

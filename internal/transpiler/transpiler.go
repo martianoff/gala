@@ -732,6 +732,14 @@ type MethodMetadata struct {
 	DefaultExprs map[int]DefaultExpr // Param index -> declared default (absent = required)
 	ReceiverName string              // Receiver parameter name (e.g., "s" in "func (s Server)") for default expr substitution
 	IsGeneric    bool                // Force transformation to standalone function
+	// ComparableTypeParams names the type parameters of the method's type,
+	// as the type declares them, that the method uses where Go requires a
+	// comparable type while the type declares them otherwise: a map key, an
+	// operand of ==, the argument of a comparable type parameter. Such a
+	// method is a function (IsGeneric) whose copy of each is constrained
+	// comparable, and a call of it needs comparable type arguments for them
+	// (GALA-E0086).
+	ComparableTypeParams []string
 	DefinedIn    string              // Source file where this method was defined (for redefinition detection)
 	// PointerReceiver is true for `func (r *T) M()`. Go calls such a method
 	// only on an addressable receiver, so a call through a val (whose Get()

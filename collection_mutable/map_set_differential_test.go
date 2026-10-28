@@ -28,11 +28,12 @@ type mutMap[K comparable] interface {
 	ForEachKV(f func(K, int))
 }
 
-// toGoMap is m as a Go map: HashMapToGoMap for a HashMap, whose keys need not
-// be comparable and so has no ToGoMap method, and the method for a TreeMap.
+// toGoMap is m as a Go map. HashMap's ToGoMap needs comparable keys, which
+// its type does not, so Go sees it as the function HashMap_ToGoMap; TreeMap
+// keeps the method.
 func toGoMap[K comparable](m mutMap[K]) map[K]int {
 	if h, ok := m.(*HashMap[K, int]); ok {
-		return HashMapToGoMap(h)
+		return HashMap_ToGoMap(h)
 	}
 	return m.(*TreeMap[K, int]).ToGoMap()
 }

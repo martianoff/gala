@@ -203,7 +203,7 @@ func demonstrateFunctionalOperations() {
         adjusted.GetOrElse("Bob", 0))
 
     // Convert to Go map
-    val goMap = im.HashMapToGoMap(s)
+    val goMap = s.ToGoMap()
     fmt.Printf("Go map type: map[string]int with %d entries\n", goMap.Size())
 
     // Create HashMap using HashMapOf with tuple syntax

@@ -258,8 +258,7 @@ Prefer GALA's collections in GALA code, and convert at the boundary:
 | Go `[]T` | `Array[T]` / `List[T]` / `HashSet[T]` | `ArrayFromSlice(s)`, `ListFromSlice(s)`, `HashSetFromSlice(s)` (copies), or `ArrayOf(s...)` |
 | `Array` / `List` / `HashSet` / `TreeSet` | Go `[]T` | `.ToGoSlice()` |
 | Go `map[K]V` | `HashMap[K, V]` / `TreeMap[K, V]` | `HashMapFromGoMap(m)`, `TreeMapFromGoMap(m)` |
-| `HashMap` | Go `map[K]V` | `HashMapToGoMap(m)` |
-| `TreeMap` | Go `map[K]V` | `.ToGoMap()` |
+| `HashMap` / `TreeMap` | Go `map[K]V` | `.ToGoMap()` |
 
 <!-- doc-source: examples/go_interop/gala_calls_go/main.gala -->
 <!-- doc-check: fragment -->
@@ -318,6 +317,7 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 | `sealed type Discount { case Percent(Pct int64) ... }` | one struct `Discount` (unexported tag), an empty struct per case (`Percent{}.Unapply(d)` returns `std.Option[int64]`), [generated constructors](#sealed-types-have-go-constructors) (`NewDiscountPercent(...)` builds a case) and [case predicates](#testing-a-sealed-values-case-from-go) (`d.IsPercent()`) |
 | `Option[T]`, `Try[T]`, `Either[L, R]` | `std.Option[T]` etc.: `IsDefined()`, `IsSuccess()`, `Get()`, `GetError()`, `GetOrElse(x)` |
 | a generic method, e.g. `Option.Map[U]` | a free function `std.Option_Map(o, f)` (Go methods cannot have type parameters) |
+| a method that needs a type parameter comparable which its type declares `any`, e.g. `HashMap.ToGoMap` | a free function with that parameter constrained `comparable`: `collection_immutable.HashMap_ToGoMap(m)` (Go methods cannot constrain their receiver's type parameters) |
 | `Array[T]`, `List[T]`, `HashMap[K, V]` | `collection_immutable.Array[T]` etc.: `ArrayOf`, `ArrayFromSlice`, `.Size()`, `.ToGoSlice()` |
 | package-level `var X` / `val X` | a Go variable / a `std.Immutable` variable (read with `X.Get()`) |
 | PascalCase / camelCase names | exported / unexported, exactly as in Go. GALA never renames an identifier |

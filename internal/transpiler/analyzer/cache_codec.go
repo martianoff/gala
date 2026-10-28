@@ -326,6 +326,7 @@ func (e *encoder) writeMethodMeta(m *transpiler.MethodMetadata) {
 	e.writeBool(m.Variadic)
 	e.writeBool(m.GoDeclared)
 	e.writeTypeSlice(m.GoResults)
+	e.writeStringSlice(m.ComparableTypeParams)
 }
 
 // writeStringMethodMap emits a map[string]*MethodMetadata.
@@ -488,6 +489,7 @@ func (e *encoder) writeGoFuncSig(s *transpiler.GoFuncSignature) {
 	e.writeBool(s.IsVariadic)
 	e.writeBool(s.Inexact)
 	e.writeStringSlice(s.TypeParams)
+	e.writeStringSlice(s.ComparableTypeParams)
 }
 
 func (e *encoder) writeStringGoFuncSigMap(m map[string]*transpiler.GoFuncSignature) {
@@ -838,6 +840,7 @@ func (d *decoder) readMethodMeta() *transpiler.MethodMetadata {
 	m.Variadic = d.readBool()
 	m.GoDeclared = d.readBool()
 	m.GoResults = d.readTypeSlice()
+	m.ComparableTypeParams = d.readStringSlice()
 	return m
 }
 
@@ -1039,6 +1042,7 @@ func (d *decoder) readGoFuncSig() *transpiler.GoFuncSignature {
 	s.IsVariadic = d.readBool()
 	s.Inexact = d.readBool()
 	s.TypeParams = d.readStringSlice()
+	s.ComparableTypeParams = d.readStringSlice()
 	return s
 }
 

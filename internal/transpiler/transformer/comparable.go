@@ -282,6 +282,47 @@ func (t *galaASTTransformer) checkComparableOperands(leftCtx, rightCtx antlr.Par
 	return nil
 }
 
+// checkComparableTypeArgs rejects a call or method value of method on a
+// receiver of type recvType when the method needs one of its type's
+// parameters comparable (MethodMetadata.ComparableTypeParams) and the
+// receiver's type argument for it is known not to be (GALA-E0086). anchor is
+// where the diagnostic points, as for checkMethodVisibility.
+func (t *galaASTTransformer) checkComparableTypeArgs(method string, recvType transpiler.Type, lookupBaseName string, anchor antlr.ParserRuleContext) error {
+	if method == "" || lookupBaseName == "" || anchor == nil {
+		return nil
+	}
+	typeMeta, _ := t.getTypeMetaResolved(lookupBaseName)
+	need := comparableReceiverParams(typeMeta, method)
+	if need == nil {
+		return nil
+	}
+	args := t.getReceiverTypeArgTypes(recvType)
+	for i, arg := range args {
+		if i >= len(need) || !need[i] {
+			continue
+		}
+		r := t.incomparableType(arg)
+		if r == nil {
+			continue
+		}
+		tp := typeMeta.TypeParams[i]
+		line, col, exact := callAnchorPos(anchor)
+		hint := fmt.Sprintf("give %s a type Go can compare with ==: a primitive, or a struct, tuple or Option of such types", tp)
+		if r.atLeaf() && r.kind == kindUnconstrainedParam {
+			name := t.sourceTypeName(r.leaf)
+			hint = fmt.Sprintf("constrain %s with comparable where it is declared (`%s comparable`)", name, name)
+		}
+		err := galaerr.NewCodedSemanticError(galaerr.CodeIncomparableTypeArgument, line, col,
+			fmt.Sprintf("%s.%s needs a comparable %s: %s", typeMeta.Name, method, tp, t.incomparableReason(r)),
+			hint)
+		if exact {
+			err = err.WithSpan(col + len([]rune(method)))
+		}
+		return err
+	}
+	return nil
+}
+
 // functionHint is the hint for a comparison that reaches a function value,
 // which Go compares with nothing but nil and Equal finds equal to nothing.
 func functionHint(r *incomparable) string {

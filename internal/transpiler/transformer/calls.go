@@ -298,6 +298,9 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, suffix); err != nil {
 				return nil, err
 			}
+			if err := t.checkComparableTypeArgs(method, recvType, lookupBaseName, suffix); err != nil {
+				return nil, err
+			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
@@ -2757,6 +2760,9 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(receiver, method)
 	// Before the generic rewrite and the regular dispatch, so both are covered.
 	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, argListCtx); err != nil {
+		return nil, err
+	}
+	if err := t.checkComparableTypeArgs(method, recvType, lookupBaseName, argListCtx); err != nil {
 		return nil, err
 	}
 
