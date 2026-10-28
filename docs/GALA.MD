@@ -672,7 +672,7 @@ func (b Box[T]) Run(n int) T = b.Mode match {
 ```
 
 #### Block Struct Declaration
-Traditional Go-style declaration.
+Traditional Go-style declaration. A field takes no Go struct tag ([GALA-E0085](errors/GALA-E0085.md)): JSON and YAML keys are set on [`Codec[T]`](#json).
 
 ```gala
 type Person struct {
@@ -4447,7 +4447,7 @@ colors.Hits = colors.Hits + 1        // OK: a var
 
 ### Go Encoders and `fmt`
 
-Go's reflection-based encoders and `fmt` see an immutable value as the value it holds, not as the `std.Immutable[T]` wrapper. `encoding/json` encodes and decodes it as a `T`, YAML libraries that use the `MarshalYAML`/`UnmarshalYAML` convention (`gopkg.in/yaml.v2` and `v3`) do the same, and `%v` prints the value. A struct tag on an immutable field applies to the value, so `json.Marshal` of `struct LineItem(SKU string, Qty int)` gives `{"SKU":"A-1","Qty":3}`, and `json.Unmarshal` fills the fields back in. To `encoding/json` the field is still a struct, which `omitempty` never leaves out; use `omitzero` instead (YAML's `omitempty` works). Like any `json.Unmarshaler`, the field does not see a `json.Decoder`'s `DisallowUnknownFields` or `UseNumber`. As for any Go struct, encoders and `fmt` only look inside exported fields: a field whose name starts with a lower-case letter is skipped by encoders and printed by `%v` as its wrapper.
+Go's reflection-based encoders and `fmt` see an immutable value as the value it holds, not as the `std.Immutable[T]` wrapper. `encoding/json` encodes and decodes it as a `T`, YAML libraries that use the `MarshalYAML`/`UnmarshalYAML` convention (`gopkg.in/yaml.v2` and `v3`) do the same, and `%v` prints the value. `json.Marshal` of `struct LineItem(SKU string, Qty int)` gives `{"SKU":"A-1","Qty":3}`, and `json.Unmarshal` fills the fields back in. The keys are the field names: GALA has no struct tags ([GALA-E0085](errors/GALA-E0085.md)), so other keys come from [`Codec[T]`](#json). Like any `json.Unmarshaler`, the field does not see a `json.Decoder`'s `DisallowUnknownFields` or `UseNumber`. As for any Go struct, encoders and `fmt` only look inside exported fields: a field whose name starts with a lower-case letter is skipped by encoders and printed by `%v` as its wrapper.
 
 ### Struct Fields Declared `Immutable[T]`
 

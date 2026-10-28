@@ -1308,6 +1308,20 @@ func main() {
 			},
 		},
 		{
+			name: "Go struct tag on a block-form struct field",
+			code: galaerr.CodeStructTag, // GALA-E0085
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", "package main\n\n"+
+					"type Location struct {\n"+
+					"    City string\n"+
+					"    CountryCode string `json:\"country_code\"`\n"+
+					"}\n\n"+
+					"func main() {\n"+
+					"    Println(Location(City = \"Oslo\", CountryCode = \"NO\").CountryCode)\n"+
+					"}\n")
+			},
+		},
+		{
 			name: "binding of the whole subject in a sealed-view match",
 			code: galaerr.CodeInvalidSealedViewMatch, // GALA-E0079
 			render: func(t *testing.T) string {

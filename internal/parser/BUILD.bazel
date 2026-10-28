@@ -33,6 +33,7 @@ go_test(
         "parser_concurrent_test.go",
         "parser_test.go",
         "source_chars_test.go",
+        "struct_tag_test.go",
     ],
     embed = [":parser"],
     deps = [

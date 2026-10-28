@@ -281,30 +281,23 @@ func TestInvalidEscapeInsideInterpolationExpression(t *testing.T) {
 	assert.Contains(t, se.Error(), `invalid escape sequence "\q"`)
 }
 
-// TestStructFieldTagEscapes covers the second site where a GALA string token is
-// copied verbatim into generated Go: a struct field tag.
-func TestStructFieldTagEscapes(t *testing.T) {
+// TestStructFieldTagIsNotCopiedToGo pins that a string after a struct field's
+// type no longer reaches the generated Go as a field tag. GALA has no struct
+// tags, so it is GALA-E0085 — also when it holds an escape Go rejects, which
+// used to be GALA-E0038 "in struct field tag".
+func TestStructFieldTagIsNotCopiedToGo(t *testing.T) {
 	trans := newEscapeTranspiler()
 
-	const valid = "package main\n\ntype User struct {\n" +
-		"    Name string \"json:\\\"name\\\"\"\n" +
-		"}\n\nfunc main() {\n    Println(\"ok\")\n}\n"
+	for _, tag := range []string{`"json:\"name\""`, `"json:\"name\" bad:\d"`} {
+		src := "package main\n\ntype User struct {\n    Name string " + tag +
+			"\n}\n\nfunc main() {\n    Println(\"ok\")\n}\n"
 
-	out, err := trans.Transpile(valid, "escapes.gala")
-	require.NoError(t, err)
-	assert.Contains(t, out, `json:\"name\"`)
-
-	const invalid = "package main\n\ntype User struct {\n" +
-		"    Name string \"json:\\\"name\\\" bad:\\d\"\n" +
-		"}\n\nfunc main() {\n    Println(\"ok\")\n}\n"
-
-	_, err = trans.Transpile(invalid, "escapes.gala")
-	require.Error(t, err)
-
-	var se *galaerr.SemanticError
-	require.ErrorAs(t, err, &se)
-	assert.Equal(t, galaerr.CodeInvalidStringEscape, se.Code)
-	assert.Contains(t, se.Error(), "in struct field tag")
+		out, err := trans.Transpile(src, "escapes.gala")
+		require.Error(t, err, tag)
+		assert.Empty(t, out, tag)
+		assert.Contains(t, err.Error(), string(galaerr.CodeStructTag), tag)
+		assert.NotContains(t, err.Error(), string(galaerr.CodeInvalidStringEscape), tag)
+	}
 }
 
 // TestInvalidEscapeDoesNotLeakMarkers is the end-to-end guard for the reported

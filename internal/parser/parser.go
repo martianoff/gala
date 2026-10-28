@@ -403,7 +403,103 @@ func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSy
 		return
 	}
 
+	if err := structTagError(recognizer, offendingSymbol); err != nil {
+		l.Errors = append(l.Errors, err)
+		return
+	}
+
 	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, hideNewlineTokens(msg)))
+}
+
+// structTagError recognizes a Go struct tag written after a struct field's
+// type, in either string form (`Name string "json:\"name\""`), and
+// returns GALA-E0085 for it, or nil when the error is something else.
+//
+// GALA has no struct tags, so the grammar has no slot for one and ANTLR
+// reports the string as extraneous input. The shape is a string literal that
+// the parser hit while in the list of a struct's fields, between two fields:
+// the field list of a block-form struct, the parameter list of a shorthand
+// struct, or the field list of a sealed case. A string anywhere deeper, such
+// as inside a field's default value, fails in a nested rule and is left to the
+// ordinary syntax error, and so is one in a function's parameter list.
+func structTagError(recognizer antlr.Recognizer, offendingSymbol interface{}) *galaerr.SemanticError {
+	tok, ok := offendingSymbol.(antlr.Token)
+	if !ok || tok == nil {
+		return nil
+	}
+	if tt := tok.GetTokenType(); tt != kinds().str && tt != kinds().rawStr {
+		return nil
+	}
+	psr, ok := recognizer.(antlr.Parser)
+	if !ok {
+		return nil
+	}
+	field, ok := taggedFieldName(psr.GetParserRuleContext())
+	if !ok {
+		return nil
+	}
+
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeStructTag,
+		tok.GetLine(),
+		tok.GetColumn(),
+		fmt.Sprintf("struct field %s has a tag: GALA has no struct tags", field),
+		"remove the tag; set JSON and YAML keys on Codec[T] with .Rename(field, key), .Omit and .OmitEmpty, "+
+			"and write a type that a Go library reads through its tags in a .go file of the package",
+	)
+	// Span the tag, so the caret covers what has to go. A raw-string tag can
+	// span lines; it is left to the renderer's single-token scan.
+	text := tok.GetText()
+	if !strings.ContainsAny(text, "\r\n") {
+		err = err.WithSpan(tok.GetColumn() + len([]rune(text)))
+	}
+	return err
+}
+
+// taggedFieldName reports whether ctx — the rule the parser was in when it
+// rejected a string literal — is a struct's field list, and names the field
+// the string follows: the last one parsed. A field list whose last field has
+// not been parsed cannot be followed by a tag.
+func taggedFieldName(ctx antlr.ParserRuleContext) (string, bool) {
+	// ANTLR reports the string from the list rule or, at a closing ')', from
+	// the rule that holds the list; both are accepted.
+	switch c := ctx.(type) {
+	case *grammar.StructTypeContext:
+		return lastFieldName(c.AllStructField())
+	case *grammar.ParameterListContext:
+		if params, ok := c.GetParent().(*grammar.ParametersContext); ok && isShorthandStruct(params) {
+			return lastFieldName(c.AllParameter())
+		}
+	case *grammar.ParametersContext:
+		if list, ok := c.ParameterList().(*grammar.ParameterListContext); ok && isShorthandStruct(c) {
+			return lastFieldName(list.AllParameter())
+		}
+	case *grammar.SealedCaseFieldListContext:
+		return lastFieldName(c.AllSealedCaseField())
+	case *grammar.SealedCaseContext:
+		if list, ok := c.SealedCaseFieldList().(*grammar.SealedCaseFieldListContext); ok {
+			return lastFieldName(list.AllSealedCaseField())
+		}
+	}
+	return "", false
+}
+
+// isShorthandStruct reports whether params is a shorthand struct's field list
+// rather than a function's or a lambda's parameter list.
+func isShorthandStruct(params *grammar.ParametersContext) bool {
+	_, ok := params.GetParent().(*grammar.StructShorthandDeclarationContext)
+	return ok
+}
+
+func lastFieldName[F interface{ Identifier() grammar.IIdentifierContext }](fields []F) (string, bool) {
+	if len(fields) == 0 {
+		return "", false
+	}
+	id := fields[len(fields)-1].Identifier()
+	if id == nil {
+		return "", false
+	}
+	return id.GetText(), true
 }
 
 // bareLambdaParamError recognizes a lambda written without parentheses around

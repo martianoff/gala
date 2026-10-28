@@ -829,6 +829,14 @@ const (
 	// `std.Immutable` wrapper of a `val` field. Such values are compared with
 	// Equal.
 	CodeIncomparableOperands ErrorCode = "GALA-E0084"
+
+	// E0085: a struct field, in a block-form struct, a shorthand struct or a
+	// sealed case, is followed by a string literal: a Go struct tag. GALA has
+	// no struct tags. JSON and YAML wire shapes are configured on Codec[T],
+	// and a type a Go reflection library must read through tags is written in
+	// a .go file of the package. Reported by the parser's error listener in
+	// place of ANTLR's "extraneous input" message.
+	CodeStructTag ErrorCode = "GALA-E0085"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

@@ -142,6 +142,9 @@ type retype struct {
 // in the generated vocabulary: the generated constants are unexported.
 type tokenKinds struct {
 	identifier, lparen, lbrace, rbrace, assign, arrow, caseKw, elseKw, funcKw, ifKw int
+	// str and rawStr are the interpreted ("...") and raw (`...`) string
+	// literals.
+	str, rawStr int
 	// bracket is indexed by token type: +1 for a bracket that opens ('(',
 	// NL_LPAREN, '[', '{'), -1 for one that closes (')', ']', '}'), else 0.
 	bracket []int8
@@ -206,6 +209,8 @@ var kinds = sync.OnceValue(func() *tokenKinds {
 		elseKw:        mustType("'else'"),
 		funcKw:        mustType("'func'"),
 		ifKw:          mustType("'if'"),
+		str:           mustType("STRING"),
+		rawStr:        mustType("RAW_STRING"),
 		bracket:       make([]int8, n),
 		opensHeader:   make([]bool, n),
 		notBlockAfter: make([]bool, n),

@@ -11,15 +11,6 @@ import (
 // decodes as the value it holds, so the struct round-trips with its data.
 struct LineItem(SKU string, UnitCents int64, Qty int)
 
-// Tagged uses the block form, which carries struct tags. A field's tag applies
-// to the value inside the wrapper. To Go the field is a struct, which
-// `omitempty` never leaves out; `omitzero` does.
-type Tagged struct {
-    Name string "json:\"name\""
-    Note string "json:\"note,omitzero\""
-    var Count int "json:\"count\""
-}
-
 // Order nests a GALA struct inside another.
 struct Order(ID string, Item LineItem)
 
@@ -34,12 +25,6 @@ func main() {
     var decodedItem LineItem
     Println(FromError(json.Unmarshal(ToBytes(itemJson), &decodedItem)).IsSuccess())
     Println(s"${decodedItem.SKU} ${decodedItem.UnitCents} ${decodedItem.Qty} equal=${decodedItem == item}")
-
-    Println(encode(Tagged(Name = "box", Note = "", Count = 2)))
-
-    var decodedTagged Tagged
-    Println(FromError(json.Unmarshal(ToBytes("{\"name\":\"crate\",\"note\":\"fragile\",\"count\":7}"), &decodedTagged)).IsSuccess())
-    Println(s"${decodedTagged.Name} ${decodedTagged.Note} ${decodedTagged.Count}")
 
     val order = Order("o-9", item)
     val orderJson = encode(order)
