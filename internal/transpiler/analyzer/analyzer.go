@@ -1516,8 +1516,7 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 
 					// The signature takes its type's parameter names after
 					// section 2.5, when every file's types are known.
-					decls.recordReceiver(methodMeta, recvNames, fullBaseType)
-					decls.recordComparableCandidate(methodMeta, ctx, recvNames, fullBaseType, pkgName, a.currentQualifiers)
+					decls.recordReceiver(receiverDecl{methodMeta, recvNames, fullBaseType, ctx, pkgName, a.currentQualifiers})
 
 					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 						if existing, exists := typeMeta.Methods[methodName]; exists {
@@ -3925,9 +3924,6 @@ type packageDecls struct {
 	// receivers holds the methods whose receiver spells type arguments, for
 	// renameReceiverTypeParams once every type of the package is known.
 	receivers []receiverDecl
-	// comparables holds the methods of generic types, for
-	// markComparableReceivers once every method of the package is known.
-	comparables []comparableDecl
 	// keywordlessFields holds the shorthand fields declared without `val` or
 	// `var`, for markStoredAsDeclared once every alias is known.
 	keywordlessFields []shorthandField
@@ -3972,18 +3968,22 @@ func (d *packageDecls) markStoredAsDeclared(aliasStep func(transpiler.Type) (tra
 }
 
 // receiverDecl is a method's metadata, the names its receiver gives its
-// type's parameters, and the metadata key of that type.
+// type's parameters, and the metadata key of that type; and, for
+// markComparableReceivers, its declaration, package and file's imports.
 type receiverDecl struct {
 	meta      *transpiler.MethodMetadata
 	recvNames []string
 	typeKey   string
+	ctx       *grammar.FunctionDeclarationContext
+	pkgName   string
+	quals     fileQualifiers
 }
 
-// recordReceiver queues meta, a method whose receiver names its type's
-// parameters recvNames, for renameReceivers.
-func (d *packageDecls) recordReceiver(meta *transpiler.MethodMetadata, recvNames []string, typeKey string) {
-	if recvNames != nil {
-		d.receivers = append(d.receivers, receiverDecl{meta, recvNames, typeKey})
+// recordReceiver queues r, a method whose receiver names its type's
+// parameters, for renameReceivers and markComparableReceivers.
+func (d *packageDecls) recordReceiver(r receiverDecl) {
+	if r.recvNames != nil {
+		d.receivers = append(d.receivers, r)
 	}
 }
 
@@ -4497,8 +4497,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						}
 					}
 				}
-				decls.recordReceiver(methodMeta, recvNames, fullBaseType)
-				decls.recordComparableCandidate(methodMeta, ctx, recvNames, fullBaseType, pkgName, sibQuals)
+				decls.recordReceiver(receiverDecl{methodMeta, recvNames, fullBaseType, ctx, pkgName, sibQuals})
 
 				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 					if _, exists := typeMeta.Methods[methodName]; !exists {

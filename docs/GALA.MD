@@ -5012,9 +5012,9 @@ struct Bag[K any, V any](keys Array[K], vals Array[V])
 
 // Go: func Bag_Index[K comparable, V any](b Bag[K, V]) map[K]int
 func (b Bag[K, V]) Index() map[K]int {
-    var out = go_interop.MapEmpty[K, int]()
+    val out = go_interop.MapEmpty[K, int]()
     b.keys.ZipWithIndex().ForEach((t) => go_interop.MapPut(out, t.V1, t.V2))
-    return out
+    out
 }
 
 // Go: func Bag_Has[K comparable, V any](b Bag[K, V], k K) bool

@@ -61,15 +61,16 @@ func (t *galaASTTransformer) transformPostfixExpr(ctx *grammar.PostfixExprContex
 		if i == len(suffixes)-1 {
 			release()
 		}
-		result, err = t.applyPostfixSuffix(result, suffix.(*grammar.PostfixSuffixContext))
+		sx := suffix.(*grammar.PostfixSuffixContext)
+		result, err = t.applyPostfixSuffix(result, sx)
 		if err != nil {
 			return nil, err
 		}
 		// A method named without a call is a method value; one GALA lowered
 		// to a function takes a function value instead (lowered_method_value.go).
-		if sel, isSel := result.(*ast.SelectorExpr); isSel && suffix.(*grammar.PostfixSuffixContext).Identifier() != nil &&
+		if sel, isSel := result.(*ast.SelectorExpr); isSel && sx.Identifier() != nil &&
 			(i == len(suffixes)-1 || !isCallSuffix(suffixes[i+1])) {
-			if result, err = t.loweredMethodValue(sel, suffix.(*grammar.PostfixSuffixContext)); err != nil {
+			if result, err = t.loweredMethodValue(sel, sx); err != nil {
 				return nil, err
 			}
 		}

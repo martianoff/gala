@@ -298,12 +298,13 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 			if err := t.checkMethodVisibility(receiver, method, lookupBaseName, suffix); err != nil {
 				return nil, err
 			}
-			if err := t.checkComparableTypeArgs(method, recvType, lookupBaseName, suffix); err != nil {
-				return nil, err
-			}
 			// splitCallTarget reads an index (`obj.handlers[0]()`) as type
 			// arguments too, so only a generic method is rewritten.
 			if t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method) {
+				// Only a lowered method can need a comparable type argument.
+				if err := t.checkComparableTypeArgs(method, recvType, lookupBaseName, suffix); err != nil {
+					return nil, err
+				}
 				// Taken before the defaults are lowered, as a call with
 				// arguments takes it, so no default sees it.
 				pending := t.expectedArgTypes.takeFor(callOwner(suffix))
@@ -2762,15 +2763,15 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	if err := t.checkMethodVisibility(receiver, method, lookupBaseName, argListCtx); err != nil {
 		return nil, err
 	}
-	if err := t.checkComparableTypeArgs(method, recvType, lookupBaseName, argListCtx); err != nil {
-		return nil, err
-	}
-
 	// Check for generic method - try all possible package lookups
 	isGenericMethod := len(typeArgs) > 0 || t.isGenericMethodWithImports(lookupBaseName, recvType.GetPackage(), method)
 
 	// --- Section 3: Generic method -> standalone function rewrite ---
 	if receiver != nil && isGenericMethod {
+		// Only a lowered method can need a comparable type argument.
+		if err := t.checkComparableTypeArgs(method, recvType, lookupBaseName, argListCtx); err != nil {
+			return nil, err
+		}
 		handled, expr, err := t.tryTransformGenericMethodAsFunction(argListCtx, receiver, method, typeArgs, recvType, lookupBaseName, pendingExpected,
 			argListCtx)
 		if err != nil {

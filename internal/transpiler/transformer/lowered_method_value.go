@@ -26,6 +26,13 @@ import (
 // names, as such a function value when the method is lowered, or sel itself.
 func (t *galaASTTransformer) loweredMethodValue(sel *ast.SelectorExpr, suffix *grammar.PostfixSuffixContext) (ast.Expr, error) {
 	method := sel.Sel.Name
+	// Most selectors are fields: only a name some lowered method has goes on.
+	if !t.loweredMethodNames[method] {
+		return sel, nil
+	}
+	if id, ok := sel.X.(*ast.Ident); ok && t.importManager.IsPackage(id.Name) && t.bindingScope(id.Name) == nil {
+		return sel, nil
+	}
 	recvType, lookupBaseName := t.resolveReceiverTypeAndLookupKey(sel.X, method)
 	typeMeta, resolved := t.getTypeMetaResolved(lookupBaseName)
 	if typeMeta == nil {

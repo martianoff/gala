@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -38,61 +39,44 @@ import (
 // operand whose type the analyzer cannot tell is left to the transformer,
 // which rejects `==` on a type parameter constrained by any (GALA-E0084).
 
-// comparableDecl is a method queued for comparableReceiverParams.
-type comparableDecl struct {
-	meta      *transpiler.MethodMetadata
-	ctx       *grammar.FunctionDeclarationContext
-	recvNames []string
-	typeKey   string
-	pkgName   string
-	quals     fileQualifiers
-}
-
-// recordComparableCandidate queues a method of a generic type for
-// markComparableReceivers.
-func (d *packageDecls) recordComparableCandidate(meta *transpiler.MethodMetadata, ctx *grammar.FunctionDeclarationContext, recvNames []string, typeKey, pkgName string, quals fileQualifiers) {
-	if len(recvNames) > 0 {
-		d.comparables = append(d.comparables, comparableDecl{meta, ctx, recvNames, typeKey, pkgName, quals})
-	}
-}
-
 // markComparableReceivers records, on each queued method, the type
 // parameters of its type that the method needs comparable
 // (MethodMetadata.ComparableTypeParams), and marks the method lowered to a
 // function (IsGeneric). A method that calls another such method on a value
 // of its own type needs what that one needs, so the scan repeats until no
-// method gains a requirement.
+// method gains a requirement. fieldParams is shared by every scan.
 func (d *packageDecls) markComparableReceivers(a *galaAnalyzer, richAST *transpiler.RichAST) {
 	outer := a.currentQualifiers
 	defer func() { a.currentQualifiers = outer }()
+	held := map[*transpiler.TypeMetadata][]bool{}
 	for changed := true; changed; {
 		changed = false
-		for _, c := range d.comparables {
-			typeMeta := richAST.Types[c.typeKey]
-			if typeMeta == nil || len(typeMeta.TypeParams) != len(c.recvNames) {
+		for _, r := range d.receivers {
+			typeMeta := richAST.Types[r.typeKey]
+			if r.ctx == nil || typeMeta == nil || len(typeMeta.TypeParams) != len(r.recvNames) ||
+				!slices.ContainsFunc(typeMeta.TypeParams, func(tp string) bool { return typeMeta.TypeParamConstraints[tp] != "comparable" }) {
 				continue
 			}
-			a.currentQualifiers = c.quals
+			a.currentQualifiers = r.quals
 			// The metadata a call reads, which a sibling pass may have
 			// recorded before this declaration's own.
-			metas := []*transpiler.MethodMetadata{c.meta}
-			if stored := typeMeta.Methods[c.meta.Name]; stored != nil && stored != c.meta {
+			metas := []*transpiler.MethodMetadata{r.meta}
+			if stored := typeMeta.Methods[r.meta.Name]; stored != nil && stored != r.meta {
 				metas = append(metas, stored)
 			}
-			for _, name := range a.comparableReceiverParams(c, richAST) {
-				declared := typeMeta.TypeParams[slices.Index(c.recvNames, name)]
-				if typeMeta.TypeParamConstraints[declared] == "comparable" || slices.Contains(c.meta.ComparableTypeParams, declared) {
+			for i, need := range a.comparableNeeds(r, richAST, held) {
+				declared := typeMeta.TypeParams[i]
+				if !need || typeMeta.TypeParamConstraints[declared] == "comparable" {
 					continue
 				}
 				for _, m := range metas {
-					if slices.Contains(m.ComparableTypeParams, declared) {
-						continue
+					if !slices.Contains(m.ComparableTypeParams, declared) {
+						m.ComparableTypeParams = append(m.ComparableTypeParams, declared)
+						slices.Sort(m.ComparableTypeParams)
+						m.IsGeneric = true
+						changed = true
 					}
-					m.ComparableTypeParams = append(m.ComparableTypeParams, declared)
-					slices.Sort(m.ComparableTypeParams)
-					m.IsGeneric = true
 				}
-				changed = true
 			}
 		}
 	}
@@ -108,25 +92,35 @@ type comparableScan struct {
 	params  []string
 	// env holds the declared type of each name the method binds.
 	env  map[string]transpiler.Type
-	need map[string]bool
+	need []bool
+	// held memoizes fieldParams.
+	held map[*transpiler.TypeMetadata][]bool
 }
 
-// comparableReceiverParams lists the receiver type parameters of c, as its
-// receiver names them, that the method needs comparable.
-func (a *galaAnalyzer) comparableReceiverParams(c comparableDecl, richAST *transpiler.RichAST) []string {
-	s := &comparableScan{a: a, richAST: richAST, pkgName: c.pkgName, quals: c.quals, params: c.recvNames,
-		env: map[string]transpiler.Type{}, need: map[string]bool{}}
-	if recv, ok := c.ctx.Receiver().(*grammar.ReceiverContext); ok && recv != nil {
+// comparableNeeds reports, by position, the receiver type parameters of r
+// that the method needs comparable.
+func (a *galaAnalyzer) comparableNeeds(r receiverDecl, richAST *transpiler.RichAST, held map[*transpiler.TypeMetadata][]bool) []bool {
+	s := &comparableScan{a: a, richAST: richAST, pkgName: r.pkgName, quals: r.quals, params: r.recvNames,
+		env: map[string]transpiler.Type{}, need: make([]bool, len(r.recvNames)), held: held}
+	if recv, ok := r.ctx.Receiver().(*grammar.ReceiverContext); ok && recv != nil {
 		s.env[recv.Identifier().GetText()] = s.resolve(recv.Type_())
 	}
-	s.walk(c.ctx)
-	var out []string
-	for _, p := range c.recvNames {
-		if s.need[p] {
-			out = append(out, p)
+	s.walk(r.ctx)
+	return s.need
+}
+
+// paramIndex is the position in params of the type parameter typ names, or
+// -1 when typ is not one of them.
+func paramIndex(typ transpiler.Type, params []string) int {
+	switch t := typ.(type) {
+	case transpiler.BasicType:
+		return slices.Index(params, t.Name)
+	case transpiler.NamedType:
+		if t.Package == "" {
+			return slices.Index(params, t.Name)
 		}
 	}
-	return out
+	return -1
 }
 
 func (s *comparableScan) resolve(ctx grammar.ITypeContext) transpiler.Type {
@@ -144,8 +138,13 @@ func (s *comparableScan) walk(tree antlr.Tree) {
 		s.instantiations(s.resolve(n))
 		return // nested types are part of the one just walked
 	case *grammar.ParameterContext:
-		if n.Identifier() != nil && n.Type_() != nil {
-			s.env[n.Identifier().GetText()] = s.resolve(n.Type_())
+		if n.Identifier() != nil {
+			if n.Type_() != nil {
+				s.env[n.Identifier().GetText()] = s.resolve(n.Type_())
+			} else {
+				// An untyped lambda parameter shadows what the name held.
+				delete(s.env, n.Identifier().GetText())
+			}
 		}
 	case *grammar.TypedPatternContext:
 		s.env[n.Identifier().GetText()] = s.resolve(n.Type_())
@@ -184,20 +183,22 @@ func (s *comparableScan) bindAll(ids grammar.IIdentifierListContext, typ grammar
 // type needs the arguments of the parameters its fields hold by value
 // (fieldParams), so OptionPtr[Node[K]], which holds a pointer, needs none.
 func (s *comparableScan) require(typ transpiler.Type) {
-	switch t := typ.(type) {
-	case transpiler.BasicType:
-		if slices.Contains(s.params, t.Name) {
-			s.need[t.Name] = true
-		}
-	case transpiler.NamedType:
-		if t.Package == "" && slices.Contains(s.params, t.Name) {
-			s.need[t.Name] = true
-		}
-	case transpiler.GenericType:
-		held := s.fieldParams(s.typeMeta(t.Base), map[*transpiler.TypeMetadata]bool{})
+	s.mark(typ, s.params, s.need, nil)
+}
+
+// mark sets, in held, the type parameters of params that typ holds by value:
+// typ itself, or the arguments of a generic type's parameters its fields hold
+// by value (fieldParams). visiting is fieldParams' cycle guard.
+func (s *comparableScan) mark(typ transpiler.Type, params []string, held []bool, visiting map[*transpiler.TypeMetadata]bool) {
+	if i := paramIndex(typ, params); i >= 0 {
+		held[i] = true
+		return
+	}
+	if t, ok := typ.(transpiler.GenericType); ok {
+		inner := s.fieldParams(s.typeMeta(t.Base), visiting)
 		for i, p := range t.Params {
-			if i < len(held) && held[i] {
-				s.require(p)
+			if i < len(inner) && inner[i] {
+				s.mark(p, params, held, visiting)
 			}
 		}
 	}
@@ -205,38 +206,35 @@ func (s *comparableScan) require(typ transpiler.Type) {
 
 // fieldParams reports, by position, the type parameters of the GALA type
 // meta whose argument must be comparable for the type to be: those a field
-// holds by value, directly or through another generic type. visiting breaks
-// a cycle through a type that holds itself. An unknown type needs none: Go
-// decides.
+// holds by value (a field of any case of a sealed type, the underlying type
+// of an opaque one), directly or through another generic type. visiting
+// breaks a cycle through a type that holds itself. An unknown type needs
+// none: Go decides.
 func (s *comparableScan) fieldParams(meta *transpiler.TypeMetadata, visiting map[*transpiler.TypeMetadata]bool) []bool {
 	if meta == nil || meta.IsInterface || visiting[meta] {
 		return nil
 	}
+	if held, ok := s.held[meta]; ok {
+		return held
+	}
+	if visiting == nil {
+		visiting = map[*transpiler.TypeMetadata]bool{}
+	}
 	visiting[meta] = true
 	defer delete(visiting, meta)
 	held := make([]bool, len(meta.TypeParams))
-	var mark func(transpiler.Type)
-	mark = func(typ transpiler.Type) {
-		switch t := typ.(type) {
-		case transpiler.BasicType:
-			if i := slices.Index(meta.TypeParams, t.Name); i >= 0 {
-				held[i] = true
-			}
-		case transpiler.NamedType:
-			if i := slices.Index(meta.TypeParams, t.Name); i >= 0 && t.Package == "" {
-				held[i] = true
-			}
-		case transpiler.GenericType:
-			inner := s.fieldParams(s.typeMeta(t.Base), visiting)
-			for i, p := range t.Params {
-				if i < len(inner) && inner[i] {
-					mark(p)
-				}
-			}
-		}
+	fields := slices.Collect(maps.Values(meta.Fields))
+	for _, v := range meta.SealedVariants {
+		fields = append(fields, v.FieldTypes...)
 	}
-	for _, f := range meta.Fields {
-		mark(f)
+	if meta.IsOpaque && meta.Underlying != nil {
+		fields = append(fields, meta.Underlying)
+	}
+	for _, f := range fields {
+		s.mark(f, meta.TypeParams, held, visiting)
+	}
+	if len(visiting) == 1 { // not a partial answer inside a cycle
+		s.held[meta] = held
 	}
 	return held
 }
@@ -381,12 +379,12 @@ func (s *comparableScan) call(c *callee, typeArgs []grammar.IExpressionContext, 
 			if pi < 0 || (i >= len(c.params) && !c.variadic) {
 				break
 			}
-			tp, ok := c.params[pi].(transpiler.BasicType)
-			if !ok || !slices.Contains(c.typeParams, tp.Name) || bound[tp.Name] != nil {
+			ti := paramIndex(c.params[pi], c.typeParams)
+			if ti < 0 || bound[c.typeParams[ti]] != nil {
 				continue
 			}
 			if t := s.argumentType(arg.(*grammar.ArgumentContext)); t != nil {
-				bound[tp.Name] = t
+				bound[c.typeParams[ti]] = t
 			}
 		}
 	}

@@ -53,6 +53,10 @@ type galaASTTransformer struct {
 	// resultGenericMethods holds the name of every known method whose own
 	// type parameters its result mentions (see isResultGenericMethodCall).
 	resultGenericMethods map[string]bool
+	// loweredMethodNames holds the name of every known method lowered to a
+	// function without type parameters of its own (MethodMetadata.IsGeneric),
+	// so a method value of one is found without resolving every selector.
+	loweredMethodNames map[string]bool
 	functions            map[string]*transpiler.FunctionMetadata
 	// galaPkgPaths is the set of import paths that are GALA packages, taken from
 	// richAST.Packages (the analyzer fills that map only inside its GALA-package
@@ -338,6 +342,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	t.patternDefineTypes = nil
 	t.genericMethods = make(map[string]map[string]bool)
 	t.resultGenericMethods = make(map[string]bool)
+	t.loweredMethodNames = make(map[string]bool)
 	t.functions = richAST.Functions
 	t.typeMetas = richAST.Types
 	t.goCtorClaims = nil
@@ -395,6 +400,9 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		for methodName, methodMeta := range meta.Methods {
 			if len(methodMeta.TypeParams) > 0 || methodMeta.IsGeneric {
 				t.genericMethods[typeName][methodName] = true
+			}
+			if methodMeta.IsGeneric && len(methodMeta.TypeParams) == 0 {
+				t.loweredMethodNames[methodName] = true
 			}
 			if len(methodMeta.TypeParams) > 0 && typeMentionsTypeParam(methodMeta.ReturnType, methodMeta.TypeParams) {
 				t.resultGenericMethods[methodName] = true

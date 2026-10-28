@@ -16,9 +16,9 @@ struct Bag[K any, V any](keys Array[K], vals Array[V])
 
 // Index uses K as a map key.
 func (b Bag[K, V]) Index() map[K]int {
-    var out = go_interop.MapEmpty[K, int]()
+    val out = go_interop.MapEmpty[K, int]()
     b.keys.ZipWithIndex().ForEach((t) => go_interop.MapPut(out, t.V1, t.V2))
-    return out
+    out
 }
 
 // Has compares K values with ==.
