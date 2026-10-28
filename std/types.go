@@ -185,21 +185,31 @@ func Equal[T any](v1, v2 T) bool {
 // key. A value of a predeclared primitive type compares with ==; a value with
 // an Equal method (Equatable, which every GALA struct has, the collections
 // included) compares by Equal, so an Array or a List is a key by its
-// elements; any other value compares with ==. A value Go cannot compare panics
-// with the reason. Hash methods agree with it: values KeyEqual calls equal
-// hash alike.
+// elements; any other value compares with ==. A value Go cannot compare and
+// with no Equal panics with the reason. Hash methods agree with it: values
+// KeyEqual calls equal hash alike.
+//
+// It runs on every lookup, so it tries == first wherever Go can compare the
+// values: values that are == are Equal too, and a lookup usually compares the
+// key it finds. Equal runs only when == says no, so a key that is == to the
+// one it looks for costs what == does.
 func KeyEqual[T any](a, b T) bool {
 	if eq, ok := equalPrimitive(a, b); ok {
 		return eq
 	}
+	x, y := any(a), any(b)
+	t := reflect.TypeOf(x)
+	comparable := t == nil || t.Comparable()
+	if comparable && x == y {
+		return true
+	}
 	if e, ok := any(a).(Equatable[T]); ok {
 		return e.Equal(b)
 	}
-	x, y := any(a), any(b)
-	if t := reflect.TypeOf(x); t != nil && !t.Comparable() {
-		panic(fmt.Sprintf("cannot compare %T keys: a HashSet element or HashMap key must have an Equal method or be comparable with ==", x))
+	if !comparable {
+		panic("cannot compare " + t.String() + " keys: a HashSet element or HashMap key must have an Equal method or be comparable with ==")
 	}
-	return x == y
+	return false
 }
 
 // equalPrimitive compares v1 and v2 with == when v1's dynamic type is a
@@ -346,4 +356,19 @@ func As[T any](obj any) (T, bool) {
 
 	var zero T
 	return zero, false
+}
+
+// KeysEqualByValue reports whether a and b, keys that are not ==, are the
+// same key all the same: by Equal, for a value with an Equal method (a List or
+// a HashSet compares by its elements, though == compares them by identity).
+// HashSet and HashMap with comparable keys call it only after == says no, so
+// a lookup that finds its key costs what == does.
+func KeysEqualByValue[T any](a, b T) bool {
+	if _, ok := equalPrimitive(a, b); ok {
+		return false
+	}
+	if e, ok := any(a).(Equatable[T]); ok {
+		return e.Equal(b)
+	}
+	return false
 }

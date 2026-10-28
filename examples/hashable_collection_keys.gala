@@ -5,6 +5,12 @@ import im "martianoff/gala/collection_immutable"
 // Array, List and HashSet implement std.Hashable and compare by value, so they
 // work as HashSet elements and HashMap keys without joining them into strings.
 
+// A struct key that holds a collection compares by value too: HashSet and
+// HashMap compare keys with Equal, which every GALA struct has.
+struct Route(Stops im.List[string])
+
+func (r Route) Hash() uint32 = r.Stops.Hash()
+
 func main() {
     // Configurations seen by a search, each an Array of states. Arrays built
     // in different ways are the same element when they hold the same values.
@@ -23,4 +29,8 @@ func main() {
     Println(s"memo entries: ${updated.Size()}")
     Println(s"memo ( [: ${updated.GetOrElse(im.ListOf("(", "["), 0)}")
     Println(s"memo [ (: ${updated.GetOrElse(im.ListOf("[", "("), 0)}")
+
+    // Two routes built separately, with the same stops, are one key.
+    val routes = im.HashSetOf(Route(im.ListOf("A", "B")), Route(im.ListOf("B").Prepend("A")))
+    Println(s"distinct routes: ${routes.Size()}")
 }
