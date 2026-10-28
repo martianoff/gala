@@ -16,6 +16,7 @@ module(
 
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "gazelle", version = "0.47.0")
 bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "rules_java", version = "9.3.0")
@@ -60,13 +61,38 @@ local_path_override(
 # which drives the import helper from the registered GALA toolchain.
 bazel_dep(name = "gala_gazelle", version = "0.4.0", dev_dependency = True)
 
-# galop, the parser generator the GALA parser is built with (see
-# internal/parser/grammar): prebuilt release binaries, registered as toolchains.
-galop = use_extension("@rules_gala//galop:extensions.bzl", "galop")
-galop.toolchain(version = "0.2.2")
-use_repo(galop, "galop_toolchains")
+# galop, the parser generator the GALA parser is also built with (see
+# internal/parser/grammar): its prebuilt release binaries, one per exec
+# platform galop publishes, registered as toolchains in //tools/galop. Bump
+# the version in the URLs and the three hashes together; the hashes are in the
+# release's checksums-sha256.txt.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-register_toolchains("@galop_toolchains//:all")
+http_file(
+    name = "galop_linux_amd64",
+    downloaded_file_path = "galop_bin",
+    executable = True,
+    sha256 = "7b382f37047b8f55468fa019ee0d5b7f835df9e196a2c88e4b5cc37fe0c03475",
+    urls = ["https://github.com/martianoff/galop/releases/download/0.2.2/galop-linux-amd64"],
+)
+
+http_file(
+    name = "galop_darwin_arm64",
+    downloaded_file_path = "galop_bin",
+    executable = True,
+    sha256 = "3ff844c6b935f13f0655720a9efd9507f5b8fe3c9078172634af4de54318d313",
+    urls = ["https://github.com/martianoff/galop/releases/download/0.2.2/galop-darwin-arm64"],
+)
+
+http_file(
+    name = "galop_windows_amd64",
+    downloaded_file_path = "galop_bin.exe",
+    executable = True,
+    sha256 = "5fc9e9f1d44ee7e5ac760232c3c4ae1607623d842df4bdb4aac48be29ecd23de",
+    urls = ["https://github.com/martianoff/galop/releases/download/0.2.2/galop-windows-amd64.exe"],
+)
+
+register_toolchains("//tools/galop:all")
 
 # ANTLR tool jar (not in BCR, loaded via use_repo_rule)
 http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
