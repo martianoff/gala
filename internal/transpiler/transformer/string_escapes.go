@@ -232,11 +232,10 @@ type literalEscapeKind struct {
 }
 
 var (
-	escapeKindString   = literalEscapeKind{noun: "string literal", quote: escapeInString}
-	escapeKindRune     = literalEscapeKind{noun: "rune literal", quote: escapeInRune}
-	escapeKindInterp   = literalEscapeKind{noun: `interpolated string literal (s"...")`, quote: escapeInString, interp: true}
-	escapeKindFormat   = literalEscapeKind{noun: `format string literal (f"...")`, quote: escapeInString, interp: true}
-	escapeKindFieldTag = literalEscapeKind{noun: "struct field tag", quote: escapeInString}
+	escapeKindString = literalEscapeKind{noun: "string literal", quote: escapeInString}
+	escapeKindRune   = literalEscapeKind{noun: "rune literal", quote: escapeInRune}
+	escapeKindInterp = literalEscapeKind{noun: `interpolated string literal (s"...")`, quote: escapeInString, interp: true}
+	escapeKindFormat = literalEscapeKind{noun: `format string literal (f"...")`, quote: escapeInString, interp: true}
 )
 
 // checkLiteralEscapes validates the escape sequences in a literal token and

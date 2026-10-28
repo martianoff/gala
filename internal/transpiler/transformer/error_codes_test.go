@@ -1265,6 +1265,30 @@ func main() {
 			expectCode:     galaerr.CodeOpaquePatternArity,
 			expectContains: "takes exactly one sub-pattern, got 0",
 		},
+		{
+			// Raised during PARSING, like E0040. A tagged block field used to
+			// compile, its tag copied into the Go field; GALA has no struct
+			// tags, so it is now this error.
+			name: "GALA-E0085 struct tag on a block-form field",
+			input: `package main
+
+type User struct {
+    Name string "json:\"name\""
+}
+
+func main() {
+    Println(User(Name = "ann").Name)
+}`,
+			expectCode:     galaerr.CodeStructTag,
+			expectContains: "struct field Name has a tag: GALA has no struct tags",
+		},
+		{
+			name: "GALA-E0085 raw-string struct tag on a shorthand struct field",
+			input: "package main\n\nstruct User(Name string `json:\"name\"`)\n\n" +
+				"func main() {\n    Println(User(\"ann\").Name)\n}",
+			expectCode:     galaerr.CodeStructTag,
+			expectContains: "set JSON and YAML keys on Codec[T] with .Rename(field, key)",
+		},
 	}
 
 	for _, tc := range cases {

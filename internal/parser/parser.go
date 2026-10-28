@@ -403,7 +403,112 @@ func (l *GalaErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSy
 		return
 	}
 
+	if err := structTagError(recognizer, offendingSymbol); err != nil {
+		l.Errors = append(l.Errors, err)
+		return
+	}
+
 	l.Errors = append(l.Errors, galaerr.NewSyntaxError(line, column, hideNewlineTokens(msg)))
+}
+
+// structTagError recognizes a Go struct tag written after a struct field's
+// type, in either string form (`Name string "json:\"name\""`), and
+// returns GALA-E0085 for it, or nil when the error is something else.
+//
+// GALA has no struct tags, so the grammar has no slot for one and ANTLR
+// reports the string as extraneous input. The shape is a string literal that
+// the parser hit in the list of a struct's fields, directly after a field and
+// on its line: the field list of a block-form struct, the parameter list of a
+// shorthand struct, or the field list of a sealed case. A string anywhere deeper, such
+// as inside a field's default value, fails in a nested rule and is left to the
+// ordinary syntax error, and so is one in a function's parameter list.
+func structTagError(recognizer antlr.Recognizer, offendingSymbol interface{}) *galaerr.SemanticError {
+	tok, ok := offendingSymbol.(antlr.Token)
+	if !ok || tok == nil {
+		return nil
+	}
+	if tt := tok.GetTokenType(); tt != kinds().str && tt != kinds().rawStr {
+		return nil
+	}
+	psr, ok := recognizer.(antlr.Parser)
+	if !ok {
+		return nil
+	}
+	field := lastStructField(psr.GetParserRuleContext())
+	if field == nil || field.Identifier() == nil {
+		return nil
+	}
+	// A tag sits right after the field, on its line. A string after a ',' or
+	// on a line of its own is not one: it is left to the ordinary error.
+	end := field.GetStop()
+	prev := prevCodeToken(psr.GetTokenStream(), tok.GetTokenIndex())
+	if end == nil || prev == nil || prev.GetTokenIndex() != end.GetTokenIndex() || end.GetLine() != tok.GetLine() {
+		return nil
+	}
+
+	err := galaerr.NewCodedSemanticError(
+		galaerr.CodeStructTag,
+		tok.GetLine(),
+		tok.GetColumn(),
+		fmt.Sprintf("struct field %s has a tag: GALA has no struct tags", field.Identifier().GetText()),
+		"remove the tag; set JSON and YAML keys on Codec[T] with .Rename(field, key), .Omit and .OmitEmpty, "+
+			"and write a type that a Go library reads through its tags in a .go file of the package",
+	)
+	// Span the tag, so the caret covers what has to go. A raw-string tag can
+	// span lines; it is left to the renderer's single-token scan.
+	text := tok.GetText()
+	if !strings.ContainsAny(text, "\r\n") {
+		err = err.WithSpan(tok.GetColumn() + len([]rune(text)))
+	}
+	return err
+}
+
+// structField is what a block-form field, a shorthand struct's parameter and a
+// sealed case's field have in common: a name and an end.
+type structField interface {
+	Identifier() grammar.IIdentifierContext
+	GetStop() antlr.Token
+}
+
+// lastStructField returns, when ctx — the rule the parser was in when it
+// rejected a string literal — is a struct's field list, the last field parsed
+// in it; otherwise nil.
+func lastStructField(ctx antlr.ParserRuleContext) structField {
+	// ANTLR reports the string from the list rule or, at a closing ')', from
+	// the rule that holds the list; both are accepted.
+	switch c := ctx.(type) {
+	case *grammar.StructTypeContext:
+		return lastOf(c.AllStructField())
+	case *grammar.ParameterListContext:
+		if params, ok := c.GetParent().(*grammar.ParametersContext); ok && isShorthandStruct(params) {
+			return lastOf(c.AllParameter())
+		}
+	case *grammar.ParametersContext:
+		if list, ok := c.ParameterList().(*grammar.ParameterListContext); ok && isShorthandStruct(c) {
+			return lastOf(list.AllParameter())
+		}
+	case *grammar.SealedCaseFieldListContext:
+		return lastOf(c.AllSealedCaseField())
+	case *grammar.SealedCaseContext:
+		if list, ok := c.SealedCaseFieldList().(*grammar.SealedCaseFieldListContext); ok {
+			return lastOf(list.AllSealedCaseField())
+		}
+	}
+	return nil
+}
+
+// isShorthandStruct reports whether params is a shorthand struct's field list
+// rather than a function's or a lambda's parameter list.
+func isShorthandStruct(params *grammar.ParametersContext) bool {
+	_, ok := params.GetParent().(*grammar.StructShorthandDeclarationContext)
+	return ok
+}
+
+func lastOf[F structField](fields []F) structField {
+	if len(fields) == 0 {
+		return nil
+	}
+	return fields[len(fields)-1]
 }
 
 // bareLambdaParamError recognizes a lambda written without parentheses around

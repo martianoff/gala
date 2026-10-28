@@ -70,7 +70,9 @@ typeDeclaration: 'type' identifier (typeParameters)? (structType | interfaceType
 typeAlias: identifier | type;
 
 structType: 'struct' '{' structField* '}';
-structField: (VAL | VAR)? identifier type (STRING)?;
+// No struct tag: a string after a field's type is GALA-E0085, reported from the
+// parser's error listener (structTagError in internal/parser/parser.go).
+structField: (VAL | VAR)? identifier type;
 
 interfaceType: 'interface' '{' methodSpec* '}';
 methodSpec: identifier (typeParameters)? signature;

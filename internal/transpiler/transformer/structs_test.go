@@ -92,38 +92,6 @@ func (s Config) Unapply(v any) (std.Immutable[string], int, bool) {
 `,
 		},
 		{
-			name: "Struct with tags",
-			input: `package main
-
-type User struct {
-	Name string "json:\"name\""
-}`,
-			expected: `package main
-
-import "martianoff/gala/std"
-
-type User struct {
-	Name std.Immutable[string] "json:\"name\""
-}
-
-func (s User) Copy() User {
-	return User{Name: std.Copy(s.Name)}
-}
-func (s User) Equal(other User) bool {
-	return std.Equal(s.Name, other.Name)
-}
-func (s User) Unapply(v any) (std.Immutable[string], bool) {
-	if p, ok := v.(User); ok {
-		return p.Name, true
-	}
-	if p, ok := v.(*User); ok && p != nil {
-		return p.Name, true
-	}
-	return *new(std.Immutable[string]), false
-}
-`,
-		},
-		{
 			name: "Shorthand struct with named arguments",
 			input: `package main
 
