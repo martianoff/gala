@@ -152,7 +152,14 @@ func prependIfNew(slice []string, val string) []string {
 	return append([]string{val}, slice...)
 }
 
+// useGoExportData has a command that runs in the user's own Go environment
+// read the types of the Go packages it imports from export data (see
+// analyzer.UseGoExportData). The Bazel worker never runs these commands — its
+// requests go through dispatchTranspile — and stays on the source importer.
+func useGoExportData() { analyzer.UseGoExportData() }
+
 func runTranspile(cmd *cobra.Command, args []string) {
+	useGoExportData()
 	tuneGCOnce()
 	startCPUProfileIfRequested()
 	defer stopCPUProfile()

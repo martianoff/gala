@@ -74,6 +74,7 @@ func init() {
 }
 
 func runExport(cmd *cobra.Command, args []string) error {
+	useGoExportData()
 	projectDir := "."
 	if len(args) > 0 {
 		projectDir = args[0]

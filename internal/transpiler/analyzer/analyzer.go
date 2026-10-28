@@ -869,33 +869,29 @@ func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath st
 	// 0.6 Analyze Go packages for type information.
 	// For non-GALA imports (Go stdlib and third-party Go packages), use go/importer
 	// to extract function signatures, type definitions, and type aliases.
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
-
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
-			if isInternalGala || isExternalGala {
-				continue // Already handled above
+	// GALA imports were handled above. The importer resolves the Go ones in
+	// one batch first where it can.
+	var goImports []string
+	for _, imp := range fileImports {
+		if !a.isGalaImport(imp.Path) {
+			goImports = append(goImports, imp.Path)
+		}
+	}
+	prefetchGoPackages(goImports)
+	for _, path := range goImports {
+		goInfo := a.analyzeGoImport(path)
+		if goTypeInfoNonEmpty(goInfo) {
+			if richAST.GoTypeInfo == nil {
+				richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
 			}
-
-			// This is a Go package — analyze it for type info.
-			goInfo := a.analyzeGoImport(path)
-			if goTypeInfoNonEmpty(goInfo) {
-				if richAST.GoTypeInfo == nil {
-					richAST.GoTypeInfo = transpiler.NewGoTypeInfo()
+			richAST.GoTypeInfo.Merge(goInfo)
+			// The package's real name, which its path does not settle
+			// (math/rand/v2 is rand, k8s.io/api/core/v1 is v1).
+			if name := goPackageName(goInfo, path); name != "" {
+				if richAST.GoImportNames == nil {
+					richAST.GoImportNames = make(map[string]string)
 				}
-				richAST.GoTypeInfo.Merge(goInfo)
-				// The package's real name, which its path does not settle
-				// (math/rand/v2 is rand, k8s.io/api/core/v1 is v1).
-				if name := goPackageName(goInfo, path); name != "" {
-					if richAST.GoImportNames == nil {
-						richAST.GoImportNames = make(map[string]string)
-					}
-					richAST.GoImportNames[path] = name
-				}
+				richAST.GoImportNames[path] = name
 			}
 		}
 	}
