@@ -1,3 +1,5 @@
+load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@rules_gala//galop:defs.bzl", "galop_parser")
 load("@rules_go//go:def.bzl", "go_library")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
@@ -25,6 +27,46 @@ genrule(
     tools = ["@antlr4_tool//jar"],
 )
 
+# galop's lexer and parser for the same grammar, in its antlr flavor: they build
+# the context types ANTLR generates above, so they share this package and every
+# consumer of the tree works with either parser (see internal/parser).
+galop_parser(
+    name = "gala_grammar_galop",
+    flavor = "antlr",
+    grammar = "gala.g4",
+    package = "grammar",
+    target_compatible_with = select({
+        ":galop_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+# galop is built in where rules_gala has a galop binary to run: the platforms
+# galop publishes release binaries for. Elsewhere GALA builds with ANTLR's
+# parser alone. This is temporary: galop 0.2.3 publishes linux-arm64 and
+# darwin-amd64 binaries too, and the next rules_gala registers them.
+selects.config_setting_group(
+    name = "galop_enabled",
+    match_any = [
+        ":darwin_arm64",
+        ":linux_amd64",
+        ":windows_amd64",
+    ],
+    visibility = ["//internal/parser:__subpackages__"],
+)
+
+[
+    config_setting(
+        name = platform,
+        constraint_values = constraints,
+    )
+    for platform, constraints in [
+        ("darwin_arm64", ["@platforms//os:macos", "@platforms//cpu:arm64"]),
+        ("linux_amd64", ["@platforms//os:linux", "@platforms//cpu:x86_64"]),
+        ("windows_amd64", ["@platforms//os:windows", "@platforms//cpu:x86_64"]),
+    ]
+]
+
 go_library(
     name = "grammar",
     srcs = [
@@ -32,7 +74,10 @@ go_library(
         "gala_lexer.go",
         "gala_listener.go",
         "gala_parser.go",
-    ],
+    ] + select({
+        ":galop_enabled": [":gala_grammar_galop"],
+        "//conditions:default": [],
+    }),
     importpath = "martianoff/gala/internal/parser/grammar",
     visibility = ["//visibility:public"],
     deps = ["@com_github_antlr4_go_antlr_v4//:antlr"],  # keep
