@@ -14,13 +14,18 @@ import (
 // BuiltIn says galop's parser is linked into this binary.
 const BuiltIn = true
 
-// NewLexer returns galop's lexer for input. Its tokens are ANTLR's lexer's.
-func NewLexer(input antlr.CharStream) antlr.Lexer { return grammar.NewgalaGalopLexer(input) }
+// NewLexer returns galop's lexer for input, and the ANTLR base lexer in it
+// (whose simulator position seeds where the input starts). Its tokens are
+// ANTLR's lexer's.
+func NewLexer(input antlr.CharStream) (antlr.Lexer, *antlr.BaseLexer) {
+	lexer := grammar.NewgalaGalopLexer(input)
+	return lexer, lexer.BaseLexer
+}
 
 // SourceFile parses stream as a source file. Building the parser fills the
-// stream, so every token, the hidden ones included, is in it afterwards. ok is false when
-// the input has a syntax error: galop does not recover from errors, so the
-// caller parses the input with ANTLR instead.
+// stream, so every token, the hidden ones included, is in it afterwards. ok is
+// false when the input has a syntax error: galop does not recover from errors,
+// so the caller parses the input with ANTLR instead.
 func SourceFile(stream *antlr.CommonTokenStream) (grammar.ISourceFileContext, bool) {
 	tree, err := grammar.NewgalaGalopParser(stream).SourceFile()
 	return tree, err == nil

@@ -203,8 +203,9 @@ let
   # galop generates its parser for gala.g4 next to ANTLR's, in its antlr
   # flavor (see internal/parser/grammar/BUILD.bazel); GALA parses with it
   # first. Its release binary runs at build time, so it is selected by
-  # buildPlatform. With useGalop = false, or on a build platform galop
-  # publishes no binary for, GALA is built with ANTLR's parser alone. The
+  # buildPlatform. With useGalop = false GALA is built with ANTLR's parser
+  # alone; that is also the way to build on a platform galop publishes no
+  # binary for, as with Bazel's --//internal/parser:antlr. The
   # version must equal MODULE.bazel's galop.toolchain version
   # (tools/check_repo_policy.sh checks it).
   galopVersion = "0.2.3";
@@ -226,7 +227,12 @@ let
       hash = "sha256-QvO5etxanXpIuACIQnmdkXJm9H72fMEwPtdWQPNZPHg=";
     };
   };
-  galopAsset = if useGalop then galopAssets.${stdenv.buildPlatform.system} or null else null;
+  galopAsset =
+    if useGalop then
+      galopAssets.${stdenv.buildPlatform.system}
+        or (throw "galop publishes no binary for ${stdenv.buildPlatform.system}; build with useGalop = false")
+    else
+      null;
   localGalop =
     if galopAsset == null then
       null

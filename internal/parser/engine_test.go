@@ -83,6 +83,24 @@ func parseExpressionWith(e Engine, src string) (out string) {
 	return out
 }
 
+// parseExpressionAtWith parses src with ParseExpressionAt, at line and col,
+// with engine e.
+func parseExpressionAtWith(e Engine, src string, line, col int) (out string) {
+	withEngine(e, func() {
+		expr, err := ParseExpressionAt(src, line, col, "test expression")
+		var tree antlr.Tree
+		var errs []error
+		if expr != nil {
+			tree = expr
+		}
+		if err != nil {
+			errs = []error{err}
+		}
+		out = render(tree, nil, errs)
+	})
+	return out
+}
+
 // positions prints, for every node under tree, what diagnostics, hover and
 // line markers read from it: a rule's first and last token indexes, a token's
 // type, channel, line, column, character offsets and index, and whether the
@@ -141,8 +159,12 @@ func TestEnginesAgree(t *testing.T) {
 		t.Skip("galop's parser is not built in")
 	}
 	grammar.GalaParserInit()
+	// r draws the broken variants and token runs; positions draws where
+	// ParseExpressionAt places an expression, from its own stream so that the
+	// samples r draws stay the same.
 	r := rand.New(rand.NewSource(1))
-	files, accepted, exprs, exprsAccepted := 0, 0, 0, 0
+	positions := rand.New(rand.NewSource(2))
+	files, accepted, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0
 	for k, input := range positionInputs {
 		want, got := parseFileWith(EngineANTLR, input), parseFileWith(EngineGalop, input)
 		if got != want {
@@ -152,16 +174,32 @@ func TestEnginesAgree(t *testing.T) {
 			t.Errorf("position input %d does not parse: %.300s", k, want)
 		}
 	}
-	for _, path := range gatherSources(t) {
+	compareExpressionAt := func(what, input string, line, col int) bool {
+		want, got := parseExpressionAtWith(EngineANTLR, input, line, col), parseExpressionAtWith(EngineGalop, input, line, col)
+		if got != want {
+			t.Errorf("%s at %d:%d: the engines disagree\nANTLR: %.300s\ngalop: %.300s", what, line, col, want, got)
+		}
+		return !strings.Contains(want, "error:")
+	}
+	for k, input := range expressionAtInputs {
+		for _, at := range [][2]int{{0, 0}, {0, 7}, {-3, 5}, {12, 30}} {
+			if !compareExpressionAt(fmt.Sprintf("expression input %d", k), input, at[0], at[1]) {
+				t.Errorf("expression input %d does not parse at %v", k, at)
+			}
+		}
+	}
+	sources := gatherSources(t)
+	for n, path := range sources {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		src := string(data)
 		inputs := []string{src, breakSource(r, src), breakSource(r, src)}
-		if files%15 == 0 {
-			// Now and then the file with CRLF line ends.
+		if n%15 == 0 {
+			// Every 15th file also with CRLF line ends.
 			inputs = append(inputs, strings.ReplaceAll(src, "\n", "\r\n"))
+			crlf++
 		}
 		for k, input := range inputs {
 			want, got := parseFileWith(EngineANTLR, input), parseFileWith(EngineGalop, input)
@@ -194,10 +232,30 @@ func TestEnginesAgree(t *testing.T) {
 				if !strings.Contains(want, "error:") {
 					exprsAccepted++
 				}
+				// As the transpiler re-parses it: at a position in its file.
+				if compareExpressionAt(fmt.Sprintf("%s: expression %q (variant %d)", path, expr, k),
+					input, 1+positions.Intn(500), positions.Intn(80)) {
+					exprsAtAccepted++
+				}
 			}
 		}
 	}
-	t.Logf("%d source inputs (%d without errors), %d expressions (%d without errors)", files, accepted, exprs, exprsAccepted)
+	if want := (len(sources) + 14) / 15; crlf != want {
+		t.Errorf("%d files compared with CRLF line ends, want %d", crlf, want)
+	}
+	t.Logf("%d source inputs (%d without errors, %d of them CRLF copies); %d expressions, %d without errors through ParseExpression and %d through ParseExpressionAt",
+		files, accepted, crlf, exprs, exprsAccepted, exprsAtAccepted)
+}
+
+// expressionAtInputs are expressions placed by ParseExpressionAt, among them
+// ones that span lines, where the starting column applies to the first line
+// only (a multi-line default value).
+var expressionAtInputs = []string{
+	"a + b",
+	"Array(1,\n    2,\n    3)",
+	"Config(\n    name = \"ünïcödé\",\n    retries = 3,\n)",
+	"xs.Map((x) => x *\n    2)",
+	"s\"${a}\\n${b}\"",
 }
 
 // lexed returns the default-channel tokens of src, without EOF. Token offsets

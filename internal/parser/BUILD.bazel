@@ -3,8 +3,9 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 # `bazel build --//internal/parser:antlr ...` builds GALA with ANTLR's parser
 # alone, leaving galop's out (see engine.go). Without it, galop's parser is
-# built in where galop runs (//internal/parser/grammar:galop_enabled); the
-# CLI's --parser flag and GALA_PARSER then choose per process.
+# built in (//internal/parser/grammar:galop_enabled), which needs a galop
+# toolchain for the build host; the CLI's --parser flag and GALA_PARSER then
+# choose per process.
 bool_flag(
     name = "antlr",
     build_setting_default = False,
