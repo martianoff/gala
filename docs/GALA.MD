@@ -682,6 +682,25 @@ type Person struct {
 }
 ```
 
+A block-form field can end with a Go **struct tag**: a string literal after the type, copied
+into the generated Go unchanged. A type that meets a reflection-driven Go library, such as a
+JSON DTO whose wire names differ from its field names, declares its tags this way:
+
+```gala
+type Location struct {
+    var CountryCode string "json:\"country_code\""
+    var City        string "json:\"city,omitempty\""
+}
+```
+
+`json.Marshal(Location{CountryCode: "US"})` gives `{"country_code":"US"}`. The tag is an
+interpreted string (`"..."`, with the inner quotes escaped). Only the block form takes one; a
+shorthand `struct Location(...)` field has no tag. Declare tagged fields `var` so each is a
+plain Go field of its own type. A `val` field is an immutable wrapper: `encoding/json` still
+encodes it as its value under the tag's name, but to the encoder it is a struct, so `omitempty`
+never leaves it out ([Go Encoders and `fmt`](#go-encoders-and-fmt)), and other libraries see
+the wrapper type.
+
 #### Struct Construction
 Structs can be constructed using traditional Go-style named fields or using a functional shorthand (positional or named arguments).
 

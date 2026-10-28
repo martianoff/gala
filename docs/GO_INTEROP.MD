@@ -73,6 +73,11 @@ inv.Add(warehouse.Item(SKU = "A-1", Name = "Anvil", Qty = 3, Price = 99.5))
 
 Go field reads (`item.Qty`), Go constants (`time.Second`, `http.StatusNoContent`), variadic calls with spread (`ArrayOf(strings.Split(line, ",")...)`) and `nil` arguments all work as in Go.
 
+A Go library that reads struct tags, such as `encoding/json` with wire names of its own, works
+with a GALA type declared in block form with Go tags on `var` fields:
+`var CountryCode string "json:\"country_code\""`. See
+[Block Struct Declaration](GALA.MD#block-struct-declaration).
+
 ### Go functions that return several results
 
 GALA turns a Go call that returns several results into **one value**:
