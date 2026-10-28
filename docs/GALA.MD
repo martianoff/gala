@@ -3923,7 +3923,7 @@ to use instead. Writing one in an expression is
 
 ### HashMap
 
-GALA provides both immutable and mutable HashMap implementations for key-value storage. Both support generic key and value types. A key is a primitive or a [`Hashable`](#custom-key-types) value, and keys are compared with `Equal`, so a key need not be Go-comparable: an `Array` is a key.
+GALA provides both immutable and mutable HashMap implementations for key-value storage. Both support generic key and value types. A key is a primitive or a [`Hashable`](#custom-key-types) value. Keys are compared with their `Equal` method (`==` for a type without one), so a key need not be Go-comparable: an `Array` is a key.
 
 #### Immutable HashMap (collection_immutable)
 
@@ -3975,7 +3975,7 @@ fmt.Println(m5.Contains("banana"))  // false
 
 `Sorted`, `SortWith` and `SortBy` are stable: entries that compare equal keep their original relative order.
 
-`HashMapToGoMap(m)` converts a map to a Go `map[K]V`. It is a package function, not a method, because a Go map needs comparable keys and a HashMap's keys need not be. It replaces the former `m.ToGoMap()` method, for the mutable HashMap too.
+`HashMapToGoMap(m)` converts a map to a Go `map[K]V`, for the immutable and the mutable HashMap. It is a package function, not a method, because a Go map needs comparable keys and a HashMap's keys need not be.
 
 #### Mutable HashMap (collection_mutable)
 
@@ -4067,7 +4067,7 @@ val alice = Person(Name = "Alice", Age = 30)
 val m = scores.Put(alice, 100)
 ```
 
-`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `Equal` (`KeyEqual`, which takes `==` values as equal without calling `Equal`), so a `Hash` method must give `Equal` values the same hash. Every struct gets a field-wise `Equal`; a type that declares its own `Equal` must hash consistently with it. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
+`HashValue(v)` hashes any key value by the same rules the collections use, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with their `Equal` method when they have one (every GALA struct gets a field-wise `Equal`), otherwise with `==` (`KeyEqual` implements the rule; `==` values are equal without calling `Equal`). A `Hash` method must give equal keys the same hash. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
 
 #### Performance Characteristics
 

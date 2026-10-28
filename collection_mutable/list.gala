@@ -818,7 +818,7 @@ func (l Ptr[List[T]]) Sorted() Ptr[List[T]] = l.ToArray().Sorted().ToList()
 func (l Ptr[List[T]]) SortWith(less func(T, T) bool) Ptr[List[T]] = l.ToArray().SortWith(less).ToList()
 
 // SortBy returns a new List sorted by a key extracted from each element.
-func (l Ptr[List[T]]) SortBy[K any](f func(T) K) Ptr[List[T]] = l.ToArray().SortBy(f).ToList()
+func (l Ptr[List[T]]) SortBy[K comparable](f func(T) K) Ptr[List[T]] = l.ToArray().SortBy(f).ToList()
 
 // SeqDrop implements the Seq interface for sequence pattern matching.
 func (l Ptr[List[T]]) SeqDrop(n int) any = l.Drop(n)

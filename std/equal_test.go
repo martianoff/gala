@@ -54,8 +54,16 @@ type boxed struct{ v any }
 
 func (b boxed) Equal(o boxed) bool { return Equal(b.v, o.v) }
 
-// TestKeyEqual checks that KeyEqual decides as Equal does, through its ==
-// shortcut and around it.
+// plain has no Equal, so a pointer to one is a key by identity.
+type plain struct{ v int }
+
+var shared = &plain{1}
+
+// color is a named type without Equal, as an opaque type is.
+type color int
+
+// TestKeyEqual checks KeyEqual through its == shortcut, its Equal call and
+// its == fallback for types without Equal.
 func TestKeyEqual(t *testing.T) {
 	nan := math.NaN()
 	tests := []struct {
@@ -74,6 +82,11 @@ func TestKeyEqual(t *testing.T) {
 		{"== would panic, Equal", KeyEqual(boxed{[]int{1}}, boxed{[]int{1}}), true},
 		{"== would panic, not Equal", KeyEqual(boxed{[]int{1}}, boxed{[]int{2}}), false},
 		{"interface type, different dynamic types", KeyEqual[any](1, int64(1)), false},
+		{"interface type, Equal dynamic values", KeyEqual[any](node{1, &node{2, nil}}, node{1, &node{2, nil}}), true},
+		{"pointer without Equal is a key by identity", KeyEqual(&plain{1}, &plain{1}), false},
+		{"same pointer", KeyEqual(shared, shared), true},
+		{"named type without Equal", KeyEqual(color(1), color(1)), true},
+		{"different named values", KeyEqual(color(1), color(2)), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

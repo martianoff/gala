@@ -627,7 +627,7 @@ val people = HashSetOf(
 - `HashCombine(h1, h2 uint32) uint32` - Combine two hashes (for structs)
 - `HashValue(v any) uint32` - Hash any key value by the rules the collections use (primitives by value, others through `Hashable`)
 
-HashSet compares elements with `Equal` (`KeyEqual`), so values that are `Equal` must hash alike; T need not be Go-comparable. An element that is neither primitive nor `Hashable` compiles, then panics on the first hash.
+HashSet compares elements with their `Equal` method when they have one, otherwise with `==` (`KeyEqual`), so equal elements must hash alike; T need not be Go-comparable. An element that is neither primitive nor `Hashable` compiles, then panics on the first hash.
 
 ### Construction
 

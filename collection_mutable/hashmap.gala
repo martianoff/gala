@@ -536,13 +536,13 @@ func (m Ptr[HashMap[K, V]]) KeySet() Ptr[HashSet[K]] = m.Keys()
 // === Sorting ===
 
 // Sorted returns a mutable Array of key-value tuples sorted by key in natural order.
-func (m Ptr[HashMap[K, V]]) Sorted() Ptr[Array[Tuple[K, V]]] = m.ToArray().SortBy((entry Tuple[K, V]) => entry.V1)
+func (m Ptr[HashMap[K, V]]) Sorted() Ptr[Array[Tuple[K, V]]] = m.ToArray().SortWith((a, b) => CompareValues(a.V1, b.V1) < 0)
 
 // SortWith returns a mutable Array of key-value tuples sorted using the given comparison function.
 func (m Ptr[HashMap[K, V]]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Ptr[Array[Tuple[K, V]]] = m.ToArray().SortWith(less)
 
 // SortBy returns a mutable Array of key-value tuples sorted by a key extracted from each entry.
-func (m Ptr[HashMap[K, V]]) SortBy[S any](f func(Tuple[K, V]) S) Ptr[Array[Tuple[K, V]]] = m.ToArray().SortBy(f)
+func (m Ptr[HashMap[K, V]]) SortBy[S comparable](f func(Tuple[K, V]) S) Ptr[Array[Tuple[K, V]]] = m.ToArray().SortBy(f)
 
 // === Merge Operations ===
 

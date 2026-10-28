@@ -707,7 +707,7 @@ func (a Ptr[Array[T]]) SortWith(less func(T, T) bool) Ptr[Array[T]] {
 // Keys must be primitive types or implement std.Ordered.
 // The sort is stable: elements with equal keys keep their original relative order.
 // f runs once per element: keys are computed up front, not on every comparison.
-func (a Ptr[Array[T]]) SortBy[K any](f func(T) K) Ptr[Array[T]] {
+func (a Ptr[Array[T]]) SortBy[K comparable](f func(T) K) Ptr[Array[T]] {
     val elements = a.elements
     val keys = go_interop.SliceWithSize[K](elements.Size())
     for i := 0; i < elements.Size(); i++ {

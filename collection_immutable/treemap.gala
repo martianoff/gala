@@ -981,4 +981,4 @@ func (m TreeMap[K, V]) Sorted() Array[Tuple[K, V]] = m.ToArray()
 func (m TreeMap[K, V]) SortWith(less func(Tuple[K, V], Tuple[K, V]) bool) Array[Tuple[K, V]] = m.ToArray().SortWith(less)
 
 // SortBy returns an array of key-value tuples sorted by a key extracted from each entry.
-func (m TreeMap[K, V]) SortBy[S any](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)
+func (m TreeMap[K, V]) SortBy[S comparable](f func(Tuple[K, V]) S) Array[Tuple[K, V]] = m.ToArray().SortBy(f)

@@ -1078,7 +1078,7 @@ func (a Array[T]) SortWith(less func(T, T) bool) Array[T] {
 // Keys must be primitive types or implement std.Ordered.
 // The sort is stable: elements with equal keys keep their original relative order.
 // f runs once per element: keys are computed up front, not on every comparison.
-func (a Array[T]) SortBy[K any](f func(T) K) Array[T] {
+func (a Array[T]) SortBy[K comparable](f func(T) K) Array[T] {
     if a.length <= 1 {
         return a
     }
