@@ -1267,6 +1267,13 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "hashable_collection_keys",
+    src = "hashable_collection_keys.gala",
+    expected = "hashable_collection_keys.out",
+    deps = ["//collection_immutable"],
+)
+
+gala_exec_test(
     name = "hashable_std_keys",
     src = "hashable_std_keys.gala",
     expected = "hashable_std_keys.out",

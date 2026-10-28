@@ -1,0 +1,26 @@
+package main
+
+import im "martianoff/gala/collection_immutable"
+
+// Array, List and HashSet implement std.Hashable and compare by value, so they
+// work as HashSet elements and HashMap keys without joining them into strings.
+
+func main() {
+    // Configurations seen by a search, each an Array of states. Arrays built
+    // in different ways are the same element when they hold the same values.
+    val seen = im.HashSetOf(im.ArrayOf(1, 4, 7), im.ArrayOf(2, 5))
+    val again = im.EmptyArray[int]().Append(4).Append(7).Prepend(1)
+    Println(s"seen [1 4 7] again: ${seen.Contains(again)}")
+    Println(s"configurations: ${seen.Add(again).Size()}")
+
+    // Sets of sets: order does not matter.
+    val groups = im.HashSetOf(im.HashSetOf("a", "b"), im.HashSetOf("b", "a"), im.HashSetOf("c"))
+    Println(s"distinct groups: ${groups.Size()}")
+
+    // A memo table keyed by a List of open brackets.
+    val memo = im.HashMapOf((im.ListOf("(", "["), 2), (im.ListOf("("), 1))
+    val updated = memo.Put(im.ListOf("[").Prepend("("), 3)
+    Println(s"memo entries: ${updated.Size()}")
+    Println(s"memo ( [: ${updated.GetOrElse(im.ListOf("(", "["), 0)}")
+    Println(s"memo [ (: ${updated.GetOrElse(im.ListOf("[", "("), 0)}")
+}

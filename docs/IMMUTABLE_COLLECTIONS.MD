@@ -575,9 +575,10 @@ arr.ForEach((x) => {
 
 An immutable set with effectively constant time operations. Uses a Hash Array Mapped Trie (HAMT) structure similar to Scala's HashSet.
 
-**Type Requirements:** T must be `comparable` and either:
+**Type Requirements:** T must be either:
 - A **primitive type** (int, string, bool, float, etc.) - hashed automatically
 - A **`Tuple`, `Option` or `Either`** of such values - std implements `Hashable` for them, so `HashSetOf((1, "a"), (2, "b"))` works as is
+- An immutable **`Array`, `List` or `HashSet`** of such values - they implement `Hashable` and `Equal`, so `HashSetOf(ArrayOf(1, 2), ArrayOf(1, 2))` holds one element; an `Array` or `List` hashes its elements in order, a `HashSet` in any order
 - A **custom type** implementing the `Hashable` interface
 
 ### Hashable Interface
@@ -616,7 +617,7 @@ val people = HashSetOf(
 - `HashCombine(h1, h2 uint32) uint32` - Combine two hashes (for structs)
 - `HashValue(v any) uint32` - Hash any key value by the rules the collections use (primitives by value, others through `Hashable`)
 
-HashSet compares elements with `==`, so values that are `==` must hash alike. An element that is neither primitive nor `Hashable` compiles, then panics on the first hash.
+HashSet compares elements with `KeyEqual`: a primitive with `==`, a value with an `Equal` method (every GALA struct has one) by `Equal`, any other value with `==`. Elements that are equal must hash alike. An element that is neither primitive nor `Hashable` compiles, then panics on the first hash.
 
 ### Construction
 

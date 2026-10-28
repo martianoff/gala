@@ -181,6 +181,27 @@ func Equal[T any](v1, v2 T) bool {
 	return true
 }
 
+// KeyEqual reports whether a and b are the same HashSet element or HashMap
+// key. A value of a predeclared primitive type compares with ==; a value with
+// an Equal method (Equatable, which every GALA struct has, the collections
+// included) compares by Equal, so an Array or a List is a key by its
+// elements; any other value compares with ==. A value Go cannot compare panics
+// with the reason. Hash methods agree with it: values KeyEqual calls equal
+// hash alike.
+func KeyEqual[T any](a, b T) bool {
+	if eq, ok := equalPrimitive(a, b); ok {
+		return eq
+	}
+	if e, ok := any(a).(Equatable[T]); ok {
+		return e.Equal(b)
+	}
+	x, y := any(a), any(b)
+	if t := reflect.TypeOf(x); t != nil && !t.Comparable() {
+		panic(fmt.Sprintf("cannot compare %T keys: a HashSet element or HashMap key must have an Equal method or be comparable with ==", x))
+	}
+	return x == y
+}
+
 // equalPrimitive compares v1 and v2 with == when v1's dynamic type is a
 // predeclared primitive type, reporting ok; that is what Equal's reflective
 // path concludes for them (a NaN equals nothing, and values of different
