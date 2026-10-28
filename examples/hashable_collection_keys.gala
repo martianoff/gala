@@ -2,22 +2,22 @@ package main
 
 import im "martianoff/gala/collection_immutable"
 
-// Array, List and HashSet implement std.Hashable and compare by value, so they
-// work as HashSet elements and HashMap keys without joining them into strings.
+// List and HashSet implement std.Hashable and compare by value, so they work
+// as HashSet elements and HashMap keys without joining them into strings.
 
 // A struct key that holds a collection compares by value too: HashSet and
-// HashMap compare keys with Equal, which every GALA struct has.
+// HashMap fall back to Equal, which every GALA struct has, when == says no.
 struct Route(Stops im.List[string])
 
 func (r Route) Hash() uint32 = r.Stops.Hash()
 
 func main() {
-    // Configurations seen by a search, each an Array of states. Arrays built
-    // in different ways are the same element when they hold the same values.
-    val seen = im.HashSetOf(im.ArrayOf(1, 4, 7), im.ArrayOf(2, 5))
-    val again = im.EmptyArray[int]().Append(4).Append(7).Prepend(1)
+    // Paths seen by a search. Lists built in different ways are the same
+    // element when they hold the same values.
+    val seen = im.HashSetOf(im.ListOf(1, 4, 7), im.ListOf(2, 5))
+    val again = im.ListOf(7).Prepend(4).Prepend(1)
     Println(s"seen [1 4 7] again: ${seen.Contains(again)}")
-    Println(s"configurations: ${seen.Add(again).Size()}")
+    Println(s"paths: ${seen.Add(again).Size()}")
 
     // Sets of sets: order does not matter.
     val groups = im.HashSetOf(im.HashSetOf("a", "b"), im.HashSetOf("b", "a"), im.HashSetOf("c"))

@@ -117,6 +117,7 @@ gala_test(
     srcs = ["hashmap_test.gala"],
     deps = [
         ":collection_mutable",
+        "//collection_immutable",
         "//go_interop",
     ],
 )
@@ -149,7 +150,10 @@ go_test(
 #   bazel run //collection_mutable:collections_bench -- -test.bench=. -test.benchmem -test.run='^$'
 go_test(
     name = "collections_bench",
-    srcs = ["collections_bench_test.go"],
+    srcs = [
+        "collections_bench_test.go",
+        "key_bench_test.go",
+    ],
     embed = [":collection_mutable"],
     deps = ["//std"],
 )

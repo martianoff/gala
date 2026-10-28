@@ -24,7 +24,7 @@ import (
 
 // hashSetNode represents a node in the HAMT structure.
 // Uses bitmap to track which children exist.
-type hashSetNode[T any] struct {
+type hashSetNode[T comparable] struct {
     bitmap   uint32
     entries  []T                   // Direct entries at this node (for leaf collisions)
     children []Ptr[hashSetNode[T]]     // Child nodes (for internal nodes)
@@ -34,17 +34,17 @@ type hashSetNode[T any] struct {
 // HashSet represents an immutable set.
 //
 // root is never reassigned; it is `var` for the reason List's tail is.
-type HashSet[T any] struct {
+type HashSet[T comparable] struct {
     var root   OptionPtr[hashSetNode[T]] // empty when the set is empty
     size   int
 }
 
 // EmptyHashSet returns an empty HashSet.
-func EmptyHashSet[T any]() HashSet[T] = HashSet[T](root = EmptyOptionPtr[hashSetNode[T]](), size = 0)
+func EmptyHashSet[T comparable]() HashSet[T] = HashSet[T](root = EmptyOptionPtr[hashSetNode[T]](), size = 0)
 
 // HashSetOf creates a HashSet from variadic arguments.
 // Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
-func HashSetOf[T any](elements ...T) HashSet[T] {
+func HashSetOf[T comparable](elements ...T) HashSet[T] {
     var result = EmptyHashSet[T]()
     for i := 0; i < elements.Size(); i++ {
         result = result.Add(elements[i])
@@ -53,7 +53,7 @@ func HashSetOf[T any](elements ...T) HashSet[T] {
 }
 
 // HashSetFromSlice creates a HashSet from a slice.
-func HashSetFromSlice[T any](elements []T) HashSet[T] {
+func HashSetFromSlice[T comparable](elements []T) HashSet[T] {
     var result = EmptyHashSet[T]()
     for i := 0; i < elements.Size(); i++ {
         result = result.Add(elements[i])
@@ -129,15 +129,14 @@ func (s HashSet[T]) Contains(elem T) bool {
 }
 
 // containsInNode searches for an element in a node.
-func containsInNode[T any](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) bool {
+func containsInNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) bool {
     if node.isLeaf {
-        // Check entries at this leaf
         for i := 0; i < node.entries.Size(); i++ {
-            if KeyEqual(node.entries[i], elem) {
+            if node.entries[i] == elem {
                 return true
             }
         }
-        return false
+        return KeyIndexByValue(node.entries, elem) >= 0
     }
 
     val bit = bitpos(hashCode, level)
@@ -167,7 +166,7 @@ func (s HashSet[T]) Add(elem T) HashSet[T] {
 }
 
 // addToNode adds an element to a node, returning a new node.
-func addToNode[T any](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) Ptr[hashSetNode[T]] {
+func addToNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) Ptr[hashSetNode[T]] {
     if node.isLeaf {
         // Add to leaf's entries or expand to internal node
         if level >= 6 {
@@ -233,7 +232,7 @@ func addToNode[T any](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level i
 }
 
 // insertIntoInternalNode inserts an element into an internal node.
-func insertIntoInternalNode[T any](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) Ptr[hashSetNode[T]] {
+func insertIntoInternalNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) Ptr[hashSetNode[T]] {
     val bit = bitpos(hashCode, level)
     val idx = index(node.bitmap, bit)
 
@@ -294,11 +293,12 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
 
 // removeFromNode removes an element from a node, returning the new node, or
 // empty when no element is left under it.
-func removeFromNode[T any](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) OptionPtr[hashSetNode[T]] {
+func removeFromNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, level int) OptionPtr[hashSetNode[T]] {
     if node.isLeaf {
         var newEntries []T
+        val found = KeyIndex(node.entries, elem)
         for i := 0; i < node.entries.Size(); i++ {
-            if !KeyEqual(node.entries[i], elem) {
+            if i != found {
                 newEntries = go_interop.SliceAppend(newEntries, node.entries[i])
             }
         }
@@ -396,7 +396,8 @@ func (s HashSet[T]) SubsetOf(other HashSet[T]) bool {
 func (s HashSet[T]) Equal(other HashSet[T]) bool = s.size == other.size && s.SubsetOf(other)
 
 // Hash hashes the elements regardless of their order (std.Hashable), so a
-// HashSet can be a HashSet element or a HashMap key.
+// HashSet can be a HashSet element or a HashMap key. It visits every element:
+// it is O(n), and not cached.
 func (s HashSet[T]) Hash() uint32 {
     // The sum and the XOR of the element hashes do not depend on the order.
     val (sum, xor) = s.FoldLeft((uint32(0), uint32(0)), (acc, elem) => {
@@ -412,7 +413,7 @@ func (s HashSet[T]) ForEach(f func(T)) {
 }
 
 // forEachInNode traverses a node and applies f to each element.
-func forEachInNode[T any](node Ptr[hashSetNode[T]], f func(T)) {
+func forEachInNode[T comparable](node Ptr[hashSetNode[T]], f func(T)) {
     if node.isLeaf {
         for i := 0; i < node.entries.Size(); i++ {
             f(node.entries[i])
@@ -427,13 +428,13 @@ func forEachInNode[T any](node Ptr[hashSetNode[T]], f func(T)) {
 
 // MapHashSet applies a function to each element and returns a new set.
 // Note: Defined as standalone function to preserve type constraints.
-func MapHashSet[T any, U any](s HashSet[T], f func(T) U) HashSet[U] {
+func MapHashSet[T comparable, U comparable](s HashSet[T], f func(T) U) HashSet[U] {
     return s.FoldLeft[HashSet[U]](EmptyHashSet[U](), (acc HashSet[U], elem T) => acc.Add(f(elem)))
 }
 
 // FlatMapHashSet applies a function that returns a set to each element and flattens.
 // Note: Defined as standalone function to preserve type constraints.
-func FlatMapHashSet[T any, U any](s HashSet[T], f func(T) HashSet[U]) HashSet[U] {
+func FlatMapHashSet[T comparable, U comparable](s HashSet[T], f func(T) HashSet[U]) HashSet[U] {
     return s.FoldLeft[HashSet[U]](EmptyHashSet[U](), (acc HashSet[U], elem T) => acc.AddAll(f(elem)))
 }
 

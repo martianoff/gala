@@ -373,20 +373,12 @@ func TestHashSetOfTupleWithUnhashablePanics(t T) T = Panics(t, () => {
 
 // ============ Collection Element Tests ============
 
-func TestHashSetOfArrays(t T) T {
-    // Equal Arrays built differently (prepended or appended) are one element.
-    val built = EmptyArray[int]().Prepend(2).Prepend(1).Append(3)
-    val s = HashSetOf(ArrayOf(1, 2, 3), built, ArrayOf(3, 2, 1))
-    val t1 = Eq(t, s.Size(), 2)
-    val t2 = IsTrue(t1, s.Contains(ArrayOf(1, 2, 3)))
-    val t3 = IsFalse(t2, s.Contains(ArrayOf(1, 2)))
-    Eq(t3, s.Remove(ArrayOf(3, 2, 1)).Size(), 1)
-}
-
 func TestHashSetOfLists(t T) T {
+    // Lists built differently are one element when they hold the same values.
     val s = HashSetOf(ListOf("a", "b"), ListOf("b").Prepend("a"), ListOf("b", "a"))
     val t1 = Eq(t, s.Size(), 2)
-    IsTrue(t1, s.Contains(ListOf("b", "a")))
+    val t2 = IsTrue(t1, s.Contains(ListOf("b", "a")))
+    Eq(t2, s.Remove(ListOf("b").Prepend("a")).Size(), 1)
 }
 
 func TestHashSetOfHashSets(t T) T {
@@ -398,10 +390,17 @@ func TestHashSetOfHashSets(t T) T {
 }
 
 func TestHashSetOfNestedCollections(t T) T {
-    val s = HashSetOf(HashSetOf(ArrayOf(1, 2), ArrayOf(3)), HashSetOf(ArrayOf(3), ArrayOf(1, 2)))
-    val t1 = Eq(t, s.Size(), 1)
-    val pairs = HashSetOf((ListOf(1), ArrayOf("x")), (ListOf(1), ArrayOf("x")), (ListOf(2), ArrayOf("x")))
+    val sets = HashSetOf(HashSetOf(ListOf(1, 2), ListOf(3)), HashSetOf(ListOf(3), ListOf(2).Prepend(1)))
+    val t1 = Eq(t, sets.Size(), 1)
+    val pairs = HashSetOf((ListOf(1), "x"), (ListOf(1), "x"), (ListOf(2), "x"))
     Eq(t1, pairs.Size(), 2)
+}
+
+func TestHashSetOfAnyComparesCollectionsByValue(t T) T {
+    // With an interface element type, Equal is found by reflection.
+    val s = EmptyHashSet[any]().Add(ListOf(1, 2)).Add(ListOf(2).Prepend(1)).Add(HashSetOf(1)).Add(HashSetOf(1))
+    val t1 = Eq(t, s.Size(), 2)
+    IsTrue(t1, s.Contains(ListOf(1, 2)))
 }
 
 func TestCollectionEqualAndHash(t T) T {

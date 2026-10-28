@@ -181,37 +181,6 @@ func Equal[T any](v1, v2 T) bool {
 	return true
 }
 
-// KeyEqual reports whether a and b are the same HashSet element or HashMap
-// key. A value of a predeclared primitive type compares with ==; a value with
-// an Equal method (Equatable, which every GALA struct has, the collections
-// included) compares by Equal, so an Array or a List is a key by its
-// elements; any other value compares with ==. A value Go cannot compare and
-// with no Equal panics with the reason. Hash methods agree with it: values
-// KeyEqual calls equal hash alike.
-//
-// It runs on every lookup, so it tries == first wherever Go can compare the
-// values: values that are == are Equal too, and a lookup usually compares the
-// key it finds. Equal runs only when == says no, so a key that is == to the
-// one it looks for costs what == does.
-func KeyEqual[T any](a, b T) bool {
-	if eq, ok := equalPrimitive(a, b); ok {
-		return eq
-	}
-	x, y := any(a), any(b)
-	t := reflect.TypeOf(x)
-	comparable := t == nil || t.Comparable()
-	if comparable && x == y {
-		return true
-	}
-	if e, ok := any(a).(Equatable[T]); ok {
-		return e.Equal(b)
-	}
-	if !comparable {
-		panic("cannot compare " + t.String() + " keys: a HashSet element or HashMap key must have an Equal method or be comparable with ==")
-	}
-	return false
-}
-
 // equalPrimitive compares v1 and v2 with == when v1's dynamic type is a
 // predeclared primitive type, reporting ok; that is what Equal's reflective
 // path concludes for them (a NaN equals nothing, and values of different
@@ -359,10 +328,14 @@ func As[T any](obj any) (T, bool) {
 }
 
 // KeysEqualByValue reports whether a and b, keys that are not ==, are the
-// same key all the same: by Equal, for a value with an Equal method (a List or
-// a HashSet compares by its elements, though == compares them by identity).
-// HashSet and HashMap with comparable keys call it only after == says no, so
-// a lookup that finds its key costs what == does.
+// same key all the same: by their Equal method, when they have one. A List or
+// a HashSet compares by its elements that way, though == compares them by
+// identity. HashSet and HashMap call it only after == says no, so a lookup
+// that finds its key costs what == does.
+//
+// Equal is found as Equatable[T]. When T is an interface type (a HashSet[any],
+// or a key of an interface or sealed type), the value's Equal takes its own
+// type rather than T, so it is looked up by reflection, as std.Equal does.
 func KeysEqualByValue[T any](a, b T) bool {
 	if _, ok := equalPrimitive(a, b); ok {
 		return false
@@ -370,5 +343,57 @@ func KeysEqualByValue[T any](a, b T) bool {
 	if e, ok := any(a).(Equatable[T]); ok {
 		return e.Equal(b)
 	}
-	return false
+	if reflect.TypeOf((*T)(nil)).Elem().Kind() != reflect.Interface {
+		return false
+	}
+	x, y := reflect.ValueOf(any(a)), reflect.ValueOf(any(b))
+	if !x.IsValid() || !y.IsValid() || x.Type() != y.Type() {
+		return false
+	}
+	m := x.MethodByName("Equal")
+	if !m.IsValid() || m.Type().NumIn() != 1 || m.Type().NumOut() != 1 || m.Type().Out(0).Kind() != reflect.Bool || !y.Type().AssignableTo(m.Type().In(0)) {
+		return false
+	}
+	return m.Call([]reflect.Value{y})[0].Bool()
+}
+
+// KeyIndexByValue returns the index of the first of keys that KeysEqualByValue
+// calls equal to key, or -1; for a key type that never compares by value, -1
+// at once. HashSet and HashMap call it after no key was == to key.
+func KeyIndexByValue[T any](keys []T, key T) int {
+	if KeysMayEqualByValue[T]() {
+		for i, k := range keys {
+			if KeysEqualByValue(k, key) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// KeyIndex returns the index of key among keys, or -1, comparing keys as
+// HashSet and HashMap do: with ==, and, when no key is ==, by Equal
+// (KeysEqualByValue) for a key type that may compare by value. A lookup that
+// finds its key with == costs what it did before Equal was considered.
+func KeyIndex[T comparable](keys []T, key T) int {
+	for i, k := range keys {
+		if k == key {
+			return i
+		}
+	}
+	return KeyIndexByValue(keys, key)
+}
+
+// KeysMayEqualByValue reports whether KeysEqualByValue can call two keys of
+// type T that are not == equal: whether T has an Equal method, or is an
+// interface type whose values may.
+func KeysMayEqualByValue[T any]() bool {
+	var zero T
+	if _, ok := equalPrimitive(zero, zero); ok {
+		return false
+	}
+	if _, ok := any(zero).(Equatable[T]); ok {
+		return true
+	}
+	return reflect.TypeOf((*T)(nil)).Elem().Kind() == reflect.Interface
 }

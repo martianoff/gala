@@ -146,7 +146,8 @@ func (l List[T]) Equal(other List[T]) bool {
 
 // Hash hashes the elements in order (std.Hashable), so a List can be a
 // HashSet element or a HashMap key. Each element must be a primitive or
-// Hashable, as a HashSet element must.
+// Hashable, as a HashSet element must. It visits every element: it is O(n),
+// and not cached.
 func (l List[T]) Hash() uint32 = l.FoldLeft(HashInt(int64(l.length)), (h, elem) => HashCombine(h, HashValue(elem)))
 
 // Prepend adds an element to the front of the list. O(1).

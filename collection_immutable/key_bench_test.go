@@ -26,7 +26,7 @@ func keysOf[K any](f func(int) K) []K {
 	return keys
 }
 
-func benchSetContains[K any](b *testing.B, keys []K) {
+func benchSetContains[K comparable](b *testing.B, keys []K) {
 	s := EmptyHashSet[K]()
 	for _, k := range keys {
 		s = s.Add(k)

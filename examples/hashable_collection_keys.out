@@ -1,5 +1,5 @@
 seen [1 4 7] again: true
-configurations: 2
+paths: 2
 distinct groups: 2
 memo entries: 2
 memo ( [: 3
