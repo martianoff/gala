@@ -67,6 +67,7 @@ go_test(
         "module_cache_immutable_test.go",
         "nested_module_test.go",
         "nested_subpackage_test.go",
+        "output_path_test.go",
         "sealed_case_defaults_test.go",
         "sealed_go_constructors_test.go",
         "sibling_syntax_error_test.go",

@@ -1,12 +1,14 @@
 package build
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -1328,19 +1330,7 @@ func (b *Builder) goBuild(outputPath, buildTarget string) (string, error) {
 		fmt.Println("Running go build...")
 	}
 
-	// Determine output path
-	if outputPath == "" {
-		// Use module name or directory name, in project directory
-		outputPath = filepath.Join(b.workspace.ProjectDir, filepath.Base(b.workspace.ProjectDir))
-	} else if !filepath.IsAbs(outputPath) {
-		// Relative path - make it relative to project directory
-		outputPath = filepath.Join(b.workspace.ProjectDir, outputPath)
-	}
-
-	// Add .exe extension on Windows if not present
-	if isWindows() && !strings.HasSuffix(outputPath, ".exe") {
-		outputPath += ".exe"
-	}
+	outputPath = resolveOutputPath(b.workspace.ProjectDir, outputPath, goTargetOS())
 
 	// The target is always a single package: `go build -o <path> ./gen/...`
 	// fails with "cannot write multiple packages to non-directory" as soon as
@@ -1677,7 +1667,7 @@ func (b *Builder) Test(verbose bool) error {
 
 		// Step 9: Build the test binary
 		testBinary := filepath.Join(b.workspace.Dir, "test-binary")
-		if isWindows() {
+		if runtime.GOOS == "windows" { // run on the host
 			testBinary += ".exe"
 		}
 
@@ -2284,7 +2274,26 @@ func findGalaTestFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
-// isWindows returns true if running on Windows.
-func isWindows() bool {
-	return os.PathSeparator == '\\'
+// resolveOutputPath returns where `go build` writes the binary. As with
+// `go build -o`, an explicit outputPath never gains an extension; a relative
+// one resolves against projectDir. With no outputPath the binary is named
+// after projectDir and gets ".exe" when targetGOOS, the OS the binary is
+// built for, is windows.
+func resolveOutputPath(projectDir, outputPath, targetGOOS string) string {
+	if outputPath == "" {
+		outputPath = filepath.Base(projectDir)
+		if targetGOOS == "windows" {
+			outputPath += ".exe"
+		}
+	}
+	if filepath.IsAbs(outputPath) {
+		return outputPath
+	}
+	return filepath.Join(projectDir, outputPath)
+}
+
+// goTargetOS returns the GOOS `go build` compiles for: GOOS as the go command
+// sees it (environment, then `go env -w`), else the host OS.
+func goTargetOS() string {
+	return cmp.Or(analyzer.GoEnvValue("GOOS"), runtime.GOOS)
 }

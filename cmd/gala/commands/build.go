@@ -28,7 +28,8 @@ This command:
   2. Transpiles .gala files to Go code (in a build workspace)
   3. Runs go build to produce a binary (or compile-check for libraries)
 
-The binary is placed in the current directory by default.
+The binary is placed in the current directory by default. The default name
+gets .exe when the target GOOS is windows; an -o name never gets .exe added.
 No go.mod or generated files are created in your project directory.
 
 Examples:

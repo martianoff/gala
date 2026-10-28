@@ -186,8 +186,11 @@ Build a GALA project to a binary.
 # Build with default output name (project directory name)
 gala build
 
-# Build with custom output name
+# Build with custom output name (no .exe added)
 gala build -o myapp
+
+# Cross-compile: GOOS/GOARCH pass through to go build
+GOOS=linux GOARCH=arm64 gala build -o myapp-linux-arm64
 
 # Build with verbose output
 gala build -v
@@ -197,6 +200,8 @@ gala build -v
 1. Transpiles `.gala` files to Go in a workspace at `~/.gala/build/<hash>/`
 2. Downloads Go dependencies to `~/.gala/go/pkg/mod/`
 3. Runs `go build` to produce the binary in your project directory
+
+**Output name**: as with `go build`, a `-o` name never gets an extension added. The default name gets `.exe` only when the target OS (`GOOS`, or the host when unset) is Windows.
 
 **Auto-fetch**: `gala build` automatically downloads GALA dependencies listed in `gala.mod` that are not yet cached locally. No manual `gala mod download` step is needed.
 
