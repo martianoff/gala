@@ -49,4 +49,14 @@ func main() {
     Println(a.Equal(b), a.Equal(Post("hello", ArrayOf("news"))))
     Println(Poly(ArrayOf(1, 2)).Equal(Poly(ArrayOf(1, 2))), Poly(ArrayOf(1)).Equal(Dot(1)))
     Println(ArrayOf(1, 2).Equal(ArrayOf(1, 2)), tagged(ArrayOf("intro")), tagged(ArrayOf("news")))
+
+    // Go compares List, HashMap, HashSet and TreeSet by their fields, which
+    // point into the structure: two built separately are not ==, even with
+    // the same contents. Equal compares the contents.
+    val xs = ListOf(1, 2)
+    val m = HashMapOf(("a", 1))
+    val s = HashSetOf(1)
+    val t = TreeSetOf(1)
+    Println(xs == xs, m == m, s != s, t == t)
+    Println(xs == ListOf(1, 2), m == HashMapOf(("a", 1)), xs.Equal(ListOf(1, 2)), m.Equal(HashMapOf(("a", 1))))
 }
