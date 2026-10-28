@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/spf13/cobra"
 
@@ -106,6 +107,11 @@ func runRun(cmd *cobra.Command, args []string) {
 
 	// Build to the workspace directory (not project dir)
 	tempOutput := filepath.Join(builder.Workspace().Dir, "run-output")
+	// The binary runs here, on the host, and an explicit output path is used
+	// as given, so add the host executable suffix ourselves.
+	if runtime.GOOS == "windows" {
+		tempOutput += ".exe"
+	}
 
 	// Run build with absolute path to workspace
 	outputPath, err := builder.Build(tempOutput)

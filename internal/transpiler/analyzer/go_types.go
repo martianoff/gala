@@ -174,14 +174,14 @@ var goSDKIdentity = sync.OnceValue(func() string {
 func GoCgoEnabled() bool { return goCgoEnabled() }
 
 var goCgoEnabled = sync.OnceValue(func() bool {
-	return resolveCgoEnabled(goEnvValue, os.Getenv("CC") != "", exec.LookPath, build.Default.CgoEnabled)
+	return resolveCgoEnabled(GoEnvValue, os.Getenv("CC") != "", exec.LookPath, build.Default.CgoEnabled)
 })
 
 // resolveCgoEnabled applies the go command's rule. CGO_ENABLED, when it is 0
 // or 1, decides. Otherwise cgo is on where the platform supports it, except
 // that with CC unset in the process environment it is off when the default C
 // compiler is not on PATH. goenv looks a variable up as the go command does
-// (see goEnvValue).
+// (see GoEnvValue).
 func resolveCgoEnabled(goenv func(string) string, ccSet bool, lookPath func(string) (string, error), platformSupportsCgo bool) bool {
 	switch strings.TrimSpace(goenv("CGO_ENABLED")) {
 	case "0":
@@ -199,11 +199,11 @@ func resolveCgoEnabled(goenv func(string) string, ccSet bool, lookPath func(stri
 	return err == nil
 }
 
-// goEnvValue is a Go environment variable as the go command sees it: the
+// GoEnvValue returns a Go environment variable as the go command sees it: the
 // process environment when non-empty, else the user's go env file
 // (`go env -w`), else the SDK's $GOROOT/go.env. Reading the files rather than
 // running `go env` keeps a subprocess off the analyzer's start-up path.
-func goEnvValue(key string) string {
+func GoEnvValue(key string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
