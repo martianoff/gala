@@ -72,20 +72,21 @@ func() int, a function`.
 
 **Fix.** In a generic function, constrain the type parameter with
 `comparable` when Go's `==` is what you mean, or compare with `Equal(a, b)`,
-which takes any type and calls the value's `Equal` method:
+which takes any type and calls the value's `Equal` method. A `List[T]` is not
+a type parameter, so `==` on one calls `List`'s `Equal`:
 
 ```gala
 package main
 
 import . "martianoff/gala/collection_immutable"
 
-func same[T any](a T, b T) bool = Equal(a, b)
+func sameList[T comparable](a List[T], b List[T]) bool = a == b
 
 func sameKey[T comparable](a T, b T) bool = a == b
 
 func main() {
-    Println(same(ListOf(1), ListOf(1))) // true
-    Println(sameKey("a", "a"))          // true
+    Println(sameList(ListOf(1), ListOf(1))) // true: List's Equal
+    Println(sameKey("a", "a"))              // true
 }
 ```
 
