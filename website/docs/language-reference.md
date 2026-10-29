@@ -443,7 +443,7 @@ Where Go's `==` gives the same answer — a type of primitives only, through its
 
 `==` keeps Go's meaning where there is no `Equal`: pointers (`*T`, `Ptr[T]`, and so the mutable collections) compare by identity, interfaces as Go compares them, a type parameter (`T comparable`) with Go's `==` (its type is not known statically; call `Equal(a, b)` for value equality), Go types such as `time.Time` with Go's `==`, and `nil` checks as in Go. A struct *holding* a pointer compares with `Equal`, which compares what it points to.
 
-Inside a type's own `Equal`, `==` on that same type is Go's `==`, since lowering it would call the method being defined; on a type Go cannot compare it is [GALA-E0084](/docs/errors/gala-e0084/). `==` on values Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a `T any` — is GALA-E0084 too. Go code that compares GALA values with its own `==` keeps Go's meaning.
+Inside a type's own `Equal`, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`, since lowering it would call the method being defined; on a type Go cannot compare it is [GALA-E0084](/docs/errors/gala-e0084/). `==` on values Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a `T any` — is GALA-E0084 too, and so is `==` on a struct, sealed type or tuple holding a function unless it declares its own `Equal`. With a literal on the left, `0 == a` calls `a.Equal(0)`. Go code that compares GALA values with its own `==` keeps Go's meaning.
 
 ### Type Aliases {#type-aliases}
 

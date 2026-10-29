@@ -72,11 +72,20 @@ func main() {
 		{name: "struct with a pointer field", src: `struct Node(v int, next *Node)
 
 func main() { Println(Node(1, nil) == Node(1, nil)) }`, want: []string{"}.Equal(Node{"}},
-		{name: "struct with a function field", src: `struct H(f func(int) int)
+		{name: "struct with a function field and its own Equal", src: `struct H(name string, f func(int) int)
+
+func (h H) Equal(o H) bool = h.name == o.name
 
 func inc(x int) int = x + 1
 
-func main() { Println(H(inc) == H(inc)) }`, want: []string{"}.Equal(H{"}},
+func main() { Println(H("a", inc) == H("a", inc)) }`, want: []string{"}.Equal(H{"}},
+		{name: "literal on the left", src: `opaque type Angle int
+
+func (a Angle) Equal(o Angle) bool = int(a) % 360 == int(o) % 360
+
+func f(a Angle) bool = 0 == a
+
+func main() { Println(f(Angle(360))) }`, want: []string{"return a.Equal(0)"}},
 		{name: "struct with an interface field", src: `struct A(v any)
 
 func main() { Println(A(1) == A(1)) }`, want: []string{"}.Equal(A{"}},
@@ -248,6 +257,11 @@ func main() { Println(same(collection_mutable.ArrayOf(1), collection_mutable.Arr
 func (c Cell) Equal(o Cell) bool = c == o
 
 func main() { Println(Equal(Cell(1, nil), Cell(1, nil))) }`, want: "return c == o"},
+		{name: "own Equal compares a type holding its own with Go's ==", src: `struct Cell(v int, next *Cell)
+
+func (c Cell) Equal(o Cell) bool = Some(c) == Some(o)
+
+func main() { Println(Equal(Cell(1, nil), Cell(1, nil))) }`, want: "std.Some[Cell]{}.Apply(c) == std.Some[Cell]{}.Apply(o)"},
 		{name: "stable identifier holding an int", src: `val Answer = 42
 
 func describe(n int) string = n match {
@@ -346,6 +360,25 @@ func (b Bag) Equal(o Bag) bool = b == o
 func main() { Println(Bag(() => 1).Equal(Bag(() => 1))) }`,
 			msg: []string{"== inside Bag's own Equal is Go's ==, which cannot compare Bag values: field items has type func() int, a function",
 				"compare the fields one by one"},
+		},
+		{
+			name: "struct with a function field",
+			src: `struct H(f func(int) int)
+
+func inc(x int) int = x + 1
+
+func main() { Println(H(inc) == H(inc)) }`,
+			msg: []string{"== cannot compare H values: field f has type func(int) int, a function",
+				"compare the other fields, or the values the function returns"},
+		},
+		{
+			name: "value Go cannot compare against an interface",
+			src: `struct S(xs []int)
+
+func f(a S, b any) bool = a == b
+
+func main() { Println(f(S(nil), 1)) }`,
+			msg: []string{"== cannot compare S values: field xs has type []int, a Go slice"},
 		},
 		{
 			name: "stable identifier holding a function",

@@ -21,7 +21,10 @@ type, and it has no `Equal`. That is an operand of type
 - a Go map;
 - a type parameter constrained by `any` (`func same[T any](a T, b T)`), whose
   type is not known statically;
-- a Go type that holds a slice, map or function, such as `bytes.Buffer`.
+- a Go type that holds a slice, map or function, such as `bytes.Buffer`;
+- a struct, sealed type or tuple that holds a function and does not declare
+  its own `Equal`: the synthesized one would find the function equal to
+  nothing, not even itself.
 
 A [stable-identifier pattern](/docs/language-reference/#stable-identifiers-constants-in-patterns)
 (`case Answer`) compares the matched value as `==` does, and fires the same

@@ -881,7 +881,7 @@ Where Go's `==` gives the same answer as `Equal`, the comparison stays Go's `==`
 | a Go type (`time.Time`, any Go struct) | with Go's `==`, even when the Go type has an `Equal` method |
 | a value and `nil` | as Go does |
 
-**Inside a type's own `Equal`**, `==` on that same type is Go's `==`: lowering it would call the method being defined. On a type Go cannot compare it is [GALA-E0084](errors/GALA-E0084.md); compare the fields instead. `==` on a field of another type still compares with that type's `Equal`.
+**Inside a type's own `Equal`**, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`: lowering it would call the method being defined. On a type Go cannot compare it is [GALA-E0084](errors/GALA-E0084.md); compare the fields instead. `==` on a field of another type still compares with that type's `Equal`. A helper that `Equal` calls is not inside it, so `==` there calls `Equal` again.
 
 ```gala
 package main
@@ -896,7 +896,7 @@ func main() {
 }
 ```
 
-`==` on values that Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a type parameter constrained by `any` — is [GALA-E0084](errors/GALA-E0084.md). Hand-written Go that compares GALA values with its own `==` keeps Go's meaning; see [Go Interop](GO_INTEROP.MD).
+`==` on values that Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a type parameter constrained by `any` — is [GALA-E0084](errors/GALA-E0084.md). So is `==` on a struct, sealed type or tuple that holds a function, unless it declares its own `Equal`: the synthesized one would find the function equal to nothing, not even itself. With a literal on the left, `0 == a` calls `a.Equal(0)`. Hand-written Go that compares GALA values with its own `==` keeps Go's meaning; see [Go Interop](GO_INTEROP.MD).
 
 #### Apply Method
 If a struct has an `Apply` method, it can be called like a function. GALA automatically expands `object(args)` to `object.Apply(args)`.

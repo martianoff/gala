@@ -127,49 +127,72 @@ type typeArg struct {
 }
 
 // typeEq is what the walk of a type finds: whether Go's == on it gives
-// Equal's answer (native), and why Go cannot compare it at all (bad; nil when
-// it can or that is not known).
+// Equal's answer (native), why Go cannot compare it at all (bad; nil when it
+// can or that is not known), a function a synthesized Equal would compare
+// (fn: such an Equal finds a function equal to nothing, not even itself), and
+// whether it holds the type whose Equal is being transformed (holdsOwner).
 type typeEq struct {
-	native bool
-	bad    *incomparable
+	native     bool
+	bad        *incomparable
+	fn         *incomparable
+	holdsOwner bool
 }
 
 // comparer walks a type for how == compares it. visiting holds the
 // declarations being walked, so a type that holds itself through another is
-// read once.
+// read once. exhaustive walks every field, as finding the owner needs.
 type comparer struct {
-	t        *galaASTTransformer
-	visiting map[string]bool
+	t          *galaASTTransformer
+	visiting   map[string]bool
+	exhaustive bool
 }
 
 // equalityOf is how == compares two values of typ, the type of an expression.
 // A type that declares a usable Equal compares with it without a walk; one
 // whose Equal is synthesized is walked to see whether Go's == gives the same
-// answer.
+// answer, and whether that Equal would compare a function, which it finds
+// equal to nothing: such a type is GALA-E0084, as before.
+//
+// Inside a type's own Equal, == on that type, or on a type that holds it by
+// value (Option[T], a tuple, a List of T), is Go's: its Equal would call the
+// method being defined.
 func (t *galaASTTransformer) equalityOf(typ transpiler.Type) equality {
 	if transpiler.IsUnusable(typ) {
 		return equality{mode: eqGo}
 	}
 	meta, isDecl := t.equalDeclaration(typ)
-	owner := isDecl && t.isEqualOwner(meta)
 	declared, usable := false, false
 	if isDecl {
 		declared, usable = t.equalMethodOf(meta)
 	}
-	if declared && usable && !owner {
+	inEqual := t.equalOwner != nil
+	if declared && usable && !inEqual {
 		return equality{mode: eqMethod}
 	}
-	c := comparer{t: t}
+	c := comparer{t: t, exhaustive: inEqual}
 	w := c.walk(typ, nil, false)
 	switch {
 	case w.native:
 		return equality{mode: eqGo}
-	case usable && !owner:
+	case w.holdsOwner && w.bad != nil:
+		return equality{mode: eqIncomparable, why: w.bad, ownEqual: true}
+	case w.holdsOwner:
+		return equality{mode: eqGo}
+	case usable && (declared || w.fn == nil):
 		return equality{mode: eqMethod}
+	case w.fn != nil:
+		return equality{mode: eqIncomparable, why: w.fn}
 	case w.bad != nil:
-		return equality{mode: eqIncomparable, why: w.bad, ownEqual: owner}
+		return equality{mode: eqIncomparable, why: w.bad}
 	}
 	return equality{mode: eqGo}
+}
+
+// goIncomparable reports why Go cannot compare values of typ, or nil when it
+// can or that is not known.
+func (t *galaASTTransformer) goIncomparable(typ transpiler.Type) *incomparable {
+	c := comparer{t: t}
+	return c.walk(typ, nil, false).bad
 }
 
 // equalDeclaration returns the GALA declaration of typ when it is a struct,
@@ -227,7 +250,8 @@ func (c *comparer) walk(typ transpiler.Type, env map[string]typeArg, declared bo
 	var args []transpiler.Type
 	switch tt := typ.(type) {
 	case transpiler.FuncType:
-		return typeEq{bad: &incomparable{leaf: typ, kind: kindFunction}}
+		r := &incomparable{leaf: typ, kind: kindFunction}
+		return typeEq{bad: r, fn: r}
 	case transpiler.MapType:
 		return typeEq{bad: &incomparable{leaf: typ, kind: "a Go map"}}
 	case transpiler.ArrayType:
@@ -336,45 +360,57 @@ func (c *comparer) declaration(typ transpiler.Type, meta *transpiler.TypeMetadat
 		}
 	}
 	declaresEqual, _ := c.t.equalMethodOf(meta)
-	native := !declaresEqual
+	res := typeEq{native: !declaresEqual, holdsOwner: c.t.isEqualOwner(meta)}
 	if meta.IsOpaque {
 		r := c.walk(meta.Underlying, fieldEnv, true)
-		r.native = r.native && native
+		r.native = r.native && res.native
+		r.holdsOwner = r.holdsOwner || res.holdsOwner
 		return r
 	}
-	var bad *incomparable
-	// field walks one field; it reports false once neither answer can change.
+	// step records the first step from typ down to r's leaf, through the field
+	// name described by desc: the outermost declaration sets it last, so the
+	// message names the first step from the compared type. A field another
+	// package keeps to itself is no step its user can take, so the type is
+	// named instead.
+	step := func(r *incomparable, name, desc string, fieldType transpiler.Type) {
+		r.direct = r.atLeaf()
+		if !c.t.isLocalPackage(meta.Package) && !token.IsExported(name) {
+			r.via, r.viaType, r.holder = "", nil, typ
+		} else {
+			r.via, r.viaType, r.holder = desc, c.t.substituteConcreteTypes(fieldType, meta.TypeParams, args), nil
+		}
+	}
+	// field walks one field; it reports false once no answer can change. A
+	// function inside a type with its own Equal is that Equal's concern.
 	field := func(name, desc string, fieldType transpiler.Type) bool {
 		r := c.walk(fieldType, fieldEnv, true)
-		native = native && r.native
-		if r.bad != nil && bad == nil {
-			bad = r.bad
-			// The outermost declaration sets these last: the message names
-			// the first step from the compared type. A field another package
-			// keeps to itself is no step its user can take, so the type is
-			// named instead.
-			bad.direct = bad.atLeaf()
-			if !c.t.isLocalPackage(meta.Package) && !token.IsExported(name) {
-				bad.via, bad.viaType, bad.holder = "", nil, typ
-			} else {
-				bad.via, bad.viaType, bad.holder = desc, c.t.substituteConcreteTypes(fieldType, meta.TypeParams, args), nil
+		res.native = res.native && r.native
+		res.holdsOwner = res.holdsOwner || r.holdsOwner
+		if r.bad != nil && res.bad == nil {
+			res.bad = r.bad
+			step(res.bad, name, desc, fieldType)
+		}
+		if r.fn != nil && res.fn == nil && !declaresEqual {
+			res.fn = r.fn
+			if res.fn != res.bad {
+				step(res.fn, name, desc, fieldType)
 			}
 		}
-		return native || bad == nil
+		return c.exhaustive || res.native || res.bad == nil || (res.fn == nil && !declaresEqual)
 	}
 	if meta.IsSealed {
 		for _, v := range meta.SealedVariants {
 			for i, name := range v.FieldNames {
 				if i >= len(v.FieldTypes) || isSealedSelfField(v.FieldTypes[i], meta) {
-					native = false // held through a pointer
+					res.native = false // held through a pointer
 					continue
 				}
 				if !field(name, fmt.Sprintf("field %s of case %s", name, v.Name), v.FieldTypes[i]) {
-					return typeEq{bad: bad}
+					return res
 				}
 			}
 		}
-		return typeEq{native: native, bad: bad}
+		return res
 	}
 	tuple := meta.Package == registry.StdPackageName && isTupleTypeName(meta.Name)
 	for i, name := range meta.FieldNames {
@@ -383,33 +419,57 @@ func (c *comparer) declaration(typ transpiler.Type, meta *transpiler.TypeMetadat
 			desc = fmt.Sprintf("element %d", i+1)
 		}
 		if !field(name, desc, meta.Fields[name]) {
-			return typeEq{bad: bad}
+			return res
 		}
 	}
-	return typeEq{native: native, bad: bad}
+	return res
 }
 
 // operandsEquality is how `x == y` compares, given the operands' types: by
-// x's Equal when x's type has one that Go's == is not and y is not an
-// interface (Go's == compares an interface with a value of a type that
-// implements it), else with Go's ==. An operand of a type that has neither
-// is eqIncomparable, and badType is its type.
-func (t *galaASTTransformer) operandsEquality(xType, yType transpiler.Type) (eq equality, badType transpiler.Type) {
+// x's Equal when x's type has one that Go's == is not, else by y's Equal when
+// x is a literal (swapped: `y.Equal(x)` evaluates the same operands), else
+// with Go's ==. Go's == compares an interface with a value of a type that
+// implements it, so a comparison with an interface operand is Go's. An
+// operand of a type that has neither Equal nor Go's == is eqIncomparable,
+// and badType is its type.
+func (t *galaASTTransformer) operandsEquality(xType, yType transpiler.Type, xLiteral bool) (eq equality, badType transpiler.Type, swapped bool) {
 	ex := t.equalityOf(xType)
 	if ex.mode == eqIncomparable {
-		return ex, xType
+		return ex, xType, false
 	}
 	ey := ex
 	if transpiler.IsUnusable(xType) || transpiler.IsUnusable(yType) || xType.String() != yType.String() {
 		ey = t.equalityOf(yType)
 	}
 	if ey.mode == eqIncomparable {
-		return ey, yType
+		return ey, yType, false
 	}
-	if ex.mode == eqMethod && !t.isInterfaceType(yType) {
-		return ex, nil
+	for _, side := range []struct {
+		eq                equality
+		typ, other        transpiler.Type
+		swapped, eligible bool
+	}{{ex, xType, yType, false, true}, {ey, yType, xType, true, xLiteral}} {
+		if side.eq.mode != eqMethod || !side.eligible {
+			continue
+		}
+		if !t.isInterfaceType(side.other) {
+			return side.eq, nil, side.swapped
+		}
+		if r := t.goIncomparable(side.typ); r != nil {
+			return equality{mode: eqIncomparable, why: r}, side.typ, false
+		}
 	}
-	return equality{mode: eqGo}, nil
+	return equality{mode: eqGo}, nil, false
+}
+
+// isLiteral reports whether expr is a literal, optionally negated: an operand
+// whose evaluation order does not matter.
+func isLiteral(expr ast.Expr) bool {
+	if u, ok := expr.(*ast.UnaryExpr); ok && (u.Op == token.SUB || u.Op == token.ADD) {
+		expr = u.X
+	}
+	_, ok := expr.(*ast.BasicLit)
+	return ok
 }
 
 // lowerEquality lowers `left == right` or `left != right`, cmp, to
@@ -423,12 +483,14 @@ func (t *galaASTTransformer) lowerEquality(leftCtx, rightCtx antlr.ParserRuleCon
 	if !ok || (bin.Op != token.EQL && bin.Op != token.NEQ) || isNilIdent(bin.X) || isNilIdent(bin.Y) {
 		return cmp, nil
 	}
-	xType := t.probeExprType(bin.X)
-	eq, badType := t.operandsEquality(xType, t.probeExprType(bin.Y))
-	switch eq.mode {
-	case eqIncomparable:
+	xType, yType := t.probeExprType(bin.X), t.probeExprType(bin.Y)
+	eq, badType, swapped := t.operandsEquality(xType, yType, isLiteral(bin.X))
+	switch {
+	case eq.mode == eqIncomparable:
 		return nil, t.incomparableOperandsError(leftCtx, rightCtx, bin.Op, badType, eq)
-	case eqMethod:
+	case eq.mode == eqMethod && swapped:
+		return t.equalCallExpr(bin.Y, yType, bin.X, bin.Op == token.NEQ, rightCtx)
+	case eq.mode == eqMethod:
 		return t.equalCallExpr(bin.X, xType, bin.Y, bin.Op == token.NEQ, leftCtx)
 	}
 	return cmp, nil
@@ -459,7 +521,7 @@ func (t *galaASTTransformer) incomparableOperandsError(leftCtx, rightCtx antlr.P
 	var hint string
 	switch {
 	case eq.ownEqual:
-		msg = fmt.Sprintf("%s inside %s's own Equal is Go's ==, which cannot compare %s values: %s", tok, name, name, reason)
+		msg = fmt.Sprintf("%s inside %s's own Equal is Go's ==, which cannot compare %s values: %s", tok, t.equalOwner.Name, name, reason)
 		hint = "compare the fields one by one: calling Equal here would call the method being defined"
 	case r.kind == kindFunction:
 		hint = functionHint(r)
@@ -496,7 +558,7 @@ func (t *galaASTTransformer) lowerPatternEquality(ctx grammar.IExpressionContext
 	if transpiler.IsUnusable(subjectType) {
 		subjectType = t.probeExprType(subject)
 	}
-	eq, badType := t.operandsEquality(subjectType, t.probeExprType(pattern))
+	eq, badType, _ := t.operandsEquality(subjectType, t.probeExprType(pattern), false)
 	switch eq.mode {
 	case eqIncomparable:
 		r := eq.why
