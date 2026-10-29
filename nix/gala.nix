@@ -8,8 +8,8 @@
 # `useLocalBootstrap` escape hatch.
 #
 #   localAntlr       gala.g4 -> internal/parser/grammar/*.go (ANTLR)
-#   localGalop       gala.g4 -> internal/parser/grammar/gala_galop_*.go (galop,
-#                    unless useGalop = false)
+#   localGalop       gala.g4 -> internal/parser/grammar/gala_galop_*.go and
+#                    internal/parser/native/*.go (galop, unless useGalop = false)
 #   localTranspiled  releaseGalaBin transpiles the local stdlib, one
 #                    `transpile-package` invocation per package (every
 #                    non-test .gala file as that package's input list, which
@@ -208,23 +208,23 @@ let
   # binary for, as with Bazel's --//internal/parser:antlr. The
   # version must equal MODULE.bazel's galop.toolchain version
   # (tools/check_repo_policy.sh checks it).
-  galopVersion = "0.2.3";
+  galopVersion = "0.2.5";
   galopAssets = {
     x86_64-linux = {
       name = "galop-linux-amd64";
-      hash = "sha256-x8xcAAsdMcnoyz1mgLSNAg/Le3sIknjRYBQqO192YrQ=";
+      hash = "sha256-b+JXI2e970pcDnFDk26/uCLjTx3HsilZZGgqpvvUnI4=";
     };
     aarch64-linux = {
       name = "galop-linux-arm64";
-      hash = "sha256-sfjoSeixXXRrVYoCnVwTV9dkDBmZROK5cevvgmYCN3s=";
+      hash = "sha256-XgH7xRlI77PQBV9gWqUaygp7f+nAvYSAWxuuglw+KLE=";
     };
     x86_64-darwin = {
       name = "galop-darwin-amd64";
-      hash = "sha256-MjIJ3dR2aJVPNFzS/jq7Um3/Yl+gYL9SqTvfSBIGM6Q=";
+      hash = "sha256-84x76NTJf0Zr6xxTF7PC7UGn/JK2UVnWZZW34bdZaps=";
     };
     aarch64-darwin = {
       name = "galop-darwin-arm64";
-      hash = "sha256-QvO5etxanXpIuACIQnmdkXJm9H72fMEwPtdWQPNZPHg=";
+      hash = "sha256-bkhmCJ+jQ+FTYZQrglWyuV/U7piAj2R/y4SYwMLJKc8=";
     };
   };
   galopAsset =
@@ -251,15 +251,19 @@ let
           runHook preBuild
           install -m755 "$src" galop
           cp ${repoRoot + "/internal/parser/grammar/gala.g4"} gala.g4
-          mkdir -p "$out/internal/parser/grammar"
+          mkdir -p "$out/internal/parser/grammar" "$out/internal/parser/native"
           ./galop -o "$out/internal/parser/grammar" -Xexact-output-dir \
-            -Dlanguage=Go -Dflavor=antlr -package grammar gala.g4
+            -Dlanguage=Go -Dflavor=antlr -DnativePackage=martianoff/gala/internal/parser/native \
+            -package grammar gala.g4
+          ./galop -o "$out/internal/parser/native" -Xexact-output-dir \
+            -Dlanguage=Go -Dflavor=native -visitor -package native gala.g4
           runHook postBuild
         '';
       };
-  # Copies the generated parsers into a Go source tree. Without galop, the
-  # stand-in package internal/parser/galopoff takes internal/parser/galop's
-  # place, as Bazel's select does.
+  # Copies the generated parsers and galop's native tree into a Go source tree.
+  # Without galop, the stand-in packages internal/parser/galopoff and
+  # internal/parser/nativeoff take internal/parser/galop's and
+  # internal/parser/native's places, as Bazel's select does.
   overlayGrammar = ''
     cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
   ''
@@ -267,11 +271,15 @@ let
     if localGalop != null then
       ''
         cp ${localGalop}/internal/parser/grammar/*.go internal/parser/grammar/
+        mkdir -p internal/parser/native
+        cp ${localGalop}/internal/parser/native/*.go internal/parser/native/
       ''
     else
       ''
         rm -r internal/parser/galop
         mv internal/parser/galopoff internal/parser/galop
+        rm -rf internal/parser/native
+        mv internal/parser/nativeoff internal/parser/native
       ''
   );
 

@@ -25,7 +25,7 @@ fail() {
 
 # --- 1. generated parser (AGENTS.md rule 1) ---------------------------------
 # .gitignore already ignores these; this catches a `git add -f`.
-generated="$(git ls-files 'internal/parser/grammar/*.go' 'internal/parser/grammar/*.java')"
+generated="$(git ls-files 'internal/parser/grammar/*.go' 'internal/parser/grammar/*.java' 'internal/parser/native/*.go')"
 if [[ -n "$generated" ]]; then
   fail "generated parser sources are committed; edit internal/parser/grammar/gala.g4 instead and remove:"
   echo "$generated" >&2

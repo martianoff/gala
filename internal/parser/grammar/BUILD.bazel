@@ -28,9 +28,13 @@ genrule(
 
 # galop's lexer and parser for the same grammar, in its antlr flavor: they build
 # the context types ANTLR generates above, so they share this package and every
-# consumer of the tree works with either parser (see internal/parser).
+# consumer of the tree works with either parser (see internal/parser). With
+# nativePackage galop also writes gala_galop_native.go, the converter from
+# these trees (and ANTLR's, error-recovered ones included) to the native tree
+# of internal/parser/native.
 galop_parser(
     name = "gala_grammar_galop",
+    defines = {"nativePackage": "martianoff/gala/internal/parser/native"},
     flavor = "antlr",
     grammar = "gala.g4",
     package = "grammar",
@@ -64,7 +68,13 @@ go_library(
     }),
     importpath = "martianoff/gala/internal/parser/grammar",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_antlr4_go_antlr_v4//:antlr"],  # keep
+    deps = [
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ] + select({
+        # gala_galop_native.go, generated, imports the native tree.
+        ":galop_enabled": ["//internal/parser/native"],  # keep
+        "//conditions:default": [],
+    }),
 )
 
 exports_files(["gala.g4"])

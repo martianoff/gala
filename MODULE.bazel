@@ -22,7 +22,7 @@ bazel_dep(name = "rules_go", version = "0.59.0")
 bazel_dep(name = "rules_java", version = "9.3.0")
 bazel_dep(name = "rules_kotlin", version = "2.4.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
-bazel_dep(name = "rules_gala", version = "0.6.3")
+bazel_dep(name = "rules_gala", version = "0.6.5")
 
 # Register the GALA toolchains shipped by this module. The main
 # toolchain binds rules_gala's user-facing rules to our in-repo
@@ -65,7 +65,7 @@ bazel_dep(name = "gala_gazelle", version = "0.4.0", dev_dependency = True)
 # internal/parser/grammar): its prebuilt release binaries, registered as
 # toolchains by rules_gala.
 galop = use_extension("@rules_gala//galop:extensions.bzl", "galop")
-galop.toolchain(version = "0.2.3")
+galop.toolchain(version = "0.2.5")
 use_repo(galop, "galop_toolchains")
 
 register_toolchains("@galop_toolchains//:all")
