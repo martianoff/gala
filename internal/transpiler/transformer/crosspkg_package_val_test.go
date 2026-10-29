@@ -275,7 +275,7 @@ func main() {
 	tree, _, err := transpiler.Parse(p, src)
 	require.NoError(t, err)
 	a := analyzer.NewGalaAnalyzer(p, append([]string{root}, getStdSearchPath()...), root)
-	richAST, err := a.Analyze(tree, nil, filepath.Join(root, "main.gala"))
+	richAST, err := transpiler.Analyze(a, tree, nil, filepath.Join(root, "main.gala"))
 	require.NoError(t, err)
 
 	assert.Empty(t, richAST.PackageVals, "imported bindings must not become the importer's own")

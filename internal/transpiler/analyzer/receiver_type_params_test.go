@@ -92,7 +92,7 @@ func analyzeRecvPackage(t *testing.T, analyzed string) *transpiler.RichAST {
 	tree, _, err := transpiler.Parse(p, files[analyzed])
 	require.NoError(t, err)
 	batch.SetPackageFiles([]string{sibling})
-	rich, err := batch.Analyze(tree, nil, filepath.Join(tmp, analyzed))
+	rich, err := transpiler.Analyze(batch, tree, nil, filepath.Join(tmp, analyzed))
 	require.NoError(t, err)
 	return rich
 }

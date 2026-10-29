@@ -432,11 +432,6 @@ func (b *BatchAnalyzer) SetGoSrcDirs(dirs map[string]string) {
 	b.inner.goSrcDirs = dirs
 }
 
-// Analyze delegates to the inner analyzer, sharing the package cache.
-func (b *BatchAnalyzer) Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (*transpiler.RichAST, error) {
-	return b.inner.Analyze(tree, docs, filePath)
-}
-
 // AnalyzeParsed delegates to the inner analyzer, sharing the package cache.
 func (b *BatchAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
 	return b.inner.AnalyzeParsed(parsed, filePath)
@@ -514,12 +509,12 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 	return filepath.Join(goSrcDirs[bestKey], filepath.FromSlash(rel)), true
 }
 
-// AnalyzeParsed analyzes parsed's tree with its doc comments (see Analyze).
+// AnalyzeParsed analyzes parsed's tree with its doc comments (see analyze).
 func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
-	return a.Analyze(parsed.Tree, parsed.Docs, filePath)
+	return a.analyze(parsed.Tree, parsed.Docs, filePath)
 }
 
-// Analyze walks the ANTLR tree and collects metadata for RichAST.
+// analyze walks the ANTLR tree and collects metadata for RichAST.
 //
 // docs carries the file's doc comments keyed by the line and column where the
 // declaration they document starts (parser.DocKey). It may be nil —
@@ -531,7 +526,7 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // therefore what an analysis failure reports, in place of the cascade they
 // cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
 // the phases after analysis to do the same.
-func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (result *transpiler.RichAST, err error) {
+func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
@@ -3136,7 +3131,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			if p := a.parsedForFile(filePath, tree); p != nil {
 				docs = p.Docs
 			}
-			res, err := a.Analyze(tree, docs, filePath)
+			res, err := a.analyze(tree, docs, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName

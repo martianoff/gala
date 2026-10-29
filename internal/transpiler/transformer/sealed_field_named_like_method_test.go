@@ -341,7 +341,7 @@ func TestSealedCaseStorageFieldsAreNotGalaFields(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	tree, _, err := transpiler.Parse(p, "package main\n\n"+transitionDecl+"\n"+transitionTargetMethod)
 	require.NoError(t, err)
-	richAST, err := analyzer.NewGalaAnalyzer(p, getStdSearchPath()).Analyze(tree, nil, "main.gala")
+	richAST, err := transpiler.Analyze(analyzer.NewGalaAnalyzer(p, getStdSearchPath()), tree, nil, "main.gala")
 	require.NoError(t, err)
 	meta := richAST.Types["Transition"]
 	require.NotNil(t, meta)

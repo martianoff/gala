@@ -55,7 +55,7 @@ func TestParseFilesConcurrent_ResultMatchesSequential(t *testing.T) {
 	// siblings; their type metadata must end up in the merged RichAST.
 	siblings := append([]string(nil), paths[1:]...)
 	batch.SetPackageFiles(siblings)
-	rich, err := batch.Analyze(parse(paths[0]), nil, paths[0])
+	rich, err := transpiler.Analyze(batch, parse(paths[0]), nil, paths[0])
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
@@ -104,6 +104,6 @@ func TestParseFilesConcurrent_RaceFree(t *testing.T) {
 
 	siblings := append([]string(nil), paths[1:]...)
 	batch.SetPackageFiles(siblings)
-	_, err = batch.Analyze(tree, nil, paths[0])
+	_, err = transpiler.Analyze(batch, tree, nil, paths[0])
 	require.NoError(t, err)
 }

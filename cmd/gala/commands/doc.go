@@ -247,7 +247,7 @@ func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
 	if len(parseErrs) > 0 {
 		return nil, parseErrs[0]
 	}
-	rich, err := a.Analyze(tree, docs, files[0])
+	rich, err := transpiler.Analyze(a, tree, docs, files[0])
 	if err != nil {
 		return nil, err
 	}

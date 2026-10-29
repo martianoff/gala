@@ -9,6 +9,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
 	"martianoff/gala/internal/parser"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
 
@@ -31,7 +32,7 @@ func analyzePkgFile(t *testing.T, searchPaths []string, dir, primary string) err
 	if perr != nil {
 		t.Fatalf("parse %s: %v", primary, perr)
 	}
-	_, aerr := a.Analyze(tree, docs, path)
+	_, aerr := transpiler.Analyze(a, tree, docs, path)
 	return aerr
 }
 

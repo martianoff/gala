@@ -57,7 +57,7 @@ func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
 			}
 		}
 		batch.SetPackageFiles(siblings)
-		if _, err := batch.Analyze(tree, nil, fp); err != nil {
+		if _, err := transpiler.Analyze(batch, tree, nil, fp); err != nil {
 			t.Fatalf("analyze %s: unexpected error (a cross-file method may use its own file's imports): %v", fp, err)
 		}
 	}

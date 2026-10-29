@@ -63,7 +63,7 @@ func TestMultiPackageBatch_NoPanic(t *testing.T) {
 				t.Fatalf("analyzer panicked on %s: %v", fp, r)
 			}
 		}()
-		if _, err := batch.Analyze(tree, nil, fp); err != nil {
+		if _, err := transpiler.Analyze(batch, tree, nil, fp); err != nil {
 			// A semantic error (e.g., package name mismatch) is acceptable —
 			// we only care that no panic escapes.
 			t.Logf("analyze %s returned error (expected for cross-package siblings): %v", fp, err)

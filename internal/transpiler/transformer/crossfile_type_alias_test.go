@@ -52,7 +52,7 @@ func main() {
 	assert.NoError(t, err)
 
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{typesPath})
-	richAST, err := a.Analyze(tree, nil, mainPath)
+	richAST, err := transpiler.Analyze(a, tree, nil, mainPath)
 	assert.NoError(t, err)
 
 	// The identifier-branch aliases must reach the sibling with their targets.

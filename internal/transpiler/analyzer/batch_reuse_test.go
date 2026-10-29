@@ -61,7 +61,7 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 
 	// First Analyze: std is loaded cold. Counter snapshots a high number.
 	batch.SetPackageFiles([]string{b})
-	_, err := batch.Analyze(parse(a), nil, a)
+	_, err := transpiler.Analyze(batch, parse(a), nil, a)
 	require.NoError(t, err)
 	first := atomic.LoadInt64(&counter.calls)
 
@@ -72,7 +72,7 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 	// previous call's parsedFileCache, or 0 if cached).
 	atomic.StoreInt64(&counter.calls, 0)
 	batch.SetPackageFiles([]string{a})
-	_, err = batch.Analyze(parse(b), nil, b)
+	_, err = transpiler.Analyze(batch, parse(b), nil, b)
 	require.NoError(t, err)
 	second := atomic.LoadInt64(&counter.calls)
 

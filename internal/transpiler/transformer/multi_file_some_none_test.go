@@ -50,7 +50,7 @@ func main() {
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-		richAST, err := a.Analyze(tree, nil, "")
+		richAST, err := transpiler.Analyze(a, tree, nil, "")
 		assert.NoError(t, err)
 
 		assert.Contains(t, richAST.Types, "std.Some", "single-file should have std.Some type")
@@ -72,7 +72,7 @@ func main() {
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{mainPath})
-		richAST, err := a.Analyze(tree, nil, lookupPath)
+		richAST, err := transpiler.Analyze(a, tree, nil, lookupPath)
 		assert.NoError(t, err)
 
 		// The key regression: multi-file mode must also have std types

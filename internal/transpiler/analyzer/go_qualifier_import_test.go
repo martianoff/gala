@@ -224,7 +224,7 @@ func h() int = S("xy").Length()
 
 			tree, _, err := transpiler.Parse(p, tc.file)
 			require.NoError(t, err)
-			_, err = batch.Analyze(tree, nil, file)
+			_, err = transpiler.Analyze(batch, tree, nil, file)
 			if len(tc.wantErr) == 0 {
 				require.NoError(t, err)
 				return

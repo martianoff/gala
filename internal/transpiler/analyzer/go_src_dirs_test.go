@@ -63,7 +63,7 @@ func main() {
 	tree, _, err := transpiler.Parse(p, input)
 	require.NoError(t, err)
 
-	richAST, err := batch.Analyze(tree, nil, "")
+	richAST, err := transpiler.Analyze(batch, tree, nil, "")
 	require.NoError(t, err)
 	require.NotNil(t, richAST)
 	require.NotNil(t, richAST.GoTypeInfo, "Go type info should be populated from the wired source dir")
@@ -117,7 +117,7 @@ func main() {
 	tree, _, err := transpiler.Parse(p, input)
 	require.NoError(t, err)
 
-	richAST, err := batch.Analyze(tree, nil, "")
+	richAST, err := transpiler.Analyze(batch, tree, nil, "")
 	require.NoError(t, err)
 	require.NotNil(t, richAST.GoTypeInfo)
 

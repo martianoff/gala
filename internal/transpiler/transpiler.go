@@ -816,12 +816,18 @@ func ParseLenient(p GalaParser, input string) (antlr.Tree, galaparser.Docs, []er
 	return p.ParseFile(input).Lenient()
 }
 
-// Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
+// Analyzer analyzes a parse of a GALA file and produces a RichAST. It reads
+// the parse's tree and doc comments and attaches neither to the result: the
+// transpile pipeline sets RichAST.Docs. A caller holding only a tree uses
+// Analyze.
 type Analyzer interface {
-	Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error)
-	// AnalyzeParsed is Analyze of a whole parse; the result keeps the parse's
-	// doc comments (RichAST.Docs) and native tree (RichAST.Native).
 	AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*RichAST, error)
+}
+
+// Analyze analyzes tree, with its doc comments docs (which may be nil), with
+// a.
+func Analyze(a Analyzer, tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error) {
+	return a.AnalyzeParsed(&galaparser.Parsed{Tree: tree, Docs: docs}, filePath)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.

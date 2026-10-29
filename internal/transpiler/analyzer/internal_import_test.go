@@ -63,7 +63,7 @@ func analyzeFile(t *testing.T, root, relPath, src string) error {
 	if err != nil {
 		t.Fatalf("parse %s: %v", relPath, err)
 	}
-	_, analyzeErr := a.Analyze(tree, nil, full)
+	_, analyzeErr := transpiler.Analyze(a, tree, nil, full)
 	return analyzeErr
 }
 

@@ -39,7 +39,7 @@ func analyzeSources(t *testing.T, main string, siblings map[string]string) error
 
 	tree, _, err := transpiler.Parse(p, main)
 	require.NoError(t, err, "test source must parse")
-	_, err = batch.Analyze(tree, nil, mainFile)
+	_, err = transpiler.Analyze(batch, tree, nil, mainFile)
 	return err
 }
 
@@ -688,7 +688,7 @@ func analyzeInModule(t *testing.T, mainRel string, files map[string]string) erro
 	mainSrc := files[mainRel]
 	tree, _, err := transpiler.Parse(p, mainSrc)
 	require.NoError(t, err, "test source must parse")
-	_, err = batch.Analyze(tree, nil, filepath.Join(tmp, filepath.FromSlash(mainRel)))
+	_, err = transpiler.Analyze(batch, tree, nil, filepath.Join(tmp, filepath.FromSlash(mainRel)))
 	return err
 }
 
@@ -893,7 +893,7 @@ func TestCrossPackageImportCheckStillFires(t *testing.T) {
 
 	tree, _, err := transpiler.Parse(p, userSrc)
 	require.NoError(t, err)
-	_, err = batch.Analyze(tree, nil, user)
+	_, err = transpiler.Analyze(batch, tree, nil, user)
 	require.Error(t, err, "a sibling's import must not satisfy this file's use of Array")
 	assert.Contains(t, err.Error(), "GALA-E0025")
 }

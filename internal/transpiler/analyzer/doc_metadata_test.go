@@ -27,7 +27,7 @@ func analyzeSrc(t *testing.T, src string) *transpiler.RichAST {
 		t.Fatalf("parse: %v", err)
 	}
 	a := NewGalaAnalyzer(p, nil)
-	rich, err := a.Analyze(tree, docs, path)
+	rich, err := transpiler.Analyze(a, tree, docs, path)
 	if err != nil {
 		t.Fatalf("analyze: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestDocCacheGrowth(t *testing.T) {
 			continue
 		}
 		a := NewGalaAnalyzer(p, []string{root})
-		rich, aerr := a.Analyze(tree, docs, path)
+		rich, aerr := transpiler.Analyze(a, tree, docs, path)
 		if aerr != nil || rich == nil {
 			continue
 		}
@@ -308,7 +308,7 @@ type Holder struct {
 	if err := os.WriteFile(path, []byte(v1), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rich, err := a.Analyze(tree1, docs1, path)
+	rich, err := transpiler.Analyze(a, tree1, docs1, path)
 	if err != nil {
 		t.Fatalf("analyze v1: %v", err)
 	}
@@ -325,7 +325,7 @@ type Holder struct {
 	if err := os.WriteFile(path, []byte(v2), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rich2, err := a.Analyze(tree2, docs2, path)
+	rich2, err := transpiler.Analyze(a, tree2, docs2, path)
 	if err != nil {
 		t.Fatalf("analyze v2: %v", err)
 	}

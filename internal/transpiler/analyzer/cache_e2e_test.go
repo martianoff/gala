@@ -60,7 +60,7 @@ func TestCacheE2E_HitRecursionRebuildsTransitiveView(t *testing.T) {
 	cold := NewBatchAnalyzer(parser, searchPaths, tmp)
 	coldTree, _, err := transpiler.Parse(parser, string(body))
 	require.NoError(t, err)
-	_, err = cold.Analyze(coldTree, nil, aFile)
+	_, err = transpiler.Analyze(cold, coldTree, nil, aFile)
 	require.NoError(t, err)
 
 	// Confirm pkg_b's cached entry is local-only (BType present, CType absent)
@@ -76,7 +76,7 @@ func TestCacheE2E_HitRecursionRebuildsTransitiveView(t *testing.T) {
 	warm := NewBatchAnalyzer(parser, searchPaths, tmp)
 	warmTree, _, err := transpiler.Parse(parser, string(body))
 	require.NoError(t, err)
-	res, err := warm.Analyze(warmTree, nil, aFile)
+	res, err := transpiler.Analyze(warm, warmTree, nil, aFile)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
@@ -132,7 +132,7 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 	require.NoError(t, err)
 	tree, _, err := transpiler.Parse(parser, string(body))
 	require.NoError(t, err)
-	_, err = a.Analyze(tree, nil, topFile)
+	_, err = transpiler.Analyze(a, tree, nil, topFile)
 	require.NoError(t, err)
 
 	// 64 KiB matches the unit test's budget. With 80 fanout types
@@ -154,7 +154,7 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 	warmTree, _, err := transpiler.Parse(parser, string(body))
 	require.NoError(t, err)
 	start := time.Now()
-	_, err = warm.Analyze(warmTree, nil, topFile)
+	_, err = transpiler.Analyze(warm, warmTree, nil, topFile)
 	require.NoError(t, err)
 	elapsed := time.Since(start)
 	if elapsed > maxWarmAnalyzeWall {

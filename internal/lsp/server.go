@@ -372,7 +372,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		return diagnostics
 	}
 
-	richAST, err := h.newAnalyzer(filePath, text).Analyze(tree, docs, filePath)
+	richAST, err := transpiler.Analyze(h.newAnalyzer(filePath, text), tree, docs, filePath)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
 		return diagnostics
@@ -503,7 +503,7 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.T
 	}
 	defer func() { recover() }()
 
-	richAST, err := h.newAnalyzer(filePath, text).Analyze(tree, docs, filePath)
+	richAST, err := transpiler.Analyze(h.newAnalyzer(filePath, text), tree, docs, filePath)
 	if err != nil || richAST == nil {
 		return
 	}
@@ -614,7 +614,7 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 	}
 
 	filePath := uriToPath(uri)
-	richAST, aerr := h.newAnalyzer(filePath, cleanText).Analyze(tree, docs, filePath)
+	richAST, aerr := transpiler.Analyze(h.newAnalyzer(filePath, cleanText), tree, docs, filePath)
 	if aerr != nil {
 		fmt.Fprintf(os.Stderr, "[%s] analyze failed: %v\n", caller, aerr)
 		return

@@ -124,7 +124,7 @@ func wrap(tag string, x string) Option[T] {
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{typesPath})
 	tree, _, err := transpiler.Parse(p, wrapSrc)
 	require.NoError(t, err)
-	richAST, err := a.Analyze(tree, nil, wrapPath)
+	richAST, err := transpiler.Analyze(a, tree, nil, wrapPath)
 	require.NoError(t, err)
 
 	tr := transformer.NewGalaASTTransformer()
@@ -210,7 +210,7 @@ func wrap(x string) Option[O] {
 	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 	tree, _, err := transpiler.Parse(p, hostSrc)
 	require.NoError(t, err)
-	richAST, err := a.Analyze(tree, nil, hostPath)
+	richAST, err := transpiler.Analyze(a, tree, nil, hostPath)
 	require.NoError(t, err)
 
 	tr := transformer.NewGalaASTTransformer()
@@ -296,7 +296,7 @@ func wrap(x string) Option[A] {
 	a := analyzer.NewGalaAnalyzer(p, searchPaths)
 	tree, _, err := transpiler.Parse(p, hostSrc)
 	require.NoError(t, err)
-	richAST, err := a.Analyze(tree, nil, hostPath)
+	richAST, err := transpiler.Analyze(a, tree, nil, hostPath)
 	require.NoError(t, err)
 
 	tr := transformer.NewGalaASTTransformer()
