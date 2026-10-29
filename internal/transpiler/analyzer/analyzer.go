@@ -5347,7 +5347,7 @@ func (a *galaAnalyzer) parsedFileCacheKey(path string) string {
 // around that. Each Parse call constructs its own InputStream / Lexer /
 // Parser, but the generated constructors hand every instance the same
 // package-global PredictionContextCache, whose Put is an unsynchronised
-// map write. parser.ParseLenient therefore rebinds each parse's ATN
+// map write. parser.ParseFile therefore rebinds each parse's ATN
 // simulator to a private cache (see isolateLexerCaches /
 // isolateParserCaches in internal/parser/parser.go) — do not remove that
 // isolation on the strength of the mutexes in the antlr module's

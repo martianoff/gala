@@ -310,7 +310,7 @@ func transformDefaultsForLSP(t *testing.T, src string) *transpiler.TransformResu
 	path := filepath.Join(t.TempDir(), "main.gala")
 	require.NoError(t, os.WriteFile(path, []byte(src), 0644))
 	p := transpiler.NewAntlrGalaParser()
-	tree, docs, err := transpiler.Parse(p, src)
+	tree, docs, err := p.ParseFile(src).Strict()
 	require.NoError(t, err)
 	richAST, err := transpiler.Analyze(analyzer.NewGalaAnalyzer(p, getStdSearchPath()), tree, docs, path)
 	require.NoError(t, err)

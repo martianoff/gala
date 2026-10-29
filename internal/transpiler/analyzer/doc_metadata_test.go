@@ -22,7 +22,7 @@ func analyzeSrc(t *testing.T, src string) *transpiler.RichAST {
 		t.Fatal(err)
 	}
 	p := parser.NewAntlrGalaParser()
-	tree, docs, err := p.Parse(src)
+	tree, docs, err := p.ParseFile(src).Strict()
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestDocCacheGrowth(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		tree, docs, perr := p.Parse(string(src))
+		tree, docs, perr := p.ParseFile(string(src)).Strict()
 		if perr != nil {
 			continue
 		}
@@ -301,7 +301,7 @@ type Holder struct {
 	p := parser.NewAntlrGalaParser()
 	a := NewGalaAnalyzer(p, nil)
 
-	tree1, docs1, err := p.Parse(v1)
+	tree1, docs1, err := p.ParseFile(v1).Strict()
 	if err != nil {
 		t.Fatalf("parse v1: %v", err)
 	}
@@ -318,7 +318,7 @@ type Holder struct {
 
 	// Re-analyze the edited source through the SAME analyzer, so the existing
 	// TypeMetadata is reused rather than rebuilt.
-	tree2, docs2, err := p.Parse(v2)
+	tree2, docs2, err := p.ParseFile(v2).Strict()
 	if err != nil {
 		t.Fatalf("parse v2: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestParsedForTreeRejectsForeignTree(t *testing.T) {
 
 	// A tree from a different parse of the same path must not be paired with
 	// the cached offsets, even though the path matches.
-	otherTree, _, _ := p.Parse(src)
+	otherTree, _, _ := p.ParseFile(src).Strict()
 	other, _ := otherTree.(*grammar.SourceFileContext)
 	if other == nil {
 		t.Fatal("second parse produced no source file")

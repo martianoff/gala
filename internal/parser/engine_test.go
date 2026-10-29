@@ -413,7 +413,7 @@ func TestEngineSelection(t *testing.T) {
 		}
 	}
 	RequestEngine("yacc")
-	_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n")
+	_, _, errs := NewAntlrGalaParser().ParseFile("package main\n").Lenient()
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `unknown parser "yacc"`) {
 		t.Fatalf("--parser=yacc: errors %v", errs)
 	}

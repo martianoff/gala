@@ -60,7 +60,7 @@ func TestStructTagIsCoded(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, errs := NewAntlrGalaParser().ParseLenient(tc.input)
+			_, _, errs := NewAntlrGalaParser().ParseFile(tc.input).Lenient()
 			require.Len(t, errs, 1, "one tag is one diagnostic, got: %v", errs)
 			se, ok := errs[0].(*galaerr.SemanticError)
 			require.True(t, ok, "expected a coded diagnostic, got: %v", errs[0])
@@ -83,7 +83,7 @@ func TestStructTagEveryFieldReported(t *testing.T) {
 		"    var Age int \"json:\\\"age\\\"\"\n" +
 		"    Email string\n" +
 		"}\n"
-	_, _, errs := NewAntlrGalaParser().ParseLenient(input)
+	_, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 	require.Len(t, errs, 2, "got: %v", errs)
 	for i, line := range []int{4, 5} {
 		se, ok := errs[i].(*galaerr.SemanticError)
@@ -105,7 +105,7 @@ func TestStringOutsideStructFieldsIsNotATag(t *testing.T) {
 		"package main\n\ntype S struct {\n    A int\n    \"doc\"\n}\n",
 	}
 	for _, in := range notTags {
-		_, _, errs := NewAntlrGalaParser().ParseLenient(in)
+		_, _, errs := NewAntlrGalaParser().ParseFile(in).Lenient()
 		require.NotEmpty(t, errs, in)
 		for _, e := range errs {
 			if se, ok := e.(*galaerr.SemanticError); ok {
@@ -120,7 +120,7 @@ func TestStringOutsideStructFieldsIsNotATag(t *testing.T) {
 		"package main\n\ntype User struct {\n    Name string\n}\n\nfunc main() {\n    Println(\"ok\")\n}\n",
 	}
 	for _, in := range valid {
-		_, _, errs := NewAntlrGalaParser().ParseLenient(in)
+		_, _, errs := NewAntlrGalaParser().ParseFile(in).Lenient()
 		assert.Empty(t, errs, "must parse cleanly: %s", in)
 	}
 }

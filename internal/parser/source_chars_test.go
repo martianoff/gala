@@ -75,7 +75,7 @@ func TestIllegalSourceCharacters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := NewAntlrGalaParser().Parse(tt.input)
+			_, _, err := NewAntlrGalaParser().ParseFile(tt.input).Strict()
 			require.Error(t, err)
 			var multi *galaerr.MultiError
 			require.True(t, errors.As(err, &multi), "want a MultiError, got %T", err)
@@ -99,7 +99,7 @@ func TestLegalSourceCharacters(t *testing.T) {
 		"package main\n\n// é ✓ 日本 𝄞\nval s = \"é ✓ 日本 𝄞\"\n",
 		utf8BOM + "package main\r\n\r\n// é\r\nval s = \"é\"\r\n",
 	} {
-		_, _, err := NewAntlrGalaParser().Parse(input)
+		_, _, err := NewAntlrGalaParser().ParseFile(input).Strict()
 		assert.NoError(t, err, "input %q", input)
 	}
 }
@@ -112,7 +112,7 @@ func TestIllegalCharacterBetweenTokensReportedOnce(t *testing.T) {
 		"package main\n\nval s = 1\x00\n",
 		"package main\n\nval s = 1" + utf8BOM + "\n",
 	} {
-		_, _, errs := NewAntlrGalaParser().ParseLenient(input)
+		_, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 		require.NotEmpty(t, errs, "input %q", input)
 		var se *galaerr.SemanticError
 		require.ErrorAs(t, errs[0], &se)

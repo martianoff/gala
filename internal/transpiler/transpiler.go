@@ -791,29 +791,19 @@ type CompanionObjectMetadata struct {
 
 // GalaParser defines the interface for parsing Gala source code.
 //
-// ParseFile always returns ANTLR's tree, error-recovered when there are syntax
-// errors, with the errors and the doc comments, keyed by where each
-// declaration's first token starts (see parser.DocKey). The tree may contain
-// error nodes but is structurally valid enough for the analyzer to extract
-// types, methods, and functions, which keeps the language server's completion,
-// hover and definition working mid-edit. Comments ride the lexer's hidden
-// channel, so they cost the parse nothing and never reach the grammar; pairing
-// them with declarations happens in a linear walk afterwards. Parse and
-// ParseLenient are the common ways to call it.
+// ParseFile returns the parse of a source file: its tree, with the syntax
+// errors and the doc comments, keyed by where each declaration's first token
+// starts (see parser.DocKey). On a syntax error the tree is error-recovered:
+// it may contain error nodes but is structurally valid enough for the
+// analyzer to extract types, methods, and functions, which keeps the language
+// server's completion, hover and definition working mid-edit. When the parse
+// cannot run at all (no engine can be chosen) there is no tree, only the
+// error. Comments ride the lexer's hidden channel, so they cost the parse
+// nothing and never reach the grammar; pairing them with declarations happens
+// in a linear walk afterwards. Callers take the result's Strict or Lenient
+// view.
 type GalaParser interface {
 	ParseFile(input string) *galaparser.Parsed
-}
-
-// Parse parses input with p: the tree and doc comments, or the syntax errors
-// (see parser.Parsed.Strict).
-func Parse(p GalaParser, input string) (antlr.Tree, galaparser.Docs, error) {
-	return p.ParseFile(input).Strict()
-}
-
-// ParseLenient parses input with p: the tree, error-recovered when there are
-// syntax errors, the doc comments and the errors (see parser.Parsed.Lenient).
-func ParseLenient(p GalaParser, input string) (antlr.Tree, galaparser.Docs, []error) {
-	return p.ParseFile(input).Lenient()
 }
 
 // Analyzer analyzes a parse of a GALA file and produces a RichAST. It reads

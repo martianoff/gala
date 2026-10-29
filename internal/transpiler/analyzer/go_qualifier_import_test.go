@@ -222,7 +222,7 @@ func h() int = S("xy").Length()
 			batch := analyzer.NewBatchAnalyzer(p, searchPaths, tmp)
 			batch.SetPackageFiles([]string{sibling})
 
-			tree, _, err := transpiler.Parse(p, tc.file)
+			tree, _, err := p.ParseFile(tc.file).Strict()
 			require.NoError(t, err)
 			_, err = transpiler.Analyze(batch, tree, nil, file)
 			if len(tc.wantErr) == 0 {

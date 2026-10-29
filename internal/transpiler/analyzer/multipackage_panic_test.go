@@ -43,7 +43,7 @@ func TestMultiPackageBatch_NoPanic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tree, _, err := transpiler.Parse(p, string(content))
+		tree, _, err := p.ParseFile(string(content)).Strict()
 		if err != nil {
 			t.Fatalf("parse %s: %v", fp, err)
 		}

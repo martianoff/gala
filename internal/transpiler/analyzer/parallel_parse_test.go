@@ -45,7 +45,7 @@ func TestParseFilesConcurrent_ResultMatchesSequential(t *testing.T) {
 	parse := func(p string) antlr.Tree {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := transpiler.Parse(innerParser, string(body))
+		tree, _, err := innerParser.ParseFile(string(body)).Strict()
 		require.NoError(t, err)
 		return tree
 	}
@@ -99,7 +99,7 @@ func TestParseFilesConcurrent_RaceFree(t *testing.T) {
 	// write to parsedFileCache from the worker goroutines fails.
 	body, err := os.ReadFile(paths[0])
 	require.NoError(t, err)
-	tree, _, err := transpiler.Parse(innerParser, string(body))
+	tree, _, err := innerParser.ParseFile(string(body)).Strict()
 	require.NoError(t, err)
 
 	siblings := append([]string(nil), paths[1:]...)

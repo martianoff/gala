@@ -37,7 +37,7 @@ func analyzeSources(t *testing.T, main string, siblings map[string]string) error
 	batch := analyzer.NewBatchAnalyzer(p, searchPaths, tmp)
 	batch.SetPackageFiles(sibPaths)
 
-	tree, _, err := transpiler.Parse(p, main)
+	tree, _, err := p.ParseFile(main).Strict()
 	require.NoError(t, err, "test source must parse")
 	_, err = transpiler.Analyze(batch, tree, nil, mainFile)
 	return err
@@ -686,7 +686,7 @@ func analyzeInModule(t *testing.T, mainRel string, files map[string]string) erro
 	p := transpiler.NewAntlrGalaParser()
 	batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
 	mainSrc := files[mainRel]
-	tree, _, err := transpiler.Parse(p, mainSrc)
+	tree, _, err := p.ParseFile(mainSrc).Strict()
 	require.NoError(t, err, "test source must parse")
 	_, err = transpiler.Analyze(batch, tree, nil, filepath.Join(tmp, filepath.FromSlash(mainRel)))
 	return err
@@ -891,7 +891,7 @@ func TestCrossPackageImportCheckStillFires(t *testing.T) {
 	batch := analyzer.NewBatchAnalyzer(p, searchPaths, tmp)
 	batch.SetPackageFiles([]string{importer})
 
-	tree, _, err := transpiler.Parse(p, userSrc)
+	tree, _, err := p.ParseFile(userSrc).Strict()
 	require.NoError(t, err)
 	_, err = transpiler.Analyze(batch, tree, nil, user)
 	require.Error(t, err, "a sibling's import must not satisfy this file's use of Array")

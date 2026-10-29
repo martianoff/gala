@@ -58,7 +58,7 @@ func TestCacheE2E_HitRecursionRebuildsTransitiveView(t *testing.T) {
 
 	// Cold pass — populates disk cache (no in-memory analyzedPkgs entries).
 	cold := NewBatchAnalyzer(parser, searchPaths, tmp)
-	coldTree, _, err := transpiler.Parse(parser, string(body))
+	coldTree, _, err := parser.ParseFile(string(body)).Strict()
 	require.NoError(t, err)
 	_, err = transpiler.Analyze(cold, coldTree, nil, aFile)
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestCacheE2E_HitRecursionRebuildsTransitiveView(t *testing.T) {
 	// Warm pass — fresh analyzer instance. Every transitive type must
 	// arrive via the cache-HIT recursion since analyzedPkgs starts empty.
 	warm := NewBatchAnalyzer(parser, searchPaths, tmp)
-	warmTree, _, err := transpiler.Parse(parser, string(body))
+	warmTree, _, err := parser.ParseFile(string(body)).Strict()
 	require.NoError(t, err)
 	res, err := transpiler.Analyze(warm, warmTree, nil, aFile)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 	topFile := filepath.Join(top, "top.gala")
 	body, err := os.ReadFile(topFile)
 	require.NoError(t, err)
-	tree, _, err := transpiler.Parse(parser, string(body))
+	tree, _, err := parser.ParseFile(string(body)).Strict()
 	require.NoError(t, err)
 	_, err = transpiler.Analyze(a, tree, nil, topFile)
 	require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestCacheE2E_DiskFootprintBounded(t *testing.T) {
 	// cap traps the symptom of a 100-MB-class entry's gob decode.
 	const maxWarmAnalyzeWall = 5 * time.Second
 	warm := NewBatchAnalyzer(parser, searchPaths, tmp)
-	warmTree, _, err := transpiler.Parse(parser, string(body))
+	warmTree, _, err := parser.ParseFile(string(body)).Strict()
 	require.NoError(t, err)
 	start := time.Now()
 	_, err = transpiler.Analyze(warm, warmTree, nil, topFile)

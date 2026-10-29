@@ -48,7 +48,7 @@ func main() {
 
 	p := transpiler.NewAntlrGalaParser()
 
-	tree, _, err := transpiler.Parse(p, mainCode)
+	tree, _, err := p.ParseFile(mainCode).Strict()
 	assert.NoError(t, err)
 
 	// Analyze main.gala with consts.gala as a sibling (multi-file mode).

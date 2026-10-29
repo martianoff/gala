@@ -60,7 +60,7 @@ import "example.test/widget"
 func main() {
 }
 `
-	tree, _, err := transpiler.Parse(p, input)
+	tree, _, err := p.ParseFile(input).Strict()
 	require.NoError(t, err)
 
 	richAST, err := transpiler.Analyze(batch, tree, nil, "")
@@ -114,7 +114,7 @@ import "example.test/mod/sub"
 func main() {
 }
 `
-	tree, _, err := transpiler.Parse(p, input)
+	tree, _, err := p.ParseFile(input).Strict()
 	require.NoError(t, err)
 
 	richAST, err := transpiler.Analyze(batch, tree, nil, "")

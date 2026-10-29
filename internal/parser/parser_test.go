@@ -282,7 +282,7 @@ bind x = foo()`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := p.Parse(tt.input)
+			_, _, err := p.ParseFile(tt.input).Strict()
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -322,7 +322,7 @@ func parseFingerprint(input string, mode int) (string, Docs, []string) {
 }
 
 func publicParseFingerprint(input string) (string, Docs, []string) {
-	tree, docs, errs := NewAntlrGalaParser().ParseLenient(input)
+	tree, docs, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 	messages := make([]string, len(errs))
 	for i, err := range errs {
 		messages[i] = fmt.Sprintf("%T:%s", err, err)

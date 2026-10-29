@@ -356,7 +356,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 
 	// One parse gives both the errors and ANTLR's error-recovered tree, so a
 	// keystroke on a broken file parses it once.
-	tree, docs, errs := transpiler.ParseLenient(h.parser, text)
+	tree, docs, errs := h.parser.ParseFile(text).Lenient()
 	if len(errs) > 0 {
 		diagnostics = append(diagnostics, errorsToDiagnostics(&galaerr.MultiError{Errors: errs}, x, filePath)...)
 		// The parse failed: if the analyzer can extract type metadata from
@@ -608,7 +608,7 @@ func (h *GalaHandler) ensureAnalysisForSignature(uri string, line, char int) {
 // analysis is logged and silently skipped; LSP features then fall back
 // to their normal "no data" behavior.
 func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
-	tree, docs, err := transpiler.Parse(h.parser, cleanText)
+	tree, docs, err := h.parser.ParseFile(cleanText).Strict()
 	if err != nil {
 		return
 	}

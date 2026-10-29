@@ -243,7 +243,7 @@ func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	tree, docs, parseErrs := transpiler.ParseLenient(p, string(content))
+	tree, docs, parseErrs := p.ParseFile(string(content)).Lenient()
 	if len(parseErrs) > 0 {
 		return nil, parseErrs[0]
 	}

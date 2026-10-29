@@ -28,7 +28,7 @@ func analyzePkgFile(t *testing.T, searchPaths []string, dir, primary string) err
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, docs, perr := p.Parse(string(src))
+	tree, docs, perr := p.ParseFile(string(src)).Strict()
 	if perr != nil {
 		t.Fatalf("parse %s: %v", primary, perr)
 	}

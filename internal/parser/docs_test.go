@@ -28,7 +28,7 @@ func TestDocKeyOfCountsCodePoints(t *testing.T) {
 // whose first token starts where the given substring does.
 func docFor(t *testing.T, src, declPrefix string) string {
 	t.Helper()
-	_, docs, errs := NewAntlrGalaParser().ParseLenient(src)
+	_, docs, errs := NewAntlrGalaParser().ParseFile(src).Lenient()
 	if len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
@@ -181,7 +181,7 @@ func TestBareLambdaDiagnosticSurvivesComment(t *testing.T) {
 		"package main\n\nfunc main() {\n    val f = x => x + 1\n}\n",
 		"package main\n\nfunc main() {\n    val f = x /* note */ => x + 1\n}\n",
 	} {
-		_, _, errs := NewAntlrGalaParser().ParseLenient(src)
+		_, _, errs := NewAntlrGalaParser().ParseFile(src).Lenient()
 		if len(errs) == 0 {
 			t.Fatalf("expected a diagnostic for %q", src)
 		}

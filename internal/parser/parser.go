@@ -21,11 +21,6 @@ func NewAntlrGalaParser() *AntlrGalaParser {
 	return &AntlrGalaParser{}
 }
 
-// Parse is ParseFile(input).Strict().
-func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, Docs, error) {
-	return p.ParseFile(input).Strict()
-}
-
 // lexedInput is an input and its complete token stream.
 type lexedInput struct {
 	input  *antlr.InputStream
@@ -98,30 +93,6 @@ func parseSourceFileAttempt(input string, mode int, lexed *lexedInput) sourceFil
 	}
 }
 
-// ParseLenient always returns ANTLR's error-recovered tree alongside any
-// syntax errors. The tree contains error nodes but is structurally valid.
-//
-// With galop's engine (the default, see Engine), galop's parser makes the
-// first attempt. Input it does not parse goes to ANTLR's parser as described
-// below, reading the tokens galop's lexer already produced.
-//
-// Input is parsed twice when it does not parse cleanly: once with SLL
-// prediction, and, if that attempt reported any syntax error, again from the
-// start with full LL prediction. SLL is the cheaper prediction mode and the
-// grammar accepts nearly everything under it, so the common case pays for one
-// attempt; input that is mid-edit and syntactically invalid pays for two. That
-// is the LSP's hot path, where invalid input is the normal state rather than the
-// exception.
-//
-// The two attempts are independent: each builds its own parser and
-// prediction-context cache, so a failed attempt leaves no state behind for the
-// retry (see parseSourceFileAttempt). Diagnostics are reported from the
-// retained attempt only, so the errors a caller sees are the LL ones and are
-// unchanged from a single full-prediction parse.
-func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, Docs, []error) {
-	return p.ParseFile(input).Lenient()
-}
-
 // Parsed is one parse of a source file: ANTLR's tree, error-recovered when
 // Errors are reported, its doc comments, and its native tree, converted only
 // if some code asks for it.
@@ -160,7 +131,29 @@ func (p *Parsed) Err() error {
 	return &galaerr.MultiError{Errors: p.Errors}
 }
 
-// ParseFile is ParseLenient's parse, as one value, with its native tree.
+// ParseFile parses input as a source file. On a syntax error the tree is
+// ANTLR's, error-recovered: it contains error nodes but is structurally valid,
+// and the errors come with it. When no engine can be chosen, there is no tree,
+// only the error. Parsed.Strict and Parsed.Lenient are the two views callers
+// take of the result.
+//
+// With galop's engine (the default, see Engine), galop's parser makes the
+// first attempt. Input it does not parse goes to ANTLR's parser as described
+// below, reading the tokens galop's lexer already produced.
+//
+// Input is parsed twice when it does not parse cleanly: once with SLL
+// prediction, and, if that attempt reported any syntax error, again from the
+// start with full LL prediction. SLL is the cheaper prediction mode and the
+// grammar accepts nearly everything under it, so the common case pays for one
+// attempt; input that is mid-edit and syntactically invalid pays for two. That
+// is the LSP's hot path, where invalid input is the normal state rather than the
+// exception.
+//
+// The two attempts are independent: each builds its own parser and
+// prediction-context cache, so a failed attempt leaves no state behind for the
+// retry (see parseSourceFileAttempt). Diagnostics are reported from the
+// retained attempt only, so the errors a caller sees are the LL ones and are
+// unchanged from a single full-prediction parse.
 func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	engine, err := currentEngine()
 	if err != nil {
@@ -328,7 +321,7 @@ func antlrExpressionAt(input string, line, col int, reuse *lexedInput) (grammar.
 
 // ParseExpression parses a single GALA expression (not a whole source file)
 // and returns its expression context alongside any syntax errors. Like
-// ParseLenient it isolates the ANTLR prediction-context cache so concurrent
+// ParseFile it isolates the ANTLR prediction-context cache so concurrent
 // parses stay race-free; the returned tree is error-recovered when errors are
 // present. Used to re-parse the embedded expressions of an interpolated string.
 // With galop's engine, galop's parser parses input that is exactly one
@@ -425,7 +418,7 @@ var (
 // VisitTokens lexes input and calls visit with every token the lexer emits, in
 // order, stopping at EOF. Lexical errors are not reported.
 //
-// Like ParseLenient it is safe to call from several goroutines at once.
+// Like ParseFile it is safe to call from several goroutines at once.
 func VisitTokens(input string, visit func(antlr.Token)) {
 	lexer := grammar.NewgalaLexer(antlr.NewInputStream(galaerr.StripBOM(input)))
 	isolateLexerCaches(lexer.BaseLexer)
