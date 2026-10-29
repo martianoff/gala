@@ -385,3 +385,16 @@ func TestHashMapListAndHashSetKeys(t T) T {
     val t3 = Eq(t2, bySet.Size(), 1)
     Eq(t3, bySet.GetOrElse(HashSetOf(1, 2), ""), "y")
 }
+
+func TestHashMapArrayKeys(t T) T {
+    // Arrays built from a slice, by appending, and through the prepend
+    // buffer are one key when they hold the same values.
+    val byPath = HashMapOf((ArrayOf("a", "b"), 1), (ArrayOf("a"), 2))
+        .Put(ArrayOf("b").Prepend("a"), 3)
+        .Put(EmptyArray[string]().Append("a").Append("b"), 4)
+    val t1 = Eq(t, byPath.Size(), 2)
+    val t2 = Eq(t1, byPath.GetOrElse(EmptyArray[string]().Prepend("b").Prepend("a"), 0), 4)
+    val t3 = Eq(t2, byPath.GetOrElse(ArrayOf("b", "a"), 0), 0)
+    val t4 = Eq(t3, byPath.Remove(ArrayOf("a").Append("b")).Size(), 1)
+    Eq(t4, byPath.GetOrElse(ArrayOf("a"), 0), 2)
+}

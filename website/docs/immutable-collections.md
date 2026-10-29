@@ -588,7 +588,7 @@ An immutable set with effectively constant time operations. Uses a Hash Array Ma
 **Type Requirements:** T must be `comparable` and either:
 - A **primitive type** (int, string, bool, float, etc.) - hashed automatically
 - A **`Tuple`, `Option` or `Either`** of such values - std implements `Hashable` for them, so `HashSetOf((1, "a"), (2, "b"))` works as is
-- An immutable **`List` or `HashSet`** of such values - they implement `Hashable` and compare by their elements, so `HashSetOf(ListOf(1, 2), ListOf(2).Prepend(1))` holds one element; a `List` hashes its elements in order, a `HashSet` in any order (their `Hash` visits every element and is not cached). An `Array` is not an element yet: it is not `comparable`
+- An immutable **`List`, `Array` or `HashSet`** of such values - they implement `Hashable` and compare by their elements, so `HashSetOf(ListOf(1, 2), ListOf(2).Prepend(1))` holds one element; a `List` or `Array` hashes its elements in order, a `HashSet` in any order (their `Hash` visits every element and is not cached)
 - A **custom type** implementing the `Hashable` interface
 
 ### Hashable Interface

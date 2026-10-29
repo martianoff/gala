@@ -381,6 +381,32 @@ func TestHashSetOfLists(t T) T {
     Eq(t2, s.Remove(ListOf("b").Prepend("a")).Size(), 1)
 }
 
+func TestHashSetOfArrays(t T) T {
+    // Arrays built differently are one element when they hold the same values:
+    // from a slice, by appending, and through the prepend buffer.
+    val appended = EmptyArray[int]().Append(1).Append(2).Append(3)
+    val prepended = ArrayOf(3).Prepend(2).Prepend(1)
+    val s = HashSetOf(ArrayOf(1, 2, 3), appended, prepended, ArrayOf(3, 2, 1))
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(EmptyArray[int]().Prepend(3).Prepend(2).Prepend(1)))
+    val t3 = IsFalse(t2, s.Contains(ArrayOf(1, 2)))
+    Eq(t3, s.Remove(prepended).Size(), 1)
+}
+
+func TestHashSetOfLargePrependedArrays(t T) T {
+    // Past 32 prepends the buffer is folded into the trie; equal arrays on
+    // either side of that still meet.
+    val n = 100
+    val built = ArrayTabulate(n, (i) => i)
+    var prepended = EmptyArray[int]()
+    for i := n - 1; i >= 0; i-- {
+        prepended = prepended.Prepend(i)
+    }
+    val s = HashSetOf(built, prepended, prepended.Updated(0, -1))
+    val t1 = Eq(t, s.Size(), 2)
+    IsTrue(t1, s.Contains(ArrayTabulate(n, (i) => i)))
+}
+
 func TestHashSetOfHashSets(t T) T {
     // Sets are equal in any order, so their hash ignores the order too.
     val s = HashSetOf(HashSetOf(1, 2, 3), HashSetOf(3, 1, 2), HashSetOf(1, 2))

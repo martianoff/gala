@@ -112,6 +112,34 @@ func BenchmarkArrayGet(b *testing.B) {
 	}
 }
 
+func BenchmarkArrayPrepend(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		a := EmptyArray[int]()
+		for j := 0; j < benchSize; j++ {
+			a = a.Prepend(j)
+		}
+		sinkInt = a.Size()
+	}
+}
+
+// BenchmarkArrayGetPrefixed reads an Array whose prepend buffer is non-empty,
+// so lookups go through both the buffer and the trie.
+func BenchmarkArrayGetPrefixed(b *testing.B) {
+	a := buildArray()
+	for j := 0; j < 16; j++ {
+		a = a.Prepend(j)
+	}
+	keys := benchKeys()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, k := range keys {
+			sinkInt += a.Get(k)
+		}
+	}
+}
+
 func BenchmarkArrayUpdated(b *testing.B) {
 	a := buildArray()
 	keys := benchKeys()
