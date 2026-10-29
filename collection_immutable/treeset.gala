@@ -86,13 +86,8 @@ func (s TreeSet[T]) Equal(other TreeSet[T]) bool {
         return false
     }
     val elems = s.ToGoSlice()
-    var i = 0
-    var same = true
-    other.ForEach((elem) => {
-        same = same && Equal(elems[i], elem)
-        i = i + 1
-    })
-    same
+    // The fold carries the index of the next element of s, -1 once one differs.
+    other.FoldLeft(0, (i, elem) => if (i >= 0 && Equal(elems[i], elem)) i + 1 else -1) == s.size
 }
 
 // compare compares two values and returns -1, 0, or 1.

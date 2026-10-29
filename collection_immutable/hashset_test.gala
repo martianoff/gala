@@ -398,10 +398,7 @@ func TestHashSetOfLargePrependedArrays(t T) T {
     // either side of that still meet.
     val n = 100
     val built = ArrayTabulate(n, (i) => i)
-    var prepended = EmptyArray[int]()
-    for i := n - 1; i >= 0; i-- {
-        prepended = prepended.Prepend(i)
-    }
+    val prepended = ArrayTabulate(n, (i) => n - 1 - i).FoldLeft(EmptyArray[int](), (acc, i) => acc.Prepend(i))
     val s = HashSetOf(built, prepended, prepended.Updated(0, -1))
     val t1 = Eq(t, s.Size(), 2)
     IsTrue(t1, s.Contains(ArrayTabulate(n, (i) => i)))

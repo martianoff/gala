@@ -98,19 +98,9 @@ func (m TreeMap[K, V]) Equal(other TreeMap[K, V]) bool {
     if m.size != other.size {
         return false
     }
-    var keys = go_interop.SliceWithCapacity[K](m.size)
-    var values = go_interop.SliceWithCapacity[V](m.size)
-    m.ForEachKV((k, v) => {
-        keys = go_interop.SliceAppend(keys, k)
-        values = go_interop.SliceAppend(values, v)
-    })
-    var i = 0
-    var same = true
-    other.ForEachKV((k, v) => {
-        same = same && Equal(keys[i], k) && Equal(values[i], v)
-        i = i + 1
-    })
-    same
+    val entries = m.FoldLeftKV(go_interop.SliceWithCapacity[Tuple[K, V]](m.size), (acc, k, v) => go_interop.SliceAppend(acc, (k, v)))
+    // The fold carries the index of the next entry of m, -1 once one differs.
+    other.FoldLeftKV(0, (i, k, v) => if (i >= 0 && Equal(entries[i].V1, k) && Equal(entries[i].V2, v)) i + 1 else -1) == m.size
 }
 
 // === Comparison ===
