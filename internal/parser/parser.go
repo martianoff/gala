@@ -122,9 +122,23 @@ func parseSourceFileAttempt(input string, mode int, lexed *lexedInput) sourceFil
 // retained attempt only, so the errors a caller sees are the LL ones and are
 // unchanged from a single full-prediction parse.
 func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, Docs, []error) {
+	r := p.ParseFile(input)
+	return r.Tree, r.Docs, r.Errors
+}
+
+// Parsed is one parse of a source file: ANTLR's tree, error-recovered when
+// Errors are reported, and its doc comments.
+type Parsed struct {
+	Tree   antlr.Tree
+	Docs   Docs
+	Errors []error
+}
+
+// ParseFile is ParseLenient's parse, as one value.
+func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	engine, err := currentEngine()
 	if err != nil {
-		return nil, nil, []error{err}
+		return &Parsed{Errors: []error{err}}
 	}
 	// Drop a leading UTF-8 BOM once, up front: the lexer has no rule for
 	// U+FEFF and would otherwise reject the file outright. Go, which GALA
@@ -155,7 +169,7 @@ func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, Docs, []error)
 		errs = append(errs, err)
 	}
 
-	return result.tree, docs, errs
+	return &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
 }
 
 // Hooks for galop's parser, replaced by tests.

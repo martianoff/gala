@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/require"
 
@@ -171,16 +170,10 @@ type concurrencyProbeParser struct {
 
 var _ transpiler.GalaParser = (*concurrencyProbeParser)(nil)
 
-func (p *concurrencyProbeParser) Parse(input string) (antlr.Tree, parser.Docs, error) {
+func (p *concurrencyProbeParser) ParseFile(input string) *parser.Parsed {
 	p.enter()
 	defer p.leave()
-	return p.inner.Parse(input)
-}
-
-func (p *concurrencyProbeParser) ParseLenient(input string) (antlr.Tree, parser.Docs, []error) {
-	p.enter()
-	defer p.leave()
-	return p.inner.ParseLenient(input)
+	return p.inner.ParseFile(input)
 }
 
 func (p *concurrencyProbeParser) enter() {

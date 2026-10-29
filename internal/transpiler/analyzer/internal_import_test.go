@@ -59,7 +59,7 @@ func analyzeFile(t *testing.T, root, relPath, src string) error {
 	searchPaths := append([]string{root}, getStdSearchPath()...)
 	a := analyzer.NewGalaAnalyzer(p, searchPaths, root)
 
-	tree, _, err := p.Parse(src)
+	tree, _, err := transpiler.Parse(p, src)
 	if err != nil {
 		t.Fatalf("parse %s: %v", relPath, err)
 	}

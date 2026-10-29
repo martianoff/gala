@@ -208,7 +208,7 @@ func TestRedefinitionAcrossFiles(t *testing.T) {
 
 			src, err := os.ReadFile(paths[tc.analyze])
 			require.NoError(t, err)
-			tree, _, err := p.Parse(string(src))
+			tree, _, err := transpiler.Parse(p, string(src))
 			require.NoError(t, err)
 
 			a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblingsOf(paths, tc.analyze))
@@ -253,7 +253,7 @@ func TestRedefinitionSameFileListedTwice(t *testing.T) {
 
 	src, err := os.ReadFile(paths["c.gala"])
 	require.NoError(t, err)
-	tree, _, err := p.Parse(string(src))
+	tree, _, err := transpiler.Parse(p, string(src))
 	require.NoError(t, err)
 
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, []string{paths["a.gala"], alias})
@@ -277,7 +277,7 @@ func TestRedefinitionSelfListedAsPackageFile(t *testing.T) {
 
 	src, err := os.ReadFile(paths["a.gala"])
 	require.NoError(t, err)
-	tree, _, err := p.Parse(string(src))
+	tree, _, err := transpiler.Parse(p, string(src))
 	require.NoError(t, err)
 
 	self := filepath.Join(dir, "sub", "..", "a.gala")
@@ -308,7 +308,7 @@ func TestRedefinitionAcrossPackages(t *testing.T) {
 		file := filepath.Join(dir, "item.gala")
 		require.NoError(t, os.WriteFile(file, []byte(src), 0644))
 
-		tree, _, err := p.Parse(src)
+		tree, _, err := transpiler.Parse(p, src)
 		require.NoError(t, err)
 		_, err = a.Analyze(tree, nil, file)
 		assert.NoError(t, err, "package %s must not collide with the identically shaped sibling package", pkg)
@@ -362,7 +362,7 @@ func TestRedefinitionMessageNamesOtherFile(t *testing.T) {
 
 			src, err := os.ReadFile(paths["first.gala"])
 			require.NoError(t, err)
-			tree, _, err := p.Parse(string(src))
+			tree, _, err := transpiler.Parse(p, string(src))
 			require.NoError(t, err)
 
 			a := analyzer.NewGalaAnalyzerWithPackageFiles(p, searchPaths, siblingsOf(paths, "first.gala"))

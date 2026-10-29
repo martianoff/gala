@@ -5177,7 +5177,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	if err != nil {
 		return nil, "", nil
 	}
-	tree, docs, err := a.parser.Parse(string(content))
+	tree, docs, err := transpiler.Parse(a.parser, string(content))
 	if err != nil {
 		err = galaerr.WithFilePath(err, path)
 		a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: err, mtime: info.ModTime(), size: info.Size()})

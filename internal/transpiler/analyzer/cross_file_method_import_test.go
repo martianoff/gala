@@ -46,7 +46,7 @@ func TestCrossFileMethodImport_MethodFileImport(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tree, _, err := p.Parse(string(content))
+		tree, _, err := transpiler.Parse(p, string(content))
 		if err != nil {
 			t.Fatalf("parse %s: %v", fp, err)
 		}

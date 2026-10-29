@@ -75,7 +75,7 @@ func TestBatchAnalyzer_AnalyzedPkgsStoresOnlyOwnTypes(t *testing.T) {
 	cFile := filepath.Join(pkgC, "c.gala")
 	body, err := os.ReadFile(cFile)
 	require.NoError(t, err)
-	tree, _, err := parser.Parse(string(body))
+	tree, _, err := transpiler.Parse(parser, string(body))
 	require.NoError(t, err)
 	_, err = batch.Analyze(tree, nil, cFile)
 	require.NoError(t, err)

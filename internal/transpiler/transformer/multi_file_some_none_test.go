@@ -46,7 +46,7 @@ func main() {
 	p := transpiler.NewAntlrGalaParser()
 
 	t.Run("single-file-has-std-types", func(t *testing.T) {
-		tree, _, err := p.Parse(lookupCode)
+		tree, _, err := transpiler.Parse(p, lookupCode)
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
@@ -68,7 +68,7 @@ func main() {
 	})
 
 	t.Run("multi-file-has-std-types", func(t *testing.T) {
-		tree, _, err := p.Parse(lookupCode)
+		tree, _, err := transpiler.Parse(p, lookupCode)
 		assert.NoError(t, err)
 
 		a := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), []string{mainPath})

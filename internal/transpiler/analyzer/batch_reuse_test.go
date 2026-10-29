@@ -23,14 +23,9 @@ type countingParser struct {
 	calls int64
 }
 
-func (c *countingParser) Parse(input string) (antlr.Tree, parser.Docs, error) {
+func (c *countingParser) ParseFile(input string) *parser.Parsed {
 	atomic.AddInt64(&c.calls, 1)
-	return c.inner.Parse(input)
-}
-
-func (c *countingParser) ParseLenient(input string) (antlr.Tree, parser.Docs, []error) {
-	atomic.AddInt64(&c.calls, 1)
-	return c.inner.ParseLenient(input)
+	return c.inner.ParseFile(input)
 }
 
 // TestBatchAnalyzer_StdAnalyzedOnce locks in the invariant that powered
@@ -59,7 +54,7 @@ func TestBatchAnalyzer_StdAnalyzedOnce(t *testing.T) {
 	parse := func(p string) antlr.Tree {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.Parse(string(body))
+		tree, _, err := transpiler.Parse(innerParser, string(body))
 		require.NoError(t, err)
 		return tree
 	}

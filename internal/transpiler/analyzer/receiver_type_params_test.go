@@ -89,7 +89,7 @@ func analyzeRecvPackage(t *testing.T, analyzed string) *transpiler.RichAST {
 	}
 	p := transpiler.NewAntlrGalaParser()
 	batch := analyzer.NewBatchAnalyzer(p, append([]string{tmp}, getStdSearchPath()...), tmp)
-	tree, _, err := p.Parse(files[analyzed])
+	tree, _, err := transpiler.Parse(p, files[analyzed])
 	require.NoError(t, err)
 	batch.SetPackageFiles([]string{sibling})
 	rich, err := batch.Analyze(tree, nil, filepath.Join(tmp, analyzed))

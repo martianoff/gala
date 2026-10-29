@@ -20,14 +20,9 @@ type parsedFileCounter struct {
 	calls int64
 }
 
-func (c *parsedFileCounter) Parse(input string) (antlr.Tree, parser.Docs, error) {
+func (c *parsedFileCounter) ParseFile(input string) *parser.Parsed {
 	atomic.AddInt64(&c.calls, 1)
-	return c.inner.Parse(input)
-}
-
-func (c *parsedFileCounter) ParseLenient(input string) (antlr.Tree, parser.Docs, []error) {
-	atomic.AddInt64(&c.calls, 1)
-	return c.inner.ParseLenient(input)
+	return c.inner.ParseFile(input)
 }
 
 // TestParsedFileCache_AmortizesAcrossBatch locks in the parsedFileCache
@@ -64,7 +59,7 @@ func TestParsedFileCache_AmortizesAcrossBatch(t *testing.T) {
 	for _, p := range paths {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.Parse(string(body))
+		tree, _, err := transpiler.Parse(innerParser, string(body))
 		require.NoError(t, err)
 		bodies[p] = tree
 	}
@@ -111,7 +106,7 @@ func TestParsedFileCache_InvalidatesOnSizeChange(t *testing.T) {
 	parse := func(p string) antlr.Tree {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.Parse(string(body))
+		tree, _, err := transpiler.Parse(innerParser, string(body))
 		require.NoError(t, err)
 		return tree
 	}

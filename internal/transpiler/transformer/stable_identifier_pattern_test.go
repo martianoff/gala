@@ -353,7 +353,7 @@ func Perm() iofs.FileMode = iofs.ModePerm
 			require.NoError(t, os.WriteFile(galaPath, []byte(tc.galaSrc), 0o644))
 
 			p := transpiler.NewAntlrGalaParser()
-			tree, _, err := p.Parse(tc.galaSrc)
+			tree, _, err := transpiler.Parse(p, tc.galaSrc)
 			require.NoError(t, err)
 			richAST, err := analyzer.NewGalaAnalyzer(p, getStdSearchPath()).Analyze(tree, nil, galaPath)
 			require.NoError(t, err)

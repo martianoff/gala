@@ -272,7 +272,7 @@ func main() {
     Println(colors.ToSgr(colors.Green), theme.Dark.Name, split.Derived, voids.Done, users.Admin)
 }`
 	p := transpiler.NewAntlrGalaParser()
-	tree, _, err := p.Parse(src)
+	tree, _, err := transpiler.Parse(p, src)
 	require.NoError(t, err)
 	a := analyzer.NewGalaAnalyzer(p, append([]string{root}, getStdSearchPath()...), root)
 	richAST, err := a.Analyze(tree, nil, filepath.Join(root, "main.gala"))

@@ -46,7 +46,7 @@ func run() {
 
 func lspCollectionRichAST(tb testing.TB) *transpiler.RichAST {
 	tb.Helper()
-	tree, _, err := transpiler.NewAntlrGalaParser().Parse(lspCollectionSource)
+	tree, _, err := transpiler.Parse(transpiler.NewAntlrGalaParser(), lspCollectionSource)
 	if err != nil {
 		tb.Fatal(err)
 	}

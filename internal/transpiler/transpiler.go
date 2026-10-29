@@ -791,19 +791,34 @@ type CompanionObjectMetadata struct {
 
 // GalaParser defines the interface for parsing Gala source code.
 //
-// Both entry points return `docs` alongside the tree: doc comments keyed by the
-// character offset of the declaration's first token. Comments ride the lexer's
-// hidden channel, so they cost the parse nothing and never reach the grammar;
-// pairing them with declarations happens in a linear walk afterwards. Callers
-// that do not need documentation discard the map.
+// ParseFile always returns ANTLR's tree, error-recovered when there are syntax
+// errors, with the errors and the doc comments, keyed by where each
+// declaration's first token starts (see parser.DocKey). The tree may contain
+// error nodes but is structurally valid enough for the analyzer to extract
+// types, methods, and functions, which keeps the language server's completion,
+// hover and definition working mid-edit. Comments ride the lexer's hidden
+// channel, so they cost the parse nothing and never reach the grammar; pairing
+// them with declarations happens in a linear walk afterwards. Parse and
+// ParseLenient are the common ways to call it.
 type GalaParser interface {
-	Parse(input string) (tree antlr.Tree, docs galaparser.Docs, err error)
-	// ParseLenient always returns ANTLR's error-recovered tree alongside any
-	// syntax errors. The tree may contain error nodes but is structurally
-	// valid enough for the analyzer to extract types, methods, and functions.
-	// Used by the LSP so completion/hover/definition keep working while the
-	// user is mid-edit.
-	ParseLenient(input string) (tree antlr.Tree, docs galaparser.Docs, errors []error)
+	ParseFile(input string) *galaparser.Parsed
+}
+
+// Parse parses input with p and returns the tree and doc comments, or the
+// syntax errors (and no tree) when there are any.
+func Parse(p GalaParser, input string) (antlr.Tree, galaparser.Docs, error) {
+	r := p.ParseFile(input)
+	if len(r.Errors) > 0 {
+		return nil, nil, &galaerr.MultiError{Errors: r.Errors}
+	}
+	return r.Tree, r.Docs, nil
+}
+
+// ParseLenient parses input with p and returns the tree, error-recovered when
+// there are syntax errors, the doc comments and the errors.
+func ParseLenient(p GalaParser, input string) (antlr.Tree, galaparser.Docs, []error) {
+	r := p.ParseFile(input)
+	return r.Tree, r.Docs, r.Errors
 }
 
 // Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
@@ -907,7 +922,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	}()
 
 	done := prof.Phase("parse")
-	tree, docs, err := t.parser.Parse(input)
+	tree, docs, err := Parse(t.parser, input)
 	done()
 	if err != nil {
 		// Same stamping the analyze phase does below: a parse-phase diagnostic
