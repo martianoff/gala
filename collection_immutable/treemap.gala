@@ -93,9 +93,25 @@ func (m TreeMap[K, V]) Size() int = m.size
 func (m TreeMap[K, V]) Length() int = m.size
 
 // Equal reports whether other holds the same keys, each mapped to an Equal
-// value, however each map was built. It is O(n log n).
-func (m TreeMap[K, V]) Equal(other TreeMap[K, V]) bool =
-    m.size == other.size && m.ForAll((k, v) => other.Get(k).Exists((w) => Equal(v, w)))
+// value, however each map was built: both hold them in key order. It is O(n).
+func (m TreeMap[K, V]) Equal(other TreeMap[K, V]) bool {
+    if m.size != other.size {
+        return false
+    }
+    var keys = go_interop.SliceWithCapacity[K](m.size)
+    var values = go_interop.SliceWithCapacity[V](m.size)
+    m.ForEachKV((k, v) => {
+        keys = go_interop.SliceAppend(keys, k)
+        values = go_interop.SliceAppend(values, v)
+    })
+    var i = 0
+    var same = true
+    other.ForEachKV((k, v) => {
+        same = same && Equal(keys[i], k) && Equal(values[i], v)
+        i = i + 1
+    })
+    same
+}
 
 // === Comparison ===
 

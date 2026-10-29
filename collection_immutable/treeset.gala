@@ -80,8 +80,20 @@ func (s TreeSet[T]) Size() int = s.size
 func (s TreeSet[T]) Length() int = s.size
 
 // Equal reports whether other holds the same elements, however each set was
-// built. It is O(n log n).
-func (s TreeSet[T]) Equal(other TreeSet[T]) bool = s.size == other.size && s.ForAll(other.Contains)
+// built: both hold them in order. It is O(n).
+func (s TreeSet[T]) Equal(other TreeSet[T]) bool {
+    if s.size != other.size {
+        return false
+    }
+    val elems = s.ToGoSlice()
+    var i = 0
+    var same = true
+    other.ForEach((elem) => {
+        same = same && Equal(elems[i], elem)
+        i = i + 1
+    })
+    same
+}
 
 // compare compares two values and returns -1, 0, or 1.
 // Handles primitive types automatically, custom types must implement Ordered[T].

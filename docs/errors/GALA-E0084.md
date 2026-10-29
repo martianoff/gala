@@ -18,7 +18,7 @@ way.
 
 It also fires inside a type's own `Equal` method, on `==` between values of
 that same type: there `==` is Go's, since calling `Equal` would call the method
-being defined, and a type that holds an `Array`, a function or a Go slice is
+being defined, and a type that holds a function or a Go slice or map is
 not one Go can compare.
 
 A comparison with `nil` is not this error. A type GALA does not know is left
@@ -54,7 +54,7 @@ hints `compare with Equal: Equal(m, n)`, and a stable identifier reports
 `case Answer compares the matched value with Answer by ==, which cannot
 compare ...`. Inside a type's own `Equal`, the message reads `== inside Bag's
 own Equal is Go's ==, which cannot compare Bag values: field items has type
-Array[int], ...`.
+func() int, a function`.
 
 **Fix.** In a generic function, constrain the type parameter with
 `comparable` when Go's `==` is what you mean, or compare with `Equal(a, b)`,

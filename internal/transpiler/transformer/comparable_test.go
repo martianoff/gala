@@ -339,12 +339,12 @@ func main() { Println(same(bytes.Buffer{}, bytes.Buffer{})) }`,
 		},
 		{
 			name: "own Equal on a type Go cannot compare",
-			src: `struct Bag(items Array[int])
+			src: `struct Bag(items func() int)
 
 func (b Bag) Equal(o Bag) bool = b == o
 
-func main() { Println(Bag(ArrayOf(1)) == Bag(ArrayOf(1))) }`,
-			msg: []string{"== inside Bag's own Equal is Go's ==, which cannot compare Bag values: field items has type Array[int]",
+func main() { Println(Bag(() => 1).Equal(Bag(() => 1))) }`,
+			msg: []string{"== inside Bag's own Equal is Go's ==, which cannot compare Bag values: field items has type func() int, a function",
 				"compare the fields one by one"},
 		},
 		{

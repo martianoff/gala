@@ -293,9 +293,9 @@ func (a Array[T]) Equal(other Array[T]) bool {
 }
 
 // Hash hashes the elements in order (std.Hashable), so Equal Arrays hash
-// alike. Each element must be a primitive or Hashable. It visits every
-// element: it is O(n), and not cached. An Array is not a HashSet element or a
-// HashMap key yet: they need comparable keys, and an Array holds a Go slice.
+// alike, and an Array can be a HashSet element or a HashMap key. Each element
+// must be a primitive or Hashable. It visits every element: it is O(n), and
+// not cached.
 func (a Array[T]) Hash() uint32 = a.FoldLeft(HashInt(int64(a.length)), (h, elem) => HashCombine(h, HashValue(elem)))
 
 // Helper function to calculate required depth for a given size.
