@@ -9,6 +9,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // BuiltIn says galop's parser is linked into this binary.
@@ -38,4 +39,12 @@ func SourceFile(stream *antlr.CommonTokenStream) (grammar.ISourceFileContext, bo
 func Expression(stream *antlr.CommonTokenStream) (grammar.IExpressionContext, bool) {
 	expr, err := grammar.NewgalaGalopParser(stream).Expression()
 	return expr, err == nil && stream.LA(1) == antlr.TokenEOF
+}
+
+// ToNative converts root, read from stream over src, to galop's native tree
+// with galop's generated converter, and returns the ANTLR context of each
+// native node, by node index (the root's last).
+func ToNative(root antlr.ParserRuleContext, stream *antlr.CommonTokenStream, src string) (*native.GalaTree, []antlr.ParserRuleContext) {
+	tree, _, ctxs := grammar.GalaToNativeContexts(root, stream, src)
+	return tree, ctxs
 }

@@ -4,7 +4,25 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/antlr4-go/antlr/v4"
 )
+
+// TestDocKeyOfCountsCodePoints pins DocKey's column unit: code points, as
+// ANTLR counts them, not bytes. "/* é */ " before func is 8 code points and 9
+// bytes. (A documented declaration starts its line, so only whitespace comes
+// before it; this pins the unit for any key built from a token.)
+func TestDocKeyOfCountsCodePoints(t *testing.T) {
+	var got []DocKey
+	VisitTokens("/* é */ func F() int = 1\n", func(tok antlr.Token) {
+		if tok.GetText() == "func" {
+			got = append(got, DocKeyOf(tok))
+		}
+	})
+	if want := (DocKey{Line: 1, Column: 8}); len(got) != 1 || got[0] != want {
+		t.Errorf("DocKeyOf(func) = %v, want [%v]", got, want)
+	}
+}
 
 // docFor parses src and returns the doc comment attached to the declaration
 // whose first token starts where the given substring does.

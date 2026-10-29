@@ -14,8 +14,8 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler/profiler"
 )
 
@@ -804,26 +804,24 @@ type GalaParser interface {
 	ParseFile(input string) *galaparser.Parsed
 }
 
-// Parse parses input with p and returns the tree and doc comments, or the
-// syntax errors (and no tree) when there are any.
+// Parse parses input with p: the tree and doc comments, or the syntax errors
+// (see parser.Parsed.Strict).
 func Parse(p GalaParser, input string) (antlr.Tree, galaparser.Docs, error) {
-	r := p.ParseFile(input)
-	if len(r.Errors) > 0 {
-		return nil, nil, &galaerr.MultiError{Errors: r.Errors}
-	}
-	return r.Tree, r.Docs, nil
+	return p.ParseFile(input).Strict()
 }
 
-// ParseLenient parses input with p and returns the tree, error-recovered when
-// there are syntax errors, the doc comments and the errors.
+// ParseLenient parses input with p: the tree, error-recovered when there are
+// syntax errors, the doc comments and the errors (see parser.Parsed.Lenient).
 func ParseLenient(p GalaParser, input string) (antlr.Tree, galaparser.Docs, []error) {
-	r := p.ParseFile(input)
-	return r.Tree, r.Docs, r.Errors
+	return p.ParseFile(input).Lenient()
 }
 
 // Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
 type Analyzer interface {
 	Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error)
+	// AnalyzeParsed is Analyze of a whole parse; the result keeps the parse's
+	// doc comments (RichAST.Docs) and native tree (RichAST.Native).
+	AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*RichAST, error)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.
@@ -922,9 +920,9 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	}()
 
 	done := prof.Phase("parse")
-	tree, docs, err := Parse(t.parser, input)
+	parsed := t.parser.ParseFile(input)
 	done()
-	if err != nil {
+	if err := parsed.Err(); err != nil {
 		// Same stamping the analyze phase does below: a parse-phase diagnostic
 		// carries a position but not the file it came from, and the CLI
 		// renderer needs the path to re-read the source for its snippet. This
@@ -935,7 +933,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	}
 
 	done = prof.Phase("analyze")
-	richAST, err := t.analyzer.Analyze(tree, docs, filePath)
+	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks
@@ -947,7 +945,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// relative to the stripped text; keep the source hung off the AST in step
 	// with them rather than three bytes ahead.
 	richAST.SourceContent = galaerr.StripBOM(input)
-	richAST.Docs = docs
+	richAST.Docs = parsed.Docs
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)

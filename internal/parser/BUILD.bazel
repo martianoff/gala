@@ -22,6 +22,7 @@ go_library(
     srcs = [
         "docs.go",
         "engine.go",
+        "native_tree.go",
         "newline.go",
         "parser.go",
         "source_chars.go",
@@ -34,9 +35,16 @@ go_library(
         "//internal/parser/grammar",
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ] + select({
-        # internal/parser/galop, or its stand-in under the same import path.
-        "//internal/parser/grammar:galop_enabled": ["//internal/parser/galop"],
-        "//conditions:default": ["//internal/parser/galopoff"],
+        # internal/parser/galop and internal/parser/native, or their stand-ins
+        # under the same import paths.
+        "//internal/parser/grammar:galop_enabled": [
+            "//internal/parser/galop",
+            "//internal/parser/native",
+        ],
+        "//conditions:default": [
+            "//internal/parser/galopoff",
+            "//internal/parser/nativeoff",
+        ],
     }),
 )
 
@@ -50,6 +58,7 @@ go_test(
         "engine_test.go",
         "go_type_in_expression_test.go",
         "grammar_test.go",
+        "native_handle_test.go",
         "newline_test.go",
         "parse_expression_at_test.go",
         "parser_concurrent_test.go",
@@ -57,7 +66,12 @@ go_test(
         "source_chars_test.go",
         "struct_tag_test.go",
         "type_text_test.go",
-    ],
+    ] + select({
+        # native_tree_test.go reads the native tree, which only builds with
+        # galop's parser have.
+        "//internal/parser/grammar:galop_enabled": ["native_tree_test.go"],  # keep
+        "//conditions:default": [],
+    }),
     # engine_test.go parses every GALA source of the repository with both
     # engines.
     data = [
@@ -78,5 +92,8 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
-    ],
+    ] + select({
+        "//internal/parser/grammar:galop_enabled": ["//internal/parser/native"],  # keep
+        "//conditions:default": ["//internal/parser/nativeoff"],  # keep
+    }),
 )

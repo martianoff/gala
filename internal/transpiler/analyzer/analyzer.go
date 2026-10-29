@@ -274,9 +274,10 @@ type pkgResultCacheEntry struct {
 // (mtime, size) pair is the staleness check: if either changes between
 // stat calls, the cached tree is dropped and the file is re-parsed.
 type parsedFileEntry struct {
-	tree    *grammar.SourceFileContext
+	// parsed is the file's parse, tree and doc comments (see parsedForTree),
+	// without its native tree: nothing reads a sibling's native tree yet.
+	parsed  *galaparser.Parsed
 	pkgName string
-	docs    galaparser.Docs // doc comments keyed by declaration start (line:column)
 	// syntaxErr is the parse failure of a file that does not parse (tree is
 	// nil then), stamped with the file's path. Cached like a tree, so a
 	// broken sibling is not re-parsed by every file of its package.
@@ -436,6 +437,11 @@ func (b *BatchAnalyzer) Analyze(tree antlr.Tree, docs galaparser.Docs, filePath 
 	return b.inner.Analyze(tree, docs, filePath)
 }
 
+// AnalyzeParsed delegates to the inner analyzer, sharing the package cache.
+func (b *BatchAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
+	return b.inner.AnalyzeParsed(parsed, filePath)
+}
+
 // SetGoSrcDirs wires module-aware Go source directories into the analyzer
 // (see galaAnalyzer.goSrcDirs). Used by the single-file/LSP analyzers that
 // are not BatchAnalyzers.
@@ -508,10 +514,15 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 	return filepath.Join(goSrcDirs[bestKey], filepath.FromSlash(rel)), true
 }
 
+// AnalyzeParsed analyzes parsed's tree with its doc comments (see Analyze).
+func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
+	return a.Analyze(parsed.Tree, parsed.Docs, filePath)
+}
+
 // Analyze walks the ANTLR tree and collects metadata for RichAST.
 //
-// docs carries the file's doc comments keyed by the character offset of the
-// declaration they document (see parser.extractDocComments). It may be nil —
+// docs carries the file's doc comments keyed by the line and column where the
+// declaration they document starts (parser.DocKey). It may be nil —
 // callers that do not care about documentation pass nothing, and every
 // attachment site degrades to an empty Doc rather than failing.
 //
@@ -3119,7 +3130,13 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		// recursive work and is intentionally serialized; parsing is the
 		// part that benefited from parallelism above.
 		{
-			res, err := a.Analyze(tree, a.docsForFile(filePath, tree), filePath)
+			// The doc comments the file was parsed with, for the docs of its
+			// declarations.
+			var docs galaparser.Docs
+			if p := a.parsedForFile(filePath, tree); p != nil {
+				docs = p.Docs
+			}
+			res, err := a.Analyze(tree, docs, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -4118,7 +4135,10 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 	a.currentQualifiers = sibQuals
 	defer func() { a.currentQualifiers = outerQualifiers }()
 	absSibPath := a.parsedFileCacheKey(sibFilePath)
-	docs := a.docsForTree(absSibPath, sibTree)
+	var docs galaparser.Docs
+	if p := a.parsedForTree(absSibPath, sibTree); p != nil {
+		docs = p.Docs
+	}
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under
 	// compilation. absSibPath stays the identity used for comparisons.
@@ -4567,7 +4587,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 
 	// The sibling's package-level bindings, recorded here rather than by the
 	// caller so they reuse the canonical path and docs map resolved above —
-	// docsForTree's own note explains why re-deriving them per sibling is worth
+	// parsedForTree's own note explains why re-deriving them per sibling is worth
 	// avoiding.
 	a.extractPackageVals(sibTree, pkgName, richAST, docs, absSibPath)
 	return nil
@@ -5167,7 +5187,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		if ok {
 			if entry.mtime.Equal(info.ModTime()) && entry.size == info.Size() {
 				a.parsedFileCacheMu.Unlock()
-				return entry.tree, entry.pkgName, entry.syntaxErr
+				return entry.tree(), entry.pkgName, entry.syntaxErr
 			}
 			delete(a.parsedFileCache, canonPath)
 		}
@@ -5177,13 +5197,13 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	if err != nil {
 		return nil, "", nil
 	}
-	tree, docs, err := transpiler.Parse(a.parser, string(content))
-	if err != nil {
+	parsed := a.parser.ParseFile(string(content))
+	if err := parsed.Err(); err != nil {
 		err = galaerr.WithFilePath(err, path)
 		a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: err, mtime: info.ModTime(), size: info.Size()})
 		return nil, "", err
 	}
-	otherSF, ok := tree.(*grammar.SourceFileContext)
+	otherSF, ok := parsed.Tree.(*grammar.SourceFileContext)
 	if !ok {
 		return nil, "", nil
 	}
@@ -5193,13 +5213,23 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	}
 	pkgName := pkgClause.Identifier().GetText()
 	a.cacheParsedFile(canonPath, &parsedFileEntry{
-		tree:    otherSF,
+		// The tree and doc comments only: no consumer reads a sibling's native
+		// tree yet, so the cache keeps no handle (nor what it holds).
+		parsed:  &galaparser.Parsed{Tree: parsed.Tree, Docs: parsed.Docs},
 		pkgName: pkgName,
-		docs:    docs,
 		mtime:   info.ModTime(),
 		size:    info.Size(),
 	})
 	return otherSF, pkgName, nil
+}
+
+// tree is the entry's source-file tree, nil for a file that does not parse.
+func (e *parsedFileEntry) tree() *grammar.SourceFileContext {
+	if e.parsed == nil {
+		return nil
+	}
+	sf, _ := e.parsed.Tree.(*grammar.SourceFileContext)
+	return sf
 }
 
 // cacheParsedFile records a parse result in parsedFileCache, when the analyzer
@@ -5253,24 +5283,24 @@ func addFieldDoc(meta *transpiler.TypeMetadata, fieldName, doc string) {
 	meta.FieldDocs[fieldName] = doc
 }
 
-// docsForFile returns the doc comments harvested when `path` was parsed, for a
+// parsedForFile returns the parse of `path` (its tree and doc comments), for a
 // caller that holds the matching tree.
 //
 // Sibling files reach the analyzer as bare trees through three routes — the
 // explicit package-file list, an in-memory sibling-tree cache hit, and a fresh
-// directory scan — and all three go through parseFileCached, which stores docs
-// alongside each tree under the same key. Looking them up by path afterwards
-// keeps one source of truth instead of threading a parallel docs slice down all
-// three; docsForTree then checks that what came back belongs to this tree.
-func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext) galaparser.Docs {
+// directory scan — and all three go through parseFileCached, which stores the
+// whole parse under the same key. Looking it up by path afterwards keeps one
+// source of truth instead of threading a parallel slice down all three;
+// parsedForTree then checks that what came back belongs to this tree.
+func (a *galaAnalyzer) parsedForFile(path string, tree *grammar.SourceFileContext) *galaparser.Parsed {
 	if path == "" {
 		return nil
 	}
-	return a.docsForTree(a.parsedFileCacheKey(path), tree)
+	return a.parsedForTree(a.parsedFileCacheKey(path), tree)
 }
 
-// docsForTree returns the doc comments for canonPath, but only if they came
-// from the very parse that produced `tree`.
+// parsedForTree returns the parse cached for canonPath, but only if it is the
+// very parse that produced `tree`.
 //
 // Doc keys are parse-local: they mean nothing except against the token stream
 // they were harvested from. Callers hold a tree from one cache
@@ -5284,20 +5314,20 @@ func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext)
 // Taking the absolute path from the caller also matters: sibling extraction runs
 // per file per Analyze, so re-deriving it here turned one filepath.Abs per
 // sibling into two.
-func (a *galaAnalyzer) docsForTree(canonPath string, tree *grammar.SourceFileContext) galaparser.Docs {
+func (a *galaAnalyzer) parsedForTree(canonPath string, tree *grammar.SourceFileContext) *galaparser.Parsed {
 	if a.parsedFileCache == nil || canonPath == "" {
 		return nil
 	}
 	a.parsedFileCacheMu.Lock()
 	defer a.parsedFileCacheMu.Unlock()
-	if entry, ok := a.parsedFileCache[canonPath]; ok && entry.tree == tree {
-		return entry.docs
+	if entry, ok := a.parsedFileCache[canonPath]; ok && entry.tree() == tree {
+		return entry.parsed
 	}
 	return nil
 }
 
 // parsedFileCacheKey derives the parsedFileCache key for a path. Writer
-// (parseFileCached) and readers (docsForTree) must agree exactly: a
+// (parseFileCached) and readers (parsedForTree) must agree exactly: a
 // divergence makes every doc lookup miss silently, since a miss is a legal
 // "undocumented" result.
 func (a *galaAnalyzer) parsedFileCacheKey(path string) string {

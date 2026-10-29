@@ -21,12 +21,9 @@ func NewAntlrGalaParser() *AntlrGalaParser {
 	return &AntlrGalaParser{}
 }
 
+// Parse is ParseFile(input).Strict().
 func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, Docs, error) {
-	tree, docs, errs := p.ParseLenient(input)
-	if len(errs) > 0 {
-		return nil, nil, &galaerr.MultiError{Errors: errs}
-	}
-	return tree, docs, nil
+	return p.ParseFile(input).Strict()
 }
 
 // lexedInput is an input and its complete token stream.
@@ -37,8 +34,8 @@ type lexedInput struct {
 
 type sourceFileParseResult struct {
 	input  *antlr.InputStream
+	stream *antlr.CommonTokenStream
 	tree   antlr.Tree
-	tokens []antlr.Token
 	errors []error
 }
 
@@ -95,8 +92,8 @@ func parseSourceFileAttempt(input string, mode int, lexed *lexedInput) sourceFil
 
 	return sourceFileParseResult{
 		input:  is,
+		stream: stream,
 		tree:   tree,
-		tokens: stream.GetAllTokens(),
 		errors: errorListener.Errors,
 	}
 }
@@ -122,19 +119,48 @@ func parseSourceFileAttempt(input string, mode int, lexed *lexedInput) sourceFil
 // retained attempt only, so the errors a caller sees are the LL ones and are
 // unchanged from a single full-prediction parse.
 func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, Docs, []error) {
-	r := p.ParseFile(input)
-	return r.Tree, r.Docs, r.Errors
+	return p.ParseFile(input).Lenient()
 }
 
 // Parsed is one parse of a source file: ANTLR's tree, error-recovered when
-// Errors are reported, and its doc comments.
+// Errors are reported, its doc comments, and its native tree, converted only
+// if some code asks for it.
 type Parsed struct {
 	Tree   antlr.Tree
 	Docs   Docs
 	Errors []error
+	// Native is the parse's native tree (see Native), nil when there is none:
+	// the parse gave no tree, or the build has no galop parser. Until it
+	// converts it holds the token stream and the source text, which a clean
+	// parse's tree does not keep alive, so a holder that keeps a Parsed long
+	// but never reads the native tree drops it.
+	Native *Native
 }
 
-// ParseFile is ParseLenient's parse, as one value.
+// Strict is the tree and doc comments, or the syntax errors as one error (and
+// no tree) when there are any.
+func (p *Parsed) Strict() (antlr.Tree, Docs, error) {
+	if err := p.Err(); err != nil {
+		return nil, nil, err
+	}
+	return p.Tree, p.Docs, nil
+}
+
+// Lenient is the tree, error-recovered when there are syntax errors, the doc
+// comments and the errors.
+func (p *Parsed) Lenient() (antlr.Tree, Docs, []error) {
+	return p.Tree, p.Docs, p.Errors
+}
+
+// Err is the parse's syntax errors as one error, or nil when there are none.
+func (p *Parsed) Err() error {
+	if len(p.Errors) == 0 {
+		return nil
+	}
+	return &galaerr.MultiError{Errors: p.Errors}
+}
+
+// ParseFile is ParseLenient's parse, as one value, with its native tree.
 func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	engine, err := currentEngine()
 	if err != nil {
@@ -146,7 +172,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	input = galaerr.StripBOM(input)
 
 	result := parseSourceFile(input, engine)
-	docs := extractDocComments(result.tokens)
+	docs := extractDocComments(result.stream.GetAllTokens())
 
 	// The source-text check goes first: an illegal character is the root
 	// cause of any lexer error it provokes, so it should lead the report.
@@ -169,7 +195,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 		errs = append(errs, err)
 	}
 
-	return &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
+	return &Parsed{Tree: result.tree, Docs: docs, Errors: errs, Native: newNative(result.tree, result.stream, input)}
 }
 
 // Hooks for galop's parser, replaced by tests.
@@ -240,7 +266,7 @@ func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 			tree, ok, panicked := tryGalop(input, in, galopSourceFile)
 			clean := len(lexErrs.Errors) == 0 && !panicked
 			if ok && clean {
-				return sourceFileParseResult{input: in.input, tree: tree, tokens: in.stream.GetAllTokens()}
+				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree}
 			}
 			if clean {
 				reuse = in

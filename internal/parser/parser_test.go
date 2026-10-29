@@ -318,7 +318,7 @@ func parseFingerprint(input string, mode int) (string, Docs, []string) {
 	for i, err := range errs {
 		messages[i] = fmt.Sprintf("%T:%s", err, err)
 	}
-	return treeFingerprint(result.tree), extractDocComments(result.tokens), messages
+	return treeFingerprint(result.tree), extractDocComments(result.stream.GetAllTokens()), messages
 }
 
 func publicParseFingerprint(input string) (string, Docs, []string) {

@@ -413,7 +413,7 @@ func TestPackageDocDoesNotCrossPackages(t *testing.T) {
 
 // Doc offsets are parse-local, so docs must only be handed to the caller
 // holding the tree they were harvested from.
-func TestDocsForTreeRejectsForeignTree(t *testing.T) {
+func TestParsedForTreeRejectsForeignTree(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.gala")
 	src := "package spkg\n\n// Thing does a thing.\nfunc Thing() int = 1\n"
@@ -429,8 +429,12 @@ func TestDocsForTreeRejectsForeignTree(t *testing.T) {
 		t.Fatalf("parseFileCached: %v", err)
 	}
 	key := a.parsedFileCacheKey(path)
-	if got := a.docsForTree(key, tree); len(got) == 0 {
+	got := a.parsedForTree(key, tree)
+	if got == nil || len(got.Docs) == 0 {
 		t.Fatal("matching tree returned no docs")
+	}
+	if got.Native != nil {
+		t.Error("the parsed-file cache keeps a native tree, which nothing reads yet")
 	}
 
 	// A tree from a different parse of the same path must not be paired with
@@ -440,8 +444,8 @@ func TestDocsForTreeRejectsForeignTree(t *testing.T) {
 	if other == nil {
 		t.Fatal("second parse produced no source file")
 	}
-	if got := a.docsForTree(key, other); got != nil {
-		t.Errorf("docs handed to a tree from a different parse: %v", got)
+	if got := a.parsedForTree(key, other); got != nil {
+		t.Errorf("a parse handed to a tree from a different parse: %v", got.Docs)
 	}
 }
 
