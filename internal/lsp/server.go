@@ -18,6 +18,7 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/build"
 	"martianoff/gala/internal/depman/mod"
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -496,7 +497,7 @@ func (h *GalaHandler) loadProjectModule(rootPath string) {
 // completion and go-to-def working while the user is mid-edit.
 // tryAnalyzePartial runs the analyzer on ANTLR's error-recovered tree.
 // The tree may have nil/error nodes, so this is wrapped in panic recovery.
-func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.Tree, docs map[int]string) {
+func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.Tree, docs parser.Docs) {
 	if tree == nil {
 		return
 	}

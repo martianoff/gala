@@ -9,6 +9,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 )
@@ -22,12 +23,12 @@ type countingParser struct {
 	calls int64
 }
 
-func (c *countingParser) Parse(input string) (antlr.Tree, map[int]string, error) {
+func (c *countingParser) Parse(input string) (antlr.Tree, parser.Docs, error) {
 	atomic.AddInt64(&c.calls, 1)
 	return c.inner.Parse(input)
 }
 
-func (c *countingParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
+func (c *countingParser) ParseLenient(input string) (antlr.Tree, parser.Docs, []error) {
 	atomic.AddInt64(&c.calls, 1)
 	return c.inner.ParseLenient(input)
 }

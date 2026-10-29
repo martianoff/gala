@@ -343,14 +343,14 @@ type Holder struct {
 // may already carry documentation from a cache load or an earlier pass. An
 // absent doc must leave that value alone; a real one must replace it.
 func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
-	docs := map[int]string{10: "fresh doc"}
+	docs := parser.Docs{10: "fresh doc"}
 	tok := &stubToken{start: 10}
 	missing := &stubToken{start: 99}
 
 	cases := []struct {
 		name  string
 		start antlr.Token
-		docs  map[int]string
+		docs  parser.Docs
 		in    string
 		want  string
 	}{

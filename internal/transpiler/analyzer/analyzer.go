@@ -276,7 +276,7 @@ type pkgResultCacheEntry struct {
 type parsedFileEntry struct {
 	tree    *grammar.SourceFileContext
 	pkgName string
-	docs    map[int]string // doc comments keyed by declaration start offset
+	docs    galaparser.Docs // doc comments keyed by declaration start offset
 	// syntaxErr is the parse failure of a file that does not parse (tree is
 	// nil then), stamped with the file's path. Cached like a tree, so a
 	// broken sibling is not re-parsed by every file of its package.
@@ -432,7 +432,7 @@ func (b *BatchAnalyzer) SetGoSrcDirs(dirs map[string]string) {
 }
 
 // Analyze delegates to the inner analyzer, sharing the package cache.
-func (b *BatchAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*transpiler.RichAST, error) {
+func (b *BatchAnalyzer) Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (*transpiler.RichAST, error) {
 	return b.inner.Analyze(tree, docs, filePath)
 }
 
@@ -520,7 +520,7 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 // therefore what an analysis failure reports, in place of the cascade they
 // cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
 // the phases after analysis to do the same.
-func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs map[int]string, filePath string) (result *transpiler.RichAST, err error) {
+func (a *galaAnalyzer) Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
@@ -2105,7 +2105,7 @@ func countErrors(warnings []ValidationWarning) int {
 // companion types for each case, and Apply/Unapply/IsXxx methods.
 // Returns a non-nil error if the declaration is rejected (e.g. duplicate
 // variant case names within the same sealed type).
-func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST, docs map[int]string) error {
+func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs) error {
 	typeName := ctx.Identifier().GetText()
 
 	fullTypeName := typeName
@@ -4838,7 +4838,7 @@ func (a *galaAnalyzer) declaredTypeUnderlying(local map[string]transpiler.Type, 
 // otherwise it is left as NilType. The unwrap itself only needs the val/var
 // classification, so an unknown type still produces correct code — it merely
 // yields weaker downstream type inference for that identifier.
-func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, docs map[int]string, absFilePath string) {
+func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs, absFilePath string) {
 	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
 		var (
 			idList   grammar.IIdentifierListContext
@@ -5220,7 +5220,7 @@ func (a *galaAnalyzer) cacheParsedFile(canonPath string, entry *parsedFileEntry)
 // `sealed`, `case` or `val` keyword), not the identifier token: a doc comment
 // sits to the left of the keyword, and for a method the identifier is preceded
 // only by the receiver's closing paren.
-func docAt(docs map[int]string, start antlr.Token) string {
+func docAt(docs galaparser.Docs, start antlr.Token) string {
 	if docs == nil || start == nil {
 		return ""
 	}
@@ -5234,7 +5234,7 @@ func docAt(docs map[int]string, start antlr.Token) string {
 // docs map (a caller that did not thread one), and assigning unconditionally
 // would erase documentation that is already correct. An empty result therefore
 // leaves the existing value alone; only a real doc comment overwrites.
-func setDoc(dst *string, docs map[int]string, start antlr.Token) {
+func setDoc(dst *string, docs galaparser.Docs, start antlr.Token) {
 	if d := docAt(docs, start); d != "" {
 		*dst = d
 	}
@@ -5262,7 +5262,7 @@ func addFieldDoc(meta *transpiler.TypeMetadata, fieldName, doc string) {
 // alongside each tree under the same key. Looking them up by path afterwards
 // keeps one source of truth instead of threading a parallel docs slice down all
 // three; docsForTree then checks that what came back belongs to this tree.
-func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext) map[int]string {
+func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext) galaparser.Docs {
 	if path == "" {
 		return nil
 	}
@@ -5284,7 +5284,7 @@ func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext)
 // Taking the absolute path from the caller also matters: sibling extraction runs
 // per file per Analyze, so re-deriving it here turned one filepath.Abs per
 // sibling into two.
-func (a *galaAnalyzer) docsForTree(canonPath string, tree *grammar.SourceFileContext) map[int]string {
+func (a *galaAnalyzer) docsForTree(canonPath string, tree *grammar.SourceFileContext) galaparser.Docs {
 	if a.parsedFileCache == nil || canonPath == "" {
 		return nil
 	}

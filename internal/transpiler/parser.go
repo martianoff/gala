@@ -18,12 +18,12 @@ func NewAntlrGalaParser() GalaParser {
 }
 
 // Parse implements the GalaParser interface.
-func (p *antlrGalaParser) Parse(input string) (antlr.Tree, map[int]string, error) {
+func (p *antlrGalaParser) Parse(input string) (antlr.Tree, parser.Docs, error) {
 	return p.wrapper.Parse(input)
 }
 
 // ParseLenient implements the GalaParser interface.
-func (p *antlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
+func (p *antlrGalaParser) ParseLenient(input string) (antlr.Tree, parser.Docs, []error) {
 	return p.wrapper.ParseLenient(input)
 }
 

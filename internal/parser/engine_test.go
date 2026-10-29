@@ -46,7 +46,7 @@ func withEngine(e Engine, f func()) {
 
 // render prints what a parse gives: the tree with every node's position (see
 // positions), then the doc comments and the errors.
-func render(tree antlr.Tree, docs map[int]string, errs []error) string {
+func render(tree antlr.Tree, docs Docs, errs []error) string {
 	var b strings.Builder
 	if tree != nil {
 		b.WriteString(antlr.TreesStringTree(tree, grammar.GalaParserStaticData.RuleNames, nil))

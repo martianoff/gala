@@ -21,7 +21,7 @@ func NewAntlrGalaParser() *AntlrGalaParser {
 	return &AntlrGalaParser{}
 }
 
-func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, map[int]string, error) {
+func (p *AntlrGalaParser) Parse(input string) (antlr.Tree, Docs, error) {
 	tree, docs, errs := p.ParseLenient(input)
 	if len(errs) > 0 {
 		return nil, nil, &galaerr.MultiError{Errors: errs}
@@ -121,7 +121,7 @@ func parseSourceFileAttempt(input string, mode int, lexed *lexedInput) sourceFil
 // retry (see parseSourceFileAttempt). Diagnostics are reported from the
 // retained attempt only, so the errors a caller sees are the LL ones and are
 // unchanged from a single full-prediction parse.
-func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
+func (p *AntlrGalaParser) ParseLenient(input string) (antlr.Tree, Docs, []error) {
 	engine, err := currentEngine()
 	if err != nil {
 		return nil, nil, []error{err}

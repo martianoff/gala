@@ -34,11 +34,15 @@ import (
 // by offset rather than line keeps the lookup exact even when two declarations
 // share a line.
 
+// Docs is a file's doc comments, by the start offset of the declaration each
+// one documents.
+type Docs = map[int]string
+
 // extractDocComments pairs hidden-channel comment runs with the declarations
 // they document. toks must be the complete token stream, hidden tokens included.
 // Returns nil for a source with no doc comments.
-func extractDocComments(toks []antlr.Token) map[int]string {
-	var docs map[int]string
+func extractDocComments(toks []antlr.Token) Docs {
+	var docs Docs
 
 	var block []string
 	blockEndLine := -1 // last source line covered by the pending comment run
@@ -82,7 +86,7 @@ func extractDocComments(toks []antlr.Token) map[int]string {
 
 		if len(block) > 0 && startLine == blockEndLine+1 {
 			if docs == nil {
-				docs = make(map[int]string)
+				docs = make(Docs)
 			}
 			docs[tk.GetStart()] = strings.Join(block, "\n")
 		}

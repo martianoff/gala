@@ -306,7 +306,7 @@ func treeFingerprint(tree antlr.Tree) string {
 	return result
 }
 
-func parseFingerprint(input string, mode int) (string, map[int]string, []string) {
+func parseFingerprint(input string, mode int) (string, Docs, []string) {
 	p := NewAntlrGalaParser()
 	input = galaerr.StripBOM(input)
 	result := parseSourceFileAttempt(input, mode, nil)
@@ -321,7 +321,7 @@ func parseFingerprint(input string, mode int) (string, map[int]string, []string)
 	return treeFingerprint(result.tree), extractDocComments(result.tokens), messages
 }
 
-func publicParseFingerprint(input string) (string, map[int]string, []string) {
+func publicParseFingerprint(input string) (string, Docs, []string) {
 	tree, docs, errs := NewAntlrGalaParser().ParseLenient(input)
 	messages := make([]string, len(errs))
 	for i, err := range errs {

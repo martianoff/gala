@@ -14,7 +14,7 @@ import (
 //
 // The opaque type deliberately does not enter the alias tables: nothing that
 // infers, unifies or looks up methods may see through it.
-func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationContext, pkgName, definedIn string, richAST *transpiler.RichAST, docs map[int]string) {
+func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationContext, pkgName, definedIn string, richAST *transpiler.RichAST, docs galaparser.Docs) {
 	typeName := ctx.Identifier().GetText()
 	fullTypeName := typeName
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {

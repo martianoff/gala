@@ -14,6 +14,7 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/require"
 
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/generator"
@@ -170,13 +171,13 @@ type concurrencyProbeParser struct {
 
 var _ transpiler.GalaParser = (*concurrencyProbeParser)(nil)
 
-func (p *concurrencyProbeParser) Parse(input string) (antlr.Tree, map[int]string, error) {
+func (p *concurrencyProbeParser) Parse(input string) (antlr.Tree, parser.Docs, error) {
 	p.enter()
 	defer p.leave()
 	return p.inner.Parse(input)
 }
 
-func (p *concurrencyProbeParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
+func (p *concurrencyProbeParser) ParseLenient(input string) (antlr.Tree, parser.Docs, []error) {
 	p.enter()
 	defer p.leave()
 	return p.inner.ParseLenient(input)

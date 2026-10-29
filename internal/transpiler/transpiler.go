@@ -14,6 +14,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler/profiler"
 )
@@ -173,7 +174,7 @@ type RichAST struct {
 	// token (see parser.extractDocComments). The transpile pipeline sets it so
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
-	Docs map[int]string
+	Docs galaparser.Docs
 }
 
 // ReportSiblingSyntaxErrors returns what to report for err, a failure of a
@@ -796,18 +797,18 @@ type CompanionObjectMetadata struct {
 // pairing them with declarations happens in a linear walk afterwards. Callers
 // that do not need documentation discard the map.
 type GalaParser interface {
-	Parse(input string) (tree antlr.Tree, docs map[int]string, err error)
+	Parse(input string) (tree antlr.Tree, docs galaparser.Docs, err error)
 	// ParseLenient always returns ANTLR's error-recovered tree alongside any
 	// syntax errors. The tree may contain error nodes but is structurally
 	// valid enough for the analyzer to extract types, methods, and functions.
 	// Used by the LSP so completion/hover/definition keep working while the
 	// user is mid-edit.
-	ParseLenient(input string) (tree antlr.Tree, docs map[int]string, errors []error)
+	ParseLenient(input string) (tree antlr.Tree, docs galaparser.Docs, errors []error)
 }
 
 // Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
 type Analyzer interface {
-	Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*RichAST, error)
+	Analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.
