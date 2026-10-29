@@ -37,3 +37,18 @@ func TestEqualPrimitives(t *testing.T) {
 		})
 	}
 }
+
+// goStruct has unexported fields, as most Go library structs do; reflection
+// cannot hand them to Equal one by one.
+type goStruct struct {
+	n    int
+	name string
+}
+
+// TestEqualGoStructWithUnexportedFields: a Go struct with unexported fields
+// and no Equal method compares deeply instead of panicking on its fields. A
+// GALA struct holding one compares it this way when == lowers to Equal.
+func TestEqualGoStructWithUnexportedFields(t *testing.T) {
+	assert.True(t, Equal(goStruct{1, "a"}, goStruct{1, "a"}))
+	assert.False(t, Equal(goStruct{1, "a"}, goStruct{2, "a"}))
+}

@@ -127,7 +127,7 @@ updated.Port = 8080
 </div>
 </div>
 
-Go's value copy is concise, but the copy and the original stay fully mutable -- and if `Config` holds a slice or map, the shallow copy shares it. GALA makes immutability the guarantee: fields can never be reassigned, `Copy()` is an expression you can drop straight into a pipeline, and the compiler also generates a structural `Equal()` (Go's `==` breaks the moment a field is a slice or map).
+Go's value copy is concise, but the copy and the original stay fully mutable -- and if `Config` holds a slice or map, the shallow copy shares it. GALA makes immutability the guarantee: fields can never be reassigned, `Copy()` is an expression you can drop straight into a pipeline, and the compiler also generates a structural `Equal()`, which GALA's `==` calls (Go's `==` breaks the moment a field is a slice or map).
 
 ---
 

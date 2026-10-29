@@ -29,6 +29,12 @@ func (o OptionPtr[T]) IsDefined() bool = o.p != nil
 // IsEmpty reports whether the OptionPtr is empty.
 func (o OptionPtr[T]) IsEmpty() bool = o.p == nil
 
+// Equal reports whether other holds the same pointer, or is empty as well:
+// an OptionPtr compares as a pointer does, by identity, not by what it
+// points to. So `a == b` on two OptionPtrs tells whether they point to the
+// same node, as a linked structure's code asks.
+func (o OptionPtr[T]) Equal(other OptionPtr[T]) bool = o.p == other.p
+
 // Get returns the pointer. It panics when the OptionPtr is empty.
 func (o OptionPtr[T]) Get() Ptr[T] {
     if o.p == nil {

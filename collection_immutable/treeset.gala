@@ -79,6 +79,10 @@ func (s TreeSet[T]) Size() int = s.size
 // Length is an alias for Size.
 func (s TreeSet[T]) Length() int = s.size
 
+// Equal reports whether other holds the same elements, however each set was
+// built. It is O(n log n).
+func (s TreeSet[T]) Equal(other TreeSet[T]) bool = s.size == other.size && s.ForAll(other.Contains)
+
 // compare compares two values and returns -1, 0, or 1.
 // Handles primitive types automatically, custom types must implement Ordered[T].
 func compare[T comparable](a T, b T) int {

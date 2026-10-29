@@ -40,6 +40,9 @@ type galaASTTransformer struct {
 	needsFmtAliasImport bool // generated code calls fmt under fmtAlias; see fmtPackage
 	needsUtf8Import     bool
 	activeTypeParams    map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
+	// equalOwner is the type whose Equal method is being transformed, nil
+	// outside one: there `==` on that type is Go's (see equalityOf).
+	equalOwner *transpiler.TypeMetadata
 	typeParamNames      map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
 	structFields        map[string][]string
 	structFieldTypes    map[string]map[string]transpiler.Type // structName -> fieldName -> typeName

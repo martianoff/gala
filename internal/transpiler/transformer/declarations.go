@@ -880,6 +880,12 @@ func (t *galaASTTransformer) transformFunctionDeclaration(ctx *grammar.FunctionD
 
 		// Keep track of the base name for standalone function transformation
 		receiverTypeName = receiverBaseName
+
+		if name == "Equal" {
+			prevOwner := t.equalOwner
+			t.equalOwner = t.getTypeMeta(receiverBaseName)
+			defer func() { t.equalOwner = prevOwner }()
+		}
 	}
 
 	// Type Parameters

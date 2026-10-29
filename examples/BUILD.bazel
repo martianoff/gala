@@ -1420,12 +1420,22 @@ gala_exec_test(
     expected = "alternative_patterns.out",
 )
 
-# `==` on comparable structs, sealed types, tuples and stable identifiers, and
-# Equal for values holding an Array (GALA-E0084 rejects `==` on those)
+# `==` on structs, sealed types, tuples, collections and stable identifiers
+# compares by Equal
 gala_exec_test(
     name = "comparable_equality",
     src = "comparable_equality.gala",
     expected = "comparable_equality.out",
+    deps = ["//collection_immutable"],
+)
+
+# `==` is Equal: collections, structs holding collections or pointers, sealed
+# types, Options, tuples and stable identifiers compare by value; a type's own
+# Equal is honoured, and == inside it stays Go's
+gala_exec_test(
+    name = "equality_value_semantics",
+    src = "equality_value_semantics.gala",
+    expected = "equality_value_semantics.out",
     deps = ["//collection_immutable"],
 )
 
