@@ -59,7 +59,7 @@ type Array[T any] struct {
 
 // EmptyArray returns an empty Array.
 func EmptyArray[T any]() Array[T] =
-    Array[T](root = EmptyOptionPtr[arrayNode[T]](), length = 0, depth = 0, prefix = EmptyOptionPtr[arrayPrefix[T]]())
+    Array[T](root = EmptyOptionPtr[arrayNode[T]](), length = 0, depth = 0, prefix = noPrefix[T]())
 
 // prefixElems returns the prepend buffer's elements, in forward order; nil
 // when nothing has been prepended.
@@ -73,6 +73,9 @@ func (a Array[T]) prefixElems() []T {
 
 // prefixOf wraps elems, already in forward order, as a prepend buffer.
 func prefixOf[T any](elems []T) OptionPtr[arrayPrefix[T]] = SomePtr(&arrayPrefix[T](elems = elems))
+
+// noPrefix is the prepend buffer of an Array nothing has been prepended to.
+func noPrefix[T any]() OptionPtr[arrayPrefix[T]] = EmptyOptionPtr[arrayPrefix[T]]()
 
 // ArrayOf creates an Array from variadic arguments.
 // Example: ArrayOf[int](1, 2, 3) creates Array(1, 2, 3)
@@ -131,7 +134,7 @@ func arrayFromLeaves[T any](leaves []Ptr[arrayNode[T]], length int) Array[T] {
         level = groupNodes(level)
         depth++
     }
-    return Array[T](root = SomePtr(level[0]), length = length, depth = depth, prefix = EmptyOptionPtr[arrayPrefix[T]]())
+    return Array[T](root = SomePtr(level[0]), length = length, depth = depth, prefix = noPrefix[T]())
 }
 
 // chunkCount is the number of branchingFactor-sized chunks needed to hold n items.
@@ -221,11 +224,11 @@ func (b Ptr[arrayBuilder[T]]) Result() Array[T] {
     if b.display2.Size() == 0 {
         if b.display1.Size() == 1 {
             // Single leaf node
-            return Array[T](root = SomePtr(b.display1[0]), length = b.length, depth = 1, prefix = EmptyOptionPtr[arrayPrefix[T]]())
+            return Array[T](root = SomePtr(b.display1[0]), length = b.length, depth = 1, prefix = noPrefix[T]())
         }
         // Multiple leaves, need internal node
         var root = &arrayNode[T](children = b.display1, isLeaf = false)
-        return Array[T](root = SomePtr(root), length = b.length, depth = 2, prefix = EmptyOptionPtr[arrayPrefix[T]]())
+        return Array[T](root = SomePtr(root), length = b.length, depth = 2, prefix = noPrefix[T]())
     }
 
     // We have display2 - need to build deeper tree
@@ -264,7 +267,7 @@ func (b Ptr[arrayBuilder[T]]) Result() Array[T] {
         depth++
     }
 
-    return Array[T](root = SomePtr(currentLevel[0]), length = b.length, depth = depth, prefix = EmptyOptionPtr[arrayPrefix[T]]())
+    return Array[T](root = SomePtr(currentLevel[0]), length = b.length, depth = depth, prefix = noPrefix[T]())
 }
 
 // IsEmpty returns true if the array is empty.

@@ -56,7 +56,10 @@ func (m HashMap[K, V]) Length() int = m.size
 // Equal reports whether other holds the same keys, each mapped to an Equal
 // value, in any order. It is O(n).
 func (m HashMap[K, V]) Equal(other HashMap[K, V]) bool =
-    m.size == other.size && m.ForAll((k, v) => other.Get(k).Exists((w) => Equal(v, w)))
+    m.size == other.size && m.ForAll((k, v) => other.Get(k) match {
+        case Some(w) => Equal(v, w)
+        case _       => false
+    })
 
 // hashMapBitpos returns the bit position for a hash at a given level.
 func hashMapBitpos(hashCode uint32, level int) uint32 {
