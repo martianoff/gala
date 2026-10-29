@@ -170,8 +170,8 @@ type RichAST struct {
 	ReceiverDotImports map[string][]string
 
 	// Docs is this file's doc-comment table from the parse that produced Tree,
-	// keyed by the character offset of each documented declaration's first
-	// token (see parser.extractDocComments). The transpile pipeline sets it so
+	// keyed by the line and column of each documented declaration's first
+	// token (see parser.DocKey). The transpile pipeline sets it so
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
 	Docs galaparser.Docs

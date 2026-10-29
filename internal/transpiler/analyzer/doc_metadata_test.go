@@ -343,9 +343,9 @@ type Holder struct {
 // may already carry documentation from a cache load or an earlier pass. An
 // absent doc must leave that value alone; a real one must replace it.
 func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
-	docs := parser.Docs{10: "fresh doc"}
-	tok := &stubToken{start: 10}
-	missing := &stubToken{start: 99}
+	docs := parser.Docs{{Line: 3, Column: 4}: "fresh doc"}
+	tok := &stubToken{line: 3, column: 4}
+	missing := &stubToken{line: 3, column: 9}
 
 	cases := []struct {
 		name  string
@@ -374,10 +374,11 @@ func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
 // stubToken is the minimal antlr.Token surface setDoc/docAt touch.
 type stubToken struct {
 	antlr.Token
-	start int
+	line, column int
 }
 
-func (s *stubToken) GetStart() int { return s.start }
+func (s *stubToken) GetLine() int   { return s.line }
+func (s *stubToken) GetColumn() int { return s.column }
 
 // PackageDoc describes the package being analyzed. Merge is also how an import
 // closure is folded in, so without a package-name check an undocumented package

@@ -3,10 +3,11 @@ package parser
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // docFor parses src and returns the doc comment attached to the declaration
-// whose first token starts at the given substring's offset.
+// whose first token starts where the given substring does.
 func docFor(t *testing.T, src, declPrefix string) string {
 	t.Helper()
 	_, docs, errs := NewAntlrGalaParser().ParseLenient(src)
@@ -17,7 +18,8 @@ func docFor(t *testing.T, src, declPrefix string) string {
 	if off < 0 {
 		t.Fatalf("declaration %q not found in source", declPrefix)
 	}
-	return docs[off]
+	lineStart := strings.LastIndex(src[:off], "\n") + 1
+	return docs[DocKey{Line: 1 + strings.Count(src[:off], "\n"), Column: utf8.RuneCountInString(src[lineStart:off])}]
 }
 
 func TestDocComments(t *testing.T) {

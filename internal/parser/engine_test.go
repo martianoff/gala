@@ -52,13 +52,15 @@ func render(tree antlr.Tree, docs Docs, errs []error) string {
 		b.WriteString(antlr.TreesStringTree(tree, grammar.GalaParserStaticData.RuleNames, nil))
 		positions(&b, tree, nil)
 	}
-	lines := make([]int, 0, len(docs))
-	for line := range docs {
-		lines = append(lines, line)
+	keys := make([]DocKey, 0, len(docs))
+	for k := range docs {
+		keys = append(keys, k)
 	}
-	sort.Ints(lines)
-	for _, line := range lines {
-		fmt.Fprintf(&b, "\ndoc %d: %q", line, docs[line])
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].Line < keys[j].Line || keys[i].Line == keys[j].Line && keys[i].Column < keys[j].Column
+	})
+	for _, k := range keys {
+		fmt.Fprintf(&b, "\ndoc %d:%d: %q", k.Line, k.Column, docs[k])
 	}
 	for _, err := range errs {
 		fmt.Fprintf(&b, "\nerror: %v", err)

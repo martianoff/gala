@@ -276,7 +276,7 @@ type pkgResultCacheEntry struct {
 type parsedFileEntry struct {
 	tree    *grammar.SourceFileContext
 	pkgName string
-	docs    galaparser.Docs // doc comments keyed by declaration start offset
+	docs    galaparser.Docs // doc comments keyed by declaration start (line:column)
 	// syntaxErr is the parse failure of a file that does not parse (tree is
 	// nil then), stamped with the file's path. Cached like a tree, so a
 	// broken sibling is not re-parsed by every file of its package.
@@ -5224,7 +5224,7 @@ func docAt(docs galaparser.Docs, start antlr.Token) string {
 	if docs == nil || start == nil {
 		return ""
 	}
-	return docs[start.GetStart()]
+	return docs[galaparser.DocKeyOf(start)]
 }
 
 // setDoc records a doc comment on a metadata entry that may already carry one.
@@ -5272,12 +5272,12 @@ func (a *galaAnalyzer) docsForFile(path string, tree *grammar.SourceFileContext)
 // docsForTree returns the doc comments for canonPath, but only if they came
 // from the very parse that produced `tree`.
 //
-// Doc offsets are parse-local: they mean nothing except against the token stream
+// Doc keys are parse-local: they mean nothing except against the token stream
 // they were harvested from. Callers hold a tree from one cache
 // (siblingTreeCache, revalidated by the directory's file count) while the docs
 // live in another (parsedFileCache, revalidated by mtime+size), and those two
 // can in principle disagree — a sibling edited in place keeps the file count
-// intact but gets fresh offsets on its next parse. Comparing the tree pointer
+// intact but gets fresh positions on its next parse. Comparing the tree pointer
 // makes the pairing structural instead of a documented hope: a mismatch yields
 // no documentation rather than another declaration's.
 //

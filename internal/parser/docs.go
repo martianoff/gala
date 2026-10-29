@@ -28,15 +28,26 @@ import (
 //     not sever a run that continues past them.
 //   - The run must end on the line immediately above the declaration.
 //
-// The result is keyed by the character offset of the declaration's first token
-// (the `func` / `type` / `sealed` / `val` keyword, or `package`), which is what
-// the analyzer has available at every site where it records a SourcePos. Keying
-// by offset rather than line keeps the lookup exact even when two declarations
-// share a line.
+// The result is keyed by where the declaration's first token starts (the
+// `func` / `type` / `sealed` / `val` keyword, or `package`): its line and column
+// (see DocKey), which the analyzer has at every site where it records a
+// SourcePos. The column keeps the lookup exact even when two declarations share
+// a line.
 
-// Docs is a file's doc comments, by the start offset of the declaration each
-// one documents.
-type Docs = map[int]string
+// DocKey is where a declaration's first token starts: its line (from 1) and
+// column (from 0). Both trees report a token's position this way, while their
+// offsets differ (code points in ANTLR's, bytes in the native tree), so doc
+// comments are keyed by it.
+type DocKey struct {
+	Line, Column int
+}
+
+// Docs is a file's doc comments, by the start of the declaration each one
+// documents.
+type Docs = map[DocKey]string
+
+// DocKeyOf is the key of a declaration whose first token is t.
+func DocKeyOf(t antlr.Token) DocKey { return DocKey{t.GetLine(), t.GetColumn()} }
 
 // extractDocComments pairs hidden-channel comment runs with the declarations
 // they document. toks must be the complete token stream, hidden tokens included.
@@ -88,7 +99,7 @@ func extractDocComments(toks []antlr.Token) Docs {
 			if docs == nil {
 				docs = make(Docs)
 			}
-			docs[tk.GetStart()] = strings.Join(block, "\n")
+			docs[DocKeyOf(tk)] = strings.Join(block, "\n")
 		}
 		block = block[:0]
 		blockEndLine = -1
