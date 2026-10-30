@@ -14,7 +14,6 @@ import (
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
-	"martianoff/gala/internal/transpiler/registry"
 )
 
 // containsUserReturnInClauses reports whether any user-written `return X`, or
@@ -165,6 +164,25 @@ func extractVariantName(patternText string) string {
 		}
 	}
 	return name
+}
+
+// qualifiedVariantName is extractVariantName keeping the package qualifier
+// the pattern writes: "event.Tick(n)" → "event.Tick", "Tick(n)" → "Tick".
+// A companion lookup needs it, where several packages may have a case of the
+// one name.
+func qualifiedVariantName(patternText string) string {
+	name := extractVariantName(patternText)
+	head, _, _ := strings.Cut(patternText, "(")
+	qualifier, _ := splitPackageQualifier(head)
+	switch {
+	case name == "" || qualifier == "":
+		return name
+	case extractVariantName(qualifier) != qualifier:
+		// `a.b.Case`: a qualifier that is no package name names no case
+		// this file can look up, and the bare name would be another's.
+		return ""
+	}
+	return qualifier + "." + name
 }
 
 // armMatchesEverything reports whether a lowered case clause (see
@@ -753,12 +771,13 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 		if isWildcard(patternText) || t.isBindingPatternOf(patternText, nil) {
 			continue
 		}
-		variantName := extractVariantName(patternText)
+		variantName := qualifiedVariantName(patternText)
 		if variantName == "" {
 			continue
 		}
 
-		// Look up the variant in companion objects to find the parent sealed type
+		// Look up the variant in companion objects to find the parent sealed
+		// type; a qualified case (`yaml.AsIs()`) is its package's.
 		companion := t.lookupCompanion(variantName)
 		if companion == nil {
 			continue
@@ -814,32 +833,43 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 	return nil
 }
 
-// lookupCompanion searches for a companion object by name, checking both
-// fully-qualified and unqualified names across all registered companions.
+// lookupCompanion finds the companion object a case name means in this file.
+//
+// The analyzer files a named package's companion under its qualified key
+// only, so a name resolves as every type name does (resolveTypeName), with
+// one precedence for both: a bare name is the file's own package's case, then
+// std's, then its dot imports' in source order (resolver.TypeResolver); a
+// keyless package's (main, test) is found under its bare key. A qualifier
+// this file (or, while a default written elsewhere is lowered, that file)
+// imports is first resolved by import path to the key its package's
+// metadata is recorded under, which an alias or a default's foreign
+// qualifier does not spell.
 func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionObjectMetadata {
-	// Try exact match first
-	if c, ok := t.companionObjects[name]; ok {
-		return c
-	}
-	// The package's own companion (a library keys it `pkg.Name`) shadows std's.
-	if c, ok := t.companionObjects[t.packageName+"."+name]; ok && !strings.Contains(name, ".") {
-		return c
-	}
-	// Try with std prefix
-	stdName := registry.StdPackageName + "." + name
-	if c, ok := t.companionObjects[stdName]; ok {
-		return c
-	}
-	// Search all companion objects for a matching base name
-	for key, c := range t.companionObjects {
-		// Check if key ends with ".Name" (e.g., "std.Some" matches "Some")
-		if idx := strings.LastIndex(key, "."); idx >= 0 {
-			if key[idx+1:] == name {
-				return c
+	if qualifier, bare := splitPackageQualifier(name); qualifier != "" && t.richAST != nil {
+		if entry, ok := t.importManager.GetByAlias(qualifier); ok {
+			if pkg := t.richAST.Packages[entry.Path]; pkg != "" {
+				return t.companionOf(pkg, bare)
 			}
 		}
 	}
-	return nil
+	key, ok := t.resolveTypeName(name, func(k string) bool { return t.companionObjects[k] != nil })
+	if !ok {
+		return nil
+	}
+	return t.companionObjects[key]
+}
+
+// companionOf is package pkg's companion called name: under its qualified
+// key, or, for a package with no qualified key (main, test), under its bare
+// one when it is that package's.
+func (t *galaASTTransformer) companionOf(pkg, name string) *transpiler.CompanionObjectMetadata {
+	if pkg == "main" || pkg == "test" {
+		if c := t.companionObjects[name]; c != nil && c.Package == pkg {
+			return c
+		}
+		return nil
+	}
+	return t.companionObjects[pkg+"."+name]
 }
 
 // buildMatchBody chains case clauses into an if-else chain with default body,
