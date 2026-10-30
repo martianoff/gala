@@ -365,11 +365,42 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
 ) []*galaerr.SemanticError {
+	errs := a.undefinedSymbolErrors(sourceFile, nf, imports, richAST, filePath, fileDotImportSets)
+	if a.onUndefinedCheck != nil {
+		a.onUndefinedCheck(undefinedCheck{
+			filePath: filePath,
+			native:   nf.ok(),
+			errs:     errs,
+			antlr: func() []*galaerr.SemanticError {
+				return a.undefinedSymbolErrors(sourceFile, nativeFile{}, imports, richAST, filePath, fileDotImportSets)
+			},
+		})
+	}
+	return errs
+}
+
+// undefinedCheck is what checkUndefinedSymbols tells
+// galaAnalyzer.onUndefinedCheck about a run: the file, whether the check
+// read its native tree, the errors it found, and how to run it again, in the
+// same state, on the file's ANTLR tree.
+type undefinedCheck struct {
+	filePath string
+	native   bool
+	errs     []*galaerr.SemanticError
+	antlr    func() []*galaerr.SemanticError
+}
+
+// undefinedSymbolErrors is checkUndefinedSymbols without the test hook.
+func (a *galaAnalyzer) undefinedSymbolErrors(
+	sourceFile *grammar.SourceFileContext,
+	nf nativeFile,
+	imports []fileImport,
+	richAST *transpiler.RichAST,
+	filePath string,
+	fileDotImportSets map[string]map[string]bool,
+) []*galaerr.SemanticError {
 	c := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
 	c.walker = scopewalk.New(c, undefWalkOptions())
-	if a.onUndefinedCheck != nil {
-		a.onUndefinedCheck(filePath, nf.ok())
-	}
 	root := nf.root.GalaNodeRef
 	if nf.ok() {
 		c.walkSourceFileNative(root)

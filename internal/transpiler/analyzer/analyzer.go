@@ -210,10 +210,11 @@ type galaAnalyzer struct {
 	// the same initializer on ANTLR's tree, in the same state, and compare.
 	onInferInit func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type)
 	// onUndefinedCheck, when set, is told of each run of the undefined-symbol
-	// check: the file and whether the check reads its native tree. It observes
-	// and changes nothing; TestUndefinedCheckAgrees sets it to prove which
-	// tree each file's check took.
-	onUndefinedCheck func(filePath string, native bool)
+	// check (see undefinedCheck). It observes and changes nothing;
+	// TestUndefinedCheckAgrees sets it to prove which tree each file's check
+	// read, and to run the check on ANTLR's tree in the same state and
+	// compare.
+	onUndefinedCheck func(undefinedCheck)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go
