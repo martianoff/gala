@@ -928,6 +928,10 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 		return "", galaerr.WithFilePath(err, filePath)
 	}
 
+	// Nothing reads the native tree yet: drop its handle, and the token stream
+	// and source text it holds, before the analysis.
+	parsed.Native = nil
+
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()

@@ -247,7 +247,9 @@ func TestEnginesAgree(t *testing.T) {
 		}
 		if got.out != want.out {
 			t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
-			checked = append(checked, want)
+			if native {
+				checked = append(checked, want)
+			}
 		}
 		for _, f := range checked {
 			if msg := f.checkNative(); msg != "" {

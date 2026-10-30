@@ -432,6 +432,8 @@ func (b *BatchAnalyzer) SetGoSrcDirs(dirs map[string]string) {
 	b.inner.goSrcDirs = dirs
 }
 
+var _ transpiler.Analyzer = (*BatchAnalyzer)(nil)
+
 // AnalyzeParsed delegates to the inner analyzer, sharing the package cache.
 func (b *BatchAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
 	return b.inner.AnalyzeParsed(parsed, filePath)

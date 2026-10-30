@@ -85,7 +85,7 @@ func (t *Native) convert() {
 // Ctx is the ANTLR context of native node n, or nil when n is no node of this
 // tree.
 func (t *Native) Ctx(n native.GalaNodeRef) antlr.ParserRuleContext {
-	if tree, err := t.Tree(); err != nil || !n.Ok() || n.Tree() != tree {
+	if tree, err := t.Tree(); err != nil || !n.Ok() || n.Tree() != tree || n.Index() >= len(t.ctxs) {
 		return nil
 	}
 	return t.ctxs[n.Index()]
