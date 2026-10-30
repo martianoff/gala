@@ -246,7 +246,9 @@ func (w antlrWalk) walkForStatement(fs grammar.IForStatementContext) {
 			w.walk(e) // the ranged value resolves before the loop vars bind
 		}
 		if idList := rc.IdentifierList(); idList != nil {
-			if strings.Contains(rc.GetText(), ":=") {
+			// The token after the list says which form it is: rc.GetText() would
+			// also find a `:=` in a string literal of the ranged expression.
+			if op, ok := rc.GetChild(1).(antlr.TerminalNode); ok && op.GetText() == ":=" {
 				// `i, v := range xs` — fresh loop-variable bindings.
 				w.BindIdentifierList(idList)
 			} else {

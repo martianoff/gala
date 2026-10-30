@@ -96,6 +96,11 @@ func TestScopeModel(t *testing.T) {
 			want: []string{"Println", "outer", "xs"},
 		},
 		{
+			name: "range assignment references its vars, whatever the ranged text holds",
+			body: "for k = range lookup(\":=\") { Println(k) }\nreturn outer",
+			want: []string{"Println", "k", "lookup", "outer"},
+		},
+		{
 			name: "if-init binding does not leak past the statement",
 			body: "if d := p; d > 0 { Println(d) }\nreturn outer",
 			want: []string{"Println", "outer"},
