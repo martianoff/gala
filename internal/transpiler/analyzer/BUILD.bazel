@@ -126,8 +126,11 @@ go_test(
 # The collection of declarations on the native tree, held to ANTLR's over the
 # GALA sources TestEnginesAgree parses and the examples of the error reference
 # pages. A target of its own: staging all of them would load packages that
-# analyzer_test's cases rely on not loading.
+# analyzer_test's cases rely on not loading. Gazelle leaves the file out of
+# analyzer_test (the exclude directive) and keeps this rule as written.
+# gazelle:exclude collect_native_test.go
 go_test(
+    # keep
     name = "collect_native_test",
     srcs = ["collect_native_test.go"],
     data = [

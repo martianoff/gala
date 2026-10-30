@@ -126,7 +126,7 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 					// silently overwrote the first in the Fields map and
 					// duplicated the name in FieldNames, producing invalid
 					// Go output. This guard is scoped to one parse of one
-					// struct (Fields was cleared on re-analysis at line ~740),
+					// struct (Fields was cleared for this declaration above),
 					// so it does not need an existing.DefinedIn check.
 					if _, exists := meta.Fields[fieldName]; exists {
 						return galaerr.NewCodedSemanticError(
