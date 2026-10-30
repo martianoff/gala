@@ -12,8 +12,8 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// errNoNative is what a nil *Native reports: the parse gave no tree, or the
-// holder dropped the handle.
+// errNoNative is what a nil *Native reports: the parse gave no tree, ANTLR's
+// parser made it (see Parsed.Native), or the holder dropped the handle.
 var errNoNative = errors.New("parser: no native tree for this parse")
 
 // Native is a parse's tree in galop's native form (internal/parser/native),

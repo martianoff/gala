@@ -62,8 +62,9 @@
 // handler; nativewalk's TestWalksAgree holds the two to the same output on the
 // GALA sources the parser's engine test parses (std, the examples and the
 // other libraries). ANTLR's walk stays for what has no native tree: a parse
-// with syntax errors, an interpolation fragment (re-parsed into ANTLR's tree
-// alone), and a caller that holds none.
+// ANTLR's parser made (with ANTLR's engine, or on a syntax error), an
+// interpolation fragment (re-parsed into ANTLR's tree alone), and a caller
+// that holds none.
 package scopewalk
 
 import (

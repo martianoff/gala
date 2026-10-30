@@ -1,6 +1,7 @@
 package scopewalk_test
 
 import (
+	"os"
 	"sort"
 	"testing"
 
@@ -12,6 +13,13 @@ import (
 	"martianoff/gala/internal/transpiler/scopewalk"
 	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
+
+// TestMain parses with galop's engine, whatever the build's default, so the
+// native walk has a tree to agree with ANTLR's on.
+func TestMain(m *testing.M) {
+	parser.RequestEngine(string(parser.EngineGalop))
+	os.Exit(m.Run())
+}
 
 // collector records every unbound reference the walker reports.
 type collector struct {

@@ -217,24 +217,29 @@ func TestEnginesAgree(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 	positions := rand.New(rand.NewSource(2))
 	files, accepted, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0
-	// compareFile parses input with both engines, reports a difference, and,
-	// when native is set, checks the native tree: of galop's parse when the
-	// engines agree, as ANTLR's is then the same tree, and of both when they
-	// do not. It returns ANTLR's rendering.
+	// compareFile parses input with both engines, reports a difference, and
+	// checks the native trees: ANTLR's engine's parse has none; galop's has
+	// one when it parses without errors. When native is set, it checks the
+	// native tree (checkNative) of galop's parse, or, when that has errors,
+	// of ANTLR's error-recovered tree converted (parseConverted). It returns
+	// ANTLR's rendering.
 	compareFile := func(what, input string, native bool) string {
 		want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
-		var checked []fileParse
-		if native {
-			checked = append(checked, got)
-		}
 		if got.out != want.out {
 			t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
-			if native {
-				checked = append(checked, want)
-			}
 		}
-		for _, f := range checked {
-			if msg := checkNative(f.parsed, f.text); msg != "" {
+		if want.parsed.Native != nil {
+			t.Errorf("%s: the parse with ANTLR's engine has a native tree", what)
+		}
+		checked, text := got.parsed, got.text
+		if len(got.parsed.Errors) > 0 {
+			checked, text = parseConverted(input), want.text
+		} else if got.parsed.Native == nil {
+			t.Errorf("%s: galop's clean parse has no native tree", what)
+			native = false
+		}
+		if native {
+			if msg := checkNative(checked, text); msg != "" {
 				t.Errorf("%s: native tree: %s", what, msg)
 			}
 		}
@@ -364,8 +369,12 @@ func TestGalopPanicFallsBack(t *testing.T) {
 	}()
 	src := "package main\n\nfunc main() {\n    Println(\"hi\")\n}\n"
 	want := parseFileWith(EngineANTLR, src)
-	if got := parseFileWith(EngineGalop, src); got != want {
-		t.Errorf("source file after a panic:\n got: %s\nwant: %s", got, want)
+	got := parseFileAs(EngineGalop, src)
+	if got.out != want {
+		t.Errorf("source file after a panic:\n got: %s\nwant: %s", got.out, want)
+	}
+	if got.parsed.Native != nil {
+		t.Error("ANTLR's fallback parse after a panic has a native tree")
 	}
 	if strings.Contains(want, "error:") {
 		t.Fatalf("the source does not parse: %s", want)

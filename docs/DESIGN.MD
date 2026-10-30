@@ -285,17 +285,23 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     reported on standard error.
   - **ANTLR alone stays an option at run time:** `--parser=antlr` or `GALA_PARSER=antlr` per
     process, or a build with `--//internal/parser:antlr`, whose binaries default to ANTLR (see
-    `internal/parser/engine.go`). Every build has both parsers.
+    `internal/parser/engine.go`). Every build has both parsers. ANTLR's engine bypasses all of
+    galop's code: its lexer and parser, the conversion to the native tree, and every consumer's
+    native path. A parse ANTLR's parser makes, with ANTLR's engine or as galop's fallback, has
+    no native tree (`Parsed.Native` is nil), so while consumers move to the native tree one by
+    one (Stage B), ANTLR's engine runs their ANTLR paths end to end, to compare against and to
+    escape to.
   - **Building GALA needs galop.** It runs at build time from prebuilt release binaries, which
     Bazel (rules_gala's galop toolchain) and nix download for linux and macOS (amd64 and arm64)
     and windows-amd64. No other host can build GALA.
   - **galop's native tree comes next.** galop also generates its own tree (in
     `internal/parser/native`): flat arrays of nodes, far smaller than ANTLR's contexts. Each
-    parse (`Parsed.Native` from `ParseFile`) can build it on first use and pair every native
-    node with its ANTLR context, so code can move to the native tree one consumer at a time.
-    Nothing reads it yet, so no cache or analysis result keeps the handle: until it converts,
-    it holds the token stream and the source text, which a clean parse's ANTLR tree doesn't
-    keep alive (after converting, the native tree keeps the text). Doc comments are keyed by
+    parse galop's parser makes (`Parsed.Native` from `ParseFile`) can build it on first use and
+    pair every native node with its ANTLR context, so code can move to the native tree one
+    consumer at a time. The analyzer's scope walk reads it (`nativewalk.For`); `transpile()`
+    drops the handle after the analysis, and no cache keeps it: until it converts, it holds the
+    token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive
+    (after converting, the native tree keeps the text). Doc comments are keyed by
     line and column (`parser.DocKey`), which both trees share.
   - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
     and errors on every GALA source of the repository, and that the native tree matches

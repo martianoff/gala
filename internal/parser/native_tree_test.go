@@ -58,11 +58,53 @@ func checkNative(p *Parsed, text string) string {
 	return ""
 }
 
+// parseWithGalop parses src as a source file with galop's engine, whatever
+// the build's default: only galop's parses have a native tree.
+func parseWithGalop(src string) *Parsed {
+	var p *Parsed
+	withEngine(EngineGalop, func() { p = NewAntlrGalaParser().ParseFile(src) })
+	return p
+}
+
+// parseConverted parses src with ANTLR's parser and gives the parse a native
+// tree all the same, error-recovered when src has syntax errors: ParseFile
+// gives such a parse none, but galop's converter takes it, so the native
+// helpers are checked on error-recovered trees too.
+func parseConverted(src string) *Parsed {
+	r := parseSourceFile(src, EngineANTLR)
+	return &Parsed{Tree: r.tree, Errors: r.errors, Native: newNative(r.tree, r.stream, src)}
+}
+
+// TestNativeOnlyForGalopParses: a tree galop's parser made has a native tree;
+// one ANTLR's parser made, with ANTLR's engine or as galop's fallback on a
+// syntax error, has none, so its consumers take the ANTLR paths.
+func TestNativeOnlyForGalopParses(t *testing.T) {
+	const clean, broken = "package main\n\nval x = 1\n", "package main\n\nval x = \n"
+	if parseWithGalop(clean).Native == nil {
+		t.Error("galop's parse has no native tree")
+	}
+	var antlrClean, antlrBroken *Parsed
+	withEngine(EngineANTLR, func() {
+		antlrClean = NewAntlrGalaParser().ParseFile(clean)
+		antlrBroken = NewAntlrGalaParser().ParseFile(broken)
+	})
+	if antlrClean.Native != nil || antlrBroken.Native != nil {
+		t.Error("a parse with ANTLR's engine has a native tree")
+	}
+	p := parseWithGalop(broken)
+	if len(p.Errors) == 0 {
+		t.Fatal("the broken source parses")
+	}
+	if p.Native != nil {
+		t.Error("ANTLR's fallback parse of a syntax error has a native tree")
+	}
+}
+
 // TestParseFileNative: a parse's native tree belongs to it alone; a node or
 // a context of another parse has no counterpart, and no node has a context.
 func TestParseFileNative(t *testing.T) {
-	p := NewAntlrGalaParser().ParseFile("package main\n\nval x = 1\n")
-	other := NewAntlrGalaParser().ParseFile("package other\n")
+	p := parseWithGalop("package main\n\nval x = 1\n")
+	other := parseWithGalop("package other\n")
 	if msg := checkNative(p, treeText(p.Tree)); msg != "" {
 		t.Fatal(msg)
 	}
@@ -84,7 +126,7 @@ func TestParseFileNative(t *testing.T) {
 // TestParseFileNativeConcurrent asks for one parse's native tree from many
 // goroutines: they get the same one (run under the race detector in CI).
 func TestParseFileNativeConcurrent(t *testing.T) {
-	p := NewAntlrGalaParser().ParseFile("package main\n\nfunc f(a int) int = a + 1\n")
+	p := parseWithGalop("package main\n\nfunc f(a int) int = a + 1\n")
 	got := make([]*native.GalaTree, 16)
 	var wg sync.WaitGroup
 	for i := range got {

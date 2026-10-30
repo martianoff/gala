@@ -16,6 +16,13 @@ import (
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
+// TestMain parses with galop's engine, whatever the build's default: only its
+// parses have a native tree to walk.
+func TestMain(m *testing.M) {
+	parser.RequestEngine(string(parser.EngineGalop))
+	os.Exit(m.Run())
+}
+
 // recorder writes down everything a walk reports, in order: each reference
 // with its site and use, and each call of the EnterFunctionScope hook.
 type recorder struct{ events []string }
