@@ -5,17 +5,12 @@ load("@rules_go//go:def.bzl", "go_library")
 # typed handles, Kind(), Typed(), a listener and a visitor. galop's antlr
 # flavor writes the converter from ANTLR's trees to it (see
 # internal/parser/grammar); internal/parser hands it out with each parse
-# (parser.Native). Builds without galop's parser link
-# internal/parser/nativeoff under this import path.
+# (parser.Native).
 galop_parser(
     name = "gala_native_galop",
     galop_opts = ["-visitor"],
     grammar = "//internal/parser/grammar:gala.g4",
     package = "native",
-    target_compatible_with = select({
-        "//internal/parser/grammar:galop_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
 )
 
 # keep: its sources are generated, so gazelle sees none.
@@ -23,9 +18,5 @@ go_library(
     name = "native",
     srcs = [":gala_native_galop"],
     importpath = "martianoff/gala/internal/parser/native",
-    target_compatible_with = select({
-        "//internal/parser/grammar:galop_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     visibility = ["//visibility:public"],
 )
