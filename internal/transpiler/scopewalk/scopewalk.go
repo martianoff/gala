@@ -66,6 +66,8 @@
 package scopewalk
 
 import (
+	"strings"
+
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/interpolation"
@@ -351,26 +353,18 @@ func (w *Walker) Walk(node antlr.Tree) {
 	}
 }
 
-// The entry points below are Walk on a node of their kind, which dispatches
-// it to the same handler.
+// WalkLambda, WalkBlock and WalkFunctionDeclaration are Walk on a node of
+// their kind, which Walk dispatches to its handler.
 
 // WalkLambda pushes a fresh scope, binds the lambda's parameters into it, walks
 // the body, and pops — so a nested lambda's parameters shadow only within its
 // own scope.
-func (w *Walker) WalkLambda(lambda grammar.ILambdaExpressionContext) {
-	if !w.walkNative(lambda) {
-		antlrWalk{w}.walkLambda(lambda)
-	}
-}
+func (w *Walker) WalkLambda(lambda grammar.ILambdaExpressionContext) { w.Walk(lambda) }
 
 // WalkBlock introduces a nested scope and walks the block's statements in
 // order, so a local declared partway through shadows an enclosing name only for
 // references that follow it.
-func (w *Walker) WalkBlock(block grammar.IBlockContext) {
-	if !w.walkNative(block) {
-		antlrWalk{w}.walkBlock(block)
-	}
-}
+func (w *Walker) WalkBlock(block grammar.IBlockContext) { w.Walk(block) }
 
 // WalkFunctionDeclaration handles a `func f(...) = body` (or block-bodied)
 // declaration. The name is bound in the ENCLOSING scope, so the function may
@@ -378,16 +372,55 @@ func (w *Walker) WalkBlock(block grammar.IBlockContext) {
 // nested scope covering only its body. Options.EnterFunctionScope runs inside
 // that scope, before the parameters bind, for binders this walker does not
 // model (type parameters, a method receiver).
-func (w *Walker) WalkFunctionDeclaration(fn grammar.IFunctionDeclarationContext) {
-	if !w.walkNative(fn) {
-		antlrWalk{w}.walkFunctionDeclaration(fn)
-	}
-}
+func (w *Walker) WalkFunctionDeclaration(fn grammar.IFunctionDeclarationContext) { w.Walk(fn) }
 
 // WalkParameterDefaults walks the `= expr` default of each parameter, so a
-// reference inside a default value is seen.
+// reference inside a default value is seen. A parameter list is no node Walk
+// dispatches, so it has a handler of its own on each tree.
 func (w *Walker) WalkParameterDefaults(params grammar.IParametersContext) {
 	if !w.walkParameterDefaultsNative(params) {
 		antlrWalk{w}.walkParameterDefaults(params)
 	}
+}
+
+// suffix is what classifySuffixes reads off a postfix suffix, whichever tree
+// it is on: the name of a `.name` selector, or whether it is an index `[…]`
+// (neither: a call `(…)`).
+type suffix struct {
+	selector string
+	index    bool
+}
+
+// classifySuffixes decides whether a bare-identifier base followed by the given
+// suffixes (and an optional trailing `match`) is a pure field-read path or a
+// whole use. A leading, uninterrupted run of `.field` selectors with no call,
+// index, or match is a field-read path; an empty suffix list (a bare
+// reference), a trailing match, or any call/index makes it a whole use. shape
+// reads a suffix of either tree.
+func classifySuffixes[S any](suffixes []S, hasMatch bool, shape func(S) suffix) (path string, whole bool) {
+	if hasMatch || len(suffixes) == 0 {
+		return "", true
+	}
+	parts := make([]string, 0, len(suffixes))
+	for i, s := range suffixes {
+		sh := shape(s)
+		if sh.selector != "" {
+			parts = append(parts, sh.selector)
+			continue
+		}
+		if sh.index {
+			// Index `[...]` — a value-position use of the whole receiver.
+			return "", true
+		}
+		// A call `(...)`. Tolerate a SINGLE trailing method call on a
+		// field-path receiver: `x.a.b.m(...)` reads the field value `x.a.b` and
+		// calls a method on it. The last selector is the method name, so the
+		// receiver path is the rest; at least one selector must remain (else it
+		// is a method on the whole value, which stays a whole use).
+		if i == len(suffixes)-1 && len(parts) >= 2 {
+			return strings.Join(parts[:len(parts)-1], "."), false
+		}
+		return "", true
+	}
+	return strings.Join(parts, "."), false
 }

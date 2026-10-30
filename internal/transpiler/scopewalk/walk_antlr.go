@@ -1,8 +1,6 @@
 package scopewalk
 
 import (
-	"strings"
-
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser/grammar"
@@ -12,8 +10,16 @@ import (
 // shares the Walker's scope stack, options and visitor.
 type antlrWalk struct{ *Walker }
 
-// walkParameterDefaults walks the `= expr` default of each parameter, so a
-// reference inside a default value is seen.
+// tokenSite is the site of tok, whose text is text.
+func tokenSite(tok antlr.Token, text string) Site {
+	return Site{Line: tok.GetLine(), Column: tok.GetColumn(), Text: text}
+}
+
+// TokenSite is the site of tok, for a consumer that reports at an ANTLR token
+// of its own.
+func TokenSite(tok antlr.Token) Site { return tokenSite(tok, tok.GetText()) }
+
+// walkParameterDefaults is WalkParameterDefaults on ANTLR's tree.
 func (w antlrWalk) walkParameterDefaults(params grammar.IParametersContext) {
 	if params == nil {
 		return
@@ -129,9 +135,7 @@ func (w antlrWalk) walk(node antlr.Tree) {
 // Scope-introducing handlers
 // ---------------------------------------------------------------------------
 
-// walkLambda pushes a fresh scope, binds the lambda's parameters into it, walks
-// the body, and pops — so a nested lambda's parameters shadow only within its
-// own scope.
+// walkLambda is WalkLambda on ANTLR's tree.
 func (w antlrWalk) walkLambda(lambda grammar.ILambdaExpressionContext) {
 	if lambda == nil {
 		return
@@ -152,9 +156,7 @@ func (w antlrWalk) walkLambda(lambda grammar.ILambdaExpressionContext) {
 	// lambda.Type_() is the optional return-type annotation — a type.
 }
 
-// walkBlock introduces a nested scope and walks the block's statements in
-// order, so a local declared partway through shadows an enclosing name only for
-// references that follow it.
+// walkBlock is WalkBlock on ANTLR's tree.
 func (w antlrWalk) walkBlock(block grammar.IBlockContext) {
 	if block == nil {
 		return
@@ -180,12 +182,7 @@ func (w antlrWalk) walkValVarDecl(exprList grammar.IExpressionListContext, idLis
 	}
 }
 
-// walkFunctionDeclaration handles a `func f(...) = body` (or block-bodied)
-// declaration. The name is bound in the ENCLOSING scope, so the function may
-// recurse and later statements may call it; its parameters live in a fresh
-// nested scope covering only its body. Options.EnterFunctionScope runs inside
-// that scope, before the parameters bind, for binders this walker does not
-// model (type parameters, a method receiver).
+// walkFunctionDeclaration is WalkFunctionDeclaration on ANTLR's tree.
 func (w antlrWalk) walkFunctionDeclaration(fn grammar.IFunctionDeclarationContext) {
 	if fn == nil {
 		return
@@ -283,7 +280,7 @@ func (w antlrWalk) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
 	caseClauses := ctx.AllCaseClause()
 
 	if id := bareIdentPrimary(pe); id != nil {
-		path, whole := classifySuffixes(suffixes, len(caseClauses) > 0)
+		path, whole := classifySuffixes(suffixes, len(caseClauses) > 0, antlrSuffix)
 		w.referenceID(id, Use{Path: path, Whole: whole})
 	} else {
 		// Base is not a bare identifier (literal, tuple/paren, composite
@@ -299,40 +296,16 @@ func (w antlrWalk) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
 	}
 }
 
-// classifySuffixes decides whether a bare-identifier base followed by the given
-// suffixes (and an optional trailing `match`) is a pure field-read path or a
-// whole use. A leading, uninterrupted run of `.field` selectors with no call,
-// index, or match is a field-read path; an empty suffix list (a bare
-// reference), a trailing match, or any call/index makes it a whole use.
-func classifySuffixes(suffixes []grammar.IPostfixSuffixContext, hasMatch bool) (path string, whole bool) {
-	if hasMatch || len(suffixes) == 0 {
-		return "", true
+// antlrSuffix is the shape of an ANTLR postfix suffix (see classifySuffixes).
+func antlrSuffix(s grammar.IPostfixSuffixContext) suffix {
+	sc, ok := s.(*grammar.PostfixSuffixContext)
+	if !ok {
+		return suffix{index: true} // never: every suffix is one
 	}
-	parts := make([]string, 0, len(suffixes))
-	for i, s := range suffixes {
-		sc, ok := s.(*grammar.PostfixSuffixContext)
-		if !ok {
-			return "", true
-		}
-		if id := sc.Identifier(); id != nil {
-			parts = append(parts, id.GetText())
-			continue
-		}
-		if sc.ExpressionList() != nil {
-			// Index `[...]` — a value-position use of the whole receiver.
-			return "", true
-		}
-		// A call `(...)`. Tolerate a SINGLE trailing method call on a
-		// field-path receiver: `x.a.b.m(...)` reads the field value `x.a.b` and
-		// calls a method on it. The last selector is the method name, so the
-		// receiver path is the rest; at least one selector must remain (else it
-		// is a method on the whole value, which stays a whole use).
-		if i == len(suffixes)-1 && len(parts) >= 2 {
-			return strings.Join(parts[:len(parts)-1], "."), false
-		}
-		return "", true
+	if id := sc.Identifier(); id != nil {
+		return suffix{selector: id.GetText()}
 	}
-	return strings.Join(parts, "."), false
+	return suffix{index: sc.ExpressionList() != nil}
 }
 
 // bareIdentPrimary returns the identifier context when the primaryExpr is a
@@ -385,15 +358,13 @@ func (w antlrWalk) walkLiteral(lit grammar.ILiteralContext) {
 	if tok == nil {
 		return
 	}
-	sym := tok.GetSymbol()
-	w.walkInterpolated(Site{Line: sym.GetLine(), Column: sym.GetColumn(), Text: tok.GetText()})
+	w.walkInterpolated(TokenSite(tok.GetSymbol()))
 }
 
 // referenceID reports the identifier id as a reference, at its token.
 func (w antlrWalk) referenceID(id grammar.IIdentifierContext, use Use) {
 	name := id.GetText()
-	tok := id.GetStart()
-	w.reference(name, Site{Line: tok.GetLine(), Column: tok.GetColumn(), Text: name}, use)
+	w.reference(name, tokenSite(id.GetStart(), name), use)
 }
 
 // walkCompositeLiteral walks the element values of a composite literal. The

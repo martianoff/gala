@@ -1089,7 +1089,7 @@ func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string
 	if tok == nil {
 		return
 	}
-	c.reportAt(name, scopewalk.Site{Line: tok.GetLine(), Column: tok.GetColumn(), Text: tok.GetText()}, msg, hint)
+	c.reportAt(name, scopewalk.TokenSite(tok), msg, hint)
 }
 
 // reportAt is reportWith at a site rather than a token.

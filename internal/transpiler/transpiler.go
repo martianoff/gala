@@ -956,6 +956,8 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)
 	done()
+	// The scope walks are done: let the native tree go before generation.
+	richAST.Native = nil
 	if err != nil {
 		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(err), filePath)
 	}

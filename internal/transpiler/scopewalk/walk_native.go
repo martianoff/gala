@@ -4,8 +4,6 @@ package scopewalk
 // native tree. walk_native_off.go stands in for it in the ANTLR-only build.
 
 import (
-	"strings"
-
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser/grammar"
@@ -20,13 +18,54 @@ type nativeWalk struct{ *Walker }
 
 // nativeNode is node's native node, when the Walker has a native tree and
 // node is a context of the parse it belongs to.
+//
+// It finds the node by its path from the root rather than with Native.Node,
+// whose context-to-node map spans the whole file: the walks start from a few
+// contexts (the top-level declarations, a lambda), each a short climb from
+// the root. The native tree has ANTLR's tree's shape, child for child, so the
+// indexes of the climb lead back down to the node; Native.Ctx confirms it.
 func (w *Walker) nativeNode(node antlr.Tree) (native.GalaNodeRef, bool) {
 	ctx, ok := node.(antlr.ParserRuleContext)
 	if !ok || w.native == nil {
 		return native.GalaNodeRef{}, false
 	}
-	n := w.native.Node(ctx)
-	return n, n.Ok()
+	tree, err := w.native.Tree()
+	if err != nil {
+		return native.GalaNodeRef{}, false
+	}
+	n := tree.Root()
+	rootCtx := w.native.Ctx(n)
+	var buf [32]int
+	path := buf[:0] // child indexes from ctx up to the root
+	for c := ctx; c != rootCtx; {
+		parent, ok := c.GetParent().(antlr.ParserRuleContext)
+		if !ok {
+			return native.GalaNodeRef{}, false // another tree's context
+		}
+		i := childIndex(parent, c)
+		if i < 0 {
+			return native.GalaNodeRef{}, false
+		}
+		path = append(path, i)
+		c = parent
+	}
+	for k := len(path) - 1; k >= 0 && n.Ok(); k-- {
+		if path[k] >= n.ChildCount() {
+			return native.GalaNodeRef{}, false
+		}
+		n = n.Child(path[k]).Node()
+	}
+	return n, n.Ok() && w.native.Ctx(n) == ctx
+}
+
+// childIndex is the index of child among parent's children, or -1.
+func childIndex(parent, child antlr.ParserRuleContext) int {
+	for i := 0; i < parent.GetChildCount(); i++ {
+		if parent.GetChild(i) == antlr.Tree(child) {
+			return i
+		}
+	}
+	return -1
 }
 
 // walkNative walks node on the native tree, and reports whether it could.
@@ -315,7 +354,7 @@ func (w nativeWalk) walkPostfixExpr(pf native.PostfixExprNode) {
 	caseClauses := pf.AllCaseClause()
 
 	if id := pe.Primary().Identifier(); id.Ok() {
-		path, whole := classifyNativeSuffixes(suffixes, len(caseClauses) > 0)
+		path, whole := classifySuffixes(suffixes, len(caseClauses) > 0, nativeSuffix)
 		w.referenceID(id, Use{Path: path, Whole: whole})
 	} else {
 		w.walk(pe.GalaNodeRef)
@@ -329,26 +368,12 @@ func (w nativeWalk) walkPostfixExpr(pf native.PostfixExprNode) {
 	}
 }
 
-// classifyNativeSuffixes is classifySuffixes on native suffixes.
-func classifyNativeSuffixes(suffixes []native.PostfixSuffixNode, hasMatch bool) (path string, whole bool) {
-	if hasMatch || len(suffixes) == 0 {
-		return "", true
+// nativeSuffix is the shape of a native postfix suffix (see classifySuffixes).
+func nativeSuffix(s native.PostfixSuffixNode) suffix {
+	if id := s.Identifier(); id.Ok() {
+		return suffix{selector: textOf(id.GalaNodeRef)}
 	}
-	parts := make([]string, 0, len(suffixes))
-	for i, s := range suffixes {
-		if id := s.Identifier(); id.Ok() {
-			parts = append(parts, textOf(id.GalaNodeRef))
-			continue
-		}
-		if s.ExpressionList().Ok() {
-			return "", true
-		}
-		if i == len(suffixes)-1 && len(parts) >= 2 {
-			return strings.Join(parts[:len(parts)-1], "."), false
-		}
-		return "", true
-	}
-	return strings.Join(parts, "."), false
+	return suffix{index: s.ExpressionList().Ok()}
 }
 
 func (w nativeWalk) walkPrimary(prim native.PrimaryNode) {
@@ -505,36 +530,31 @@ func (w nativeWalk) bindPatternExpression(expr native.ExpressionNode) {
 
 // singleNativePostfixExpr is singlePostfixExpr on the native tree.
 func singleNativePostfixExpr(expr native.ExpressionNode) (native.PostfixExprNode, bool) {
-	// expression > orExpr > andExpr > … > unaryExpr: each level one child of
-	// the next, or the expression has an operator.
-	n := expr.OrExpr().GalaNodeRef
-	for _, kind := range [...]native.GalaKind{
-		native.GalaKIND_andExpr,
-		native.GalaKIND_equalityExpr,
-		native.GalaKIND_relationalExpr,
-		native.GalaKIND_additiveExpr,
-		native.GalaKIND_multiplicativeExpr,
-		native.GalaKIND_unaryExpr,
-	} {
-		if !n.Ok() {
-			return native.PostfixExprNode{}, false
-		}
-		n = onlyChild(n, kind)
+	none := native.PostfixExprNode{}
+	ands := expr.OrExpr().AllAndExpr()
+	if len(ands) != 1 {
+		return none, false
 	}
-	pf := native.UnaryExprNode{GalaNodeRef: n}.PostfixExpr()
+	eqs := ands[0].AllEqualityExpr()
+	if len(eqs) != 1 {
+		return none, false
+	}
+	rels := eqs[0].AllRelationalExpr()
+	if len(rels) != 1 {
+		return none, false
+	}
+	adds := rels[0].AllAdditiveExpr()
+	if len(adds) != 1 {
+		return none, false
+	}
+	muls := adds[0].AllMultiplicativeExpr()
+	if len(muls) != 1 {
+		return none, false
+	}
+	uns := muls[0].AllUnaryExpr()
+	if len(uns) != 1 {
+		return none, false
+	}
+	pf := uns[0].PostfixExpr()
 	return pf, pf.Ok()
-}
-
-// onlyChild is n's child node of kind when it has exactly one, or no node.
-func onlyChild(n native.GalaNodeRef, kind native.GalaKind) native.GalaNodeRef {
-	var only native.GalaNodeRef
-	for i := 0; i < n.ChildCount(); i++ {
-		if c := n.Child(i).Node(); c.Ok() && c.Kind() == kind {
-			if only.Ok() {
-				return native.GalaNodeRef{}
-			}
-			only = c
-		}
-	}
-	return only
 }

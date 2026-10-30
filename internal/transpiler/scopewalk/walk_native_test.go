@@ -6,6 +6,7 @@ package scopewalk
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -25,11 +26,12 @@ func (r *recorder) Reference(name string, at Site, use Use) {
 	r.events = append(r.events, fmt.Sprintf("%s at %d:%d %q %+v", name, at.Line, at.Column, at.Text, use))
 }
 
-// options returns the option sets the walks are compared under: the capture
-// analysis's, the undefined-symbol check's, and the blunt pattern binding.
-// The hook records its call and binds the receiver's identifiers, as the
-// analyzer's does, so a hook handed the wrong context changes what follows.
-func (r *recorder) options() []Options {
+// optionSets are the option sets the walks are compared under, reporting to
+// r: the capture analysis's, the undefined-symbol check's, and the blunt
+// pattern binding. The hook records its call and binds the receiver's
+// identifiers, as the analyzer's does, so a hook handed the wrong context
+// changes what follows.
+func optionSets(r *recorder) []Options {
 	hook := func(w *Walker, fn grammar.IFunctionDeclarationContext) {
 		start := fn.GetStart()
 		r.events = append(r.events, fmt.Sprintf("enter %s at %d:%d", fn.Identifier().GetText(), start.GetLine(), start.GetColumn()))
@@ -54,13 +56,15 @@ func (r *recorder) options() []Options {
 // under every option set, and returns where the two reports first differ (""
 // when they agree). Each walk has its own recorder, so its own hook.
 func walkBoth(p *parser.Parsed, ctx antlr.ParserRuleContext) string {
-	for i := range new(recorder).options() {
-		var a, n recorder
-		wa := New(&a, a.options()[i])
+	var a, n recorder
+	optsA, optsN := optionSets(&a), optionSets(&n)
+	for i := range optsA {
+		a.events, n.events = nil, nil
+		wa := New(&a, optsA[i])
 		wa.PushScope()
 		antlrWalk{wa}.walk(ctx)
 
-		wn := New(&n, n.options()[i]).WithNative(p.Native)
+		wn := New(&n, optsN[i]).WithNative(p.Native)
 		node, ok := wn.nativeNode(ctx)
 		if !ok {
 			return "the context has no native node"
@@ -68,18 +72,21 @@ func walkBoth(p *parser.Parsed, ctx antlr.ParserRuleContext) string {
 		wn.PushScope()
 		nativeWalk{wn}.walk(node)
 
-		for j := 0; j < len(a.events) || j < len(n.events); j++ {
-			var ae, ne string
-			if j < len(a.events) {
-				ae = a.events[j]
+		if !slices.Equal(a.events, n.events) {
+			j := 0
+			for j < len(a.events) && j < len(n.events) && a.events[j] == n.events[j] {
+				j++
 			}
-			if j < len(n.events) {
-				ne = n.events[j]
-			}
-			if ae != ne {
-				return fmt.Sprintf("options %d, event %d: ANTLR's walk reports %q, the native walk %q", i, j, ae, ne)
-			}
+			return fmt.Sprintf("options %d, event %d: ANTLR's walk reports %q, the native walk %q", i, j, at(a.events, j), at(n.events, j))
 		}
+	}
+	return ""
+}
+
+// at is events[j], or "" past its end.
+func at(events []string, j int) string {
+	if j < len(events) {
+		return events[j]
 	}
 	return ""
 }
@@ -120,26 +127,22 @@ func TestWalksAgree(t *testing.T) {
 		}
 	}
 	sort.Strings(paths)
-	if len(paths) < 200 {
-		t.Fatalf("found %d .gala files in the runfiles; the sources are not staged", len(paths))
-	}
-	sources := append([]string(nil), walkInputs...)
-	names := make([]string, len(walkInputs))
-	for i := range names {
-		names[i] = fmt.Sprintf("input %d", i)
+	type source struct{ name, text string }
+	var sources []source
+	for i, in := range walkInputs {
+		sources = append(sources, source{fmt.Sprintf("input %d", i), in})
 	}
 	for _, path := range paths {
-		src, err := os.ReadFile(path)
+		text, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		sources = append(sources, string(src))
-		names = append(names, path)
+		sources = append(sources, source{path, string(text)})
 	}
 
 	walked := 0
-	for i, src := range sources {
-		p := parser.NewAntlrGalaParser().ParseFile(src)
+	for _, src := range sources {
+		p := parser.NewAntlrGalaParser().ParseFile(src.text)
 		tree, _, err := p.Strict()
 		if err != nil {
 			continue // a source that does not parse is never walked
@@ -147,18 +150,19 @@ func TestWalksAgree(t *testing.T) {
 		walked++
 		root := tree.(antlr.ParserRuleContext)
 		if msg := walkBoth(p, root); msg != "" {
-			t.Errorf("%s: from the root: %s", names[i], msg)
+			t.Errorf("%s: from the root: %s", src.name, msg)
 			continue
 		}
 		for _, l := range lambdasIn(root, nil) {
 			if msg := walkBoth(p, l); msg != "" {
-				t.Errorf("%s: from the lambda at %d:%d: %s", names[i], l.GetStart().GetLine(), l.GetStart().GetColumn(), msg)
+				t.Errorf("%s: from the lambda at %d:%d: %s", src.name, l.GetStart().GetLine(), l.GetStart().GetColumn(), msg)
 				break
 			}
 		}
 	}
-	if walked < len(walkInputs)+200 {
-		t.Fatalf("walked %d sources", walked)
+	// The repository's sources parse; a floor catches them not being staged.
+	if walked < 200 {
+		t.Fatalf("walked %d sources; the repository's are not staged", walked)
 	}
 }
 
