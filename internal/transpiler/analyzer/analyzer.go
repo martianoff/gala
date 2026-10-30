@@ -2378,7 +2378,14 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 // A companion object is a type that has an Unapply method and optionally an Apply method.
 // From the Apply method, we can determine what container type it works with and which
 // type parameter indices are extracted.
+//
+// A companion is filed under its bare name as well as its qualified one.
+// When companions of several packages share a bare name (json's and yaml's
+// AsIs), the bare name goes to one chosen by bareCompanionWins, never by the
+// order Types happens to be iterated in.
 func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
+	// bareFrom is the Types key of the companion each bare name was given to.
+	bareFrom := make(map[string]string)
 	for typeName, meta := range richAST.Types {
 		// Check if this type has an Unapply method
 		if _, hasUnapply := meta.Methods["Unapply"]; !hasUnapply {
@@ -2427,11 +2434,26 @@ func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
 		}
 
 		// Store with both short and full name for lookup
-		richAST.CompanionObjects[meta.Name] = companionMeta
+		if prev, taken := bareFrom[meta.Name]; !taken || bareCompanionWins(richAST, typeName, prev) {
+			richAST.CompanionObjects[meta.Name] = companionMeta
+			bareFrom[meta.Name] = typeName
+		}
 		if meta.Package != "" && meta.Package != "main" && meta.Package != "test" {
 			richAST.CompanionObjects[typeName] = companionMeta
 		}
 	}
+}
+
+// bareCompanionWins reports whether the companion under Types key typeName
+// takes a bare name from the one under key prev: the analyzed package's own
+// companion beats another package's, and otherwise the smaller key wins.
+func bareCompanionWins(richAST *transpiler.RichAST, typeName, prev string) bool {
+	own := richAST.Types[typeName].Package == richAST.PackageName
+	prevOwn := richAST.Types[prev].Package == richAST.PackageName
+	if own != prevOwn {
+		return own
+	}
+	return typeName < prev
 }
 
 // computeExtractIndices determines which type parameter indices are
