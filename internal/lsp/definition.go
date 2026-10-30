@@ -465,6 +465,37 @@ func parseGalaImports(text string) map[string]string {
 	return imports
 }
 
+// parseGalaDotImports scans the document text as parseGalaImports does and
+// returns the paths it dot-imports (`. "path"`), in source order.
+func parseGalaDotImports(text string) []string {
+	var dots []string
+	inBlock := false
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if !inBlock {
+			if strings.HasPrefix(line, "import (") {
+				inBlock = true
+				continue
+			}
+			if !strings.HasPrefix(line, "import ") {
+				continue
+			}
+			line = strings.TrimSpace(strings.TrimPrefix(line, "import"))
+		} else if strings.HasPrefix(line, ")") {
+			inBlock = false
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, "."); ok {
+			if q := strings.Index(rest, "\""); q >= 0 && strings.TrimSpace(rest[:q]) == "" {
+				if end := strings.Index(rest[q+1:], "\""); end > 0 {
+					dots = append(dots, rest[q+1:q+1+end])
+				}
+			}
+		}
+	}
+	return dots
+}
+
 // addImportSpec parses a single import spec ("path", `alias "path"`, or
 // `. "path"`) and records the local-name -> path mapping.
 func addImportSpec(imports map[string]string, spec string) {

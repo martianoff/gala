@@ -12,6 +12,7 @@ import (
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/resolver"
 )
 
 // Hover resolves the symbol under the cursor and renders its signature and
@@ -121,7 +122,39 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 		return info
 	}
 
-	return lookupSymbol(richAST, word)
+	return lookupSymbol(richAST, word, fileResolver(richAST, text))
+}
+
+// fileResolver resolves a bare name as the transformer does in the file with
+// this text (resolver.TypeResolver): its own package, then std, then the
+// GALA packages it dot-imports, in source order.
+func fileResolver(richAST *transpiler.RichAST, text string) *resolver.TypeResolver {
+	r := &resolver.TypeResolver{PackageName: richAST.PackageName}
+	for _, path := range parseGalaDotImports(text) {
+		if pkg := richAST.Packages[path]; pkg != "" {
+			r.Imports = append(r.Imports, resolver.PackageInfo{PkgName: pkg, IsDot: true})
+		}
+	}
+	return r
+}
+
+// resolveVisible is the key of m that name means: the one res resolves it to
+// (nil res resolves nothing), else, of the keys qualifying name by some
+// package, the smallest, found in one pass so that the answer never depends
+// on map order.
+func resolveVisible[V any](m map[string]V, name string, res *resolver.TypeResolver) (string, bool) {
+	if res != nil {
+		if key, ok := res.Resolve(name, func(k string) bool { _, ok := m[k]; return ok }); ok {
+			return key, true
+		}
+	}
+	best := ""
+	for k := range m {
+		if strings.HasSuffix(k, "."+name) && (best == "" || k < best) {
+			best = k
+		}
+	}
+	return best, best != ""
 }
 
 // declarationAt resolves the cursor against declaration positions recorded
@@ -318,7 +351,7 @@ func findSealedVariant(richAST *transpiler.RichAST, name, preferPkg string) (*tr
 	return anyV, anyT
 }
 
-func lookupSymbol(richAST *transpiler.RichAST, name string) string {
+func lookupSymbol(richAST *transpiler.RichAST, name string, res *resolver.TypeResolver) string {
 	typeMeta, hasType := richAST.Types[name]
 	// The transpiler generates a standalone companion type per sealed case,
 	// carrying Apply and Unapply, and registers it under the case's own name. When
@@ -338,21 +371,21 @@ func lookupSymbol(richAST *transpiler.RichAST, name string) string {
 	if hasType {
 		return formatTypeMeta(richAST, typeMeta)
 	}
-	for key, typeMeta := range richAST.Types {
-		if strings.HasSuffix(key, "."+name) {
-			return formatTypeMeta(richAST, typeMeta)
-		}
+	// Several packages may have a type of this name: the one the file means
+	// by it (resolveVisible).
+	if key, ok := resolveVisible(richAST.Types, name, res); ok {
+		return formatTypeMeta(richAST, richAST.Types[key])
 	}
 	if fm := findFunction(richAST, name); fm != nil {
 		return formatFuncMeta(fm)
 	}
+	// A companion: a keyless package's under its bare name, a named
+	// package's under its qualified one.
 	if companion, ok := richAST.CompanionObjects[name]; ok {
 		return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
 	}
-	for key, companion := range richAST.CompanionObjects {
-		if strings.HasSuffix(key, "."+name) {
-			return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
-		}
+	if key, ok := resolveVisible(richAST.CompanionObjects, name, res); ok {
+		return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", richAST.CompanionObjects[key].Name)
 	}
 
 	// Built-in functions

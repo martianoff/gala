@@ -42,7 +42,7 @@ func richASTWithVariantClash() *transpiler.RichAST {
 }
 
 func TestLookupSymbolPrefersOwnTypeOverForeignVariant(t *testing.T) {
-	got := lookupSymbol(richASTWithVariantClash(), "Marker")
+	got := lookupSymbol(richASTWithVariantClash(), "Marker", nil)
 	if !strings.Contains(got, "Marker is the application's own type.") {
 		t.Errorf("own type was shadowed by an imported package's sealed case\n--- got ---\n%s", got)
 	}
@@ -53,7 +53,7 @@ func TestLookupSymbolPrefersOwnTypeOverForeignVariant(t *testing.T) {
 
 // A case with no same-named type still renders as a case.
 func TestLookupSymbolRendersVariantWhenNoTypeShadows(t *testing.T) {
-	got := lookupSymbol(richASTWithVariantClash(), "Ping")
+	got := lookupSymbol(richASTWithVariantClash(), "Ping", nil)
 	if !strings.Contains(got, "case Ping()") || !strings.Contains(got, "Case of") {
 		t.Errorf("sealed case did not render as a case\n--- got ---\n%s", got)
 	}
