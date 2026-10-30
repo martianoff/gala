@@ -430,3 +430,40 @@ go_test(
         "@rules_go//go/tools/bazel",
     ],
 )
+
+# The transformer's walk of the compiled file's top-level declarations on the
+# native tree, held to its walk on ANTLR's over the GALA sources
+# TestEnginesAgree parses. A target of its own: it stages all of them and
+# transpiles each twice. Gazelle leaves its files out of transformer_test (the exclude
+# directives) and keeps this rule as written.
+# gazelle:exclude native_walk_test.go
+# gazelle:exclude native_walk_export_test.go
+go_test(
+    # keep
+    name = "native_walk_test",
+    srcs = [
+        "native_walk_export_test.go",
+        "native_walk_test.go",
+    ],
+    data = [
+        "//:all_gala_sources",
+        "//examples:all_gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//lazy:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+    ],
+    embed = [":transformer"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/grammar",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "@rules_go//go/tools/bazel",
+    ],
+)
