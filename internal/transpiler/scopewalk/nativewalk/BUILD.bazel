@@ -1,0 +1,46 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+# The scope walk on galop's native tree. Builds without galop's parser link
+# //internal/transpiler/scopewalk/nativewalkoff under this import path.
+go_library(
+    name = "nativewalk",
+    srcs = ["nativewalk.go"],
+    importpath = "martianoff/gala/internal/transpiler/scopewalk/nativewalk",
+    target_compatible_with = select({
+        "//internal/parser/grammar:galop_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
+        "//internal/transpiler/scopewalk",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
+)
+
+go_test(
+    name = "nativewalk_test",
+    srcs = ["nativewalk_test.go"],
+    # The test walks the GALA sources TestEnginesAgree parses.
+    data = [
+        "//:all_gala_sources",
+        "//examples:all_gala_sources",
+        "//lazy:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+    ],
+    embed = [":nativewalk"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/grammar",
+        "//internal/parser/native",  # keep
+        "//internal/transpiler/scopewalk",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+        "@rules_go//go/tools/bazel",
+    ],
+)

@@ -331,11 +331,11 @@ type undefChecker struct {
 // the package (by canonical path) to the GALA package names it dot-imports; a
 // method whose receiver type lives in another file may use that file's dot
 // imports in its signature, the bare-name form of the allowance GALA-E0025
-// makes. native is sourceFile's native tree, or nil; the walk runs on it when
-// there is one (see scopewalk.Walker.WithNative).
+// makes. native walks sourceFile on its native tree, or is nil (see
+// scopewalk.Walker.WithNative).
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
-	native *galaparser.Native,
+	native scopewalk.NativeWalker,
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
@@ -1086,14 +1086,15 @@ func (c *undefChecker) isReported(name string) bool {
 // reportWith reports name at tok with msg and hint. An empty msg means
 // `undefined: name`, an empty hint hintFor's.
 func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string) {
-	if tok == nil {
-		return
-	}
 	c.reportAt(name, scopewalk.TokenSite(tok), msg, hint)
 }
 
-// reportAt is reportWith at a site rather than a token.
+// reportAt is reportWith at a site rather than a token. A name with no site
+// (no token) is not reported.
 func (c *undefChecker) reportAt(name string, at scopewalk.Site, msg, hint string) {
+	if at.NoSite() {
+		return
+	}
 	// The span covers the reported token, which is normally the identifier
 	// itself. For a name found inside an interpolated string the token is the
 	// whole literal (a re-parsed fragment has no file position of its own), so

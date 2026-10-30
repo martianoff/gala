@@ -261,9 +261,9 @@ let
         '';
       };
   # Copies the generated parsers and galop's native tree into a Go source tree.
-  # Without galop, the stand-in packages internal/parser/galopoff and
-  # internal/parser/nativeoff take internal/parser/galop's and
-  # internal/parser/native's places, as Bazel's select does.
+  # Without galop, the stand-in packages internal/parser/galopoff,
+  # internal/parser/nativeoff and internal/transpiler/scopewalk/nativewalkoff
+  # take the places of the packages they stand in for, as Bazel's select does.
   overlayGrammar = ''
     cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
   ''
@@ -280,6 +280,8 @@ let
         mv internal/parser/galopoff internal/parser/galop
         rm -rf internal/parser/native
         mv internal/parser/nativeoff internal/parser/native
+        rm -r internal/transpiler/scopewalk/nativewalk
+        mv internal/transpiler/scopewalk/nativewalkoff internal/transpiler/scopewalk/nativewalk
       ''
   );
 

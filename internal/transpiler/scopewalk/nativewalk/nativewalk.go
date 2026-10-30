@@ -1,66 +1,149 @@
-package scopewalk
-
-// This file is built only with galop's parser (see BUILD.bazel): it reads the
-// native tree. walk_native_off.go stands in for it in the ANTLR-only build.
+// Package nativewalk walks scopewalk's walk on galop's native tree
+// (internal/parser/native). Builds without galop's parser link
+// internal/transpiler/scopewalk/nativewalkoff under this import path instead,
+// whose For gives no NativeWalker, so every walk is ANTLR's.
+//
+// The walk here is scopewalk's ANTLR walk (walk_antlr.go) node for node: the
+// same handlers, visiting the same nodes in the same order, so it reports the
+// same references at the same sites. Each handler sits under the name of its
+// ANTLR twin. TestWalksAgree holds the two together.
+package nativewalk
 
 import (
+	"sync"
+
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
-// nativeWalk is the walk over galop's native tree (internal/parser/native).
-// It is antlrWalk node for node: the same handlers, visiting the same nodes in
-// the same order, so it reports the same references at the same sites. Each
-// handler sits under the name of its ANTLR twin.
-type nativeWalk struct{ *Walker }
+// For returns the NativeWalker of p's contexts, or nil when p has no native
+// tree or has syntax errors: an error-recovered tree is ANTLR's to walk. The
+// native tree is built on the first walk, not here.
+func For(p *parser.Parsed) scopewalk.NativeWalker {
+	if p == nil || p.Native == nil || len(p.Errors) > 0 {
+		return nil
+	}
+	return &walker{native: p.Native}
+}
 
-// nativeNode is node's native node, when the Walker has a native tree and
-// node is a context of the parse it belongs to.
+// walker is For's NativeWalker. It belongs to one scopewalk.Walker at a
+// time: rootHint is not safe for concurrent use.
+type walker struct {
+	native *parser.Native
+
+	once    sync.Once
+	ok      bool // the tree converted, and its bridge holds (see prepare)
+	root    native.GalaNodeRef
+	rootCtx antlr.ParserRuleContext
+
+	// rootHint is where among the root's children the last lookup found its
+	// top-level declaration: the undefined-symbol check enters at each one
+	// in order, so the next is found from there.
+	rootHint int
+}
+
+var _ scopewalk.NativeWalker = (*walker)(nil)
+
+// prepare converts the native tree, once, and checks what the walk takes
+// from the bridge: the root's context (so every node has one) and a function
+// declaration's context for each function declaration, which
+// Options.EnterFunctionScope is handed. Should either fail, every walk falls
+// back to ANTLR's tree.
+func (nw *walker) prepare() bool {
+	nw.once.Do(func() {
+		tree, err := nw.native.Tree()
+		if err != nil {
+			return
+		}
+		nw.root = tree.Root()
+		if nw.rootCtx = nw.native.Ctx(nw.root); nw.rootCtx == nil {
+			return
+		}
+		for i := range tree.Nodes {
+			n := tree.Node(i)
+			if n.Kind() != native.GalaKIND_functionDeclaration {
+				continue
+			}
+			if _, ok := nw.native.Ctx(n).(*grammar.FunctionDeclarationContext); !ok {
+				return
+			}
+		}
+		nw.ok = true
+	})
+	return nw.ok
+}
+
+// Walk implements scopewalk.NativeWalker.
+func (nw *walker) Walk(w *scopewalk.Walker, node antlr.Tree) bool {
+	n, ok := nw.node(node)
+	if ok {
+		walk{w, w.Options(), nw}.walk(n)
+	}
+	return ok
+}
+
+// WalkParameterDefaults implements scopewalk.NativeWalker.
+func (nw *walker) WalkParameterDefaults(w *scopewalk.Walker, params antlr.Tree) bool {
+	n, ok := nw.node(params)
+	if ok {
+		walk{w, w.Options(), nw}.walkParameterDefaults(native.ParametersNode{GalaNodeRef: n})
+	}
+	return ok
+}
+
+// node is the native node of node, when it is a context of the parse.
 //
 // It finds the node by its path from the root rather than with Native.Node,
 // whose context-to-node map spans the whole file: the walks start from a few
-// contexts (the top-level declarations, a lambda), each a short climb from
-// the root. The native tree has ANTLR's tree's shape, child for child, so the
-// indexes of the climb lead back down to the node; Native.Ctx confirms it.
-func (w *Walker) nativeNode(node antlr.Tree) (native.GalaNodeRef, bool) {
+// contexts (the top-level declarations), each a short climb from the root.
+// The native tree has ANTLR's tree's shape, child for child, so the indexes of
+// the climb lead back down to the node; Native.Ctx confirms it.
+func (nw *walker) node(node antlr.Tree) (native.GalaNodeRef, bool) {
 	ctx, ok := node.(antlr.ParserRuleContext)
-	if !ok || w.native == nil {
+	if !ok || !nw.prepare() {
 		return native.GalaNodeRef{}, false
 	}
-	tree, err := w.native.Tree()
-	if err != nil {
-		return native.GalaNodeRef{}, false
-	}
-	n := tree.Root()
-	rootCtx := w.native.Ctx(n)
 	var buf [32]int
 	path := buf[:0] // child indexes from ctx up to the root
-	for c := ctx; c != rootCtx; {
+	for c := ctx; c != nw.rootCtx; {
 		parent, ok := c.GetParent().(antlr.ParserRuleContext)
 		if !ok {
 			return native.GalaNodeRef{}, false // another tree's context
 		}
-		i := childIndex(parent, c)
+		hint := 0
+		if parent == nw.rootCtx {
+			hint = nw.rootHint
+		}
+		i := childIndex(parent, c, hint)
 		if i < 0 {
 			return native.GalaNodeRef{}, false
+		}
+		if parent == nw.rootCtx {
+			nw.rootHint = i
 		}
 		path = append(path, i)
 		c = parent
 	}
+	n := nw.root
 	for k := len(path) - 1; k >= 0 && n.Ok(); k-- {
 		if path[k] >= n.ChildCount() {
 			return native.GalaNodeRef{}, false
 		}
 		n = n.Child(path[k]).Node()
 	}
-	return n, n.Ok() && w.native.Ctx(n) == ctx
+	return n, n.Ok() && nw.native.Ctx(n) == ctx
 }
 
-// childIndex is the index of child among parent's children, or -1.
-func childIndex(parent, child antlr.ParserRuleContext) int {
-	for i := 0; i < parent.GetChildCount(); i++ {
+// childIndex is the index of child among parent's children, or -1, looked for
+// from index from on and then before it.
+func childIndex(parent, child antlr.ParserRuleContext, from int) int {
+	count := parent.GetChildCount()
+	for k := 0; k < count; k++ {
+		i := (from + k) % count
 		if parent.GetChild(i) == antlr.Tree(child) {
 			return i
 		}
@@ -68,23 +151,11 @@ func childIndex(parent, child antlr.ParserRuleContext) int {
 	return -1
 }
 
-// walkNative walks node on the native tree, and reports whether it could.
-func (w *Walker) walkNative(node antlr.Tree) bool {
-	n, ok := w.nativeNode(node)
-	if ok {
-		nativeWalk{w}.walk(n)
-	}
-	return ok
-}
-
-// walkParameterDefaultsNative is WalkParameterDefaults on the native tree,
-// and reports whether it could.
-func (w *Walker) walkParameterDefaultsNative(params antlr.Tree) bool {
-	n, ok := w.nativeNode(params)
-	if ok {
-		nativeWalk{w}.walkParameterDefaults(native.ParametersNode{GalaNodeRef: n})
-	}
-	return ok
+// walk is one walk on the native tree, for a scopewalk.Walker.
+type walk struct {
+	*scopewalk.Walker
+	opts scopewalk.Options
+	nw   *walker
 }
 
 // ---------------------------------------------------------------------------
@@ -100,36 +171,44 @@ func textOf(n native.GalaNodeRef) string {
 	return n.GetText()
 }
 
+// isToken reports whether t is a token whose text is text.
+func isToken(t native.GalaTerminal, text string) bool { return t.Ok() && t.GetText() == text }
+
 // siteOf is the site of token tok, whose text is text.
-func siteOf(tok native.GalaToken, text string) Site {
-	return Site{Line: int(tok.Line), Column: int(tok.Column), Text: text}
+func siteOf(tok native.GalaToken, text string) scopewalk.Site {
+	return scopewalk.Site{Line: int(tok.Line), Column: int(tok.Column), Text: text}
 }
 
-// referenceID reports the identifier id as a reference, at its token.
-func (w nativeWalk) referenceID(id native.IdentifierNode, use Use) {
+// referenceID reports the identifier id as a reference, at its token; at no
+// site for an identifier of no token.
+func (w walk) referenceID(id native.IdentifierNode, use scopewalk.Use) {
 	name := textOf(id.GalaNodeRef)
-	w.reference(name, siteOf(id.Start(), name), use)
+	var at scopewalk.Site
+	if id.StopIndex() >= id.StartIndex() {
+		at = siteOf(id.Start(), name)
+	}
+	w.Report(name, at, use)
 }
 
-func (w nativeWalk) bindID(id native.IdentifierNode) {
+func (w walk) bindID(id native.IdentifierNode) {
 	if id.Ok() {
 		w.Bind(textOf(id.GalaNodeRef))
 	}
 }
 
-func (w nativeWalk) bindIdentifierList(idList native.IdentifierListNode) {
+func (w walk) bindIdentifierList(idList native.IdentifierListNode) {
 	for _, id := range idList.AllIdentifier() {
 		w.Bind(textOf(id.GalaNodeRef))
 	}
 }
 
-func (w nativeWalk) bindParameters(params native.ParametersNode) {
+func (w walk) bindParameters(params native.ParametersNode) {
 	for _, p := range params.ParameterList().AllParameter() {
 		w.bindID(p.Identifier())
 	}
 }
 
-func (w nativeWalk) walkParameterDefaults(params native.ParametersNode) {
+func (w walk) walkParameterDefaults(params native.ParametersNode) {
 	for _, p := range params.ParameterList().AllParameter() {
 		if def := p.ParamDefault(); def.Ok() {
 			w.walk(def.Expression().GalaNodeRef)
@@ -143,7 +222,7 @@ func (w nativeWalk) walkParameterDefaults(params native.ParametersNode) {
 
 // walk is antlrWalk.walk: precise handlers for the nodes that scope or
 // reference, every child for the rest.
-func (w nativeWalk) walk(n native.GalaNodeRef) {
+func (w walk) walk(n native.GalaNodeRef) {
 	if !n.Ok() {
 		return
 	}
@@ -234,7 +313,7 @@ func (w nativeWalk) walk(n native.GalaNodeRef) {
 // Scope-introducing handlers
 // ---------------------------------------------------------------------------
 
-func (w nativeWalk) walkLambda(lambda native.LambdaExpressionNode) {
+func (w walk) walkLambda(lambda native.LambdaExpressionNode) {
 	if !lambda.Ok() {
 		return
 	}
@@ -251,7 +330,7 @@ func (w nativeWalk) walkLambda(lambda native.LambdaExpressionNode) {
 	}
 }
 
-func (w nativeWalk) walkBlock(block native.BlockNode) {
+func (w walk) walkBlock(block native.BlockNode) {
 	if !block.Ok() {
 		return
 	}
@@ -262,7 +341,7 @@ func (w nativeWalk) walkBlock(block native.BlockNode) {
 	}
 }
 
-func (w nativeWalk) walkValVarDecl(exprList native.ExpressionListNode, idList native.IdentifierListNode, tuple native.TuplePatternNode) {
+func (w walk) walkValVarDecl(exprList native.ExpressionListNode, idList native.IdentifierListNode, tuple native.TuplePatternNode) {
 	for _, e := range exprList.AllExpression() {
 		w.walk(e.GalaNodeRef)
 	}
@@ -272,7 +351,7 @@ func (w nativeWalk) walkValVarDecl(exprList native.ExpressionListNode, idList na
 
 // walkFunctionDeclaration hands Options.EnterFunctionScope the declaration's
 // ANTLR context: the hook's callers are not on the native tree yet.
-func (w nativeWalk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
+func (w walk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	if !fn.Ok() {
 		return
 	}
@@ -280,13 +359,9 @@ func (w nativeWalk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	w.PushScope()
 	defer w.PopScope()
 	if w.opts.EnterFunctionScope != nil {
-		ctx, ok := w.native.Ctx(fn.GalaNodeRef).(grammar.IFunctionDeclarationContext)
-		if !ok {
-			// Every node has the context of its rule (TestEnginesAgree checks
-			// the bridge); skipping the hook would turn its binders into
-			// undefined names.
-			panic("scopewalk: a native function declaration has no ANTLR context")
-		}
+		// prepare checked that every function declaration has its context,
+		// or the file would be walking ANTLR's tree.
+		ctx, _ := w.nw.native.Ctx(fn.GalaNodeRef).(*grammar.FunctionDeclarationContext)
 		w.opts.EnterFunctionScope(w.Walker, ctx)
 	}
 	if sig := fn.Signature(); sig.Ok() {
@@ -300,7 +375,7 @@ func (w nativeWalk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	}
 }
 
-func (w nativeWalk) walkIfStatement(ifs native.IfStatementNode) {
+func (w walk) walkIfStatement(ifs native.IfStatementNode) {
 	w.PushScope()
 	defer w.PopScope()
 	if ss := ifs.SimpleStatement(); ss.Ok() {
@@ -317,7 +392,7 @@ func (w nativeWalk) walkIfStatement(ifs native.IfStatementNode) {
 	}
 }
 
-func (w nativeWalk) walkForStatement(fs native.ForStatementNode) {
+func (w walk) walkForStatement(fs native.ForStatementNode) {
 	w.PushScope()
 	defer w.PopScope()
 
@@ -334,11 +409,11 @@ func (w nativeWalk) walkForStatement(fs native.ForStatementNode) {
 		}
 		if idList := rc.IdentifierList(); idList.Ok() {
 			// rangeClause: (identifierList (':=' | '='))? 'range' expression
-			if op := rc.Child(1).Terminal(); op.Ok() && op.GetText() == ":=" {
+			if rc.ChildCount() > 1 && isToken(rc.Child(1).Terminal(), ":=") {
 				w.bindIdentifierList(idList)
 			} else {
 				for _, id := range idList.AllIdentifier() {
-					w.referenceID(id, Use{Whole: true})
+					w.referenceID(id, scopewalk.Use{Whole: true})
 				}
 			}
 		}
@@ -353,14 +428,14 @@ func (w nativeWalk) walkForStatement(fs native.ForStatementNode) {
 // Reference-contributing handlers
 // ---------------------------------------------------------------------------
 
-func (w nativeWalk) walkPostfixExpr(pf native.PostfixExprNode) {
+func (w walk) walkPostfixExpr(pf native.PostfixExprNode) {
 	pe := pf.PrimaryExpr()
 	suffixes := pf.AllPostfixSuffix()
 	caseClauses := pf.AllCaseClause()
 
 	if id := pe.Primary().Identifier(); id.Ok() {
-		path, whole := classifySuffixes(suffixes, len(caseClauses) > 0, nativeSuffix)
-		w.referenceID(id, Use{Path: path, Whole: whole})
+		path, whole := scopewalk.ClassifySuffixes(suffixes, len(caseClauses) > 0, nativeSuffix)
+		w.referenceID(id, scopewalk.Use{Path: path, Whole: whole})
 	} else {
 		w.walk(pe.GalaNodeRef)
 	}
@@ -373,17 +448,17 @@ func (w nativeWalk) walkPostfixExpr(pf native.PostfixExprNode) {
 	}
 }
 
-// nativeSuffix is the shape of a native postfix suffix (see classifySuffixes).
-func nativeSuffix(s native.PostfixSuffixNode) suffix {
+// nativeSuffix is the shape of a native postfix suffix (see scopewalk.ClassifySuffixes).
+func nativeSuffix(s native.PostfixSuffixNode) scopewalk.Suffix {
 	if id := s.Identifier(); id.Ok() {
-		return suffix{selector: textOf(id.GalaNodeRef)}
+		return scopewalk.Suffix{Selector: textOf(id.GalaNodeRef)}
 	}
-	return suffix{index: s.ExpressionList().Ok()}
+	return scopewalk.Suffix{Index: s.ExpressionList().Ok()}
 }
 
-func (w nativeWalk) walkPrimary(prim native.PrimaryNode) {
+func (w walk) walkPrimary(prim native.PrimaryNode) {
 	if id := prim.Identifier(); id.Ok() {
-		w.referenceID(id, Use{Whole: true})
+		w.referenceID(id, scopewalk.Use{Whole: true})
 		return
 	}
 	if lit := prim.Literal(); lit.Ok() {
@@ -401,7 +476,7 @@ func (w nativeWalk) walkPrimary(prim native.PrimaryNode) {
 	}
 }
 
-func (w nativeWalk) walkLiteral(lit native.LiteralNode) {
+func (w walk) walkLiteral(lit native.LiteralNode) {
 	if !w.opts.ParseInterpolations {
 		return
 	}
@@ -412,10 +487,10 @@ func (w nativeWalk) walkLiteral(lit native.LiteralNode) {
 	if !tok.Ok() {
 		return
 	}
-	w.walkInterpolated(siteOf(tok.Token(), tok.GetText()))
+	w.WalkInterpolated(siteOf(tok.Token(), tok.GetText()))
 }
 
-func (w nativeWalk) walkCompositeLiteral(cl native.CompositeLiteralNode) {
+func (w walk) walkCompositeLiteral(cl native.CompositeLiteralNode) {
 	for _, ke := range cl.ElementList().AllKeyedElement() {
 		exprs := ke.AllExpression()
 		if w.opts.SkipCompositeLiteralKeys && len(exprs) > 1 {
@@ -427,7 +502,7 @@ func (w nativeWalk) walkCompositeLiteral(cl native.CompositeLiteralNode) {
 	}
 }
 
-func (w nativeWalk) walkPostfixSuffix(s native.PostfixSuffixNode) {
+func (w walk) walkPostfixSuffix(s native.PostfixSuffixNode) {
 	if s.Identifier().Ok() {
 		return
 	}
@@ -442,7 +517,7 @@ func (w nativeWalk) walkPostfixSuffix(s native.PostfixSuffixNode) {
 	}
 }
 
-func (w nativeWalk) walkArgument(arg native.ArgumentNode) {
+func (w walk) walkArgument(arg native.ArgumentNode) {
 	if lambda := arg.LambdaExpression(); lambda.Ok() {
 		w.walkLambda(lambda)
 		return
@@ -452,14 +527,14 @@ func (w nativeWalk) walkArgument(arg native.ArgumentNode) {
 	}
 }
 
-func (w nativeWalk) walkPatternAsValue(pat native.PatternNode) {
+func (w walk) walkPatternAsValue(pat native.PatternNode) {
 	if p, ok := pat.AsExpressionPattern(); ok {
 		w.walk(p.Expression().GalaNodeRef)
 	} else if p, ok := pat.AsRestPattern(); ok {
 		w.walk(p.Expression().GalaNodeRef)
 	} else if p, ok := pat.AsTypedPattern(); ok && !w.opts.SkipTypedPatternArgument {
 		if id := p.Identifier(); id.Ok() {
-			w.referenceID(id, Use{Whole: true})
+			w.referenceID(id, scopewalk.Use{Whole: true})
 		}
 	}
 }
@@ -468,7 +543,7 @@ func (w nativeWalk) walkPatternAsValue(pat native.PatternNode) {
 // Match / partial-function case clauses
 // ---------------------------------------------------------------------------
 
-func (w nativeWalk) walkCaseClause(cc native.CaseClauseNode) {
+func (w walk) walkCaseClause(cc native.CaseClauseNode) {
 	w.PushScope()
 	defer w.PopScope()
 
@@ -484,7 +559,7 @@ func (w nativeWalk) walkCaseClause(cc native.CaseClauseNode) {
 	}
 }
 
-func (w nativeWalk) bindPattern(pat native.PatternNode) {
+func (w walk) bindPattern(pat native.PatternNode) {
 	if !pat.Ok() {
 		return
 	}
@@ -507,7 +582,7 @@ func (w nativeWalk) bindPattern(pat native.PatternNode) {
 	}
 }
 
-func (w nativeWalk) bindPatternExpression(expr native.ExpressionNode) {
+func (w walk) bindPatternExpression(expr native.ExpressionNode) {
 	pf, ok := singleNativePostfixExpr(expr)
 	if !ok {
 		return

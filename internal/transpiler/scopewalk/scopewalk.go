@@ -56,14 +56,14 @@
 // walked in the current scope, so a name referenced only inside an
 // interpolation is seen like any other reference.
 //
-// TWO TREES. The entry points take ANTLR contexts. Given the native tree of
-// their parse (WithNative), they walk galop's native tree instead
-// (walk_native.go), which mirrors the walk over ANTLR's (walk_antlr.go)
-// handler for handler; TestWalksAgree holds the two to the same output on
-// the GALA sources the parser's engine test parses (std, the examples and the
-// other libraries). ANTLR's walk stays for what has no
-// native tree: a build without galop's parser, an interpolation fragment
-// (re-parsed into ANTLR's tree alone), and a caller that holds none.
+// TWO TREES. The entry points take ANTLR contexts. Given a NativeWalker for
+// their parse (WithNative), they walk galop's native tree instead (package
+// nativewalk), which mirrors the walk over ANTLR's (walk_antlr.go) handler for
+// handler; nativewalk's TestWalksAgree holds the two to the same output on the
+// GALA sources the parser's engine test parses (std, the examples and the
+// other libraries). ANTLR's walk stays for what has no native tree: a build
+// without galop's parser, a parse with syntax errors, an interpolation
+// fragment (re-parsed into ANTLR's tree alone), and a caller that holds none.
 package scopewalk
 
 import (
@@ -93,13 +93,18 @@ type Use struct {
 
 // Site is the token a reference is reported at: normally the identifier
 // itself, but the whole string literal for a name inside an interpolation (see
-// walkInterpolated). It carries what a consumer reads off the token, whichever
+// WalkInterpolated). It carries what a consumer reads off the token, whichever
 // tree the walk ran on.
 type Site struct {
 	Line   int    // 1-based
 	Column int    // 0-based, in code points
 	Text   string // the token's text
 }
+
+// NoSite reports whether s is no site: the zero Site, for a name with no
+// token to report it at (a context the transformer made up). A consumer that
+// reports positions skips it.
+func (s Site) NoSite() bool { return s == Site{} }
 
 // Visitor receives the walk's output.
 type Visitor interface {
@@ -172,9 +177,20 @@ type Walker struct {
 	// contains it.
 	posOverride *Site
 
-	// native is the native tree of the parse the walked contexts come from,
-	// or nil (see WithNative).
-	native *parser.Native
+	// native walks the contexts of one parse on its native tree, or is nil
+	// (see WithNative).
+	native NativeWalker
+}
+
+// NativeWalker walks the ANTLR contexts of one parse on the parse's native
+// tree, for a Walker. Package nativewalk makes one; this package stays free of
+// the native tree, which builds without galop's parser do not have.
+type NativeWalker interface {
+	// Walk is Walker.Walk of node on the native tree. It reports false, having
+	// walked nothing, when node is no context of the parse.
+	Walk(w *Walker, node antlr.Tree) bool
+	// WalkParameterDefaults is Walker.WalkParameterDefaults likewise.
+	WalkParameterDefaults(w *Walker, params antlr.Tree) bool
 }
 
 // New returns a Walker that reports to v.
@@ -182,17 +198,19 @@ func New(v Visitor, opts Options) *Walker {
 	return &Walker{visitor: v, opts: opts}
 }
 
-// WithNative makes w walk on n, the native tree of the parse whose contexts
-// it is handed, and returns w. An entry point given a context of that parse
-// then walks the context's native node; one given any other context (an
-// interpolation fragment's, another parse's), or a Walker with no native tree
-// (n nil, or the ANTLR-only build), walks ANTLR's tree. The two walks report
-// the same references at the same sites. n's tree is built on the first walk
-// that needs it.
-func (w *Walker) WithNative(n *parser.Native) *Walker {
-	w.native = n
+// WithNative makes w walk on the native tree through nw, and returns w. An
+// entry point given a context of nw's parse then walks the context's native
+// node; one given any other context (an interpolation fragment's, another
+// parse's), or a Walker with no NativeWalker (nw nil: no native tree, or the
+// ANTLR-only build), walks ANTLR's tree. The two walks report the same
+// references at the same sites.
+func (w *Walker) WithNative(nw NativeWalker) *Walker {
+	w.native = nw
 	return w
 }
+
+// Options is w's options, for a NativeWalker.
+func (w *Walker) Options() Options { return w.opts }
 
 // ---------------------------------------------------------------------------
 // Scope stack
@@ -275,10 +293,11 @@ func (w *Walker) BindParameters(params grammar.IParametersContext) {
 	}
 }
 
-// reference emits an unbound value-position reference. Inside a re-parsed
+// Report emits an unbound value-position reference (for the walks, and a
+// NativeWalker): a name no scope binds goes to the Visitor. Inside a re-parsed
 // interpolation fragment the reported token is the enclosing string literal —
 // see posOverride.
-func (w *Walker) reference(name string, at Site, use Use) {
+func (w *Walker) Report(name string, at Site, use Use) {
 	if name == "" || name == "_" || w.Bound(name) {
 		return
 	}
@@ -288,7 +307,7 @@ func (w *Walker) reference(name string, at Site, use Use) {
 	w.visitor.Reference(name, at, use)
 }
 
-// walkInterpolated walks the embedded expressions of lit, an interpolated
+// WalkInterpolated walks the embedded expressions of lit, an interpolated
 // (`s"…"`) or format (`f"…"`) string literal. Such a literal is a single
 // token whose embedded `${…}` / `$name` expressions are NOT parse-tree
 // children, so each is re-parsed and walked in the CURRENT scope.
@@ -309,7 +328,7 @@ func (w *Walker) reference(name string, at Site, use Use) {
 // only that Split builds its parts by unescaping into a strings.Builder, so
 // the mapping back to source columns is lost; recording spans as it scans is
 // mechanical but touches a shared, well-tested splitter.
-func (w *Walker) walkInterpolated(lit Site) {
+func (w *Walker) WalkInterpolated(lit Site) {
 	raw := lit.Text
 	if len(raw) < 3 {
 		return
@@ -349,7 +368,7 @@ func (w *Walker) walkInterpolated(lit Site) {
 // contribute references have precise handlers; every other node recurses into
 // all its children.
 func (w *Walker) Walk(node antlr.Tree) {
-	if !w.walkNative(node) {
+	if w.native == nil || !w.native.Walk(w, node) {
 		antlrWalk{w}.walk(node)
 	}
 }
@@ -379,37 +398,37 @@ func (w *Walker) WalkFunctionDeclaration(fn grammar.IFunctionDeclarationContext)
 // reference inside a default value is seen. A parameter list is no node Walk
 // dispatches, so it has a handler of its own on each tree.
 func (w *Walker) WalkParameterDefaults(params grammar.IParametersContext) {
-	if !w.walkParameterDefaultsNative(params) {
+	if w.native == nil || !w.native.WalkParameterDefaults(w, params) {
 		antlrWalk{w}.walkParameterDefaults(params)
 	}
 }
 
-// suffix is what classifySuffixes reads off a postfix suffix, whichever tree
+// Suffix is what ClassifySuffixes reads off a postfix suffix, whichever tree
 // it is on: the name of a `.name` selector, or whether it is an index `[…]`
 // (neither: a call `(…)`).
-type suffix struct {
-	selector string
-	index    bool
+type Suffix struct {
+	Selector string
+	Index    bool
 }
 
-// classifySuffixes decides whether a bare-identifier base followed by the given
+// ClassifySuffixes decides whether a bare-identifier base followed by the given
 // suffixes (and an optional trailing `match`) is a pure field-read path or a
 // whole use. A leading, uninterrupted run of `.field` selectors with no call,
 // index, or match is a field-read path; an empty suffix list (a bare
 // reference), a trailing match, or any call/index makes it a whole use. shape
 // reads a suffix of either tree.
-func classifySuffixes[S any](suffixes []S, hasMatch bool, shape func(S) suffix) (path string, whole bool) {
+func ClassifySuffixes[S any](suffixes []S, hasMatch bool, shape func(S) Suffix) (path string, whole bool) {
 	if hasMatch || len(suffixes) == 0 {
 		return "", true
 	}
 	parts := make([]string, 0, len(suffixes))
 	for i, s := range suffixes {
 		sh := shape(s)
-		if sh.selector != "" {
-			parts = append(parts, sh.selector)
+		if sh.Selector != "" {
+			parts = append(parts, sh.Selector)
 			continue
 		}
-		if sh.index {
+		if sh.Index {
 			// Index `[...]` — a value-position use of the whole receiver.
 			return "", true
 		}

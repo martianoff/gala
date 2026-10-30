@@ -1,7 +1,4 @@
-package scopewalk
-
-// This file is built only with galop's parser (see BUILD.bazel): it walks the
-// native tree.
+package nativewalk
 
 import (
 	"fmt"
@@ -16,7 +13,7 @@ import (
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/parser/native"
+	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
 // recorder writes down everything a walk reports, in order: each reference
@@ -24,11 +21,11 @@ import (
 type recorder struct{ events []string }
 
 var (
-	_ Visitor = (*recorder)(nil)
-	_ Visitor = discard{}
+	_ scopewalk.Visitor = (*recorder)(nil)
+	_ scopewalk.Visitor = discard{}
 )
 
-func (r *recorder) Reference(name string, at Site, use Use) {
+func (r *recorder) Reference(name string, at scopewalk.Site, use scopewalk.Use) {
 	r.events = append(r.events, fmt.Sprintf("%s at %d:%d %q %+v", name, at.Line, at.Column, at.Text, use))
 }
 
@@ -37,15 +34,15 @@ func (r *recorder) Reference(name string, at Site, use Use) {
 // pattern binding. The hook records its call and binds the receiver's
 // identifiers, as the analyzer's does, so a hook handed the wrong context
 // changes what follows.
-func optionSets(r *recorder) []Options {
-	hook := func(w *Walker, fn grammar.IFunctionDeclarationContext) {
+func optionSets(r *recorder) []scopewalk.Options {
+	hook := func(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
 		start := fn.GetStart()
 		r.events = append(r.events, fmt.Sprintf("enter %s at %d:%d", fn.Identifier().GetText(), start.GetLine(), start.GetColumn()))
 		if recv := fn.Receiver(); recv != nil {
 			w.BindIdentifiersIn(recv)
 		}
 	}
-	return []Options{
+	return []scopewalk.Options{
 		{ParseInterpolations: true},
 		{
 			ParseInterpolations:            true,
@@ -69,20 +66,20 @@ func walkBoth(p *parser.Parsed, ctx antlr.ParserRuleContext) string {
 	optsA, optsN := optionSets(&a), optionSets(&n)
 	for i := range optsA {
 		a.events, n.events = nil, nil
-		wa := New(&a, optsA[i])
-		wa.PushScope()
-		wn := New(&n, optsN[i]).WithNative(p.Native)
-		node, ok := wn.nativeNode(ctx)
-		if !ok {
+		nw := For(p).(*walker)
+		if _, ok := nw.node(ctx); !ok {
 			return "the context has no native node"
 		}
+		wa := scopewalk.New(&a, optsA[i])
+		wn := scopewalk.New(&n, optsN[i]).WithNative(nw)
+		wa.PushScope()
 		wn.PushScope()
 		if isParams {
-			antlrWalk{wa}.walkParameterDefaults(params)
-			nativeWalk{wn}.walkParameterDefaults(native.ParametersNode{GalaNodeRef: node})
+			wa.WalkParameterDefaults(params)
+			wn.WalkParameterDefaults(params)
 		} else {
-			antlrWalk{wa}.walk(ctx)
-			nativeWalk{wn}.walk(node)
+			wa.Walk(ctx)
+			wn.Walk(ctx)
 		}
 
 		if !slices.Equal(a.events, n.events) {
@@ -164,7 +161,7 @@ func corpus(tb testing.TB) []string {
 // discard is a Visitor that drops what it is told.
 type discard struct{}
 
-func (discard) Reference(string, Site, Use) {}
+func (discard) Reference(string, scopewalk.Site, scopewalk.Use) {}
 
 // BenchmarkWalk walks every staged source from its root with the
 // undefined-symbol check's options: on ANTLR's tree ("antlr"), on the native
@@ -180,7 +177,7 @@ func BenchmarkWalk(b *testing.B) {
 		}
 		texts = append(texts, string(text))
 	}
-	opts := Options{ParseInterpolations: true, RequireCleanInterpolationParse: true, SkipCompositeLiteralKeys: true, SkipTypedPatternArgument: true}
+	opts := scopewalk.Options{ParseInterpolations: true, RequireCleanInterpolationParse: true, SkipCompositeLiteralKeys: true, SkipTypedPatternArgument: true}
 	for _, mode := range []string{"antlr", "native", "native-walk"} {
 		b.Run(mode, func(b *testing.B) {
 			b.ReportAllocs()
@@ -197,9 +194,9 @@ func BenchmarkWalk(b *testing.B) {
 				}
 				b.StartTimer()
 				for _, p := range parses {
-					w := New(discard{}, opts)
+					w := scopewalk.New(discard{}, opts)
 					if mode != "antlr" {
-						w.WithNative(p.Native)
+						w.WithNative(For(p))
 					}
 					w.Walk(p.Tree)
 				}
@@ -272,17 +269,32 @@ func f(p int) int {
 		t.Fatal(err)
 	}
 	var mine, theirs recorder
-	w := New(&mine, Options{}).WithNative(p.Native)
-	if _, ok := w.nativeNode(tree); !ok {
+	nw := For(p).(*walker)
+	if _, ok := nw.node(tree); !ok {
 		t.Fatal("the Walker's own root has no native node")
 	}
 	otherTree, _, _ := other.Strict()
-	if _, ok := w.nativeNode(otherTree); ok {
+	if _, ok := nw.node(otherTree); ok {
 		t.Fatal("another parse's root has a native node")
 	}
-	w.Walk(tree)
-	New(&theirs, Options{}).WithNative(p.Native).Walk(otherTree)
+	scopewalk.New(&mine, scopewalk.Options{}).WithNative(nw).Walk(tree)
+	scopewalk.New(&theirs, scopewalk.Options{}).WithNative(nw).Walk(otherTree)
 	if got, want := strings.Join(mine.events, "\n"), strings.Join(theirs.events, "\n"); got != want || got == "" {
 		t.Fatalf("the native walk reports\n%s\nANTLR's\n%s", got, want)
+	}
+}
+
+// TestForTakesCleanParses: a parse with syntax errors has no NativeWalker, so
+// its error-recovered tree is ANTLR's to walk.
+func TestForTakesCleanParses(t *testing.T) {
+	broken := parser.NewAntlrGalaParser().ParseFile("package main\n\nfunc f( = 1\n")
+	if len(broken.Errors) == 0 {
+		t.Fatal("the input must have syntax errors")
+	}
+	if For(broken) != nil {
+		t.Fatal("a parse with syntax errors has a NativeWalker")
+	}
+	if For(parser.NewAntlrGalaParser().ParseFile("package main\n")) == nil {
+		t.Fatal("a clean parse has no NativeWalker")
 	}
 }

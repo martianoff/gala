@@ -10,14 +10,23 @@ import (
 // shares the Walker's scope stack, options and visitor.
 type antlrWalk struct{ *Walker }
 
-// tokenSite is the site of tok, whose text is text.
+// tokenSite is the site of tok, whose text is text; no site (the zero Site)
+// for no token, as a context the transformer made up can have.
 func tokenSite(tok antlr.Token, text string) Site {
+	if tok == nil {
+		return Site{}
+	}
 	return Site{Line: tok.GetLine(), Column: tok.GetColumn(), Text: text}
 }
 
-// TokenSite is the site of tok, for a consumer that reports at an ANTLR token
-// of its own.
-func TokenSite(tok antlr.Token) Site { return tokenSite(tok, tok.GetText()) }
+// TokenSite is the site of tok (see tokenSite), for a consumer that reports
+// at an ANTLR token of its own.
+func TokenSite(tok antlr.Token) Site {
+	if tok == nil {
+		return Site{}
+	}
+	return tokenSite(tok, tok.GetText())
+}
 
 // walkParameterDefaults is WalkParameterDefaults on ANTLR's tree.
 func (w antlrWalk) walkParameterDefaults(params grammar.IParametersContext) {
@@ -280,7 +289,7 @@ func (w antlrWalk) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
 	caseClauses := ctx.AllCaseClause()
 
 	if id := bareIdentPrimary(pe); id != nil {
-		path, whole := classifySuffixes(suffixes, len(caseClauses) > 0, antlrSuffix)
+		path, whole := ClassifySuffixes(suffixes, len(caseClauses) > 0, antlrSuffix)
 		w.referenceID(id, Use{Path: path, Whole: whole})
 	} else {
 		// Base is not a bare identifier (literal, tuple/paren, composite
@@ -296,16 +305,16 @@ func (w antlrWalk) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
 	}
 }
 
-// antlrSuffix is the shape of an ANTLR postfix suffix (see classifySuffixes).
-func antlrSuffix(s grammar.IPostfixSuffixContext) suffix {
+// antlrSuffix is the shape of an ANTLR postfix suffix (see ClassifySuffixes).
+func antlrSuffix(s grammar.IPostfixSuffixContext) Suffix {
 	sc, ok := s.(*grammar.PostfixSuffixContext)
 	if !ok {
-		return suffix{index: true} // never: every suffix is one
+		return Suffix{Index: true} // never: every suffix is one
 	}
 	if id := sc.Identifier(); id != nil {
-		return suffix{selector: id.GetText()}
+		return Suffix{Selector: id.GetText()}
 	}
-	return suffix{index: sc.ExpressionList() != nil}
+	return Suffix{Index: sc.ExpressionList() != nil}
 }
 
 // bareIdentPrimary returns the identifier context when the primaryExpr is a
@@ -345,7 +354,7 @@ func (w antlrWalk) walkPrimary(ctx grammar.IPrimaryContext) {
 }
 
 // walkLiteral walks the embedded expressions of an interpolated (`s"…"`) or
-// format (`f"…"`) string (see walkInterpolated). Every other literal
+// format (`f"…"`) string (see WalkInterpolated). Every other literal
 // contributes no references.
 func (w antlrWalk) walkLiteral(lit grammar.ILiteralContext) {
 	if !w.opts.ParseInterpolations {
@@ -358,13 +367,13 @@ func (w antlrWalk) walkLiteral(lit grammar.ILiteralContext) {
 	if tok == nil {
 		return
 	}
-	w.walkInterpolated(TokenSite(tok.GetSymbol()))
+	w.WalkInterpolated(TokenSite(tok.GetSymbol()))
 }
 
 // referenceID reports the identifier id as a reference, at its token.
 func (w antlrWalk) referenceID(id grammar.IIdentifierContext, use Use) {
 	name := id.GetText()
-	w.reference(name, tokenSite(id.GetStart(), name), use)
+	w.Report(name, tokenSite(id.GetStart(), name), use)
 }
 
 // walkCompositeLiteral walks the element values of a composite literal. The

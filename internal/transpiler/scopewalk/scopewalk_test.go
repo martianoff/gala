@@ -10,6 +10,7 @@ import (
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler/scopewalk"
+	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
 
 // collector records every unbound reference the walker reports.
@@ -50,9 +51,9 @@ func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 	sf, ok := tree.(*grammar.SourceFileContext)
 	require.True(t, ok)
 
-	walk := func(native *parser.Native) *collector {
+	walk := func(nw scopewalk.NativeWalker) *collector {
 		c := newCollector()
-		w := scopewalk.New(c, opts).WithNative(native)
+		w := scopewalk.New(c, opts).WithNative(nw)
 		w.PushScope()
 		for _, td := range sf.AllTopLevelDeclaration() {
 			if fd := td.FunctionDeclaration(); fd != nil {
@@ -63,7 +64,7 @@ func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 		return c
 	}
 	c := walk(nil)
-	require.Equal(t, c, walk(parsed.Native), "the native walk must agree with ANTLR's")
+	require.Equal(t, c, walk(nativewalk.For(parsed)), "the native walk must agree with ANTLR's")
 	return c
 }
 

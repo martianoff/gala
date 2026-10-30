@@ -37,7 +37,11 @@ go_library(
         "//internal/transpiler/scopewalk",
         "//internal/transpiler/transformer",
         "@com_github_antlr4_go_antlr_v4//:antlr",
-    ],
+    ] + select({
+        # nativewalk, or its stand-in under the same import path.
+        "//internal/parser/grammar:galop_enabled": ["//internal/transpiler/scopewalk/nativewalk"],  # keep
+        "//conditions:default": ["//internal/transpiler/scopewalk/nativewalkoff"],  # keep
+    }),
 )
 
 go_test(
