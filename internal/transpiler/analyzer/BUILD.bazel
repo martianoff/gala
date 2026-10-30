@@ -15,6 +15,7 @@ go_library(
         "go_keyword_names.go",
         "go_nocopy.go",
         "go_types.go",
+        "infer_native.go",
         "opaque.go",
         "package_siblings.go",
         "path_cache.go",
@@ -150,6 +151,7 @@ go_test(
     deps = [
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",
         "//internal/transpiler",
         "@rules_go//go/tools/bazel",
     ],

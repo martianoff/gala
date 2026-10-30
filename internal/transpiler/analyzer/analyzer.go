@@ -21,6 +21,7 @@ import (
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/module"
@@ -203,6 +204,12 @@ type galaAnalyzer struct {
 	// packages it imports, collected on ANTLR's tree, are not reported. It observes and changes nothing; the collection tests
 	// set it to prove which tree each file took.
 	onCollect func(collectTrace)
+	// onInferInit, when set, is told of each package-level initializer
+	// inferred on the native tree (inferPackageValInitTypeNative): the
+	// expression, the state it was inferred in and the type it got. It
+	// observes and changes nothing; TestValInferenceAgrees sets it to infer
+	// the same initializer on ANTLR's tree, in the same state, and compare.
+	onInferInit func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go

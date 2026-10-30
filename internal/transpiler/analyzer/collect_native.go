@@ -8,7 +8,6 @@ import (
 
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
@@ -26,9 +25,9 @@ import (
 // syntax errors (no handle, see Parsed.CleanNative), an LSP buffer or a tree
 // a caller handed in bare, a sibling or an imported file (the parsed-file
 // cache keeps no handle), and a file whose check stands down. A file is
-// collected on one tree or the other, never on a mix: the only crossing is
-// inferPackageValInitType, expression inference not yet ported, which reads
-// the initializer's context (nativeFile.expressionCtx).
+// collected on one tree or the other, never on a mix, and the native
+// collection reads no ANTLR context: the initializers of package-level
+// bindings are inferred on the native tree too (infer_native.go).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
@@ -44,12 +43,10 @@ type collectTrace struct {
 	native          bool
 }
 
-// nativeFile is a file's native tree, with the handle it came from for the
-// crossings to ANTLR's tree, and its top-level declarations by kind; or the
-// zero nativeFile: no tree (see ok).
+// nativeFile is a file's native tree, with its top-level declarations by
+// kind; or the zero nativeFile: no tree (see ok).
 type nativeFile struct {
-	handle *galaparser.Native
-	root   native.SourceFileNode
+	root native.SourceFileNode
 	// The top-level declarations, in source order, bucketed as the
 	// collection reads them: the type and struct shorthand declarations
 	// together (collectFileTypes takes them in one pass), the sealed types,
@@ -65,15 +62,14 @@ type nativeFile struct {
 // tree. The bridge check is the undefined-symbol check's walk's
 // (galaparser.Native.Bridged), so the collection takes the native tree
 // exactly when the walk does, and a file never pays the conversion for the
-// collection alone; it covers the crossing (nativeFile.expressionCtx) too,
-// so no gap in the bridge surfaces midway through the collection.
+// collection alone. The collection itself never crosses the bridge.
 func nativeFileOf(h *galaparser.Native) nativeFile {
 	if !h.Bridged() {
 		return nativeFile{}
 	}
 	tree, _ := h.Tree()
 	root := tree.Root()
-	nf := nativeFile{handle: h, root: native.SourceFileNode{GalaNodeRef: root}}
+	nf := nativeFile{root: native.SourceFileNode{GalaNodeRef: root}}
 	for td := range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
 		if td.ChildCount() == 0 {
 			continue
@@ -103,12 +99,6 @@ func nativeFileOf(h *galaparser.Native) nativeFile {
 
 // ok reports whether f is a native tree, not the zero nativeFile.
 func (f nativeFile) ok() bool { return f.root.Ok() }
-
-// expressionCtx is the ANTLR context of expression e, which every expression
-// of a native tree has: nativeFileOf takes a tree only when its bridge holds.
-func (f nativeFile) expressionCtx(e native.ExpressionNode) grammar.IExpressionContext {
-	return f.handle.Ctx(e.GalaNodeRef).(*grammar.ExpressionContext)
-}
 
 // nativePos is transpiler.PosFromToken of n's first token.
 func nativePos(n native.GalaNodeRef) transpiler.SourcePos {
@@ -819,8 +809,7 @@ func (a *galaAnalyzer) fileTypeAliasesNative(nf nativeFile, pkgName string) map[
 	return aliases
 }
 
-// extractPackageValsNative is extractPackageVals. An initializer is inferred
-// on its ANTLR context (inferPackageValInitType is not ported yet).
+// extractPackageValsNative is extractPackageVals.
 func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs, absFilePath string) {
 	for _, decl := range nf.vals {
 		var (
@@ -863,7 +852,10 @@ func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, r
 			if typeCtx.Ok() {
 				valType = a.resolveTypeWithParams(galaparser.NativeTypeText(typeCtx), pkgName, nil)
 			} else if len(exprs) == len(names) {
-				valType = a.inferPackageValInitType(nf.expressionCtx(exprs[i]), pkgName, richAST)
+				valType = a.inferPackageValInitTypeNative(exprs[i], pkgName, richAST)
+				if a.onInferInit != nil {
+					a.onInferInit(exprs[i], pkgName, richAST, valType)
+				}
 			}
 			valType = knownType(valType)
 			if richAST.PackageVals == nil {

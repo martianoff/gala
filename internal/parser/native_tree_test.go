@@ -149,7 +149,7 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 }
 
 // TestBridgeHolds: the bridge holds for a converted parse, and not once the
-// root, a function declaration or an expression lacks its context or has
+// root or a function declaration lacks its context or has
 // another rule's, or the contexts do not match the nodes.
 func TestBridgeHolds(t *testing.T) {
 	p := parseWithGalop("package main\n\nval x = 1\n\nfunc f() int = 2\n")
@@ -160,7 +160,7 @@ func TestBridgeHolds(t *testing.T) {
 	if !p.Native.Bridged() {
 		t.Fatal("a converted parse is not bridged")
 	}
-	for _, kind := range []native.GalaKind{native.GalaKIND_sourceFile, native.GalaKIND_functionDeclaration, native.GalaKIND_expression} {
+	for _, kind := range []native.GalaKind{native.GalaKIND_sourceFile, native.GalaKIND_functionDeclaration} {
 		for i := range tree.Nodes {
 			if tree.Node(i).Kind() != kind {
 				continue
