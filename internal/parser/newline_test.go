@@ -99,7 +99,7 @@ func TestLineStartTokenStartsStatement(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := "package main\n\nfunc f() {\n" + tt.body + "\n}\n"
-			tree, _, errs := NewAntlrGalaParser().ParseLenient(input)
+			tree, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 			require.Empty(t, errs)
 			block := tree.(grammar.ISourceFileContext).TopLevelDeclaration(0).FunctionDeclaration().Block()
 			assert.Len(t, block.AllStatement(), tt.stmts)
@@ -134,7 +134,7 @@ func TestLineStartTokenInDeclarations(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\n" + tt.decl + "\n")
+			_, _, errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.decl + "\n").Lenient()
 			assert.Empty(t, errs)
 		})
 	}
@@ -161,7 +161,7 @@ func TestBlockAfterHeaderEndingInType(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			tree, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\n" + tt.src + "\n")
+			tree, _, errs := NewAntlrGalaParser().ParseFile("package main\n\n" + tt.src + "\n").Lenient()
 			require.Empty(t, errs)
 			decls := tree.(grammar.ISourceFileContext).AllTopLevelDeclaration()
 			body := decls[len(decls)-1].FunctionDeclaration().Block()
@@ -204,7 +204,7 @@ func TestSplitHeaderOpensBlock(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			input := "package main\n\n" + tt.src + "\n"
-			tree, _, errs := NewAntlrGalaParser().ParseLenient(input)
+			tree, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 			require.Empty(t, errs)
 			// The body is the block whose first statement is `val q = 1`.
 			var body grammar.IBlockContext
@@ -269,13 +269,13 @@ func TestNewlineTokensAbsentFromSyntaxErrors(t *testing.T) {
 		"package main\n\nsealed type S {\n    case A\n    (\n}\n",
 		"package main\n\nfunc f() {\n    val x = 1\n    *}\n",
 	} {
-		_, _, errs := NewAntlrGalaParser().ParseLenient(input)
+		_, _, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 		require.NotEmpty(t, errs, input)
 		for _, err := range errs {
 			assert.NotContains(t, err.Error(), "NL_", input)
 		}
 	}
-	_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n\nval f func int = g\n")
+	_, _, errs := NewAntlrGalaParser().ParseFile("package main\n\nval f func int = g\n").Lenient()
 	require.NotEmpty(t, errs)
 	assert.Contains(t, errs[0].Error(), "missing '(' at 'int'")
 }

@@ -28,7 +28,7 @@ func TestTypeText(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
-			tree, _, err := NewAntlrGalaParser().Parse("package main\n\nval v " + tc.typ + " = nil\n")
+			tree, _, err := NewAntlrGalaParser().ParseFile("package main\n\nval v " + tc.typ + " = nil\n").Strict()
 			require.NoError(t, err)
 			var typ grammar.ITypeContext
 			for _, d := range tree.(*grammar.SourceFileContext).AllTopLevelDeclaration() {

@@ -8,6 +8,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // BuiltIn says galop's parser is linked into this binary: here it is not.
@@ -21,3 +22,9 @@ func SourceFile(*antlr.CommonTokenStream) (grammar.ISourceFileContext, bool) { r
 
 // Expression never parses: ok is false.
 func Expression(*antlr.CommonTokenStream) (grammar.IExpressionContext, bool) { return nil, false }
+
+// ToNative has no converter to call, the native tree being galop's: no tree.
+// (A build without galop makes no native-tree handle to call it.)
+func ToNative(antlr.ParserRuleContext, *antlr.CommonTokenStream, string) (*native.GalaTree, []antlr.ParserRuleContext) {
+	return nil, nil
+}

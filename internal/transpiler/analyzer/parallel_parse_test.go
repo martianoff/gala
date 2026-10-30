@@ -45,7 +45,7 @@ func TestParseFilesConcurrent_ResultMatchesSequential(t *testing.T) {
 	parse := func(p string) antlr.Tree {
 		body, err := os.ReadFile(p)
 		require.NoError(t, err)
-		tree, _, err := innerParser.Parse(string(body))
+		tree, _, err := innerParser.ParseFile(string(body)).Strict()
 		require.NoError(t, err)
 		return tree
 	}
@@ -55,7 +55,7 @@ func TestParseFilesConcurrent_ResultMatchesSequential(t *testing.T) {
 	// siblings; their type metadata must end up in the merged RichAST.
 	siblings := append([]string(nil), paths[1:]...)
 	batch.SetPackageFiles(siblings)
-	rich, err := batch.Analyze(parse(paths[0]), nil, paths[0])
+	rich, err := transpiler.Analyze(batch, parse(paths[0]), nil, paths[0])
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
@@ -99,11 +99,11 @@ func TestParseFilesConcurrent_RaceFree(t *testing.T) {
 	// write to parsedFileCache from the worker goroutines fails.
 	body, err := os.ReadFile(paths[0])
 	require.NoError(t, err)
-	tree, _, err := innerParser.Parse(string(body))
+	tree, _, err := innerParser.ParseFile(string(body)).Strict()
 	require.NoError(t, err)
 
 	siblings := append([]string(nil), paths[1:]...)
 	batch.SetPackageFiles(siblings)
-	_, err = batch.Analyze(tree, nil, paths[0])
+	_, err = transpiler.Analyze(batch, tree, nil, paths[0])
 	require.NoError(t, err)
 }

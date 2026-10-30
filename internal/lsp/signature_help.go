@@ -120,7 +120,7 @@ func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callCon
 	}
 	h.mu.Unlock()
 	if tree == nil {
-		if tree, _, _ = h.parser.ParseLenient(src); tree == nil {
+		if tree, _, _ = h.parser.ParseFile(src).Lenient(); tree == nil {
 			return nil
 		}
 	}

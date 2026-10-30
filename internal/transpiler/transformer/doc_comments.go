@@ -8,6 +8,7 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 )
 
@@ -85,7 +86,7 @@ func (t *galaASTTransformer) docFor(start antlr.Token) *ast.CommentGroup {
 	if start == nil {
 		return nil
 	}
-	return docCommentGroup(t.richAST.Docs[start.GetStart()])
+	return docCommentGroup(t.richAST.Docs[parser.DocKeyOf(start)])
 }
 
 // attachDocComments attaches the doc comments of one GALA top-level declaration

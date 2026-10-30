@@ -287,8 +287,18 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     build with `--//internal/parser:antlr` that leaves galop out (see `internal/parser/engine.go`).
     galop runs at build time from release binaries for linux and macOS (amd64 and arm64) and
     windows-amd64; on any other build host, use that flag.
+  - **galop's native tree comes next.** galop also generates its own tree (in
+    `internal/parser/native`): flat arrays of nodes, far smaller than ANTLR's contexts. Each
+    parse (`Parsed.Native` from `ParseFile`) can build it on first use and pair every native
+    node with its ANTLR context, so code can move to the native tree one consumer at a time.
+    Nothing reads it yet, so no cache or analysis result keeps the handle: until it converts,
+    it holds the token stream and the source text, which a clean parse's ANTLR tree doesn't
+    keep alive (after converting, the native tree keeps the text). Doc comments are keyed by
+    line and column (`parser.DocKey`), which both trees share. A build without galop has a
+    stand-in package there, and asking for the native tree returns an error.
   - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
-    and errors on every GALA source of the repository, and CI runs the suite under each.
+    and errors on every GALA source of the repository, and that the native tree matches
+    ANTLR's; CI runs the suite under each.
 - **Coded diagnostics are the user-facing edge of the inference/exhaustiveness checks.** When
   inference or resolution can't proceed, GALA emits a named, documented `GALA-Exxxx` error
   (see [docs/errors/](errors/)) rather than a vague failure.

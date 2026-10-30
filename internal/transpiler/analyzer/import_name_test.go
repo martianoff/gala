@@ -31,7 +31,7 @@ import (
     "github.com/mattn/go-sqlite3"
 )
 `
-	tree, _, err := transpiler.NewAntlrGalaParser().Parse(src)
+	tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
 	require.NoError(t, err)
 	sf := tree.(*grammar.SourceFileContext)
 	a := &galaAnalyzer{}
@@ -80,7 +80,7 @@ import (
     "k8s.io/api/core/v1"
 )
 `
-	tree, _, err := transpiler.NewAntlrGalaParser().Parse(src)
+	tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
 	require.NoError(t, err)
 	sf := tree.(*grammar.SourceFileContext)
 	a := &galaAnalyzer{}
@@ -123,7 +123,7 @@ import (
     "strings"
 )
 `
-	tree, _, err := transpiler.NewAntlrGalaParser().Parse(src)
+	tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
 	require.NoError(t, err)
 	sf := tree.(*grammar.SourceFileContext)
 	a := &galaAnalyzer{}

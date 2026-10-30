@@ -95,6 +95,7 @@ fabric.properties
 # Generated files
 internal/parser/grammar/*.go
 internal/parser/grammar/*.java
+internal/parser/native/*.go
 std/option.go
 
 # IntelliJ plugin generated ANTLR sources and build artifacts

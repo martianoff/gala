@@ -353,9 +353,9 @@ func Perm() iofs.FileMode = iofs.ModePerm
 			require.NoError(t, os.WriteFile(galaPath, []byte(tc.galaSrc), 0o644))
 
 			p := transpiler.NewAntlrGalaParser()
-			tree, _, err := p.Parse(tc.galaSrc)
+			tree, _, err := p.ParseFile(tc.galaSrc).Strict()
 			require.NoError(t, err)
-			richAST, err := analyzer.NewGalaAnalyzer(p, getStdSearchPath()).Analyze(tree, nil, galaPath)
+			richAST, err := transpiler.Analyze(analyzer.NewGalaAnalyzer(p, getStdSearchPath()), tree, nil, galaPath)
 			require.NoError(t, err)
 			fset, file, err := transformer.NewGalaASTTransformer().Transform(richAST)
 			require.NoError(t, err)

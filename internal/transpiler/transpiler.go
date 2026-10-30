@@ -15,6 +15,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler/profiler"
 )
 
@@ -169,11 +170,11 @@ type RichAST struct {
 	ReceiverDotImports map[string][]string
 
 	// Docs is this file's doc-comment table from the parse that produced Tree,
-	// keyed by the character offset of each documented declaration's first
-	// token (see parser.extractDocComments). The transpile pipeline sets it so
+	// keyed by the line and column of each documented declaration's first
+	// token (see parser.DocKey). The transpile pipeline sets it so
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
-	Docs map[int]string
+	Docs galaparser.Docs
 }
 
 // ReportSiblingSyntaxErrors returns what to report for err, a failure of a
@@ -790,24 +791,33 @@ type CompanionObjectMetadata struct {
 
 // GalaParser defines the interface for parsing Gala source code.
 //
-// Both entry points return `docs` alongside the tree: doc comments keyed by the
-// character offset of the declaration's first token. Comments ride the lexer's
-// hidden channel, so they cost the parse nothing and never reach the grammar;
-// pairing them with declarations happens in a linear walk afterwards. Callers
-// that do not need documentation discard the map.
+// ParseFile returns the parse of a source file: its tree, with the syntax
+// errors and the doc comments, keyed by where each declaration's first token
+// starts (see parser.DocKey). On a syntax error the tree is error-recovered:
+// it may contain error nodes but is structurally valid enough for the
+// analyzer to extract types, methods, and functions, which keeps the language
+// server's completion, hover and definition working mid-edit. When the parse
+// cannot run at all (no engine can be chosen) there is no tree, only the
+// error. Comments ride the lexer's hidden channel, so they cost the parse
+// nothing and never reach the grammar; pairing them with declarations happens
+// in a linear walk afterwards. Callers take the result's Strict or Lenient
+// view.
 type GalaParser interface {
-	Parse(input string) (tree antlr.Tree, docs map[int]string, err error)
-	// ParseLenient always returns ANTLR's error-recovered tree alongside any
-	// syntax errors. The tree may contain error nodes but is structurally
-	// valid enough for the analyzer to extract types, methods, and functions.
-	// Used by the LSP so completion/hover/definition keep working while the
-	// user is mid-edit.
-	ParseLenient(input string) (tree antlr.Tree, docs map[int]string, errors []error)
+	ParseFile(input string) *galaparser.Parsed
 }
 
-// Analyzer analyzes a Gala ANTLR parse tree and produces a RichAST.
+// Analyzer analyzes a parse of a GALA file and produces a RichAST. It reads
+// the parse's tree and doc comments and attaches neither to the result: the
+// transpile pipeline sets RichAST.Docs. A caller holding only a tree uses
+// Analyze.
 type Analyzer interface {
-	Analyze(tree antlr.Tree, docs map[int]string, filePath string) (*RichAST, error)
+	AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*RichAST, error)
+}
+
+// Analyze analyzes tree, with its doc comments docs (which may be nil), with
+// a.
+func Analyze(a Analyzer, tree antlr.Tree, docs galaparser.Docs, filePath string) (*RichAST, error) {
+	return a.AnalyzeParsed(&galaparser.Parsed{Tree: tree, Docs: docs}, filePath)
 }
 
 // TransformResult holds the output of a GALA-to-Go AST transformation.
@@ -906,9 +916,9 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	}()
 
 	done := prof.Phase("parse")
-	tree, docs, err := t.parser.Parse(input)
+	parsed := t.parser.ParseFile(input)
 	done()
-	if err != nil {
+	if err := parsed.Err(); err != nil {
 		// Same stamping the analyze phase does below: a parse-phase diagnostic
 		// carries a position but not the file it came from, and the CLI
 		// renderer needs the path to re-read the source for its snippet. This
@@ -918,8 +928,12 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 		return "", galaerr.WithFilePath(err, filePath)
 	}
 
+	// Nothing reads the native tree yet: drop its handle, and the token stream
+	// and source text it holds, before the analysis.
+	parsed.Native = nil
+
 	done = prof.Phase("analyze")
-	richAST, err := t.analyzer.Analyze(tree, docs, filePath)
+	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks
@@ -931,7 +945,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// relative to the stripped text; keep the source hung off the AST in step
 	// with them rather than three bytes ahead.
 	richAST.SourceContent = galaerr.StripBOM(input)
-	richAST.Docs = docs
+	richAST.Docs = parsed.Docs
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)

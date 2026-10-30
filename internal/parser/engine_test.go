@@ -46,19 +46,34 @@ func withEngine(e Engine, f func()) {
 
 // render prints what a parse gives: the tree with every node's position (see
 // positions), then the doc comments and the errors.
-func render(tree antlr.Tree, docs map[int]string, errs []error) string {
+func render(tree antlr.Tree, docs Docs, errs []error) string {
+	return renderText(treeText(tree), tree, docs, errs)
+}
+
+// treeText is tree in ANTLR's LISP-like form, "" for no tree.
+func treeText(tree antlr.Tree) string {
+	if tree == nil {
+		return ""
+	}
+	return antlr.TreesStringTree(tree, grammar.GalaParserStaticData.RuleNames, nil)
+}
+
+// renderText is render with the tree's text already printed (treeText).
+func renderText(text string, tree antlr.Tree, docs Docs, errs []error) string {
 	var b strings.Builder
 	if tree != nil {
-		b.WriteString(antlr.TreesStringTree(tree, grammar.GalaParserStaticData.RuleNames, nil))
+		b.WriteString(text)
 		positions(&b, tree, nil)
 	}
-	lines := make([]int, 0, len(docs))
-	for line := range docs {
-		lines = append(lines, line)
+	keys := make([]DocKey, 0, len(docs))
+	for k := range docs {
+		keys = append(keys, k)
 	}
-	sort.Ints(lines)
-	for _, line := range lines {
-		fmt.Fprintf(&b, "\ndoc %d: %q", line, docs[line])
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].Line < keys[j].Line || keys[i].Line == keys[j].Line && keys[i].Column < keys[j].Column
+	})
+	for _, k := range keys {
+		fmt.Fprintf(&b, "\ndoc %d:%d: %q", k.Line, k.Column, docs[k])
 	}
 	for _, err := range errs {
 		fmt.Fprintf(&b, "\nerror: %v", err)
@@ -66,9 +81,64 @@ func render(tree antlr.Tree, docs map[int]string, errs []error) string {
 	return b.String()
 }
 
-func parseFileWith(e Engine, src string) (out string) {
-	withEngine(e, func() { out = render(NewAntlrGalaParser().ParseLenient(src)) })
-	return out
+// checkNativeHook, set in builds with galop's parser (native_tree_test.go),
+// checks a parse's native tree and bridge, given the text of its ANTLR tree
+// (treeText), returning what is wrong or "".
+var checkNativeHook func(p *Parsed, text string) string
+
+// fileParse is a parse of a source file with one engine, and its rendering.
+type fileParse struct {
+	parsed *Parsed
+	text   string // treeText of the parse's tree
+	out    string // render of the parse
+}
+
+// parseFileAs parses src with engine e.
+func parseFileAs(e Engine, src string) fileParse {
+	var f fileParse
+	withEngine(e, func() {
+		f.parsed = NewAntlrGalaParser().ParseFile(src)
+		f.text = treeText(f.parsed.Tree)
+		f.out = renderText(f.text, f.parsed.Tree, f.parsed.Docs, f.parsed.Errors)
+	})
+	return f
+}
+
+// checkNative is what is wrong with f's native tree, "" when nothing is or
+// the build has no galop parser.
+func (f fileParse) checkNative() string {
+	if checkNativeHook == nil {
+		return ""
+	}
+	return checkNativeHook(f.parsed, f.text)
+}
+
+// parseFileWith parses src with engine e and renders the result (see
+// render).
+func parseFileWith(e Engine, src string) string {
+	return parseFileAs(e, src).out
+}
+
+// diffAt shows where want and got first differ: the line number, and each
+// side's text around the first differing byte of that line (tree text is one
+// long line, so a whole line can be too long to read).
+func diffAt(want, got string) string {
+	i := 0
+	for i < len(want) && i < len(got) && want[i] == got[i] {
+		i++
+	}
+	// i is at most either length; show from up to 120 bytes before it, on its
+	// line, to up to 240 bytes after it, on the same line.
+	from := max(strings.LastIndexByte(want[:i], '\n')+1, i-120)
+	window := func(s string) string {
+		end := min(len(s), i+240)
+		if nl := strings.IndexByte(s[i:end], '\n'); nl >= 0 {
+			end = i + nl
+		}
+		return fmt.Sprintf("%q", s[from:end])
+	}
+	line := strings.Count(want[:i], "\n") + 1
+	return fmt.Sprintf("first difference at line %d, byte %d\n  want: %s\n  got:  %s", line, i, window(want), window(got))
 }
 
 func parseExpressionWith(e Engine, src string) (out string) {
@@ -165,11 +235,31 @@ func TestEnginesAgree(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 	positions := rand.New(rand.NewSource(2))
 	files, accepted, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0
-	for k, input := range positionInputs {
-		want, got := parseFileWith(EngineANTLR, input), parseFileWith(EngineGalop, input)
-		if got != want {
-			t.Errorf("position input %d: the engines disagree\nANTLR: %s\ngalop: %s", k, want, got)
+	// compareFile parses input with both engines, reports a difference, and,
+	// when native is set, checks the native tree: of galop's parse when the
+	// engines agree, as ANTLR's is then the same tree, and of both when they
+	// do not. It returns ANTLR's rendering.
+	compareFile := func(what, input string, native bool) string {
+		want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
+		var checked []fileParse
+		if native {
+			checked = append(checked, got)
 		}
+		if got.out != want.out {
+			t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
+			if native {
+				checked = append(checked, want)
+			}
+		}
+		for _, f := range checked {
+			if msg := f.checkNative(); msg != "" {
+				t.Errorf("%s: native tree: %s", what, msg)
+			}
+		}
+		return want.out
+	}
+	for k, input := range positionInputs {
+		want := compareFile(fmt.Sprintf("position input %d", k), input, true)
 		if strings.Contains(want, "error:") {
 			t.Errorf("position input %d does not parse: %.300s", k, want)
 		}
@@ -202,10 +292,11 @@ func TestEnginesAgree(t *testing.T) {
 			crlf++
 		}
 		for k, input := range inputs {
-			want, got := parseFileWith(EngineANTLR, input), parseFileWith(EngineGalop, input)
-			if got != want {
-				t.Errorf("%s (variant %d): the engines disagree\nANTLR: %.300s\ngalop: %.300s", path, k, want, got)
-			}
+			// The native tree of each file's source, and of every tenth file's
+			// first broken variant, for error-recovered trees: converting each
+			// variant would double the suite's time for little more coverage.
+			native := k == 0 || k == 1 && n%10 == 0
+			want := compareFile(fmt.Sprintf("%s (variant %d)", path, k), input, native)
 			files++
 			if !strings.Contains(want, "\nerror:") {
 				accepted++
@@ -324,7 +415,7 @@ func TestEngineSelection(t *testing.T) {
 		}
 	}
 	RequestEngine("yacc")
-	_, _, errs := NewAntlrGalaParser().ParseLenient("package main\n")
+	_, _, errs := NewAntlrGalaParser().ParseFile("package main\n").Lenient()
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `unknown parser "yacc"`) {
 		t.Fatalf("--parser=yacc: errors %v", errs)
 	}

@@ -60,10 +60,10 @@ import "example.test/widget"
 func main() {
 }
 `
-	tree, _, err := p.Parse(input)
+	tree, _, err := p.ParseFile(input).Strict()
 	require.NoError(t, err)
 
-	richAST, err := batch.Analyze(tree, nil, "")
+	richAST, err := transpiler.Analyze(batch, tree, nil, "")
 	require.NoError(t, err)
 	require.NotNil(t, richAST)
 	require.NotNil(t, richAST.GoTypeInfo, "Go type info should be populated from the wired source dir")
@@ -114,10 +114,10 @@ import "example.test/mod/sub"
 func main() {
 }
 `
-	tree, _, err := p.Parse(input)
+	tree, _, err := p.ParseFile(input).Strict()
 	require.NoError(t, err)
 
-	richAST, err := batch.Analyze(tree, nil, "")
+	richAST, err := transpiler.Analyze(batch, tree, nil, "")
 	require.NoError(t, err)
 	require.NotNil(t, richAST.GoTypeInfo)
 

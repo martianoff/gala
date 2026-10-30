@@ -92,13 +92,13 @@ func TestConcurrentSiblingParse(t *testing.T) {
 	p := transpiler.NewAntlrGalaParser()
 	src, err := os.ReadFile(paths[0])
 	require.NoError(t, err)
-	tree, docs, err := p.Parse(string(src))
+	tree, docs, err := p.ParseFile(string(src)).Strict()
 	require.NoError(t, err, "fixture must be valid GALA")
 
 	// A fresh analyzer per run means an empty parsedFileCache, so all 63
 	// siblings are parsed for real rather than served from cache.
 	a := analyzer.NewGalaAnalyzerWithPackageFiles(p, []string{dir}, paths, dir)
-	richAST, err := a.Analyze(tree, docs, paths[0])
+	richAST, err := transpiler.Analyze(a, tree, docs, paths[0])
 	require.NoError(t, err)
 	require.NotNil(t, richAST)
 

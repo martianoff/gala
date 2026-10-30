@@ -11,6 +11,7 @@ go_library(
     visibility = ["//internal/parser:__pkg__"],
     deps = [
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )

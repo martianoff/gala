@@ -3,13 +3,32 @@ package parser
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/antlr4-go/antlr/v4"
 )
 
+// TestDocKeyOfCountsCodePoints pins DocKey's column unit: code points, as
+// ANTLR counts them, not bytes. "/* é */ " before func is 8 code points and 9
+// bytes. (A documented declaration starts its line, so only whitespace comes
+// before it; this pins the unit for any key built from a token.)
+func TestDocKeyOfCountsCodePoints(t *testing.T) {
+	var got []DocKey
+	VisitTokens("/* é */ func F() int = 1\n", func(tok antlr.Token) {
+		if tok.GetText() == "func" {
+			got = append(got, DocKeyOf(tok))
+		}
+	})
+	if want := (DocKey{Line: 1, Column: 8}); len(got) != 1 || got[0] != want {
+		t.Errorf("DocKeyOf(func) = %v, want [%v]", got, want)
+	}
+}
+
 // docFor parses src and returns the doc comment attached to the declaration
-// whose first token starts at the given substring's offset.
+// whose first token starts where the given substring does.
 func docFor(t *testing.T, src, declPrefix string) string {
 	t.Helper()
-	_, docs, errs := NewAntlrGalaParser().ParseLenient(src)
+	_, docs, errs := NewAntlrGalaParser().ParseFile(src).Lenient()
 	if len(errs) > 0 {
 		t.Fatalf("parse errors: %v", errs)
 	}
@@ -17,7 +36,8 @@ func docFor(t *testing.T, src, declPrefix string) string {
 	if off < 0 {
 		t.Fatalf("declaration %q not found in source", declPrefix)
 	}
-	return docs[off]
+	lineStart := strings.LastIndex(src[:off], "\n") + 1
+	return docs[DocKey{Line: 1 + strings.Count(src[:off], "\n"), Column: utf8.RuneCountInString(src[lineStart:off])}]
 }
 
 func TestDocComments(t *testing.T) {
@@ -161,7 +181,7 @@ func TestBareLambdaDiagnosticSurvivesComment(t *testing.T) {
 		"package main\n\nfunc main() {\n    val f = x => x + 1\n}\n",
 		"package main\n\nfunc main() {\n    val f = x /* note */ => x + 1\n}\n",
 	} {
-		_, _, errs := NewAntlrGalaParser().ParseLenient(src)
+		_, _, errs := NewAntlrGalaParser().ParseFile(src).Lenient()
 		if len(errs) == 0 {
 			t.Fatalf("expected a diagnostic for %q", src)
 		}

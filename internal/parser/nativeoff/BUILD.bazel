@@ -1,0 +1,11 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+# Stands in for //internal/parser/native, under its import path, in builds
+# without galop's parser (see //internal/parser:parser): the types the native
+# tree's handle names, and no tree.
+go_library(
+    name = "nativeoff",
+    srcs = ["native.go"],
+    importpath = "martianoff/gala/internal/parser/native",  # keep
+    visibility = ["//internal/parser:__subpackages__"],
+)

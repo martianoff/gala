@@ -282,7 +282,7 @@ bind x = foo()`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := p.Parse(tt.input)
+			_, _, err := p.ParseFile(tt.input).Strict()
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -306,7 +306,7 @@ func treeFingerprint(tree antlr.Tree) string {
 	return result
 }
 
-func parseFingerprint(input string, mode int) (string, map[int]string, []string) {
+func parseFingerprint(input string, mode int) (string, Docs, []string) {
 	p := NewAntlrGalaParser()
 	input = galaerr.StripBOM(input)
 	result := parseSourceFileAttempt(input, mode, nil)
@@ -318,11 +318,11 @@ func parseFingerprint(input string, mode int) (string, map[int]string, []string)
 	for i, err := range errs {
 		messages[i] = fmt.Sprintf("%T:%s", err, err)
 	}
-	return treeFingerprint(result.tree), extractDocComments(result.tokens), messages
+	return treeFingerprint(result.tree), extractDocComments(result.stream.GetAllTokens()), messages
 }
 
-func publicParseFingerprint(input string) (string, map[int]string, []string) {
-	tree, docs, errs := NewAntlrGalaParser().ParseLenient(input)
+func publicParseFingerprint(input string) (string, Docs, []string) {
+	tree, docs, errs := NewAntlrGalaParser().ParseFile(input).Lenient()
 	messages := make([]string, len(errs))
 	for i, err := range errs {
 		messages[i] = fmt.Sprintf("%T:%s", err, err)

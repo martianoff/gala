@@ -22,12 +22,12 @@ func analyzeSrc(t *testing.T, src string) *transpiler.RichAST {
 		t.Fatal(err)
 	}
 	p := parser.NewAntlrGalaParser()
-	tree, docs, err := p.Parse(src)
+	tree, docs, err := p.ParseFile(src).Strict()
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	a := NewGalaAnalyzer(p, nil)
-	rich, err := a.Analyze(tree, docs, path)
+	rich, err := transpiler.Analyze(a, tree, docs, path)
 	if err != nil {
 		t.Fatalf("analyze: %v", err)
 	}
@@ -201,12 +201,12 @@ func TestDocCacheGrowth(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		tree, docs, perr := p.Parse(string(src))
+		tree, docs, perr := p.ParseFile(string(src)).Strict()
 		if perr != nil {
 			continue
 		}
 		a := NewGalaAnalyzer(p, []string{root})
-		rich, aerr := a.Analyze(tree, docs, path)
+		rich, aerr := transpiler.Analyze(a, tree, docs, path)
 		if aerr != nil || rich == nil {
 			continue
 		}
@@ -301,14 +301,14 @@ type Holder struct {
 	p := parser.NewAntlrGalaParser()
 	a := NewGalaAnalyzer(p, nil)
 
-	tree1, docs1, err := p.Parse(v1)
+	tree1, docs1, err := p.ParseFile(v1).Strict()
 	if err != nil {
 		t.Fatalf("parse v1: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(v1), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rich, err := a.Analyze(tree1, docs1, path)
+	rich, err := transpiler.Analyze(a, tree1, docs1, path)
 	if err != nil {
 		t.Fatalf("analyze v1: %v", err)
 	}
@@ -318,14 +318,14 @@ type Holder struct {
 
 	// Re-analyze the edited source through the SAME analyzer, so the existing
 	// TypeMetadata is reused rather than rebuilt.
-	tree2, docs2, err := p.Parse(v2)
+	tree2, docs2, err := p.ParseFile(v2).Strict()
 	if err != nil {
 		t.Fatalf("parse v2: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(v2), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rich2, err := a.Analyze(tree2, docs2, path)
+	rich2, err := transpiler.Analyze(a, tree2, docs2, path)
 	if err != nil {
 		t.Fatalf("analyze v2: %v", err)
 	}
@@ -343,14 +343,14 @@ type Holder struct {
 // may already carry documentation from a cache load or an earlier pass. An
 // absent doc must leave that value alone; a real one must replace it.
 func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
-	docs := map[int]string{10: "fresh doc"}
-	tok := &stubToken{start: 10}
-	missing := &stubToken{start: 99}
+	docs := parser.Docs{{Line: 3, Column: 4}: "fresh doc"}
+	tok := &stubToken{line: 3, column: 4}
+	missing := &stubToken{line: 3, column: 9}
 
 	cases := []struct {
 		name  string
 		start antlr.Token
-		docs  map[int]string
+		docs  parser.Docs
 		in    string
 		want  string
 	}{
@@ -374,10 +374,11 @@ func TestSetDocKeepsExistingWhenAbsent(t *testing.T) {
 // stubToken is the minimal antlr.Token surface setDoc/docAt touch.
 type stubToken struct {
 	antlr.Token
-	start int
+	line, column int
 }
 
-func (s *stubToken) GetStart() int { return s.start }
+func (s *stubToken) GetLine() int   { return s.line }
+func (s *stubToken) GetColumn() int { return s.column }
 
 // PackageDoc describes the package being analyzed. Merge is also how an import
 // closure is folded in, so without a package-name check an undocumented package
@@ -412,7 +413,7 @@ func TestPackageDocDoesNotCrossPackages(t *testing.T) {
 
 // Doc offsets are parse-local, so docs must only be handed to the caller
 // holding the tree they were harvested from.
-func TestDocsForTreeRejectsForeignTree(t *testing.T) {
+func TestParsedForTreeRejectsForeignTree(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.gala")
 	src := "package spkg\n\n// Thing does a thing.\nfunc Thing() int = 1\n"
@@ -428,19 +429,23 @@ func TestDocsForTreeRejectsForeignTree(t *testing.T) {
 		t.Fatalf("parseFileCached: %v", err)
 	}
 	key := a.parsedFileCacheKey(path)
-	if got := a.docsForTree(key, tree); len(got) == 0 {
+	got := a.parsedForTree(key, tree)
+	if got == nil || len(got.Docs) == 0 {
 		t.Fatal("matching tree returned no docs")
+	}
+	if got.Native != nil {
+		t.Error("the parsed-file cache keeps a native tree, which nothing reads yet")
 	}
 
 	// A tree from a different parse of the same path must not be paired with
 	// the cached offsets, even though the path matches.
-	otherTree, _, _ := p.Parse(src)
+	otherTree, _, _ := p.ParseFile(src).Strict()
 	other, _ := otherTree.(*grammar.SourceFileContext)
 	if other == nil {
 		t.Fatal("second parse produced no source file")
 	}
-	if got := a.docsForTree(key, other); got != nil {
-		t.Errorf("docs handed to a tree from a different parse: %v", got)
+	if got := a.parsedForTree(key, other); got != nil {
+		t.Errorf("a parse handed to a tree from a different parse: %v", got.Docs)
 	}
 }
 

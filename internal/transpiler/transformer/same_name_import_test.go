@@ -268,9 +268,9 @@ func main() {
 			}
 
 			p := transpiler.NewAntlrGalaParser()
-			tree, _, err := p.Parse(tc.src)
+			tree, _, err := p.ParseFile(tc.src).Strict()
 			require.NoError(t, err)
-			richAST, err := analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), siblings).Analyze(tree, nil, mainPath)
+			richAST, err := transpiler.Analyze(analyzer.NewGalaAnalyzerWithPackageFiles(p, getStdSearchPath(), siblings), tree, nil, mainPath)
 			require.NoError(t, err)
 			fset, file, err := transformer.NewGalaASTTransformer().Transform(richAST)
 			require.NoError(t, err)

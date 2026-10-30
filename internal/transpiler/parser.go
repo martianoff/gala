@@ -2,8 +2,6 @@ package transpiler
 
 import (
 	"martianoff/gala/internal/parser"
-
-	"github.com/antlr4-go/antlr/v4"
 )
 
 type antlrGalaParser struct {
@@ -17,14 +15,9 @@ func NewAntlrGalaParser() GalaParser {
 	}
 }
 
-// Parse implements the GalaParser interface.
-func (p *antlrGalaParser) Parse(input string) (antlr.Tree, map[int]string, error) {
-	return p.wrapper.Parse(input)
-}
-
-// ParseLenient implements the GalaParser interface.
-func (p *antlrGalaParser) ParseLenient(input string) (antlr.Tree, map[int]string, []error) {
-	return p.wrapper.ParseLenient(input)
+// ParseFile implements the GalaParser interface.
+func (p *antlrGalaParser) ParseFile(input string) *parser.Parsed {
+	return p.wrapper.ParseFile(input)
 }
 
 // Ensure antlrGalaParser implements GalaParser interface.
