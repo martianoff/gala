@@ -174,7 +174,6 @@ func hashPrimitive[T any](v T) Option[uint32] = v match {
 // out: it may declare an Equal of its own.
 func HashesByValue(v any) bool = hashPrimitive(v).IsDefined()
 
-
 // panicNotHashable panics for a value HashValue cannot hash.
 func panicNotHashable(v any) uint32 {
     Panic(f"cannot hash type ${v}%T: a HashSet element or HashMap key, and every value inside a Tuple, Option or Either one, must be a primitive or implement std.Hashable interface")

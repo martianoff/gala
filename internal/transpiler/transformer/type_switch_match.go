@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strconv"
 
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -75,7 +74,7 @@ type typeArm struct {
 // arms are the lowered arms of caseClauses; isDefault and isBinding classify
 // them as buildMatchExpressionFromClauses did.
 func (t *galaASTTransformer) typeSwitchDispatch(caseClauses []grammar.ICaseClauseContext, arms []matchArm, isDefault, isBinding []bool, paramName string, matchedType transpiler.Type) []ast.Stmt {
-	if transpiler.IsUnusable(matchedType) || !(t.isActiveTypeParam(matchedType.String()) || t.isInterfaceType(matchedType)) {
+	if transpiler.IsUnusable(matchedType) || !(t.isTypeParamSubject(t.followAliasChain(matchedType)) || t.isInterfaceType(matchedType)) {
 		return nil
 	}
 	var typeArms []typeArm
@@ -174,15 +173,10 @@ func (t *galaASTTransformer) transparentTypes(emit bool) []ast.Expr {
 // goTypeSpelling is the spelling of a Go type with its predeclared aliases
 // replaced by the types they stand for.
 func goTypeSpelling(typ string) string {
-	switch typ {
-	case "byte":
-		return "uint8"
-	case "rune":
-		return "int32"
-	case "interface{}":
+	if typ == "interface{}" {
 		return "any"
 	}
-	return typ
+	return canonicalScalar(typ)
 }
 
 // lowerTypeSwitchDispatch builds the dispatch of typeArms, and rewrites each
@@ -197,17 +191,13 @@ func (t *galaASTTransformer) lowerTypeSwitchDispatch(typeArms []typeArm, paramNa
 	armName := t.nextTempVar()
 	switchedName := t.nextTempVar()
 	okName := t.nextTempVar()
-	armIndex := func(k int) ast.Expr { return &ast.BasicLit{Kind: token.INT, Value: strconv.Itoa(k)} }
-
 	stmts := make([]ast.Stmt, 0, len(typeArms)+2)
 	values := make([]string, len(typeArms))
 	for k, arm := range typeArms {
 		values[k] = t.nextTempVar()
-		stmts = append(stmts, &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{
-			&ast.ValueSpec{Names: []*ast.Ident{ast.NewIdent(values[k])}, Type: arm.typeExpr},
-		}}})
+		stmts = append(stmts, seqVarDecl(values[k], arm.typeExpr))
 	}
-	stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(armName)}, Tok: token.DEFINE, Rhs: []ast.Expr{armIndex(0)}})
+	stmts = append(stmts, &ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(armName)}, Tok: token.DEFINE, Rhs: []ast.Expr{intLit(0)}})
 
 	// The first case: the As calls, in order, for a value As looks through.
 	var asChain ast.Stmt
@@ -220,15 +210,13 @@ func (t *galaASTTransformer) lowerTypeSwitchDispatch(typeArms []typeArm, paramNa
 			},
 			Cond: ast.NewIdent(okName),
 			Body: &ast.BlockStmt{List: []ast.Stmt{
-				&ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(armName)}, Tok: token.ASSIGN, Rhs: []ast.Expr{armIndex(k + 1)}},
+				&ast.AssignStmt{Lhs: []ast.Expr{ast.NewIdent(armName)}, Tok: token.ASSIGN, Rhs: []ast.Expr{intLit(k + 1)}},
 			}},
 			Else: asChain,
 		}
 	}
 	cases := []ast.Stmt{&ast.CaseClause{List: t.transparentTypes(true), Body: []ast.Stmt{
-		&ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{
-			&ast.ValueSpec{Names: []*ast.Ident{ast.NewIdent(okName)}, Type: ast.NewIdent("bool")},
-		}}},
+		seqVarDecl(okName, ast.NewIdent("bool")),
 		asChain,
 	}}}
 
@@ -248,13 +236,13 @@ func (t *galaASTTransformer) lowerTypeSwitchDispatch(typeArms []typeArm, paramNa
 			&ast.AssignStmt{
 				Lhs: []ast.Expr{ast.NewIdent(values[k]), ast.NewIdent(armName)},
 				Tok: token.ASSIGN,
-				Rhs: []ast.Expr{value, armIndex(k + 1)},
+				Rhs: []ast.Expr{value, intLit(k + 1)},
 			},
 		}})
 		// The chain's As call becomes the switch's answer for this arm.
 		arm.define.Rhs = []ast.Expr{
 			ast.NewIdent(values[k]),
-			&ast.BinaryExpr{X: ast.NewIdent(armName), Op: token.EQL, Y: armIndex(k + 1)},
+			&ast.BinaryExpr{X: ast.NewIdent(armName), Op: token.EQL, Y: intLit(k + 1)},
 		}
 	}
 

@@ -16,32 +16,35 @@ var (
 	hashFloat64 = float64(hashInt) / 7
 )
 
+// allocsOfHashes is the allocations HashOf(v) and HashKeyOf(v) make.
+func allocsOfHashes[T any](v T) (of, keyOf float64) {
+	return testing.AllocsPerRun(100, func() { HashOf(v) }), testing.AllocsPerRun(100, func() { HashKeyOf(v) })
+}
+
 // TestHashOfDoesNotAllocate holds HashOf and HashKeyOf to hashing a primitive
 // without boxing it: their match is dispatched by a Go type switch, whose box
 // of the value does not escape.
 func TestHashOfDoesNotAllocate(t *testing.T) {
 	tests := []struct {
-		name string
-		hash func()
+		name   string
+		allocs func() (float64, float64)
 	}{
-		{"int", func() { HashOf(hashInt) }},
-		{"string", func() { HashOf(hashString) }},
-		{"int64", func() { HashOf(hashInt64) }},
-		{"float64", func() { HashOf(hashFloat64) }},
-		{"key int", func() { HashKeyOf(hashInt) }},
-		{"key string", func() { HashKeyOf(hashString) }},
-		{"key int64", func() { HashKeyOf(hashInt64) }},
-		{"key float64", func() { HashKeyOf(hashFloat64) }},
+		{"int", func() (float64, float64) { return allocsOfHashes(hashInt) }},
+		{"string", func() (float64, float64) { return allocsOfHashes(hashString) }},
+		{"int64", func() (float64, float64) { return allocsOfHashes(hashInt64) }},
+		{"float64", func() (float64, float64) { return allocsOfHashes(hashFloat64) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Zero(t, testing.AllocsPerRun(100, tt.hash))
+			of, keyOf := tt.allocs()
+			assert.Zero(t, of, "HashOf")
+			assert.Zero(t, keyOf, "HashKeyOf")
 		})
 	}
 }
 
-// asChainHashInt is hashPrimitive's int arm as a match lowers when it tests
-// each type pattern with As: each As call boxes v.
+// asChainHashInt is hashPrimitive's first arms as a match lowers when it
+// tests each type pattern with As: each As call boxes v.
 func asChainHashInt[T any](v T) uint32 {
 	if i, ok := As[int](v); ok {
 		return HashInt(int64(i))
@@ -65,41 +68,36 @@ type hashOfHashable struct{ n int }
 
 func (h hashOfHashable) Hash() uint32 { return uint32(h.n) * 31 }
 
+// assertHashesAgree holds HashOf(v) to HashValue(v) and HashKeyOf(v) to
+// HashKey(v).
+func assertHashesAgree[T any](t *testing.T, v T) {
+	t.Helper()
+	assert.Equal(t, HashValue(v), HashOf(v), "HashOf(%#v)", v)
+	assert.Equal(t, HashKey(v), HashKeyOf(v), "HashKeyOf(%#v)", v)
+}
+
 // TestHashOfAgreesWithHashValue holds HashOf to hashing every value as
 // HashValue does, and HashKeyOf as HashKey does, the values As looks through
-// (an Immutable, a recovered panic's error) included.
+// (an Immutable) included.
 func TestHashOfAgreesWithHashValue(t *testing.T) {
-	values := []struct {
-		name  string
-		value any
-		of    func() uint32
-		keyOf func() uint32
-	}{
-		{"int", 1000, func() uint32 { return HashOf(1000) }, func() uint32 { return HashKeyOf(1000) }},
-		{"string", "abc", func() uint32 { return HashOf("abc") }, func() uint32 { return HashKeyOf("abc") }},
-		{"int64", int64(-7), func() uint32 { return HashOf(int64(-7)) }, func() uint32 { return HashKeyOf(int64(-7)) }},
-		{"int32", int32(7), func() uint32 { return HashOf(int32(7)) }, func() uint32 { return HashKeyOf(int32(7)) }},
-		{"uint", uint(7), func() uint32 { return HashOf(uint(7)) }, func() uint32 { return HashKeyOf(uint(7)) }},
-		{"uint64", uint64(1 << 60), func() uint32 { return HashOf(uint64(1 << 60)) }, func() uint32 { return HashKeyOf(uint64(1 << 60)) }},
-		{"uint32", uint32(7), func() uint32 { return HashOf(uint32(7)) }, func() uint32 { return HashKeyOf(uint32(7)) }},
-		{"bool", true, func() uint32 { return HashOf(true) }, func() uint32 { return HashKeyOf(true) }},
-		{"int8", int8(-3), func() uint32 { return HashOf(int8(-3)) }, func() uint32 { return HashKeyOf(int8(-3)) }},
-		{"int16", int16(300), func() uint32 { return HashOf(int16(300)) }, func() uint32 { return HashKeyOf(int16(300)) }},
-		{"uint8", uint8(200), func() uint32 { return HashOf(uint8(200)) }, func() uint32 { return HashKeyOf(uint8(200)) }},
-		{"uint16", uint16(60000), func() uint32 { return HashOf(uint16(60000)) }, func() uint32 { return HashKeyOf(uint16(60000)) }},
-		{"float64", 1.5, func() uint32 { return HashOf(1.5) }, func() uint32 { return HashKeyOf(1.5) }},
-		{"float32", float32(1.5), func() uint32 { return HashOf(float32(1.5)) }, func() uint32 { return HashKeyOf(float32(1.5)) }},
-		{"Hashable", hashOfHashable{3}, func() uint32 { return HashOf(hashOfHashable{3}) }, func() uint32 { return HashKeyOf(hashOfHashable{3}) }},
-		{"Hashable as any", any(hashOfHashable{3}), func() uint32 { return HashOf(any(hashOfHashable{3})) }, func() uint32 { return HashKeyOf(any(hashOfHashable{3})) }},
-		{"Immutable int", NewImmutable(1000), func() uint32 { return HashOf(NewImmutable(1000)) }, func() uint32 { return HashKeyOf(NewImmutable(1000)) }},
-		{"Immutable Hashable", NewImmutable(hashOfHashable{3}), func() uint32 { return HashOf(NewImmutable(hashOfHashable{3})) }, func() uint32 { return HashKeyOf(NewImmutable(hashOfHashable{3})) }},
-	}
-	for _, v := range values {
-		t.Run(v.name, func(t *testing.T) {
-			assert.Equal(t, HashValue(v.value), v.of())
-			assert.Equal(t, HashKey(v.value), v.keyOf())
-		})
-	}
+	assertHashesAgree(t, 1000)
+	assertHashesAgree(t, "abc")
+	assertHashesAgree(t, int64(-7))
+	assertHashesAgree(t, int32(7))
+	assertHashesAgree(t, uint(7))
+	assertHashesAgree(t, uint64(1<<60))
+	assertHashesAgree(t, uint32(7))
+	assertHashesAgree(t, true)
+	assertHashesAgree(t, int8(-3))
+	assertHashesAgree(t, int16(300))
+	assertHashesAgree(t, uint8(200))
+	assertHashesAgree(t, uint16(60000))
+	assertHashesAgree(t, 1.5)
+	assertHashesAgree(t, float32(1.5))
+	assertHashesAgree(t, hashOfHashable{3})
+	assertHashesAgree[any](t, hashOfHashable{3})
+	assertHashesAgree(t, NewImmutable(1000))
+	assertHashesAgree(t, NewImmutable(hashOfHashable{3}))
 	assert.Equal(t, HashInt(1000), HashOf(NewImmutable(1000)), "an Immutable hashes as the value it holds")
 }
 
@@ -116,6 +114,31 @@ func TestHashOfRejectsWhatHashValueRejects(t *testing.T) {
 	assert.True(t, HashesByValue(NewImmutable("s")))
 	assert.False(t, HashesByValue(hashOfNamedInt(1)))
 	assert.False(t, HashesByValue(nil))
+}
+
+// The benchmarks compare HashOf with HashValue on a primitive.
+func BenchmarkHashOfInt(b *testing.B) {
+	for b.Loop() {
+		HashOf(hashInt)
+	}
+}
+
+func BenchmarkHashValueInt(b *testing.B) {
+	for b.Loop() {
+		HashValue(hashInt)
+	}
+}
+
+func BenchmarkHashOfString(b *testing.B) {
+	for b.Loop() {
+		HashOf(hashString)
+	}
+}
+
+func BenchmarkHashValueString(b *testing.B) {
+	for b.Loop() {
+		HashValue(hashString)
+	}
 }
 
 // panicValue is the value f panics with.
