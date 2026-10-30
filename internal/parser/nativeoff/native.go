@@ -1,7 +1,9 @@
 // Package native, in this directory, stands in for internal/parser/native in
 // builds without galop's parser (--//internal/parser:antlr, or nix with
-// useGalop = false). It declares the types internal/parser's native-tree
-// handle names; there is never a tree of them (see parser.Native).
+// useGalop = false). It declares what internal/parser names of the native
+// tree: the types of its handle (parser.Native) and what its native-tree
+// helpers (type_text_native.go) read. There is never a tree of them, so every
+// node is no node.
 package native
 
 // GalaTree stands in for galop's native tree.
@@ -21,3 +23,89 @@ func (GalaNodeRef) Tree() *GalaTree { return nil }
 
 // Index is -1.
 func (GalaNodeRef) Index() int { return -1 }
+
+// Text is "".
+func (t *GalaTree) Text(int) string { return "" }
+
+// StartIndex is -1.
+func (GalaNodeRef) StartIndex() int { return -1 }
+
+// Start is the zero token.
+func (GalaNodeRef) Start() GalaToken { return GalaToken{} }
+
+// GetText is "".
+func (GalaNodeRef) GetText() string { return "" }
+
+// GalaToken stands in for a token of galop's native tree, with the fields
+// internal/parser reads.
+type GalaToken struct {
+	Line, Column int32
+}
+
+// GalaTerminal stands in for a token child: always no token.
+type GalaTerminal struct{}
+
+// Ok reports false.
+func (GalaTerminal) Ok() bool { return false }
+
+// The rule handles below are the ones internal/parser reads, with the
+// children it reads: each is no node, as is each child.
+
+// TypeNode stands in for a node of rule type.
+type TypeNode struct{ GalaNodeRef }
+
+func (TypeNode) QualifiedIdentifier() QualifiedIdentifierNode { return QualifiedIdentifierNode{} }
+func (TypeNode) TypeArguments() TypeArgumentsNode             { return TypeArgumentsNode{} }
+func (TypeNode) Type_(int) TypeNode                           { return TypeNode{} }
+func (TypeNode) FUNC() GalaTerminal                           { return GalaTerminal{} }
+func (TypeNode) Signature() SignatureNode                     { return SignatureNode{} }
+
+// TypeAliasNode stands in for a node of rule typeAlias.
+type TypeAliasNode struct{ GalaNodeRef }
+
+func (TypeAliasNode) Type_() TypeNode { return TypeNode{} }
+
+// QualifiedIdentifierNode stands in for a node of rule qualifiedIdentifier.
+type QualifiedIdentifierNode struct{ GalaNodeRef }
+
+// IdentifierNode stands in for a node of rule identifier.
+type IdentifierNode struct{ GalaNodeRef }
+
+// TypeArgumentsNode stands in for a node of rule typeArguments.
+type TypeArgumentsNode struct{ GalaNodeRef }
+
+func (TypeArgumentsNode) TypeList() TypeListNode { return TypeListNode{} }
+
+// TypeListNode stands in for a node of rule typeList.
+type TypeListNode struct{ GalaNodeRef }
+
+func (TypeListNode) Type_(int) TypeNode { return TypeNode{} }
+
+// SignatureNode stands in for a node of rule signature.
+type SignatureNode struct{ GalaNodeRef }
+
+func (SignatureNode) Parameters() ParametersNode { return ParametersNode{} }
+func (SignatureNode) Type_() TypeNode            { return TypeNode{} }
+func (SignatureNode) GoResults() GoResultsNode   { return GoResultsNode{} }
+
+// GoResultsNode stands in for a node of rule goResults.
+type GoResultsNode struct{ GalaNodeRef }
+
+func (GoResultsNode) Type_(int) TypeNode { return TypeNode{} }
+
+// ParametersNode stands in for a node of rule parameters.
+type ParametersNode struct{ GalaNodeRef }
+
+func (ParametersNode) ParameterList() ParameterListNode { return ParameterListNode{} }
+
+// ParameterListNode stands in for a node of rule parameterList.
+type ParameterListNode struct{ GalaNodeRef }
+
+func (ParameterListNode) Parameter(int) ParameterNode { return ParameterNode{} }
+
+// ParameterNode stands in for a node of rule parameter.
+type ParameterNode struct{ GalaNodeRef }
+
+func (ParameterNode) ELLIPSIS() GalaTerminal     { return GalaTerminal{} }
+func (ParameterNode) Type_() TypeNode            { return TypeNode{} }
+func (ParameterNode) Identifier() IdentifierNode { return IdentifierNode{} }
