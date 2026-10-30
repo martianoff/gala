@@ -10,10 +10,10 @@ go_library(
     importpath = "martianoff/gala/internal/transpiler/concurrency",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//internal/parser",
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/scopewalk",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 

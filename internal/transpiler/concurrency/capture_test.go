@@ -238,7 +238,7 @@ func TestFreeVariablesInLambda(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lambda := firstLambda(t, wrapBody("val g = "+tc.lambda))
-			got := names(FreeVariablesInLambda(lambda))
+			got := names(FreeVariablesInLambda(nil, lambda))
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -251,7 +251,7 @@ func TestFreeVariablesInLambda(t *testing.T) {
 func TestFreeVariablesInExpression(t *testing.T) {
 	t.Run("bare expression captures free names", func(t *testing.T) {
 		expr := firstValInitExpr(t, wrapBody("val g = counter + 1"))
-		got := names(FreeVariablesInExpression(nil, expr))
+		got := names(FreeVariablesInExpression(nil, nil, expr))
 		assert.Equal(t, []string{"counter"}, got)
 	})
 
@@ -261,14 +261,14 @@ func TestFreeVariablesInExpression(t *testing.T) {
 		expr := firstValInitExpr(t, wrapBody("val g = counter + 1"))
 		lambda := firstLambda(t, wrapBody("val g = () => counter + 1"))
 		assert.Equal(t,
-			names(FreeVariablesInExpression(nil, expr)),
-			names(FreeVariablesInLambda(lambda)),
+			names(FreeVariablesInExpression(nil, nil, expr)),
+			names(FreeVariablesInLambda(nil, lambda)),
 		)
 	})
 
 	t.Run("seeded param names are treated as bound", func(t *testing.T) {
 		expr := firstValInitExpr(t, wrapBody("val g = counter + step"))
-		got := names(FreeVariablesInExpression([]string{"step"}, expr))
+		got := names(FreeVariablesInExpression(nil, []string{"step"}, expr))
 		assert.Equal(t, []string{"counter"}, got)
 	})
 }
@@ -398,7 +398,7 @@ func TestCaptureFieldPaths(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lambda := firstLambda(t, wrapBody("val g = "+tc.lambda))
-			caps := FreeVariablesInLambda(lambda)
+			caps := FreeVariablesInLambda(nil, lambda)
 			c := findCapture(caps, tc.capture)
 			require.NotNil(t, c, "expected a capture named %q in %v", tc.capture, names(caps))
 			assert.Equal(t, tc.wantWhole, c.Whole, "Whole mismatch")
@@ -411,7 +411,7 @@ func TestCaptureFieldPaths(t *testing.T) {
 // reference to the captured name (the caret PR3's diagnostic points at).
 func TestCapturePosition(t *testing.T) {
 	lambda := firstLambda(t, wrapBody("val g = () => counter + 1"))
-	caps := FreeVariablesInLambda(lambda)
+	caps := FreeVariablesInLambda(nil, lambda)
 	require.Len(t, caps, 1)
 	assert.Equal(t, "counter", caps[0].Name)
 	// `counter` is on line 4 (package, blank, func, body) of wrapBody's output.

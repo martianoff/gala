@@ -175,6 +175,13 @@ type RichAST struct {
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
 	Docs galaparser.Docs
+
+	// Native is the native tree of the parse that produced Tree, or nil (a
+	// caller with a bare tree, or a build without galop's parser). The
+	// transpile pipeline sets it, like Docs, for the transformer's passes
+	// that walk the native tree; the tree is built the first time one does.
+	// Per-file, and never merged or cached: it holds the file's tokens.
+	Native *galaparser.Native
 }
 
 // ReportSiblingSyntaxErrors returns what to report for err, a failure of a
@@ -928,10 +935,8 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 		return "", galaerr.WithFilePath(err, filePath)
 	}
 
-	// Nothing reads the native tree yet: drop its handle, and the token stream
-	// and source text it holds, before the analysis.
-	parsed.Native = nil
-
+	// The native tree's handle rides along: the scope walks of the analysis
+	// and the transform run on its tree, built when the first one asks.
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
@@ -946,6 +951,7 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// with them rather than three bytes ahead.
 	richAST.SourceContent = galaerr.StripBOM(input)
 	richAST.Docs = parsed.Docs
+	richAST.Native = parsed.Native
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)

@@ -40,6 +40,7 @@ package concurrency
 // enforcement. It is called only by its tests. PR3 consumes it.
 
 import (
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/scopewalk"
@@ -90,8 +91,11 @@ var captureOptions = scopewalk.Options{ParseInterpolations: true}
 // FreeVariablesInLambda returns the free variables captured by an explicit
 // lambda. The lambda's declared parameters are bound (never captured); its body
 // may be an expression (`(x) => x + n`) or a block (`(x) => { ... }`).
-func FreeVariablesInLambda(lambda grammar.ILambdaExpressionContext) []Capture {
-	c := newCaptureCollector()
+//
+// native is the native tree of the lambda's parse, or nil; the walk runs on
+// it when there is one (see scopewalk.Walker.WithNative).
+func FreeVariablesInLambda(native *parser.Native, lambda grammar.ILambdaExpressionContext) []Capture {
+	c := newCaptureCollector(native)
 	c.walker.WalkLambda(lambda)
 	return c.out
 }
@@ -103,8 +107,9 @@ func FreeVariablesInLambda(lambda grammar.ILambdaExpressionContext) []Capture {
 //
 // paramNames lets a caller seed additional bound names (e.g. an implicit
 // parameter of the thunk); pass nil/empty for the common Future/Spawn thunk.
-func FreeVariablesInExpression(paramNames []string, expr grammar.IExpressionContext) []Capture {
-	c := newCaptureCollector()
+// native is as for FreeVariablesInLambda.
+func FreeVariablesInExpression(native *parser.Native, paramNames []string, expr grammar.IExpressionContext) []Capture {
+	c := newCaptureCollector(native)
 	c.walker.PushScope()
 	for _, p := range paramNames {
 		c.walker.Bind(p)
@@ -124,9 +129,9 @@ type captureCollector struct {
 
 var _ scopewalk.Visitor = (*captureCollector)(nil)
 
-func newCaptureCollector() *captureCollector {
+func newCaptureCollector(native *parser.Native) *captureCollector {
 	c := &captureCollector{index: map[string]int{}}
-	c.walker = scopewalk.New(c, captureOptions)
+	c.walker = scopewalk.New(c, captureOptions).WithNative(native)
 	return c
 }
 

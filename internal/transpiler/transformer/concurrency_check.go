@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/concurrency"
@@ -121,11 +122,19 @@ func boundaryParamByName(ctx callContext, argName string) (transpiler.Type, bool
 	return transpiler.NilType{}, false
 }
 
+// nativeTree is the native tree of the file being transformed, or nil.
+func (t *galaASTTransformer) nativeTree() *parser.Native {
+	if t.richAST == nil {
+		return nil
+	}
+	return t.richAST.Native
+}
+
 // enforceSendableCapturesInLambda runs the capture-safety check for an explicit
 // lambda argument passed to a `Sendable` parameter. It returns a GALA-E0037
 // error for the first unsafe capture, or nil when every capture is safe.
 func (t *galaASTTransformer) enforceSendableCapturesInLambda(lambda grammar.ILambdaExpressionContext) error {
-	return t.checkSendableCaptures(concurrency.FreeVariablesInLambda(lambda))
+	return t.checkSendableCaptures(concurrency.FreeVariablesInLambda(t.nativeTree(), lambda))
 }
 
 // enforceSendableCapturesInExpr runs the capture-safety check for a by-name /
@@ -134,9 +143,9 @@ func (t *galaASTTransformer) enforceSendableCapturesInLambda(lambda grammar.ILam
 // analysed directly; otherwise the whole expression is analysed as a thunk body.
 func (t *galaASTTransformer) enforceSendableCapturesInExpr(exprCtx grammar.IExpressionContext) error {
 	if lam := t.findLambdaInExpression(exprCtx); lam != nil {
-		return t.checkSendableCaptures(concurrency.FreeVariablesInLambda(lam))
+		return t.checkSendableCaptures(concurrency.FreeVariablesInLambda(t.nativeTree(), lam))
 	}
-	return t.checkSendableCaptures(concurrency.FreeVariablesInExpression(nil, exprCtx))
+	return t.checkSendableCaptures(concurrency.FreeVariablesInExpression(t.nativeTree(), nil, exprCtx))
 }
 
 // checkSendableCaptures classifies each captured free variable and returns a

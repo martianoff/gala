@@ -331,9 +331,11 @@ type undefChecker struct {
 // the package (by canonical path) to the GALA package names it dot-imports; a
 // method whose receiver type lives in another file may use that file's dot
 // imports in its signature, the bare-name form of the allowance GALA-E0025
-// makes.
+// makes. native is sourceFile's native tree, or nil; the walk runs on it when
+// there is one (see scopewalk.Walker.WithNative).
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
+	native *galaparser.Native,
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
@@ -364,7 +366,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		imports:        imports,
 		sourceTypes:    sourceTypes,
 	}
-	c.walker = scopewalk.New(c, undefWalkOptions())
+	c.walker = scopewalk.New(c, undefWalkOptions()).WithNative(native)
 	c.walkSourceFile(sourceFile)
 
 	// Type positions are invisible to the value walker, so they get their own

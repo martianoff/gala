@@ -511,9 +511,10 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 	return filepath.Join(goSrcDirs[bestKey], filepath.FromSlash(rel)), true
 }
 
-// AnalyzeParsed analyzes parsed's tree with its doc comments (see analyze).
+// AnalyzeParsed analyzes parsed's tree with its doc comments and its native
+// tree (see analyze).
 func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
-	return a.analyze(parsed.Tree, parsed.Docs, filePath)
+	return a.analyze(parsed.Tree, parsed.Docs, parsed.Native, filePath)
 }
 
 // analyze walks the ANTLR tree and collects metadata for RichAST.
@@ -523,12 +524,15 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // callers that do not care about documentation pass nothing, and every
 // attachment site degrades to an empty Doc rather than failing.
 //
+// native is tree's native tree, or nil. The undefined-symbol check's scope
+// walk runs on it when there is one, on tree when not. Nothing keeps it.
+//
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
 // therefore what an analysis failure reports, in place of the cascade they
 // cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
 // the phases after analysis to do the same.
-func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, filePath string) (result *transpiler.RichAST, err error) {
+func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native *galaparser.Native, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
@@ -1823,7 +1827,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, filePath s
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if !a.skipUndefinedCheck && a.fileImportsFullyLoaded(scanFileImports(sourceFile), richAST) {
-			if errs := a.checkUndefinedSymbols(sourceFile, richAST, filePath, fileDotImportSets); len(errs) > 0 {
+			if errs := a.checkUndefinedSymbols(sourceFile, native, richAST, filePath, fileDotImportSets); len(errs) > 0 {
 				return nil, errs[0]
 			}
 		}
@@ -3133,7 +3137,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			if p := a.parsedForFile(filePath, tree); p != nil {
 				docs = p.Docs
 			}
-			res, err := a.analyze(tree, docs, filePath)
+			// No native tree: the undefined-symbol check, its one reader,
+			// runs on the top-level file alone.
+			res, err := a.analyze(tree, docs, nil, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
