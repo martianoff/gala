@@ -49,10 +49,7 @@ func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationConte
 // infers, unifies or looks up methods may see through it.
 func (a *galaAnalyzer) registerOpaqueType(decl opaqueDecl, pkgName, definedIn string, richAST *transpiler.RichAST) {
 	typeName := decl.name
-	fullTypeName := typeName
-	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		fullTypeName = pkgName + "." + typeName
-	}
+	fullTypeName := qualifiedName(pkgName, typeName)
 
 	meta := &transpiler.TypeMetadata{
 		Name:                 typeName,
