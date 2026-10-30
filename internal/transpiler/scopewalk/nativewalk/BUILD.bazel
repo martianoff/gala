@@ -8,10 +8,8 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/parser",
-        "//internal/parser/grammar",
         "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler/scopewalk",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 

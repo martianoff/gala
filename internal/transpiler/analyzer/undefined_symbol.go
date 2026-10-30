@@ -352,19 +352,30 @@ type undefChecker struct {
 // source order. fileDotImportSets maps each file of the package (by canonical
 // path) to the GALA package names it dot-imports; a method whose receiver type
 // lives in another file may use that file's dot imports in its signature, the
-// bare-name form of the allowance GALA-E0025 makes. native walks sourceFile on
-// its native tree, or is nil (see scopewalk.Walker.WithNative).
+// bare-name form of the allowance GALA-E0025 makes.
+//
+// nf is sourceFile's native tree, or the zero nativeFile. The check reads the
+// native tree when there is one (undefined_symbol_native.go), as the
+// collection of the file's declarations did, and ANTLR's tree otherwise.
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
-	native scopewalk.NativeWalker,
+	nf nativeFile,
 	imports []fileImport,
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
 ) []*galaerr.SemanticError {
 	c := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
-	c.walker = scopewalk.New(c, undefWalkOptions()).WithNative(native)
-	c.walkSourceFile(sourceFile)
+	c.walker = scopewalk.New(c, undefWalkOptions())
+	if a.onUndefinedCheck != nil {
+		a.onUndefinedCheck(filePath, nf.ok())
+	}
+	root := nf.root.GalaNodeRef
+	if nf.ok() {
+		c.walkSourceFileNative(root)
+	} else {
+		c.walkSourceFile(sourceFile)
+	}
 
 	// Type positions are invisible to the value walker, so they get their own
 	// pass over the same qualifier set. Sharing the checker shares its
@@ -373,7 +384,11 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 	// search root to build its hint, so the dedupe is worth real work. It runs
 	// under this function's eligibility guards, which is why it lives here
 	// rather than standing alone. See checkTypeNames.
-	c.checkTypeNames(sourceFile)
+	if nf.ok() {
+		c.checkTypeNamesNative(root)
+	} else {
+		c.checkTypeNames(sourceFile)
+	}
 	return c.sortedErrs()
 }
 

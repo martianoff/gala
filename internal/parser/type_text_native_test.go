@@ -19,6 +19,13 @@ import (
 // every GALA source of the repository; checkNative compares DocKeyOf with
 // NativeDocKeyOf itself, as its check of where each node starts.
 func checkNativeHelpers(n *Native, ctx antlr.ParserRuleContext, node native.GalaNodeRef) string {
+	// NativeText takes its own path for a node of one token; any other is
+	// the node's GetText.
+	if node.StopIndex() == node.StartIndex() {
+		if want, got := ctx.GetText(), NativeText(node); got != want {
+			return fmt.Sprintf("GetText is %q, NativeText %q", want, got)
+		}
+	}
 	// A helper's nil context is no node, as Node finds it.
 	switch c := ctx.(type) {
 	case *grammar.TypeContext:

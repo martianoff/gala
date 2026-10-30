@@ -109,6 +109,15 @@ func NativeStartText(n native.GalaNodeRef) string {
 	return tree.Text(i)
 }
 
+// NativeText is GetText of n without building a string where it can: a node
+// of one token, an identifier's, is that token's text, a slice of the source.
+func NativeText(n native.GalaNodeRef) string {
+	if i := n.StartIndex(); n.StopIndex() == i {
+		return n.Tree().Text(i)
+	}
+	return n.GetText()
+}
+
 // NativeKids is n's child nodes of kind, in order, in one pass over its
 // children and without allocating (the All accessors allocate). The transpiler's
 // native-tree readers walk lists with it.

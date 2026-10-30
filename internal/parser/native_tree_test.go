@@ -34,9 +34,6 @@ func checkNative(p *Parsed, text string) string {
 	if last := len(n.ctxs) - 1; tree.Root().Index() != last || n.ctxs[last] != p.Tree {
 		return "the root, and its context the tree, are not last"
 	}
-	if !n.Bridged() {
-		return "the bridge does not hold"
-	}
 	for i := range tree.Nodes {
 		node := tree.Node(i)
 		ctx := n.Ctx(node)
@@ -145,43 +142,6 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 		if got[i] == nil || got[i] != got[0] {
 			t.Fatalf("goroutine %d got %p, goroutine 0 %p", i, got[i], got[0])
 		}
-	}
-}
-
-// TestBridgeHolds: the bridge holds for a converted parse, and not once the
-// root or a function declaration lacks its context or has
-// another rule's, or the contexts do not match the nodes.
-func TestBridgeHolds(t *testing.T) {
-	p := parseWithGalop("package main\n\nval x = 1\n\nfunc f() int = 2\n")
-	tree, err := p.Native.Tree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !p.Native.Bridged() {
-		t.Fatal("a converted parse is not bridged")
-	}
-	for _, kind := range []native.GalaKind{native.GalaKIND_sourceFile, native.GalaKIND_functionDeclaration} {
-		for i := range tree.Nodes {
-			if tree.Node(i).Kind() != kind {
-				continue
-			}
-			// No context, then another rule's: the root's, or for the root
-			// the last node's before it.
-			other := p.Native.ctxs[tree.Root().Index()]
-			if i == tree.Root().Index() {
-				other = p.Native.ctxs[i-1]
-			}
-			for _, ctx := range []antlr.ParserRuleContext{nil, other} {
-				ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
-				ctxs[i] = ctx
-				if bridgeHolds(tree, ctxs) {
-					t.Errorf("bridged with context %T for node %d (%s)", ctx, i, native.GalaRuleNames[tree.Node(i).Rule()])
-				}
-			}
-		}
-	}
-	if bridgeHolds(tree, p.Native.ctxs[1:]) {
-		t.Error("bridged with a context missing")
 	}
 }
 

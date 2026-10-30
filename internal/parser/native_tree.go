@@ -39,10 +39,6 @@ type Native struct {
 	err  error
 	// ctxs is the ANTLR context of each native node, by node index.
 	ctxs []antlr.ParserRuleContext
-	// bridged, settled on the first call to Bridged, is whether the bridge
-	// holds where the compiler crosses it.
-	bridgedOnce sync.Once
-	bridged     bool
 	// nodes, built on the first call to Node, maps a context to its node.
 	nodesOnce sync.Once
 	nodes     map[antlr.ParserRuleContext]int32
@@ -82,46 +78,6 @@ func (t *Native) convert() {
 	if t.tree, t.ctxs = galop.ToNative(t.root, t.stream, t.src); t.tree == nil {
 		t.err = errNoNative
 	}
-}
-
-// Bridged reports whether the tree converted and its bridge to the ANTLR
-// tree holds wherever the compiler crosses it: the root is a source file
-// with its context and every function declaration has its
-// FunctionDeclarationContext, which the undefined-symbol check's walk reads.
-// Every reader of a file that takes the native tree with that walk (the walk
-// itself, the analyzer's collection of the file's declarations) works on it
-// only when the bridge holds, and on the ANTLR tree otherwise, so they all
-// take the same tree. It is checked once, on the first call, safely
-// from any goroutine. A nil *Native is not bridged.
-func (t *Native) Bridged() bool {
-	tree, err := t.Tree()
-	if err != nil {
-		return false
-	}
-	t.bridgedOnce.Do(func() { t.bridged = bridgeHolds(tree, t.ctxs) })
-	return t.bridged
-}
-
-// bridgeHolds is Bridged's check of tree, whose nodes' contexts are ctxs.
-func bridgeHolds(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
-	if len(ctxs) != len(tree.Nodes) {
-		return false
-	}
-	root := tree.Root()
-	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
-		return false
-	}
-	if _, ok := ctxs[root.Index()].(*grammar.SourceFileContext); !ok {
-		return false
-	}
-	for i, ctx := range ctxs {
-		if tree.Node(i).Kind() == native.GalaKIND_functionDeclaration {
-			if _, ok := ctx.(*grammar.FunctionDeclarationContext); !ok {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // Ctx is the ANTLR context of native node n, or nil when n is no node of this

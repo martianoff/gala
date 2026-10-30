@@ -19,8 +19,9 @@ import (
 // TestCollectionDiagnosticsAgree hold each pair together.
 //
 // analyze collects a file on its native tree only when the undefined-symbol
-// check's native walk converts that tree anyway (see checksUndefined there):
-// converting costs several times what collecting on it saves. Every other
+// check reads that tree too (see checksUndefined there, and
+// undefined_symbol_native.go): converting costs several times what
+// collecting on it saves. Every other
 // file is collected on ANTLR's tree: a parse by ANTLR's parser or one with
 // syntax errors (no handle, see Parsed.CleanNative), an LSP buffer or a tree
 // a caller handed in bare, a sibling or an imported file (the parsed-file
@@ -57,28 +58,20 @@ type nativeFile struct {
 
 // nativeFileOf is the native tree of a parse's handle h, converted now if it
 // was not yet, with its top-level declarations bucketed in one pass; or no
-// tree when there is none (a nil handle, or the conversion failed) or its
-// bridge to ANTLR's tree does not hold, and the file is collected on ANTLR's
-// tree. The bridge check is the undefined-symbol check's walk's
-// (galaparser.Native.Bridged), so the collection takes the native tree
-// exactly when the walk does, and a file never pays the conversion for the
-// collection alone. The collection itself never crosses the bridge.
+// tree when there is none (a nil handle, or the conversion failed), and the
+// file is collected, and checked, on ANTLR's tree. Neither the collection nor
+// the undefined-symbol check crosses from the native tree to ANTLR's.
 func nativeFileOf(h *galaparser.Native) nativeFile {
-	if !h.Bridged() {
+	tree, err := h.Tree()
+	if err != nil {
 		return nativeFile{}
 	}
-	tree, _ := h.Tree()
 	root := tree.Root()
+	if root.Kind() != native.GalaKIND_sourceFile {
+		return nativeFile{}
+	}
 	nf := nativeFile{root: native.SourceFileNode{GalaNodeRef: root}}
-	for td := range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
-		if td.ChildCount() == 0 {
-			continue
-		}
-		// A topLevelDeclaration holds one node, the declaration.
-		decl := td.Child(0).Node()
-		if !decl.Ok() {
-			continue
-		}
+	for decl := range nativeTopLevelDecls(root) {
 		switch decl.Kind() {
 		case native.GalaKIND_typeDeclaration, native.GalaKIND_structShorthandDeclaration:
 			nf.types = append(nf.types, decl)
@@ -95,6 +88,33 @@ func nativeFileOf(h *galaparser.Native) nativeFile {
 		}
 	}
 	return nf
+}
+
+// methodReceiverTypesNative is methodReceiverTypes of nf.
+func methodReceiverTypesNative(nf nativeFile) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, fn := range nf.funcs {
+			typ := native.FunctionDeclarationNode{GalaNodeRef: fn}.Receiver().Type_()
+			if typ.Ok() && !yield(receiverBaseTypeNameNative(typ)) {
+				return
+			}
+		}
+	}
+}
+
+// nativeTopLevelDecls is the top-level declarations of root, a source file,
+// in source order: the node each topLevelDeclaration holds.
+func nativeTopLevelDecls(root native.GalaNodeRef) iter.Seq[native.GalaNodeRef] {
+	return func(yield func(native.GalaNodeRef) bool) {
+		for td := range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
+			if td.ChildCount() == 0 {
+				continue
+			}
+			if decl := td.Child(0).Node(); decl.Ok() && !yield(decl) {
+				return
+			}
+		}
+	}
 }
 
 // ok reports whether f is a native tree, not the zero nativeFile.

@@ -23,6 +23,7 @@ go_test(
         ":scopewalk",
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler/scopewalk/nativewalk",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
