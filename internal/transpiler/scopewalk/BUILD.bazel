@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "scopewalk",
-    srcs = ["scopewalk.go"],
+    srcs = [
+        "scopewalk.go",
+        "walk_antlr.go",
+    ],
     importpath = "martianoff/gala/internal/transpiler/scopewalk",
     visibility = ["//:__subpackages__"],
     deps = [
