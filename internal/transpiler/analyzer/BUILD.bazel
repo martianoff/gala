@@ -7,6 +7,7 @@ go_library(
         "cache.go",
         "cache_codec.go",
         "collect.go",
+        "collect_native.go",
         "default_scope.go",
         "dot_import_collision.go",
         "field_method_names.go",
@@ -29,6 +30,7 @@ go_library(
         "//galaerr",
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/genheader",
         "//internal/transpiler/module",
