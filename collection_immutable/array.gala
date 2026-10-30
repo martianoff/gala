@@ -4,6 +4,7 @@ import (
     . "martianoff/gala/std"
     "martianoff/gala/go_interop"
     "martianoff/gala/go_builtins"
+    "sync/atomic"
 )
 
 // Array is an immutable indexed sequence with effectively constant time operations.
@@ -28,7 +29,14 @@ val branchingMask = 31
 // arrayNode represents a node in the trie structure (internal).
 // Leaf nodes have nil children and store values directly.
 // Internal nodes have children and nil values.
+//
+// hashCache is, once a root node has been hashed, hashCached | the hash of
+// the elements under it (see trieHash); 0 before. Nodes are never changed
+// once built, so it never goes stale. It is the first field because 64-bit
+// atomics need 8-byte alignment, which 32-bit platforms guarantee only for
+// the first word of an allocated struct.
 type arrayNode[T any] struct {
+    var hashCache uint64
     var children []Ptr[arrayNode[T]]
     var values   []T
     isLeaf   bool
@@ -297,9 +305,75 @@ func (a Array[T]) Equal(other Array[T]) bool {
 
 // Hash hashes the elements in order (std.Hashable), so Equal Arrays hash
 // alike, and an Array can be a HashSet element or a HashMap key. Each element
-// must be a primitive or Hashable. It visits every element: it is O(n), and
-// not cached.
-func (a Array[T]) Hash() uint32 = a.FoldLeft(HashInt(int64(a.length)), (h, elem) => HashCombine(h, HashValue(elem)))
+// must be a primitive or Hashable.
+//
+// It is a polynomial hash, the sum of mix(hash(element i)) * P^i, so it
+// splits at any position: the hash of the trie's elements is computed once,
+// on the first Hash, and kept in the root node, which the Arrays sharing the
+// trie share too. Only the prepend buffer, under 32 elements, is hashed each
+// time. Like a HashSet element's, an element's hash must not change.
+func (a Array[T]) Hash() uint32 {
+    val prefixed = addValuesHash(a.prefixElems(), (uint32(0), uint32(1)))
+    val sum = if (a.root.IsDefined()) prefixed.V1 + trieHash(a.root.Get()) * prefixed.V2 else prefixed.V1
+    HashCombine(HashInt(int64(a.length)), mixHash(sum))
+}
+
+// polyHashPrime is the base of Array's polynomial hash (the 32-bit FNV prime).
+val polyHashPrime = uint32(16777619)
+
+// hashCached marks an arrayNode's hashCache as holding a hash.
+val hashCached = uint64(1) << 32
+
+// trieHash returns the polynomial hash of the elements under root, computing
+// it on the first call and keeping it in root. Arrays are shared between
+// goroutines, so the cache is read and written atomically; two goroutines
+// that both miss compute and store the same value.
+func trieHash[T any](root Ptr[arrayNode[T]]) uint32 {
+    val cached = atomic.LoadUint64(&root.hashCache)
+    if cached != uint64(0) {
+        return uint32(cached)
+    }
+    val (sum, _) = addNodeHash(root, (uint32(0), uint32(1)))
+    atomic.StoreUint64(&root.hashCache, hashCached | uint64(sum))
+    sum
+}
+
+// addNodeHash adds the elements under node, in order, to a polynomial hash
+// (see addValuesHash).
+func addNodeHash[T any](node Ptr[arrayNode[T]], acc Tuple[uint32, uint32]) Tuple[uint32, uint32] {
+    if node.isLeaf {
+        return addValuesHash(node.values, acc)
+    }
+    var next = acc
+    for i := 0; i < node.children.Size(); i++ {
+        next = addNodeHash(node.children[i], next)
+    }
+    next
+}
+
+// addValuesHash adds values, in order, to a polynomial hash: acc is the sum
+// so far and the power of P the next element is multiplied by, and the result
+// is both after values. A loop rather than a fold, as Hash runs per key and
+// the fold's closure would cost a call per element.
+func addValuesHash[T any](values []T, acc Tuple[uint32, uint32]) Tuple[uint32, uint32] {
+    var sum = acc.V1
+    var pow = acc.V2
+    for i := 0; i < values.Size(); i++ {
+        sum = sum + mixHash(HashOf(values[i])) * pow
+        pow = pow * polyHashPrime
+    }
+    (sum, pow)
+}
+
+// mixHash scrambles a hash (the murmur3 finalizer). Applied to each element
+// hash, it keeps close element hashes (small ints, bools) from cancelling out
+// in the linear polynomial sum; applied to the sum, it brings every bit of it
+// to the low bits a HashSet routes by.
+func mixHash(h uint32) uint32 {
+    val a = (h ^ (h >> 16)) * uint32(2246822507)
+    val b = (a ^ (a >> 13)) * uint32(3266489909)
+    b ^ (b >> 16)
+}
 
 // Helper function to calculate required depth for a given size.
 func requiredDepth(size int) int {

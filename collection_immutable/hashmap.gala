@@ -88,7 +88,7 @@ func (m HashMap[K, V]) Contains(key K) bool {
     if m.root.IsEmpty() {
         return false
     }
-    val hashCode = HashKey(key)
+    val hashCode = HashKeyOf(key)
     return containsKeyInNode[K, V](m.root.Get(), key, hashCode, 0)
 }
 
@@ -117,7 +117,7 @@ func (m HashMap[K, V]) Get(key K) Option[V] {
     if m.root.IsEmpty() {
         return None[V]()
     }
-    val hashCode = HashKey(key)
+    val hashCode = HashKeyOf(key)
     return getFromNodeMap[K, V](m.root.Get(), key, hashCode, 0)
 }
 
@@ -162,7 +162,7 @@ func (m HashMap[K, V]) Put(key K, value V) HashMap[K, V] {
         return HashMap[K, V](root = SomePtr(leaf), size = m.size + 1)
     }
     val root = m.root.Get()
-    val hashCode = HashKey(key)
+    val hashCode = HashKeyOf(key)
 
     // Check if key exists (to determine if size changes)
     val sizeChange = if (containsKeyInNode[K, V](root, key, hashCode, 0)) 0 else 1
@@ -208,7 +208,7 @@ func putToNode[K comparable, V any](node Ptr[hashMapNode[K, V]], key K, value V,
 
         // Add existing entries
         for i := 0; i < node.keys.Size(); i++ {
-            val existingHash = HashKey(node.keys[i])
+            val existingHash = HashKeyOf(node.keys[i])
             newNode = insertIntoInternalNodeMap[K, V](newNode, node.keys[i], node.values[i], existingHash, level)
         }
 
@@ -305,7 +305,7 @@ func (m HashMap[K, V]) Remove(key K) HashMap[K, V] {
         return m
     }
     val root = m.root.Get()
-    val hashCode = HashKey(key)
+    val hashCode = HashKeyOf(key)
 
     // Check if contains
     if !containsKeyInNode[K, V](root, key, hashCode, 0) {

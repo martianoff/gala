@@ -140,6 +140,7 @@ go_test(
     shard_count = 4,
     srcs = [
         "array_differential_test.go",
+        "hash_cache_test.go",
         "list_differential_test.go",
         "map_set_differential_test.go",
         "rbtree_invariant_test.go",
@@ -157,6 +158,7 @@ go_test(
     name = "collections_bench",
     srcs = [
         "collections_bench_test.go",
+        "hashkey_bench_test.go",
         "key_bench_test.go",
     ],
     embed = [":collection_immutable"],

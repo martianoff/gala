@@ -4089,7 +4089,7 @@ val seen = HashSetOf(ListOf(1, 2), ListOf(2, 1), ListOf(2).Prepend(1))          
 val rows = HashSetOf(ArrayOf(1, 2), ArrayOf(1).Append(2))                           // 1 element
 ```
 
-A collection's `Hash` visits every element (O(n)) and is not cached.
+A `HashSet` keeps its hash up to date as it is built, so its `Hash` is O(1). An `Array` hashes its elements on the first `Hash` and keeps the result for every `Array` that shares them, so later calls are O(1). A `List`'s `Hash` visits every element (O(n)) each time.
 
 For custom types as keys, implement the `Hashable` interface:
 
