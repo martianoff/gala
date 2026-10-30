@@ -165,8 +165,9 @@ func nativeBaseTypeName(t native.TypeNode) string {
 		return qid.GetText()
 	}
 	if first := t.Type_(0); first.Ok() {
-		// A slice, `[]T`, is the one type whose text starts with `[`.
-		if t.Tree().Text(t.StartIndex()) == "[" {
+		// A slice, `[]T`, is the one type whose text starts with `[`. A
+		// type node always spans tokens, so it has a first one.
+		if t.StopIndex() >= t.StartIndex() && t.Tree().Text(t.StartIndex()) == "[" {
 			return "[]" + nativeBaseTypeName(first)
 		}
 		return nativeBaseTypeName(first)

@@ -108,31 +108,40 @@ func dropAmbiguousCompanions(res *transpiler.RichAST) {
 // tree (collect_native.go) to the collection on ANTLR's: every GALA source
 // staged as data, analyzed as the CLI analyzes a file, with its library
 // siblings and imports, gives the same metadata — or the same error — when
-// every file is collected on its native tree (the siblings and imported
-// files too, through nativeSiblings) as when every file is collected on
-// ANTLR's.
+// every file is collected on ANTLR's tree as when the file is collected on its
+// native tree and the rest on ANTLR's (as the transpiler does), and as when
+// every file is collected on its native tree (the siblings and imported files
+// too, through nativeSiblings).
 func TestCollectionsAgree(t *testing.T) {
 	paths, searchPaths := collectionCorpus(t)
 	p := galaparser.NewAntlrGalaParser()
-	native := newCollectionAnalyzer(p, searchPaths)
-	native.nativeSiblings = true
-	nativeRes := analyzeAll(t, native, paths)
 	antlrRes := analyzeAll(t, newCollectionAnalyzer(antlrOnly{p}, searchPaths), paths)
-
-	analyzed := 0
-	for _, path := range paths {
-		n, a := nativeRes[path], antlrRes[path]
-		if n == nil && a == nil {
-			continue
+	allNative := newCollectionAnalyzer(p, searchPaths)
+	allNative.nativeSiblings = true
+	for _, run := range []struct {
+		name string
+		a    *galaAnalyzer
+	}{
+		{"the file on its native tree", newCollectionAnalyzer(p, searchPaths)},
+		{"every file on its native tree", allNative},
+	} {
+		nativeRes := analyzeAll(t, run.a, paths)
+		analyzed := 0
+		for _, path := range paths {
+			n, a := nativeRes[path], antlrRes[path]
+			if n == nil && a == nil {
+				continue
+			}
+			analyzed++
+			if diff := firstDiff(reflect.ValueOf(n), reflect.ValueOf(a), "", map[visit]bool{}); diff != "" {
+				t.Errorf("%s, %s: the native collection differs from ANTLR's at %s", run.name, path, diff)
+			}
 		}
-		analyzed++
-		if diff := firstDiff(reflect.ValueOf(n), reflect.ValueOf(a), "", map[visit]bool{}); diff != "" {
-			t.Errorf("%s: the native collection differs from ANTLR's at %s", path, diff)
+		// The repository's sources analyze; a floor catches them not being
+		// staged.
+		if analyzed < 200 {
+			t.Fatalf("analyzed %d sources; the repository's are not staged", analyzed)
 		}
-	}
-	// The repository's sources analyze; a floor catches them not being staged.
-	if analyzed < 200 {
-		t.Fatalf("analyzed %d sources; the repository's are not staged", analyzed)
 	}
 }
 

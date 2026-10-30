@@ -2659,7 +2659,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			var docs galaparser.Docs
 			var handle *galaparser.Native
 			if p := a.parsedForFile(filePath, tree); p != nil {
-				docs, handle = p.Docs, p.Native
+				docs, handle = p.Docs, p.CleanNative()
 			}
 			// No native walk: the undefined-symbol check, its one user,
 			// runs on the top-level file alone.
