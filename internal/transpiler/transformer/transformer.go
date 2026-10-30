@@ -787,6 +787,11 @@ func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg st
 	return galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 }
 
+// semanticErrorIn is semanticErrorAt of the node at r.
+func (t *galaASTTransformer) semanticErrorIn(r srcRange, msg string) *galaerr.SemanticError {
+	return galaerr.NewSemanticErrorInFile(t.filePath, r.line, r.col, msg)
+}
+
 var _ transpiler.ASTTransformer = (*galaASTTransformer)(nil)
 
 // resolveTypeName is a unified type resolution function that searches for a type name

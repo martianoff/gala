@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"martianoff/gala/galaerr"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -23,11 +22,11 @@ import (
 
 // recordMethodReceiver notes a method's receiver for checkMethodReceivers to
 // validate once the whole file has been walked.
-func (t *galaASTTransformer) recordMethodReceiver(recvCtx *grammar.ReceiverContext, recvTypeName string) {
-	if recvTypeName == "" || recvCtx == nil {
+func (t *galaASTTransformer) recordMethodReceiver(at srcRange, recvTypeName string) {
+	if recvTypeName == "" {
 		return
 	}
-	t.methodReceivers = append(t.methodReceivers, methodReceiver{ctx: recvCtx, typeName: recvTypeName})
+	t.methodReceivers = append(t.methodReceivers, methodReceiver{at: at, typeName: recvTypeName})
 }
 
 // checkMethodReceivers validates every receiver recorded during the walk. It
@@ -35,7 +34,7 @@ func (t *galaASTTransformer) recordMethodReceiver(recvCtx *grammar.ReceiverConte
 // names them are still in the table.
 func (t *galaASTTransformer) checkMethodReceivers() error {
 	for _, recv := range t.methodReceivers {
-		if err := t.checkMethodReceiverAlias(recv.ctx, recv.typeName); err != nil {
+		if err := t.checkMethodReceiverAlias(recv.at, recv.typeName); err != nil {
 			return err
 		}
 	}
@@ -44,7 +43,7 @@ func (t *galaASTTransformer) checkMethodReceivers() error {
 
 // methodReceiver is one method's receiver, held until the file is fully walked.
 type methodReceiver struct {
-	ctx      *grammar.ReceiverContext
+	at       srcRange // the receiver
 	typeName string
 }
 
@@ -59,7 +58,7 @@ type methodReceiver struct {
 // composite (`type Handler func(int) int`, `type Bytes []byte`) all leave the
 // receiver base type non-local, and Go rejects each with a different message
 // against generated code.
-func (t *galaASTTransformer) checkMethodReceiverAlias(recvCtx *grammar.ReceiverContext, recvTypeName string) error {
+func (t *galaASTTransformer) checkMethodReceiverAlias(at srcRange, recvTypeName string) error {
 	if recvTypeName == "" {
 		return nil
 	}
@@ -100,7 +99,7 @@ func (t *galaASTTransformer) checkMethodReceiverAlias(recvCtx *grammar.ReceiverC
 		return nil
 	}
 
-	line, col := recvCtx.GetStart().GetLine(), recvCtx.GetStart().GetColumn()
+	line, col := at.line, at.col
 	hint := "a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function"
 	// A scalar can be given an identity of its own, with methods, as an
 	// opaque type over it.

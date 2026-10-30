@@ -86,8 +86,45 @@ func (t *galaASTTransformer) docFor(start antlr.Token) *ast.CommentGroup {
 	if start == nil {
 		return nil
 	}
-	return docCommentGroup(t.richAST.Docs[parser.DocKeyOf(start)])
+	return t.docAt(parser.DocKeyOf(start))
 }
+
+// docAt is the doc comment of the declaration whose first token is at key.
+func (t *galaASTTransformer) docAt(key parser.DocKey) *ast.CommentGroup {
+	return docCommentGroup(t.richAST.Docs[key])
+}
+
+// declDocs is what attachDocs reads of a GALA top-level declaration, from
+// either tree (readDeclDocs, readDeclDocsNative): which kind it is, where it
+// starts, its name, and its documented members.
+type declDocs struct {
+	kind declDocKind
+	doc  parser.DocKey
+	name string
+	// members are a type's struct fields or interface methods, a struct
+	// shorthand's named parameters, or a sealed type's cases.
+	members []memberDoc
+}
+
+// memberDoc is a member of a declaration: its name and where it starts.
+type memberDoc struct {
+	name string
+	doc  parser.DocKey
+}
+
+// declDocKind is the kind of declaration declDocs describes, as
+// attachDocs places its docs.
+type declDocKind int
+
+const (
+	docsNone      declDocKind = iota
+	docsOne                   // a function, val or var: one Go declaration
+	docsEmbed                 // an embed
+	docsType                  // a type declaration
+	docsShorthand             // a struct shorthand declaration
+	docsOpaque                // an opaque type
+	docsSealed                // a sealed type
+)
 
 // attachDocComments attaches the doc comments of one GALA top-level declaration
 // to the Go declarations it lowered to. decls is the transformer's output for
@@ -96,88 +133,128 @@ func (t *galaASTTransformer) attachDocComments(ctx grammar.ITopLevelDeclarationC
 	if t.richAST == nil || len(t.richAST.Docs) == 0 || len(decls) == 0 {
 		return
 	}
-	doc := t.docFor(ctx.GetStart())
+	t.attachDocs(readDeclDocs(ctx), decls)
+}
 
+// readDeclDocs reads what attachDocs needs of ctx on ANTLR's tree.
+func readDeclDocs(ctx grammar.ITopLevelDeclarationContext) declDocs {
+	dd := declDocs{doc: parser.DocKeyOf(ctx.GetStart())}
 	switch {
 	case ctx.FunctionDeclaration() != nil, ctx.ValDeclaration() != nil, ctx.VarDeclaration() != nil:
-		// Each lowers to exactly one Go declaration.
-		*declDoc(decls[0]) = doc
+		dd.kind = docsOne
 
 	case ctx.EmbedDeclaration() != nil:
-		// An EmbeddedFS embed adds a hidden `_embed_<name>` var ahead of the
-		// public binding; the doc belongs to the binding.
-		name := ctx.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier().GetText()
-		if d := findValueDecl(decls, name); d != nil {
-			d.Doc = doc
-		}
+		dd.kind = docsEmbed
+		dd.name = ctx.EmbedDeclaration().(*grammar.EmbedDeclarationContext).Identifier().GetText()
 
 	case ctx.TypeDeclaration() != nil:
 		typeCtx := ctx.TypeDeclaration().(*grammar.TypeDeclarationContext)
-		decl, spec := findTypeSpec(decls, typeCtx.Identifier().GetText())
-		if decl == nil {
-			return
-		}
-		decl.Doc = doc
+		dd.kind, dd.name = docsType, typeCtx.Identifier().GetText()
 		if st, ok := typeCtx.StructType().(*grammar.StructTypeContext); ok && st != nil {
 			for _, f := range st.AllStructField() {
 				fctx := f.(*grammar.StructFieldContext)
-				t.attachFieldDoc(spec, fctx.Identifier().GetText(), fctx.GetStart())
+				dd.members = append(dd.members, memberDoc{fctx.Identifier().GetText(), parser.DocKeyOf(fctx.GetStart())})
 			}
 		}
 		if it, ok := typeCtx.InterfaceType().(*grammar.InterfaceTypeContext); ok && it != nil {
 			for _, m := range it.AllMethodSpec() {
 				mctx := m.(*grammar.MethodSpecContext)
-				t.attachFieldDoc(spec, mctx.Identifier().GetText(), mctx.GetStart())
+				dd.members = append(dd.members, memberDoc{mctx.Identifier().GetText(), parser.DocKeyOf(mctx.GetStart())})
 			}
 		}
 
 	case ctx.StructShorthandDeclaration() != nil:
 		sctx := ctx.StructShorthandDeclaration().(*grammar.StructShorthandDeclarationContext)
-		decl, spec := findTypeSpec(decls, sctx.Identifier().GetText())
+		dd.kind, dd.name = docsShorthand, sctx.Identifier().GetText()
+		params := sctx.Parameters().(*grammar.ParametersContext)
+		if params.ParameterList() == nil {
+			break
+		}
+		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
+			pctx := p.(*grammar.ParameterContext)
+			if pctx.Identifier() != nil {
+				dd.members = append(dd.members, memberDoc{pctx.Identifier().GetText(), parser.DocKeyOf(pctx.GetStart())})
+			}
+		}
+
+	case ctx.OpaqueTypeDeclaration() != nil:
+		dd.kind = docsOpaque
+		dd.name = ctx.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext).Identifier().GetText()
+
+	case ctx.SealedTypeDeclaration() != nil:
+		sctx := ctx.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
+		dd.kind, dd.name = docsSealed, sctx.Identifier().GetText()
+		for _, c := range sctx.AllSealedCase() {
+			cctx := c.(*grammar.SealedCaseContext)
+			dd.members = append(dd.members, memberDoc{cctx.Identifier().GetText(), parser.DocKeyOf(cctx.GetStart())})
+		}
+	}
+	return dd
+}
+
+// attachDocs attaches the doc comments of the declaration dd describes to
+// decls, the Go declarations it lowered to, in emission order.
+func (t *galaASTTransformer) attachDocs(dd declDocs, decls []ast.Decl) {
+	doc := t.docAt(dd.doc)
+
+	switch dd.kind {
+	case docsOne:
+		// Each lowers to exactly one Go declaration.
+		*declDoc(decls[0]) = doc
+
+	case docsEmbed:
+		// An EmbeddedFS embed adds a hidden `_embed_<name>` var ahead of the
+		// public binding; the doc belongs to the binding.
+		if d := findValueDecl(decls, dd.name); d != nil {
+			d.Doc = doc
+		}
+
+	case docsType:
+		decl, spec := findTypeSpec(decls, dd.name)
+		if decl == nil {
+			return
+		}
+		decl.Doc = doc
+		for _, m := range dd.members {
+			t.attachFieldDoc(spec, m.name, m.doc)
+		}
+
+	case docsShorthand:
+		decl, spec := findTypeSpec(decls, dd.name)
 		if decl == nil {
 			return
 		}
 		// The written doc first, then the constructor guidance the lowering
 		// put there (see structGoConstructor).
 		decl.Doc = joinDocs(doc, decl.Doc)
-		params := sctx.Parameters().(*grammar.ParametersContext)
-		if params.ParameterList() == nil {
-			return
-		}
-		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			pctx := p.(*grammar.ParameterContext)
-			if pctx.Identifier() != nil {
-				t.attachFieldDoc(spec, pctx.Identifier().GetText(), pctx.GetStart())
-			}
+		for _, m := range dd.members {
+			t.attachFieldDoc(spec, m.name, m.doc)
 		}
 
-	case ctx.OpaqueTypeDeclaration() != nil:
-		octx := ctx.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext)
-		if decl, _ := findTypeSpec(decls, octx.Identifier().GetText()); decl != nil {
+	case docsOpaque:
+		if decl, _ := findTypeSpec(decls, dd.name); decl != nil {
 			decl.Doc = doc
 		}
 
-	case ctx.SealedTypeDeclaration() != nil:
-		sctx := ctx.SealedTypeDeclaration().(*grammar.SealedTypeDeclarationContext)
-		if decl, _ := findTypeSpec(decls, sctx.Identifier().GetText()); decl != nil {
+	case docsSealed:
+		if decl, _ := findTypeSpec(decls, dd.name); decl != nil {
 			// The written doc first, then the constructor guidance the
 			// lowering put there (see sealedGoConstructors).
 			decl.Doc = joinDocs(doc, decl.Doc)
 		}
 		// Each case is a companion type of its own name; its doc goes there.
-		for _, c := range sctx.AllSealedCase() {
-			cctx := c.(*grammar.SealedCaseContext)
-			if decl, _ := findTypeSpec(decls, cctx.Identifier().GetText()); decl != nil {
-				decl.Doc = t.docFor(cctx.GetStart())
+		for _, m := range dd.members {
+			if decl, _ := findTypeSpec(decls, m.name); decl != nil {
+				decl.Doc = t.docAt(m.doc)
 			}
 		}
 	}
 }
 
 // attachFieldDoc documents the struct field or interface method called name in
-// spec's type.
-func (t *galaASTTransformer) attachFieldDoc(spec *ast.TypeSpec, name string, start antlr.Token) {
-	doc := t.docFor(start)
+// spec's type with the doc comment at key.
+func (t *galaASTTransformer) attachFieldDoc(spec *ast.TypeSpec, name string, key parser.DocKey) {
+	doc := t.docAt(key)
 	if doc == nil {
 		return
 	}

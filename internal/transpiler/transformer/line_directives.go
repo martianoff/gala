@@ -88,9 +88,22 @@ func lineMarkerDecl(line int) *ast.GenDecl {
 // should point at the identifier being declared.
 func (t *galaASTTransformer) checkReservedName(name string, ctx antlr.ParserRuleContext) error {
 	if strings.HasPrefix(name, transpiler.LineMarkerPrefix) {
-		return t.semanticErrorAt(ctx, fmt.Sprintf(
-			"identifier %q uses the reserved %q prefix (reserved for transpiler-internal source-map markers); rename it",
-			name, transpiler.LineMarkerPrefix))
+		return t.semanticErrorAt(ctx, reservedNameMessage(name))
 	}
 	return nil
+}
+
+// checkReservedNameAt is checkReservedName of the identifier at r.
+func (t *galaASTTransformer) checkReservedNameAt(name string, r srcRange) error {
+	if strings.HasPrefix(name, transpiler.LineMarkerPrefix) {
+		return t.semanticErrorIn(r, reservedNameMessage(name))
+	}
+	return nil
+}
+
+// reservedNameMessage is checkReservedName's diagnostic for name.
+func reservedNameMessage(name string) string {
+	return fmt.Sprintf(
+		"identifier %q uses the reserved %q prefix (reserved for transpiler-internal source-map markers); rename it",
+		name, transpiler.LineMarkerPrefix)
 }

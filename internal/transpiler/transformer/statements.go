@@ -966,12 +966,11 @@ func (t *galaASTTransformer) lowerFunctionTail(exprCtx grammar.IExpressionContex
 	return ret, nil
 }
 
-// sourceFunctionName is the name a diagnostic gives a function declaration:
-// `Name`, or `Type.Name` for a method. It is the GALA spelling, never the
-// standalone `Type_Name` a generic method is lowered to. receiverTypeName is
-// the receiver's resolved base type name, "" for a plain function.
-func (t *galaASTTransformer) sourceFunctionName(ctx *grammar.FunctionDeclarationContext, receiverTypeName string) string {
-	name := ctx.Identifier().GetText()
+// sourceFunctionName is the name a diagnostic gives the function declaration
+// name: `Name`, or `Type.Name` for a method. It is the GALA spelling, never
+// the standalone `Type_Name` a generic method is lowered to. receiverTypeName
+// is the receiver's resolved base type name, "" for a plain function.
+func (t *galaASTTransformer) sourceFunctionName(name, receiverTypeName string) string {
 	if receiverTypeName == "" {
 		return name
 	}
