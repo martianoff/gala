@@ -18,8 +18,9 @@ func init() { checkNativeHook = checkNative }
 // checkNative checks p's native tree: it prints as the ANTLR tree, whose text
 // is text (treeText); the converter gives one context per node, the root's
 // last; and the bridge pairs every node with a context of its rule, starting
-// at the same token, both ways. TestEnginesAgree runs it on the parses it
-// makes.
+// at the same token, both ways; and the native helpers agree with the ANTLR
+// ones on every node (checkNativeHelpers). TestEnginesAgree runs it on the
+// parses it makes.
 func checkNative(p *Parsed, text string) string {
 	n := p.Native
 	tree, err := n.Tree()
@@ -49,10 +50,13 @@ func checkNative(p *Parsed, text string) string {
 		case n.Node(ctx) != node:
 			return fmt.Sprintf("node %d's context maps to node %d", i, n.Node(ctx).Index())
 		}
+		if msg := checkNativeHelpers(n, ctx, node); msg != "" {
+			return fmt.Sprintf("node %d (%s): %s", i, native.GalaRuleNames[node.Rule()], msg)
+		}
+		// A node that spans no token has no first token to compare.
 		if node.StopIndex() >= node.StartIndex() {
-			s, t := node.Start(), ctx.GetStart()
-			if int(s.Line) != t.GetLine() || int(s.Column) != t.GetColumn() {
-				return fmt.Sprintf("node %d starts at %d:%d, its context at %d:%d", i, s.Line, s.Column, t.GetLine(), t.GetColumn())
+			if got, want := NativeDocKeyOf(node), DocKeyOf(ctx.GetStart()); got != want {
+				return fmt.Sprintf("node %d starts at %d:%d, its context at %d:%d", i, got.Line, got.Column, want.Line, want.Column)
 			}
 		}
 	}
