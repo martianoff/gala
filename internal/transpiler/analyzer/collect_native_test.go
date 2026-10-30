@@ -563,11 +563,11 @@ func TestValInferenceAgrees(t *testing.T) {
 			}
 			continue
 		}
-		reported := 0
+		reported, reportedTyped := 0, 0
 		a.onInferInit = func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type) {
 			reported++
 			if !got.IsNil() {
-				typed++
+				reportedTyped++
 			}
 			pos := nativePos(e.GalaNodeRef)
 			ctx, ok := parsed.Native.Ctx(e.GalaNodeRef).(*grammar.ExpressionContext)
@@ -595,7 +595,7 @@ func TestValInferenceAgrees(t *testing.T) {
 		// An analysis that fails may stop before the last declaration.
 		if reported == want || failed && reported < want {
 			files++
-			inferred += reported
+			inferred, typed = inferred+reported, typed+reportedTyped
 			continue
 		}
 		t.Errorf("%s: %d initializers inferred on the native tree, want %d (collected natively: %v)", src.path, reported, want, an.trace.native)
