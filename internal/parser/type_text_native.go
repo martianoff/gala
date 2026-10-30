@@ -20,8 +20,7 @@ import (
 // No node gives the empty result. They read children through the rule
 // handles and nativeKids, never through Typed, which builds a handle per
 // node, and walk a list in one pass without allocating: the All accessors
-// allocate, and the indexed ones rescan the children from the first. In builds
-// without galop's parser every node is no node (see internal/parser/nativeoff).
+// allocate, and the indexed ones rescan the children from the first.
 
 // NativeTypeText is TypeText for the native node of a type.
 func NativeTypeText(t native.TypeNode) string {

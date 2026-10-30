@@ -10,11 +10,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// This file is built only with galop's parser (see BUILD.bazel): it reads the
-// native tree.
-
-func init() { checkNativeHook = checkNative }
-
 // checkNative checks p's native tree: it prints as the ANTLR tree, whose text
 // is text (treeText); the converter gives one context per node, the root's
 // last; and the bridge pairs every node with a context of its rule, starting

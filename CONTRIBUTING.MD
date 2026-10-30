@@ -19,6 +19,12 @@ directly installed `bazel` — only Bazelisk reads `.bazelversion`. Check with
 `bazel --version`. `MODULE.bazel.lock` uses a format Bazel 8 cannot read; a directly
 installed Bazel 8 silently rewrites it to an older version, dirtying your tree.
 
+Building GALA needs [galop](https://github.com/martianoff/galop), the parser generator
+GALA's parser is built with. It is a prebuilt binary that Bazel (rules_gala's galop
+toolchain) and nix download for you, for linux and macOS (amd64 and arm64) and
+windows-amd64. GALA cannot be built on other platforms. ANTLR's parser stays available
+when GALA runs (`--parser=antlr`, `GALA_PARSER=antlr`).
+
 Keep `go` on your `PATH` (or set `GOROOT`). `.bazelrc` forwards both into the build so
 the transpiler can resolve Go stdlib and third-party signatures. Without the Go SDK,
 transpilation still succeeds but Go type inference is disabled (a warning is printed).

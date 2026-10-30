@@ -1,9 +1,17 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
+# `bazel build --//internal/parser:antlr ...` builds GALA to parse with ANTLR's
+# parser by default (see engine.go). galop's parser is built in either way, so
+# the CLI's --parser flag and GALA_PARSER still choose per process.
 bool_flag(
     name = "antlr",
     build_setting_default = False,
+)
+
+config_setting(
+    name = "antlr_default",
+    flag_values = {":antlr": "true"},
 )
 
 go_library(
@@ -20,6 +28,10 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/parser",
     visibility = ["//:__subpackages__"],
+    x_defs = select({
+        ":antlr_default": {"martianoff/gala/internal/parser.defaultEngine": "antlr"},
+        "//conditions:default": {},
+    }),
     deps = [
         "//galaerr",
         "//internal/parser/galop",

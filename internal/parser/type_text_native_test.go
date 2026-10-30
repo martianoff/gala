@@ -12,9 +12,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// This file is built only with galop's parser (see BUILD.bazel): it reads the
-// native tree.
-
 // checkNativeHelpers compares, on context ctx of a parse and its native node
 // node, each function of type_text.go that applies to ctx with its native
 // version (type_text_native.go), returning what differs or "". checkNative

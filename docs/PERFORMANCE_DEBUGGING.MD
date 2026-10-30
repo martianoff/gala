@@ -107,7 +107,8 @@ alone. Both give the same tree, so the output must not change; compare
 the two when a parse looks wrong or slow. On the galop project (67 files
 and the stdlib), galop's parser takes transpile time from 3.7 s to 2.0 s
 and a warm `gala build` from 5.1 s to 3.5 s. A Bazel build with
-`--//internal/parser:antlr` leaves galop's parser out altogether.
+`--//internal/parser:antlr` makes ANTLR's parser the default of the
+binaries it builds; galop's is still built in.
 
 A panic in galop's parser falls back to ANTLR's and prints
 `gala: warning: galop's parser panicked (N so far in this process) ...`

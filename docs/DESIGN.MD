@@ -283,10 +283,12 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     recovered tree the language server analyzes are always ANTLR's. ANTLR also takes over if
     galop's parser panics, so a galop bug can't take down `gala lsp` or a build; the panic is
     reported on standard error.
-  - **ANTLR alone stays an option:** `--parser=antlr` or `GALA_PARSER=antlr` per process, or a
-    build with `--//internal/parser:antlr` that leaves galop out (see `internal/parser/engine.go`).
-    galop runs at build time from release binaries for linux and macOS (amd64 and arm64) and
-    windows-amd64; on any other build host, use that flag.
+  - **ANTLR alone stays an option at run time:** `--parser=antlr` or `GALA_PARSER=antlr` per
+    process, or a build with `--//internal/parser:antlr`, whose binaries default to ANTLR (see
+    `internal/parser/engine.go`). Every build has both parsers.
+  - **Building GALA needs galop.** It runs at build time from prebuilt release binaries, which
+    Bazel (rules_gala's galop toolchain) and nix download for linux and macOS (amd64 and arm64)
+    and windows-amd64. No other host can build GALA.
   - **galop's native tree comes next.** galop also generates its own tree (in
     `internal/parser/native`): flat arrays of nodes, far smaller than ANTLR's contexts. Each
     parse (`Parsed.Native` from `ParseFile`) can build it on first use and pair every native
@@ -294,8 +296,7 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     Nothing reads it yet, so no cache or analysis result keeps the handle: until it converts,
     it holds the token stream and the source text, which a clean parse's ANTLR tree doesn't
     keep alive (after converting, the native tree keeps the text). Doc comments are keyed by
-    line and column (`parser.DocKey`), which both trees share. A build without galop has a
-    stand-in package there, and asking for the native tree returns an error.
+    line and column (`parser.DocKey`), which both trees share.
   - **Tests and CI:** `TestEnginesAgree` checks both parsers give the same trees, doc comments
     and errors on every GALA source of the repository, and that the native tree matches
     ANTLR's; CI runs the suite under each.

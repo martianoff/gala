@@ -101,10 +101,10 @@ type Parsed struct {
 	Docs   Docs
 	Errors []error
 	// Native is the parse's native tree (see Native), nil when there is none:
-	// the parse gave no tree, or the build has no galop parser. Until it
-	// converts it holds the token stream and the source text, which a clean
-	// parse's tree does not keep alive, so a holder that keeps a Parsed long
-	// but never reads the native tree drops it.
+	// the parse gave no tree. Until it converts it holds the token stream and
+	// the source text, which a clean parse's tree does not keep alive, so a
+	// holder that keeps a Parsed long but never reads the native tree drops
+	// it.
 	Native *Native
 }
 
