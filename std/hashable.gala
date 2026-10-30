@@ -126,7 +126,8 @@ func HashKey(v any) uint32 = hashOf(v, true)
 
 // HashOf hashes v exactly as HashValue(v) does, without boxing it into an
 // any: hashing a value of a predeclared primitive type, an int, a string or a
-// float64, allocates nothing.
+// float64, allocates nothing. Being generic, it is compiled once per shape of
+// T it hashes, where HashValue is compiled once.
 //
 // Example:
 //   val h = HashOf(1000) // HashValue(1000), without an allocation

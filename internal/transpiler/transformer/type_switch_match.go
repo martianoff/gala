@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"regexp"
+	"strings"
 
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -113,7 +115,7 @@ func (t *galaASTTransformer) typeSwitchDispatch(caseClauses []grammar.ICaseClaus
 	if len(typeArms) == 0 {
 		return nil
 	}
-	return t.lowerTypeSwitchDispatch(typeArms, paramName, matchedType)
+	return t.lowerTypeSwitchDispatch(typeArms, paramName)
 }
 
 // typePatternArm reads a lowered unguarded type pattern, `{ x, ok :=
@@ -170,22 +172,27 @@ func (t *galaASTTransformer) transparentTypes(emit bool) []ast.Expr {
 	return []ast.Expr{ref("ImmutableUnwrapper"), ref("Transparent")}
 }
 
-// goTypeSpelling is the spelling of a Go type with its predeclared aliases
-// replaced by the types they stand for.
+// goTypeSpelling is the spelling of a Go type with the predeclared aliases in
+// it (`byte`, `rune`, `interface{}`), at any depth, replaced by the types they
+// stand for: `[]byte` and `[]uint8` are one type.
 func goTypeSpelling(typ string) string {
-	if typ == "interface{}" {
-		return "any"
-	}
-	return canonicalScalar(typ)
+	typ = strings.ReplaceAll(typ, "interface{}", "any")
+	return predeclaredAlias.ReplaceAllStringFunc(typ, func(m string) string {
+		lead, name := m[:len(m)-4], m[len(m)-4:]
+		return lead + canonicalScalar(name)
+	})
 }
+
+// predeclaredAlias matches `byte` or `rune` as a whole, unqualified name, with
+// the character before it.
+var predeclaredAlias = regexp.MustCompile(`(^|[^.\w])(byte|rune)\b`)
 
 // lowerTypeSwitchDispatch builds the dispatch of typeArms, and rewrites each
 // arm's As call to read it (see typeSwitchDispatch).
-func (t *galaASTTransformer) lowerTypeSwitchDispatch(typeArms []typeArm, paramName string, matchedType transpiler.Type) []ast.Stmt {
+func (t *galaASTTransformer) lowerTypeSwitchDispatch(typeArms []typeArm, paramName string) []ast.Stmt {
+	// The subject is converted to any even when its type is any: an inlined
+	// match binds it as its own Go type, which a type switch may not take.
 	subject := func() ast.Expr {
-		if matchedType.IsAny() {
-			return ast.NewIdent(paramName)
-		}
 		return &ast.CallExpr{Fun: ast.NewIdent("any"), Args: []ast.Expr{ast.NewIdent(paramName)}}
 	}
 	armName := t.nextTempVar()

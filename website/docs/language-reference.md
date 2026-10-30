@@ -939,7 +939,7 @@ val res = x match {
 }
 ```
 
-A match on a value of a type parameter or an interface type whose arms are type patterns without a guard, `_` arms and bindings is one Go type switch: the value is boxed once, and that box is not a heap allocation, so a generic `func hash[T any](v T)` that dispatches on `case i: int` hashes an `int` without allocating. The arms still match in order, and a value held in an `Immutable`, or the error of a recovered panic, is matched by what it holds, as with any type pattern.
+A match on a value of a type parameter or an interface type whose arms are type patterns without a guard, `_` arms and bindings is one Go type switch: the value is boxed once, and that box is not a heap allocation, so a generic `func hash[T any](v T)` that dispatches on `case i: int` hashes an `int` without allocating. An arm of an interface type (`case h: Hashable`) still boxes the value it binds. The arms still match in order, and a value held in an `Immutable`, or the error of a recovered panic, is matched by what it holds, as with any type pattern.
 
 A wildcard type argument, `case w: Wrap[_]`, matches any instantiation of a generic struct, at the top level or nested in another pattern (`case Failure(e: Tagged[_])`, `case Some(w: Wrap[_])`, a tuple element, a struct field, a sequence element). The binding has the type of the value being matched: its fields can be read when that type is an instantiation, and an interface's methods when it is an interface such as `error`. A value typed `any` is the exception: `Wrap[_]` asserts to `Wrap[any]` there, and matches only a `Wrap[any]`.
 

@@ -50,13 +50,13 @@ type Celsius int
 			},
 		},
 		{
-			name: "any subject is switched on as it is",
+			name: "any subject",
 			body: `func f(v any) string = v match {
     case i: int => s"int $i"
     case _ => "other"
 }`,
 			dispatched: true,
-			contains:   []string{":= obj.(type)"},
+			contains:   []string{":= any(obj).(type)"},
 		},
 		{
 			name: "interface arm boxes the subject afresh",
@@ -129,6 +129,14 @@ type Celsius int
 			body: `func f[T any](v T) string = v match {
     case _: uint8 => "uint8"
     case _: byte => "byte"
+    case _ => "other"
+}`,
+		},
+		{
+			name: "predeclared alias inside a composite type falls back",
+			body: `func f[T any](v T) string = v match {
+    case _: Option[uint8] => "uint8"
+    case _: Option[byte] => "byte"
     case _ => "other"
 }`,
 		},

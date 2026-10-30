@@ -1881,7 +1881,7 @@ val res = x match {
 }
 ```
 
-A match on a value of a type parameter or an interface type whose arms are type patterns without a guard, `_` arms and bindings is one Go type switch: the value is boxed once, and that box is not a heap allocation, so a generic `func hash[T any](v T)` that dispatches on `case i: int` hashes an `int` without allocating. The arms still match in order, and a value held in an `Immutable`, or the error of a recovered panic, is matched by what it holds, as with any type pattern.
+A match on a value of a type parameter or an interface type whose arms are type patterns without a guard, `_` arms and bindings is one Go type switch: the value is boxed once, and that box is not a heap allocation, so a generic `func hash[T any](v T)` that dispatches on `case i: int` hashes an `int` without allocating. An arm of an interface type (`case h: Hashable`) still boxes the value it binds. The arms still match in order, and a value held in an `Immutable`, or the error of a recovered panic, is matched by what it holds, as with any type pattern.
 
 #### Struct Patterns on Interface Values
 A struct pattern also matches a value whose static type is an interface — `any`, `error`, an interface the program declares, a Go interface — or a type parameter. The arm matches when the value holds that struct, and binds its fields:
