@@ -1,19 +1,27 @@
 package parser
 
 import (
+	"iter"
 	"strings"
 
 	"martianoff/gala/internal/parser/native"
 )
 
-// Each function here is the native-tree version of the function in
-// type_text.go or docs.go with the name less its Native prefix: given the
-// native node of a context (Native.Node), it returns what that function
-// returns for the context. They read children through the rule handles, never
-// through Typed, which builds a handle per node, and walk lists by index
-// rather than through the All accessors, which allocate. In builds without
-// galop's parser every node is no node (see internal/parser/nativeoff), and
-// they return what they return for none.
+// The functions here read galop's native tree as type_text.go and docs.go
+// read ANTLR's:
+//
+//   - NativeTypeText, NativePtrElem, NativePointerElem and NativeAliasText
+//     take the native node of a context (Native.Node) and return what TypeText,
+//     PtrElem, PointerElem and AliasText return for the context, a returned
+//     context as its native node.
+//   - NativeDocKeyOf takes a node where DocKeyOf takes a token: it is DocKeyOf
+//     of the node's first token.
+//
+// No node gives the empty result. They read children through the rule
+// handles and nativeKids, never through Typed, which builds a handle per
+// node, and walk a list in one pass without allocating: the All accessors
+// allocate, and the indexed ones rescan the children from the first. In builds
+// without galop's parser every node is no node (see internal/parser/nativeoff).
 
 // NativeTypeText is TypeText for the native node of a type.
 func NativeTypeText(t native.TypeNode) string {
@@ -28,13 +36,28 @@ func NativePtrElem(t native.TypeNode) native.TypeNode {
 	if !t.Ok() {
 		return native.TypeNode{}
 	}
-	qid, list := t.QualifiedIdentifier(), t.TypeArguments().TypeList()
-	elem := list.Type_(0)
-	// The name last: reading it builds a string.
-	if !qid.Ok() || !elem.Ok() || list.Type_(1).Ok() || !IsPtrTypeName(qid.GetText()) {
+	qid := t.QualifiedIdentifier()
+	elem, ok := onlyNativeKid(t.TypeArguments().TypeList().GalaNodeRef, native.GalaKIND_type)
+	if !qid.Ok() || !ok || !isNativePtrName(qid) {
 		return native.TypeNode{}
 	}
-	return elem
+	return native.TypeNode{GalaNodeRef: elem}
+}
+
+// isNativePtrName is IsPtrTypeName(qid.GetText()) without building the text
+// for the common names. GetText runs qid's token texts together; the source
+// from its first token to its last also has what lies between them. Where
+// that source is `Ptr` or `std.Ptr` the tokens are exactly those, and where
+// it does not end with `Ptr` neither does the last token, which a made-up
+// token cannot be (its text, "<missing ...>", is in no name either).
+func isNativePtrName(qid native.QualifiedIdentifierNode) bool {
+	switch src := qid.SourceText(); {
+	case IsPtrTypeName(src):
+		return true
+	case !strings.HasSuffix(src, PtrTypeName):
+		return false
+	}
+	return IsPtrTypeName(qid.GetText())
 }
 
 // NativePointerElem is PointerElem for the native node of a type: the element
@@ -44,8 +67,8 @@ func NativePointerElem(t native.TypeNode) (native.TypeNode, bool) {
 		return elem, true
 	}
 	if t.Ok() && nativeStartText(t.GalaNodeRef) == "*" {
-		if elem := t.Type_(0); elem.Ok() && !t.Type_(1).Ok() {
-			return elem, true
+		if elem, ok := onlyNativeKid(t.GalaNodeRef, native.GalaKIND_type); ok {
+			return native.TypeNode{GalaNodeRef: elem}, true
 		}
 	}
 	return t, false
@@ -62,20 +85,70 @@ func NativeAliasText(a native.TypeAliasNode) string {
 	return a.GetText()
 }
 
-// NativeDocKeyOf is DocKeyOf for the first token of node n, the key of the
-// declaration n is; the zero key for no node.
+// NativeDocKeyOf is DocKeyOf of node n's first token: the key of the
+// declaration n is. A node that spans no token has no first token (the
+// converter starts it at the token after the ones before it, which may be
+// past the last), so it, like no node, gives the zero key; a declaration
+// always spans tokens.
 func NativeDocKeyOf(n native.GalaNodeRef) DocKey {
-	if !n.Ok() {
+	if !n.Ok() || n.StopIndex() < n.StartIndex() {
 		return DocKey{}
 	}
 	start := n.Start()
 	return DocKey{Line: int(start.Line), Column: int(start.Column)}
 }
 
-// nativeStartText is the text of n's first token, as ANTLR's GetStart gives
-// it: for a node that spans no token, the token after it.
+// nativeStartText has no ANTLR counterpart: it is the text of the token
+// ANTLR's GetStart gives for n's context, which for a node that spans no
+// token is the token after it. Past the last token it is "": that token is
+// none of the ones writeNativeTypeText and NativePointerElem look for.
 func nativeStartText(n native.GalaNodeRef) string {
-	return n.Tree().Text(n.StartIndex())
+	tree, i := n.Tree(), n.StartIndex()
+	if i >= len(tree.Tokens) {
+		return ""
+	}
+	return tree.Text(i)
+}
+
+// nativeKids is n's child nodes of kind, in order, in one pass over its
+// children.
+func nativeKids(n native.GalaNodeRef, kind native.GalaKind) iter.Seq[native.GalaNodeRef] {
+	return func(yield func(native.GalaNodeRef) bool) {
+		if !n.Ok() {
+			return
+		}
+		for i := range n.ChildCount() {
+			if c := n.Child(i).Node(); c.Ok() && c.Kind() == kind && !yield(c) {
+				return
+			}
+		}
+	}
+}
+
+// onlyNativeKid is n's child node of kind and true when it has exactly one.
+func onlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeRef, bool) {
+	var only native.GalaNodeRef
+	count := 0
+	for c := range nativeKids(n, kind) {
+		if count++; count > 1 {
+			return native.GalaNodeRef{}, false
+		}
+		only = c
+	}
+	return only, count == 1
+}
+
+// writeNativeTypeList writes n's child types as writeTypeText writes a list
+// of types: separated by commas.
+func writeNativeTypeList(b *strings.Builder, n native.GalaNodeRef) {
+	first := true
+	for typ := range nativeKids(n, native.GalaKIND_type) {
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		writeNativeTypeText(b, native.TypeNode{GalaNodeRef: typ})
+	}
 }
 
 func writeNativeTypeText(b *strings.Builder, t native.TypeNode) {
@@ -88,17 +161,7 @@ func writeNativeTypeText(b *strings.Builder, t native.TypeNode) {
 		b.WriteString(qid.GetText())
 		if args := t.TypeArguments(); args.Ok() {
 			b.WriteByte('[')
-			list := args.TypeList()
-			for i := 0; ; i++ {
-				arg := list.Type_(i)
-				if !arg.Ok() {
-					break
-				}
-				if i > 0 {
-					b.WriteByte(',')
-				}
-				writeNativeTypeText(b, arg)
-			}
+			writeNativeTypeList(b, args.TypeList().GalaNodeRef)
 			b.WriteByte(']')
 		}
 	case t.FUNC().Ok():
@@ -127,15 +190,13 @@ func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 		return
 	}
 	b.WriteByte('(')
-	list := s.Parameters().ParameterList()
-	for i := 0; ; i++ {
-		param := list.Parameter(i)
-		if !param.Ok() {
-			break
-		}
-		if i > 0 {
+	first := true
+	for p := range nativeKids(s.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+		if !first {
 			b.WriteByte(',')
 		}
+		first = false
+		param := native.ParameterNode{GalaNodeRef: p}
 		if param.ELLIPSIS().Ok() {
 			b.WriteString("...")
 		}
@@ -151,16 +212,7 @@ func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 		writeNativeTypeText(b, typ)
 	case results.Ok():
 		b.WriteByte('(')
-		for i := 0; ; i++ {
-			r := results.Type_(i)
-			if !r.Ok() {
-				break
-			}
-			if i > 0 {
-				b.WriteByte(',')
-			}
-			writeNativeTypeText(b, r)
-		}
+		writeNativeTypeList(b, results.GalaNodeRef)
 		b.WriteByte(')')
 	}
 }

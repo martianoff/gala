@@ -53,10 +53,10 @@ func checkNative(p *Parsed, text string) string {
 		if msg := checkNativeHelpers(n, ctx, node); msg != "" {
 			return fmt.Sprintf("node %d (%s): %s", i, native.GalaRuleNames[node.Rule()], msg)
 		}
+		// A node that spans no token has no first token to compare.
 		if node.StopIndex() >= node.StartIndex() {
-			s, t := node.Start(), ctx.GetStart()
-			if int(s.Line) != t.GetLine() || int(s.Column) != t.GetColumn() {
-				return fmt.Sprintf("node %d starts at %d:%d, its context at %d:%d", i, s.Line, s.Column, t.GetLine(), t.GetColumn())
+			if got, want := NativeDocKeyOf(node), DocKeyOf(ctx.GetStart()); got != want {
+				return fmt.Sprintf("node %d starts at %d:%d, its context at %d:%d", i, got.Line, got.Column, want.Line, want.Column)
 			}
 		}
 	}

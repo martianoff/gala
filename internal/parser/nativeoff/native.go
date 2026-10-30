@@ -7,10 +7,15 @@
 package native
 
 // GalaTree stands in for galop's native tree.
-type GalaTree struct{}
+type GalaTree struct {
+	Tokens []GalaToken
+}
 
 // Node is no node.
 func (t *GalaTree) Node(int) GalaNodeRef { return GalaNodeRef{} }
+
+// Text is "". Its receiver is nil (GalaNodeRef.Tree), so it reads nothing.
+func (t *GalaTree) Text(int) string { return "" }
 
 // GalaNodeRef stands in for a node of galop's native tree: always no node.
 type GalaNodeRef struct{}
@@ -24,17 +29,42 @@ func (GalaNodeRef) Tree() *GalaTree { return nil }
 // Index is -1.
 func (GalaNodeRef) Index() int { return -1 }
 
-// Text is "". Its receiver is nil (GalaNodeRef.Tree), so it reads nothing.
-func (t *GalaTree) Text(int) string { return "" }
+// Kind is the zero kind.
+func (GalaNodeRef) Kind() GalaKind { return 0 }
 
-// StartIndex is -1.
+// StartIndex and StopIndex are -1.
 func (GalaNodeRef) StartIndex() int { return -1 }
+
+func (GalaNodeRef) StopIndex() int { return -1 }
 
 // Start is the zero token.
 func (GalaNodeRef) Start() GalaToken { return GalaToken{} }
 
-// GetText is "".
+// GetText and SourceText are "".
 func (GalaNodeRef) GetText() string { return "" }
+
+func (GalaNodeRef) SourceText() string { return "" }
+
+// ChildCount is 0.
+func (GalaNodeRef) ChildCount() int { return 0 }
+
+// Child is no child.
+func (GalaNodeRef) Child(int) GalaChild { return GalaChild{} }
+
+// GalaChild stands in for a child of a node: always no node.
+type GalaChild struct{}
+
+// Node is no node.
+func (GalaChild) Node() GalaNodeRef { return GalaNodeRef{} }
+
+// GalaKind stands in for the kind of a node. The kinds below are the ones
+// internal/parser reads, with galop's numbers; no node has one.
+type GalaKind uint16
+
+const (
+	GalaKIND_parameter GalaKind = 32
+	GalaKIND_type      GalaKind = 78
+)
 
 // GalaToken stands in for a token of galop's native tree, with the fields
 // internal/parser reads.
@@ -79,8 +109,6 @@ func (TypeArgumentsNode) TypeList() TypeListNode { return TypeListNode{} }
 // TypeListNode stands in for a node of rule typeList.
 type TypeListNode struct{ GalaNodeRef }
 
-func (TypeListNode) Type_(int) TypeNode { return TypeNode{} }
-
 // SignatureNode stands in for a node of rule signature.
 type SignatureNode struct{ GalaNodeRef }
 
@@ -91,8 +119,6 @@ func (SignatureNode) GoResults() GoResultsNode   { return GoResultsNode{} }
 // GoResultsNode stands in for a node of rule goResults.
 type GoResultsNode struct{ GalaNodeRef }
 
-func (GoResultsNode) Type_(int) TypeNode { return TypeNode{} }
-
 // ParametersNode stands in for a node of rule parameters.
 type ParametersNode struct{ GalaNodeRef }
 
@@ -100,8 +126,6 @@ func (ParametersNode) ParameterList() ParameterListNode { return ParameterListNo
 
 // ParameterListNode stands in for a node of rule parameterList.
 type ParameterListNode struct{ GalaNodeRef }
-
-func (ParameterListNode) Parameter(int) ParameterNode { return ParameterNode{} }
 
 // ParameterNode stands in for a node of rule parameter.
 type ParameterNode struct{ GalaNodeRef }
