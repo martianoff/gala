@@ -131,8 +131,9 @@ func (p *Parsed) Lenient() (antlr.Tree, Docs, []error) {
 
 // CleanNative is the native-tree handle of a parse without syntax errors,
 // nil for one with them (an error-recovered tree is ANTLR's to read), for no
-// parse, or when there is no handle. The transpiler's native-tree readers
-// take their handle from here.
+// parse, or when there is no handle (a parse by ANTLR's parser has none). The
+// transpiler's native-tree readers take their handle from here, so a parse
+// without one is read on ANTLR's tree end to end.
 func (p *Parsed) CleanNative() *Native {
 	if p == nil || len(p.Errors) > 0 {
 		return nil
