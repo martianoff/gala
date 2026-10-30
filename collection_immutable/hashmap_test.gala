@@ -398,3 +398,16 @@ func TestHashMapArrayKeys(t T) T {
     val t4 = Eq(t3, byPath.Remove(ArrayOf("a").Append("b")).Size(), 1)
     Eq(t4, byPath.GetOrElse(ArrayOf("a"), 0), 2)
 }
+
+// mapPointerTarget has no Hash method: a pointer to it is a key by its address.
+struct mapPointerTarget(N int)
+
+func TestHashMapPointerKeysCompareByIdentity(t T) T {
+    val a = &mapPointerTarget(1)
+    val twin = &mapPointerTarget(1)
+    val m = EmptyHashMap[*mapPointerTarget, string]().Put(a, "a").Put(twin, "twin").Put(a, "again")
+    val t1 = Eq(t, m.Size(), 2)
+    val t2 = Eq(t1, m.GetOrElse(a, ""), "again")
+    val t3 = Eq(t2, m.GetOrElse(&mapPointerTarget(1), "none"), "none")
+    Eq(t3, m.Remove(twin).Size(), 1)
+}

@@ -1,0 +1,9 @@
+immutable set size: 3
+contains a: true, twin: true, fresh: false
+without a: 2, still has twin: true
+immutable map: 2 again ?
+many: 200, all found: true
+mutable set size: 2, contains b: false
+mutable map: 2 3 2
+int pointers: 2
+people: 2, hash as value: true

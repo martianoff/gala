@@ -185,6 +185,38 @@ func TestHashValuePanicsOnUnhashable(t T) T = Panics(t, () => {
     std.HashValue(unhashable(N = 1))
 })
 
+// selfEqual is a pointer key with an Equal of its own, which HashSet and
+// HashMap call on two keys that are not ==; no address hash agrees with it.
+type selfEqual struct {
+    N int
+}
+
+func (p *selfEqual) Equal(other *selfEqual) bool = p.N == other.N
+
+func TestHashKeyHashesPointerByAddress(t T) T {
+    val p = &unhashable(N = 1)
+    val twin = &unhashable(N = 1)
+    val t1 = Eq(t, std.HashKey(p), std.HashKey(p))
+    val t2 = NotEq(t1, std.HashKey(p), std.HashKey(twin))
+    Eq(t2, std.HashKey(42), std.HashValue(42))
+}
+
+func TestHashKeyHashesHashablePointerByTarget(t T) T = Eq(t, std.HashKey(&keyed(N = 3)), std.HashInt(3))
+
+func TestHashKeyPanicsOnUnhashableValue(t T) T = Panics(t, () => {
+    std.HashKey(unhashable(N = 1))
+})
+
+func TestHashKeyPanicsOnPointerWithEqual(t T) T = Panics(t, () => {
+    std.HashKey(&selfEqual(N = 1))
+})
+
+// A Tuple compares a pointer it holds by its target (std.Equal), which an
+// address hash would not agree with, so HashValue keeps refusing it.
+func TestHashValuePanicsOnPointer(t T) T = Panics(t, () => {
+    std.HashValue(&unhashable(N = 1))
+})
+
 func TestTupleHashEqualForEqualTuples(t T) T {
     val a = (1, "a")
     val b = (1, "a")

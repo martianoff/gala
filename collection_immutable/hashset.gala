@@ -124,7 +124,7 @@ func (s HashSet[T]) Contains(elem T) bool {
     if s.root.IsEmpty() {
         return false
     }
-    val hashCode = HashValue(elem)
+    val hashCode = HashKey(elem)
     return containsInNode[T](s.root.Get(), elem, hashCode, 0)
 }
 
@@ -156,7 +156,7 @@ func (s HashSet[T]) Add(elem T) HashSet[T] {
         return HashSet[T](root = SomePtr(leaf), size = s.size + 1)
     }
     val root = s.root.Get()
-    val hashCode = HashValue(elem)
+    val hashCode = HashKey(elem)
 
     // Check if already contains (single hash computation)
     if containsInNode[T](root, elem, hashCode, 0) {
@@ -184,7 +184,7 @@ func addToNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, 
 
         // Add existing entries
         for i := 0; i < node.entries.Size(); i++ {
-            val existingHash = HashValue(node.entries[i])
+            val existingHash = HashKey(node.entries[i])
             newNode = insertIntoInternalNode[T](newNode, node.entries[i], existingHash, level)
         }
 
@@ -277,7 +277,7 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
         return s
     }
     val root = s.root.Get()
-    val hashCode = HashValue(elem)
+    val hashCode = HashKey(elem)
 
     // Check if contains (single hash computation)
     if !containsInNode[T](root, elem, hashCode, 0) {
@@ -401,7 +401,7 @@ func (s HashSet[T]) Equal(other HashSet[T]) bool = s.size == other.size && s.Sub
 func (s HashSet[T]) Hash() uint32 {
     // The sum and the XOR of the element hashes do not depend on the order.
     val (sum, xor) = s.FoldLeft((uint32(0), uint32(0)), (acc, elem) => {
-        val h = HashValue(elem)
+        val h = HashKey(elem)
         (acc.V1 + h, acc.V2 ^ h)
     })
     HashCombine(HashCombine(HashInt(int64(s.size)), sum), xor)

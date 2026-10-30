@@ -573,3 +573,20 @@ func TestHashMapImmutableListAndHashSetKeys(t T) T {
     val t3 = Eq(t2, bySet.Size(), 1)
     Eq(t3, bySet.GetOrElse(im.HashSetOf(1, 2), ""), "y")
 }
+
+// mapPointerTarget has no Hash method: a pointer to it is a key by its address.
+struct mapPointerTarget(N int)
+
+func TestHashMapPointerKeysCompareByIdentity(t T) T {
+    val a = &mapPointerTarget(1)
+    val twin = &mapPointerTarget(1)
+    val m = EmptyHashMap[*mapPointerTarget, string]()
+    m.Put(a, "a")
+    m.Put(twin, "twin")
+    m.Put(a, "again")
+    val t1 = Eq(t, m.Size(), 2)
+    val t2 = Eq(t1, m.GetOrElse(a, ""), "again")
+    val t3 = Eq(t2, m.GetOrElse(&mapPointerTarget(1), "none"), "none")
+    m.Remove(twin)
+    Eq(t3, m.Size(), 1)
+}

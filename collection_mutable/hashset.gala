@@ -103,7 +103,7 @@ func (s Ptr[HashSet[T]]) Length() int = s.size
 // Add adds an element to the set. O(1) amortized.
 // Returns true if the element was added (not already present).
 func (s Ptr[HashSet[T]]) Add(elem T) bool {
-    val hashCode = HashValue(elem)
+    val hashCode = HashKey(elem)
     val idx = int(hashCode & s.bucketMask)
 
     // Check if already present
@@ -168,7 +168,7 @@ func (s Ptr[HashSet[T]]) AddFrom(other Ptr[HashSet[T]]) {
 // Remove removes an element from the set. O(1) amortized.
 // Returns true if the element was removed (was present).
 func (s Ptr[HashSet[T]]) Remove(elem T) bool {
-    val hashCode = HashValue(elem)
+    val hashCode = HashKey(elem)
     val idx = int(hashCode & s.bucketMask)
 
     var prev = EmptyOptionPtr[hashSetEntry[T]]()
@@ -215,7 +215,7 @@ func (s Ptr[HashSet[T]]) Clear() {
 
 // Contains checks if the set contains the given element. O(1) average.
 func (s Ptr[HashSet[T]]) Contains(elem T) bool {
-    val hashCode = HashValue(elem)
+    val hashCode = HashKey(elem)
     val idx = int(hashCode & s.bucketMask)
 
     var entry = s.buckets[idx]

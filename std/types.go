@@ -355,11 +355,19 @@ func KeysEqualByValue[T any](a, b T) bool {
 	if !x.IsValid() || !y.IsValid() || x.Type() != y.Type() {
 		return false
 	}
+	m, ok := equalMethodTaking(x, y.Type())
+	return ok && m.Call([]reflect.Value{y})[0].Bool()
+}
+
+// equalMethodTaking returns x's Equal method, reporting ok, when it is an
+// Equal(U) bool that a value of type arg can be passed to.
+func equalMethodTaking(x reflect.Value, arg reflect.Type) (reflect.Value, bool) {
 	m := x.MethodByName("Equal")
-	if !m.IsValid() || m.Type().NumIn() != 1 || m.Type().NumOut() != 1 || m.Type().Out(0).Kind() != reflect.Bool || !y.Type().AssignableTo(m.Type().In(0)) {
-		return false
+	if !m.IsValid() {
+		return m, false
 	}
-	return m.Call([]reflect.Value{y})[0].Bool()
+	t := m.Type()
+	return m, t.NumIn() == 1 && t.NumOut() == 1 && t.Out(0).Kind() == reflect.Bool && arg.AssignableTo(t.In(0))
 }
 
 // KeyIndexByValue returns the index of the first of keys that KeysEqualByValue
@@ -401,4 +409,20 @@ func KeysMayEqualByValue[T any]() bool {
 		return true
 	}
 	return reflect.TypeOf((*T)(nil)).Elem().Kind() == reflect.Interface
+}
+
+// hashKeyByIdentity hashes v, a key HashKey found neither primitive nor
+// Hashable, by its address when v is a pointer that HashSet and HashMap tell
+// apart from other keys by identity alone: one with no Equal method that
+// KeysEqualByValue could pass another key to. Any other v panics as HashValue
+// does, since no hash of it is sure to agree with the key's equality.
+func hashKeyByIdentity(v any) uint32 {
+	x := reflect.ValueOf(v)
+	if x.Kind() != reflect.Pointer {
+		return panicNotHashable(v)
+	}
+	if _, ok := equalMethodTaking(x, x.Type()); ok {
+		return panicNotHashable(v)
+	}
+	return HashUint(uint64(x.Pointer()))
 }

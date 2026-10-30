@@ -1,0 +1,59 @@
+package main
+
+import (
+    im "martianoff/gala/collection_immutable"
+    mu "martianoff/gala/collection_mutable"
+)
+
+// A pointer whose target has no Hash method is a HashSet element or HashMap
+// key by its address: two pointers are the same key only when they point to
+// the same value, as == says.
+
+struct Node(Name string)
+
+// Person hashes by its fields, so a *Person hashes as the Person it points to.
+struct Person(Name string)
+
+func (p Person) Hash() uint32 = HashString(p.Name)
+
+func main() {
+    val a = &Node("a")
+    val b = &Node("b")
+    val twin = &Node("a")
+
+    val visited = im.EmptyHashSet[*Node]().Add(a).Add(b).Add(a).Add(twin)
+    Println(s"immutable set size: ${visited.Size()}")
+    Println(s"contains a: ${visited.Contains(a)}, twin: ${visited.Contains(twin)}, fresh: ${visited.Contains(&Node("a"))}")
+    Println(s"without a: ${visited.Remove(a).Size()}, still has twin: ${visited.Remove(a).Contains(twin)}")
+
+    val labels = im.EmptyHashMap[*Node, string]().Put(a, "first").Put(b, "second").Put(a, "again")
+    Println(s"immutable map: ${labels.Size()} ${labels.GetOrElse(a, "?")} ${labels.GetOrElse(twin, "?")}")
+
+    // Enough keys that the trie splits its nodes and rehashes the keys there.
+    val nodes = im.ArrayTabulate(200, (i) => &Node(s"n$i"))
+    val many = nodes.FoldLeft(im.EmptyHashSet[*Node](), (acc, n) => acc.Add(n))
+    Println(s"many: ${many.Size()}, all found: ${nodes.ForAll((n) => many.Contains(n))}")
+
+    val seen = mu.EmptyHashSet[*Node]()
+    seen.Add(a)
+    seen.Add(twin)
+    seen.Add(a)
+    Println(s"mutable set size: ${seen.Size()}, contains b: ${seen.Contains(b)}")
+
+    val counts = mu.EmptyHashMap[*Node, int]()
+    counts.Put(a, 1)
+    counts.Put(twin, 2)
+    counts.Put(a, 3)
+    Println(s"mutable map: ${counts.Size()} ${counts.GetOrElse(a, 0)} ${counts.GetOrElse(twin, 0)}")
+
+    // Pointers to a primitive work the same way.
+    var x = 1
+    var y = 1
+    Println(s"int pointers: ${im.EmptyHashSet[*int]().Add(&x).Add(&y).Add(&x).Size()}")
+
+    // A pointer to a Hashable value hashes as that value, and == still tells
+    // two pointers apart.
+    val alice = &Person("alice")
+    val people = im.EmptyHashSet[*Person]().Add(alice).Add(&Person("alice")).Add(alice)
+    Println(s"people: ${people.Size()}, hash as value: ${HashKey(alice) == Person("alice").Hash()}")
+}

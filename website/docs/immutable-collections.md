@@ -625,9 +625,10 @@ val people = HashSetOf(
 - `HashBool(b bool) uint32` - Hash booleans
 - `HashFloat(f float64) uint32` - Hash floats by their bits
 - `HashCombine(h1, h2 uint32) uint32` - Combine two hashes (for structs)
-- `HashValue(v any) uint32` - Hash any key value by the rules the collections use (primitives by value, others through `Hashable`)
+- `HashValue(v any) uint32` - Hash a value held inside a key, such as a field (primitives by value, others through `Hashable`)
+- `HashKey(v any) uint32` - Hash a key the way the collections do: as `HashValue`, and a pointer with no `Hash` method by its address
 
-HashSet compares elements with `==`, and elements that are not `==` by their `Equal` method when they have one (every GALA struct has one), so a `List` element, or a struct holding one, compares by value. Elements that are equal must hash alike. An element that is neither primitive nor `Hashable` compiles, then panics on the first hash.
+HashSet compares elements with `==`, and elements that are not `==` by their `Equal` method when they have one (every GALA struct has one), so a `List` element, or a struct holding one, compares by value. Elements that are equal must hash alike. A pointer element with no `Hash` method is hashed and compared by its address (identity). Any other element that is neither primitive nor `Hashable`, including a tuple or struct holding such a pointer, compiles, then panics on the first hash.
 
 ### Construction
 
