@@ -1,0 +1,28 @@
+int 1000
+string hi
+label tag
+oops 1
+error plain
+hashable 33
+other
+LOUD OTHER
+other
+int 1000
+label kept
+oops 7
+error boom
+stringer first: Oops#3
+stringer first: Oops#4
+bound: plain
+bound: no panic: 0
+big 42
+small 3
+not an int
+int 21
+no temperature
+9
+not an int
+-1
+43
+4
+-1

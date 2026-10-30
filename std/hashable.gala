@@ -110,10 +110,9 @@ func HashCombine(h1 uint32, h2 uint32) uint32 {
 // primitive type by its value, any other value through its Hashable Hash
 // method. It panics for a value that is neither. The std value types hash the
 // values they hold through it, so a Tuple of Tuples, or an Option of a
-// Hashable type, hashes all the way down. It takes any rather than a type
-// parameter: the switch boxes the value either way, and one function serves
-// every key type instead of an instance per type.
-func HashValue(v any) uint32 = hashValue(v, false)
+// Hashable type, hashes all the way down. A caller that knows the value's
+// type hashes it with HashOf, which does not box a primitive.
+func HashValue(v any) uint32 = hashOf(v, false)
 
 // HashKey hashes a HashSet element or HashMap key: as HashValue does, and a
 // pointer that is not Hashable, and has no Equal method another key could be
@@ -123,50 +122,58 @@ func HashValue(v any) uint32 = hashValue(v, false)
 // HashValue does not hash such a pointer: a Tuple, Option, List or struct
 // holding one compares it by its target (std.Equal), which its address does
 // not agree with.
-func HashKey(v any) uint32 = hashValue(v, true)
+func HashKey(v any) uint32 = hashOf(v, true)
 
-// hashValue is HashValue, and HashKey when key is set.
-func hashValue(v any, key bool) uint32 = v match {
-    case i: int => HashInt(int64(i))
-    case s: string => HashString(s)
-    case i: int64 => HashInt(i)
-    case i: int32 => HashInt(int64(i))
-    case u: uint => HashUint(uint64(u))
-    case u: uint64 => HashUint(u)
-    case u: uint32 => HashUint(uint64(u))
-    case b: bool => HashBool(b)
-    case i: int8 => HashInt(int64(i))
-    case i: int16 => HashInt(int64(i))
-    case u: uint8 => HashUint(uint64(u))
-    case u: uint16 => HashUint(uint64(u))
-    case f: float64 => HashFloat(f)
-    case f: float32 => HashFloat(float64(f))
-    case h: Hashable => h.Hash()
-    case _ if key => hashKeyByIdentity(v)
-    case _ => panicNotHashable(v)
+// HashOf hashes v exactly as HashValue(v) does, without boxing it into an
+// any: hashing a value of a predeclared primitive type, an int, a string or a
+// float64, allocates nothing. Being generic, it is compiled once per shape of
+// T it hashes, where HashValue is compiled once.
+//
+// Example:
+//   val h = HashOf(1000) // HashValue(1000), without an allocation
+func HashOf[T any](v T) uint32 = hashOf(v, false)
+
+// HashKeyOf hashes a HashSet element or HashMap key exactly as HashKey(v)
+// does, without boxing it into an any, as HashOf does HashValue.
+func HashKeyOf[T any](v T) uint32 = hashOf(v, true)
+
+// hashOf is HashOf, and HashKeyOf when key is set.
+func hashOf[T any](v T, key bool) uint32 = hashPrimitive(v) match {
+    case Some(h) => h
+    case _ => v match {
+        case h: Hashable => h.Hash()
+        case _ if key => hashKeyByIdentity(v)
+        case _ => panicNotHashable(v)
+    }
+}
+
+// hashPrimitive hashes v by its value when it is of a predeclared primitive
+// type, and is None otherwise: the one list of the types HashValue hashes by
+// value. Its type patterns lower to one Go type switch, which boxes v without
+// an allocation.
+func hashPrimitive[T any](v T) Option[uint32] = v match {
+    case i: int => Some(HashInt(int64(i)))
+    case s: string => Some(HashString(s))
+    case i: int64 => Some(HashInt(i))
+    case i: int32 => Some(HashInt(int64(i)))
+    case u: uint => Some(HashUint(uint64(u)))
+    case u: uint64 => Some(HashUint(u))
+    case u: uint32 => Some(HashUint(uint64(u)))
+    case b: bool => Some(HashBool(b))
+    case i: int8 => Some(HashInt(int64(i)))
+    case i: int16 => Some(HashInt(int64(i)))
+    case u: uint8 => Some(HashUint(uint64(u)))
+    case u: uint16 => Some(HashUint(uint64(u)))
+    case f: float64 => Some(HashFloat(f))
+    case f: float32 => Some(HashFloat(float64(f)))
+    case _ => None()
 }
 
 // HashesByValue reports whether v is of a predeclared primitive type that
 // HashValue hashes by its value. For those types == is Equal, so a HashSet
 // holding them tells values apart exactly as Equal does. A named type is left
 // out: it may declare an Equal of its own.
-func HashesByValue(v any) bool = v match {
-    case _: int => true
-    case _: string => true
-    case _: int64 => true
-    case _: int32 => true
-    case _: uint => true
-    case _: uint64 => true
-    case _: uint32 => true
-    case _: bool => true
-    case _: int8 => true
-    case _: int16 => true
-    case _: uint8 => true
-    case _: uint16 => true
-    case _: float64 => true
-    case _: float32 => true
-    case _ => false
-}
+func HashesByValue(v any) bool = hashPrimitive(v).IsDefined()
 
 // panicNotHashable panics for a value HashValue cannot hash.
 func panicNotHashable(v any) uint32 {

@@ -1881,6 +1881,8 @@ val res = x match {
 }
 ```
 
+A match on a value of a type parameter or an interface type whose arms are type patterns without a guard, `_` arms and bindings is one Go type switch: the value is boxed once, and that box is not a heap allocation, so a generic `func hash[T any](v T)` that dispatches on `case i: int` hashes an `int` without allocating. An arm of an interface type (`case h: Hashable`) still boxes the value it binds. The arms still match in order, and a value held in an `Immutable`, or the error of a recovered panic, is matched by what it holds, as with any type pattern.
+
 #### Struct Patterns on Interface Values
 A struct pattern also matches a value whose static type is an interface — `any`, `error`, an interface the program declares, a Go interface — or a type parameter. The arm matches when the value holds that struct, and binds its fields:
 
@@ -4107,7 +4109,7 @@ val alice = Person(Name = "Alice", Age = 30)
 val m = scores.Put(alice, 100)
 ```
 
-`HashValue(v)` hashes a value held inside a key by the same rules, which helps when a field is itself a tuple or another `Hashable`. Keys are compared with `==`, and keys that are not `==` by their `Equal` method when they have one (every GALA struct has one, the collections included), so a `List` key, or a struct holding one, compares by value. A `Hash` method must give equal keys the same hash. A pointer key (a `HashSet[*Node]`) is compared by identity: two pointers are the same key only when they point to the same value. It hashes through its target's `Hash` method when there is one, and by its address otherwise; a pointer with an `Equal` method of its own that takes the pointer, and no `Hash`, is not hashable. A struct or tuple holding such a pointer compares it by the value it points to, so it is not hashable that way. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
+`HashValue(v)` hashes a value held inside a key by the same rules, which helps when a field is itself a tuple or another `Hashable`; `HashOf(v)` hashes it alike without boxing it into an `any`, so a primitive field costs no allocation. Keys are compared with `==`, and keys that are not `==` by their `Equal` method when they have one (every GALA struct has one, the collections included), so a `List` key, or a struct holding one, compares by value. A `Hash` method must give equal keys the same hash. A pointer key (a `HashSet[*Node]`) is compared by identity: two pointers are the same key only when they point to the same value. It hashes through its target's `Hash` method when there is one, and by its address otherwise; a pointer with an `Equal` method of its own that takes the pointer, and no `Hash`, is not hashable. A struct or tuple holding such a pointer compares it by the value it points to, so it is not hashable that way. A key that is neither primitive nor `Hashable` (including a tuple holding one) compiles, then panics on the first hash with `cannot hash type main.Point: ... must be a primitive or implement std.Hashable interface`.
 
 #### Performance Characteristics
 

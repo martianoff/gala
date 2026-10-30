@@ -860,6 +860,10 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 		}
 	}
 
+	// A match over the dynamic type of its subject is dispatched by one type
+	// switch, which goes in front of the arms (see type_switch_match.go).
+	dispatch := t.typeSwitchDispatch(caseClauses, arms, isDefault, isBinding, paramName, matchedType)
+
 	// Statement-position match with a user-written `return X` inside an arm
 	// body cannot use the IIFE lowering. Wrapping the body in
 	// `func(obj T) { ... }(subject)` would trap that `return X` inside the
@@ -875,7 +879,7 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	if stmtPosition && (loopControl != nil || t.containsUserReturnInClauses(clauses, defaultBody)) {
 		// A `use` in an arm is released at the end of the match, as in a
 		// match lowered to a function literal (see scopeReleases).
-		body := t.buildMatchBodyForInline(clauses, defaultBody)
+		body := append(dispatch, t.buildMatchBodyForInline(clauses, defaultBody)...)
 		stmts, err := t.scopeReleases([]ast.Stmt{t.buildInlinedMatchBlock(subject, paramName, matchedType, body)},
 			ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 		if err != nil {
@@ -896,13 +900,13 @@ func (t *galaASTTransformer) buildMatchExpressionFromClauses(subject ast.Expr, p
 	// stores its value in the declaration's variable, and its control flow
 	// acts on the enclosing function or loop (see hoisted_value.go).
 	if hoist != "" {
-		body := t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)
+		body := append(dispatch, t.storeArmValues(chainMatchClauses(clauses, defaultBody), hoist, resultType)...)
 		block := t.buildInlinedMatchBlock(subject, paramName, matchedType, body)
 		return t.hoistedResult(hoist, []ast.Stmt{block}, resultType, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
 	}
 
 	// Build the match body: chain clauses into if-else, attach default, handle void stripping
-	stmts := t.buildMatchBody(clauses, defaultBody, resultType)
+	stmts := append(dispatch, t.buildMatchBody(clauses, defaultBody, resultType)...)
 
 	// Check if result type is void (for side-effect only match statements)
 	isVoid := resultType != nil && resultType.IsVoid()

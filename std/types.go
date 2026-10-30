@@ -15,6 +15,27 @@ type ImmutableUnwrapper interface {
 	GetAny() any
 }
 
+// Transparent is implemented by std's transparent wrappers, the values As
+// looks through besides an ImmutableUnwrapper: an Immutable and a recovered
+// panic's error. Its method is unexported, so no other type implements it.
+//
+// A match whose type patterns the transpiler dispatches with a Go type switch
+// sends a value of Transparent or ImmutableUnwrapper to As, in the switch's
+// first case; the switch matches every other value as As would, without
+// boxing it for each pattern.
+type Transparent interface {
+	transparent()
+}
+
+var (
+	_ Transparent = Immutable[int]{}
+	_ Transparent = (*panicError)(nil)
+)
+
+func (Immutable[T]) transparent() {}
+
+func (*panicError) transparent() {}
+
 // A GALA struct field or package-level val that is not `var` is an
 // Immutable[T] in Go, and the value inside it is unexported, so Go's
 // reflection-based encoders and fmt would see an empty struct. These methods
