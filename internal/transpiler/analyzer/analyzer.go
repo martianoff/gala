@@ -4521,7 +4521,7 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 	if !ok {
 		return transpiler.NilType{}
 	}
-	if op.qualified {
+	if op.qualified() {
 		suffixes = suffixes[1:]
 	}
 
@@ -4556,13 +4556,15 @@ func signedNumberType(text string) transpiler.Type {
 type packageValOperand struct {
 	name string
 	// importPath and pkg are the package a qualifier names, with the
-	// package's name (else the qualifier as written); both empty for an
-	// unqualified name.
+	// package's name (else the qualifier as written, so never empty); both
+	// empty for an unqualified name.
 	importPath, pkg string
-	// qualified is whether the initializer's first suffix was the selector
-	// naming it, so only the suffixes after that one apply to it.
-	qualified bool
 }
+
+// qualified reports whether op is a qualified name: the initializer's first
+// suffix is the selector naming it, so only the suffixes after that one
+// apply to it.
+func (op packageValOperand) qualified() bool { return op.pkg != "" }
 
 // packageValOperand is the operand an initializer names, from name, the
 // identifier it starts from, and sel, the selector of its first suffix, if
@@ -4581,7 +4583,7 @@ func (a *galaAnalyzer) packageValOperand(name, sel string) (packageValOperand, b
 	if pkg == "" {
 		pkg = name
 	}
-	return packageValOperand{name: sel, importPath: b.Path, pkg: pkg, qualified: true}, true
+	return packageValOperand{name: sel, importPath: b.Path, pkg: pkg}, true
 }
 
 // packageValRefType is the type of a reference to the package-level binding

@@ -592,7 +592,8 @@ func TestValInferenceAgrees(t *testing.T) {
 		if an.trace.native {
 			want = initializersInferred(parsed.Tree.(*grammar.SourceFileContext))
 		}
-		if failed && reported <= want || !failed && reported == want {
+		// An analysis that fails may stop before the last declaration.
+		if reported == want || failed && reported < want {
 			files++
 			inferred += reported
 			continue

@@ -13,7 +13,7 @@ import (
 
 // inferPackageValInitTypeNative is inferPackageValInitType of expression e.
 func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST) transpiler.Type {
-	postfix := nativeSolePostfixExpr(e)
+	postfix := galaparser.NativeSolePostfixExpr(e)
 	if !postfix.Ok() {
 		return signedNumberType(e.GetText())
 	}
@@ -43,7 +43,7 @@ func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pk
 	if !ok {
 		return transpiler.NilType{}
 	}
-	if op.qualified {
+	if op.qualified() {
 		suffixes = suffixes[1:]
 	}
 
@@ -54,8 +54,9 @@ func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pk
 	default:
 		return transpiler.NilType{}
 	}
+	// A postfix suffix spans a token or more: its first is a call's `(`.
 	call := suffixes[0]
-	if call.ChildCount() == 0 || !call.Child(0).IsToken() || call.Child(0).Terminal().GetText() != "(" {
+	if galaparser.NativeStartText(call.GalaNodeRef) != "(" {
 		return transpiler.NilType{}
 	}
 	args := 0
@@ -63,32 +64,6 @@ func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pk
 		args++
 	}
 	return a.packageValCallType(op, args, pkgName, richAST)
-}
-
-// soleOperandChain is the precedence chain from an orExpr down to the
-// unaryExpr that holds a postfix expression (or → and → equality →
-// relational → additive → multiplicative → unary).
-var soleOperandChain = [...]native.GalaKind{
-	native.GalaKIND_andExpr,
-	native.GalaKIND_equalityExpr,
-	native.GalaKIND_relationalExpr,
-	native.GalaKIND_additiveExpr,
-	native.GalaKIND_multiplicativeExpr,
-	native.GalaKIND_unaryExpr,
-}
-
-// nativeSolePostfixExpr is transformer.LeadingPostfixExpr(e, true): the
-// postfix expression e is, or no node when e has a binary operator at any
-// level or a unary operator before its operand.
-func nativeSolePostfixExpr(e native.ExpressionNode) native.PostfixExprNode {
-	n := e.OrExpr().GalaNodeRef
-	for _, kind := range soleOperandChain {
-		var ok bool
-		if n, ok = galaparser.OnlyNativeKid(n, kind); !ok {
-			return native.PostfixExprNode{}
-		}
-	}
-	return native.UnaryExprNode{GalaNodeRef: n}.PostfixExpr()
 }
 
 // nativeLiteralType is literalType.
@@ -102,9 +77,7 @@ func nativeLiteralType(lit native.LiteralNode) transpiler.Type {
 		return transpiler.BasicType{Name: "rune"}
 	case lit.STRING().Ok(), lit.RAW_STRING().Ok(), lit.INTERPOLATED_STRING().Ok(), lit.FORMAT_STRING().Ok():
 		return transpiler.BasicType{Name: "string"}
-	}
-	switch lit.GetText() {
-	case "true", "false":
+	case lit.GetText() == "true", lit.GetText() == "false":
 		return transpiler.BasicType{Name: "bool"}
 	}
 	return transpiler.NilType{}
