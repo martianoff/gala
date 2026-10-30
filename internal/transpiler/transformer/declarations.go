@@ -247,14 +247,15 @@ type bindingDecl struct {
 	// pattern's; tuple is the pattern's range when there is one.
 	names []declName
 	tuple *srcRange
-	// typ is the type annotation, nil when there is none; typAt is its range.
+	// typ is the type annotation and exprs the initializer list, each nil
+	// when there is none.
 	typ   grammar.ITypeContext
-	typAt srcRange
-	// exprs is the initializer list, nil when there is none; nExprs counts
-	// its expressions and exprsAt is its range.
-	exprs   grammar.IExpressionListContext
-	nExprs  int
-	exprsAt srcRange
+	exprs grammar.IExpressionListContext
+	// For a tuple pattern only, which its diagnostics read: typAt and
+	// exprsAt are the ranges of typ and exprs, and nExprs counts exprs's
+	// expressions.
+	typAt, exprsAt srcRange
+	nExprs         int
 	// blankForm and blankHint are GALA-E0060's form and hint, set only for a
 	// declaration whose names are a lone `_` and that has an initializer
 	// (see checkBlankDeclaration).
@@ -269,20 +270,20 @@ func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
 		r := ctxRange(tp)
 		d.tuple = &r
 		idList = tp.(*grammar.TuplePatternContext).IdentifierList()
+		if d.typ != nil {
+			d.typAt = ctxRange(d.typ)
+		}
+		if d.exprs != nil {
+			d.exprsAt = ctxRange(d.exprs)
+			d.nExprs = len(d.exprs.(*grammar.ExpressionListContext).AllExpression())
+		}
 	}
 	for _, idCtx := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
 		d.names = append(d.names, declName{text: idCtx.GetText(), at: ctxRange(idCtx)})
 	}
-	if d.typ != nil {
-		d.typAt = ctxRange(d.typ)
-	}
-	if d.exprs != nil {
-		d.exprsAt = ctxRange(d.exprs)
-		d.nExprs = len(d.exprs.(*grammar.ExpressionListContext).AllExpression())
-		if d.tuple == nil && isLoneBlank(d.names) {
-			d.blankForm = blankDeclarationForm(keyword, d.typ)
-			d.blankHint = blankDeclarationHint(ctx)
-		}
+	if d.exprs != nil && d.tuple == nil && isLoneBlank(d.names) {
+		d.blankForm = blankDeclarationForm(keyword, d.typ)
+		d.blankHint = blankDeclarationHint(ctx)
 	}
 	return d
 }
@@ -539,19 +540,19 @@ func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) 
 				// `var (a, b) int`: several variables of one type.
 				hint = fmt.Sprintf("to declare several variables of one type, drop the parentheses: `%s a, b T`", keyword)
 			}
-			return nil, malformedTupleDestructureAt(d.typAt, d.typAt,
+			return nil, malformedTupleDestructure(d.typAt, d.typAt,
 				fmt.Sprintf("a tuple destructuring `%s (...)` takes no type annotation", keyword), hint)
 		}
 		listCtx = nil
 	}
 	if listCtx == nil {
-		return nil, malformedTupleDestructureAt(d.at, tupleAt,
+		return nil, malformedTupleDestructure(d.at, tupleAt,
 			fmt.Sprintf("a tuple destructuring `%s (...)` needs an initializer", keyword),
 			"add the tuple to split: `= pair`; a variable with no value declares its own type instead, as in `var a int`")
 	}
 	list := listCtx.(*grammar.ExpressionListContext)
 	if d.nExprs != 1 {
-		return nil, malformedTupleDestructureAt(d.at, d.exprsAt,
+		return nil, malformedTupleDestructure(d.at, d.exprsAt,
 			"tuple destructuring requires exactly one expression on the right side",
 			fmt.Sprintf("destructure one tuple; to bind several values, write them as one: `%s (a, b) = (x, y)`", keyword))
 	}
@@ -583,7 +584,7 @@ func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) 
 		if len(namesCtx) < len(tupleGenericType.Params) {
 			hint = "bind one name per component; write `_` for a component you do not need"
 		}
-		return nil, malformedTupleDestructureAt(tupleAt, tupleAt,
+		return nil, malformedTupleDestructure(tupleAt, tupleAt,
 			fmt.Sprintf("`%s (...)` binds %d %s, but the tuple has %d components", keyword, len(namesCtx), noun, len(tupleGenericType.Params)),
 			hint)
 	}
@@ -780,12 +781,7 @@ const (
 )
 
 // malformedTupleDestructure is the GALA-E0056 diagnostic.
-func malformedTupleDestructure(from, to antlr.ParserRuleContext, msg, hint string) error {
-	return spanError(galaerr.CodeMalformedTupleDestructure, from, to, msg, hint)
-}
-
-// malformedTupleDestructureAt is malformedTupleDestructure over ranges.
-func malformedTupleDestructureAt(from, to srcRange, msg, hint string) error {
+func malformedTupleDestructure(from, to srcRange, msg, hint string) error {
 	return spanErrorAt(galaerr.CodeMalformedTupleDestructure, from, to, msg, hint)
 }
 
@@ -958,13 +954,12 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 type funcDecl struct {
 	name string
 	recv *receiverDecl // nil for a function
-	// typeParams are the declared type parameters; hasTypeParams tells a
-	// declared list from none.
-	typeParams    []typeParam
-	hasTypeParams bool
-	sig           grammar.ISignatureContext
-	block         grammar.IBlockContext      // nil for an expression body
-	expr          grammar.IExpressionContext // nil for a block body
+	// typeParams are the declared type parameters, none when it declares
+	// none: the grammar's list has at least one.
+	typeParams []typeParam
+	sig        grammar.ISignatureContext
+	block      grammar.IBlockContext      // nil for an expression body
+	expr       grammar.IExpressionContext // nil for a block body
 }
 
 // receiverDecl is a method's receiver: its name, where it is written, whether
@@ -984,7 +979,7 @@ func readFuncDecl(ctx *grammar.FunctionDeclarationContext) funcDecl {
 		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: ctxRange(recvCtx), isVar: recvCtx.VAR() != nil, typ: recvCtx.Type_()}
 	}
 	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams, d.hasTypeParams = readTypeParams(tps.(*grammar.TypeParametersContext)), true
+		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
 	return d
 }
@@ -1068,7 +1063,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		if t.genericMethods[receiverBaseName] == nil {
 			t.genericMethods[receiverBaseName] = make(map[string]bool)
 		}
-		if d.hasTypeParams {
+		if len(d.typeParams) > 0 {
 			t.genericMethods[receiverBaseName][name] = true
 		}
 
@@ -1084,7 +1079,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 
 	// Type Parameters
 	var typeParams *ast.FieldList
-	if d.hasTypeParams {
+	if len(d.typeParams) > 0 {
 		typeParams = lowerTypeParams(d.typeParams)
 	}
 	// The function's own type parameters are in scope for the signature and
@@ -1462,12 +1457,11 @@ func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
 // shorthandDecl is a struct shorthand declaration as lowerShorthandDecl reads
 // it, from either tree (readShorthandDecl, readShorthandDeclNative).
 type shorthandDecl struct {
-	at            srcRange
-	name          string
-	nameAt        srcRange
-	typeParams    []typeParam
-	hasTypeParams bool
-	params        []paramDecl
+	at         srcRange
+	name       string
+	nameAt     srcRange
+	typeParams []typeParam
+	params     []paramDecl
 }
 
 // paramDecl is a struct shorthand's parameter: its context, lowered on
@@ -1484,7 +1478,7 @@ func readShorthandDecl(ctx *grammar.StructShorthandDeclarationContext) shorthand
 	id := ctx.Identifier()
 	d := shorthandDecl{at: ctxRange(ctx), name: id.GetText(), nameAt: ctxRange(id)}
 	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams, d.hasTypeParams = readTypeParams(tps.(*grammar.TypeParametersContext)), true
+		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
 	if list := ctx.Parameters().(*grammar.ParametersContext).ParameterList(); list != nil {
 		for _, pCtx := range list.(*grammar.ParameterListContext).AllParameter() {
@@ -1516,7 +1510,7 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 
 	// Process Type Parameters first (mirrors lowerTypeDecl).
 	var tParams *ast.FieldList
-	if d.hasTypeParams {
+	if len(d.typeParams) > 0 {
 		tParams = lowerTypeParams(d.typeParams)
 		defer t.bindTypeParams(tParams.List...)()
 	}
@@ -1674,13 +1668,12 @@ func (t *galaASTTransformer) storedFieldElem(meta *transpiler.TypeMetadata, fiel
 // (readTypeDecl, readTypeDeclNative). The types it holds are ANTLR contexts,
 // lowered on ANTLR's tree.
 type typeDecl struct {
-	name          string
-	nameAt        srcRange
-	typeParams    []typeParam
-	hasTypeParams bool
-	kind          typeDeclKind
-	fields        []structFieldDecl // a struct's
-	methods       []methodSpecDecl  // an interface's
+	name       string
+	nameAt     srcRange
+	typeParams []typeParam
+	kind       typeDeclKind
+	fields     []structFieldDecl // a struct's
+	methods    []methodSpecDecl  // an interface's
 	// An alias's target: the type, or else the bare identifier.
 	aliasType  grammar.ITypeContext
 	aliasIdent string
@@ -1705,10 +1698,9 @@ type structFieldDecl struct {
 
 // methodSpecDecl is a method of an interface type declaration.
 type methodSpecDecl struct {
-	name          string
-	typeParams    []typeParam
-	hasTypeParams bool
-	sig           grammar.ISignatureContext
+	name       string
+	typeParams []typeParam
+	sig        grammar.ISignatureContext
 }
 
 // readTypeDecl reads a type declaration on ANTLR's tree.
@@ -1716,7 +1708,7 @@ func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 	id := ctx.Identifier()
 	d := typeDecl{name: id.GetText(), nameAt: ctxRange(id)}
 	if tps := ctx.TypeParameters(); tps != nil {
-		d.typeParams, d.hasTypeParams = readTypeParams(tps.(*grammar.TypeParametersContext)), true
+		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
 	if ctx.StructType() != nil {
 		d.kind = structTypeDecl
@@ -1730,7 +1722,7 @@ func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 			spec := mCtx.(*grammar.MethodSpecContext)
 			m := methodSpecDecl{name: spec.Identifier().GetText(), sig: spec.Signature()}
 			if tps := spec.TypeParameters(); tps != nil {
-				m.typeParams, m.hasTypeParams = readTypeParams(tps.(*grammar.TypeParametersContext)), true
+				m.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 			}
 			d.methods = append(d.methods, m)
 		}
@@ -1757,7 +1749,7 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl) ([]ast.Decl, error) {
 
 	// Process Type Parameters first
 	var tParams *ast.FieldList
-	if d.hasTypeParams {
+	if len(d.typeParams) > 0 {
 		tParams = lowerTypeParams(d.typeParams)
 		defer t.bindTypeParams(tParams.List...)()
 	}
@@ -2292,7 +2284,7 @@ func (t *galaASTTransformer) lowerInterfaceType(specs []methodSpecDecl) (*ast.In
 
 		// Check for method-level type parameters
 		var typeParams *ast.FieldList
-		if spec.hasTypeParams {
+		if len(spec.typeParams) > 0 {
 			typeParams = lowerTypeParams(spec.typeParams)
 		}
 

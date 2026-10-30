@@ -126,14 +126,18 @@ const (
 	docsSealed                // a sealed type
 )
 
-// attachDocComments attaches the doc comments of one GALA top-level declaration
-// to the Go declarations it lowered to. decls is the transformer's output for
-// that declaration, in emission order.
-func (t *galaASTTransformer) attachDocComments(ctx grammar.ITopLevelDeclarationContext, decls []ast.Decl) {
+// attachTopDeclDocs attaches the doc comments of d, one GALA top-level
+// declaration, to the Go declarations it lowered to. decls is the
+// transformer's output for that declaration, in emission order.
+func (t *galaASTTransformer) attachTopDeclDocs(d topDecl, decls []ast.Decl) {
 	if t.richAST == nil || len(t.richAST.Docs) == 0 || len(decls) == 0 {
 		return
 	}
-	t.attachDocs(readDeclDocs(ctx), decls)
+	if d.node.Ok() {
+		t.attachDocs(readDeclDocsNative(d.node), decls)
+	} else {
+		t.attachDocs(readDeclDocs(d.ctx), decls)
+	}
 }
 
 // readDeclDocs reads what attachDocs needs of ctx on ANTLR's tree.

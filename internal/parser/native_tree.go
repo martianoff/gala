@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/grammar"
@@ -24,7 +25,9 @@ var errNoNative = errors.New("parser: no native tree for this parse")
 // tree: Tree reports errNoNative, Ctx and Node find nothing.
 type Native struct {
 	once sync.Once
-	root antlr.ParserRuleContext
+	// converted is set once Tree has converted the tree (see Converted).
+	converted atomic.Bool
+	root      antlr.ParserRuleContext
 	// stream and src are what the conversion reads. The ANTLR tree keeps its
 	// tokens, their lexer and its input alive, but reaches the token stream
 	// only through the recognition exceptions of error-recovered contexts, and
@@ -66,6 +69,14 @@ func (t *Native) Tree() (*native.GalaTree, error) {
 	return t.tree, t.err
 }
 
+// Converted reports whether Tree has run the conversion already, so that
+// calling it costs nothing, without converting. A consumer that would not pay
+// for the conversion itself reads the native tree only when this holds. A nil
+// *Native has not converted.
+func (t *Native) Converted() bool {
+	return t != nil && t.converted.Load()
+}
+
 func (t *Native) convert() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -74,6 +85,7 @@ func (t *Native) convert() {
 		// The native tree keeps the text it was given; the handle needs
 		// neither any more, and after a failure nothing does.
 		t.stream, t.src = nil, ""
+		t.converted.Store(true)
 	}()
 	if t.tree, t.ctxs = galop.ToNative(t.root, t.stream, t.src); t.tree == nil {
 		t.err = errNoNative

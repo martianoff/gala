@@ -12,27 +12,30 @@ import (
 )
 
 // The compiled file's top-level walk reads the file through walkSource:
-// galop's native tree when the parse came with one (RichAST.Native), ANTLR's
-// tree otherwise. A file is walked on one tree or the other, never on a mix;
-// below the declarations, the native walk crosses to ANTLR's tree where the
-// port has not reached (see declarations_native.go).
+// galop's native tree when the parse came with one that the analysis has
+// converted (RichAST.Native), ANTLR's tree otherwise. A file is walked on one
+// tree or the other, never on a mix; below the declarations, the native walk
+// crosses to ANTLR's tree where the port has not reached (see
+// declarations_native.go).
 
 // walkSource is the compiled file as the top-level walk reads it: ANTLR's
-// tree sf, and the native tree root when the walk reads that instead
-// (root.Ok()). sf stays for the checks the native walk does not cover yet.
+// tree sf, and, when the walk reads the native tree instead, its root and the
+// handle h it crosses back through (root.Ok()). sf stays for the checks the
+// native walk does not cover yet.
 type walkSource struct {
 	sf   *grammar.SourceFileContext
 	root native.SourceFileNode
+	h    *parser.Native
 }
 
-// walkSource picks the tree the walk of sf reads: richAST's native tree when
-// it has one that converts and is sf's (its root's context is sf), and sf
-// otherwise. It sets t.native to the handle the native walk crosses to ANTLR's
-// tree through, or nil.
-func (t *galaASTTransformer) walkSource(richAST *transpiler.RichAST, sf *grammar.SourceFileContext) walkSource {
-	t.native = nil
+// newWalkSource picks the tree the walk of sf reads: richAST's native tree
+// when it has one that is converted already and is sf's (its root's context
+// is sf), and sf otherwise. The walk never converts a tree itself: that costs
+// more than walking it saves, so it reads one only where the analysis has
+// paid for it.
+func newWalkSource(richAST *transpiler.RichAST, sf *grammar.SourceFileContext) walkSource {
 	h := richAST.Native
-	if h == nil || t.antlrWalkOnly {
+	if !h.Converted() {
 		return walkSource{sf: sf}
 	}
 	tree, err := h.Tree()
@@ -43,8 +46,7 @@ func (t *galaASTTransformer) walkSource(richAST *transpiler.RichAST, sf *grammar
 	if h.Ctx(root) != antlr.ParserRuleContext(sf) {
 		return walkSource{sf: sf}
 	}
-	t.native = h
-	return walkSource{sf: sf, root: native.SourceFileNode{GalaNodeRef: root}}
+	return walkSource{sf: sf, root: native.SourceFileNode{GalaNodeRef: root}, h: h}
 }
 
 // packageClause is the file's package name and the doc key of its package
@@ -151,26 +153,11 @@ func (t *galaASTTransformer) lowerTopDecl(d topDecl) ([]ast.Decl, error) {
 	return t.transformTopLevelDeclaration(d.ctx)
 }
 
-// attachTopDeclDocs is attachDocComments of d, which lowered to decls.
-func (t *galaASTTransformer) attachTopDeclDocs(d topDecl, decls []ast.Decl) {
-	if !d.node.Ok() {
-		t.attachDocComments(d.ctx, decls)
-		return
-	}
-	if t.richAST == nil || len(t.richAST.Docs) == 0 || len(decls) == 0 {
-		return
-	}
-	t.attachDocs(readDeclDocsNative(d.node), decls)
-}
-
 // readDeclDocsNative is readDeclDocs of td, a topLevelDeclaration node.
 func readDeclDocsNative(td native.GalaNodeRef) declDocs {
 	dd := declDocs{doc: parser.NativeDocKeyOf(td)}
-	if td.ChildCount() == 0 {
-		return dd
-	}
-	decl := td.Child(0).Node()
-	if !decl.Ok() {
+	decl, ok := topDeclKid(td)
+	if !ok {
 		return dd
 	}
 	member := func(n native.GalaNodeRef, id native.IdentifierNode) {
@@ -220,16 +207,18 @@ func readDeclDocsNative(td native.GalaNodeRef) declDocs {
 func bindingNames(d topDecl) ([]string, bool) {
 	var names []string
 	if d.node.Ok() {
-		decl, ok := parser.OnlyNativeKid(d.node, native.GalaKIND_valDeclaration)
+		decl, ok := topDeclKid(d.node)
 		if !ok {
-			if decl, ok = parser.OnlyNativeKid(d.node, native.GalaKIND_varDeclaration); !ok {
-				return nil, false
-			}
+			return nil, false
 		}
-		// val and var declarations share the shape read here.
-		idList, _ := parser.OnlyNativeKid(decl, native.GalaKIND_identifierList)
-		if tp, ok := parser.OnlyNativeKid(decl, native.GalaKIND_tuplePattern); ok {
-			idList, _ = parser.OnlyNativeKid(tp, native.GalaKIND_identifierList)
+		var idList native.GalaNodeRef
+		switch decl.Kind() {
+		case native.GalaKIND_valDeclaration:
+			idList = bindingIdList(native.ValDeclarationNode{GalaNodeRef: decl})
+		case native.GalaKIND_varDeclaration:
+			idList = bindingIdList(native.VarDeclarationNode{GalaNodeRef: decl})
+		default:
+			return nil, false
 		}
 		if !idList.Ok() {
 			return nil, false
@@ -239,16 +228,12 @@ func bindingNames(d topDecl) ([]string, bool) {
 		}
 		return names, true
 	}
-	// val and var declarations share the shape read here.
-	var decl interface {
-		IdentifierList() grammar.IIdentifierListContext
-		TuplePattern() grammar.ITuplePatternContext
-	}
+	var decl tupleDeclaration
 	switch {
 	case d.ctx.ValDeclaration() != nil:
-		decl = d.ctx.ValDeclaration()
+		decl = d.ctx.ValDeclaration().(*grammar.ValDeclarationContext)
 	case d.ctx.VarDeclaration() != nil:
-		decl = d.ctx.VarDeclaration()
+		decl = d.ctx.VarDeclaration().(*grammar.VarDeclarationContext)
 	default:
 		return nil, false
 	}

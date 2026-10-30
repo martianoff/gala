@@ -1,6 +1,8 @@
 package transformer_test
 
 import (
+	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,34 +21,64 @@ import (
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
-// walkRun is one transpile of a file: its Go, or its error, and how many of
-// its top-level declarations the native walk lowered.
+// walkRun is one transpile of a file: its Go, or its error, how many of its
+// top-level declarations the native walk lowered, and whether the analysis
+// converted the parse's native tree, which the walk reads only then.
 type walkRun struct {
-	out    string
-	err    error
-	native int
+	out       string
+	err       error
+	native    int
+	converted bool
 }
 
-// walkPipeline transpiles files the way the CLI does, parsing with galop, with
-// one analyzer for every file; antlrOnly makes its transformer walk ANTLR's
+// walkPipeline transpiles files the way the CLI does, parsing with galop, each
+// with an analyzer of its own: a package that fails to load stands an
+// analyzer's undefined-symbol check down for every later file, and with it the
+// conversion the native walk reads. antlrOnly makes its transformer walk ANTLR's
 // tree whatever the parse came with.
 type walkPipeline struct {
-	p         transpiler.GalaParser
-	a         transpiler.Analyzer
-	antlrOnly bool
-}
-
-func newWalkPipeline(searchPaths []string, antlrOnly bool) *walkPipeline {
-	p := transpiler.NewAntlrGalaParser()
-	return &walkPipeline{p: p, a: analyzer.NewGalaAnalyzer(p, searchPaths), antlrOnly: antlrOnly}
+	searchPaths []string
+	antlrOnly   bool
 }
 
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
 	var run walkRun
-	transformer.SetWalkHooks(tr, w.antlrOnly, func() { run.native++ })
-	run.out, run.err = transpiler.NewGalaToGoTranspiler(w.p, w.a, tr, generator.NewGoCodeGenerator()).Transpile(src, path)
+	transformer.OnNativeDecl(tr, func() { run.native++ })
+	if w.antlrOnly {
+		tr = withoutNative{tr}
+	}
+	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
+	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
+	run.converted = p.compiled.Converted()
 	return run
+}
+
+// handleParser parses as its parser does and keeps the native-tree handle of
+// the first parse, the compiled file's: the analysis parses the package's
+// other files after it.
+type handleParser struct {
+	transpiler.GalaParser
+	compiled *galaparser.Native
+	parsed   bool
+}
+
+func (p *handleParser) ParseFile(input string) *galaparser.Parsed {
+	parsed := p.GalaParser.ParseFile(input)
+	if !p.parsed {
+		p.compiled, p.parsed = parsed.Native, true
+	}
+	return parsed
+}
+
+// withoutNative transforms as its transformer does, but without the file's
+// native-tree handle, so its walk reads ANTLR's tree after the same parse and
+// analysis.
+type withoutNative struct{ transpiler.ASTTransformer }
+
+func (w withoutNative) Transform(richAST *transpiler.RichAST) (*token.FileSet, *ast.File, error) {
+	richAST.Native = nil
+	return w.ASTTransformer.Transform(richAST)
 }
 
 // walkCorpus is the paths of the GALA sources staged as the test's data
@@ -77,8 +109,8 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 
 // topLevelDecls counts the top-level declarations of src's ANTLR tree, or -1
 // when src does not parse cleanly with galop (no native tree to walk).
-func topLevelDecls(p transpiler.GalaParser, src string) int {
-	parsed := p.ParseFile(src)
+func topLevelDecls(src string) int {
+	parsed := transpiler.NewAntlrGalaParser().ParseFile(src)
 	if parsed.CleanNative() == nil {
 		return -1
 	}
@@ -86,12 +118,13 @@ func topLevelDecls(p transpiler.GalaParser, src string) int {
 }
 
 // checkWalksAgree fails tb unless the native and the ANTLR walk of path give
-// the same Go, or the same error, and the native walk lowered every top-level
-// declaration of the file (each one up to the failing one, on an error) while
-// the ANTLR walk lowered none.
+// the same Go, or the same error, and each walk took the tree it should: the
+// native walk lowered every top-level declaration of the file (each one up to
+// the failing one, on an error) when the analysis converted its native tree,
+// and none when it did not, and the ANTLR walk none.
 func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src string) (native walkRun, ok bool) {
 	tb.Helper()
-	want := topLevelDecls(nativeW.p, src)
+	want := topLevelDecls(src)
 	if want < 0 {
 		return walkRun{}, false
 	}
@@ -100,7 +133,9 @@ func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src str
 	switch {
 	case a.native != 0:
 		tb.Errorf("%s: the ANTLR walk lowered %d declarations on the native tree", path, a.native)
-	case n.err == nil && n.native != want, n.err != nil && n.native > want:
+	case !n.converted && n.native != 0:
+		tb.Errorf("%s: the native walk lowered %d declarations on a tree the analysis did not convert", path, n.native)
+	case n.converted && n.err == nil && n.native != want, n.err != nil && n.native > want:
 		tb.Errorf("%s: the native walk lowered %d of %d top-level declarations (error: %v)", path, n.native, want, n.err)
 	case n.out != a.out:
 		tb.Errorf("%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
@@ -131,35 +166,40 @@ func firstLineDiff(x, y string) string {
 // TestNativeWalkAgrees holds the transformer's walk of the compiled file's
 // top-level declarations on its native tree to its walk on ANTLR's: every
 // GALA source staged as data, transpiled as the CLI transpiles a file, gives
-// byte-identical Go, or the same error, both ways. Each file's native walk
-// must have lowered each of its top-level declarations (checkWalksAgree), so
-// a bridge or converter that fails quietly cannot turn the comparison into
-// ANTLR's against ANTLR's.
+// byte-identical Go, or the same error, both ways. Each file's walk must have
+// taken the tree it should (checkWalksAgree), and most must have taken the
+// native one, so a bridge or converter that fails quietly cannot turn the
+// comparison into ANTLR's against ANTLR's.
 func TestNativeWalkAgrees(t *testing.T) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	paths, searchPaths := walkCorpus(t)
-	nativeW, antlrW := newWalkPipeline(searchPaths, false), newWalkPipeline(searchPaths, true)
-	files, clean, decls := 0, 0, 0
+	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
+	files, clean, walked, decls := 0, 0, 0, 0
 	for _, path := range paths {
 		src, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n, ok := checkWalksAgree(t, nativeW, antlrW, path, string(src)); ok {
-			files++
-			decls += n.native
-			if n.err == nil {
-				clean++
-			}
+		n, ok := checkWalksAgree(t, nativeW, antlrW, path, string(src))
+		if !ok {
+			continue
+		}
+		files++
+		decls += n.native
+		if n.err == nil {
+			clean++
+		}
+		if n.converted {
+			walked++
 		}
 	}
 	// Floors catch the sources not being staged or the native walk going
 	// unused.
-	if files < 200 || clean < files*3/4 || decls < files {
-		t.Fatalf("walked %d sources, %d of them transpiled, %d top-level declarations on the native tree", files, clean, decls)
+	if files < 200 || clean < files*3/4 || walked < files*3/4 || decls < files {
+		t.Fatalf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
 	}
-	t.Logf("walked %d sources, %d of them transpiled, %d top-level declarations on the native tree", files, clean, decls)
+	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
 }
 
 // walkCases cover every top-level declaration shape the native walk reads,
@@ -171,6 +211,8 @@ var walkCases = []struct{ name, src string }{
 package main
 
 import (
+	"go/ast"
+	"go/token"
 	"fmt"
 	s "strings"
 	. "martianoff/gala/collection_immutable"
@@ -286,7 +328,7 @@ func TestNativeWalkCases(t *testing.T) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	_, searchPaths := walkCorpus(t)
-	nativeW, antlrW := newWalkPipeline(searchPaths, false), newWalkPipeline(searchPaths, true)
+	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
 	dir := t.TempDir()
 	for _, c := range walkCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -305,6 +347,9 @@ func TestNativeWalkCases(t *testing.T) {
 			// declaration shape in it is lowered to the end.
 			if c.name == walkCases[0].name && n.err != nil {
 				t.Fatalf("the case does not transpile: %v", n.err)
+			}
+			if !n.converted {
+				t.Fatalf("the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 			}
 			t.Logf("the native walk lowered %d declarations; error: %v", n.native, n.err)
 		})

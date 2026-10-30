@@ -139,13 +139,10 @@ type galaASTTransformer struct {
 	// its top-level walk reads that tree (see walkSource), nil while it reads
 	// ANTLR's. The native walk crosses to ANTLR's tree through it (crossTo).
 	native *galaparser.Native
-	// antlrWalkOnly and onNativeDecl are test hooks, unset outside tests:
-	// antlrWalkOnly makes the walk read ANTLR's tree whatever the parse came
-	// with, and onNativeDecl is told of each top-level declaration the native
-	// walk lowers. TestNativeWalkAgrees uses them to compare the walks and to
-	// prove which tree each file's walk read.
-	antlrWalkOnly bool
-	onNativeDecl  func()
+	// onNativeDecl, when set, is told of each top-level declaration the
+	// native walk lowers. It observes and changes nothing;
+	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
+	onNativeDecl func()
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
@@ -449,7 +446,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol, fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
 	}
-	src := t.walkSource(richAST, sourceFile)
+	src := newWalkSource(richAST, sourceFile)
+	t.native = src.h
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName

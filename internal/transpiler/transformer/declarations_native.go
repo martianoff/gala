@@ -80,12 +80,8 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	// Track position for error reporting in deeply-nested helpers
 	start := td.Start()
 	t.lastLine, t.lastCol = int(start.Line), int(start.Column)
-	if td.ChildCount() == 0 {
-		return nil, nil
-	}
-	// A topLevelDeclaration holds one node, the declaration.
-	decl := td.Child(0).Node()
-	if !decl.Ok() {
+	decl, ok := topDeclKid(td)
+	if !ok {
 		return nil, nil
 	}
 	switch decl.Kind() {
@@ -109,6 +105,25 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	return nil, nil
 }
 
+// topDeclKid is the declaration td, a topLevelDeclaration node, holds, and
+// false when it holds none (parse-error recovery).
+func topDeclKid(td native.GalaNodeRef) (native.GalaNodeRef, bool) {
+	if td.ChildCount() == 0 {
+		return native.GalaNodeRef{}, false
+	}
+	decl := td.Child(0).Node()
+	return decl, decl.Ok()
+}
+
+// oneDecl is the result of lowering a declaration to the one Go declaration
+// d, or the error err.
+func oneDecl(d ast.Decl, err error) ([]ast.Decl, error) {
+	if err != nil {
+		return nil, err
+	}
+	return []ast.Decl{d}, nil
+}
+
 // readEmbedDeclNative is readEmbedDecl of n.
 func readEmbedDeclNative(n native.EmbedDeclarationNode) embedDecl {
 	d := embedDecl{name: n.Identifier().GetText()}
@@ -126,47 +141,52 @@ func readEmbedDeclNative(n native.EmbedDeclarationNode) embedDecl {
 	return d
 }
 
-// nativeBinding is what the native val and var declaration handles share.
+// nativeBinding is what the native val and var declaration handles share,
+// as tupleDeclaration is what their contexts share.
 type nativeBinding interface {
+	Ref() native.GalaNodeRef
 	TuplePattern() native.TuplePatternNode
 	IdentifierList() native.IdentifierListNode
 	Type_() native.TypeNode
 	ExpressionList() native.ExpressionListNode
 }
 
+// bindingIdList is the identifier list of n: its own, or its tuple pattern's.
+func bindingIdList(n nativeBinding) native.GalaNodeRef {
+	if tp := n.TuplePattern(); tp.Ok() {
+		return tp.IdentifierList().GalaNodeRef
+	}
+	return n.IdentifierList().GalaNodeRef
+}
+
 // readBindingDeclNative is readBindingDecl of a package-level val or var
 // declaration n, keyword. The native walk reaches no declaration in a body
 // yet: those are statements.
-func (t *galaASTTransformer) readBindingDeclNative(n interface {
-	nativeBinding
-	Ref() native.GalaNodeRef
-}, keyword string) bindingDecl {
-	d := bindingDecl{at: nativeRange(n.Ref()), topLevel: true}
-	idList := n.IdentifierList().GalaNodeRef
+func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword string) bindingDecl {
+	d := bindingDecl{at: nativeRange(n.Ref()), topLevel: true, names: nativeDeclNames(bindingIdList(n))}
+	typ, list := n.Type_(), n.ExpressionList()
+	if typ.Ok() {
+		d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
+	}
+	if list.Ok() {
+		d.exprs = crossTo[*grammar.ExpressionListContext](t, list.GalaNodeRef)
+	}
 	if tp := n.TuplePattern(); tp.Ok() {
 		r := nativeRange(tp.GalaNodeRef)
 		d.tuple = &r
-		idList = tp.IdentifierList().GalaNodeRef
-	}
-	d.names = nativeDeclNames(idList)
-	typ := n.Type_()
-	if typ.Ok() {
-		d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
-		d.typAt = nativeRange(typ.GalaNodeRef)
-	}
-	if list := n.ExpressionList(); list.Ok() {
-		d.exprs = crossTo[*grammar.ExpressionListContext](t, list.GalaNodeRef)
-		d.exprsAt = nativeRange(list.GalaNodeRef)
-		for range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
-			d.nExprs++
+		if typ.Ok() {
+			d.typAt = nativeRange(typ.GalaNodeRef)
 		}
-		if d.tuple == nil && isLoneBlank(d.names) {
-			d.blankForm = keyword + " _ = ..."
-			if typ.Ok() {
-				d.blankForm = keyword + " _ " + typ.GetText() + " = ..."
+		if list.Ok() {
+			d.exprsAt = nativeRange(list.GalaNodeRef)
+			for range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
+				d.nExprs++
 			}
-			d.blankHint = topLevelBlankHint
 		}
+	}
+	if d.exprs != nil && d.tuple == nil && isLoneBlank(d.names) {
+		d.blankForm = blankDeclarationForm(keyword, d.typ)
+		d.blankHint = topLevelBlankHint
 	}
 	return d
 }
@@ -189,7 +209,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 		}
 	}
 	if tps := n.TypeParameters(); tps.Ok() {
-		d.typeParams, d.hasTypeParams = nativeTypeParams(tps), true
+		d.typeParams = nativeTypeParams(tps)
 	}
 	return d
 }
@@ -199,7 +219,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 	id := n.Identifier()
 	d := typeDecl{name: id.GetText(), nameAt: nativeRange(id.GalaNodeRef)}
 	if tps := n.TypeParameters(); tps.Ok() {
-		d.typeParams, d.hasTypeParams = nativeTypeParams(tps), true
+		d.typeParams = nativeTypeParams(tps)
 	}
 	if st := n.StructType(); st.Ok() {
 		d.kind = structTypeDecl
@@ -217,7 +237,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 			spec := native.MethodSpecNode{GalaNodeRef: m}
 			ms := methodSpecDecl{name: spec.Identifier().GetText(), sig: crossTo[*grammar.SignatureContext](t, spec.Signature().GalaNodeRef)}
 			if tps := spec.TypeParameters(); tps.Ok() {
-				ms.typeParams, ms.hasTypeParams = nativeTypeParams(tps), true
+				ms.typeParams = nativeTypeParams(tps)
 			}
 			d.methods = append(d.methods, ms)
 		}
@@ -237,7 +257,7 @@ func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDec
 	id := n.Identifier()
 	d := shorthandDecl{at: nativeRange(n.GalaNodeRef), name: id.GetText(), nameAt: nativeRange(id.GalaNodeRef)}
 	if tps := n.TypeParameters(); tps.Ok() {
-		d.typeParams, d.hasTypeParams = nativeTypeParams(tps), true
+		d.typeParams = nativeTypeParams(tps)
 	}
 	for p := range galaparser.NativeKids(n.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		param := native.ParameterNode{GalaNodeRef: p}
@@ -273,13 +293,4 @@ func readImportDeclNative(n native.GalaNodeRef) []importSpecDecl {
 		specs = append(specs, d)
 	}
 	return specs
-}
-
-// oneDecl is the result of lowering a declaration to the one Go declaration
-// d, or the error err.
-func oneDecl(d ast.Decl, err error) ([]ast.Decl, error) {
-	if err != nil {
-		return nil, err
-	}
-	return []ast.Decl{d}, nil
 }
