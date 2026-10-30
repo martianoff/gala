@@ -39,9 +39,10 @@ type Native struct {
 	err  error
 	// ctxs is the ANTLR context of each native node, by node index.
 	ctxs []antlr.ParserRuleContext
-	// bridged is whether the bridge holds where the compiler crosses it (see
-	// Bridged), settled by the conversion.
-	bridged bool
+	// bridged, settled on the first call to Bridged, is whether the bridge
+	// holds where the compiler crosses it.
+	bridgedOnce sync.Once
+	bridged     bool
 	// nodes, built on the first call to Node, maps a context to its node.
 	nodesOnce sync.Once
 	nodes     map[antlr.ParserRuleContext]int32
@@ -80,9 +81,7 @@ func (t *Native) convert() {
 	}()
 	if t.tree, t.ctxs = galop.ToNative(t.root, t.stream, t.src); t.tree == nil {
 		t.err = errNoNative
-		return
 	}
-	t.bridged = bridgeHolds(t.tree, t.ctxs)
 }
 
 // Bridged reports whether the tree converted and its bridge to the ANTLR
@@ -92,11 +91,14 @@ func (t *Native) convert() {
 // Every reader of a file that crosses the bridge (the undefined-symbol
 // check's walk, the analyzer's collection of the file's declarations) works
 // on the native tree only when it holds, and on the ANTLR tree otherwise, so
-// they all take the same tree. A nil *Native is not bridged.
+// they all take the same tree. It is checked once, on the first call, safely
+// from any goroutine. A nil *Native is not bridged.
 func (t *Native) Bridged() bool {
-	if _, err := t.Tree(); err != nil {
+	tree, err := t.Tree()
+	if err != nil {
 		return false
 	}
+	t.bridgedOnce.Do(func() { t.bridged = bridgeHolds(tree, t.ctxs) })
 	return t.bridged
 }
 

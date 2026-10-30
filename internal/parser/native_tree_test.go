@@ -149,8 +149,8 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 }
 
 // TestBridgeHolds: the bridge holds for a converted parse, and not once the
-// root, a function declaration or an expression lacks its context, or the
-// contexts do not match the nodes.
+// root, a function declaration or an expression lacks its context or has
+// another rule's, or the contexts do not match the nodes.
 func TestBridgeHolds(t *testing.T) {
 	p := parseWithGalop("package main\n\nval x = 1\n\nfunc f() int = 2\n")
 	tree, err := p.Native.Tree()
@@ -165,10 +165,18 @@ func TestBridgeHolds(t *testing.T) {
 			if tree.Node(i).Kind() != kind {
 				continue
 			}
-			ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
-			ctxs[i] = nil
-			if bridgeHolds(tree, ctxs) {
-				t.Errorf("bridged with no context for node %d (%s)", i, native.GalaRuleNames[tree.Node(i).Rule()])
+			// No context, then another rule's: the root's, or for the root
+			// the last node's before it.
+			other := p.Native.ctxs[tree.Root().Index()]
+			if i == tree.Root().Index() {
+				other = p.Native.ctxs[i-1]
+			}
+			for _, ctx := range []antlr.ParserRuleContext{nil, other} {
+				ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
+				ctxs[i] = ctx
+				if bridgeHolds(tree, ctxs) {
+					t.Errorf("bridged with context %T for node %d (%s)", ctx, i, native.GalaRuleNames[tree.Node(i).Rule()])
+				}
 			}
 		}
 	}
