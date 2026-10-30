@@ -37,45 +37,48 @@ func (r *recorder) Reference(name string, at scopewalk.Site, use scopewalk.Use) 
 	r.events = append(r.events, fmt.Sprintf("%s at %d:%d %q %+v", name, at.Line, at.Column, at.Text, use))
 }
 
-// optionSets are the option sets the walks are compared under, reporting to
-// r: the capture analysis's, the undefined-symbol check's, and the blunt
-// pattern binding. The hooks record their call and bind the receiver's
-// identifiers, as the analyzer's do, so a hook handed the wrong declaration
-// changes what follows; hooked says which sets have them. Their ANTLR hook
-// is in the options, their native one is enterNative.
-func optionSets(r *recorder) (opts []scopewalk.Options, hooked []bool) {
+// optionSet is one set of options the walks are compared under: the options,
+// whose EnterFunctionScope (if any) is ANTLR's walk's hook, and enter, the
+// native walk's.
+type optionSet struct {
+	opts  scopewalk.Options
+	enter EnterFunctionScope
+}
+
+// optionSets are the option sets the walks are compared under: the capture
+// analysis's, the undefined-symbol check's, and the blunt pattern binding.
+// The hooks record their call, ANTLR's to a and the native one to n, and bind
+// the receiver's identifiers, as the analyzer's do, so a hook handed the
+// wrong declaration changes what follows.
+func optionSets(a, n *recorder) []optionSet {
 	hook := func(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
 		start := fn.GetStart()
-		r.enter(fn.Identifier().GetText(), start.GetLine(), start.GetColumn())
+		a.enter(fn.Identifier().GetText(), start.GetLine(), start.GetColumn())
 		if recv := fn.Receiver(); recv != nil {
 			w.BindIdentifiersIn(recv)
 		}
 	}
-	return []scopewalk.Options{
-		{ParseInterpolations: true},
-		{
+	enter := func(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
+		start := fn.Start()
+		n.enter(parser.NativeText(fn.Identifier().GalaNodeRef), int(start.Line), int(start.Column))
+		BindIdentifiersIn(w, fn.Receiver().GalaNodeRef)
+	}
+	return []optionSet{
+		{opts: scopewalk.Options{ParseInterpolations: true}},
+		{opts: scopewalk.Options{
 			ParseInterpolations:            true,
 			RequireCleanInterpolationParse: true,
 			SkipCompositeLiteralKeys:       true,
 			SkipTypedPatternArgument:       true,
 			EnterFunctionScope:             hook,
-		},
-		{BindWholePattern: true, EnterFunctionScope: hook},
-	}, []bool{false, true, true}
+		}, enter: enter},
+		{opts: scopewalk.Options{BindWholePattern: true, EnterFunctionScope: hook}, enter: enter},
+	}
 }
 
 // enter records a call of the hook, on the function named name at line:col.
 func (r *recorder) enter(name string, line, col int) {
 	r.events = append(r.events, fmt.Sprintf("enter %s at %d:%d", name, line, col))
-}
-
-// enterNative is optionSets' hook on the native tree, reporting to r.
-func enterNative(r *recorder) EnterFunctionScope {
-	return func(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
-		start := fn.Start()
-		r.enter(textOf(fn.Identifier().GalaNodeRef), int(start.Line), int(start.Column))
-		BindIdentifiersIn(w, fn.Receiver().GalaNodeRef)
-	}
 }
 
 // walkBoth walks ctx, a context of p, on ANTLR's tree and its node on the
@@ -90,17 +93,11 @@ func walkBoth(p *parser.Parsed, ctx antlr.ParserRuleContext) string {
 	}
 	params, isParams := ctx.(*grammar.ParametersContext)
 	var a, n recorder
-	optsA, hooked := optionSets(&a)
-	optsN, _ := optionSets(&n)
-	for i := range optsA {
+	for i, set := range optionSets(&a, &n) {
 		a.events, n.events = nil, nil
-		wa := scopewalk.New(&a, optsA[i])
-		wn := scopewalk.New(&n, optsN[i])
-		var enter EnterFunctionScope
-		if hooked[i] {
-			enter = enterNative(&n)
-		}
-		nw := New(wn, enter)
+		wa := scopewalk.New(&a, set.opts)
+		wn := scopewalk.New(&n, set.opts)
+		nw := New(wn, set.enter)
 		wa.PushScope()
 		wn.PushScope()
 		if isParams {

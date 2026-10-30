@@ -269,8 +269,8 @@ func (w *Walker) BindParameters(params grammar.IParametersContext) {
 	}
 }
 
-// Report emits an unbound value-position reference (for the walks, and a
-// NativeWalker): a name no scope binds goes to the Visitor. Inside a re-parsed
+// Report emits an unbound value-position reference (for both walks, this
+// package's and nativewalk's): a name no scope binds goes to the Visitor. Inside a re-parsed
 // interpolation fragment the reported token is the enclosing string literal —
 // see posOverride.
 func (w *Walker) Report(name string, at Site, use Use) {

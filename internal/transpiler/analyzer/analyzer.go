@@ -2708,7 +2708,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			}
 			// No native tree: the parsed-file cache keeps none, and the
 			// native collection runs only where the undefined-symbol check,
-			// which runs after it, will walk the native tree anyway: on the
+			// which runs after it, reads the native tree too: on the
 			// top-level file alone.
 			res, err := a.analyze(tree, docs, nil, filePath)
 			if err == nil {

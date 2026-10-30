@@ -34,9 +34,7 @@ func (c *undefChecker) walkSourceFileNative(root native.GalaNodeRef) {
 			d := native.StructShorthandDeclarationNode{GalaNodeRef: decl}
 			w.PushScope()
 			bindTypeParametersNative(w, d.TypeParameters())
-			for _, p := range nativeParams(d.Parameters()) {
-				bindNativeID(w, p.Identifier().GalaNodeRef)
-			}
+			nativewalk.BindParameters(w, d.Parameters())
 			nw.WalkParameterDefaults(d.Parameters())
 			w.PopScope()
 		}
@@ -56,18 +54,9 @@ func (c *undefChecker) bindFileLevelNamesNative(root native.GalaNodeRef) {
 		case native.GalaKIND_varDeclaration:
 			tp = native.VarDeclarationNode{GalaNodeRef: decl}.TuplePattern()
 		case native.GalaKIND_embedDeclaration:
-			bindNativeID(c.walker, native.EmbedDeclarationNode{GalaNodeRef: decl}.Identifier().GalaNodeRef)
+			nativewalk.BindID(c.walker, native.EmbedDeclarationNode{GalaNodeRef: decl}.Identifier())
 		}
-		for id := range galaparser.NativeKids(tp.IdentifierList().GalaNodeRef, native.GalaKIND_identifier) {
-			bindNativeID(c.walker, id)
-		}
-	}
-}
-
-// bindNativeID is scopewalk.Walker.BindID of identifier id.
-func bindNativeID(w *scopewalk.Walker, id native.GalaNodeRef) {
-	if id.Ok() {
-		w.Bind(galaparser.NativeText(id))
+		nativewalk.BindIdentifierList(c.walker, tp.IdentifierList())
 	}
 }
 
@@ -78,14 +67,14 @@ func bindFunctionDeclarationScopeNative(w *scopewalk.Walker, fn native.FunctionD
 	if !recv.Ok() {
 		return
 	}
-	bindNativeID(w, recv.Identifier().GalaNodeRef)
+	nativewalk.BindID(w, recv.Identifier())
 	nativewalk.BindIdentifiersIn(w, recv.Type_().GalaNodeRef)
 }
 
 // bindTypeParametersNative is bindTypeParameters of tps.
 func bindTypeParametersNative(w *scopewalk.Walker, tps native.TypeParametersNode) {
 	for p := range galaparser.NativeKids(tps.TypeParameterList().GalaNodeRef, native.GalaKIND_typeParameter) {
-		bindNativeID(w, native.TypeParameterNode{GalaNodeRef: p}.Identifier(0).GalaNodeRef)
+		nativewalk.BindID(w, native.TypeParameterNode{GalaNodeRef: p}.Identifier(0))
 	}
 }
 

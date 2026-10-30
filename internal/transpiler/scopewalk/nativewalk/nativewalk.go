@@ -25,35 +25,54 @@ type EnterFunctionScope func(w *scopewalk.Walker, fn native.FunctionDeclarationN
 
 // Walker is the walk on the native tree of a scopewalk.Walker: it reports to
 // that Walker's Visitor, under its options, in its scopes.
-type Walker struct {
-	w     *scopewalk.Walker
-	enter EnterFunctionScope
-}
+type Walker struct{ w walk }
 
 // New is w's walk on the native tree. enter, which may be nil, stands in for
 // w's Options.EnterFunctionScope, whose hook takes an ANTLR context and is
 // never called on this tree.
 func New(w *scopewalk.Walker, enter EnterFunctionScope) Walker {
-	return Walker{w: w, enter: enter}
+	return Walker{walk{w, w.Options(), enter}}
 }
 
 // Walk is scopewalk.Walker.Walk of node n.
-func (nw Walker) Walk(n native.GalaNodeRef) { nw.walk().walk(n) }
+func (nw Walker) Walk(n native.GalaNodeRef) { nw.w.walk(n) }
 
 // WalkFunctionDeclaration is scopewalk.Walker.WalkFunctionDeclaration of fn.
 func (nw Walker) WalkFunctionDeclaration(fn native.FunctionDeclarationNode) {
-	nw.walk().walkFunctionDeclaration(fn)
+	nw.w.walkFunctionDeclaration(fn)
 }
 
 // WalkParameterDefaults is scopewalk.Walker.WalkParameterDefaults of params.
 func (nw Walker) WalkParameterDefaults(params native.ParametersNode) {
-	nw.walk().walkParameterDefaults(params)
+	nw.w.walkParameterDefaults(params)
 }
 
-func (nw Walker) walk() walk { return walk{nw.w, nw.w.Options(), nw.enter} }
+// The binders of scopewalk.Walker on the native tree: each binds in w's
+// innermost scope what its ANTLR twin, the Walker method of its name, binds.
+
+// BindID is scopewalk.Walker.BindID of identifier id.
+func BindID(w *scopewalk.Walker, id native.IdentifierNode) {
+	if id.Ok() {
+		w.Bind(parser.NativeText(id.GalaNodeRef))
+	}
+}
+
+// BindIdentifierList is scopewalk.Walker.BindIdentifierList of idList.
+func BindIdentifierList(w *scopewalk.Walker, idList native.IdentifierListNode) {
+	for id := range parser.NativeKids(idList.GalaNodeRef, native.GalaKIND_identifier) {
+		w.Bind(parser.NativeText(id))
+	}
+}
+
+// BindParameters is scopewalk.Walker.BindParameters of params.
+func BindParameters(w *scopewalk.Walker, params native.ParametersNode) {
+	for p := range parser.NativeKids(params.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+		BindID(w, native.ParameterNode{GalaNodeRef: p}.Identifier())
+	}
+}
 
 // BindIdentifiersIn is scopewalk.Walker.BindIdentifiersIn of node n: it binds
-// every identifier under n in w's innermost scope.
+// every identifier under n.
 func BindIdentifiersIn(w *scopewalk.Walker, n native.GalaNodeRef) {
 	if !n.Ok() {
 		return
@@ -62,7 +81,7 @@ func BindIdentifiersIn(w *scopewalk.Walker, n native.GalaNodeRef) {
 		if n.Kind() != native.GalaKIND_identifier {
 			return true
 		}
-		w.Bind(textOf(n))
+		w.Bind(parser.NativeText(n))
 		return false
 	})
 }
@@ -78,9 +97,6 @@ type walk struct {
 // Tokens and binders
 // ---------------------------------------------------------------------------
 
-// textOf is n's text (parser.NativeText).
-func textOf(n native.GalaNodeRef) string { return parser.NativeText(n) }
-
 // isToken reports whether t is a token whose text is text.
 func isToken(t native.GalaTerminal, text string) bool { return t.Ok() && t.GetText() == text }
 
@@ -93,7 +109,7 @@ func siteOf(tok native.GalaToken, text string) scopewalk.Site {
 // what scopewalk.TokenSite gives for its context's start token. An identifier
 // of no token has no site.
 func IdentifierSite(id native.GalaNodeRef) (string, scopewalk.Site) {
-	name := textOf(id)
+	name := parser.NativeText(id)
 	if id.StopIndex() < id.StartIndex() {
 		return name, scopewalk.Site{}
 	}
@@ -107,23 +123,13 @@ func (w walk) referenceID(id native.IdentifierNode, use scopewalk.Use) {
 	w.Report(name, at, use)
 }
 
-func (w walk) bindID(id native.IdentifierNode) {
-	if id.Ok() {
-		w.Bind(textOf(id.GalaNodeRef))
-	}
-}
+func (w walk) bindID(id native.IdentifierNode) { BindID(w.Walker, id) }
 
 func (w walk) bindIdentifierList(idList native.IdentifierListNode) {
-	for _, id := range idList.AllIdentifier() {
-		w.Bind(textOf(id.GalaNodeRef))
-	}
+	BindIdentifierList(w.Walker, idList)
 }
 
-func (w walk) bindParameters(params native.ParametersNode) {
-	for _, p := range params.ParameterList().AllParameter() {
-		w.bindID(p.Identifier())
-	}
-}
+func (w walk) bindParameters(params native.ParametersNode) { BindParameters(w.Walker, params) }
 
 func (w walk) walkParameterDefaults(params native.ParametersNode) {
 	for _, p := range params.ParameterList().AllParameter() {
@@ -365,7 +371,7 @@ func (w walk) walkPostfixExpr(pf native.PostfixExprNode) {
 // nativeSuffix is the shape of a native postfix suffix (see scopewalk.ClassifySuffixes).
 func nativeSuffix(s native.PostfixSuffixNode) scopewalk.Suffix {
 	if id := s.Identifier(); id.Ok() {
-		return scopewalk.Suffix{Selector: textOf(id.GalaNodeRef)}
+		return scopewalk.Suffix{Selector: parser.NativeText(id.GalaNodeRef)}
 	}
 	return scopewalk.Suffix{Index: s.ExpressionList().Ok()}
 }
@@ -499,7 +505,7 @@ func (w walk) bindPatternExpression(expr native.ExpressionNode) {
 	if len(suffixes) == 0 {
 		prim := pf.PrimaryExpr().Primary()
 		if id := prim.Identifier(); id.Ok() {
-			w.Bind(textOf(id.GalaNodeRef))
+			w.Bind(parser.NativeText(id.GalaNodeRef))
 			return
 		}
 		for _, e := range prim.TupleExpressionList().AllExpression() {

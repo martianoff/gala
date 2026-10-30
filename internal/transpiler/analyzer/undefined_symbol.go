@@ -401,23 +401,19 @@ func (a *galaAnalyzer) undefinedSymbolErrors(
 ) []*galaerr.SemanticError {
 	c := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
 	c.walker = scopewalk.New(c, undefWalkOptions())
-	root := nf.root.GalaNodeRef
-	if nf.ok() {
+	// The value walk, then the type pass. Type positions are invisible to the
+	// value walker, so they get their own pass over the same qualifier set.
+	// Sharing the checker shares its `reported` map too, so a qualifier
+	// missing in both a value and a type position is reported once rather
+	// than twice — each report walks every search root to build its hint, so
+	// the dedupe is worth real work. It runs under this function's eligibility
+	// guards, which is why it lives here rather than standing alone. See
+	// checkTypeNames.
+	if root := nf.root.GalaNodeRef; nf.ok() {
 		c.walkSourceFileNative(root)
-	} else {
-		c.walkSourceFile(sourceFile)
-	}
-
-	// Type positions are invisible to the value walker, so they get their own
-	// pass over the same qualifier set. Sharing the checker shares its
-	// `reported` map too, so a qualifier missing in both a value and a type
-	// position is reported once rather than twice — each report walks every
-	// search root to build its hint, so the dedupe is worth real work. It runs
-	// under this function's eligibility guards, which is why it lives here
-	// rather than standing alone. See checkTypeNames.
-	if nf.ok() {
 		c.checkTypeNamesNative(root)
 	} else {
+		c.walkSourceFile(sourceFile)
 		c.checkTypeNames(sourceFile)
 	}
 	return c.sortedErrs()
@@ -1654,7 +1650,7 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 	}
 	ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
 	if len(ids) < 2 {
-		c.checkBareTypeName(ids[0].GetText(), identifierSite(ids[0]), typeParams, extra)
+		c.checkBareTypeID(ids[0], typeParams, extra)
 		return
 	}
 	c.checkTypeQualifier(ids[0].GetText(), identifierSite(ids[0]))
@@ -1663,6 +1659,12 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 // identifierSite is the site of identifier id: its token.
 func identifierSite(id grammar.IIdentifierContext) scopewalk.Site {
 	return scopewalk.TokenSite(id.GetStart())
+}
+
+// checkBareTypeID is checkBareTypeName of the name identifier id spells, at
+// its token.
+func (c *undefChecker) checkBareTypeID(id grammar.IIdentifierContext, typeParams, extra map[string]bool) {
+	c.checkBareTypeName(id.GetText(), identifierSite(id), typeParams, extra)
 }
 
 // checkTypeQualifier checks name, the package qualifier of a qualified type
@@ -1718,11 +1720,11 @@ func (c *undefChecker) checkBareTypePositions(n antlr.Tree, typeParams, extra ma
 	switch ctx := n.(type) {
 	case *grammar.TypeAliasContext:
 		if id := ctx.Identifier(); id != nil {
-			c.checkBareTypeName(id.GetText(), identifierSite(id), typeParams, extra)
+			c.checkBareTypeID(id, typeParams, extra)
 		}
 	case *grammar.TypeParameterContext:
 		if ids := ctx.AllIdentifier(); len(ids) == 2 {
-			c.checkBareTypeName(ids[1].GetText(), identifierSite(ids[1]), typeParams, extra)
+			c.checkBareTypeID(ids[1], typeParams, extra)
 		}
 	case *grammar.TypeContext:
 		sig, ok := ctx.Signature().(*grammar.SignatureContext)
@@ -1735,7 +1737,7 @@ func (c *undefChecker) checkBareTypePositions(n antlr.Tree, typeParams, extra ma
 		}
 		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			if pc, ok := p.(*grammar.ParameterContext); ok && pc.Identifier() != nil && pc.Type_() == nil {
-				c.checkBareTypeName(pc.Identifier().GetText(), identifierSite(pc.Identifier()), typeParams, extra)
+				c.checkBareTypeID(pc.Identifier(), typeParams, extra)
 			}
 		}
 	}
