@@ -198,9 +198,9 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
-	// onCollect, when set, is told for each file analyze collects the
-	// declarations of which tree it collects them on, and why (see
-	// collectTrace). It observes and changes nothing; the collection tests
+	// onCollect, when set, is told which tree analyze collects the top-level
+	// file's declarations on, and why (see collectTrace); the files of the
+	// packages it imports, collected on ANTLR's tree, are not reported. It observes and changes nothing; the collection tests
 	// set it to prove which tree each file took.
 	onCollect func(collectTrace)
 
@@ -1132,8 +1132,9 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 
 	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
 	// checksUndefined says whether the undefined-symbol check (GALA-E0023,
-	// below) runs. Decided here, with every import loaded, because the
-	// collection follows it: converting the tree costs several times what
+	// below, after the collection) runs. Decided here, with every import
+	// loaded and before the collection, because the collection depends on
+	// it: converting the tree costs several times what
 	// collecting on it saves, so the file's own declarations are collected
 	// on its native tree only when the check's walk converts that tree
 	// anyway, and on its ANTLR tree otherwise (see collect_native.go).
@@ -1142,7 +1143,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 	if checksUndefined && native != nil {
 		nf = nativeFileOf(handle)
 	}
-	if a.onCollect != nil {
+	if a.onCollect != nil && isTopLevel {
 		a.onCollect(collectTrace{filePath: filePath, checksUndefined: checksUndefined, hasHandle: handle != nil, native: nf.ok()})
 	}
 
@@ -2679,8 +2680,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 				docs = p.Docs
 			}
 			// No native tree: the parsed-file cache keeps none, and the
-			// undefined-symbol check, which the native collection follows,
-			// runs on the top-level file alone.
+			// native collection runs only where the undefined-symbol check,
+			// which runs after it, will walk the native tree anyway: on the
+			// top-level file alone.
 			res, err := a.analyze(tree, docs, nil, nil, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {

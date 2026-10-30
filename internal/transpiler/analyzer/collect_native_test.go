@@ -16,12 +16,12 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// TestMain parses with galop's parser whatever the build's or environment's
-// default: only its parses come with a native tree, which these tests
-// compare ANTLR's collection to.
-func TestMain(m *testing.M) {
+// parseWithGalop makes tb's parses use galop's parser whatever the build's
+// or environment's default, until tb ends: only its parses come with a
+// native tree, which these tests compare ANTLR's collection to.
+func parseWithGalop(tb testing.TB) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
-	os.Exit(m.Run())
+	tb.Cleanup(func() { galaparser.RequestEngine("") })
 }
 
 // antlrOnly parses as its parser does but gives no native-tree handle, so an
@@ -77,19 +77,21 @@ type analysis struct {
 	trace  collectTrace
 }
 
-// analyzeFile analyzes path, whose source is text, with a, parsing it with
-// a.parser; packageFiles are the other files of its package, or nil to let
-// the analyzer find library siblings in its directory. ok is false when the
-// source does not parse: the transpiler stops at a syntax error, before
-// analysis.
-func analyzeFile(tb testing.TB, a *galaAnalyzer, path, text string, packageFiles []string) (an analysis, ok bool) {
+// analyzeForCollection analyzes path, whose source is text, with a, parsing
+// it with a.parser; packageFiles are the other files of its package, or nil
+// to let the analyzer find library siblings in its directory. ok is false
+// when the source does not parse: the transpiler stops at a syntax error,
+// before analysis.
+func analyzeForCollection(tb testing.TB, a *galaAnalyzer, path, text string, packageFiles []string) (an analysis, ok bool) {
 	tb.Helper()
 	parsed := a.parser.ParseFile(text)
 	if parsed.Err() != nil {
 		return analysis{}, false
 	}
-	var traces []collectTrace
-	a.onCollect = func(t collectTrace) { traces = append(traces, t) }
+	// The file's own trace, which onCollect reports alone: no trace of an
+	// imported package's file, which might be this one, stands in for it
+	// when the analysis fails before the collection.
+	a.onCollect = func(t collectTrace) { an.trace = t }
 	defer func() { a.onCollect = nil }()
 	a.packageFiles = packageFiles
 	a.checkedDirs = make(map[string]bool)
@@ -100,12 +102,8 @@ func analyzeFile(tb testing.TB, a *galaAnalyzer, path, text string, packageFiles
 	// one that imports such a package still finds it unloaded.
 	clear(a.packageLoadFailures)
 	res, err := a.AnalyzeParsed(parsed, path)
-	// The file's own trace: analyze also collects the files of the packages
-	// it imports, through analyzePackage, before it collects this one.
-	for _, t := range traces {
-		if t.filePath == path {
-			an.trace = t
-		}
+	if an.trace.filePath != "" && an.trace.filePath != path {
+		tb.Errorf("%s: analyze reported the collection of %s", path, an.trace.filePath)
 	}
 	if err != nil {
 		an.result = err
@@ -148,6 +146,7 @@ func checkTrace(tb testing.TB, name string, an analysis, wantHandle bool) bool {
 // when they are collected on ANTLR's. Each file's collection must have taken
 // the tree it should (checkTrace), and most must have taken the native one.
 func TestCollectionsAgree(t *testing.T) {
+	parseWithGalop(t)
 	paths, searchPaths := collectionCorpus(t)
 	p := galaparser.NewAntlrGalaParser()
 	nativeA := newCollectionAnalyzer(t, p, searchPaths)
@@ -158,11 +157,11 @@ func TestCollectionsAgree(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, ok := analyzeFile(t, nativeA, path, string(text), nil)
+		n, ok := analyzeForCollection(t, nativeA, path, string(text), nil)
 		if !ok {
 			continue
 		}
-		a, _ := analyzeFile(t, antlrA, path, string(text), nil)
+		a, _ := analyzeForCollection(t, antlrA, path, string(text), nil)
 		analyzed++
 		if !checkTrace(t, path+" (native run)", n, true) || !checkTrace(t, path+" (ANTLR run)", a, false) {
 			continue
@@ -281,6 +280,7 @@ func docExamples(tb testing.TB) [][][2]string {
 // are collected on. Every input of collectionErrorInputs must fail, and be
 // collected on its native tree.
 func TestCollectionDiagnosticsAgree(t *testing.T) {
+	parseWithGalop(t)
 	_, searchPaths := collectionCorpus(t)
 	p := galaparser.NewAntlrGalaParser()
 	nativeA := newCollectionAnalyzer(t, p, searchPaths)
@@ -320,14 +320,14 @@ func TestCollectionDiagnosticsAgree(t *testing.T) {
 				}
 			}
 			name := in.name + ": " + in.files[i][0]
-			n, ok := analyzeFile(t, nativeA, path, in.files[i][1], siblings)
+			n, ok := analyzeForCollection(t, nativeA, path, in.files[i][1], siblings)
 			if !ok {
 				if in.mustFail {
 					t.Errorf("%s: does not parse", name)
 				}
 				continue
 			}
-			a, _ := analyzeFile(t, antlrA, path, in.files[i][1], siblings)
+			a, _ := analyzeForCollection(t, antlrA, path, in.files[i][1], siblings)
 			compared++
 			if !checkTrace(t, name+" (native run)", n, true) || !checkTrace(t, name+" (ANTLR run)", a, false) {
 				continue
@@ -358,6 +358,7 @@ func TestCollectionDiagnosticsAgree(t *testing.T) {
 // no native tree to collect on, so its error-recovered tree is collected on
 // ANTLR's tree; a clean parse gives one.
 func TestCollectionTakesCleanParses(t *testing.T) {
+	parseWithGalop(t)
 	p := galaparser.NewAntlrGalaParser()
 	broken := p.ParseFile("package main\n\nfunc f( = 1\n")
 	if len(broken.Errors) == 0 {
@@ -487,6 +488,7 @@ func sortedKeys(m reflect.Value) []reflect.Value {
 // 2b). "convert" is the conversion to the native tree itself, which a file
 // collected on its native tree pays once.
 func BenchmarkCollect(b *testing.B) {
+	parseWithGalop(b)
 	paths, searchPaths := collectionCorpus(b)
 	type source struct {
 		path, pkgName string
