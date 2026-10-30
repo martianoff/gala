@@ -79,6 +79,17 @@ func (s TreeSet[T]) Size() int = s.size
 // Length is an alias for Size.
 func (s TreeSet[T]) Length() int = s.size
 
+// Equal reports whether other holds the same elements, however each set was
+// built: both hold them in order. It is O(n).
+func (s TreeSet[T]) Equal(other TreeSet[T]) bool {
+    if s.size != other.size {
+        return false
+    }
+    val elems = s.ToGoSlice()
+    // The fold carries the index of the next element of s, -1 once one differs.
+    other.FoldLeft(0, (i, elem) => if (i >= 0 && Equal(elems[i], elem)) i + 1 else -1) == s.size
+}
+
 // compare compares two values and returns -1, 0, or 1.
 // Handles primitive types automatically, custom types must implement Ordered[T].
 func compare[T comparable](a T, b T) int {

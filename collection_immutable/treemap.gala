@@ -92,6 +92,17 @@ func (m TreeMap[K, V]) Size() int = m.size
 // Length is an alias for Size.
 func (m TreeMap[K, V]) Length() int = m.size
 
+// Equal reports whether other holds the same keys, each mapped to an Equal
+// value, however each map was built: both hold them in key order. It is O(n).
+func (m TreeMap[K, V]) Equal(other TreeMap[K, V]) bool {
+    if m.size != other.size {
+        return false
+    }
+    val entries = m.FoldLeftKV(go_interop.SliceWithCapacity[Tuple[K, V]](m.size), (acc, k, v) => go_interop.SliceAppend(acc, (k, v)))
+    // The fold carries the index of the next entry of m, -1 once one differs.
+    other.FoldLeftKV(0, (i, k, v) => if (i >= 0 && Equal(entries[i].V1, k) && Equal(entries[i].V2, v)) i + 1 else -1) == m.size
+}
+
 // === Comparison ===
 
 // treeMapCompare compares two keys and returns -1, 0, or 1.

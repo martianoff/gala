@@ -1,0 +1,14 @@
+List: true true
+Array: true true
+HashSet: true true
+HashMap: true true
+TreeSet: true true
+TreeMap: true
+struct: true true
+pointer field: true false
+sealed: true false
+Option: true true
+tuple: true
+own Equal: true true true
+match: home away
+NaN: false false

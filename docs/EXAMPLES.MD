@@ -432,6 +432,32 @@ func main() {
 }
 ```
 
+## Equality Compares by Value
+
+`a == b` calls `a.Equal(b)` on structs, sealed types, tuples, `Option` and the collections, so values built separately with the same contents are `==`. Types made of primitives only keep Go's `==`, which gives the same answer.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Route(name string, stops List[string])
+
+val Home = ListOf("home")
+
+func where(stops List[string]) string = stops match {
+    case Home => "home"
+    case _    => "away"
+}
+
+func main() {
+    Println(ListOf(1, 2) == ListOf(2).Prepend(1))                  // true
+    Println(Route("r", ListOf("a")) == Route("r", ListOf("a")))    // true
+    Println(HashSetOf(ArrayOf(1, 2), ArrayOf(1).Append(2)).Size()) // 1
+    Println(where(ListOf("home")))                                 // home
+}
+```
+
 ## Matching Against Constants (Stable Identifiers)
 
 A capitalized name that refers to a value in scope compares with that value instead of binding a new variable. A lowercase name never compares with a value: it binds (unless it names a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard.

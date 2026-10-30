@@ -494,7 +494,7 @@ A mutable hash-based set providing O(1) average-case operations. Best for fast m
 Elements must be either:
 - **Primitive types**: `int`, `string`, `float64`, `bool`, etc. (handled automatically)
 - **`Tuple`, `Option` and `Either`** holding such values: std implements `Hashable` for them
-- **Immutable `List` and `HashSet`** of such values: they implement `Hashable` and compare by their elements (an immutable `Array` is not `comparable`, so it is not a mutable `HashSet` element)
+- **Immutable `List`, `Array` and `HashSet`** of such values: they implement `Hashable` and compare by their elements
 - **Types implementing `Hashable`**: Custom types that provide a `Hash() uint32` method
 
 ```gala

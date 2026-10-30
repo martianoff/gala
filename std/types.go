@@ -172,6 +172,11 @@ func Equal[T any](v1, v2 T) bool {
 	}
 
 	for i := 0; i < val1.NumField(); i++ {
+		if !val1.Field(i).CanInterface() {
+			// A Go struct with unexported fields: reflection cannot hand
+			// them to Equal, so the struct compares deeply as a whole.
+			return reflect.DeepEqual(v1, v2)
+		}
 		f1 := val1.Field(i).Interface()
 		f2 := val2.Field(i).Interface()
 		if !Equal(f1, f2) {

@@ -435,7 +435,15 @@ val same = p1.Equal(p2)    // false
 
 A `Copy` override can be any expression, lambdas included. A lambda's parameter types come from the field's declared type, as with a named constructor argument: `calc.Copy(Op = (x) => x + 1)`.
 
-`==` and `!=` are Go's operators: they compare a struct field by field when Go can compare every field. A struct, sealed type or tuple that holds a function, a Go slice or map, or a collection such as `Array` cannot be compared with `==` ([GALA-E0084](/docs/errors/gala-e0084/)); compare it with `Equal`.
+#### Equality: `==` and `!=`
+
+`a == b` means `a.Equal(b)`, and `a != b` means `!a.Equal(b)`, for every type with an `Equal(other T) bool` method: every struct, sealed type and tuple, `Option`, `Either` and `Try`, the immutable collections, and any type that declares its own `Equal`. Values compare by value, as Scala's case classes do: `ListOf(1, 2) == ListOf(1, 2)` is `true`, and so is `==` on two structs whose `List` fields hold the same elements.
+
+Where Go's `==` gives the same answer — a type of primitives only, through its fields, cases and type arguments, with no `Equal` of its own anywhere in it (`struct Point(x int, y int)`, `Option[int]`, `(int, string)`) — the comparison stays Go's `==` and costs nothing extra. A NaN equals nothing either way.
+
+`==` keeps Go's meaning where there is no `Equal`: pointers (`*T`, `Ptr[T]`, and so the mutable collections) compare by identity, interfaces as Go compares them, a type parameter (`T comparable`) with Go's `==` (its type is not known statically; call `Equal(a, b)` for value equality), Go types such as `time.Time` with Go's `==`, and `nil` checks as in Go. A struct *holding* a pointer compares with `Equal`, which compares what it points to.
+
+Inside a type's own `Equal`, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`, since lowering it would call the method being defined; on a type Go cannot compare it is [GALA-E0084](/docs/errors/gala-e0084/). `==` on values Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a `T any` — is GALA-E0084 too, and so is `==` on a struct, sealed type or tuple holding a function unless it declares its own `Equal`. With a literal on the left, `0 == a` calls `a.Equal(0)`. Go code that compares GALA values with its own `==` keeps Go's meaning.
 
 ### Type Aliases {#type-aliases}
 
@@ -614,7 +622,7 @@ Untyped constants still mix, as in Go: `id == 42`, `lookup(7)`, `val zero Millis
 
 **Methods.** An opaque type starts with no methods: those of its underlying type are **not** inherited — `opaque type Timeout time.Duration` has no `.Seconds()`. Declare methods in GALA, or in a hand-written `.go` file of the same package. A `String() string` method makes the type a `fmt.Stringer`, used by `Println` and string interpolation.
 
-**Hash and Compare are generated**, so an opaque type works as a `HashMap` or `HashSet` key and in `TreeSet`, `TreeMap` and `Sorted()`: `Hash() uint32` for every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`) for every one except those over `bool`. Each is skipped when the type already declares it, in GALA or in a `.go` file of the package. Equality is Go's `==`. Hover, completion and `gala doc` list the generated methods, marked *synthesized*.
+**Hash and Compare are generated**, so an opaque type works as a `HashMap` or `HashSet` key and in `TreeSet`, `TreeMap` and `Sorted()`: `Hash() uint32` for every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`) for every one except those over `bool`. Each is skipped when the type already declares it, in GALA or in a `.go` file of the package. `==` is Go's, unless the type declares `Equal(other T) bool`, which `==` then calls. Hover, completion and `gala doc` list the generated methods, marked *synthesized*.
 
 ```gala
 package main
@@ -857,7 +865,7 @@ val desc = flag match {
 A `match` used as a statement (its value discarded) is side-effect dispatch: its arms need not share a type, and each arm is a statement. An arm may make a call, assign or do nothing, but an arm that is, or in braces ends in, a plain value (a literal, name, operator expression or lambda) is rejected as evaluated but not used.
 
 #### Stable Identifiers (Constants in Patterns)
-A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. The value's type must be comparable: a function value, an `Array`, or a struct that holds one is [GALA-E0084](/docs/errors/gala-e0084/); bind it and compare in a guard, `case v if v.Equal(Answer)`. Lowercase identifiers never compare with a value: they bind (unless they name a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
+A capitalized identifier in a `case` pattern that names a value in scope (a local or package `val`/`var`, a parameter, a binding of an enclosing arm, or a `const`/`var` from a hand-written `.go` file of the same package) compares with `==` instead of binding. A qualified name such as `math.MaxInt8` always compares. The arm compares as `==` does: a value with an `Equal` method — a struct, a collection, an `Option` — matches when it is `Equal` to the subject, and a value that cannot be compared at all, such as a function, is [GALA-E0084](/docs/errors/gala-e0084/). Lowercase identifiers never compare with a value: they bind (unless they name a variant of the matched sealed type or a zero-field extractor), so compare against a lowercase value with a guard. A name cannot appear twice in one pattern (`case (X, X)` is rejected), and a zero-field variant or extractor of the same name takes precedence.
 ```gala
 type Environment string
 

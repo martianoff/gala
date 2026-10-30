@@ -1,0 +1,69 @@
+package main
+
+import (
+    "math"
+
+    . "martianoff/gala/collection_immutable"
+)
+
+// `a == b` is `a.Equal(b)` and `a != b` is `!a.Equal(b)`: values compare by
+// value, however each was built. Pointers, interfaces and type parameters
+// keep Go's ==.
+
+struct Route(name string, stops List[string])
+
+struct Node(v int, next *Node)
+
+struct Reading(v float64)
+
+sealed type Event {
+    case Moved(path List[int])
+    case Stopped(at int)
+}
+
+// Cell compares its value modulo 10. == uses this Equal; inside it, == on
+// Cell would call it again, so there == is Go's.
+struct Cell(v int)
+
+func (c Cell) Equal(o Cell) bool = c.v % 10 == o.v % 10
+
+// Tag declares an Equal that uses == on Tag itself: Go's ==, not a call of
+// the method being defined.
+struct Tag(name string)
+
+func (t Tag) Equal(o Tag) bool = t == o
+
+val Home = ListOf("home")
+
+func where(stops List[string]) string = stops match {
+    case Home => "home"
+    case _    => "away"
+}
+
+func main() {
+    // Collections built separately, in different orders.
+    Println("List:", ListOf(1, 2, 3) == ListOf(3).Prepend(2).Prepend(1), ListOf(1) != ListOf(2))
+    Println("Array:", ArrayOf(1, 2, 3) == ArrayOf(1).Append(2).Append(3), ArrayOf(2, 3).Prepend(1) == ArrayOf(1, 2, 3))
+    Println("HashSet:", HashSetOf(1, 2, 3) == HashSetOf(3, 2, 1), HashSetOf(1) != HashSetOf(1, 2))
+    Println("HashMap:", HashMapOf((1, "a"), (2, "b")) == HashMapOf((2, "b"), (1, "a")), HashMapOf((1, "a"), (2, "b")).Remove(2) == HashMapOf((1, "a")))
+    Println("TreeSet:", TreeSetOf(1, 2, 3, 4, 5) == TreeSetOf(5, 4, 3, 2, 1), TreeSetOf(1, 2, 3).Remove(3) == TreeSetOf(1, 2))
+    Println("TreeMap:", TreeMapOf((1, "a"), (2, "b"), (3, "c")) == TreeMapOf((3, "c"), (2, "b"), (1, "a")))
+
+    // Values that hold collections or pointers.
+    Println("struct:", Route("r", ListOf("a", "b")) == Route("r", ListOf("b").Prepend("a")), Route("r", ListOf("a")) != Route("r", ListOf("b")))
+    var n1 = Node(2, nil)
+    var n2 = Node(2, nil)
+    Println("pointer field:", Node(1, &n1) == Node(1, &n2), &n1 == &n2)
+    Println("sealed:", Moved(ListOf(1, 2)) == Moved(ListOf(1, 2)), Moved(ListOf(1)) == Stopped(1))
+    Println("Option:", Some(ListOf(1)) == Some(ListOf(1)), Some(ListOf(1)) != None[List[int]]())
+    Println("tuple:", (1, ListOf("x")) == (1, ListOf("x")))
+
+    // A type's own Equal, and == inside it.
+    Println("own Equal:", Cell(1) == Cell(11), Cell(1) != Cell(2), Tag("a") == Tag("a"))
+
+    // A stable identifier compares the same way.
+    Println("match:", where(ListOf("home")), where(ListOf("work")))
+
+    // A NaN equals nothing, through Go's == and through Equal alike.
+    Println("NaN:", Reading(math.NaN()) == Reading(math.NaN()), ListOf(math.NaN()) == ListOf(math.NaN()))
+}

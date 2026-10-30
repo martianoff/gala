@@ -105,7 +105,7 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 		if result, err = t.binaryOperation(opText, tok, ctx, result, right); err != nil {
 			return nil, err
 		}
-		if err := t.checkComparableOperands(relExprs[i-1], relExprs[i], result); err != nil {
+		if result, err = t.lowerEquality(relExprs[i-1], relExprs[i], result); err != nil {
 			return nil, err
 		}
 	}

@@ -2,7 +2,7 @@ package main
 
 import im "martianoff/gala/collection_immutable"
 
-// List and HashSet implement std.Hashable and compare by value, so they work
+// List, Array and HashSet implement std.Hashable and compare by value, so they work
 // as HashSet elements and HashMap keys without joining them into strings.
 
 // A struct key that holds a collection compares by value too: HashSet and
@@ -29,6 +29,12 @@ func main() {
     Println(s"memo entries: ${updated.Size()}")
     Println(s"memo ( [: ${updated.GetOrElse(im.ListOf("(", "["), 0)}")
     Println(s"memo [ (: ${updated.GetOrElse(im.ListOf("[", "("), 0)}")
+
+    // Grid cells keyed by an Array of coordinates, however the Array was built.
+    val visited = im.HashMapOf((im.ArrayOf(0, 0), "start"), (im.ArrayOf(2, 3), "goal"))
+    val cell = im.ArrayOf(3).Prepend(2)
+    Println(s"cell [2 3]: ${visited.GetOrElse(cell, "unseen")}")
+    Println(s"cells: ${visited.Put(im.EmptyArray[int]().Append(0).Append(0), "again").Size()}")
 
     // Two routes built separately, with the same stops, are one key.
     val routes = im.HashSetOf(Route(im.ListOf("A", "B")), Route(im.ListOf("B").Prepend("A")))

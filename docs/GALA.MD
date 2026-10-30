@@ -850,7 +850,53 @@ val p2 = Person("Alice", 30)
 val same = p1.Equal(p2) // true
 ```
 
-`==` and `!=` are Go's operators: they compare a struct field by field when Go can compare every field. A struct, sealed type or tuple that holds a function, a Go slice or map, or a collection such as `Array` cannot be compared with `==` ([GALA-E0084](errors/GALA-E0084.md)); compare it with `Equal`.
+#### Equality: `==` and `!=`
+`a == b` means `a.Equal(b)`, and `a != b` means `!a.Equal(b)`, for every type with an `Equal(other T) bool` method: every struct, sealed type and tuple (their `Equal` is synthesized), `Option`, `Either` and `Try`, the immutable collections (`List`, `Array`, `HashSet`, `HashMap`, `TreeSet`, `TreeMap`), and any type that declares its own `Equal`. Values compare by value, as Scala's case classes do: two values built separately with the same contents are `==`.
+
+```gala
+package main
+
+import . "martianoff/gala/collection_immutable"
+
+struct Route(name string, stops List[string])
+
+func main() {
+    val a = Route("r", ListOf("a", "b"))
+    val b = Route("r", ListOf("b").Prepend("a"))
+    Println(a == b)                             // true: Equal compares the stops
+    Println(ListOf(1, 2) == ListOf(1, 2))       // true
+    Println(HashSetOf(1, 2) != HashSetOf(2, 1)) // false: same elements
+}
+```
+
+Where Go's `==` gives the same answer as `Equal`, the comparison stays Go's `==` and costs nothing extra: a type made of primitives only, through its fields, cases and type arguments, with no `Equal` of its own anywhere in it — `struct Point(x int, y int)`, `Option[int]`, `(int, string)`, a sealed type whose cases hold primitives. A float compares by IEEE rules either way, so a NaN equals nothing.
+
+`==` keeps Go's meaning where there is no `Equal`:
+
+| Operands | `==` compares |
+|----------|---------------|
+| pointers (`*T`, `Ptr[T]`), and so a mutable collection, which is used through one | identity. A struct *holding* a pointer compares with `Equal`, which compares what the pointer points to |
+| interfaces (`any`, a GALA interface) | as Go compares interface values |
+| a type parameter (`T comparable`) | with Go's `==`: the type is not known statically, so a `List` passed as `T` compares by identity. Call `Equal(a, b)` for value equality |
+| a Go type (`time.Time`, any Go struct) | with Go's `==`, even when the Go type has an `Equal` method |
+| a value and `nil` | as Go does |
+
+**Inside a type's own `Equal`**, `==` on that same type, or on a type that holds it by value (`Option[T]`, a tuple, a `List[T]`), is Go's `==`: lowering it would call the method being defined. On a type Go cannot compare it is [GALA-E0084](errors/GALA-E0084.md); compare the fields instead. `==` on a field of another type still compares with that type's `Equal`. A helper that `Equal` calls is not inside it, so `==` there calls `Equal` again.
+
+```gala
+package main
+
+struct Code(value string)
+
+// Codes are equal ignoring a "#" prefix. `c == o` in here is Go's ==.
+func (c Code) Equal(o Code) bool = c == o || "#" + c.value == o.value || c.value == "#" + o.value
+
+func main() {
+    Println(Code("a1") == Code("#a1")) // true: == calls Code's Equal
+}
+```
+
+`==` on values that Go cannot compare and that have no `Equal` — a function, a Go slice or map, a Go type holding one, a type parameter constrained by `any` — is [GALA-E0084](errors/GALA-E0084.md). So is `==` on a struct, sealed type or tuple that holds a function, unless it declares its own `Equal`: the synthesized one would find the function equal to nothing, not even itself. With a literal on the left, `0 == a` calls `a.Equal(0)`. Hand-written Go that compares GALA values with its own `==` keeps Go's meaning; see [Go Interop](GO_INTEROP.MD).
 
 #### Apply Method
 If a struct has an `Apply` method, it can be called like a function. GALA automatically expands `object(args)` to `object.Apply(args)`.
@@ -1121,7 +1167,8 @@ same package. A `String() string` method makes the type a
 `HashSet` key and in `TreeSet`, `TreeMap` and `Sorted()`: `Hash() uint32` for
 every opaque type, and `Compare(other T) int` (which makes it an `Ordered[T]`)
 for every one except those over `bool`. Each is skipped when the type already
-declares it, in GALA or in a `.go` file of the package. Equality is Go's `==`.
+declares it, in GALA or in a `.go` file of the package. `==` is Go's, unless the
+type declares `Equal(other T) bool`, which `==` then calls.
 Hover, completion and `gala doc` list the generated methods, marked
 *synthesized*.
 
@@ -1290,7 +1337,7 @@ This generates:
 - Empty companion structs `Circle{}`, `Rectangle{}`, `Point{}`
 - `Apply` methods on each companion for construction
 - `Unapply` methods for pattern matching
-- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so `a.Equal(b)` is the canonical way to test sealed values for structural equality. The Go `==` operator also works on sealed values when every variant field is a Go-comparable type; otherwise it is [GALA-E0084](errors/GALA-E0084.md).
+- `Copy()` and `Equal(other Shape) bool` on `Shape` — the same auto-synthesis as for ordinary structs (see [§4 Automatic Copy and Equal Methods](#automatic-copy-and-equal-methods)). `Equal` first compares the `_variant` tag, then dispatches field-wise via `std.Equal`, so sealed values compare structurally. `a == b` is `a.Equal(b)` ([Equality](#equality--and-)); it stays Go's `==` when every case holds primitives only, which gives the same answer.
 
 A variant is a constructor and a pattern, not a type. Every value `Circle(...)` builds is a `Shape`, and GALA has no type for a single variant: narrowing to one is what a `match` arm does. Naming a variant where a type is expected — a parameter, result, field, `val`/`var` annotation, type argument (`Array[Some[int]]`, `ArrayOf[Circle](...)`), typed pattern (`case c: Circle`), receiver or alias target — is rejected with [GALA-E0061](errors/GALA-E0061.md). Take the sealed type instead and match on the variant:
 
@@ -1713,7 +1760,7 @@ case Some(y) if y > 0 => "positive"
 ```
 
 #### Stable Identifiers (Constants in Patterns)
-As in Scala, a **capitalized** bare identifier in a `case` pattern that names a value in scope is a *stable identifier*: the arm compares the subject with that value using Go's `==` instead of binding a new variable. The value can be:
+As in Scala, a **capitalized** bare identifier in a `case` pattern that names a value in scope is a *stable identifier*: the arm compares the subject with that value as `==` does ([Equality](#equality--and-)) instead of binding a new variable. The value can be:
 
 - a local `val`/`var` or a function parameter,
 - a package-level `val`/`var` from any file of the package,
@@ -1733,7 +1780,7 @@ func describe(env Environment) string = env match {
 }
 ```
 
-Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`, and in partial functions. A qualified name such as `case math.MaxInt8` is always compared, never bound. Because the comparison is Go's `==`, the value's type must be comparable with the matched type: a function value, an `Array`, or a struct that holds one is [GALA-E0084](errors/GALA-E0084.md); bind such a value and compare it in a guard, `case v if v.Equal(Answer)`. A stable-identifier arm is conditional, so the match still needs a `case _` default.
+Stable identifiers work anywhere a sub-pattern does: `case Some(Answer)`, `case (Answer, s)`, `case Point(Origin, y)`, and in partial functions. A qualified name such as `case math.MaxInt8` is always compared, never bound. A value with an `Equal` method — a struct, a collection, an `Option` — matches when it is `Equal` to the subject, so `case Home` with `val Home = ListOf("home")` matches any list holding just `"home"`. A value that cannot be compared at all, such as a function, is [GALA-E0084](errors/GALA-E0084.md). A stable-identifier arm is conditional, so the match still needs a `case _` default.
 
 A few edge cases:
 
@@ -4030,16 +4077,17 @@ fmt.Println(snapshot.Size())  // Still has data
 
 #### Custom Key Types
 
-Primitive keys (numbers, strings, bools) are hashed by value. `Tuple` (every arity), `Option` and `Either` implement `Hashable` by combining the hashes of the values they hold, so they are keys as they are, nested or not, as long as the values inside are hashable. So do the immutable `List` (in order) and `HashSet` (in any order), which compare by their elements:
+Primitive keys (numbers, strings, bools) are hashed by value. `Tuple` (every arity), `Option` and `Either` implement `Hashable` by combining the hashes of the values they hold, so they are keys as they are, nested or not, as long as the values inside are hashable. So do the immutable `List` and `Array` (in order) and `HashSet` (in any order), which compare by their elements:
 
 ```gala
 val edges = HashMapOf(((1, 2), "a"), ((2, 3), "b"))
 val byNick = EmptyHashMap[Option[string], string]().Put(None[string](), "anonymous") // immutable HashMap
 val byPath = HashMapOf((ListOf("a", "b"), 1))                                         // List keys
 val seen = HashSetOf(ListOf(1, 2), ListOf(2, 1), ListOf(2).Prepend(1))              // 2 elements
+val rows = HashSetOf(ArrayOf(1, 2), ArrayOf(1).Append(2))                           // 1 element
 ```
 
-An `Array` is not a key yet: `HashSet` elements and `HashMap` keys must be `comparable`, and an `Array` holds a Go slice. Use a `List`. A collection's `Hash` visits every element (O(n)) and is not cached.
+A collection's `Hash` visits every element (O(n)) and is not cached.
 
 For custom types as keys, implement the `Hashable` interface:
 

@@ -4,4 +4,6 @@ distinct groups: 2
 memo entries: 2
 memo ( [: 3
 memo [ (: 0
+cell [2 3]: goal
+cells: 2
 distinct routes: 1

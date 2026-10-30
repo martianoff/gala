@@ -112,6 +112,34 @@ func BenchmarkArrayGet(b *testing.B) {
 	}
 }
 
+func BenchmarkArrayPrepend(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		a := EmptyArray[int]()
+		for j := 0; j < benchSize; j++ {
+			a = a.Prepend(j)
+		}
+		sinkInt = a.Size()
+	}
+}
+
+// BenchmarkArrayGetPrefixed reads an Array whose prepend buffer is non-empty,
+// so lookups go through both the buffer and the trie.
+func BenchmarkArrayGetPrefixed(b *testing.B) {
+	a := buildArray()
+	for j := 0; j < 16; j++ {
+		a = a.Prepend(j)
+	}
+	keys := benchKeys()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, k := range keys {
+			sinkInt += a.Get(k)
+		}
+	}
+}
+
 func BenchmarkArrayUpdated(b *testing.B) {
 	a := buildArray()
 	keys := benchKeys()
@@ -303,5 +331,61 @@ func BenchmarkTreeSetRemove(b *testing.B) {
 			x = x.Remove(k)
 		}
 		sinkInt = x.Size()
+	}
+}
+
+// The Equal benchmarks compare two collections built separately with the same
+// elements, which is what `a == b` on them costs: == lowers to Equal. They
+// visit every element.
+
+func BenchmarkListEqual(b *testing.B) {
+	x, y := buildList(), buildList()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = x.Equal(y)
+	}
+}
+
+func BenchmarkArrayEqual(b *testing.B) {
+	x, y := buildArray(), buildArray()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = x.Equal(y)
+	}
+}
+
+func BenchmarkHashSetEqual(b *testing.B) {
+	keys := benchKeys()
+	x, y := buildHashSet(keys), buildHashSet(keys)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = x.Equal(y)
+	}
+}
+
+func BenchmarkHashMapEqual(b *testing.B) {
+	keys := benchKeys()
+	x, y := buildHashMap(keys), buildHashMap(keys)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = x.Equal(y)
+	}
+}
+
+func BenchmarkTreeSetEqual(b *testing.B) {
+	keys := benchKeys()
+	x, y := buildTreeSet(keys), buildTreeSet(keys)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = x.Equal(y)
+	}
+}
+
+func BenchmarkTreeMapEqual(b *testing.B) {
+	keys := benchKeys()
+	x, y := buildTreeMap(keys), buildTreeMap(keys)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sinkBool = x.Equal(y)
 	}
 }

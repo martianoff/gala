@@ -310,6 +310,8 @@ A GALA package is a Go package after transpilation. Go code imports it by its im
 
 Every type also gets `Copy()`, `Equal(other)` and, for sealed types, `String()`.
 
+**`==` in Go is Go's.** In GALA, `a == b` on a struct, sealed type, tuple or collection calls `a.Equal(b)` ([Equality](GALA.MD#equality--and-)). Go code that compares GALA values with `==` gets Go's operator: two `List`s built separately with the same elements are not `==` in Go, and a GALA struct holding a collection or a `val` field compares the internal fields. Call `a.Equal(b)` from Go for GALA's meaning.
+
 ### Sealed types have Go constructors
 
 Go can make a value without running any GALA code: `Discount{}` is a composite literal and `var d Discount` a zero value. Neither applies the defaults GALA declares. So an exported sealed type comes with constructors for Go callers, and its Godoc says to use them:

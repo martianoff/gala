@@ -2,8 +2,9 @@ package main
 
 import . "martianoff/gala/collection_immutable"
 
-// `==` compares values Go can compare; a value holding an Array, a function
-// or a Go slice is compared with Equal (`==` on one is GALA-E0084).
+// `==` compares values with Equal: two values built separately with the same
+// contents are ==. A type of primitives only keeps Go's ==, which gives the
+// same answer.
 
 struct Point(x int, y int)
 
@@ -33,8 +34,8 @@ func describe(p Point) string = p match {
 }
 
 func tagged(tags Array[string]) string = tags match {
-    case t if t.Equal(Intro) => "intro"
-    case _                   => "other"
+    case Intro => "intro"
+    case _     => "other"
 }
 
 func main() {
@@ -46,17 +47,16 @@ func main() {
 
     val a = Post("hello", ArrayOf("intro"))
     val b = Post("hello", ArrayOf("intro"))
-    Println(a.Equal(b), a.Equal(Post("hello", ArrayOf("news"))))
-    Println(Poly(ArrayOf(1, 2)).Equal(Poly(ArrayOf(1, 2))), Poly(ArrayOf(1)).Equal(Dot(1)))
-    Println(ArrayOf(1, 2).Equal(ArrayOf(1, 2)), tagged(ArrayOf("intro")), tagged(ArrayOf("news")))
+    Println(a == b, a == Post("hello", ArrayOf("news")))
+    Println(Poly(ArrayOf(1, 2)) == Poly(ArrayOf(1, 2)), Poly(ArrayOf(1)) == Dot(1))
+    Println(ArrayOf(1, 2) == ArrayOf(1, 2), tagged(ArrayOf("intro")), tagged(ArrayOf("news")))
 
-    // Go compares List, HashMap, HashSet and TreeSet by their fields, which
-    // point into the structure: two built separately are not ==, even with
-    // the same contents. Equal compares the contents.
+    // Collections compare by their contents, as Equal does: two built
+    // separately are == when they hold the same elements.
     val xs = ListOf(1, 2)
     val m = HashMapOf(("a", 1))
     val s = HashSetOf(1)
     val t = TreeSetOf(1)
     Println(xs == xs, m == m, s != s, t == t)
-    Println(xs == ListOf(1, 2), m == HashMapOf(("a", 1)), xs.Equal(ListOf(1, 2)), m.Equal(HashMapOf(("a", 1))))
+    Println(xs == ListOf(1, 2), m == HashMapOf(("a", 1)), s != HashSetOf(1), t == TreeSetOf(1))
 }

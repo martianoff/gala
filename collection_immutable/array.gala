@@ -34,22 +34,48 @@ type arrayNode[T any] struct {
     isLeaf   bool
 }
 
+// arrayPrefix is an Array's prepend buffer: the prepended elements in forward
+// order, so elems[0] is logical index 0. It is never modified once built;
+// Prepend and Updated copy it.
+type arrayPrefix[T any] struct {
+    elems []T
+}
+
 // Array represents an immutable indexed sequence.
 // Uses a prefix buffer for amortized O(1) prepend (Scala-inspired).
 //
-// root is never reassigned; it is `var` for the reason List's tail is.
+// Every field is comparable, so an Array is a valid HashSet element and
+// HashMap key; that is why the prefix buffer sits behind a pointer rather
+// than in a slice field.
+//
+// root and prefix are never reassigned; they are `var` for the reason
+// List's tail is.
 type Array[T any] struct {
-    var root OptionPtr[arrayNode[T]] // empty while the tree holds no elements
-    length   int           // Total logical length (prefix + tree)
-    depth    int
-    prefix   []T           // Prepended elements in forward order (prefix[0] is logical index 0)
+    var root   OptionPtr[arrayNode[T]]   // empty while the tree holds no elements
+    length     int                       // Total logical length (prefix + tree)
+    depth      int
+    var prefix OptionPtr[arrayPrefix[T]] // empty until the first Prepend
 }
 
 // EmptyArray returns an empty Array.
-func EmptyArray[T any]() Array[T] {
-    var emptyPrefix []T
-    return Array[T](root = EmptyOptionPtr[arrayNode[T]](), length = 0, depth = 0, prefix = emptyPrefix)
+func EmptyArray[T any]() Array[T] =
+    Array[T](root = EmptyOptionPtr[arrayNode[T]](), length = 0, depth = 0, prefix = noPrefix[T]())
+
+// prefixElems returns the prepend buffer's elements, in forward order; nil
+// when nothing has been prepended.
+func (a Array[T]) prefixElems() []T {
+    if a.prefix.IsDefined() {
+        return a.prefix.Get().elems
+    }
+    var none []T
+    none
 }
+
+// prefixOf wraps elems, already in forward order, as a prepend buffer.
+func prefixOf[T any](elems []T) OptionPtr[arrayPrefix[T]] = SomePtr(&arrayPrefix[T](elems = elems))
+
+// noPrefix is the prepend buffer of an Array nothing has been prepended to.
+func noPrefix[T any]() OptionPtr[arrayPrefix[T]] = EmptyOptionPtr[arrayPrefix[T]]()
 
 // ArrayOf creates an Array from variadic arguments.
 // Example: ArrayOf[int](1, 2, 3) creates Array(1, 2, 3)
@@ -108,8 +134,7 @@ func arrayFromLeaves[T any](leaves []Ptr[arrayNode[T]], length int) Array[T] {
         level = groupNodes(level)
         depth++
     }
-    var emptyPrefix []T
-    return Array[T](root = SomePtr(level[0]), length = length, depth = depth, prefix = emptyPrefix)
+    return Array[T](root = SomePtr(level[0]), length = length, depth = depth, prefix = noPrefix[T]())
 }
 
 // chunkCount is the number of branchingFactor-sized chunks needed to hold n items.
@@ -199,13 +224,11 @@ func (b Ptr[arrayBuilder[T]]) Result() Array[T] {
     if b.display2.Size() == 0 {
         if b.display1.Size() == 1 {
             // Single leaf node
-            var emptyPrefix []T
-            return Array[T](root = SomePtr(b.display1[0]), length = b.length, depth = 1, prefix = emptyPrefix)
+            return Array[T](root = SomePtr(b.display1[0]), length = b.length, depth = 1, prefix = noPrefix[T]())
         }
         // Multiple leaves, need internal node
         var root = &arrayNode[T](children = b.display1, isLeaf = false)
-        var emptyPrefix []T
-        return Array[T](root = SomePtr(root), length = b.length, depth = 2, prefix = emptyPrefix)
+        return Array[T](root = SomePtr(root), length = b.length, depth = 2, prefix = noPrefix[T]())
     }
 
     // We have display2 - need to build deeper tree
@@ -244,8 +267,7 @@ func (b Ptr[arrayBuilder[T]]) Result() Array[T] {
         depth++
     }
 
-    var emptyPrefix []T
-    return Array[T](root = SomePtr(currentLevel[0]), length = b.length, depth = depth, prefix = emptyPrefix)
+    return Array[T](root = SomePtr(currentLevel[0]), length = b.length, depth = depth, prefix = noPrefix[T]())
 }
 
 // IsEmpty returns true if the array is empty.
@@ -274,9 +296,9 @@ func (a Array[T]) Equal(other Array[T]) bool {
 }
 
 // Hash hashes the elements in order (std.Hashable), so Equal Arrays hash
-// alike. Each element must be a primitive or Hashable. It visits every
-// element: it is O(n), and not cached. An Array is not a HashSet element or a
-// HashMap key yet: they need comparable keys, and an Array holds a Go slice.
+// alike, and an Array can be a HashSet element or a HashMap key. Each element
+// must be a primitive or Hashable. It visits every element: it is O(n), and
+// not cached.
 func (a Array[T]) Hash() uint32 = a.FoldLeft(HashInt(int64(a.length)), (h, elem) => HashCombine(h, HashValue(elem)))
 
 // Helper function to calculate required depth for a given size.
@@ -340,10 +362,11 @@ func (a Array[T]) Get(index int) T {
     }
 
     // Check if index is in prefix (prefix is stored in forward order)
-    var prefixLen = a.prefix.Size()
+    val prefix = a.prefixElems()
+    val prefixLen = prefix.Size()
     if index < prefixLen {
         // Prefix stores elements in forward order: prefix[0] is logical index 0
-        return a.prefix[index]
+        return prefix[index]
     }
 
     // Otherwise, get from tree (adjusting index for prefix)
@@ -412,18 +435,13 @@ func (a Array[T]) Updated(index int, value T) Array[T] {
         go_builtins.Panic(f"Array.Updated: index $index out of bounds [0, ${a.length})")
     }
 
-    var prefixLen = a.prefix.Size()
+    val prefix = a.prefixElems()
+    val prefixLen = prefix.Size()
     if index < prefixLen {
-        // Update is in prefix - create new prefix with updated value
-        var newPrefix []T
-        for i := 0; i < prefixLen; i++ {
-            if i == index {
-                newPrefix = go_interop.SliceAppend(newPrefix, value)
-            } else {
-                newPrefix = go_interop.SliceAppend(newPrefix, a.prefix[i])
-            }
-        }
-        return Array[T](root = a.root, length = a.length, depth = a.depth, prefix = newPrefix)
+        // Update is in prefix - copy it, never write to the shared buffer
+        val newPrefix = go_interop.SliceCopy(prefix)
+        newPrefix[index] = value
+        return Array[T](root = a.root, length = a.length, depth = a.depth, prefix = prefixOf(newPrefix))
     }
 
     // Update is in tree
@@ -481,7 +499,7 @@ func newSubtree[T any](value T, depth int) Ptr[arrayNode[T]] =
 // Append adds an element to the end. O(log32 n) = effectively constant.
 func (a Array[T]) Append(value T) Array[T] {
     // Calculate tree length (excluding prefix)
-    var treeLen = a.length - a.prefix.Size()
+    val treeLen = a.length - a.prefixElems().Size()
 
     if treeLen == 0 {
         return Array[T](root = SomePtr(newSubtree[T](value, 1)), length = a.length + 1, depth = 1, prefix = a.prefix)
@@ -508,12 +526,10 @@ func (a Array[T]) AppendAll(other Array[T]) Array[T] {
 // Prepend adds an element to the front. O(1) amortized - uses prefix buffer.
 // The prefix buffer is consolidated into the tree when it reaches 32 elements.
 func (a Array[T]) Prepend(value T) Array[T] {
-    // Create new prefix with value at front (forward order: prefix[0] is logical index 0)
-    var newPrefix []T
-    newPrefix = go_interop.SliceAppend(newPrefix, value)
-    for i := 0; i < a.prefix.Size(); i++ {
-        newPrefix = go_interop.SliceAppend(newPrefix, a.prefix[i])
-    }
+    // Copy the prefix with value at front (forward order: prefix[0] is logical
+    // index 0); the old buffer may be shared, so it is never written to.
+    val prefix = a.prefixElems()
+    val newPrefix = go_interop.SliceAppendAll(go_interop.SliceAppend(go_interop.SliceWithCapacity[T](prefix.Size() + 1), value), prefix)
 
     // If prefix is getting too large, consolidate into tree
     if newPrefix.Size() >= branchingFactor {
@@ -521,7 +537,7 @@ func (a Array[T]) Prepend(value T) Array[T] {
     }
 
     // Otherwise, just update prefix
-    return Array[T](root = a.root, length = a.length + 1, depth = a.depth, prefix = newPrefix)
+    return Array[T](root = a.root, length = a.length + 1, depth = a.depth, prefix = prefixOf(newPrefix))
 }
 
 // consolidateWithPrefix merges the prefix buffer into a new tree.
@@ -535,7 +551,7 @@ func (a Array[T]) consolidateWithPrefix(newPrefix []T) Array[T] {
     }
 
     // Add tree elements
-    val treeLen = a.length - a.prefix.Size()
+    val treeLen = a.length - a.prefixElems().Size()
     a.root.ForEach((root) => {
         for i := 0; i < treeLen; i++ {
             builder.Add(getFromNode[T](root, i, a.depth))
@@ -978,7 +994,7 @@ func (a Array[T]) Sliding(size int) Array[Array[T]] {
 
 // ToGoSlice converts the array to a Go slice. The slice is a fresh copy the caller owns.
 func (a Array[T]) ToGoSlice() []T {
-    val withPrefix = go_interop.SliceAppendAll(go_interop.SliceWithCapacity[T](a.length), a.prefix)
+    val withPrefix = go_interop.SliceAppendAll(go_interop.SliceWithCapacity[T](a.length), a.prefixElems())
     return a.root match {
         case Some(root) => appendLeaves(withPrefix, root)
         case None() => withPrefix
