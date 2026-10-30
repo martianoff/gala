@@ -198,14 +198,11 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
-	// nativeSiblings makes the parsed-file cache keep each file's native
-	// tree, converted, so that a sibling's or an imported file's
-	// declarations are collected on it (see collect_native.go). No analyzer
-	// sets it yet: while the cache also holds each file's ANTLR tree, the
-	// native trees add about a fifth to a build's peak memory (gala-tui: 310
-	// MB to 370 MB) for no measurable gain in time. The test of the sibling
-	// collection sets it.
-	nativeSiblings bool
+	// onCollect, when set, is told for each file analyze collects the
+	// declarations of which tree it collects them on, and why (see
+	// collectTrace). It observes and changes nothing; the collection tests
+	// set it to prove which tree each file took.
+	onCollect func(collectTrace)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go
@@ -285,7 +282,9 @@ type pkgResultCacheEntry struct {
 // stat calls, the cached tree is dropped and the file is re-parsed.
 type parsedFileEntry struct {
 	// parsed is the file's parse, tree and doc comments (see parsedForTree),
-	// without its native tree: nothing reads a sibling's native tree yet.
+	// without its native-tree handle: a sibling's or an imported file's
+	// declarations are collected on ANTLR's tree, and an unconverted handle
+	// would keep the file's token stream alive (see parser.Parsed.Native).
 	parsed  *galaparser.Parsed
 	pkgName string
 	// syntaxErr is the parse failure of a file that does not parse (tree is
@@ -538,9 +537,10 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // undefined-symbol check's scope walk runs through it when there is one, on
 // tree when not. Nothing keeps it.
 //
-// handle is tree's native-tree handle, or nil. The file's own declarations
-// are collected on its native tree when it has one (see collect_native.go),
-// on tree when not.
+// handle is tree's native-tree handle (from Parsed.CleanNative), or nil. The
+// file's own declarations are collected on its native tree when native walks
+// it in the undefined-symbol check too (see checksUndefined), on tree when
+// not (see collect_native.go).
 //
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
@@ -1131,9 +1131,20 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 	decls := newPackageDecls(filePath)
 
 	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
-	// The file's own declarations are collected on its native tree when it
-	// has one, on its ANTLR tree when not (see collect_native.go).
-	nf := nativeFileOf(handle)
+	// checksUndefined says whether the undefined-symbol check (GALA-E0023,
+	// below) runs. Decided here, with every import loaded, because the
+	// collection follows it: converting the tree costs several times what
+	// collecting on it saves, so the file's own declarations are collected
+	// on its native tree only when the check's walk converts that tree
+	// anyway, and on its ANTLR tree otherwise (see collect_native.go).
+	checksUndefined := isTopLevel && !a.skipUndefinedCheck && a.fileImportsFullyLoaded(fileImports, richAST)
+	var nf nativeFile
+	if checksUndefined && native != nil {
+		nf = nativeFileOf(handle)
+	}
+	if a.onCollect != nil {
+		a.onCollect(collectTrace{filePath: filePath, checksUndefined: checksUndefined, hasHandle: handle != nil, native: nf.ok()})
+	}
 
 	// 1. Collect all types
 	if nf.ok() {
@@ -1291,7 +1302,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 		// contribute their metadata: every symbol such an import exports is
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
-		if !a.skipUndefinedCheck && a.fileImportsFullyLoaded(scanFileImports(sourceFile), richAST) {
+		if checksUndefined {
 			if errs := a.checkUndefinedSymbols(sourceFile, native, richAST, filePath, fileDotImportSets); len(errs) > 0 {
 				return nil, errs[0]
 			}
@@ -2664,13 +2675,13 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			// The doc comments the file was parsed with, for the docs of its
 			// declarations.
 			var docs galaparser.Docs
-			var handle *galaparser.Native
 			if p := a.parsedForFile(filePath, tree); p != nil {
-				docs, handle = p.Docs, p.CleanNative()
+				docs = p.Docs
 			}
-			// No native walk: the undefined-symbol check, its one user,
+			// No native tree: the parsed-file cache keeps none, and the
+			// undefined-symbol check, which the native collection follows,
 			// runs on the top-level file alone.
-			res, err := a.analyze(tree, docs, nil, handle, filePath)
+			res, err := a.analyze(tree, docs, nil, nil, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -3670,12 +3681,8 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 	defer func() { a.currentQualifiers = outerQualifiers }()
 	absSibPath := a.parsedFileCacheKey(sibFilePath)
 	var docs galaparser.Docs
-	var nf nativeFile
 	if p := a.parsedForTree(absSibPath, sibTree); p != nil {
 		docs = p.Docs
-		// The parsed-file cache keeps a sibling's native tree converted, or
-		// none (see parseFileCached).
-		nf = nativeFileOf(p.Native)
 	}
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under
@@ -3683,9 +3690,6 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 	sibDisplay := sibFilePath
 	if sibDisplay == "" {
 		sibDisplay = absSibPath
-	}
-	if nf.ok() {
-		return a.extractSiblingDeclsNative(nf, pkgName, richAST, absSibPath, sibDisplay, docs, decls)
 	}
 	// 1. Collect struct types with full field info
 	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
@@ -4736,17 +4740,9 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		return nil, "", nil
 	}
 	pkgName := pkgClause.Identifier().GetText()
-	// The tree and doc comments, and the native tree only when the analyzer
-	// collects siblings on it (see nativeSiblings): converted here, so the
-	// cache keeps no token stream.
-	kept := &galaparser.Parsed{Tree: parsed.Tree, Docs: parsed.Docs}
-	if a.nativeSiblings {
-		if _, err := parsed.Native.Tree(); err == nil {
-			kept.Native = parsed.Native
-		}
-	}
 	a.cacheParsedFile(canonPath, &parsedFileEntry{
-		parsed:  kept,
+		// The tree and doc comments only (see parsedFileEntry.parsed).
+		parsed:  &galaparser.Parsed{Tree: parsed.Tree, Docs: parsed.Docs},
 		pkgName: pkgName,
 		mtime:   info.ModTime(),
 		size:    info.Size(),

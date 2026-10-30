@@ -931,9 +931,10 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
-	// The undefined-symbol check's scope walk, in the analysis, is the one
-	// reader of the native tree: drop its handle, and the tree (or the token
-	// stream and source text it holds until converted), before the transform.
+	// The analysis is the native tree's one reader (the undefined-symbol
+	// check's scope walk, and the collection of the file's declarations that
+	// follows it): drop its handle, and the tree (or the token stream and
+	// source text it holds until converted), before the transform.
 	parsed.Native = nil
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks

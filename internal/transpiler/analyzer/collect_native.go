@@ -13,36 +13,56 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// The collection of a file's declarations on galop's native tree
-// (internal/parser/native): each function here is the twin of the one it is
-// named after, which reads ANTLR's tree, and records the same metadata, in
-// the same order, with the same diagnostics. TestCollectionsAgree holds each
-// pair together over the repository's GALA sources.
+// The collection of the compiled file's own declarations on galop's native
+// tree (internal/parser/native): each function here is the twin of the one
+// it is named after, which reads ANTLR's tree, and records the same metadata,
+// in the same order, with the same diagnostics. TestCollectionsAgree and
+// TestCollectionDiagnosticsAgree hold each pair together.
 //
-// A file is collected on its native tree when it has one (see nativeFileOf):
-// the file being compiled, whose parse comes with a handle, and a package
-// file the parsed-file cache holds a converted tree for. Every other file —
-// one parsed with syntax errors, an LSP buffer, a tree a caller handed in
-// bare — is collected on ANTLR's tree. A file is collected on one tree or
-// the other, never on a mix: the only crossing is inferPackageValInitType,
-// expression inference not yet ported, which reads the initializer's
-// context (nativeFile.expressionCtx).
+// analyze collects a file on its native tree only when the undefined-symbol
+// check's native walk converts that tree anyway (see checksUndefined there):
+// converting costs several times what collecting on it saves. Every other
+// file is collected on ANTLR's tree: a parse by ANTLR's parser or one with
+// syntax errors (no handle, see Parsed.CleanNative), an LSP buffer or a tree
+// a caller handed in bare, a sibling or an imported file (the parsed-file
+// cache keeps no handle), and a file whose check stands down. A file is
+// collected on one tree or the other, never on a mix: the only crossing is
+// inferPackageValInitType, expression inference not yet ported, which reads
+// the initializer's context (nativeFile.expressionCtx).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
 
+// collectTrace is what analyze tells galaAnalyzer.onCollect about a file:
+// whether the undefined-symbol check runs on it, whether its parse came with
+// a native-tree handle, and whether its declarations are collected on the
+// native tree, which they are exactly when both hold and the tree converts.
+type collectTrace struct {
+	filePath        string
+	checksUndefined bool
+	hasHandle       bool
+	native          bool
+}
+
 // nativeFile is a file's native tree, with the handle it came from for the
-// crossings to ANTLR's tree, or the zero nativeFile: no tree (see ok).
+// crossings to ANTLR's tree, and its top-level declarations by kind; or the
+// zero nativeFile: no tree (see ok).
 type nativeFile struct {
 	handle *galaparser.Native
 	root   native.SourceFileNode
+	// The top-level declarations, in source order, bucketed as the
+	// collection reads them: the type and struct shorthand declarations
+	// together (collectFileTypes takes them in one pass), the sealed types,
+	// the opaque types, the functions and methods, the embeds, and the val
+	// and var declarations together.
+	types, sealed, opaque, funcs, embeds, vals []native.GalaNodeRef
 }
 
 // nativeFileOf is the native tree of a parse's handle h, converted now if it
-// was not yet, or no tree when there is none (a nil handle, or the conversion
-// failed) or its bridge to ANTLR's tree does not hold, and the file is
-// collected on ANTLR's tree. A handle comes from Parsed.CleanNative: an
-// error-recovered tree is ANTLR's to read.
+// was not yet, with its top-level declarations bucketed in one pass; or no
+// tree when there is none (a nil handle, or the conversion failed) or its
+// bridge to ANTLR's tree does not hold, and the file is collected on ANTLR's
+// tree.
 func nativeFileOf(h *galaparser.Native) nativeFile {
 	tree, err := h.Tree()
 	if err != nil {
@@ -57,7 +77,32 @@ func nativeFileOf(h *galaparser.Native) nativeFile {
 	if _, ok := h.Ctx(root).(*grammar.SourceFileContext); !ok {
 		return nativeFile{}
 	}
-	return nativeFile{handle: h, root: native.SourceFileNode{GalaNodeRef: root}}
+	nf := nativeFile{handle: h, root: native.SourceFileNode{GalaNodeRef: root}}
+	for td := range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
+		if td.ChildCount() == 0 {
+			continue
+		}
+		// A topLevelDeclaration holds one node, the declaration.
+		decl := td.Child(0).Node()
+		if !decl.Ok() {
+			continue
+		}
+		switch decl.Kind() {
+		case native.GalaKIND_typeDeclaration, native.GalaKIND_structShorthandDeclaration:
+			nf.types = append(nf.types, decl)
+		case native.GalaKIND_sealedTypeDeclaration:
+			nf.sealed = append(nf.sealed, decl)
+		case native.GalaKIND_opaqueTypeDeclaration:
+			nf.opaque = append(nf.opaque, decl)
+		case native.GalaKIND_functionDeclaration:
+			nf.funcs = append(nf.funcs, decl)
+		case native.GalaKIND_embedDeclaration:
+			nf.embeds = append(nf.embeds, decl)
+		case native.GalaKIND_valDeclaration, native.GalaKIND_varDeclaration:
+			nf.vals = append(nf.vals, decl)
+		}
+	}
+	return nf
 }
 
 // ok reports whether f is a native tree, not the zero nativeFile.
@@ -67,36 +112,6 @@ func (f nativeFile) ok() bool { return f.root.Ok() }
 func (f nativeFile) expressionCtx(e native.ExpressionNode) grammar.IExpressionContext {
 	ctx, _ := f.handle.Ctx(e.GalaNodeRef).(grammar.IExpressionContext)
 	return ctx
-}
-
-// nativeKids is n's child nodes of kind, in order, in one pass over its
-// children without allocating.
-func nativeKids[H ~struct{ native.GalaNodeRef }](n native.GalaNodeRef, kind native.GalaKind) iter.Seq[H] {
-	return func(yield func(H) bool) {
-		if !n.Ok() {
-			return
-		}
-		for i := range n.ChildCount() {
-			if c := n.Child(i).Node(); c.Ok() && c.Kind() == kind && !yield(H{c}) {
-				return
-			}
-		}
-	}
-}
-
-// topLevelDecls is the declaration of each of root's top-level declarations,
-// in order: the one node a topLevelDeclaration holds.
-func topLevelDecls(root native.SourceFileNode) iter.Seq[native.GalaNodeRef] {
-	return func(yield func(native.GalaNodeRef) bool) {
-		for td := range nativeKids[native.TopLevelDeclarationNode](root.GalaNodeRef, native.GalaKIND_topLevelDeclaration) {
-			if td.ChildCount() == 0 {
-				continue
-			}
-			if d := td.Child(0).Node(); d.Ok() && !yield(d) {
-				return
-			}
-		}
-	}
 }
 
 // nativePos is transpiler.PosFromToken of n's first token.
@@ -129,7 +144,8 @@ func nativeTypeParamsOf(tps native.TypeParametersNode) ([]string, map[string]str
 	}
 	var names []string
 	var constraints map[string]string
-	for tp := range nativeKids[native.TypeParameterNode](list.GalaNodeRef, native.GalaKIND_typeParameter) {
+	for n := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_typeParameter) {
+		tp := native.TypeParameterNode{GalaNodeRef: n}
 		name, constraint := tp.Identifier(0).GetText(), tp.Identifier(1)
 		names = append(names, name)
 		if constraint.Ok() {
@@ -189,7 +205,7 @@ func nativeReceiverTypeArgNames(t native.TypeNode) []string {
 		return nil
 	}
 	var names []string
-	for arg := range nativeKids[native.TypeNode](list.GalaNodeRef, native.GalaKIND_type) {
+	for arg := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_type) {
 		names = append(names, arg.GetText())
 	}
 	return names
@@ -216,11 +232,53 @@ func (a *galaAnalyzer) nativeSignatureResult(sig native.SignatureNode, pkgName s
 		return transpiler.VoidType{}, nil
 	}
 	var results []transpiler.Type
-	for typ := range nativeKids[native.TypeNode](list.GalaNodeRef, native.GalaKIND_type) {
-		results = append(results, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, typeParams))
+	for typ := range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_type) {
+		results = append(results, a.resolveTypeWithParams(galaparser.NativeTypeText(native.TypeNode{GalaNodeRef: typ}), pkgName, typeParams))
 	}
 	value, _ := transpiler.GoResultValueOf(results)
 	return value.Type, results
+}
+
+// nativeSignatureParams are a signature's parameters as collectFileFuncs and
+// collectFileTypes record them, from its parameters node: each one's type
+// (NilType for one written without), whether the signature is variadic,
+// each one's name ("" for one without), each default by parameter index
+// (recordParamDefault), and the source span of each default (spanOfCtx).
+// Types are resolved with typeParams in scope.
+type nativeSignatureParams struct {
+	types    []transpiler.Type
+	variadic bool
+	names    []string
+	defaults map[int]transpiler.DefaultExpr
+	spans    map[int]defaultExprSpan
+}
+
+// nativeParamsOf reads the parameters of params (see nativeSignatureParams).
+func (a *galaAnalyzer) nativeParamsOf(params native.ParametersNode, pkgName string, typeParams []string) nativeSignatureParams {
+	var sp nativeSignatureParams
+	for i, p := range nativeParams(params) {
+		if typ := p.Type_(); typ.Ok() {
+			sp.types = append(sp.types, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, typeParams))
+			sp.variadic = p.ELLIPSIS().Ok()
+		} else {
+			sp.types = append(sp.types, transpiler.NilType{})
+		}
+		name := ""
+		if id := p.Identifier(); id.Ok() {
+			name = id.GetText()
+		}
+		sp.names = append(sp.names, name)
+		if pd := p.ParamDefault(); pd.Ok() {
+			expr := pd.Expression()
+			if sp.defaults == nil {
+				sp.defaults = make(map[int]transpiler.DefaultExpr)
+				sp.spans = make(map[int]defaultExprSpan)
+			}
+			sp.defaults[i] = nativeDefaultExpr(expr)
+			sp.spans[i] = nativeSpanOf(expr.GalaNodeRef)
+		}
+	}
+	return sp
 }
 
 // nativeCausesInstantiationCycle is causesInstantiationCycle.
@@ -263,37 +321,19 @@ func nativeTypeAliasTarget(typeDecl native.TypeDeclarationNode) string {
 
 // nativeRecordFieldDefault is recordFieldDefault.
 func nativeRecordFieldDefault(meta *transpiler.TypeMetadata, fieldName string, p native.ParameterNode) {
-	if !p.ParamDefault().Ok() {
+	pd := p.ParamDefault()
+	if !pd.Ok() {
 		return
 	}
 	if meta.FieldDefaults == nil {
 		meta.FieldDefaults = make(map[string]transpiler.DefaultExpr)
 	}
-	meta.FieldDefaults[fieldName], _ = nativeParamDefaultSource(p)
+	meta.FieldDefaults[fieldName] = nativeDefaultExpr(pd.Expression())
 }
 
-// nativeRecordParamDefault is recordParamDefault, the expression's node for
-// its parse tree.
-func nativeRecordParamDefault(exprs *map[int]transpiler.DefaultExpr, i int, p native.ParameterNode) native.ExpressionNode {
-	if !p.ParamDefault().Ok() {
-		return native.ExpressionNode{}
-	}
-	if *exprs == nil {
-		*exprs = make(map[int]transpiler.DefaultExpr)
-	}
-	def, expr := nativeParamDefaultSource(p)
-	(*exprs)[i] = def
-	return expr
-}
-
-// nativeParamDefaultSource is paramDefaultSource.
-func nativeParamDefaultSource(p native.ParameterNode) (transpiler.DefaultExpr, native.ExpressionNode) {
-	expr := p.ParamDefault().Expression()
-	return nativeDefaultExpr(expr), expr
-}
-
-// nativeDefaultExpr is the DefaultExpr of default expression e: its source
-// text, as transpiler.SourceText gives a context's, and its position.
+// nativeDefaultExpr is paramDefaultSource's DefaultExpr of default
+// expression e: its source text, as transpiler.SourceText gives a context's,
+// and its position.
 func nativeDefaultExpr(e native.ExpressionNode) transpiler.DefaultExpr {
 	return transpiler.DefaultExpr{Text: e.SourceText(), Pos: nativePos(e.GalaNodeRef)}
 }
@@ -319,15 +359,17 @@ func nativeSealedDeclOf(n native.SealedTypeDeclarationNode, docs galaparser.Docs
 		pos:  nativePos(id.GalaNodeRef),
 	}
 	d.typeParams, d.typeParamConstraints = nativeTypeParamsOf(n.TypeParameters())
-	for sc := range nativeKids[native.SealedCaseNode](n.GalaNodeRef, native.GalaKIND_sealedCase) {
+	for scNode := range galaparser.NativeKids(n.GalaNodeRef, native.GalaKIND_sealedCase) {
+		sc := native.SealedCaseNode{GalaNodeRef: scNode}
 		caseID := sc.Identifier()
 		c := sealedCase{
 			name:      caseID.GetText(),
-			doc:       nativeDocAt(docs, sc.GalaNodeRef),
+			doc:       nativeDocAt(docs, scNode),
 			pos:       nativePos(caseID.GalaNodeRef),
 			isDefault: sc.DEFAULT().Ok(),
 		}
-		for fc := range nativeKids[native.SealedCaseFieldNode](sc.SealedCaseFieldList().GalaNodeRef, native.GalaKIND_sealedCaseField) {
+		for fcNode := range galaparser.NativeKids(sc.SealedCaseFieldList().GalaNodeRef, native.GalaKIND_sealedCaseField) {
+			fc := native.SealedCaseFieldNode{GalaNodeRef: fcNode}
 			field := sealedCaseField{name: fc.Identifier().GetText(), typeName: galaparser.NativeTypeText(fc.Type_())}
 			if pd := fc.ParamDefault(); pd.Ok() {
 				def := nativeDefaultExpr(pd.Expression())
@@ -360,8 +402,8 @@ func nativeOpaqueDeclOf(n native.OpaqueTypeDeclarationNode, docs galaparser.Docs
 func nativeParams(params native.ParametersNode) iter.Seq2[int, native.ParameterNode] {
 	return func(yield func(int, native.ParameterNode) bool) {
 		i := 0
-		for p := range nativeKids[native.ParameterNode](params.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
-			if !yield(i, p) {
+		for p := range galaparser.NativeKids(params.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+			if !yield(i, native.ParameterNode{GalaNodeRef: p}) {
 				return
 			}
 			i++
@@ -372,7 +414,7 @@ func nativeParams(params native.ParametersNode) iter.Seq2[int, native.ParameterN
 // collectFileTypesNative is collectFileTypes.
 func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) error {
 	richAST, pkgName, filePath, absFilePath, docs, decls := fd.richAST, fd.pkgName, fd.filePath, fd.absFilePath, fd.docs, fd.decls
-	for decl := range topLevelDecls(nf.root) {
+	for _, decl := range nf.types {
 		switch decl.Kind() {
 		case native.GalaKIND_typeDeclaration:
 			ctx := native.TypeDeclarationNode{GalaNodeRef: decl}
@@ -429,7 +471,8 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 			}
 
 			if structType := ctx.StructType(); structType.Ok() {
-				for fctx := range nativeKids[native.StructFieldNode](structType.GalaNodeRef, native.GalaKIND_structField) {
+				for fNode := range galaparser.NativeKids(structType.GalaNodeRef, native.GalaKIND_structField) {
+					fctx := native.StructFieldNode{GalaNodeRef: fNode}
 					fieldID := fctx.Identifier()
 					fieldName := fieldID.GetText()
 					// Reject duplicate field names within a single struct
@@ -450,7 +493,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						meta.FieldPositions = make(map[string]transpiler.SourcePos)
 					}
 					meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-					addFieldDoc(meta, fieldName, nativeDocAt(docs, fctx.GalaNodeRef))
+					addFieldDoc(meta, fieldName, nativeDocAt(docs, fNode))
 				}
 				meta.DefinedIn = filePath
 			}
@@ -460,7 +503,8 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 				meta.IsInterface = true
 				// seenSpecs: see collectFileTypes.
 				seenSpecs := make(map[string]bool)
-				for msCtx := range nativeKids[native.MethodSpecNode](ifaceType.GalaNodeRef, native.GalaKIND_methodSpec) {
+				for msNode := range galaparser.NativeKids(ifaceType.GalaNodeRef, native.GalaKIND_methodSpec) {
+					msCtx := native.MethodSpecNode{GalaNodeRef: msNode}
 					msID := msCtx.Identifier()
 					methodName := msID.GetText()
 					if seenSpecs[methodName] {
@@ -476,10 +520,18 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
-						Doc:       nativeDocAt(docs, msCtx.GalaNodeRef),
+						Doc:       nativeDocAt(docs, msNode),
 						DefinedIn: filePath,
 					}
-					a.nativeMethodSpec(methodMeta, msCtx, pkgName, meta.TypeParams)
+					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(msCtx.TypeParameters(), pkgName)
+					var allTypeParams []string
+					allTypeParams = append(allTypeParams, meta.TypeParams...)
+					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+					sig := msCtx.Signature()
+					methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
+					// An interface method records its parameters' types only.
+					params := a.nativeParamsOf(sig.Parameters(), pkgName, allTypeParams)
+					methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
 					meta.Methods[methodName] = methodMeta
 				}
 			}
@@ -565,43 +617,11 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 	return nil
 }
 
-// nativeMethodSpec fills in the type parameters, result and parameter types
-// of methodMeta, the metadata of interface method msCtx, as collectFileTypes
-// and extractSiblingFullMetadata do; typeTypeParams are the interface's type
-// parameters.
-func (a *galaAnalyzer) nativeMethodSpec(methodMeta *transpiler.MethodMetadata, msCtx native.MethodSpecNode, pkgName string, typeTypeParams []string) {
-	methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(msCtx.TypeParameters(), pkgName)
-	var allTypeParams []string
-	allTypeParams = append(allTypeParams, typeTypeParams...)
-	allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
-	sig := msCtx.Signature()
-	methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
-	for _, paramCtx := range nativeParams(sig.Parameters()) {
-		if typ := paramCtx.Type_(); typ.Ok() {
-			methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, allTypeParams))
-			methodMeta.Variadic = paramCtx.ELLIPSIS().Ok()
-		} else {
-			methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
-		}
-	}
-}
-
-// nativeParamName is a parameter's name, "" when it has none.
-func nativeParamName(p native.ParameterNode) string {
-	if id := p.Identifier(); id.Ok() {
-		return id.GetText()
-	}
-	return ""
-}
-
 // collectFileFuncsNative is collectFileFuncs.
 func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) error {
 	richAST, pkgName, filePath, absFilePath, docs, decls := fd.richAST, fd.pkgName, fd.filePath, fd.absFilePath, fd.docs, fd.decls
 	// 1.5 Collect sealed types.
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_sealedTypeDeclaration {
-			continue
-		}
+	for _, decl := range nf.sealed {
 		ctx := native.SealedTypeDeclarationNode{GalaNodeRef: decl}
 		sealedName := ctx.Identifier().GetText()
 		fullSealedName := qualifiedName(pkgName, sealedName)
@@ -618,10 +638,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 	}
 
 	// 1.6 Collect opaque types
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_opaqueTypeDeclaration {
-			continue
-		}
+	for _, decl := range nf.opaque {
 		octx := native.OpaqueTypeDeclarationNode{GalaNodeRef: decl}
 		typeName := octx.Identifier().GetText()
 		if err := CheckStdConflict(typeName, pkgName); err != nil {
@@ -637,10 +654,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 	}
 
 	// 2. Collect methods and functions
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_functionDeclaration {
-			continue
-		}
+	for _, decl := range nf.funcs {
 		ctx := native.FunctionDeclarationNode{GalaNodeRef: decl}
 		declPos := nativePos(decl)
 		sig := ctx.Signature()
@@ -684,16 +698,8 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				methodMeta.IsGeneric = true
 			}
 
-			for i, paramCtx := range nativeParams(sig.Parameters()) {
-				if typ := paramCtx.Type_(); typ.Ok() {
-					methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, allTypeParams))
-					methodMeta.Variadic = paramCtx.ELLIPSIS().Ok()
-				} else {
-					methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
-				}
-				methodMeta.ParamNames = append(methodMeta.ParamNames, nativeParamName(paramCtx))
-				nativeRecordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
-			}
+			params := a.nativeParamsOf(sig.Parameters(), pkgName, allTypeParams)
+			methodMeta.ParamTypes, methodMeta.Variadic, methodMeta.ParamNames, methodMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
 
 			// The signature takes its type's parameter names after
 			// section 2.5, when every file's types are known.
@@ -750,28 +756,13 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 		// Collect type parameters first so we can resolve param types correctly
 		funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 		funcMeta.ReturnType, funcMeta.GoResults = a.nativeSignatureResult(sig, pkgName, funcMeta.TypeParams)
-		// Source spans of each default expression, keyed by param index.
-		var defaultSpans map[int]defaultExprSpan
-		for i, paramCtx := range nativeParams(sig.Parameters()) {
-			if typ := paramCtx.Type_(); typ.Ok() {
-				funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, funcMeta.TypeParams))
-				funcMeta.Variadic = paramCtx.ELLIPSIS().Ok()
-			} else {
-				funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
-			}
-			funcMeta.ParamNames = append(funcMeta.ParamNames, nativeParamName(paramCtx))
-			if expr := nativeRecordParamDefault(&funcMeta.DefaultExprs, i, paramCtx); expr.Ok() {
-				if defaultSpans == nil {
-					defaultSpans = make(map[int]defaultExprSpan)
-				}
-				defaultSpans[i] = nativeSpanOf(expr.GalaNodeRef)
-			}
-		}
+		params := a.nativeParamsOf(sig.Parameters(), pkgName, funcMeta.TypeParams)
+		funcMeta.ParamTypes, funcMeta.Variadic, funcMeta.ParamNames, funcMeta.DefaultExprs = params.types, params.variadic, params.names, params.defaults
 		// Validate default parameter rules once the sibling files' type
 		// declarations are known too (section 2.5).
 		if len(funcMeta.DefaultExprs) > 0 {
 			fd.pendingDefaultChecks = append(fd.pendingDefaultChecks, pendingDefaultCheck{
-				meta: funcMeta, line: declPos.Line, col: declPos.Column, spans: defaultSpans,
+				meta: funcMeta, line: declPos.Line, col: declPos.Column, spans: params.spans,
 			})
 		}
 		// Reject redeclaration of a top-level function within the same
@@ -795,10 +786,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 
 // collectFileEmbedsNative is collectFileEmbeds.
 func collectFileEmbedsNative(nf nativeFile, richAST *transpiler.RichAST) {
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_embedDeclaration {
-			continue
-		}
+	for _, decl := range nf.embeds {
 		ctx := native.EmbedDeclarationNode{GalaNodeRef: decl}
 		typeName := ""
 		if typ := ctx.Type_(); typ.Ok() {
@@ -815,7 +803,7 @@ func collectFileEmbedsNative(nf nativeFile, richAST *transpiler.RichAST) {
 // fileTypeAliasesNative is fileTypeAliases.
 func (a *galaAnalyzer) fileTypeAliasesNative(nf nativeFile, pkgName string) map[string]transpiler.Type {
 	aliases := make(map[string]transpiler.Type)
-	for decl := range topLevelDecls(nf.root) {
+	for _, decl := range nf.types {
 		if decl.Kind() != native.GalaKIND_typeDeclaration {
 			continue
 		}
@@ -838,24 +826,20 @@ func (a *galaAnalyzer) fileTypeAliasesNative(nf nativeFile, pkgName string) map[
 // extractPackageValsNative is extractPackageVals. An initializer is inferred
 // on its ANTLR context (inferPackageValInitType is not ported yet).
 func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs, absFilePath string) {
-	for decl := range topLevelDecls(nf.root) {
+	for _, decl := range nf.vals {
 		var (
 			idList   native.IdentifierListNode
 			typeCtx  native.TypeNode
 			exprList native.ExpressionListNode
 			tp       native.TuplePatternNode
-			isVal    bool
 		)
-		switch decl.Kind() {
-		case native.GalaKIND_valDeclaration:
+		isVal := decl.Kind() == native.GalaKIND_valDeclaration
+		if isVal {
 			vc := native.ValDeclarationNode{GalaNodeRef: decl}
 			idList, typeCtx, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
-			isVal = true
-		case native.GalaKIND_varDeclaration:
+		} else {
 			vc := native.VarDeclarationNode{GalaNodeRef: decl}
 			idList, typeCtx, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
-		default:
-			continue
 		}
 		if tp.Ok() {
 			// A tuple destructuring: see extractPackageVals.
@@ -904,316 +888,4 @@ func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, r
 			}
 		}
 	}
-}
-
-// extractSiblingDeclsNative is extractSiblingFullMetadata after its prologue,
-// which resolves the sibling's path (absSibPath, and sibDisplay for
-// diagnostics), doc comments and imports and calls it for a sibling the
-// parsed-file cache holds a native tree of.
-func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, richAST *transpiler.RichAST, absSibPath, sibDisplay string, docs galaparser.Docs, decls *packageDecls) error {
-	// 1. Collect struct types with full field info
-	for decl := range topLevelDecls(nf.root) {
-		switch decl.Kind() {
-		case native.GalaKIND_typeDeclaration:
-			ctx := native.TypeDeclarationNode{GalaNodeRef: decl}
-			id := ctx.Identifier()
-			typeName := id.GetText()
-			fullTypeName := qualifiedName(pkgName, typeName)
-			// Redefinition, or a type already loaded from this same sibling:
-			// see extractSiblingFullMetadata.
-			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-						nativePos(id.GalaNodeRef), decls.mainFile)
-				}
-				if existing.DefinedIn != "" {
-					continue
-				}
-			}
-			// Preserve existing methods from placeholder entry (e.g., methods from current file)
-			existingMethods := make(map[string]*transpiler.MethodMetadata)
-			if existing, ok := richAST.Types[fullTypeName]; ok {
-				for k, v := range existing.Methods {
-					existingMethods[k] = v
-				}
-			}
-			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Package: pkgName,
-				Doc:     nativeDocAt(docs, decl),
-				Pos:     nativePos(id.GalaNodeRef),
-				Methods: existingMethods,
-				Fields:  make(map[string]transpiler.Type),
-			}
-			// Preserve DefinedIn from main analysis if already set
-			if ex, ok := richAST.Types[fullTypeName]; ok && ex.DefinedIn != "" {
-				meta.DefinedIn = ex.DefinedIn
-			}
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
-			if structType := ctx.StructType(); structType.Ok() {
-				for fctx := range nativeKids[native.StructFieldNode](structType.GalaNodeRef, native.GalaKIND_structField) {
-					fieldID := fctx.Identifier()
-					fieldName := fieldID.GetText()
-					meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.NativeTypeText(fctx.Type_()), pkgName, meta.TypeParams)
-					meta.FieldNames = append(meta.FieldNames, fieldName)
-					meta.ImmutFlags = append(meta.ImmutFlags, !fctx.VAR().Ok())
-					if meta.FieldPositions == nil {
-						meta.FieldPositions = make(map[string]transpiler.SourcePos)
-					}
-					meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-					addFieldDoc(meta, fieldName, nativeDocAt(docs, fctx.GalaNodeRef))
-				}
-				if meta.DefinedIn == "" {
-					meta.DefinedIn = absSibPath
-				}
-			}
-			if ifaceType := ctx.InterfaceType(); ifaceType.Ok() {
-				meta.IsInterface = true
-				for msCtx := range nativeKids[native.MethodSpecNode](ifaceType.GalaNodeRef, native.GalaKIND_methodSpec) {
-					msID := msCtx.Identifier()
-					methodName := msID.GetText()
-					methodMeta := &transpiler.MethodMetadata{
-						Name:      methodName,
-						Package:   pkgName,
-						Doc:       nativeDocAt(docs, msCtx.GalaNodeRef),
-						Pos:       nativePos(msID.GalaNodeRef),
-						DefinedIn: absSibPath,
-					}
-					a.nativeMethodSpec(methodMeta, msCtx, pkgName, meta.TypeParams)
-					meta.Methods[methodName] = methodMeta
-				}
-			}
-			// Type aliases: see extractSiblingFullMetadata.
-			if aliasTarget := nativeTypeAliasTarget(ctx); aliasTarget != "" {
-				underlyingType := a.resolveTypeWithParams(aliasTarget, pkgName, meta.TypeParams)
-				if !underlyingType.IsNil() {
-					if richAST.TypeAliases == nil {
-						richAST.TypeAliases = make(map[string]transpiler.Type)
-					}
-					richAST.TypeAliases[typeName] = underlyingType
-				}
-			}
-			richAST.Types[fullTypeName] = meta
-
-		case native.GalaKIND_structShorthandDeclaration:
-			ctx := native.StructShorthandDeclarationNode{GalaNodeRef: decl}
-			id := ctx.Identifier()
-			typeName := id.GetText()
-			fullTypeName := qualifiedName(pkgName, typeName)
-			if existing, ok := richAST.Types[fullTypeName]; ok && len(existing.FieldNames) > 0 {
-				if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-					return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-						nativePos(id.GalaNodeRef), decls.mainFile)
-				}
-				if existing.DefinedIn != "" {
-					continue
-				}
-			}
-			existingMethods := make(map[string]*transpiler.MethodMetadata)
-			if existing, ok := richAST.Types[fullTypeName]; ok {
-				for k, v := range existing.Methods {
-					existingMethods[k] = v
-				}
-			}
-			meta := &transpiler.TypeMetadata{
-				Name:    typeName,
-				Package: pkgName,
-				Doc:     nativeDocAt(docs, decl),
-				Pos:     nativePos(id.GalaNodeRef),
-				Methods: existingMethods,
-				Fields:  make(map[string]transpiler.Type),
-			}
-			// Preserve DefinedIn from main analysis if already set
-			if ex, ok := richAST.Types[fullTypeName]; ok && ex.DefinedIn != "" {
-				meta.DefinedIn = ex.DefinedIn
-			}
-			if meta.DefinedIn == "" {
-				meta.DefinedIn = absSibPath
-			}
-			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
-			for _, pctx := range nativeParams(ctx.Parameters()) {
-				fieldID := pctx.Identifier()
-				fieldName := fieldID.GetText()
-				decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(galaparser.NativeTypeText(pctx.Type_()), pkgName, meta.TypeParams), pctx.VAL().Ok(), pctx.VAR().Ok())
-				if meta.FieldPositions == nil {
-					meta.FieldPositions = make(map[string]transpiler.SourcePos)
-				}
-				meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-				nativeRecordFieldDefault(meta, fieldName, pctx)
-			}
-			meta.IsShorthand = true
-			richAST.Types[fullTypeName] = meta
-		}
-	}
-
-	// 2. Collect sealed types
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_sealedTypeDeclaration {
-			continue
-		}
-		ctx := native.SealedTypeDeclarationNode{GalaNodeRef: decl}
-		id := ctx.Identifier()
-		typeName := id.GetText()
-		fullTypeName := qualifiedName(pkgName, typeName)
-		// Redefinition: see extractSiblingFullMetadata.
-		if existing, ok := richAST.Types[fullTypeName]; ok && existing.IsSealed {
-			if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-				return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-					nativePos(id.GalaNodeRef), decls.mainFile)
-			}
-			if existing.DefinedIn != "" {
-				continue
-			}
-		}
-		if err := a.registerSealedType(nativeSealedDeclOf(ctx, docs), pkgName, richAST); err != nil {
-			return err
-		}
-		markSiblingSealed(richAST, pkgName, fullTypeName, absSibPath)
-	}
-
-	// 2.5 Collect opaque types
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_opaqueTypeDeclaration {
-			continue
-		}
-		octx := native.OpaqueTypeDeclarationNode{GalaNodeRef: decl}
-		id := octx.Identifier()
-		typeName := id.GetText()
-		fullTypeName := qualifiedName(pkgName, typeName)
-		if existing, ok := richAST.Types[fullTypeName]; ok && hasTypeDefinition(existing) {
-			if existing.DefinedIn != "" && !a.paths.sameFile(existing.DefinedIn, absSibPath) {
-				return siblingTypeRedefinedError(typeName, pkgName, existing, sibDisplay,
-					nativePos(id.GalaNodeRef), decls.mainFile)
-			}
-			if existing.DefinedIn != "" {
-				continue
-			}
-		}
-		a.registerOpaqueType(nativeOpaqueDeclOf(octx, docs), pkgName, absSibPath, richAST)
-	}
-
-	// 3. Collect methods and functions
-	for decl := range topLevelDecls(nf.root) {
-		if decl.Kind() != native.GalaKIND_functionDeclaration {
-			continue
-		}
-		ctx := native.FunctionDeclarationNode{GalaNodeRef: decl}
-		id := ctx.Identifier()
-		sig := ctx.Signature()
-		if recvCtx := ctx.Receiver(); recvCtx.Ok() {
-			recvType := recvCtx.Type_()
-			baseType := nativeBaseTypeName(recvType)
-			if baseType == "" {
-				continue
-			}
-			methodName := id.GetText()
-			fullBaseType := baseType
-			if !strings.Contains(baseType, ".") {
-				fullBaseType = qualifiedName(pkgName, baseType)
-			}
-
-			sibPos := nativePos(id.GalaNodeRef)
-			// A method the analyzed file already declares on the same type:
-			// see extractSiblingFullMetadata.
-			prev, dup := decls.recordMethod(fullBaseType+"."+methodName, absSibPath, sibPos)
-			if dup && a.paths.sameFile(prev.file, decls.mainFile) {
-				return methodRedefinedError(methodName, baseType, pkgName,
-					prev.pos.Line, prev.pos.Column,
-					sibDisplay, decls.mainFile, sibPos)
-			}
-
-			pointer, ptr := nativeReceiverPointers(recvType)
-			methodMeta := &transpiler.MethodMetadata{
-				Name:            methodName,
-				Package:         pkgName,
-				Doc:             nativeDocAt(docs, decl),
-				Pos:             sibPos,
-				ReceiverName:    recvCtx.Identifier().GetText(),
-				PointerReceiver: pointer,
-				PtrReceiver:     ptr,
-				DefinedIn:       absSibPath,
-			}
-			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
-
-			var typeTypeParams []string
-			if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-				typeTypeParams = typeMeta.TypeParams
-			}
-			recvNames := nativeReceiverTypeArgNames(recvType)
-			allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
-
-			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
-			// IsGeneric: see extractSiblingFullMetadata.
-			if a.nativeCausesInstantiationCycle(recvType, sig) {
-				methodMeta.IsGeneric = true
-			}
-			for i, paramCtx := range nativeParams(sig.Parameters()) {
-				if typ := paramCtx.Type_(); typ.Ok() {
-					methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, allTypeParams))
-					methodMeta.Variadic = paramCtx.ELLIPSIS().Ok()
-				} else {
-					methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
-				}
-				methodMeta.ParamNames = append(methodMeta.ParamNames, nativeParamName(paramCtx))
-				nativeRecordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
-			}
-			decls.recordReceiver(methodMeta, recvNames, fullBaseType)
-
-			if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-				if _, exists := typeMeta.Methods[methodName]; !exists {
-					typeMeta.Methods[methodName] = methodMeta
-				} else if !typeMeta.Methods[methodName].IsGeneric && methodMeta.IsGeneric {
-					// IsGeneric is append-only: see extractSiblingFullMetadata.
-					typeMeta.Methods[methodName].IsGeneric = true
-				}
-			} else {
-				richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
-					Name:    baseType,
-					Package: pkgName,
-					Methods: map[string]*transpiler.MethodMetadata{methodName: methodMeta},
-					Fields:  make(map[string]transpiler.Type),
-				}
-			}
-			continue
-		}
-
-		funcName := id.GetText()
-		fullFuncName := qualifiedName(pkgName, funcName)
-		sibPos := nativePos(id.GalaNodeRef)
-		// A top-level function the analyzed file already declares: see
-		// extractSiblingFullMetadata.
-		prev, dup := decls.recordFunc(fullFuncName, absSibPath, sibPos)
-		if dup && a.paths.sameFile(prev.file, decls.mainFile) {
-			return funcRedeclaredError(funcName, pkgName,
-				prev.pos.Line, prev.pos.Column,
-				sibDisplay, decls.mainFile, sibPos)
-		}
-		if _, ok := richAST.Functions[fullFuncName]; ok {
-			continue
-		}
-		funcMeta := &transpiler.FunctionMetadata{
-			Name:      funcName,
-			Package:   pkgName,
-			Doc:       nativeDocAt(docs, decl),
-			Pos:       sibPos,
-			DefinedIn: absSibPath,
-		}
-		funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
-		funcMeta.ReturnType, funcMeta.GoResults = a.nativeSignatureResult(sig, pkgName, funcMeta.TypeParams)
-		for i, paramCtx := range nativeParams(sig.Parameters()) {
-			if typ := paramCtx.Type_(); typ.Ok() {
-				funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, funcMeta.TypeParams))
-				funcMeta.Variadic = paramCtx.ELLIPSIS().Ok()
-			} else {
-				funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
-			}
-			funcMeta.ParamNames = append(funcMeta.ParamNames, nativeParamName(paramCtx))
-			nativeRecordParamDefault(&funcMeta.DefaultExprs, i, paramCtx)
-		}
-		richAST.Functions[fullFuncName] = funcMeta
-	}
-
-	// The sibling's package-level bindings: see extractSiblingFullMetadata.
-	a.extractPackageValsNative(nf, pkgName, richAST, docs, absSibPath)
-	return nil
 }
