@@ -1118,548 +1118,19 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 	// shorthand fields whose type may name an alias of Immutable.
 	decls := newPackageDecls(filePath)
 
+	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
+
 	// 1. Collect all types
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
-			ctx := typeDecl.(*grammar.TypeDeclarationContext)
-			typeName := ctx.Identifier().GetText()
-
-			// The std names the transpiler gives built-in meaning are reserved;
-			// any other std type is shadowed by the declaration.
-			if err := CheckStdConflict(typeName, pkgName); err != nil {
-				return nil, err
-			}
-
-			fullTypeName := typeName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				fullTypeName = pkgName + "." + typeName
-			}
-
-			var meta *transpiler.TypeMetadata
-			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
-				// Error if type is being redefined from a DIFFERENT file.
-				// Skip if DefinedIn is empty (cache) or same file (re-analysis from analyzePackage).
-				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
-					return nil, typeRedefinedError(typeName, pkgName,
-						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-						existing.DefinedIn, filePath, existing.Pos)
-				}
-				meta = existing
-				// Clear fields to avoid duplicates if re-analyzing
-				meta.IsInterface = false
-				meta.Fields = make(map[string]transpiler.Type)
-				meta.FieldNames = nil
-				meta.ImmutFlags = nil
-				meta.StoredAsDeclared = nil
-				meta.FieldPositions = nil
-				meta.FieldDocs = nil
-				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
-				setDoc(&meta.Doc, docs, ctx.GetStart())
-			} else {
-				meta = &transpiler.TypeMetadata{
-					Name:    typeName,
-					Package: pkgName,
-					Doc:     docAt(docs, ctx.GetStart()),
-					Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
-					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]transpiler.Type),
-				}
-				richAST.Types[fullTypeName] = meta
-			}
-
-			if ctx.TypeParameters() != nil {
-				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-				if tpList := tpCtx.TypeParameterList(); tpList != nil {
-					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-						tpCtx := tp.(*grammar.TypeParameterContext)
-						tpId := tpCtx.Identifier(0)
-						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
-						// Extract the constraint (second identifier in "T comparable")
-						if len(tpCtx.AllIdentifier()) > 1 {
-							constraint := tpCtx.Identifier(1).GetText()
-							if meta.TypeParamConstraints == nil {
-								meta.TypeParamConstraints = make(map[string]string)
-							}
-							meta.TypeParamConstraints[tpId.GetText()] = constraint
-						}
-					}
-				}
-			}
-
-			if ctx.StructType() != nil {
-				structType := ctx.StructType().(*grammar.StructTypeContext)
-				for _, field := range structType.AllStructField() {
-					fctx := field.(*grammar.StructFieldContext)
-					fieldName := fctx.Identifier().GetText()
-					// Reject duplicate field names within a single struct
-					// declaration. Without this, the second declaration
-					// silently overwrote the first in the Fields map and
-					// duplicated the name in FieldNames, producing invalid
-					// Go output. This guard is scoped to one parse of one
-					// struct (Fields was cleared on re-analysis at line ~740),
-					// so it does not need an existing.DefinedIn check.
-					if _, exists := meta.Fields[fieldName]; exists {
-						return nil, galaerr.NewCodedSemanticError(
-							galaerr.CodeStructFieldRedeclared,
-							fctx.Identifier().GetStart().GetLine(), fctx.Identifier().GetStart().GetColumn(),
-							fmt.Sprintf("field %q already declared in struct %q", fieldName, typeName),
-							"rename or remove the duplicate field",
-						)
-					}
-					meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.TypeText(fctx.Type_()), pkgName, meta.TypeParams)
-					meta.FieldNames = append(meta.FieldNames, fieldName)
-					meta.ImmutFlags = append(meta.ImmutFlags, fctx.VAR() == nil)
-					if meta.FieldPositions == nil {
-						meta.FieldPositions = make(map[string]transpiler.SourcePos)
-					}
-					meta.FieldPositions[fieldName] = transpiler.PosFromToken(fctx.Identifier().GetStart())
-					addFieldDoc(meta, fieldName, docAt(docs, fctx.GetStart()))
-				}
-				meta.DefinedIn = filePath
-			}
-
-			// Extract interface method signatures as type methods
-			if ctx.InterfaceType() != nil {
-				meta.IsInterface = true
-				ifaceType := ctx.InterfaceType().(*grammar.InterfaceTypeContext)
-				// seenSpecs is a per-declaration dedup so re-analysis (which
-				// preserves the Methods map across calls) does not falsely
-				// trigger the redeclaration check on already-registered
-				// specs. Within ONE iteration of AllMethodSpec() we still
-				// catch genuine duplicates.
-				seenSpecs := make(map[string]bool)
-				for _, ms := range ifaceType.AllMethodSpec() {
-					msCtx := ms.(*grammar.MethodSpecContext)
-					methodName := msCtx.Identifier().GetText()
-					if seenSpecs[methodName] {
-						return nil, galaerr.NewCodedSemanticError(
-							galaerr.CodeInterfaceMethodRedeclared,
-							msCtx.Identifier().GetStart().GetLine(), msCtx.Identifier().GetStart().GetColumn(),
-							fmt.Sprintf("method %q already declared in interface %q", methodName, typeName),
-							"rename or remove the duplicate method",
-						)
-					}
-					seenSpecs[methodName] = true
-					methodMeta := &transpiler.MethodMetadata{
-						Name:      methodName,
-						Package:   pkgName,
-						Doc:       docAt(docs, msCtx.GetStart()),
-						DefinedIn: filePath,
-					}
-					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(msCtx.TypeParameters(), pkgName)
-					var allTypeParams []string
-					allTypeParams = append(allTypeParams, meta.TypeParams...)
-					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
-					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, allTypeParams)
-					if msCtx.Signature().Parameters() != nil {
-						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
-						if pList := pCtx.ParameterList(); pList != nil {
-							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
-								paramCtx := p.(*grammar.ParameterContext)
-								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
-									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
-								} else {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
-								}
-							}
-						}
-					}
-					meta.Methods[methodName] = methodMeta
-				}
-			}
-		}
-
-		if shorthandCtx := topDecl.StructShorthandDeclaration(); shorthandCtx != nil {
-			ctx := shorthandCtx.(*grammar.StructShorthandDeclarationContext)
-			typeName := ctx.Identifier().GetText()
-
-			// Reserved std names: see the type declaration case above.
-			if err := CheckStdConflict(typeName, pkgName); err != nil {
-				return nil, err
-			}
-
-			fullTypeName := typeName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				fullTypeName = pkgName + "." + typeName
-			}
-
-			var meta *transpiler.TypeMetadata
-			pos := transpiler.PosFromToken(ctx.Identifier().GetStart())
-			if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName {
-				if existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
-					return nil, typeRedefinedError(typeName, pkgName,
-						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-						existing.DefinedIn, filePath, existing.Pos)
-				}
-				meta = existing
-				meta.Fields = make(map[string]transpiler.Type)
-				meta.FieldNames = nil
-				meta.ImmutFlags = nil
-				meta.StoredAsDeclared = nil
-				meta.FieldPositions = nil
-				meta.FieldDocs = nil
-				meta.FieldDefaults = nil
-				meta.Pos = pos
-				setDoc(&meta.Doc, docs, ctx.GetStart())
-			} else {
-				meta = &transpiler.TypeMetadata{
-					Name:    typeName,
-					Package: pkgName,
-					Doc:     docAt(docs, ctx.GetStart()),
-					Pos:     pos,
-					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]transpiler.Type),
-				}
-				richAST.Types[fullTypeName] = meta
-			}
-
-			if ctx.TypeParameters() != nil {
-				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-				if tpList := tpCtx.TypeParameterList(); tpList != nil {
-					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-						tpCtx := tp.(*grammar.TypeParameterContext)
-						tpId := tpCtx.Identifier(0)
-						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
-						if len(tpCtx.AllIdentifier()) > 1 {
-							constraint := tpCtx.Identifier(1).GetText()
-							if meta.TypeParamConstraints == nil {
-								meta.TypeParamConstraints = make(map[string]string)
-							}
-							meta.TypeParamConstraints[tpId.GetText()] = constraint
-						}
-					}
-				}
-			}
-
-			if ctx.Parameters() != nil {
-				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
-				if paramsCtx.ParameterList() != nil {
-					for _, param := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-						pctx := param.(*grammar.ParameterContext)
-						fieldName := pctx.Identifier().GetText()
-						// Reject duplicate field names within a shorthand
-						// struct declaration. Fields was cleared above on
-						// re-analysis, so this check is scoped to one parse.
-						if _, exists := meta.Fields[fieldName]; exists {
-							return nil, galaerr.NewCodedSemanticError(
-								galaerr.CodeStructFieldRedeclared,
-								pctx.Identifier().GetStart().GetLine(), pctx.Identifier().GetStart().GetColumn(),
-								fmt.Sprintf("field %q already declared in struct %q", fieldName, typeName),
-								"rename or remove the duplicate field",
-							)
-						}
-						fieldType := ""
-						if pctx.Type_() != nil {
-							fieldType = galaparser.TypeText(pctx.Type_())
-						}
-						decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx)
-						if meta.FieldPositions == nil {
-							meta.FieldPositions = make(map[string]transpiler.SourcePos)
-						}
-						meta.FieldPositions[fieldName] = transpiler.PosFromToken(pctx.Identifier().GetStart())
-						recordFieldDefault(meta, fieldName, pctx)
-					}
-				}
-				meta.IsShorthand = true
-				meta.DefinedIn = filePath
-			}
-		}
+	if err := a.collectFileTypes(sourceFile, fd); err != nil {
+		return nil, err
 	}
 
 	logPhase("collect-types", phaseStart)
 	phaseStart = time.Now()
 
-	// 1.5 Collect sealed types. A case whose fields declare defaults is
-	// checked as a function's parameter defaults are, below, through its
-	// companion Apply.
-	type caseDefaults struct {
-		name  string
-		apply *transpiler.MethodMetadata
-		pos   transpiler.SourcePos
-	}
-	var caseDefaultChecks []caseDefaults
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		if sealedCtx := topDecl.SealedTypeDeclaration(); sealedCtx != nil {
-			ctx := sealedCtx.(*grammar.SealedTypeDeclarationContext)
-			sealedName := ctx.Identifier().GetText()
-			fullSealedName := sealedName
-			if pkgName != "" && pkgName != "main" && pkgName != "test" {
-				fullSealedName = pkgName + "." + sealedName
-			}
-			// Check for redefinition (skip if DefinedIn is empty — type came from cache)
-			if existing, ok := richAST.Types[fullSealedName]; ok && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
-				return nil, typeRedefinedError(sealedName, pkgName,
-					ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-					existing.DefinedIn, filePath, existing.Pos)
-			}
-			if err := a.analyzeSealedType(ctx, pkgName, richAST, docs); err != nil {
-				return nil, err
-			}
-			if meta, ok := richAST.Types[fullSealedName]; ok {
-				meta.DefinedIn = filePath
-				for _, v := range meta.SealedVariants {
-					companionKey := v.Name
-					if pkgName != "" && pkgName != "main" && pkgName != "test" {
-						companionKey = pkgName + "." + v.Name
-					}
-					if cm, ok := richAST.Types[companionKey]; ok {
-						cm.DefinedIn = filePath
-						if apply := cm.Methods["Apply"]; apply != nil {
-							apply.DefinedIn = filePath // its field defaults are lowered as declared here
-							if len(apply.DefaultExprs) > 0 {
-								caseDefaultChecks = append(caseDefaultChecks, caseDefaults{v.Name, apply, v.Pos})
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// 1.6 Collect opaque types
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		octx, ok := topDecl.OpaqueTypeDeclaration().(*grammar.OpaqueTypeDeclarationContext)
-		if !ok || octx == nil {
-			continue
-		}
-		typeName := octx.Identifier().GetText()
-		if err := CheckStdConflict(typeName, pkgName); err != nil {
-			return nil, err
-		}
-		fullTypeName := typeName
-		if pkgName != "" && pkgName != "main" && pkgName != "test" {
-			fullTypeName = pkgName + "." + typeName
-		}
-		if existing, ok := richAST.Types[fullTypeName]; ok && existing.Package == pkgName && existing.DefinedIn != "" && hasTypeDefinition(existing) && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
-			return nil, typeRedefinedError(typeName, pkgName,
-				octx.GetStart().GetLine(), octx.GetStart().GetColumn(),
-				existing.DefinedIn, filePath, existing.Pos)
-		}
-		a.analyzeOpaqueType(octx, pkgName, filePath, richAST, docs)
-	}
-
-	// pendingDefaultChecks validates each function's parameter defaults after
-	// section 2.5, when every declared type of the package can be resolved.
-	type pendingDefaultCheck struct {
-		meta      *transpiler.FunctionMetadata
-		line, col int
-		spans     map[int]defaultExprSpan
-	}
-	var pendingDefaultChecks []pendingDefaultCheck
-	for _, c := range caseDefaultChecks {
-		// Each default's own position, so a mismatch underlines it.
-		spans := make(map[int]defaultExprSpan, len(c.apply.DefaultExprs))
-		for i, def := range c.apply.DefaultExprs {
-			text := def.Text
-			if nl := strings.IndexByte(text, '\n'); nl >= 0 {
-				text = text[:nl]
-			}
-			spans[i] = defaultExprSpan{line: def.Pos.Line, startCol: def.Pos.Column, endCol: def.Pos.Column + len([]rune(text))}
-		}
-		pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
-			meta: &transpiler.FunctionMetadata{
-				Name: c.name, ParamTypes: c.apply.ParamTypes, ParamNames: c.apply.ParamNames, DefaultExprs: c.apply.DefaultExprs,
-			},
-			line: c.pos.Line, col: c.pos.Column,
-			spans: spans,
-		})
-	}
-
-	// 2. Collect methods and functions
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
-			ctx := funcDeclCtx.(*grammar.FunctionDeclarationContext)
-			if ctx.Receiver() != nil {
-				recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
-				baseType := getBaseTypeName(recvCtx.Type_())
-				if baseType != "" {
-					methodName := ctx.Identifier().GetText()
-					fullBaseType := baseType
-					if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(baseType, ".") {
-						fullBaseType = pkgName + "." + baseType
-					}
-
-					methodMeta := &transpiler.MethodMetadata{
-						Name:            methodName,
-						Package:         pkgName,
-						Doc:             docAt(docs, ctx.GetStart()),
-						Pos:             transpiler.PosFromToken(ctx.Identifier().GetStart()),
-						ReceiverName:    recvCtx.Identifier().GetText(),
-						PointerReceiver: isPointerReceiver(recvCtx),
-						PtrReceiver:     isPtrReceiver(recvCtx),
-					}
-					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
-
-					// Collect receiver's type parameters to include when resolving types
-					// e.g., for "func (s Some[T]) Unapply(o Option[T])", we need to know T is a type param
-					var typeTypeParams []string
-					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-						typeTypeParams = typeMeta.TypeParams
-					}
-					recvNames := receiverTypeArgNames(recvCtx.Type_())
-					allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
-
-					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, allTypeParams)
-					// Detect Go generics instantiation cycle:
-					// If receiver is Container[T] and return is Container[SomeType[T, ...]]
-					// Go would detect infinite type instantiation
-					if a.causesInstantiationCycle(recvCtx.Type_(), ctx.Signature()) {
-						methodMeta.IsGeneric = true
-					}
-
-					if ctx.Signature().Parameters() != nil {
-						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
-						if pList := pCtx.ParameterList(); pList != nil {
-							for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
-								paramCtx := p.(*grammar.ParameterContext)
-								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
-									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
-								} else {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
-								}
-								if paramCtx.Identifier() != nil {
-									methodMeta.ParamNames = append(methodMeta.ParamNames, paramCtx.Identifier().GetText())
-								} else {
-									methodMeta.ParamNames = append(methodMeta.ParamNames, "")
-								}
-								recordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
-							}
-						}
-					}
-
-					// The signature takes its type's parameter names after
-					// section 2.5, when every file's types are known.
-					decls.recordReceiver(methodMeta, recvNames, fullBaseType)
-
-					if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-						if existing, exists := typeMeta.Methods[methodName]; exists {
-							// Error if method already has a user-defined implementation
-							if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
-								return nil, methodRedefinedError(methodName, baseType, pkgName,
-									ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-									existing.DefinedIn, filePath, existing.Pos)
-							}
-							// Merge IsGeneric: preserve a pre-populated flag (e.g. from a
-							// sibling-metadata pass) without clobbering a fresh true that
-							// causesInstantiationCycle just set. Either source may legitimately
-							// flag the method as needing function-form generation; once flagged,
-							// never flip back to false (Go generation would emit method syntax
-							// against a function definition).
-							methodMeta.IsGeneric = methodMeta.IsGeneric || existing.IsGeneric
-						}
-						methodMeta.DefinedIn = filePath
-						typeMeta.Methods[methodName] = methodMeta
-					} else {
-						// Even if type is not in this file, we might want to collect it?
-						// But for now let's stick to what's requested.
-						// We can create a placeholder if needed.
-						richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
-							Name:    baseType,
-							Package: pkgName,
-							Methods: map[string]*transpiler.MethodMetadata{methodName: methodMeta},
-							Fields:  make(map[string]transpiler.Type),
-						}
-					}
-					// Record the declaration so the sibling pass can detect a
-					// second definition of this method in another file of the
-					// package. This also catches a duplicate within this file
-					// when the receiver type is declared in a sibling: the
-					// check above sees only a placeholder entry whose
-					// DefinedIn is still empty, and would let it through.
-					if prev, dup := decls.recordMethod(fullBaseType+"."+methodName, filePath, methodMeta.Pos); dup {
-						return nil, methodRedefinedError(methodName, baseType, pkgName,
-							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-							prev.file, filePath, prev.pos)
-					}
-				}
-			} else {
-				// Top-level function
-				funcName := ctx.Identifier().GetText()
-
-				// Check for std library conflicts
-				if err := CheckStdConflict(funcName, pkgName); err != nil {
-					return nil, err
-				}
-
-				fullFuncName := funcName
-				if pkgName != "" && pkgName != "main" && pkgName != "test" {
-					fullFuncName = pkgName + "." + funcName
-				}
-				funcMeta := &transpiler.FunctionMetadata{
-					Name:      funcName,
-					Package:   pkgName,
-					Doc:       docAt(docs, ctx.GetStart()),
-					Pos:       transpiler.PosFromToken(ctx.Identifier().GetStart()),
-					DefinedIn: filePath,
-				}
-				// Collect type parameters first so we can resolve param types correctly
-				funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
-				funcMeta.ReturnType, funcMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, funcMeta.TypeParams)
-				// Source spans of each default expression, keyed by param index.
-				// Used to give the E0014 (default type mismatch) diagnostic an
-				// exact caret span over the offending default value.
-				var defaultSpans map[int]defaultExprSpan
-				if ctx.Signature().Parameters() != nil {
-					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
-					if pList := pCtx.ParameterList(); pList != nil {
-						for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
-							paramCtx := p.(*grammar.ParameterContext)
-							if paramCtx.Type_() != nil {
-								funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
-								funcMeta.Variadic = paramCtx.ELLIPSIS() != nil
-							} else {
-								funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
-							}
-							// Extract parameter name
-							if paramCtx.Identifier() != nil {
-								funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
-							} else {
-								funcMeta.ParamNames = append(funcMeta.ParamNames, "")
-							}
-							if exprCtx := recordParamDefault(&funcMeta.DefaultExprs, i, paramCtx); exprCtx != nil {
-								if defaultSpans == nil {
-									defaultSpans = make(map[int]defaultExprSpan)
-								}
-								defaultSpans[i] = spanOfCtx(exprCtx)
-							}
-						}
-					}
-				}
-				// Validate default parameter rules once the sibling files' type
-				// declarations are known too (section 2.5): a default is checked
-				// against the type its parameter's named type is declared over.
-				if len(funcMeta.DefaultExprs) > 0 {
-					pendingDefaultChecks = append(pendingDefaultChecks, pendingDefaultCheck{
-						meta: funcMeta, line: ctx.GetStart().GetLine(), col: ctx.GetStart().GetColumn(), spans: defaultSpans,
-					})
-				}
-				// Reject redeclaration of a top-level function within the same
-				// package. The sibling-metadata pass may have already registered
-				// the function from another file; if it lives in a different
-				// file, that's a true redeclaration (mirrors Go's "redeclared
-				// in this block"). Skip when the existing entry is empty
-				// (placeholder / cache) or refers to this same file
-				// (re-analysis of the same source).
-				if existing, ok := richAST.Functions[fullFuncName]; ok {
-					if existing.DefinedIn != "" && !(existing.DefinedIn != filePath && a.paths.sameFile(existing.DefinedIn, absFilePath)) {
-						return nil, funcRedeclaredError(funcName, pkgName,
-							ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-							existing.DefinedIn, filePath, existing.Pos)
-					}
-				}
-				// Record the declaration so the sibling pass can detect a
-				// second definition of this function in another file of the
-				// package.
-				if prev, dup := decls.recordFunc(fullFuncName, filePath, funcMeta.Pos); dup {
-					return nil, funcRedeclaredError(funcName, pkgName,
-						ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
-						prev.file, filePath, prev.pos)
-				}
-				richAST.Functions[fullFuncName] = funcMeta
-			}
-		}
+	// 1.5-2. Collect sealed and opaque types, methods and functions
+	if err := a.collectFileFuncs(sourceFile, fd); err != nil {
+		return nil, err
 	}
 
 	logPhase("collect-methods-functions", phaseStart)
@@ -1709,62 +1180,14 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 	underlying := a.declaredTypeUnderlying(ownAliases, pkgName, richAST)
 	recordOpaqueBases(richAST, pkgName, underlying)
 	decls.markStoredAsDeclared(aliasStep(ownAliases, pkgName, richAST))
-	if len(pendingDefaultChecks) > 0 {
-		for _, check := range pendingDefaultChecks {
-			if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
-				return nil, err
-			}
+	for _, check := range fd.pendingDefaultChecks {
+		if err := validateDefaultParams(check.meta, check.line, check.col, filePath, check.spans, underlying); err != nil {
+			return nil, err
 		}
 	}
 
 	// 2.75 Collect embed declarations
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		if embedCtx := topDecl.EmbedDeclaration(); embedCtx != nil {
-			ctx := embedCtx.(*grammar.EmbedDeclarationContext)
-			varName := ctx.Identifier().GetText()
-
-			// Extract type name if specified
-			typeName := ""
-			if ctx.Type_() != nil {
-				typeName = galaparser.TypeText(ctx.Type_())
-			}
-
-			// Extract embed patterns from embedPatterns rule
-			patternsCtx := ctx.EmbedPatterns().(*grammar.EmbedPatternsContext)
-			var patterns []string
-			for _, s := range patternsCtx.AllSTRING() {
-				patterns = append(patterns, strings.Trim(s.GetText(), "\""))
-			}
-
-			// Determine Go variable name
-			goVar := varName
-			if typeName == transpiler.TypeEmbeddedFS || typeName == "std.EmbeddedFS" {
-				goVar = "_embed_" + varName
-			} else if typeName == "" {
-				// Infer type: glob patterns → EmbeddedFS, single file → string
-				hasGlob := false
-				for _, p := range patterns {
-					if strings.ContainsAny(p, "*?") || len(patterns) > 1 {
-						hasGlob = true
-						break
-					}
-				}
-				if hasGlob {
-					typeName = transpiler.TypeEmbeddedFS
-					goVar = "_embed_" + varName
-				} else {
-					typeName = "string"
-				}
-			}
-
-			richAST.EmbedDirectives = append(richAST.EmbedDirectives, transpiler.EmbedDirective{
-				VarName:  varName,
-				GoVar:    goVar,
-				Patterns: patterns,
-				TypeName: typeName,
-			})
-		}
-	}
+	collectFileEmbeds(sourceFile, richAST)
 
 	// 2b. Record this file's package-level val/var declarations so cross-file
 	// references unwrap their std.Immutable[T] wrapper correctly.
@@ -2115,28 +1538,96 @@ func countErrors(warnings []ValidationWarning) int {
 	return n
 }
 
-// analyzeSealedType registers metadata for a sealed type declaration.
+// sealedDecl is what analyzeSealedType reads from a sealed type declaration:
+// its name, doc comment, the position of its name, its type parameters with
+// their constraints, and its cases in order.
+type sealedDecl struct {
+	name                 string
+	doc                  string
+	pos                  transpiler.SourcePos
+	typeParams           []string
+	typeParamConstraints map[string]string
+	cases                []sealedCase
+}
+
+// sealedCase is a case of a sealed type declaration: its name, doc comment,
+// the position of its name, whether it is the `default case`, and its fields.
+type sealedCase struct {
+	name      string
+	doc       string
+	pos       transpiler.SourcePos
+	fields    []sealedCaseField
+	isDefault bool
+}
+
+// sealedCaseField is a field of a sealed case: its name, its type as written
+// (parser.TypeText) and its declared default, if any.
+type sealedCaseField struct {
+	name     string
+	typeName string
+	def      *transpiler.DefaultExpr
+}
+
+// sealedDeclOf reads ctx, with the doc comments of its file.
+func sealedDeclOf(ctx *grammar.SealedTypeDeclarationContext, docs galaparser.Docs) sealedDecl {
+	d := sealedDecl{
+		name: ctx.Identifier().GetText(),
+		doc:  docAt(docs, ctx.GetStart()),
+		pos:  transpiler.PosFromToken(ctx.Identifier().GetStart()),
+	}
+	d.typeParams, d.typeParamConstraints = typeParamsOf(ctx.TypeParameters())
+	for _, caseCtx := range ctx.AllSealedCase() {
+		sc := caseCtx.(*grammar.SealedCaseContext)
+		c := sealedCase{
+			name:      sc.Identifier().GetText(),
+			doc:       docAt(docs, sc.GetStart()),
+			pos:       transpiler.PosFromToken(sc.Identifier().GetStart()),
+			isDefault: sc.DEFAULT() != nil,
+		}
+		if sc.SealedCaseFieldList() != nil {
+			fieldList := sc.SealedCaseFieldList().(*grammar.SealedCaseFieldListContext)
+			for _, fieldCtx := range fieldList.AllSealedCaseField() {
+				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
+				field := sealedCaseField{name: fc.Identifier().GetText(), typeName: galaparser.TypeText(fc.Type_())}
+				if pd := fc.ParamDefault(); pd != nil {
+					exprCtx := pd.(*grammar.ParamDefaultContext).Expression()
+					field.def = &transpiler.DefaultExpr{Text: transpiler.SourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}
+				}
+				c.fields = append(c.fields, field)
+			}
+		}
+		d.cases = append(d.cases, c)
+	}
+	return d
+}
+
+// analyzeSealedType registers metadata for a sealed type declaration (see
+// registerSealedType).
+func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs) error {
+	return a.registerSealedType(sealedDeclOf(ctx, docs), pkgName, richAST)
+}
+
+// registerSealedType registers metadata for a sealed type declaration.
 // It creates the parent type (with all variant fields merged + _variant),
 // companion types for each case, and Apply/Unapply/IsXxx methods.
 // Returns a non-nil error if the declaration is rejected (e.g. duplicate
 // variant case names within the same sealed type).
-func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationContext, pkgName string, richAST *transpiler.RichAST, docs galaparser.Docs) error {
-	typeName := ctx.Identifier().GetText()
+func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName string, richAST *transpiler.RichAST) error {
+	typeName := decl.name
 
 	fullTypeName := typeName
 	if pkgName != "" && pkgName != "main" && pkgName != "test" {
 		fullTypeName = pkgName + "." + typeName
 	}
 
-	// Collect type parameters from the sealed type
-	typeParams, typeParamConstraints := typeParamsOf(ctx.TypeParameters())
+	typeParams, typeParamConstraints := decl.typeParams, decl.typeParamConstraints
 
 	// Create parent type metadata with all variant fields merged + _variant
 	parentMeta := &transpiler.TypeMetadata{
 		Name:                 typeName,
 		Package:              pkgName,
-		Doc:                  docAt(docs, ctx.GetStart()),
-		Pos:                  transpiler.PosFromToken(ctx.Identifier().GetStart()),
+		Doc:                  decl.doc,
+		Pos:                  decl.pos,
 		Methods:              make(map[string]*transpiler.MethodMetadata),
 		Fields:               make(map[string]transpiler.Type),
 		IsSealed:             true,
@@ -2145,25 +1636,12 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 	}
 
 	// Process each case to collect fields (two passes: collect, then resolve conflicts)
-	type variantFieldInfo struct {
-		name     string
-		typeName string
-		def      *transpiler.DefaultExpr // the field's declared default, if any
-	}
-	type variantInfo struct {
-		name      string
-		doc       string
-		pos       transpiler.SourcePos
-		fields    []variantFieldInfo
-		isDefault bool
-	}
-	var variants []variantInfo
+	var variants []sealedCase
 
 	// First pass: collect all variant fields
 	allFieldTypes := make(map[string]map[string]bool) // field name -> set of type texts
-	for _, caseCtx := range ctx.AllSealedCase() {
-		sc := caseCtx.(*grammar.SealedCaseContext)
-		variantName := sc.Identifier().GetText()
+	for _, vi := range decl.cases {
+		variantName := vi.name
 		// Reject duplicate sealed-variant case names within a single sealed
 		// type declaration. Without this guard the second variant's
 		// companion type and Apply/Unapply/isXxx methods would be silently
@@ -2173,36 +1651,17 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 			if existing.name == variantName {
 				return galaerr.NewCodedSemanticError(
 					galaerr.CodeSealedVariantCaseRedeclared,
-					sc.Identifier().GetStart().GetLine(), sc.Identifier().GetStart().GetColumn(),
+					vi.pos.Line, vi.pos.Column,
 					fmt.Sprintf("sealed case %q already declared in sealed type %q", variantName, typeName),
 					"rename or remove the duplicate case",
 				)
 			}
 		}
-		vi := variantInfo{
-			name:      variantName,
-			doc:       docAt(docs, sc.GetStart()),
-			pos:       transpiler.PosFromToken(sc.Identifier().GetStart()),
-			isDefault: sc.DEFAULT() != nil,
-		}
-
-		if sc.SealedCaseFieldList() != nil {
-			fieldList := sc.SealedCaseFieldList().(*grammar.SealedCaseFieldListContext)
-			for _, fieldCtx := range fieldList.AllSealedCaseField() {
-				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
-				fieldName := fc.Identifier().GetText()
-				fieldTypeStr := galaparser.TypeText(fc.Type_())
-				field := variantFieldInfo{name: fieldName, typeName: fieldTypeStr}
-				if pd := fc.ParamDefault(); pd != nil {
-					exprCtx := pd.(*grammar.ParamDefaultContext).Expression()
-					field.def = &transpiler.DefaultExpr{Text: transpiler.SourceText(exprCtx), Pos: transpiler.PosFromToken(exprCtx.GetStart())}
-				}
-				vi.fields = append(vi.fields, field)
-				if allFieldTypes[fieldName] == nil {
-					allFieldTypes[fieldName] = make(map[string]bool)
-				}
-				allFieldTypes[fieldName][fieldTypeStr] = true
+		for _, field := range vi.fields {
+			if allFieldTypes[field.name] == nil {
+				allFieldTypes[field.name] = make(map[string]bool)
 			}
+			allFieldTypes[field.name][field.typeName] = true
 		}
 
 		variants = append(variants, vi)
@@ -2508,7 +1967,12 @@ func (a *galaAnalyzer) causesInstantiationCycle(recvType grammar.ITypeContext, s
 	if retType == nil {
 		return false
 	}
-	recvTypeStr, retTypeStr := galaparser.TypeText(pointee(recvType)), galaparser.TypeText(pointee(retType))
+	return instantiationCycle(galaparser.TypeText(pointee(recvType)), galaparser.TypeText(pointee(retType)))
+}
+
+// instantiationCycle is causesInstantiationCycle on the text of the receiver
+// type and of the return type, each with its pointers stripped.
+func instantiationCycle(recvTypeStr, retTypeStr string) bool {
 	// Extract base type and type args from receiver
 	recvBase, recvArgs := extractBaseAndArgs(recvTypeStr)
 	if recvBase == "" || len(recvArgs) == 0 {
@@ -3980,13 +3444,13 @@ type shorthandField struct {
 }
 
 // recordShorthandField records field of the shorthand struct meta, declared
-// by pctx as type declared, and queues one with no keyword for
-// markStoredAsDeclared.
-func (d *packageDecls) recordShorthandField(meta *transpiler.TypeMetadata, field string, declared transpiler.Type, pctx *grammar.ParameterContext) {
-	hasKeyword := pctx.VAL() != nil || pctx.VAR() != nil
+// as type declared, with `val` (hasVal) or `var` (hasVar) or neither, and
+// queues one with no keyword for markStoredAsDeclared.
+func (d *packageDecls) recordShorthandField(meta *transpiler.TypeMetadata, field string, declared transpiler.Type, hasVal, hasVar bool) {
+	hasKeyword := hasVal || hasVar
 	meta.Fields[field] = transpiler.ShorthandFieldType(declared, hasKeyword)
 	meta.FieldNames = append(meta.FieldNames, field)
-	meta.ImmutFlags = append(meta.ImmutFlags, pctx.VAR() == nil)
+	meta.ImmutFlags = append(meta.ImmutFlags, !hasVar)
 	meta.StoredAsDeclared = append(meta.StoredAsDeclared, false)
 	if !hasKeyword {
 		d.keywordlessFields = append(d.keywordlessFields, shorthandField{meta, len(meta.FieldNames) - 1, declared})
@@ -4370,7 +3834,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						if pctx.Type_() != nil {
 							fieldType = galaparser.TypeText(pctx.Type_())
 						}
-						decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx)
+						decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL() != nil, pctx.VAR() != nil)
 						if meta.FieldPositions == nil {
 							meta.FieldPositions = make(map[string]transpiler.SourcePos)
 						}
@@ -4408,24 +3872,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if err := a.analyzeSealedType(ctx, pkgName, richAST, docs); err != nil {
 				return err
 			}
-			// Set DefinedIn on the parent and all companion variants (only when empty).
-			if meta, ok := richAST.Types[fullTypeName]; ok {
-				if meta.DefinedIn == "" {
-					meta.DefinedIn = absSibPath
-				}
-				for _, v := range meta.SealedVariants {
-					companionKey := v.Name
-					if pkgName != "" && pkgName != "main" && pkgName != "test" {
-						companionKey = pkgName + "." + v.Name
-					}
-					if cm, ok := richAST.Types[companionKey]; ok && cm.DefinedIn == "" {
-						cm.DefinedIn = absSibPath
-						if apply := cm.Methods["Apply"]; apply != nil {
-							apply.DefinedIn = absSibPath
-						}
-					}
-				}
-			}
+			markSiblingSealed(richAST, pkgName, fullTypeName, absSibPath)
 		}
 	}
 
