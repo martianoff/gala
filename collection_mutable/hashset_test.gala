@@ -375,3 +375,21 @@ func TestHashSetOfImmutableArrays(t T) T {
     val t1 = Eq(t, s.Size(), 2)
     IsTrue(t1, s.Contains(im.EmptyArray[int]().Prepend(2).Prepend(1)))
 }
+
+// setPointerTarget has no Hash method: a pointer to it is an element by its
+// address.
+struct setPointerTarget(N int)
+
+func TestHashSetOfPointersComparesByIdentity(t T) T {
+    val a = &setPointerTarget(1)
+    val twin = &setPointerTarget(1)
+    val s = EmptyHashSet[*setPointerTarget]()
+    s.Add(a)
+    s.Add(twin)
+    s.Add(a)
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsFalse(t1, s.Contains(&setPointerTarget(1)))
+    s.Remove(a)
+    val t3 = IsFalse(t2, s.Contains(a))
+    IsTrue(t3, s.Contains(twin))
+}

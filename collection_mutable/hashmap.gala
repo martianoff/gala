@@ -66,7 +66,7 @@ func (m Ptr[HashMap[K, V]]) Length() int = m.size
 // Put adds or updates a key-value pair. O(1) amortized.
 // Returns true if this is a new key, false if updating existing.
 func (m Ptr[HashMap[K, V]]) Put(key K, value V) bool {
-    val hashCode = HashValue(key)
+    val hashCode = HashKey(key)
     val idx = int(hashCode & m.bucketMask)
 
     // Check if key already exists
@@ -139,7 +139,7 @@ func (m Ptr[HashMap[K, V]]) GetOrElseUpdate(key K, f func() V) V {
 // Update updates the value for a key using a function.
 // Returns true if the key existed and was updated.
 func (m Ptr[HashMap[K, V]]) Update(key K, f func(V) V) bool {
-    val hashCode = HashValue(key)
+    val hashCode = HashKey(key)
     val idx = int(hashCode & m.bucketMask)
 
     var entry = m.buckets[idx]
@@ -157,7 +157,7 @@ func (m Ptr[HashMap[K, V]]) Update(key K, f func(V) V) bool {
 // Remove removes a key from the map. O(1) amortized.
 // Returns true if the key was removed (was present).
 func (m Ptr[HashMap[K, V]]) Remove(key K) bool {
-    val hashCode = HashValue(key)
+    val hashCode = HashKey(key)
     val idx = int(hashCode & m.bucketMask)
 
     var prev = EmptyOptionPtr[hashMapEntry[K, V]]()
@@ -197,7 +197,7 @@ func (m Ptr[HashMap[K, V]]) Clear() {
 
 // Contains checks if the map contains the given key. O(1) average.
 func (m Ptr[HashMap[K, V]]) Contains(key K) bool {
-    val hashCode = HashValue(key)
+    val hashCode = HashKey(key)
     val idx = int(hashCode & m.bucketMask)
 
     var entry = m.buckets[idx]
@@ -213,7 +213,7 @@ func (m Ptr[HashMap[K, V]]) Contains(key K) bool {
 
 // Get returns the value for a key wrapped in Option. O(1) average.
 func (m Ptr[HashMap[K, V]]) Get(key K) Option[V] {
-    val hashCode = HashValue(key)
+    val hashCode = HashKey(key)
     val idx = int(hashCode & m.bucketMask)
 
     var entry = m.buckets[idx]

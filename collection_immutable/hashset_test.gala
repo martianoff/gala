@@ -371,6 +371,58 @@ func TestHashSetOfTupleWithUnhashablePanics(t T) T = Panics(t, () => {
     HashSetOf((1, unhashableKey(N = 1)), (2, unhashableKey(N = 2)))
 })
 
+func TestHashSetOfPointersComparesByIdentity(t T) T {
+    val a = &unhashableKey(N = 1)
+    val twin = &unhashableKey(N = 1)
+    val s = EmptyHashSet[*unhashableKey]().Add(a).Add(twin).Add(a)
+    val t1 = Eq(t, s.Size(), 2)
+    val t2 = IsTrue(t1, s.Contains(twin))
+    val t3 = IsFalse(t2, s.Contains(&unhashableKey(N = 1)))
+    val t4 = Eq(t3, s.Remove(a).Size(), 1)
+    IsFalse(t4, s.Remove(a).Contains(a))
+}
+
+func TestHashSetOfAnyHoldingPointers(t T) T {
+    val a = &unhashableKey(N = 1)
+    val twin = &unhashableKey(N = 1)
+    Eq(t, EmptyHashSet[any]().Add(a).Add(twin).Add(a).Size(), 2)
+}
+
+// equalByValueKey's pointer has an Equal of its own, which the set calls on
+// two pointers that are not ==, so no address hash agrees with it.
+type equalByValueKey struct {
+    N int
+}
+
+func (p *equalByValueKey) Equal(other *equalByValueKey) bool = p.N == other.N
+
+func TestHashSetOfAnyPointerWithEqualPanics(t T) T = Panics(t, () => {
+    EmptyHashSet[any]().Add(&equalByValueKey(N = 1)).Add(&equalByValueKey(N = 1))
+})
+
+func TestHashSetOfManyPointers(t T) T {
+    val keys = ArrayTabulate(300, (i) => &unhashableKey(N = i))
+    val s = keys.FoldLeft(EmptyHashSet[*unhashableKey](), (acc, k) => acc.Add(k))
+    val t1 = Eq(t, s.Size(), 300)
+    IsTrue(t1, keys.ForAll((k) => s.Contains(k)))
+}
+
+func TestHashSetOfPointerSets(t T) T {
+    // A set compares its pointer elements by identity, so it hashes them by
+    // their addresses and is itself an element.
+    val a = &unhashableKey(N = 1)
+    val b = &unhashableKey(N = 2)
+    val s = HashSetOf(HashSetOf(a, b), HashSetOf(b, a), HashSetOf(a))
+    val t1 = Eq(t, s.Size(), 2)
+    IsFalse(t1, s.Contains(HashSetOf(&unhashableKey(N = 1))))
+}
+
+// A Tuple compares the pointer it holds by its target, so it cannot hash it
+// by its address.
+func TestHashSetOfTupleWithPointerPanics(t T) T = Panics(t, () => {
+    HashSetOf((1, &unhashableKey(N = 1)), (2, &unhashableKey(N = 2)))
+})
+
 // ============ Collection Element Tests ============
 
 func TestHashSetOfLists(t T) T {

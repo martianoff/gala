@@ -106,14 +106,27 @@ func HashCombine(h1 uint32, h2 uint32) uint32 {
     return h1 ^ (h2 + 2654435769 + (h1 << 6) + (h1 >> 2))
 }
 
-// HashValue hashes a value the way HashSet and HashMap hash their keys: a
-// value of a predeclared primitive type by its value, any other value through
-// its Hashable Hash method. It panics for a value that is neither. The std
-// value types hash the values they hold through it too, so a Tuple of Tuples,
-// or an Option of a Hashable type, hashes all the way down. It takes any
-// rather than a type parameter: the switch boxes the value either way, and one
-// function serves every key type instead of an instance per type.
-func HashValue(v any) uint32 = v match {
+// HashValue hashes a value held inside a key: a value of a predeclared
+// primitive type by its value, any other value through its Hashable Hash
+// method. It panics for a value that is neither. The std value types hash the
+// values they hold through it, so a Tuple of Tuples, or an Option of a
+// Hashable type, hashes all the way down. It takes any rather than a type
+// parameter: the switch boxes the value either way, and one function serves
+// every key type instead of an instance per type.
+func HashValue(v any) uint32 = hashValue(v, false)
+
+// HashKey hashes a HashSet element or HashMap key: as HashValue does, and a
+// pointer that is not Hashable, and has no Equal method another key could be
+// passed to, by its address. HashSet and HashMap tell such pointers apart by
+// identity (==), so the address is the hash that agrees with their equality.
+//
+// HashValue does not hash such a pointer: a Tuple, Option, List or struct
+// holding one compares it by its target (std.Equal), which its address does
+// not agree with.
+func HashKey(v any) uint32 = hashValue(v, true)
+
+// hashValue is HashValue, and HashKey when key is set.
+func hashValue(v any, key bool) uint32 = v match {
     case i: int => HashInt(int64(i))
     case s: string => HashString(s)
     case i: int64 => HashInt(i)
@@ -129,6 +142,7 @@ func HashValue(v any) uint32 = v match {
     case f: float64 => HashFloat(f)
     case f: float32 => HashFloat(float64(f))
     case h: Hashable => h.Hash()
+    case _ if key => hashKeyByIdentity(v)
     case _ => panicNotHashable(v)
 }
 

@@ -1283,6 +1283,18 @@ gala_exec_test(
     ],
 )
 
+# A pointer with no Hash method is a HashSet element or HashMap key by its
+# address, in the immutable and the mutable collections.
+gala_exec_test(
+    name = "pointer_hash_keys",
+    src = "pointer_hash_keys.gala",
+    expected = "pointer_hash_keys.out",
+    deps = [
+        "//collection_immutable",
+        "//collection_mutable",
+    ],
+)
+
 gala_exec_test(
     name = "hashmap_foreachkv_twoparam",
     src = "hashmap_foreachkv_twoparam.gala",
