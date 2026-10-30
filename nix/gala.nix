@@ -202,10 +202,8 @@ let
   # flavor (see internal/parser/grammar/BUILD.bazel); GALA parses with it
   # first. Its release binary runs at build time, so it is selected by
   # buildPlatform; building GALA needs it, so a platform galop publishes no
-  # binary for cannot build GALA. ANTLR's parser stays selectable when GALA
-  # runs (--parser=antlr, GALA_PARSER=antlr). The version must equal
-  # MODULE.bazel's galop.toolchain version (tools/check_repo_policy.sh checks
-  # it).
+  # binary for cannot build GALA. The version must equal MODULE.bazel's
+  # galop.toolchain version (tools/check_repo_policy.sh checks it).
   galopVersion = "0.2.5";
   galopAssets = {
     x86_64-linux = {

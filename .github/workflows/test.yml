@@ -51,15 +51,15 @@ jobs:
 
   # GALA parses with galop's parser by default and keeps ANTLR's as a run-time
   # option (internal/parser/engine.go). This runs the whole suite on a build
-  # whose default engine is ANTLR's (--//internal/parser:antlr; galop is still
-  # built in), so that option keeps working: the flag reaches the exec
+  # whose binaries default to ANTLR's (--//internal/parser:antlr; galop is
+  # still built in), so that option keeps working. The flag reaches the exec
   # configuration too, so the gala worker that transpiles std, the examples
-  # and the other libraries parses with ANTLR, and their outputs and tests
-  # must come out the same. TestDefaultEngine checks the default through
-  # GALA_EXPECT_DEFAULT_ENGINE. It keeps its own
-  # disk cache, so the two jobs never save over each other's. Long tests get 30
-  # minutes instead of 15: //internal/build:build_test runs whole CLI builds,
-  # 7-10 minutes on a warm cache, and this cache is often cold.
+  # and the libraries parses with ANTLR. TestDefaultEngine and
+  # TestParserFlagHelp check the default through GALA_EXPECT_DEFAULT_ENGINE.
+  # The job keeps its own disk cache, so the two jobs never save over each
+  # other's. Long tests get 30 minutes instead of 15: //internal/build:build_test
+  # runs whole CLI builds, 7-10 minutes on a warm cache, and this cache is
+  # often cold.
   test-antlr:
     name: Build and Test (ANTLR parser)
     runs-on: ubuntu-latest
@@ -92,12 +92,6 @@ jobs:
             --test_timeout=-1,-1,1800,-1 \
             --test_output=errors --verbose_failures \
             --action_env=GOROOT="$GOROOT" --action_env=PATH
-
-      - name: The CLI defaults to ANTLR's parser
-        run: |
-          bazel run //cmd/gala --//internal/parser:antlr \
-            --action_env=GOROOT="$GOROOT" --action_env=PATH -- --help \
-            | grep -F '(default: $GALA_PARSER, else antlr)'
 
   race:
     name: Race Detector

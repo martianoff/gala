@@ -98,12 +98,6 @@ func parseFileAs(e Engine, src string) fileParse {
 	return f
 }
 
-// checkNative is what is wrong with f's native tree and bridge, "" when
-// nothing is (see checkNative in native_tree_test.go).
-func (f fileParse) checkNative() string {
-	return checkNative(f.parsed, f.text)
-}
-
 // parseFileWith parses src with engine e and renders the result (see
 // render).
 func parseFileWith(e Engine, src string) string {
@@ -240,7 +234,7 @@ func TestEnginesAgree(t *testing.T) {
 			}
 		}
 		for _, f := range checked {
-			if msg := f.checkNative(); msg != "" {
+			if msg := checkNative(f.parsed, f.text); msg != "" {
 				t.Errorf("%s: native tree: %s", what, msg)
 			}
 		}

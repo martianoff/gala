@@ -34,8 +34,7 @@ genrule(
 # of internal/parser/native.
 #
 # galop runs on the build host, from the prebuilt binaries rules_gala
-# registers for linux-amd64, linux-arm64, darwin-amd64, darwin-arm64 and
-# windows-amd64. Building GALA needs one: no other host can build it.
+# registers; building GALA needs one (see CONTRIBUTING.MD for the hosts).
 galop_parser(
     name = "gala_grammar_galop",
     defines = {"nativePackage": "martianoff/gala/internal/parser/native"},

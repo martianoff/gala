@@ -21,8 +21,7 @@ import (
 type Engine string
 
 const (
-	// EngineGalop parses with galop and falls back to ANTLR. It is the
-	// default.
+	// EngineGalop parses with galop and falls back to ANTLR.
 	EngineGalop Engine = "galop"
 	// EngineANTLR parses with ANTLR's runtime alone.
 	EngineANTLR Engine = "antlr"
@@ -30,11 +29,12 @@ const (
 
 // defaultEngine names the engine this binary uses unless asked for another.
 // Bazel's --//internal/parser:antlr sets it to "antlr" at link time (an x_defs
-// of this library); both engines are built in either way.
+// of this library); both engines are built in either way. Like GALA_PARSER, a
+// name that is no engine fails the parses.
 var defaultEngine = string(EngineGalop)
 
-// DefaultEngine is the engine this binary uses unless asked for another:
-// galop's, unless the binary was built to default to ANTLR's.
+// DefaultEngine is the engine this binary uses unless asked for another (see
+// defaultEngine).
 func DefaultEngine() Engine {
 	return Engine(defaultEngine)
 }
@@ -90,10 +90,11 @@ func currentEngine() (Engine, error) {
 	if name == "" {
 		name = os.Getenv("GALA_PARSER")
 	}
-	c := &engineChoice{engine: DefaultEngine()}
-	if name != "" {
-		c.engine, c.err = parseEngine(name)
+	if name == "" {
+		name = defaultEngine
 	}
+	e, err := parseEngine(name)
+	c := &engineChoice{engine: e, err: err}
 	chosen.Store(c)
 	return c.engine, c.err
 }

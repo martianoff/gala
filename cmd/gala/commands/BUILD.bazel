@@ -82,6 +82,7 @@ go_test(
         "mod_tidy_test.go",
         "new_test.go",
         "project_test.go",
+        "root_test.go",
         "run_test.go",
         "transpile_package_test.go",
     ],
