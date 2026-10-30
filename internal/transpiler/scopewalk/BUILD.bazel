@@ -5,7 +5,12 @@ go_library(
     srcs = [
         "scopewalk.go",
         "walk_antlr.go",
-    ],
+    ] + select({
+        # walk_native.go reads the native tree, which only builds with
+        # galop's parser have; walk_native_off.go stands in for it.
+        "//internal/parser/grammar:galop_enabled": ["walk_native.go"],  # keep
+        "//conditions:default": ["walk_native_off.go"],  # keep
+    }),
     importpath = "martianoff/gala/internal/transpiler/scopewalk",
     visibility = ["//:__subpackages__"],
     deps = [
@@ -13,18 +18,37 @@ go_library(
         "//internal/parser",
         "//internal/parser/grammar",
         "@com_github_antlr4_go_antlr_v4//:antlr",
-    ],
+    ] + select({
+        "//internal/parser/grammar:galop_enabled": ["//internal/parser/native"],  # keep
+        "//conditions:default": [],  # keep
+    }),
 )
 
 go_test(
     name = "scopewalk_test",
-    srcs = ["scopewalk_test.go"],
+    srcs = ["scopewalk_test.go"] + select({
+        # walk_native_test.go compares the native walk with ANTLR's.
+        "//internal/parser/grammar:galop_enabled": ["walk_native_test.go"],  # keep
+        "//conditions:default": [],  # keep
+    }),
+    # walk_native_test.go walks every GALA source of the repository.
+    data = [
+        "//:all_gala_sources",
+        "//examples:all_gala_sources",
+        "//lazy:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+    ],
+    embed = [":scopewalk"],
     deps = [
-        ":scopewalk",
         "//internal/parser",
         "//internal/parser/grammar",
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
     ],
 )

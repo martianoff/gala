@@ -40,24 +40,30 @@ func (c *collector) sorted() []string {
 }
 
 // walkFuncBody parses a whole source file and walks the body of its single
-// top-level function, returning the unbound references.
+// top-level function, returning the unbound references. It walks ANTLR's tree,
+// and the native tree when the build has one, and requires the same result.
 func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 	t.Helper()
-	p := parser.NewAntlrGalaParser()
-	tree, _, errs := p.ParseFile(src).Strict()
+	parsed := parser.NewAntlrGalaParser().ParseFile(src)
+	tree, _, errs := parsed.Strict()
 	require.Empty(t, errs, "source must parse")
 	sf, ok := tree.(*grammar.SourceFileContext)
 	require.True(t, ok)
 
-	c := newCollector()
-	w := scopewalk.New(c, opts)
-	w.PushScope()
-	for _, td := range sf.AllTopLevelDeclaration() {
-		if fd := td.FunctionDeclaration(); fd != nil {
-			w.WalkFunctionDeclaration(fd)
+	walk := func(native *parser.Native) *collector {
+		c := newCollector()
+		w := scopewalk.New(c, opts).WithNative(native)
+		w.PushScope()
+		for _, td := range sf.AllTopLevelDeclaration() {
+			if fd := td.FunctionDeclaration(); fd != nil {
+				w.WalkFunctionDeclaration(fd)
+			}
 		}
+		w.PopScope()
+		return c
 	}
-	w.PopScope()
+	c := walk(nil)
+	require.Equal(t, c, walk(parsed.Native), "the native walk must agree with ANTLR's")
 	return c
 }
 

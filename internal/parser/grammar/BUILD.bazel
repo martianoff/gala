@@ -48,11 +48,12 @@ galop_parser(
 # (--//internal/parser:antlr). galop runs on the build host, from the
 # prebuilt binaries rules_gala registers for linux-amd64, linux-arm64,
 # darwin-amd64, darwin-arm64 and windows-amd64; on any other host, build with
-# --//internal/parser:antlr.
+# --//internal/parser:antlr. The tree's consumers outside internal/parser select
+# on it too, for the files that read the native tree.
 alias(
     name = "galop_enabled",
     actual = "//internal/parser:galop_wanted",
-    visibility = ["//internal/parser:__subpackages__"],
+    visibility = ["//:__subpackages__"],
 )
 
 go_library(

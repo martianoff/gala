@@ -55,6 +55,14 @@
 // Options.ParseInterpolations set, each embedded expression is re-parsed and
 // walked in the current scope, so a name referenced only inside an
 // interpolation is seen like any other reference.
+//
+// TWO TREES. The entry points take ANTLR contexts. Given the native tree of
+// their parse (WithNative), they walk galop's native tree instead
+// (walk_native.go), which mirrors the walk over ANTLR's (walk_antlr.go)
+// handler for handler; TestWalksAgree holds the two to the same output on
+// every GALA source of the repository. ANTLR's walk stays for what has no
+// native tree: a build without galop's parser, an interpolation fragment
+// (re-parsed into ANTLR's tree alone), and a caller that holds none.
 package scopewalk
 
 import (
@@ -160,11 +168,27 @@ type Walker struct {
 	// token, so a reference inside `s"…"` is attributed to the literal that
 	// contains it.
 	posOverride *Site
+
+	// native is the native tree of the parse the walked contexts come from,
+	// or nil (see WithNative).
+	native *parser.Native
 }
 
 // New returns a Walker that reports to v.
 func New(v Visitor, opts Options) *Walker {
 	return &Walker{visitor: v, opts: opts}
+}
+
+// WithNative makes w walk on n, the native tree of the parse whose contexts
+// it is handed, and returns w. An entry point given a context of that parse
+// then walks the context's native node; one given any other context (an
+// interpolation fragment's, another parse's), or a Walker with no native tree
+// (n nil, or the ANTLR-only build), walks ANTLR's tree. The two walks report
+// the same references at the same sites. n's tree is built on the first walk
+// that needs it.
+func (w *Walker) WithNative(n *parser.Native) *Walker {
+	w.native = n
+	return w
 }
 
 // ---------------------------------------------------------------------------
@@ -321,19 +345,32 @@ func (w *Walker) walkInterpolated(lit Site) {
 // Walk descends an arbitrary parse-tree node. Nodes that affect scoping or
 // contribute references have precise handlers; every other node recurses into
 // all its children.
-func (w *Walker) Walk(node antlr.Tree) { antlrWalk{w}.walk(node) }
+func (w *Walker) Walk(node antlr.Tree) {
+	if !w.walkNative(node) {
+		antlrWalk{w}.walk(node)
+	}
+}
+
+// The entry points below are Walk on a node of their kind, which dispatches
+// it to the same handler.
 
 // WalkLambda pushes a fresh scope, binds the lambda's parameters into it, walks
 // the body, and pops — so a nested lambda's parameters shadow only within its
 // own scope.
 func (w *Walker) WalkLambda(lambda grammar.ILambdaExpressionContext) {
-	antlrWalk{w}.walkLambda(lambda)
+	if !w.walkNative(lambda) {
+		antlrWalk{w}.walkLambda(lambda)
+	}
 }
 
 // WalkBlock introduces a nested scope and walks the block's statements in
 // order, so a local declared partway through shadows an enclosing name only for
 // references that follow it.
-func (w *Walker) WalkBlock(block grammar.IBlockContext) { antlrWalk{w}.walkBlock(block) }
+func (w *Walker) WalkBlock(block grammar.IBlockContext) {
+	if !w.walkNative(block) {
+		antlrWalk{w}.walkBlock(block)
+	}
+}
 
 // WalkFunctionDeclaration handles a `func f(...) = body` (or block-bodied)
 // declaration. The name is bound in the ENCLOSING scope, so the function may
@@ -342,11 +379,15 @@ func (w *Walker) WalkBlock(block grammar.IBlockContext) { antlrWalk{w}.walkBlock
 // that scope, before the parameters bind, for binders this walker does not
 // model (type parameters, a method receiver).
 func (w *Walker) WalkFunctionDeclaration(fn grammar.IFunctionDeclarationContext) {
-	antlrWalk{w}.walkFunctionDeclaration(fn)
+	if !w.walkNative(fn) {
+		antlrWalk{w}.walkFunctionDeclaration(fn)
+	}
 }
 
 // WalkParameterDefaults walks the `= expr` default of each parameter, so a
 // reference inside a default value is seen.
 func (w *Walker) WalkParameterDefaults(params grammar.IParametersContext) {
-	antlrWalk{w}.walkParameterDefaults(params)
+	if !w.walkParameterDefaultsNative(params) {
+		antlrWalk{w}.walkParameterDefaults(params)
+	}
 }
