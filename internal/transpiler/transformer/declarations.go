@@ -7,6 +7,7 @@ import (
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"strings"
@@ -232,7 +233,7 @@ func (t *galaASTTransformer) lowerEmbedDecl(d embedDecl) ([]ast.Decl, error) {
 // declName is a name a declaration binds, and where it is written.
 type declName struct {
 	text string
-	at   srcRange
+	at   srcNode
 }
 
 // bindingDecl is a val or var declaration as its lowering (lowerValDecl,
@@ -241,12 +242,12 @@ type declName struct {
 // ANTLR contexts, lowered on ANTLR's tree: types and expressions are not
 // ported to the native tree yet.
 type bindingDecl struct {
-	at       srcRange
+	at       srcNode
 	topLevel bool // a package-level declaration, not one in a body
 	// names are the names the identifier list binds, or the tuple
 	// pattern's; tuple is the pattern's range when there is one.
 	names []declName
-	tuple *srcRange
+	tuple srcNode
 	// typ is the type annotation and exprs the initializer list, each nil
 	// when there is none.
 	typ   grammar.ITypeContext
@@ -254,7 +255,7 @@ type bindingDecl struct {
 	// For a tuple pattern only, which its diagnostics read: typAt and
 	// exprsAt are the ranges of typ and exprs, and nExprs counts exprs's
 	// expressions.
-	typAt, exprsAt srcRange
+	typAt, exprsAt srcNode
 	nExprs         int
 	// blankForm and blankHint are GALA-E0060's form and hint, set only for a
 	// declaration whose names are a lone `_` and that has an initializer
@@ -264,24 +265,23 @@ type bindingDecl struct {
 
 // readBindingDecl reads a val or var declaration, keyword, on ANTLR's tree.
 func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
-	d := bindingDecl{at: ctxRange(ctx), topLevel: isTopLevelDecl(ctx), typ: ctx.Type_(), exprs: ctx.ExpressionList()}
+	d := bindingDecl{at: srcNode{ctx: ctx}, topLevel: isTopLevelDecl(ctx), typ: ctx.Type_(), exprs: ctx.ExpressionList()}
 	idList := ctx.IdentifierList()
 	if tp := ctx.TuplePattern(); tp != nil {
-		r := ctxRange(tp)
-		d.tuple = &r
+		d.tuple = srcNode{ctx: tp}
 		idList = tp.(*grammar.TuplePatternContext).IdentifierList()
 		if d.typ != nil {
-			d.typAt = ctxRange(d.typ)
+			d.typAt = srcNode{ctx: d.typ}
 		}
 		if d.exprs != nil {
-			d.exprsAt = ctxRange(d.exprs)
+			d.exprsAt = srcNode{ctx: d.exprs}
 			d.nExprs = len(d.exprs.(*grammar.ExpressionListContext).AllExpression())
 		}
 	}
 	for _, idCtx := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
-		d.names = append(d.names, declName{text: idCtx.GetText(), at: ctxRange(idCtx)})
+		d.names = append(d.names, declName{text: idCtx.GetText(), at: srcNode{ctx: idCtx}})
 	}
-	if d.exprs != nil && d.tuple == nil && isLoneBlank(d.names) {
+	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
 		d.blankHint = blankDeclarationHint(ctx)
 	}
@@ -295,7 +295,7 @@ func (t *galaASTTransformer) transformValDeclaration(ctx *grammar.ValDeclaration
 // lowerValDecl lowers a val declaration.
 func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 	// Handle tuple pattern: val (a, b) = tuple
-	if d.tuple != nil {
+	if d.tuple.ok() {
 		return t.lowerTupleDestructure(d, false)
 	}
 
@@ -304,7 +304,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 		return nil, err
 	}
 	for _, id := range namesCtx {
-		if err := t.checkReservedNameAt(id.text, id.at); err != nil {
+		if err := t.checkReservedName(id.text, id.at); err != nil {
 			return nil, err
 		}
 	}
@@ -328,7 +328,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 		if isMultiReturnFromSingleExpr {
 			// multi-value from a single expression (e.g. function call)
 		} else {
-			return nil, t.semanticErrorIn(d.at, "assignment mismatch")
+			return nil, t.semanticErrorIn(d.at.rng(), "assignment mismatch")
 		}
 	}
 
@@ -342,7 +342,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 		}
 		annotType = t.astTypeToTranspilerType(declType)
 		if t.isImmutableType(annotType) {
-			return nil, t.semanticErrorIn(d.at, "recursive Immutable wrapping is not allowed")
+			return nil, t.semanticErrorIn(d.at.rng(), "recursive Immutable wrapping is not allowed")
 		}
 	}
 
@@ -467,7 +467,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 		t.bindGoResult(name, val)
 
 		if t.isNoneCall(val) && d.typ == nil {
-			return nil, t.semanticErrorIn(d.at, "variable assigned to None() must have an explicit type")
+			return nil, t.semanticErrorIn(d.at.rng(), "variable assigned to None() must have an explicit type")
 		}
 
 		wrappedValues = append(wrappedValues, t.valInitializer(declType, val))
@@ -518,10 +518,10 @@ func (t *galaASTTransformer) valDeclaredType(declType ast.Expr) ast.Expr {
 // The grammar lets the declaration carry a type annotation and, for var, omit
 // the initializer; neither has a meaning here (GALA-E0056).
 func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) (ast.Decl, error) {
-	tupleAt, listCtx := *d.tuple, d.exprs
+	tupleAt, listCtx := d.tuple, d.exprs
 	namesCtx := d.names
 	for _, id := range namesCtx {
-		if err := t.checkReservedNameAt(id.text, id.at); err != nil {
+		if err := t.checkReservedName(id.text, id.at); err != nil {
 			return nil, err
 		}
 	}
@@ -534,7 +534,7 @@ func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) 
 		// `Println(a)` on the next line `Println` parses as a type: the
 		// declaration as written has no initializer. A val always has one, so
 		// its type is an annotation wherever it is.
-		if !mutable || d.typAt.line == tupleAt.stopLine {
+		if !mutable || d.typAt.rng().line == tupleAt.rng().stopLine {
 			hint := "remove the type; each name takes its type from the tuple"
 			if listCtx == nil {
 				// `var (a, b) int`: several variables of one type.
@@ -743,16 +743,16 @@ func checkLoneBlank(ctx antlr.ParserRuleContext, names []grammar.IIdentifierCont
 	if len(names) != 1 || names[0].GetText() != "_" {
 		return nil
 	}
-	return loneBlankError(ctxRange(ctx), []declName{{text: "_", at: ctxRange(names[0])}}, form, blankDeclarationHint(ctx))
+	return loneBlankError(srcNode{ctx: ctx}, []declName{{text: "_", at: srcNode{ctx: names[0]}}}, form, blankDeclarationHint(ctx))
 }
 
 // loneBlankError is GALA-E0060 for the declaration at at, of form, whose
 // names are a lone `_`, or nil when they are not.
-func loneBlankError(at srcRange, names []declName, form, hint string) error {
+func loneBlankError(at srcNode, names []declName, form, hint string) error {
 	if !isLoneBlank(names) {
 		return nil
 	}
-	return spanErrorAt(galaerr.CodeBlankValDeclaration, at, names[0].at, fmt.Sprintf("`%s` binds nothing", form), hint)
+	return spanErrorAt(galaerr.CodeBlankValDeclaration, at.rng(), names[0].at.rng(), fmt.Sprintf("`%s` binds nothing", form), hint)
 }
 
 // blankDeclarationHint is GALA-E0060's hint: a package-level declaration has
@@ -781,8 +781,8 @@ const (
 )
 
 // malformedTupleDestructure is the GALA-E0056 diagnostic.
-func malformedTupleDestructure(from, to srcRange, msg, hint string) error {
-	return spanErrorAt(galaerr.CodeMalformedTupleDestructure, from, to, msg, hint)
+func malformedTupleDestructure(from, to srcNode, msg, hint string) error {
+	return spanErrorAt(galaerr.CodeMalformedTupleDestructure, from.rng(), to.rng(), msg, hint)
 }
 
 // srcRange is where a node of the source sits, as diagnostics read it: its
@@ -801,6 +801,26 @@ func ctxRange(ctx antlr.ParserRuleContext) srcRange {
 		r.stopLine, r.stopEnd = stop.GetLine(), stop.GetColumn()+utf8.RuneCountInString(stop.GetText())
 	}
 	return r
+}
+
+// srcNode is a node of either tree, as a diagnostic locates it: its context
+// on ANTLR's tree, or its native node. The readers keep the node and the
+// range is read only when a diagnostic needs it, so a declaration that lowers
+// cleanly pays nothing for it.
+type srcNode struct {
+	ctx  antlr.ParserRuleContext
+	node native.GalaNodeRef
+}
+
+// ok reports whether n is a node, not the zero srcNode.
+func (n srcNode) ok() bool { return n.ctx != nil || n.node.Ok() }
+
+// rng is n's range.
+func (n srcNode) rng() srcRange {
+	if n.node.Ok() {
+		return nativeRange(n.node)
+	}
+	return ctxRange(n.ctx)
 }
 
 // spanError is a coded diagnostic underlining from the start of from to the
@@ -825,7 +845,7 @@ func (t *galaASTTransformer) transformVarDeclaration(ctx *grammar.VarDeclaration
 // lowerVarDecl lowers a var declaration.
 func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 	// Handle tuple pattern: var (a, b) = tuple
-	if d.tuple != nil {
+	if d.tuple.ok() {
 		return t.lowerTupleDestructure(d, true)
 	}
 	namesCtx := d.names
@@ -833,7 +853,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 		return nil, err
 	}
 	for _, id := range namesCtx {
-		if err := t.checkReservedNameAt(id.text, id.at); err != nil {
+		if err := t.checkReservedName(id.text, id.at); err != nil {
 			return nil, err
 		}
 	}
@@ -903,7 +923,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 		if d.typ == nil {
 			for _, r := range rhsExprs {
 				if t.isNoneCall(r) {
-					return nil, galaerr.NewSemanticErrorAt(d.at.line, d.at.col, "variable assigned to None() must have an explicit type")
+					return nil, galaerr.NewSemanticErrorAt(d.at.rng().line, d.at.rng().col, "variable assigned to None() must have an explicit type")
 				}
 			}
 		}
@@ -930,7 +950,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 		if len(rhsExprs) == 0 {
 			typ := t.astTypeToTranspilerType(typeExpr)
 			for range namesCtx {
-				val, err := t.defaultValue(typ, d.at.line, d.at.col, map[string]bool{})
+				val, err := t.defaultValue(typ, d.at.rng().line, d.at.rng().col, map[string]bool{})
 				if err != nil {
 					return nil, err
 				}
@@ -966,7 +986,7 @@ type funcDecl struct {
 // it is declared `var`, and its type.
 type receiverDecl struct {
 	name  string
-	at    srcRange
+	at    srcNode
 	isVar bool
 	typ   grammar.ITypeContext
 }
@@ -976,7 +996,7 @@ func readFuncDecl(ctx *grammar.FunctionDeclarationContext) funcDecl {
 	d := funcDecl{name: ctx.Identifier().GetText(), sig: ctx.Signature(), block: ctx.Block(), expr: ctx.Expression()}
 	if r := ctx.Receiver(); r != nil {
 		recvCtx := r.(*grammar.ReceiverContext)
-		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: ctxRange(recvCtx), isVar: recvCtx.VAR() != nil, typ: recvCtx.Type_()}
+		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: srcNode{ctx: recvCtx}, isVar: recvCtx.VAR() != nil, typ: recvCtx.Type_()}
 	}
 	if tps := ctx.TypeParameters(); tps != nil {
 		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
@@ -1014,7 +1034,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 	if recv := d.recv; recv != nil {
 		recvName := recv.name
 		if recv.isVar {
-			err := t.semanticErrorIn(recv.at, fmt.Sprintf("receiver %s cannot be declared `var`", recvName))
+			err := t.semanticErrorIn(recv.at.rng(), fmt.Sprintf("receiver %s cannot be declared `var`", recvName))
 			err.Hint = receiverRebindHint(recvName)
 			return nil, err
 		}
@@ -1457,9 +1477,9 @@ func (t *galaASTTransformer) isGoNamedFuncType(typ transpiler.Type) bool {
 // shorthandDecl is a struct shorthand declaration as lowerShorthandDecl reads
 // it, from either tree (readShorthandDecl, readShorthandDeclNative).
 type shorthandDecl struct {
-	at         srcRange
+	at         srcNode
 	name       string
-	nameAt     srcRange
+	nameAt     srcNode
 	typeParams []typeParam
 	params     []paramDecl
 }
@@ -1476,7 +1496,7 @@ type paramDecl struct {
 // readShorthandDecl reads a struct shorthand declaration on ANTLR's tree.
 func readShorthandDecl(ctx *grammar.StructShorthandDeclarationContext) shorthandDecl {
 	id := ctx.Identifier()
-	d := shorthandDecl{at: ctxRange(ctx), name: id.GetText(), nameAt: ctxRange(id)}
+	d := shorthandDecl{at: srcNode{ctx: ctx}, name: id.GetText(), nameAt: srcNode{ctx: id}}
 	if tps := ctx.TypeParameters(); tps != nil {
 		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
@@ -1643,7 +1663,8 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 	}
 
 	// A constructor for Go callers, and the doc comment naming it.
-	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, d.at.line, d.at.col)
+	at := d.at.rng()
+	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, at.line, at.col)
 	if err != nil {
 		return nil, err
 	}
@@ -1669,7 +1690,7 @@ func (t *galaASTTransformer) storedFieldElem(meta *transpiler.TypeMetadata, fiel
 // lowered on ANTLR's tree.
 type typeDecl struct {
 	name       string
-	nameAt     srcRange
+	nameAt     srcNode
 	typeParams []typeParam
 	kind       typeDeclKind
 	fields     []structFieldDecl // a struct's
@@ -1706,7 +1727,7 @@ type methodSpecDecl struct {
 // readTypeDecl reads a type declaration on ANTLR's tree.
 func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 	id := ctx.Identifier()
-	d := typeDecl{name: id.GetText(), nameAt: ctxRange(id)}
+	d := typeDecl{name: id.GetText(), nameAt: srcNode{ctx: id}}
 	if tps := ctx.TypeParameters(); tps != nil {
 		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
@@ -1893,7 +1914,7 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl) ([]ast.Decl, error) {
 				if _, exists := t.typeAliases[name]; exists {
 					return nil, galaerr.NewCodedSemanticError(
 						galaerr.CodeTypeAliasRedeclared,
-						d.nameAt.line, d.nameAt.col,
+						d.nameAt.rng().line, d.nameAt.rng().col,
 						fmt.Sprintf("type alias %q already declared in package %q", name, t.packageName),
 						"remove the duplicate declaration or rename one of the aliases",
 					)

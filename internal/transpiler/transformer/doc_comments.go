@@ -80,16 +80,18 @@ func sanitizeDocLine(line string) string {
 	}, line)
 }
 
-// docFor returns the doc comment group for the declaration whose first token is
-// start, or nil when it is undocumented. The caller has checked t.richAST.
-func (t *galaASTTransformer) docFor(start antlr.Token) *ast.CommentGroup {
+// docKeyOf is the doc key of the declaration whose first token is start, or
+// the zero key, which no doc comment has, when there is no start token (an
+// error-recovered tree).
+func docKeyOf(start antlr.Token) parser.DocKey {
 	if start == nil {
-		return nil
+		return parser.DocKey{}
 	}
-	return t.docAt(parser.DocKeyOf(start))
+	return parser.DocKeyOf(start)
 }
 
-// docAt is the doc comment of the declaration whose first token is at key.
+// docAt is the doc comment group of the declaration whose first token is at
+// key, or nil when it is undocumented. The caller has checked t.richAST.
 func (t *galaASTTransformer) docAt(key parser.DocKey) *ast.CommentGroup {
 	return docCommentGroup(t.richAST.Docs[key])
 }
@@ -142,7 +144,7 @@ func (t *galaASTTransformer) attachTopDeclDocs(d topDecl, decls []ast.Decl) {
 
 // readDeclDocs reads what attachDocs needs of ctx on ANTLR's tree.
 func readDeclDocs(ctx grammar.ITopLevelDeclarationContext) declDocs {
-	dd := declDocs{doc: parser.DocKeyOf(ctx.GetStart())}
+	dd := declDocs{doc: docKeyOf(ctx.GetStart())}
 	switch {
 	case ctx.FunctionDeclaration() != nil, ctx.ValDeclaration() != nil, ctx.VarDeclaration() != nil:
 		dd.kind = docsOne
@@ -157,13 +159,13 @@ func readDeclDocs(ctx grammar.ITopLevelDeclarationContext) declDocs {
 		if st, ok := typeCtx.StructType().(*grammar.StructTypeContext); ok && st != nil {
 			for _, f := range st.AllStructField() {
 				fctx := f.(*grammar.StructFieldContext)
-				dd.members = append(dd.members, memberDoc{fctx.Identifier().GetText(), parser.DocKeyOf(fctx.GetStart())})
+				dd.members = append(dd.members, memberDoc{fctx.Identifier().GetText(), docKeyOf(fctx.GetStart())})
 			}
 		}
 		if it, ok := typeCtx.InterfaceType().(*grammar.InterfaceTypeContext); ok && it != nil {
 			for _, m := range it.AllMethodSpec() {
 				mctx := m.(*grammar.MethodSpecContext)
-				dd.members = append(dd.members, memberDoc{mctx.Identifier().GetText(), parser.DocKeyOf(mctx.GetStart())})
+				dd.members = append(dd.members, memberDoc{mctx.Identifier().GetText(), docKeyOf(mctx.GetStart())})
 			}
 		}
 
@@ -177,7 +179,7 @@ func readDeclDocs(ctx grammar.ITopLevelDeclarationContext) declDocs {
 		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			pctx := p.(*grammar.ParameterContext)
 			if pctx.Identifier() != nil {
-				dd.members = append(dd.members, memberDoc{pctx.Identifier().GetText(), parser.DocKeyOf(pctx.GetStart())})
+				dd.members = append(dd.members, memberDoc{pctx.Identifier().GetText(), docKeyOf(pctx.GetStart())})
 			}
 		}
 
@@ -190,7 +192,7 @@ func readDeclDocs(ctx grammar.ITopLevelDeclarationContext) declDocs {
 		dd.kind, dd.name = docsSealed, sctx.Identifier().GetText()
 		for _, c := range sctx.AllSealedCase() {
 			cctx := c.(*grammar.SealedCaseContext)
-			dd.members = append(dd.members, memberDoc{cctx.Identifier().GetText(), parser.DocKeyOf(cctx.GetStart())})
+			dd.members = append(dd.members, memberDoc{cctx.Identifier().GetText(), docKeyOf(cctx.GetStart())})
 		}
 	}
 	return dd

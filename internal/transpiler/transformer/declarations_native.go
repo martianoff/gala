@@ -35,6 +35,7 @@ func crossTo[C antlr.ParserRuleContext](t *galaASTTransformer, n native.GalaNode
 	ctx := t.native.Ctx(n)
 	c, ok := ctx.(C)
 	if !ok {
+		// invariant: native-bridge — the walk reads only bridged trees.
 		panic(fmt.Sprintf("native tree: node %d (kind %d) has the ANTLR context %T, not %T", n.Index(), n.Kind(), ctx, c))
 	}
 	return c
@@ -56,7 +57,7 @@ func nativeRange(n native.GalaNodeRef) srcRange {
 func nativeDeclNames(idList native.GalaNodeRef) []declName {
 	var names []declName
 	for id := range galaparser.NativeKids(idList, native.GalaKIND_identifier) {
-		names = append(names, declName{text: id.GetText(), at: nativeRange(id)})
+		names = append(names, declName{text: id.GetText(), at: srcNode{node: id}})
 	}
 	return names
 }
@@ -163,7 +164,7 @@ func bindingIdList(n nativeBinding) native.GalaNodeRef {
 // declaration n, keyword. The native walk reaches no declaration in a body
 // yet: those are statements.
 func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword string) bindingDecl {
-	d := bindingDecl{at: nativeRange(n.Ref()), topLevel: true, names: nativeDeclNames(bindingIdList(n))}
+	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: true, names: nativeDeclNames(bindingIdList(n))}
 	typ, list := n.Type_(), n.ExpressionList()
 	if typ.Ok() {
 		d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
@@ -172,19 +173,18 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 		d.exprs = crossTo[*grammar.ExpressionListContext](t, list.GalaNodeRef)
 	}
 	if tp := n.TuplePattern(); tp.Ok() {
-		r := nativeRange(tp.GalaNodeRef)
-		d.tuple = &r
+		d.tuple = srcNode{node: tp.GalaNodeRef}
 		if typ.Ok() {
-			d.typAt = nativeRange(typ.GalaNodeRef)
+			d.typAt = srcNode{node: typ.GalaNodeRef}
 		}
 		if list.Ok() {
-			d.exprsAt = nativeRange(list.GalaNodeRef)
+			d.exprsAt = srcNode{node: list.GalaNodeRef}
 			for range galaparser.NativeKids(list.GalaNodeRef, native.GalaKIND_expression) {
 				d.nExprs++
 			}
 		}
 	}
-	if d.exprs != nil && d.tuple == nil && isLoneBlank(d.names) {
+	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
 		d.blankHint = topLevelBlankHint
 	}
@@ -203,7 +203,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 	if r := n.Receiver(); r.Ok() {
 		d.recv = &receiverDecl{
 			name:  r.Identifier().GetText(),
-			at:    nativeRange(r.GalaNodeRef),
+			at:    srcNode{node: r.GalaNodeRef},
 			isVar: r.VAR().Ok(),
 			typ:   crossTo[*grammar.TypeContext](t, r.Type_().GalaNodeRef),
 		}
@@ -217,7 +217,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 // readTypeDeclNative is readTypeDecl of n.
 func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) typeDecl {
 	id := n.Identifier()
-	d := typeDecl{name: id.GetText(), nameAt: nativeRange(id.GalaNodeRef)}
+	d := typeDecl{name: id.GetText(), nameAt: srcNode{node: id.GalaNodeRef}}
 	if tps := n.TypeParameters(); tps.Ok() {
 		d.typeParams = nativeTypeParams(tps)
 	}
@@ -255,7 +255,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 // readShorthandDeclNative is readShorthandDecl of n.
 func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDeclarationNode) shorthandDecl {
 	id := n.Identifier()
-	d := shorthandDecl{at: nativeRange(n.GalaNodeRef), name: id.GetText(), nameAt: nativeRange(id.GalaNodeRef)}
+	d := shorthandDecl{at: srcNode{node: n.GalaNodeRef}, name: id.GetText(), nameAt: srcNode{node: id.GalaNodeRef}}
 	if tps := n.TypeParameters(); tps.Ok() {
 		d.typeParams = nativeTypeParams(tps)
 	}

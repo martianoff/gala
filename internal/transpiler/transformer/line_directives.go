@@ -6,8 +6,6 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -84,26 +82,13 @@ func lineMarkerDecl(line int) *ast.GenDecl {
 // `var __gala_line_7 int`) is byte-for-byte identical to a source-map marker, so
 // the post-generation //line rewrite could not tell it apart and would silently
 // delete the user's declaration. Rejecting it up front — with the offending
-// identifier's position — turns a silent miscompile into a clear error. ctx
-// should point at the identifier being declared.
-func (t *galaASTTransformer) checkReservedName(name string, ctx antlr.ParserRuleContext) error {
+// identifier's position — turns a silent miscompile into a clear error. at is
+// the identifier being declared.
+func (t *galaASTTransformer) checkReservedName(name string, at srcNode) error {
 	if strings.HasPrefix(name, transpiler.LineMarkerPrefix) {
-		return t.semanticErrorAt(ctx, reservedNameMessage(name))
+		return t.semanticErrorIn(at.rng(), fmt.Sprintf(
+			"identifier %q uses the reserved %q prefix (reserved for transpiler-internal source-map markers); rename it",
+			name, transpiler.LineMarkerPrefix))
 	}
 	return nil
-}
-
-// checkReservedNameAt is checkReservedName of the identifier at r.
-func (t *galaASTTransformer) checkReservedNameAt(name string, r srcRange) error {
-	if strings.HasPrefix(name, transpiler.LineMarkerPrefix) {
-		return t.semanticErrorIn(r, reservedNameMessage(name))
-	}
-	return nil
-}
-
-// reservedNameMessage is checkReservedName's diagnostic for name.
-func reservedNameMessage(name string) string {
-	return fmt.Sprintf(
-		"identifier %q uses the reserved %q prefix (reserved for transpiler-internal source-map markers); rename it",
-		name, transpiler.LineMarkerPrefix)
 }

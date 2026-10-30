@@ -35,7 +35,9 @@ type walkSource struct {
 // paid for it.
 func newWalkSource(richAST *transpiler.RichAST, sf *grammar.SourceFileContext) walkSource {
 	h := richAST.Native
-	if !h.Converted() {
+	// The analysis reads the native tree only where its bridge to ANTLR's
+	// holds (Native.Bridged); so does the walk, which crosses it.
+	if !h.Converted() || !h.Bridged() {
 		return walkSource{sf: sf}
 	}
 	tree, err := h.Tree()
@@ -57,11 +59,7 @@ func (s walkSource) packageClause() (string, parser.DocKey) {
 		return pc.Identifier().GetText(), parser.NativeDocKeyOf(pc.GalaNodeRef)
 	}
 	pc := s.sf.PackageClause()
-	var key parser.DocKey
-	if start := pc.GetStart(); start != nil {
-		key = parser.DocKeyOf(start)
-	}
-	return pc.(*grammar.PackageClauseContext).Identifier().GetText(), key
+	return pc.(*grammar.PackageClauseContext).Identifier().GetText(), docKeyOf(pc.GetStart())
 }
 
 // importDecl is an import declaration: its specs and where it is written.

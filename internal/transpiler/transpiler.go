@@ -938,6 +938,16 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
+	// After the analysis, the native tree's one reader is the transform's
+	// walk of the top-level declarations, which reads it only where the
+	// analysis converted it (the transformer's walkSource). Keep the handle
+	// for that; drop it otherwise, and with it the token stream and source
+	// text it holds until converted, before the transform.
+	handle := parsed.CleanNative()
+	if !handle.Converted() {
+		handle = nil
+	}
+	parsed.Native = nil
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks
 		// one, so the CLI's rich renderer can re-read the source for a snippet.
@@ -949,18 +959,14 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// with them rather than three bytes ahead.
 	richAST.SourceContent = galaerr.StripBOM(input)
 	richAST.Docs = parsed.Docs
-	// The transform walks the file's top-level declarations on its native
-	// tree when the parse came with one (Parsed.CleanNative). The analysis
-	// has converted that tree whenever the undefined-symbol check ran, which
-	// in a build is every file that analyzes.
-	richAST.Native = parsed.CleanNative()
+	richAST.Native = handle
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)
 	done()
 	// The transform is the native tree's last reader: drop the handle, and
 	// with it the tree, before generating.
-	richAST.Native, parsed.Native = nil, nil
+	richAST.Native = nil
 	if err != nil {
 		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(err), filePath)
 	}

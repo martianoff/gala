@@ -22,7 +22,7 @@ import (
 
 // recordMethodReceiver notes a method's receiver for checkMethodReceivers to
 // validate once the whole file has been walked.
-func (t *galaASTTransformer) recordMethodReceiver(at srcRange, recvTypeName string) {
+func (t *galaASTTransformer) recordMethodReceiver(at srcNode, recvTypeName string) {
 	if recvTypeName == "" {
 		return
 	}
@@ -43,7 +43,7 @@ func (t *galaASTTransformer) checkMethodReceivers() error {
 
 // methodReceiver is one method's receiver, held until the file is fully walked.
 type methodReceiver struct {
-	at       srcRange // the receiver
+	at       srcNode // the receiver
 	typeName string
 }
 
@@ -58,7 +58,7 @@ type methodReceiver struct {
 // composite (`type Handler func(int) int`, `type Bytes []byte`) all leave the
 // receiver base type non-local, and Go rejects each with a different message
 // against generated code.
-func (t *galaASTTransformer) checkMethodReceiverAlias(at srcRange, recvTypeName string) error {
+func (t *galaASTTransformer) checkMethodReceiverAlias(at srcNode, recvTypeName string) error {
 	if recvTypeName == "" {
 		return nil
 	}
@@ -99,7 +99,8 @@ func (t *galaASTTransformer) checkMethodReceiverAlias(at srcRange, recvTypeName 
 		return nil
 	}
 
-	line, col := at.line, at.col
+	r := at.rng()
+	line, col := r.line, r.col
 	hint := "a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function"
 	// A scalar can be given an identity of its own, with methods, as an
 	// opaque type over it.
