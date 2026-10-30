@@ -13,6 +13,7 @@ import (
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -88,6 +89,13 @@ func analyzeForCollection(tb testing.TB, a *galaAnalyzer, path, text string, pac
 	if parsed.Err() != nil {
 		return analysis{}, false
 	}
+	return analyzeParsedForCollection(tb, a, path, parsed, packageFiles), true
+}
+
+// analyzeParsedForCollection is analyzeForCollection of parsed, a parse
+// without errors.
+func analyzeParsedForCollection(tb testing.TB, a *galaAnalyzer, path string, parsed *galaparser.Parsed, packageFiles []string) (an analysis) {
+	tb.Helper()
 	// The file's own trace, which onCollect reports alone: no trace of an
 	// imported package's file, which might be this one, stands in for it
 	// when the analysis fails before the collection.
@@ -107,11 +115,11 @@ func analyzeForCollection(tb testing.TB, a *galaAnalyzer, path, text string, pac
 	}
 	if err != nil {
 		an.result = err
-		return an, true
+		return an
 	}
 	res.Tree = nil // each analysis has its own parse
 	an.result = res
-	return an, true
+	return an
 }
 
 // checkTrace fails tb unless an's file was collected on the tree it should
@@ -377,6 +385,225 @@ func TestCollectionTakesCleanParses(t *testing.T) {
 	if !nativeFileOf(clean).ok() {
 		t.Fatal("a clean parse has no native tree")
 	}
+}
+
+// valInferenceInputs are packages of one file whose package-level
+// initializers take each shape inferPackageValInitType reads, and the shapes
+// it turns down, so TestValInferenceAgrees compares both twins on every
+// branch, whatever the corpus holds.
+var valInferenceInputs = []string{
+	`package main
+
+import "strings"
+
+struct Point(X int, Y int)
+
+struct Hidden(x int)
+
+type Pair struct {
+    A int
+    B string
+}
+
+func (p Point) Apply(n int) Point = Point(n, n)
+
+sealed type Shape {
+    case Circle(R float64)
+    case Square(S float64)
+}
+
+type Box[T any] struct {
+    V T
+}
+
+func id[T any](x T) T = x
+
+func two() (int, string) = (2, "b")
+
+func none() {
+}
+
+val Full = Point(1, 2)
+val Short = Point(1)
+val NoArgs = Point()
+val Lit = Pair(1, "a")
+val Priv = Hidden(1)
+val Case = Circle(1.0)
+val Generic = id(1)
+val GenericBox = Box[int](1)
+val Tuple = two()
+val Void = none()
+val Field = Full.X
+val Chain = Point(1).Apply(2)
+val Paren = (1)
+val Unit = ()
+val NegFloat = -1.5
+val Plus = +2
+val Not = !true
+val Sum = 1 + 2
+val Concat = "a" + "b"
+val Ref = Full
+val Later = Earlier
+val Earlier = 3
+val Upper = strings.ToUpper("a")
+val Compare = strings.Compare
+val Builder = strings.Builder{}
+val Nil = nil
+val Raw = ` + "`raw`" + `
+val Format = f"${1}%d"
+val Rune = 'r'
+val Interp = s"v=$Earlier"
+val Eq = "a" == "b"
+val Float = 1.5
+val Bool = true
+val Int = 7
+val Str = "s"
+val Count = Earlier
+val Lambda = (x int) => x
+val Cond = if (true) 1 else 2
+val Opt = Some(1)
+val Matched = 3 match {
+    case 3 => "three"
+    case _ => "other"
+}
+val (TA, TB) = (1, 2)
+val X, Y = 1, "y"
+val P, Q = two()
+val Typed int = 4
+var Mutable = Full
+var VoidVar = none()
+val _ = 5
+`,
+}
+
+// initializersInferred is how many initializers of sf's package-level
+// bindings extractPackageVals infers: one per name a declaration with no type
+// binds, other than `_`, when it gives each name an initializer of its own.
+func initializersInferred(sf *grammar.SourceFileContext) int {
+	n := 0
+	for _, td := range sf.AllTopLevelDeclaration() {
+		var (
+			idList   grammar.IIdentifierListContext
+			typ      grammar.ITypeContext
+			exprList grammar.IExpressionListContext
+			tp       grammar.ITuplePatternContext
+		)
+		switch {
+		case td.ValDeclaration() != nil:
+			vc := td.ValDeclaration().(*grammar.ValDeclarationContext)
+			idList, typ, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
+		case td.VarDeclaration() != nil:
+			vc := td.VarDeclaration().(*grammar.VarDeclarationContext)
+			idList, typ, exprList, tp = vc.IdentifierList(), vc.Type_(), vc.ExpressionList(), vc.TuplePattern()
+		default:
+			continue
+		}
+		if tp != nil || typ != nil || idList == nil || exprList == nil {
+			continue
+		}
+		names := idList.(*grammar.IdentifierListContext).AllIdentifier()
+		if len(names) != len(exprList.(*grammar.ExpressionListContext).AllExpression()) {
+			continue
+		}
+		for _, id := range names {
+			if id.GetText() != "_" {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// TestValInferenceAgrees holds the inference of package-level initializers on
+// the native tree (inferPackageValInitTypeNative) to the inference on
+// ANTLR's (inferPackageValInitType). As each initializer of a file collected
+// on its native tree is inferred, the test infers the same initializer's
+// ANTLR context in the same state, and the two types must be equal. A file
+// collected on its native tree must report every initializer its
+// declarations have inferred (initializersInferred), and a file collected on
+// ANTLR's none, so no file takes the ANTLR inference unnoticed. The corpus is
+// TestCollectionsAgree's plus valInferenceInputs. The inference reports no
+// diagnostics; TestCollectionDiagnosticsAgree covers the collection's.
+func TestValInferenceAgrees(t *testing.T) {
+	parseWithGalop(t)
+	paths, searchPaths := collectionCorpus(t)
+	a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), searchPaths)
+	type source struct {
+		path, text string
+		// handwritten says the source is one of valInferenceInputs, which
+		// must analyze on the native tree.
+		handwritten bool
+	}
+	var sources []source
+	for _, path := range paths {
+		text, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sources = append(sources, source{path, string(text), false})
+	}
+	for i, text := range valInferenceInputs {
+		dir := filepath.Join(t.TempDir(), fmt.Sprintf("input%d", i))
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "main.gala")
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sources = append(sources, source{path, text, true})
+	}
+
+	files, inferred, typed := 0, 0, 0
+	for _, src := range sources {
+		parsed := a.parser.ParseFile(src.text)
+		if parsed.Err() != nil {
+			if src.handwritten {
+				t.Errorf("%s: does not parse: %v", src.path, parsed.Err())
+			}
+			continue
+		}
+		reported, reportedTyped := 0, 0
+		a.onInferInit = func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type) {
+			reported++
+			if !got.IsNil() {
+				reportedTyped++
+			}
+			pos := nativePos(e.GalaNodeRef)
+			ctx, ok := parsed.Native.Ctx(e.GalaNodeRef).(*grammar.ExpressionContext)
+			if !ok {
+				t.Errorf("%s:%d:%d: the initializer has no expression context", src.path, pos.Line, pos.Column)
+				return
+			}
+			if want := a.inferPackageValInitType(ctx, pkgName, richAST); !reflect.DeepEqual(got, want) {
+				t.Errorf("%s:%d:%d: %q is inferred as %#v on the native tree, %#v on ANTLR's", src.path, pos.Line, pos.Column, ctx.GetText(), got, want)
+			}
+		}
+		an := analyzeParsedForCollection(t, a, src.path, parsed, nil)
+		a.onInferInit = nil
+		if !checkTrace(t, src.path, an, true) {
+			continue
+		}
+		_, failed := an.result.(error)
+		if src.handwritten && (failed || !an.trace.native) {
+			t.Errorf("%s: must analyze on the native tree: native %v, result %v", src.path, an.trace.native, an.result)
+		}
+		want := 0
+		if an.trace.native {
+			want = initializersInferred(parsed.Tree.(*grammar.SourceFileContext))
+		}
+		// An analysis that fails may stop before the last declaration.
+		if reported == want || failed && reported < want {
+			files++
+			inferred, typed = inferred+reported, typed+reportedTyped
+			continue
+		}
+		t.Errorf("%s: %d initializers inferred on the native tree, want %d (collected natively: %v)", src.path, reported, want, an.trace.native)
+	}
+	if files < 200 || inferred < 80 || typed < inferred/2 {
+		t.Fatalf("%d files, %d initializers inferred on the native tree, %d of them typed", files, inferred, typed)
+	}
+	t.Logf("%d files, %d initializers inferred on the native tree, %d of them typed", files, inferred, typed)
 }
 
 // visit is a pair of pointers firstDiff has compared, or is comparing.

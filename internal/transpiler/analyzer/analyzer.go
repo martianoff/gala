@@ -21,6 +21,7 @@ import (
 	"martianoff/gala/galaerr"
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/genheader"
 	"martianoff/gala/internal/transpiler/module"
@@ -203,6 +204,12 @@ type galaAnalyzer struct {
 	// packages it imports, collected on ANTLR's tree, are not reported. It observes and changes nothing; the collection tests
 	// set it to prove which tree each file took.
 	onCollect func(collectTrace)
+	// onInferInit, when set, is told of each package-level initializer
+	// inferred on the native tree (inferPackageValInitTypeNative): the
+	// expression, the state it was inferred in and the type it got. It
+	// observes and changes nothing; TestValInferenceAgrees sets it to infer
+	// the same initializer on ANTLR's tree, in the same state, and compare.
+	onInferInit func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go
@@ -4480,15 +4487,14 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 // is not resolved.
 //
 // A qualifier resolves through the declaring file's import table
-// (a.currentQualifiers).
+// (a.currentQualifiers). inferPackageValInitTypeNative is its twin on the
+// native tree: each reads its tree, and they share what follows
+// (packageValOperand, packageValRefType, packageValCallType).
 func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, pkgName string, richAST *transpiler.RichAST) transpiler.Type {
 	postfix := transformer.LeadingPostfixExpr(expr, true)
 	if postfix == nil {
 		// Not a single operand: of those, only a signed number is recognised.
-		if text := expr.GetText(); isNumericLiteral(text) {
-			return transpiler.BasicType{Name: inferLiteralType(text)}
-		}
-		return transpiler.NilType{}
+		return signedNumberType(expr.GetText())
 	}
 	primary := transformer.PrimaryOf(postfix)
 	if primary == nil {
@@ -4505,32 +4511,23 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 		return transpiler.NilType{}
 	}
 
-	name := primary.Identifier().GetText()
-	var importPath, pkg string
+	var sel string
 	if len(suffixes) > 0 {
-		if sel := suffixes[0].(*grammar.PostfixSuffixContext).Identifier(); sel != nil {
-			b, ok := a.currentQualifiers.named[name]
-			if !ok {
-				return transpiler.NilType{}
-			}
-			// The package's name, else the qualifier as written.
-			if pkg = b.PkgName; pkg == "" {
-				pkg = name
-			}
-			importPath, name, suffixes = b.Path, sel.GetText(), suffixes[1:]
+		if id := suffixes[0].(*grammar.PostfixSuffixContext).Identifier(); id != nil {
+			sel = id.GetText()
 		}
+	}
+	op, ok := a.packageValOperand(primary.Identifier().GetText(), sel)
+	if !ok {
+		return transpiler.NilType{}
+	}
+	if op.qualified() {
+		suffixes = suffixes[1:]
 	}
 
 	switch len(suffixes) {
 	case 0: // a reference to another binding
-		pv := richAST.PackageVals[name]
-		if importPath != "" {
-			pv = richAST.ImportedVals[importPath][name]
-		}
-		if pv == nil {
-			return transpiler.NilType{}
-		}
-		return pv.Type
+		return packageValRefType(op, richAST)
 	case 1:
 	default:
 		return transpiler.NilType{}
@@ -4543,7 +4540,69 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 	if argList, ok := call.ArgumentList().(*grammar.ArgumentListContext); ok && argList != nil {
 		args = len(argList.AllArgument())
 	}
+	return a.packageValCallType(op, args, pkgName, richAST)
+}
 
+// signedNumberType is the type of an initializer that is not a single
+// operand, by its text: of those, only a signed number is recognised.
+func signedNumberType(text string) transpiler.Type {
+	if isNumericLiteral(text) {
+		return transpiler.BasicType{Name: inferLiteralType(text)}
+	}
+	return transpiler.NilType{}
+}
+
+// packageValOperand is the binding or callee an initializer names.
+type packageValOperand struct {
+	name string
+	// importPath and pkg are the package a qualifier names, with the
+	// package's name (else the qualifier as written, so never empty); both
+	// empty for an unqualified name.
+	importPath, pkg string
+}
+
+// qualified reports whether op is a qualified name: the initializer's first
+// suffix is the selector naming it, so only the suffixes after that one
+// apply to it.
+func (op packageValOperand) qualified() bool { return op.pkg != "" }
+
+// packageValOperand is the operand an initializer names, from name, the
+// identifier it starts from, and sel, the selector of its first suffix, if
+// any (`name.sel`). A name that is a qualifier of the file's imports
+// (a.currentQualifiers) names sel in that package; ok is false when sel
+// follows a name that is no qualifier.
+func (a *galaAnalyzer) packageValOperand(name, sel string) (packageValOperand, bool) {
+	if sel == "" {
+		return packageValOperand{name: name}, true
+	}
+	b, ok := a.currentQualifiers.named[name]
+	if !ok {
+		return packageValOperand{}, false
+	}
+	pkg := b.PkgName
+	if pkg == "" {
+		pkg = name
+	}
+	return packageValOperand{name: sel, importPath: b.Path, pkg: pkg}, true
+}
+
+// packageValRefType is the type of a reference to the package-level binding
+// op names, NilType when none is recorded.
+func packageValRefType(op packageValOperand, richAST *transpiler.RichAST) transpiler.Type {
+	pv := richAST.PackageVals[op.name]
+	if op.importPath != "" {
+		pv = richAST.ImportedVals[op.importPath][op.name]
+	}
+	if pv == nil {
+		return transpiler.NilType{}
+	}
+	return pv.Type
+}
+
+// packageValCallType is the type of a call of op, a constructor or function,
+// with args arguments.
+func (a *galaAnalyzer) packageValCallType(op packageValOperand, args int, pkgName string, richAST *transpiler.RichAST) transpiler.Type {
+	name, pkg := op.name, op.pkg
 	key := name
 	if pkg != "" {
 		key = pkg + "." + name

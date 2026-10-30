@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "docs.go",
         "engine.go",
+        "expr_native.go",
         "native_tree.go",
         "newline.go",
         "parser.go",

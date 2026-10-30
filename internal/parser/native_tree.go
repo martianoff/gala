@@ -86,12 +86,12 @@ func (t *Native) convert() {
 
 // Bridged reports whether the tree converted and its bridge to the ANTLR
 // tree holds wherever the compiler crosses it: the root is a source file
-// with its context, every function declaration has its
-// FunctionDeclarationContext and every expression its ExpressionContext.
-// Every reader of a file that crosses the bridge (the undefined-symbol
-// check's walk, the analyzer's collection of the file's declarations) works
-// on the native tree only when it holds, and on the ANTLR tree otherwise, so
-// they all take the same tree. It is checked once, on the first call, safely
+// with its context and every function declaration has its
+// FunctionDeclarationContext, which the undefined-symbol check's walk reads.
+// Every reader of a file that takes the native tree with that walk (the walk
+// itself, the analyzer's collection of the file's declarations) works on it
+// only when the bridge holds, and on the ANTLR tree otherwise, so they all
+// take the same tree. It is checked once, on the first call, safely
 // from any goroutine. A nil *Native is not bridged.
 func (t *Native) Bridged() bool {
 	tree, err := t.Tree()
@@ -115,13 +115,8 @@ func bridgeHolds(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
 		return false
 	}
 	for i, ctx := range ctxs {
-		switch tree.Node(i).Kind() {
-		case native.GalaKIND_functionDeclaration:
+		if tree.Node(i).Kind() == native.GalaKIND_functionDeclaration {
 			if _, ok := ctx.(*grammar.FunctionDeclarationContext); !ok {
-				return false
-			}
-		case native.GalaKIND_expression:
-			if _, ok := ctx.(*grammar.ExpressionContext); !ok {
 				return false
 			}
 		}

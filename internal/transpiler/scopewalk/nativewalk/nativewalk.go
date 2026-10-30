@@ -572,8 +572,8 @@ func (w walk) bindPattern(pat native.PatternNode) {
 }
 
 func (w walk) bindPatternExpression(expr native.ExpressionNode) {
-	pf, ok := singleNativePostfixExpr(expr)
-	if !ok {
+	pf := parser.NativeSolePostfixExpr(expr)
+	if !pf.Ok() {
 		return
 	}
 	suffixes := pf.AllPostfixSuffix()
@@ -595,35 +595,4 @@ func (w walk) bindPatternExpression(expr native.ExpressionNode) {
 			}
 		}
 	}
-}
-
-// singleNativePostfixExpr is singlePostfixExpr on the native tree.
-func singleNativePostfixExpr(expr native.ExpressionNode) (native.PostfixExprNode, bool) {
-	none := native.PostfixExprNode{}
-	ands := expr.OrExpr().AllAndExpr()
-	if len(ands) != 1 {
-		return none, false
-	}
-	eqs := ands[0].AllEqualityExpr()
-	if len(eqs) != 1 {
-		return none, false
-	}
-	rels := eqs[0].AllRelationalExpr()
-	if len(rels) != 1 {
-		return none, false
-	}
-	adds := rels[0].AllAdditiveExpr()
-	if len(adds) != 1 {
-		return none, false
-	}
-	muls := adds[0].AllMultiplicativeExpr()
-	if len(muls) != 1 {
-		return none, false
-	}
-	uns := muls[0].AllUnaryExpr()
-	if len(uns) != 1 {
-		return none, false
-	}
-	pf := uns[0].PostfixExpr()
-	return pf, pf.Ok()
 }
