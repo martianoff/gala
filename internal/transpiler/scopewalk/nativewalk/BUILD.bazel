@@ -1,15 +1,10 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
-# The scope walk on galop's native tree. Builds without galop's parser link
-# //internal/transpiler/scopewalk/nativewalkoff under this import path.
+# The scope walk on galop's native tree.
 go_library(
     name = "nativewalk",
     srcs = ["nativewalk.go"],
     importpath = "martianoff/gala/internal/transpiler/scopewalk/nativewalk",
-    target_compatible_with = select({
-        "//internal/parser/grammar:galop_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/parser",

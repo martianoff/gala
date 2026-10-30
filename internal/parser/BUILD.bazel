@@ -1,20 +1,17 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
-# `bazel build --//internal/parser:antlr ...` builds GALA with ANTLR's parser
-# alone, leaving galop's out (see engine.go). Without it, galop's parser is
-# built in (//internal/parser/grammar:galop_enabled), which needs a galop
-# toolchain for the build host; the CLI's --parser flag and GALA_PARSER then
-# choose per process.
+# `bazel build --//internal/parser:antlr ...` builds GALA to parse with ANTLR's
+# parser by default (see engine.go). galop's parser is built in either way, so
+# the CLI's --parser flag and GALA_PARSER still choose per process.
 bool_flag(
     name = "antlr",
     build_setting_default = False,
 )
 
 config_setting(
-    name = "galop_wanted",
-    flag_values = {":antlr": "false"},
-    visibility = ["//:__subpackages__"],
+    name = "antlr_default",
+    flag_values = {":antlr": "true"},
 )
 
 go_library(
@@ -31,22 +28,17 @@ go_library(
     ],
     importpath = "martianoff/gala/internal/parser",
     visibility = ["//:__subpackages__"],
+    x_defs = select({
+        ":antlr_default": {"martianoff/gala/internal/parser.defaultEngine": "antlr"},
+        "//conditions:default": {},
+    }),
     deps = [
         "//galaerr",
+        "//internal/parser/galop",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "@com_github_antlr4_go_antlr_v4//:antlr",
-    ] + select({
-        # internal/parser/galop and internal/parser/native, or their stand-ins
-        # under the same import paths.
-        "//internal/parser/grammar:galop_enabled": [
-            "//internal/parser/galop",
-            "//internal/parser/native",
-        ],
-        "//conditions:default": [
-            "//internal/parser/galopoff",
-            "//internal/parser/nativeoff",
-        ],
-    }),
+    ],
 )
 
 go_test(
@@ -60,22 +52,16 @@ go_test(
         "go_type_in_expression_test.go",
         "grammar_test.go",
         "native_handle_test.go",
+        "native_tree_test.go",
         "newline_test.go",
         "parse_expression_at_test.go",
         "parser_concurrent_test.go",
         "parser_test.go",
         "source_chars_test.go",
         "struct_tag_test.go",
+        "type_text_native_test.go",
         "type_text_test.go",
-    ] + select({
-        # native_tree_test.go and type_text_native_test.go read the native
-        # tree, which only builds with galop's parser have.
-        "//internal/parser/grammar:galop_enabled": [
-            "native_tree_test.go",  # keep
-            "type_text_native_test.go",  # keep
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     # engine_test.go parses every GALA source of the repository with both
     # engines.
     data = [
@@ -92,12 +78,10 @@ go_test(
     deps = [
         "//galaerr",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep
         "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
-    ] + select({
-        "//internal/parser/grammar:galop_enabled": ["//internal/parser/native"],  # keep
-        "//conditions:default": ["//internal/parser/nativeoff"],  # keep
-    }),
+    ],
 )

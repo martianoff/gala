@@ -138,8 +138,6 @@ var (
 
 // parserFlagHelp describes --parser with this build's default engine.
 func parserFlagHelp() string {
-	if parser.DefaultEngine() == parser.EngineGalop {
-		return `Parser: "galop" (ANTLR reports syntax errors) or "antlr" (default: $GALA_PARSER, else galop)`
-	}
-	return `Parser: "antlr", the only one built into this binary (default: $GALA_PARSER, else antlr)`
+	return `Parser: "galop" (ANTLR reports syntax errors) or "antlr" (default: $GALA_PARSER, else ` +
+		string(parser.DefaultEngine()) + `)`
 }

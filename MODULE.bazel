@@ -63,7 +63,9 @@ bazel_dep(name = "gala_gazelle", version = "0.4.0", dev_dependency = True)
 
 # galop, the parser generator the GALA parser is also built with (see
 # internal/parser/grammar): its prebuilt release binaries, registered as
-# toolchains by rules_gala.
+# toolchains by rules_gala. Building GALA needs one for the build host (see
+# CONTRIBUTING.MD for the hosts); elsewhere the build fails with "No matching
+# toolchains found" for galop's toolchain type.
 galop = use_extension("@rules_gala//galop:extensions.bzl", "galop")
 galop.toolchain(version = "0.2.5")
 use_repo(galop, "galop_toolchains")

@@ -12,9 +12,8 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// errNoNative is what a nil *Native reports: the parse gave no tree, the build
-// has no galop parser (--//internal/parser:antlr), or the holder dropped the
-// handle.
+// errNoNative is what a nil *Native reports: the parse gave no tree, ANTLR's
+// parser made it (see Parsed.Native), or the holder dropped the handle.
 var errNoNative = errors.New("parser: no native tree for this parse")
 
 // Native is a parse's tree in galop's native form (internal/parser/native),
@@ -46,11 +45,10 @@ type Native struct {
 }
 
 // newNative returns the native-tree handle of root, read from stream over
-// src, or nil when there is no source-file tree or no galop parser to convert
-// it.
+// src, or nil when there is no source-file tree.
 func newNative(root antlr.Tree, stream *antlr.CommonTokenStream, src string) *Native {
 	sf, ok := root.(*grammar.SourceFileContext)
-	if !galop.BuiltIn || !ok || sf == nil {
+	if !ok || sf == nil {
 		return nil
 	}
 	return &Native{root: sf, stream: stream, src: src}

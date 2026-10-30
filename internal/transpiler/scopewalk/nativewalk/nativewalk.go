@@ -1,7 +1,5 @@
 // Package nativewalk walks scopewalk's walk on galop's native tree
-// (internal/parser/native). Builds without galop's parser link
-// internal/transpiler/scopewalk/nativewalkoff under this import path instead,
-// whose For gives no NativeWalker, so every walk is ANTLR's.
+// (internal/parser/native).
 //
 // The walk here is scopewalk's ANTLR walk (walk_antlr.go) node for node: the
 // same handlers, visiting the same nodes in the same order, so it reports the

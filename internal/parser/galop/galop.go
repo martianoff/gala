@@ -1,8 +1,7 @@
 // Package galop runs galop's parser for gala.g4, which Bazel generates next to
 // ANTLR's in internal/parser/grammar (galop's antlr flavor builds ANTLR's own
-// context types). Builds without galop link internal/parser/galopoff under the
-// same import path instead; internal/parser chooses between the parsers and
-// recovers if one panics.
+// context types). internal/parser chooses between the parsers and recovers if
+// one panics.
 package galop
 
 import (
@@ -11,9 +10,6 @@ import (
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 )
-
-// BuiltIn says galop's parser is linked into this binary.
-const BuiltIn = true
 
 // NewLexer returns galop's lexer for input, and the ANTLR base lexer in it
 // (whose simulator position seeds where the input starts). Its tokens are

@@ -32,6 +32,10 @@ type sourceFileParseResult struct {
 	stream *antlr.CommonTokenStream
 	tree   antlr.Tree
 	errors []error
+	// galop says galop's parser made tree. Only its parses get a native tree:
+	// a tree ANTLR's parser made, with ANTLR's engine or as galop's fallback,
+	// is read on the ANTLR paths alone.
+	galop bool
 }
 
 // parseSourceFileAttempt parses input once under the given ANTLR prediction
@@ -101,7 +105,9 @@ type Parsed struct {
 	Docs   Docs
 	Errors []error
 	// Native is the parse's native tree (see Native), nil when there is none:
-	// the parse gave no tree, or the build has no galop parser. Until it
+	// the parse gave no tree, or ANTLR's parser made it (with ANTLR's engine,
+	// or as galop's fallback on a syntax error or panic), so that code with a
+	// native and an ANTLR path takes the ANTLR one end to end. Until it
 	// converts it holds the token stream and the source text, which a clean
 	// parse's tree does not keep alive, so a holder that keeps a Parsed long
 	// but never reads the native tree drops it.
@@ -188,7 +194,11 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 		errs = append(errs, err)
 	}
 
-	return &Parsed{Tree: result.tree, Docs: docs, Errors: errs, Native: newNative(result.tree, result.stream, input)}
+	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
+	if result.galop {
+		parsed.Native = newNative(result.tree, result.stream, input)
+	}
+	return parsed
 }
 
 // Hooks for galop's parser, replaced by tests.
@@ -259,7 +269,7 @@ func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 			tree, ok, panicked := tryGalop(input, in, galopSourceFile)
 			clean := len(lexErrs.Errors) == 0 && !panicked
 			if ok && clean {
-				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree}
+				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree, galop: true}
 			}
 			if clean {
 				reuse = in

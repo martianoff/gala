@@ -12,7 +12,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 
-	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/grammar"
 )
 
@@ -81,11 +80,6 @@ func renderText(text string, tree antlr.Tree, docs Docs, errs []error) string {
 	return b.String()
 }
 
-// checkNativeHook, set in builds with galop's parser (native_tree_test.go),
-// checks a parse's native tree and bridge, given the text of its ANTLR tree
-// (treeText), returning what is wrong or "".
-var checkNativeHook func(p *Parsed, text string) string
-
 // fileParse is a parse of a source file with one engine, and its rendering.
 type fileParse struct {
 	parsed *Parsed
@@ -102,15 +96,6 @@ func parseFileAs(e Engine, src string) fileParse {
 		f.out = renderText(f.text, f.parsed.Tree, f.parsed.Docs, f.parsed.Errors)
 	})
 	return f
-}
-
-// checkNative is what is wrong with f's native tree, "" when nothing is or
-// the build has no galop parser.
-func (f fileParse) checkNative() string {
-	if checkNativeHook == nil {
-		return ""
-	}
-	return checkNativeHook(f.parsed, f.text)
 }
 
 // parseFileWith parses src with engine e and renders the result (see
@@ -225,9 +210,6 @@ var interpolation = regexp.MustCompile(`\$\{([^{}"]+)\}`)
 // broken variants of both. galop's parser builds ANTLR's tree on input that
 // parses and leaves the rest to ANTLR, so any difference is a bug.
 func TestEnginesAgree(t *testing.T) {
-	if !galop.BuiltIn {
-		t.Skip("galop's parser is not built in")
-	}
 	grammar.GalaParserInit()
 	// r draws the broken variants and token runs; positions draws where
 	// ParseExpressionAt places an expression, from its own stream so that the
@@ -235,24 +217,29 @@ func TestEnginesAgree(t *testing.T) {
 	r := rand.New(rand.NewSource(1))
 	positions := rand.New(rand.NewSource(2))
 	files, accepted, exprs, exprsAccepted, exprsAtAccepted, crlf := 0, 0, 0, 0, 0, 0
-	// compareFile parses input with both engines, reports a difference, and,
-	// when native is set, checks the native tree: of galop's parse when the
-	// engines agree, as ANTLR's is then the same tree, and of both when they
-	// do not. It returns ANTLR's rendering.
+	// compareFile parses input with both engines, reports a difference, and
+	// checks the native trees: ANTLR's engine's parse has none; galop's has
+	// one when it parses without errors. When native is set, it checks the
+	// native tree (checkNative) of galop's parse, or, when that has errors,
+	// of ANTLR's error-recovered tree converted (parseConverted). It returns
+	// ANTLR's rendering.
 	compareFile := func(what, input string, native bool) string {
 		want, got := parseFileAs(EngineANTLR, input), parseFileAs(EngineGalop, input)
-		var checked []fileParse
-		if native {
-			checked = append(checked, got)
-		}
 		if got.out != want.out {
 			t.Errorf("%s: the engines disagree (want ANTLR's, got galop's): %s", what, diffAt(want.out, got.out))
-			if native {
-				checked = append(checked, want)
-			}
 		}
-		for _, f := range checked {
-			if msg := f.checkNative(); msg != "" {
+		if want.parsed.Native != nil {
+			t.Errorf("%s: the parse with ANTLR's engine has a native tree", what)
+		}
+		checked, text := got.parsed, got.text
+		if len(got.parsed.Errors) > 0 {
+			checked, text = parseConverted(input), want.text
+		} else if got.parsed.Native == nil {
+			t.Errorf("%s: galop's clean parse has no native tree", what)
+			native = false
+		}
+		if native {
+			if msg := checkNative(checked, text); msg != "" {
 				t.Errorf("%s: native tree: %s", what, msg)
 			}
 		}
@@ -369,9 +356,6 @@ func lexed(src string) []antlr.Token {
 // TestGalopPanicFallsBack makes galop's parser panic: the parse must still
 // succeed, with ANTLR's result.
 func TestGalopPanicFallsBack(t *testing.T) {
-	if !galop.BuiltIn {
-		t.Skip("galop's parser is not built in")
-	}
 	savedFile, savedExpr := galopSourceFile, galopExpression
 	defer func() { galopSourceFile, galopExpression = savedFile, savedExpr }()
 	galopSourceFile = func(*antlr.CommonTokenStream) (grammar.ISourceFileContext, bool) { panic("injected") }
@@ -385,8 +369,12 @@ func TestGalopPanicFallsBack(t *testing.T) {
 	}()
 	src := "package main\n\nfunc main() {\n    Println(\"hi\")\n}\n"
 	want := parseFileWith(EngineANTLR, src)
-	if got := parseFileWith(EngineGalop, src); got != want {
-		t.Errorf("source file after a panic:\n got: %s\nwant: %s", got, want)
+	got := parseFileAs(EngineGalop, src)
+	if got.out != want {
+		t.Errorf("source file after a panic:\n got: %s\nwant: %s", got.out, want)
+	}
+	if got.parsed.Native != nil {
+		t.Error("ANTLR's fallback parse after a panic has a native tree")
 	}
 	if strings.Contains(want, "error:") {
 		t.Fatalf("the source does not parse: %s", want)
@@ -408,11 +396,9 @@ func TestEngineSelection(t *testing.T) {
 	if e, err := currentEngine(); err != nil || e != EngineANTLR {
 		t.Fatalf("GALA_PARSER=antlr: engine %q, error %v", e, err)
 	}
-	if galop.BuiltIn {
-		RequestEngine("galop")
-		if e, err := currentEngine(); err != nil || e != EngineGalop {
-			t.Fatalf("--parser=galop over GALA_PARSER=antlr: engine %q, error %v", e, err)
-		}
+	RequestEngine("galop")
+	if e, err := currentEngine(); err != nil || e != EngineGalop {
+		t.Fatalf("--parser=galop over GALA_PARSER=antlr: engine %q, error %v", e, err)
 	}
 	RequestEngine("yacc")
 	_, _, errs := NewAntlrGalaParser().ParseFile("package main\n").Lenient()
@@ -421,19 +407,16 @@ func TestEngineSelection(t *testing.T) {
 	}
 }
 
-// TestBuiltInDefault checks the engine a build defaults to: galop's where it
-// is built in. CI's job for ANTLR's parser builds with --//internal/parser:antlr
-// and expects ANTLR's through GALA_EXPECT_DEFAULT_ENGINE.
-func TestBuiltInDefault(t *testing.T) {
+// TestDefaultEngine checks the engine a build defaults to: galop's, unless it
+// is built with --//internal/parser:antlr. CI's job for ANTLR's parser builds
+// so and expects ANTLR's through GALA_EXPECT_DEFAULT_ENGINE.
+func TestDefaultEngine(t *testing.T) {
 	if os.Getenv("GALA_PARSER") != "" {
 		t.Skip("GALA_PARSER is set")
 	}
 	want := os.Getenv("GALA_EXPECT_DEFAULT_ENGINE")
 	if want == "" {
-		want = string(EngineANTLR)
-		if galop.BuiltIn {
-			want = string(EngineGalop)
-		}
+		want = string(EngineGalop)
 	}
 	saved := chosen.Load()
 	defer chosen.Store(saved)

@@ -49,12 +49,20 @@ jobs:
         run: |
           bazel build //ide/intellij:plugin --action_env=PATH
 
-  # GALA parses with galop's parser by default and keeps ANTLR's as an option
-  # (internal/parser/engine.go). This runs the whole suite on a build with
-  # ANTLR's parser alone, so that option keeps working. It keeps its own
-  # disk cache, so the two jobs never save over each other's. Long tests get 30
-  # minutes instead of 15: //internal/build:build_test runs whole CLI builds,
-  # 7-10 minutes on a warm cache, and this cache is often cold.
+  # GALA parses with galop's parser by default and keeps ANTLR's as a run-time
+  # option (internal/parser/engine.go). This runs the whole suite on a build
+  # whose binaries default to ANTLR's (--//internal/parser:antlr; galop is
+  # still built in), so that option keeps working. The flag reaches the exec
+  # configuration too, so the gala worker that transpiles std, the examples
+  # and the libraries parses with ANTLR. A parse ANTLR's parser makes has no
+  # native tree, so those builds and tests run the ANTLR consumer paths end
+  # to end (e.g. scopewalk's walk_antlr.go, not nativewalk). TestDefaultEngine
+  # checks the default through GALA_EXPECT_DEFAULT_ENGINE (galop when unset,
+  # in the other job).
+  # The job keeps its own disk cache, so the two jobs never save over each
+  # other's. Long tests get 30 minutes instead of 15: //internal/build:build_test
+  # runs whole CLI builds, 7-10 minutes on a warm cache, and this cache is
+  # often cold.
   test-antlr:
     name: Build and Test (ANTLR parser)
     runs-on: ubuntu-latest

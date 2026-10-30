@@ -32,28 +32,15 @@ genrule(
 # nativePackage galop also writes gala_galop_native.go, the converter from
 # these trees (and ANTLR's, error-recovered ones included) to the native tree
 # of internal/parser/native.
+#
+# galop runs on the build host, from the prebuilt binaries rules_gala
+# registers; building GALA needs one (see CONTRIBUTING.MD for the hosts).
 galop_parser(
     name = "gala_grammar_galop",
     defines = {"nativePackage": "martianoff/gala/internal/parser/native"},
     flavor = "antlr",
     grammar = "gala.g4",
     package = "grammar",
-    target_compatible_with = select({
-        ":galop_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-)
-
-# galop is built in unless the build asks for ANTLR's parser alone
-# (--//internal/parser:antlr). galop runs on the build host, from the
-# prebuilt binaries rules_gala registers for linux-amd64, linux-arm64,
-# darwin-amd64, darwin-arm64 and windows-amd64; on any other host, build with
-# --//internal/parser:antlr. The tree's consumers outside internal/parser select
-# on it too, for the files that read the native tree.
-alias(
-    name = "galop_enabled",
-    actual = "//internal/parser:galop_wanted",
-    visibility = ["//:__subpackages__"],
 )
 
 go_library(
@@ -63,19 +50,15 @@ go_library(
         "gala_lexer.go",
         "gala_listener.go",
         "gala_parser.go",
-    ] + select({
-        ":galop_enabled": [":gala_grammar_galop"],
-        "//conditions:default": [],
-    }),
+        ":gala_grammar_galop",  # keep
+    ],
     importpath = "martianoff/gala/internal/parser/grammar",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_antlr4_go_antlr_v4//:antlr",
-    ] + select({
         # gala_galop_native.go, generated, imports the native tree.
-        ":galop_enabled": ["//internal/parser/native"],  # keep
-        "//conditions:default": [],
-    }),
+        "//internal/parser/native",  # keep
+        "@com_github_antlr4_go_antlr_v4//:antlr",
+    ],
 )
 
 exports_files(["gala.g4"])

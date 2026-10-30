@@ -9,7 +9,7 @@
 #
 #   localAntlr       gala.g4 -> internal/parser/grammar/*.go (ANTLR)
 #   localGalop       gala.g4 -> internal/parser/grammar/gala_galop_*.go and
-#                    internal/parser/native/*.go (galop, unless useGalop = false)
+#                    internal/parser/native/*.go (galop)
 #   localTranspiled  releaseGalaBin transpiles the local stdlib, one
 #                    `transpile-package` invocation per package (every
 #                    non-test .gala file as that package's input list, which
@@ -38,8 +38,6 @@
   # Escape hatch: transpile the stdlib with cmd/gala_bootstrap built from this
   # tree instead of a downloaded release binary.
   useLocalBootstrap ? false,
-  # Build GALA without galop's parser, parsing with ANTLR's alone.
-  useGalop ? true,
   # Downloaded release binary used to transpile the stdlib. Bump the version
   # and all four hashes together; the asset names match .github/workflows/
   # release.yml. A release can lag the tree (codegen/grammar changes), in
@@ -203,11 +201,9 @@ let
   # galop generates its parser for gala.g4 next to ANTLR's, in its antlr
   # flavor (see internal/parser/grammar/BUILD.bazel); GALA parses with it
   # first. Its release binary runs at build time, so it is selected by
-  # buildPlatform. With useGalop = false GALA is built with ANTLR's parser
-  # alone; that is also the way to build on a platform galop publishes no
-  # binary for, as with Bazel's --//internal/parser:antlr. The
-  # version must equal MODULE.bazel's galop.toolchain version
-  # (tools/check_repo_policy.sh checks it).
+  # buildPlatform; building GALA needs it, so a platform galop publishes no
+  # binary for cannot build GALA. The version must equal MODULE.bazel's
+  # galop.toolchain version (tools/check_repo_policy.sh checks it).
   galopVersion = "0.2.5";
   galopAssets = {
     x86_64-linux = {
@@ -228,62 +224,38 @@ let
     };
   };
   galopAsset =
-    if useGalop then
-      galopAssets.${stdenv.buildPlatform.system}
-        or (throw "galop publishes no binary for ${stdenv.buildPlatform.system}; build with useGalop = false")
-    else
-      null;
-  localGalop =
-    if galopAsset == null then
-      null
-    else
-      stdenv.mkDerivation {
-        pname = "gala-galop-local";
-        inherit version;
-        src = fetchurl {
-          url = "https://github.com/martianoff/galop/releases/download/${galopVersion}/${galopAsset.name}";
-          inherit (galopAsset) hash;
-        };
-        dontUnpack = true;
-        dontConfigure = true;
-        dontInstall = true;
-        buildPhase = ''
-          runHook preBuild
-          install -m755 "$src" galop
-          cp ${repoRoot + "/internal/parser/grammar/gala.g4"} gala.g4
-          mkdir -p "$out/internal/parser/grammar" "$out/internal/parser/native"
-          ./galop -o "$out/internal/parser/grammar" -Xexact-output-dir \
-            -Dlanguage=Go -Dflavor=antlr -DnativePackage=martianoff/gala/internal/parser/native \
-            -package grammar gala.g4
-          ./galop -o "$out/internal/parser/native" -Xexact-output-dir \
-            -Dlanguage=Go -Dflavor=native -visitor -package native gala.g4
-          runHook postBuild
-        '';
-      };
+    galopAssets.${stdenv.buildPlatform.system}
+      or (throw "galop publishes no binary for ${stdenv.buildPlatform.system}, and building GALA needs one");
+  localGalop = stdenv.mkDerivation {
+    pname = "gala-galop-local";
+    inherit version;
+    src = fetchurl {
+      url = "https://github.com/martianoff/galop/releases/download/${galopVersion}/${galopAsset.name}";
+      inherit (galopAsset) hash;
+    };
+    dontUnpack = true;
+    dontConfigure = true;
+    dontInstall = true;
+    buildPhase = ''
+      runHook preBuild
+      install -m755 "$src" galop
+      cp ${repoRoot + "/internal/parser/grammar/gala.g4"} gala.g4
+      mkdir -p "$out/internal/parser/grammar" "$out/internal/parser/native"
+      ./galop -o "$out/internal/parser/grammar" -Xexact-output-dir \
+        -Dlanguage=Go -Dflavor=antlr -DnativePackage=martianoff/gala/internal/parser/native \
+        -package grammar gala.g4
+      ./galop -o "$out/internal/parser/native" -Xexact-output-dir \
+        -Dlanguage=Go -Dflavor=native -visitor -package native gala.g4
+      runHook postBuild
+    '';
+  };
   # Copies the generated parsers and galop's native tree into a Go source tree.
-  # Without galop, the stand-in packages internal/parser/galopoff,
-  # internal/parser/nativeoff and internal/transpiler/scopewalk/nativewalkoff
-  # take the places of the packages they stand in for, as Bazel's select does.
   overlayGrammar = ''
     cp ${localAntlr}/internal/parser/grammar/*.go internal/parser/grammar/
-  ''
-  + (
-    if localGalop != null then
-      ''
-        cp ${localGalop}/internal/parser/grammar/*.go internal/parser/grammar/
-        mkdir -p internal/parser/native
-        cp ${localGalop}/internal/parser/native/*.go internal/parser/native/
-      ''
-    else
-      ''
-        rm -r internal/parser/galop
-        mv internal/parser/galopoff internal/parser/galop
-        rm -rf internal/parser/native
-        mv internal/parser/nativeoff internal/parser/native
-        rm -r internal/transpiler/scopewalk/nativewalk
-        mv internal/transpiler/scopewalk/nativewalkoff internal/transpiler/scopewalk/nativewalk
-      ''
-  );
+    cp ${localGalop}/internal/parser/grammar/*.go internal/parser/grammar/
+    mkdir -p internal/parser/native
+    cp ${localGalop}/internal/parser/native/*.go internal/parser/native/
+  '';
 
   # Downloaded release binary used to transpile the stdlib. fetchurl does not
   # preserve the executable bit, so wrap it with install -m755. The tool runs

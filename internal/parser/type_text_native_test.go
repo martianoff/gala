@@ -12,9 +12,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// This file is built only with galop's parser (see BUILD.bazel): it reads the
-// native tree.
-
 // checkNativeHelpers compares, on context ctx of a parse and its native node
 // node, each function of type_text.go that applies to ctx with its native
 // version (type_text_native.go), returning what differs or "". checkNative
@@ -85,7 +82,7 @@ func TestNativeTypeHelpers(t *testing.T) {
 	var typeTexts, aliasTexts []string
 	ptrElems, pointerElems := 0, 0
 	for k, input := range nativeHelperInputs {
-		p := NewAntlrGalaParser().ParseFile(input)
+		p := parseConverted(input)
 		broken := k == len(nativeHelperInputs)-1
 		if (len(p.Errors) > 0) != broken {
 			t.Fatalf("input %d: errors %v, want them only for the last input", k, p.Errors)
@@ -167,7 +164,7 @@ func TestNativeDocKeyOfGalopParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := NewAntlrGalaParser().ParseFile(src)
+	p := parseWithGalop(src)
 	converted, err := p.Native.Tree()
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +195,7 @@ func TestNativeDocKeyOfGalopParse(t *testing.T) {
 // nothing, on Ptr types, pointers, other generics and a func type with
 // parameters and Go results; NativeTypeText spells the func type.
 func TestNativeHelpersAllocate(t *testing.T) {
-	p := NewAntlrGalaParser().ParseFile("package main\n\ntype F func(a Ptr[int], b ...*int, c std.Ptr[Ptr[int]]) (Map[string, int], error)\n")
+	p := parseWithGalop("package main\n\ntype F func(a Ptr[int], b ...*int, c std.Ptr[Ptr[int]]) (Map[string, int], error)\n")
 	tree, err := p.Native.Tree()
 	if err != nil {
 		t.Fatal(err)

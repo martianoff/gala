@@ -61,9 +61,10 @@
 // nativewalk), which mirrors the walk over ANTLR's (walk_antlr.go) handler for
 // handler; nativewalk's TestWalksAgree holds the two to the same output on the
 // GALA sources the parser's engine test parses (std, the examples and the
-// other libraries). ANTLR's walk stays for what has no native tree: a build
-// without galop's parser, a parse with syntax errors, an interpolation
-// fragment (re-parsed into ANTLR's tree alone), and a caller that holds none.
+// other libraries). ANTLR's walk stays for what has no native tree: a parse
+// ANTLR's parser made (with ANTLR's engine, or on a syntax error), an
+// interpolation fragment (re-parsed into ANTLR's tree alone), and a caller
+// that holds none.
 package scopewalk
 
 import (
@@ -184,7 +185,7 @@ type Walker struct {
 
 // NativeWalker walks the ANTLR contexts of one parse on the parse's native
 // tree, for a Walker. Package nativewalk makes one; this package stays free of
-// the native tree, which builds without galop's parser do not have.
+// the native tree.
 type NativeWalker interface {
 	// Walk is Walker.Walk of node on the native tree. It reports false, having
 	// walked nothing, when node is no context of the parse.

@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"martianoff/gala/internal/parser/galop"
 )
 
 // Engine names the parser that turns GALA source into a tree.
@@ -23,20 +21,22 @@ import (
 type Engine string
 
 const (
-	// EngineGalop parses with galop and falls back to ANTLR. It is the
-	// default where galop's parser is built in.
+	// EngineGalop parses with galop and falls back to ANTLR.
 	EngineGalop Engine = "galop"
 	// EngineANTLR parses with ANTLR's runtime alone.
 	EngineANTLR Engine = "antlr"
 )
 
-// DefaultEngine is the engine this binary uses unless asked for another:
-// galop's where it is built in, else ANTLR's.
+// defaultEngine names the engine this binary uses unless asked for another.
+// Bazel's --//internal/parser:antlr sets it to "antlr" at link time (an x_defs
+// of this library); both engines are built in either way. Like GALA_PARSER, a
+// name that is no engine fails the parses.
+var defaultEngine = string(EngineGalop)
+
+// DefaultEngine is the engine this binary uses unless asked for another (see
+// defaultEngine).
 func DefaultEngine() Engine {
-	if galop.BuiltIn {
-		return EngineGalop
-	}
-	return EngineANTLR
+	return Engine(defaultEngine)
 }
 
 // engineChoice is a resolved engine, or why the requested one is unusable.
@@ -59,12 +59,7 @@ var (
 // parseEngine returns the engine named s, or why it cannot be used.
 func parseEngine(s string) (Engine, error) {
 	switch e := Engine(s); e {
-	case EngineANTLR:
-		return e, nil
-	case EngineGalop:
-		if !galop.BuiltIn {
-			return "", fmt.Errorf("parser %q is not built into this binary; use %q", s, EngineANTLR)
-		}
+	case EngineANTLR, EngineGalop:
 		return e, nil
 	}
 	return "", fmt.Errorf("unknown parser %q: want %q or %q", s, EngineGalop, EngineANTLR)
@@ -95,10 +90,11 @@ func currentEngine() (Engine, error) {
 	if name == "" {
 		name = os.Getenv("GALA_PARSER")
 	}
-	c := &engineChoice{engine: DefaultEngine()}
-	if name != "" {
-		c.engine, c.err = parseEngine(name)
+	if name == "" {
+		name = defaultEngine
 	}
+	e, err := parseEngine(name)
+	c := &engineChoice{engine: e, err: err}
 	chosen.Store(c)
 	return c.engine, c.err
 }
