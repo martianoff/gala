@@ -611,11 +611,7 @@ func markSiblingSealed(richAST *transpiler.RichAST, pkgName, fullName, absSibPat
 		meta.DefinedIn = absSibPath
 	}
 	for _, v := range meta.SealedVariants {
-		companionKey := v.Name
-		if pkgName != "" && pkgName != "main" && pkgName != "test" {
-			companionKey = pkgName + "." + v.Name
-		}
-		if cm, ok := richAST.Types[companionKey]; ok && cm.DefinedIn == "" {
+		if cm, ok := richAST.Types[qualifiedName(pkgName, v.Name)]; ok && cm.DefinedIn == "" {
 			cm.DefinedIn = absSibPath
 			if apply := cm.Methods["Apply"]; apply != nil {
 				apply.DefinedIn = absSibPath
@@ -635,11 +631,7 @@ func (fd *fileDecls) sealedDeclaredHere(fullName string) {
 	}
 	meta.DefinedIn = fd.filePath
 	for _, v := range meta.SealedVariants {
-		companionKey := v.Name
-		if fd.pkgName != "" && fd.pkgName != "main" && fd.pkgName != "test" {
-			companionKey = fd.pkgName + "." + v.Name
-		}
-		cm, ok := fd.richAST.Types[companionKey]
+		cm, ok := fd.richAST.Types[qualifiedName(fd.pkgName, v.Name)]
 		if !ok {
 			continue
 		}
