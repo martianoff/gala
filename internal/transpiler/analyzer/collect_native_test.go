@@ -483,10 +483,9 @@ func sortedKeys(m reflect.Value) []reflect.Value {
 
 // BenchmarkCollect collects the declarations of every staged source, on
 // ANTLR's tree ("antlr") and on the native tree converted beforehand
-// ("native"): as the file being analyzed ("file": analyze's sections 1 to 2b)
-// and as a sibling ("sibling": extractSiblingFullMetadata). "convert" is the
-// conversion to the native tree itself, which a file collected on its native
-// tree pays once.
+// ("native"), as the file being analyzed ("file": analyze's sections 1 to
+// 2b). "convert" is the conversion to the native tree itself, which a file
+// collected on its native tree pays once.
 func BenchmarkCollect(b *testing.B) {
 	paths, searchPaths := collectionCorpus(b)
 	type source struct {

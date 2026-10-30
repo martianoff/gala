@@ -36,7 +36,7 @@ func NativePtrElem(t native.TypeNode) native.TypeNode {
 		return native.TypeNode{}
 	}
 	qid := t.QualifiedIdentifier()
-	elem, ok := onlyNativeKid(t.TypeArguments().TypeList().GalaNodeRef, native.GalaKIND_type)
+	elem, ok := OnlyNativeKid(t.TypeArguments().TypeList().GalaNodeRef, native.GalaKIND_type)
 	if !qid.Ok() || !ok || !isNativePtrName(qid) {
 		return native.TypeNode{}
 	}
@@ -65,8 +65,8 @@ func NativePointerElem(t native.TypeNode) (native.TypeNode, bool) {
 	if elem := NativePtrElem(t); elem.Ok() {
 		return elem, true
 	}
-	if t.Ok() && nativeStartText(t.GalaNodeRef) == "*" {
-		if elem, ok := onlyNativeKid(t.GalaNodeRef, native.GalaKIND_type); ok {
+	if t.Ok() && NativeStartText(t.GalaNodeRef) == "*" {
+		if elem, ok := OnlyNativeKid(t.GalaNodeRef, native.GalaKIND_type); ok {
 			return native.TypeNode{GalaNodeRef: elem}, true
 		}
 	}
@@ -97,11 +97,11 @@ func NativeDocKeyOf(n native.GalaNodeRef) DocKey {
 	return DocKey{Line: int(start.Line), Column: int(start.Column)}
 }
 
-// nativeStartText has no ANTLR counterpart: it is the text of the token
+// NativeStartText has no ANTLR counterpart: it is the text of the token
 // ANTLR's GetStart gives for n's context, which for a node that spans no
 // token is the token after it. Past the last token it is "": that token is
 // none of the ones writeNativeTypeText and NativePointerElem look for.
-func nativeStartText(n native.GalaNodeRef) string {
+func NativeStartText(n native.GalaNodeRef) string {
 	tree, i := n.Tree(), n.StartIndex()
 	if i >= len(tree.Tokens) {
 		return ""
@@ -125,8 +125,8 @@ func NativeKids(n native.GalaNodeRef, kind native.GalaKind) iter.Seq[native.Gala
 	}
 }
 
-// onlyNativeKid is n's child node of kind and true when it has exactly one.
-func onlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeRef, bool) {
+// OnlyNativeKid is n's child node of kind and true when it has exactly one.
+func OnlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeRef, bool) {
 	var only native.GalaNodeRef
 	count := 0
 	for c := range NativeKids(n, kind) {
@@ -155,7 +155,7 @@ func writeNativeTypeText(b *strings.Builder, t native.TypeNode) {
 	if !t.Ok() {
 		return
 	}
-	start := nativeStartText(t.GalaNodeRef)
+	start := NativeStartText(t.GalaNodeRef)
 	switch qid := t.QualifiedIdentifier(); {
 	case qid.Ok():
 		b.WriteString(qid.GetText())

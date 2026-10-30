@@ -181,9 +181,8 @@ func nativeBaseTypeName(t native.TypeNode) string {
 		return qid.GetText()
 	}
 	if first := t.Type_(0); first.Ok() {
-		// A slice, `[]T`, is the one type whose text starts with `[`. A
-		// type node always spans tokens, so it has a first one.
-		if t.StopIndex() >= t.StartIndex() && t.Tree().Text(t.StartIndex()) == "[" {
+		// A slice, `[]T`, is the one type whose text starts with `[`.
+		if galaparser.NativeStartText(t.GalaNodeRef) == "[" {
 			return "[]" + nativeBaseTypeName(first)
 		}
 		return nativeBaseTypeName(first)
@@ -195,10 +194,11 @@ func nativeBaseTypeName(t native.TypeNode) string {
 func nativeReceiverTypeArgNames(t native.TypeNode) []string {
 	t, _ = galaparser.NativePointerElem(t)
 	for t.Ok() && !t.QualifiedIdentifier().Ok() {
-		if !t.Type_(0).Ok() || t.Type_(1).Ok() {
+		elem, ok := galaparser.OnlyNativeKid(t.GalaNodeRef, native.GalaKIND_type)
+		if !ok {
 			return nil
 		}
-		t = t.Type_(0)
+		t = native.TypeNode{GalaNodeRef: elem}
 	}
 	list := t.TypeArguments().TypeList()
 	if !list.Ok() {
