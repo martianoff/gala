@@ -16,6 +16,14 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
+// TestMain parses with galop's parser whatever the build's or environment's
+// default: only its parses come with a native tree, which these tests
+// compare ANTLR's collection to.
+func TestMain(m *testing.M) {
+	galaparser.RequestEngine(string(galaparser.EngineGalop))
+	os.Exit(m.Run())
+}
+
 // antlrOnly parses as its parser does but gives no native-tree handle, so an
 // analyzer using it collects every file on ANTLR's tree.
 type antlrOnly struct{ p transpiler.GalaParser }
@@ -40,18 +48,24 @@ func collectionCorpus(tb testing.TB) ([]string, []string) {
 	}
 	var paths []string
 	for _, f := range files {
-		if strings.HasSuffix(f.ShortPath, ".gala") {
-			paths = append(paths, f.Path)
+		if !strings.HasSuffix(f.ShortPath, ".gala") {
+			continue
 		}
+		if info, err := os.Stat(f.Path); err != nil || !info.Mode().IsRegular() {
+			continue // a directory named *.gala, such as a tool's .gala cache
+		}
+		paths = append(paths, f.Path)
 	}
 	sort.Strings(paths)
 	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
 }
 
 // newCollectionAnalyzer is a batch analyzer over searchPaths parsing with p,
-// with no disk cache, so every package it imports it analyzes itself.
-func newCollectionAnalyzer(p transpiler.GalaParser, searchPaths []string) *galaAnalyzer {
-	a := NewBatchAnalyzer(p, searchPaths, searchPaths[0]).inner
+// with no disk cache, so every package it imports it analyzes itself. Its
+// project root is a temporary directory, so it writes nothing among the
+// sources.
+func newCollectionAnalyzer(tb testing.TB, p transpiler.GalaParser, searchPaths []string) *galaAnalyzer {
+	a := NewBatchAnalyzer(p, searchPaths, tb.TempDir()).inner
 	a.cache = nil
 	return a
 }
@@ -115,14 +129,17 @@ func dropAmbiguousCompanions(res *transpiler.RichAST) {
 func TestCollectionsAgree(t *testing.T) {
 	paths, searchPaths := collectionCorpus(t)
 	p := galaparser.NewAntlrGalaParser()
-	antlrRes := analyzeAll(t, newCollectionAnalyzer(antlrOnly{p}, searchPaths), paths)
-	allNative := newCollectionAnalyzer(p, searchPaths)
+	if p.ParseFile("package main\n").CleanNative() == nil {
+		t.Fatal("the parser gives no native tree, so nothing would be collected on one")
+	}
+	antlrRes := analyzeAll(t, newCollectionAnalyzer(t, antlrOnly{p}, searchPaths), paths)
+	allNative := newCollectionAnalyzer(t, p, searchPaths)
 	allNative.nativeSiblings = true
 	for _, run := range []struct {
 		name string
 		a    *galaAnalyzer
 	}{
-		{"the file on its native tree", newCollectionAnalyzer(p, searchPaths)},
+		{"the file on its native tree", newCollectionAnalyzer(t, p, searchPaths)},
 		{"every file on its native tree", allNative},
 	} {
 		nativeRes := analyzeAll(t, run.a, paths)
@@ -319,7 +336,7 @@ func BenchmarkCollect(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	a := newCollectionAnalyzer(galaparser.NewAntlrGalaParser(), searchPaths)
+	a := newCollectionAnalyzer(b, galaparser.NewAntlrGalaParser(), searchPaths)
 	newFile := func(s source) *fileDecls {
 		richAST := &transpiler.RichAST{
 			Types:            make(map[string]*transpiler.TypeMetadata),
