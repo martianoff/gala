@@ -62,21 +62,17 @@ type nativeFile struct {
 // was not yet, with its top-level declarations bucketed in one pass; or no
 // tree when there is none (a nil handle, or the conversion failed) or its
 // bridge to ANTLR's tree does not hold, and the file is collected on ANTLR's
-// tree.
+// tree. The bridge check is the undefined-symbol check's walk's
+// (galaparser.Native.Bridged), so the collection takes the native tree
+// exactly when the walk does, and a file never pays the conversion for the
+// collection alone; it covers the crossing (nativeFile.expressionCtx) too,
+// so no gap in the bridge surfaces midway through the collection.
 func nativeFileOf(h *galaparser.Native) nativeFile {
-	tree, err := h.Tree()
-	if err != nil {
+	if !h.Bridged() {
 		return nativeFile{}
 	}
+	tree, _ := h.Tree()
 	root := tree.Root()
-	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
-		return nativeFile{}
-	}
-	// The crossing reads each node's context from the bridge, which holds one
-	// for every node or none.
-	if _, ok := h.Ctx(root).(*grammar.SourceFileContext); !ok {
-		return nativeFile{}
-	}
 	nf := nativeFile{handle: h, root: native.SourceFileNode{GalaNodeRef: root}}
 	for td := range galaparser.NativeKids(root, native.GalaKIND_topLevelDeclaration) {
 		if td.ChildCount() == 0 {
@@ -108,10 +104,10 @@ func nativeFileOf(h *galaparser.Native) nativeFile {
 // ok reports whether f is a native tree, not the zero nativeFile.
 func (f nativeFile) ok() bool { return f.root.Ok() }
 
-// expressionCtx is the ANTLR context of expression e, or nil.
+// expressionCtx is the ANTLR context of expression e, which every expression
+// of a native tree has: nativeFileOf takes a tree only when its bridge holds.
 func (f nativeFile) expressionCtx(e native.ExpressionNode) grammar.IExpressionContext {
-	ctx, _ := f.handle.Ctx(e.GalaNodeRef).(grammar.IExpressionContext)
-	return ctx
+	return f.handle.Ctx(e.GalaNodeRef).(*grammar.ExpressionContext)
 }
 
 // nativePos is transpiler.PosFromToken of n's first token.
@@ -867,9 +863,7 @@ func (a *galaAnalyzer) extractPackageValsNative(nf nativeFile, pkgName string, r
 			if typeCtx.Ok() {
 				valType = a.resolveTypeWithParams(galaparser.NativeTypeText(typeCtx), pkgName, nil)
 			} else if len(exprs) == len(names) {
-				if expr := nf.expressionCtx(exprs[i]); expr != nil {
-					valType = a.inferPackageValInitType(expr, pkgName, richAST)
-				}
+				valType = a.inferPackageValInitType(nf.expressionCtx(exprs[i]), pkgName, richAST)
 			}
 			valType = knownType(valType)
 			if richAST.PackageVals == nil {
