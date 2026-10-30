@@ -91,6 +91,50 @@ func checkArray(p *Prop, what string, a Array[int], ref []int) {
 	} else if a.HeadOption().IsDefined() || a.LastOption().IsDefined() {
 		p.Fatalf("%s: HeadOption/LastOption defined on empty array", what)
 	}
+	checkArrayHash(p, what, a, ref)
+}
+
+// refArrayHash is Array.Hash computed from scratch: the polynomial hash of
+// the elements in order, mixed and combined with the length.
+func refArrayHash(ref []int) uint32 {
+	var sum uint32
+	pow := uint32(1)
+	for _, x := range ref {
+		sum += mixHash(HashInt(int64(x))) * pow
+		pow *= 16777619
+	}
+	return HashCombine(HashInt(int64(len(ref))), mixHash(sum))
+}
+
+// checkArrayHash checks that a hashes as its elements do, however it was
+// built (the trie's hash is cached in its root, which Arrays share), twice
+// so the cached hash is read too, and that Equal agrees.
+func checkArrayHash(p *Prop, what string, a Array[int], ref []int) {
+	p.T.Helper()
+	want := refArrayHash(ref)
+	if h1, h2 := a.Hash(), a.Hash(); h1 != want || h2 != want {
+		p.Fatalf("%s: Hash %d then %d, want %d", what, h1, h2, want)
+	}
+	fresh := ArrayFromSlice(ref)
+	fresh.Hash()
+	if !a.Equal(fresh) || !fresh.Equal(a) {
+		p.Fatalf("%s: not Equal to ArrayFromSlice of its elements", what)
+	}
+	if n := len(ref); n > 0 {
+		// a is hashed: an Updated copy must hash as its own elements do (not
+		// reuse a's cached hash) and not be Equal to a.
+		for _, i := range []int{0, n - 1} {
+			changed := a.Updated(i, ref[i]+1)
+			changedRef := slices.Clone(ref)
+			changedRef[i]++
+			if got, want := changed.Hash(), refArrayHash(changedRef); got != want {
+				p.Fatalf("%s: Hash after Updated(%d) %d, want %d", what, i, got, want)
+			}
+			if a.Equal(changed) || changed.Equal(a) || fresh.Equal(changed) {
+				p.Fatalf("%s: Equal after Updated(%d)", what, i)
+			}
+		}
+	}
 }
 
 func TestArrayConstructionDifferential(t *testing.T) {

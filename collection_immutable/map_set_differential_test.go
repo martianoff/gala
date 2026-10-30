@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	. "martianoff/gala/internal/collprop"
+	"martianoff/gala/std"
 )
 
 func checkHashMap[K comparable](p *Prop, what string, m HashMap[K, int], ref map[K]int, absent []K) {
@@ -192,6 +193,74 @@ func checkHashSet[T comparable](p *Prop, what string, s HashSet[T], ref map[T]bo
 	}
 	if len(seen) != len(ref) {
 		p.Fatalf("%s: iteration saw %d elements, want %d", what, len(seen), len(ref))
+	}
+	// Hash is kept up to date by Add and Remove; it must equal the hash of
+	// the elements computed afresh, whatever order they were added in.
+	if got, want := s.Hash(), refSetHash(ref); got != want {
+		p.Fatalf("%s: Hash %d, want %d", what, got, want)
+	}
+}
+
+// refSetHash is HashSet.Hash computed from scratch: the size combined with
+// the sum and the XOR of the element hashes.
+func refSetHash[T comparable](ref map[T]bool) uint32 {
+	var sum, xor uint32
+	for k := range ref {
+		h := std.HashKey(k)
+		sum += h
+		xor ^= h
+	}
+	return std.HashCombine(std.HashCombine(std.HashInt(int64(len(ref))), sum), xor)
+}
+
+// TestHashSetOfPointersHashes: pointer elements without Hash are told apart
+// by identity, and a set of them hashes by their addresses, in any order.
+func TestHashSetOfPointersHashes(t *testing.T) {
+	type cell struct{ v int }
+	a, b, c := &cell{1}, &cell{1}, &cell{2}
+	ab := HashSetOf(a, b, c)
+	ba := HashSetOf(c, b, a).Remove(c).Add(c)
+	if ab.Size() != 3 || !ab.Equal(ba) || ab.Hash() != ba.Hash() {
+		t.Fatalf("pointer sets: size %d, Equal %v, Hash %d and %d", ab.Size(), ab.Equal(ba), ab.Hash(), ba.Hash())
+	}
+	if ab.Hash() != refSetHash(map[*cell]bool{a: true, b: true, c: true}) {
+		t.Fatalf("pointer set Hash %d, want %d", ab.Hash(), refSetHash(map[*cell]bool{a: true, b: true, c: true}))
+	}
+}
+
+// TestHashSetEqualSetsHashAlike builds the same sets through different
+// sequences of Add and Remove and checks they are Equal and hash alike, and
+// that sets differing in one element are not Equal.
+func TestHashSetEqualSetsHashAlike(t *testing.T) {
+	for _, n := range []int{0, 1, 2, 3, 33, 1025} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			p := NewProp(t, n)
+			elems := p.Rng.Perm(n)
+			forward := HashSetFromSlice(elems)
+			backward := EmptyHashSet[int]()
+			for i := n - 1; i >= 0; i-- {
+				backward = backward.Add(elems[i])
+			}
+			// Add extra elements, then remove them again.
+			detour := backward
+			for i := 0; i < n/2+2; i++ {
+				detour = detour.Add(n + i)
+			}
+			for i := 0; i < n/2+2; i++ {
+				detour = detour.Remove(n + i)
+			}
+			for _, s := range []HashSet[int]{backward, detour, forward.Filter(func(int) bool { return true })} {
+				if !forward.Equal(s) || forward.Hash() != s.Hash() {
+					p.Fatalf("equal sets: Equal %v, Hash %d and %d", forward.Equal(s), forward.Hash(), s.Hash())
+				}
+			}
+			if n > 0 {
+				other := forward.Remove(elems[0]).Add(n)
+				if forward.Equal(other) || other.Equal(forward) {
+					p.Fatalf("sets differing in one element are Equal")
+				}
+			}
+		})
 	}
 }
 

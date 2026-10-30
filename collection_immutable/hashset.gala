@@ -37,10 +37,19 @@ type hashSetNode[T comparable] struct {
 type HashSet[T comparable] struct {
     var root   OptionPtr[hashSetNode[T]] // empty when the set is empty
     size   int
+    // hashSum and hashXor are the sum and the XOR of the element hashes
+    // (HashKey). Add and Remove keep them up to date from the hash they route
+    // the element by, so Hash is O(1). They hold only when size != 1: Add
+    // does not hash the first element of an empty set, so a one-element set
+    // of a type HashKey cannot hash stays legal; sums hashes that element on
+    // demand.
+    hashSum uint32
+    hashXor uint32
 }
 
 // EmptyHashSet returns an empty HashSet.
-func EmptyHashSet[T comparable]() HashSet[T] = HashSet[T](root = EmptyOptionPtr[hashSetNode[T]](), size = 0)
+func EmptyHashSet[T comparable]() HashSet[T] =
+    HashSet[T](root = EmptyOptionPtr[hashSetNode[T]](), size = 0, hashSum = uint32(0), hashXor = uint32(0))
 
 // HashSetOf creates a HashSet from variadic arguments.
 // Example: HashSetOf[int](1, 2, 3) creates HashSet(1, 2, 3)
@@ -124,7 +133,7 @@ func (s HashSet[T]) Contains(elem T) bool {
     if s.root.IsEmpty() {
         return false
     }
-    val hashCode = HashKey(elem)
+    val hashCode = HashKeyOf(elem)
     return containsInNode[T](s.root.Get(), elem, hashCode, 0)
 }
 
@@ -153,16 +162,17 @@ func (s HashSet[T]) Add(elem T) HashSet[T] {
     if s.root.IsEmpty() {
         // Create new leaf node
         val leaf = &hashSetNode[T](entries = go_interop.SliceOf(elem), isLeaf = true)
-        return HashSet[T](root = SomePtr(leaf), size = s.size + 1)
+        return HashSet[T](root = SomePtr(leaf), size = 1, hashSum = uint32(0), hashXor = uint32(0))
     }
     val root = s.root.Get()
-    val hashCode = HashKey(elem)
+    val hashCode = HashKeyOf(elem)
 
     // Check if already contains (single hash computation)
     if containsInNode[T](root, elem, hashCode, 0) {
         return s
     }
-    return HashSet[T](root = SomePtr(addToNode[T](root, elem, hashCode, 0)), size = s.size + 1)
+    val (sum, xor) = s.sums()
+    HashSet[T](root = SomePtr(addToNode[T](root, elem, hashCode, 0)), size = s.size + 1, hashSum = sum + hashCode, hashXor = xor ^ hashCode)
 }
 
 // addToNode adds an element to a node, returning a new node.
@@ -184,7 +194,7 @@ func addToNode[T comparable](node Ptr[hashSetNode[T]], elem T, hashCode uint32, 
 
         // Add existing entries
         for i := 0; i < node.entries.Size(); i++ {
-            val existingHash = HashKey(node.entries[i])
+            val existingHash = HashKeyOf(node.entries[i])
             newNode = insertIntoInternalNode[T](newNode, node.entries[i], existingHash, level)
         }
 
@@ -277,7 +287,7 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
         return s
     }
     val root = s.root.Get()
-    val hashCode = HashKey(elem)
+    val hashCode = HashKeyOf(elem)
 
     // Check if contains (single hash computation)
     if !containsInNode[T](root, elem, hashCode, 0) {
@@ -288,7 +298,8 @@ func (s HashSet[T]) Remove(elem T) HashSet[T] {
         return EmptyHashSet[T]()
     }
 
-    return HashSet[T](root = removeFromNode[T](root, elem, hashCode, 0), size = s.size - 1)
+    // size >= 2 here, so hashSum and hashXor hold.
+    HashSet[T](root = removeFromNode[T](root, elem, hashCode, 0), size = s.size - 1, hashSum = s.hashSum - hashCode, hashXor = s.hashXor ^ hashCode)
 }
 
 // removeFromNode removes an element from a node, returning the new node, or
@@ -392,20 +403,39 @@ func (s HashSet[T]) SubsetOf(other HashSet[T]) bool {
     return s.FoldLeft[bool](true, (acc bool, elem T) => acc && other.Contains(elem))
 }
 
-// Equal reports whether other holds the same elements, in any order.
-func (s HashSet[T]) Equal(other HashSet[T]) bool = s.size == other.size && s.SubsetOf(other)
+// Equal reports whether other holds the same elements, in any order. Sets
+// whose element hashes differ cannot be Equal, so that is checked first.
+func (s HashSet[T]) Equal(other HashSet[T]) bool =
+    s.size == other.size &&
+    (s.size < 2 || (s.hashSum == other.hashSum && s.hashXor == other.hashXor)) &&
+    s.SubsetOf(other)
 
 // Hash hashes the elements regardless of their order (std.Hashable), so a
-// HashSet can be a HashSet element or a HashMap key. It visits every element:
-// it is O(n), and not cached.
+// HashSet can be a HashSet element or a HashMap key. It is O(1): it combines
+// the sum and the XOR of the element hashes, which do not depend on the order
+// and which the set keeps as it is built. The element hashes are the ones the
+// set routes its elements by (HashKey), so they agree with how it compares
+// them: a pointer element without Hash hashes by its address.
 func (s HashSet[T]) Hash() uint32 {
-    // The sum and the XOR of the element hashes do not depend on the order.
-    val (sum, xor) = s.FoldLeft((uint32(0), uint32(0)), (acc, elem) => {
-        val h = HashKey(elem)
-        (acc.V1 + h, acc.V2 ^ h)
-    })
+    val (sum, xor) = s.sums()
     HashCombine(HashCombine(HashInt(int64(s.size)), sum), xor)
 }
+
+// sums returns the sum and the XOR of the element hashes: hashSum and hashXor,
+// or, for a one-element set, which does not keep them, its element's hash.
+func (s HashSet[T]) sums() Tuple[uint32, uint32] {
+    if s.size == 1 {
+        val h = HashKeyOf(soleEntry(s.root.Get()))
+        return (h, h)
+    }
+    (s.hashSum, s.hashXor)
+}
+
+// soleEntry is the element of a one-element set's node. Removal prunes empty
+// nodes, so the path down to it has one child at each level; descending it
+// needs no closure, unlike Head.
+func soleEntry[T comparable](node Ptr[hashSetNode[T]]) T =
+    if (node.isLeaf) node.entries[0] else soleEntry(node.children[0])
 
 // ForEach applies a function to each element for side effects.
 func (s HashSet[T]) ForEach(f func(T)) {
