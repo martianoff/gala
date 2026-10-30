@@ -89,11 +89,15 @@ func writeNativeTypeText(b *strings.Builder, t native.TypeNode) {
 		if args := t.TypeArguments(); args.Ok() {
 			b.WriteByte('[')
 			list := args.TypeList()
-			for i := 0; list.Type_(i).Ok(); i++ {
+			for i := 0; ; i++ {
+				arg := list.Type_(i)
+				if !arg.Ok() {
+					break
+				}
 				if i > 0 {
 					b.WriteByte(',')
 				}
-				writeNativeTypeText(b, list.Type_(i))
+				writeNativeTypeText(b, arg)
 			}
 			b.WriteByte(']')
 		}
@@ -124,8 +128,11 @@ func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 	}
 	b.WriteByte('(')
 	list := s.Parameters().ParameterList()
-	for i := 0; list.Parameter(i).Ok(); i++ {
+	for i := 0; ; i++ {
 		param := list.Parameter(i)
+		if !param.Ok() {
+			break
+		}
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -144,11 +151,15 @@ func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 		writeNativeTypeText(b, typ)
 	case results.Ok():
 		b.WriteByte('(')
-		for i := 0; results.Type_(i).Ok(); i++ {
+		for i := 0; ; i++ {
+			r := results.Type_(i)
+			if !r.Ok() {
+				break
+			}
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			writeNativeTypeText(b, results.Type_(i))
+			writeNativeTypeText(b, r)
 		}
 		b.WriteByte(')')
 	}

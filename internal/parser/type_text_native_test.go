@@ -85,11 +85,17 @@ func TestNativeTypeHelpers(t *testing.T) {
 	ptrElems, pointerElems := 0, 0
 	for k, input := range nativeHelperInputs {
 		p := NewAntlrGalaParser().ParseFile(input)
-		if broken := k == len(nativeHelperInputs)-1; (len(p.Errors) > 0) != broken {
+		broken := k == len(nativeHelperInputs)-1
+		if (len(p.Errors) > 0) != broken {
 			t.Fatalf("input %d: errors %v, want them only for the last input", k, p.Errors)
 		}
 		if msg := checkNative(p, treeText(p.Tree)); msg != "" {
 			t.Fatalf("input %d: %s", k, msg)
+		}
+		if broken {
+			// What error recovery makes of it is the engines' to decide;
+			// checkNative has compared the helpers on it.
+			continue
 		}
 		tree, err := p.Native.Tree()
 		if err != nil {

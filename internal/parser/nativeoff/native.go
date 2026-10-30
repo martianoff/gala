@@ -24,7 +24,7 @@ func (GalaNodeRef) Tree() *GalaTree { return nil }
 // Index is -1.
 func (GalaNodeRef) Index() int { return -1 }
 
-// Text is "".
+// Text is "". Its receiver is nil (GalaNodeRef.Tree), so it reads nothing.
 func (t *GalaTree) Text(int) string { return "" }
 
 // StartIndex is -1.
