@@ -416,6 +416,11 @@ func KeysMayEqualByValue[T any]() bool {
 // apart from other keys by identity alone: one with no Equal method that
 // KeysEqualByValue could pass another key to. Any other v panics as HashValue
 // does, since no hash of it is sure to agree with the key's equality.
+//
+// HashKey takes the key as any, not as the collection's key type, so an Equal
+// that KeysEqualByValue would call only for an interface key type (one taking
+// any, say) refuses the pointer for every key type: a panic, never a hash
+// that disagrees with equality.
 func hashKeyByIdentity(v any) uint32 {
 	x := reflect.ValueOf(v)
 	if x.Kind() != reflect.Pointer {
@@ -424,5 +429,19 @@ func hashKeyByIdentity(v any) uint32 {
 	if _, ok := equalMethodTaking(x, x.Type()); ok {
 		return panicNotHashable(v)
 	}
-	return HashUint(uint64(x.Pointer()))
+	return hashAddress(uint64(x.Pointer()))
+}
+
+// hashAddress hashes a pointer's address with the 64-bit finalizer of
+// MurmurHash3. Addresses are aligned, and their low bits are what the
+// collections index buckets by, so every bit is mixed into every other one
+// first; HashUint's byte-wise FNV would leave the low bits of the hash alike
+// for neighbouring allocations.
+func hashAddress(a uint64) uint32 {
+	a ^= a >> 33
+	a *= 0xff51afd7ed558ccd
+	a ^= a >> 33
+	a *= 0xc4ceb3fe1a85ec53
+	a ^= a >> 33
+	return uint32(a)
 }
