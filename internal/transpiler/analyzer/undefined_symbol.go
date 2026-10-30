@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -1009,11 +1010,11 @@ func addQualifierOf(q map[string]bool, qualified string) {
 // exists to raise. `use` describes how the name was used, which this pass does
 // not need — existence is existence however the name is spelled at the call
 // site.
-func (c *undefChecker) Reference(name string, tok antlr.Token, use scopewalk.Use) {
+func (c *undefChecker) Reference(name string, at scopewalk.Site, use scopewalk.Use) {
 	if c.resolves(name) {
 		return
 	}
-	c.report(name, tok)
+	c.reportAt(name, at, "", "")
 }
 
 // resolves reports whether `name` denotes anything at all. Scope is already
@@ -1086,19 +1087,24 @@ func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string
 	if tok == nil {
 		return
 	}
+	c.reportAt(name, scopewalk.Site{Line: tok.GetLine(), Column: tok.GetColumn(), Text: tok.GetText()}, msg, hint)
+}
+
+// reportAt is reportWith at a site rather than a token.
+func (c *undefChecker) reportAt(name string, at scopewalk.Site, msg, hint string) {
 	// The span covers the reported token, which is normally the identifier
 	// itself. For a name found inside an interpolated string the token is the
 	// whole literal (a re-parsed fragment has no file position of its own), so
 	// deriving the span from the token's text underlines the literal rather
 	// than a name-length slice of it.
-	span := tok.GetColumn() + len([]rune(tok.GetText()))
+	span := at.Column + utf8.RuneCountInString(at.Text)
 	if idx, seen := c.reported[name]; seen {
 		// The type pass runs after the value pass, so a name both report may
 		// first be used in a type position earlier in the file: point there.
 		prev := c.errs[idx]
-		if c.inTypePass && (tok.GetLine() < prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() < prev.Column)) {
+		if c.inTypePass && (at.Line < prev.Line || (at.Line == prev.Line && at.Column < prev.Column)) {
 			moved := *prev
-			moved.Line, moved.Column = tok.GetLine(), tok.GetColumn()
+			moved.Line, moved.Column = at.Line, at.Column
 			c.errs[idx] = moved.WithSpan(span)
 		}
 		return
@@ -1111,7 +1117,7 @@ func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string
 	}
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUndefinedVariable,
-		tok.GetLine(), tok.GetColumn(), msg, hint,
+		at.Line, at.Column, msg, hint,
 	).WithSpan(span)
 	c.reported[name] = len(c.errs)
 	c.errs = append(c.errs, err)

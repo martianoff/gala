@@ -5,8 +5,6 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
-	"martianoff/gala/internal/interpolation"
-	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 )
 
@@ -254,7 +252,7 @@ func (w antlrWalk) walkForStatement(fs grammar.IForStatementContext) {
 			} else {
 				// `i, v = range xs` — assignment to existing variables.
 				for _, id := range idList.AllIdentifier() {
-					w.reference(id.GetText(), id.GetStart(), Use{Whole: true})
+					w.referenceID(id, Use{Whole: true})
 				}
 			}
 		}
@@ -284,7 +282,7 @@ func (w antlrWalk) walkPostfixExpr(ctx grammar.IPostfixExprContext) {
 
 	if id := bareIdentPrimary(pe); id != nil {
 		path, whole := classifySuffixes(suffixes, len(caseClauses) > 0)
-		w.reference(id.GetText(), id.GetStart(), Use{Path: path, Whole: whole})
+		w.referenceID(id, Use{Path: path, Whole: whole})
 	} else {
 		// Base is not a bare identifier (literal, tuple/paren, composite
 		// literal, lambda, if-expression, partial function): recurse into it.
@@ -353,7 +351,7 @@ func (w antlrWalk) walkPrimary(ctx grammar.IPrimaryContext) {
 		return
 	}
 	if id := ctx.Identifier(); id != nil {
-		w.reference(id.GetText(), id.GetStart(), Use{Whole: true})
+		w.referenceID(id, Use{Whole: true})
 		return
 	}
 	if lit := ctx.Literal(); lit != nil {
@@ -371,66 +369,29 @@ func (w antlrWalk) walkPrimary(ctx grammar.IPrimaryContext) {
 	}
 }
 
-// walkLiteral descends into an interpolated (`s"…"`) or format (`f"…"`) string.
-// Such a literal is a single token whose embedded `${…}` / `$name` expressions
-// are NOT parse-tree children, so each is re-parsed and walked in the CURRENT
-// scope. Every other literal contributes no references.
-//
-// A re-parsed fragment is its own token stream: its tokens' line/column are
-// relative to the fragment, so reporting one verbatim would put a caret on line
-// 1 of the file. For the duration of the walk every reference is therefore
-// attributed to the string literal token itself, which is the position a reader
-// needs — the literal that contains the offending name. Resolving to the exact
-// column inside the literal would need Split to preserve each part's span in
-// the original text, which it does not (it unescapes as it goes).
-//
-// FOLLOW-UP: threading a byte offset (and length) for each embedded part
-// through interpolation.Split would let a consumer add it to this token's
-// start and point the caret at the offending name inside the literal rather
-// than at the literal as a whole. The transformer would benefit too — it emits
-// per-part Sprintf arguments and has the same coarse position. The obstacle is
-// only that Split builds its parts by unescaping into a strings.Builder, so
-// the mapping back to source columns is lost; recording spans as it scans is
-// mechanical but touches a shared, well-tested splitter.
+// walkLiteral walks the embedded expressions of an interpolated (`s"…"`) or
+// format (`f"…"`) string (see walkInterpolated). Every other literal
+// contributes no references.
 func (w antlrWalk) walkLiteral(lit grammar.ILiteralContext) {
 	if !w.opts.ParseInterpolations {
 		return
 	}
-	var tok antlr.TerminalNode
-	if t := lit.INTERPOLATED_STRING(); t != nil {
-		tok = t
-	} else if t := lit.FORMAT_STRING(); t != nil {
-		tok = t
-	} else {
+	tok := lit.INTERPOLATED_STRING()
+	if tok == nil {
+		tok = lit.FORMAT_STRING()
+	}
+	if tok == nil {
 		return
 	}
-	raw := tok.GetText()
-	if len(raw) < 3 {
-		return
-	}
-	if w.interpParser == nil {
-		w.interpParser = parser.NewAntlrGalaParser()
-	}
+	sym := tok.GetSymbol()
+	w.walkInterpolated(Site{Line: sym.GetLine(), Column: sym.GetColumn(), Text: tok.GetText()})
+}
 
-	prev := w.posOverride
-	w.posOverride = tok.GetSymbol()
-	defer func() { w.posOverride = prev }()
-
-	// Strip the `s"`/`f"` prefix and the closing `"`, matching the transformer.
-	content := raw[2 : len(raw)-1]
-	for _, part := range interpolation.Split(content) {
-		if part.IsLiteral {
-			continue
-		}
-		expr, errs := w.interpParser.ParseExpression(part.Text)
-		if expr == nil {
-			continue
-		}
-		if len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
-			continue
-		}
-		w.walk(expr)
-	}
+// referenceID reports the identifier id as a reference, at its token.
+func (w antlrWalk) referenceID(id grammar.IIdentifierContext, use Use) {
+	name := id.GetText()
+	tok := id.GetStart()
+	w.reference(name, Site{Line: tok.GetLine(), Column: tok.GetColumn(), Text: name}, use)
 }
 
 // walkCompositeLiteral walks the element values of a composite literal. The
@@ -510,7 +471,7 @@ func (w antlrWalk) walkPatternAsValue(pat grammar.IPatternContext) {
 			return
 		}
 		if id := p.Identifier(); id != nil {
-			w.reference(id.GetText(), id.GetStart(), Use{Whole: true})
+			w.referenceID(id, Use{Whole: true})
 		}
 	}
 }

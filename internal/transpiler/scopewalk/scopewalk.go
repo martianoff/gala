@@ -60,6 +60,7 @@ package scopewalk
 import (
 	"github.com/antlr4-go/antlr/v4"
 
+	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 )
@@ -79,13 +80,23 @@ type Use struct {
 	Whole bool
 }
 
+// Site is the token a reference is reported at: normally the identifier
+// itself, but the whole string literal for a name inside an interpolation (see
+// walkInterpolated). It carries what a consumer reads off the token, whichever
+// tree the walk ran on.
+type Site struct {
+	Line   int    // 1-based
+	Column int    // 0-based, in code points
+	Text   string // the token's text
+}
+
 // Visitor receives the walk's output.
 type Visitor interface {
 	// Reference reports a value-position identifier that no scope entered by
 	// the walk binds. The blank identifier is never reported. A name used
 	// several ways is reported once per use, so consumers that aggregate must
 	// de-duplicate.
-	Reference(name string, tok antlr.Token, use Use)
+	Reference(name string, at Site, use Use)
 }
 
 // Options carries the narrow behavioural differences between the passes built
@@ -141,14 +152,14 @@ type Walker struct {
 	// consumer that leaves ParseInterpolations off never pays for it.
 	interpParser *parser.AntlrGalaParser
 
-	// posOverride, when set, replaces the token reported for a reference. A
+	// posOverride, when set, replaces the site reported for a reference. A
 	// re-parsed interpolation fragment is its own token stream, so its tokens
 	// carry positions relative to the FRAGMENT, not the file — reporting one
 	// verbatim points the caret at line 1, column 1 of the source. While a
 	// fragment is being walked this holds the enclosing string literal's
 	// token, so a reference inside `s"…"` is attributed to the literal that
 	// contains it.
-	posOverride antlr.Token
+	posOverride *Site
 }
 
 // New returns a Walker that reports to v.
@@ -240,14 +251,67 @@ func (w *Walker) BindParameters(params grammar.IParametersContext) {
 // reference emits an unbound value-position reference. Inside a re-parsed
 // interpolation fragment the reported token is the enclosing string literal —
 // see posOverride.
-func (w *Walker) reference(name string, tok antlr.Token, use Use) {
+func (w *Walker) reference(name string, at Site, use Use) {
 	if name == "" || name == "_" || w.Bound(name) {
 		return
 	}
 	if w.posOverride != nil {
-		tok = w.posOverride
+		at = *w.posOverride
 	}
-	w.visitor.Reference(name, tok, use)
+	w.visitor.Reference(name, at, use)
+}
+
+// walkInterpolated walks the embedded expressions of lit, an interpolated
+// (`s"…"`) or format (`f"…"`) string literal. Such a literal is a single
+// token whose embedded `${…}` / `$name` expressions are NOT parse-tree
+// children, so each is re-parsed and walked in the CURRENT scope.
+//
+// A re-parsed fragment is its own token stream: its tokens' line/column are
+// relative to the fragment, so reporting one verbatim would put a caret on line
+// 1 of the file. For the duration of the walk every reference is therefore
+// attributed to the string literal token itself, which is the position a reader
+// needs — the literal that contains the offending name. Resolving to the exact
+// column inside the literal would need Split to preserve each part's span in
+// the original text, which it does not (it unescapes as it goes).
+//
+// FOLLOW-UP: threading a byte offset (and length) for each embedded part
+// through interpolation.Split would let a consumer add it to this token's
+// start and point the caret at the offending name inside the literal rather
+// than at the literal as a whole. The transformer would benefit too — it emits
+// per-part Sprintf arguments and has the same coarse position. The obstacle is
+// only that Split builds its parts by unescaping into a strings.Builder, so
+// the mapping back to source columns is lost; recording spans as it scans is
+// mechanical but touches a shared, well-tested splitter.
+func (w *Walker) walkInterpolated(lit Site) {
+	raw := lit.Text
+	if len(raw) < 3 {
+		return
+	}
+	if w.interpParser == nil {
+		w.interpParser = parser.NewAntlrGalaParser()
+	}
+
+	prev := w.posOverride
+	w.posOverride = &lit
+	defer func() { w.posOverride = prev }()
+
+	// Strip the `s"`/`f"` prefix and the closing `"`, matching the transformer.
+	content := raw[2 : len(raw)-1]
+	for _, part := range interpolation.Split(content) {
+		if part.IsLiteral {
+			continue
+		}
+		expr, errs := w.interpParser.ParseExpression(part.Text)
+		if expr == nil {
+			continue
+		}
+		if len(errs) > 0 && w.opts.RequireCleanInterpolationParse {
+			continue
+		}
+		// A fragment's parse is ANTLR's tree alone, whatever tree the
+		// literal came from.
+		antlrWalk{w}.walk(expr)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,7 +20,7 @@ type collector struct {
 
 func newCollector() *collector { return &collector{uses: map[string]scopewalk.Use{}} }
 
-func (c *collector) Reference(name string, tok antlr.Token, use scopewalk.Use) {
+func (c *collector) Reference(name string, _ scopewalk.Site, use scopewalk.Use) {
 	if _, seen := c.uses[name]; !seen {
 		c.names = append(c.names, name)
 	}
