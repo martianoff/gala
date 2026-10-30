@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+# Stands in for //internal/transpiler/scopewalk/nativewalk, under its import
+# path, in builds without galop's parser: no native walk.
+go_library(
+    name = "nativewalkoff",
+    srcs = ["nativewalk.go"],
+    importpath = "martianoff/gala/internal/transpiler/scopewalk/nativewalk",  # keep
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/parser",
+        "//internal/transpiler/scopewalk",
+    ],
+)

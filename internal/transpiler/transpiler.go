@@ -928,13 +928,13 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 		return "", galaerr.WithFilePath(err, filePath)
 	}
 
-	// Nothing reads the native tree yet: drop its handle, and the token stream
-	// and source text it holds, before the analysis.
-	parsed.Native = nil
-
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
+	// The undefined-symbol check's scope walk, in the analysis, is the one
+	// reader of the native tree: drop its handle, and the tree (or the token
+	// stream and source text it holds until converted), before the transform.
+	parsed.Native = nil
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks
 		// one, so the CLI's rich renderer can re-read the source for a snippet.

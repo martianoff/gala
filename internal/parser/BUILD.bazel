@@ -14,7 +14,7 @@ bool_flag(
 config_setting(
     name = "galop_wanted",
     flag_values = {":antlr": "false"},
-    visibility = ["//internal/parser:__subpackages__"],
+    visibility = ["//:__subpackages__"],
 )
 
 go_library(

@@ -4,13 +4,13 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler/scopewalk"
+	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
 
 // collector records every unbound reference the walker reports.
@@ -21,7 +21,7 @@ type collector struct {
 
 func newCollector() *collector { return &collector{uses: map[string]scopewalk.Use{}} }
 
-func (c *collector) Reference(name string, tok antlr.Token, use scopewalk.Use) {
+func (c *collector) Reference(name string, _ scopewalk.Site, use scopewalk.Use) {
 	if _, seen := c.uses[name]; !seen {
 		c.names = append(c.names, name)
 	}
@@ -41,24 +41,30 @@ func (c *collector) sorted() []string {
 }
 
 // walkFuncBody parses a whole source file and walks the body of its single
-// top-level function, returning the unbound references.
+// top-level function, returning the unbound references. It walks ANTLR's tree,
+// and the native tree when the build has one, and requires the same result.
 func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 	t.Helper()
-	p := parser.NewAntlrGalaParser()
-	tree, _, errs := p.ParseFile(src).Strict()
+	parsed := parser.NewAntlrGalaParser().ParseFile(src)
+	tree, _, errs := parsed.Strict()
 	require.Empty(t, errs, "source must parse")
 	sf, ok := tree.(*grammar.SourceFileContext)
 	require.True(t, ok)
 
-	c := newCollector()
-	w := scopewalk.New(c, opts)
-	w.PushScope()
-	for _, td := range sf.AllTopLevelDeclaration() {
-		if fd := td.FunctionDeclaration(); fd != nil {
-			w.WalkFunctionDeclaration(fd)
+	walk := func(nw scopewalk.NativeWalker) *collector {
+		c := newCollector()
+		w := scopewalk.New(c, opts).WithNative(nw)
+		w.PushScope()
+		for _, td := range sf.AllTopLevelDeclaration() {
+			if fd := td.FunctionDeclaration(); fd != nil {
+				w.WalkFunctionDeclaration(fd)
+			}
 		}
+		w.PopScope()
+		return c
 	}
-	w.PopScope()
+	c := walk(nil)
+	require.Equal(t, c, walk(nativewalk.For(parsed)), "the native walk must agree with ANTLR's")
 	return c
 }
 
@@ -95,6 +101,11 @@ func TestScopeModel(t *testing.T) {
 			name: "range vars bind, ranged value is a reference",
 			body: "for i, v := range xs { Println(i + v) }\nreturn outer",
 			want: []string{"Println", "outer", "xs"},
+		},
+		{
+			name: "range assignment references its vars, whatever the ranged text holds",
+			body: "for k = range lookup(\":=\") { Println(k) }\nreturn outer",
+			want: []string{"Println", "k", "lookup", "outer"},
 		},
 		{
 			name: "if-init binding does not leak past the statement",

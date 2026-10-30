@@ -13,7 +13,6 @@ go_library(
         "//internal/parser/grammar",
         "//internal/transpiler",
         "//internal/transpiler/scopewalk",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
     ],
 )
 

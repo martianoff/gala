@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "scopewalk",
-    srcs = ["scopewalk.go"],
+    srcs = [
+        "scopewalk.go",
+        "walk_antlr.go",
+    ],
     importpath = "martianoff/gala/internal/transpiler/scopewalk",
     visibility = ["//:__subpackages__"],
     deps = [
@@ -20,8 +23,11 @@ go_test(
         ":scopewalk",
         "//internal/parser",
         "//internal/parser/grammar",
-        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-    ],
+    ] + select({
+        # nativewalk, or its stand-in under the same import path.
+        "//internal/parser/grammar:galop_enabled": ["//internal/transpiler/scopewalk/nativewalk"],  # keep
+        "//conditions:default": ["//internal/transpiler/scopewalk/nativewalkoff"],  # keep
+    }),
 )

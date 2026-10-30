@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/antlr4-go/antlr/v4"
 
@@ -330,9 +331,11 @@ type undefChecker struct {
 // the package (by canonical path) to the GALA package names it dot-imports; a
 // method whose receiver type lives in another file may use that file's dot
 // imports in its signature, the bare-name form of the allowance GALA-E0025
-// makes.
+// makes. native walks sourceFile on its native tree, or is nil (see
+// scopewalk.Walker.WithNative).
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
+	native scopewalk.NativeWalker,
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
@@ -363,7 +366,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		imports:        imports,
 		sourceTypes:    sourceTypes,
 	}
-	c.walker = scopewalk.New(c, undefWalkOptions())
+	c.walker = scopewalk.New(c, undefWalkOptions()).WithNative(native)
 	c.walkSourceFile(sourceFile)
 
 	// Type positions are invisible to the value walker, so they get their own
@@ -1009,11 +1012,11 @@ func addQualifierOf(q map[string]bool, qualified string) {
 // exists to raise. `use` describes how the name was used, which this pass does
 // not need — existence is existence however the name is spelled at the call
 // site.
-func (c *undefChecker) Reference(name string, tok antlr.Token, use scopewalk.Use) {
+func (c *undefChecker) Reference(name string, at scopewalk.Site, use scopewalk.Use) {
 	if c.resolves(name) {
 		return
 	}
-	c.report(name, tok)
+	c.reportAt(name, at, "", "")
 }
 
 // resolves reports whether `name` denotes anything at all. Scope is already
@@ -1083,7 +1086,13 @@ func (c *undefChecker) isReported(name string) bool {
 // reportWith reports name at tok with msg and hint. An empty msg means
 // `undefined: name`, an empty hint hintFor's.
 func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string) {
-	if tok == nil {
+	c.reportAt(name, scopewalk.TokenSite(tok), msg, hint)
+}
+
+// reportAt is reportWith at a site rather than a token. A name with no site
+// (no token) is not reported.
+func (c *undefChecker) reportAt(name string, at scopewalk.Site, msg, hint string) {
+	if at.NoSite() {
 		return
 	}
 	// The span covers the reported token, which is normally the identifier
@@ -1091,14 +1100,14 @@ func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string
 	// whole literal (a re-parsed fragment has no file position of its own), so
 	// deriving the span from the token's text underlines the literal rather
 	// than a name-length slice of it.
-	span := tok.GetColumn() + len([]rune(tok.GetText()))
+	span := at.Column + utf8.RuneCountInString(at.Text)
 	if idx, seen := c.reported[name]; seen {
 		// The type pass runs after the value pass, so a name both report may
 		// first be used in a type position earlier in the file: point there.
 		prev := c.errs[idx]
-		if c.inTypePass && (tok.GetLine() < prev.Line || (tok.GetLine() == prev.Line && tok.GetColumn() < prev.Column)) {
+		if c.inTypePass && (at.Line < prev.Line || (at.Line == prev.Line && at.Column < prev.Column)) {
 			moved := *prev
-			moved.Line, moved.Column = tok.GetLine(), tok.GetColumn()
+			moved.Line, moved.Column = at.Line, at.Column
 			c.errs[idx] = moved.WithSpan(span)
 		}
 		return
@@ -1111,7 +1120,7 @@ func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string
 	}
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeUndefinedVariable,
-		tok.GetLine(), tok.GetColumn(), msg, hint,
+		at.Line, at.Column, msg, hint,
 	).WithSpan(span)
 	c.reported[name] = len(c.errs)
 	c.errs = append(c.errs, err)

@@ -40,8 +40,6 @@ package concurrency
 // enforcement. It is called only by its tests. PR3 consumes it.
 
 import (
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/scopewalk"
@@ -135,10 +133,10 @@ func newCaptureCollector() *captureCollector {
 // Reference records one unbound value-position use of name. A whole-value use
 // marks the capture Whole (its entire type must be Shareable); a pure field
 // read accumulates the distinct access path instead.
-func (c *captureCollector) Reference(name string, tok antlr.Token, use scopewalk.Use) {
+func (c *captureCollector) Reference(name string, at scopewalk.Site, use scopewalk.Use) {
 	idx, ok := c.index[name]
 	if !ok {
-		c.out = append(c.out, Capture{Name: name, Pos: transpiler.PosFromToken(tok)})
+		c.out = append(c.out, Capture{Name: name, Pos: transpiler.SourcePos{Line: at.Line, Column: at.Column}})
 		idx = len(c.out) - 1
 		c.index[name] = idx
 	}
