@@ -26,33 +26,38 @@ import (
 // bare — is collected on ANTLR's tree. A file is collected on one tree or
 // the other, never on a mix: the only crossing is inferPackageValInitType,
 // expression inference not yet ported, which reads the initializer's
-// context (nativeFile.ctx).
+// context (nativeFile.expressionCtx).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
 
 // nativeFile is a file's native tree, with the handle it came from for the
-// crossings to ANTLR's tree.
+// crossings to ANTLR's tree, or the zero nativeFile: no tree (see ok).
 type nativeFile struct {
 	handle *galaparser.Native
 	root   native.SourceFileNode
 }
 
 // nativeFileOf is the native tree of a parse's handle h, converted now if it
-// was not yet, and true; false when there is none (a nil handle, or the
-// conversion failed), and the file is collected on ANTLR's tree. The caller
-// passes no handle for a parse with syntax errors: an error-recovered tree
-// is ANTLR's to read.
-func nativeFileOf(h *galaparser.Native) (nativeFile, bool) {
+// was not yet, or no tree when there is none (a nil handle, or the conversion
+// failed) or its bridge to ANTLR's tree does not hold, and the file is
+// collected on ANTLR's tree. A handle comes from Parsed.CleanNative: an
+// error-recovered tree is ANTLR's to read.
+func nativeFileOf(h *galaparser.Native) nativeFile {
 	tree, err := h.Tree()
 	if err != nil {
-		return nativeFile{}, false
+		return nativeFile{}
 	}
 	root := tree.Root()
 	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
-		return nativeFile{}, false
+		return nativeFile{}
 	}
-	return nativeFile{handle: h, root: native.SourceFileNode{GalaNodeRef: root}}, true
+	// The crossing reads each node's context from the bridge, which holds one
+	// for every node or none.
+	if _, ok := h.Ctx(root).(*grammar.SourceFileContext); !ok {
+		return nativeFile{}
+	}
+	return nativeFile{handle: h, root: native.SourceFileNode{GalaNodeRef: root}}
 }
 
 // ok reports whether f is a native tree, not the zero nativeFile.
@@ -125,13 +130,13 @@ func nativeTypeParamsOf(tps native.TypeParametersNode) ([]string, map[string]str
 	var names []string
 	var constraints map[string]string
 	for tp := range nativeKids[native.TypeParameterNode](list.GalaNodeRef, native.GalaKIND_typeParameter) {
-		name, constraint := tp.Identifier(0), tp.Identifier(1)
-		names = append(names, name.GetText())
+		name, constraint := tp.Identifier(0).GetText(), tp.Identifier(1)
+		names = append(names, name)
 		if constraint.Ok() {
 			if constraints == nil {
 				constraints = make(map[string]string)
 			}
-			constraints[name.GetText()] = constraint.GetText()
+			constraints[name] = constraint.GetText()
 		}
 	}
 	return names, constraints
@@ -160,7 +165,8 @@ func nativeBaseTypeName(t native.TypeNode) string {
 		return qid.GetText()
 	}
 	if first := t.Type_(0); first.Ok() {
-		if strings.HasPrefix(t.GetText(), "[]") {
+		// A slice, `[]T`, is the one type whose text starts with `[`.
+		if t.Tree().Text(t.StartIndex()) == "[" {
 			return "[]" + nativeBaseTypeName(first)
 		}
 		return nativeBaseTypeName(first)
@@ -188,15 +194,15 @@ func nativeReceiverTypeArgNames(t native.TypeNode) []string {
 	return names
 }
 
-// nativeIsPointerReceiver is isPointerReceiver.
-func nativeIsPointerReceiver(recv native.ReceiverNode) bool {
-	_, isPtr := galaparser.NativePointerElem(recv.Type_())
-	return isPtr
-}
-
-// nativeIsPtrReceiver is isPtrReceiver.
-func nativeIsPtrReceiver(recv native.ReceiverNode) bool {
-	return galaparser.NativePtrElem(recv.Type_()).Ok()
+// nativeReceiverPointers is isPointerReceiver and isPtrReceiver of a
+// receiver of type t: whether it is a pointer, `*T` or `Ptr[T]`, and whether
+// it is the non-null `Ptr[T]`.
+func nativeReceiverPointers(t native.TypeNode) (pointer, ptr bool) {
+	if galaparser.NativePtrElem(t).Ok() {
+		return true, true
+	}
+	_, pointer = galaparser.NativePointerElem(t)
+	return pointer, false
 }
 
 // nativeSignatureResult is signatureResult.
@@ -225,7 +231,13 @@ func (a *galaAnalyzer) nativeCausesInstantiationCycle(recvType native.TypeNode, 
 	if !retType.Ok() {
 		return false
 	}
-	return instantiationCycle(galaparser.NativeTypeText(nativePointee(recvType)), galaparser.NativeTypeText(nativePointee(retType)))
+	// A receiver without type arguments, as most are, has no cycle:
+	// instantiationCycle finds none in a text without `[`.
+	recvText := galaparser.NativeTypeText(nativePointee(recvType))
+	if !strings.Contains(recvText, "[") {
+		return false
+	}
+	return instantiationCycle(recvText, galaparser.NativeTypeText(nativePointee(retType)))
 }
 
 // nativePointee is pointee.
@@ -342,18 +354,18 @@ func nativeOpaqueDeclOf(n native.OpaqueTypeDeclarationNode, docs galaparser.Docs
 	return d
 }
 
-// nativeParams is the parameters of a parameters node, in order.
-func nativeParams(params native.ParametersNode) iter.Seq[native.ParameterNode] {
-	return nativeKids[native.ParameterNode](params.ParameterList().GalaNodeRef, native.GalaKIND_parameter)
-}
-
-// qualifiedName is name keyed in package pkgName: qualified unless the
-// package is main or test, or there is none.
-func qualifiedName(pkgName, name string) string {
-	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		return pkgName + "." + name
+// nativeParams is the parameters of a parameters node, in order, with their
+// indexes.
+func nativeParams(params native.ParametersNode) iter.Seq2[int, native.ParameterNode] {
+	return func(yield func(int, native.ParameterNode) bool) {
+		i := 0
+		for p := range nativeKids[native.ParameterNode](params.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+			if !yield(i, p) {
+				return
+			}
+			i++
+		}
 	}
-	return name
 }
 
 // collectFileTypesNative is collectFileTypes.
@@ -523,7 +535,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 			}
 
 			if params := ctx.Parameters(); params.Ok() {
-				for pctx := range nativeParams(params) {
+				for _, pctx := range nativeParams(params) {
 					fieldID := pctx.Identifier()
 					fieldName := fieldID.GetText()
 					// Reject duplicate field names within a shorthand
@@ -563,7 +575,7 @@ func (a *galaAnalyzer) nativeMethodSpec(methodMeta *transpiler.MethodMetadata, m
 	allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
 	sig := msCtx.Signature()
 	methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
-	for paramCtx := range nativeParams(sig.Parameters()) {
+	for _, paramCtx := range nativeParams(sig.Parameters()) {
 		if typ := paramCtx.Type_(); typ.Ok() {
 			methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, allTypeParams))
 			methodMeta.Variadic = paramCtx.ELLIPSIS().Ok()
@@ -632,25 +644,27 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 		declPos := nativePos(decl)
 		sig := ctx.Signature()
 		if recvCtx := ctx.Receiver(); recvCtx.Ok() {
-			baseType := nativeBaseTypeName(recvCtx.Type_())
+			recvType := recvCtx.Type_()
+			baseType := nativeBaseTypeName(recvType)
 			if baseType == "" {
 				continue
 			}
 			id := ctx.Identifier()
 			methodName := id.GetText()
 			fullBaseType := baseType
-			if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(baseType, ".") {
-				fullBaseType = pkgName + "." + baseType
+			if !strings.Contains(baseType, ".") {
+				fullBaseType = qualifiedName(pkgName, baseType)
 			}
 
+			pointer, ptr := nativeReceiverPointers(recvType)
 			methodMeta := &transpiler.MethodMetadata{
 				Name:            methodName,
 				Package:         pkgName,
 				Doc:             nativeDocAt(docs, decl),
 				Pos:             nativePos(id.GalaNodeRef),
 				ReceiverName:    recvCtx.Identifier().GetText(),
-				PointerReceiver: nativeIsPointerReceiver(recvCtx),
-				PtrReceiver:     nativeIsPtrReceiver(recvCtx),
+				PointerReceiver: pointer,
+				PtrReceiver:     ptr,
 			}
 			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 
@@ -660,17 +674,16 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 			if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 				typeTypeParams = typeMeta.TypeParams
 			}
-			recvNames := nativeReceiverTypeArgNames(recvCtx.Type_())
+			recvNames := nativeReceiverTypeArgNames(recvType)
 			allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
 			// Go generics instantiation cycle: see collectFileFuncs.
-			if a.nativeCausesInstantiationCycle(recvCtx.Type_(), sig) {
+			if a.nativeCausesInstantiationCycle(recvType, sig) {
 				methodMeta.IsGeneric = true
 			}
 
-			i := 0
-			for paramCtx := range nativeParams(sig.Parameters()) {
+			for i, paramCtx := range nativeParams(sig.Parameters()) {
 				if typ := paramCtx.Type_(); typ.Ok() {
 					methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, allTypeParams))
 					methodMeta.Variadic = paramCtx.ELLIPSIS().Ok()
@@ -679,7 +692,6 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				}
 				methodMeta.ParamNames = append(methodMeta.ParamNames, nativeParamName(paramCtx))
 				nativeRecordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
-				i++
 			}
 
 			// The signature takes its type's parameter names after
@@ -739,8 +751,7 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 		funcMeta.ReturnType, funcMeta.GoResults = a.nativeSignatureResult(sig, pkgName, funcMeta.TypeParams)
 		// Source spans of each default expression, keyed by param index.
 		var defaultSpans map[int]defaultExprSpan
-		i := 0
-		for paramCtx := range nativeParams(sig.Parameters()) {
+		for i, paramCtx := range nativeParams(sig.Parameters()) {
 			if typ := paramCtx.Type_(); typ.Ok() {
 				funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, funcMeta.TypeParams))
 				funcMeta.Variadic = paramCtx.ELLIPSIS().Ok()
@@ -754,7 +765,6 @@ func (a *galaAnalyzer) collectFileFuncsNative(nf nativeFile, fd *fileDecls) erro
 				}
 				defaultSpans[i] = nativeSpanOf(expr.GalaNodeRef)
 			}
-			i++
 		}
 		// Validate default parameter rules once the sibling files' type
 		// declarations are known too (section 2.5).
@@ -1020,7 +1030,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 				meta.DefinedIn = absSibPath
 			}
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
-			for pctx := range nativeParams(ctx.Parameters()) {
+			for _, pctx := range nativeParams(ctx.Parameters()) {
 				fieldID := pctx.Identifier()
 				fieldName := fieldID.GetText()
 				decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(galaparser.NativeTypeText(pctx.Type_()), pkgName, meta.TypeParams), pctx.VAL().Ok(), pctx.VAR().Ok())
@@ -1090,14 +1100,15 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 		id := ctx.Identifier()
 		sig := ctx.Signature()
 		if recvCtx := ctx.Receiver(); recvCtx.Ok() {
-			baseType := nativeBaseTypeName(recvCtx.Type_())
+			recvType := recvCtx.Type_()
+			baseType := nativeBaseTypeName(recvType)
 			if baseType == "" {
 				continue
 			}
 			methodName := id.GetText()
 			fullBaseType := baseType
-			if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(baseType, ".") {
-				fullBaseType = pkgName + "." + baseType
+			if !strings.Contains(baseType, ".") {
+				fullBaseType = qualifiedName(pkgName, baseType)
 			}
 
 			sibPos := nativePos(id.GalaNodeRef)
@@ -1110,14 +1121,15 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 					sibDisplay, decls.mainFile, sibPos)
 			}
 
+			pointer, ptr := nativeReceiverPointers(recvType)
 			methodMeta := &transpiler.MethodMetadata{
 				Name:            methodName,
 				Package:         pkgName,
 				Doc:             nativeDocAt(docs, decl),
 				Pos:             sibPos,
 				ReceiverName:    recvCtx.Identifier().GetText(),
-				PointerReceiver: nativeIsPointerReceiver(recvCtx),
-				PtrReceiver:     nativeIsPtrReceiver(recvCtx),
+				PointerReceiver: pointer,
+				PtrReceiver:     ptr,
 				DefinedIn:       absSibPath,
 			}
 			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
@@ -1126,16 +1138,15 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 			if typeMeta, ok := richAST.Types[fullBaseType]; ok {
 				typeTypeParams = typeMeta.TypeParams
 			}
-			recvNames := nativeReceiverTypeArgNames(recvCtx.Type_())
+			recvNames := nativeReceiverTypeArgNames(recvType)
 			allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
 
 			methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
 			// IsGeneric: see extractSiblingFullMetadata.
-			if a.nativeCausesInstantiationCycle(recvCtx.Type_(), sig) {
+			if a.nativeCausesInstantiationCycle(recvType, sig) {
 				methodMeta.IsGeneric = true
 			}
-			i := 0
-			for paramCtx := range nativeParams(sig.Parameters()) {
+			for i, paramCtx := range nativeParams(sig.Parameters()) {
 				if typ := paramCtx.Type_(); typ.Ok() {
 					methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, allTypeParams))
 					methodMeta.Variadic = paramCtx.ELLIPSIS().Ok()
@@ -1144,7 +1155,6 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 				}
 				methodMeta.ParamNames = append(methodMeta.ParamNames, nativeParamName(paramCtx))
 				nativeRecordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
-				i++
 			}
 			decls.recordReceiver(methodMeta, recvNames, fullBaseType)
 
@@ -1189,8 +1199,7 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 		}
 		funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.nativeDeclaredTypeParams(ctx.TypeParameters(), pkgName)
 		funcMeta.ReturnType, funcMeta.GoResults = a.nativeSignatureResult(sig, pkgName, funcMeta.TypeParams)
-		i := 0
-		for paramCtx := range nativeParams(sig.Parameters()) {
+		for i, paramCtx := range nativeParams(sig.Parameters()) {
 			if typ := paramCtx.Type_(); typ.Ok() {
 				funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.NativeTypeText(typ), pkgName, funcMeta.TypeParams))
 				funcMeta.Variadic = paramCtx.ELLIPSIS().Ok()
@@ -1199,7 +1208,6 @@ func (a *galaAnalyzer) extractSiblingDeclsNative(nf nativeFile, pkgName string, 
 			}
 			funcMeta.ParamNames = append(funcMeta.ParamNames, nativeParamName(paramCtx))
 			nativeRecordParamDefault(&funcMeta.DefaultExprs, i, paramCtx)
-			i++
 		}
 		richAST.Functions[fullFuncName] = funcMeta
 	}

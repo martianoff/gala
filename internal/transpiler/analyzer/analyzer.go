@@ -524,16 +524,7 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 // AnalyzeParsed analyzes parsed's tree with its doc comments and its native
 // tree (see analyze).
 func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
-	return a.analyze(parsed.Tree, parsed.Docs, nativewalk.For(parsed), collectionHandle(parsed), filePath)
-}
-
-// collectionHandle is the native-tree handle a file's declarations are
-// collected on (see nativeFileOf): parsed's, unless it has syntax errors.
-func collectionHandle(parsed *galaparser.Parsed) *galaparser.Native {
-	if parsed == nil || len(parsed.Errors) > 0 {
-		return nil
-	}
-	return parsed.Native
+	return a.analyze(parsed.Tree, parsed.Docs, nativewalk.For(parsed), parsed.CleanNative(), filePath)
 }
 
 // analyze walks the ANTLR tree and collects metadata for RichAST.
@@ -1142,10 +1133,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
 	// The file's own declarations are collected on its native tree when it
 	// has one, on its ANTLR tree when not (see collect_native.go).
-	var nf nativeFile
-	if handle != nil {
-		nf, _ = nativeFileOf(handle)
-	}
+	nf := nativeFileOf(handle)
 
 	// 1. Collect all types
 	if nf.ok() {
@@ -1665,11 +1653,7 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 // variant case names within the same sealed type).
 func (a *galaAnalyzer) registerSealedType(decl sealedDecl, pkgName string, richAST *transpiler.RichAST) error {
 	typeName := decl.name
-
-	fullTypeName := typeName
-	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		fullTypeName = pkgName + "." + typeName
-	}
+	fullTypeName := qualifiedName(pkgName, typeName)
 
 	typeParams, typeParamConstraints := decl.typeParams, decl.typeParamConstraints
 
@@ -3691,9 +3675,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 		docs = p.Docs
 		// The parsed-file cache keeps a sibling's native tree converted, or
 		// none (see parseFileCached).
-		if p.Native != nil {
-			nf, _ = nativeFileOf(p.Native)
-		}
+		nf = nativeFileOf(p.Native)
 	}
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under

@@ -22,10 +22,11 @@ import (
 // tree or has syntax errors: an error-recovered tree is ANTLR's to walk. The
 // native tree is built on the first walk, not here.
 func For(p *parser.Parsed) scopewalk.NativeWalker {
-	if p == nil || p.Native == nil || len(p.Errors) > 0 {
+	h := p.CleanNative()
+	if h == nil {
 		return nil
 	}
-	return &walker{native: p.Native}
+	return &walker{native: h}
 }
 
 // walker is For's NativeWalker. It belongs to one scopewalk.Walker at a

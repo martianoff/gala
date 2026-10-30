@@ -56,16 +56,16 @@ func newCollectionAnalyzer(p transpiler.GalaParser, searchPaths []string) *galaA
 	return a
 }
 
-// analyzeAll analyzes each of paths in turn with a, parsing it with p, and
+// analyzeAll analyzes each of paths in turn with a, parsing it with a.parser, and
 // returns what each analysis gives, by path: the metadata, or the error.
-func analyzeAll(tb testing.TB, a *galaAnalyzer, p transpiler.GalaParser, paths []string) map[string]any {
+func analyzeAll(tb testing.TB, a *galaAnalyzer, paths []string) map[string]any {
 	out := make(map[string]any, len(paths))
 	for _, path := range paths {
 		text, err := os.ReadFile(path)
 		if err != nil {
 			tb.Fatal(err)
 		}
-		parsed := p.ParseFile(string(text))
+		parsed := a.parser.ParseFile(string(text))
 		if parsed.Err() != nil {
 			continue // the transpiler stops at a syntax error, before analysis
 		}
@@ -116,8 +116,8 @@ func TestCollectionsAgree(t *testing.T) {
 	p := galaparser.NewAntlrGalaParser()
 	native := newCollectionAnalyzer(p, searchPaths)
 	native.nativeSiblings = true
-	nativeRes := analyzeAll(t, native, p, paths)
-	antlrRes := analyzeAll(t, newCollectionAnalyzer(antlrOnly{p}, searchPaths), antlrOnly{p}, paths)
+	nativeRes := analyzeAll(t, native, paths)
+	antlrRes := analyzeAll(t, newCollectionAnalyzer(antlrOnly{p}, searchPaths), paths)
 
 	analyzed := 0
 	for _, path := range paths {
@@ -145,20 +145,17 @@ func TestCollectionTakesCleanParses(t *testing.T) {
 	if len(broken.Errors) == 0 {
 		t.Fatal("the input must have syntax errors")
 	}
-	if collectionHandle(broken) != nil {
+	if broken.CleanNative() != nil {
 		t.Fatal("a parse with syntax errors has a handle to collect on")
 	}
-	if collectionHandle(nil) != nil {
-		t.Fatal("no parse has a handle to collect on")
-	}
-	if _, ok := nativeFileOf(nil); ok {
+	if nativeFileOf(nil).ok() {
 		t.Fatal("a nil handle has a native tree")
 	}
-	clean := collectionHandle(p.ParseFile("package main\n\nfunc f() int = 1\n"))
+	clean := p.ParseFile("package main\n\nfunc f() int = 1\n").CleanNative()
 	if clean == nil {
 		t.Fatal("a clean parse has no handle to collect on")
 	}
-	if _, ok := nativeFileOf(clean); !ok {
+	if !nativeFileOf(clean).ok() {
 		t.Fatal("a clean parse has no native tree")
 	}
 }
@@ -199,7 +196,9 @@ func firstDiff(x, y reflect.Value, path string, seen map[visit]bool) string {
 		}
 	}
 	switch x.Kind() {
-	case reflect.Pointer, reflect.Interface:
+	case reflect.Pointer:
+		return firstDiff(x.Elem(), y.Elem(), path, seen)
+	case reflect.Interface:
 		if x.IsNil() || y.IsNil() {
 			if x.IsNil() == y.IsNil() {
 				return ""
@@ -332,7 +331,7 @@ func BenchmarkCollect(b *testing.B) {
 					fd := newFile(s)
 					sf := s.parsed.Tree.(*grammar.SourceFileContext)
 					if mode == "native" {
-						nf, _ := nativeFileOf(s.parsed.Native)
+						nf := nativeFileOf(s.parsed.Native)
 						if a.collectFileTypesNative(nf, fd) == nil && a.collectFileFuncsNative(nf, fd) == nil {
 							a.fileTypeAliasesNative(nf, fd.pkgName)
 							collectFileEmbedsNative(nf, fd.richAST)

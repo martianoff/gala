@@ -36,6 +36,15 @@ type pendingDefaultCheck struct {
 	spans     map[int]defaultExprSpan
 }
 
+// qualifiedName is name keyed in package pkgName: qualified unless the
+// package is main or test, or there is none.
+func qualifiedName(pkgName, name string) string {
+	if pkgName != "" && pkgName != "main" && pkgName != "test" {
+		return pkgName + "." + name
+	}
+	return name
+}
+
 // collectFileTypes records the struct, shorthand-struct and interface types
 // sourceFile declares (analyze's section 1).
 func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, fd *fileDecls) error {
