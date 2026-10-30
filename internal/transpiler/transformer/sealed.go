@@ -922,9 +922,20 @@ func (t *galaASTTransformer) sealedCaseParent(caseType transpiler.Type) transpil
 	}
 
 	// A sealed case must be registered as a companion object whose target is
-	// the parent sealed type. lookupCompanion handles std-prefix and
-	// package-qualified lookup.
-	companion := t.lookupCompanion(caseBase)
+	// the parent sealed type: the companion of the case type's own package,
+	// named by the type's base name, a metadata key (`yaml.AsIs`), not a
+	// name as this file spells it. A case of a package with no qualified key
+	// may still carry its package (`main.MsgCmd`), and its companion is
+	// filed bare (companionOf). A bare base name resolves as this file
+	// would, else to the one package's case of that name if exactly one
+	// has it (a package this file imports by name); a qualified one that is
+	// not filed has no companion here, never another package's.
+	var companion *transpiler.CompanionObjectMetadata
+	if pkg, bare := splitPackageQualifier(caseType.BaseName()); pkg != "" {
+		companion = t.companionOf(pkg, bare)
+	} else if companion = t.lookupCompanion(bare); companion == nil {
+		companion = t.companionBySuffix(bare)
+	}
 	if companion == nil {
 		return nil
 	}

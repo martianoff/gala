@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/resolver"
 )
 
 // richASTWithVariantClash builds a RichAST where the current package declares a
@@ -42,7 +43,7 @@ func richASTWithVariantClash() *transpiler.RichAST {
 }
 
 func TestLookupSymbolPrefersOwnTypeOverForeignVariant(t *testing.T) {
-	got := lookupSymbol(richASTWithVariantClash(), "Marker")
+	got := lookupSymbol(richASTWithVariantClash(), "Marker", nil)
 	if !strings.Contains(got, "Marker is the application's own type.") {
 		t.Errorf("own type was shadowed by an imported package's sealed case\n--- got ---\n%s", got)
 	}
@@ -53,9 +54,47 @@ func TestLookupSymbolPrefersOwnTypeOverForeignVariant(t *testing.T) {
 
 // A case with no same-named type still renders as a case.
 func TestLookupSymbolRendersVariantWhenNoTypeShadows(t *testing.T) {
-	got := lookupSymbol(richASTWithVariantClash(), "Ping")
+	got := lookupSymbol(richASTWithVariantClash(), "Ping", nil)
 	if !strings.Contains(got, "case Ping()") || !strings.Contains(got, "Case of") {
 		t.Errorf("sealed case did not render as a case\n--- got ---\n%s", got)
+	}
+}
+
+// A case name two packages share (json's and yaml's AsIs) hovers as the one
+// the file means: yaml's when the file dot-imports yaml and imports json by
+// name, though json's sorts first. The dot imports come from the parse tree,
+// in any spelling of the import declaration.
+func TestLookupSymbolHonorsTheFileDotImports(t *testing.T) {
+	naming := func(pkg string) *transpiler.TypeMetadata {
+		return &transpiler.TypeMetadata{Name: "Naming", Package: pkg, IsSealed: true,
+			SealedVariants: []transpiler.SealedVariant{{Name: "AsIs", Doc: "AsIs of " + pkg + "."}}}
+	}
+	rich := &transpiler.RichAST{
+		PackageName: "app",
+		Packages:    map[string]string{"martianoff/gala/json": "json", "martianoff/gala/yaml": "yaml"},
+		Types: map[string]*transpiler.TypeMetadata{
+			"json.Naming": naming("json"),
+			"yaml.Naming": naming("yaml"),
+			"json.AsIs":   {Name: "AsIs", Package: "json"},
+			"yaml.AsIs":   {Name: "AsIs", Package: "yaml"},
+		},
+		Functions: map[string]*transpiler.FunctionMetadata{},
+	}
+	for _, imports := range []string{
+		"import . \"martianoff/gala/yaml\"\nimport \"martianoff/gala/json\"\n",
+		"import (. \"martianoff/gala/yaml\"\n    \"martianoff/gala/json\"\n)\n",
+		"import(\n    \"martianoff/gala/json\"\n    . \"martianoff/gala/yaml\"\n)\n",
+		"import \"martianoff/gala/json\"\nimport ( . \"martianoff/gala/yaml\" )\n",
+	} {
+		src := "package app\n\n" + imports + "\nfunc main() {}\n"
+		tree, _, err := transpiler.NewAntlrGalaParser().ParseFile(src).Strict()
+		if err != nil {
+			t.Fatalf("%q: %v", imports, err)
+		}
+		got := lookupSymbol(rich, "AsIs", func() *resolver.TypeResolver { return fileResolver(rich, tree) })
+		if !strings.Contains(got, "AsIs of yaml.") {
+			t.Errorf("%q: AsIs hovered as\n%s\nwant yaml's case", imports, got)
+		}
 	}
 }
 

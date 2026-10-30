@@ -9,9 +9,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
+	"martianoff/gala/internal/transpiler/resolver"
 )
 
 // Hover resolves the symbol under the cursor and renders its signature and
@@ -31,6 +34,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
 	varTypes := h.varTypes[uri]
+	tree := h.parseTrees[uri]
 	h.mu.Unlock()
 
 	if text == "" || richAST == nil {
@@ -38,7 +42,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 	}
 
 	line, char := h.index(text).toByte(params.Position)
-	info := h.hoverInfo(text, uriToPath(uri), richAST, varTypes, line, char)
+	info := h.hoverInfo(text, uriToPath(uri), richAST, tree, varTypes, line, char)
 	if info == "" {
 		return nil, nil
 	}
@@ -53,7 +57,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 // path is the on-disk path of the document being hovered; it is what the
 // analyzer recorded as DefinedIn, and is how a declaration in this file is told
 // apart from a same-named one elsewhere in the package.
-func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, varTypes map[string]string, line, char int) string {
+func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, tree antlr.Tree, varTypes map[string]string, line, char int) string {
 	lines := strings.Split(text, "\n")
 	if line >= len(lines) {
 		return ""
@@ -121,7 +125,41 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 		return info
 	}
 
-	return lookupSymbol(richAST, word)
+	return lookupSymbol(richAST, word, func() *resolver.TypeResolver { return fileResolver(richAST, tree) })
+}
+
+// fileResolver resolves a bare name as the transformer does in the file with
+// this parse tree (resolver.TypeResolver): its own package, then std, then
+// the GALA packages it dot-imports, in source order.
+func fileResolver(richAST *transpiler.RichAST, tree antlr.Tree) *resolver.TypeResolver {
+	r := &resolver.TypeResolver{PackageName: richAST.PackageName}
+	for _, path := range analyzer.DotImportPaths(tree) {
+		if pkg := richAST.Packages[path]; pkg != "" {
+			r.Imports = append(r.Imports, resolver.PackageInfo{PkgName: pkg, IsDot: true})
+		}
+	}
+	return r
+}
+
+// resolveVisible is the key of m that name means: the one the resolver res
+// builds resolves it to (nil res resolves nothing), else, of the keys
+// qualifying name by some package, the smallest, found in one pass so that
+// the answer never depends on map order.
+func resolveVisible[V any](m map[string]V, name string, res func() *resolver.TypeResolver) (string, bool) {
+	if res != nil {
+		if r := res(); r != nil {
+			if key, ok := r.Resolve(name, func(k string) bool { _, ok := m[k]; return ok }); ok {
+				return key, true
+			}
+		}
+	}
+	best := ""
+	for k := range m {
+		if strings.HasSuffix(k, "."+name) && (best == "" || k < best) {
+			best = k
+		}
+	}
+	return best, best != ""
 }
 
 // declarationAt resolves the cursor against declaration positions recorded
@@ -318,7 +356,7 @@ func findSealedVariant(richAST *transpiler.RichAST, name, preferPkg string) (*tr
 	return anyV, anyT
 }
 
-func lookupSymbol(richAST *transpiler.RichAST, name string) string {
+func lookupSymbol(richAST *transpiler.RichAST, name string, res func() *resolver.TypeResolver) string {
 	typeMeta, hasType := richAST.Types[name]
 	// The transpiler generates a standalone companion type per sealed case,
 	// carrying Apply and Unapply, and registers it under the case's own name. When
@@ -330,7 +368,24 @@ func lookupSymbol(richAST *transpiler.RichAST, name string) string {
 	// be shadowed: `std` exports cases called Success, Failure, Some, Left and
 	// Right, and a user's own `type Success struct` has to keep answering for
 	// itself.
-	if variant, parent := findSealedVariant(richAST, name, richAST.PackageName); variant != nil {
+	//
+	// When no type has the bare key, the file's resolver (built only then,
+	// once) says which package's name it means: a dot-imported yaml's case
+	// AsIs, not json's that sorts first.
+	var built *resolver.TypeResolver
+	fileRes := func() *resolver.TypeResolver {
+		if built == nil && res != nil {
+			built = res()
+		}
+		return built
+	}
+	preferPkg := richAST.PackageName
+	if !hasType {
+		if key, ok := resolveVisible(richAST.Types, name, fileRes); ok && richAST.Types[key] != nil {
+			preferPkg = richAST.Types[key].Package
+		}
+	}
+	if variant, parent := findSealedVariant(richAST, name, preferPkg); variant != nil {
 		if !hasType || (parent != nil && parent.Package == typeMeta.Package) {
 			return formatVariant(variant, parent)
 		}
@@ -338,22 +393,16 @@ func lookupSymbol(richAST *transpiler.RichAST, name string) string {
 	if hasType {
 		return formatTypeMeta(richAST, typeMeta)
 	}
-	for key, typeMeta := range richAST.Types {
-		if strings.HasSuffix(key, "."+name) {
-			return formatTypeMeta(richAST, typeMeta)
-		}
+	// Several packages may have a type of this name: the one the file means
+	// by it (resolveVisible).
+	if key, ok := resolveVisible(richAST.Types, name, fileRes); ok {
+		return formatTypeMeta(richAST, richAST.Types[key])
 	}
 	if fm := findFunction(richAST, name); fm != nil {
 		return formatFuncMeta(fm)
 	}
-	if companion, ok := richAST.CompanionObjects[name]; ok {
-		return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
-	}
-	for key, companion := range richAST.CompanionObjects {
-		if strings.HasSuffix(key, "."+name) {
-			return fmt.Sprintf("```gala\n%s — sealed case constructor\n```\n", companion.Name)
-		}
-	}
+	// A companion needs no branch of its own: each is filed under the key of
+	// its type, which the lookups above answer for.
 
 	// Built-in functions
 	if info, ok := builtinFuncDocs[name]; ok {

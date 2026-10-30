@@ -1775,7 +1775,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 		return nil, err
 	}
 
-	// 3. Discover companion objects - types with Unapply methods that can be used for pattern matching
+	// 3. Discover companion objects - types with Unapply methods that can be
+	// used for pattern matching.
 	a.discoverCompanionObjects(richAST)
 
 	// 4. Optional metadata validation (enabled via GALA_VALIDATE_METADATA=1)
@@ -2378,7 +2379,30 @@ func (a *galaAnalyzer) analyzeSealedType(ctx *grammar.SealedTypeDeclarationConte
 // A companion object is a type that has an Unapply method and optionally an Apply method.
 // From the Apply method, we can determine what container type it works with and which
 // type parameter indices are extracted.
+//
+// A companion is filed under one key: the qualified one (`json.AsIs`) of a
+// named package, or its bare name when its package has no qualified key
+// (main, test, or none). No bare key is filed for a named package's
+// companion: which package a bare case name means depends on the file that
+// writes it, and the transformer resolves it there, with the precedence
+// every bare type name has (resolver.TypeResolver). A bare key a merged
+// package filed for a named package's companion is dropped. Should two
+// keyless companions share a name, the file's own package's wins, else the
+// one with the smaller Types key, never the order Types is iterated in.
 func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
+	keyless := func(pkg string) bool { return pkg == "" || pkg == "main" || pkg == "test" }
+	for key, c := range richAST.CompanionObjects {
+		if c != nil && !strings.Contains(key, ".") && !keyless(c.Package) {
+			delete(richAST.CompanionObjects, key)
+		}
+	}
+	// bareFrom is, for each bare key filed here, the Types key of the
+	// companion it went to and whether that companion is the file's own.
+	type bareOwner struct {
+		key string
+		own bool
+	}
+	bareFrom := make(map[string]bareOwner)
 	for typeName, meta := range richAST.Types {
 		// Check if this type has an Unapply method
 		if _, hasUnapply := meta.Methods["Unapply"]; !hasUnapply {
@@ -2426,11 +2450,16 @@ func (a *galaAnalyzer) discoverCompanionObjects(richAST *transpiler.RichAST) {
 			ExtractIndices: extractIndices,
 		}
 
-		// Store with both short and full name for lookup
-		richAST.CompanionObjects[meta.Name] = companionMeta
-		if meta.Package != "" && meta.Package != "main" && meta.Package != "test" {
+		if !keyless(meta.Package) {
 			richAST.CompanionObjects[typeName] = companionMeta
+			continue
 		}
+		own := meta.Package == richAST.PackageName
+		if prev, taken := bareFrom[meta.Name]; taken && (prev.own && !own || prev.own == own && prev.key < typeName) {
+			continue
+		}
+		richAST.CompanionObjects[meta.Name] = companionMeta
+		bareFrom[meta.Name] = bareOwner{typeName, own}
 	}
 }
 
