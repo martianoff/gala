@@ -23,7 +23,7 @@
 // whether the new behaviour is instead:
 //
 //   - a property of the consumer, not the walk (decide it in Visitor.Reference,
-//     which already sees the name, the token and the use), or
+//     which already sees the name, the site and the use), or
 //   - something both passes would want (then just change the walk), or
 //   - a binder this walker does not model (use EnterFunctionScope, or push a
 //     scope and Bind before calling in).
@@ -60,7 +60,8 @@
 // their parse (WithNative), they walk galop's native tree instead
 // (walk_native.go), which mirrors the walk over ANTLR's (walk_antlr.go)
 // handler for handler; TestWalksAgree holds the two to the same output on
-// every GALA source of the repository. ANTLR's walk stays for what has no
+// the GALA sources the parser's engine test parses (std, the examples and the
+// other libraries). ANTLR's walk stays for what has no
 // native tree: a build without galop's parser, an interpolation fragment
 // (re-parsed into ANTLR's tree alone), and a caller that holds none.
 package scopewalk

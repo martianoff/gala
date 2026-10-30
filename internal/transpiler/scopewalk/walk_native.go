@@ -280,9 +280,14 @@ func (w nativeWalk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	w.PushScope()
 	defer w.PopScope()
 	if w.opts.EnterFunctionScope != nil {
-		if ctx, ok := w.native.Ctx(fn.GalaNodeRef).(grammar.IFunctionDeclarationContext); ok {
-			w.opts.EnterFunctionScope(w.Walker, ctx)
+		ctx, ok := w.native.Ctx(fn.GalaNodeRef).(grammar.IFunctionDeclarationContext)
+		if !ok {
+			// Every node has the context of its rule (TestEnginesAgree checks
+			// the bridge); skipping the hook would turn its binders into
+			// undefined names.
+			panic("scopewalk: a native function declaration has no ANTLR context")
 		}
+		w.opts.EnterFunctionScope(w.Walker, ctx)
 	}
 	if sig := fn.Signature(); sig.Ok() {
 		w.bindParameters(sig.Parameters())

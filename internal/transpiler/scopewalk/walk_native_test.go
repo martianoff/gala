@@ -16,11 +16,17 @@ import (
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 )
 
 // recorder writes down everything a walk reports, in order: each reference
 // with its site and use, and each call of the EnterFunctionScope hook.
 type recorder struct{ events []string }
+
+var (
+	_ Visitor = (*recorder)(nil)
+	_ Visitor = discard{}
+)
 
 func (r *recorder) Reference(name string, at Site, use Use) {
 	r.events = append(r.events, fmt.Sprintf("%s at %d:%d %q %+v", name, at.Line, at.Column, at.Text, use))
@@ -54,23 +60,30 @@ func optionSets(r *recorder) []Options {
 
 // walkBoth walks ctx, a context of p, on ANTLR's tree and on the native tree
 // under every option set, and returns where the two reports first differ (""
-// when they agree). Each walk has its own recorder, so its own hook.
+// when they agree). A parameter list is walked as WalkParameterDefaults walks
+// it, anything else as Walk does. Each walk has its own recorder, so its own
+// hook.
 func walkBoth(p *parser.Parsed, ctx antlr.ParserRuleContext) string {
+	params, isParams := ctx.(*grammar.ParametersContext)
 	var a, n recorder
 	optsA, optsN := optionSets(&a), optionSets(&n)
 	for i := range optsA {
 		a.events, n.events = nil, nil
 		wa := New(&a, optsA[i])
 		wa.PushScope()
-		antlrWalk{wa}.walk(ctx)
-
 		wn := New(&n, optsN[i]).WithNative(p.Native)
 		node, ok := wn.nativeNode(ctx)
 		if !ok {
 			return "the context has no native node"
 		}
 		wn.PushScope()
-		nativeWalk{wn}.walk(node)
+		if isParams {
+			antlrWalk{wa}.walkParameterDefaults(params)
+			nativeWalk{wn}.walkParameterDefaults(native.ParametersNode{GalaNodeRef: node})
+		} else {
+			antlrWalk{wa}.walk(ctx)
+			nativeWalk{wn}.walk(node)
+		}
 
 		if !slices.Equal(a.events, n.events) {
 			j := 0
@@ -91,34 +104,52 @@ func at(events []string, j int) string {
 	return ""
 }
 
-// lambdasIn is every lambda of tree, the contexts the capture analysis
-// starts from.
-func lambdasIn(tree antlr.Tree, out []antlr.ParserRuleContext) []antlr.ParserRuleContext {
-	if l, ok := tree.(*grammar.LambdaExpressionContext); ok {
-		out = append(out, l)
+// entriesIn is every context of tree the walk's callers start from, besides
+// the root: the lambdas (the capture analysis), and the expression lists and
+// parameter lists (the undefined-symbol check's top-level vals and struct
+// shorthands).
+func entriesIn(tree antlr.Tree, out []antlr.ParserRuleContext) []antlr.ParserRuleContext {
+	switch c := tree.(type) {
+	case *grammar.LambdaExpressionContext:
+		out = append(out, c)
+	case *grammar.ExpressionListContext:
+		out = append(out, c)
+	case *grammar.ParametersContext:
+		out = append(out, c)
 	}
 	for i := 0; i < tree.GetChildCount(); i++ {
-		out = lambdasIn(tree.GetChild(i), out)
+		out = entriesIn(tree.GetChild(i), out)
 	}
 	return out
 }
 
 // walkInputs exercise what positions are counted over (non-ASCII text before
-// a name, CRLF line ends) and the walk's less common forms.
+// a name, CRLF line ends) and the walk's less common forms. The CRLF input is
+// spelled out: a raw string cannot hold its carriage returns.
 var walkInputs = []string{
-	"package main\n\nfunc f(p int) string {\n    val s = \"héllo ✓ 日本\"; val t = s\"ü${p + q}ö$r\"\n    return s + t + u\n}\n",
+	`package main
+
+func f(p int) string {
+    val s = "héllo ✓ 日本"; val t = s"ü${p + q}ö$r"
+    return s + t + u
+}
+`,
 	"package main\r\n\r\nfunc f(p int) int {\r\n    for k = range lookup(\":=\") { Println(k) }\r\n    for i, v := range xs { Println(i + v) }\r\n    return p match {\r\n        case Some(x: int) if x > lim => x\r\n        case Pair(a, b...) => a\r\n        case _ => g(name = p, h...)\r\n    }\r\n}\r\n",
-	"package main\n\nfunc (b *Box[T]) m(x T = dflt) T = T{Field: x, Other: y}.v.w(z)\n\nval h = { case n => n + k }\n",
+	`package main
+
+func (b *Box[T]) m(x T = dflt) T = T{Field: x, Other: y}.v.w(z)
+
+val h = { case n => n + k }
+
+struct Point(x int = origin, y int = x)
+`,
 }
 
-// TestWalksAgree holds the native walk to ANTLR's: from the root of every GALA
-// source of the repository, and from each of its lambdas, both report the
-// same references, at the same sites, with the same uses, in the same order,
-// and call the hook alike.
-func TestWalksAgree(t *testing.T) {
+// corpus is the paths of the GALA sources staged as the test's data.
+func corpus(tb testing.TB) []string {
 	files, err := bazel.ListRunfiles()
 	if err != nil {
-		t.Fatalf("cannot list the runfiles: %v", err)
+		tb.Fatalf("cannot list the runfiles: %v", err)
 	}
 	var paths []string
 	for _, f := range files {
@@ -127,6 +158,63 @@ func TestWalksAgree(t *testing.T) {
 		}
 	}
 	sort.Strings(paths)
+	return paths
+}
+
+// discard is a Visitor that drops what it is told.
+type discard struct{}
+
+func (discard) Reference(string, Site, Use) {}
+
+// BenchmarkWalk walks every staged source from its root with the
+// undefined-symbol check's options: on ANTLR's tree ("antlr"), on the native
+// tree converted within the timed walk, as the transpiler does ("native"),
+// and on the native tree converted beforehand ("native-walk"). Each iteration
+// parses the sources afresh, untimed.
+func BenchmarkWalk(b *testing.B) {
+	var texts []string
+	for _, path := range corpus(b) {
+		text, err := os.ReadFile(path)
+		if err != nil {
+			b.Fatal(err)
+		}
+		texts = append(texts, string(text))
+	}
+	opts := Options{ParseInterpolations: true, RequireCleanInterpolationParse: true, SkipCompositeLiteralKeys: true, SkipTypedPatternArgument: true}
+	for _, mode := range []string{"antlr", "native", "native-walk"} {
+		b.Run(mode, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				parses := make([]*parser.Parsed, 0, len(texts))
+				for _, text := range texts {
+					if p := parser.NewAntlrGalaParser().ParseFile(text); p.Err() == nil {
+						if mode == "native-walk" {
+							p.Native.Tree()
+						}
+						parses = append(parses, p)
+					}
+				}
+				b.StartTimer()
+				for _, p := range parses {
+					w := New(discard{}, opts)
+					if mode != "antlr" {
+						w.WithNative(p.Native)
+					}
+					w.Walk(p.Tree)
+				}
+			}
+		})
+	}
+}
+
+// TestWalksAgree holds the native walk to ANTLR's: from the root of each GALA
+// source staged as data (those TestEnginesAgree parses), and from each
+// context the callers enter at (see entriesIn), both report the
+// same references, at the same sites, with the same uses, in the same order,
+// and call the hook alike.
+func TestWalksAgree(t *testing.T) {
+	paths := corpus(t)
 	type source struct{ name, text string }
 	var sources []source
 	for i, in := range walkInputs {
@@ -153,9 +241,9 @@ func TestWalksAgree(t *testing.T) {
 			t.Errorf("%s: from the root: %s", src.name, msg)
 			continue
 		}
-		for _, l := range lambdasIn(root, nil) {
-			if msg := walkBoth(p, l); msg != "" {
-				t.Errorf("%s: from the lambda at %d:%d: %s", src.name, l.GetStart().GetLine(), l.GetStart().GetColumn(), msg)
+		for _, e := range entriesIn(root, nil) {
+			if msg := walkBoth(p, e); msg != "" {
+				t.Errorf("%s: from the %T at %d:%d: %s", src.name, e, e.GetStart().GetLine(), e.GetStart().GetColumn(), msg)
 				break
 			}
 		}
@@ -170,7 +258,13 @@ func TestWalksAgree(t *testing.T) {
 // parse walks its native node, and one handed any other context walks ANTLR's
 // tree, with the same result.
 func TestEntryPointsWalkNative(t *testing.T) {
-	src := "package main\n\nfunc f(p int) int {\n    val g = (q int) => q + p + outer\n    return g(1)\n}\n"
+	src := `package main
+
+func f(p int) int {
+    val g = (q int) => q + p + outer
+    return g(1)
+}
+`
 	p := parser.NewAntlrGalaParser().ParseFile(src)
 	other := parser.NewAntlrGalaParser().ParseFile(src)
 	tree, _, err := p.Strict()
