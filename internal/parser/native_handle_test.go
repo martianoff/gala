@@ -22,6 +22,9 @@ func TestNilNative(t *testing.T) {
 	if node := n.Node(nil); node.Ok() {
 		t.Error("Node() found a node")
 	}
+	if n.Bridged() {
+		t.Error("Bridged() = true")
+	}
 }
 
 // TestNewNativeNoTree: no handle for a parse without a source-file tree,

@@ -22,10 +22,11 @@ import (
 // tree or has syntax errors: an error-recovered tree is ANTLR's to walk. The
 // native tree is built on the first walk, not here.
 func For(p *parser.Parsed) scopewalk.NativeWalker {
-	if p == nil || p.Native == nil || len(p.Errors) > 0 {
+	h := p.CleanNative()
+	if h == nil {
 		return nil
 	}
-	return &walker{native: p.Native}
+	return &walker{native: h}
 }
 
 // walker is For's NativeWalker. It belongs to one scopewalk.Walker at a
@@ -46,30 +47,20 @@ type walker struct {
 
 var _ scopewalk.NativeWalker = (*walker)(nil)
 
-// prepare converts the native tree, once, and checks what the walk takes
-// from the bridge: the root's context (so every node has one) and a function
-// declaration's context for each function declaration, which
-// Options.EnterFunctionScope is handed. Should either fail, every walk falls
-// back to ANTLR's tree.
+// prepare converts the native tree, once, and checks that the bridge holds
+// (parser.Native.Bridged): the walk takes the root's context from it, and a
+// function declaration's context for each function declaration, which
+// Options.EnterFunctionScope is handed. The analyzer's collection of the
+// file's declarations makes the same check, so the two take the same tree.
+// Should it fail, every walk falls back to ANTLR's tree.
 func (nw *walker) prepare() bool {
 	nw.once.Do(func() {
-		tree, err := nw.native.Tree()
-		if err != nil {
+		if !nw.native.Bridged() {
 			return
 		}
+		tree, _ := nw.native.Tree()
 		nw.root = tree.Root()
-		if nw.rootCtx = nw.native.Ctx(nw.root); nw.rootCtx == nil {
-			return
-		}
-		for i := range tree.Nodes {
-			n := tree.Node(i)
-			if n.Kind() != native.GalaKIND_functionDeclaration {
-				continue
-			}
-			if _, ok := nw.native.Ctx(n).(*grammar.FunctionDeclarationContext); !ok {
-				return
-			}
-		}
+		nw.rootCtx = nw.native.Ctx(nw.root)
 		nw.ok = true
 	})
 	return nw.ok

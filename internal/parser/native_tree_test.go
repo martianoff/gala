@@ -34,6 +34,9 @@ func checkNative(p *Parsed, text string) string {
 	if last := len(n.ctxs) - 1; tree.Root().Index() != last || n.ctxs[last] != p.Tree {
 		return "the root, and its context the tree, are not last"
 	}
+	if !n.Bridged() {
+		return "the bridge does not hold"
+	}
 	for i := range tree.Nodes {
 		node := tree.Node(i)
 		ctx := n.Ctx(node)
@@ -141,6 +144,66 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 	for i := range got {
 		if got[i] == nil || got[i] != got[0] {
 			t.Fatalf("goroutine %d got %p, goroutine 0 %p", i, got[i], got[0])
+		}
+	}
+}
+
+// TestBridgeHolds: the bridge holds for a converted parse, and not once the
+// root, a function declaration or an expression lacks its context or has
+// another rule's, or the contexts do not match the nodes.
+func TestBridgeHolds(t *testing.T) {
+	p := parseWithGalop("package main\n\nval x = 1\n\nfunc f() int = 2\n")
+	tree, err := p.Native.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Native.Bridged() {
+		t.Fatal("a converted parse is not bridged")
+	}
+	for _, kind := range []native.GalaKind{native.GalaKIND_sourceFile, native.GalaKIND_functionDeclaration, native.GalaKIND_expression} {
+		for i := range tree.Nodes {
+			if tree.Node(i).Kind() != kind {
+				continue
+			}
+			// No context, then another rule's: the root's, or for the root
+			// the last node's before it.
+			other := p.Native.ctxs[tree.Root().Index()]
+			if i == tree.Root().Index() {
+				other = p.Native.ctxs[i-1]
+			}
+			for _, ctx := range []antlr.ParserRuleContext{nil, other} {
+				ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
+				ctxs[i] = ctx
+				if bridgeHolds(tree, ctxs) {
+					t.Errorf("bridged with context %T for node %d (%s)", ctx, i, native.GalaRuleNames[tree.Node(i).Rule()])
+				}
+			}
+		}
+	}
+	if bridgeHolds(tree, p.Native.ctxs[1:]) {
+		t.Error("bridged with a context missing")
+	}
+}
+
+// TestCleanNative: a parse's native tree is for its readers only when the
+// parse has no errors. galop's parser accepts each source here, so the parse
+// keeps its native tree, but a check that runs after the parse rejects it;
+// its readers take the ANTLR tree, as they do on a syntax error.
+func TestCleanNative(t *testing.T) {
+	clean := parseWithGalop("package main\n\nval x = 1\n")
+	if clean.CleanNative() == nil || clean.CleanNative() != clean.Native {
+		t.Fatal("a clean parse gives no handle")
+	}
+	for name, src := range map[string]string{
+		"illegal character":                      "package main\n\nval s = \"a\uFEFFb\"\n",
+		"no blank line after the package clause": "package main\nval x = 1\n",
+	} {
+		p := parseWithGalop(src)
+		if p.Native == nil || len(p.Errors) == 0 {
+			t.Fatalf("%s: want a native tree and an error, got a native tree: %v, errors: %v", name, p.Native != nil, p.Errors)
+		}
+		if p.CleanNative() != nil {
+			t.Errorf("%s: a parse with an error gives a handle", name)
 		}
 	}
 }

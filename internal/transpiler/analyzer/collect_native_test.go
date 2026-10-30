@@ -1,0 +1,570 @@
+package analyzer
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
+
+	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
+)
+
+// parseWithGalop makes tb's parses use galop's parser whatever the build's
+// or environment's default, until tb ends: only its parses come with a
+// native tree, which these tests compare ANTLR's collection to.
+func parseWithGalop(tb testing.TB) {
+	galaparser.RequestEngine(string(galaparser.EngineGalop))
+	tb.Cleanup(func() { galaparser.RequestEngine("") })
+}
+
+// antlrOnly parses as its parser does but gives no native-tree handle, so an
+// analyzer using it collects every file on ANTLR's tree.
+type antlrOnly struct{ p transpiler.GalaParser }
+
+func (o antlrOnly) ParseFile(input string) *galaparser.Parsed {
+	parsed := o.p.ParseFile(input)
+	parsed.Native = nil
+	return parsed
+}
+
+// collectionCorpus is the paths of the GALA sources staged as the test's
+// data (those TestEnginesAgree parses), sorted, and the search path that
+// resolves their imports.
+func collectionCorpus(tb testing.TB) ([]string, []string) {
+	stdFile, err := bazel.Runfile("std/option.gala")
+	if err != nil {
+		tb.Skipf("std sources not staged: %v", err)
+	}
+	files, err := bazel.ListRunfiles()
+	if err != nil {
+		tb.Fatalf("cannot list the runfiles: %v", err)
+	}
+	var paths []string
+	for _, f := range files {
+		if !strings.HasSuffix(f.ShortPath, ".gala") {
+			continue
+		}
+		if info, err := os.Stat(f.Path); err != nil || !info.Mode().IsRegular() {
+			continue // a directory named *.gala, such as a tool's .gala cache
+		}
+		paths = append(paths, f.Path)
+	}
+	sort.Strings(paths)
+	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
+}
+
+// newCollectionAnalyzer is a batch analyzer over searchPaths parsing with p,
+// with no disk cache, so every package it imports it analyzes itself. Its
+// project root is a temporary directory, so it writes nothing among the
+// sources.
+func newCollectionAnalyzer(tb testing.TB, p transpiler.GalaParser, searchPaths []string) *galaAnalyzer {
+	a := NewBatchAnalyzer(p, searchPaths, tb.TempDir()).inner
+	a.cache = nil
+	return a
+}
+
+// analysis is what analyzing a file gives: the metadata, or the error, and
+// the tree its declarations were collected on (see collectTrace).
+type analysis struct {
+	result any
+	trace  collectTrace
+}
+
+// analyzeForCollection analyzes path, whose source is text, with a, parsing
+// it with a.parser; packageFiles are the other files of its package, or nil
+// to let the analyzer find library siblings in its directory. ok is false
+// when the source does not parse: the transpiler stops at a syntax error,
+// before analysis.
+func analyzeForCollection(tb testing.TB, a *galaAnalyzer, path, text string, packageFiles []string) (an analysis, ok bool) {
+	tb.Helper()
+	parsed := a.parser.ParseFile(text)
+	if parsed.Err() != nil {
+		return analysis{}, false
+	}
+	// The file's own trace, which onCollect reports alone: no trace of an
+	// imported package's file, which might be this one, stands in for it
+	// when the analysis fails before the collection.
+	a.onCollect = func(t collectTrace) { an.trace = t }
+	defer func() { a.onCollect = nil }()
+	a.packageFiles = packageFiles
+	a.checkedDirs = make(map[string]bool)
+	// A package that failed to load stands the undefined-symbol check down
+	// for every later file of the batch (see fileImportsFullyLoaded), and with
+	// it the native collection. The corpus's examples import a few packages
+	// the test does not stage, so each file starts with no failure recorded:
+	// one that imports such a package still finds it unloaded.
+	clear(a.packageLoadFailures)
+	res, err := a.AnalyzeParsed(parsed, path)
+	if an.trace.filePath != "" && an.trace.filePath != path {
+		tb.Errorf("%s: analyze reported the collection of %s", path, an.trace.filePath)
+	}
+	if err != nil {
+		an.result = err
+		return an, true
+	}
+	res.Tree = nil // each analysis has its own parse
+	an.result = res
+	return an, true
+}
+
+// checkTrace fails tb unless an's file was collected on the tree it should
+// have been: on its native tree exactly when the undefined-symbol check ran
+// on it and its parse came with a handle (wantHandle, which a galop parse
+// without syntax errors has), so a converter or bridge that fails quietly
+// cannot turn the comparison into ANTLR's against ANTLR's.
+func checkTrace(tb testing.TB, name string, an analysis, wantHandle bool) bool {
+	tb.Helper()
+	switch t := an.trace; {
+	case t.filePath == "":
+		// Analysis stopped before the collection: its result is an error.
+		if _, isErr := an.result.(error); isErr {
+			return true
+		}
+		tb.Errorf("%s: analyze reported no collection", name)
+	case t.hasHandle != wantHandle:
+		tb.Errorf("%s: the parse came with a handle: %v, want %v", name, t.hasHandle, wantHandle)
+	case t.native != (t.checksUndefined && t.hasHandle):
+		tb.Errorf("%s: collected on the native tree: %v, want %v (undefined-symbol check runs: %v, handle: %v)", name, t.native, t.checksUndefined && t.hasHandle, t.checksUndefined, t.hasHandle)
+	default:
+		return true
+	}
+	return false
+}
+
+// TestCollectionsAgree holds the collection of the compiled file's
+// declarations on its native tree (collect_native.go) to the collection on
+// ANTLR's: every GALA source staged as data, analyzed as the CLI analyzes a
+// file, with its library siblings and imports, gives the same metadata, or
+// the same error, when its declarations are collected on its native tree as
+// when they are collected on ANTLR's. Each file's collection must have taken
+// the tree it should (checkTrace), and most must have taken the native one.
+func TestCollectionsAgree(t *testing.T) {
+	parseWithGalop(t)
+	paths, searchPaths := collectionCorpus(t)
+	p := galaparser.NewAntlrGalaParser()
+	nativeA := newCollectionAnalyzer(t, p, searchPaths)
+	antlrA := newCollectionAnalyzer(t, antlrOnly{p}, searchPaths)
+	analyzed, native := 0, 0
+	for _, path := range paths {
+		text, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, ok := analyzeForCollection(t, nativeA, path, string(text), nil)
+		if !ok {
+			continue
+		}
+		a, _ := analyzeForCollection(t, antlrA, path, string(text), nil)
+		analyzed++
+		if !checkTrace(t, path+" (native run)", n, true) || !checkTrace(t, path+" (ANTLR run)", a, false) {
+			continue
+		}
+		if n.trace.native {
+			native++
+		}
+		if diff := firstDiff(reflect.ValueOf(n.result), reflect.ValueOf(a.result), "", map[visit]bool{}); diff != "" {
+			t.Errorf("%s: the native collection differs from ANTLR's at %s", path, diff)
+		}
+	}
+	// The repository's sources analyze, and nearly all of them load their
+	// imports, so the check runs and they are collected natively; floors
+	// catch the sources not being staged or the native path going unused.
+	if analyzed < 200 || native < analyzed*3/4 {
+		t.Fatalf("analyzed %d sources, %d of them collected on the native tree", analyzed, native)
+	}
+	t.Logf("analyzed %d sources, %d of them collected on the native tree", analyzed, native)
+}
+
+// collectionErrorInputs are sources whose analysis fails in the collection
+// of the file's declarations, each diagnostic of it: by package, the files,
+// and the file analyzed first is the first listed. Their positions cover a
+// declaration's start, its name's, a field's, a case's and a default
+// expression's span, after multibyte text too.
+var collectionErrorInputs = []struct {
+	name  string
+	files [][2]string
+}{
+	{"type redefined", [][2]string{{"main.gala", "package main\n\ntype User struct {\n    Name string\n}\n\ntype User struct {\n    Email string\n}\n"}}},
+	{"shorthand redefined", [][2]string{{"main.gala", "package main\n\nstruct P(x int)\n\nstruct P(y int)\n"}}},
+	{"sealed type redefined", [][2]string{{"main.gala", "package main\n\nstruct S(x int)\n\nsealed type S {\n    case A()\n}\n"}}},
+	{"opaque type redefined", [][2]string{{"main.gala", "package main\n\ntype Id struct {\n    V int\n}\n\nopaque type Id int64\n"}}},
+	{"method redefined", [][2]string{{"main.gala", "package main\n\nstruct P(x int)\n\nfunc (p P) Get() int = p.x\n\nfunc (p P) Get() int = 2\n"}}},
+	{"function redeclared", [][2]string{{"main.gala", "package main\n\nfunc f() int = 1\n\nfunc f() int = 2\n"}}},
+	{"function redeclared in a sibling", [][2]string{
+		{"a.gala", "package main\n\nfunc f() int = 1\n"},
+		{"b.gala", "package main\n\nfunc f() int = 2\n"},
+	}},
+	{"type redefined in a sibling", [][2]string{
+		{"a.gala", "package main\n\ntype User struct {\n    Name string\n}\n"},
+		{"b.gala", "package main\n\ntype User struct {\n    Email string\n}\n"},
+	}},
+	{"method redefined in a sibling", [][2]string{
+		{"a.gala", "package main\n\nstruct P(x int)\n\nfunc (p P) Get() int = p.x\n"},
+		{"b.gala", "package main\n\nfunc (p P) Get() int = 2\n"},
+	}},
+	{"duplicate struct field", [][2]string{{"main.gala", "package main\n\ntype P struct {\n    A int\n    A string\n}\n"}}},
+	{"duplicate shorthand field", [][2]string{{"main.gala", "package main\n\nstruct Q(a int, b int, a string)\n"}}},
+	{"duplicate interface method", [][2]string{{"main.gala", "package main\n\ntype R interface {\n    Run() int\n    Run() string\n}\n"}}},
+	{"duplicate sealed case", [][2]string{{"main.gala", "package main\n\nsealed type Shape {\n    case Dot()\n    case Dot()\n}\n"}}},
+	{"std conflict: type", [][2]string{{"main.gala", "package main\n\ntype Option struct {\n    X int\n}\n"}}},
+	{"std conflict: shorthand", [][2]string{{"main.gala", "package main\n\nstruct Try(x int)\n"}}},
+	{"std conflict: opaque type", [][2]string{{"main.gala", "package main\n\nopaque type Either int\n"}}},
+	{"std conflict: function", [][2]string{{"main.gala", "package main\n\nfunc Some() int = 1\n"}}},
+	{"default of the wrong type", [][2]string{{"main.gala", "package main\n\nfunc f(x int = \"s\") int = x\n"}}},
+	{"default of the wrong type after multibyte text", [][2]string{{"main.gala", "package main\n\nfunc g(a string = \"üñï\", b int = \"äöü\") int = b\n"}}},
+	{"multiline default of the wrong type", [][2]string{{"main.gala", "package main\n\nfunc h(n int = \"a\" +\n    \"b\") int = n\n"}}},
+	{"sealed case default of the wrong type", [][2]string{{"main.gala", "package main\n\nsealed type Box {\n    case Full(n int = \"é\")\n}\n"}}},
+}
+
+// docExamples are the GALA examples of the error reference pages
+// (docs/errors), as packages of files: a page's examples that name their
+// files (`// a.gala`) form one package until a name repeats, and an example
+// that names none is a package of its own.
+func docExamples(tb testing.TB) [][][2]string {
+	page, err := bazel.Runfile("docs/errors/GALA-E0011.md")
+	if err != nil {
+		tb.Fatalf("the error reference pages are not staged: %v", err)
+	}
+	pages, err := filepath.Glob(filepath.Join(filepath.Dir(page), "GALA-E*.md"))
+	if err != nil || len(pages) < 50 {
+		tb.Fatalf("found %d error reference pages: %v", len(pages), err)
+	}
+	sort.Strings(pages)
+	var pkgs [][][2]string
+	for _, path := range pages {
+		text, err := os.ReadFile(path)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		var pkg [][2]string
+		names := make(map[string]bool)
+		flush := func() {
+			if len(pkg) > 0 {
+				pkgs = append(pkgs, pkg)
+			}
+			pkg, names = nil, make(map[string]bool)
+		}
+		for _, block := range strings.Split(strings.ReplaceAll(string(text), "\r\n", "\n"), "```gala\n")[1:] {
+			src, _, _ := strings.Cut(block, "```")
+			name := ""
+			if first, _, _ := strings.Cut(src, "\n"); strings.HasPrefix(first, "// ") && strings.HasSuffix(first, ".gala") {
+				name = strings.TrimPrefix(first, "// ")
+			}
+			if name == "" || names[name] {
+				flush()
+			}
+			if name == "" {
+				pkgs = append(pkgs, [][2]string{{"main.gala", src}})
+				continue
+			}
+			names[name] = true
+			pkg = append(pkg, [2]string{name, src})
+		}
+		flush()
+	}
+	return pkgs
+}
+
+// TestCollectionDiagnosticsAgree holds the collection's diagnostics on the
+// native tree to ANTLR's: each file of each source of collectionErrorInputs
+// and of every example of the error reference pages, analyzed with the other
+// files of its package, gives the same metadata, or the same error with the
+// same code, message, position and span, whichever tree its declarations
+// are collected on. Every input of collectionErrorInputs must fail, and be
+// collected on its native tree.
+func TestCollectionDiagnosticsAgree(t *testing.T) {
+	parseWithGalop(t)
+	_, searchPaths := collectionCorpus(t)
+	p := galaparser.NewAntlrGalaParser()
+	nativeA := newCollectionAnalyzer(t, p, searchPaths)
+	antlrA := newCollectionAnalyzer(t, antlrOnly{p}, searchPaths)
+
+	type input struct {
+		name  string
+		files [][2]string
+		// mustFail says the input exists to fail in the collection, on its
+		// native tree.
+		mustFail bool
+	}
+	var inputs []input
+	for _, in := range collectionErrorInputs {
+		inputs = append(inputs, input{in.name, in.files, true})
+	}
+	for i, files := range docExamples(t) {
+		inputs = append(inputs, input{fmt.Sprintf("error reference example %d (%s)", i, files[0][0]), files, false})
+	}
+
+	compared, failed := 0, 0
+	for _, in := range inputs {
+		dir := t.TempDir()
+		var paths []string
+		for _, f := range in.files {
+			path := filepath.Join(dir, f[0])
+			if err := os.WriteFile(path, []byte(f[1]), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			paths = append(paths, path)
+		}
+		for i, path := range paths {
+			var siblings []string
+			for j, other := range paths {
+				if j != i {
+					siblings = append(siblings, other)
+				}
+			}
+			name := in.name + ": " + in.files[i][0]
+			n, ok := analyzeForCollection(t, nativeA, path, in.files[i][1], siblings)
+			if !ok {
+				if in.mustFail {
+					t.Errorf("%s: does not parse", name)
+				}
+				continue
+			}
+			a, _ := analyzeForCollection(t, antlrA, path, in.files[i][1], siblings)
+			compared++
+			if !checkTrace(t, name+" (native run)", n, true) || !checkTrace(t, name+" (ANTLR run)", a, false) {
+				continue
+			}
+			if _, isErr := n.result.(error); isErr {
+				failed++
+			}
+			if in.mustFail && i == 0 {
+				if _, isErr := n.result.(error); !isErr {
+					t.Errorf("%s: analysis succeeded; the input must fail in the collection", name)
+				}
+				if !n.trace.native {
+					t.Errorf("%s: not collected on the native tree", name)
+				}
+			}
+			if diff := firstDiff(reflect.ValueOf(n.result), reflect.ValueOf(a.result), "", map[visit]bool{}); diff != "" {
+				t.Errorf("%s: the native collection differs from ANTLR's at %s", name, diff)
+			}
+		}
+	}
+	if compared < 100 || failed < len(collectionErrorInputs) {
+		t.Fatalf("compared %d files, %d of them failing; the inputs are not all read", compared, failed)
+	}
+	t.Logf("compared %d files, %d of them failing", compared, failed)
+}
+
+// TestCollectionTakesCleanParses: a parse with syntax errors, or none, gives
+// no native tree to collect on, so its error-recovered tree is collected on
+// ANTLR's tree; a clean parse gives one.
+func TestCollectionTakesCleanParses(t *testing.T) {
+	parseWithGalop(t)
+	p := galaparser.NewAntlrGalaParser()
+	broken := p.ParseFile("package main\n\nfunc f( = 1\n")
+	if len(broken.Errors) == 0 {
+		t.Fatal("the input must have syntax errors")
+	}
+	if broken.CleanNative() != nil {
+		t.Fatal("a parse with syntax errors has a handle to collect on")
+	}
+	if nativeFileOf(nil).ok() {
+		t.Fatal("a nil handle has a native tree")
+	}
+	clean := p.ParseFile("package main\n\nfunc f() int = 1\n").CleanNative()
+	if clean == nil {
+		t.Fatal("a clean parse has no handle to collect on")
+	}
+	if !nativeFileOf(clean).ok() {
+		t.Fatal("a clean parse has no native tree")
+	}
+}
+
+// visit is a pair of pointers firstDiff has compared, or is comparing.
+type visit struct {
+	a, b uintptr
+	typ  reflect.Type
+}
+
+// firstDiff is where x and y first differ, as a path from the values
+// compared, or "" when they are deeply equal (reflect.DeepEqual). Maps are
+// compared in key order, so the path it reports is the same on every run.
+func firstDiff(x, y reflect.Value, path string, seen map[visit]bool) string {
+	if !x.IsValid() || !y.IsValid() {
+		if x.IsValid() == y.IsValid() {
+			return ""
+		}
+		return fmt.Sprintf("%s: %v vs %v", path, x, y)
+	}
+	if x.Type() != y.Type() {
+		return fmt.Sprintf("%s: %s vs %s", path, x.Type(), y.Type())
+	}
+	switch x.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice:
+		if x.IsNil() != y.IsNil() {
+			return fmt.Sprintf("%s: nil %v vs %v", path, x.IsNil(), y.IsNil())
+		}
+		if x.IsNil() {
+			return ""
+		}
+		if x.Kind() != reflect.Slice || x.Len() > 0 {
+			v := visit{x.Pointer(), y.Pointer(), x.Type()}
+			if seen[v] || x.Pointer() == y.Pointer() && x.Kind() != reflect.Slice {
+				return ""
+			}
+			seen[v] = true
+		}
+	}
+	switch x.Kind() {
+	case reflect.Pointer:
+		return firstDiff(x.Elem(), y.Elem(), path, seen)
+	case reflect.Interface:
+		if x.IsNil() || y.IsNil() {
+			if x.IsNil() == y.IsNil() {
+				return ""
+			}
+			return fmt.Sprintf("%s: nil %v vs %v", path, x.IsNil(), y.IsNil())
+		}
+		return firstDiff(x.Elem(), y.Elem(), path, seen)
+	case reflect.Struct:
+		for i := range x.NumField() {
+			if d := firstDiff(x.Field(i), y.Field(i), path+"."+x.Type().Field(i).Name, seen); d != "" {
+				return d
+			}
+		}
+		return ""
+	case reflect.Slice, reflect.Array:
+		if x.Len() != y.Len() {
+			return fmt.Sprintf("%s: length %d vs %d", path, x.Len(), y.Len())
+		}
+		for i := range x.Len() {
+			if d := firstDiff(x.Index(i), y.Index(i), fmt.Sprintf("%s[%d]", path, i), seen); d != "" {
+				return d
+			}
+		}
+		return ""
+	case reflect.Map:
+		if x.Len() != y.Len() {
+			return fmt.Sprintf("%s: %d entries vs %d (%v vs %v)", path, x.Len(), y.Len(), sortedKeys(x), sortedKeys(y))
+		}
+		for _, k := range sortedKeys(x) {
+			yv := y.MapIndex(k)
+			if !yv.IsValid() {
+				return fmt.Sprintf("%s[%v]: only in the first", path, k)
+			}
+			if d := firstDiff(x.MapIndex(k), yv, fmt.Sprintf("%s[%v]", path, k), seen); d != "" {
+				return d
+			}
+		}
+		return ""
+	case reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		if x.Pointer() == y.Pointer() {
+			return ""
+		}
+		return fmt.Sprintf("%s: %s values differ", path, x.Kind())
+	default:
+		if x.CanInterface() && y.CanInterface() {
+			if !reflect.DeepEqual(x.Interface(), y.Interface()) {
+				return fmt.Sprintf("%s: %#v vs %#v", path, x.Interface(), y.Interface())
+			}
+			return ""
+		}
+		if fmt.Sprint(x) != fmt.Sprint(y) {
+			return fmt.Sprintf("%s: %v vs %v", path, x, y)
+		}
+		return ""
+	}
+}
+
+// sortedKeys is m's keys, sorted by their printed form.
+func sortedKeys(m reflect.Value) []reflect.Value {
+	keys := m.MapKeys()
+	sort.Slice(keys, func(i, j int) bool { return fmt.Sprint(keys[i]) < fmt.Sprint(keys[j]) })
+	return keys
+}
+
+// BenchmarkCollect collects the declarations of every staged source, on
+// ANTLR's tree ("antlr") and on the native tree converted beforehand
+// ("native"), as the file being analyzed ("file": analyze's sections 1 to
+// 2b). "convert" is the conversion to the native tree itself, which a file
+// collected on its native tree pays once.
+func BenchmarkCollect(b *testing.B) {
+	parseWithGalop(b)
+	paths, searchPaths := collectionCorpus(b)
+	type source struct {
+		path, pkgName string
+		parsed        *galaparser.Parsed
+	}
+	parseAll := func() []source {
+		var out []source
+		for _, path := range paths {
+			text, err := os.ReadFile(path)
+			if err != nil {
+				b.Fatal(err)
+			}
+			parsed := galaparser.NewAntlrGalaParser().ParseFile(string(text))
+			if parsed.Err() != nil {
+				continue
+			}
+			sf := parsed.Tree.(*grammar.SourceFileContext)
+			out = append(out, source{path, sf.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText(), parsed})
+		}
+		return out
+	}
+
+	b.Run("convert", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			sources := parseAll()
+			b.StartTimer()
+			for _, s := range sources {
+				s.parsed.Native.Tree()
+			}
+		}
+	})
+
+	sources := parseAll()
+	for _, s := range sources {
+		if _, err := s.parsed.Native.Tree(); err != nil {
+			b.Fatal(err)
+		}
+	}
+	a := newCollectionAnalyzer(b, galaparser.NewAntlrGalaParser(), searchPaths)
+	newFile := func(s source) *fileDecls {
+		richAST := &transpiler.RichAST{
+			Types:            make(map[string]*transpiler.TypeMetadata),
+			Functions:        make(map[string]*transpiler.FunctionMetadata),
+			Packages:         make(map[string]string),
+			CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
+		}
+		a.currentRichAST = richAST
+		a.currentOwnTypes = make(map[string]bool)
+		a.currentOwnMethods = make(map[string]map[string]bool)
+		return &fileDecls{richAST: richAST, pkgName: s.pkgName, filePath: s.path, absFilePath: s.path, docs: s.parsed.Docs, decls: newPackageDecls(s.path)}
+	}
+	for _, mode := range []string{"antlr", "native"} {
+		b.Run(mode+"/file", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				for _, s := range sources {
+					fd := newFile(s)
+					sf := s.parsed.Tree.(*grammar.SourceFileContext)
+					if mode == "native" {
+						nf := nativeFileOf(s.parsed.Native)
+						if a.collectFileTypesNative(nf, fd) == nil && a.collectFileFuncsNative(nf, fd) == nil {
+							a.fileTypeAliasesNative(nf, fd.pkgName)
+							collectFileEmbedsNative(nf, fd.richAST)
+							a.extractPackageValsNative(nf, fd.pkgName, fd.richAST, fd.docs, fd.absFilePath)
+						}
+						continue
+					}
+					if a.collectFileTypes(sf, fd) == nil && a.collectFileFuncs(sf, fd) == nil {
+						a.fileTypeAliases(sf, fd.pkgName)
+						collectFileEmbeds(sf, fd.richAST)
+						a.extractPackageVals(sf, fd.pkgName, fd.richAST, fd.docs, fd.absFilePath)
+					}
+				}
+			}
+		})
+	}
+}

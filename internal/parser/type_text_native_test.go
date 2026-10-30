@@ -103,7 +103,7 @@ func TestNativeTypeHelpers(t *testing.T) {
 			tree.Root().Walk(func(n native.GalaNodeRef) bool {
 				typ := native.TypeNode{GalaNodeRef: n}
 				if n.Kind() == native.GalaKIND_type && !typ.QualifiedIdentifier().Ok() && !typ.FUNC().Ok() &&
-					!slices.Contains([]string{"map", "[", "*"}, nativeStartText(n)) {
+					!slices.Contains([]string{"map", "[", "*"}, NativeStartText(n)) {
 					defaults++
 				}
 				return true

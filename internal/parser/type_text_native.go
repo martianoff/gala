@@ -18,7 +18,7 @@ import (
 //     of the node's first token.
 //
 // No node gives the empty result. They read children through the rule
-// handles and nativeKids, never through Typed, which builds a handle per
+// handles and NativeKids, never through Typed, which builds a handle per
 // node, and walk a list in one pass without allocating: the All accessors
 // allocate, and the indexed ones rescan the children from the first.
 
@@ -36,7 +36,7 @@ func NativePtrElem(t native.TypeNode) native.TypeNode {
 		return native.TypeNode{}
 	}
 	qid := t.QualifiedIdentifier()
-	elem, ok := onlyNativeKid(t.TypeArguments().TypeList().GalaNodeRef, native.GalaKIND_type)
+	elem, ok := OnlyNativeKid(t.TypeArguments().TypeList().GalaNodeRef, native.GalaKIND_type)
 	if !qid.Ok() || !ok || !isNativePtrName(qid) {
 		return native.TypeNode{}
 	}
@@ -65,8 +65,8 @@ func NativePointerElem(t native.TypeNode) (native.TypeNode, bool) {
 	if elem := NativePtrElem(t); elem.Ok() {
 		return elem, true
 	}
-	if t.Ok() && nativeStartText(t.GalaNodeRef) == "*" {
-		if elem, ok := onlyNativeKid(t.GalaNodeRef, native.GalaKIND_type); ok {
+	if t.Ok() && NativeStartText(t.GalaNodeRef) == "*" {
+		if elem, ok := OnlyNativeKid(t.GalaNodeRef, native.GalaKIND_type); ok {
 			return native.TypeNode{GalaNodeRef: elem}, true
 		}
 	}
@@ -97,11 +97,11 @@ func NativeDocKeyOf(n native.GalaNodeRef) DocKey {
 	return DocKey{Line: int(start.Line), Column: int(start.Column)}
 }
 
-// nativeStartText has no ANTLR counterpart: it is the text of the token
+// NativeStartText has no ANTLR counterpart: it is the text of the token
 // ANTLR's GetStart gives for n's context, which for a node that spans no
 // token is the token after it. Past the last token it is "": that token is
 // none of the ones writeNativeTypeText and NativePointerElem look for.
-func nativeStartText(n native.GalaNodeRef) string {
+func NativeStartText(n native.GalaNodeRef) string {
 	tree, i := n.Tree(), n.StartIndex()
 	if i >= len(tree.Tokens) {
 		return ""
@@ -109,9 +109,10 @@ func nativeStartText(n native.GalaNodeRef) string {
 	return tree.Text(i)
 }
 
-// nativeKids is n's child nodes of kind, in order, in one pass over its
-// children.
-func nativeKids(n native.GalaNodeRef, kind native.GalaKind) iter.Seq[native.GalaNodeRef] {
+// NativeKids is n's child nodes of kind, in order, in one pass over its
+// children and without allocating (the All accessors allocate). The transpiler's
+// native-tree readers walk lists with it.
+func NativeKids(n native.GalaNodeRef, kind native.GalaKind) iter.Seq[native.GalaNodeRef] {
 	return func(yield func(native.GalaNodeRef) bool) {
 		if !n.Ok() {
 			return
@@ -124,11 +125,11 @@ func nativeKids(n native.GalaNodeRef, kind native.GalaKind) iter.Seq[native.Gala
 	}
 }
 
-// onlyNativeKid is n's child node of kind and true when it has exactly one.
-func onlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeRef, bool) {
+// OnlyNativeKid is n's child node of kind and true when it has exactly one.
+func OnlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeRef, bool) {
 	var only native.GalaNodeRef
 	count := 0
-	for c := range nativeKids(n, kind) {
+	for c := range NativeKids(n, kind) {
 		if count++; count > 1 {
 			return native.GalaNodeRef{}, false
 		}
@@ -141,7 +142,7 @@ func onlyNativeKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeR
 // of types: separated by commas.
 func writeNativeTypeList(b *strings.Builder, n native.GalaNodeRef) {
 	first := true
-	for typ := range nativeKids(n, native.GalaKIND_type) {
+	for typ := range NativeKids(n, native.GalaKIND_type) {
 		if !first {
 			b.WriteByte(',')
 		}
@@ -154,7 +155,7 @@ func writeNativeTypeText(b *strings.Builder, t native.TypeNode) {
 	if !t.Ok() {
 		return
 	}
-	start := nativeStartText(t.GalaNodeRef)
+	start := NativeStartText(t.GalaNodeRef)
 	switch qid := t.QualifiedIdentifier(); {
 	case qid.Ok():
 		b.WriteString(qid.GetText())
@@ -190,7 +191,7 @@ func writeNativeSignatureText(b *strings.Builder, s native.SignatureNode) {
 	}
 	b.WriteByte('(')
 	first := true
-	for p := range nativeKids(s.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+	for p := range NativeKids(s.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		if !first {
 			b.WriteByte(',')
 		}

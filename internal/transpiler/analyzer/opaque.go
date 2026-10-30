@@ -6,7 +6,40 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// analyzeOpaqueType records `opaque type UserID int64` (or a phantom-typed
+// opaqueDecl is what analyzeOpaqueType reads from an opaque type
+// declaration: its name, doc comment, the position of its name, its type
+// parameters with their constraints, and its underlying type as written
+// (parser.TypeText), "" when it has none.
+type opaqueDecl struct {
+	name                 string
+	doc                  string
+	pos                  transpiler.SourcePos
+	typeParams           []string
+	typeParamConstraints map[string]string
+	underlying           string
+}
+
+// opaqueDeclOf reads ctx, with the doc comments of its file.
+func opaqueDeclOf(ctx *grammar.OpaqueTypeDeclarationContext, docs galaparser.Docs) opaqueDecl {
+	d := opaqueDecl{
+		name: ctx.Identifier().GetText(),
+		doc:  docAt(docs, ctx.GetStart()),
+		pos:  transpiler.PosFromToken(ctx.Identifier().GetStart()),
+	}
+	d.typeParams, d.typeParamConstraints = typeParamsOf(ctx.TypeParameters())
+	if ctx.Type_() != nil {
+		d.underlying = galaparser.TypeText(ctx.Type_())
+	}
+	return d
+}
+
+// analyzeOpaqueType records an opaque type declaration (see
+// registerOpaqueType).
+func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationContext, pkgName, definedIn string, richAST *transpiler.RichAST, docs galaparser.Docs) {
+	a.registerOpaqueType(opaqueDeclOf(ctx, docs), pkgName, definedIn, richAST)
+}
+
+// registerOpaqueType records `opaque type UserID int64` (or a phantom-typed
 // `opaque type Id[T any] int64`) as TypeMetadata with IsOpaque set and the
 // declared Underlying type. The type has no fields; its methods are attached
 // by the method-collection pass like any other type's. Methods already
@@ -14,22 +47,21 @@ import (
 //
 // The opaque type deliberately does not enter the alias tables: nothing that
 // infers, unifies or looks up methods may see through it.
-func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationContext, pkgName, definedIn string, richAST *transpiler.RichAST, docs galaparser.Docs) {
-	typeName := ctx.Identifier().GetText()
-	fullTypeName := typeName
-	if pkgName != "" && pkgName != "main" && pkgName != "test" {
-		fullTypeName = pkgName + "." + typeName
-	}
+func (a *galaAnalyzer) registerOpaqueType(decl opaqueDecl, pkgName, definedIn string, richAST *transpiler.RichAST) {
+	typeName := decl.name
+	fullTypeName := qualifiedName(pkgName, typeName)
 
 	meta := &transpiler.TypeMetadata{
-		Name:      typeName,
-		Package:   pkgName,
-		Doc:       docAt(docs, ctx.GetStart()),
-		Pos:       transpiler.PosFromToken(ctx.Identifier().GetStart()),
-		Methods:   make(map[string]*transpiler.MethodMetadata),
-		Fields:    make(map[string]transpiler.Type),
-		IsOpaque:  true,
-		DefinedIn: definedIn,
+		Name:                 typeName,
+		Package:              pkgName,
+		Doc:                  decl.doc,
+		Pos:                  decl.pos,
+		Methods:              make(map[string]*transpiler.MethodMetadata),
+		Fields:               make(map[string]transpiler.Type),
+		IsOpaque:             true,
+		DefinedIn:            definedIn,
+		TypeParams:           decl.typeParams,
+		TypeParamConstraints: decl.typeParamConstraints,
 	}
 	if existing, ok := richAST.Types[fullTypeName]; ok {
 		for k, v := range existing.Methods {
@@ -37,25 +69,8 @@ func (a *galaAnalyzer) analyzeOpaqueType(ctx *grammar.OpaqueTypeDeclarationConte
 		}
 	}
 
-	if ctx.TypeParameters() != nil {
-		tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-		if tpList := tpCtx.TypeParameterList(); tpList != nil {
-			for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-				tpc := tp.(*grammar.TypeParameterContext)
-				tpName := tpc.Identifier(0).GetText()
-				meta.TypeParams = append(meta.TypeParams, tpName)
-				if len(tpc.AllIdentifier()) > 1 {
-					if meta.TypeParamConstraints == nil {
-						meta.TypeParamConstraints = make(map[string]string)
-					}
-					meta.TypeParamConstraints[tpName] = tpc.Identifier(1).GetText()
-				}
-			}
-		}
-	}
-
-	if ctx.Type_() != nil {
-		meta.Underlying = a.resolveTypeWithParams(galaparser.TypeText(ctx.Type_()), pkgName, meta.TypeParams)
+	if decl.underlying != "" {
+		meta.Underlying = a.resolveTypeWithParams(decl.underlying, pkgName, meta.TypeParams)
 	}
 	richAST.Types[fullTypeName] = meta
 }
