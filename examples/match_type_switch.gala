@@ -1,0 +1,149 @@
+package main
+
+import "fmt"
+
+// A match over the dynamic type of a type parameter or an interface value,
+// whose arms are type patterns, `_` and bindings, is dispatched by one Go type
+// switch. It matches exactly as a type pattern always does: arms in order, a
+// value inside an Immutable and the error of a recovered panic looked through.
+
+// Label is a plain struct a concrete arm matches.
+struct Label(Text string)
+
+// Point is Hashable.
+struct Point(X int, Y int)
+
+// Hash makes Point Hashable.
+func (p Point) Hash() uint32 = uint32(p.X * 31 + p.Y)
+
+// Oops is an error of its own type.
+struct Oops(Code int)
+
+// Error makes Oops an error.
+func (o Oops) Error() string = s"oops ${o.Code}"
+
+// String makes Oops a fmt.Stringer.
+func (o Oops) String() string = s"Oops#${o.Code}"
+
+// classify mixes concrete and interface arms, a guarded `_` and a default.
+func classify[T any](v T, loud bool) string = v match {
+    case i: int => s"int $i"
+    case s: string => s"string $s"
+    case l: Label => s"label ${l.Text}"
+    case o: Oops => s"oops ${o.Code}"
+    case e: error => s"error ${e.Error()}"
+    case h: Hashable => s"hashable ${h.Hash()}"
+    case _ if loud => "LOUD OTHER"
+    case _ => "other"
+}
+
+// stringerFirst matches an error, an interface value, and lists an interface
+// before a type that implements it: the first arm that matches wins.
+func stringerFirst(err error) string = err match {
+    case s: fmt.Stringer => s"stringer first: ${s.String()}"
+    case o: Oops => s"oops second: ${o.Code}"
+    case other => s"bound: ${other.Error()}"
+}
+
+// guardedInt has a guard on a type arm, which a type switch cannot express:
+// it keeps testing each pattern in turn.
+func guardedInt[T any](v T) string = v match {
+    case i: int if i > 10 => s"big $i"
+    case i: int => s"small $i"
+    case _ => "not an int"
+}
+
+// Celsius names int itself, so its arm tests int a second time, which a type
+// switch cannot list twice: this match, too, tests each pattern in turn.
+type Celsius int
+
+// temperature matches int and Celsius, the same type.
+func temperature[T any](v T) string = v match {
+    case i: int => s"int $i"
+    case c: Celsius => s"celsius $c"
+    case _ => "no temperature"
+}
+
+// firstInt leaves the function from an arm.
+func firstInt[T any](v T) int {
+    v match {
+        case i: int => { return i }
+        case _ => Println("not an int")
+    }
+    return -1
+}
+
+// doubled stores the match's value; one arm leaves the function instead.
+func doubled[T any](v T) int {
+    val n = v match {
+        case i: int => i * 2
+        case s: string => s.Size()
+        case _ => { return -1 }
+    }
+    n + 1
+}
+
+// explode panics with an Oops for a positive code.
+func explode(code int) int {
+    if code > 0 {
+        Panic(Oops(Code = code))
+    }
+    code
+}
+
+// boom panics with a string when asked to.
+func boom(fail bool) int {
+    if fail {
+        Panic("boom")
+    }
+    0
+}
+
+// recovered is the error of the panic body raises.
+func recovered(body func() int) error = Try(body) match {
+    case Failure(e) => e
+    case Success(n) => fmt.Errorf("no panic: %d", n)
+}
+
+func main() {
+    Println(classify(1000, false))
+    Println(classify("hi", false))
+    Println(classify(Label(Text = "tag"), false))
+    Println(classify(Oops(Code = 1), false))
+    Println(classify(fmt.Errorf("plain"), false))
+    Println(classify(Point(X = 1, Y = 2), false))
+    Println(classify(2.5, false))
+    Println(classify(2.5, true))
+
+    // nil holds no type: no type arm matches it.
+    val noError error = nil
+    Println(classify(noError, false))
+
+    // An Immutable is matched by the value it holds.
+    Println(classify(NewImmutable(1000), false))
+    Println(classify(NewImmutable(Label(Text = "kept")), false))
+
+    // A recovered panic's error is matched by the error it holds, and is an
+    // error itself.
+    Println(classify(recovered(explode(7)), false))
+    Println(classify(recovered(boom(true)), false))
+
+    Println(stringerFirst(Oops(Code = 3)))
+    Println(stringerFirst(recovered(explode(4))))
+    Println(stringerFirst(fmt.Errorf("plain")))
+    Println(stringerFirst(recovered(explode(0))))
+
+    Println(guardedInt(42))
+    Println(guardedInt(3))
+    Println(guardedInt("3"))
+
+    Println(temperature(Celsius(21)))
+    Println(temperature("warm"))
+
+    Println(firstInt(9))
+    Println(firstInt("nine"))
+
+    Println(doubled(21))
+    Println(doubled("abc"))
+    Println(doubled(true))
+}

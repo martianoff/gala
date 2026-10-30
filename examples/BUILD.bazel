@@ -1425,6 +1425,14 @@ gala_exec_test(
     expected = "match_type_inference.out",
 )
 
+# A match over the dynamic type of a type parameter or interface value,
+# dispatched by one Go type switch, matches as the type patterns do
+gala_exec_test(
+    name = "match_type_switch",
+    src = "match_type_switch.gala",
+    expected = "match_type_switch.out",
+)
+
 # Alternative patterns `p1 | p2`, top level and nested
 gala_exec_test(
     name = "alternative_patterns",
