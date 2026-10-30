@@ -6,6 +6,7 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"io/ioutil"
+	"iter"
 	"maps"
 	"os"
 	"path/filepath"
@@ -1311,7 +1312,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if checksUndefined {
-			if errs := a.checkUndefinedSymbols(sourceFile, native, richAST, filePath, fileDotImportSets); len(errs) > 0 {
+			if errs := a.checkUndefinedSymbols(sourceFile, native, fileImports, richAST, filePath, fileDotImportSets); len(errs) > 0 {
 				return nil, errs[0]
 			}
 		}
@@ -1326,7 +1327,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
-		richAST.ReceiverDotImports = a.receiverDotImports(sourceFile, richAST, filePath, fileDotImportPaths)
+		richAST.ReceiverDotImports = a.receiverDotImports(methodReceiverTypes(sourceFile), richAST, filePath, fileDotImportPaths)
 	}
 	if profiler.Enabled && isTopLevel {
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
@@ -1381,23 +1382,16 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 }
 
 // receiverDotImports builds RichAST.ReceiverDotImports: for each method of
-// sourceFile whose receiver type another file of the package declares, the
-// GALA packages that file dot-imports, by the name their metadata is filed
-// under (richAST.Packages after ApplyPackageKeys), sorted. Only a top-level
-// analysis needs it: the field is per-file and never merged.
-func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST, filePath string, fileDotImportPaths map[string][]string) map[string][]string {
+// the file at filePath whose receiver type another file of the package
+// declares, the GALA packages that file dot-imports, by the name their
+// metadata is filed under (richAST.Packages after ApplyPackageKeys), sorted.
+// receiverTypes is the base type of each method's receiver, in source order
+// (methodReceiverTypes). Only a top-level analysis needs it: the field is
+// per-file and never merged.
+func (a *galaAnalyzer) receiverDotImports(receiverTypes iter.Seq[string], richAST *transpiler.RichAST, filePath string, fileDotImportPaths map[string][]string) map[string][]string {
 	var out map[string][]string
 	seen := make(map[string]bool)
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
-		if !ok || fd == nil {
-			continue
-		}
-		rc, ok := fd.Receiver().(*grammar.ReceiverContext)
-		if !ok || rc == nil || rc.Type_() == nil {
-			continue
-		}
-		recv := receiverBaseTypeName(rc.Type_())
+	for recv := range receiverTypes {
 		if recv == "" || seen[recv] {
 			continue
 		}
@@ -1418,6 +1412,27 @@ func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext,
 		out[recv] = slices.Compact(pkgs)
 	}
 	return out
+}
+
+// methodReceiverTypes is the base type name (receiverBaseTypeName) of the
+// receiver of each method among sourceFile's top-level declarations, in
+// source order.
+func methodReceiverTypes(sourceFile *grammar.SourceFileContext) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+			fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
+			if !ok || fd == nil {
+				continue
+			}
+			rc, ok := fd.Receiver().(*grammar.ReceiverContext)
+			if !ok || rc == nil || rc.Type_() == nil {
+				continue
+			}
+			if !yield(receiverBaseTypeName(rc.Type_())) {
+				return
+			}
+		}
+	}
 }
 
 // validateExplicitImports walks the metadata for entries defined in

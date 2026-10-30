@@ -338,25 +338,50 @@ type undefChecker struct {
 	// even where the metadata did not model them.
 	sourceTypes map[string]bool
 
+	// receiverImports returns the GALA packages the signature of a method of
+	// receiver type recvType may also use: those the file declaring the type
+	// dot-imports, when that is another file. See checkTypeNames.
+	receiverImports func(recvType string) map[string]bool
+
 	// inTypePass is set while checkTypeNames runs; see reportWith.
 	inTypePass bool
 }
 
-// checkUndefinedSymbols runs the existence check over `sourceFile` and returns
-// the collected errors in source order. fileDotImportSets maps each file of
-// the package (by canonical path) to the GALA package names it dot-imports; a
-// method whose receiver type lives in another file may use that file's dot
-// imports in its signature, the bare-name form of the allowance GALA-E0025
-// makes. native walks sourceFile on its native tree, or is nil (see
-// scopewalk.Walker.WithNative).
+// checkUndefinedSymbols runs the existence check over `sourceFile`, whose
+// imports are imports (scanFileImports), and returns the collected errors in
+// source order. fileDotImportSets maps each file of the package (by canonical
+// path) to the GALA package names it dot-imports; a method whose receiver type
+// lives in another file may use that file's dot imports in its signature, the
+// bare-name form of the allowance GALA-E0025 makes. native walks sourceFile on
+// its native tree, or is nil (see scopewalk.Walker.WithNative).
 func (a *galaAnalyzer) checkUndefinedSymbols(
 	sourceFile *grammar.SourceFileContext,
 	native scopewalk.NativeWalker,
+	imports []fileImport,
 	richAST *transpiler.RichAST,
 	filePath string,
 	fileDotImportSets map[string]map[string]bool,
 ) []*galaerr.SemanticError {
-	imports := scanFileImports(sourceFile)
+	c := a.newUndefChecker(imports, richAST, filePath, fileDotImportSets)
+	c.walker = scopewalk.New(c, undefWalkOptions()).WithNative(native)
+	c.walkSourceFile(sourceFile)
+
+	// Type positions are invisible to the value walker, so they get their own
+	// pass over the same qualifier set. Sharing the checker shares its
+	// `reported` map too, so a qualifier missing in both a value and a type
+	// position is reported once rather than twice — each report walks every
+	// search root to build its hint, so the dedupe is worth real work. It runs
+	// under this function's eligibility guards, which is why it lives here
+	// rather than standing alone. See checkTypeNames.
+	c.checkTypeNames(sourceFile)
+	return c.sortedErrs()
+}
+
+// newUndefChecker is the checker of the file at filePath, whose imports are
+// imports, with no walker yet: the symbol table and the scope its checks
+// decide by, whichever tree they read. See checkUndefinedSymbols for
+// fileDotImportSets.
+func (a *galaAnalyzer) newUndefChecker(imports []fileImport, richAST *transpiler.RichAST, filePath string, fileDotImportSets map[string]map[string]bool) *undefChecker {
 	declared := indexDeclaredSymbols(richAST)
 	for name := range a.undefinedSymbolLocalGoNames(filePath) {
 		declared[name] = true
@@ -369,7 +394,7 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		}
 	}
 	scope := a.buildGalaScope(imports, richAST, filePath)
-	c := &undefChecker{
+	return &undefChecker{
 		rich:           richAST,
 		declared:       declared,
 		declaredTypes:  indexDeclaredTypeNames(richAST),
@@ -381,21 +406,14 @@ func (a *galaAnalyzer) checkUndefinedSymbols(
 		types:          a.indexTypes(imports, richAST, filePath, scope),
 		imports:        imports,
 		sourceTypes:    sourceTypes,
+		receiverImports: func(recvType string) map[string]bool {
+			return receiverFileImports(a.paths, richAST, recvType, filePath, fileDotImportSets)
+		},
 	}
-	c.walker = scopewalk.New(c, undefWalkOptions()).WithNative(native)
-	c.walkSourceFile(sourceFile)
+}
 
-	// Type positions are invisible to the value walker, so they get their own
-	// pass over the same qualifier set. Sharing the checker shares its
-	// `reported` map too, so a qualifier missing in both a value and a type
-	// position is reported once rather than twice — each report walks every
-	// search root to build its hint, so the dedupe is worth real work. It runs
-	// under this function's eligibility guards, which is why it lives here
-	// rather than standing alone. See checkTypeNames.
-	c.checkTypeNames(sourceFile, func(recvType string) map[string]bool {
-		return receiverFileImports(a.paths, richAST, recvType, filePath, fileDotImportSets)
-	})
-
+// sortedErrs is the checker's errors in source order.
+func (c *undefChecker) sortedErrs() []*galaerr.SemanticError {
 	sort.SliceStable(c.errs, func(i, j int) bool {
 		if c.errs[i].Line != c.errs[j].Line {
 			return c.errs[i].Line < c.errs[j].Line
@@ -1032,7 +1050,7 @@ func (c *undefChecker) Reference(name string, at scopewalk.Site, use scopewalk.U
 	if c.resolves(name) {
 		return
 	}
-	c.reportAt(name, at, "", "")
+	c.report(name, at)
 }
 
 // resolves reports whether `name` denotes anything at all. Scope is already
@@ -1089,8 +1107,8 @@ func (c *undefChecker) isGeneratedMethodForm(name string) bool {
 	return false
 }
 
-func (c *undefChecker) report(name string, tok antlr.Token) {
-	c.reportWith(name, tok, "", "")
+func (c *undefChecker) report(name string, at scopewalk.Site) {
+	c.reportWith(name, at, "", "")
 }
 
 // isReported reports whether name already has an error.
@@ -1099,15 +1117,10 @@ func (c *undefChecker) isReported(name string) bool {
 	return seen
 }
 
-// reportWith reports name at tok with msg and hint. An empty msg means
-// `undefined: name`, an empty hint hintFor's.
-func (c *undefChecker) reportWith(name string, tok antlr.Token, msg, hint string) {
-	c.reportAt(name, scopewalk.TokenSite(tok), msg, hint)
-}
-
-// reportAt is reportWith at a site rather than a token. A name with no site
-// (no token) is not reported.
-func (c *undefChecker) reportAt(name string, at scopewalk.Site, msg, hint string) {
+// reportWith reports name at site at with msg and hint. An empty msg means
+// `undefined: name`, an empty hint hintFor's. A name with no site (no token)
+// is not reported.
+func (c *undefChecker) reportWith(name string, at scopewalk.Site, msg, hint string) {
 	if at.NoSite() {
 		return
 	}
@@ -1549,7 +1562,7 @@ func scanHintSource(src string, keywords []string) (string, map[string]bool) {
 // file of the package, the packages that file dot-imports count as well — the
 // allowance GALA-E0025 makes for method signatures. receiverImports returns
 // them. The method body gets no allowance, for type and value names alike.
-func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext, receiverImports func(recvType string) map[string]bool) {
+func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext) {
 	c.inTypePass = true
 	defer func() { c.inTypePass = false }()
 	typeParams := collectFileTypeBinders(sourceFile)
@@ -1558,7 +1571,7 @@ func (c *undefChecker) checkTypeNames(sourceFile *grammar.SourceFileContext, rec
 		if fd, ok := n.(*grammar.FunctionDeclarationContext); ok && fd.Receiver() != nil {
 			var sigExtra map[string]bool
 			if rc, ok := fd.Receiver().(*grammar.ReceiverContext); ok && rc.Type_() != nil {
-				sigExtra = receiverImports(receiverBaseTypeName(rc.Type_()))
+				sigExtra = c.receiverImports(receiverBaseTypeName(rc.Type_()))
 			}
 			for i := 0; i < n.GetChildCount(); i++ {
 				switch child := n.GetChild(i).(type) {
@@ -1595,20 +1608,31 @@ func (c *undefChecker) checkTypeName(tc *grammar.TypeContext, typeParams, extra 
 	}
 	ids := qi.(*grammar.QualifiedIdentifierContext).AllIdentifier()
 	if len(ids) < 2 {
-		c.checkBareTypeName(ids[0], typeParams, extra)
+		c.checkBareTypeName(ids[0].GetText(), identifierSite(ids[0]), typeParams, extra)
 		return
 	}
-	if name := ids[0].GetText(); !c.qualifiers[name] {
-		c.report(name, ids[0].GetStart())
+	c.checkTypeQualifier(ids[0].GetText(), identifierSite(ids[0]))
+}
+
+// identifierSite is the site of identifier id: its token.
+func identifierSite(id grammar.IIdentifierContext) scopewalk.Site {
+	return scopewalk.TokenSite(id.GetStart())
+}
+
+// checkTypeQualifier checks name, the package qualifier of a qualified type
+// name, written at at.
+func (c *undefChecker) checkTypeQualifier(name string, at scopewalk.Site) {
+	if !c.qualifiers[name] {
+		c.report(name, at)
 	}
 }
 
-// checkBareTypeName checks an unqualified type name. Besides a TypeContext's,
-// the grammar spells three type positions as a bare identifier: an alias
-// target (`type Coord Point`), a type parameter's constraint (`[T Number]`)
-// and an unnamed parameter of a function type (`func(Widget) int`).
-func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typeParams, extra map[string]bool) {
-	name := id.GetText()
+// checkBareTypeName checks name, an unqualified type name written at at.
+// Besides a TypeContext's, the grammar spells three type positions as a bare
+// identifier: an alias target (`type Coord Point`), a type parameter's
+// constraint (`[T Number]`) and an unnamed parameter of a function type
+// (`func(Widget) int`).
+func (c *undefChecker) checkBareTypeName(name string, at scopewalk.Site, typeParams, extra map[string]bool) {
 	switch {
 	case typeParams[name]:
 	case name == "_":
@@ -1619,25 +1643,25 @@ func (c *undefChecker) checkBareTypeName(id grammar.IIdentifierContext, typePara
 		// The source of a package this file dot-imports declares it as a type,
 		// whatever the metadata recorded.
 	case c.scope.hidesFrom(name, extra):
-		c.report(name, id.GetStart())
+		c.report(name, at)
 	case c.typeNameExists(name, extra):
 	case len(c.types.galaOwners[name]) > 0:
-		c.report(name, id.GetStart())
+		c.report(name, at)
 	case c.isReported(name):
 		// report moves the existing error to the first use; the hint below
 		// would be thrown away.
-		c.report(name, id.GetStart())
+		c.report(name, at)
 	default:
 		if hint := c.goTypeHint(name); hint != "" {
 			// Only a Go package this file does not dot-import declares it.
-			c.reportWith(name, id.GetStart(), "", hint)
+			c.reportWith(name, at, "", hint)
 		} else if c.scope.declaresVisibly(name, extra) {
 			// A function or value this file can name: say so rather than
 			// suggest an import the file may already have.
-			c.reportWith(name, id.GetStart(), fmt.Sprintf("%s is not a type", name),
+			c.reportWith(name, at, fmt.Sprintf("%s is not a type", name),
 				fmt.Sprintf("%s names a function or value; a type position needs a type", name))
 		} else {
-			c.report(name, id.GetStart())
+			c.report(name, at)
 		}
 	}
 }
@@ -1648,11 +1672,11 @@ func (c *undefChecker) checkBareTypePositions(n antlr.Tree, typeParams, extra ma
 	switch ctx := n.(type) {
 	case *grammar.TypeAliasContext:
 		if id := ctx.Identifier(); id != nil {
-			c.checkBareTypeName(id, typeParams, extra)
+			c.checkBareTypeName(id.GetText(), identifierSite(id), typeParams, extra)
 		}
 	case *grammar.TypeParameterContext:
 		if ids := ctx.AllIdentifier(); len(ids) == 2 {
-			c.checkBareTypeName(ids[1], typeParams, extra)
+			c.checkBareTypeName(ids[1].GetText(), identifierSite(ids[1]), typeParams, extra)
 		}
 	case *grammar.TypeContext:
 		sig, ok := ctx.Signature().(*grammar.SignatureContext)
@@ -1665,7 +1689,7 @@ func (c *undefChecker) checkBareTypePositions(n antlr.Tree, typeParams, extra ma
 		}
 		for _, p := range params.ParameterList().(*grammar.ParameterListContext).AllParameter() {
 			if pc, ok := p.(*grammar.ParameterContext); ok && pc.Identifier() != nil && pc.Type_() == nil {
-				c.checkBareTypeName(pc.Identifier(), typeParams, extra)
+				c.checkBareTypeName(pc.Identifier().GetText(), identifierSite(pc.Identifier()), typeParams, extra)
 			}
 		}
 	}
@@ -1862,7 +1886,12 @@ func goKeyPackages[V any](m map[string]V, name string) map[string]bool {
 // to the bare type name (`Box`).
 func receiverBaseTypeName(ctx grammar.ITypeContext) string {
 	elem, _ := galaparser.PointerElem(ctx)
-	text := galaparser.TypeText(elem)
+	return receiverBaseTypeOf(galaparser.TypeText(elem))
+}
+
+// receiverBaseTypeOf is the bare type name of text, a receiver type's
+// pointee as written (`Box[T]`): its text before the type arguments.
+func receiverBaseTypeOf(text string) string {
 	if i := strings.IndexByte(text, '['); i >= 0 {
 		text = text[:i]
 	}
