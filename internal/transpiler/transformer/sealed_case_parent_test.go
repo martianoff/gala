@@ -42,6 +42,34 @@ func TestSealedCaseParentOfKeylessPackage(t *testing.T) {
 	}
 }
 
+// TestSealedCaseParentOfNamedImportCase: a bare case type of a package the
+// file imports by name (`dep.MsgCmd` met as `MsgCmd`) resolves by no
+// precedence, so it takes the one package's case of that name, as master's
+// suffix scan did; when two packages have one, it takes neither rather than
+// guess.
+func TestSealedCaseParentOfNamedImportCase(t *testing.T) {
+	fixture := func(pkgs ...string) *galaASTTransformer {
+		tr := NewGalaASTTransformer().(*galaASTTransformer)
+		tr.packageName = "main"
+		tr.importManager = NewImportManager()
+		tr.richAST = &transpiler.RichAST{PackageName: "main", Types: map[string]*transpiler.TypeMetadata{}}
+		tr.companionObjects = map[string]*transpiler.CompanionObjectMetadata{}
+		for _, pkg := range pkgs {
+			tr.richAST.Types[pkg+".Cmd"] = &transpiler.TypeMetadata{Name: "Cmd", Package: pkg, IsSealed: true, SealedVariants: []transpiler.SealedVariant{{Name: "MsgCmd"}}}
+			tr.companionObjects[pkg+".MsgCmd"] = &transpiler.CompanionObjectMetadata{Name: "MsgCmd", Package: pkg, TargetType: "Cmd"}
+		}
+		return tr
+	}
+	if parent := fixture("dep").sealedCaseParent(transpiler.NamedType{Name: "MsgCmd"}); parent == nil || parent.BaseName() != "dep.Cmd" {
+		t.Errorf("the parent of MsgCmd is %v, want dep.Cmd", parent)
+	}
+	for run := 0; run < 50; run++ {
+		if parent := fixture("dep", "other").sealedCaseParent(transpiler.NamedType{Name: "MsgCmd"}); parent != nil {
+			t.Fatalf("run %d: MsgCmd of two packages took %v for its parent", run, parent)
+		}
+	}
+}
+
 // TestSealedCaseParentBorrowsNoCompanion: a qualified case type of a named
 // package whose companion is not filed has no parent here, even where a
 // keyless package has a bare companion of the case's name. Master looked the

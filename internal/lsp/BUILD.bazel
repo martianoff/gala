@@ -94,6 +94,7 @@ go_test(
         "//galaerr",
         "//internal/parser/grammar",
         "//internal/transpiler",
+        "//internal/transpiler/resolver",
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",

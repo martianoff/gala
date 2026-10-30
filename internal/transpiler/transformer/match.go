@@ -838,17 +838,20 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 // The analyzer files a named package's companion under its qualified key
 // only, so a name resolves as every type name does (resolveTypeName), with
 // one precedence for both: a bare name is the file's own package's case, then
-// std's, then its dot imports' in source order (resolver.TypeResolver); a
-// keyless package's (main, test) is found under its bare key. A qualifier
-// this file (or, while a default written elsewhere is lowered, that file)
-// imports is first resolved by import path to the key its package's
-// metadata is recorded under, which an alias or a default's foreign
-// qualifier does not spell.
+// std's, then a dot import's in the import manager's order; a keyless
+// package's (main, test) is found under its bare key. While a default written
+// in another file is lowered, that file's dot imports come after this file's
+// (WithForeignQualifiers), as for every type name. A qualifier imported here
+// (or by that file) is first resolved by import path to the key its
+// package's metadata is recorded under, which an alias or a default's foreign
+// qualifier does not spell; failing that, it resolves as a type name does.
 func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionObjectMetadata {
 	if qualifier, bare := splitPackageQualifier(name); qualifier != "" && t.richAST != nil {
 		if entry, ok := t.importManager.GetByAlias(qualifier); ok {
 			if pkg := t.richAST.Packages[entry.Path]; pkg != "" {
-				return t.companionOf(pkg, bare)
+				if c := t.companionOf(pkg, bare); c != nil {
+					return c
+				}
 			}
 		}
 	}
@@ -859,17 +862,34 @@ func (t *galaASTTransformer) lookupCompanion(name string) *transpiler.CompanionO
 	return t.companionObjects[key]
 }
 
-// companionOf is package pkg's companion called name: under its qualified
-// key, or, for a package with no qualified key (main, test), under its bare
-// one when it is that package's.
+// companionOf is package pkg's companion called name, keyed as the analyzer
+// keys a package's declarations (ownFunctionKey): a package with no
+// qualified key (none, main, test) by the bare name, which must then be that
+// package's companion.
 func (t *galaASTTransformer) companionOf(pkg, name string) *transpiler.CompanionObjectMetadata {
-	if pkg == "main" || pkg == "test" {
-		if c := t.companionObjects[name]; c != nil && c.Package == pkg {
-			return c
-		}
+	key := ownFunctionKey(pkg, name)
+	c := t.companionObjects[key]
+	if c == nil || key == name && c.Package != pkg {
 		return nil
 	}
-	return t.companionObjects[pkg+"."+name]
+	return c
+}
+
+// companionBySuffix is the companion whose qualified key alone ends in
+// "."+name, or nil when none or several do: a bare case type of a package
+// this file names only qualified (`dep.MsgCmd` met as `MsgCmd`). One pass,
+// and no guess between several.
+func (t *galaASTTransformer) companionBySuffix(name string) *transpiler.CompanionObjectMetadata {
+	var found *transpiler.CompanionObjectMetadata
+	for key, c := range t.companionObjects {
+		if strings.HasSuffix(key, "."+name) {
+			if found != nil {
+				return nil
+			}
+			found = c
+		}
+	}
+	return found
 }
 
 // buildMatchBody chains case clauses into an if-else chain with default body,

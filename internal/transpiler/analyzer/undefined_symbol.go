@@ -248,6 +248,22 @@ func scanFileImports(sf *grammar.SourceFileContext) []fileImport {
 	return out
 }
 
+// DotImportPaths is the paths the file with this parse tree dot-imports, in
+// source order (scanFileImports), or nil for a tree that is no source file.
+func DotImportPaths(tree antlr.Tree) []string {
+	sf, ok := tree.(*grammar.SourceFileContext)
+	if !ok {
+		return nil
+	}
+	var paths []string
+	for _, fi := range scanFileImports(sf) {
+		if fi.IsDot {
+			paths = append(paths, fi.Path)
+		}
+	}
+	return paths
+}
+
 // isGalaImport reports whether an import path names a GALA package, using the
 // same in-repo/external split as the import scan in Analyze.
 func (a *galaAnalyzer) isGalaImport(path string) bool {
