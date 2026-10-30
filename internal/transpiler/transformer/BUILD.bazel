@@ -19,6 +19,7 @@ go_library(
         "concurrency_check.go",
         "constructors.go",
         "declarations.go",
+        "declarations_native.go",
         "default_exprs.go",
         "default_values.go",
         "doc_comments.go",
@@ -73,6 +74,7 @@ go_library(
         "value_called_as_function.go",
         "variant_type_names.go",
         "void_calls.go",
+        "walk_source.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/transformer",
     visibility = ["//:__subpackages__"],
@@ -81,6 +83,7 @@ go_library(
         "//internal/interpolation",
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/concurrency",
         "//internal/transpiler/registry",

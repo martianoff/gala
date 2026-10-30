@@ -175,6 +175,13 @@ type RichAST struct {
 	// the transformer can carry documentation into the generated Go; it is
 	// per-file and never merged or cached.
 	Docs galaparser.Docs
+
+	// Native is the native-tree handle of the parse that produced Tree, or
+	// nil. The transpile pipeline sets it for the transform, whose top-level
+	// walk reads the native tree when there is one (see the transformer's
+	// walkSource), and drops it after; it is per-file and never merged or
+	// cached.
+	Native *galaparser.Native
 }
 
 // ReportSiblingSyntaxErrors returns what to report for err, a failure of a
@@ -931,11 +938,6 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	done = prof.Phase("analyze")
 	richAST, err := t.analyzer.AnalyzeParsed(parsed, filePath)
 	done()
-	// The analysis is the native tree's one reader (the collection of the
-	// file's declarations, and the undefined-symbol check's scope walk that
-	// follows it): drop its handle, and the tree (or the token stream and
-	// source text it holds until converted), before the transform.
-	parsed.Native = nil
 	if err != nil {
 		// Stamp the file being compiled onto any positional error that lacks
 		// one, so the CLI's rich renderer can re-read the source for a snippet.
@@ -947,10 +949,18 @@ func (t *GalaToGoTranspiler) transpile(input string, filePath string, summary *p
 	// with them rather than three bytes ahead.
 	richAST.SourceContent = galaerr.StripBOM(input)
 	richAST.Docs = parsed.Docs
+	// The transform walks the file's top-level declarations on its native
+	// tree when the parse came with one (Parsed.CleanNative). The analysis
+	// has converted that tree whenever the undefined-symbol check ran, which
+	// in a build is every file that analyzes.
+	richAST.Native = parsed.CleanNative()
 
 	done = prof.Phase("transform")
 	fset, file, err := t.transformer.Transform(richAST)
 	done()
+	// The transform is the native tree's last reader: drop the handle, and
+	// with it the tree, before generating.
+	richAST.Native, parsed.Native = nil, nil
 	if err != nil {
 		return "", galaerr.WithFilePath(richAST.ReportSiblingSyntaxErrors(err), filePath)
 	}

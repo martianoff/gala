@@ -135,6 +135,18 @@ type galaASTTransformer struct {
 	// lowered, and the element type each binding takes is recorded here.
 	valTypes map[string]transpiler.Type
 
+	// native is the native-tree handle of the file being transformed while
+	// its top-level walk reads that tree (see walkSource), nil while it reads
+	// ANTLR's. The native walk crosses to ANTLR's tree through it (crossTo).
+	native *galaparser.Native
+	// antlrWalkOnly and onNativeDecl are test hooks, unset outside tests:
+	// antlrWalkOnly makes the walk read ANTLR's tree whatever the parse came
+	// with, and onNativeDecl is told of each top-level declaration the native
+	// walk lowers. TestNativeWalkAgrees uses them to compare the walks and to
+	// prove which tree each file's walk read.
+	antlrWalkOnly bool
+	onNativeDecl  func()
+
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
 	// file dot-imports: a bare name there may resolve through them
@@ -229,7 +241,7 @@ func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Typ
 // manual restores of the scoped state it had set (see scoped_state.go), so
 // that state is put back here: otherwise the next declaration would be
 // lowered with it, e.g. a match lowered as a discarded statement.
-func (t *galaASTTransformer) lowersCleanly(decl grammar.ITopLevelDeclarationContext) (ok bool) {
+func (t *galaASTTransformer) lowersCleanly(decl topDecl) (ok bool) {
 	saved := t.saveScopedState()
 	defer func() {
 		if r := recover(); r != nil {
@@ -239,40 +251,22 @@ func (t *galaASTTransformer) lowersCleanly(decl grammar.ITopLevelDeclarationCont
 			t.restoreScopedState(saved)
 		}
 	}()
-	_, err := t.transformTopLevelDeclaration(decl)
+	_, err := t.lowerTopDecl(decl)
 	return err == nil
 }
 
-// recordPackageValTypes lowers sourceFile's package-level val/var declarations
-// and records the type each binding takes in t.valTypes (InferPackageValTypes).
-func (t *galaASTTransformer) recordPackageValTypes(sourceFile *grammar.SourceFileContext) {
-	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
-		// val and var declarations share the shape read here.
-		var decl interface {
-			IdentifierList() grammar.IIdentifierListContext
-			TuplePattern() grammar.ITuplePatternContext
-		}
-		switch {
-		case topDeclCtx.ValDeclaration() != nil:
-			decl = topDeclCtx.ValDeclaration()
-		case topDeclCtx.VarDeclaration() != nil:
-			decl = topDeclCtx.VarDeclaration()
-		default:
+// recordPackageValTypes lowers the package-level val/var declarations among
+// decls and records the type each binding takes in t.valTypes
+// (InferPackageValTypes).
+func (t *galaASTTransformer) recordPackageValTypes(decls []topDecl) {
+	for _, decl := range decls {
+		names, ok := bindingNames(decl)
+		if !ok || !t.lowersCleanly(decl) {
 			continue
 		}
-		idList := decl.IdentifierList()
-		if tp := decl.TuplePattern(); tp != nil {
-			idList = tp.IdentifierList()
-		}
-		if idList == nil {
-			continue // parse-error recovery
-		}
-		if !t.lowersCleanly(topDeclCtx) {
-			continue
-		}
-		for _, id := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
-			if typ, _, bound := t.scopeLookup(id.GetText()); bound && transpiler.HasResult(typ) {
-				t.valTypes[id.GetText()] = typ
+		for _, name := range names {
+			if typ, _, bound := t.scopeLookup(name); bound && transpiler.HasResult(typ) {
+				t.valTypes[name] = typ
 			}
 		}
 	}
@@ -306,6 +300,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 			)
 		}
 	}()
+	// Nothing reads the native tree after the walk; keep no handle to it.
+	defer func() { t.native = nil }()
 	tree := richAST.Tree
 	t.currentScope = nil
 	t.resetExprTypeCache()
@@ -453,23 +449,21 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 		return nil, nil, galaerr.NewSemanticErrorAt(errLine, errCol, fmt.Sprintf("expected *grammar.SourceFileContext, got %T", tree))
 	}
+	src := t.walkSource(richAST, sourceFile)
 
-	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName
 	file = &ast.File{
 		// This file's own package doc, from the per-file table: the merged
 		// RichAST.PackageDoc can come from a sibling file of the package.
-		Doc:  t.docFor(sourceFile.PackageClause().GetStart()),
+		Doc:  t.docAt(pkgDoc),
 		Name: ast.NewIdent(pkgName),
 	}
 
 	// Imports
-	for _, importCtx := range sourceFile.AllImportDeclaration() {
-		decl, err := t.transformImportDeclaration(importCtx.(*grammar.ImportDeclarationContext))
-		if err != nil {
-			return nil, nil, err
-		}
-		file.Decls = append(file.Decls, decl)
+	imports := src.imports()
+	for _, imp := range imports {
+		file.Decls = append(file.Decls, t.lowerImportDecl(imp.specs))
 	}
 
 	// Update actual package names from richAST.Packages for better type resolution
@@ -481,9 +475,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Error on symbol clashes between dot-imported packages.
 	// Use the first import declaration's position for error reporting.
 	importLine, importCol := 1, 0
-	if imports := sourceFile.AllImportDeclaration(); len(imports) > 0 {
-		importLine = imports[0].GetStart().GetLine()
-		importCol = imports[0].GetStart().GetColumn()
+	if len(imports) > 0 {
+		importLine, importCol = imports[0].at.line, imports[0].at.col
 	}
 	if err := t.importManager.ValidateDotImports(richAST, importLine, importCol); err != nil {
 		return nil, nil, err
@@ -506,40 +499,37 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// `type Millis int64` would not see it. Record every alias target up front
 	// for the lookups that must not depend on declaration order.
 	t.fileTypeDeclTargets = make(map[string]transpiler.Type)
-	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
-		typeDecl, ok := topDeclCtx.TypeDeclaration().(*grammar.TypeDeclarationContext)
-		if !ok || typeDecl == nil || typeDecl.Identifier() == nil || typeDecl.TypeAlias() == nil {
-			continue
-		}
-		t.fileTypeDeclTargets[typeDecl.Identifier().GetText()] = transpiler.ParseType(galaparser.AliasText(typeDecl.TypeAlias()))
-	}
+	src.aliasTargets(func(name, target string) {
+		t.fileTypeDeclTargets[name] = transpiler.ParseType(target)
+	})
 
+	decls := src.topDecls()
 	if t.valTypes != nil {
-		t.recordPackageValTypes(sourceFile)
+		t.recordPackageValTypes(decls)
 		return nil, nil, nil
 	}
 
-	for _, topDeclCtx := range sourceFile.AllTopLevelDeclaration() {
-		decls, err := t.transformTopLevelDeclaration(topDeclCtx)
+	for _, topDecl := range decls {
+		lowered, err := t.lowerTopDecl(topDecl)
 		if err != nil {
 			return nil, nil, err
 		}
-		if decls != nil {
-			t.attachDocComments(topDeclCtx, decls)
+		if lowered != nil {
+			t.attachTopDeclDocs(topDecl, lowered)
 			// Source-mapped `//line` directive: mark the declaration with its
 			// originating GALA line so panics in top-level initializers report a
 			// GALA position (see line_directives.go).
-			if t.emitLineMarkers() && topDeclCtx.GetStart() != nil {
-				marker := lineMarkerDecl(topDeclCtx.GetStart().GetLine())
+			if line, ok := topDecl.startLine(); t.emitLineMarkers() && ok {
+				marker := lineMarkerDecl(line)
 				// The marker turns into the `//line` directive, which has to be
 				// laid out around the first declaration's doc comment (see
 				// transpiler.insertLineDirectives). The doc moves onto the
 				// marker so the rewrite can find it next to the marker.
-				doc := declDoc(decls[0])
+				doc := declDoc(lowered[0])
 				marker.Doc, *doc = *doc, nil
 				file.Decls = append(file.Decls, marker)
 			}
-			file.Decls = append(file.Decls, decls...)
+			file.Decls = append(file.Decls, lowered...)
 		}
 	}
 
