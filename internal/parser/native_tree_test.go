@@ -34,8 +34,8 @@ func checkNative(p *Parsed, text string) string {
 	if last := len(n.ctxs) - 1; tree.Root().Index() != last || n.ctxs[last] != p.Tree {
 		return "the root, and its context the tree, are not last"
 	}
-	if !n.WellFormed() {
-		return "the tree is not well formed"
+	if !n.Bridged() {
+		return "the bridge does not hold"
 	}
 	for i := range tree.Nodes {
 		node := tree.Node(i)
@@ -148,31 +148,68 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 	}
 }
 
-// TestWellFormed: a converted parse is well formed, and not once the root
-// lacks its context or has another rule's, a context is missing, or the tree
-// has no nodes.
-func TestWellFormed(t *testing.T) {
-	p := parseWithGalop("package main\n\nval x = 1\n\nfunc f() int = 2\n")
+// TestBridgeHolds: the bridge holds for a converted parse, and not once any
+// node lacks its context or has another rule's, a context is missing, or the
+// tree has no nodes. The source has every kind of node the transformer's
+// top-level walk crosses back to ANTLR's tree from (types, signatures,
+// parameters, blocks, expressions, sealed and opaque declarations).
+func TestBridgeHolds(t *testing.T) {
+	p := parseWithGalop(`package main
+
+type P struct {
+    var a int
+    b []string
+}
+
+type I interface {
+    M(x int) string
+}
+
+sealed type S {
+    case A(v int)
+    case B()
+}
+
+opaque type O int
+
+struct Q(x int, y string)
+
+val x, y = 1, 2
+
+func (p P) f(n int) int { return n }
+
+func g() int = 2
+`)
+	if len(p.Errors) > 0 {
+		t.Fatal(p.Errors)
+	}
 	tree, err := p.Native.Tree()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.Native.WellFormed() {
-		t.Fatal("a converted parse is not well formed")
+	if !p.Native.Bridged() {
+		t.Fatal("a converted parse is not bridged")
 	}
-	root := tree.Root().Index()
-	for _, ctx := range []antlr.ParserRuleContext{nil, p.Native.ctxs[root-1]} {
-		ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
-		ctxs[root] = ctx
-		if wellFormed(tree, ctxs) {
-			t.Errorf("well formed with root context %T", ctx)
+	for i := range tree.Nodes {
+		// No context, then another rule's: the root's, or for the root the
+		// last node's before it.
+		other := p.Native.ctxs[tree.Root().Index()]
+		if i == tree.Root().Index() {
+			other = p.Native.ctxs[i-1]
+		}
+		for _, ctx := range []antlr.ParserRuleContext{nil, other} {
+			ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
+			ctxs[i] = ctx
+			if bridgeHolds(tree, ctxs) {
+				t.Errorf("bridged with context %T for node %d (%s)", ctx, i, native.GalaRuleNames[tree.Node(i).Rule()])
+			}
 		}
 	}
-	if wellFormed(tree, p.Native.ctxs[1:]) {
-		t.Error("well formed with a context missing")
+	if bridgeHolds(tree, p.Native.ctxs[1:]) {
+		t.Error("bridged with a context missing")
 	}
-	if wellFormed(&native.GalaTree{}, nil) {
-		t.Error("an empty tree is well formed")
+	if bridgeHolds(&native.GalaTree{}, nil) {
+		t.Error("an empty tree is bridged")
 	}
 }
 

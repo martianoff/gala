@@ -823,6 +823,17 @@ func (n srcNode) rng() srcRange {
 	return ctxRange(n.ctx)
 }
 
+// start is the line and column of n's first token, rng's start without
+// its stop, for the clean paths that pass a position on.
+func (n srcNode) start() (line, col int) {
+	if n.node.Ok() {
+		s := n.node.Start()
+		return int(s.Line), int(s.Column)
+	}
+	s := n.ctx.GetStart()
+	return s.GetLine(), s.GetColumn()
+}
+
 // spanError is a coded diagnostic underlining from the start of from to the
 // end of to when both are on one line.
 func spanError(code galaerr.ErrorCode, from, to antlr.ParserRuleContext, msg, hint string) error {
@@ -949,8 +960,9 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 		// defaultValue), built once per name.
 		if len(rhsExprs) == 0 {
 			typ := t.astTypeToTranspilerType(typeExpr)
+			line, col := d.at.start()
 			for range namesCtx {
-				val, err := t.defaultValue(typ, d.at.rng().line, d.at.rng().col, map[string]bool{})
+				val, err := t.defaultValue(typ, line, col, map[string]bool{})
 				if err != nil {
 					return nil, err
 				}
@@ -1663,8 +1675,8 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 	}
 
 	// A constructor for Go callers, and the doc comment naming it.
-	at := d.at.rng()
-	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, at.line, at.col)
+	line, col := d.at.start()
+	ctor, guidance, err := t.structGoConstructor(name, fieldNames, paramTypes, tParams, line, col)
 	if err != nil {
 		return nil, err
 	}

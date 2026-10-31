@@ -26,7 +26,8 @@ func (t *galaASTTransformer) recordMethodReceiver(at srcNode, recvTypeName strin
 	if recvTypeName == "" {
 		return
 	}
-	t.methodReceivers = append(t.methodReceivers, methodReceiver{at: at, typeName: recvTypeName})
+	line, col := at.start()
+	t.methodReceivers = append(t.methodReceivers, methodReceiver{line: line, col: col, typeName: recvTypeName})
 }
 
 // checkMethodReceivers validates every receiver recorded during the walk. It
@@ -34,7 +35,7 @@ func (t *galaASTTransformer) recordMethodReceiver(at srcNode, recvTypeName strin
 // names them are still in the table.
 func (t *galaASTTransformer) checkMethodReceivers() error {
 	for _, recv := range t.methodReceivers {
-		if err := t.checkMethodReceiverAlias(recv.at, recv.typeName); err != nil {
+		if err := t.checkMethodReceiverAlias(recv.line, recv.col, recv.typeName); err != nil {
 			return err
 		}
 	}
@@ -43,8 +44,8 @@ func (t *galaASTTransformer) checkMethodReceivers() error {
 
 // methodReceiver is one method's receiver, held until the file is fully walked.
 type methodReceiver struct {
-	at       srcNode // the receiver
-	typeName string
+	line, col int // where the receiver starts; not its node, which would keep the tree alive
+	typeName  string
 }
 
 // checkMethodReceiverAlias rejects a method whose receiver names a type alias
@@ -58,7 +59,7 @@ type methodReceiver struct {
 // composite (`type Handler func(int) int`, `type Bytes []byte`) all leave the
 // receiver base type non-local, and Go rejects each with a different message
 // against generated code.
-func (t *galaASTTransformer) checkMethodReceiverAlias(at srcNode, recvTypeName string) error {
+func (t *galaASTTransformer) checkMethodReceiverAlias(line, col int, recvTypeName string) error {
 	if recvTypeName == "" {
 		return nil
 	}
@@ -99,8 +100,6 @@ func (t *galaASTTransformer) checkMethodReceiverAlias(at srcNode, recvTypeName s
 		return nil
 	}
 
-	r := at.rng()
-	line, col := r.line, r.col
 	hint := "a type alias is the same type as its target, so it takes no methods of its own — declare a struct that wraps the value, or write the method as a plain function"
 	// A scalar can be given an identity of its own, with methods, as an
 	// opaque type over it.

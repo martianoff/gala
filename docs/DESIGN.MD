@@ -300,8 +300,10 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     pair every native node with its ANTLR context, so code can move to the native tree one
     consumer at a time. The analyzer collects the compiled file's declarations and runs its
     undefined-symbol check on it (`nativewalk.New` walks it), and the transformer walks its
-    top-level declarations; `transpile()` drops the handle after the
-    transform, and no cache keeps it: until it converts, it holds the
+    top-level declarations, all only where the tree bridges to ANTLR's (`Native.Bridged`);
+    `transpile()` drops the handle after the transform (before it when the analysis did not
+    convert the tree), and neither the transformer nor any cache keeps it or a node of it:
+    until it converts, it holds the
     token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive
     (after converting, the native tree keeps the text). Doc comments are keyed by
     line and column (`parser.DocKey`), which both trees share.

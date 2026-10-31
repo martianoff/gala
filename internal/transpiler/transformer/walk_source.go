@@ -35,8 +35,10 @@ type walkSource struct {
 // paid for it.
 func newWalkSource(richAST *transpiler.RichAST, sf *grammar.SourceFileContext) walkSource {
 	h := richAST.Native
-	// The analysis reads the native tree only where its bridge to ANTLR's
-	// holds (Native.Bridged); so does the walk, which crosses it.
+	// The walk crosses back to ANTLR's tree on many kinds of node (crossTo).
+	// Native.Bridged checks every node has a context of its rule, so where it
+	// does not hold the whole file is walked on ANTLR's tree, as the analysis
+	// reads it, and no crossing can miss.
 	if !h.Converted() || !h.Bridged() {
 		return walkSource{sf: sf}
 	}
@@ -65,7 +67,7 @@ func (s walkSource) packageClause() (string, parser.DocKey) {
 // importDecl is an import declaration: its specs and where it is written.
 type importDecl struct {
 	specs []importSpecDecl
-	at    srcRange
+	at    srcNode
 }
 
 // imports reads the file's import declarations, in source order.
@@ -73,12 +75,12 @@ func (s walkSource) imports() []importDecl {
 	var out []importDecl
 	if s.root.Ok() {
 		for n := range parser.NativeKids(s.root.GalaNodeRef, native.GalaKIND_importDeclaration) {
-			out = append(out, importDecl{specs: readImportDeclNative(n), at: nativeRange(n)})
+			out = append(out, importDecl{specs: readImportDeclNative(n), at: srcNode{node: n}})
 		}
 		return out
 	}
 	for _, ctx := range s.sf.AllImportDeclaration() {
-		out = append(out, importDecl{specs: readImportDecl(ctx.(*grammar.ImportDeclarationContext)), at: ctxRange(ctx)})
+		out = append(out, importDecl{specs: readImportDecl(ctx.(*grammar.ImportDeclarationContext)), at: srcNode{ctx: ctx}})
 	}
 	return out
 }
@@ -201,31 +203,9 @@ func readDeclDocsNative(td native.GalaNodeRef) declDocs {
 
 // bindingNames is the names a val or var declaration d binds, for
 // recordPackageValTypes, and false when d is no val or var or binds none
-// (parse-error recovery).
+// (parse-error recovery). d is on ANTLR's tree: package-val inference walks
+// only that tree (see InferPackageValTypes).
 func bindingNames(d topDecl) ([]string, bool) {
-	var names []string
-	if d.node.Ok() {
-		decl, ok := topDeclKid(d.node)
-		if !ok {
-			return nil, false
-		}
-		var idList native.GalaNodeRef
-		switch decl.Kind() {
-		case native.GalaKIND_valDeclaration:
-			idList = bindingIdList(native.ValDeclarationNode{GalaNodeRef: decl})
-		case native.GalaKIND_varDeclaration:
-			idList = bindingIdList(native.VarDeclarationNode{GalaNodeRef: decl})
-		default:
-			return nil, false
-		}
-		if !idList.Ok() {
-			return nil, false
-		}
-		for id := range parser.NativeKids(idList, native.GalaKIND_identifier) {
-			names = append(names, id.GetText())
-		}
-		return names, true
-	}
 	var decl tupleDeclaration
 	switch {
 	case d.ctx.ValDeclaration() != nil:
@@ -242,8 +222,10 @@ func bindingNames(d topDecl) ([]string, bool) {
 	if idList == nil {
 		return nil, false // parse-error recovery
 	}
-	for _, id := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
-		names = append(names, id.GetText())
+	ids := idList.(*grammar.IdentifierListContext).AllIdentifier()
+	names := make([]string, len(ids))
+	for i, id := range ids {
+		names[i] = id.GetText()
 	}
 	return names, true
 }

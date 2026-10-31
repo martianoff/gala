@@ -5,13 +5,14 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
@@ -90,9 +91,7 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 		tb.Skipf("std sources not staged: %v", err)
 	}
 	files, err := bazel.ListRunfiles()
-	if err != nil {
-		tb.Fatalf("cannot list the runfiles: %v", err)
-	}
+	require.NoError(tb, err, "cannot list the runfiles")
 	var paths []string
 	for _, f := range files {
 		if !strings.HasSuffix(f.ShortPath, ".gala") {
@@ -130,18 +129,19 @@ func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src str
 	}
 	n := nativeW.transpile(path, src)
 	a := antlrW.transpile(path, src)
+	assert.Zerof(tb, a.native, "%s: the ANTLR walk lowered declarations on the native tree", path)
 	switch {
-	case a.native != 0:
-		tb.Errorf("%s: the ANTLR walk lowered %d declarations on the native tree", path, a.native)
-	case !n.converted && n.native != 0:
-		tb.Errorf("%s: the native walk lowered %d declarations on a tree the analysis did not convert", path, n.native)
-	case n.converted && n.err == nil && n.native != want, n.err != nil && n.native > want:
-		tb.Errorf("%s: the native walk lowered %d of %d top-level declarations (error: %v)", path, n.native, want, n.err)
-	case n.out != a.out:
-		tb.Errorf("%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
-	case !reflect.DeepEqual(n.err, a.err):
-		tb.Errorf("%s: the native walk's error differs from the ANTLR walk's:\n native: %#v\n  ANTLR: %#v", path, n.err, a.err)
+	case !n.converted:
+		assert.Zerof(tb, n.native, "%s: the native walk lowered declarations on a tree the analysis did not convert", path)
+	case n.err == nil:
+		assert.Equalf(tb, want, n.native, "%s: top-level declarations the native walk lowered", path)
+	default:
+		assert.LessOrEqualf(tb, n.native, want, "%s: the native walk lowered more declarations than there are (error: %v)", path, n.err)
 	}
+	if n.out != a.out {
+		assert.Failf(tb, "the walks' Go differs", "%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
+	}
+	assert.Equalf(tb, a.err, n.err, "%s: the native walk's error differs from the ANTLR walk's", path)
 	return n, true
 }
 
@@ -178,9 +178,7 @@ func TestNativeWalkAgrees(t *testing.T) {
 	files, clean, walked, decls := 0, 0, 0, 0
 	for _, path := range paths {
 		src, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		n, ok := checkWalksAgree(t, nativeW, antlrW, path, string(src))
 		if !ok {
 			continue
@@ -196,9 +194,8 @@ func TestNativeWalkAgrees(t *testing.T) {
 	}
 	// Floors catch the sources not being staged or the native walk going
 	// unused.
-	if files < 200 || clean < files*3/4 || walked < files*3/4 || decls < files {
-		t.Fatalf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
-	}
+	require.Truef(t, files >= 200 && clean >= files*3/4 && walked >= files*3/4 && decls >= files,
+		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
 	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
 }
 
@@ -333,24 +330,16 @@ func TestNativeWalkCases(t *testing.T) {
 	for _, c := range walkCases {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "_"), "main.gala")
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(c.src), 0o644); err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
 			n, ok := checkWalksAgree(t, nativeW, antlrW, path, c.src)
-			if !ok {
-				t.Fatalf("the case does not parse cleanly with galop")
-			}
+			require.True(t, ok, "the case does not parse cleanly with galop")
 			// The first case is a program that transpiles, so every
 			// declaration shape in it is lowered to the end.
-			if c.name == walkCases[0].name && n.err != nil {
-				t.Fatalf("the case does not transpile: %v", n.err)
+			if c.name == walkCases[0].name {
+				require.NoError(t, n.err, "the case does not transpile")
 			}
-			if !n.converted {
-				t.Fatalf("the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
-			}
+			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
 			t.Logf("the native walk lowered %d declarations; error: %v", n.native, n.err)
 		})
 	}

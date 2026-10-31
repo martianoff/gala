@@ -227,7 +227,11 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Type {
 	t := NewGalaASTTransformer().(*galaASTTransformer)
 	t.valTypes = make(map[string]transpiler.Type)
-	_, _, _ = t.transform(richAST, false)
+	// The inference walks ANTLR's tree (bindingNames reads only that one):
+	// the file it is given need not be the one a native handle belongs to.
+	view := *richAST
+	view.Native = nil
+	_, _, _ = t.transform(&view, false)
 	return t.valTypes
 }
 
@@ -298,6 +302,8 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 		}
 	}()
 	// Nothing reads the native tree after the walk; keep no handle to it.
+	// (No state kept past a declaration holds a node of it: the receivers
+	// checked at the end keep ranges.)
 	defer func() { t.native = nil }()
 	tree := richAST.Tree
 	t.currentScope = nil
@@ -474,7 +480,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// Use the first import declaration's position for error reporting.
 	importLine, importCol := 1, 0
 	if len(imports) > 0 {
-		importLine, importCol = imports[0].at.line, imports[0].at.col
+		importLine, importCol = imports[0].at.start()
 	}
 	if err := t.importManager.ValidateDotImports(richAST, importLine, importCol); err != nil {
 		return nil, nil, err

@@ -28,15 +28,20 @@ import (
 // which allocate.
 
 // crossTo is the ANTLR context of native node n, a C: the crossing from the
-// native tree back to ANTLR's where the port has not reached yet. Every
-// native node has its context (the conversion pairs them), so a node without
-// one of the right type is a bug in the bridge, raised as an internal error.
+// native tree back to ANTLR's where the port has not reached yet. The walk
+// reads only bridged trees (newWalkSource), where every node has a context of
+// its rule, so a missing node or one without a context of the right type is
+// a bug in the walk or the bridge, raised as an internal error.
 func crossTo[C antlr.ParserRuleContext](t *galaASTTransformer, n native.GalaNodeRef) C {
 	ctx := t.native.Ctx(n)
 	c, ok := ctx.(C)
 	if !ok {
+		what := "no node"
+		if n.Ok() {
+			what = fmt.Sprintf("node %d (kind %d) has the ANTLR context %T", n.Index(), n.Kind(), ctx)
+		}
 		// invariant: native-bridge — the walk reads only bridged trees.
-		panic(fmt.Sprintf("native tree: node %d (kind %d) has the ANTLR context %T, not %T", n.Index(), n.Kind(), ctx, c))
+		panic(fmt.Sprintf("native tree: %s, not %T", what, c))
 	}
 	return c
 }
@@ -151,6 +156,11 @@ type nativeBinding interface {
 	Type_() native.TypeNode
 	ExpressionList() native.ExpressionListNode
 }
+
+var (
+	_ nativeBinding = native.ValDeclarationNode{}
+	_ nativeBinding = native.VarDeclarationNode{}
+)
 
 // bindingIdList is the identifier list of n: its own, or its tuple pattern's.
 func bindingIdList(n nativeBinding) native.GalaNodeRef {

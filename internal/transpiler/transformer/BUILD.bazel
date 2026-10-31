@@ -464,6 +464,8 @@ go_test(
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
     ],
 )
