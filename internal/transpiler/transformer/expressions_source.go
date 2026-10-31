@@ -98,7 +98,7 @@ func (e exprSrc) bareName(t *galaASTTransformer) (name string, line, col int) {
 		if !p.Ok() {
 			return "", 0, 0
 		}
-		if _, suffixed := firstKid(p.GalaNodeRef, native.GalaKIND_postfixSuffix); suffixed {
+		for range galaparser.NativeKids(p.GalaNodeRef, native.GalaKIND_postfixSuffix) {
 			return "", 0, 0
 		}
 		id := p.PrimaryExpr().Primary().Identifier()
@@ -115,14 +115,6 @@ func (e exprSrc) bareName(t *galaASTTransformer) (name string, line, col int) {
 	return t.bareIdentifier(e.ctx), start.GetLine(), start.GetColumn()
 }
 
-// firstKid is n's first child node of kind, and false when it has none.
-func firstKid(n native.GalaNodeRef, kind native.GalaKind) (native.GalaNodeRef, bool) {
-	for kid := range galaparser.NativeKids(n, kind) {
-		return kid, true
-	}
-	return native.GalaNodeRef{}, false
-}
-
 // lowerExpr lowers e, on the tree it is on.
 func (t *galaASTTransformer) lowerExpr(e exprSrc) (ast.Expr, error) {
 	if e.node.Ok() {
@@ -133,7 +125,7 @@ func (t *galaASTTransformer) lowerExpr(e exprSrc) (ast.Expr, error) {
 
 // ctxAt is n's context on ANTLR's tree, for a check that reads it: the
 // crossing from a native node (crossTo). Diagnostics take it on their error
-// paths; the address-of check (unaryOperation) reads its operand with it.
+// paths only.
 func (t *galaASTTransformer) ctxAt(n srcNode) antlr.ParserRuleContext {
 	if n.node.Ok() {
 		return crossTo[antlr.ParserRuleContext](t, n.node)

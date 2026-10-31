@@ -225,8 +225,8 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 
 // unaryOperation builds `op expr` from the lowered operand expr of the unary
 // expression at, whose operand is written at operand. Taking the address of a
-// val is GALA-E0058 (immutableAddressError, which reads the operand on
-// ANTLR's tree).
+// val is GALA-E0058 (immutableAddressError, which reads the operand's
+// ANTLR text only for its diagnostic).
 func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr ast.Expr) (ast.Expr, error) {
 	switch op {
 	case "&":

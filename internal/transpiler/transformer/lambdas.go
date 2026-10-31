@@ -95,7 +95,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // isTryThunk reports whether l is the lambda being lowered as the thunk of
 // Try(...) (see tryThunkValue).
 func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
-	return t.tryThunkLambda != nil && l.ctx == t.tryThunkLambda
+	return t.tryThunkLambda != nil && l.antlr(t) == t.tryThunkLambda
 }
 
 // lowerLambda lowers a lambda, on the tree it comes from (see
@@ -193,7 +193,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 					hint = fmt.Sprintf("give the lambda %d parameters", len(expectedParamTypes))
 				}
 				if unresolvedSlot {
-					callee := lambdaArgCallee(l.ctx)
+					callee := lambdaArgCallee(l.antlr(t))
 					if callee == "" {
 						callee = "the function it is passed to"
 					}
