@@ -625,10 +625,13 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		}
 	}
 
-	pkgName := readTree(a, filePath, "package name", nf, packageNameNative,
-		func() string {
-			return sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+	clause := readTree(a, filePath, "package clause", nf,
+		func(root native.GalaNodeRef) packageClause { return packageClauseNative(root, docs) },
+		func() packageClause {
+			pc := sourceFile.PackageClause().(*grammar.PackageClauseContext)
+			return packageClause{name: pc.Identifier().GetText(), doc: docAt(docs, pc.GetStart())}
 		})
+	pkgName := clause.name
 	absFilePath, _ := filepath.Abs(filePath)
 
 	phaseStart := time.Now()
@@ -780,7 +783,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	richAST := &transpiler.RichAST{
 		Tree:             tree,
 		PackageName:      pkgName,
-		PackageDoc:       docAt(docs, sourceFile.PackageClause().GetStart()),
+		PackageDoc:       clause.doc,
 		Types:            make(map[string]*transpiler.TypeMetadata),
 		Functions:        make(map[string]*transpiler.FunctionMetadata),
 		Packages:         make(map[string]string),

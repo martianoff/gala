@@ -175,7 +175,8 @@ import . "martianoff/gala/collection_immutable"
 func size(xs Array[int]) int = xs.Size()
 `}}},
 	{"clean", "", [][2]string{
-		{"lib.gala", `package lib
+		{"lib.gala", `// Package lib is the clean case: naïve, but well formed.
+package lib
 
 import (
     "strings"
@@ -211,11 +212,11 @@ func cafeAt(i int) string = "é"
 
 // fileReads is the reads of the compiled file analyze makes through readTree,
 // in order.
-var fileReads = []string{"go keyword names", "generated codec names", "package name", "imports", "dot-import collisions", "top-level names"}
+var fileReads = []string{"go keyword names", "generated codec names", "package clause", "imports", "dot-import collisions", "top-level names"}
 
 // TestFileChecksAgree holds analyze's reads of the compiled file on its
 // native tree (file_checks_native.go) to the same reads on ANTLR's: its
-// package name, its imports, its top-level names, and the checks
+// package clause, its imports, its top-level names, and the checks
 // GALA-E0055, GALA-E0058 and GALA-E0066. Each GALA source staged as data
 // (those TestEnginesAgree parses), each example of the error reference pages
 // and each of fileCheckInputs is analyzed as the CLI analyzes a file, and

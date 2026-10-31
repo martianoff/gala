@@ -10,7 +10,7 @@ import (
 )
 
 // The reads analyze makes of the compiled file before and around its
-// collection, on galop's native tree: its package name, its imports, the
+// collection, on galop's native tree: its package clause, its imports, the
 // names its top-level declarations introduce, and the checks GALA-E0055,
 // GALA-E0058 and GALA-E0066. Each function here is the twin of the one it is
 // named after, which reads ANTLR's tree, and hands the same values to the
@@ -59,9 +59,16 @@ func newOwnNames() ownNames {
 	return ownNames{types: make(map[string]bool), methods: make(map[string]map[string]bool)}
 }
 
-// packageNameNative is the name root's package clause declares.
-func packageNameNative(root native.GalaNodeRef) string {
-	return galaparser.NativeText(native.SourceFileNode{GalaNodeRef: root}.PackageClause().Identifier().GalaNodeRef)
+// packageClause is what a file's package clause says: the package's name, and
+// the doc comment on the clause in docs, the file's doc comments.
+type packageClause struct {
+	name, doc string
+}
+
+// packageClauseNative is the package clause of root.
+func packageClauseNative(root native.GalaNodeRef, docs galaparser.Docs) packageClause {
+	pc := native.SourceFileNode{GalaNodeRef: root}.PackageClause()
+	return packageClause{name: galaparser.NativeText(pc.Identifier().GalaNodeRef), doc: nativeDocAt(docs, pc.GalaNodeRef)}
 }
 
 // scanFileImportsNative is scanFileImports of root.
