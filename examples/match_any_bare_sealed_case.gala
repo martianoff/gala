@@ -1,0 +1,51 @@
+package main
+
+// A bare zero-field sealed case, `case Square =>`, matched against a value of
+// an interface type (or of a type parameter) tests for that case, exactly as
+// `case Square() =>` does and as it does against a value of the sealed type.
+// A value of any other type falls through to later arms.
+//
+// Value is an empty interface, so it holds any value, exactly as Go's `any`
+// does; naming it keeps this file in the type-erasure corpus check.
+
+type Value interface {}
+
+sealed type Shape {
+    case Circle(R int)
+    case Square()
+}
+
+sealed type Wrapped {
+    case Wrap(Inner Value)
+    case Empty()
+}
+
+func describe(v Value, loud bool) string = v match {
+    case Square if loud => "SQUARE"
+    case Square => "square"
+    case Circle(r) => s"circle $r"
+    case Wrap(Square) => "wrapped square"
+    case Wrap(_) => "wrapped other"
+    case Empty => "empty"
+    case i: int => s"int $i"
+    case _ => "other"
+}
+
+func describeGeneric[T any](v T) string = v match {
+    case Square => "generic square"
+    case _ => "generic other"
+}
+
+func main() {
+    Println(describe(Square(), false))
+    Println(describe(Square(), true))
+    Println(describe(Circle(2), false))
+    Println(describe(Wrap(Square()), false))
+    Println(describe(Wrap(Circle(3)), false))
+    Println(describe(Empty(), false))
+    Println(describe(7, false))
+    Println(describe("text", false))
+    Println(describeGeneric(Square()))
+    Println(describeGeneric(Circle(1)))
+    Println(describeGeneric(9))
+}

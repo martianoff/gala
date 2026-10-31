@@ -76,7 +76,7 @@ type typeArm struct {
 // arms are the lowered arms of caseClauses; isDefault and isBinding classify
 // them as buildMatchExpressionFromClauses did.
 func (t *galaASTTransformer) typeSwitchDispatch(caseClauses []grammar.ICaseClauseContext, arms []matchArm, isDefault, isBinding []bool, paramName string, matchedType transpiler.Type) []ast.Stmt {
-	if transpiler.IsUnusable(matchedType) || !(t.isTypeParamSubject(t.followAliasChain(matchedType)) || t.isInterfaceType(matchedType)) {
+	if transpiler.IsUnusable(matchedType) || !t.holdsAnyType(matchedType) {
 		return nil
 	}
 	var typeArms []typeArm

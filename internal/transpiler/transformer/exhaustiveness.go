@@ -339,11 +339,19 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 	if inner := c.t.parenthesizedPattern(cell); inner != nil {
 		return c.constructorOf(inner, typ)
 	}
-	if name := patternIdentifier(cell); name != "" {
-		// `case None` is `case None()`.
+	// `case None` is `case None()`, and `case shapes.Square` is
+	// `case shapes.Square()`.
+	bare := patternIdentifier(cell)
+	if bare != "" && !c.t.bareNameTests(bare, typ) {
+		return "", nil
+	}
+	if bare == "" {
+		bare = stripPackagePrefix(c.t.qualifiedZeroFieldCase(cell))
+	}
+	if bare != "" {
 		for _, ctor := range ctors {
-			if ctor.name == name && len(ctor.fields) == 0 && c.t.bareNameTests(name, typ) {
-				return name, nil
+			if ctor.name == bare && len(ctor.fields) == 0 {
+				return bare, nil
 			}
 		}
 		return "", nil
