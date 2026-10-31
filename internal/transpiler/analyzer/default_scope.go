@@ -22,6 +22,10 @@ type defaultScopeRecorder struct {
 	pkgPath     string
 	quals       map[string]fileQualifiers // canonical file path -> its import table
 	privateVals map[string]bool           // the package's unexported package-level vals and vars
+	// keepRecorded leaves a default that already has a scope as it is: one
+	// recorded when its package was loaded as a dependency, which also
+	// knows the package's private vals.
+	keepRecorded bool
 }
 
 func newDefaultScopeRecorder(pkgPath string) *defaultScopeRecorder {
@@ -96,7 +100,7 @@ var identifierPattern = regexp.MustCompile(`[\p{L}_][\p{L}\p{Nd}_]*`)
 func (r *defaultScopeRecorder) record(pkgAST *transpiler.RichAST, canonical func(string) string) {
 	scopeOf := func(def transpiler.DefaultExpr, definedIn string) transpiler.DefaultExpr {
 		quals, own := r.quals[canonical(definedIn)]
-		if !own || definedIn == "" {
+		if !own || definedIn == "" || (r.keepRecorded && def.Scope != nil) {
 			return def
 		}
 		scope := &transpiler.DefaultScope{PkgPath: r.pkgPath}

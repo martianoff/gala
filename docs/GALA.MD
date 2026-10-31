@@ -403,6 +403,15 @@ func log(msg string, timestamp time.Time = time.Now()) {
 log("starting")  // timestamp = current time at each call
 ```
 
+A default is evaluated at the call site but resolved where it is written: its
+names mean what the imports of the file that declares it make them mean, never
+what the caller's imports do. A default in a file that dot-imports `pa` names
+`pa`'s `Point`, even where the calling file dot-imports another package with a
+`Point` of its own. A name that only the caller's imports resolve is undefined
+([GALA-E0023](errors/GALA-E0023.md)), reported at the default in its own file.
+This holds for a call in another package and for one in another file of the
+same package.
+
 Expression functions also support defaults:
 
 ```gala

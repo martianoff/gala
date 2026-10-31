@@ -1,0 +1,9 @@
+package lib
+
+import . "martianoff/gala/examples/foreign_default_dot_scope/pb"
+
+// lib's other file dot-imports pb, not pa. The defaults of lib.gala, lowered
+// here, still resolve their bare names through lib.gala's dot import of pa:
+// a default means what it means where it is written. They used to resolve
+// through this file's dot import and fail to compile.
+func Inside() string = s"${Matched()} ${Mapped()} ${Folded()} ${Built()} ${Pick()}"

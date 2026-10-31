@@ -1244,6 +1244,23 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	logPhase("extract-sibling-metadata", phaseStart)
 	phaseStart = time.Now()
 
+	// A default declared in one file of the package and used in another is
+	// lowered in the using file, against the declaring file's imports (see
+	// transpiler.DefaultScope): record them, as for a dependency's defaults.
+	// Only the import tables: unexported vals are in scope within the package,
+	// so addFile's private-val bookkeeping does not apply.
+	if filePath != "" && len(siblingTrees) > 0 {
+		scopes := newDefaultScopeRecorder(richAST.OwnImportPath)
+		scopes.keepRecorded = true
+		scopes.quals[a.paths.canonical(filePath)] = fileQuals
+		for i, q := range siblingQuals {
+			if i < len(siblingPaths) {
+				scopes.quals[a.paths.canonical(siblingPaths[i])] = q
+			}
+		}
+		scopes.record(richAST, a.paths.canonical)
+	}
+
 	decls.renameReceivers(richAST)
 
 	// Resolved here, while this file's imports are in effect: a target such

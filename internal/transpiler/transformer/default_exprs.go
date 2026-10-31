@@ -13,6 +13,7 @@ import (
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/registry"
 )
 
 // Default values — for function and method parameters and for shorthand struct
@@ -144,29 +145,193 @@ func (t *galaASTTransformer) carriedTypeParams(declared transpiler.Type, subst m
 // spellsAny returns the first of names that the default's source refers to —
 // as a value or as a type, not as a member, label or binding — or "".
 func spellsAny(tree antlr.Tree, names []string) string {
-	found := ""
-	if len(names) > 0 {
-		walkTree(tree, func(node antlr.Tree) {
-			id, ok := node.(*grammar.IdentifierContext)
-			if !ok || found != "" || !slices.Contains(names, id.GetText()) {
-				return
-			}
-			switch parent := id.GetParent().(type) {
-			case *grammar.PrimaryContext:
-				found = id.GetText()
-			case *grammar.QualifiedIdentifierContext:
-				if parent.Identifier(0) == id {
-					found = id.GetText()
-				}
-			case *grammar.ParameterContext:
-				// `func(Some) int`: an unnamed parameter's type.
-				if parent.Type_() == nil && isFuncTypeSignature(parent) {
-					found = id.GetText()
-				}
-			}
-		})
+	if len(names) == 0 {
+		return ""
 	}
+	if id := firstReference(tree, func(id *grammar.IdentifierContext) bool { return slices.Contains(names, id.GetText()) }); id != nil {
+		return id.GetText()
+	}
+	return ""
+}
+
+// firstReference returns the first identifier of tree that refers to a name —
+// as a value or as a type, not as a member, label or binding — and that match
+// accepts, or nil.
+func firstReference(tree antlr.Tree, match func(*grammar.IdentifierContext) bool) *grammar.IdentifierContext {
+	var found *grammar.IdentifierContext
+	walkTree(tree, func(node antlr.Tree) {
+		id, ok := node.(*grammar.IdentifierContext)
+		if !ok || found != nil || !isReference(id) || !match(id) {
+			return
+		}
+		found = id
+	})
 	return found
+}
+
+// isReference reports whether id refers to a name, as a value or as a type
+// (see firstReference).
+func isReference(id *grammar.IdentifierContext) bool {
+	switch parent := id.GetParent().(type) {
+	case *grammar.PrimaryContext:
+		return true
+	case *grammar.QualifiedIdentifierContext:
+		return parent.Identifier(0) == id
+	case *grammar.ParameterContext:
+		// `func(Some) int`: an unnamed parameter's type.
+		return parent.Type_() == nil && isFuncTypeSignature(parent)
+	}
+	return false
+}
+
+// isQualifier reports whether id, a reference, is followed by a member
+// selection: `pb` in `pb.Same()` or in `pb.Point`.
+func isQualifier(id *grammar.IdentifierContext) bool {
+	switch parent := id.GetParent().(type) {
+	case *grammar.QualifiedIdentifierContext:
+		return len(parent.AllIdentifier()) > 1
+	case *grammar.PrimaryContext:
+		primaryExpr, ok := parent.GetParent().(*grammar.PrimaryExprContext)
+		if !ok {
+			return false
+		}
+		postfix, ok := primaryExpr.GetParent().(*grammar.PostfixExprContext)
+		if !ok {
+			return false
+		}
+		suffixes := postfix.AllPostfixSuffix()
+		return len(suffixes) > 0 && suffixes[0].(*grammar.PostfixSuffixContext).Identifier() != nil
+	}
+	return false
+}
+
+// outOfLexicalScope reports a name that a default from another file reads
+// but only this file's imports resolve. A default is resolved where it was
+// written (see WithForeignQualifiers), so such a name is undefined there; the
+// generated Go would compile through this file's import and silently take
+// this file's meaning instead. The analyzer checks a default against its own
+// file's imports where it is declared, except for what it cannot check there,
+// such as the constructor a `case` pattern names; this catches the rest.
+//
+// expr is the lowered and qualified default, nil when lowering it failed; its
+// bindings are what the source binds. A bare name of the source that nothing
+// in the default's scope declares and one of this file's dot imports does is
+// such a name; when lowering failed, it is what it failed on (a `case` naming
+// a constructor out of scope, say), and is reported instead of the failure. A
+// qualifier of the source that the default's file does not bind, and this
+// file binds to a package, is read through this file's import. Each is
+// reported at its own token, in the default's file.
+func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr, src defaultSource) error {
+	if !t.lexicallyScoped(src) || t.importManager == nil || exprCtx == nil {
+		return nil
+	}
+	var bound map[string]bool // nil when lowering failed: no bindings known
+	if expr != nil {
+		bound = boundNames(expr)
+	}
+	free := func(name string) bool {
+		return !bound[name] && !slices.Contains(src.carried, name) && !slices.Contains(src.typeParams, name) && t.shadowingScope(name) == nil
+	}
+	if at, path := t.bareOutsideScope(exprCtx, src, free); at != nil {
+		name := at.GetText()
+		return lexicalScopeError(at, name, fmt.Sprintf(
+			"%s is declared in %q, which the file using this default dot-imports but the default's own file does not; a default value resolves its names where it is written, so add `import . %q` to the default's file",
+			name, path, path))
+	}
+	// A qualifier resolves through this file's names as a fallback (see
+	// WithForeignQualifiers), so it never fails lowering: it is checked on the
+	// lowered default, whose bindings bound holds.
+	if expr == nil {
+		return nil
+	}
+	if at, path := t.qualifierOutsideScope(exprCtx, src, free); at != nil {
+		name := at.GetText()
+		return lexicalScopeError(at, name, fmt.Sprintf(
+			"%s names %q in the file using this default but nothing in the default's own file; a default value resolves its names where it is written, so add `import %q` to the default's file",
+			name, path, path))
+	}
+	return nil
+}
+
+// lexicalScopeError is the GALA-E0023 for name, out of a default's scope, at
+// its token at in the default's source.
+func lexicalScopeError(at *grammar.IdentifierContext, name, hint string) error {
+	return galaerr.NewCodedSemanticError(galaerr.CodeUndefinedVariable, at.GetStart().GetLine(), at.GetStart().GetColumn(), "undefined: "+name, hint)
+}
+
+// bareOutsideScope finds, for outOfLexicalScope, the token of a bare, free,
+// exported name of the default's source that nothing in the default's scope
+// declares and one of this file's dot imports — a GALA package the default's
+// file does not dot-import — does, and that package's path; nil when there is
+// none. Only the source is read: the lowered default also holds names spelled
+// for this file (a declared type, through this file's dot import), which the
+// default never wrote. A dot import brings in exported names only.
+func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, src defaultSource, free func(string) bool) (*grammar.IdentifierContext, string) {
+	var outside []*ImportEntry
+	for _, e := range t.importManager.dotImports {
+		if _, own := src.Scope.DotImports[e.Path]; !own && e.Path != src.Scope.PkgPath && t.galaPkgPaths[e.Path] {
+			outside = append(outside, e)
+		}
+	}
+	if len(outside) == 0 {
+		return nil, ""
+	}
+	path := ""
+	prelude := registry.Global.PreludePackages()
+	at := firstReference(exprCtx, func(id *grammar.IdentifierContext) bool {
+		n := id.GetText()
+		if isQualifier(id) || !ast.IsExported(n) || !free(n) || t.declaredInDefaultScope(n, src, prelude) {
+			return false
+		}
+		for _, e := range outside {
+			if t.importDeclares(e.Path, e.PkgName, n) {
+				path = e.Path
+				return true
+			}
+		}
+		return false
+	})
+	return at, path
+}
+
+// qualifierOutsideScope finds, for outOfLexicalScope, the token of a
+// qualifier of the default's source that its file does not bind and this file
+// binds to an import it wrote, and that import's path; nil when there is none.
+func (t *galaASTTransformer) qualifierOutsideScope(exprCtx antlr.Tree, src defaultSource, free func(string) bool) (*grammar.IdentifierContext, string) {
+	path := ""
+	at := firstReference(exprCtx, func(id *grammar.IdentifierContext) bool {
+		q := id.GetText()
+		if _, own := src.Scope.Imports[q]; own || !isQualifier(id) || !free(q) {
+			return false
+		}
+		entry, ok := t.importManager.GetByAlias(q)
+		if !ok || entry.Implicit() || entry.IsDot {
+			return false
+		}
+		path = entry.Path
+		return true
+	})
+	return at, path
+}
+
+// declaredInDefaultScope reports whether name is declared where the default
+// src was written: by its package, a package its file dot-imports, or the
+// prelude.
+func (t *galaASTTransformer) declaredInDefaultScope(name string, src defaultSource, prelude []*registry.PackageInfo) bool {
+	if t.packageDeclares(src.pkg, name) || t.functions[name] != nil || t.typeMetas[name] != nil {
+		return true
+	}
+	for path, pkgName := range src.Scope.DotImports {
+		if t.importDeclares(path, pkgName, name) {
+			return true
+		}
+	}
+	for _, pkg := range prelude {
+		if t.importDeclares(pkg.ImportPath, pkg.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultExprTree parses a default's recorded text at its recorded position,
@@ -218,7 +383,7 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	// The use-site type parameters its declared type carries are the
 	// exception: they are bound, and the default must not read their names.
 	defer t.onlyTypeParams(append(slices.Clip(src.typeParams), src.carried...))()
-	if t.loweringForeignDefault() {
+	if foreignPkg := t.loweringForeignDefault(); foreignPkg || t.lexicallyScoped(src) {
 		// A foreign default reads its own package's vals and vars by bare
 		// name. They are bound here, above the use site's scopes (whose
 		// locals were not in scope where the default was written), so the
@@ -226,7 +391,8 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 		// `.Get()` unwrap, with its type — and qualifyDefaultExpr then
 		// qualifies them like the package's functions and types. The vals
 		// of the packages its file dot-imports are in scope there too, below
-		// the package's own.
+		// the package's own; for a default from another file of this
+		// package, only those.
 		t.pushScope()
 		defer t.popScope()
 		register := func(vals map[string]*transpiler.PackageValMetadata) {
@@ -236,7 +402,9 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 				}
 			}
 		}
-		register(t.declaringPackageVals(src))
+		if foreignPkg {
+			register(t.declaringPackageVals(src))
+		}
 		if src.Scope != nil {
 			for path := range src.Scope.DotImports {
 				register(t.importedVals(path))
@@ -268,9 +436,19 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 	var expr ast.Expr
 	if err == nil {
 		expr, err = t.lowerDefault(exprCtx, src)
+		if err != nil {
+			// What it failed on may be a name only this file's imports
+			// declare: report that, at the name.
+			if scopeErr := t.outOfLexicalScope(exprCtx, nil, src); scopeErr != nil {
+				err = scopeErr
+			}
+		}
 	}
 	if err == nil {
 		expr, err = t.qualifyDefaultExpr(expr, src)
+	}
+	if err == nil {
+		err = t.outOfLexicalScope(exprCtx, expr, src)
 	}
 	if err == nil {
 		if name := t.shadowedByUse(expr, useSite, src.carried); name != "" {
@@ -294,13 +472,15 @@ func (t *galaASTTransformer) transformDefaultExpr(src defaultSource, useLine, us
 }
 
 // lowerDefault transforms a default's parse tree against its declared type.
-// While a foreign default is lowered, the imports of the file that wrote it
-// are in scope: `strings.Repeat` types as Go's function even where this file
-// has no `strings`, or binds the name to another package, and `EmptyArray`
-// resolves through that file's dot import of collection_immutable. Their
-// names are respelled with this file's afterwards (see qualifyDefaultExpr).
+// While a default from another file is lowered, the imports of the file that
+// wrote it are in scope in place of this file's (see WithForeignQualifiers):
+// `strings.Repeat` types as Go's function even where this file has no
+// `strings`, or binds the name to another package, and `EmptyArray` resolves
+// through that file's dot import of collection_immutable, never through one of
+// this file's. Their names are respelled with this file's afterwards (see
+// qualifyDefaultExpr).
 func (t *galaASTTransformer) lowerDefault(exprCtx grammar.IExpressionContext, src defaultSource) (ast.Expr, error) {
-	if t.loweringForeignDefault() && src.Scope != nil && len(src.Scope.Imports)+len(src.Scope.DotImports) > 0 && t.importManager != nil {
+	if t.lexicallyScoped(src) && t.importManager != nil {
 		defer t.importManager.WithForeignQualifiers(src.Scope.Imports, src.Scope.DotImports)()
 	}
 	return t.transformWithDeclaredType(exprCtx, src.declared, src.unboundTypeParams())

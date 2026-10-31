@@ -687,6 +687,15 @@ func (t *galaASTTransformer) loweringForeignDefault() bool {
 	return d != nil && d.pkg != "" && d.pkg != t.packageName
 }
 
+// lexicallyScoped reports whether src, the default being lowered, is from
+// another file — of this package or another one — whose imports were
+// recorded: its names then resolve through that file's imports alone (see
+// WithForeignQualifiers).
+func (t *galaASTTransformer) lexicallyScoped(src defaultSource) bool {
+	d := t.loweringDefault
+	return d != nil && d.foreign && src.Scope != nil
+}
+
 // ownFunctionKey is the t.functions key of function name declared in package
 // pkg, mirroring the analyzer: `main` and `test` register bare names, every
 // other package registers "pkg.Name".
