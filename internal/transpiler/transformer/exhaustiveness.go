@@ -341,16 +341,20 @@ func (c *coverage) constructorOf(cell covCell, typ transpiler.Type) (string, []c
 	}
 	// `case None` is `case None()`, and `case shapes.Square` is
 	// `case shapes.Square()`.
-	bare := patternIdentifier(cell)
-	if bare != "" && !c.t.bareNameTests(bare, typ) {
-		return "", nil
-	}
+	// A qualified case names a constructor of typ only when it is of typ's
+	// package.
+	bare, qualified := patternIdentifier(cell), false
 	if bare == "" {
-		bare = stripPackagePrefix(c.t.qualifiedZeroFieldCase(cell))
+		if pkg, name := splitPackageQualifier(c.t.qualifiedZeroFieldCase(cell)); name != "" {
+			if meta := c.t.getTypeMeta(typ.BaseName()); meta == nil || meta.Package != pkg {
+				return "", nil
+			}
+			bare, qualified = name, true
+		}
 	}
 	if bare != "" {
 		for _, ctor := range ctors {
-			if ctor.name == bare && len(ctor.fields) == 0 {
+			if ctor.name == bare && len(ctor.fields) == 0 && (qualified || c.t.bareNameTests(bare, typ)) {
 				return bare, nil
 			}
 		}
