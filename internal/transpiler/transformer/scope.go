@@ -551,6 +551,7 @@ func (t *galaASTTransformer) registerPackageVal(name string, meta *transpiler.Pa
 // registerDotImportedVals binds the bindings of every dot-imported GALA package
 // under their bare names, after the current package's own (which win a clash).
 func (t *galaASTTransformer) registerDotImportedVals() {
+	t.dotImportedVals = nil
 	if t.richAST == nil || len(t.richAST.ImportedVals) == 0 || t.currentScope == nil {
 		return
 	}
@@ -561,6 +562,10 @@ func (t *galaASTTransformer) registerDotImportedVals() {
 		for name, meta := range t.richAST.ImportedVals[entry.Path] {
 			if _, bound := t.currentScope.vals[name]; !bound && meta != nil {
 				t.registerPackageVal(name, meta)
+				if t.dotImportedVals == nil {
+					t.dotImportedVals = make(map[string]*ImportEntry)
+				}
+				t.dotImportedVals[name] = entry
 			}
 		}
 	}

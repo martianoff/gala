@@ -2206,6 +2206,15 @@ gala_exec_test(
     deps = [":std_shadow_lib"],
 )
 
+# A function named like a std type, reached through a named import, beside
+# std's type reached as `std.Name` — the two spellings GALA-E0087 suggests.
+gala_exec_test(
+    name = "std_type_qualified",
+    src = "std_type_qualified.gala",
+    expected = "std_type_qualified.out",
+    deps = [":std_shadow_lib"],
+)
+
 # Regression: a dot-imported sealed type whose first case is named `Done`
 # (with at least one field) must not be shadowed by an entry whose simple
 # name happens to be the sub-package name (`state`). Pattern

@@ -844,6 +844,15 @@ const (
 	// instantiations to generate. The spec used to be copied into the Go
 	// interface as written, and the generated Go did not parse (GALA-E0017).
 	CodeGenericInterfaceMethod ErrorCode = "GALA-E0086"
+
+	// E0087: a bare name written as a value is provided both by the
+	// implicitly imported prelude, as a type, and by an explicitly
+	// dot-imported package, as a function or package-level value. Neither
+	// import outranks the other, so the use is ambiguous; it used to be read
+	// silently as the prelude's type. A type position, a type argument and
+	// the extractor of a constructor pattern are not affected: only the
+	// prelude's name can stand there.
+	CodeDotImportPreludeAmbiguity ErrorCode = "GALA-E0087"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

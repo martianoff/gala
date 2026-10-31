@@ -1649,6 +1649,8 @@ A few std names are reserved and cannot be redeclared, because the language give
 
 A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](/docs/errors/gala-e0066/), because Go forbids it; import that package under a name, or rename the declaration.
 
+A bare name written as a value that std declares as a type and a dot-imported package declares as a function or `val` is ambiguous, and is rejected with [GALA-E0087](/docs/errors/gala-e0087/): `Void()` beside `import . "example.com/demo/util"`, where `util` declares `func Void()`. Write `util.Void()` through a plain import, or `std.Void` through `import "martianoff/gala/std"`. In a type position (`Try[Void]`) the name is std's type.
+
 ### Package Visibility {#package-visibility}
 
 Visibility is controlled at two levels. **Identifiers** use casing, as in Go: a `PascalCase` type, function, field or method is exported from its package; a `camelCase` one is not.

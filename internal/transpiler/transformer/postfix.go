@@ -428,10 +428,16 @@ func (t *galaASTTransformer) resolveIndexAccess(base ast.Expr, suffix *grammar.P
 	// a value, so the function is no Immutable to unwrap; asking would only
 	// find it typeless until instantiated.
 	genericMethod := false
-	if !t.namesFunction(base) {
+	instantiates := t.namesFunction(base)
+	if !instantiates {
 		if genericMethod = t.namesGenericMethod(base); !genericMethod {
 			base = t.unwrapImmutable(base)
 		}
+	}
+	// The indices of a function, method or type are its type arguments.
+	if instantiates || genericMethod || t.getTypeMeta(t.getBaseTypeName(base)) != nil {
+		t.typeNameDepth++
+		defer func() { t.typeNameDepth-- }()
 	}
 	indices, err := t.transformExpressionList(exprList.(*grammar.ExpressionListContext))
 	if err != nil {
