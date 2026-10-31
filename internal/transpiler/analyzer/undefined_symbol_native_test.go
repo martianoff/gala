@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/galaerr"
+	galaparser "martianoff/gala/internal/parser"
 )
 
 // undefinedInputs are packages, as files, whose compiled file (the first) the
