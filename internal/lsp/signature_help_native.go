@@ -8,7 +8,7 @@ import (
 // Signature help's reads of the parse tree on galop's native tree: each
 // function here is the twin of the one it is named after, in
 // signature_help.go, which reads ANTLR's tree, and hands the same values to
-// the same tree-free code (callShape). TestSignatureHelpTreesAgree holds each
+// the same tree-free code (callShape). TestSignatureCallTreesAgree holds each
 // pair together.
 
 // The reads of a document's tree that have a native twin, as
@@ -43,7 +43,11 @@ func findCallAtOffsetNative(root native.GalaNodeRef, cursorOffset int) *callCont
 	if !f.bestSuffix.Ok() {
 		return nil
 	}
-	return callShapeNative(f.bestSuffix, f.bestParent).context(cursorOffset)
+	shape, ok := callShapeNative(f.bestSuffix, f.bestParent)
+	if !ok {
+		return nil
+	}
+	return shape.context(cursorOffset)
 }
 
 // nativeCallFinder is callFinder on the native tree: it visits the nodes
@@ -78,10 +82,11 @@ func (f *nativeCallFinder) walk(n, parent native.GalaNodeRef, depth int) {
 // enterPostfixSuffix is callFinder.EnterPostfixSuffix of suffix, the child of
 // parent, at depth depth.
 func (f *nativeCallFinder) enterPostfixSuffix(suffix, parent native.GalaNodeRef, depth int) {
-	if !(native.PostfixSuffixNode{GalaNodeRef: suffix}).ArgumentList().Ok() && !childToken(suffix, "(").Ok() {
+	open := childToken(suffix, "(")
+	if !(native.PostfixSuffixNode{GalaNodeRef: suffix}).ArgumentList().Ok() && !open.Ok() {
 		return
 	}
-	start, stop := openParenRangeNative(suffix)
+	start, stop := openParenRangeNative(suffix, open)
 	if !bracketsCursor(start, stop, f.cursorOffset) {
 		return
 	}
@@ -96,9 +101,9 @@ func (f *nativeCallFinder) enterPostfixSuffix(suffix, parent native.GalaNodeRef,
 	f.bestDepth = depth
 }
 
-// openParenRangeNative is openParenRange of suffix.
-func openParenRangeNative(suffix native.GalaNodeRef) (openAfter, closeAt int) {
-	openParen := childToken(suffix, "(")
+// openParenRangeNative is openParenRange of suffix, whose first "(" child is
+// openParen (childToken).
+func openParenRangeNative(suffix native.GalaNodeRef, openParen native.GalaTerminal) (openAfter, closeAt int) {
 	if !openParen.Ok() {
 		return -1, -1
 	}
@@ -124,7 +129,7 @@ func childToken(n native.GalaNodeRef, literal string) native.GalaTerminal {
 }
 
 // callShapeNative is callShapeOf the call callSuffix of parent.
-func callShapeNative(callSuffix, parent native.GalaNodeRef) callShape {
+func callShapeNative(callSuffix, parent native.GalaNodeRef) (callShape, bool) {
 	var suffixes []native.GalaNodeRef
 	callIdx := -1
 	for s := range parser.NativeKids(parent, native.GalaKIND_postfixSuffix) {
@@ -137,10 +142,10 @@ func callShapeNative(callSuffix, parent native.GalaNodeRef) callShape {
 		}
 	}
 	if callIdx < 0 {
-		return callShape{}
+		return callShape{}, false
 	}
 
-	shape := callShape{found: true, primary: nativeSourceText(native.PostfixExprNode{GalaNodeRef: parent}.PrimaryExpr().GalaNodeRef)}
+	shape := callShape{primary: nativeSourceText(native.PostfixExprNode{GalaNodeRef: parent}.PrimaryExpr().GalaNodeRef)}
 	if callIdx > 0 {
 		prev := suffixes[callIdx-1]
 		if id := (native.PostfixSuffixNode{GalaNodeRef: prev}).Identifier(); id.Ok() && !childToken(prev, "(").Ok() && !childToken(prev, "[").Ok() {
@@ -157,7 +162,7 @@ func callShapeNative(callSuffix, parent native.GalaNodeRef) callShape {
 	}
 	argList := native.PostfixSuffixNode{GalaNodeRef: callSuffix}.ArgumentList()
 	if !argList.Ok() {
-		return shape
+		return shape, true
 	}
 	for i := range argList.ChildCount() {
 		if t := argList.Child(i).Terminal(); t.Ok() && t.GetText() == "," {
@@ -174,7 +179,7 @@ func callShapeNative(callSuffix, parent native.GalaNodeRef) callShape {
 		}
 		shape.args = append(shape.args, ca)
 	}
-	return shape
+	return shape, true
 }
 
 // nativeSourceText is contextText of n: its source text, or "" for no node

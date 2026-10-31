@@ -153,10 +153,8 @@ func fileResolver(richAST *transpiler.RichAST, dotImports []string) *resolver.Ty
 // of ANTLR's tree, and converting the whole file to read them would cost a
 // hover more than it saves. onNative says which tree it read.
 func dotImportPathsOf(tree antlr.Tree, handle *parser.Native) (paths []string, onNative bool) {
-	if handle.Converted() && handle.Bridged() {
-		if root, err := handle.Tree(); err == nil {
-			return analyzer.DotImportPathsNative(root.Root()), true
-		}
+	if root, ok := handle.ConvertedRoot(); ok {
+		return analyzer.DotImportPathsNative(root), true
 	}
 	return analyzer.DotImportPaths(tree), false
 }

@@ -81,6 +81,26 @@ func (t *Native) Converted() bool {
 	return t != nil && t.converted.Load()
 }
 
+// BridgedRoot is the root of the native tree and true when the bridge holds
+// (Bridged), converting the tree if nothing has yet; no node and false
+// otherwise.
+func (t *Native) BridgedRoot() (native.GalaNodeRef, bool) {
+	if !t.Bridged() {
+		return native.GalaNodeRef{}, false
+	}
+	return t.tree.Root(), true
+}
+
+// ConvertedRoot is BridgedRoot for a consumer that would not pay for the
+// conversion itself: no node and false unless the tree has converted already
+// (Converted).
+func (t *Native) ConvertedRoot() (native.GalaNodeRef, bool) {
+	if !t.Converted() {
+		return native.GalaNodeRef{}, false
+	}
+	return t.BridgedRoot()
+}
+
 func (t *Native) convert() {
 	defer func() {
 		if r := recover(); r != nil {

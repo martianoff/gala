@@ -81,15 +81,12 @@ func TestSignatureCallTreesAgree(t *testing.T) {
 			continue // a parse with errors (or none) is ANTLR's alone
 		}
 		require.True(t, handle.Bridged(), "%s: the native tree does not bridge", path)
-		root, err := handle.Tree()
-		require.NoError(t, err)
 		files++
 		for _, off := range spread(callCursors(text), 150) {
 			want := findCallAtOffset(parsed.Tree, text, off)
 			got, onNative := callAtOffset(parsed.Tree, handle, text, off)
 			require.True(t, onNative, "%s@%d: callAtOffset read ANTLR's tree", path, off)
 			require.Equal(t, want, got, "%s@%d", path, off)
-			require.Equal(t, want, findCallAtOffsetNative(root.Root(), off), "%s@%d", path, off)
 			cases++
 			if want != nil {
 				calls++

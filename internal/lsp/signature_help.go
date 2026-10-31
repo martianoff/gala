@@ -135,10 +135,8 @@ func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callCon
 // native tree when the handle bridges, converting it if no feature has yet,
 // and ANTLR's tree otherwise; onNative says which it read.
 func callAtOffset(tree antlr.Tree, handle *parser.Native, src string, offset int) (call *callContext, onNative bool) {
-	if handle.Bridged() {
-		if root, err := handle.Tree(); err == nil {
-			return findCallAtOffsetNative(root.Root(), offset), true
-		}
+	if root, ok := handle.BridgedRoot(); ok {
+		return findCallAtOffsetNative(root, offset), true
 	}
 	return findCallAtOffset(tree, src, offset), false
 }
@@ -212,7 +210,11 @@ func findCallAtOffset(tree antlr.Tree, text string, cursorOffset int) *callConte
 	if f.bestSuffix == nil {
 		return nil
 	}
-	return callShapeOf(f.bestSuffix, f.bestParent, text, f.offs).context(cursorOffset)
+	shape, ok := callShapeOf(f.bestSuffix, f.bestParent, text, f.offs)
+	if !ok {
+		return nil
+	}
+	return shape.context(cursorOffset)
 }
 
 // callFinder is an ANTLR listener that tracks the innermost postfixSuffix
@@ -304,8 +306,6 @@ func findChildTerminal(ctx antlr.RuleContext, literal string) antlr.TerminalNode
 // ANTLR's tree and callShapeNative from the native tree; context turns it
 // into the callContext, the same way for both.
 type callShape struct {
-	// found is whether the suffix is one of the postfixExpr's suffixes.
-	found bool
 	// primary is the source text of the postfixExpr's primary expression.
 	primary string
 	// method is the identifier of the `.id` suffix right before the call,
@@ -328,8 +328,8 @@ type callArg struct {
 }
 
 // callShapeOf is the callShape of the call callSuffix of parent, on ANTLR's
-// tree.
-func callShapeOf(callSuffix *grammar.PostfixSuffixContext, parent *grammar.PostfixExprContext, text string, offs tokenOffsets) callShape {
+// tree, and false when callSuffix is none of parent's suffixes.
+func callShapeOf(callSuffix *grammar.PostfixSuffixContext, parent *grammar.PostfixExprContext, text string, offs tokenOffsets) (callShape, bool) {
 	suffixes := parent.AllPostfixSuffix()
 	callIdx := -1
 	for i, s := range suffixes {
@@ -339,10 +339,10 @@ func callShapeOf(callSuffix *grammar.PostfixSuffixContext, parent *grammar.Postf
 		}
 	}
 	if callIdx < 0 {
-		return callShape{}
+		return callShape{}, false
 	}
 
-	shape := callShape{found: true, primary: contextText(parent.PrimaryExpr(), text, offs)}
+	shape := callShape{primary: contextText(parent.PrimaryExpr(), text, offs)}
 	// If the immediately-preceding suffix is `.id`, the callee is that
 	// identifier and the receiver is primaryExpr + suffixes before it.
 	if callIdx > 0 {
@@ -361,7 +361,7 @@ func callShapeOf(callSuffix *grammar.PostfixSuffixContext, parent *grammar.Postf
 	}
 	argList, _ := callSuffix.ArgumentList().(*grammar.ArgumentListContext)
 	if argList == nil {
-		return shape
+		return shape, true
 	}
 	for _, child := range argList.GetChildren() {
 		if term, ok := child.(antlr.TerminalNode); ok && term.GetText() == "," {
@@ -379,16 +379,13 @@ func callShapeOf(callSuffix *grammar.PostfixSuffixContext, parent *grammar.Postf
 		}
 		shape.args = append(shape.args, ca)
 	}
-	return shape
+	return shape, true
 }
 
 // context turns the call into the data the signature resolver needs:
 // callee name, receiver text, and argument index. It is nil when the shape
 // is no call signature help answers for.
 func (s callShape) context(cursorOffset int) *callContext {
-	if !s.found {
-		return nil
-	}
 	name := s.method
 	// No preceding `.id` — this is a bare call on the primary expression.
 	// Use the primary expression's text as the callee name.
