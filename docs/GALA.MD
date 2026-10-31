@@ -1324,7 +1324,7 @@ Variants with one or more fields always require parentheses (`case Rectangle(w, 
 
 A zero-field variant of another package is written the same way, qualified (`case shapes.Point`, or through an import alias) or bare under a dot import.
 
-On a subject whose type is an interface (`any` included) or a type parameter, a bare capitalized zero-field variant of a non-generic sealed type tests for that variant too, exactly as `case Point()` does there: the arm matches only when the value holds a `Shape` that is a `Point` ([Struct Patterns on Interface Values](#struct-patterns-on-interface-values)). A lowercase variant name binds on such a subject. The bare name of any other variant there is rejected with [GALA-E0039](errors/GALA-E0039.md) rather than bound: a field-bearing variant needs its fields (`case Rectangle(_, _)`), and a variant of a generic sealed type (`case None`) cannot be tested at all, because the pattern does not name the type arguments — match on a typed subject such as `Option[int]` instead.
+On a subject whose type is an interface (`any` included) or a type parameter, a bare capitalized zero-field variant of a non-generic sealed type tests for that variant too, exactly as `case Point()` does there: the arm matches only when the value holds a `Shape` that is a `Point` ([Struct Patterns on Interface Values](#struct-patterns-on-interface-values)). A lowercase variant name binds on such a subject. The bare name of any other variant there is rejected with [GALA-E0039](errors/GALA-E0039.md) rather than bound: a field-bearing variant needs its fields (`case Rectangle(_, _)`), and a variant of a generic sealed type (`case None`) needs its type arguments (`case None[int]()`), since the subject does not supply them — or match on a typed subject such as `Option[int]`.
 
 Otherwise the rule is scoped to the type being matched. A bare identifier that does not name a variant of the match subject's type — and, if capitalized, does not name an in-scope value (see [Stable Identifiers](#stable-identifiers-constants-in-patterns)) — is an ordinary binding:
 
@@ -1920,7 +1920,7 @@ func describe(v any) string = v match {
 }
 ```
 
-The bare form stops there. `case Circle` without its fields is [GALA-E0039](errors/GALA-E0039.md), as on a `Shape` subject — write `case Circle(_)`. So is `case None`, or any variant of a generic sealed type: an interface value cannot be checked for an `Option` of no particular element type, so match on a typed subject such as `Option[int]`, or use a lowercase name to bind the value.
+The bare form stops there. `case Circle` without its fields is [GALA-E0039](errors/GALA-E0039.md), as on a `Shape` subject — write `case Circle(_)`. So is `case None`, or any variant of a generic sealed type: an interface value can only be checked for one instantiation, so write it, `case None[int]()` or `case Some[int](n)`, match on a typed subject such as `Option[int]`, or use a lowercase name to bind the value.
 
 #### Generic Type Pattern Matching
 GALA supports matching against generic types. This is particularly useful for generic containers like `Option[T]`, `Either[A, B]`, or custom generic structs.

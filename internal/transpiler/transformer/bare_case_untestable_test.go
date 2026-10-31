@@ -78,11 +78,11 @@ sealed type Pair[A any, B any] {
 		{
 			name: "case with fields, type parameter subject",
 			body: `func describe[T any](x T) string = x match {
-    case Both => "both"
+    case Circle => "circle"
     case _ => "other"
 }`,
-			msg:  "`Both` is a variant of sealed type \"Pair\"",
-			hint: "write `case Both(_, _)`",
+			msg:  "`Circle` is a variant of sealed type \"Shape\"",
+			hint: "write `case Circle(_)`",
 		},
 		{
 			name: "generic case, any subject",
@@ -91,7 +91,27 @@ sealed type Pair[A any, B any] {
     case _ => "other"
 }`,
 			msg:  "`None` is a variant of generic sealed type \"Option\", so `case None` binds a new variable and matches every value: a value of type any cannot be tested for None without Option's type arguments",
-			hint: "match on a typed subject (e.g. `Option[int]`), or use a lowercase name to bind the value",
+			hint: "write the type arguments (e.g. `case None[int]()`), match on a typed subject (e.g. `Option[int]`), or use a lowercase name to bind the value",
+		},
+		{
+			// Spelling the fields alone would not test the value either: the
+			// hint spells the type arguments too.
+			name: "generic case with fields, any subject",
+			body: `func describe(v any) string = v match {
+    case Some => "some"
+    case _ => "other"
+}`,
+			msg:  "`Some` is a variant of generic sealed type \"Option\"",
+			hint: "`case Some[int](_)`",
+		},
+		{
+			name: "generic case with fields, type parameter subject",
+			body: `func describe[T any](x T) string = x match {
+    case Both => "both"
+    case _ => "other"
+}`,
+			msg:  "`Both` is a variant of generic sealed type \"Pair\"",
+			hint: "`case Both[int, int](_, _)`",
 		},
 		{
 			name: "generic case, the only arm",
@@ -174,6 +194,28 @@ sealed type Slot[T any] {
     case blank => fmt.Sprint(blank)
 }`,
 			contains: []string{"blank := obj"},
+		},
+		{
+			name: "generic case with its type arguments",
+			body: `func describe(v any) string = v match {
+    case None[int]() => "none"
+    case Some[int](n) => fmt.Sprint(n)
+    case _ => "other"
+}`,
+			contains: []string{"std.As[std.Option[int]](obj)"},
+		},
+		{
+			// A capitalized value in scope is compared, as before, even when
+			// it is named like a case of a generic sealed type.
+			name: "value named like a generic case",
+			body: `func describe(v any) string {
+    val Success = "ok"
+    return v match {
+        case Success => "success"
+        case _ => "other"
+    }
+}`,
+			contains: []string{"== Success"},
 		},
 		{
 			name: "generic case on a typed subject",

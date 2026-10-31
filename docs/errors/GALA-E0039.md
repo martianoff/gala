@@ -98,9 +98,10 @@ other variant name is this error:
 
 - a field-bearing variant, as on a subject of its sealed type — write
   `case Circle(_)`;
-- a variant of a generic sealed type, `case None`. It cannot be tested at all,
-  because the pattern names no type arguments. Match on a typed subject, such
-  as `Option[int]`, or use a lowercase name to bind the value.
+- a variant of a generic sealed type, `case None` (with or without fields).
+  The subject does not supply its type arguments, so write them
+  (`case None[int]()`), match on a typed subject such as `Option[int]`, or use
+  a lowercase name to bind the value.
 
 The same goes for a variant named through a dot import or qualified
 (`case shapes.Circle`, `case std.None`). A lowercase name still binds.
