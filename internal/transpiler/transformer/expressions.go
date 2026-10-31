@@ -1173,7 +1173,7 @@ func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifCtx *grammar.IfStatementC
 		return loweredIfBranch{}, err
 	}
 	if !ok {
-		if err := t.checkUnpromotedBranchTails(ifCtx, promoted); err != nil {
+		if err := t.checkUnpromotedBranchTails(ifSrc{ctx: ifCtx}, promoted); err != nil {
 			return loweredIfBranch{}, err
 		}
 		return noValueBranch([]ast.Stmt{promoted}), nil

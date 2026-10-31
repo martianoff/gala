@@ -781,6 +781,22 @@ func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg st
 	return galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
 }
 
+// semanticErrorAtNode is semanticErrorAt of n, a node of either tree.
+func (t *galaASTTransformer) semanticErrorAtNode(n srcNode, msg string) *galaerr.SemanticError {
+	if n.node.Ok() {
+		line, col := n.start()
+		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
+	}
+	return t.semanticErrorAt(n.ctx, msg)
+}
+
+// semanticErrorAtStart is galaerr.NewSemanticErrorAt n's first token: a
+// diagnostic without the file's path.
+func semanticErrorAtStart(n srcNode, msg string) *galaerr.SemanticError {
+	line, col := n.start()
+	return galaerr.NewSemanticErrorAt(line, col, msg)
+}
+
 // semanticErrorIn is semanticErrorAt of the node at r.
 func (t *galaASTTransformer) semanticErrorIn(r srcRange, msg string) *galaerr.SemanticError {
 	return galaerr.NewSemanticErrorInFile(t.filePath, r.line, r.col, msg)

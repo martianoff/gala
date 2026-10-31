@@ -205,7 +205,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode) funcDecl {
 	d := funcDecl{name: n.Identifier().GetText(), sig: crossTo[*grammar.SignatureContext](t, n.Signature().GalaNodeRef)}
 	if b := n.Block(); b.Ok() {
-		d.block = crossTo[*grammar.BlockContext](t, b.GalaNodeRef)
+		d.block = antlrBlock(crossTo[*grammar.BlockContext](t, b.GalaNodeRef))
 	}
 	if e := n.Expression(); e.Ok() {
 		d.expr = crossTo[*grammar.ExpressionContext](t, e.GalaNodeRef)

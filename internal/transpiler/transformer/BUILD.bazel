@@ -58,6 +58,7 @@ go_library(
         "self_containing.go",
         "spread.go",
         "statements.go",
+        "statements_source.go",
         "string_escapes.go",
         "struct_defaults.go",
         "tco.go",

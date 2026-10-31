@@ -12,26 +12,22 @@ import (
 )
 
 func (t *galaASTTransformer) transformSimpleStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
-	return t.transformSimpleStatementWithMutability(ctx, false)
+	return t.lowerSimpleStatement(antlrSimple(ctx), false)
 }
 
-// transformForLoopInitStatement transforms a simple statement in a for loop init context.
-// Variables declared with := in this context are mutable (can be incremented/decremented).
-func (t *galaASTTransformer) transformForLoopInitStatement(ctx grammar.ISimpleStatementContext) (ast.Stmt, error) {
-	return t.transformSimpleStatementWithMutability(ctx, true)
-}
-
-func (t *galaASTTransformer) transformSimpleStatementWithMutability(ctx grammar.ISimpleStatementContext, mutable bool) (ast.Stmt, error) {
-	if incDecCtx := ctx.IncDecStmt(); incDecCtx != nil {
-		return t.transformIncDecStmt(incDecCtx.(*grammar.IncDecStmtContext))
-	}
-	if assignCtx := ctx.Assignment(); assignCtx != nil {
-		return t.transformAssignment(assignCtx.(*grammar.AssignmentContext))
-	}
-	if shortCtx := ctx.ShortVarDecl(); shortCtx != nil {
-		return t.transformShortVarDeclWithMutability(shortCtx.(*grammar.ShortVarDeclContext), mutable)
-	}
-	if exprCtx := ctx.Expression(); exprCtx != nil {
+// lowerSimpleStatement lowers s. mutable makes the names a `:=` declares
+// mutable (they can be incremented or decremented): the init statement of a
+// for loop.
+func (t *galaASTTransformer) lowerSimpleStatement(s simpleSrc, mutable bool) (ast.Stmt, error) {
+	switch s.kind {
+	case simpleIncDec:
+		return t.lowerIncDec(s.incDec(t))
+	case simpleAssign:
+		return t.lowerAssignment(s.assign(t))
+	case simpleShortVar:
+		return t.lowerShortVarDecl(s.shortVar(t), mutable)
+	case simpleExpr:
+		exprCtx := s.expr(t)
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
 			return bs, nil
 		}
@@ -118,27 +114,23 @@ func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExp
 	)
 }
 
-func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext) (ast.Stmt, error) {
-	if err := t.immutableWriteError(ctx, ctx.Expression(), "increment/decrement"); err != nil {
+// lowerIncDec lowers an increment or decrement.
+func (t *galaASTTransformer) lowerIncDec(d incDecDecl) (ast.Stmt, error) {
+	if err := t.immutableWriteError(d.at, d.expr, "increment/decrement"); err != nil {
 		return nil, err
 	}
-	expr, err := t.transformExpression(ctx.Expression())
+	expr, err := t.transformExpression(d.expr)
 	if err != nil {
 		return nil, err
 	}
-	if err := t.immutableFieldWriteError(ctx.Expression(), expr, "increment/decrement"); err != nil {
+	if err := t.immutableFieldWriteError(d.expr, expr, "increment/decrement"); err != nil {
 		return nil, err
 	}
 	expr = t.sealPlainValPath(expr)
 
-	// Determine the token (++ or --)
 	tok := token.INC
-	if ctx.GetChildCount() >= 2 {
-		if termNode, ok := ctx.GetChild(1).(antlr.TerminalNode); ok {
-			if termNode.GetText() == "--" {
-				tok = token.DEC
-			}
-		}
+	if d.dec {
+		tok = token.DEC
 	}
 
 	return &ast.IncDecStmt{
@@ -147,74 +139,62 @@ func (t *galaASTTransformer) transformIncDecStmt(ctx *grammar.IncDecStmtContext)
 	}, nil
 }
 
-// hoistsInitializer reports whether the value of ctx may be lowered as
-// statements emitted before it: a `val` or `var` declaration, or an assignment
-// statement of its own to a variable. Not the clauses of an `if` or `for`: a
-// `for` post statement runs on every iteration, not once before the loop. Nor
-// an assignment to an element or field: its index and receiver operands are
-// evaluated before its value, so the value's statements cannot go first.
-func hoistsInitializer(ctx grammar.IDeclarationContext) bool {
-	if ctx.ValDeclaration() != nil || ctx.VarDeclaration() != nil {
-		return true
-	}
-	simple := ctx.SimpleStatement()
-	if simple == nil || simple.Assignment() == nil {
-		return false
-	}
-	targets := simple.Assignment().AllExpressionList()[0].AllExpression()
-	return len(targets) == 1 && token.IsIdentifier(targets[0].GetText())
+// transformStatement lowers the statement ctx (see lowerStatement).
+func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (stmt ast.Stmt, pre []ast.Stmt, err error) {
+	return t.lowerStatement(antlrStmt(ctx))
 }
 
-// transformStatement lowers a statement to stmt, preceded by pre: the
-// statements a local declaration whose initializer is lowered as statements
-// needs before it (see hoisted_value.go), or the binding of a `use`, emitted
-// in the caller's own list so the name stays in its scope.
-func (t *galaASTTransformer) transformStatement(ctx *grammar.StatementContext) (stmt ast.Stmt, pre []ast.Stmt, err error) {
-	// A `use x = acquire` scoped-resource binding lowers to `x := acquire`,
-	// emitted before, plus `defer x.Close()`; the binding stays in scope for
-	// the rest of the block and releases (LIFO) when the function returns.
-	if useDecl := useDeclFromStatement(ctx); useDecl != nil {
-		useStmts, err := t.transformUseDeclaration(useDecl)
+// lowerStatement lowers a statement to stmt, preceded by pre: the statements
+// a local declaration whose initializer is lowered as statements needs
+// before it (see hoisted_value.go), or the binding of a `use`, emitted in the
+// caller's own list so the name stays in its scope.
+func (t *galaASTTransformer) lowerStatement(s stmtSrc) (stmt ast.Stmt, pre []ast.Stmt, err error) {
+	switch s.kind {
+	case stmtNone:
+		return nil, nil, nil
+	case stmtUse:
+		// A `use x = acquire` scoped-resource binding lowers to `x := acquire`,
+		// emitted before, plus `defer x.Close()`; the binding stays in scope for
+		// the rest of the block and releases (LIFO) when the function returns.
+		useStmts, err := t.lowerUseDecl(s.use(t))
 		if err != nil {
 			return nil, nil, err
 		}
 		return useStmts[1], useStmts[:1], nil
-	}
-	if declCtx := ctx.Declaration(); declCtx != nil {
-		prevLocal, prevPre := t.localDeclaration, t.hoistedPre
-		t.localDeclaration, t.hoistedPre = hoistsInitializer(declCtx), nil
-		decl, stmt, err := t.transformDeclaration(declCtx)
-		pre := t.hoistedPre
-		t.localDeclaration, t.hoistedPre = prevLocal, prevPre
-		if err != nil {
-			return nil, nil, err
-		}
-		if stmt == nil && decl != nil {
-			stmt = &ast.DeclStmt{Decl: decl}
-		}
-		return stmt, pre, nil
-	}
-	if retCtx := ctx.ReturnStatement(); retCtx != nil {
-		start := retCtx.GetStart()
-		if retCtx.Expression() == nil {
+	case stmtReturn:
+		line, col := s.kid.start()
+		value := s.returnExpr(t)
+		if value == nil {
 			ret := &ast.ReturnStmt{}
-			t.recordUserReturn(ret, start.GetLine(), start.GetColumn())
+			t.recordUserReturn(ret, line, col)
 			return ret, nil, nil
 		}
 		// A lambda, if-expression or match takes its types from the result
 		// type of the innermost enclosing function or lambda.
-		stmt, err := t.lowerReturnValue(retCtx.Expression())
+		stmt, err := t.lowerReturnValue(value)
 		if err != nil {
 			return nil, nil, err
 		}
-		t.recordUserReturn(stmt, start.GetLine(), start.GetColumn())
+		t.recordUserReturn(stmt, line, col)
 		return stmt, nil, nil
 	}
-	return nil, nil, nil
+	prevLocal, prevPre := t.localDeclaration, t.hoistedPre
+	t.localDeclaration, t.hoistedPre = s.hoistsInitializer(), nil
+	decl, stmt, err := t.lowerDeclaration(s)
+	pre = t.hoistedPre
+	t.localDeclaration, t.hoistedPre = prevLocal, prevPre
+	if err != nil {
+		return nil, nil, err
+	}
+	if stmt == nil && decl != nil {
+		stmt = &ast.DeclStmt{Decl: decl}
+	}
+	return stmt, pre, nil
 }
 
-func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext) (ast.Stmt, error) {
-	lhsCtx := ctx.GetChild(0).(*grammar.ExpressionListContext)
+// lowerAssignment lowers an assignment.
+func (t *galaASTTransformer) lowerAssignment(d assignDecl) (ast.Stmt, error) {
+	lhsCtx := d.lhs
 	for _, exprCtx := range lhsCtx.AllExpression() {
 		// `if (c) a() else x = v` parses as an assignment to the whole
 		// if-expression: an if-expression's branch is an expression, and an
@@ -222,13 +202,13 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		// call's result, which Go rejects; the intent is the braced
 		// if-statement.
 		if t.findIfExpressionInExpression(exprCtx) != nil {
-			return nil, t.semanticErrorAt(ctx, "cannot assign to an if-expression: its else branch is an "+
+			return nil, t.semanticErrorAtNode(d.at, "cannot assign to an if-expression: its else branch is an "+
 				"expression, so `if (c) a() else x = v` assigns to the whole if. "+
 				"Use braces to make the assignment part of a branch: `if (c) { a() } else { x = v }`")
 		}
 		// Only direct reassignment of a val (`v = ...`, `pkg.V = ...`) is blocked
 		// here; a field or index through a val binding is checked below or by Go.
-		if err := t.immutableWriteError(ctx, exprCtx, "assign to"); err != nil {
+		if err := t.immutableWriteError(d.at, exprCtx, "assign to"); err != nil {
 			return nil, err
 		}
 		if exprCtx.GetChildCount() == 3 && exprCtx.GetChild(1).(antlr.ParseTree).GetText() == "." {
@@ -243,7 +223,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 					for i, f := range fields {
 						if f == selName {
 							if t.structImmutFields[resolvedTypeName][i] {
-								return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("cannot assign to immutable field %s", selName))
+								return nil, semanticErrorAtStart(d.at, fmt.Sprintf("cannot assign to immutable field %s", selName))
 							}
 							break
 						}
@@ -267,7 +247,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	// A single target's type is the RHS's expected type, so
 	// `failure = Some(...)` emits `Some[string]{}.Apply(...)`, and so does a
 	// field or element target: `s.cur = None()` for `cur Option[int]`.
-	rhsListCtx := ctx.GetChild(2).(*grammar.ExpressionListContext)
+	rhsListCtx := d.rhs
 	var lhsType transpiler.Type
 	if lhsName, lhsOk := t.singleAssignmentLHSName(lhsCtx); lhsOk {
 		lhsType = t.getValType(lhsName)
@@ -297,7 +277,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 		unwrappedRhs[0] = t.rawGoCall(unwrappedRhs[0])
 	}
 
-	op := ctx.GetChild(1).(antlr.TerminalNode).GetText()
+	op := d.op
 	var tok token.Token
 	switch op {
 	case "=":
@@ -311,7 +291,7 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	case "/=":
 		tok = token.QUO_ASSIGN
 	default:
-		return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), fmt.Sprintf("unknown assignment operator: %s", op))
+		return nil, semanticErrorAtStart(d.at, fmt.Sprintf("unknown assignment operator: %s", op))
 	}
 
 	return &ast.AssignStmt{
@@ -321,16 +301,14 @@ func (t *galaASTTransformer) transformAssignment(ctx *grammar.AssignmentContext)
 	}, nil
 }
 
-func (t *galaASTTransformer) transformShortVarDecl(ctx *grammar.ShortVarDeclContext) (ast.Stmt, error) {
-	return t.transformShortVarDeclWithMutability(ctx, false)
-}
-
-func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.ShortVarDeclContext, mutable bool) (ast.Stmt, error) {
-	idsCtx := ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier()
-	if err := checkLoneBlank(ctx, idsCtx, "_ := ..."); err != nil {
+// lowerShortVarDecl lowers `names := exprs`; mutable as for
+// lowerSimpleStatement.
+func (t *galaASTTransformer) lowerShortVarDecl(d shortVarDecl, mutable bool) (ast.Stmt, error) {
+	idsCtx := d.names
+	if err := loneBlankError(d.at, d.names, "_ := ...", d.blankHint); err != nil {
 		return nil, err
 	}
-	rhsExprs, err := t.transformExpressionList(ctx.ExpressionList().(*grammar.ExpressionListContext))
+	rhsExprs, err := t.transformExpressionList(d.exprs)
 	if err != nil {
 		return nil, err
 	}
@@ -339,16 +317,16 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 	// like the `val a, b = f()` form; the per-name walk below handles only the
 	// one-expression-per-name case.
 	if len(rhsExprs) == 1 && len(idsCtx) > 1 {
-		return t.shortVarDeclFromMultiValue(ctx, idsCtx, rhsExprs[0], mutable)
+		return t.shortVarDeclFromMultiValue(d, rhsExprs[0], mutable)
 	}
 	if len(rhsExprs) != len(idsCtx) {
-		return nil, t.semanticErrorAt(ctx, "assignment mismatch")
+		return nil, t.semanticErrorAtNode(d.at, "assignment mismatch")
 	}
 
 	lhs := make([]ast.Expr, 0)
 	rhs := make([]ast.Expr, 0)
 	for i, idCtx := range idsCtx {
-		name := idCtx.GetText()
+		name := idCtx.text
 		typeName := t.getExprTypeName(rhsExprs[i])
 		if qName := t.lookupTypeName(typeName.String()); !qName.IsNil() {
 			typeName = qName
@@ -365,7 +343,7 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 		t.bindGoResult(name, val)
 
 		if t.isNoneCall(val) {
-			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "variable assigned to None() must have an explicit type")
+			return nil, semanticErrorAtStart(d.at, "variable assigned to None() must have an explicit type")
 		}
 
 		// A local val is a plain Go variable, as a var is (see valsAreBoxed).
@@ -384,17 +362,17 @@ func (t *galaASTTransformer) transformShortVarDeclWithMutability(ctx *grammar.Sh
 // each name takes its own, mirroring the `val a, b = f()` lowering in
 // transformVarDeclaration.
 func (t *galaASTTransformer) shortVarDeclFromMultiValue(
-	ctx *grammar.ShortVarDeclContext,
-	idsCtx []grammar.IIdentifierContext,
+	d shortVarDecl,
 	rhs ast.Expr,
 	mutable bool,
 ) (ast.Stmt, error) {
+	idsCtx := d.names
 	callValue := t.rawGoCall(t.unwrapImmutable(rhs))
 	// Only a call yields several values. Anything else — a literal, a name, an
 	// arithmetic expression — is one value, and binding it to several names is
 	// a mismatch Go would otherwise report against the generated temporaries.
 	if _, isCall := callValue.(*ast.CallExpr); !isCall {
-		return nil, t.semanticErrorAt(ctx, fmt.Sprintf(
+		return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf(
 			"assignment mismatch: %d names but the right-hand side is a single value", len(idsCtx)))
 	}
 	// Each name takes its type from the callee's corresponding declared return,
@@ -403,7 +381,7 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	// The callee's return count is known only for a resolved Go signature; a
 	// GALA callee reports none, and the mismatch surfaces later.
 	if len(callReturns) > 0 && len(callReturns) != len(idsCtx) {
-		return nil, t.semanticErrorAt(ctx, fmt.Sprintf(
+		return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf(
 			"assignment mismatch: %d names but the call returns %d values", len(idsCtx), len(callReturns)))
 	}
 	typeOf := func(i int) transpiler.Type {
@@ -426,7 +404,7 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	if mutable {
 		lhs := make([]ast.Expr, 0, len(idsCtx))
 		for i, idCtx := range idsCtx {
-			name := idCtx.GetText()
+			name := idCtx.text
 			t.addVar(name, typeOf(i))
 			t.markMutable(name)
 			lhs = append(lhs, ast.NewIdent(name))
@@ -438,36 +416,12 @@ func (t *galaASTTransformer) shortVarDeclFromMultiValue(
 	// name on its left: `_, _ := f()` is not Go.
 	names := make([]*ast.Ident, len(idsCtx))
 	for i, idCtx := range idsCtx {
-		name := idCtx.GetText()
+		name := idCtx.text
 		t.addVal(name, typeOf(i))
 		names[i] = ast.NewIdent(name)
 	}
 	spec := &ast.ValueSpec{Names: names, Values: []ast.Expr{callValue}}
 	return &ast.DeclStmt{Decl: &ast.GenDecl{Tok: token.VAR, Specs: []ast.Spec{spec}}}, nil
-}
-
-// forClauseSlots splits a `for init; cond; post` clause into its two statement
-// slots. Either may be omitted, so the statements are assigned by counting the
-// `;` separators that precede each one rather than by their position in the
-// list: nothing before the first separator is the init, anything after the
-// second is the post.
-func forClauseSlots(forClause *grammar.ForClauseContext) (init, post *grammar.SimpleStatementContext) {
-	semis := 0
-	for _, child := range forClause.GetChildren() {
-		switch node := child.(type) {
-		case antlr.TerminalNode:
-			if node.GetText() == ";" {
-				semis++
-			}
-		case *grammar.SimpleStatementContext:
-			if semis == 0 {
-				init = node
-			} else {
-				post = node
-			}
-		}
-	}
-	return init, post
 }
 
 // blockTail says what a block's trailing statement is for.
@@ -529,10 +483,15 @@ func (t *galaASTTransformer) transformFunctionBody(ctx *grammar.BlockContext) (*
 	return t.transformBlockWithTail(ctx, tailReturn, slot{})
 }
 
-// transformBlockWithTail lowers a block. tail and lastValueExpected describe
-// this block's trailing statement only; they are parameters, not transformer
-// state, so nested and sibling blocks cannot inherit them.
+// transformBlockWithTail lowers the block ctx (see lowerBlock).
 func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
+	return t.lowerBlock(antlrBlock(ctx), tail, lastValueExpected)
+}
+
+// lowerBlock lowers a block. tail and lastValueExpected describe this block's
+// trailing statement only; they are parameters, not transformer state, so
+// nested and sibling blocks cannot inherit them.
+func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
 	// A match or if-expression at the tail of every value-carrying block is
 	// value-consumed, not statement-position — including a branch of a value
 	// block's trailing if, whose tail the chain promotes like a lambda's.
@@ -541,33 +500,35 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 	defer t.popScope()
 
 	block := &ast.BlockStmt{}
-	allStmts := ctx.AllStatement()
+	allStmts := b.statements()
 	lastIdx := len(allStmts) - 1
-	for i, stmtCtx := range allStmts {
+	for i, st := range allStmts {
 		// Source-mapped `//line` directive: mark each statement with its
 		// originating GALA line so a panic reports the GALA position. The marker
 		// is prepended before the statement's generated code — never appended —
 		// so the block's trailing statement stays real and downstream
 		// trailing-expression handling is unaffected (see line_directives.go).
-		if t.emitLineMarkers() && stmtCtx.GetStart() != nil {
-			block.List = append(block.List, lineMarkerStmt(stmtCtx.GetStart().GetLine()))
+		if t.emitLineMarkers() {
+			if line, ok := st.line(); ok {
+				block.List = append(block.List, lineMarkerStmt(line))
+			}
 		}
 		// Monadic do-notation: a `bind` collapses itself and every following
 		// statement in the block into a FlatMap chain (see bind.go). Statements
 		// before the first `bind` are emitted normally by prior iterations. An
 		// `also` is only valid immediately following a `bind`/`also` (handled
 		// inside the chain), so one reached here has no preceding `bind`.
-		if alsoDeclFromStatement(stmtCtx) != nil {
-			return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`also` must follow a `bind`")
+		if st.kind == stmtAlso {
+			return nil, t.semanticErrorAtNode(st.at, "`also` must follow a `bind`")
 		}
-		if bindDeclFromStatement(stmtCtx) != nil {
+		if st.kind == stmtBind {
 			if !lastStmtIsValue {
 				// The chain is the block's value, and nothing reads the
 				// value of this block.
 				if transpiler.IsUnusable(t.returnSlot.typ) {
-					return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext), "`bind` requires the enclosing function to declare a monad return type")
+					return nil, t.semanticErrorAtNode(st.at, "`bind` requires the enclosing function to declare a monad return type")
 				}
-				return nil, t.semanticErrorAt(stmtCtx.(*grammar.StatementContext),
+				return nil, t.semanticErrorAtNode(st.at,
 					"`bind` is not allowed in a block whose value is not used, such as the body of an `if` statement or a loop: "+
 						"its chain would be computed and thrown away. Use it in a function or lambda body, an if-expression branch or a match arm")
 			}
@@ -588,14 +549,14 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				}
 			}
 			if hoisted {
-				if err := t.checkNoEscapeAfterBind(allStmts[i:], "a match arm"); err != nil {
+				if err := t.checkNoEscapeAfterBind(antlrStmts(t, allStmts[i:]), "a match arm"); err != nil {
 					return nil, err
 				}
 				// The chain's continuations are functions of their own.
 				defer t.enterIIFEReturnSlot(typ)()
 			}
 			res := t.newBindResult(typ)
-			expr, err := t.desugarBindChain(allStmts[i:], res)
+			expr, err := t.desugarBindChain(antlrStmts(t, allStmts[i:]), res)
 			if err != nil {
 				return nil, err
 			}
@@ -624,25 +585,27 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		prev := t.matchInStatementPos
 		isTrailing := i == lastIdx
 		discardsValue := !isTrailing || !lastStmtIsValue
-		if discardsValue && stmtIsBareMatchExpression(stmtCtx.(*grammar.StatementContext), t) {
+		valueExpr := st.valueExpr(t)
+		if discardsValue && valueExpr != nil && t.expressionIsBareMatch(valueExpr) {
 			t.matchInStatementPos = true
 		}
 		var stmt ast.Stmt
 		// pre: statements a local declaration needs before it (see
-		// transformStatement).
+		// lowerStatement).
 		var pre []ast.Stmt
 		var err error
-		valueExpr := trailingValueExpression(stmtCtx.(*grammar.StatementContext))
+		// The trailing value of a lambda's block body is a result value.
+		slotBody := isTrailing && lastStmtIsValue && b.is(t, t.returnSlot.body)
 		// The trailing value of a lambda whose result type is not known yet
 		// is one of its result values, like a `return` value.
-		fillsPendingSlot := isTrailing && lastStmtIsValue && valueExpr != nil && ctx == t.returnSlot.body && t.returnSlotPending()
+		fillsPendingSlot := slotBody && valueExpr != nil && t.returnSlotPending()
 		// Once an earlier `return` has filled that slot, the trailing value
 		// fills a slot of that type like any other result value.
-		if isTrailing && lastStmtIsValue && ctx == t.returnSlot.body && t.returnSlot.fillable &&
+		if slotBody && t.returnSlot.fillable &&
 			transpiler.IsUnusable(lastValueExpected.typ) && !transpiler.IsUnusable(t.returnSlot.typ) {
 			lastValueExpected = typedSlot(t.returnSlot.typ)
 		}
-		ifCtx := ifStatementOf(stmtCtx.(*grammar.StatementContext))
+		ifS := st.ifStmt()
 		if bs, ok := t.lowerLoopControl(valueExpr); ok {
 			// Loop control is a statement wherever it sits, the tail of a
 			// value-carrying block included: it is never the block's value.
@@ -653,20 +616,20 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 		} else if isTrailing && tail == tailReturn && valueExpr != nil {
 			// The function's implicit return value.
 			stmt, err = t.lowerFunctionTail(valueExpr)
-		} else if isTrailing && ifCtx != nil && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
+		} else if isTrailing && ifS.ok() && (tail == tailReturn || tail == tailValue || tail == tailBranch) {
 			// A trailing if/else carries the block's value in its branches,
 			// and so does an if/else nested at the tail of such a branch.
 			branchTail := tailBranch
 			if tail == tailReturn {
 				branchTail = tailReturn
 			}
-			stmt, err = t.transformIfStatementWithTail(ifCtx, branchTail, lastValueExpected)
+			stmt, err = t.lowerIfStatement(ifS, branchTail, lastValueExpected)
 			if ifStmt, ok := stmt.(*ast.IfStmt); ok && err == nil && tail == tailValue {
 				// The consumer promotes the chain only when every branch
 				// ends in a value; otherwise its branch tails are discarded.
 				if _, promotes := t.promoteIfBranchValues(ifStmt, plainReturn); !promotes {
-					if err = t.checkMixedBranchValues(ifCtx, ifStmt); err == nil {
-						err = t.checkUnpromotedBranchTails(ifCtx, ifStmt)
+					if err = t.checkMixedBranchValues(ifS, ifStmt); err == nil {
+						err = t.checkUnpromotedBranchTails(ifS, ifStmt)
 					}
 				}
 			}
@@ -695,7 +658,7 @@ func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, t
 				stmt = &ast.ExprStmt{X: t.lowerFillingValue(valueExpr, false)}
 			}
 		} else {
-			stmt, pre, err = t.transformStatement(stmtCtx.(*grammar.StatementContext))
+			stmt, pre, err = t.lowerStatement(st)
 		}
 		t.matchInStatementPos = prev
 		if err != nil {
@@ -765,7 +728,7 @@ func (t *galaASTTransformer) typeBlockValue(block *ast.BlockStmt) {
 	}
 }
 
-// transformUseDeclaration lowers a `use x = acquire` scoped-resource binding to
+// lowerUseDecl lowers a `use x = acquire` scoped-resource binding to
 // the two Go statements that implement it: `x := acquire` and `defer x.Close()`.
 // The resource is bound for the rest of the enclosing block and released — via
 // its Close() method — when the function returns, on every path (normal or
@@ -779,9 +742,9 @@ func (t *galaASTTransformer) typeBlockValue(block *ast.BlockStmt) {
 // injected. Acquisition is a single-value expression; a fallible Go acquire that
 // returns `(resource, error)` should be error-checked first (or use the
 // resource combinators directly).
-func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclarationContext) ([]ast.Stmt, error) {
-	name := ctx.Identifier().GetText()
-	acquire, err := t.transformExpression(ctx.Expression())
+func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
+	name := d.name
+	acquire, err := t.transformExpression(d.expr)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +754,7 @@ func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclaration
 	// the Close() call resolve directly (no Immutable unwrapping). Prefer an
 	// explicit annotation when present; otherwise infer from the acquire expr.
 	resType := t.getExprTypeName(acquire)
-	if typeCtx := ctx.Type_(); typeCtx != nil {
+	if typeCtx := d.typ; typeCtx != nil {
 		if typeExpr, terr := t.transformType(typeCtx); terr == nil {
 			if annotated := t.astTypeToTranspilerType(typeExpr); annotated != nil && !annotated.IsNil() {
 				resType = annotated
@@ -822,15 +785,6 @@ func (t *galaASTTransformer) transformUseDeclaration(ctx grammar.IUseDeclaration
 		},
 	}
 	return []ast.Stmt{assign, deferStmt}, nil
-}
-
-// stmtIsBareMatchExpression reports whether a statement is just a bare
-// `subject match { ... }` expression. It descends through statement →
-// declaration / simpleStatement → expression to reach the match check.
-// The transformer is passed for access to expressionIsBareMatch.
-func stmtIsBareMatchExpression(ctx *grammar.StatementContext, t *galaASTTransformer) bool {
-	exprCtx := trailingValueExpression(ctx)
-	return exprCtx != nil && t.expressionIsBareMatch(exprCtx)
 }
 
 // trailingValueExpression returns the expression of an expression statement
@@ -980,15 +934,15 @@ func (t *galaASTTransformer) sourceFunctionName(name, receiverTypeName string) s
 // missingReturnError reports a body that can finish without the value its
 // result type promises — subject is "function F" or "this lambda" — at the
 // body's last statement (or its closing brace when it is empty).
-func (t *galaASTTransformer) missingReturnError(body *grammar.BlockContext, subject, result string) error {
+func (t *galaASTTransformer) missingReturnError(body blockSrc, subject, result string) error {
 	msg := fmt.Sprintf("%s returns %s, but its body can finish without a value; end it in the value to return, or add a `return`", subject, result)
-	if stmts := body.AllStatement(); len(stmts) > 0 {
-		return t.semanticErrorAt(stmts[len(stmts)-1], msg)
+	if last, ok := body.lastStatement(); ok {
+		return t.semanticErrorAtNode(last.at, msg)
 	}
-	if stop := body.GetStop(); stop != nil {
-		return galaerr.NewSemanticErrorInFile(t.filePath, stop.GetLine(), stop.GetColumn(), msg)
+	if line, col, ok := body.stop(); ok {
+		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
 	}
-	return t.semanticErrorAt(body, msg)
+	return t.semanticErrorAtNode(body.at(), msg)
 }
 
 // isTerminatingStmt reports whether s is a terminating statement in the sense
@@ -1033,28 +987,27 @@ func isTerminatingStmt(s ast.Stmt) bool {
 // branch computes. A branch ending in a `return` or a diverging call needs no
 // value; an `if` with no `else`, here or nested at a branch's tail, is left to
 // checkUnpromotedBranchTails.
-func (t *galaASTTransformer) checkMixedBranchValues(ifCtx *grammar.IfStatementContext, stmt *ast.IfStmt) error {
+func (t *galaASTTransformer) checkMixedBranchValues(ifS ifSrc, stmt *ast.IfStmt) error {
 	if stmt.Else == nil {
 		return nil
 	}
 	valueSeen := false
-	var noValue antlr.ParserRuleContext
-	var walk func(*grammar.IfStatementContext, *ast.IfStmt)
-	branch := func(blockCtx grammar.IBlockContext, blk *ast.BlockStmt) {
-		stmts := blockCtx.(*grammar.BlockContext).AllStatement()
-		if len(stmts) == 0 || blk == nil || len(blk.List) == 0 {
-			if noValue == nil {
-				noValue = blockCtx.(*grammar.BlockContext)
+	var noValue srcNode
+	var walk func(ifSrc, *ast.IfStmt)
+	branch := func(b blockSrc, blk *ast.BlockStmt) {
+		last, ok := b.lastStatement()
+		if !ok || blk == nil || len(blk.List) == 0 {
+			if !noValue.ok() {
+				noValue = b.at()
 			}
 			return
 		}
-		last := stmts[len(stmts)-1].(*grammar.StatementContext)
 		yields := false
 		switch lowered := blk.List[len(blk.List)-1].(type) {
 		case *ast.IfStmt:
-			if innerCtx := ifStatementOf(last); innerCtx != nil {
+			if inner := last.ifStmt(); inner.ok() {
 				if lowered.Else != nil {
-					walk(innerCtx, lowered)
+					walk(inner, lowered)
 				}
 				return
 			}
@@ -1069,26 +1022,26 @@ func (t *galaASTTransformer) checkMixedBranchValues(ifCtx *grammar.IfStatementCo
 		}
 		if yields {
 			valueSeen = true
-		} else if noValue == nil {
-			noValue = last
+		} else if !noValue.ok() {
+			noValue = last.at
 		}
 	}
-	walk = func(ifCtx *grammar.IfStatementContext, stmt *ast.IfStmt) {
-		branch(ifCtx.Block(0), stmt.Body)
+	walk = func(ifS ifSrc, stmt *ast.IfStmt) {
+		branch(ifS.block(0), stmt.Body)
 		switch e := stmt.Else.(type) {
 		case *ast.BlockStmt:
-			if ifCtx.Block(1) != nil {
-				branch(ifCtx.Block(1), e)
+			if b := ifS.block(1); b.ok() {
+				branch(b, e)
 			}
 		case *ast.IfStmt:
-			if elseIf, ok := ifCtx.IfStatement().(*grammar.IfStatementContext); ok && elseIf != nil {
+			if elseIf := ifS.elseIf(); elseIf.ok() {
 				walk(elseIf, e)
 			}
 		}
 	}
-	walk(ifCtx, stmt)
-	if valueSeen && noValue != nil {
-		return t.semanticErrorAt(noValue,
+	walk(ifS, stmt)
+	if valueSeen && noValue.ok() {
+		return t.semanticErrorAtNode(noValue,
 			"this branch of the `if` produces no value, but another branch does; end every branch in a value, since the `if` is the block's value")
 	}
 	return nil
@@ -1097,35 +1050,34 @@ func (t *galaASTTransformer) checkMixedBranchValues(ifCtx *grammar.IfStatementCo
 // checkUnpromotedBranchTails runs checkValueUsed on the trailing statement of
 // every branch of an if/else chain lowered with tailBranch, once it is known
 // the chain will not be promoted: its branch tails are then discarded like
-// any other statement. ifCtx is the GALA chain and stmt its lowering.
-func (t *galaASTTransformer) checkUnpromotedBranchTails(ifCtx *grammar.IfStatementContext, stmt *ast.IfStmt) error {
-	checkBlock := func(blockCtx grammar.IBlockContext, blk *ast.BlockStmt) error {
-		stmts := blockCtx.(*grammar.BlockContext).AllStatement()
-		if len(stmts) == 0 || blk == nil || len(blk.List) == 0 {
+// any other statement. ifS is the GALA chain and stmt its lowering.
+func (t *galaASTTransformer) checkUnpromotedBranchTails(ifS ifSrc, stmt *ast.IfStmt) error {
+	checkBlock := func(b blockSrc, blk *ast.BlockStmt) error {
+		last, ok := b.lastStatement()
+		if !ok || blk == nil || len(blk.List) == 0 {
 			return nil
 		}
-		last := stmts[len(stmts)-1].(*grammar.StatementContext)
 		lowered := blk.List[len(blk.List)-1]
 		if inner, ok := lowered.(*ast.IfStmt); ok {
-			if innerCtx := ifStatementOf(last); innerCtx != nil {
-				return t.checkUnpromotedBranchTails(innerCtx, inner)
+			if innerS := last.ifStmt(); innerS.ok() {
+				return t.checkUnpromotedBranchTails(innerS, inner)
 			}
 		}
-		if valueExpr := trailingValueExpression(last); valueExpr != nil {
+		if valueExpr := last.valueExpr(t); valueExpr != nil {
 			return t.checkValueUsed(valueExpr, lowered)
 		}
 		return nil
 	}
-	if err := checkBlock(ifCtx.Block(0), stmt.Body); err != nil {
+	if err := checkBlock(ifS.block(0), stmt.Body); err != nil {
 		return err
 	}
 	switch e := stmt.Else.(type) {
 	case *ast.BlockStmt:
-		if ifCtx.Block(1) != nil {
-			return checkBlock(ifCtx.Block(1), e)
+		if b := ifS.block(1); b.ok() {
+			return checkBlock(b, e)
 		}
 	case *ast.IfStmt:
-		if elseIf, ok := ifCtx.IfStatement().(*grammar.IfStatementContext); ok && elseIf != nil {
+		if elseIf := ifS.elseIf(); elseIf.ok() {
 			return t.checkUnpromotedBranchTails(elseIf, e)
 		}
 	}
@@ -1178,14 +1130,15 @@ func (t *galaASTTransformer) checkValueUsedHint(exprCtx grammar.IExpressionConte
 		"`%s` is evaluated but not used; %s", exprCtx.GetText(), hint))
 }
 
-func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementContext) (ast.Stmt, error) {
+// lowerForStatement lowers a for-statement.
+func (t *galaASTTransformer) lowerForStatement(f forSrc) (ast.Stmt, error) {
 	// Handle condition-only for loop: for condition { ... }
-	if condCtx := ctx.ForCondition(); condCtx != nil {
-		cond, err := t.transformExpression(condCtx.(*grammar.ForConditionContext).Expression())
+	if condCtx := f.cond(t); condCtx != nil {
+		cond, err := t.transformExpression(condCtx)
 		if err != nil {
 			return nil, err
 		}
-		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		body, err := t.lowerBlock(f.body(), tailDiscarded, slot{})
 		if err != nil {
 			return nil, err
 		}
@@ -1196,15 +1149,13 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	}
 
 	// Handle range clause: for x := range expr
-	if rangeCtx := ctx.RangeClause(); rangeCtx != nil {
-		rangeClause := rangeCtx.(*grammar.RangeClauseContext)
-
+	if rangeClause, ok := f.rangeClause(t); ok {
 		// Push scope for range variables - they should be visible in the body
 		t.pushScope()
 		defer t.popScope()
 
 		// Transform the range expression
-		rangeExpr, err := t.transformExpression(rangeClause.Expression())
+		rangeExpr, err := t.transformExpression(rangeClause.expr)
 		if err != nil {
 			return nil, err
 		}
@@ -1214,46 +1165,37 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 
 		// Determine if using := or =
 		tok := token.DEFINE
-		if rangeClause.GetChildCount() > 1 {
-			for i := 0; i < rangeClause.GetChildCount(); i++ {
-				if child := rangeClause.GetChild(i); child != nil {
-					if termNode, ok := child.(antlr.TerminalNode); ok && termNode.GetText() == "=" {
-						tok = token.ASSIGN
-						break
-					}
-				}
-			}
+		if rangeClause.assign {
+			tok = token.ASSIGN
 		}
 
 		// Set up key and value identifiers
 		var key, value ast.Expr
-		if idListCtx := rangeClause.IdentifierList(); idListCtx != nil {
-			ids := idListCtx.(*grammar.IdentifierListContext).AllIdentifier()
-			// `for k, v = range xs` assigns the existing bindings, so it is
-			// rejected for a val, a parameter not declared `var` or a receiver,
-			// like any other assignment. Checked before the names are rebound.
-			if tok == token.ASSIGN {
-				for _, id := range ids {
-					name, fixed := t.immutableBinding("", id.GetText())
-					if err := t.immutableNameWriteError(rangeClause, name, fixed, "assign to"); err != nil {
-						return nil, err
-					}
+		ids := rangeClause.names
+		// `for k, v = range xs` assigns the existing bindings, so it is
+		// rejected for a val, a parameter not declared `var` or a receiver,
+		// like any other assignment. Checked before the names are rebound.
+		if tok == token.ASSIGN {
+			for _, id := range ids {
+				name, fixed := t.immutableBinding("", id.text)
+				if err := t.immutableNameWriteError(rangeClause.at, name, fixed, "assign to"); err != nil {
+					return nil, err
 				}
 			}
-			if len(ids) >= 1 {
-				keyName := ids[0].GetText()
-				t.addVar(keyName, keyType)
-				key = ast.NewIdent(keyName)
-			}
-			if len(ids) >= 2 {
-				valueName := ids[1].GetText()
-				t.addVar(valueName, valueType)
-				value = ast.NewIdent(valueName)
-			}
+		}
+		if len(ids) >= 1 {
+			keyName := ids[0].text
+			t.addVar(keyName, keyType)
+			key = ast.NewIdent(keyName)
+		}
+		if len(ids) >= 2 {
+			valueName := ids[1].text
+			t.addVar(valueName, valueType)
+			value = ast.NewIdent(valueName)
 		}
 
 		// Transform body AFTER range variables are in scope
-		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		body, err := t.lowerBlock(f.body(), tailDiscarded, slot{})
 		if err != nil {
 			return nil, err
 		}
@@ -1268,9 +1210,7 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	}
 
 	// Handle for clause: for init; condition; post
-	if forClauseCtx := ctx.ForClause(); forClauseCtx != nil {
-		forClause := forClauseCtx.(*grammar.ForClauseContext)
-
+	if forClause, ok := f.clause(t); ok {
 		// Push scope for init variables - they should be visible in condition, post, and body
 		t.pushScope()
 		defer t.popScope()
@@ -1284,30 +1224,29 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 		// list is positionally ambiguous: with the init omitted, the post is
 		// the only entry and reading it as element 0 turned `for ; i < 3; i =
 		// i + 1` into `for i = i + 1; i < 3; {`, running the step once before
-		// the loop instead of on every iteration. The slot is decided by how
-		// many `;` separators precede each statement.
-		initCtx, postCtx := forClauseSlots(forClause)
+		// the loop instead of on every iteration. The reader decides the slot
+		// by how many `;` separators precede each statement (forSrc.clause).
 
-		// Process init FIRST so variables are in scope for condition and body
-		// Note: init uses transformForLoopInitStatement to make := declarations mutable
-		if initCtx != nil {
-			init, err = t.transformForLoopInitStatement(initCtx)
+		// Process init FIRST so variables are in scope for condition and body.
+		// Its := declarations are mutable, so the loop can step them.
+		if forClause.init.ok() {
+			init, err = t.lowerSimpleStatement(forClause.init, true)
 			if err != nil {
 				return nil, err
 			}
 		}
 
 		// Process condition (can use init variables)
-		if forClause.Expression() != nil {
-			cond, err = t.transformExpression(forClause.Expression())
+		if forClause.cond != nil {
+			cond, err = t.transformExpression(forClause.cond)
 			if err != nil {
 				return nil, err
 			}
 		}
 
 		// Process post (can use init variables)
-		if postCtx != nil {
-			post, err = t.transformSimpleStatement(postCtx)
+		if forClause.post.ok() {
+			post, err = t.lowerSimpleStatement(forClause.post, false)
 			if err != nil {
 				return nil, err
 			}
@@ -1317,12 +1256,12 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 			// reported here rather than reaching the Go parser as an
 			// unparseable-output internal error.
 			if _, isDecl := post.(*ast.DeclStmt); isDecl {
-				return nil, t.semanticErrorAt(postCtx, "a `for` post statement cannot bind a multi-value call; move the binding into the loop body")
+				return nil, t.semanticErrorAtNode(forClause.post.at, "a `for` post statement cannot bind a multi-value call; move the binding into the loop body")
 			}
 		}
 
 		// Transform body LAST - after init variables are in scope
-		body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		body, err := t.lowerBlock(f.body(), tailDiscarded, slot{})
 		if err != nil {
 			return nil, err
 		}
@@ -1336,7 +1275,7 @@ func (t *galaASTTransformer) transformForStatement(ctx *grammar.ForStatementCont
 	}
 
 	// Infinite loop: for { ... }
-	body, err := t.transformBlock(ctx.Block().(*grammar.BlockContext))
+	body, err := t.lowerBlock(f.body(), tailDiscarded, slot{})
 	if err != nil {
 		return nil, err
 	}
@@ -1427,23 +1366,23 @@ func (t *galaASTTransformer) immutableBinding(pkg string, name string) (string, 
 // decrement") the immutable binding target names directly, or returns nil.
 // A parameter not marked `var` is immutable like a val; its error says how to
 // make it reassignable. A receiver can never be rebound.
-func (t *galaASTTransformer) immutableWriteError(ctx antlr.ParserRuleContext, target grammar.IExpressionContext, verb string) error {
+func (t *galaASTTransformer) immutableWriteError(at srcNode, target grammar.IExpressionContext, verb string) error {
 	name, fixed := t.immutableBindingName(target)
-	return t.immutableNameWriteError(ctx, name, fixed, verb)
+	return t.immutableNameWriteError(at, name, fixed, verb)
 }
 
 // immutableNameWriteError builds the error for writing the immutable binding
 // name (as immutableBinding reports it), or returns nil when name is "".
-func (t *galaASTTransformer) immutableNameWriteError(ctx antlr.ParserRuleContext, name string, fixed fixedBinding, verb string) error {
+func (t *galaASTTransformer) immutableNameWriteError(at srcNode, name string, fixed fixedBinding, verb string) error {
 	switch {
 	case name == "":
 		return nil
 	case fixed.isReceiver():
-		err := t.semanticErrorAt(ctx, fmt.Sprintf("cannot %s receiver %s", verb, name))
+		err := t.semanticErrorAtNode(at, fmt.Sprintf("cannot %s receiver %s", verb, name))
 		err.Hint = receiverRebindHint(name)
 		return err
 	}
-	err := t.semanticErrorAt(ctx, fmt.Sprintf("cannot %s immutable variable %s", verb, name))
+	err := t.semanticErrorAtNode(at, fmt.Sprintf("cannot %s immutable variable %s", verb, name))
 	if fixed == fixedParam {
 		err.Hint = fmt.Sprintf("declare it `var %s` to reassign it", name)
 	}
@@ -1456,24 +1395,20 @@ func receiverRebindHint(name string) string {
 	return fmt.Sprintf("a receiver cannot be rebound; copy it into a local `var` (`var c = %s`) if you need a mutable copy", name)
 }
 
-func (t *galaASTTransformer) transformIfStatement(ctx *grammar.IfStatementContext) (ast.Stmt, error) {
-	return t.transformIfStatementWithTail(ctx, tailDiscarded, slot{})
-}
-
-// transformIfStatementWithTail lowers an if-statement whose branch blocks end
-// as tail says: tailDiscarded for an if run for its effect, or the branch tail
-// of a value block's trailing if/else. s is the slot that value block fills:
-// each branch's value is lowered against it, as the block's own would be.
-func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStatementContext, tail blockTail, s slot) (ast.Stmt, error) {
-	if err := checkIfInitializer(ctx); err != nil {
+// lowerIfStatement lowers an if-statement whose branch blocks end as tail
+// says: tailDiscarded for an if run for its effect, or the branch tail of a
+// value block's trailing if/else. s is the slot that value block fills: each
+// branch's value is lowered against it, as the block's own would be.
+func (t *galaASTTransformer) lowerIfStatement(ifS ifSrc, tail blockTail, s slot) (ast.Stmt, error) {
+	if err := checkIfInitializer(ifS); err != nil {
 		return nil, err
 	}
 
-	cond, err := t.transformExpression(ctx.Expression())
+	cond, err := t.transformExpression(ifS.cond(t))
 	if err != nil {
 		return nil, err
 	}
-	body, err := t.transformBlockWithTail(ctx.Block(0).(*grammar.BlockContext), tail, s)
+	body, err := t.lowerBlock(ifS.block(0), tail, s)
 	if err != nil {
 		return nil, err
 	}
@@ -1482,19 +1417,19 @@ func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStateme
 		Body: body,
 	}
 
-	if ctx.ELSE() != nil {
-		if ctx.Block(1) != nil {
-			elseBody, err := t.transformBlockWithTail(ctx.Block(1).(*grammar.BlockContext), tail, s)
+	if ifS.hasElse() {
+		if b := ifS.block(1); b.ok() {
+			elseBody, err := t.lowerBlock(b, tail, s)
 			if err != nil {
 				return nil, err
 			}
 			stmt.Else = elseBody
-		} else if ctx.IfStatement() != nil {
-			elseIf, err := t.transformIfStatementWithTail(ctx.IfStatement().(*grammar.IfStatementContext), tail, s)
+		} else if elseIf := ifS.elseIf(); elseIf.ok() {
+			elseStmt, err := t.lowerIfStatement(elseIf, tail, s)
 			if err != nil {
 				return nil, err
 			}
-			stmt.Else = elseIf
+			stmt.Else = elseStmt
 		}
 	}
 
@@ -1511,11 +1446,11 @@ func (t *galaASTTransformer) transformIfStatementWithTail(ctx *grammar.IfStateme
 //
 // The hint points at `Try`, which auto-wraps the Go `(T, error)` return this
 // slot is typically used to nil-test into Success/Failure.
-func checkIfInitializer(ctx *grammar.IfStatementContext) error {
-	if ctx.SimpleStatement() == nil {
+func checkIfInitializer(ifS ifSrc) error {
+	if !ifS.hasInit() {
 		return nil
 	}
-	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	line, col := ifS.at().start()
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeIfInitializer,
 		line, col,
@@ -1531,7 +1466,8 @@ func checkIfInitializer(ctx *grammar.IfStatementContext) error {
 // and promoted false, unless one branch has a value and another none, which
 // is an error.
 func (t *galaASTTransformer) lowerTailIf(ifCtx *grammar.IfStatementContext, s slot, mkReturn func(*ast.ReturnStmt) ast.Stmt) (*ast.IfStmt, bool, error) {
-	stmt, err := t.transformIfStatementWithTail(ifCtx, tailBranch, s)
+	ifS := ifSrc{ctx: ifCtx}
+	stmt, err := t.lowerIfStatement(ifS, tailBranch, s)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1539,5 +1475,5 @@ func (t *galaASTTransformer) lowerTailIf(ifCtx *grammar.IfStatementContext, s sl
 	if promoted, ok := t.promoteIfBranchValues(ifStmt, mkReturn); ok {
 		return promoted, true, nil
 	}
-	return ifStmt, false, t.checkMixedBranchValues(ifCtx, ifStmt)
+	return ifStmt, false, t.checkMixedBranchValues(ifS, ifStmt)
 }

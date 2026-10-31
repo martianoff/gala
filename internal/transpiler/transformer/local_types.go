@@ -3,11 +3,10 @@ package transformer
 import (
 	"go/ast"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
-// transformLocalTypeDeclaration lowers a type declared inside a function body.
+// lowerLocalTypeDecl lowers d, a type declared inside a function body.
 //
 // A local struct is constructed like a top-level one — `Inner(1)`,
 // `Inner(N = 1)` — so it gets the metadata a top-level struct has from the
@@ -26,8 +25,8 @@ import (
 // Go has no methods on a local type, so only the type itself is emitted,
 // without the Copy/Equal/Unapply methods a top-level struct gets (copy and
 // pattern matching lower inline instead).
-func (t *galaASTTransformer) transformLocalTypeDeclaration(ctx *grammar.TypeDeclarationContext) (ast.Decl, error) {
-	decls, err := t.lowerTypeDecl(readTypeDecl(ctx), true)
+func (t *galaASTTransformer) lowerLocalTypeDecl(d typeDecl) (ast.Decl, error) {
+	decls, err := t.lowerTypeDecl(d, true)
 	if err != nil || len(decls) == 0 {
 		return nil, err
 	}
