@@ -17,6 +17,7 @@ go_library(
         "position.go",
         "server.go",
         "signature_help.go",
+        "signature_help_native.go",
         "symbols.go",
         "typeatpos.go",
     ],
@@ -28,6 +29,7 @@ go_library(
         "//internal/depman/mod",
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
@@ -98,6 +100,30 @@ go_test(
         "//internal/transpiler/transformer",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_owenrumney_go_lsp//servertest",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)
+
+go_test(
+    # keep
+    name = "lsp_native_test",
+    srcs = ["native_tree_test.go"],
+    data = [
+        "//:all_gala_sources",
+        "//collection_immutable:gala_sources",
+        "//examples:all_gala_sources",
+        "//go_interop:types.go",
+        "//std:gala_sources",
+    ],
+    embed = [":lsp"],
+    tags = ["no-sandbox"],
+    deps = [
+        "//galaerr",
+        "//internal/parser",
+        "//internal/transpiler/analyzer",
+        "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",

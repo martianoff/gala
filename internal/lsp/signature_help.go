@@ -114,17 +114,33 @@ func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callCon
 		return nil
 	}
 	h.mu.Lock()
-	tree := h.parseTrees[uri]
+	tree, handle := h.parseTrees[uri], h.parseNatives[uri]
 	if h.parseTexts[uri] != src {
-		tree = nil
+		tree, handle = nil, nil
 	}
 	h.mu.Unlock()
 	if tree == nil {
-		if tree, _, _ = h.parser.ParseFile(src).Lenient(); tree == nil {
+		parsed := h.parser.ParseFile(src)
+		if tree, handle = parsed.Tree, h.nativeOf(parsed); tree == nil {
 			return nil
 		}
 	}
-	return findCallAtOffset(tree, src, offset)
+	call, onNative := callAtOffset(tree, handle, src, offset)
+	h.noteTreeRead(treeReadSignatureCall, onNative)
+	return call
+}
+
+// callAtOffset is findCallAtOffset of a parse of src, whose ANTLR tree is
+// tree and whose native-tree handle is handle (nil for none). It reads the
+// native tree when the handle bridges, converting it if no feature has yet,
+// and ANTLR's tree otherwise; onNative says which it read.
+func callAtOffset(tree antlr.Tree, handle *parser.Native, src string, offset int) (call *callContext, onNative bool) {
+	if handle.Bridged() {
+		if root, err := handle.Tree(); err == nil {
+			return findCallAtOffsetNative(root.Root(), offset), true
+		}
+	}
+	return findCallAtOffset(tree, src, offset), false
 }
 
 // patchTextForSignature closes the call the user is typing with a `)` at the
