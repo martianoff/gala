@@ -1,0 +1,23 @@
+package lib
+
+import . "martianoff/gala/examples/foreign_default_dot_scope/pa"
+
+// Each default names pa's Same, Hit, Pick and Point bare, as this file's dot import
+// makes them. A caller that dot-imports pb, which declares the same names,
+// still lowers them as pa's.
+func Matched(s string = Some(Same()) match {
+    case Some(Same()) => "same"
+    case _ => "other"
+}) string = s
+
+func Mapped(n int = Some(Point(3)).Map((p) => p.X).GetOrElse(0)) int = n
+
+func Folded(s string = Some(Pick()).Map((k) => k match {
+    case Same() => "same"
+    case _ => "other"
+}).GetOrElse("none")) string = s
+
+func Built(s string = Some(Hit(N = 2)) match {
+    case Some(Hit(n)) => s"hit ${n + 1}"
+    case _ => "other"
+}) string = s

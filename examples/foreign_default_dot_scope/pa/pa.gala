@@ -1,0 +1,13 @@
+package pa
+
+// pa and pb declare the same names with different types. lib dot-imports pa,
+// the test's main package dot-imports pb, and lib's defaults are lowered there.
+sealed type KindA {
+    case Same()
+    case OtherA()
+    case Hit(N int)
+}
+
+func Pick() KindA = Same()
+
+struct Point(X int)

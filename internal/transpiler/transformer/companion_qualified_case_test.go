@@ -24,7 +24,8 @@ import (
 // precedence of every bare type name: std's Success before a dot import's.
 // A default lowered in another package resolves its bare case as the file
 // it was written in does, not through the bare companion of the package
-// lowering it. (Two dot imports exporting one name are rejected, GALA-E0032,
+// lowering it, nor through a dot import of the file lowering it whose package
+// declares a case of the same name. (Two dot imports exporting one name are rejected, GALA-E0032,
 // so they never tie.) Each run is a fresh analyzer.
 func TestQualifiedCompanionCase(t *testing.T) {
 	root := t.TempDir()
@@ -39,6 +40,7 @@ func TestQualifiedCompanionCase(t *testing.T) {
 		write(dir+"/kind.gala", "package kind\n\nsealed type Kind {\n    case Same()\n    case Diff()\n}\n")
 	}
 	write("c/kinda/kinda.gala", "package kinda\n\nsealed type KindA {\n    case Same()\n    case DiffA()\n}\n")
+	write("c/kindb/kindb.gala", "package kindb\n\nsealed type KindB {\n    case Same()\n    case DiffB()\n}\n")
 	write("e/res/res.gala", "package res\n\nsealed type Res {\n    case Success(V int)\n    case Fail()\n}\n")
 	// lib's default names a bare case its own file dot-imports; the main
 	// package that lowers it has a case of that name of its own.
@@ -188,6 +190,21 @@ func main() {
 }
 `,
 			want: []string{"func(obj kinda.KindA) string"},
+		},
+		{
+			name: "a default lowered in a file that dot-imports another case of the name",
+			src: `package main
+
+import (
+    . "example.com/naming/c/kindb"
+    "example.com/naming/lib"
+)
+
+func main() {
+    Println(lib.Describe(), DiffB())
+}
+`,
+			want: []string{"func(obj kinda.KindA) string", "kinda.Same{}.Unapply(obj)"},
 		},
 	}
 	for _, tt := range tests {

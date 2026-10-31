@@ -395,3 +395,46 @@ func TestImportManager_UnaliasedGoImportNames(t *testing.T) {
 	aliased := transformer.NewImportManager().Add("math/rand/v2", "r2", false, "")
 	assert.Equal(t, "r2", aliased.QualifierFor("rand"), "a written alias wins")
 }
+
+// TestImportManager_ForeignDotImportsComeFirst: while a default written in
+// another file is lowered, that file's dot imports are tried before this
+// file's, so a name both declare means what it means where the default was
+// written. A path both files dot-import moves to the front rather than being
+// listed twice, the other imports keep their places, and restoring puts the
+// order back, keeping an import added in between.
+func TestImportManager_ForeignDotImportsComeFirst(t *testing.T) {
+	m := transformer.NewImportManager()
+	m.Add("fmt", "", false, "fmt")
+	m.Add("example.com/pb", "", true, "pb")
+	m.Add("example.com/pa", "", true, "pa")
+	paths := func() []string {
+		var out []string
+		for _, e := range m.All() {
+			out = append(out, e.Path)
+		}
+		return out
+	}
+
+	restore := m.WithForeignQualifiers(nil, map[string]string{"example.com/pa": "pa", "example.com/pc": "pc"})
+	assert.Equal(t, []string{"pa", "pc", "pb"}, m.GetDotImports())
+	assert.Equal(t, []string{"example.com/pc", "fmt", "example.com/pa", "example.com/pb"}, paths())
+	m.Add("strings", "", false, "strings")
+	restore()
+
+	assert.Equal(t, []string{"pb", "pa"}, m.GetDotImports())
+	assert.Equal(t, []string{"fmt", "example.com/pb", "example.com/pa", "strings"}, paths())
+
+	// Reordered and restored with nothing added in between.
+	restore = m.WithForeignQualifiers(nil, map[string]string{"example.com/pa": "pa"})
+	assert.Equal(t, []string{"pa", "pb"}, m.GetDotImports())
+	restore()
+	assert.Equal(t, []string{"pb", "pa"}, m.GetDotImports())
+
+	// Already first: the imports, and the revision they are cached by, stay.
+	rev := m.Revision()
+	restore = m.WithForeignQualifiers(nil, map[string]string{"example.com/pb": "pb"})
+	assert.Equal(t, []string{"pb", "pa"}, m.GetDotImports())
+	assert.Equal(t, rev, m.Revision())
+	restore()
+	assert.Equal(t, rev, m.Revision())
+}
