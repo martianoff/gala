@@ -18,9 +18,10 @@ import (
 // named after, which reads ANTLR's tree, and fills the same tree-free value
 // for the same lowering (lowerValDecl, lowerFuncDecl, lowerTypeDecl, ...).
 // What the native tree does not drive yet, it hands to ANTLR's tree: the
-// types, signatures, parameters, initializers and expression bodies inside a
-// declaration, and the sealed and opaque type declarations whole, cross back
-// with crossTo. Block bodies are walked natively down to their statements
+// signatures, parameters, initializers and expression bodies inside a
+// declaration cross back with crossTo. Types are read natively
+// (types_source.go), as are the sealed and opaque type declarations
+// (sealed_source.go), and block bodies down to their statements
 // (statements_source.go). The later steps of the port move the boundary down.
 // TestNativeWalkAgrees holds the native walk to the ANTLR one.
 //
@@ -105,9 +106,11 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	case native.GalaKIND_structShorthandDeclaration:
 		return t.lowerShorthandDecl(t.readShorthandDeclNative(native.StructShorthandDeclarationNode{GalaNodeRef: decl}))
 	case native.GalaKIND_sealedTypeDeclaration:
-		return t.transformSealedTypeDeclaration(crossTo[*grammar.SealedTypeDeclarationContext](t, decl))
+		t.noteNativeType(srcNode{node: decl})
+		return t.lowerSealedDecl(readSealedDeclNative(native.SealedTypeDeclarationNode{GalaNodeRef: decl}))
 	case native.GalaKIND_opaqueTypeDeclaration:
-		return t.transformOpaqueTypeDeclaration(crossTo[*grammar.OpaqueTypeDeclarationContext](t, decl))
+		t.noteNativeType(srcNode{node: decl})
+		return t.lowerOpaqueDecl(readOpaqueDeclNative(native.OpaqueTypeDeclarationNode{GalaNodeRef: decl}))
 	}
 	return nil, nil
 }
@@ -167,7 +170,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: isTopLevelDeclNative(n.Ref()), names: nativeDeclNames(bindingIdList(n))}
 	typ, list := n.Type_(), n.ExpressionList()
 	if typ.Ok() {
-		d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
+		d.typ = nativeType(typ)
 	}
 	if list.Ok() {
 		d.exprs = crossTo[*grammar.ExpressionListContext](t, list.GalaNodeRef)
@@ -175,7 +178,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 	if tp := n.TuplePattern(); tp.Ok() {
 		d.tuple = srcNode{node: tp.GalaNodeRef}
 		if typ.Ok() {
-			d.typAt = srcNode{node: typ.GalaNodeRef}
+			d.typAt = d.typ.at()
 		}
 		if list.Ok() {
 			d.exprsAt = srcNode{node: list.GalaNodeRef}
@@ -205,7 +208,7 @@ func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode
 			name:  r.Identifier().GetText(),
 			at:    srcNode{node: r.GalaNodeRef},
 			isVar: r.VAR().Ok(),
-			typ:   crossTo[*grammar.TypeContext](t, r.Type_().GalaNodeRef),
+			typ:   nativeType(r.Type_()),
 		}
 	}
 	if tps := n.TypeParameters(); tps.Ok() {
@@ -228,7 +231,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 			d.fields = append(d.fields, structFieldDecl{
 				name:  field.Identifier().GetText(),
 				isVar: field.VAR().Ok(),
-				typ:   crossTo[*grammar.TypeContext](t, field.Type_().GalaNodeRef),
+				typ:   nativeType(field.Type_()),
 			})
 		}
 	} else if it := n.InterfaceType(); it.Ok() {
@@ -244,7 +247,7 @@ func (t *galaASTTransformer) readTypeDeclNative(n native.TypeDeclarationNode) ty
 	} else if alias := n.TypeAlias(); alias.Ok() {
 		d.kind = aliasTypeDecl
 		if typ := alias.Type_(); typ.Ok() {
-			d.aliasType = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
+			d.aliasType = nativeType(typ)
 		} else if aid := alias.Identifier(); aid.Ok() {
 			d.aliasIdent = aid.GetText()
 		}
@@ -268,7 +271,7 @@ func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDec
 			isVal: param.VAL().Ok(),
 		}
 		if typ := param.Type_(); typ.Ok() {
-			pd.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
+			pd.typ = nativeType(typ)
 		}
 		d.params = append(d.params, pd)
 	}

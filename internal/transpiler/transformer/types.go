@@ -3,7 +3,6 @@ package transformer
 import (
 	"go/ast"
 	"go/token"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -62,27 +61,34 @@ func (t *galaASTTransformer) rewriteStdTupleIdent(ident ast.Expr, n int) ast.Exp
 	return t.stdIdent(name)
 }
 
+// transformType lowers the type ctx, on ANTLR's tree (see lowerType).
 func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, error) {
-	if ctx == nil {
+	return t.lowerType(antlrType(ctx))
+}
+
+// lowerType lowers the type s, of either tree (types_source.go); no type
+// lowers to nil.
+func (t *galaASTTransformer) lowerType(s typeSrc) (ast.Expr, error) {
+	if !s.ok() {
 		return nil, nil
 	}
+	t.noteNativeType(s.at())
 	// The non-null pointer `Ptr[T]` is `*T` in generated Go (see ptr.go).
-	if elem := galaparser.PtrElem(ctx); elem != nil {
-		typ, err := t.transformType(elem)
+	if elem := s.ptrElem(); elem.ok() {
+		typ, err := t.lowerType(elem)
 		if err != nil {
 			return nil, err
 		}
 		return t.ptrStar(typ), nil
 	}
 	// Handle qualified identifier types (e.g., std.Option[T] or just Option[T])
-	if ctx.QualifiedIdentifier() != nil {
-		qid := ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext)
-		identifiers := qid.AllIdentifier()
+	if s.named() {
+		identifiers := s.nameParts()
 
 		var ident ast.Expr
 		if len(identifiers) == 1 {
 			// Simple type name
-			typeName := identifiers[0].GetText()
+			typeName := identifiers[0]
 			// B12: `_` is a wildcard type, desugared to Go's `any`. It is intended
 			// for pattern-matching contexts (e.g., `case Wrap[_] =>`) and generic
 			// type-parameter holes where the exact type does not matter. Users who
@@ -92,8 +98,8 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 				return ast.NewIdent("any"), nil
 			}
 			ident = ast.NewIdent(typeName)
-			if t.activeTypeParams[typeName] && ctx.TypeArguments() != nil {
-				return nil, t.typeParamMisuseError(ctx, typeName, "takes no type arguments")
+			if t.activeTypeParams[typeName] && s.hasTypeArgs() {
+				return nil, t.typeParamMisuseErrorAt(s.at(), typeName, "takes no type arguments")
 			}
 			// Use resolution to determine if this type belongs to an imported package
 			resolvedType := t.lookupTypeName(typeName)
@@ -121,37 +127,37 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 		} else {
 			// Qualified type name (e.g., std.Option)
 			// Build selector expression from left to right
-			ident = ast.NewIdent(identifiers[0].GetText())
+			ident = ast.NewIdent(identifiers[0])
 			for i := 1; i < len(identifiers); i++ {
-				ident = &ast.SelectorExpr{X: ident, Sel: ast.NewIdent(identifiers[i].GetText())}
+				ident = &ast.SelectorExpr{X: ident, Sel: ast.NewIdent(identifiers[i])}
 			}
 		}
 
-		if ctx.TypeArguments() != nil {
+		if args, ok := s.typeArgs(); ok {
+			if len(args) == 0 {
+				// A partial parse (an editor's `Box[]`) has no type list.
+				return nil, t.semanticErrorAtNode(s.at(), "type "+s.nameText()+" has an empty type argument list")
+			}
 			// Transparent concurrency-boundary marker: `Sendable[F]` is exactly
 			// `F` in generated Go — it carries no runtime representation. Emit the
 			// inner type directly so the marker never leaks into the output. The
 			// analyzer still records the un-unwrapped `Sendable[F]` in parameter
 			// metadata, which is what drives the capture-safety check at call
 			// sites; codegen (here) is the point that makes it disappear.
-			if len(identifiers) == 1 && identifiers[0].GetText() == transpiler.TypeSendable {
-				args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
-				if len(args) == 1 {
-					return t.transformType(args[0])
-				}
+			if len(identifiers) == 1 && identifiers[0] == transpiler.TypeSendable && len(args) == 1 {
+				return t.lowerType(args[0])
 			}
 
 			// Generic type: T[A, B] -> *ast.IndexExpr or *ast.IndexListExpr
-			args := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext).AllType_()
 			var argExprs []ast.Expr
 			for _, arg := range args {
-				ae, err := t.transformType(arg)
+				ae, err := t.lowerType(arg)
 				if err != nil {
 					return nil, err
 				}
 				argExprs = append(argExprs, ae)
 			}
-			if err := t.checkPtrTypeArgsOfType(qid.GetText(), argExprs, args); err != nil {
+			if err := t.checkPtrTypeArgsOfType(s.nameText(), argExprs, args); err != nil {
 				return nil, err
 			}
 
@@ -169,46 +175,33 @@ func (t *galaASTTransformer) transformType(ctx grammar.ITypeContext) (ast.Expr, 
 		return ident, nil
 	}
 
-	txt := ctx.GetText()
-	if strings.HasPrefix(txt, "*") && len(ctx.AllType_()) > 0 {
-		typ, err := t.transformType(ctx.Type_(0))
+	switch shape, elems := s.shape(); shape {
+	case shapePointer:
+		typ, err := t.lowerType(elems[0])
 		if err != nil {
 			return nil, err
 		}
 		return &ast.StarExpr{X: typ}, nil
-	}
-	if strings.HasPrefix(txt, "[]") && len(ctx.AllType_()) > 0 {
-		typ, err := t.transformType(ctx.Type_(0))
+	case shapeSlice:
+		typ, err := t.lowerType(elems[0])
 		if err != nil {
 			return nil, err
 		}
 		return &ast.ArrayType{Elt: typ}, nil
-	}
-
-	// Handle map types: map[K]V
-	if strings.HasPrefix(txt, "map[") && len(ctx.AllType_()) >= 2 {
-		keyType, err := t.transformType(ctx.Type_(0))
+	case shapeMap:
+		keyType, err := t.lowerType(elems[0])
 		if err != nil {
 			return nil, err
 		}
-		valueType, err := t.transformType(ctx.Type_(1))
+		valueType, err := t.lowerType(elems[1])
 		if err != nil {
 			return nil, err
 		}
 		return &ast.MapType{Key: keyType, Value: valueType}, nil
+	case shapeFunc:
+		return t.lowerFuncTypeSignature(s)
 	}
-
-	// Handle function types: func(params) results
-	if ctx.Signature() != nil {
-		sig := ctx.Signature().(*grammar.SignatureContext)
-		funcType, err := t.transformFuncTypeSignature(sig)
-		if err != nil {
-			return nil, err
-		}
-		return funcType, nil
-	}
-
-	return ast.NewIdent(txt), nil
+	return ast.NewIdent(s.text()), nil
 }
 
 func (t *galaASTTransformer) getExprType(expr ast.Expr) ast.Expr {

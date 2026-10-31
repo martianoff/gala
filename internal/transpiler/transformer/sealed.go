@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -23,13 +22,19 @@ type sealedVariantInfo struct {
 type sealedFieldInfo struct {
 	name            string
 	structFieldName string // Go struct field name (may be prefixed with variant name to avoid collisions)
-	typeCtx         grammar.ITypeContext
+	typ             typeSrc
 	isRecursive     bool // true if field type references the parent sealed type (requires pointer indirection)
 }
 
 func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedTypeDeclarationContext) ([]ast.Decl, error) {
-	name := ctx.Identifier().GetText()
-	if err := t.selfContainingTypeError(name, srcNode{ctx: ctx.Identifier()}); err != nil {
+	return t.lowerSealedDecl(readSealedDecl(ctx))
+}
+
+// lowerSealedDecl lowers a sealed type declaration, read from either tree
+// (sealed_source.go).
+func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
+	name := d.name
+	if err := t.selfContainingTypeError(name, d.nameAt); err != nil {
 		return nil, err
 	}
 	t.pushScope()
@@ -37,12 +42,8 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 
 	// Process Type Parameters
 	var tParams *ast.FieldList
-	if ctx.TypeParameters() != nil {
-		var err error
-		tParams, err = t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
-		if err != nil {
-			return nil, err
-		}
+	if len(d.typeParams) > 0 {
+		tParams = lowerTypeParams(d.typeParams)
 		defer t.bindTypeParams(tParams.List...)()
 	}
 
@@ -52,18 +53,19 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	// case with zero fields. Without one, tags start at 1 and a zero value
 	// is no case at all (see exhaustiveDefaultBody).
 	nextTag := 1
-	var defaultCase *grammar.SealedCaseContext
-	for _, caseCtx := range ctx.AllSealedCase() {
-		sc := caseCtx.(*grammar.SealedCaseContext)
+	var defaultCase *sealedCaseDecl
+	for ci := range d.cases {
+		sc := &d.cases[ci]
 		vi := sealedVariantInfo{
-			name:     sc.Identifier().GetText(),
-			tagConst: fmt.Sprintf("_%s_%s", name, sc.Identifier().GetText()),
+			name:     sc.name,
+			tagConst: fmt.Sprintf("_%s_%s", name, sc.name),
 		}
-		if sc.DEFAULT() != nil {
+		if sc.isDefault {
 			if defaultCase != nil {
+				line, col := sc.at.start()
 				return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
-					sc.GetStart().GetLine(), sc.GetStart().GetColumn(),
-					fmt.Sprintf("sealed type %q marks both %q and %q as its default case", name, defaultCase.Identifier().GetText(), vi.name),
+					line, col,
+					fmt.Sprintf("sealed type %q marks both %q and %q as its default case", name, defaultCase.name, vi.name),
 					"keep `default` on one case: the default case is the type's zero value")
 			}
 			defaultCase = sc
@@ -72,31 +74,28 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			nextTag++
 		}
 
-		if sc.SealedCaseFieldList() != nil {
-			fieldList := sc.SealedCaseFieldList().(*grammar.SealedCaseFieldListContext)
-			for _, fieldCtx := range fieldList.AllSealedCaseField() {
-				fc := fieldCtx.(*grammar.SealedCaseFieldContext)
-				fieldName := fc.Identifier().GetText()
-				fieldTypeText := galaparser.TypeText(fc.Type_())
-				recursive := isSelfReferentialSealedField(fieldTypeText, name)
-				if recursive && sc.DEFAULT() != nil {
-					// The field is held through a pointer, which a zero
-					// value leaves nil.
-					return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
-						fc.GetStart().GetLine(), fc.GetStart().GetColumn(),
-						fmt.Sprintf("the default case %q of sealed type %q has a field %q of type %s itself, which its zero value cannot hold", vi.name, name, fieldName, name),
-						"make a case without such a field the default, or drop `default`")
-				}
-				vi.fields = append(vi.fields, sealedFieldInfo{
-					name:        fieldName,
-					typeCtx:     fc.Type_(),
-					isRecursive: recursive,
-				})
+		for _, fc := range sc.fields {
+			fieldName := fc.name
+			recursive := isSelfReferentialSealedField(fc.typ.typeText(), name)
+			if recursive && sc.isDefault {
+				// The field is held through a pointer, which a zero
+				// value leaves nil.
+				line, col := fc.at.start()
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeInvalidDefaultCase,
+					line, col,
+					fmt.Sprintf("the default case %q of sealed type %q has a field %q of type %s itself, which its zero value cannot hold", vi.name, name, fieldName, name),
+					"make a case without such a field the default, or drop `default`")
 			}
+			vi.fields = append(vi.fields, sealedFieldInfo{
+				name:        fieldName,
+				typ:         fc.typ,
+				isRecursive: recursive,
+			})
 		}
 		if n := len(vi.fields); n > transpiler.MaxTupleArity {
+			line, col := sc.nameAt.start()
 			return nil, galaerr.NewCodedSemanticError(galaerr.CodeSealedVariantTooWide,
-				sc.Identifier().GetStart().GetLine(), sc.Identifier().GetStart().GetColumn(),
+				line, col,
 				fmt.Sprintf("sealed variant %q has %d fields; a variant can have at most %d", vi.name, n, transpiler.MaxTupleArity),
 				"group related fields into a struct and give the variant a field of that type")
 		}
@@ -108,12 +107,12 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	// metadata agree.
 	meta := t.getTypeMeta(name)
 	if meta == nil || !meta.IsSealed || len(meta.SealedVariants) != len(variants) {
-		return nil, t.semanticErrorAt(ctx, fmt.Sprintf("internal error: no metadata for sealed type %s", name))
+		return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf("internal error: no metadata for sealed type %s", name))
 	}
 	for vi := range variants {
 		goNames := meta.SealedVariants[vi].GoFieldNames
 		if len(goNames) != len(variants[vi].fields) {
-			return nil, t.semanticErrorAt(ctx, fmt.Sprintf("internal error: no field layout for case %s of sealed type %s", variants[vi].name, name))
+			return nil, t.semanticErrorAtNode(d.at, fmt.Sprintf("internal error: no field layout for case %s of sealed type %s", variants[vi].name, name))
 		}
 		for fi := range variants[vi].fields {
 			variants[vi].fields[fi].structFieldName = goNames[fi]
@@ -141,7 +140,7 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 			}
 			addedFields[f.structFieldName] = true
 
-			typ, err := t.transformType(f.typeCtx)
+			typ, err := t.lowerType(f.typ)
 			if err != nil {
 				return nil, err
 			}
@@ -268,7 +267,8 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 	}
 
 	// 8. Constructors for Go callers, and the doc comment naming them.
-	ctors, guidance, err := t.sealedGoConstructors(name, variants, tParams, decls, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	line, col := d.at.start()
+	ctors, guidance, err := t.sealedGoConstructors(name, variants, tParams, decls, line, col)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func (t *galaASTTransformer) generateSealedApply(parentName string, vi sealedVar
 	// Parameters: the variant's fields
 	params := &ast.FieldList{}
 	for _, f := range vi.fields {
-		typ, err := t.transformType(f.typeCtx)
+		typ, err := t.lowerType(f.typ)
 		if err != nil {
 			return nil, err
 		}
@@ -499,7 +499,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 	case 1:
 		// Returns Option[FieldType]: if matches, Some(v.Field.Get()) or Some(*v.Field), else None
 		f := vi.fields[0]
-		fieldType, err := t.transformType(f.typeCtx)
+		fieldType, err := t.lowerType(f.typ)
 		if err != nil {
 			return nil, err
 		}
@@ -576,7 +576,7 @@ func (t *galaASTTransformer) generateSealedUnapply(parentName string, vi sealedV
 		// Returns Option[TupleN[...]]
 		var tupleFieldTypes []ast.Expr
 		for _, f := range vi.fields {
-			typ, err := t.transformType(f.typeCtx)
+			typ, err := t.lowerType(f.typ)
 			if err != nil {
 				return nil, err
 			}

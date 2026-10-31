@@ -54,6 +54,7 @@ go_library(
         "scope.go",
         "scoped_state.go",
         "sealed.go",
+        "sealed_source.go",
         "sealed_view.go",
         "self_containing.go",
         "spread.go",
@@ -70,6 +71,7 @@ go_library(
         "type_subst.go",
         "type_switch_match.go",
         "types.go",
+        "types_source.go",
         "unknown_method.go",
         "unresolved_types.go",
         "utils.go",
@@ -440,9 +442,12 @@ go_test(
 # native tree, held to its walk on ANTLR's over the GALA sources
 # TestEnginesAgree parses. A target of its own: it stages all of them and
 # transpiles each twice. Gazelle leaves its files out of transformer_test (the exclude
-# directives) and keeps this rule as written.
+# directives) and keeps this rule as written. TestNativeTypeCases
+# (native_types_test.go) holds the native lowering of types and of sealed and
+# opaque declarations to the ANTLR one over its own cases, in seconds.
 # gazelle:exclude native_walk_test.go
 # gazelle:exclude native_walk_export_test.go
+# gazelle:exclude native_types_test.go
 go_test(
     # keep
     name = "native_walk_test",
@@ -452,6 +457,7 @@ go_test(
     # medium 300s on the slower ANTLR-parser lane.
     size = "large",
     srcs = [
+        "native_types_test.go",
         "native_walk_export_test.go",
         "native_walk_test.go",
     ],

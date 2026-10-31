@@ -235,9 +235,9 @@ type bindingDecl struct {
 	// pattern's; tuple is the pattern's range when there is one.
 	names []declName
 	tuple srcNode
-	// typ is the type annotation and exprs the initializer list, each nil
-	// when there is none.
-	typ   grammar.ITypeContext
+	// typ is the type annotation, no type when there is none, and exprs the
+	// initializer list, nil when there is none.
+	typ   typeSrc
 	exprs grammar.IExpressionListContext
 	// For a tuple pattern only, which its diagnostics read: typAt and
 	// exprsAt are the ranges of typ and exprs, and nExprs counts exprs's
@@ -262,13 +262,13 @@ func ctxDeclNames(idList grammar.IIdentifierListContext) []declName {
 
 // readBindingDecl reads a val or var declaration, keyword, on ANTLR's tree.
 func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
-	d := bindingDecl{at: srcNode{ctx: ctx}, topLevel: isTopLevelDecl(ctx), typ: ctx.Type_(), exprs: ctx.ExpressionList()}
+	d := bindingDecl{at: srcNode{ctx: ctx}, topLevel: isTopLevelDecl(ctx), typ: antlrType(ctx.Type_()), exprs: ctx.ExpressionList()}
 	idList := ctx.IdentifierList()
 	if tp := ctx.TuplePattern(); tp != nil {
 		d.tuple = srcNode{ctx: tp}
 		idList = tp.(*grammar.TuplePatternContext).IdentifierList()
-		if d.typ != nil {
-			d.typAt = srcNode{ctx: d.typ}
+		if d.typ.ok() {
+			d.typAt = d.typ.at()
 		}
 		if d.exprs != nil {
 			d.exprsAt = srcNode{ctx: d.exprs}
@@ -307,8 +307,8 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 	// An explicit type annotation (`val c Cmd[int] = NoCmd()`, `val f func(int) int
 	// = (x) => x + 1`) is the initializer's expected type (see lowerAgainst).
 	var declaredType transpiler.Type
-	if d.typ != nil && len(namesCtx) == 1 {
-		if typeExpr, terr := t.transformType(d.typ); terr == nil {
+	if d.typ.ok() && len(namesCtx) == 1 {
+		if typeExpr, terr := t.lowerType(d.typ); terr == nil {
 			declaredType = t.astTypeToTranspilerType(typeExpr)
 		}
 	}
@@ -331,8 +331,8 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 	// GALA type; a val never boxes a value twice.
 	var declType ast.Expr
 	var annotType transpiler.Type
-	if d.typ != nil {
-		if declType, err = t.transformType(d.typ); err != nil {
+	if d.typ.ok() {
+		if declType, err = t.lowerType(d.typ); err != nil {
 			return nil, err
 		}
 		annotType = t.astTypeToTranspilerType(declType)
@@ -461,7 +461,7 @@ func (t *galaASTTransformer) lowerValDecl(d bindingDecl) (ast.Decl, error) {
 
 		t.bindGoResult(name, val)
 
-		if t.isNoneCall(val) && d.typ == nil {
+		if t.isNoneCall(val) && !d.typ.ok() {
 			return nil, t.semanticErrorIn(d.at.rng(), "variable assigned to None() must have an explicit type")
 		}
 
@@ -524,7 +524,7 @@ func (t *galaASTTransformer) lowerTupleDestructure(d bindingDecl, mutable bool) 
 	if mutable {
 		keyword = "var"
 	}
-	if d.typ != nil {
+	if d.typ.ok() {
 		// The grammar ignores newlines, so in `var (a, b)` followed by
 		// `Println(a)` on the next line `Println` parses as a type: the
 		// declaration as written has no initializer. A val always has one, so
@@ -719,10 +719,10 @@ func checkBlankDeclaration(d bindingDecl) error {
 }
 
 // blankDeclarationForm is how GALA-E0060 spells a lone-blank declaration of
-// keyword with the type annotation typ (nil when none).
-func blankDeclarationForm(keyword string, typ grammar.ITypeContext) string {
-	if typ != nil {
-		return keyword + " _ " + typ.GetText() + " = ..."
+// keyword with the type annotation typ (no type when none).
+func blankDeclarationForm(keyword string, typ typeSrc) string {
+	if typ.ok() {
+		return keyword + " _ " + typ.text() + " = ..."
 	}
 	return keyword + " _ = ..."
 }
@@ -858,8 +858,8 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 	// As in lowerValDecl, an explicit type is the initializer's expected
 	// type.
 	var declaredType transpiler.Type
-	if d.typ != nil && len(namesCtx) == 1 {
-		if typeExpr, terr := t.transformType(d.typ); terr == nil {
+	if d.typ.ok() && len(namesCtx) == 1 {
+		if typeExpr, terr := t.lowerType(d.typ); terr == nil {
 			declaredType = t.astTypeToTranspilerType(typeExpr)
 		}
 	}
@@ -875,7 +875,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 
 	// `var a, err = goCall()`: each name takes the matching result's type.
 	var callReturns []transpiler.Type
-	if len(rhsExprs) == 1 && len(namesCtx) > 1 && d.typ == nil {
+	if len(rhsExprs) == 1 && len(namesCtx) > 1 && !d.typ.ok() {
 		callReturns = t.resolveGoCallReturnTypes(t.rawGoCall(t.unwrapImmutable(rhsExprs[0])))
 	}
 
@@ -883,9 +883,9 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 	for i, id := range namesCtx {
 		name := id.text
 		var typeName transpiler.Type = transpiler.NilType{}
-		if d.typ != nil {
+		if d.typ.ok() {
 			// Try to get type name from transformed type
-			typeExpr, _ := t.transformType(d.typ)
+			typeExpr, _ := t.lowerType(d.typ)
 			typeName = t.astTypeToTranspilerType(typeExpr)
 			t.isImmutableType(typeName) // This will panic if recursive
 		} else if len(rhsExprs) == len(namesCtx) {
@@ -917,7 +917,7 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 	}
 
 	if len(rhsExprs) > 0 {
-		if d.typ == nil {
+		if !d.typ.ok() {
 			for _, r := range rhsExprs {
 				if t.isNoneCall(r) {
 					return nil, galaerr.NewSemanticErrorAt(d.at.rng().line, d.at.rng().col, "variable assigned to None() must have an explicit type")
@@ -936,8 +936,8 @@ func (t *galaASTTransformer) lowerVarDecl(d bindingDecl) (ast.Decl, error) {
 		spec.Values = unwrappedRhs
 	}
 
-	if d.typ != nil {
-		typeExpr, err := t.transformType(d.typ)
+	if d.typ.ok() {
+		typeExpr, err := t.lowerType(d.typ)
 		if err != nil {
 			return nil, err
 		}
@@ -986,7 +986,7 @@ type receiverDecl struct {
 	name  string
 	at    srcNode
 	isVar bool
-	typ   grammar.ITypeContext
+	typ   typeSrc
 }
 
 // readFuncDecl reads a function declaration on ANTLR's tree.
@@ -997,7 +997,7 @@ func readFuncDecl(ctx *grammar.FunctionDeclarationContext) funcDecl {
 	}
 	if r := ctx.Receiver(); r != nil {
 		recvCtx := r.(*grammar.ReceiverContext)
-		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: srcNode{ctx: recvCtx}, isVar: recvCtx.VAR() != nil, typ: recvCtx.Type_()}
+		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: srcNode{ctx: recvCtx}, isVar: recvCtx.VAR() != nil, typ: antlrType(recvCtx.Type_())}
 	}
 	if tps := ctx.TypeParameters(); tps != nil {
 		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
@@ -1045,7 +1045,7 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		// outside — std's included.
 		recvTypeParams = receiverTypeParams(recv.typ)
 		defer t.bindTypeParams(recvTypeParams...)()
-		recvTypeExpr, err := t.transformType(recv.typ)
+		recvTypeExpr, err := t.lowerType(recv.typ)
 		if err != nil {
 			return nil, err
 		}
@@ -1490,7 +1490,7 @@ type paramDecl struct {
 	ctx          *grammar.ParameterContext
 	name         string
 	isVar, isVal bool
-	typ          grammar.ITypeContext // nil when it has none
+	typ          typeSrc // no type when it has none
 }
 
 // readShorthandDecl reads a struct shorthand declaration on ANTLR's tree.
@@ -1508,7 +1508,7 @@ func readShorthandDecl(ctx *grammar.StructShorthandDeclarationContext) shorthand
 				name:  param.Identifier().GetText(),
 				isVar: param.VAR() != nil,
 				isVal: param.VAL() != nil,
-				typ:   param.Type_(),
+				typ:   antlrType(param.Type_()),
 			})
 		}
 	}
@@ -1607,8 +1607,8 @@ func (t *galaASTTransformer) lowerShorthandDecl(d shorthandDecl) ([]ast.Decl, er
 			continue
 		}
 		var pType transpiler.Type = transpiler.NilType{}
-		if param.typ != nil {
-			typeExpr, _ := t.transformType(param.typ)
+		if param.typ.ok() {
+			typeExpr, _ := t.lowerType(param.typ)
 			pType = transpiler.ShorthandFieldType(t.astTypeToTranspilerType(typeExpr), param.isVal || param.isVar)
 		}
 		t.structFieldTypes[name][pName] = pType
@@ -1696,7 +1696,7 @@ type typeDecl struct {
 	fields     []structFieldDecl // a struct's
 	methods    []methodSpecDecl  // an interface's
 	// An alias's target: the type, or else the bare identifier.
-	aliasType  grammar.ITypeContext
+	aliasType  typeSrc
 	aliasIdent string
 }
 
@@ -1714,7 +1714,7 @@ const (
 type structFieldDecl struct {
 	name  string
 	isVar bool
-	typ   grammar.ITypeContext
+	typ   typeSrc
 }
 
 // methodSpecDecl is a method of an interface type declaration.
@@ -1735,7 +1735,7 @@ func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 		d.kind = structTypeDecl
 		for _, fCtx := range ctx.StructType().(*grammar.StructTypeContext).AllStructField() {
 			f := fCtx.(*grammar.StructFieldContext)
-			d.fields = append(d.fields, structFieldDecl{name: f.Identifier().GetText(), isVar: f.VAR() != nil, typ: f.Type_()})
+			d.fields = append(d.fields, structFieldDecl{name: f.Identifier().GetText(), isVar: f.VAR() != nil, typ: antlrType(f.Type_())})
 		}
 	} else if ctx.InterfaceType() != nil {
 		d.kind = interfaceTypeDecl
@@ -1751,7 +1751,7 @@ func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 		d.kind = aliasTypeDecl
 		aliasCtx := ctx.TypeAlias().(*grammar.TypeAliasContext)
 		if aliasCtx.Type_() != nil {
-			d.aliasType = aliasCtx.Type_()
+			d.aliasType = antlrType(aliasCtx.Type_())
 		} else if aliasCtx.Identifier() != nil {
 			d.aliasIdent = aliasCtx.Identifier().GetText()
 		}
@@ -1804,8 +1804,8 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl, local bool) ([]ast.Decl, 
 				immutFlags = append(immutFlags, !fd.isVar)
 
 				var fType transpiler.Type = transpiler.NilType{}
-				if fd.typ != nil {
-					typeExpr, _ := t.transformType(fd.typ)
+				if fd.typ.ok() {
+					typeExpr, _ := t.lowerType(fd.typ)
 					fType = t.astTypeToTranspilerType(typeExpr)
 				}
 				t.structFieldTypes[name][n.Name] = fType
@@ -1886,9 +1886,9 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl, local bool) ([]ast.Decl, 
 
 	case aliasTypeDecl:
 		var targetType ast.Expr
-		if d.aliasType != nil {
+		if d.aliasType.ok() {
 			var err error
-			targetType, err = t.transformType(d.aliasType)
+			targetType, err = t.lowerType(d.aliasType)
 			if err != nil {
 				return nil, err
 			}
@@ -2137,7 +2137,7 @@ func (t *galaASTTransformer) transformParameter(ctx *grammar.ParameterContext, r
 // lowerStructField lowers a field of a struct type declaration.
 func (t *galaASTTransformer) lowerStructField(f structFieldDecl) (*ast.Field, error) {
 	name := f.name
-	typ, err := t.transformType(f.typ)
+	typ, err := t.lowerType(f.typ)
 	if err != nil {
 		return nil, err
 	}
@@ -2159,10 +2159,6 @@ func (t *galaASTTransformer) lowerStructField(f structFieldDecl) (*ast.Field, er
 		field.Type = typ
 	}
 	return field, nil
-}
-
-func (t *galaASTTransformer) transformTypeParameters(ctx *grammar.TypeParametersContext) (*ast.FieldList, error) {
-	return lowerTypeParams(readTypeParams(ctx)), nil
 }
 
 // typeParam is a declared type parameter: its name and its constraint.
@@ -2219,88 +2215,32 @@ func (t *galaASTTransformer) transformSignature(ctx *grammar.SignatureContext, t
 // transformSignatureResults lowers a signature's results: its one result type,
 // or each type of its Go result list (`(int, error)`); nil when it has none.
 func (t *galaASTTransformer) transformSignatureResults(ctx *grammar.SignatureContext) (*ast.FieldList, error) {
-	var types []grammar.ITypeContext
-	if ctx.Type_() != nil {
-		types = []grammar.ITypeContext{ctx.Type_()}
-	} else if list, ok := ctx.GoResults().(*grammar.GoResultsContext); ok {
-		types = list.AllType_()
-	}
-	if len(types) == 0 {
-		return nil, nil
-	}
-	results := &ast.FieldList{}
-	for _, typ := range types {
-		retType, err := t.transformType(typ)
-		if err != nil {
-			return nil, err
-		}
-		t.isImmutableType(t.astTypeToTranspilerType(retType))
-		results.List = append(results.List, &ast.Field{Type: retType})
-	}
-	return results, nil
+	return t.lowerSignatureResults(antlrSigResults(ctx))
 }
 
-// transformFuncTypeSignature transforms a function type's signature (used in type positions like func(T) bool).
-// In function types, parameters without explicit types should be treated as anonymous params with the identifier as the type.
-func (t *galaASTTransformer) transformFuncTypeSignature(ctx *grammar.SignatureContext) (*ast.FuncType, error) {
-	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
-
-	fieldList := &ast.FieldList{}
-	if paramsCtx.ParameterList() != nil {
-		for _, pCtx := range paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter() {
-			paramCtx := pCtx.(*grammar.ParameterContext)
-			field := &ast.Field{}
-
-			if paramCtx.Type_() != nil {
-				// Explicit type provided: `name type` -> use type for the field
-				typ, err := t.transformType(paramCtx.Type_())
-				if err != nil {
-					return nil, err
-				}
-				field.Type = typ
-			} else {
-				// No explicit type: treat identifier as the type (for function types like func(T) bool)
-				typeName := paramCtx.Identifier().GetText()
-				// Check if this identifier resolves to a known type
-				resolvedType := t.lookupTypeName(typeName)
-				if !resolvedType.IsNil() {
-					if pkg := resolvedType.GetPackage(); pkg != "" && pkg != t.packageName {
-						if pkg == registry.StdPackageName {
-							field.Type = t.stdIdent(typeName)
-						} else if t.importManager.IsDotImported(pkg) {
-							// Dot-imported package: use unqualified name
-							t.markDotImportUsed(pkg)
-							field.Type = ast.NewIdent(typeName)
-						} else if alias, ok := t.packageQualifier(pkg); ok {
-							field.Type = &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
-						} else {
-							field.Type = ast.NewIdent(typeName)
-						}
-					} else {
-						field.Type = ast.NewIdent(typeName)
-					}
-				} else {
-					field.Type = ast.NewIdent(typeName)
-				}
-			}
-
-			if paramCtx.ELLIPSIS() != nil {
-				field.Type = &ast.Ellipsis{Elt: field.Type}
-			}
-
-			fieldList.List = append(fieldList.List, field)
-		}
+// funcTypeParamName is the Go type of a function type's parameter written
+// without a type, as the identifier typeName (`func(T) bool`): typeName,
+// qualified when it names a type of an imported package.
+func (t *galaASTTransformer) funcTypeParamName(typeName string) ast.Expr {
+	resolvedType := t.lookupTypeName(typeName)
+	if resolvedType.IsNil() {
+		return ast.NewIdent(typeName)
 	}
-
-	results, err := t.transformSignatureResults(ctx)
-	if err != nil {
-		return nil, err
+	pkg := resolvedType.GetPackage()
+	switch {
+	case pkg == "" || pkg == t.packageName:
+		return ast.NewIdent(typeName)
+	case pkg == registry.StdPackageName:
+		return t.stdIdent(typeName)
+	case t.importManager.IsDotImported(pkg):
+		// Dot-imported package: use unqualified name
+		t.markDotImportUsed(pkg)
+		return ast.NewIdent(typeName)
 	}
-
-	return &ast.FuncType{
-		Params:  fieldList,
-		Results: results,
-	}, nil
+	if alias, ok := t.packageQualifier(pkg); ok {
+		return &ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(typeName)}
+	}
+	return ast.NewIdent(typeName)
 }
 
 // lowerInterfaceType lowers the interface type of a type declaration, whose

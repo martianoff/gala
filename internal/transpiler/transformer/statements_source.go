@@ -342,18 +342,18 @@ func (s stmtSrc) use(t *galaASTTransformer) useDecl {
 		n := native.UseDeclarationNode{GalaNodeRef: s.kid.node}
 		d := useDecl{name: n.Identifier().GetText(), expr: crossTo[*grammar.ExpressionContext](t, n.Expression().GalaNodeRef)}
 		if typ := n.Type_(); typ.Ok() {
-			d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
+			d.typ = nativeType(typ)
 		}
 		return d
 	}
 	ctx := s.kid.ctx.(*grammar.UseDeclarationContext)
-	return useDecl{name: ctx.Identifier().GetText(), typ: ctx.Type_(), expr: ctx.Expression()}
+	return useDecl{name: ctx.Identifier().GetText(), typ: antlrType(ctx.Type_()), expr: ctx.Expression()}
 }
 
 // useDecl is `use name (typ) = expr`.
 type useDecl struct {
 	name string
-	typ  grammar.ITypeContext // nil when it has no annotation
+	typ  typeSrc // no type when it has no annotation
 	expr grammar.IExpressionContext
 }
 
