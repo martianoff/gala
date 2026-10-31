@@ -36,6 +36,7 @@ go_library(
         "interface_literal.go",
         "interpolation.go",
         "lambdas.go",
+        "lambdas_source.go",
         "line_directives.go",
         "local_types.go",
         "loop_control.go",
@@ -456,6 +457,9 @@ go_test(
     # timeout too: it takes ~235s on the main CI lane and crosses the default
     # medium 300s on the slower ANTLR-parser lane.
     size = "large",
+    # Two shards, so the case tests (TestNativeWalkCases, TestNativeTypeCases)
+    # can run beside the corpus run rather than after it.
+    shard_count = 2,
     srcs = [
         "native_types_test.go",
         "native_walk_export_test.go",
@@ -480,6 +484,7 @@ go_test(
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",

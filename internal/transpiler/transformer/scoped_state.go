@@ -118,6 +118,8 @@ var accumulatedStateFields = []string{
 	"onNativeDecl",
 	"onNativeStmt",
 	"onNativeType",
+	"onNativeLambda",
+	"onNativeCapture",
 	"traceTypeResolution",
 	"typeTraces",
 	"exprTypeCache",

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/antlr4-go/antlr/v4"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,8 @@ type walkRun struct {
 	native    int
 	stmts     int          // the statements the native walk lowered, each counted once
 	stmtLines map[int]bool // the lines those statements start on
+	lambdas   int          // the lambdas lowered on the native tree, each counted once
+	captures  int          // the Sendable capture checks run on the native tree
 	converted bool
 }
 
@@ -49,13 +52,16 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 	transformer.OnNativeDecl(tr, func() { run.native++ })
 	stmts := map[int]bool{}
 	transformer.OnNativeStmt(tr, func(index, line int) { stmts[index], run.stmtLines[line] = true, true })
+	lambdas := map[int]bool{}
+	transformer.OnNativeLambda(tr, func(index int) { lambdas[index] = true })
+	transformer.OnNativeCapture(tr, func() { run.captures++ })
 	if w.antlrOnly {
 		tr = withoutNative{tr}
 	}
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
-	run.stmts = len(stmts)
+	run.stmts, run.lambdas = len(stmts), len(lambdas)
 	return run
 }
 
@@ -112,8 +118,9 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 
 // treeCounts is what the native walk of a file must lower, counted on its
 // ANTLR tree: its top-level declarations, and the statements of its
-// top-level functions' bodies (bodyStatements).
-type treeCounts struct{ decls, stmts int }
+// top-level functions' and its lambdas' bodies, and its lambdas
+// (bodyStatements).
+type treeCounts struct{ decls, stmts, lambdas int }
 
 // countTree counts src's ANTLR tree, and false when src does not parse
 // cleanly with galop (no native tree to walk).
@@ -123,16 +130,16 @@ func countTree(src string) (treeCounts, bool) {
 		return treeCounts{}, false
 	}
 	sf := parsed.Tree.(*grammar.SourceFileContext)
-	return treeCounts{decls: len(sf.AllTopLevelDeclaration()), stmts: bodyStatements(sf)}, true
+	stmts, lambdas := bodyStatements(sf)
+	return treeCounts{decls: len(sf.AllTopLevelDeclaration()), stmts: stmts, lambdas: lambdas}, true
 }
 
 // bodyStatements counts the statements the native walk lowers in sf's
-// top-level function bodies: each statement of a body, and of the if and for
-// blocks in it, up to and including a block's first `bind`, whose chain
-// lowers the statements after it on ANTLR's tree. A block below an
-// expression (a lambda's, a match arm's) is lowered on ANTLR's tree too.
-func bodyStatements(sf *grammar.SourceFileContext) int {
-	n := 0
+// top-level function bodies and lambda bodies: each statement of a body, and
+// of the if and for blocks in it, up to and including a block's first
+// `bind`, whose chain lowers the statements after it on ANTLR's tree. A match
+// arm's block is lowered on ANTLR's tree.
+func bodyStatements(sf *grammar.SourceFileContext) (stmts, lambdaCount int) {
 	var block func(grammar.IBlockContext)
 	var ifBlocks func(grammar.IIfStatementContext)
 	block = func(b grammar.IBlockContext) {
@@ -140,7 +147,7 @@ func bodyStatements(sf *grammar.SourceFileContext) int {
 			return
 		}
 		for _, s := range b.AllStatement() {
-			n++
+			stmts++
 			d := s.Declaration()
 			switch {
 			case d == nil:
@@ -166,7 +173,25 @@ func bodyStatements(sf *grammar.SourceFileContext) int {
 			block(fd.Block())
 		}
 	}
-	return n
+	// A lambda is lowered on the native tree wherever it is written (the
+	// expression it is in crosses back to it, lambdas_source.go), but in a
+	// parameter's default value: a default is lowered at each call, from the
+	// declaration the analysis recorded, on ANTLR's tree.
+	var lambdas func(antlr.Tree)
+	lambdas = func(node antlr.Tree) {
+		switch l := node.(type) {
+		case *grammar.ParamDefaultContext:
+			return
+		case *grammar.LambdaExpressionContext:
+			lambdaCount++
+			block(l.Block())
+		}
+		for _, c := range node.GetChildren() {
+			lambdas(c)
+		}
+	}
+	lambdas(sf)
+	return stmts, lambdaCount
 }
 
 // checkWalksAgree fails tb unless the native and the ANTLR walk of path give
@@ -175,32 +200,37 @@ func bodyStatements(sf *grammar.SourceFileContext) int {
 // statement of its function bodies (each one up to the failing one, on an
 // error) when the analysis converted its native tree, and none when it did
 // not, and the ANTLR walk none.
-func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src string) (native walkRun, ok bool) {
+func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src string) (native walkRun, want treeCounts, ok bool) {
 	tb.Helper()
-	want, ok := countTree(src)
+	want, ok = countTree(src)
 	if !ok {
-		return walkRun{}, false
+		return walkRun{}, want, false
 	}
 	n := nativeW.transpile(path, src)
 	a := antlrW.transpile(path, src)
 	assert.Zerof(tb, a.native, "%s: the ANTLR walk lowered declarations on the native tree", path)
 	assert.Zerof(tb, a.stmts, "%s: the ANTLR walk lowered statements on the native tree", path)
+	assert.Zerof(tb, a.lambdas, "%s: the ANTLR walk lowered lambdas on the native tree", path)
+	assert.Zerof(tb, a.captures, "%s: the ANTLR walk checked captures on the native tree", path)
 	switch {
 	case !n.converted:
 		assert.Zerof(tb, n.native, "%s: the native walk lowered declarations on a tree the analysis did not convert", path)
 		assert.Zerof(tb, n.stmts, "%s: the native walk lowered statements on a tree the analysis did not convert", path)
+		assert.Zerof(tb, n.lambdas, "%s: the native walk lowered lambdas on a tree the analysis did not convert", path)
 	case n.err == nil:
 		assert.Equalf(tb, want.decls, n.native, "%s: top-level declarations the native walk lowered", path)
 		assert.Equalf(tb, want.stmts, n.stmts, "%s: body statements the native walk lowered", path)
+		assert.Equalf(tb, want.lambdas, n.lambdas, "%s: lambdas the native walk lowered", path)
 	default:
 		assert.LessOrEqualf(tb, n.native, want.decls, "%s: the native walk lowered more declarations than there are (error: %v)", path, n.err)
 		assert.LessOrEqualf(tb, n.stmts, want.stmts, "%s: the native walk lowered more statements than there are (error: %v)", path, n.err)
+		assert.LessOrEqualf(tb, n.lambdas, want.lambdas, "%s: the native walk lowered more lambdas than there are (error: %v)", path, n.err)
 	}
 	if n.out != a.out {
 		assert.Failf(tb, "the walks' Go differs", "%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
 	}
 	assert.Equalf(tb, a.err, n.err, "%s: the native walk's error differs from the ANTLR walk's", path)
-	return n, true
+	return n, want, true
 }
 
 // firstLineDiff describes the first line where x and y differ.
@@ -234,17 +264,18 @@ func TestNativeWalkAgrees(t *testing.T) {
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	paths, searchPaths := walkCorpus(t)
 	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
-	files, clean, walked, decls, stmts := 0, 0, 0, 0, 0
+	files, clean, walked, decls, stmts, lambdas := 0, 0, 0, 0, 0, 0
 	for _, path := range paths {
 		src, err := os.ReadFile(path)
 		require.NoError(t, err)
-		n, ok := checkWalksAgree(t, nativeW, antlrW, path, string(src))
+		n, _, ok := checkWalksAgree(t, nativeW, antlrW, path, string(src))
 		if !ok {
 			continue
 		}
 		files++
 		decls += n.native
 		stmts += n.stmts
+		lambdas += n.lambdas
 		if n.err == nil {
 			clean++
 		}
@@ -254,9 +285,9 @@ func TestNativeWalkAgrees(t *testing.T) {
 	}
 	// Floors catch the sources not being staged or the native walk going
 	// unused.
-	require.Truef(t, files >= 200 && clean >= files*3/4 && walked >= files*3/4 && decls >= files && stmts >= files,
-		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations and %d body statements lowered there", files, clean, walked, decls, stmts)
-	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations and %d body statements lowered there", files, clean, walked, decls, stmts)
+	require.Truef(t, files >= 200 && clean >= files*3/4 && walked >= files*3/4 && decls >= files && stmts >= files && lambdas >= files,
+		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations, %d body statements and %d lambdas lowered there", files, clean, walked, decls, stmts, lambdas)
+	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations, %d body statements and %d lambdas lowered there", files, clean, walked, decls, stmts, lambdas)
 }
 
 // walkCases cover every top-level declaration shape the native walk reads,
@@ -503,12 +534,94 @@ func main() {
 	{"missing return in a branch", "package main\n\nfunc f(x int) int {\n\tif x > 0 {\n\t\t/* ü */ Println(x)\n\t} else {\n\t\treturn 1\n\t}\n}\n"},
 	{"body ends in an if without else", "package main\n\nfunc f(x int) int {\n\tPrintln(\"ü\")\n\t/* ü */ if x > 0 {\n\t\treturn 1\n\t}\n}\n"},
 	{"empty body with a result", "package main\n\nfunc f() int {\n/* ü */ }\n"},
+	{lambdaShapes, `package main
+
+import (
+	"os"
+	"strconv"
+	. "martianoff/gala/concurrent"
+	. "martianoff/gala/collection_immutable"
+)
+
+type Handler func(int) int
+
+val inc = (x int) => x + 1
+
+val twice Handler = (x) => x * 2
+
+func apply(f func(int) int, x int) int = f(x)
+
+func main() {
+	val add = (a int, b int) int => a + b
+	val block = (x int) int => {
+		val y = x + 1
+		if y > 2 {
+			return y
+		}
+		y * 2
+	}
+	val say = (s string) => {
+		Println(s)
+	}
+	val nested = (x int) => (y int) => x + y
+	val xs = ArrayOf(1, 2, 3)
+	val doubled = xs.Map((x) => x * 2)
+	val sum = xs.FoldLeft(0, (acc, x) => acc + x)
+	xs.ForEach((x) => {
+		val label = "ünï"
+		Println(label, x)
+	})
+	val bump = (var n int) int => {
+		n = n + 1
+		n
+	}
+	val bumped = xs.Map((var x) => {
+		x = x + 1
+		x
+	})
+	val shared = 5
+	val f = Future(() => shared + 1)
+	val g = Future(shared * 2)
+	val tried = Try(() => os.Getenv("HOME"))
+	val parsed = Try(() => {
+		val digits = "1" + "2"
+		strconv.Atoi(digits)
+	})
+	val noop = () => {}
+	Println(inc(1), twice(2), apply((x) => x - 1, 3), add(1, 2), block(1), nested(1)(2), doubled, sum, bump(1), bumped, f.Get(), g.Get(), tried.IsSuccess(), parsed.IsSuccess())
+	say("ü")
+	noop()
+}
+`},
+	{"untyped lambda parameter", "package main\n\nfunc f() {\n\t/* ü */ val g = (x) => x\n\tg(1)\n}\n"},
+	{"wildcard and explicit parameter types", "package main\n\nfunc f() {\n\t/* ü */ val g = (x _, y int) => y\n\tg(1, 2)\n}\n"},
+	{"lambda of too many parameters", "package main\n\nimport . \"martianoff/gala/collection_immutable\"\n\nfunc f() {\n\t/* ü */ Println(ArrayOf(1).Map((x, y) => x))\n}\n"},
+	{"missing return in a lambda", "package main\n\nfunc f() {\n\tval g = (x int) int => {\n\t\tif x > 0 {\n\t\t\treturn 1\n\t\t}\n\t\t/* ü */ Println(\"ü\")\n\t}\n\tg(1)\n}\n"},
+	{"void block lambda discards an error", "package main\n\nimport (\n\t\"os\"\n\t. \"martianoff/gala/collection_immutable\"\n)\n\nfunc f() {\n\t/* ü */ ArrayOf(\"ü\").ForEach((p) => {\n\t\tos.Remove(p)\n\t})\n}\n"},
+	{"void expression lambda discards an error", "package main\n\nimport (\n\t\"os\"\n\t. \"martianoff/gala/collection_immutable\"\n)\n\nfunc f() {\n\t/* ü */ ArrayOf(\"ü\").ForEach((p) => os.Remove(p))\n}\n"},
+	{"blank local val in a lambda body", "package main\n\nfunc f() {\n\tval g = (x int) => {\n\t\t/* ü */ val _ = x\n\t\tx\n\t}\n\tg(1)\n}\n"},
+	{"var captured by a Future lambda", "package main\n\nimport . \"martianoff/gala/concurrent\"\n\nfunc f() {\n\tvar n = 1\n\t/* ü */ val g = Future(() => n + 1)\n\tPrintln(g.Get())\n}\n"},
+	{"var captured by a Future thunk", "package main\n\nimport . \"martianoff/gala/concurrent\"\n\nfunc f() {\n\tvar n = 1\n\t/* ü */ val g = Future(n + 1)\n\tPrintln(g.Get())\n}\n"},
 }
 
-// belowExpression names the walkCases whose marked statement is in a block
-// below an expression (a lambda body), which expressions reach on ANTLR's
-// tree still.
-var belowExpression = map[string]bool{"blank local var in a lambda body": true}
+// lambdaShapes is the walkCases program that has every lambda shape the
+// native walk lowers, and must transpile.
+const lambdaShapes = "lambda shapes"
+
+// captureCases are the walkCases that pass a lambda, or a by-name argument,
+// to a Sendable parameter, so their captures must be checked on the native
+// tree.
+var captureCases = map[string]bool{
+	lambdaShapes:                      true,
+	"var captured by a Future lambda": true,
+	"var captured by a Future thunk":  true,
+}
+
+// captureFailsFirst are the captureCases whose diagnostic is the capture
+// check, which runs before the lambda is lowered, so no lambda is.
+var captureFailsFirst = map[string]bool{
+	"var captured by a Future lambda": true,
+}
 
 // bodyMarkerLine is the line of src's first `/* ü */` marker, when the line
 // is indented, so the marker is on a statement in a body.
@@ -537,11 +650,11 @@ func TestNativeWalkCases(t *testing.T) {
 			path := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "_"), "main.gala")
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
-			n, ok := checkWalksAgree(t, nativeW, antlrW, path, c.src)
+			n, want, ok := checkWalksAgree(t, nativeW, antlrW, path, c.src)
 			require.True(t, ok, "the case does not parse cleanly with galop")
 			// The first case and statementShapes are programs that
 			// transpile, so every shape in them is lowered to the end.
-			if c.name == walkCases[0].name || c.name == statementShapes {
+			if c.name == walkCases[0].name || c.name == statementShapes || c.name == lambdaShapes {
 				require.NoError(t, n.err, "the case does not transpile")
 			}
 			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
@@ -549,10 +662,20 @@ func TestNativeWalkCases(t *testing.T) {
 			// native walk: the statement on the marked line was lowered on
 			// the native tree, so the case compares native with ANTLR, not
 			// ANTLR with itself.
-			if line, ok := bodyMarkerLine(c.src); ok && n.err != nil && !belowExpression[c.name] {
+			if line, ok := bodyMarkerLine(c.src); ok && n.err != nil {
 				assert.Truef(t, n.stmtLines[line], "the native walk did not reach the statement on line %d; error: %v", line, n.err)
 			}
-			t.Logf("the native walk lowered %d declarations and %d statements; error: %v", n.native, n.stmts, n.err)
+			// A case with a lambda must have lowered it on the native tree,
+			// and a case passing to a Sendable parameter must have checked
+			// its captures there, so its diagnostic, or its Go, compares the
+			// native lambda lowering and capture check with ANTLR's.
+			if want.lambdas > 0 && !captureFailsFirst[c.name] {
+				assert.Positivef(t, n.lambdas, "the native walk lowered no lambda; error: %v", n.err)
+			}
+			if captureCases[c.name] {
+				assert.Positivef(t, n.captures, "the native walk checked no captures; error: %v", n.err)
+			}
+			t.Logf("the native walk lowered %d declarations, %d statements and %d lambdas, and checked %d captures; error: %v", n.native, n.stmts, n.lambdas, n.captures, n.err)
 		})
 	}
 }

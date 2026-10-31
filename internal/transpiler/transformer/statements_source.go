@@ -22,10 +22,10 @@ import (
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
-// declarations_native.go). A native block is reached only from a function
-// declaration's body (readFuncDeclNative) and from the if and for statements
-// inside it: a lambda's or a match arm's block is below an expression, which
-// is still read on ANTLR's tree.
+// declarations_native.go). A native block is reached from a function
+// declaration's body (readFuncDeclNative), from a lambda's (lambdas_source.go)
+// and from the if and for statements inside them: a match arm's block is
+// below an expression, which is still read on ANTLR's tree.
 
 // blockSrc is a block.
 type blockSrc struct {
@@ -102,16 +102,24 @@ func (b blockSrc) stop() (line, col int, ok bool) {
 	return stop.GetLine(), stop.GetColumn(), true
 }
 
-// is reports whether b is the block ctx, a lambda's body (see
-// returnSlot.body); false when ctx is nil.
-func (b blockSrc) is(t *galaASTTransformer, ctx *grammar.BlockContext) bool {
-	if ctx == nil {
-		return false
+// is reports whether b is the block o, a lambda's body (see
+// returnSlot.body); false when o is the zero blockSrc. The two can be on
+// different trees (a match arm's ANTLR block below a native lambda), so a
+// native side is compared by its context on ANTLR's tree.
+func (b blockSrc) is(t *galaASTTransformer, o blockSrc) bool {
+	if b.node.Ok() && o.node.Ok() {
+		return b.node == o.node
 	}
+	ctx := b.antlr(t)
+	return ctx != nil && ctx == o.antlr(t)
+}
+
+// antlr is b's context on ANTLR's tree, and nil for the zero blockSrc.
+func (b blockSrc) antlr(t *galaASTTransformer) *grammar.BlockContext {
 	if b.node.Ok() {
-		return crossTo[*grammar.BlockContext](t, b.node) == ctx
+		return crossTo[*grammar.BlockContext](t, b.node)
 	}
-	return b.ctx == ctx
+	return b.ctx
 }
 
 // stmtKind is what a statement is: a `return`, or the kind of its

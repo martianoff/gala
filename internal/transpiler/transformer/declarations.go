@@ -1484,13 +1484,40 @@ type shorthandDecl struct {
 	params     []paramDecl
 }
 
-// paramDecl is a struct shorthand's parameter: its context, lowered on
-// ANTLR's tree (transformParameter), its name, its keyword, and its type.
+// paramDecl is a struct shorthand's or a lambda's parameter: its context,
+// lowered on ANTLR's tree (transformParameter), where it and its name are
+// written, its name, its keyword, and its type.
 type paramDecl struct {
 	ctx          *grammar.ParameterContext
+	at, nameAt   srcNode
 	name         string
 	isVar, isVal bool
 	typ          typeSrc // no type when it has none
+}
+
+// readParams reads a parameter list on ANTLR's tree.
+func readParams(ps *grammar.ParametersContext) []paramDecl {
+	list, ok := ps.ParameterList().(*grammar.ParameterListContext)
+	if !ok {
+		return nil
+	}
+	var out []paramDecl
+	for _, pCtx := range list.AllParameter() {
+		param := pCtx.(*grammar.ParameterContext)
+		pd := paramDecl{
+			ctx:   param,
+			at:    srcNode{ctx: param},
+			isVar: param.VAR() != nil,
+			isVal: param.VAL() != nil,
+			typ:   antlrType(param.Type_()),
+		}
+		// A parameter can be nameless, as in `(...int) => 0`.
+		if id := param.Identifier(); id != nil {
+			pd.nameAt, pd.name = srcNode{ctx: id}, id.GetText()
+		}
+		out = append(out, pd)
+	}
+	return out
 }
 
 // readShorthandDecl reads a struct shorthand declaration on ANTLR's tree.
@@ -1500,18 +1527,7 @@ func readShorthandDecl(ctx *grammar.StructShorthandDeclarationContext) shorthand
 	if tps := ctx.TypeParameters(); tps != nil {
 		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
-	if list := ctx.Parameters().(*grammar.ParametersContext).ParameterList(); list != nil {
-		for _, pCtx := range list.(*grammar.ParameterListContext).AllParameter() {
-			param := pCtx.(*grammar.ParameterContext)
-			d.params = append(d.params, paramDecl{
-				ctx:   param,
-				name:  param.Identifier().GetText(),
-				isVar: param.VAR() != nil,
-				isVal: param.VAL() != nil,
-				typ:   antlrType(param.Type_()),
-			})
-		}
-	}
+	d.params = readParams(ctx.Parameters().(*grammar.ParametersContext))
 	return d
 }
 

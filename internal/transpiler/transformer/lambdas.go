@@ -10,7 +10,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -87,7 +86,20 @@ func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
 	return ""
 }
 
-// transformLambdaWithExpectedType lowers a lambda, applying expectedParamTypes /
+// transformLambdaWithExpectedType is lowerLambda of the lambda ctx, on the
+// native tree when the walk reads it (lambdaOf).
+func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
+	return t.lowerLambda(t.lambdaOf(ctx), expectedRetType, expectedParamTypes, requireTypedParams, declaredResult)
+}
+
+// isTryThunk reports whether l is the lambda being lowered as the thunk of
+// Try(...) (see tryThunkValue).
+func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
+	return t.tryThunkLambda != nil && l.ctx == t.tryThunkLambda
+}
+
+// lowerLambda lowers a lambda, on the tree it comes from (see
+// lambdas_source.go), applying expectedParamTypes /
 // expectedRetType when present. requireTypedParams controls the untyped-parameter
 // policy: when true (the bare/initializer path), a parameter with no annotation
 // and no inferable type is a hard error (GALA-E0033); when false (call-argument /
@@ -100,21 +112,21 @@ func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
 // `any` in it is that type (`func() any`, `func() Array[any]`); otherwise an
 // `any` there stands for a type not inferred yet, and the body's own result
 // type is used.
-func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
+func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
+	if t.onNativeLambda != nil && l.node.Ok() {
+		t.onNativeLambda(l.node.Index())
+	}
 	t.pushScope()
 	defer t.popScope()
-	paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 	fieldList := &ast.FieldList{}
-	if paramsCtx.ParameterList() != nil {
-		allParams := paramsCtx.ParameterList().(*grammar.ParameterListContext).AllParameter()
+	if params := l.params(t); len(params) > 0 {
 		// Validate: reject `_` as a type annotation when other params have explicit types.
 		// `_` means "infer" but has no inference context in a standalone lambda.
 		hasExplicitType := false
 		hasWildcardType := false
-		for _, pCtx := range allParams {
-			paramCtx := pCtx.(*grammar.ParameterContext)
-			if paramCtx.Type_() != nil {
-				typeText := galaparser.TypeText(paramCtx.Type_())
+		for _, p := range params {
+			if p.typ.ok() {
+				typeText := p.typ.typeText()
 				if typeText == "_" {
 					hasWildcardType = true
 				} else {
@@ -123,11 +135,11 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			}
 		}
 		if hasExplicitType && hasWildcardType {
-			return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
+			line, col := l.at().start()
+			return nil, galaerr.NewSemanticErrorAt(line, col, "cannot use '_' as a parameter type when other parameters have explicit types — provide the type explicitly or omit all parameter types for inference")
 		}
-		for i, pCtx := range allParams {
-			paramCtx := pCtx.(*grammar.ParameterContext)
-			field, err := t.transformParameter(paramCtx, false)
+		for i, p := range params {
+			field, err := t.transformParameter(p.ctx, false)
 			if err != nil {
 				return nil, err
 			}
@@ -140,18 +152,17 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// resolved: see the check below.
 			unresolvedSlot := expType != nil && transpiler.ContainsUnusable(expType)
 			typeApplied := false
-			if paramCtx.Type_() == nil {
+			if !p.typ.ok() {
 				if expType != nil && !unresolvedSlot && !expType.IsAny() {
 					typeExpr := t.typeToExpr(expType)
-					name := paramCtx.Identifier().GetText()
 					field.Type = typeExpr
-					t.addParam(name, expType, paramCtx.VAR() != nil)
+					t.addParam(p.name, expType, p.isVar)
 					if t.lspVarTypes != nil && t.loweringDefault == nil {
-						pos := transpiler.PosFromToken(paramCtx.Identifier().GetStart())
+						line, col := p.nameAt.start()
 						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
-							Line:   pos.Line,
-							Column: pos.Column,
-							Name:   name,
+							Line:   line,
+							Column: col,
+							Name:   p.name,
 							Type:   expType,
 						})
 					}
@@ -171,30 +182,30 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			// declaring package did not type-check, say. Its `any` would reach
 			// the output unannounced and fail only in `go build`.
 			anySlot := expType != nil && !unresolvedSlot && expType.IsAny()
-			if paramCtx.Type_() == nil && !typeApplied && (requireTypedParams || !anySlot) {
-				name := paramCtx.Identifier().GetText()
+			if !p.typ.ok() && !typeApplied && (requireTypedParams || !anySlot) {
+				name := p.name
 				msg := fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name)
 				hint := fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name)
 				if len(expectedParamTypes) > 0 && i >= len(expectedParamTypes) {
 					// The slot is a function of fewer parameters: annotating
 					// this one would only move the error to go build.
-					msg = fmt.Sprintf("lambda parameter %q has no type: the lambda takes %d parameters where a function of %d is expected", name, len(allParams), len(expectedParamTypes))
+					msg = fmt.Sprintf("lambda parameter %q has no type: the lambda takes %d parameters where a function of %d is expected", name, len(params), len(expectedParamTypes))
 					hint = fmt.Sprintf("give the lambda %d parameters", len(expectedParamTypes))
 				}
 				if unresolvedSlot {
-					callee := lambdaArgCallee(ctx)
+					callee := lambdaArgCallee(l.ctx)
 					if callee == "" {
 						callee = "the function it is passed to"
 					}
 					msg = fmt.Sprintf("lambda parameter %q has no type: %s expects a function here whose parameter %d has a type that could not be resolved", name, callee, i+1)
 					hint = fmt.Sprintf("check that the package declaring %s type-checks — every package it imports must resolve — or annotate the parameter (e.g. `(%s T) => …`)", callee, name)
 				}
-				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam,
-					paramCtx.GetStart().GetLine(), paramCtx.GetStart().GetColumn(), msg, hint)
+				line, col := p.at.start()
+				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col, msg, hint)
 			}
 			// A parameter filling a slot typed `any` has that type.
-			if paramCtx.Type_() == nil && !typeApplied && anySlot {
-				t.addParam(paramCtx.Identifier().GetText(), expType, paramCtx.VAR() != nil)
+			if !p.typ.ok() && !typeApplied && anySlot {
+				t.addParam(p.name, expType, p.isVar)
 			}
 			fieldList.List = append(fieldList.List, field)
 		}
@@ -220,8 +231,9 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	// When present it wins over both the expected type supplied by the caller
 	// and any body-based inference: the user asked for a specific shape.
 	var explicitRetType ast.Expr
-	if ctx.Type_() != nil {
-		rt, err := t.transformType(ctx.Type_().(*grammar.TypeContext))
+	resultType := l.resultType()
+	if resultType.ok() {
+		rt, err := t.lowerType(resultType)
 		if err != nil {
 			return nil, err
 		}
@@ -250,7 +262,8 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 	} else {
 		lambdaSlot.fillable = !isVoidExpected
 	}
-	if block, ok := ctx.Block().(*grammar.BlockContext); ok && lambdaSlot.fillable {
+	block := l.block()
+	if block.ok() && lambdaSlot.fillable {
 		lambdaSlot.body = block
 	}
 	defer t.enterReturnSlot(lambdaSlot)()
@@ -266,8 +279,8 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		}
 	}
 
-	if ctx.Block() != nil {
-		b, inferredRet, err := t.transformBlockLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)
+	if block.ok() {
+		b, inferredRet, err := t.transformBlockLambdaBody(l, block, isVoidExpected, isConcreteExpectedType, expectsReturnValue, bodySlot)
 		if err != nil {
 			return nil, err
 		}
@@ -279,15 +292,15 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 		// as a function declared with one must (see missingReturnError).
 		if !isVoidExpected && retType != nil && !isVoidTypeIdent(retType) && !isTerminatingStmt(body) {
 			var result string
-			if ctx.Type_() != nil {
-				result = ctx.Type_().GetText()
+			if resultType.ok() {
+				result = resultType.text()
 			} else {
 				result = t.astTypeToTranspilerType(retType).String()
 			}
-			return nil, t.missingReturnError(antlrBlock(ctx.Block().(*grammar.BlockContext)), "this lambda", result)
+			return nil, t.missingReturnError(block, "this lambda", result)
 		}
-	} else if ctx.Expression() != nil {
-		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodySlot)
+	} else if expr := l.expression(t); expr != nil {
+		b, inferredRet, err := t.transformExpressionLambdaBody(l, expr, isVoidExpected, isConcreteExpectedType, bodySlot)
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +342,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 // when the expected return type is already concrete (caller keeps its own)
 // or when the lambda is void. Extracted from transformLambdaWithExpectedType
 // as part of A6.
-func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+func (t *galaASTTransformer) transformBlockLambdaBody(l lambdaSrc, block blockSrc, isVoidExpected, isConcreteExpectedType, expectsReturnValue bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
 	// A value-returning lambda's body is a value block: its last expression
 	// is promoted to the implicit return. Otherwise a trailing bare `match`
 	// whose value becomes the lambda's return would be marked
@@ -338,12 +351,12 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	var err error
 	switch {
 	case isVoidExpected:
-		b, err = t.transformBlock(ctx.Block().(*grammar.BlockContext))
+		b, err = t.lowerBlock(block, tailDiscarded, slot{})
 	case expectsReturnValue:
-		b, err = t.transformValueBlock(ctx.Block().(*grammar.BlockContext), bodySlot)
+		b, err = t.lowerValueBlock(block, bodySlot)
 	default:
 		// With no value expected, only a trailing IIFE is promoted below.
-		b, err = t.transformBlockWithTail(ctx.Block().(*grammar.BlockContext), tailIIFE, bodySlot)
+		b, err = t.lowerBlock(block, tailIIFE, bodySlot)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -353,7 +366,8 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 		for _, stmt := range b.List {
 			if exprStmt, ok := stmt.(*ast.ExprStmt); ok {
 				if funcName := t.goCallReturnsErrorOnly(exprStmt.X); funcName != "" {
-					return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+					line, col := l.at().start()
+					return nil, nil, galaerr.NewSemanticErrorAt(line, col,
 						fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
 				}
 			}
@@ -410,7 +424,7 @@ func (t *galaASTTransformer) transformBlockLambdaBody(ctx *grammar.LambdaExpress
 	}
 	// The thunk of Try(...): a trailing Go call's error is the Failure (see
 	// tryThunkValue), not a Try inside the Try.
-	if ctx == t.tryThunkLambda && len(b.List) > 0 {
+	if t.isTryThunk(l) && len(b.List) > 0 {
 		if ret, ok := b.List[len(b.List)-1].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
 			ret.Results[0] = t.tryThunkIIFE(ret.Results[0])
 		}
@@ -480,13 +494,13 @@ func isVoidTypeIdent(expr ast.Expr) bool {
 // transformExpressionLambdaBody handles the `=> expr` form of a lambda body.
 // Returns (body, inferredReturnType, error). Extracted from
 // transformLambdaWithExpectedType as part of A6.
-func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
-	bodySlot.tryThunk = ctx == t.tryThunkLambda
+func (t *galaASTTransformer) transformExpressionLambdaBody(l lambdaSrc, bodyExpr grammar.IExpressionContext, isVoidExpected, isConcreteExpectedType bool, bodySlot slot) (*ast.BlockStmt, ast.Expr, error) {
+	bodySlot.tryThunk = t.isTryThunk(l)
 	// A lambda that returns nothing runs its body as a statement, as a void
 	// function does: a call is made, a match or if-expression runs its
 	// branches as statements, and a plain value is evaluated but not used.
 	if isVoidExpected {
-		body, err := t.transformVoidExpressionBody(ctx.Expression(), lambdaDiscardHint)
+		body, err := t.transformVoidExpressionBody(bodyExpr, lambdaDiscardHint)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -496,13 +510,14 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 		}
 		if es, ok := body.List[0].(*ast.ExprStmt); ok {
 			if funcName := t.goCallReturnsErrorOnly(es.X); funcName != "" {
-				return nil, nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+				line, col := l.at().start()
+				return nil, nil, galaerr.NewSemanticErrorAt(line, col,
 					fmt.Sprintf("cannot discard error return from %s in void lambda — use FromError(%s) to handle the error", funcName, funcName))
 			}
 		}
 		return body, nil, nil
 	}
-	expr, err := t.lowerResultAgainst(ctx.Expression(), bodySlot, true)
+	expr, err := t.lowerResultAgainst(bodyExpr, bodySlot, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -532,7 +547,7 @@ func (t *galaASTTransformer) transformExpressionLambdaBody(ctx *grammar.LambdaEx
 	// The thunk of Try(...): a Go call's error is the Failure, so the body runs
 	// the call and panics on the error (see tryThunkValue). Anywhere else the
 	// body's value is the call converted to a Try or Tuple, like any value.
-	if ctx == t.tryThunkLambda {
+	if t.isTryThunk(l) {
 		if thunkBody, thunkType, ok := t.tryThunkValue(expr); ok {
 			if !isConcreteExpectedType {
 				retType = thunkType

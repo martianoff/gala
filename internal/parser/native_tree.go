@@ -49,6 +49,10 @@ type Native struct {
 	// nodes, built on the first call to Node, maps a context to its node.
 	nodesOnce sync.Once
 	nodes     map[antlr.ParserRuleContext]int32
+	// kinds, built kind by kind by NodeOfKind, maps a context to its node of
+	// that kind.
+	kindsMu sync.Mutex
+	kinds   map[native.GalaKind]map[antlr.ParserRuleContext]int32
 }
 
 // newNative returns the native-tree handle of root, read from stream over
@@ -178,6 +182,37 @@ func (t *Native) Node(ctx antlr.ParserRuleContext) native.GalaNodeRef {
 		}
 	})
 	if i, ok := t.nodes[ctx]; ok {
+		return tree.Node(int(i))
+	}
+	return native.GalaNodeRef{}
+}
+
+// NodeOfKind is Node for a context whose node is of kind, and no node when
+// it has none of that kind. It indexes only the nodes of kind, on its first
+// call for kind, so a caller that crosses at a few kinds of node does not pay
+// for a map of the whole tree. ctx may be nil, or a typed nil: neither is in
+// the tree.
+func (t *Native) NodeOfKind(ctx antlr.ParserRuleContext, kind native.GalaKind) native.GalaNodeRef {
+	tree, err := t.Tree()
+	if err != nil {
+		return native.GalaNodeRef{}
+	}
+	t.kindsMu.Lock()
+	nodes, ok := t.kinds[kind]
+	if !ok {
+		nodes = map[antlr.ParserRuleContext]int32{}
+		for i, c := range t.ctxs {
+			if tree.Node(i).Kind() == kind {
+				nodes[c] = int32(i)
+			}
+		}
+		if t.kinds == nil {
+			t.kinds = map[native.GalaKind]map[antlr.ParserRuleContext]int32{}
+		}
+		t.kinds[kind] = nodes
+	}
+	t.kindsMu.Unlock()
+	if i, ok := nodes[ctx]; ok {
 		return tree.Node(int(i))
 	}
 	return native.GalaNodeRef{}

@@ -163,6 +163,14 @@ type galaASTTransformer struct {
 	// opaque type declaration, lowered off the native tree, by its first
 	// line. It observes and changes nothing; TestNativeTypeCases sets it.
 	onNativeType func(line int)
+	// onNativeLambda, when set, is told of each lambda lowered on the
+	// native tree, by its node index. It observes and
+	// changes nothing; TestNativeWalkAgrees sets it to count them.
+	onNativeLambda func(index int)
+	// onNativeCapture, when set, is told of each Sendable capture check run
+	// on the native tree. It observes and changes nothing;
+	// TestNativeWalkCases sets it to prove which tree a check read.
+	onNativeCapture func()
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
