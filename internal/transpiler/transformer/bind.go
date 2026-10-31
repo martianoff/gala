@@ -34,55 +34,9 @@ import (
 // is structural: no type is special-cased, so a user-defined monad works exactly
 // like std's. See docs/BIND_NOTATION.MD.
 
-// bindDeclFromStatement returns the BindDeclaration context if the statement is a
-// `bind name = expr`, else nil.
-func bindDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IBindDeclarationContext {
-	sc, ok := stmtCtx.(*grammar.StatementContext)
-	if !ok || sc == nil {
-		return nil
-	}
-	dc, ok := sc.Declaration().(*grammar.DeclarationContext)
-	if !ok || dc == nil {
-		return nil
-	}
-	if bd := dc.BindDeclaration(); bd != nil {
-		return bd
-	}
-	return nil
-}
-
-// alsoDeclFromStatement returns the AlsoDeclaration context if the statement is an
-// `also name = expr`, else nil.
-func alsoDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IAlsoDeclarationContext {
-	sc, ok := stmtCtx.(*grammar.StatementContext)
-	if !ok || sc == nil {
-		return nil
-	}
-	dc, ok := sc.Declaration().(*grammar.DeclarationContext)
-	if !ok || dc == nil {
-		return nil
-	}
-	if ad := dc.AlsoDeclaration(); ad != nil {
-		return ad
-	}
-	return nil
-}
-
-// useDeclFromStatement returns the UseDeclaration context if the statement is a
-// `use name = expr`, else nil.
-func useDeclFromStatement(stmtCtx grammar.IStatementContext) grammar.IUseDeclarationContext {
-	sc, ok := stmtCtx.(*grammar.StatementContext)
-	if !ok || sc == nil {
-		return nil
-	}
-	dc, ok := sc.Declaration().(*grammar.DeclarationContext)
-	if !ok || dc == nil {
-		return nil
-	}
-	if ud := dc.UseDeclaration(); ud != nil {
-		return ud
-	}
-	return nil
+// stmtKindOf is the kind of s, a statement on ANTLR's tree.
+func stmtKindOf(s grammar.IStatementContext) stmtKind {
+	return antlrStmt(s.(*grammar.StatementContext)).kind
 }
 
 // trailingBindValueExpr extracts the value expression from a block's trailing
@@ -127,14 +81,15 @@ type preppedBind struct {
 // collectBindGroup splits the leading `bind` and any consecutive `also` clauses
 // into one group, returning that group and the statements after it.
 func collectBindGroup(stmts []grammar.IStatementContext) ([]bindEntry, []grammar.IStatementContext) {
-	bd := bindDeclFromStatement(stmts[0])
+	bd := antlrStmt(stmts[0].(*grammar.StatementContext)).kid.ctx.(*grammar.BindDeclarationContext)
 	group := []bindEntry{{bd.Identifier().GetText(), bd.Expression(), bd.Type_(), bd}}
 	i := 1
 	for i < len(stmts) {
-		ad := alsoDeclFromStatement(stmts[i])
-		if ad == nil {
+		s := antlrStmt(stmts[i].(*grammar.StatementContext))
+		if s.kind != stmtAlso {
 			break
 		}
+		ad := s.kid.ctx.(*grammar.AlsoDeclarationContext)
 		group = append(group, bindEntry{ad.Identifier().GetText(), ad.Expression(), ad.Type_(), ad})
 		i++
 	}
@@ -580,10 +535,11 @@ func (t *galaASTTransformer) typeHasMethod(lookupBaseName, method string) bool {
 func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, res *bindResult) (*ast.BlockStmt, error) {
 	body := &ast.BlockStmt{}
 	for i, s := range stmts {
-		if alsoDeclFromStatement(s) != nil {
+		src := antlrStmt(s.(*grammar.StatementContext))
+		if src.kind == stmtAlso {
 			return nil, t.semanticErrorAt(s.(*grammar.StatementContext), "`also` must directly follow a `bind` or `also`")
 		}
-		if bindDeclFromStatement(s) != nil {
+		if src.kind == stmtBind {
 			expr, err := t.desugarBindChain(stmts[i:], res)
 			if err != nil {
 				return nil, err
@@ -592,8 +548,8 @@ func (t *galaASTTransformer) buildBindBody(stmts []grammar.IStatementContext, re
 			return body, nil
 		}
 		if i == len(stmts)-1 {
-			if ifCtx := ifStatementOf(s.(*grammar.StatementContext)); ifCtx != nil {
-				stmt, err := t.lowerBindTailIf(ifCtx, res)
+			if src.kind == stmtIf {
+				stmt, err := t.lowerBindTailIf(src.kid.ctx.(*grammar.IfStatementContext), res)
 				if err != nil {
 					return nil, err
 				}

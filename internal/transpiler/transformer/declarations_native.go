@@ -18,9 +18,10 @@ import (
 // named after, which reads ANTLR's tree, and fills the same tree-free value
 // for the same lowering (lowerValDecl, lowerFuncDecl, lowerTypeDecl, ...).
 // What the native tree does not drive yet, it hands to ANTLR's tree: the
-// types, signatures, parameters, initializers and bodies inside a
+// types, signatures, parameters, initializers and expression bodies inside a
 // declaration, and the sealed and opaque type declarations whole, cross back
-// with crossTo. The later steps of the port move that boundary down.
+// with crossTo. Block bodies are walked natively down to their statements
+// (statements_source.go). The later steps of the port move the boundary down.
 // TestNativeWalkAgrees holds the native walk to the ANTLR one.
 //
 // Children are read through the rule handles, NativeKids and Kind(), never
@@ -58,7 +59,7 @@ func nativeRange(n native.GalaNodeRef) srcRange {
 	return r
 }
 
-// nativeDeclNames is readDeclNames of the identifier list idList.
+// nativeDeclNames is ctxDeclNames of the identifier list idList.
 func nativeDeclNames(idList native.GalaNodeRef) []declName {
 	var names []declName
 	for id := range galaparser.NativeKids(idList, native.GalaKIND_identifier) {
@@ -86,7 +87,7 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	// Track position for error reporting in deeply-nested helpers
 	start := td.Start()
 	t.lastLine, t.lastCol = int(start.Line), int(start.Column)
-	decl, ok := topDeclKid(td)
+	decl, ok := firstKidNode(td)
 	if !ok {
 		return nil, nil
 	}
@@ -109,16 +110,6 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 		return t.transformOpaqueTypeDeclaration(crossTo[*grammar.OpaqueTypeDeclarationContext](t, decl))
 	}
 	return nil, nil
-}
-
-// topDeclKid is the declaration td, a topLevelDeclaration node, holds, and
-// false when it holds none (parse-error recovery).
-func topDeclKid(td native.GalaNodeRef) (native.GalaNodeRef, bool) {
-	if td.ChildCount() == 0 {
-		return native.GalaNodeRef{}, false
-	}
-	decl := td.Child(0).Node()
-	return decl, decl.Ok()
 }
 
 // oneDecl is the result of lowering a declaration to the one Go declaration
@@ -170,11 +161,10 @@ func bindingIdList(n nativeBinding) native.GalaNodeRef {
 	return n.IdentifierList().GalaNodeRef
 }
 
-// readBindingDeclNative is readBindingDecl of a package-level val or var
-// declaration n, keyword. The native walk reaches no declaration in a body
-// yet: those are statements.
+// readBindingDeclNative is readBindingDecl of a val or var declaration n,
+// keyword: a package-level one or a statement in a body.
 func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword string) bindingDecl {
-	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: true, names: nativeDeclNames(bindingIdList(n))}
+	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: isTopLevelDeclNative(n.Ref()), names: nativeDeclNames(bindingIdList(n))}
 	typ, list := n.Type_(), n.ExpressionList()
 	if typ.Ok() {
 		d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
@@ -196,7 +186,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 	}
 	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
-		d.blankHint = topLevelBlankHint
+		d.blankHint = nativeBlankDeclarationHint(n.Ref(), d.topLevel)
 	}
 	return d
 }
@@ -205,7 +195,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 func (t *galaASTTransformer) readFuncDeclNative(n native.FunctionDeclarationNode) funcDecl {
 	d := funcDecl{name: n.Identifier().GetText(), sig: crossTo[*grammar.SignatureContext](t, n.Signature().GalaNodeRef)}
 	if b := n.Block(); b.Ok() {
-		d.block = crossTo[*grammar.BlockContext](t, b.GalaNodeRef)
+		d.block = blockSrc{node: b.GalaNodeRef}
 	}
 	if e := n.Expression(); e.Ok() {
 		d.expr = crossTo[*grammar.ExpressionContext](t, e.GalaNodeRef)

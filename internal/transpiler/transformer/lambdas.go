@@ -284,7 +284,7 @@ func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.Lambda
 			} else {
 				result = t.astTypeToTranspilerType(retType).String()
 			}
-			return nil, t.missingReturnError(ctx.Block().(*grammar.BlockContext), "this lambda", result)
+			return nil, t.missingReturnError(antlrBlock(ctx.Block().(*grammar.BlockContext)), "this lambda", result)
 		}
 	} else if ctx.Expression() != nil {
 		b, inferredRet, err := t.transformExpressionLambdaBody(ctx, isVoidExpected, isConcreteExpectedType, bodySlot)
