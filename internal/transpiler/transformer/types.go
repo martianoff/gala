@@ -135,7 +135,6 @@ func (t *galaASTTransformer) lowerType(s typeSrc) (ast.Expr, error) {
 
 		if args, ok := s.typeArgs(); ok {
 			if len(args) == 0 {
-				// A partial parse (an editor's `Box[]`) has no type list.
 				return nil, t.semanticErrorAtNode(s.at(), "type "+s.nameText()+" has an empty type argument list")
 			}
 			// Transparent concurrency-boundary marker: `Sendable[F]` is exactly
@@ -157,7 +156,7 @@ func (t *galaASTTransformer) lowerType(s typeSrc) (ast.Expr, error) {
 				}
 				argExprs = append(argExprs, ae)
 			}
-			if err := t.checkPtrTypeArgsOfType(s.nameText(), argExprs, args); err != nil {
+			if err := t.checkPtrTypeArgsOfType(s, argExprs, args); err != nil {
 				return nil, err
 			}
 

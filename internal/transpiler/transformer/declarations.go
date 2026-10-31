@@ -2180,14 +2180,28 @@ func (t *galaASTTransformer) lowerStructField(f structFieldDecl) (*ast.Field, er
 // typeParam is a declared type parameter: its name and its constraint.
 type typeParam struct{ name, constraint string }
 
-// readTypeParams reads a type parameter list on ANTLR's tree.
+// readTypeParams reads a type parameter list on ANTLR's tree. A partial parse
+// (an editor's `S[T]` or `S[]`) may have no list, or a parameter without its
+// name or constraint; it reads what is there.
 func readTypeParams(ctx *grammar.TypeParametersContext) []typeParam {
+	list, ok := ctx.TypeParameterList().(*grammar.TypeParameterListContext)
+	if !ok {
+		return nil
+	}
 	var params []typeParam
-	for _, tpCtx := range ctx.TypeParameterList().(*grammar.TypeParameterListContext).AllTypeParameter() {
+	for _, tpCtx := range list.AllTypeParameter() {
 		tp := tpCtx.(*grammar.TypeParameterContext)
-		params = append(params, typeParam{name: tp.Identifier(0).GetText(), constraint: tp.Identifier(1).GetText()})
+		params = append(params, typeParam{name: identText(tp.Identifier(0)), constraint: identText(tp.Identifier(1))})
 	}
 	return params
+}
+
+// identText is id's text, or "" when a partial parse has no identifier.
+func identText(id grammar.IIdentifierContext) string {
+	if id == nil {
+		return ""
+	}
+	return id.GetText()
 }
 
 // lowerTypeParams lowers a type parameter list.

@@ -191,7 +191,6 @@ func receiverTypeParamNamesOf(s typeSrc) []string {
 	if !s.ok() {
 		return nil
 	}
-	// A partial parse (an editor's `Box[]`) has no type list.
 	args, _ := s.typeArgs()
 	var names []string
 	for _, arg := range args {

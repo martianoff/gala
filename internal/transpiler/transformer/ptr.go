@@ -461,11 +461,14 @@ func (t *galaASTTransformer) checkPtrBoundTypeArgs(o typeParamOwner, written int
 	return nil
 }
 
-// checkPtrTypeArgsOfType checks the type arguments args, at ctxs, of the
-// generic type name names in a type (`Holder[*Counter]`) with
-// checkPtrTypeArg.
-func (t *galaASTTransformer) checkPtrTypeArgsOfType(name string, args []ast.Expr, written []typeSrc) error {
-	if len(t.ptrReceiverMethods) == 0 || t.activeTypeParams[name] {
+// checkPtrTypeArgsOfType checks the type arguments args, written as written,
+// of the generic type s names (`Holder[*Counter]`) with checkPtrTypeArg.
+func (t *galaASTTransformer) checkPtrTypeArgsOfType(s typeSrc, args []ast.Expr, written []typeSrc) error {
+	if len(t.ptrReceiverMethods) == 0 {
+		return nil
+	}
+	name := s.nameText()
+	if t.activeTypeParams[name] {
 		return nil
 	}
 	meta := t.getTypeMeta(name)

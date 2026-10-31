@@ -55,6 +55,10 @@ func markedLines(src string) []int {
 	return lines
 }
 
+// typeParamMisuse is the message, which has no code, of a type parameter
+// given type arguments.
+const typeParamMisuse = "is a type parameter of the enclosing declaration and takes no type arguments"
+
 // typeCases cover each type shape lowerType reads, each place a declaration
 // holds a type the native walk reads, the sealed and opaque type
 // declarations, and each diagnostic they position, after multibyte text: a
@@ -64,7 +68,9 @@ func markedLines(src string) []int {
 // the native walk with ANTLR's, not ANTLR's with itself.
 var typeCases = []struct {
 	name, src string
-	fails     bool
+	// want, set on a case that fails, is in its error: the diagnostic code,
+	// or the message where the diagnostic has no code.
+	want string
 }{
 	{name: "type shapes", src: `package main
 
@@ -173,9 +179,9 @@ func main() {
 	Println(Meters(1.5), Id[string](2), Flag(true))
 }
 `},
-	{name: "type parameter given type arguments", fails: true, src: "package main\n\nstruct Box[T any](v T)\n\ntype W[T any] struct {\n\t/* ü */ b T[int]\n}\n"},
-	{name: "type parameter in a local val", fails: true, src: "package main\n\nfunc f[T any](x T) {\n\t/* ü */ val y T[int] = x\n}\n"},
-	{name: "nullable pointer as a type argument", fails: true, src: `package main
+	{name: "type parameter given type arguments", want: typeParamMisuse, src: "package main\n\nstruct Box[T any](v T)\n\ntype W[T any] struct {\n\t/* ü */ b T[int]\n}\n"},
+	{name: "type parameter in a local val", want: typeParamMisuse, src: "package main\n\nfunc f[T any](x T) {\n\t/* ü */ val y T[int] = x\n}\n"},
+	{name: "nullable pointer as a type argument", want: "GALA-E0080", src: `package main
 
 struct Counter(var N int)
 
@@ -193,13 +199,15 @@ type W struct {
 	/* ü */ h Holder[*Counter]
 }
 `},
-	{name: "two default cases", fails: true, src: "package main\n\n/* ü */ sealed type S {\n\tdefault case A\n\tdefault case B\n}\n"},
-	{name: "recursive default case", fails: true, src: "package main\n\n/* ü */ sealed type S {\n\tdefault case A(next S)\n\tcase B\n}\n"},
-	{name: "sealed variant too wide", fails: true, src: "package main\n\n/* ü */ sealed type S {\n\tcase A(a int, b int, c int, d int, e int, f int, g int, h int, i int, j int, k int)\n}\n"},
-	{name: "self-containing sealed", fails: true, src: "package main\n\n/* ü */ sealed type S {\n\tcase A(i S2)\n}\n\nsealed type S2 {\n\tcase B(s S)\n}\n"},
-	{name: "opaque over a type parameter", fails: true, src: "package main\n\n/* ü */ opaque type Id[T any] T\n"},
-	{name: "opaque over a struct", fails: true, src: "package main\n\nstruct P(x int)\n\n/* ü */ opaque type O  P\n"},
-	{name: "opaque over a generic type", fails: true, src: "package main\n\nstruct Box[T any](v T)\n\n/* ü */ opaque type O Box[  int ]\n"},
+	// A sealed declaration's checks run before its cases' types are lowered,
+	// so these keep the reported token on the declaration's (marked) line.
+	{name: "two default cases", want: "GALA-E0074", src: "package main\n\n/* ü */ sealed type S { default case A /* ü */ default case B }\n"},
+	{name: "recursive default case", want: "GALA-E0074", src: "package main\n\n/* ü */ sealed type S { default case A(/* ü */ next S) case B }\n"},
+	{name: "sealed variant too wide", want: "GALA-E0072", src: "package main\n\n/* ü */ sealed type S { case /* ü */ A(a int, b int, c int, d int, e int, f int, g int, h int, i int, j int, k int) }\n"},
+	{name: "self-containing sealed", want: "GALA-E0077", src: "package main\n\n/* ü */ sealed type S {\n\tcase A(i S2)\n}\n\nsealed type S2 {\n\tcase B(s S)\n}\n"},
+	{name: "opaque over a type parameter", want: "GALA-E0062", src: "package main\n\n/* ü */ opaque type Id[T any] T\n"},
+	{name: "opaque over a struct", want: "GALA-E0062", src: "package main\n\nstruct P(x int)\n\n/* ü */ opaque type O  P\n"},
+	{name: "opaque over a generic type", want: "GALA-E0062", src: "package main\n\nstruct Box[T any](v T)\n\n/* ü */ opaque type O Box[  int ]\n"},
 }
 
 // TestNativeTypeCases holds the lowering of types and of sealed and opaque
@@ -222,8 +230,8 @@ func TestNativeTypeCases(t *testing.T) {
 			n, a := transpileTypes(searchPaths, false, path, c.src), transpileTypes(searchPaths, true, path, c.src)
 			require.True(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's")
 			assert.Empty(t, a.lines, "the ANTLR walk lowered types off the native tree")
-			if c.fails {
-				require.Error(t, n.err, "the case transpiles")
+			if c.want != "" {
+				require.ErrorContains(t, n.err, c.want, "the case does not fail with its diagnostic")
 			} else {
 				require.NoError(t, n.err, "the case does not transpile")
 			}
