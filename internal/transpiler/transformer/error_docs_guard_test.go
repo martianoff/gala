@@ -1304,6 +1304,20 @@ func main() {
 			},
 		},
 		{
+			name: "type parameter on an interface method",
+			code: galaerr.CodeGenericInterfaceMethod, // GALA-E0086
+			render: func(t *testing.T) string {
+				return renderRepro(t, "main.gala", `package main
+
+type Named interface {
+    Map[T any](f func(string) T) T
+}
+
+func main() = Println("ok")
+`)
+			},
+		},
+		{
 			name: "Go struct tag on a block-form struct field",
 			code: galaerr.CodeStructTag, // GALA-E0085
 			render: func(t *testing.T) string {

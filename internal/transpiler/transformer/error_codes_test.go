@@ -1289,6 +1289,32 @@ func main() {
 			expectCode:     galaerr.CodeStructTag,
 			expectContains: "set JSON and YAML keys on Codec[T] with .Rename(field, key)",
 		},
+		{
+			// The spec used to be copied into the Go interface as written,
+			// and the generated Go did not parse (GALA-E0017).
+			name: "GALA-E0086 type parameter on an interface method",
+			input: `package main
+
+type Named interface {
+    Map[T any](f func(string) T) T
+}
+
+func main() = Println("ok")`,
+			expectCode:     galaerr.CodeGenericInterfaceMethod,
+			expectContains: `interface method "Map" of "Named" declares a type parameter [T]`,
+		},
+		{
+			name: "GALA-E0086 hint keeps the interface's own type parameters",
+			input: `package main
+
+type Pair[A any] interface {
+    Zip[B any, C comparable](b B, c C) A
+}
+
+func main() = Println("ok")`,
+			expectCode:     galaerr.CodeGenericInterfaceMethod,
+			expectContains: "declare B, C on the interface instead (type Pair[A any, B any, C comparable] interface { ... })",
+		},
 	}
 
 	for _, tc := range cases {

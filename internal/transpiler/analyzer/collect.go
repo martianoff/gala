@@ -170,16 +170,18 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						)
 					}
 					seenSpecs[methodName] = true
+					if tps, cons := typeParamsOf(msCtx.TypeParameters()); len(tps) > 0 {
+						id := msCtx.Identifier().GetStart()
+						return genericInterfaceMethodError(id.GetLine(), id.GetColumn(), typeName, meta.TypeParams, meta.TypeParamConstraints, methodName, tps, cons)
+					}
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
 						Doc:       docAt(docs, msCtx.GetStart()),
 						DefinedIn: filePath,
 					}
-					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(msCtx.TypeParameters(), pkgName)
-					var allTypeParams []string
-					allTypeParams = append(allTypeParams, meta.TypeParams...)
-					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+					// The spec declares no type parameters of its own (GALA-E0086).
+					allTypeParams := meta.TypeParams
 					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, allTypeParams)
 					if msCtx.Signature().Parameters() != nil {
 						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
@@ -661,4 +663,32 @@ func (fd *fileDecls) sealedDeclaredHere(fullName string) {
 			spans: spans,
 		})
 	}
+}
+
+// genericInterfaceMethodError is GALA-E0086 for the method spec methodName,
+// at line:col, of the interface typeName: the spec declares the type
+// parameters methodTPs, whose constraints, as written, are methodCons.
+// Go interface methods cannot have type parameters, and a call through an
+// interface value is dispatched at run time, so no set of instantiations can
+// be generated for it. The hint moves the parameters onto the interface,
+// after the interface's own, ifaceTPs constrained by ifaceCons.
+func genericInterfaceMethodError(line, col int, typeName string, ifaceTPs []string, ifaceCons map[string]string, methodName string, methodTPs []string, methodCons map[string]string) error {
+	var decl []string
+	for _, tp := range ifaceTPs {
+		decl = append(decl, tp+" "+ifaceCons[tp])
+	}
+	for _, tp := range methodTPs {
+		decl = append(decl, tp+" "+methodCons[tp])
+	}
+	noun := "a type parameter"
+	if len(methodTPs) > 1 {
+		noun = "type parameters"
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeGenericInterfaceMethod,
+		line, col,
+		fmt.Sprintf("interface method %q of %q declares %s [%s]: a Go interface method cannot have type parameters", methodName, typeName, noun, strings.Join(methodTPs, ", ")),
+		fmt.Sprintf("declare %s on the interface instead (type %s[%s] interface { ... }), or write %s as a generic function that takes a %s",
+			strings.Join(methodTPs, ", "), typeName, strings.Join(decl, ", "), methodName, typeName),
+	)
 }

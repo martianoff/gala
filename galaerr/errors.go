@@ -837,6 +837,13 @@ const (
 	// a .go file of the package. Reported by the parser's error listener in
 	// place of ANTLR's "extraneous input" message.
 	CodeStructTag ErrorCode = "GALA-E0085"
+
+	// E0086: a method spec of an interface declares its own type
+	// parameters. Go interface methods cannot have type parameters, and the
+	// call goes through dynamic dispatch, so there is no set of
+	// instantiations to generate. The spec used to be copied into the Go
+	// interface as written, and the generated Go did not parse (GALA-E0017).
+	CodeGenericInterfaceMethod ErrorCode = "GALA-E0086"
 )
 
 // InternalTransformerPanicHint is the hint attached to every GALA-E0017.

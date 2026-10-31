@@ -1,6 +1,7 @@
 package transformer_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -175,18 +176,6 @@ func main() {
 }`,
 			wantError: "Box is generic, and the literal does not say its type arguments",
 		},
-		{
-			name: "a generic method",
-			body: `type Conv interface {
-    Convert[U any](x U) U
-}
-
-func main() {
-    val c = Conv(Convert = (x) => x)
-    Println(c)
-}`,
-			wantError: "method Convert of Conv is generic, and a function cannot implement a generic method",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -203,6 +192,32 @@ func main() {
 			}
 		})
 	}
+}
+
+// TestInterfaceLiteralOfGenericMethodInSibling: an interface method spec with
+// type parameters is GALA-E0086 at the spec, in the file that declares it, even
+// when the file transpiled is a sibling that builds the interface with a
+// literal. The literal used to fail first with a GALA-E0078 whose hint, a
+// struct implementing the interface, cannot be followed.
+func TestInterfaceLiteralOfGenericMethodInSibling(t *testing.T) {
+	_, err := transpileInModule(t, map[string]string{
+		"gala.mod": "module example.com/conv\n",
+		"lib/conv.gala": `package lib
+
+type Conv interface {
+    Convert[U any](x U) U
+}
+`,
+		"lib/make.gala": `package lib
+
+func Make() Conv = Conv(Convert = (x) => x)
+`,
+	}, "lib/make.gala")
+	var se *galaerr.SemanticError
+	require.ErrorAs(t, err, &se)
+	require.Equal(t, galaerr.CodeGenericInterfaceMethod, se.Code)
+	require.Equal(t, "conv.gala", filepath.Base(se.FilePath))
+	require.Equal(t, 4, se.Line)
 }
 
 // TestInterfaceLiteralOfGoVariadicMethod pins a Go interface whose method is

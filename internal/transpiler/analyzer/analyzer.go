@@ -3801,6 +3801,12 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 				for _, ms := range ifaceType.AllMethodSpec() {
 					msCtx := ms.(*grammar.MethodSpecContext)
 					methodName := msCtx.Identifier().GetText()
+					// Reported in the sibling, so the file that uses the
+					// interface does not fail first with a consequence of it.
+					if tps, cons := typeParamsOf(msCtx.TypeParameters()); len(tps) > 0 {
+						id := msCtx.Identifier().GetStart()
+						return galaerr.WithFilePath(genericInterfaceMethodError(id.GetLine(), id.GetColumn(), typeName, meta.TypeParams, meta.TypeParamConstraints, methodName, tps, cons), sibDisplay)
+					}
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
@@ -3808,10 +3814,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						Pos:       transpiler.PosFromToken(msCtx.Identifier().GetStart()),
 						DefinedIn: absSibPath,
 					}
-					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(msCtx.TypeParameters(), pkgName)
-					var allTypeParams []string
-					allTypeParams = append(allTypeParams, meta.TypeParams...)
-					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
+					allTypeParams := meta.TypeParams
 					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, allTypeParams)
 					if msCtx.Signature().Parameters() != nil {
 						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
