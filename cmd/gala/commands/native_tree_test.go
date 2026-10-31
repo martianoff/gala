@@ -58,7 +58,7 @@ func TestImportsTreesAgree(t *testing.T) {
 			failed++
 		}
 	}
-	t.Logf("%d files read on the native tree, %d with syntax errors on ANTLR's", native, failed)
+	t.Logf("%d files read on the native tree, %d without one (a parse with errors, or one ANTLR's parser made) on ANTLR's", native, failed)
 	assert.Greater(t, native, 300)
 }
 
