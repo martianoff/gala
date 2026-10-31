@@ -36,9 +36,15 @@ type fileQualifiers struct {
 // qualifiersForFile builds sf's import table. richAST supplies package names,
 // so it must run after the file's imports were loaded.
 func (a *galaAnalyzer) qualifiersForFile(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) fileQualifiers {
+	return a.qualifiersFor(scanFileImports(sf), richAST)
+}
+
+// qualifiersFor is the import table of a file whose imports are imports (see
+// qualifiersForFile).
+func (a *galaAnalyzer) qualifiersFor(imports []fileImport, richAST *transpiler.RichAST) fileQualifiers {
 	names := transpiler.NewRankedNames[importBinding]()
 	var q fileQualifiers
-	for _, imp := range scanFileImports(sf) {
+	for _, imp := range imports {
 		b := importBinding{Path: imp.Path, Alias: imp.Alias, IsGala: a.isGalaImport(imp.Path)}
 		if b.IsGala {
 			b.PkgName = richAST.Packages[imp.Path]

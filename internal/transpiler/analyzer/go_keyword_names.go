@@ -6,6 +6,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/transformer"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -49,28 +50,18 @@ var bareStatementKeywords = func() map[string]bool {
 // is called above its declaration is reported where it is declared — the place
 // the rename starts. It returns nil when the file has none.
 func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
-	var firstUse, firstDecl *grammar.IdentifierContext
+	var k keywordNames
 	var visit func(antlr.Tree)
 	visit = func(node antlr.Tree) {
-		if firstDecl != nil {
+		if k.done() {
 			return
 		}
 		if id, ok := node.(*grammar.IdentifierContext); ok {
-			name := id.GetText()
-			if !token.IsKeyword(name) || (bareStatementKeywords[name] && isBareStatement(id)) {
-				return
-			}
-			isDecl := declaresName(id)
-			if !isDecl && (name == "break" || name == "continue") && !inPattern(id) {
-				// Loop control in any other position (`val x = break`, an
-				// if-expression branch) is the transformer's GALA-E0059,
-				// which knows whether a loop can be reached from there.
-				return
-			}
-			if isDecl {
-				firstDecl = id
-			} else if firstUse == nil {
-				firstUse = id
+			if name := id.GetText(); keywordNamed(name) {
+				k.see(name, transpiler.PosFromToken(id.GetStart()),
+					func() bool { return isBareStatement(id) },
+					func() bool { return declaresName(id) },
+					func() bool { return inPattern(id) })
 			}
 			return
 		}
@@ -79,26 +70,74 @@ func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
 		}
 	}
 	visit(sf)
+	return k.err()
+}
 
-	id := firstDecl
+// keywordName is an identifier spelled like a Go keyword, and where it starts.
+type keywordName struct {
+	name string
+	at   transpiler.SourcePos
+}
+
+// keywordNames is what checkGoKeywordNames, and its native twin, decide about
+// the identifiers they see, in source order, reading neither tree: the first
+// declaration and the first use of a name spelled like a Go keyword.
+type keywordNames struct {
+	firstUse, firstDecl *keywordName
+}
+
+// done reports whether no later identifier can change the result: a
+// declaration was found.
+func (k *keywordNames) done() bool { return k.firstDecl != nil }
+
+// keywordNamed reports whether name is spelled like a Go keyword: the
+// identifiers keywordNames.see is told of.
+func keywordNamed(name string) bool { return token.IsKeyword(name) }
+
+// see considers the identifier name, spelled like a Go keyword
+// (keywordNamed), at at. bare, decl and pattern say whether it is a whole
+// statement on its own (isBareStatement), the name a declaration introduces
+// (declaresName), and part of a case pattern (inPattern); each is asked only
+// when the answer matters.
+func (k *keywordNames) see(name string, at transpiler.SourcePos, bare, decl, pattern func() bool) {
+	if bareStatementKeywords[name] && bare() {
+		return
+	}
+	isDecl := decl()
+	if !isDecl && (name == "break" || name == "continue") && !pattern() {
+		// Loop control in any other position (`val x = break`, an
+		// if-expression branch) is the transformer's GALA-E0059,
+		// which knows whether a loop can be reached from there.
+		return
+	}
+	if isDecl {
+		k.firstDecl = &keywordName{name, at}
+	} else if k.firstUse == nil {
+		k.firstUse = &keywordName{name, at}
+	}
+}
+
+// err is the GALA-E0055 error of what k saw, preferring a declaration over a
+// use, or nil when it saw neither.
+func (k *keywordNames) err() error {
+	id := k.firstDecl
 	if id == nil {
-		id = firstUse
+		id = k.firstUse
 	}
 	if id == nil {
 		return nil
 	}
-	name := id.GetText()
-	tok := id.GetStart()
+	name := id.name
 	msg, hint := keywordUseDiagnostic(name)
-	if firstDecl != nil {
+	if k.firstDecl != nil {
 		msg = fmt.Sprintf("%q is a Go keyword and cannot be used as a name", name)
 		hint = fmt.Sprintf("rename it; GALA compiles to Go, where %q is reserved, so nothing a GALA "+
 			"program declares can have that name", name)
 	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeGoKeywordAsName,
-		tok.GetLine(), tok.GetColumn(), msg, hint,
-	).WithSpan(tok.GetColumn() + len(name))
+		id.at.Line, id.at.Column, msg, hint,
+	).WithSpan(id.at.Column + len(name))
 }
 
 // keywordUseDiagnostic words the error for a keyword used without a

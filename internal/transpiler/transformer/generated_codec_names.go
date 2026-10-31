@@ -6,6 +6,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/transpiler"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -48,7 +49,7 @@ func CheckGeneratedCodecNames(tree antlr.Tree) error {
 			return
 		}
 		if id, ok := node.(*grammar.IdentifierContext); ok {
-			if isGeneratedCodecName(id.GetText()) {
+			if IsGeneratedCodecName(id.GetText()) {
 				found = id
 			}
 			return
@@ -61,20 +62,25 @@ func CheckGeneratedCodecNames(tree antlr.Tree) error {
 	if found == nil {
 		return nil
 	}
-	name := found.GetText()
-	tok := found.GetStart()
+	return GeneratedCodecNameError(found.GetText(), transpiler.PosFromToken(found.GetStart()))
+}
+
+// GeneratedCodecNameError is the GALA-E0058 error of name, an identifier
+// spelled like a generated codec metadata type (IsGeneratedCodecName) that
+// starts at at. The analyzer's check of a file's native tree reports it too.
+func GeneratedCodecNameError(name string, at transpiler.SourcePos) error {
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeGeneratedCodecName,
-		tok.GetLine(), tok.GetColumn(),
+		at.Line, at.Column,
 		fmt.Sprintf("%s is codec metadata the transpiler generates and cannot be named in GALA code", name),
 		"use json.Codec[T], yaml.Codec[T] or StructMeta[T]() instead; "+
 			"those check that a struct with private fields may be decoded",
-	).WithSpan(tok.GetColumn() + len(name))
+	).WithSpan(at.Column + len(name))
 }
 
-// isGeneratedCodecName reports whether name is spelled like a generated codec
+// IsGeneratedCodecName reports whether name is spelled like a generated codec
 // metadata type: one of the prefixes followed by at least one character.
-func isGeneratedCodecName(name string) bool {
+func IsGeneratedCodecName(name string) bool {
 	for _, prefix := range generatedCodecPrefixes {
 		if len(name) > len(prefix) && strings.HasPrefix(name, prefix) {
 			return true

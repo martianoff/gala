@@ -206,9 +206,9 @@ type fileImport struct {
 	// IsDot marks the `import . "…"` form, which brings the package's exports
 	// into scope unqualified.
 	IsDot bool
-	// Tok is the spec's first token, so a diagnostic can point at this import
-	// rather than at the file.
-	Tok antlr.Token
+	// At is where the spec starts, so a diagnostic can point at this import
+	// rather than at the file; PathAt is where its path's string starts.
+	At, PathAt transpiler.SourcePos
 }
 
 // SpelledName is the alias, else the path's last segment, taken as written.
@@ -234,7 +234,12 @@ func scanFileImports(sf *grammar.SourceFileContext) []fileImport {
 			if !ok || s.STRING() == nil {
 				continue
 			}
-			fi := fileImport{Path: strings.Trim(s.STRING().GetText(), "\""), Tok: s.GetStart()}
+			str := s.STRING().GetSymbol()
+			fi := fileImport{
+				Path:   strings.Trim(str.GetText(), "\""),
+				At:     transpiler.PosFromToken(s.GetStart()),
+				PathAt: transpiler.PosFromToken(str),
+			}
 			if alias := s.Identifier(); alias != nil {
 				fi.Alias = alias.GetText()
 			} else {
@@ -692,27 +697,42 @@ func (a *galaAnalyzer) packageTopLevelNames(relPath string) map[string]bool {
 // when it names a type. When methods is not nil, it also records there, by
 // receiver type, the name of every method the file declares, in the same walk.
 func collectTopLevelDeclaredNames(sf *grammar.SourceFileContext, out map[string]bool, methods map[string]map[string]bool) {
-	var visitMethod func(fc *grammar.FunctionDeclarationContext)
+	forEachTopLevelName(sf, topLevelNameRecorder(out, methods))
+}
+
+// topLevelNameRecorder is the visitor collectTopLevelDeclaredNames and its
+// native twin record out and methods with.
+func topLevelNameRecorder(out map[string]bool, methods map[string]map[string]bool) topLevelVisitor {
+	v := topLevelVisitor{name: func(name string, _ transpiler.SourcePos, kind string) {
+		if kind == declKindType || kind == declKindVariant {
+			out[name] = true
+		} else if !out[name] {
+			out[name] = false
+		}
+	}}
 	if methods != nil {
-		visitMethod = func(fc *grammar.FunctionDeclarationContext) {
-			base := getBaseTypeName(fc.Receiver().(*grammar.ReceiverContext).Type_())
+		v.method = func(base, name string) {
 			if base == "" {
 				return
 			}
 			if methods[base] == nil {
 				methods[base] = make(map[string]bool)
 			}
-			methods[base][fc.Identifier().GetText()] = true
+			methods[base][name] = true
 		}
 	}
-	forEachTopLevelName(sf, func(id grammar.IIdentifierContext, kind string) {
-		name := id.GetText()
-		if kind == declKindType || kind == declKindVariant {
-			out[name] = true
-		} else if !out[name] {
-			out[name] = false
-		}
-	}, visitMethod)
+	return v
+}
+
+// topLevelVisitor is what forEachTopLevelName, and its native twin, report a
+// file's top-level names to, read off neither tree.
+type topLevelVisitor struct {
+	// name gets each name a top-level declaration introduces, where its
+	// identifier starts, and the kind of declaration.
+	name func(name string, at transpiler.SourcePos, kind string)
+	// method, when not nil, gets each method's receiver base type (see
+	// getBaseTypeName) and name.
+	method func(receiverBase, name string)
 }
 
 // The kinds of top-level declaration forEachTopLevelName reports.
@@ -723,15 +743,15 @@ const (
 	declKindValue    = "package-level value"
 )
 
-// forEachTopLevelName calls visit with the identifier of every name the
-// file's top-level declarations introduce, and the kind of declaration: free
-// functions, types, struct shorthands, sealed types and their case variants,
-// package vals/vars (including tuple-pattern destructuring), and embed
-// bindings.
-func forEachTopLevelName(sf *grammar.SourceFileContext, visit func(id grammar.IIdentifierContext, kind string), visitMethod func(fc *grammar.FunctionDeclarationContext)) {
+// forEachTopLevelName tells v every name the file's top-level declarations
+// introduce, and the kind of declaration: free functions, types, struct
+// shorthands, sealed types and their case variants, package vals/vars
+// (including tuple-pattern destructuring), and embed bindings; and, when
+// v.method is set, every method.
+func forEachTopLevelName(sf *grammar.SourceFileContext, v topLevelVisitor) {
 	report := func(id grammar.IIdentifierContext, kind string) {
 		if id != nil {
-			visit(id, kind)
+			v.name(id.GetText(), transpiler.PosFromToken(id.GetStart()), kind)
 		}
 	}
 	reportList := func(il grammar.IIdentifierListContext) {
@@ -748,8 +768,8 @@ func forEachTopLevelName(sf *grammar.SourceFileContext, visit func(id grammar.II
 			fc := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
 			if fc.Receiver() == nil {
 				report(fc.Identifier(), declKindFunction)
-			} else if visitMethod != nil {
-				visitMethod(fc)
+			} else if v.method != nil {
+				v.method(getBaseTypeName(fc.Receiver().(*grammar.ReceiverContext).Type_()), fc.Identifier().GetText())
 			}
 		case topDecl.TypeDeclaration() != nil:
 			report(topDecl.TypeDeclaration().(*grammar.TypeDeclarationContext).Identifier(), declKindType)

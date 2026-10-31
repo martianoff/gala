@@ -56,7 +56,8 @@ import (
 // Every path that cannot establish a violation returns nil. The Go compiler
 // still rejects the generated code, so failing open costs a worse error
 // message rather than a missed violation.
-func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec *grammar.ImportSpecContext, filePath string) error {
+func (a *galaAnalyzer) checkInternalImport(importerPath string, imp fileImport, filePath string) error {
+	importPath := imp.Path
 	if module.AllowsInternalImport(importerPath, importPath) {
 		return nil
 	}
@@ -82,11 +83,10 @@ func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec
 			"import something %q exports instead, or move this package out of internal/ to make it public",
 		root)
 
-	tok := spec.STRING().GetSymbol()
 	violation := galaerr.NewCodedSemanticError(
 		galaerr.CodeInternalPackageImport,
-		tok.GetLine(),
-		tok.GetColumn(),
+		imp.PathAt.Line,
+		imp.PathAt.Column,
 		msg,
 		hint,
 	)
@@ -199,6 +199,10 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
+	// antlrTreeOnly keeps every file on ANTLR's tree, its native tree unread
+	// and unconverted. The LSP sets it: an editor buffer is analyzed per
+	// keystroke, where converting costs more than the reads it would serve.
+	antlrTreeOnly bool
 	// onCollect, when set, is told which tree analyze collects the top-level
 	// file's declarations on, and why (see collectTrace); the files of the
 	// packages it imports, collected on ANTLR's tree, are not reported. It observes and changes nothing; the collection tests
@@ -216,6 +220,11 @@ type galaAnalyzer struct {
 	// read, and to run the check on ANTLR's tree in the same state and
 	// compare.
 	onUndefinedCheck func(undefinedCheck)
+	// onTreeRead, when set, is told of each of analyze's other reads of the
+	// top-level file (see readTree). It observes and changes nothing;
+	// TestFileChecksAgree sets it to prove which tree each read took, and to
+	// make the read on ANTLR's tree in the same state and compare.
+	onTreeRead func(treeRead)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go
@@ -400,6 +409,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipUndefinedCheck:  true,
+		antlrTreeOnly:       true,
 	}
 }
 
@@ -547,10 +557,11 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // attachment site degrades to an empty Doc rather than failing.
 //
 // handle is tree's native-tree handle (from Parsed.CleanNative), or nil.
-// Where the undefined-symbol check runs (see checksUndefined), the file's own
-// declarations are collected, and the check reads the file, on its native
-// tree when there is one, and on tree otherwise (see collect_native.go).
-// Nothing keeps it.
+// The top-level file, outside the LSP, is read on its native tree when there
+// is one, and on tree otherwise (see readsNative, collect_native.go and
+// file_checks_native.go); only the inference of the package's untyped vals
+// (inferPackageValTypes, the transformer's) reads tree either way. Nothing
+// keeps it.
 //
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
@@ -595,19 +606,40 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		return nil, fmt.Errorf("expected *grammar.SourceFileContext, got %T", tree)
 	}
 
+	// The tree the file is read on, decided once, before its first read: its
+	// native tree when it is the compiled file outside the LSP and its parse
+	// came with a handle that converts (see nativeFileOf), ANTLR's tree
+	// otherwise. Every analyzer read below takes the same tree, so a file is
+	// read on one tree or the other, never a mix; inferPackageValTypes, the
+	// transformer's pass, still reads ANTLR's. The imported packages' files
+	// are read on ANTLR's tree: the parsed-file cache keeps no handle.
+	readsNative := isTopLevel && !a.antlrTreeOnly
+	var nf nativeFile
+	if readsNative {
+		nf = nativeFileOf(handle)
+	}
+
 	// GALA-E0055: a name spelled like a Go keyword cannot reach the generated
 	// Go. Checked first, so no later check reports a symptom of the same name.
 	if isTopLevel {
-		if err := checkGoKeywordNames(sourceFile); err != nil {
+		if err := readTree(a, filePath, "go keyword names", nf, checkGoKeywordNamesNative,
+			func() error { return checkGoKeywordNames(sourceFile) }); err != nil {
 			return nil, err
 		}
 		// GALA-E0058: generated codec metadata is not part of GALA's surface.
-		if err := transformer.CheckGeneratedCodecNames(sourceFile); err != nil {
+		if err := readTree(a, filePath, "generated codec names", nf, checkGeneratedCodecNamesNative,
+			func() error { return transformer.CheckGeneratedCodecNames(sourceFile) }); err != nil {
 			return nil, err
 		}
 	}
 
-	pkgName := sourceFile.PackageClause().(*grammar.PackageClauseContext).Identifier().GetText()
+	clause := readTree(a, filePath, "package clause", nf,
+		func(root native.GalaNodeRef) packageClause { return packageClauseNative(root, docs) },
+		func() packageClause {
+			pc := sourceFile.PackageClause().(*grammar.PackageClauseContext)
+			return packageClause{name: pc.Identifier().GetText(), doc: docAt(docs, pc.GetStart())}
+		})
+	pkgName := clause.name
 	absFilePath, _ := filepath.Abs(filePath)
 
 	phaseStart := time.Now()
@@ -759,7 +791,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	richAST := &transpiler.RichAST{
 		Tree:             tree,
 		PackageName:      pkgName,
-		PackageDoc:       docAt(docs, sourceFile.PackageClause().GetStart()),
+		PackageDoc:       clause.doc,
 		Types:            make(map[string]*transpiler.TypeMetadata),
 		Functions:        make(map[string]*transpiler.FunctionMetadata),
 		Packages:         make(map[string]string),
@@ -823,7 +855,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// Reject a package imported twice, or a path no package can have, before
 	// resolving anything, so either is reported against the source rather than
 	// escaping into the generated Go.
-	fileImports := scanFileImports(sourceFile)
+	fileImports := readTree(a, filePath, "imports", nf, scanFileImportsNative,
+		func() []fileImport { return scanFileImports(sourceFile) })
 	if err := checkDuplicateImports(fileImports); err != nil {
 		return nil, err
 	}
@@ -831,66 +864,62 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		return nil, err
 	}
 
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
+	for _, imp := range fileImports {
+		path := imp.Path
 
-			if err := a.checkInternalImport(importerPath, path, s, filePath); err != nil {
-				return nil, err
+		if err := a.checkInternalImport(importerPath, imp, filePath); err != nil {
+			return nil, err
+		}
+
+		// Check if this is a GALA package (internal or external)
+		isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+		isExternalGala := a.resolver.IsGalaPackage(path)
+
+		if isInternalGala || isExternalGala {
+			// Determine how to resolve the package
+			var relPath string
+			if isInternalGala {
+				relPath = strings.TrimPrefix(path, "martianoff/gala/")
+			} else {
+				relPath = path // External packages use full path
 			}
 
-			// Check if this is a GALA package (internal or external)
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
-
-			if isInternalGala || isExternalGala {
-				// Determine how to resolve the package
-				var relPath string
-				if isInternalGala {
-					relPath = strings.TrimPrefix(path, "martianoff/gala/")
-				} else {
-					relPath = path // External packages use full path
+			// Check if the GALA import path differs from the actual Go module path
+			// (e.g., "martianoff/gala-server" vs "github.com/martianoff/gala-server")
+			if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
+				if richAST.ImportPathMap == nil {
+					richAST.ImportPathMap = make(map[string]string)
 				}
+				richAST.ImportPathMap[path] = goPath
+			}
 
-				// Check if the GALA import path differs from the actual Go module path
-				// (e.g., "martianoff/gala-server" vs "github.com/martianoff/gala-server")
-				if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
-					if richAST.ImportPathMap == nil {
-						richAST.ImportPathMap = make(map[string]string)
-					}
-					richAST.ImportPathMap[path] = goPath
+			if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
+				// Use cached metadata — walk closure to materialize transitive types.
+				if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
+					richAST.Packages[path] = name
 				}
+			} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
+				// First time analyzing this package - set placeholder to prevent infinite recursion
+				a.analyzedPkgs[path] = nil
 
-				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					// Use cached metadata — walk closure to materialize transitive types.
+				importedAST, err := a.analyzePackage(relPath, path)
+				if err != nil {
+					line := imp.At.Line
+					warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
+					fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
+					richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
+				}
+				if err == nil {
+					a.storeAnalyzedPkg(path, importedAST)
+					// Store package name from the imported package
 					if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
 						richAST.Packages[path] = name
-					}
-				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
-					// First time analyzing this package - set placeholder to prevent infinite recursion
-					a.analyzedPkgs[path] = nil
-
-					importedAST, err := a.analyzePackage(relPath, path)
-					if err != nil {
-						line := s.GetStart().GetLine()
-						warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
-						fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
-						richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
-					}
-					if err == nil {
-						a.storeAnalyzedPkg(path, importedAST)
-						// Store package name from the imported package
-						if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
-							richAST.Packages[path] = name
-						} else {
-							// Fallback if PackageName is not set properly
-							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
-									richAST.Packages[path] = typeMeta.Package
-									break
-								}
+					} else {
+						// Fallback if PackageName is not set properly
+						for _, typeMeta := range importedAST.Types {
+							if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
+								richAST.Packages[path] = typeMeta.Package
+								break
 							}
 						}
 					}
@@ -935,12 +964,12 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	// 0.61 The Go packages the imported packages' defaults name through their
 	// own imports, for lowering those defaults here.
-	a.loadDefaultScopeGoTypes(sourceFile, richAST)
+	a.loadDefaultScopeGoTypes(fileImports, richAST)
 
 	// 0.62 This file's import table (see fileQualifiers), now that its GALA and
 	// Go imports are loaded, and the import aliases it records (e.g.,
 	// import im "path/to/pkg" → im → actual package name).
-	fileQuals := a.qualifiersForFile(sourceFile, richAST)
+	fileQuals := a.qualifiersFor(fileImports, richAST)
 	recordImportAliases(richAST, fileQuals)
 
 	logPhase("analyze-go-packages", phaseStart)
@@ -999,7 +1028,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		// A sibling's import may have keyed a package merged above (see
 		// keySharedNames): read this file's import table against it again.
 		richAST.ApplyPackageKeys()
-		fileQuals = a.qualifiersForFile(sourceFile, richAST)
+		fileQuals = a.qualifiersFor(fileImports, richAST)
 		recordImportAliases(richAST, fileQuals)
 	}
 
@@ -1098,7 +1127,9 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	// GALA-E0066: a package-level name a dot import also brings in.
 	if isTopLevel {
-		if err := checkDotImportCollisions(sourceFile, packageDotImports, richAST); err != nil {
+		if err := readTree(a, filePath, "dot-import collisions", nf,
+			func(root native.GalaNodeRef) error { return checkDotImportCollisionsNative(root, packageDotImports, richAST) },
+			func() error { return checkDotImportCollisions(sourceFile, packageDotImports, richAST) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1112,9 +1143,13 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	a.currentRichAST = richAST
 	a.currentDotImportPkgs = dotImportPkgs
 	a.currentQualifiers = fileQuals
-	a.currentOwnTypes = make(map[string]bool)
-	a.currentOwnMethods = make(map[string]map[string]bool)
-	for _, sf := range append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...) {
+	// The file's own names first, on its tree, then its siblings', on
+	// ANTLR's: the parsed-file cache keeps no native tree. The result does
+	// not depend on the order.
+	own := readTree(a, filePath, "top-level names", nf, ownNamesNative,
+		func() ownNames { return ownNamesOf(sourceFile) })
+	a.currentOwnTypes, a.currentOwnMethods = own.types, own.methods
+	for _, sf := range siblingTrees {
 		collectTopLevelDeclaredNames(sf, a.currentOwnTypes, a.currentOwnMethods)
 	}
 	for name := range richAST.OwnGoTypes {
@@ -1142,17 +1177,9 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
 	// checksUndefined says whether the undefined-symbol check (GALA-E0023,
-	// below, after the collection) runs. Decided here, with every import
-	// loaded and before the collection, because the collection depends on
-	// it: converting the tree costs several times what
-	// collecting on it saves, so the file's own declarations are collected
-	// on its native tree only when the check reads that tree too, and on its
-	// ANTLR tree otherwise (see collect_native.go).
+	// below, after the collection) runs: only once every import loaded. It
+	// reads the tree the file is read on.
 	checksUndefined := isTopLevel && !a.skipUndefinedCheck && a.fileImportsFullyLoaded(fileImports, richAST)
-	var nf nativeFile
-	if checksUndefined {
-		nf = nativeFileOf(handle)
-	}
 	if a.onCollect != nil && isTopLevel {
 		a.onCollect(collectTrace{filePath: filePath, checksUndefined: checksUndefined, hasHandle: handle != nil, native: nf.ok()})
 	}
@@ -1329,9 +1356,11 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
-		receiverTypes := methodReceiverTypes(sourceFile)
+		var receiverTypes iter.Seq[string]
 		if nf.ok() {
 			receiverTypes = methodReceiverTypesNative(nf)
+		} else {
+			receiverTypes = methodReceiverTypes(sourceFile)
 		}
 		richAST.ReceiverDotImports = a.receiverDotImports(receiverTypes, richAST, filePath, fileDotImportPaths)
 	}
@@ -2707,10 +2736,8 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			if p := a.parsedForFile(filePath, tree); p != nil {
 				docs = p.Docs
 			}
-			// No native tree: the parsed-file cache keeps none, and the
-			// native collection runs only where the undefined-symbol check,
-			// which runs after it, reads the native tree too: on the
-			// top-level file alone.
+			// No native tree: the parsed-file cache keeps none, and only
+			// the top-level file is read on its native tree (see analyze).
 			res, err := a.analyze(tree, docs, nil, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
@@ -5181,7 +5208,7 @@ func checkImportPathsWellFormed(imports []fileImport) error {
 		}
 		return galaerr.NewCodedSemanticError(
 			galaerr.CodePackageNotFound,
-			imp.Tok.GetLine(), imp.Tok.GetColumn(),
+			imp.At.Line, imp.At.Column,
 			fmt.Sprintf("package not found: %q is not an import path", imp.Path),
 			"import a package by its module path joined with its directory (e.g. \"example.com/app/util\"), not by a relative or filesystem path",
 		)
@@ -5223,12 +5250,12 @@ func checkDuplicateImports(imports []fileImport) error {
 		if first, ok := seen[key]; ok {
 			return galaerr.NewCodedSemanticError(
 				galaerr.CodeDuplicateImport,
-				imp.Tok.GetLine(), imp.Tok.GetColumn(),
+				imp.At.Line, imp.At.Column,
 				fmt.Sprintf("package %q is already imported at line %d", imp.Path, first),
 				"remove this import — a file's import blocks are merged, so a package listed in one block is in scope for the whole file",
 			)
 		}
-		seen[key] = imp.Tok.GetLine()
+		seen[key] = imp.At.Line
 	}
 	return nil
 }

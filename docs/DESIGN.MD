@@ -298,12 +298,14 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     `internal/parser/native`): flat arrays of nodes, far smaller than ANTLR's contexts. Each
     parse galop's parser makes (`Parsed.Native` from `ParseFile`) can build it on first use and
     pair every native node with its ANTLR context, so code can move to the native tree one
-    consumer at a time. The analyzer collects the compiled file's declarations and runs its
-    undefined-symbol check on it (`nativewalk.New` walks it), and the transformer walks its
-    top-level declarations, all only where the tree bridges to ANTLR's (`Native.Bridged`);
-    `transpile()` drops the handle after the transform (before it when the analysis did not
-    convert the tree), and neither the transformer nor any cache keeps it or a node of it:
-    until it converts, it holds the
+    consumer at a time. The analyzer reads the compiled file on it, from its first read on
+    (its package clause, imports and names, and the checks on them), collects the file's
+    declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
+    the transformer walks its top-level declarations, all only where the tree bridges to
+    ANTLR's (`Native.Bridged`); the compiled file's sibling files, the files of imported
+    packages and LSP buffers stay on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the
+    analysis did not convert the tree), and neither the transformer nor any cache keeps it or
+    a node of it: until it converts, it holds the
     token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive
     (after converting, the native tree keeps the text). Doc comments are keyed by
     line and column (`parser.DocKey`), which both trees share.

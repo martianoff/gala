@@ -11,6 +11,7 @@ go_library(
         "default_scope.go",
         "dot_import_collision.go",
         "field_method_names.go",
+        "file_checks_native.go",
         "go_export_importer.go",
         "go_keyword_names.go",
         "go_nocopy.go",
@@ -125,19 +126,22 @@ go_test(
     ],
 )
 
-# The collection of declarations, and the undefined-symbol check, on the
-# native tree, held to ANTLR's over the GALA sources TestEnginesAgree parses
-# and the examples of the error reference pages. A target of its own: staging
+# The collection of declarations, the undefined-symbol check and the other
+# reads of the compiled file on the native tree, held to ANTLR's over the
+# GALA sources TestEnginesAgree parses and the examples of the error
+# reference pages. A target of its own: staging
 # all of them would load packages that analyzer_test's cases rely on not
 # loading. Gazelle leaves the files out of analyzer_test (the exclude
 # directives) and keeps this rule as written.
 # gazelle:exclude collect_native_test.go
 # gazelle:exclude undefined_symbol_native_test.go
+# gazelle:exclude file_checks_native_test.go
 go_test(
     # keep
     name = "collect_native_test",
     srcs = [
         "collect_native_test.go",
+        "file_checks_native_test.go",
         "undefined_symbol_native_test.go",
     ],
     data = [
@@ -160,6 +164,8 @@ go_test(
         "//internal/parser/grammar",
         "//internal/parser/native",
         "//internal/transpiler",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
     ],
 )
