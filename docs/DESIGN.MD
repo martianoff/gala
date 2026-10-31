@@ -302,8 +302,8 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     (its package clause, imports and names, and the checks on them), collects the file's
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
     the transformer walks its top-level declarations, all only where the tree bridges to
-    ANTLR's (`Native.Bridged`); the files of imported packages and LSP buffers stay on
-    ANTLR's tree. `transpile()` drops the handle after the transform (before it when the
+    ANTLR's (`Native.Bridged`); the compiled file's sibling files, the files of imported
+    packages and LSP buffers stay on ANTLR's tree. `transpile()` drops the handle after the transform (before it when the
     analysis did not convert the tree), and neither the transformer nor any cache keeps it or
     a node of it: until it converts, it holds the
     token stream and the source text, which a clean parse's ANTLR tree doesn't keep alive

@@ -342,3 +342,39 @@ func TestFileChecksAgree(t *testing.T) {
 	require.GreaterOrEqual(t, errs, 20, "errors found")
 	t.Logf("%d files, all read on the native tree: %d reads, %d errors", files, reads, errs)
 }
+
+// TestLSPBuffersStayOnANTLR holds the LSP analyzer to ANTLR's tree: a buffer
+// parsed by galop comes with a native-tree handle, but analyzing it as the
+// language server does neither collects its declarations nor makes any other
+// read on the native tree, so a keystroke pays for no conversion.
+func TestLSPBuffersStayOnANTLR(t *testing.T) {
+	parseWithGalop(t)
+	_, searchPaths := collectionCorpus(t)
+	a, ok := NewGalaAnalyzerForLSP(galaparser.NewAntlrGalaParser(), searchPaths, t.TempDir()).(*galaAnalyzer)
+	require.True(t, ok, "NewGalaAnalyzerForLSP gives a *galaAnalyzer")
+	a.cache = nil
+
+	path := filepath.Join(t.TempDir(), "main.gala")
+	src := "package main\n\nimport . \"martianoff/gala/std\"\n\nfunc main() {\n\tval x = Some(1)\n\tPrintln(x)\n}\n"
+	require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
+	parsed := a.parser.ParseFile(src)
+	require.NoError(t, parsed.Err())
+	require.NotNil(t, parsed.Native, "a galop parse without syntax errors comes with a handle")
+
+	var reads []treeRead
+	a.onTreeRead = func(r treeRead) {
+		if r.filePath == path {
+			reads = append(reads, r)
+		}
+	}
+	an := analyzeParsedForCollection(t, a, path, parsed, nil)
+	a.onTreeRead = nil
+
+	require.Equal(t, path, an.trace.filePath, "the buffer's declarations are collected")
+	assert.True(t, an.trace.hasHandle, "the buffer's parse came with a handle")
+	assert.False(t, an.trace.native, "the LSP analyzer collected the buffer on its native tree")
+	require.NotEmpty(t, reads, "the buffer's file checks report their reads")
+	for _, r := range reads {
+		assert.False(t, r.native, "the LSP analyzer made the read of the %s on the native tree", r.what)
+	}
+}
