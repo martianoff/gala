@@ -303,7 +303,7 @@ GALA-AST → Go-AST, `internal/transpiler/generator` for emission).
     declarations and runs its undefined-symbol check on it (`nativewalk.New` walks it), and
     the transformer walks its top-level declarations, the statements of its function
     bodies, and its lambdas (their parameters, bodies and Sendable capture checks, reached
-    from expressions on ANTLR's tree through `Native.Node`), all only where the tree
+    from expressions on ANTLR's tree through `Native.NodeOfKind`), all only where the tree
     bridges to ANTLR's (`Native.Bridged`); the compiled
     file's sibling files, the files of imported packages and LSP buffers stay on ANTLR's
     tree. `transpile()` drops the handle after the transform (before it when the analysis did

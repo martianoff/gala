@@ -617,6 +617,12 @@ var captureCases = map[string]bool{
 	"var captured by a Future thunk":  true,
 }
 
+// captureFailsFirst are the captureCases whose diagnostic is the capture
+// check, which runs before the lambda is lowered, so no lambda is.
+var captureFailsFirst = map[string]bool{
+	"var captured by a Future lambda": true,
+}
+
 // bodyMarkerLine is the line of src's first `/* ü */` marker, when the line
 // is indented, so the marker is on a statement in a body.
 func bodyMarkerLine(src string) (int, bool) {
@@ -663,7 +669,7 @@ func TestNativeWalkCases(t *testing.T) {
 			// and a case passing to a Sendable parameter must have checked
 			// its captures there, so its diagnostic, or its Go, compares the
 			// native lambda lowering and capture check with ANTLR's.
-			if want.lambdas > 0 {
+			if want.lambdas > 0 && !captureFailsFirst[c.name] {
 				assert.Positivef(t, n.lambdas, "the native walk lowered no lambda; error: %v", n.err)
 			}
 			if captureCases[c.name] {

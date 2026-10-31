@@ -107,15 +107,19 @@ func (b blockSrc) stop() (line, col int, ok bool) {
 // different trees (a match arm's ANTLR block below a native lambda), so a
 // native side is compared by its context on ANTLR's tree.
 func (b blockSrc) is(t *galaASTTransformer, o blockSrc) bool {
-	switch {
-	case b.node.Ok() && o.node.Ok():
+	if b.node.Ok() && o.node.Ok() {
 		return b.node == o.node
-	case b.node.Ok():
-		return o.ctx != nil && crossTo[*grammar.BlockContext](t, b.node) == o.ctx
-	case o.node.Ok():
-		return b.ctx != nil && crossTo[*grammar.BlockContext](t, o.node) == b.ctx
 	}
-	return b.ctx != nil && b.ctx == o.ctx
+	ctx := b.antlr(t)
+	return ctx != nil && ctx == o.antlr(t)
+}
+
+// antlr is b's context on ANTLR's tree, and nil for the zero blockSrc.
+func (b blockSrc) antlr(t *galaASTTransformer) *grammar.BlockContext {
+	if b.node.Ok() {
+		return crossTo[*grammar.BlockContext](t, b.node)
+	}
+	return b.ctx
 }
 
 // stmtKind is what a statement is: a `return`, or the kind of its
