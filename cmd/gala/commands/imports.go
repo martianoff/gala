@@ -8,6 +8,7 @@ import (
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 
 	"github.com/spf13/cobra"
 )
@@ -81,12 +82,17 @@ func runImports(cmd *cobra.Command, args []string) error {
 // extractImports parses a single file and returns its package name and imports.
 // A parse failure is reported in the Error field with an empty Imports slice.
 func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
-	return importsOfParse(file, p.ParseFile(src))
+	result, _ := importsOfParse(file, p.ParseFile(src))
+	return result
 }
 
-// importsOfParse is extractImports of parsed, a parse of file.
-func importsOfParse(file string, parsed *parser.Parsed) fileImports {
-	result := fileImports{
+// importsOfParse is extractImports of parsed, a parse of file. It reads the
+// native tree when the parse has one that has converted already, and ANTLR's
+// tree otherwise: the package clause and the imports are a few nodes at the
+// top of the file, which ANTLR's tree gives for less than a conversion of the
+// whole file costs. onNative says which tree it read.
+func importsOfParse(file string, parsed *parser.Parsed) (result fileImports, onNative bool) {
+	result = fileImports{
 		File:    file,
 		Imports: []importInfo{},
 	}
@@ -94,16 +100,23 @@ func importsOfParse(file string, parsed *parser.Parsed) fileImports {
 	tree, _, err := parsed.Strict()
 	if err != nil {
 		result.Error = err.Error()
-		return result
+		return result, false
+	}
+
+	if handle := parsed.CleanNative(); handle.Converted() && handle.Bridged() {
+		if nt, err := handle.Tree(); err == nil {
+			result.Package, result.Imports = importsOfNative(native.SourceFileNode{GalaNodeRef: nt.Root()}, result.Imports)
+			return result, true
+		}
 	}
 
 	sourceFile, ok := tree.(grammar.ISourceFileContext)
 	if !ok {
 		result.Error = "unexpected parse tree type"
-		return result
+		return result, false
 	}
 	result.Package, result.Imports = importsOf(sourceFile, result.Imports)
-	return result
+	return result, false
 }
 
 // importsOf is the package name of sf and its imports, appended to imports,
@@ -134,6 +147,29 @@ func importsOf(sf grammar.ISourceFileContext, imports []importInfo) (string, []i
 				alias = &text
 			}
 			imports = append(imports, importOf(s.STRING().GetText(), alias, s.GetChildCount()))
+		}
+	}
+	return pkgName, imports
+}
+
+// importsOfNative is importsOf on the native tree.
+func importsOfNative(sf native.SourceFileNode, imports []importInfo) (string, []importInfo) {
+	var pkgName string
+	if pc := sf.PackageClause(); pc.Ok() {
+		if ident := pc.Identifier(); ident.Ok() {
+			pkgName = ident.GetText()
+		}
+	}
+
+	for decl := range parser.NativeKids(sf.GalaNodeRef, native.GalaKIND_importDeclaration) {
+		for spec := range parser.NativeKids(decl, native.GalaKIND_importSpec) {
+			s := native.ImportSpecNode{GalaNodeRef: spec}
+			var alias *string
+			if aliasIdent := s.Identifier(); aliasIdent.Ok() {
+				text := aliasIdent.GetText()
+				alias = &text
+			}
+			imports = append(imports, importOf(s.STRING().GetText(), alias, spec.ChildCount()))
 		}
 	}
 	return pkgName, imports

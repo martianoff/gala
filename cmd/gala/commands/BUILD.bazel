@@ -51,6 +51,7 @@ go_library(
         "//internal/lsp",
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/stdlib",
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
@@ -97,5 +98,26 @@ go_test(
         "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    # keep
+    name = "commands_native_test",
+    srcs = ["native_tree_test.go"],
+    # The test reads the GALA sources TestEnginesAgree parses.
+    data = [
+        "//:all_gala_sources",
+        "//examples:all_gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+    ],
+    embed = [":commands"],
+    tags = ["no-sandbox"],
+    deps = [
+        "//internal/parser",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
     ],
 )

@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/module"
@@ -214,6 +215,12 @@ func packageShortName(importPath string) string {
 // the surface. The analyzer is given the sibling list so a type declared in one
 // file and extended in another reports its whole method set.
 func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
+	return loadPackageDocWith(pkgName, dir, nil)
+}
+
+// loadPackageDocWith is loadPackageDoc, with prepare, when set, given the
+// parse of the file it analyzes before the analysis reads it.
+func loadPackageDocWith(pkgName, dir string, prepare func(*parser.Parsed)) (*docPackage, error) {
 	found, err := filepath.Glob(filepath.Join(dir, "*.gala"))
 	if err != nil {
 		return nil, fmt.Errorf("no .gala files in %s", dir)
@@ -243,11 +250,16 @@ func loadPackageDoc(pkgName, dir string) (*docPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	tree, docs, parseErrs := p.ParseFile(string(content)).Lenient()
-	if len(parseErrs) > 0 {
-		return nil, parseErrs[0]
+	// The analysis reads the file on its native tree, as a build's does,
+	// when the parse has one (transpiler.Analyzer).
+	parsed := p.ParseFile(string(content))
+	if len(parsed.Errors) > 0 {
+		return nil, parsed.Errors[0]
 	}
-	rich, err := transpiler.Analyze(a, tree, docs, files[0])
+	if prepare != nil {
+		prepare(parsed)
+	}
+	rich, err := a.AnalyzeParsed(parsed, files[0])
 	if err != nil {
 		return nil, err
 	}
