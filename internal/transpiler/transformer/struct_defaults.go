@@ -266,8 +266,12 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 	// A dot import puts the declaring package's names in scope unqualified, so
 	// they resolve here as written and qualifying would invent an identifier
 	// (`struct_defaults_lib.Entry`) that the file never binds.
-	dotted := t.importManager.IsDotImported(owningPkg)
-	vals := t.declaringPackageVals(src)
+	var dotted bool
+	var vals map[string]*transpiler.PackageValMetadata
+	if !samePkg {
+		dotted = t.importManager.IsDotImported(owningPkg)
+		vals = t.declaringPackageVals(src)
+	}
 
 	// An unexported name cannot be reached from another package at all, so
 	// qualifying it would only trade one Go error for another. Say what is

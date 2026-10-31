@@ -213,15 +213,14 @@ func isQualifier(id *grammar.IdentifierContext) bool {
 // file's imports where it is declared, except for what it cannot check there,
 // such as the constructor a `case` pattern names; this catches the rest.
 //
-// expr is the lowered and qualified default, nil when lowering it failed. A
-// bare name left in it that one of this file's dot imports declares — one the
-// default's file does not have — is read through that import. When lowering
-// failed, such a name in the source that nothing in the default's scope
-// declares is what it failed on (a `case` naming a constructor out of scope,
-// say), and is reported instead of the failure. A qualifier in the source that
-// the default's file does not bind, and this file binds to a package, is read
-// through this file's import. Each is reported at its own token, in the
-// default's file.
+// expr is the lowered and qualified default, nil when lowering it failed; its
+// bindings are what the source binds. A bare name of the source that nothing
+// in the default's scope declares and one of this file's dot imports does is
+// such a name; when lowering failed, it is what it failed on (a `case` naming
+// a constructor out of scope, say), and is reported instead of the failure. A
+// qualifier of the source that the default's file does not bind, and this
+// file binds to a package, is read through this file's import. Each is
+// reported at its own token, in the default's file.
 func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr, src defaultSource) error {
 	if !t.lexicallyScoped(src) || t.importManager == nil || exprCtx == nil {
 		return nil
@@ -231,10 +230,11 @@ func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr
 		bound = boundNames(expr)
 	}
 	free := func(name string) bool {
-		return !bound[name] && !slices.Contains(src.carried, name) && t.shadowingScope(name) == nil
+		return !bound[name] && !slices.Contains(src.carried, name) && !slices.Contains(src.typeParams, name) && t.shadowingScope(name) == nil
 	}
-	if name, path, at := t.bareOutsideScope(exprCtx, expr, src, free); name != "" {
-		return lexicalScopeError(src, at, name, fmt.Sprintf(
+	if at, path := t.bareOutsideScope(exprCtx, src, free); at != nil {
+		name := at.GetText()
+		return lexicalScopeError(at, name, fmt.Sprintf(
 			"%s is declared in %q, which the file using this default dot-imports but the default's own file does not; a default value resolves its names where it is written, so add `import . %q` to the default's file",
 			name, path, path))
 	}
@@ -246,31 +246,27 @@ func (t *galaASTTransformer) outOfLexicalScope(exprCtx antlr.Tree, expr ast.Expr
 	}
 	if at, path := t.qualifierOutsideScope(exprCtx, src, free); at != nil {
 		name := at.GetText()
-		return lexicalScopeError(src, at, name, fmt.Sprintf(
+		return lexicalScopeError(at, name, fmt.Sprintf(
 			"%s names %q in the file using this default but nothing in the default's own file; a default value resolves its names where it is written, so add `import %q` to the default's file",
 			name, path, path))
 	}
 	return nil
 }
 
-// lexicalScopeError is the GALA-E0023 for name, out of the scope of the
-// default src: at its token at, or at the default when the source spells it
-// nowhere.
-func lexicalScopeError(src defaultSource, at *grammar.IdentifierContext, name, hint string) error {
-	line, col := src.Pos.Line, src.Pos.Column
-	if at != nil {
-		line, col = at.GetStart().GetLine(), at.GetStart().GetColumn()
-	}
-	return galaerr.NewCodedSemanticError(galaerr.CodeUndefinedVariable, line, col, "undefined: "+name, hint)
+// lexicalScopeError is the GALA-E0023 for name, out of a default's scope, at
+// its token at in the default's source.
+func lexicalScopeError(at *grammar.IdentifierContext, name, hint string) error {
+	return galaerr.NewCodedSemanticError(galaerr.CodeUndefinedVariable, at.GetStart().GetLine(), at.GetStart().GetColumn(), "undefined: "+name, hint)
 }
 
-// bareOutsideScope finds, for outOfLexicalScope, a bare name that only one of
-// this file's dot imports — GALA packages the default's file does not
-// dot-import — declares, that package's path and the name's token in the
-// source (nil if none spells it); "" when there is none. With expr lowered,
-// it is a free name left in expr; otherwise a free name of the source that
-// nothing in the default's scope declares.
-func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, expr ast.Expr, src defaultSource, free func(string) bool) (string, string, *grammar.IdentifierContext) {
+// bareOutsideScope finds, for outOfLexicalScope, the token of a bare, free,
+// exported name of the default's source that nothing in the default's scope
+// declares and one of this file's dot imports — a GALA package the default's
+// file does not dot-import — does, and that package's path; nil when there is
+// none. Only the source is read: the lowered default also holds names spelled
+// for this file (a declared type, through this file's dot import), which the
+// default never wrote. A dot import brings in exported names only.
+func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, src defaultSource, free func(string) bool) (*grammar.IdentifierContext, string) {
 	var outside []*ImportEntry
 	for _, e := range t.importManager.dotImports {
 		if _, own := src.Scope.DotImports[e.Path]; !own && e.Path != src.Scope.PkgPath && t.galaPkgPaths[e.Path] {
@@ -278,47 +274,24 @@ func (t *galaASTTransformer) bareOutsideScope(exprCtx antlr.Tree, expr ast.Expr,
 		}
 	}
 	if len(outside) == 0 {
-		return "", "", nil
+		return nil, ""
 	}
-	declaredOutside := func(name string) string {
-		for _, e := range outside {
-			if t.importDeclares(e.Path, e.PkgName, name) {
-				return e.Path
-			}
-		}
-		return ""
-	}
-	name, path := "", ""
-	if expr != nil {
-		ast.Inspect(&ast.ParenExpr{X: expr}, func(n ast.Node) bool {
-			for _, slot := range referenceSlots(n) {
-				if id, ok := (*slot).(*ast.Ident); ok && name == "" && free(id.Name) {
-					if p := declaredOutside(id.Name); p != "" {
-						name, path = id.Name, p
-					}
-				}
-			}
-			return name == ""
-		})
-		if name == "" {
-			return "", "", nil
-		}
-		return name, path, firstReference(exprCtx, func(id *grammar.IdentifierContext) bool {
-			return !isQualifier(id) && id.GetText() == name
-		})
-	}
+	path := ""
+	prelude := registry.Global.PreludePackages()
 	at := firstReference(exprCtx, func(id *grammar.IdentifierContext) bool {
 		n := id.GetText()
-		if isQualifier(id) || !free(n) || t.declaredInDefaultScope(n, src) {
+		if isQualifier(id) || !ast.IsExported(n) || !free(n) || t.declaredInDefaultScope(n, src, prelude) {
 			return false
 		}
-		path = declaredOutside(n)
-		return path != ""
+		for _, e := range outside {
+			if t.importDeclares(e.Path, e.PkgName, n) {
+				path = e.Path
+				return true
+			}
+		}
+		return false
 	})
-	if at == nil {
-		return "", "", nil
-	}
-	return at.GetText(), path, at
+	return at, path
 }
 
 // qualifierOutsideScope finds, for outOfLexicalScope, the token of a
@@ -344,7 +317,7 @@ func (t *galaASTTransformer) qualifierOutsideScope(exprCtx antlr.Tree, src defau
 // declaredInDefaultScope reports whether name is declared where the default
 // src was written: by its package, a package its file dot-imports, or the
 // prelude.
-func (t *galaASTTransformer) declaredInDefaultScope(name string, src defaultSource) bool {
+func (t *galaASTTransformer) declaredInDefaultScope(name string, src defaultSource, prelude []*registry.PackageInfo) bool {
 	if t.packageDeclares(src.pkg, name) || t.functions[name] != nil || t.typeMetas[name] != nil {
 		return true
 	}
@@ -353,7 +326,7 @@ func (t *galaASTTransformer) declaredInDefaultScope(name string, src defaultSour
 			return true
 		}
 	}
-	for _, pkg := range registry.Global.PreludePackages() {
+	for _, pkg := range prelude {
 		if t.importDeclares(pkg.ImportPath, pkg.Name, name) {
 			return true
 		}

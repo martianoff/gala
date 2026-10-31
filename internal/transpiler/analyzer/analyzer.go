@@ -1251,6 +1251,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// so addFile's private-val bookkeeping does not apply.
 	if filePath != "" && len(siblingTrees) > 0 {
 		scopes := newDefaultScopeRecorder(richAST.OwnImportPath)
+		scopes.keepRecorded = true
 		scopes.quals[a.paths.canonical(filePath)] = fileQuals
 		for i, q := range siblingQuals {
 			if i < len(siblingPaths) {

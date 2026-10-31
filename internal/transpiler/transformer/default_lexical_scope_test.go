@@ -60,6 +60,14 @@ struct Cfg(N int)
 
 func Run(f func(Cfg) int = (c) => c.N) int = f(Cfg(1))
 `)
+	// pb is imported by name here: a file using the default that dot-imports
+	// pb spells its declared type bare, which the default never wrote.
+	write("lib/named.gala", `package lib
+
+import "example.com/lexical/pb"
+
+func Named(f func(pb.Point) int = (p) => p.X) int = f(pb.Point(2))
+`)
 	// The constructors these patterns name are pb's, which this file does
 	// not import: only a file using the default does. The analyzer does not
 	// check a pattern's constructor where the default is declared.
@@ -98,10 +106,11 @@ import (
 )
 
 func main() {
-    Println(lib.Matched(), lib.Mapped(), Point(1), OnlyB())
+    Println(lib.Matched(), lib.Mapped(), lib.Named(), Point(1), OnlyB())
 }
 `)
 		require.NoError(t, err)
+		assert.Contains(t, out, "func(p Point) int", "lib.Named's declared type, spelled for this file:\n%s", out)
 		for _, want := range []string{"pa.Same{}", "func(p pa.Point) string"} {
 			assert.Contains(t, out, want, "generated:\n%s", out)
 		}

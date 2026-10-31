@@ -220,7 +220,8 @@ func (m *ImportManager) removeEntry(entry *ImportEntry) {
 		delete(m.byPkgName, entry.PkgName)
 	}
 
-	// Remove from dotImports
+	// Remove from dotImports, and from the ones a default has out of scope
+	m.hiddenDots = slices.DeleteFunc(m.hiddenDots, func(e *ImportEntry) bool { return e == entry })
 	if entry.IsDot {
 		for i, e := range m.dotImports {
 			if e == entry {
@@ -440,15 +441,18 @@ func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (
 	m.revision++
 	scopedRev := m.revision
 	return func() {
+		stillHidden := m.hiddenDots
 		m.foreign, m.hiddenDots = prev, prevHidden
 		if m.revision == scopedRev {
 			// No import was added or dropped meanwhile: the old slices,
 			// which scoping copied rather than changed, still hold.
 			m.entries, m.dotImports = prevEntries, prevDots
 		} else {
-			// The dot imports scoping took out count as still there.
-			m.entries = restoreImportOrder(slices.Concat(m.entries, hidden), prevEntries, added)
-			m.dotImports = restoreImportOrder(slices.Concat(m.dotImports, hidden), prevDots, added)
+			// The dot imports scoping took out count as still there,
+			// unless one was dropped meanwhile (see removeEntry).
+			live := slices.DeleteFunc(slices.Clone(hidden), func(e *ImportEntry) bool { return !slices.Contains(stillHidden, e) })
+			m.entries = restoreImportOrder(slices.Concat(m.entries, live), prevEntries, added)
+			m.dotImports = restoreImportOrder(slices.Concat(m.dotImports, live), prevDots, added)
 		}
 		m.revision++
 	}
