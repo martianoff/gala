@@ -442,6 +442,11 @@ go_test(
 go_test(
     # keep
     name = "native_walk_test",
+    # Walks the whole GALA corpus (every example plus the stdlib) on both
+    # trees, like transformer_test's corpus guards, so it needs the large
+    # timeout too: it takes ~235s on the main CI lane and crosses the default
+    # medium 300s on the slower ANTLR-parser lane.
+    size = "large",
     srcs = [
         "native_walk_export_test.go",
         "native_walk_test.go",
