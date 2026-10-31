@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
 )
@@ -22,7 +20,7 @@ import (
 // selfContainingTypeError reports the first field of the type declared as name
 // that holds the type by value, or nil. at locates the declaration, for a
 // field whose own position is not recorded.
-func (t *galaASTTransformer) selfContainingTypeError(name string, at antlr.Token) error {
+func (t *galaASTTransformer) selfContainingTypeError(name string, at srcNode) error {
 	meta := t.getTypeMeta(name)
 	if meta == nil || meta.IsOpaque {
 		return nil
@@ -44,7 +42,8 @@ func (t *galaASTTransformer) selfContainingTypeError(name string, at antlr.Token
 		}
 		pos := meta.FieldPositions[field]
 		if pos.Line == 0 {
-			pos = transpiler.SourcePos{Line: at.GetLine(), Column: at.GetColumn()}
+			r := at.rng()
+			pos = transpiler.SourcePos{Line: r.line, Column: r.col}
 		}
 		return galaerr.NewCodedSemanticError(galaerr.CodeSelfContainingType, pos.Line, pos.Column,
 			fmt.Sprintf("%s %s holds itself by value: field %s has type %s, which contains %s itself", kind, name, field, displayType(typ), name),

@@ -86,3 +86,33 @@ go_test(
         "@rules_go//go/tools/bazel",
     ],
 )
+
+# The fallback test compiles a file through the whole pipeline with its
+# native tree's bridge broken, so it needs the transpiler; it stays out of
+# parser_test, which the race lane runs.
+# gazelle:exclude misbridge_export_test.go
+# gazelle:exclude native_fallback_test.go
+go_test(
+    # keep
+    name = "native_fallback_test",
+    srcs = [
+        "misbridge_export_test.go",
+        "native_fallback_test.go",
+    ],
+    data = [
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//std:gala_sources",
+    ],
+    embed = [":parser"],
+    deps = [
+        "//internal/parser/native",  # keep
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "//internal/transpiler/transformer",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)

@@ -19,6 +19,7 @@ go_library(
         "concurrency_check.go",
         "constructors.go",
         "declarations.go",
+        "declarations_native.go",
         "default_exprs.go",
         "default_values.go",
         "doc_comments.go",
@@ -73,6 +74,7 @@ go_library(
         "value_called_as_function.go",
         "variant_type_names.go",
         "void_calls.go",
+        "walk_source.go",
     ],
     importpath = "martianoff/gala/internal/transpiler/transformer",
     visibility = ["//:__subpackages__"],
@@ -81,6 +83,7 @@ go_library(
         "//internal/interpolation",
         "//internal/parser",
         "//internal/parser/grammar",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/concurrency",
         "//internal/transpiler/registry",
@@ -422,6 +425,45 @@ go_test(
         "//internal/transpiler/generator",
         "//internal/transpiler/genheader",
         "//internal/transpiler/gooracle",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)
+
+# The transformer's walk of the compiled file's top-level declarations on the
+# native tree, held to its walk on ANTLR's over the GALA sources
+# TestEnginesAgree parses. A target of its own: it stages all of them and
+# transpiles each twice. Gazelle leaves its files out of transformer_test (the exclude
+# directives) and keeps this rule as written.
+# gazelle:exclude native_walk_test.go
+# gazelle:exclude native_walk_export_test.go
+go_test(
+    # keep
+    name = "native_walk_test",
+    srcs = [
+        "native_walk_export_test.go",
+        "native_walk_test.go",
+    ],
+    data = [
+        "//:all_gala_sources",
+        "//examples:all_gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//lazy:gala_sources",
+        "//resource:gala_sources",
+        "//std:gala_sources",
+        "//stream:gala_sources",
+        "//subprocess:gala_sources",
+        "//test:gala_sources",
+    ],
+    embed = [":transformer"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/grammar",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",

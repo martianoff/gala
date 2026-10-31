@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"martianoff/gala/internal/parser/galop"
 	"martianoff/gala/internal/parser/grammar"
@@ -24,7 +25,9 @@ var errNoNative = errors.New("parser: no native tree for this parse")
 // tree: Tree reports errNoNative, Ctx and Node find nothing.
 type Native struct {
 	once sync.Once
-	root antlr.ParserRuleContext
+	// converted is set once Tree has converted the tree (see Converted).
+	converted atomic.Bool
+	root      antlr.ParserRuleContext
 	// stream and src are what the conversion reads. The ANTLR tree keeps its
 	// tokens, their lexer and its input alive, but reaches the token stream
 	// only through the recognition exceptions of error-recovered contexts, and
@@ -39,6 +42,10 @@ type Native struct {
 	err  error
 	// ctxs is the ANTLR context of each native node, by node index.
 	ctxs []antlr.ParserRuleContext
+	// bridged, settled on the first call to Bridged, is whether the bridge
+	// holds.
+	bridgedOnce sync.Once
+	bridged     bool
 	// nodes, built on the first call to Node, maps a context to its node.
 	nodesOnce sync.Once
 	nodes     map[antlr.ParserRuleContext]int32
@@ -66,6 +73,14 @@ func (t *Native) Tree() (*native.GalaTree, error) {
 	return t.tree, t.err
 }
 
+// Converted reports whether Tree has run the conversion already, so that
+// calling it costs nothing, without converting. A consumer that would not pay
+// for the conversion itself reads the native tree only when this holds. A nil
+// *Native has not converted.
+func (t *Native) Converted() bool {
+	return t != nil && t.converted.Load()
+}
+
 func (t *Native) convert() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -74,24 +89,35 @@ func (t *Native) convert() {
 		// The native tree keeps the text it was given; the handle needs
 		// neither any more, and after a failure nothing does.
 		t.stream, t.src = nil, ""
+		t.converted.Store(true)
 	}()
 	if t.tree, t.ctxs = galop.ToNative(t.root, t.stream, t.src); t.tree == nil {
 		t.err = errNoNative
 	}
 }
 
-// WellFormed reports whether the tree converted with the shape its readers
-// rely on: a source-file root, and one ANTLR context per node with the
-// root's a source file, so Ctx and Node pair the two trees. A reader that
-// gets false works on the ANTLR tree instead. The check is constant-time. A
-// nil *Native is not well formed.
-func (t *Native) WellFormed() bool {
+// Bridged reports whether the tree converted and its bridge to the ANTLR
+// tree holds: one context per node, the root is a source file with its
+// context, and every node has a context of its own rule. Every reader of a
+// file that takes the native tree (the analyzer's collection of the file's
+// declarations, its undefined-symbol check, the transformer's top-level walk)
+// works on it only when the bridge holds, and on the ANTLR tree otherwise, so
+// they all take the same tree, and a crossing back to a context of the node's
+// rule (Ctx) cannot miss. The one rule with labeled alternatives, pattern, is
+// not checked for its alternative's context type; nothing crosses there by
+// type. It is checked once, on the first call, safely from any goroutine. A
+// nil *Native is not bridged.
+func (t *Native) Bridged() bool {
 	tree, err := t.Tree()
-	return err == nil && wellFormed(tree, t.ctxs)
+	if err != nil {
+		return false
+	}
+	t.bridgedOnce.Do(func() { t.bridged = bridgeHolds(tree, t.ctxs) })
+	return t.bridged
 }
 
-// wellFormed is WellFormed's check of tree, whose nodes' contexts are ctxs.
-func wellFormed(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
+// bridgeHolds is Bridged's check of tree, whose nodes' contexts are ctxs.
+func bridgeHolds(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
 	if len(ctxs) != len(tree.Nodes) {
 		return false
 	}
@@ -99,8 +125,15 @@ func wellFormed(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
 	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
 		return false
 	}
-	_, ok := ctxs[root.Index()].(*grammar.SourceFileContext)
-	return ok
+	if _, ok := ctxs[root.Index()].(*grammar.SourceFileContext); !ok {
+		return false
+	}
+	for i, ctx := range ctxs {
+		if ctx == nil || ctx.GetRuleIndex() != tree.Node(i).Rule() {
+			return false
+		}
+	}
+	return true
 }
 
 // Ctx is the ANTLR context of native node n, or nil when n is no node of this
