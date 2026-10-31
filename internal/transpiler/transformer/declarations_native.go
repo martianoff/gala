@@ -95,9 +95,9 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	case native.GalaKIND_embedDeclaration:
 		return t.lowerEmbedDecl(readEmbedDeclNative(native.EmbedDeclarationNode{GalaNodeRef: decl}))
 	case native.GalaKIND_valDeclaration:
-		return oneDecl(t.lowerValDecl(t.readBindingDeclNative(native.ValDeclarationNode{GalaNodeRef: decl}, "val", true)))
+		return oneDecl(t.lowerValDecl(t.readBindingDeclNative(native.ValDeclarationNode{GalaNodeRef: decl}, "val")))
 	case native.GalaKIND_varDeclaration:
-		return oneDecl(t.lowerVarDecl(t.readBindingDeclNative(native.VarDeclarationNode{GalaNodeRef: decl}, "var", true)))
+		return oneDecl(t.lowerVarDecl(t.readBindingDeclNative(native.VarDeclarationNode{GalaNodeRef: decl}, "var")))
 	case native.GalaKIND_functionDeclaration:
 		return oneDecl(t.lowerFuncDecl(t.readFuncDeclNative(native.FunctionDeclarationNode{GalaNodeRef: decl})))
 	case native.GalaKIND_typeDeclaration:
@@ -162,10 +162,9 @@ func bindingIdList(n nativeBinding) native.GalaNodeRef {
 }
 
 // readBindingDeclNative is readBindingDecl of a val or var declaration n,
-// keyword: a package-level one when topLevel, a statement in a body
-// otherwise.
-func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword string, topLevel bool) bindingDecl {
-	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: topLevel, names: nativeDeclNames(bindingIdList(n))}
+// keyword: a package-level one or a statement in a body.
+func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword string) bindingDecl {
+	d := bindingDecl{at: srcNode{node: n.Ref()}, topLevel: isTopLevelDeclNative(n.Ref()), names: nativeDeclNames(bindingIdList(n))}
 	typ, list := n.Type_(), n.ExpressionList()
 	if typ.Ok() {
 		d.typ = crossTo[*grammar.TypeContext](t, typ.GalaNodeRef)
@@ -187,7 +186,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 	}
 	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
-		d.blankHint = nativeBlankDeclarationHint(n.Ref())
+		d.blankHint = nativeBlankDeclarationHint(n.Ref(), d.topLevel)
 	}
 	return d
 }

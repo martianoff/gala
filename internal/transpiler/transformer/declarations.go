@@ -65,10 +65,10 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, error) {
 	switch s.kind {
 	case stmtVal:
-		decl, err := t.lowerValDecl(s.binding(t, "val"))
+		decl, err := t.lowerValDecl(s.binding(t))
 		return decl, nil, err
 	case stmtVar:
-		decl, err := t.lowerVarDecl(s.binding(t, "var"))
+		decl, err := t.lowerVarDecl(s.binding(t))
 		return decl, nil, err
 	case stmtFunc:
 		// lowerDeclaration only sees statements inside a body; top-level

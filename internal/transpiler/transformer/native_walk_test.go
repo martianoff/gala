@@ -29,7 +29,8 @@ type walkRun struct {
 	out       string
 	err       error
 	native    int
-	stmts     int // the statements the native walk lowered, each counted once
+	stmts     int          // the statements the native walk lowered, each counted once
+	stmtLines map[int]bool // the lines those statements start on
 	converted bool
 }
 
@@ -44,10 +45,10 @@ type walkPipeline struct {
 
 func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
-	var run walkRun
+	run := walkRun{stmtLines: map[int]bool{}}
 	transformer.OnNativeDecl(tr, func() { run.native++ })
 	stmts := map[int]bool{}
-	transformer.OnNativeStmt(tr, func(index int) { stmts[index] = true })
+	transformer.OnNativeStmt(tr, func(index, line int) { stmts[index], run.stmtLines[line] = true, true })
 	if w.antlrOnly {
 		tr = withoutNative{tr}
 	}
@@ -504,6 +505,22 @@ func main() {
 	{"empty body with a result", "package main\n\nfunc f() int {\n/* ü */ }\n"},
 }
 
+// belowExpression names the walkCases whose marked statement is in a block
+// below an expression (a lambda body), which expressions reach on ANTLR's
+// tree still.
+var belowExpression = map[string]bool{"blank local var in a lambda body": true}
+
+// bodyMarkerLine is the line of src's first `/* ü */` marker, when the line
+// is indented, so the marker is on a statement in a body.
+func bodyMarkerLine(src string) (int, bool) {
+	for i, l := range strings.Split(src, "\n") {
+		if strings.Contains(l, "/* ü */") {
+			return i + 1, strings.HasPrefix(l, "\t")
+		}
+	}
+	return 0, false
+}
+
 // statementShapes is the walkCases program that has every statement shape
 // the native walk lowers, and must transpile.
 const statementShapes = "statement shapes"
@@ -528,6 +545,13 @@ func TestNativeWalkCases(t *testing.T) {
 				require.NoError(t, n.err, "the case does not transpile")
 			}
 			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
+			// A diagnostic marked in a function body must come from the
+			// native walk: the statement on the marked line was lowered on
+			// the native tree, so the case compares native with ANTLR, not
+			// ANTLR with itself.
+			if line, ok := bodyMarkerLine(c.src); ok && n.err != nil && !belowExpression[c.name] {
+				assert.Truef(t, n.stmtLines[line], "the native walk did not reach the statement on line %d; error: %v", line, n.err)
+			}
 			t.Logf("the native walk lowered %d declarations and %d statements; error: %v", n.native, n.stmts, n.err)
 		})
 	}

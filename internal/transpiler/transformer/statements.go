@@ -498,7 +498,7 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 	lastIdx := len(allStmts) - 1
 	for i, st := range allStmts {
 		if t.onNativeStmt != nil && st.at.node.Ok() {
-			t.onNativeStmt(st.at.node.Index())
+			t.onNativeStmt(st.at.node.Index(), int(st.at.node.Start().Line))
 		}
 		// Source-mapped `//line` directive: mark each statement with its
 		// originating GALA line so a panic reports the GALA position. The marker
@@ -784,37 +784,6 @@ func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
 		},
 	}
 	return []ast.Stmt{assign, deferStmt}, nil
-}
-
-// trailingValueExpression returns the expression of an expression statement
-// (statement → declaration → simpleStatement → expression), or nil when the
-// statement is anything else.
-func trailingValueExpression(ctx *grammar.StatementContext) grammar.IExpressionContext {
-	if ctx == nil {
-		return nil
-	}
-	dc, ok := ctx.Declaration().(*grammar.DeclarationContext)
-	if !ok || dc == nil {
-		return nil
-	}
-	sc, ok := dc.SimpleStatement().(*grammar.SimpleStatementContext)
-	if !ok || sc == nil {
-		return nil
-	}
-	return sc.Expression()
-}
-
-// ifStatementOf returns the if-statement ctx consists of, or nil.
-func ifStatementOf(ctx *grammar.StatementContext) *grammar.IfStatementContext {
-	if ctx == nil {
-		return nil
-	}
-	dc, ok := ctx.Declaration().(*grammar.DeclarationContext)
-	if !ok || dc == nil {
-		return nil
-	}
-	ifCtx, _ := dc.IfStatement().(*grammar.IfStatementContext)
-	return ifCtx
 }
 
 // lowerIfExpressionStatement lowers an if-expression whose value is discarded —

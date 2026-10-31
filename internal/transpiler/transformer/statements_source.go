@@ -302,7 +302,7 @@ func (s stmtSrc) forStmt() forSrc {
 }
 
 // valueExpr is the expression of s when s is an expression statement, and
-// nil otherwise (trailingValueExpression).
+// nil otherwise.
 func (s stmtSrc) valueExpr(t *galaASTTransformer) grammar.IExpressionContext {
 	return s.simpleS.expr(t)
 }
@@ -357,13 +357,17 @@ type useDecl struct {
 	expr grammar.IExpressionContext
 }
 
-// binding reads s, a local val or var declaration of keyword.
-func (s stmtSrc) binding(t *galaASTTransformer, keyword string) bindingDecl {
+// binding reads s, a local val or var declaration.
+func (s stmtSrc) binding(t *galaASTTransformer) bindingDecl {
+	keyword := "var"
+	if s.kind == stmtVal {
+		keyword = "val"
+	}
 	if s.kid.node.Ok() {
 		if s.kind == stmtVal {
-			return t.readBindingDeclNative(native.ValDeclarationNode{GalaNodeRef: s.kid.node}, keyword, false)
+			return t.readBindingDeclNative(native.ValDeclarationNode{GalaNodeRef: s.kid.node}, keyword)
 		}
-		return t.readBindingDeclNative(native.VarDeclarationNode{GalaNodeRef: s.kid.node}, keyword, false)
+		return t.readBindingDeclNative(native.VarDeclarationNode{GalaNodeRef: s.kid.node}, keyword)
 	}
 	return readBindingDecl(s.kid.ctx.(tupleDeclaration), keyword)
 }
@@ -568,7 +572,7 @@ func (s simpleSrc) shortVar(t *galaASTTransformer) shortVarDecl {
 			exprs: crossTo[*grammar.ExpressionListContext](t, sv.ExpressionList().GalaNodeRef),
 		}
 		if isLoneBlank(d.names) {
-			d.blankHint = nativeBlankDeclarationHint(n)
+			d.blankHint = nativeBlankDeclarationHint(n, false)
 		}
 		return d
 	}
@@ -584,13 +588,19 @@ func (s simpleSrc) shortVar(t *galaASTTransformer) shortVarDecl {
 	return d
 }
 
-// nativeBlankDeclarationHint is blankDeclarationHint of n.
-func nativeBlankDeclarationHint(n native.GalaNodeRef) string {
+// isTopLevelDeclNative is isTopLevelDecl of n.
+func isTopLevelDeclNative(n native.GalaNodeRef) bool {
 	p := n.Parent()
-	if p.Ok() && p.Kind() == native.GalaKIND_topLevelDeclaration {
+	return p.Ok() && p.Kind() == native.GalaKIND_topLevelDeclaration
+}
+
+// nativeBlankDeclarationHint is blankDeclarationHint of n, a package-level
+// declaration when topLevel (isTopLevelDeclNative).
+func nativeBlankDeclarationHint(n native.GalaNodeRef, topLevel bool) string {
+	if topLevel {
 		return topLevelBlankHint
 	}
-	for ; p.Ok(); p = p.Parent() {
+	for p := n.Parent(); p.Ok(); p = p.Parent() {
 		switch p.Kind() {
 		case native.GalaKIND_functionDeclaration:
 			return bodyBlankHint

@@ -8,6 +8,6 @@ func OnNativeDecl(tr transpiler.ASTTransformer, f func()) {
 }
 
 // OnNativeStmt sets tr's onNativeStmt hook for TestNativeWalkAgrees.
-func OnNativeStmt(tr transpiler.ASTTransformer, f func(index int)) {
+func OnNativeStmt(tr transpiler.ASTTransformer, f func(index, line int)) {
 	tr.(*galaASTTransformer).onNativeStmt = f
 }
