@@ -246,10 +246,20 @@ func andJoin(parts []string) string {
 // (`strings` in `strings.Repeat("=", 2)`) is replaced by this file's name for
 // that import, which is added when this file lacks it (see
 // transpiler.DefaultScope).
+//
+// A default from another file of this package names the package's own
+// declarations as written; only what it borrows from its file's imports is
+// respelled.
 func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource) (ast.Expr, error) {
 	owningPkg := src.pkg
-	if expr == nil || owningPkg == "" || owningPkg == t.packageName {
+	if expr == nil || owningPkg == "" {
 		return expr, nil
+	}
+	if owningPkg == t.packageName {
+		if t.loweringDefault == nil || !t.loweringDefault.foreign || src.Scope == nil {
+			return expr, nil
+		}
+		return t.qualifyImportedNames(expr, src.Scope), nil
 	}
 	scope := src.Scope
 	if scope == nil {
@@ -327,15 +337,45 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 	return holder.X, err
 }
 
+// qualifyImportedNames is qualifyDefaultExpr for a default from another file
+// of this package: a qualifier of that file's imports becomes this file's name
+// for the import, and a bare name of a package that file dot-imports is
+// qualified where this file does not dot-import it too.
+func (t *galaASTTransformer) qualifyImportedNames(expr ast.Expr, scope *transpiler.DefaultScope) ast.Expr {
+	qualified := map[ast.Node]bool{}
+	bound := boundNames(expr)
+	holder := &ast.ParenExpr{X: expr}
+	ast.Inspect(holder, func(n ast.Node) bool {
+		if qualified[n] {
+			return false
+		}
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			if base, ok := sel.X.(*ast.Ident); ok && !bound[base.Name] {
+				if path, ok := scope.Imports[base.Name]; ok {
+					sel.X = ast.NewIdent(t.importQualifier(path, base.Name))
+					return true
+				}
+			}
+		}
+		for _, slot := range referenceSlots(n) {
+			if id, ok := (*slot).(*ast.Ident); ok && !bound[id.Name] {
+				*slot = t.qualifyDotImported(id, scope, qualified)
+			}
+		}
+		return true
+	})
+	return holder.X
+}
+
 // qualifyDotImported qualifies id, a bare name of a lowered default from
-// another package, when it is a type, function, val or var of a package the
+// another file, when it is a type, function, val or var of a package the
 // default's declaring file dot-imports (`EmptyArray` of collection_immutable)
 // and this file does not dot-import that package too. Otherwise id is
 // returned as is. A qualified selector is recorded in qualified.
 func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler.DefaultScope, qualified map[ast.Node]bool) ast.Expr {
 	for _, path := range slices.Sorted(maps.Keys(scope.DotImports)) { // deterministic output
 		pkgName := scope.DotImports[path]
-		if _, isVal := t.importedVals(path)[id.Name]; !isVal && !t.packageDeclares(pkgName, id.Name) {
+		if !t.importDeclares(path, pkgName, id.Name) {
 			continue
 		}
 		if t.importManager.IsDotImportedPath(path) {
@@ -346,6 +386,13 @@ func (t *galaASTTransformer) qualifyDotImported(id *ast.Ident, scope *transpiler
 		return sel
 	}
 	return id
+}
+
+// importDeclares reports whether the GALA package at path, named pkgName,
+// declares a type, function, val or var called name.
+func (t *galaASTTransformer) importDeclares(path, pkgName, name string) bool {
+	_, isVal := t.importedVals(path)[name]
+	return isVal || t.packageDeclares(pkgName, name)
 }
 
 // importQualifier is this file's name for the package at path, named pkgName

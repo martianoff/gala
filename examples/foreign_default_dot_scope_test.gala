@@ -17,4 +17,6 @@ func main() {
     Println(lib.Folded())
     Println(lib.Built())
     Println(Pick(), Point("own"))
+    // The same defaults, lowered in lib's own other file (see inside.gala).
+    Println(lib.Inside())
 }

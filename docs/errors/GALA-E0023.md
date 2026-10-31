@@ -188,7 +188,11 @@ for a guaranteed absence of false positives:
   which is which in general needs the scrutinee's type. A typo in a
   pattern's constructor position is therefore not caught here. The
   arm's *body* is checked normally, against exactly the names the
-  pattern introduces.
+  pattern introduces. In a parameter default, the constructor is checked
+  where the default is lowered, at a call in another file: one that only
+  the calling file's imports resolve is reported, at the pattern in the
+  default's own file, because a default resolves its names where it is
+  written (see [Default Parameter Values](../GALA.MD#default-parameter-values)).
 - **Any package that failed to load, anywhere in the graph.** If a GALA
   package could not be analyzed — missing from a search path, a
   transpile failure, whatever the reason — the check stands down for
