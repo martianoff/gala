@@ -232,7 +232,7 @@ func (t *galaASTTransformer) transformConstructorCallPattern(rawName string, arg
 						rawName, returnType.String()))
 			}
 			// Use direct Unapply call - no reflection needed!
-			return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType)
+			return t.generateDirectUnapplyPattern(rawName, meta, inferredTypes, unapplyMeta, objExpr, argList, matchedType, patExprCtx)
 		}
 	}
 
@@ -518,7 +518,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		// sealed variant matched against a subject whose type could not be
 		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
 		if meta, unapplyMeta := t.bareExtractor(name, matchedType); meta != nil {
-			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType)
+			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType, patExprCtx)
 		}
 
 		// A name bound earlier in this same pattern is neither a fresh binding
@@ -848,7 +848,7 @@ func (t *galaASTTransformer) generateDirectStructFieldMatch(objExpr ast.Expr, ar
 	// field access reads from castVar. A concretely-typed subject keeps reading
 	// fields straight off objExpr.
 	baseExpr := objExpr
-	assertFrom, err := t.structPatternAssertSubject(objExpr, structName, matchedType, patExprCtx)
+	assertFrom, err := t.patternAssertSubject(objExpr, structName, structName, matchedType, patExprCtx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -965,14 +965,15 @@ func combineStructMatchConds(conds []ast.Expr, stmts []ast.Stmt) (ast.Expr, []as
 	return finalCond, stmts, nil
 }
 
-// structPatternAssertSubject returns the expression a struct pattern asserts
-// to the struct before reading its fields, or nil when the subject is of a
-// concrete type whose fields are read directly. An interface subject is
-// asserted as it is, once the struct is known to implement the interface — a
-// struct that does not could never be held by it, so the arm is an error
-// rather than one that silently never matches. A value of a type parameter is
-// asserted through `any`.
-func (t *galaASTTransformer) structPatternAssertSubject(objExpr ast.Expr, structName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, error) {
+// patternAssertSubject returns the expression a pattern asserts to typeName
+// before reading it — a struct pattern's struct, or the type an extractor's
+// Unapply takes — or nil when the subject is of a concrete type read directly.
+// An interface subject is asserted as it is, once typeName is known to
+// implement the interface — a type that does not could never be held by it,
+// so the arm is an error rather than one that silently never matches. A value
+// of a type parameter is asserted through `any`. patternName is the pattern's
+// constructor, as the error names it.
+func (t *galaASTTransformer) patternAssertSubject(objExpr ast.Expr, typeName, patternName string, matchedType transpiler.Type, patExprCtx grammar.IExpressionContext) (ast.Expr, error) {
 	if matchedType == nil {
 		return nil, nil
 	}
@@ -983,24 +984,25 @@ func (t *galaASTTransformer) structPatternAssertSubject(objExpr ast.Expr, struct
 	if !t.isInterfaceType(subjectType) {
 		return nil, nil
 	}
-	// Only a struct declared in GALA has its whole method set in metadata.
-	meta := t.getTypeMeta(structName)
-	if meta == nil || !strings.HasSuffix(meta.DefinedIn, ".gala") {
-		return objExpr, nil
-	}
 	required, _ := t.interfaceMethodNames(subjectType)
 	reason := ""
-	if missing := t.missingInterfaceMethods(meta, required); len(missing) > 0 {
-		reason = "missing " + strings.Join(missing, ", ")
-	} else if ptr := pointerReceiverMethods(meta, required); len(ptr) > 0 {
-		reason = strings.Join(ptr, ", ") + " has a pointer receiver"
+	// Only a type declared in GALA has its whole method set in metadata; a
+	// primitive has no methods at all.
+	if meta := t.getTypeMeta(typeName); meta != nil && strings.HasSuffix(meta.DefinedIn, ".gala") {
+		if missing := t.missingInterfaceMethods(meta, required); len(missing) > 0 {
+			reason = "missing " + strings.Join(missing, ", ")
+		} else if ptr := pointerReceiverMethods(meta, required); len(ptr) > 0 {
+			reason = strings.Join(ptr, ", ") + " has a pointer receiver"
+		}
+	} else if meta == nil && transpiler.IsPrimitiveType(typeName) && len(required) > 0 {
+		reason = "missing " + strings.Join(required, ", ")
 	}
 	if reason != "" {
 		at := patExprCtx.GetStart()
-		name := stripPackagePrefix(structName)
+		name, pattern := stripPackagePrefix(typeName), stripPackagePrefix(patternName)
 		return nil, galaerr.NewSemanticErrorAt(at.GetLine(), at.GetColumn(),
 			fmt.Sprintf("%s does not implement %s (%s), so a value of type %s never holds one and the pattern %s(...) never matches",
-				name, matchedType.String(), reason, matchedType.String(), name))
+				name, matchedType.String(), reason, matchedType.String(), pattern))
 	}
 	return objExpr, nil
 }
@@ -1745,8 +1747,28 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	objExpr ast.Expr,
 	argList *grammar.ArgumentListContext,
 	matchedType transpiler.Type,
+	patExprCtx grammar.IExpressionContext,
 ) (ast.Expr, []ast.Stmt, error) {
+	subst := func(typ transpiler.Type) transpiler.Type {
+		return t.substituteConcreteTypes(typ, extractorMeta.TypeParams, inferredTypes)
+	}
+	return t.assertedUnapplyPattern(objExpr, t.unapplyAssertType(unapplyMeta, subst), extractorName, matchedType, patExprCtx,
+		func(obj ast.Expr, matched transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+			return t.lowerDirectUnapplyPattern(extractorName, extractorMeta, inferredTypes, unapplyMeta, obj, argList, matched)
+		})
+}
 
+// lowerDirectUnapplyPattern is generateDirectUnapplyPattern for a subject
+// Unapply takes as it is.
+func (t *galaASTTransformer) lowerDirectUnapplyPattern(
+	extractorName string,
+	extractorMeta *transpiler.TypeMetadata,
+	inferredTypes []transpiler.Type,
+	unapplyMeta *transpiler.MethodMetadata,
+	objExpr ast.Expr,
+	argList *grammar.ArgumentListContext,
+	matchedType transpiler.Type,
+) (ast.Expr, []ast.Stmt, error) {
 	var allBindings []ast.Stmt
 	var conds []ast.Expr
 
@@ -1920,6 +1942,71 @@ func (t *galaASTTransformer) generateDirectUnapplyPattern(
 	return finalCond, allBindings, nil
 }
 
+// unapplyAssertType returns the type an extractor's Unapply takes when it is a
+// concrete one — a sealed parent such as `Shape` for `case Circle(r)`, or
+// `int` for a guard extractor — and nil otherwise. A subject of an interface
+// type (`any`, `error`, a GALA or Go interface) or of a type parameter holds a
+// value of some other, dynamic type, which Go passes to such an Unapply only
+// once it is asserted to that type (see patternAssertSubject); a value of
+// another type does not match the arm. An Unapply taking an interface takes
+// the subject as it is.
+// subst instantiates the Unapply's declared parameter type.
+func (t *galaASTTransformer) unapplyAssertType(unapplyMeta *transpiler.MethodMetadata, subst func(transpiler.Type) transpiler.Type) transpiler.Type {
+	if len(unapplyMeta.ParamTypes) != 1 {
+		return nil
+	}
+	paramType := subst(unapplyMeta.ParamTypes[0])
+	if transpiler.IsUnusable(paramType) || t.hasTypeParams(paramType) || t.isInterfaceType(paramType) {
+		return nil
+	}
+	return paramType
+}
+
+// assertedUnapplyPattern lowers an extractor pattern with lower, asserting an
+// interface or type-parameter subject to paramType, the concrete type its
+// Unapply takes (see unapplyAssertType; nil when there is none), first:
+//
+//	_tmp_1, _tmp_2 := std.As[Shape](obj)
+//	var _tmp_3 std.Option[int]
+//	...
+//	if _tmp_2 { _tmp_3 = Circle{}.Unapply(_tmp_1); ... }
+//
+// The extractor runs, as a sub-pattern does, only once the assertion holds: a
+// user Unapply never sees the zero value of a type the subject did not hold.
+// Its declarations are hoisted before the guard so the arm sees its bindings.
+// Any other subject is lowered as it is.
+func (t *galaASTTransformer) assertedUnapplyPattern(
+	objExpr ast.Expr,
+	paramType transpiler.Type,
+	patternName string,
+	matchedType transpiler.Type,
+	patExprCtx grammar.IExpressionContext,
+	lower func(obj ast.Expr, matched transpiler.Type) (ast.Expr, []ast.Stmt, error),
+) (ast.Expr, []ast.Stmt, error) {
+	if paramType == nil {
+		return lower(objExpr, matchedType)
+	}
+	assertFrom, err := t.patternAssertSubject(objExpr, paramType.BaseName(), patternName, matchedType, patExprCtx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if assertFrom == nil {
+		return lower(objExpr, matchedType)
+	}
+	assertType := t.typeToExpr(paramType)
+	cast, assign, ok := t.assertPatternSubject(assertFrom, assertType)
+	cond, stmts, err := lower(cast, paramType)
+	if err != nil {
+		return nil, nil, err
+	}
+	decls, guarded, err := t.hoistPatternDecls(stmts, cast.Name, exprType(assertType))
+	if err != nil {
+		return nil, nil, err
+	}
+	out := assembleSeqPatternGuardBlock(append([]ast.Stmt{assign}, decls...), ok.Name, guarded)
+	return &ast.BinaryExpr{X: ok, Op: token.LAND, Y: cond}, out, nil
+}
+
 // tryBindingExtractorPattern matches against a val/var — `r`, or an imported
 // `pkg.R` — whose type defines Unapply: `case r(groups) =>`. handled is false
 // when the binding's type has no Unapply.
@@ -1950,8 +2037,33 @@ func (t *galaASTTransformer) tryBindingExtractorPattern(
 	if i := firstNamedArg(argList); i >= 0 {
 		return nil, nil, true, noFieldNamesError(argList, i, b.String(), "it is an extractor whose result has no field names")
 	}
-	expr, stmts, err := t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, objExpr, argList, matchedType)
+	subst := func(typ transpiler.Type) transpiler.Type { return t.substituteBindingTypeParams(typ, b, varMeta) }
+	expr, stmts, err := t.assertedUnapplyPattern(objExpr, t.unapplyAssertType(unapplyMeta, subst), b.String(), matchedType, patExprCtx,
+		func(obj ast.Expr, matched transpiler.Type) (ast.Expr, []ast.Stmt, error) {
+			return t.generateVariableUnapplyPattern(b, varMeta, unapplyMeta, obj, argList, matched)
+		})
 	return expr, stmts, true, err
+}
+
+// substituteBindingTypeParams instantiates typ, a type in the methods of
+// varTypeMeta's type, with the type arguments of the binding b of that type:
+// for a JsonEncoder[Person], T is Person.
+func (t *galaASTTransformer) substituteBindingTypeParams(typ transpiler.Type, b binding, varTypeMeta *transpiler.TypeMetadata) transpiler.Type {
+	// Unwrap Immutable[X] to get X (vals are wrapped)
+	genType, ok := unwrapGalaType(b.typ).(transpiler.GenericType)
+	if !ok || len(varTypeMeta.TypeParams) == 0 {
+		return typ
+	}
+	typeSubst := make(typeSubstMap)
+	for i, tp := range varTypeMeta.TypeParams {
+		if i < len(genType.Params) {
+			typeSubst[tp] = genType.Params[i]
+		}
+	}
+	if len(typeSubst) == 0 {
+		return typ
+	}
+	return t.substituteTranspilerTypeParams(typ, typeSubst)
 }
 
 // generateVariableUnapplyPattern generates a pattern match using a variable's Unapply method.
@@ -1976,19 +2088,7 @@ func (t *galaASTTransformer) generateVariableUnapplyPattern(
 
 	// Get the return type of Unapply, substituting type params from the variable's concrete type.
 	// e.g., if variable is JsonEncoder[Person] and Unapply returns Option[T], resolve T=Person → Option[Person]
-	returnType := unapplyMeta.ReturnType
-	// Unwrap Immutable[X] to get X (vals are wrapped)
-	if genType, ok := unwrapGalaType(b.typ).(transpiler.GenericType); ok && len(varTypeMeta.TypeParams) > 0 {
-		typeSubst := make(typeSubstMap)
-		for i, tp := range varTypeMeta.TypeParams {
-			if i < len(genType.Params) {
-				typeSubst[tp] = genType.Params[i]
-			}
-		}
-		if len(typeSubst) > 0 {
-			returnType = t.substituteTranspilerTypeParams(returnType, typeSubst)
-		}
-	}
+	returnType := t.substituteBindingTypeParams(unapplyMeta.ReturnType, b, varTypeMeta)
 
 	// Check if Unapply returns bool (guard pattern) or Option[T] (extractor pattern)
 	isBoolReturn := false

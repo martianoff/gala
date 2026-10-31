@@ -1,0 +1,57 @@
+package main
+
+// A sealed case or a guard extractor matched against a value of type `any`
+// (or of a type parameter) first checks that the value holds the type the
+// extractor takes. A value of another type falls through to later arms.
+
+sealed type Shape {
+    case Circle(R int)
+    case Square()
+}
+
+sealed type Wrapped {
+    case Wrap(Inner any)
+    case Empty()
+}
+
+struct Pair(L any, R int)
+
+type Even struct {}
+
+func (_ Even) Unapply(i int) bool = i % 2 == 0
+
+func describe(v any) string = v match {
+    case Circle(r) if r > 10 => s"big circle $r"
+    case Circle(r) => s"circle $r"
+    case Square() => "square"
+    case Wrap(Circle(r)) => s"wrapped circle $r"
+    case Wrap(Square()) => "wrapped square"
+    case Wrap(_) => "wrapped other"
+    case Empty() => "empty"
+    case Pair(Circle(r), n) => s"pair circle $r/$n"
+    case Even() => "even int"
+    case i: int => s"odd int $i"
+    case _ => "other"
+}
+
+func describeGeneric[T any](v T) string = v match {
+    case Circle(r) => s"generic circle $r"
+    case _ => "generic other"
+}
+
+func main() {
+    Println(describe(Circle(2)))
+    Println(describe(Circle(20)))
+    Println(describe(Square()))
+    Println(describe(Wrap(Circle(3))))
+    Println(describe(Wrap(Square())))
+    Println(describe(Wrap("x")))
+    Println(describe(Empty()))
+    Println(describe(Pair(Circle(4), 5)))
+    Println(describe(Pair("y", 5)))
+    Println(describe(8))
+    Println(describe(7))
+    Println(describe("text"))
+    Println(describeGeneric(Circle(6)))
+    Println(describeGeneric(9))
+}
