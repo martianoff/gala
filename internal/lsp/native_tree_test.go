@@ -144,7 +144,10 @@ func (r *treeReads) note(_ string, onNative bool) {
 // at the cursors of callCursors and hover at the start of every identifier,
 // on a sample of the corpus. The responses, positions in UTF-16 columns
 // included, must be the same, and every read of the first handler must take
-// the native tree and every read of the second ANTLR's.
+// the native tree and every read of the second ANTLR's. Hover reads the native
+// tree only once something has converted it (dotImportPathsOf), so each
+// file's hovers come after its signature-help requests, which convert the
+// document's cached parse.
 func TestHandlerTreesAgree(t *testing.T) {
 	texts, paths, root := nativeCorpus(t)
 	sample := handlerSample(t, texts, paths)

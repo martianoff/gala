@@ -29,7 +29,7 @@ go_library(
         "//internal/depman/mod",
         "//internal/parser",
         "//internal/parser/grammar",
-        "//internal/parser/native",
+        "//internal/parser/native",  # keep: generated, gazelle cannot resolve it
         "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "//internal/transpiler/generator",
