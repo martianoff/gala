@@ -47,6 +47,16 @@ func shadow(p int) int {
 
 func repeated() int = missing + missing
 
+func localTypeOutOfBlock(ok bool) int {
+    if ok {
+        type Inner struct {
+            N int
+        }
+        Println(Inner(1).N)
+    }
+    return Inner(2).N
+}
+
 func qualifiable(xs Array[int]) int = xs.Size()
 
 func main() {
@@ -150,7 +160,10 @@ func walk(xs []int) int {
     }
     val f = (y int) => y + total
     func inner[U any](u U) U = u
-    return f(inner(c + d))
+    type Cell struct {
+        V int
+    }
+    return f(inner(Cell(c + d).V))
 }
 
 func pick(o Option[int]) int = o match {

@@ -5647,7 +5647,6 @@ If the Go SDK is not found, transpilation still succeeds but Go type inference i
 ### Optional Values in Immutable Fields
 Use `Option[T]` instead of nil for fields that may have no value. This follows the Scala idiom where null is avoided entirely.
 
-<!-- doc-check: fragment -->
 ```gala
 // BAD: Using nil with mutable field
 type Node[T any] struct {
@@ -5655,13 +5654,15 @@ type Node[T any] struct {
     var next func() Node[T]  // mutable just to allow nil
 }
 val end = Node[int](value = 0, next = nil)
+```
 
+```gala
 // GOOD: Using Option with immutable field
 type Node[T any] struct {
     value T
     next func() Option[Node[T]]  // immutable, returns None at end
 }
-val end = Node[int](value = 0, next = () => None[Node[T]]())
+val end = Node[int](value = 0, next = () => None[Node[int]]())
 ```
 
 **Why this matters:**

@@ -4688,6 +4688,15 @@ gala_exec_test(
     expected = "block_struct_zero_arg_ctor.out",
 )
 
+# A struct type declared inside a function body is constructed with call
+# syntax like a top-level one, and shadows a package-level type of its name
+# only inside its block (#918).
+gala_exec_test(
+    name = "local_type_constructor",
+    src = "local_type_constructor.gala",
+    expected = "local_type_constructor.out",
+)
+
 # A Go struct called with no arguments builds its zero value, `url.URL{}`,
 # instead of reaching Go as a zero-operand conversion.
 gala_exec_test(

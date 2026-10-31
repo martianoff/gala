@@ -117,6 +117,12 @@ func (w antlrWalk) walk(node antlr.Tree) {
 		w.walk(n.Expression())
 		w.BindID(n.Identifier())
 		return
+	// A type declaration binds its name for the rest of its block: a struct
+	// type's name is also its constructor (`Inner(1)`), a value position. Its
+	// body is types, but walks like any other node.
+	case *grammar.TypeDeclarationContext:
+		w.BindID(n.Identifier())
+		// No return: the body still gets the generic recursion.
 
 	// Reference-contributing leaves.
 	case *grammar.PostfixExprContext:

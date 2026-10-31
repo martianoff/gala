@@ -1,0 +1,82 @@
+package main
+
+// A struct type declared inside a function body is constructed with call
+// syntax like a top-level one: positionally, with named arguments, with a
+// subset of its fields, generically, from a nested lambda, and while it
+// shadows a package-level type of the same name.
+
+type Inner struct {
+    S string
+}
+
+type Label string
+
+func positional() int {
+    type Inner struct {
+        N int
+    }
+    val i = Inner(1)
+    i.N
+}
+
+func namedArgs() int {
+    type Pair struct {
+        A int
+        B int
+    }
+    val p = Pair(B = 2, A = 1)
+    p.A * 10 + p.B
+}
+
+func subset() int {
+    type Cfg struct {
+        A int
+        B int
+    }
+    val c = Cfg(3)
+    c.A + c.B
+}
+
+func usedEverywhere() string {
+    type Point struct {
+        X int
+        Y int
+    }
+    val p = Point(1, 2)
+    val shift = (n int) => Point(n, n + 1)
+    val q = shift(5)
+    val moved = p.Copy(X = 9)
+    val shown = q match {
+        case Point(x, y) => s"$x/$y"
+        case _ => "?"
+    }
+    s"${p.X},${p.Y} ${moved.X} $shown ${p == Point(1, 2)}"
+}
+
+func generic() string {
+    type Box[T any] struct {
+        V T
+    }
+    val n = Box(42)
+    val s = Box("hi")
+    s"${n.V} ${s.V}"
+}
+
+func shadowsAlias() int {
+    type Label struct {
+        Len int
+    }
+    Label(7).Len
+}
+
+func main() {
+    Println(positional())
+    Println(namedArgs())
+    Println(subset())
+    Println(usedEverywhere())
+    Println(generic())
+    Println(shadowsAlias())
+    // The package-level types are untouched by the local ones.
+    Println(Inner("top").S)
+    Println(Label("label"))
+}
