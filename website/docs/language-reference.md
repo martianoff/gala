@@ -961,6 +961,21 @@ func describe(err error) string = err match {
 
 A struct the interface can never hold — one missing a method of the interface, or declaring it with a pointer receiver — is a compile error rather than an arm that never matches. A generic struct names its type arguments, `case Box[int](v)`, since Go can only check for one instantiation.
 
+A sealed variant or an extractor works the same way: the arm first checks that the value holds the type its `Unapply` takes. A zero-field variant of a non-generic sealed type needs no parentheses here either — `case Square` is `case Square()`, at the top level, nested (`case Wrap(Square)`) or with a guard, also when it is qualified (`case shapes.Square`) or dot-imported. A lowercase variant name still binds on such a subject.
+
+```gala
+sealed type Shape {
+    case Circle(R int)
+    case Square()
+}
+
+func describe(v any) string = v match {
+    case Circle(r) => s"circle $r"
+    case Square    => "square"
+    case _         => "something else"
+}
+```
+
 #### Extractors and Unapply
 ```gala
 type Even struct {}

@@ -1824,6 +1824,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "match_any_bare_sealed_case",
+    src = "match_any_bare_sealed_case.gala",
+    expected = "match_any_bare_sealed_case.out",
+)
+
+gala_exec_test(
     name = "match_any_sealed_case",
     src = "match_any_sealed_case.gala",
     expected = "match_any_sealed_case.out",

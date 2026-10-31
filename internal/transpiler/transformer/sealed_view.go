@@ -126,6 +126,9 @@ func (t *galaASTTransformer) patternHeadName(alt grammar.IExpressionContext) str
 	if name, _, ok := t.patternCallShape(alt); ok {
 		return name
 	}
+	if qualified := t.qualifiedZeroFieldCase(alt); qualified != "" {
+		return stripPackagePrefix(qualified)
+	}
 	return patternIdentifier(alt)
 }
 
