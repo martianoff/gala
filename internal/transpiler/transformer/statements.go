@@ -753,8 +753,8 @@ func (t *galaASTTransformer) lowerUseDecl(d useDecl) ([]ast.Stmt, error) {
 	// the Close() call resolve directly (no Immutable unwrapping). Prefer an
 	// explicit annotation when present; otherwise infer from the acquire expr.
 	resType := t.getExprTypeName(acquire)
-	if typeCtx := d.typ; typeCtx != nil {
-		if typeExpr, terr := t.transformType(typeCtx); terr == nil {
+	if d.typ.ok() {
+		if typeExpr, terr := t.lowerType(d.typ); terr == nil {
 			if annotated := t.astTypeToTranspilerType(typeExpr); annotated != nil && !annotated.IsNil() {
 				resType = annotated
 			}

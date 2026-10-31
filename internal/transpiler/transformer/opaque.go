@@ -370,24 +370,26 @@ func (t *galaASTTransformer) resolveScalar(typ transpiler.Type) (end transpiler.
 // transformOpaqueTypeDeclaration lowers `opaque type Name[TP] U` to the Go
 // defined type `type Name[TP] U`, plus the synthesized Hash and Compare.
 func (t *galaASTTransformer) transformOpaqueTypeDeclaration(ctx *grammar.OpaqueTypeDeclarationContext) ([]ast.Decl, error) {
-	name := ctx.Identifier().GetText()
+	return t.lowerOpaqueDecl(readOpaqueDecl(ctx))
+}
+
+// lowerOpaqueDecl lowers an opaque type declaration, read from either tree
+// (sealed_source.go).
+func (t *galaASTTransformer) lowerOpaqueDecl(d opaqueDecl) ([]ast.Decl, error) {
+	name := d.name
 
 	var tParams *ast.FieldList
-	if ctx.TypeParameters() != nil {
-		var err error
-		tParams, err = t.transformTypeParameters(ctx.TypeParameters().(*grammar.TypeParametersContext))
-		if err != nil {
-			return nil, err
-		}
+	if d.generic {
+		tParams = lowerTypeParams(d.typeParams)
 		defer t.bindTypeParams(tParams.List...)()
 	}
 
-	underlyingExpr, err := t.transformType(ctx.Type_())
+	underlyingExpr, err := t.lowerType(d.underlying)
 	if err != nil {
 		return nil, err
 	}
 	declared := t.astTypeToTranspilerType(underlyingExpr)
-	kind, err := t.checkOpaqueUnderlying(ctx, name, declared, tParams)
+	kind, err := t.checkOpaqueUnderlying(d.underlying, name, declared, tParams)
 	if err != nil {
 		return nil, err
 	}
@@ -476,16 +478,17 @@ func (t *galaASTTransformer) opaqueCompareMethod(recvType ast.Expr, kind scalarK
 }
 
 // checkOpaqueUnderlying rejects an underlying type an opaque type cannot be
-// declared over (GALA-E0062) and classifies the accepted ones.
-func (t *galaASTTransformer) checkOpaqueUnderlying(ctx *grammar.OpaqueTypeDeclarationContext, name string, declared transpiler.Type, tParams *ast.FieldList) (scalarKind, error) {
-	written := transpiler.SourceText(ctx.Type_())
+// declared over (GALA-E0062) and classifies the accepted ones. underlying is
+// the type as written.
+func (t *galaASTTransformer) checkOpaqueUnderlying(underlying typeSrc, name string, declared transpiler.Type, tParams *ast.FieldList) (scalarKind, error) {
+	written := underlying.sourceText()
 	reject := func(reason, hint string) (scalarKind, error) {
-		tok := ctx.Type_().GetStart()
+		line, col := underlying.at().start()
 		return scalarNone, galaerr.NewCodedSemanticError(galaerr.CodeInvalidOpaqueUnderlying,
-			tok.GetLine(), tok.GetColumn(),
+			line, col,
 			fmt.Sprintf("cannot declare opaque type %q over %s: %s", name, written, reason),
 			hint,
-		).WithSpan(tok.GetColumn() + len([]rune(written)))
+		).WithSpan(col + len([]rune(written)))
 	}
 	wrapHint := "use a struct to wrap it, or a type alias to name it"
 

@@ -54,6 +54,7 @@ go_library(
         "scope.go",
         "scoped_state.go",
         "sealed.go",
+        "sealed_source.go",
         "sealed_view.go",
         "self_containing.go",
         "spread.go",
@@ -70,6 +71,7 @@ go_library(
         "type_subst.go",
         "type_switch_match.go",
         "types.go",
+        "types_source.go",
         "unknown_method.go",
         "unresolved_types.go",
         "utils.go",
@@ -466,6 +468,41 @@ go_test(
         "//stream:gala_sources",
         "//subprocess:gala_sources",
         "//test:gala_sources",
+    ],
+    embed = [":transformer"],
+    deps = [
+        "//internal/parser",
+        "//internal/parser/grammar",
+        "//internal/transpiler",
+        "//internal/transpiler/analyzer",
+        "//internal/transpiler/generator",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@rules_go//go/tools/bazel",
+    ],
+)
+
+# The lowering of types and of sealed and opaque type declarations on the
+# native tree, held to the lowering on ANTLR's over typeCases. It shares
+# native_walk_test's pipeline, but runs only its own cases, so it stays quick
+# and out of that target's corpus walk.
+# gazelle:exclude native_types_test.go
+# gazelle:exclude native_types_export_test.go
+go_test(
+    # keep
+    name = "native_types_test",
+    srcs = [
+        "native_types_export_test.go",
+        "native_types_test.go",
+        "native_walk_export_test.go",
+        "native_walk_test.go",
+    ],
+    args = ["-test.run=^TestNativeTypeCases$$"],
+    data = [
+        "//:all_gala_sources",
+        "//go_builtins:builtins.go",
+        "//go_interop:types.go",
+        "//std:gala_sources",
     ],
     embed = [":transformer"],
     deps = [

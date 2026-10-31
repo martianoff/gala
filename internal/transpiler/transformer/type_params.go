@@ -7,7 +7,6 @@ import (
 
 	"github.com/antlr4-go/antlr/v4"
 
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
@@ -139,7 +138,12 @@ func (t *galaASTTransformer) constrainTypeParam(name, constraint string) {
 // typeParamMisuseError reports name, a type parameter of the enclosing
 // declaration, used where it cannot stand — a name it shadows was meant.
 func (t *galaASTTransformer) typeParamMisuseError(ctx antlr.ParserRuleContext, name, what string) error {
-	err := t.semanticErrorAt(ctx, fmt.Sprintf("'%s' is a type parameter of the enclosing declaration and %s", name, what))
+	return t.typeParamMisuseErrorAt(srcNode{ctx: ctx}, name, what)
+}
+
+// typeParamMisuseErrorAt is typeParamMisuseError at a node of either tree.
+func (t *galaASTTransformer) typeParamMisuseErrorAt(at srcNode, name, what string) error {
+	err := t.semanticErrorAtNode(at, fmt.Sprintf("'%s' is a type parameter of the enclosing declaration and %s", name, what))
 	err.Hint = fmt.Sprintf("a type parameter shadows every other '%s' in its declaration; rename the type parameter to reach the outer one", name)
 	return err
 }
@@ -160,32 +164,39 @@ func (t *galaASTTransformer) onlyTypeParams(names []string) func() {
 
 // receiverTypeParams is the type parameters a receiver type declares: the
 // type arguments of `Box[T]` or `*Pair[A, B]`, each a bare name.
-func receiverTypeParams(ctx grammar.ITypeContext) []*ast.Field {
+func receiverTypeParams(s typeSrc) []*ast.Field {
 	var params []*ast.Field
-	for _, name := range receiverTypeParamNames(ctx) {
+	for _, name := range receiverTypeParamNamesOf(s) {
 		params = append(params, &ast.Field{Names: []*ast.Ident{ast.NewIdent(name)}})
 	}
 	return params
 }
 
-// receiverTypeParamNames is the names of receiverTypeParams.
+// receiverTypeParamNames is the names of receiverTypeParams of the receiver
+// type ctx, on ANTLR's tree.
 func receiverTypeParamNames(ctx grammar.ITypeContext) []string {
-	ctx, _ = galaparser.PointerElem(ctx) // *Box[T], Ptr[Box[T]]
-	for ctx != nil && ctx.QualifiedIdentifier() == nil && len(ctx.AllType_()) == 1 {
-		ctx = ctx.Type_(0)
+	return receiverTypeParamNamesOf(antlrType(ctx))
+}
+
+// receiverTypeParamNamesOf is the names of receiverTypeParams of s.
+func receiverTypeParamNamesOf(s typeSrc) []string {
+	s, _ = s.pointerElem() // *Box[T], Ptr[Box[T]]
+	for s.ok() && !s.named() {
+		elems := s.elems()
+		if len(elems) != 1 {
+			break
+		}
+		s = elems[0]
 	}
-	if ctx == nil || ctx.TypeArguments() == nil {
+	if !s.ok() {
 		return nil
 	}
 	// A partial parse (an editor's `Box[]`) has no type list.
-	list, ok := ctx.TypeArguments().(*grammar.TypeArgumentsContext).TypeList().(*grammar.TypeListContext)
-	if !ok {
-		return nil
-	}
+	args, _ := s.typeArgs()
 	var names []string
-	for _, arg := range list.AllType_() {
+	for _, arg := range args {
 		// `_` is the wildcard type, not a parameter name.
-		if name := arg.GetText(); name != "_" && token.IsIdentifier(name) {
+		if name := arg.text(); name != "_" && token.IsIdentifier(name) {
 			names = append(names, name)
 		}
 	}

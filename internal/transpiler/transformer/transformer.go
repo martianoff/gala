@@ -159,6 +159,10 @@ type galaASTTransformer struct {
 	// lowers in a block, by its node index and its first line. It observes
 	// and changes nothing; TestNativeWalkAgrees sets it to count them.
 	onNativeStmt func(index, line int)
+	// onNativeType, when set, is told of each type, and each sealed or
+	// opaque type declaration, lowered off the native tree, by its first
+	// line. It observes and changes nothing; TestNativeTypeCases sets it.
+	onNativeType func(line int)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that

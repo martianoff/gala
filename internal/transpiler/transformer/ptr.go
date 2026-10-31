@@ -320,11 +320,17 @@ func argSource(at antlr.ParserRuleContext, argType transpiler.Type) typeArgSourc
 // that method on whatever pointer the type argument holds. at locates the
 // type argument, or what it is inferred from (src).
 func (t *galaASTTransformer) checkPtrTypeArg(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at antlr.ParserRuleContext) error {
+	return t.checkPtrTypeArgAt(o, tp, typeArg, src, srcNode{ctx: at})
+}
+
+// checkPtrTypeArgAt is checkPtrTypeArg at a node of either tree.
+func (t *galaASTTransformer) checkPtrTypeArgAt(o typeParamOwner, tp string, typeArg transpiler.Type, src typeArgSource, at srcNode) error {
 	msg, hint, bad := t.ptrTypeArgMisuse(o, tp, typeArg, src)
 	if !bad {
 		return nil
 	}
-	return ptrError(at, msg, hint)
+	r := at.rng()
+	return spanErrorAt(galaerr.CodePtrNullability, r, r, msg, hint)
 }
 
 // ptrTypeArgMisuse returns the GALA-E0080 message and hint of checkPtrTypeArg
@@ -417,11 +423,17 @@ func typeTypeParamOwner(name string, m *transpiler.TypeMetadata) typeParamOwner 
 // checkPtrWrittenTypeArgs checks the written type arguments args of o, the
 // i-th located by at(i), with checkPtrTypeArg.
 func (t *galaASTTransformer) checkPtrWrittenTypeArgs(o typeParamOwner, args []ast.Expr, at func(i int) antlr.ParserRuleContext) error {
+	return t.checkPtrWrittenTypeArgsAt(o, args, func(i int) srcNode { return srcNode{ctx: at(i)} })
+}
+
+// checkPtrWrittenTypeArgsAt is checkPtrWrittenTypeArgs of type arguments
+// located on either tree.
+func (t *galaASTTransformer) checkPtrWrittenTypeArgsAt(o typeParamOwner, args []ast.Expr, at func(i int) srcNode) error {
 	if !t.hasPtrConstraint(o) {
 		return nil
 	}
 	for i, arg := range args[:min(len(args), len(o.params))] {
-		if err := t.checkPtrTypeArg(o, o.params[i], t.astTypeToTranspilerType(arg), typeArgSource{}, at(i)); err != nil {
+		if err := t.checkPtrTypeArgAt(o, o.params[i], t.astTypeToTranspilerType(arg), typeArgSource{}, at(i)); err != nil {
 			return err
 		}
 	}
@@ -447,7 +459,7 @@ func (t *galaASTTransformer) checkPtrBoundTypeArgs(o typeParamOwner, written int
 // checkPtrTypeArgsOfType checks the type arguments args, at ctxs, of the
 // generic type name names in a type (`Holder[*Counter]`) with
 // checkPtrTypeArg.
-func (t *galaASTTransformer) checkPtrTypeArgsOfType(name string, args []ast.Expr, ctxs []grammar.ITypeContext) error {
+func (t *galaASTTransformer) checkPtrTypeArgsOfType(name string, args []ast.Expr, written []typeSrc) error {
 	if len(t.ptrReceiverMethods) == 0 || t.activeTypeParams[name] {
 		return nil
 	}
@@ -456,7 +468,7 @@ func (t *galaASTTransformer) checkPtrTypeArgsOfType(name string, args []ast.Expr
 		return nil
 	}
 	o := typeTypeParamOwner(name, meta)
-	return t.checkPtrWrittenTypeArgs(o, args, func(i int) antlr.ParserRuleContext { return ctxs[i] })
+	return t.checkPtrWrittenTypeArgsAt(o, args, func(i int) srcNode { return written[i].at() })
 }
 
 // checkPtrCallTypeArgs checks, with checkPtrTypeArg, the type arguments the
