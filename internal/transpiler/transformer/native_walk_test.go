@@ -576,12 +576,16 @@ func main() {
 		n = n + 1
 		n
 	}
+	val bumped = xs.Map((var x) => {
+		x = x + 1
+		x
+	})
 	val shared = 5
 	val f = Future(() => shared + 1)
 	val g = Future(shared * 2)
 	val tried = Try(() => os.Getenv("HOME"))
 	val noop = () => {}
-	Println(inc(1), twice(2), apply((x) => x - 1, 3), add(1, 2), block(1), nested(1)(2), doubled, sum, bump(1), f.Get(), g.Get(), tried.IsSuccess())
+	Println(inc(1), twice(2), apply((x) => x - 1, 3), add(1, 2), block(1), nested(1)(2), doubled, sum, bump(1), bumped, f.Get(), g.Get(), tried.IsSuccess())
 	say("ü")
 	noop()
 }
