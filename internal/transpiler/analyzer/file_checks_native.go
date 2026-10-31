@@ -185,11 +185,11 @@ func checkGoKeywordNamesNative(root native.GalaNodeRef) error {
 	return k.err()
 }
 
-// isNativePattern reports whether n is a pattern, of any of the rule's
-// labeled alternatives.
+// isNativePattern reports whether n is a pattern: one of the rule's labeled
+// alternatives, as every pattern node is.
 func isNativePattern(n native.GalaNodeRef) bool {
 	switch n.Kind() {
-	case native.GalaKIND_pattern, native.GalaKIND_restPattern, native.GalaKIND_expressionPattern, native.GalaKIND_typedPattern:
+	case native.GalaKIND_restPattern, native.GalaKIND_expressionPattern, native.GalaKIND_typedPattern:
 		return true
 	}
 	return false

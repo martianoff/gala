@@ -163,6 +163,20 @@ import . "martianoff/gala/collection_immutable"
 
 val (a, EmptyArray) = ("é", 2)
 `}}},
+	{"dot-import collision: opaque type", galaerr.CodeDeclarationCollidesWithDotImport, [][2]string{{"main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+val greeting = "héllo"
+
+opaque type HashSet int
+`}}},
+	{"dot-import collision: embed", galaerr.CodeDeclarationCollidesWithDotImport, [][2]string{{"main.gala", `package main
+
+import . "martianoff/gala/collection_immutable"
+
+embed val List = "naïve.txt"
+`}}},
 	{"dot-import collision: another file's dot import", galaerr.CodeDeclarationCollidesWithDotImport, [][2]string{
 		{"lib.gala", `package lib
 

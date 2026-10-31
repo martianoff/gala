@@ -198,6 +198,10 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
+	// antlrTreeOnly keeps every file on ANTLR's tree, its native tree unread
+	// and unconverted. The LSP sets it: an editor buffer is analyzed per
+	// keystroke, where converting costs more than the reads it would serve.
+	antlrTreeOnly bool
 	// onCollect, when set, is told which tree analyze collects the top-level
 	// file's declarations on, and why (see collectTrace); the files of the
 	// packages it imports, collected on ANTLR's tree, are not reported. It observes and changes nothing; the collection tests
@@ -404,6 +408,7 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipUndefinedCheck:  true,
+		antlrTreeOnly:       true,
 	}
 }
 
@@ -607,7 +612,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// read on one tree or the other, never a mix; inferPackageValTypes, the
 	// transformer's pass, still reads ANTLR's. The imported packages' files
 	// are read on ANTLR's tree: the parsed-file cache keeps no handle.
-	readsNative := isTopLevel && !a.skipUndefinedCheck
+	readsNative := isTopLevel && !a.antlrTreeOnly
 	var nf nativeFile
 	if readsNative {
 		nf = nativeFileOf(handle)
