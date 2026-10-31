@@ -97,24 +97,8 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 				richAST.Types[fullTypeName] = meta
 			}
 
-			if ctx.TypeParameters() != nil {
-				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-				if tpList := tpCtx.TypeParameterList(); tpList != nil {
-					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-						tpCtx := tp.(*grammar.TypeParameterContext)
-						tpId := tpCtx.Identifier(0)
-						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
-						// Extract the constraint (second identifier in "T comparable")
-						if len(tpCtx.AllIdentifier()) > 1 {
-							constraint := tpCtx.Identifier(1).GetText()
-							if meta.TypeParamConstraints == nil {
-								meta.TypeParamConstraints = make(map[string]string)
-							}
-							meta.TypeParamConstraints[tpId.GetText()] = constraint
-						}
-					}
-				}
-			}
+			// Assigned, not appended: a reused entry already holds them.
+			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 
 			if ctx.StructType() != nil {
 				structType := ctx.StructType().(*grammar.StructTypeContext)
@@ -244,23 +228,8 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 				richAST.Types[fullTypeName] = meta
 			}
 
-			if ctx.TypeParameters() != nil {
-				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-				if tpList := tpCtx.TypeParameterList(); tpList != nil {
-					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-						tpCtx := tp.(*grammar.TypeParameterContext)
-						tpId := tpCtx.Identifier(0)
-						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
-						if len(tpCtx.AllIdentifier()) > 1 {
-							constraint := tpCtx.Identifier(1).GetText()
-							if meta.TypeParamConstraints == nil {
-								meta.TypeParamConstraints = make(map[string]string)
-							}
-							meta.TypeParamConstraints[tpId.GetText()] = constraint
-						}
-					}
-				}
-			}
+			// Assigned, not appended: a reused entry already holds them.
+			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 
 			if ctx.Parameters() != nil {
 				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)

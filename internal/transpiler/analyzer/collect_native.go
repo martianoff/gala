@@ -447,14 +447,8 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 				richAST.Types[fullTypeName] = meta
 			}
 
-			names, constraints := nativeTypeParamsOf(ctx.TypeParameters())
-			meta.TypeParams = append(meta.TypeParams, names...)
-			for tp, c := range constraints {
-				if meta.TypeParamConstraints == nil {
-					meta.TypeParamConstraints = make(map[string]string)
-				}
-				meta.TypeParamConstraints[tp] = c
-			}
+			// Assigned, not appended: a reused entry already holds them.
+			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 
 			if structType := ctx.StructType(); structType.Ok() {
 				for fNode := range galaparser.NativeKids(structType.GalaNodeRef, native.GalaKIND_structField) {
@@ -564,14 +558,8 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 				richAST.Types[fullTypeName] = meta
 			}
 
-			names, constraints := nativeTypeParamsOf(ctx.TypeParameters())
-			meta.TypeParams = append(meta.TypeParams, names...)
-			for tp, c := range constraints {
-				if meta.TypeParamConstraints == nil {
-					meta.TypeParamConstraints = make(map[string]string)
-				}
-				meta.TypeParamConstraints[tp] = c
-			}
+			// Assigned, not appended: a reused entry already holds them.
+			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 
 			if params := ctx.Parameters(); params.Ok() {
 				for _, pctx := range nativeParams(params) {
