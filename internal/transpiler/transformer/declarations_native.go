@@ -48,6 +48,19 @@ func crossTo[C antlr.ParserRuleContext](t *galaASTTransformer, n native.GalaNode
 	return c
 }
 
+// nativeNodeOf is ctx's node on the native tree, of kind, when the file's
+// walk reads that tree (t.native is set only for a bridged tree), and false
+// otherwise: crossTo's inverse, for the lowerings the native walk reaches
+// through an expression that is still lowered on ANTLR's tree (see
+// lambdas_source.go). A nil ctx, typed or not, has no node.
+func (t *galaASTTransformer) nativeNodeOf(ctx antlr.ParserRuleContext, kind native.GalaKind) (native.GalaNodeRef, bool) {
+	if t.native == nil {
+		return native.GalaNodeRef{}, false
+	}
+	n := t.native.NodeOfKind(ctx, kind)
+	return n, n.Ok()
+}
+
 // nativeRange is ctxRange of native node n's context.
 func nativeRange(n native.GalaNodeRef) srcRange {
 	start := n.Start()
@@ -262,20 +275,31 @@ func (t *galaASTTransformer) readShorthandDeclNative(n native.StructShorthandDec
 	if tps := n.TypeParameters(); tps.Ok() {
 		d.typeParams = nativeTypeParams(tps)
 	}
-	for p := range galaparser.NativeKids(n.Parameters().ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+	d.params = t.readParamsNative(n.Parameters())
+	return d
+}
+
+// readParamsNative is readParams of ps.
+func (t *galaASTTransformer) readParamsNative(ps native.ParametersNode) []paramDecl {
+	var out []paramDecl
+	for p := range galaparser.NativeKids(ps.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
 		param := native.ParameterNode{GalaNodeRef: p}
 		pd := paramDecl{
 			ctx:   crossTo[*grammar.ParameterContext](t, p),
-			name:  param.Identifier().GetText(),
+			at:    srcNode{node: p},
 			isVar: param.VAR().Ok(),
 			isVal: param.VAL().Ok(),
+		}
+		// A parameter can be nameless, as in `(...int) => 0`.
+		if id := param.Identifier(); id.Ok() {
+			pd.nameAt, pd.name = srcNode{node: id.GalaNodeRef}, id.GetText()
 		}
 		if typ := param.Type_(); typ.Ok() {
 			pd.typ = nativeType(typ)
 		}
-		d.params = append(d.params, pd)
+		out = append(out, pd)
 	}
-	return d
+	return out
 }
 
 // readImportDeclNative is readImportDecl of n.

@@ -102,16 +102,20 @@ func (b blockSrc) stop() (line, col int, ok bool) {
 	return stop.GetLine(), stop.GetColumn(), true
 }
 
-// is reports whether b is the block ctx, a lambda's body (see
-// returnSlot.body); false when ctx is nil.
-func (b blockSrc) is(t *galaASTTransformer, ctx *grammar.BlockContext) bool {
-	if ctx == nil {
-		return false
+// is reports whether b is the block o, a lambda's body (see
+// returnSlot.body); false when o is the zero blockSrc. The two can be on
+// different trees (a match arm's ANTLR block below a native lambda), so a
+// native side is compared by its context on ANTLR's tree.
+func (b blockSrc) is(t *galaASTTransformer, o blockSrc) bool {
+	switch {
+	case b.node.Ok() && o.node.Ok():
+		return b.node == o.node
+	case b.node.Ok():
+		return o.ctx != nil && crossTo[*grammar.BlockContext](t, b.node) == o.ctx
+	case o.node.Ok():
+		return b.ctx != nil && crossTo[*grammar.BlockContext](t, o.node) == b.ctx
 	}
-	if b.node.Ok() {
-		return crossTo[*grammar.BlockContext](t, b.node) == ctx
-	}
-	return b.ctx == ctx
+	return b.ctx != nil && b.ctx == o.ctx
 }
 
 // stmtKind is what a statement is: a `return`, or the kind of its

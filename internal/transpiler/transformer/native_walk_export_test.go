@@ -18,7 +18,7 @@ func OnNativeType(tr transpiler.ASTTransformer, f func(line int)) {
 }
 
 // OnNativeLambda sets tr's onNativeLambda hook for TestNativeWalkAgrees.
-func OnNativeLambda(tr transpiler.ASTTransformer, f func(index, line int)) {
+func OnNativeLambda(tr transpiler.ASTTransformer, f func(index int)) {
 	tr.(*galaASTTransformer).onNativeLambda = f
 }
 

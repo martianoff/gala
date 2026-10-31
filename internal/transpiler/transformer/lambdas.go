@@ -10,7 +10,6 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 
 	"martianoff/gala/galaerr"
-	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/registry"
@@ -87,7 +86,20 @@ func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
 	return ""
 }
 
-// transformLambdaWithExpectedType lowers a lambda, applying expectedParamTypes /
+// transformLambdaWithExpectedType is lowerLambda of the lambda ctx, on the
+// native tree when the walk reads it (lambdaOf).
+func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
+	return t.lowerLambda(t.lambdaOf(ctx), expectedRetType, expectedParamTypes, requireTypedParams, declaredResult)
+}
+
+// isTryThunk reports whether l is the lambda being lowered as the thunk of
+// Try(...) (see tryThunkValue).
+func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
+	return t.tryThunkLambda != nil && l.ctx == t.tryThunkLambda
+}
+
+// lowerLambda lowers a lambda, on the tree it comes from (see
+// lambdas_source.go), applying expectedParamTypes /
 // expectedRetType when present. requireTypedParams controls the untyped-parameter
 // policy: when true (the bare/initializer path), a parameter with no annotation
 // and no inferable type is a hard error (GALA-E0033); when false (call-argument /
@@ -100,21 +112,9 @@ func lambdaArgCallee(lambda *grammar.LambdaExpressionContext) string {
 // `any` in it is that type (`func() any`, `func() Array[any]`); otherwise an
 // `any` there stands for a type not inferred yet, and the body's own result
 // type is used.
-func (t *galaASTTransformer) transformLambdaWithExpectedType(ctx *grammar.LambdaExpressionContext, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
-	return t.lowerLambda(t.lambdaOf(ctx), expectedRetType, expectedParamTypes, requireTypedParams, declaredResult)
-}
-
-// isTryThunk reports whether l is the lambda being lowered as the thunk of
-// Try(...) (see tryThunkValue).
-func (t *galaASTTransformer) isTryThunk(l lambdaSrc) bool {
-	return t.tryThunkLambda != nil && l.antlr(t) == t.tryThunkLambda
-}
-
-// lowerLambda is transformLambdaWithExpectedType of l, on the tree it comes
-// from (see lambdas_source.go).
 func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, expectedParamTypes []transpiler.Type, requireTypedParams, declaredResult bool) (ast.Expr, error) {
 	if t.onNativeLambda != nil && l.node.Ok() {
-		t.onNativeLambda(l.node.Index(), int(l.node.Start().Line))
+		t.onNativeLambda(l.node.Index())
 	}
 	t.pushScope()
 	defer t.popScope()
@@ -125,8 +125,8 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 		hasExplicitType := false
 		hasWildcardType := false
 		for _, p := range params {
-			if p.typ != nil {
-				typeText := galaparser.TypeText(p.typ)
+			if p.typ.ok() {
+				typeText := p.typ.typeText()
 				if typeText == "_" {
 					hasWildcardType = true
 				} else {
@@ -152,15 +152,16 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			// resolved: see the check below.
 			unresolvedSlot := expType != nil && transpiler.ContainsUnusable(expType)
 			typeApplied := false
-			if p.typ == nil {
+			if !p.typ.ok() {
 				if expType != nil && !unresolvedSlot && !expType.IsAny() {
 					typeExpr := t.typeToExpr(expType)
 					field.Type = typeExpr
 					t.addParam(p.name, expType, p.isVar)
 					if t.lspVarTypes != nil && t.loweringDefault == nil {
+						line, col := p.nameAt.start()
 						t.lspLambdaParamHints = append(t.lspLambdaParamHints, transpiler.LambdaParamHint{
-							Line:   p.nameAt.Line,
-							Column: p.nameAt.Column,
+							Line:   line,
+							Column: col,
 							Name:   p.name,
 							Type:   expType,
 						})
@@ -181,7 +182,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 			// declaring package did not type-check, say. Its `any` would reach
 			// the output unannounced and fail only in `go build`.
 			anySlot := expType != nil && !unresolvedSlot && expType.IsAny()
-			if p.typ == nil && !typeApplied && (requireTypedParams || !anySlot) {
+			if !p.typ.ok() && !typeApplied && (requireTypedParams || !anySlot) {
 				name := p.name
 				msg := fmt.Sprintf("lambda parameter %q has no type and none can be inferred from context", name)
 				hint := fmt.Sprintf("annotate it (e.g. `(%s int) => …`) or use the lambda in a typed context (typed val, function argument, or return)", name)
@@ -192,7 +193,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 					hint = fmt.Sprintf("give the lambda %d parameters", len(expectedParamTypes))
 				}
 				if unresolvedSlot {
-					callee := lambdaArgCallee(l.antlr(t))
+					callee := lambdaArgCallee(l.ctx)
 					if callee == "" {
 						callee = "the function it is passed to"
 					}
@@ -203,7 +204,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 				return nil, galaerr.NewCodedSemanticError(galaerr.CodeUntypedLambdaParam, line, col, msg, hint)
 			}
 			// A parameter filling a slot typed `any` has that type.
-			if p.typ == nil && !typeApplied && anySlot {
+			if !p.typ.ok() && !typeApplied && anySlot {
 				t.addParam(p.name, expType, p.isVar)
 			}
 			fieldList.List = append(fieldList.List, field)
@@ -230,9 +231,9 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	// When present it wins over both the expected type supplied by the caller
 	// and any body-based inference: the user asked for a specific shape.
 	var explicitRetType ast.Expr
-	resultType := l.resultType(t)
-	if resultType != nil {
-		rt, err := t.transformType(resultType)
+	resultType := l.resultType()
+	if resultType.ok() {
+		rt, err := t.lowerType(resultType)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +264,7 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 	}
 	block := l.block()
 	if block.ok() && lambdaSlot.fillable {
-		lambdaSlot.body = block.antlr(t)
+		lambdaSlot.body = block
 	}
 	defer t.enterReturnSlot(lambdaSlot)()
 
@@ -291,8 +292,8 @@ func (t *galaASTTransformer) lowerLambda(l lambdaSrc, expectedRetType ast.Expr, 
 		// as a function declared with one must (see missingReturnError).
 		if !isVoidExpected && retType != nil && !isVoidTypeIdent(retType) && !isTerminatingStmt(body) {
 			var result string
-			if resultType != nil {
-				result = resultType.GetText()
+			if resultType.ok() {
+				result = resultType.text()
 			} else {
 				result = t.astTypeToTranspilerType(retType).String()
 			}

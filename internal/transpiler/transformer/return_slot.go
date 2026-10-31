@@ -22,7 +22,7 @@ import (
 type returnSlot struct {
 	typ      transpiler.Type
 	fillable bool
-	body     *grammar.BlockContext // a fillable lambda's block body: its trailing value is a result value
+	body     blockSrc // a fillable lambda's block body: its trailing value is a result value
 	deferred []deferredReturn
 	// typeParams are the type parameters of the enclosing function
 	// declaration and its receiver, in scope for every slot inside it: a type

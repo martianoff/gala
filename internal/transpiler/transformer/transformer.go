@@ -164,9 +164,9 @@ type galaASTTransformer struct {
 	// line. It observes and changes nothing; TestNativeTypeCases sets it.
 	onNativeType func(line int)
 	// onNativeLambda, when set, is told of each lambda lowered on the
-	// native tree, by its node index and its first line. It observes and
+	// native tree, by its node index. It observes and
 	// changes nothing; TestNativeWalkAgrees sets it to count them.
-	onNativeLambda func(index, line int)
+	onNativeLambda func(index int)
 	// onNativeCapture, when set, is told of each Sendable capture check run
 	// on the native tree. It observes and changes nothing;
 	// TestNativeWalkCases sets it to prove which tree a check read.

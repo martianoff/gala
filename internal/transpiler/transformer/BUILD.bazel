@@ -457,6 +457,9 @@ go_test(
     # timeout too: it takes ~235s on the main CI lane and crosses the default
     # medium 300s on the slower ANTLR-parser lane.
     size = "large",
+    # Two shards, so the case tests (TestNativeWalkCases, TestNativeTypeCases)
+    # can run beside the corpus run rather than after it.
+    shard_count = 2,
     srcs = [
         "native_types_test.go",
         "native_walk_export_test.go",
