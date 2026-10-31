@@ -449,21 +449,12 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				recollectType(meta, nativePos(id.GalaNodeRef))
-				nativeSetDoc(&meta.Doc, docs, decl)
 			} else {
-				meta = &transpiler.TypeMetadata{
-					Name:    typeName,
-					Package: pkgName,
-					Doc:     nativeDocAt(docs, decl),
-					Pos:     nativePos(id.GalaNodeRef),
-					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]transpiler.Type),
-				}
+				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
 				richAST.Types[fullTypeName] = meta
 			}
-
-			// Assigned, not appended: a reused entry already holds them.
+			startTypeEntry(meta, nativePos(id.GalaNodeRef))
+			nativeSetDoc(&meta.Doc, docs, decl)
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 
 			if structType := ctx.StructType(); structType.Ok() {
@@ -553,21 +544,12 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				recollectType(meta, pos)
-				nativeSetDoc(&meta.Doc, docs, decl)
 			} else {
-				meta = &transpiler.TypeMetadata{
-					Name:    typeName,
-					Package: pkgName,
-					Doc:     nativeDocAt(docs, decl),
-					Pos:     pos,
-					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]transpiler.Type),
-				}
+				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
 				richAST.Types[fullTypeName] = meta
 			}
-
-			// Assigned, not appended: a reused entry already holds them.
+			startTypeEntry(meta, pos)
+			nativeSetDoc(&meta.Doc, docs, decl)
 			meta.TypeParams, meta.TypeParamConstraints = nativeTypeParamsOf(ctx.TypeParameters())
 
 			if params := ctx.Parameters(); params.Ok() {

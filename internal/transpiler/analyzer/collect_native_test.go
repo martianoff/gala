@@ -492,15 +492,14 @@ func parseClean(tb testing.TB, src string) *galaparser.Parsed {
 	return parsed
 }
 
-// collectOnce collects the types of src, the file box.gala of package box at
+// collectOnce collects with a the types of src, the file of package box at
 // path, into a fresh RichAST.
-func collectOnce(tb testing.TB, collect typeCollector, path, src string) *fileDecls {
+func collectOnce(tb testing.TB, a *galaAnalyzer, collect typeCollector, path, src string) *fileDecls {
 	tb.Helper()
-	a := newCollectionAnalyzer(tb, galaparser.NewAntlrGalaParser(), nil)
 	parsed := parseClean(tb, src)
 	fd := newCollectedFile(a, "box", path, parsed.Docs)
 	if err := collect(a, parsed, fd); err != nil {
-		tb.Fatalf("collection: %v", err)
+		tb.Fatalf("collection of %s: %v", path, err)
 	}
 	return fd
 }
@@ -513,15 +512,11 @@ func collectOnce(tb testing.TB, collect typeCollector, path, src string) *fileDe
 func collectTwice(tb testing.TB, a *galaAnalyzer, collect typeCollector, first, again string, between func(*fileDecls)) *fileDecls {
 	tb.Helper()
 	dir := tb.TempDir()
-	parsed := parseClean(tb, first)
-	fd := newCollectedFile(a, "box", filepath.Join(dir, "box.gala"), parsed.Docs)
-	if err := collect(a, parsed, fd); err != nil {
-		tb.Fatalf("first collection: %v", err)
-	}
+	fd := collectOnce(tb, a, collect, filepath.Join(dir, "box.gala"), first)
 	if between != nil {
 		between(fd)
 	}
-	parsed = parseClean(tb, again)
+	parsed := parseClean(tb, again)
 	fd.filePath = dir + string(filepath.Separator) + "." + string(filepath.Separator) + "box.gala"
 	fd.docs = parsed.Docs
 	if err := collect(a, parsed, fd); err != nil {
@@ -534,7 +529,8 @@ func collectTwice(tb testing.TB, a *galaAnalyzer, collect typeCollector, first, 
 // between two collections of its file (a shorthand struct, a block struct, an
 // interface) gets, from both twins, the entry a first collection of its new
 // declaration gives, with no flag, field or interface method left from the
-// old form. The methods declared on a struct survive the re-collection.
+// old form. The methods declared on a struct, and the DefinedIn an interface
+// does not set, survive the re-collection.
 func TestRecollectedTypeChangesForm(t *testing.T) {
 	parseWithGalop(t)
 	forms := []struct{ name, src string }{
@@ -551,15 +547,25 @@ func TestRecollectedTypeChangesForm(t *testing.T) {
 			}
 			for name, collect := range typeCollectors {
 				t.Run(from.name+"_to_"+to.name+"/"+name, func(t *testing.T) {
+					keepsMethods := from.name != "interface"
+					var firstDefinedIn string
 					a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
 					fd := collectTwice(t, a, collect, from.src, to.src, func(fd *fileDecls) {
-						if from.name != "interface" {
-							fd.richAST.Types["box.Cfg"].Methods[declared.Name] = declared
+						meta := fd.richAST.Types["box.Cfg"]
+						firstDefinedIn = meta.DefinedIn
+						if keepsMethods {
+							meta.Methods[declared.Name] = declared
 						}
 					})
-					want := collectOnce(t, collect, fd.filePath, to.src).richAST.Types["box.Cfg"]
-					if from.name != "interface" {
+					fresh := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
+					want := collectOnce(t, fresh, collect, fd.filePath, to.src).richAST.Types["box.Cfg"]
+					if keepsMethods {
 						want.Methods[declared.Name] = declared
+					}
+					// An interface declaration does not record DefinedIn, so
+					// the one recorded before stays.
+					if to.name == "interface" {
+						want.DefinedIn = firstDefinedIn
 					}
 					if got := fd.richAST.Types["box.Cfg"]; !reflect.DeepEqual(got, want) {
 						t.Errorf("re-collected entry:\n got %+v\nwant %+v", *got, *want)

@@ -75,21 +75,12 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				recollectType(meta, transpiler.PosFromToken(ctx.Identifier().GetStart()))
-				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
-				meta = &transpiler.TypeMetadata{
-					Name:    typeName,
-					Package: pkgName,
-					Doc:     docAt(docs, ctx.GetStart()),
-					Pos:     transpiler.PosFromToken(ctx.Identifier().GetStart()),
-					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]transpiler.Type),
-				}
+				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
 				richAST.Types[fullTypeName] = meta
 			}
-
-			// Assigned, not appended: a reused entry already holds them.
+			startTypeEntry(meta, transpiler.PosFromToken(ctx.Identifier().GetStart()))
+			setDoc(&meta.Doc, docs, ctx.GetStart())
 			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 
 			if ctx.StructType() != nil {
@@ -199,21 +190,12 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				recollectType(meta, pos)
-				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
-				meta = &transpiler.TypeMetadata{
-					Name:    typeName,
-					Package: pkgName,
-					Doc:     docAt(docs, ctx.GetStart()),
-					Pos:     pos,
-					Methods: make(map[string]*transpiler.MethodMetadata),
-					Fields:  make(map[string]transpiler.Type),
-				}
+				meta = &transpiler.TypeMetadata{Name: typeName, Package: pkgName}
 				richAST.Types[fullTypeName] = meta
 			}
-
-			// Assigned, not appended: a reused entry already holds them.
+			startTypeEntry(meta, pos)
+			setDoc(&meta.Doc, docs, ctx.GetStart())
 			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 
 			if ctx.Parameters() != nil {
@@ -253,27 +235,30 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 	return nil
 }
 
-// recollectType resets meta, a same-package entry that an earlier collection
-// or a cache load filled, to the entry a first collection of its declaration
-// starts from, at pos. Its declaration may have changed form since (a
-// shorthand struct become an interface, say), so no field it describes
-// survives. Name and Package are its key. The methods declared on it, which
-// other files may have added, are kept. An interface's methods are its own
-// specs, which its declaration collects again. Doc is kept as well: the
-// caller's setDoc replaces it only when the declaration has a doc comment.
-// The entry is reset in place, so references to it stay valid.
-func recollectType(meta *transpiler.TypeMetadata, pos transpiler.SourcePos) {
+// startTypeEntry readies meta, at pos, for collecting a type or shorthand
+// struct declaration into: a new entry holding only its Name and Package, or
+// a same-package one that an earlier collection or a cache load filled.
+// Such a declaration may have changed form since (a shorthand struct become
+// an interface, say), so no field the old one described survives, and the
+// entry is reset in place, so references to it stay valid. Name and Package
+// are its key. The methods declared on it, which other files may have added,
+// are kept; an interface's methods are its own specs, which its declaration
+// collects again. Doc is kept as well: the caller's setDoc replaces it only
+// when the declaration has a doc comment. So is DefinedIn, which a struct
+// declaration sets and other forms leave as an earlier pass recorded it.
+func startTypeEntry(meta *transpiler.TypeMetadata, pos transpiler.SourcePos) {
 	methods := meta.Methods
 	if meta.IsInterface || methods == nil {
 		methods = make(map[string]*transpiler.MethodMetadata)
 	}
 	*meta = transpiler.TypeMetadata{
-		Name:    meta.Name,
-		Package: meta.Package,
-		Doc:     meta.Doc,
-		Pos:     pos,
-		Methods: methods,
-		Fields:  make(map[string]transpiler.Type),
+		Name:      meta.Name,
+		Package:   meta.Package,
+		Doc:       meta.Doc,
+		Pos:       pos,
+		Methods:   methods,
+		Fields:    make(map[string]transpiler.Type),
+		DefinedIn: meta.DefinedIn,
 	}
 }
 
