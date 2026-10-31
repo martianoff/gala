@@ -260,8 +260,13 @@ func DotImportPaths(tree antlr.Tree) []string {
 	if !ok {
 		return nil
 	}
+	return dotImportPaths(scanFileImports(sf))
+}
+
+// dotImportPaths is the paths of the dot imports among imports, in order.
+func dotImportPaths(imports []fileImport) []string {
 	var paths []string
-	for _, fi := range scanFileImports(sf) {
+	for _, fi := range imports {
 		if fi.IsDot {
 			paths = append(paths, fi.Path)
 		}
