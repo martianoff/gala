@@ -71,6 +71,21 @@ func newCollectionAnalyzer(tb testing.TB, p transpiler.GalaParser, searchPaths [
 	return a
 }
 
+// newCollectedFile starts a's collection of the file at path, of package
+// pkgName, into an empty RichAST, as analyze does before collecting a file.
+func newCollectedFile(a *galaAnalyzer, pkgName, path string, docs galaparser.Docs) *fileDecls {
+	richAST := &transpiler.RichAST{
+		Types:            make(map[string]*transpiler.TypeMetadata),
+		Functions:        make(map[string]*transpiler.FunctionMetadata),
+		Packages:         make(map[string]string),
+		CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
+	}
+	a.currentRichAST = richAST
+	a.currentOwnTypes = make(map[string]bool)
+	a.currentOwnMethods = make(map[string]map[string]bool)
+	return &fileDecls{richAST: richAST, pkgName: pkgName, filePath: path, absFilePath: path, docs: docs, decls: newPackageDecls(path)}
+}
+
 // analysis is what analyzing a file gives: the metadata, or the error, and
 // the tree its declarations were collected on (see collectTrace).
 type analysis struct {
@@ -384,6 +399,100 @@ func TestCollectionTakesCleanParses(t *testing.T) {
 	}
 	if !nativeFileOf(clean).ok() {
 		t.Fatal("a clean parse has no native tree")
+	}
+}
+
+// TestRecollectedTypeParams: collecting a file's types again reuses each
+// type's entry, and both twins give it the type parameters of the declaration
+// collected last, rather than appending them to the ones it holds.
+func TestRecollectedTypeParams(t *testing.T) {
+	parseWithGalop(t)
+	const generic = `package box
+
+type Box[T comparable] struct {
+    V T
+}
+
+struct Pair[A any, B comparable](a A, b B)
+`
+	type typeParams struct {
+		params      []string
+		constraints map[string]string
+	}
+	genericWant := map[string]typeParams{
+		"box.Box":  {[]string{"T"}, map[string]string{"T": "comparable"}},
+		"box.Pair": {[]string{"A", "B"}, map[string]string{"A": "any", "B": "comparable"}},
+	}
+	cases := []struct {
+		name  string
+		again string // the source collected the second time
+		want  map[string]typeParams
+	}{
+		{"same declarations", generic, genericWant},
+		{"edited declarations", `package box
+
+type Box[K any] struct {
+    V K
+}
+
+struct Pair(a int, b int)
+`, map[string]typeParams{
+			"box.Box":  {[]string{"K"}, map[string]string{"K": "any"}},
+			"box.Pair": {nil, nil},
+		}},
+	}
+	type collector func(*galaAnalyzer, *galaparser.Parsed, *fileDecls) error
+	collectors := map[string]collector{
+		"antlr": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
+			return a.collectFileTypes(p.Tree.(*grammar.SourceFileContext), fd)
+		},
+		"native": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
+			nf := nativeFileOf(p.CleanNative())
+			if !nf.ok() {
+				return fmt.Errorf("a clean parse has no native tree")
+			}
+			return a.collectFileTypesNative(nf, fd)
+		},
+	}
+	parse := func(t *testing.T, src string) *galaparser.Parsed {
+		parsed := galaparser.NewAntlrGalaParser().ParseFile(src)
+		if parsed.Err() != nil {
+			t.Fatal(parsed.Err())
+		}
+		return parsed
+	}
+	for _, c := range cases {
+		for name, collect := range collectors {
+			t.Run(c.name+"/"+name, func(t *testing.T) {
+				a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
+				dir := t.TempDir()
+				first := parse(t, generic)
+				fd := newCollectedFile(a, "box", filepath.Join(dir, "box.gala"), first.Docs)
+				if err := collect(a, first, fd); err != nil {
+					t.Fatalf("first collection: %v", err)
+				}
+				// The same file under another spelling: its types' entries
+				// are reused, not reported as redefined.
+				again := parse(t, c.again)
+				fd.filePath = dir + string(filepath.Separator) + "." + string(filepath.Separator) + "box.gala"
+				fd.docs = again.Docs
+				if err := collect(a, again, fd); err != nil {
+					t.Fatalf("second collection: %v", err)
+				}
+				for key, w := range c.want {
+					meta := fd.richAST.Types[key]
+					if meta == nil {
+						t.Fatalf("%s was not collected", key)
+					}
+					if !reflect.DeepEqual(meta.TypeParams, w.params) {
+						t.Errorf("%s: TypeParams = %v, want %v", key, meta.TypeParams, w.params)
+					}
+					if !reflect.DeepEqual(meta.TypeParamConstraints, w.constraints) {
+						t.Errorf("%s: TypeParamConstraints = %v, want %v", key, meta.TypeParamConstraints, w.constraints)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -757,24 +866,12 @@ func BenchmarkCollect(b *testing.B) {
 		}
 	}
 	a := newCollectionAnalyzer(b, galaparser.NewAntlrGalaParser(), searchPaths)
-	newFile := func(s source) *fileDecls {
-		richAST := &transpiler.RichAST{
-			Types:            make(map[string]*transpiler.TypeMetadata),
-			Functions:        make(map[string]*transpiler.FunctionMetadata),
-			Packages:         make(map[string]string),
-			CompanionObjects: make(map[string]*transpiler.CompanionObjectMetadata),
-		}
-		a.currentRichAST = richAST
-		a.currentOwnTypes = make(map[string]bool)
-		a.currentOwnMethods = make(map[string]map[string]bool)
-		return &fileDecls{richAST: richAST, pkgName: s.pkgName, filePath: s.path, absFilePath: s.path, docs: s.parsed.Docs, decls: newPackageDecls(s.path)}
-	}
 	for _, mode := range []string{"antlr", "native"} {
 		b.Run(mode+"/file", func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				for _, s := range sources {
-					fd := newFile(s)
+					fd := newCollectedFile(a, s.pkgName, s.path, s.parsed.Docs)
 					sf := s.parsed.Tree.(*grammar.SourceFileContext)
 					if mode == "native" {
 						nf := nativeFileOf(s.parsed.Native)
