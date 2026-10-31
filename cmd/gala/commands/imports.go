@@ -81,12 +81,17 @@ func runImports(cmd *cobra.Command, args []string) error {
 // extractImports parses a single file and returns its package name and imports.
 // A parse failure is reported in the Error field with an empty Imports slice.
 func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
+	return importsOfParse(file, p.ParseFile(src))
+}
+
+// importsOfParse is extractImports of parsed, a parse of file.
+func importsOfParse(file string, parsed *parser.Parsed) fileImports {
 	result := fileImports{
 		File:    file,
 		Imports: []importInfo{},
 	}
 
-	tree, _, err := p.ParseFile(src).Strict()
+	tree, _, err := parsed.Strict()
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -97,16 +102,23 @@ func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
 		result.Error = "unexpected parse tree type"
 		return result
 	}
+	result.Package, result.Imports = importsOf(sourceFile, result.Imports)
+	return result
+}
 
-	if pkg := sourceFile.PackageClause(); pkg != nil {
+// importsOf is the package name of sf and its imports, appended to imports,
+// on ANTLR's tree.
+func importsOf(sf grammar.ISourceFileContext, imports []importInfo) (string, []importInfo) {
+	var pkgName string
+	if pkg := sf.PackageClause(); pkg != nil {
 		if pkgCtx, ok := pkg.(*grammar.PackageClauseContext); ok {
 			if ident := pkgCtx.Identifier(); ident != nil {
-				result.Package = ident.GetText()
+				pkgName = ident.GetText()
 			}
 		}
 	}
 
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
+	for _, impDecl := range sf.AllImportDeclaration() {
 		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
 		if !ok {
 			continue
@@ -116,24 +128,35 @@ func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
 			if !ok {
 				continue
 			}
-			info := importInfo{
-				Path: strings.Trim(s.STRING().GetText(), "\""),
-			}
+			var alias *string
 			if aliasIdent := s.Identifier(); aliasIdent != nil {
-				// Named alias (e.g. import m "math"). A "." identifier is not
-				// produced here — dot imports have no Identifier child.
-				if alias := aliasIdent.GetText(); alias != "." {
-					info.Alias = alias
-				}
-			} else if s.GetChildCount() > 1 {
-				// Dot import: no identifier, but an extra child — the '.' terminal.
-				info.Dot = true
+				text := aliasIdent.GetText()
+				alias = &text
 			}
-			result.Imports = append(result.Imports, info)
+			imports = append(imports, importOf(s.STRING().GetText(), alias, s.GetChildCount()))
 		}
 	}
+	return pkgName, imports
+}
 
-	return result
+// importOf is the import of an import spec whose path string literal is str,
+// whose alias identifier's text is *alias (nil when it has none), and which
+// has kids children.
+func importOf(str string, alias *string, kids int) importInfo {
+	info := importInfo{
+		Path: strings.Trim(str, "\""),
+	}
+	if alias != nil {
+		// Named alias (e.g. import m "math"). A "." identifier is not
+		// produced here — dot imports have no Identifier child.
+		if *alias != "." {
+			info.Alias = *alias
+		}
+	} else if kids > 1 {
+		// Dot import: no identifier, but an extra child — the '.' terminal.
+		info.Dot = true
+	}
+	return info
 }
 
 func init() {
