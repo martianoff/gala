@@ -29,6 +29,7 @@ type walkRun struct {
 	out       string
 	err       error
 	native    int
+	stmts     int // the statements the native walk lowered, each counted once
 	converted bool
 }
 
@@ -45,12 +46,15 @@ func (w *walkPipeline) transpile(path, src string) walkRun {
 	tr := transformer.NewGalaASTTransformer()
 	var run walkRun
 	transformer.OnNativeDecl(tr, func() { run.native++ })
+	stmts := map[int]bool{}
+	transformer.OnNativeStmt(tr, func(index int) { stmts[index] = true })
 	if w.antlrOnly {
 		tr = withoutNative{tr}
 	}
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
 	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
+	run.stmts = len(stmts)
 	return run
 }
 
@@ -105,37 +109,91 @@ func walkCorpus(tb testing.TB) ([]string, []string) {
 	return paths, []string{filepath.Dir(filepath.Dir(stdFile))}
 }
 
-// topLevelDecls counts the top-level declarations of src's ANTLR tree, or -1
-// when src does not parse cleanly with galop (no native tree to walk).
-func topLevelDecls(src string) int {
+// treeCounts is what the native walk of a file must lower, counted on its
+// ANTLR tree: its top-level declarations, and the statements of its
+// top-level functions' bodies (bodyStatements).
+type treeCounts struct{ decls, stmts int }
+
+// countTree counts src's ANTLR tree, and false when src does not parse
+// cleanly with galop (no native tree to walk).
+func countTree(src string) (treeCounts, bool) {
 	parsed := transpiler.NewAntlrGalaParser().ParseFile(src)
 	if parsed.CleanNative() == nil {
-		return -1
+		return treeCounts{}, false
 	}
-	return len(parsed.Tree.(*grammar.SourceFileContext).AllTopLevelDeclaration())
+	sf := parsed.Tree.(*grammar.SourceFileContext)
+	return treeCounts{decls: len(sf.AllTopLevelDeclaration()), stmts: bodyStatements(sf)}, true
+}
+
+// bodyStatements counts the statements the native walk lowers in sf's
+// top-level function bodies: each statement of a body, and of the if and for
+// blocks in it, up to and including a block's first `bind`, whose chain
+// lowers the statements after it on ANTLR's tree. A block below an
+// expression (a lambda's, a match arm's) is lowered on ANTLR's tree too.
+func bodyStatements(sf *grammar.SourceFileContext) int {
+	n := 0
+	var block func(grammar.IBlockContext)
+	var ifBlocks func(grammar.IIfStatementContext)
+	block = func(b grammar.IBlockContext) {
+		if b == nil {
+			return
+		}
+		for _, s := range b.AllStatement() {
+			n++
+			d := s.Declaration()
+			switch {
+			case d == nil:
+			case d.BindDeclaration() != nil:
+				return
+			case d.IfStatement() != nil:
+				ifBlocks(d.IfStatement())
+			case d.ForStatement() != nil:
+				block(d.ForStatement().Block())
+			}
+		}
+	}
+	ifBlocks = func(s grammar.IIfStatementContext) {
+		for _, b := range s.AllBlock() {
+			block(b)
+		}
+		if elseIf := s.IfStatement(); elseIf != nil {
+			ifBlocks(elseIf)
+		}
+	}
+	for _, td := range sf.AllTopLevelDeclaration() {
+		if fd := td.FunctionDeclaration(); fd != nil {
+			block(fd.Block())
+		}
+	}
+	return n
 }
 
 // checkWalksAgree fails tb unless the native and the ANTLR walk of path give
 // the same Go, or the same error, and each walk took the tree it should: the
-// native walk lowered every top-level declaration of the file (each one up to
-// the failing one, on an error) when the analysis converted its native tree,
-// and none when it did not, and the ANTLR walk none.
+// native walk lowered every top-level declaration of the file and every
+// statement of its function bodies (each one up to the failing one, on an
+// error) when the analysis converted its native tree, and none when it did
+// not, and the ANTLR walk none.
 func checkWalksAgree(tb testing.TB, nativeW, antlrW *walkPipeline, path, src string) (native walkRun, ok bool) {
 	tb.Helper()
-	want := topLevelDecls(src)
-	if want < 0 {
+	want, ok := countTree(src)
+	if !ok {
 		return walkRun{}, false
 	}
 	n := nativeW.transpile(path, src)
 	a := antlrW.transpile(path, src)
 	assert.Zerof(tb, a.native, "%s: the ANTLR walk lowered declarations on the native tree", path)
+	assert.Zerof(tb, a.stmts, "%s: the ANTLR walk lowered statements on the native tree", path)
 	switch {
 	case !n.converted:
 		assert.Zerof(tb, n.native, "%s: the native walk lowered declarations on a tree the analysis did not convert", path)
+		assert.Zerof(tb, n.stmts, "%s: the native walk lowered statements on a tree the analysis did not convert", path)
 	case n.err == nil:
-		assert.Equalf(tb, want, n.native, "%s: top-level declarations the native walk lowered", path)
+		assert.Equalf(tb, want.decls, n.native, "%s: top-level declarations the native walk lowered", path)
+		assert.Equalf(tb, want.stmts, n.stmts, "%s: body statements the native walk lowered", path)
 	default:
-		assert.LessOrEqualf(tb, n.native, want, "%s: the native walk lowered more declarations than there are (error: %v)", path, n.err)
+		assert.LessOrEqualf(tb, n.native, want.decls, "%s: the native walk lowered more declarations than there are (error: %v)", path, n.err)
+		assert.LessOrEqualf(tb, n.stmts, want.stmts, "%s: the native walk lowered more statements than there are (error: %v)", path, n.err)
 	}
 	if n.out != a.out {
 		assert.Failf(tb, "the walks' Go differs", "%s: the native walk's Go differs from the ANTLR walk's at %s", path, firstLineDiff(n.out, a.out))
@@ -163,9 +221,10 @@ func firstLineDiff(x, y string) string {
 }
 
 // TestNativeWalkAgrees holds the transformer's walk of the compiled file's
-// top-level declarations on its native tree to its walk on ANTLR's: every
-// GALA source staged as data, transpiled as the CLI transpiles a file, gives
-// byte-identical Go, or the same error, both ways. Each file's walk must have
+// top-level declarations and function-body statements on its native tree to
+// its walk on ANTLR's: every GALA source staged as data, transpiled as the
+// CLI transpiles a file, gives byte-identical Go, or the same error, both
+// ways. Each file's walk must have
 // taken the tree it should (checkWalksAgree), and most must have taken the
 // native one, so a bridge or converter that fails quietly cannot turn the
 // comparison into ANTLR's against ANTLR's.
@@ -174,7 +233,7 @@ func TestNativeWalkAgrees(t *testing.T) {
 	t.Cleanup(func() { galaparser.RequestEngine("") })
 	paths, searchPaths := walkCorpus(t)
 	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
-	files, clean, walked, decls := 0, 0, 0, 0
+	files, clean, walked, decls, stmts := 0, 0, 0, 0, 0
 	for _, path := range paths {
 		src, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -184,6 +243,7 @@ func TestNativeWalkAgrees(t *testing.T) {
 		}
 		files++
 		decls += n.native
+		stmts += n.stmts
 		if n.err == nil {
 			clean++
 		}
@@ -193,9 +253,9 @@ func TestNativeWalkAgrees(t *testing.T) {
 	}
 	// Floors catch the sources not being staged or the native walk going
 	// unused.
-	require.Truef(t, files >= 200 && clean >= files*3/4 && walked >= files*3/4 && decls >= files,
-		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
-	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations lowered there", files, clean, walked, decls)
+	require.Truef(t, files >= 200 && clean >= files*3/4 && walked >= files*3/4 && decls >= files && stmts >= files,
+		"%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations and %d body statements lowered there", files, clean, walked, decls, stmts)
+	t.Logf("%d sources, %d of them transpiled, %d walked on the native tree, %d top-level declarations and %d body statements lowered there", files, clean, walked, decls, stmts)
 }
 
 // walkCases cover every top-level declaration shape the native walk reads,
@@ -317,7 +377,136 @@ func main() {
 	{"dot import", "package main\n\nimport . \"strings\"\n\nfunc main() = Println(ToUpper(\"a\"))\n"},
 	{"no declarations", "package main\n"},
 	{"exported pointer params", "package main\n\nstruct P(x int)\n\nfunc (p *P) Get(q *P) int = p.x + q.x\n\nfunc Use(p Ptr[P]) int = 1\n"},
+	{statementShapes, `package main
+
+import "strconv"
+
+type Handle struct {
+	name string
 }
+
+func (h Handle) Close() error {
+	return nil
+}
+
+func open(name string) Handle = Handle(name = name)
+
+struct Cell(var n int, label string)
+
+func look(x int) Option[int] = if (x > 0) Some(x) else None[int]()
+
+// Monad binds in a body: the statements after the bind are its chain's.
+func both(x int, y int) Option[int] {
+	val base = 1
+	bind a = look(x)
+	also b = look(y)
+	Some(a + b + base)
+}
+
+func sign(x int) string {
+	if x > 0 {
+		return "plus"
+	} else if x < 0 {
+		"minus"
+	} else {
+		"zéro"
+	}
+}
+
+func early(x int) int {
+	if x > 9 {
+		return 9
+	}
+	x * 2
+}
+
+func loops() int {
+	var total = 0
+	for i := 0; i < 3; i++ {
+		total += i
+	}
+	var j = 0
+	for ; j < 3; j = j + 1 {
+		total -= j
+	}
+	for total < 100 {
+		total *= 2
+	}
+	for {
+		total /= 2
+		if total < 10 {
+			break
+		}
+		continue
+	}
+	for k, v := range "ünï" {
+		total = total + k + int(v)
+	}
+	var key = 0
+	for key = range "ab" {
+		total++
+	}
+	total--
+	total
+}
+
+func locals() {
+	val (p, q) = (1, "ü")
+	var (m, n) = (2, 3)
+	var cell = Cell(1, "c")
+	cell.n = 2
+	m, n = n, m
+	val a, b = 1, 2
+	val parsed, err = strconv.Atoi("12")
+	use h = open("h")
+	Println(p, q, m, n, cell, a, b, parsed, err, h.name, key())
+	val x = 3
+	x match {
+		case 3 => Println("three")
+		case _ => Println("other")
+	}
+	if (x > 2) Println("big") else Println("small")
+	return
+}
+
+func key() int = 1
+
+func main() {
+	Println(both(1, 2), sign(1), early(3), loops())
+	locals()
+}
+`},
+	{"also without a bind", "package main\n\nfunc f() Option[int] {\n\t/* ü */ also x = Some(1)\n\tSome(x)\n}\n"},
+	{"bind in a loop body", "package main\n\nfunc f() Option[int] {\n\tfor {\n\t\t/* ü */ bind x = Some(1)\n\t}\n\tSome(1)\n}\n"},
+	{"bind without a monad", "package main\n\nfunc f() {\n\t/* ü */ bind x = Some(1)\n\tSome(x)\n}\n"},
+	{"nested function", "package main\n\nfunc f() {\n\t/* ü */ func gee(x int) int = x\n}\n"},
+	{"nested method", "package main\n\nstruct P(x int)\n\nfunc f() {\n\t/* ü */ func (p P) G() int = 1\n}\n"},
+	{"if initializer", "package main\n\nfunc f(x int) {\n\t/* ü */ if y := x; y > 0 {\n\t\tPrintln(y)\n\t}\n}\n"},
+	{"assign to a val", "package main\n\nfunc f() {\n\tval x = 1\n\t/* ü */ x = 2\n}\n"},
+	{"assign to a parameter", "package main\n\nfunc f(x int) {\n\t/* ü */ x += 2\n}\n"},
+	{"assign to a receiver", "package main\n\nstruct P(x int)\n\nfunc (p P) M() {\n\t/* ü */ p = P(1)\n}\n"},
+	{"assign to an immutable field", "package main\n\nstruct P(x int)\n\nfunc f() {\n\tvar p = P(1)\n\t/* ü */ p.x = 2\n}\n"},
+	{"assign to an if-expression", "package main\n\nfunc f(c bool) {\n\tvar x = 1\n\t/* ü */ if (c) Println(x) else x = 2\n}\n"},
+	{"increment a val", "package main\n\nfunc f() {\n\tval x = 1\n\t/* ü */ x++\n}\n"},
+	{"range assigns a val", "package main\n\nfunc f() {\n\tval k = 0\n\t/* ü */ for k = range \"ab\" {\n\t\tPrintln(k)\n\t}\n}\n"},
+	{"for post binds two names", "package main\n\nimport \"strconv\"\n\nfunc f() {\n\tfor i := 0; i < 3; /* ü */ a, b := strconv.Atoi(\"1\") {\n\t\tPrintln(i)\n\t}\n}\n"},
+	{"blank short var", "package main\n\nfunc f() {\n\t/* ü */ _ := 1 /* ü */ + 2\n}\n"},
+	{"blank local val", "package main\n\nfunc f() {\n\t/* ü */ val _ = \"äöü\"\n}\n"},
+	{"blank local var in a lambda body", "package main\n\nfunc f() {\n\tval g = () => {\n\t\t/* ü */ var _ int = 1\n\t}\n\tg()\n}\n"},
+	{"short var mismatch", "package main\n\nfunc f() {\n\t/* ü */ a, b := 1, 2, 3\n}\n"},
+	{"short var of one value", "package main\n\nfunc f() {\n\t/* ü */ a, b := 1\n}\n"},
+	{"short var None", "package main\n\nfunc f() {\n\t/* ü */ x := None()\n}\n"},
+	{"forbidden keyword", "package main\n\nfunc f() {\n\t/* ü */ defer\n}\n"},
+	{"value not used", "package main\n\nfunc f() {\n\tval x = 1\n\t/* ü */ x\n\tPrintln(x)\n}\n"},
+	{"tail with no value", "package main\n\nfunc f() int {\n\t/* ü */ Println(\"ü\")\n}\n"},
+	{"missing return in a branch", "package main\n\nfunc f(x int) int {\n\tif x > 0 {\n\t\t/* ü */ Println(x)\n\t} else {\n\t\treturn 1\n\t}\n}\n"},
+	{"body ends in an if without else", "package main\n\nfunc f(x int) int {\n\tPrintln(\"ü\")\n\t/* ü */ if x > 0 {\n\t\treturn 1\n\t}\n}\n"},
+	{"empty body with a result", "package main\n\nfunc f() int {\n/* ü */ }\n"},
+}
+
+// statementShapes is the walkCases program that has every statement shape
+// the native walk lowers, and must transpile.
+const statementShapes = "statement shapes"
 
 // TestNativeWalkCases is TestNativeWalkAgrees over walkCases.
 func TestNativeWalkCases(t *testing.T) {
@@ -333,13 +522,13 @@ func TestNativeWalkCases(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
 			n, ok := checkWalksAgree(t, nativeW, antlrW, path, c.src)
 			require.True(t, ok, "the case does not parse cleanly with galop")
-			// The first case is a program that transpiles, so every
-			// declaration shape in it is lowered to the end.
-			if c.name == walkCases[0].name {
+			// The first case and statementShapes are programs that
+			// transpile, so every shape in them is lowered to the end.
+			if c.name == walkCases[0].name || c.name == statementShapes {
 				require.NoError(t, n.err, "the case does not transpile")
 			}
 			require.Truef(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's; error: %v", n.err)
-			t.Logf("the native walk lowered %d declarations; error: %v", n.native, n.err)
+			t.Logf("the native walk lowered %d declarations and %d statements; error: %v", n.native, n.stmts, n.err)
 		})
 	}
 }
