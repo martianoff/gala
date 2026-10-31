@@ -523,7 +523,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 					seenSpecs[methodName] = true
 					if tps, cons := nativeTypeParamsOf(msCtx.TypeParameters()); len(tps) > 0 {
 						pos := nativePos(msID.GalaNodeRef)
-						return genericInterfaceMethodError(pos.Line, pos.Column, typeName, meta.TypeParams, meta.TypeParamConstraints, methodName, tps, cons)
+						return genericInterfaceMethodError(pos.Line, pos.Column, meta, methodName, tps, cons)
 					}
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
@@ -531,12 +531,10 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						Doc:       nativeDocAt(docs, msNode),
 						DefinedIn: filePath,
 					}
-					// The spec declares no type parameters of its own (GALA-E0086).
-					allTypeParams := meta.TypeParams
 					sig := msCtx.Signature()
-					methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, allTypeParams)
+					methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)
 					// An interface method records its parameters' types only.
-					params := a.nativeParamsOf(sig.Parameters(), pkgName, allTypeParams)
+					params := a.nativeParamsOf(sig.Parameters(), pkgName, meta.TypeParams)
 					methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
 					meta.Methods[methodName] = methodMeta
 				}

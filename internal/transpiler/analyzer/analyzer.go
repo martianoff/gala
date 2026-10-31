@@ -3805,7 +3805,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 					// interface does not fail first with a consequence of it.
 					if tps, cons := typeParamsOf(msCtx.TypeParameters()); len(tps) > 0 {
 						id := msCtx.Identifier().GetStart()
-						return galaerr.WithFilePath(genericInterfaceMethodError(id.GetLine(), id.GetColumn(), typeName, meta.TypeParams, meta.TypeParamConstraints, methodName, tps, cons), sibDisplay)
+						return galaerr.WithFilePath(genericInterfaceMethodError(id.GetLine(), id.GetColumn(), meta, methodName, tps, cons), sibDisplay)
 					}
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
@@ -3814,15 +3814,14 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 						Pos:       transpiler.PosFromToken(msCtx.Identifier().GetStart()),
 						DefinedIn: absSibPath,
 					}
-					allTypeParams := meta.TypeParams
-					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, allTypeParams)
+					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, meta.TypeParams)
 					if msCtx.Signature().Parameters() != nil {
 						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
 						if pList := pCtx.ParameterList(); pList != nil {
 							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, meta.TypeParams))
 									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
