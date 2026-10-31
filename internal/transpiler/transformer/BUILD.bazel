@@ -258,6 +258,7 @@ go_test(
         "package_val_inferred_type_test.go",
         "panic_audit_test.go",
         "partial_ctor_type_args_test.go",
+        "partial_type_params_test.go",
         "phantom_reexport_funconly_test.go",
         "placeholder_field_immutable_test.go",
         "placeholder_void_context_test.go",
@@ -432,6 +433,7 @@ go_test(
         "//internal/transpiler/generator",
         "//internal/transpiler/genheader",
         "//internal/transpiler/gooracle",
+        "@com_github_antlr4_go_antlr_v4//:antlr",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@rules_go//go/tools/bazel",
@@ -444,7 +446,8 @@ go_test(
 # transpiles each twice. Gazelle leaves its files out of transformer_test (the exclude
 # directives) and keeps this rule as written. TestNativeTypeCases
 # (native_types_test.go) holds the native lowering of types and of sealed and
-# opaque declarations to the ANTLR one over its own cases, in seconds.
+# opaque declarations to the ANTLR one over its own cases; run it alone, in
+# seconds, with --test_filter=TestNativeTypeCases.
 # gazelle:exclude native_walk_test.go
 # gazelle:exclude native_walk_export_test.go
 # gazelle:exclude native_types_test.go
