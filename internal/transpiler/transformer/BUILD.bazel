@@ -163,6 +163,7 @@ go_test(
         "default_values_test.go",
         "doc_comments_test.go",
         "dot_import_generic_namedarg_test.go",
+        "dot_import_prelude_ambiguity_test.go",
         "dot_import_prune_test.go",
         "dot_import_test.go",
         "equal_test.go",

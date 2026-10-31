@@ -139,7 +139,10 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// has a primary with identifier `Foo`, but it's not a simple binding.
 	// Also handles generic patterns with explicit type arguments like Unwrap[int](v).
 	if primaryExprCtx, argList, explicitTypeArgs := t.getCallPatternWithTypeArgsFromExpression(patExprCtx); primaryExprCtx != nil {
+		// An extractor names a type or companion, never a function.
+		t.typeNameDepth++
 		patternExpr, err := t.transformPrimaryExpr(primaryExprCtx)
+		t.typeNameDepth--
 		if err != nil {
 			return nil, nil, err
 		}
@@ -161,10 +164,47 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		return t.transformConstructorCallPattern(rawName, argList, explicitTypeArgs, objExpr, matchedType, patExprCtx)
 	}
 
+	// `case shapes.Square` is `case shapes.Square()`, as the unqualified
+	// spelling is.
+	if rawName := t.qualifiedZeroFieldCase(patExprCtx); rawName != "" {
+		return t.transformConstructorCallPattern(rawName, nil, nil, objExpr, matchedType, patExprCtx)
+	}
+
 	// Simple Binding - bind variable with the matched type
 	// This check comes after the extractor check because extractors like `Foo(x)` have a primary
 	// with an identifier, but they're not simple bindings.
 	return t.transformSimpleBindingOrLiteral(patExprCtx, objExpr, matchedType)
+}
+
+// qualifiedZeroFieldCase returns the name a pattern `pkg.Name` resolves to —
+// "shapes.Square", with an import alias resolved — when pkg is an imported
+// package and Name a zero-field sealed variant it declares and exports. It
+// returns "" for anything else, such as a qualified constant (`math.MaxInt8`),
+// which is compared by ==.
+func (t *galaASTTransformer) qualifiedZeroFieldCase(ctx grammar.IExpressionContext) string {
+	postfix := t.getSinglePostfixExpr(ctx)
+	if postfix == nil || len(postfix.AllPostfixSuffix()) != 1 || postfix.CaseClause(0) != nil {
+		return ""
+	}
+	member := postfix.PostfixSuffix(0).(*grammar.PostfixSuffixContext)
+	primary := PrimaryOf(postfix)
+	if suffixOpener(member) != "." || member.Identifier() == nil || primary == nil || primary.Identifier() == nil {
+		return ""
+	}
+	pkg, name := primary.Identifier().GetText(), member.Identifier().GetText()
+	if !token.IsExported(name) || t.bindingScope(pkg) != nil || !t.importManager.IsPackage(pkg) {
+		return ""
+	}
+	parent := t.findSealedParentForVariant(name, pkg)
+	if parent == nil {
+		return ""
+	}
+	for _, v := range parent.SealedVariants {
+		if v.Name == name && len(v.FieldNames) == 0 {
+			return parent.Package + "." + name
+		}
+	}
+	return ""
 }
 
 // transformConstructorCallPattern lowers a call-shaped pattern whose constructor
@@ -417,16 +457,33 @@ func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.T
 
 // bareExtractor returns the zero-field extractor (see zeroFieldExtractor) a
 // bare pattern name lowers to when it is not a variant of the matched type:
-// a standalone guard extractor, or — when the subject's type is unknown — any
-// zero-field variant, whose Unapply then decides. A zero-field variant of a
-// sealed type other than the known matched type is not one: the name binds.
+// a standalone guard extractor, or a zero-field variant whose Unapply then
+// decides, when the subject's type is unknown or may hold any variant (see
+// mayHoldVariant). A zero-field variant of a sealed type other than a known,
+// concrete matched type is not one: the name binds.
 func (t *galaASTTransformer) bareExtractor(name string, matchedType transpiler.Type) (*transpiler.TypeMetadata, *transpiler.MethodMetadata) {
 	meta, unapplyMeta := t.zeroFieldExtractor(name)
 	if meta == nil || !t.visibleHere(name, meta) ||
-		(!transpiler.IsUnusable(matchedType) && t.findSealedParentForVariant(name, "") != nil) {
+		(!transpiler.IsUnusable(matchedType) && !t.mayHoldVariant(name, matchedType) &&
+			t.findSealedParentForVariant(name, "") != nil) {
 		return nil, nil
 	}
 	return meta, unapplyMeta
+}
+
+// mayHoldVariant reports whether a bare exported name of a zero-field variant
+// of a non-generic sealed type (see zeroFieldExtractor) tests a subject of matchedType for that variant, as it does on a subject of
+// the variant's sealed type: the subject is an interface (`any` included) or a
+// type parameter, so it may hold the variant. The pattern then asserts the
+// subject to the sealed type before Unapply runs (see assertedUnapplyPattern),
+// and a value of another type falls through. An unexported name still binds:
+// on a subject that is not the variant's own sealed type, a lowercase name is
+// a binding.
+func (t *galaASTTransformer) mayHoldVariant(name string, matchedType transpiler.Type) bool {
+	if !token.IsExported(name) {
+		return false
+	}
+	return t.holdsAnyType(matchedType)
 }
 
 // visibleHere reports whether name, a variant or type that meta's package

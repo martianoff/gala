@@ -181,6 +181,13 @@ func (t *galaASTTransformer) generateOpaquePattern(
 	return combineStructMatchConds(conds, stmts)
 }
 
+// holdsAnyType reports whether a match subject of type typ (usable) may hold
+// a value of a type other than its own: it is an interface (`any` included)
+// or a type parameter in scope.
+func (t *galaASTTransformer) holdsAnyType(typ transpiler.Type) bool {
+	return t.isTypeParamSubject(t.followAliasChain(typ)) || t.isInterfaceType(typ)
+}
+
 // isTypeParamSubject reports whether a match subject's type is a type
 // parameter in scope, whose values may be of any type.
 func (t *galaASTTransformer) isTypeParamSubject(typ transpiler.Type) bool {

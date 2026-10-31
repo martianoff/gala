@@ -1824,6 +1824,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "match_any_bare_sealed_case",
+    src = "match_any_bare_sealed_case.gala",
+    expected = "match_any_bare_sealed_case.out",
+)
+
+gala_exec_test(
     name = "match_any_sealed_case",
     src = "match_any_sealed_case.gala",
     expected = "match_any_sealed_case.out",
@@ -2197,6 +2203,15 @@ gala_exec_test(
     name = "use_std_shadow_lib",
     src = "use_std_shadow_lib.gala",
     expected = "use_std_shadow_lib.out",
+    deps = [":std_shadow_lib"],
+)
+
+# A function named like a std type, reached through a named import, beside
+# std's type reached as `std.Name` — the two spellings GALA-E0087 suggests.
+gala_exec_test(
+    name = "std_type_qualified",
+    src = "std_type_qualified.gala",
+    expected = "std_type_qualified.out",
     deps = [":std_shadow_lib"],
 )
 

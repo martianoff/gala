@@ -101,6 +101,7 @@ rather than inventing an example — trust the notice at the top of the page.
 | `GALA-E0084` | Values that cannot be compared with == | [GALA-E0084.md](GALA-E0084.md) |
 | `GALA-E0085` | Struct tag on a field | [GALA-E0085.md](GALA-E0085.md) |
 | `GALA-E0086` | Type parameter on an interface method | [GALA-E0086.md](GALA-E0086.md) |
+| `GALA-E0087` | Name is both a std type and a dot-imported value | [GALA-E0087.md](GALA-E0087.md) |
 
 ### Retired codes
 

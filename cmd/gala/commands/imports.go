@@ -8,6 +8,7 @@ import (
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 
 	"github.com/spf13/cobra"
 )
@@ -81,32 +82,55 @@ func runImports(cmd *cobra.Command, args []string) error {
 // extractImports parses a single file and returns its package name and imports.
 // A parse failure is reported in the Error field with an empty Imports slice.
 func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
-	result := fileImports{
+	result, _ := importsOfParse(file, p.ParseFile(src))
+	return result
+}
+
+// importsOfParse is extractImports of parsed, a parse of file. It reads the
+// native tree only when the parse has one that has converted already, which
+// a parse here never has until the parse itself is native: the package clause
+// and the imports are a few nodes at the top of the file, which ANTLR's tree
+// gives for less than a conversion of the whole file costs. onNative says
+// which tree it read.
+func importsOfParse(file string, parsed *parser.Parsed) (result fileImports, onNative bool) {
+	result = fileImports{
 		File:    file,
 		Imports: []importInfo{},
 	}
 
-	tree, _, err := p.ParseFile(src).Strict()
+	tree, _, err := parsed.Strict()
 	if err != nil {
 		result.Error = err.Error()
-		return result
+		return result, false
+	}
+
+	if root, ok := parsed.CleanNative().ConvertedRoot(); ok {
+		result.Package, result.Imports = importsOfNative(native.SourceFileNode{GalaNodeRef: root})
+		return result, true
 	}
 
 	sourceFile, ok := tree.(grammar.ISourceFileContext)
 	if !ok {
 		result.Error = "unexpected parse tree type"
-		return result
+		return result, false
 	}
+	result.Package, result.Imports = importsOf(sourceFile)
+	return result, false
+}
 
-	if pkg := sourceFile.PackageClause(); pkg != nil {
+// importsOf is the package name of sf and its imports, on ANTLR's tree.
+func importsOf(sf grammar.ISourceFileContext) (string, []importInfo) {
+	var pkgName string
+	if pkg := sf.PackageClause(); pkg != nil {
 		if pkgCtx, ok := pkg.(*grammar.PackageClauseContext); ok {
 			if ident := pkgCtx.Identifier(); ident != nil {
-				result.Package = ident.GetText()
+				pkgName = ident.GetText()
 			}
 		}
 	}
 
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
+	imports := []importInfo{}
+	for _, impDecl := range sf.AllImportDeclaration() {
 		ctx, ok := impDecl.(*grammar.ImportDeclarationContext)
 		if !ok {
 			continue
@@ -116,24 +140,52 @@ func extractImports(p *parser.AntlrGalaParser, file, src string) fileImports {
 			if !ok {
 				continue
 			}
-			info := importInfo{
-				Path: strings.Trim(s.STRING().GetText(), "\""),
-			}
+			var alias string
 			if aliasIdent := s.Identifier(); aliasIdent != nil {
-				// Named alias (e.g. import m "math"). A "." identifier is not
-				// produced here — dot imports have no Identifier child.
-				if alias := aliasIdent.GetText(); alias != "." {
-					info.Alias = alias
-				}
-			} else if s.GetChildCount() > 1 {
-				// Dot import: no identifier, but an extra child — the '.' terminal.
-				info.Dot = true
+				alias = aliasIdent.GetText()
 			}
-			result.Imports = append(result.Imports, info)
+			imports = append(imports, importOf(s.STRING().GetText(), alias, s.GetChildCount()))
+		}
+	}
+	return pkgName, imports
+}
+
+// importsOfNative is importsOf on the native tree.
+func importsOfNative(sf native.SourceFileNode) (string, []importInfo) {
+	var pkgName string
+	if pc := sf.PackageClause(); pc.Ok() {
+		if ident := pc.Identifier(); ident.Ok() {
+			pkgName = ident.GetText()
 		}
 	}
 
-	return result
+	imports := []importInfo{}
+	for decl := range parser.NativeKids(sf.GalaNodeRef, native.GalaKIND_importDeclaration) {
+		for spec := range parser.NativeKids(decl, native.GalaKIND_importSpec) {
+			s := native.ImportSpecNode{GalaNodeRef: spec}
+			var alias string
+			if aliasIdent := s.Identifier(); aliasIdent.Ok() {
+				alias = aliasIdent.GetText()
+			}
+			imports = append(imports, importOf(s.STRING().GetText(), alias, spec.ChildCount()))
+		}
+	}
+	return pkgName, imports
+}
+
+// importOf is the import of an import spec whose path string literal is str,
+// whose alias identifier's text is alias ("" when it has none: an
+// identifier's text is never empty), and which has kids children.
+func importOf(str, alias string, kids int) importInfo {
+	info := importInfo{
+		Path:  strings.Trim(str, "\""),
+		Alias: alias, // e.g. import m "math"
+	}
+	if alias == "" && kids > 1 {
+		// Dot import: no identifier, but an extra child — the '.' terminal.
+		info.Dot = true
+	}
+	return info
 }
 
 func init() {

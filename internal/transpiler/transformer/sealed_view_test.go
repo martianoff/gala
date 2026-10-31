@@ -64,6 +64,15 @@ func TestSealedViewMatchLowering(t *testing.T) {
 			wantViews: 1,
 		},
 		{
+			name: "qualified bare zero-field variant is the variant",
+			body: `func f(m MaybeInt) string = m match {
+    case std.None => "none"
+    case Some(n)  => s"some $n"
+}`,
+			want:      []string{"obj := m.MatchView()", "std.None[_T0]{}.Unapply(v)"},
+			wantViews: 1,
+		},
+		{
 			name: "user sealed view with alternatives",
 			body: `func f(g Gauge) string = g match {
     case Low() | High(_) => "any"

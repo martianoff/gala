@@ -961,6 +961,21 @@ func describe(err error) string = err match {
 
 A struct the interface can never hold — one missing a method of the interface, or declaring it with a pointer receiver — is a compile error rather than an arm that never matches. A generic struct names its type arguments, `case Box[int](v)`, since Go can only check for one instantiation.
 
+A sealed variant or an extractor works the same way: the arm first checks that the value holds the type its `Unapply` takes. A zero-field variant of a non-generic sealed type needs no parentheses here either — `case Square` is `case Square()`, at the top level, nested (`case Wrap(Square)`) or with a guard, also when it is qualified (`case shapes.Square`) or dot-imported. A lowercase variant name still binds on such a subject.
+
+```gala
+sealed type Shape {
+    case Circle(R int)
+    case Square()
+}
+
+func describe(v any) string = v match {
+    case Circle(r) => s"circle $r"
+    case Square    => "square"
+    case _         => "something else"
+}
+```
+
 #### Extractors and Unapply
 ```gala
 type Even struct {}
@@ -1633,6 +1648,8 @@ func main() {
 A few std names are reserved and cannot be redeclared, because the language gives them built-in meaning: `Option`, `Either`, `Try`, `Immutable`, `Tuple`…`Tuple10`, `Traversable`, `Iterable`, `Sendable`, `Ptr`, `EmbeddedFS`, the companions `Some`, `None`, `Left`, `Right`, `Success`, `Failure`, and helpers such as `Copy` and `Equal`. A `type`, `struct` or top-level function under one of them is an error, and a sealed variant named like a companion draws a warning.
 
 A package-level declaration whose name a dot-imported package also exports is rejected with [GALA-E0066](/docs/errors/gala-e0066/), because Go forbids it; import that package under a name, or rename the declaration.
+
+A bare name written as a value that std declares as a type and a dot-imported package declares as a function or `val` is ambiguous, and is rejected with [GALA-E0087](/docs/errors/gala-e0087/): `Void()` beside `import . "example.com/demo/util"`, where `util` declares `func Void()`. Write `util.Void()` through a plain import, or `std.Void` through `import "martianoff/gala/std"`. In a type position (`Try[Void]`) the name is std's type.
 
 ### Package Visibility {#package-visibility}
 
