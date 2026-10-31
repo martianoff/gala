@@ -6,6 +6,7 @@ import (
 	goparser "go/parser"
 	"go/token"
 	"io/ioutil"
+	"iter"
 	"maps"
 	"os"
 	"path/filepath"
@@ -28,8 +29,6 @@ import (
 	"martianoff/gala/internal/transpiler/profiler"
 	"martianoff/gala/internal/transpiler/registry"
 	"martianoff/gala/internal/transpiler/resolver"
-	"martianoff/gala/internal/transpiler/scopewalk"
-	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 	"martianoff/gala/internal/transpiler/transformer"
 )
 
@@ -210,6 +209,12 @@ type galaAnalyzer struct {
 	// observes and changes nothing; TestValInferenceAgrees sets it to infer
 	// the same initializer on ANTLR's tree, in the same state, and compare.
 	onInferInit func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type)
+	// onUndefinedCheck, when set, is told of each run of the undefined-symbol
+	// check (see undefinedCheck). It observes and changes nothing;
+	// TestUndefinedCheckAgrees sets it to prove which tree each file's check
+	// read, and to run the check on ANTLR's tree in the same state and
+	// compare.
+	onUndefinedCheck func(undefinedCheck)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go
@@ -530,7 +535,7 @@ func ResolveGoSrcDir(goSrcDirs map[string]string, importPath string) (string, bo
 // AnalyzeParsed analyzes parsed's tree with its doc comments and its native
 // tree (see analyze).
 func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string) (*transpiler.RichAST, error) {
-	return a.analyze(parsed.Tree, parsed.Docs, nativewalk.For(parsed), parsed.CleanNative(), filePath)
+	return a.analyze(parsed.Tree, parsed.Docs, parsed.CleanNative(), filePath)
 }
 
 // analyze walks the ANTLR tree and collects metadata for RichAST.
@@ -540,21 +545,18 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // callers that do not care about documentation pass nothing, and every
 // attachment site degrades to an empty Doc rather than failing.
 //
-// native walks tree's contexts on its native tree, or is nil. The
-// undefined-symbol check's scope walk runs through it when there is one, on
-// tree when not. Nothing keeps it.
-//
-// handle is tree's native-tree handle (from Parsed.CleanNative), or nil. The
-// file's own declarations are collected on its native tree when native walks
-// it in the undefined-symbol check too (see checksUndefined), on tree when
-// not (see collect_native.go).
+// handle is tree's native-tree handle (from Parsed.CleanNative), or nil.
+// Where the undefined-symbol check runs (see checksUndefined), the file's own
+// declarations are collected, and the check reads the file, on its native
+// tree when there is one, and on tree otherwise (see collect_native.go).
+// Nothing keeps it.
 //
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
 // therefore what an analysis failure reports, in place of the cascade they
 // cause; on success they ride on the result (RichAST.SiblingSyntaxErrors) for
 // the phases after analysis to do the same.
-func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native scopewalk.NativeWalker, handle *galaparser.Native, filePath string) (result *transpiler.RichAST, err error) {
+func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *galaparser.Native, filePath string) (result *transpiler.RichAST, err error) {
 	a.analyzeDepth++
 	isTopLevel := a.analyzeDepth == 1
 	defer func() { a.analyzeDepth-- }()
@@ -1143,11 +1145,11 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 	// loaded and before the collection, because the collection depends on
 	// it: converting the tree costs several times what
 	// collecting on it saves, so the file's own declarations are collected
-	// on its native tree only when the check's walk converts that tree
-	// anyway, and on its ANTLR tree otherwise (see collect_native.go).
+	// on its native tree only when the check reads that tree too, and on its
+	// ANTLR tree otherwise (see collect_native.go).
 	checksUndefined := isTopLevel && !a.skipUndefinedCheck && a.fileImportsFullyLoaded(fileImports, richAST)
 	var nf nativeFile
-	if checksUndefined && native != nil {
+	if checksUndefined {
 		nf = nativeFileOf(handle)
 	}
 	if a.onCollect != nil && isTopLevel {
@@ -1311,7 +1313,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 		// invisible to the symbol table, and reporting those as undefined
 		// would blame the author for a gap on the analyzer's side.
 		if checksUndefined {
-			if errs := a.checkUndefinedSymbols(sourceFile, native, richAST, filePath, fileDotImportSets); len(errs) > 0 {
+			if errs := a.checkUndefinedSymbols(sourceFile, nf, fileImports, richAST, filePath, fileDotImportSets); len(errs) > 0 {
 				return nil, errs[0]
 			}
 		}
@@ -1326,7 +1328,11 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, native sco
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
-		richAST.ReceiverDotImports = a.receiverDotImports(sourceFile, richAST, filePath, fileDotImportPaths)
+		receiverTypes := methodReceiverTypes(sourceFile)
+		if nf.ok() {
+			receiverTypes = methodReceiverTypesNative(nf)
+		}
+		richAST.ReceiverDotImports = a.receiverDotImports(receiverTypes, richAST, filePath, fileDotImportPaths)
 	}
 	if profiler.Enabled && isTopLevel {
 		fmt.Fprintf(os.Stderr, "  [analyze] %-35s %s\n", "TOTAL", time.Since(analyzeStart).Round(time.Millisecond))
@@ -1381,23 +1387,16 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 }
 
 // receiverDotImports builds RichAST.ReceiverDotImports: for each method of
-// sourceFile whose receiver type another file of the package declares, the
-// GALA packages that file dot-imports, by the name their metadata is filed
-// under (richAST.Packages after ApplyPackageKeys), sorted. Only a top-level
-// analysis needs it: the field is per-file and never merged.
-func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext, richAST *transpiler.RichAST, filePath string, fileDotImportPaths map[string][]string) map[string][]string {
+// the file at filePath whose receiver type another file of the package
+// declares, the GALA packages that file dot-imports, by the name their
+// metadata is filed under (richAST.Packages after ApplyPackageKeys), sorted.
+// receiverTypes is the base type of each method's receiver, in source order
+// (methodReceiverTypes). Only a top-level analysis needs it: the field is
+// per-file and never merged.
+func (a *galaAnalyzer) receiverDotImports(receiverTypes iter.Seq[string], richAST *transpiler.RichAST, filePath string, fileDotImportPaths map[string][]string) map[string][]string {
 	var out map[string][]string
 	seen := make(map[string]bool)
-	for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
-		fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
-		if !ok || fd == nil {
-			continue
-		}
-		rc, ok := fd.Receiver().(*grammar.ReceiverContext)
-		if !ok || rc == nil || rc.Type_() == nil {
-			continue
-		}
-		recv := receiverBaseTypeName(rc.Type_())
+	for recv := range receiverTypes {
 		if recv == "" || seen[recv] {
 			continue
 		}
@@ -1418,6 +1417,27 @@ func (a *galaAnalyzer) receiverDotImports(sourceFile *grammar.SourceFileContext,
 		out[recv] = slices.Compact(pkgs)
 	}
 	return out
+}
+
+// methodReceiverTypes is the base type name (receiverBaseTypeName) of the
+// receiver of each method among sourceFile's top-level declarations, in
+// source order.
+func methodReceiverTypes(sourceFile *grammar.SourceFileContext) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, topDecl := range sourceFile.AllTopLevelDeclaration() {
+			fd, ok := topDecl.FunctionDeclaration().(*grammar.FunctionDeclarationContext)
+			if !ok || fd == nil {
+				continue
+			}
+			rc, ok := fd.Receiver().(*grammar.ReceiverContext)
+			if !ok || rc == nil || rc.Type_() == nil {
+				continue
+			}
+			if !yield(receiverBaseTypeName(rc.Type_())) {
+				return
+			}
+		}
+	}
 }
 
 // validateExplicitImports walks the metadata for entries defined in
@@ -2688,9 +2708,9 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 			}
 			// No native tree: the parsed-file cache keeps none, and the
 			// native collection runs only where the undefined-symbol check,
-			// which runs after it, will walk the native tree anyway: on the
+			// which runs after it, reads the native tree too: on the
 			// top-level file alone.
-			res, err := a.analyze(tree, docs, nil, nil, filePath)
+			res, err := a.analyze(tree, docs, nil, filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName

@@ -10,6 +10,7 @@ import (
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
 	"martianoff/gala/internal/transpiler/scopewalk/nativewalk"
 )
@@ -49,9 +50,16 @@ func (c *collector) sorted() []string {
 }
 
 // walkFuncBody parses a whole source file and walks the body of its single
-// top-level function, returning the unbound references. It walks ANTLR's tree,
-// and the native tree when the build has one, and requires the same result.
+// top-level function, returning the unbound references. It walks ANTLR's tree
+// and the native tree, and requires the same result.
 func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
+	t.Helper()
+	return walkFuncBodyHooked(t, src, opts, nil)
+}
+
+// walkFuncBodyHooked is walkFuncBody whose native walk calls enter, the
+// counterpart of opts' EnterFunctionScope.
+func walkFuncBodyHooked(t *testing.T, src string, opts scopewalk.Options, enter nativewalk.EnterFunctionScope) *collector {
 	t.Helper()
 	parsed := parser.NewAntlrGalaParser().ParseFile(src)
 	tree, _, errs := parsed.Strict()
@@ -59,20 +67,28 @@ func walkFuncBody(t *testing.T, src string, opts scopewalk.Options) *collector {
 	sf, ok := tree.(*grammar.SourceFileContext)
 	require.True(t, ok)
 
-	walk := func(nw scopewalk.NativeWalker) *collector {
+	walk := func(onNative bool) *collector {
 		c := newCollector()
-		w := scopewalk.New(c, opts).WithNative(nw)
+		w := scopewalk.New(c, opts)
+		nw := nativewalk.New(w, enter)
 		w.PushScope()
 		for _, td := range sf.AllTopLevelDeclaration() {
-			if fd := td.FunctionDeclaration(); fd != nil {
+			fd := td.FunctionDeclaration()
+			switch {
+			case fd == nil:
+			case onNative:
+				node := parsed.Native.Node(fd)
+				require.True(t, node.Ok(), "the declaration must have a native node")
+				nw.WalkFunctionDeclaration(native.FunctionDeclarationNode{GalaNodeRef: node})
+			default:
 				w.WalkFunctionDeclaration(fd)
 			}
 		}
 		w.PopScope()
 		return c
 	}
-	c := walk(nil)
-	require.Equal(t, c, walk(nativewalk.For(parsed)), "the native walk must agree with ANTLR's")
+	c := walk(false)
+	require.Equal(t, c, walk(true), "the native walk must agree with ANTLR's")
 	return c
 }
 
@@ -258,10 +274,12 @@ func TestEnterFunctionScopeHook(t *testing.T) {
 	without := walkFuncBody(t, src, scopewalk.Options{})
 	assert.Equal(t, []string{"extra"}, without.sorted())
 
-	with := walkFuncBody(t, src, scopewalk.Options{
+	with := walkFuncBodyHooked(t, src, scopewalk.Options{
 		EnterFunctionScope: func(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
 			w.Bind("extra")
 		},
+	}, func(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
+		w.Bind("extra")
 	})
 	assert.Empty(t, with.sorted(), "the hook's bindings are in scope for the body")
 }

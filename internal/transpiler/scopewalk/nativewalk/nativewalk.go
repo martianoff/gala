@@ -5,160 +5,102 @@
 // same handlers, visiting the same nodes in the same order, so it reports the
 // same references at the same sites. Each handler sits under the name of its
 // ANTLR twin. TestWalksAgree holds the two together.
+//
+// A caller on the native tree enters it here, with a node, where a caller on
+// ANTLR's tree enters scopewalk's walk with a context: the walk never crosses
+// from one tree to the other (an interpolation fragment, re-parsed into
+// ANTLR's tree alone, is the one walk of ANTLR's tree it makes).
 package nativewalk
 
 import (
-	"sync"
-
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/parser"
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
-// For returns the NativeWalker of p's contexts, or nil when p has no native
-// tree or has syntax errors: an error-recovered tree is ANTLR's to walk. The
-// native tree is built on the first walk, not here.
-func For(p *parser.Parsed) scopewalk.NativeWalker {
-	h := p.CleanNative()
-	if h == nil {
-		return nil
+// EnterFunctionScope is scopewalk.Options.EnterFunctionScope on the native
+// tree: called after the walk pushes the scope for a function declaration
+// and before it binds the declaration's parameters.
+type EnterFunctionScope func(w *scopewalk.Walker, fn native.FunctionDeclarationNode)
+
+// Walker is the walk on the native tree of a scopewalk.Walker: it reports to
+// that Walker's Visitor, under its options, in its scopes.
+type Walker struct{ w walk }
+
+// New is w's walk on the native tree. enter stands in for w's
+// Options.EnterFunctionScope, whose hook takes an ANTLR context and is never
+// called on this tree. enter is nil exactly when that option is: New panics
+// on a hook without its native twin, which the walk would otherwise drop.
+func New(w *scopewalk.Walker, enter EnterFunctionScope) Walker {
+	opts := w.Options()
+	if (opts.EnterFunctionScope != nil) != (enter != nil) {
+		panic("nativewalk: Options.EnterFunctionScope and the native enter hook must be set together")
 	}
-	return &walker{native: h}
+	return Walker{walk{w, opts, enter}}
 }
 
-// walker is For's NativeWalker. It belongs to one scopewalk.Walker at a
-// time: rootHint is not safe for concurrent use.
-type walker struct {
-	native *parser.Native
+// Walk is scopewalk.Walker.Walk of node n.
+func (nw Walker) Walk(n native.GalaNodeRef) { nw.w.walk(n) }
 
-	once    sync.Once
-	ok      bool // the tree converted, and its bridge holds (see prepare)
-	root    native.GalaNodeRef
-	rootCtx antlr.ParserRuleContext
-
-	// rootHint is where among the root's children the last lookup found its
-	// top-level declaration: the undefined-symbol check enters at each one
-	// in order, so the next is found from there.
-	rootHint int
+// WalkFunctionDeclaration is scopewalk.Walker.WalkFunctionDeclaration of fn.
+func (nw Walker) WalkFunctionDeclaration(fn native.FunctionDeclarationNode) {
+	nw.w.walkFunctionDeclaration(fn)
 }
 
-var _ scopewalk.NativeWalker = (*walker)(nil)
+// WalkParameterDefaults is scopewalk.Walker.WalkParameterDefaults of params.
+func (nw Walker) WalkParameterDefaults(params native.ParametersNode) {
+	nw.w.walkParameterDefaults(params)
+}
 
-// prepare converts the native tree, once, and checks that the bridge holds
-// (parser.Native.Bridged): the walk takes the root's context from it, and a
-// function declaration's context for each function declaration, which
-// Options.EnterFunctionScope is handed. The analyzer's collection of the
-// file's declarations makes the same check, so the two take the same tree.
-// Should it fail, every walk falls back to ANTLR's tree.
-func (nw *walker) prepare() bool {
-	nw.once.Do(func() {
-		if !nw.native.Bridged() {
-			return
+// The binders of scopewalk.Walker on the native tree: each binds in w's
+// innermost scope what its ANTLR twin, the Walker method of its name, binds.
+
+// BindID is scopewalk.Walker.BindID of identifier id.
+func BindID(w *scopewalk.Walker, id native.IdentifierNode) {
+	if id.Ok() {
+		w.Bind(parser.NativeText(id.GalaNodeRef))
+	}
+}
+
+// BindIdentifierList is scopewalk.Walker.BindIdentifierList of idList.
+func BindIdentifierList(w *scopewalk.Walker, idList native.IdentifierListNode) {
+	for id := range parser.NativeKids(idList.GalaNodeRef, native.GalaKIND_identifier) {
+		w.Bind(parser.NativeText(id))
+	}
+}
+
+// BindParameters is scopewalk.Walker.BindParameters of params.
+func BindParameters(w *scopewalk.Walker, params native.ParametersNode) {
+	for p := range parser.NativeKids(params.ParameterList().GalaNodeRef, native.GalaKIND_parameter) {
+		BindID(w, native.ParameterNode{GalaNodeRef: p}.Identifier())
+	}
+}
+
+// BindIdentifiersIn is scopewalk.Walker.BindIdentifiersIn of node n: it binds
+// every identifier under n.
+func BindIdentifiersIn(w *scopewalk.Walker, n native.GalaNodeRef) {
+	if !n.Ok() {
+		return
+	}
+	n.Walk(func(n native.GalaNodeRef) bool {
+		if n.Kind() != native.GalaKIND_identifier {
+			return true
 		}
-		tree, _ := nw.native.Tree()
-		nw.root = tree.Root()
-		nw.rootCtx = nw.native.Ctx(nw.root)
-		nw.ok = true
+		w.Bind(parser.NativeText(n))
+		return false
 	})
-	return nw.ok
-}
-
-// Walk implements scopewalk.NativeWalker.
-func (nw *walker) Walk(w *scopewalk.Walker, node antlr.Tree) bool {
-	n, ok := nw.node(node)
-	if ok {
-		walk{w, w.Options(), nw}.walk(n)
-	}
-	return ok
-}
-
-// WalkParameterDefaults implements scopewalk.NativeWalker.
-func (nw *walker) WalkParameterDefaults(w *scopewalk.Walker, params antlr.Tree) bool {
-	n, ok := nw.node(params)
-	if ok {
-		walk{w, w.Options(), nw}.walkParameterDefaults(native.ParametersNode{GalaNodeRef: n})
-	}
-	return ok
-}
-
-// node is the native node of node, when it is a context of the parse.
-//
-// It finds the node by its path from the root rather than with Native.Node,
-// whose context-to-node map spans the whole file: the walks start from a few
-// contexts (the top-level declarations), each a short climb from the root.
-// The native tree has ANTLR's tree's shape, child for child, so the indexes of
-// the climb lead back down to the node; Native.Ctx confirms it.
-func (nw *walker) node(node antlr.Tree) (native.GalaNodeRef, bool) {
-	ctx, ok := node.(antlr.ParserRuleContext)
-	if !ok || !nw.prepare() {
-		return native.GalaNodeRef{}, false
-	}
-	var buf [32]int
-	path := buf[:0] // child indexes from ctx up to the root
-	for c := ctx; c != nw.rootCtx; {
-		parent, ok := c.GetParent().(antlr.ParserRuleContext)
-		if !ok {
-			return native.GalaNodeRef{}, false // another tree's context
-		}
-		hint := 0
-		if parent == nw.rootCtx {
-			hint = nw.rootHint
-		}
-		i := childIndex(parent, c, hint)
-		if i < 0 {
-			return native.GalaNodeRef{}, false
-		}
-		if parent == nw.rootCtx {
-			nw.rootHint = i
-		}
-		path = append(path, i)
-		c = parent
-	}
-	n := nw.root
-	for k := len(path) - 1; k >= 0 && n.Ok(); k-- {
-		if path[k] >= n.ChildCount() {
-			return native.GalaNodeRef{}, false
-		}
-		n = n.Child(path[k]).Node()
-	}
-	return n, n.Ok() && nw.native.Ctx(n) == ctx
-}
-
-// childIndex is the index of child among parent's children, or -1, looked for
-// from index from on and then before it.
-func childIndex(parent, child antlr.ParserRuleContext, from int) int {
-	count := parent.GetChildCount()
-	for k := 0; k < count; k++ {
-		i := (from + k) % count
-		if parent.GetChild(i) == antlr.Tree(child) {
-			return i
-		}
-	}
-	return -1
 }
 
 // walk is one walk on the native tree, for a scopewalk.Walker.
 type walk struct {
 	*scopewalk.Walker
-	opts scopewalk.Options
-	nw   *walker
+	opts  scopewalk.Options
+	enter EnterFunctionScope
 }
 
 // ---------------------------------------------------------------------------
 // Tokens and binders
 // ---------------------------------------------------------------------------
-
-// textOf is n's text. A node of one token, an identifier's, is that token's
-// text, a slice of the source.
-func textOf(n native.GalaNodeRef) string {
-	if i := n.StartIndex(); n.StopIndex() == i {
-		return n.Tree().Text(i)
-	}
-	return n.GetText()
-}
 
 // isToken reports whether t is a token whose text is text.
 func isToken(t native.GalaTerminal, text string) bool { return t.Ok() && t.GetText() == text }
@@ -168,34 +110,31 @@ func siteOf(tok native.GalaToken, text string) scopewalk.Site {
 	return scopewalk.Site{Line: int(tok.Line), Column: int(tok.Column), Text: text}
 }
 
+// IdentifierSite is the name identifier id spells and the site of its token:
+// what scopewalk.TokenSite gives for its context's start token. An identifier
+// of no token has no site.
+func IdentifierSite(id native.GalaNodeRef) (string, scopewalk.Site) {
+	name := parser.NativeText(id)
+	if id.StopIndex() < id.StartIndex() {
+		return name, scopewalk.Site{}
+	}
+	return name, siteOf(id.Start(), name)
+}
+
 // referenceID reports the identifier id as a reference, at its token; at no
 // site for an identifier of no token.
 func (w walk) referenceID(id native.IdentifierNode, use scopewalk.Use) {
-	name := textOf(id.GalaNodeRef)
-	var at scopewalk.Site
-	if id.StopIndex() >= id.StartIndex() {
-		at = siteOf(id.Start(), name)
-	}
+	name, at := IdentifierSite(id.GalaNodeRef)
 	w.Report(name, at, use)
 }
 
-func (w walk) bindID(id native.IdentifierNode) {
-	if id.Ok() {
-		w.Bind(textOf(id.GalaNodeRef))
-	}
-}
+func (w walk) bindID(id native.IdentifierNode) { BindID(w.Walker, id) }
 
 func (w walk) bindIdentifierList(idList native.IdentifierListNode) {
-	for _, id := range idList.AllIdentifier() {
-		w.Bind(textOf(id.GalaNodeRef))
-	}
+	BindIdentifierList(w.Walker, idList)
 }
 
-func (w walk) bindParameters(params native.ParametersNode) {
-	for _, p := range params.ParameterList().AllParameter() {
-		w.bindID(p.Identifier())
-	}
-}
+func (w walk) bindParameters(params native.ParametersNode) { BindParameters(w.Walker, params) }
 
 func (w walk) walkParameterDefaults(params native.ParametersNode) {
 	for _, p := range params.ParameterList().AllParameter() {
@@ -338,8 +277,8 @@ func (w walk) walkValVarDecl(exprList native.ExpressionListNode, idList native.I
 	w.bindIdentifierList(tuple.IdentifierList())
 }
 
-// walkFunctionDeclaration hands Options.EnterFunctionScope the declaration's
-// ANTLR context: the hook's callers are not on the native tree yet.
+// walkFunctionDeclaration calls the walk's EnterFunctionScope, the native
+// tree's stand-in for Options.EnterFunctionScope.
 func (w walk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	if !fn.Ok() {
 		return
@@ -347,11 +286,8 @@ func (w walk) walkFunctionDeclaration(fn native.FunctionDeclarationNode) {
 	w.bindID(fn.Identifier())
 	w.PushScope()
 	defer w.PopScope()
-	if w.opts.EnterFunctionScope != nil {
-		// prepare checked that every function declaration has its context,
-		// or the file would be walking ANTLR's tree.
-		ctx, _ := w.nw.native.Ctx(fn.GalaNodeRef).(*grammar.FunctionDeclarationContext)
-		w.opts.EnterFunctionScope(w.Walker, ctx)
+	if w.enter != nil {
+		w.enter(w.Walker, fn)
 	}
 	if sig := fn.Signature(); sig.Ok() {
 		w.bindParameters(sig.Parameters())
@@ -440,7 +376,7 @@ func (w walk) walkPostfixExpr(pf native.PostfixExprNode) {
 // nativeSuffix is the shape of a native postfix suffix (see scopewalk.ClassifySuffixes).
 func nativeSuffix(s native.PostfixSuffixNode) scopewalk.Suffix {
 	if id := s.Identifier(); id.Ok() {
-		return scopewalk.Suffix{Selector: textOf(id.GalaNodeRef)}
+		return scopewalk.Suffix{Selector: parser.NativeText(id.GalaNodeRef)}
 	}
 	return scopewalk.Suffix{Index: s.ExpressionList().Ok()}
 }
@@ -553,13 +489,7 @@ func (w walk) bindPattern(pat native.PatternNode) {
 		return
 	}
 	if w.opts.BindWholePattern {
-		pat.Walk(func(n native.GalaNodeRef) bool {
-			if n.Kind() != native.GalaKIND_identifier {
-				return true
-			}
-			w.Bind(textOf(n))
-			return false
-		})
+		BindIdentifiersIn(w.Walker, pat.GalaNodeRef)
 		return
 	}
 	if p, ok := pat.AsExpressionPattern(); ok {
@@ -580,7 +510,7 @@ func (w walk) bindPatternExpression(expr native.ExpressionNode) {
 	if len(suffixes) == 0 {
 		prim := pf.PrimaryExpr().Primary()
 		if id := prim.Identifier(); id.Ok() {
-			w.Bind(textOf(id.GalaNodeRef))
+			w.Bind(parser.NativeText(id.GalaNodeRef))
 			return
 		}
 		for _, e := range prim.TupleExpressionList().AllExpression() {

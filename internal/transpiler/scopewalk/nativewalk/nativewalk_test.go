@@ -13,6 +13,7 @@ import (
 
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler/scopewalk"
 )
 
@@ -36,57 +37,75 @@ func (r *recorder) Reference(name string, at scopewalk.Site, use scopewalk.Use) 
 	r.events = append(r.events, fmt.Sprintf("%s at %d:%d %q %+v", name, at.Line, at.Column, at.Text, use))
 }
 
-// optionSets are the option sets the walks are compared under, reporting to
-// r: the capture analysis's, the undefined-symbol check's, and the blunt
-// pattern binding. The hook records its call and binds the receiver's
-// identifiers, as the analyzer's does, so a hook handed the wrong context
-// changes what follows.
-func optionSets(r *recorder) []scopewalk.Options {
+// optionSet is one set of options the walks are compared under: the options,
+// whose EnterFunctionScope (if any) is ANTLR's walk's hook, and enter, the
+// native walk's.
+type optionSet struct {
+	opts  scopewalk.Options
+	enter EnterFunctionScope
+}
+
+// optionSets are the option sets the walks are compared under: the capture
+// analysis's, the undefined-symbol check's, and the blunt pattern binding.
+// The hooks record their call, ANTLR's to a and the native one to n, and bind
+// the receiver's identifiers, as the analyzer's do, so a hook handed the
+// wrong declaration changes what follows.
+func optionSets(a, n *recorder) []optionSet {
 	hook := func(w *scopewalk.Walker, fn grammar.IFunctionDeclarationContext) {
 		start := fn.GetStart()
-		r.events = append(r.events, fmt.Sprintf("enter %s at %d:%d", fn.Identifier().GetText(), start.GetLine(), start.GetColumn()))
+		a.enter(fn.Identifier().GetText(), start.GetLine(), start.GetColumn())
 		if recv := fn.Receiver(); recv != nil {
 			w.BindIdentifiersIn(recv)
 		}
 	}
-	return []scopewalk.Options{
-		{ParseInterpolations: true},
-		{
+	enter := func(w *scopewalk.Walker, fn native.FunctionDeclarationNode) {
+		start := fn.Start()
+		n.enter(parser.NativeText(fn.Identifier().GalaNodeRef), int(start.Line), int(start.Column))
+		BindIdentifiersIn(w, fn.Receiver().GalaNodeRef)
+	}
+	return []optionSet{
+		{opts: scopewalk.Options{ParseInterpolations: true}},
+		{opts: scopewalk.Options{
 			ParseInterpolations:            true,
 			RequireCleanInterpolationParse: true,
 			SkipCompositeLiteralKeys:       true,
 			SkipTypedPatternArgument:       true,
 			EnterFunctionScope:             hook,
-		},
-		{BindWholePattern: true, EnterFunctionScope: hook},
+		}, enter: enter},
+		{opts: scopewalk.Options{BindWholePattern: true, EnterFunctionScope: hook}, enter: enter},
 	}
 }
 
-// walkBoth walks ctx, a context of p, on ANTLR's tree and on the native tree
-// under every option set, and returns where the two reports first differ (""
-// when they agree). A parameter list is walked as WalkParameterDefaults walks
-// it, anything else as Walk does. Each walk has its own recorder, so its own
-// hook.
+// enter records a call of the hook, on the function named name at line:col.
+func (r *recorder) enter(name string, line, col int) {
+	r.events = append(r.events, fmt.Sprintf("enter %s at %d:%d", name, line, col))
+}
+
+// walkBoth walks ctx, a context of p, on ANTLR's tree and its node on the
+// native tree under every option set, and returns where the two reports
+// first differ ("" when they agree). A parameter list is walked as
+// WalkParameterDefaults walks it, anything else as Walk does. Each walk has
+// its own recorder, so its own hook.
 func walkBoth(p *parser.Parsed, ctx antlr.ParserRuleContext) string {
+	node := p.Native.Node(ctx)
+	if !node.Ok() {
+		return "the context has no native node"
+	}
 	params, isParams := ctx.(*grammar.ParametersContext)
 	var a, n recorder
-	optsA, optsN := optionSets(&a), optionSets(&n)
-	for i := range optsA {
+	for i, set := range optionSets(&a, &n) {
 		a.events, n.events = nil, nil
-		nw := For(p).(*walker)
-		if _, ok := nw.node(ctx); !ok {
-			return "the context has no native node"
-		}
-		wa := scopewalk.New(&a, optsA[i])
-		wn := scopewalk.New(&n, optsN[i]).WithNative(nw)
+		wa := scopewalk.New(&a, set.opts)
+		wn := scopewalk.New(&n, set.opts)
+		nw := New(wn, set.enter)
 		wa.PushScope()
 		wn.PushScope()
 		if isParams {
 			wa.WalkParameterDefaults(params)
-			wn.WalkParameterDefaults(params)
+			nw.WalkParameterDefaults(native.ParametersNode{GalaNodeRef: node})
 		} else {
 			wa.Walk(ctx)
-			wn.Walk(ctx)
+			nw.Walk(node)
 		}
 
 		if !slices.Equal(a.events, n.events) {
@@ -202,10 +221,15 @@ func BenchmarkWalk(b *testing.B) {
 				b.StartTimer()
 				for _, p := range parses {
 					w := scopewalk.New(discard{}, opts)
-					if mode != "antlr" {
-						w.WithNative(For(p))
+					if mode == "antlr" {
+						w.Walk(p.Tree)
+						continue
 					}
-					w.Walk(p.Tree)
+					tree, err := p.Native.Tree()
+					if err != nil {
+						b.Fatal(err)
+					}
+					New(w, nil).Walk(tree.Root())
 				}
 			}
 		})
@@ -258,50 +282,30 @@ func TestWalksAgree(t *testing.T) {
 	}
 }
 
-// TestEntryPointsWalkNative: an entry point handed a context of the Walker's
-// parse walks its native node, and one handed any other context walks ANTLR's
-// tree, with the same result.
-func TestEntryPointsWalkNative(t *testing.T) {
-	src := `package main
-
-func f(p int) int {
-    val g = (q int) => q + p + outer
-    return g(1)
-}
-`
-	p := parser.NewAntlrGalaParser().ParseFile(src)
-	other := parser.NewAntlrGalaParser().ParseFile(src)
-	tree, _, err := p.Strict()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var mine, theirs recorder
-	nw := For(p).(*walker)
-	if _, ok := nw.node(tree); !ok {
-		t.Fatal("the Walker's own root has no native node")
-	}
-	otherTree, _, _ := other.Strict()
-	if _, ok := nw.node(otherTree); ok {
-		t.Fatal("another parse's root has a native node")
-	}
-	scopewalk.New(&mine, scopewalk.Options{}).WithNative(nw).Walk(tree)
-	scopewalk.New(&theirs, scopewalk.Options{}).WithNative(nw).Walk(otherTree)
-	if got, want := strings.Join(mine.events, "\n"), strings.Join(theirs.events, "\n"); got != want || got == "" {
-		t.Fatalf("the native walk reports\n%s\nANTLR's\n%s", got, want)
-	}
-}
-
-// TestForTakesCleanParses: a parse with syntax errors has no NativeWalker, so
-// its error-recovered tree is ANTLR's to walk.
-func TestForTakesCleanParses(t *testing.T) {
-	broken := parser.NewAntlrGalaParser().ParseFile("package main\n\nfunc f( = 1\n")
-	if len(broken.Errors) == 0 {
-		t.Fatal("the input must have syntax errors")
-	}
-	if For(broken) != nil {
-		t.Fatal("a parse with syntax errors has a NativeWalker")
-	}
-	if For(parser.NewAntlrGalaParser().ParseFile("package main\n")) == nil {
-		t.Fatal("a clean parse has no NativeWalker")
+// TestNewPairsTheHooks checks that New refuses an EnterFunctionScope option
+// without its native twin, and a native twin without the option: the native
+// walk never calls the option's hook, so an unpaired one would be dropped.
+func TestNewPairsTheHooks(t *testing.T) {
+	hook := func(*scopewalk.Walker, grammar.IFunctionDeclarationContext) {}
+	enter := func(*scopewalk.Walker, native.FunctionDeclarationNode) {}
+	for _, c := range []struct {
+		name      string
+		opts      scopewalk.Options
+		enter     EnterFunctionScope
+		wantPanic bool
+	}{
+		{"neither", scopewalk.Options{}, nil, false},
+		{"both", scopewalk.Options{EnterFunctionScope: hook}, enter, false},
+		{"option only", scopewalk.Options{EnterFunctionScope: hook}, nil, true},
+		{"native only", scopewalk.Options{}, enter, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			defer func() {
+				if got := recover() != nil; got != c.wantPanic {
+					t.Fatalf("panicked = %v, want %v", got, c.wantPanic)
+				}
+			}()
+			New(scopewalk.New(discard{}, c.opts), c.enter)
+		})
 	}
 }

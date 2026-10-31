@@ -56,15 +56,14 @@
 // walked in the current scope, so a name referenced only inside an
 // interpolation is seen like any other reference.
 //
-// TWO TREES. The entry points take ANTLR contexts. Given a NativeWalker for
-// their parse (WithNative), they walk galop's native tree instead (package
-// nativewalk), which mirrors the walk over ANTLR's (walk_antlr.go) handler for
-// handler; nativewalk's TestWalksAgree holds the two to the same output on the
-// GALA sources the parser's engine test parses (std, the examples and the
-// other libraries). ANTLR's walk stays for what has no native tree: a parse
-// ANTLR's parser made (with ANTLR's engine, or on a syntax error), an
-// interpolation fragment (re-parsed into ANTLR's tree alone), and a caller
-// that holds none.
+// TWO TREES. The entry points here take ANTLR contexts and walk ANTLR's tree
+// (walk_antlr.go). Package nativewalk walks galop's native tree for a Walker,
+// entered with a native node, and mirrors this walk handler for handler;
+// nativewalk's TestWalksAgree holds the two to the same output on the GALA
+// sources the parser's engine test parses (std, the examples and the other
+// libraries). ANTLR's walk stays for what has no native tree: a parse ANTLR's
+// parser made (with ANTLR's engine, or on a syntax error), an interpolation
+// fragment (re-parsed into ANTLR's tree alone), and a caller that holds none.
 package scopewalk
 
 import (
@@ -155,7 +154,8 @@ type Options struct {
 	// EnterFunctionScope, when set, is called after the walker pushes the scope
 	// for a function declaration and before its parameters are bound. It is the
 	// hook for binders this walker does not model itself — type parameters and
-	// a method receiver, which only the analyzer's pass needs.
+	// a method receiver, which only the analyzer's pass needs. The walk on the
+	// native tree takes its own hook instead (nativewalk.New).
 	EnterFunctionScope func(w *Walker, fn grammar.IFunctionDeclarationContext)
 }
 
@@ -177,21 +177,6 @@ type Walker struct {
 	// token, so a reference inside `s"…"` is attributed to the literal that
 	// contains it.
 	posOverride *Site
-
-	// native walks the contexts of one parse on its native tree, or is nil
-	// (see WithNative).
-	native NativeWalker
-}
-
-// NativeWalker walks the ANTLR contexts of one parse on the parse's native
-// tree, for a Walker. Package nativewalk makes one; this package stays free of
-// the native tree.
-type NativeWalker interface {
-	// Walk is Walker.Walk of node on the native tree. It reports false, having
-	// walked nothing, when node is no context of the parse.
-	Walk(w *Walker, node antlr.Tree) bool
-	// WalkParameterDefaults is Walker.WalkParameterDefaults likewise.
-	WalkParameterDefaults(w *Walker, params antlr.Tree) bool
 }
 
 // New returns a Walker that reports to v.
@@ -199,18 +184,8 @@ func New(v Visitor, opts Options) *Walker {
 	return &Walker{visitor: v, opts: opts}
 }
 
-// WithNative makes w walk on the native tree through nw, and returns w. An
-// entry point given a context of nw's parse then walks the context's native
-// node; one given any other context (an interpolation fragment's, another
-// parse's), or a Walker with no NativeWalker (nw nil: no native tree, or the
-// ANTLR-only build), walks ANTLR's tree. The two walks report the same
-// references at the same sites.
-func (w *Walker) WithNative(nw NativeWalker) *Walker {
-	w.native = nw
-	return w
-}
-
-// Options is w's options, for a NativeWalker.
+// Options is w's options, for its walk on the native tree (package
+// nativewalk).
 func (w *Walker) Options() Options { return w.opts }
 
 // ---------------------------------------------------------------------------
@@ -294,8 +269,8 @@ func (w *Walker) BindParameters(params grammar.IParametersContext) {
 	}
 }
 
-// Report emits an unbound value-position reference (for the walks, and a
-// NativeWalker): a name no scope binds goes to the Visitor. Inside a re-parsed
+// Report emits an unbound value-position reference (for both walks, this
+// package's and nativewalk's): a name no scope binds goes to the Visitor. Inside a re-parsed
 // interpolation fragment the reported token is the enclosing string literal —
 // see posOverride.
 func (w *Walker) Report(name string, at Site, use Use) {
@@ -368,11 +343,7 @@ func (w *Walker) WalkInterpolated(lit Site) {
 // Walk descends an arbitrary parse-tree node. Nodes that affect scoping or
 // contribute references have precise handlers; every other node recurses into
 // all its children.
-func (w *Walker) Walk(node antlr.Tree) {
-	if w.native == nil || !w.native.Walk(w, node) {
-		antlrWalk{w}.walk(node)
-	}
-}
+func (w *Walker) Walk(node antlr.Tree) { antlrWalk{w}.walk(node) }
 
 // WalkLambda, WalkBlock and WalkFunctionDeclaration are Walk on a node of
 // their kind, which Walk dispatches to its handler.
@@ -399,9 +370,7 @@ func (w *Walker) WalkFunctionDeclaration(fn grammar.IFunctionDeclarationContext)
 // reference inside a default value is seen. A parameter list is no node Walk
 // dispatches, so it has a handler of its own on each tree.
 func (w *Walker) WalkParameterDefaults(params grammar.IParametersContext) {
-	if w.native == nil || !w.native.WalkParameterDefaults(w, params) {
-		antlrWalk{w}.walkParameterDefaults(params)
-	}
+	antlrWalk{w}.walkParameterDefaults(params)
 }
 
 // Suffix is what ClassifySuffixes reads off a postfix suffix, whichever tree

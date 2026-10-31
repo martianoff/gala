@@ -22,8 +22,8 @@ func TestNilNative(t *testing.T) {
 	if node := n.Node(nil); node.Ok() {
 		t.Error("Node() found a node")
 	}
-	if n.Bridged() {
-		t.Error("Bridged() = true")
+	if n.WellFormed() {
+		t.Error("WellFormed() = true")
 	}
 }
 
