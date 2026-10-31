@@ -16,4 +16,6 @@ func main() {
     Println(s"${k.Key} ${lib.CodeOf(k)}")
     Println(first(Seq("seq", 1)))
     Println(Some(3).GetOrElse(0))
+    Println(lib.Bump())
+    Println(lib.Void(2))
 }

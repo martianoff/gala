@@ -4328,6 +4328,14 @@ gala_exec_test(
     expected = "shadowed_function.out",
 )
 
+# A function named like a std type (Void, NoSuchElementError, Ordered,
+# Hashable) shadows it: a bare call of the name calls the function.
+gala_exec_test(
+    name = "function_shadows_std_type",
+    src = "function_shadows_std_type.gala",
+    expected = "function_shadows_std_type.out",
+)
+
 # A type parameter named like a std type or variant, or an imported type,
 # means the type parameter throughout its declaration.
 gala_exec_test(

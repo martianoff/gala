@@ -138,9 +138,13 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		if isStructMetaIntrinsic(t.getBaseTypeName(base)) {
 			return t.transformStructMetaConstruction(base, suffix.GetStart().GetLine(), suffix.GetStart().GetColumn())
 		}
+		// A function the package declares is called, never read as a
+		// same-named type an import exports (`Void()` for `func Void()`), so
+		// the paths below that read the callee as a type are skipped for it.
+		ownFunc := t.namesOwnFunction(base)
 		// Empty argument list - check for zero-argument Apply method
 		typeName := t.getBaseTypeName(base)
-		if typeName != "" {
+		if typeName != "" && !ownFunc {
 			// Use unified resolution to find type metadata
 			typeMeta := t.getTypeMeta(typeName)
 			if typeMeta != nil {
@@ -386,7 +390,7 @@ func (t *galaASTTransformer) applyCallSuffix(base ast.Expr, suffix *grammar.Post
 		//
 		// structFields also holds a sealed parent, whose literal would be a
 		// value of none of its cases; calling it is GALA-E0043.
-		if typeName := t.getBaseTypeName(base); typeName != "" {
+		if typeName != "" && !ownFunc {
 			resolved := t.resolveStructTypeName(typeName)
 			meta := t.getTypeMeta(resolved)
 			fields, ok := t.structFields[resolved]
@@ -2715,11 +2719,16 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// (B1).
 	pendingExpected := t.expectedArgTypes.consume()
 
+	// A function the package declares is called, never read as a same-named
+	// type an import exports (`Void(3)` for `func Void(n int)`), so the
+	// sections that read the callee as a type are skipped for it.
+	ownFunc := t.namesOwnFunction(fun)
+
 	// Sealed-variant type-arg propagation: when the expected type is a
 	// generic sealed parent (e.g. `Step[int]`) and `fun` names one of its
 	// variants without explicit type args (`StepA(...)`), inject the parent's
 	// type args into `fun` so downstream codegen emits `StepA[int]{}.Apply(...)`.
-	if pendingExpected != nil && !pendingExpected.IsNil() {
+	if pendingExpected != nil && !pendingExpected.IsNil() && !ownFunc {
 		if rewritten, ok := t.injectSealedVariantTypeArgs(fun, pendingExpected); ok {
 			fun = rewritten
 		}
@@ -2727,8 +2736,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 
 	// --- Section 0.5: interface literal `Repo(Find = ...)` ---
 	// See interface_literal.go.
-	if expr, handled, err := t.tryTransformInterfaceLiteral(fun, argListCtx, pendingExpected); handled || err != nil {
-		return expr, err
+	if !ownFunc {
+		if expr, handled, err := t.tryTransformInterfaceLiteral(fun, argListCtx, pendingExpected); handled || err != nil {
+			return expr, err
+		}
 	}
 
 	// --- Section 1: Copy method short-circuit ---
@@ -2808,7 +2819,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// --- Section 6.5: opaque-type conversion `UserID(x)` ---
 	// A Go conversion; a direct conversion between two opaque types is
 	// rejected (opaque.go). Any other arity is left to Go, which names it.
-	if len(namedArgs) == 0 && !hasSpread {
+	if len(namedArgs) == 0 && !hasSpread && !ownFunc {
 		if target := t.opaqueConversionCallee(fun); target != nil {
 			if len(args) == 1 {
 				argCtx := argListCtx.Argument(0).(*grammar.ArgumentContext)
@@ -2865,7 +2876,7 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	}
 
 	// --- Section 10: Companion Apply / positional struct construction ---
-	if typeName != "" {
+	if typeName != "" && !ownFunc {
 		handled, expr, err := t.tryTransformCompanionApplyOrStructCtor(fun, typeName, args, pendingExpected,
 			argListCtx.GetStart().GetLine(), argListCtx.GetStart().GetColumn())
 		if err != nil {
@@ -2905,8 +2916,10 @@ func (t *galaASTTransformer) transformCallWithArgsCtx(fun ast.Expr, argListCtx *
 	// reading (struct ctor, companion Apply, sealed variant) is resolved in the
 	// sections above and has already returned, so reaching here means the
 	// callee names a type and nothing callable. See type_as_constructor.go.
-	if err := t.checkTypeUsedAsConstructor(fun, fl, fc, exact); err != nil {
-		return nil, err
+	if !ownFunc {
+		if err := t.checkTypeUsedAsConstructor(fun, fl, fc, exact); err != nil {
+			return nil, err
+		}
 	}
 
 	// --- Section 13: Fallback — emit the call verbatim. ---

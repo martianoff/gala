@@ -24,17 +24,7 @@ import (
 // each kind (interface, sealed type, struct), in library packages and in
 // package main.
 func TestLocalTypeShadowsStdType(t *testing.T) {
-	p := transpiler.NewAntlrGalaParser()
-	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
-	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
-
-	tests := []struct {
-		name    string
-		pkg     string
-		src     string
-		want    []string
-		notWant []string
-	}{
+	runStdShadowCases(t, []stdShadowCase{
 		{
 			name: "alias of a collection type",
 			pkg:  "lib",
@@ -278,8 +268,27 @@ func none() Void = Void()`,
 			want:    []string{"func none() Void"},
 			notWant: []string{"std.Void"},
 		},
-	}
-	for _, tc := range tests {
+	})
+}
+
+// stdShadowCase is a package declaring a name std also exports, with what
+// its generated Go must and must not contain.
+type stdShadowCase struct {
+	name    string
+	pkg     string
+	src     string
+	want    []string
+	notWant []string
+}
+
+// runStdShadowCases transpiles each case as package pkg (adding an empty
+// `main` for package main) and checks its generated Go.
+func runStdShadowCases(t *testing.T, cases []stdShadowCase) {
+	t.Helper()
+	p := transpiler.NewAntlrGalaParser()
+	a := analyzer.NewGalaAnalyzer(p, getStdSearchPath())
+	trans := newCheckedTranspiler(p, a, transformer.NewGalaASTTransformer(), generator.NewGoCodeGenerator())
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			src := "package " + tc.pkg + "\n\n" + tc.src + "\n"
 			if tc.pkg == "main" {
@@ -295,6 +304,95 @@ func none() Void = Void()`,
 			}
 		})
 	}
+}
+
+// A function the package declares shadows a std type of the same name where
+// the name is written as a value: the bare name calls the function rather
+// than constructing std's type. The rows cover a zero-field std struct
+// called as a statement and with an argument, a std struct with fields, a
+// generic std interface, and the function used as a value, in package main
+// and in a library package. A type position still names std's type.
+func TestLocalFunctionShadowsStdType(t *testing.T) {
+	runStdShadowCases(t, []stdShadowCase{
+		{
+			name: "zero-argument void call as a statement in main",
+			pkg:  "main",
+			src: `func Void() = Println("a")
+
+func run() {
+    Void()
+}`,
+			want:    []string{"func Void()", "\tVoid()\n"},
+			notWant: []string{"std.Void"},
+		},
+		{
+			name: "call with an argument and as a function value",
+			pkg:  "lib",
+			src: `func Void(n int) int = n * 2
+
+func twice(f func(int) int, n int) int = f(f(n))
+
+func Run() int = twice(Void, Void(1))`,
+			want:    []string{"func Void(n int) int", "twice(Void, Void(1))"},
+			notWant: []string{"std.Void"},
+		},
+		{
+			name: "std struct with a field",
+			pkg:  "main",
+			src: `func NoSuchElementError(msg string) string = "E:" + msg
+
+func run() string = NoSuchElementError("x")`,
+			want:    []string{`NoSuchElementError("x")`},
+			notWant: []string{"std.NoSuchElementError"},
+		},
+		{
+			name: "generic std interface",
+			pkg:  "lib",
+			src: `func Ordered() int = 3
+
+func Run() int = Ordered() + 1`,
+			want:    []string{"Ordered() + 1"},
+			notWant: []string{"std.Ordered"},
+		},
+		{
+			name: "std's type stays reachable through std's own functions",
+			pkg:  "main",
+			src: `func Void() = Println("mine")
+
+func run() bool {
+    Void()
+    FromError(nil).IsSuccess()
+}`,
+			want: []string{"\tVoid()\n", "std.FromError(nil)"},
+		},
+		{
+			name: "generic function called with explicit type arguments",
+			pkg:  "lib",
+			src: `func Void[T any]() = Println("v")
+
+func Ordered[T any](x T) T = x
+
+func Run() int {
+    Void[int]()
+    Ordered[int](3)
+}`,
+			want:    []string{"\tVoid[int]()\n", "Ordered[int](3)"},
+			notWant: []string{"std.Void", "std.Ordered", "Void[int]{"},
+		},
+		{
+			// The function is no type, so a type position still names std's.
+			name: "a type position keeps naming std's type",
+			pkg:  "main",
+			src: `func Void() = Println("mine")
+
+func NoSuchElementError(msg string) string = "E:" + msg
+
+func run() Try[Void] = FromError(nil)
+
+func describe(e NoSuchElementError) string = e.Error()`,
+			want: []string{"func run() std.Try[std.Void]", "func describe(e std.NoSuchElementError) string"},
+		},
+	})
 }
 
 // The std names the transpiler gives built-in meaning — constructor inference

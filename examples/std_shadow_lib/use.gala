@@ -10,3 +10,10 @@ func Rekey(h Hashable, k string) Hashable = Hashable(k, h.Code)
 
 // FirstItem returns the first item of s; std's Option stays in scope.
 func FirstItem(s Seq) Option[int] = s.HeadOption()
+
+// Void is a function named like std's Void type; a bare `Void(...)` in this
+// package calls it.
+func Void(n int) int = n + 100
+
+// Bump defaults n to a call of the package's Void, lowered at each use site.
+func Bump(n int = Void(1)) int = n
