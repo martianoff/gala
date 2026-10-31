@@ -172,7 +172,9 @@ func describe(v any) string = v match {
 
 func main() {}
 `,
-			contains: []string{"std.As[shapes.Shape](obj)", "shapes.Square{}.Unapply("},
+			// The dot import is kept, so the generated Go names the case
+			// unqualified too.
+			contains: []string{"std.As[Shape](obj)", "Square{}.Unapply(_tmp_"},
 			absent:   []string{"Square := obj"},
 		},
 		{
@@ -196,8 +198,10 @@ func describe(v any) string = v match {
 
 func main() {}
 `,
-			contains: []string{"std.As[shapes.Shape](obj)", "shapes.Square{}.Unapply("},
-			absent:   []string{"== shapes.Square"},
+			// The two imports of one path are emitted as one, under the
+			// alias.
+			contains: []string{"std.As[sh.Shape](obj)", "std.As[sh.Shape](_tmp_", "sh.Square{}.Unapply("},
+			absent:   []string{"== shapes.Square", "== sh.Square"},
 		},
 		{
 			name: "qualified, sealed subject, exhaustive",

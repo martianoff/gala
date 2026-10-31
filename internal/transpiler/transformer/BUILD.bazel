@@ -120,6 +120,8 @@ go_test(
         "arm_no_value_test.go",
         "assignment_test.go",
         "auto_method_override_test.go",
+        "bare_case_interface_subject_test.go",
+        "bare_case_untestable_test.go",
         "bare_funcref_test.go",
         "bare_variant_pattern_test.go",
         "binary_codegen_test.go",

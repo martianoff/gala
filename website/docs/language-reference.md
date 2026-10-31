@@ -985,6 +985,8 @@ func describe(v any) string = v match {
 }
 ```
 
+The bare form stops there. `case Circle` without its fields is [GALA-E0039](/docs/errors/gala-e0039/), as on a `Shape` subject — write `case Circle(_)`. So is `case None`, or any variant of a generic sealed type: an interface value can only be checked for one instantiation, so write it, `case None[int]()` or `case Some[int](n)`, match on a typed subject such as `Option[int]`, or use a lowercase name to bind the value.
+
 #### Extractors and Unapply
 ```gala
 type Even struct {}
