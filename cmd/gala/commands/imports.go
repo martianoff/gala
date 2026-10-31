@@ -178,15 +178,10 @@ func importsOfNative(sf native.SourceFileNode) (string, []importInfo) {
 // identifier's text is never empty), and which has kids children.
 func importOf(str, alias string, kids int) importInfo {
 	info := importInfo{
-		Path: strings.Trim(str, "\""),
+		Path:  strings.Trim(str, "\""),
+		Alias: alias, // e.g. import m "math"
 	}
-	if alias != "" {
-		// Named alias (e.g. import m "math"). A "." identifier is not
-		// produced here — dot imports have no Identifier child.
-		if alias != "." {
-			info.Alias = alias
-		}
-	} else if kids > 1 {
+	if alias == "" && kids > 1 {
 		// Dot import: no identifier, but an extra child — the '.' terminal.
 		info.Dot = true
 	}
