@@ -1247,6 +1247,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// A default declared in one file of the package and used in another is
 	// lowered in the using file, against the declaring file's imports (see
 	// transpiler.DefaultScope): record them, as for a dependency's defaults.
+	// Only the import tables: unexported vals are in scope within the package,
+	// so addFile's private-val bookkeeping does not apply.
 	if filePath != "" && len(siblingTrees) > 0 {
 		scopes := newDefaultScopeRecorder(richAST.OwnImportPath)
 		scopes.quals[a.paths.canonical(filePath)] = fileQuals

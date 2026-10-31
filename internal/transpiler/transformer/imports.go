@@ -446,8 +446,9 @@ func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (
 			// which scoping copied rather than changed, still hold.
 			m.entries, m.dotImports = prevEntries, prevDots
 		} else {
-			m.entries = restoreImportOrder(m.entries, prevEntries, hidden, added)
-			m.dotImports = restoreImportOrder(m.dotImports, prevDots, hidden, added)
+			// The dot imports scoping took out count as still there.
+			m.entries = restoreImportOrder(slices.Concat(m.entries, hidden), prevEntries, added)
+			m.dotImports = restoreImportOrder(slices.Concat(m.dotImports, hidden), prevDots, added)
 		}
 		m.revision++
 	}
@@ -472,14 +473,12 @@ func scopeDotEntries(entries, dots, scoped, added []*ImportEntry) []*ImportEntry
 	return out
 }
 
-// restoreImportOrder undoes the scoping of prev into cur, which an import may
+// restoreImportOrder undoes a scoping of prev into cur, which an import may
 // have been added to or dropped from since: the result holds the entries of
-// prev that cur or hidden (the dot imports scoping took out) holds and drop
-// does not, in prev's order, then those added to cur since, in cur's order.
-func restoreImportOrder(cur, prev, hidden, drop []*ImportEntry) []*ImportEntry {
-	kept := func(e *ImportEntry) bool {
-		return (slices.Contains(cur, e) || slices.Contains(hidden, e)) && !slices.Contains(drop, e)
-	}
+// cur not in drop, those that prev holds in prev's order, then those added
+// since in cur's order.
+func restoreImportOrder(cur, prev, drop []*ImportEntry) []*ImportEntry {
+	kept := func(e *ImportEntry) bool { return slices.Contains(cur, e) && !slices.Contains(drop, e) }
 	out := slices.DeleteFunc(slices.Clone(prev), func(e *ImportEntry) bool { return !kept(e) })
 	for _, e := range cur {
 		if !slices.Contains(prev, e) && !slices.Contains(drop, e) {

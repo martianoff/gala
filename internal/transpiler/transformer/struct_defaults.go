@@ -248,18 +248,16 @@ func andJoin(parts []string) string {
 // transpiler.DefaultScope).
 //
 // A default from another file of this package names the package's own
-// declarations as written; only what it borrows from its file's imports is
-// respelled.
+// declarations as written; only what it borrows from its file's imports (its
+// import qualifiers and dot-imported names) is respelled.
 func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource) (ast.Expr, error) {
 	owningPkg := src.pkg
 	if expr == nil || owningPkg == "" {
 		return expr, nil
 	}
-	if owningPkg == t.packageName {
-		if t.loweringDefault == nil || !t.loweringDefault.foreign || src.Scope == nil {
-			return expr, nil
-		}
-		return t.qualifyImportedNames(expr, src.Scope), nil
+	samePkg := owningPkg == t.packageName
+	if samePkg && !t.lexicallyScoped(src) {
+		return expr, nil
 	}
 	scope := src.Scope
 	if scope == nil {
@@ -285,6 +283,9 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 	}
 	qualified := map[ast.Node]bool{}
 	rewriteIdent := func(id *ast.Ident) ast.Expr {
+		if samePkg {
+			return t.qualifyDotImported(id, scope, qualified)
+		}
 		_, isVal := vals[id.Name]
 		private := slices.Contains(scope.PrivateVals, id.Name)
 		if !isVal && !private && !t.packageDeclares(owningPkg, id.Name) {
@@ -317,7 +318,7 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 				// use site in another package, and emitting `lib.helper()`
 				// would just hand the author a Go visibility error about code
 				// they never wrote.
-				if base.Name == owningPkg && !ast.IsExported(sel.Sel.Name) {
+				if !samePkg && base.Name == owningPkg && !ast.IsExported(sel.Sel.Name) {
 					unexported(sel.Sel.Name)
 				}
 				// A qualifier of one of the declaring file's imports.
@@ -335,36 +336,6 @@ func (t *galaASTTransformer) qualifyDefaultExpr(expr ast.Expr, src defaultSource
 		return true
 	})
 	return holder.X, err
-}
-
-// qualifyImportedNames is qualifyDefaultExpr for a default from another file
-// of this package: a qualifier of that file's imports becomes this file's name
-// for the import, and a bare name of a package that file dot-imports is
-// qualified where this file does not dot-import it too.
-func (t *galaASTTransformer) qualifyImportedNames(expr ast.Expr, scope *transpiler.DefaultScope) ast.Expr {
-	qualified := map[ast.Node]bool{}
-	bound := boundNames(expr)
-	holder := &ast.ParenExpr{X: expr}
-	ast.Inspect(holder, func(n ast.Node) bool {
-		if qualified[n] {
-			return false
-		}
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			if base, ok := sel.X.(*ast.Ident); ok && !bound[base.Name] {
-				if path, ok := scope.Imports[base.Name]; ok {
-					sel.X = ast.NewIdent(t.importQualifier(path, base.Name))
-					return true
-				}
-			}
-		}
-		for _, slot := range referenceSlots(n) {
-			if id, ok := (*slot).(*ast.Ident); ok && !bound[id.Name] {
-				*slot = t.qualifyDotImported(id, scope, qualified)
-			}
-		}
-		return true
-	})
-	return holder.X
 }
 
 // qualifyDotImported qualifies id, a bare name of a lowered default from
