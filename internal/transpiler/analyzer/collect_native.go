@@ -18,28 +18,31 @@ import (
 // in the same order, with the same diagnostics. TestCollectionsAgree and
 // TestCollectionDiagnosticsAgree hold each pair together.
 //
-// analyze collects a file on its native tree only when the undefined-symbol
-// check reads that tree too (see checksUndefined there, and
-// undefined_symbol_native.go): converting costs several times what
-// collecting on it saves. Every other
-// file is collected on ANTLR's tree: a parse by ANTLR's parser or one with
-// syntax errors (no handle, see Parsed.CleanNative), an LSP buffer or a tree
-// a caller handed in bare, a sibling or an imported file (the parsed-file
-// cache keeps no handle), and a file whose check stands down. A file is
-// collected on one tree or the other, never on a mix, and the native
-// collection reads no ANTLR context: the initializers of package-level
-// bindings are inferred on the native tree too (infer_native.go).
+// analyze reads the compiled file on its native tree, from its first read on
+// (file_checks_native.go), when the file is analyzed outside the LSP and its
+// parse came with a handle (see nativeFileOf and readsNative there). The
+// undefined-symbol check reads that tree too (undefined_symbol_native.go).
+// Every other file is collected on ANTLR's tree: a parse by ANTLR's parser or
+// one with syntax errors (no handle, see Parsed.CleanNative), an LSP buffer
+// or a tree a caller handed in bare, and a sibling or an imported file (the
+// parsed-file cache keeps no handle). A file is collected on one tree or the
+// other, never on a mix, and the native collection reads no ANTLR context:
+// the initializers of package-level bindings are inferred on the native tree
+// too (infer_native.go).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
 
 // collectTrace is what analyze tells galaAnalyzer.onCollect about a file:
-// whether the undefined-symbol check runs on it, whether its parse came with
-// a native-tree handle, and whether its declarations are collected on the
-// native tree, which they are exactly when both hold and the tree converts.
+// whether the undefined-symbol check runs on it, whether it is read on its
+// native tree when it has one (readsNative), whether its parse came with a
+// native-tree handle, and whether its declarations are collected on the
+// native tree, which they are exactly when readsNative and hasHandle hold and
+// the tree converts.
 type collectTrace struct {
 	filePath        string
 	checksUndefined bool
+	readsNative     bool
 	hasHandle       bool
 	native          bool
 }
