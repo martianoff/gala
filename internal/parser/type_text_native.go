@@ -111,8 +111,12 @@ func NativeStartText(n native.GalaNodeRef) string {
 
 // NativeText is GetText of n without building a string where it can: a node
 // of one token, an identifier's, is that token's text, a slice of the source.
+// A tree converted from ANTLR's error recovery can hold conjured tokens
+// ("<missing 'package'>"), which sit past the stream's tokens and so are
+// outside the span StartIndex and StopIndex give; a node there that spans one
+// token may hold one, so in such a tree every node takes GetText.
 func NativeText(n native.GalaNodeRef) string {
-	if i := n.StartIndex(); n.StopIndex() == i {
+	if i := n.StartIndex(); n.StopIndex() == i && len(n.Tree().Conjured) == 0 {
 		return n.Tree().Text(i)
 	}
 	return n.GetText()
