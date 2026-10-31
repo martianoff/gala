@@ -89,7 +89,7 @@ func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, er
 		}
 		return nil, stmt, err
 	case stmtSimple:
-		stmt, err := t.lowerSimpleStatement(s.simple(), false)
+		stmt, err := t.lowerSimpleStatement(s.simpleS, false)
 		return nil, stmt, err
 	// A block lowers a `bind` and the `also`s after it as one FlatMap chain
 	// before reaching its statements one by one, so either one here has no
@@ -1185,19 +1185,18 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 		// expression, as a lambda does: the body is lowered so that value is a
 		// `return`, and one that can still finish without a value is rejected
 		// here rather than left to Go's "missing return".
-		block := d.block
 		var b *ast.BlockStmt
 		var err error
 		if hasResult {
-			b, err = t.lowerBlock(block, tailReturn, slot{})
+			b, err = t.lowerBlock(d.block, tailReturn, slot{})
 		} else {
-			b, err = t.lowerBlock(block, tailDiscarded, slot{})
+			b, err = t.lowerBlock(d.block, tailDiscarded, slot{})
 		}
 		if err != nil {
 			return nil, err
 		}
 		if hasResult && !isTerminatingStmt(b) {
-			return nil, t.missingReturnError(block, "function "+funcSlot.funcName, funcSlot.typ.String())
+			return nil, t.missingReturnError(d.block, "function "+funcSlot.funcName, funcSlot.typ.String())
 		}
 		body = b
 	} else if d.expr != nil && !hasResult {

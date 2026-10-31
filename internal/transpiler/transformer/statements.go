@@ -1288,7 +1288,7 @@ func (t *galaASTTransformer) lowerForStatement(f forSrc) (ast.Stmt, error) {
 // assignments (`a, b = ...`), field/index targets (`v.f = ...`, `v[i] = ...`),
 // and any other expression that is not a plain identifier.
 //
-// Used by transformAssignment to look up the variable's declared type so
+// Used by lowerAssignment to look up the variable's declared type so
 // downward inference can drive sealed-variant constructors on the RHS.
 func (t *galaASTTransformer) singleAssignmentLHSName(lhsCtx *grammar.ExpressionListContext) (string, bool) {
 	exprs := lhsCtx.AllExpression()

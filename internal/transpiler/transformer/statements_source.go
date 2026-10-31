@@ -41,10 +41,13 @@ func (b blockSrc) ok() bool { return b.ctx != nil || b.node.Ok() }
 
 // at is where b is written.
 func (b blockSrc) at() srcNode {
-	if b.node.Ok() {
+	switch {
+	case b.node.Ok():
 		return srcNode{node: b.node}
+	case b.ctx != nil:
+		return srcNode{ctx: b.ctx}
 	}
-	return srcNode{ctx: b.ctx}
+	return srcNode{}
 }
 
 // statements is b's statements, in order.
@@ -276,9 +279,6 @@ func antlrStmts(t *galaASTTransformer, stmts []stmtSrc) []grammar.IStatementCont
 	return out
 }
 
-// simple is s's simple statement; the zero simpleSrc when s is none.
-func (s stmtSrc) simple() simpleSrc { return s.simpleS }
-
 // ifStmt is s's if-statement; the zero ifSrc when s is none.
 func (s stmtSrc) ifStmt() ifSrc {
 	switch {
@@ -290,9 +290,12 @@ func (s stmtSrc) ifStmt() ifSrc {
 	return ifSrc{ctx: s.kid.ctx.(*grammar.IfStatementContext)}
 }
 
-// forStmt is s's for-statement, when s is one.
+// forStmt is s's for-statement; the zero forSrc when s is none.
 func (s stmtSrc) forStmt() forSrc {
-	if s.kid.node.Ok() {
+	switch {
+	case s.kind != stmtFor:
+		return forSrc{}
+	case s.kid.node.Ok():
 		return forSrc{node: s.kid.node}
 	}
 	return forSrc{ctx: s.kid.ctx.(*grammar.ForStatementContext)}
@@ -328,8 +331,7 @@ func (s stmtSrc) hoistsInitializer() bool {
 	case stmtVal, stmtVar:
 		return true
 	case stmtSimple:
-		simple := s.simple()
-		return simple.kind == simpleAssign && simple.assignsOneName()
+		return s.simpleS.kind == simpleAssign && s.simpleS.assignsOneName()
 	}
 	return false
 }
@@ -610,10 +612,13 @@ func (s ifSrc) ok() bool { return s.ctx != nil || s.node.Ok() }
 
 // at is where s is written.
 func (s ifSrc) at() srcNode {
-	if s.node.Ok() {
+	switch {
+	case s.node.Ok():
 		return srcNode{node: s.node}
+	case s.ctx != nil:
+		return srcNode{ctx: s.ctx}
 	}
-	return srcNode{ctx: s.ctx}
+	return srcNode{}
 }
 
 // native is s's native handle.
