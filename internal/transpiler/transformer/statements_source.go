@@ -22,10 +22,10 @@ import (
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
-// declarations_native.go). A native block is reached only from a function
-// declaration's body (readFuncDeclNative) and from the if and for statements
-// inside it: a lambda's or a match arm's block is below an expression, which
-// is still read on ANTLR's tree.
+// declarations_native.go). A native block is reached from a function
+// declaration's body (readFuncDeclNative), from a lambda's (lambdas_source.go)
+// and from the if and for statements inside them: a match arm's block is
+// below an expression, which is still read on ANTLR's tree.
 
 // blockSrc is a block.
 type blockSrc struct {

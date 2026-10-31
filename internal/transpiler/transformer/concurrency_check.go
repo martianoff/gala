@@ -6,6 +6,7 @@ import (
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/concurrency"
 )
@@ -125,7 +126,35 @@ func boundaryParamByName(ctx callContext, argName string) (transpiler.Type, bool
 // lambda argument passed to a `Sendable` parameter. It returns a GALA-E0037
 // error for the first unsafe capture, or nil when every capture is safe.
 func (t *galaASTTransformer) enforceSendableCapturesInLambda(lambda grammar.ILambdaExpressionContext) error {
-	return t.checkSendableCaptures(concurrency.FreeVariablesInLambda(lambda))
+	return t.checkSendableCaptures(t.lambdaCaptures(lambda))
+}
+
+// lambdaCaptures is the free variables lambda captures, read on the native
+// tree when the walk reads it (nativeNodeOf) and on ANTLR's otherwise.
+func (t *galaASTTransformer) lambdaCaptures(lambda grammar.ILambdaExpressionContext) []concurrency.Capture {
+	if n, ok := t.nativeNodeOf(lambda, native.GalaKIND_lambdaExpression); ok {
+		t.nativeCaptureCheck()
+		return concurrency.FreeVariablesInLambdaNative(native.LambdaExpressionNode{GalaNodeRef: n})
+	}
+	return concurrency.FreeVariablesInLambda(lambda)
+}
+
+// thunkCaptures is the free variables of exprCtx, a by-name argument, as
+// the body of a thunk, read on the tree lambdaCaptures reads.
+func (t *galaASTTransformer) thunkCaptures(exprCtx grammar.IExpressionContext) []concurrency.Capture {
+	if n, ok := t.nativeNodeOf(exprCtx, native.GalaKIND_expression); ok {
+		t.nativeCaptureCheck()
+		return concurrency.FreeVariablesInExpressionNative(nil, native.ExpressionNode{GalaNodeRef: n})
+	}
+	return concurrency.FreeVariablesInExpression(nil, exprCtx)
+}
+
+// nativeCaptureCheck tells onNativeCapture of a capture check on the
+// native tree.
+func (t *galaASTTransformer) nativeCaptureCheck() {
+	if t.onNativeCapture != nil {
+		t.onNativeCapture()
+	}
 }
 
 // enforceSendableCapturesInExpr runs the capture-safety check for a by-name /
@@ -134,9 +163,9 @@ func (t *galaASTTransformer) enforceSendableCapturesInLambda(lambda grammar.ILam
 // analysed directly; otherwise the whole expression is analysed as a thunk body.
 func (t *galaASTTransformer) enforceSendableCapturesInExpr(exprCtx grammar.IExpressionContext) error {
 	if lam := t.findLambdaInExpression(exprCtx); lam != nil {
-		return t.checkSendableCaptures(concurrency.FreeVariablesInLambda(lam))
+		return t.checkSendableCaptures(t.lambdaCaptures(lam))
 	}
-	return t.checkSendableCaptures(concurrency.FreeVariablesInExpression(nil, exprCtx))
+	return t.checkSendableCaptures(t.thunkCaptures(exprCtx))
 }
 
 // checkSendableCaptures classifies each captured free variable and returns a

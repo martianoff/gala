@@ -471,10 +471,15 @@ func (t *galaASTTransformer) transformBlock(ctx *grammar.BlockContext) (*ast.Blo
 // statement-position match too rather than a value mixing value and void arms,
 // and a trailing plain value is evaluated but not used, as in any statement.
 func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s slot) (*ast.BlockStmt, error) {
+	return t.lowerValueBlock(antlrBlock(ctx), s)
+}
+
+// lowerValueBlock is transformValueBlock of b.
+func (t *galaASTTransformer) lowerValueBlock(b blockSrc, s slot) (*ast.BlockStmt, error) {
 	if s.discarded {
-		return t.transformBlock(ctx)
+		return t.lowerBlock(b, tailDiscarded, slot{})
 	}
-	return t.transformBlockWithTail(ctx, tailValue, s)
+	return t.lowerBlock(b, tailValue, s)
 }
 
 // transformBlockWithTail lowers the block ctx (see lowerBlock).
