@@ -24,6 +24,13 @@ import (
 // whether one is kept depends on the bare names the file uses, and the
 // colliding declaration is such a name.
 func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[string][]string, richAST *transpiler.RichAST) error {
+	return dotImportCollisions(dotImports, richAST, func(v topLevelVisitor) { forEachTopLevelName(sf, v) })
+}
+
+// dotImportCollisions is checkDotImportCollisions of the file whose top-level
+// names names reports (forEachTopLevelName or its native twin), reading
+// neither tree.
+func dotImportCollisions(dotImports map[string][]string, richAST *transpiler.RichAST, names func(topLevelVisitor)) error {
 	if len(dotImports) == 0 || richAST == nil {
 		return nil
 	}
@@ -44,24 +51,22 @@ func checkDotImportCollisions(sf *grammar.SourceFileContext, dotImports map[stri
 		return ""
 	}
 	var err error
-	forEachTopLevelName(sf, func(id grammar.IIdentifierContext, kind string) {
-		name := id.GetText()
+	names(topLevelVisitor{name: func(name string, at transpiler.SourcePos, kind string) {
 		// A dot import brings in exported names only.
 		if err != nil || !token.IsExported(name) {
 			return
 		}
 		if pkg := exporter(name); pkg != "" {
-			err = dotImportCollisionError(kind, name, pkg, id)
+			err = dotImportCollisionError(kind, name, pkg, at)
 		}
-	}, nil)
+	}})
 	return err
 }
 
-func dotImportCollisionError(kind, name, pkg string, id grammar.IIdentifierContext) error {
-	tok := id.GetStart()
+func dotImportCollisionError(kind, name, pkg string, at transpiler.SourcePos) error {
 	msg := fmt.Sprintf("%s %s is also exported by %s, which this package dot-imports", kind, name, pkg)
 	hint := fmt.Sprintf("rename %s, or import %s under a name instead of `.`; "+
 		"Go allows no package-level name that a dot import also brings in", name, pkg)
-	return galaerr.NewCodedSemanticError(galaerr.CodeDeclarationCollidesWithDotImport, tok.GetLine(), tok.GetColumn(), msg, hint).
-		WithSpan(tok.GetColumn() + len([]rune(name)))
+	return galaerr.NewCodedSemanticError(galaerr.CodeDeclarationCollidesWithDotImport, at.Line, at.Column, msg, hint).
+		WithSpan(at.Column + len([]rune(name)))
 }

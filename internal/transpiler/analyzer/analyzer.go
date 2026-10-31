@@ -55,7 +55,8 @@ import (
 // Every path that cannot establish a violation returns nil. The Go compiler
 // still rejects the generated code, so failing open costs a worse error
 // message rather than a missed violation.
-func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec *grammar.ImportSpecContext, filePath string) error {
+func (a *galaAnalyzer) checkInternalImport(importerPath string, imp fileImport, filePath string) error {
+	importPath := imp.Path
 	if module.AllowsInternalImport(importerPath, importPath) {
 		return nil
 	}
@@ -81,11 +82,10 @@ func (a *galaAnalyzer) checkInternalImport(importerPath, importPath string, spec
 			"import something %q exports instead, or move this package out of internal/ to make it public",
 		root)
 
-	tok := spec.STRING().GetSymbol()
 	violation := galaerr.NewCodedSemanticError(
 		galaerr.CodeInternalPackageImport,
-		tok.GetLine(),
-		tok.GetColumn(),
+		imp.PathAt.Line,
+		imp.PathAt.Column,
 		msg,
 		hint,
 	)
@@ -830,66 +830,62 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		return nil, err
 	}
 
-	for _, impDecl := range sourceFile.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
+	for _, imp := range fileImports {
+		path := imp.Path
 
-			if err := a.checkInternalImport(importerPath, path, s, filePath); err != nil {
-				return nil, err
+		if err := a.checkInternalImport(importerPath, imp, filePath); err != nil {
+			return nil, err
+		}
+
+		// Check if this is a GALA package (internal or external)
+		isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
+		isExternalGala := a.resolver.IsGalaPackage(path)
+
+		if isInternalGala || isExternalGala {
+			// Determine how to resolve the package
+			var relPath string
+			if isInternalGala {
+				relPath = strings.TrimPrefix(path, "martianoff/gala/")
+			} else {
+				relPath = path // External packages use full path
 			}
 
-			// Check if this is a GALA package (internal or external)
-			isInternalGala := strings.HasPrefix(path, "martianoff/gala/")
-			isExternalGala := a.resolver.IsGalaPackage(path)
-
-			if isInternalGala || isExternalGala {
-				// Determine how to resolve the package
-				var relPath string
-				if isInternalGala {
-					relPath = strings.TrimPrefix(path, "martianoff/gala/")
-				} else {
-					relPath = path // External packages use full path
+			// Check if the GALA import path differs from the actual Go module path
+			// (e.g., "martianoff/gala-server" vs "github.com/martianoff/gala-server")
+			if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
+				if richAST.ImportPathMap == nil {
+					richAST.ImportPathMap = make(map[string]string)
 				}
+				richAST.ImportPathMap[path] = goPath
+			}
 
-				// Check if the GALA import path differs from the actual Go module path
-				// (e.g., "martianoff/gala-server" vs "github.com/martianoff/gala-server")
-				if goPath := a.resolver.ResolveGoImportPath(path); goPath != "" {
-					if richAST.ImportPathMap == nil {
-						richAST.ImportPathMap = make(map[string]string)
-					}
-					richAST.ImportPathMap[path] = goPath
+			if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
+				// Use cached metadata — walk closure to materialize transitive types.
+				if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
+					richAST.Packages[path] = name
 				}
+			} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
+				// First time analyzing this package - set placeholder to prevent infinite recursion
+				a.analyzedPkgs[path] = nil
 
-				if cached, ok := a.analyzedPkgs[path]; ok && cached != nil {
-					// Use cached metadata — walk closure to materialize transitive types.
+				importedAST, err := a.analyzePackage(relPath, path)
+				if err != nil {
+					line := imp.At.Line
+					warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
+					fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
+					richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
+				}
+				if err == nil {
+					a.storeAnalyzedPkg(path, importedAST)
+					// Store package name from the imported package
 					if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
 						richAST.Packages[path] = name
-					}
-				} else if _, inProgress := a.analyzedPkgs[path]; !inProgress {
-					// First time analyzing this package - set placeholder to prevent infinite recursion
-					a.analyzedPkgs[path] = nil
-
-					importedAST, err := a.analyzePackage(relPath, path)
-					if err != nil {
-						line := s.GetStart().GetLine()
-						warnMsg := fmt.Sprintf("failed to analyze package %s (imported at line %d): %v", relPath, line, err)
-						fmt.Fprintf(os.Stderr, "Warning: %s\n", warnMsg)
-						richAST.AnalysisWarnings = append(richAST.AnalysisWarnings, warnMsg)
-					}
-					if err == nil {
-						a.storeAnalyzedPkg(path, importedAST)
-						// Store package name from the imported package
-						if name := a.mergeAnalyzedClosureAt(richAST, path, mergeVisited); name != "" && name != "main" && name != "test" {
-							richAST.Packages[path] = name
-						} else {
-							// Fallback if PackageName is not set properly
-							for _, typeMeta := range importedAST.Types {
-								if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
-									richAST.Packages[path] = typeMeta.Package
-									break
-								}
+					} else {
+						// Fallback if PackageName is not set properly
+						for _, typeMeta := range importedAST.Types {
+							if typeMeta.Package != "" && typeMeta.Package != "main" && typeMeta.Package != "test" && !registry.Global.IsPreludePackage(typeMeta.Package) {
+								richAST.Packages[path] = typeMeta.Package
+								break
 							}
 						}
 					}
@@ -934,12 +930,12 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	// 0.61 The Go packages the imported packages' defaults name through their
 	// own imports, for lowering those defaults here.
-	a.loadDefaultScopeGoTypes(sourceFile, richAST)
+	a.loadDefaultScopeGoTypes(fileImports, richAST)
 
 	// 0.62 This file's import table (see fileQualifiers), now that its GALA and
 	// Go imports are loaded, and the import aliases it records (e.g.,
 	// import im "path/to/pkg" → im → actual package name).
-	fileQuals := a.qualifiersForFile(sourceFile, richAST)
+	fileQuals := a.qualifiersFor(fileImports, richAST)
 	recordImportAliases(richAST, fileQuals)
 
 	logPhase("analyze-go-packages", phaseStart)
@@ -998,7 +994,7 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		// A sibling's import may have keyed a package merged above (see
 		// keySharedNames): read this file's import table against it again.
 		richAST.ApplyPackageKeys()
-		fileQuals = a.qualifiersForFile(sourceFile, richAST)
+		fileQuals = a.qualifiersFor(fileImports, richAST)
 		recordImportAliases(richAST, fileQuals)
 	}
 
@@ -5188,7 +5184,7 @@ func checkImportPathsWellFormed(imports []fileImport) error {
 		}
 		return galaerr.NewCodedSemanticError(
 			galaerr.CodePackageNotFound,
-			imp.Tok.GetLine(), imp.Tok.GetColumn(),
+			imp.At.Line, imp.At.Column,
 			fmt.Sprintf("package not found: %q is not an import path", imp.Path),
 			"import a package by its module path joined with its directory (e.g. \"example.com/app/util\"), not by a relative or filesystem path",
 		)
@@ -5230,12 +5226,12 @@ func checkDuplicateImports(imports []fileImport) error {
 		if first, ok := seen[key]; ok {
 			return galaerr.NewCodedSemanticError(
 				galaerr.CodeDuplicateImport,
-				imp.Tok.GetLine(), imp.Tok.GetColumn(),
+				imp.At.Line, imp.At.Column,
 				fmt.Sprintf("package %q is already imported at line %d", imp.Path, first),
 				"remove this import — a file's import blocks are merged, so a package listed in one block is in scope for the whole file",
 			)
 		}
-		seen[key] = imp.Tok.GetLine()
+		seen[key] = imp.At.Line
 	}
 	return nil
 }

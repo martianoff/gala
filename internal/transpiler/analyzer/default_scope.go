@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"slices"
 
-	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
 )
 
@@ -41,14 +40,14 @@ func (r *defaultScopeRecorder) addFile(canonFile string, quals fileQualifiers, r
 }
 
 // loadDefaultScopeGoTypes loads the Go type info of the Go packages that the
-// defaults of the packages sf imports name through their own files' imports
-// (`strings` in `sep string = strings.Repeat("=", 2)`), so such a default
-// lowered in sf types as it does where it was written. sf need not import
-// them, so they are recorded by import path only: the names sf's own imports
-// bind keep their meaning.
-func (a *galaAnalyzer) loadDefaultScopeGoTypes(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) {
+// defaults of the packages a file imports (imports) name through their own
+// files' imports (`strings` in `sep string = strings.Repeat("=", 2)`), so
+// such a default lowered in the file types as it does where it was written.
+// The file need not import them, so they are recorded by import path only:
+// the names its own imports bind keep their meaning.
+func (a *galaAnalyzer) loadDefaultScopeGoTypes(imports []fileImport, richAST *transpiler.RichAST) {
 	imported := map[string]bool{}
-	for _, imp := range scanFileImports(sf) {
+	for _, imp := range imports {
 		imported[imp.Path] = true
 	}
 	loaded := map[string]bool{}
