@@ -1315,6 +1315,18 @@ func main() = Println("ok")`,
 			expectCode:     galaerr.CodeGenericInterfaceMethod,
 			expectContains: "declare B, C on the interface instead (type Pair[A any, B any, C comparable] interface { ... })",
 		},
+		{
+			name: "GALA-E0086 hint lists a name the interface already declares once",
+			input: `package main
+
+type Box[T any] interface {
+    Map[T any](f func(T) T) T
+}
+
+func main() = Println("ok")`,
+			expectCode:     galaerr.CodeGenericInterfaceMethod,
+			expectContains: "(type Box[T any] interface { ... })",
+		},
 	}
 
 	for _, tc := range cases {

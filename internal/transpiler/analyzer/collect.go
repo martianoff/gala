@@ -668,15 +668,23 @@ func (fd *fileDecls) sealedDeclaredHere(fullName string) {
 // methodTPs, whose constraints, as written, are methodCons. Go interface
 // methods cannot have type parameters, and a call through an interface value
 // is dispatched at run time, so no set of instantiations can be generated for
-// it. The hint moves the parameters onto the interface, after its own.
+// it. The hint moves the parameters onto the interface, after its own; a
+// name the interface already declares is listed once.
 func genericInterfaceMethodError(line, col int, iface *transpiler.TypeMetadata, methodName string, methodTPs []string, methodCons map[string]string) error {
 	typeName := iface.Name
 	var decl []string
+	seen := make(map[string]bool)
+	add := func(tp, constraint string) {
+		if !seen[tp] {
+			seen[tp] = true
+			decl = append(decl, tp+" "+constraint)
+		}
+	}
 	for _, tp := range iface.TypeParams {
-		decl = append(decl, tp+" "+iface.TypeParamConstraints[tp])
+		add(tp, iface.TypeParamConstraints[tp])
 	}
 	for _, tp := range methodTPs {
-		decl = append(decl, tp+" "+methodCons[tp])
+		add(tp, methodCons[tp])
 	}
 	noun := "a type parameter"
 	if len(methodTPs) > 1 {
