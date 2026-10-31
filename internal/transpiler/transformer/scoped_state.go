@@ -113,6 +113,7 @@ var accumulatedStateFields = []string{
 	"richAST",
 	"native",
 	"onNativeDecl",
+	"onNativeStmt",
 	"traceTypeResolution",
 	"typeTraces",
 	"exprTypeCache",

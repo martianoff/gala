@@ -503,6 +503,9 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 	allStmts := b.statements()
 	lastIdx := len(allStmts) - 1
 	for i, st := range allStmts {
+		if t.onNativeStmt != nil && st.at.node.Ok() {
+			t.onNativeStmt(st.at.node.Index())
+		}
 		// Source-mapped `//line` directive: mark each statement with its
 		// originating GALA line so a panic reports the GALA position. The marker
 		// is prepended before the statement's generated code — never appended —

@@ -143,6 +143,10 @@ type galaASTTransformer struct {
 	// native walk lowers. It observes and changes nothing;
 	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
 	onNativeDecl func()
+	// onNativeStmt, when set, is told of each statement the native walk
+	// lowers in a block, by its node index. It observes and changes nothing;
+	// TestNativeWalkAgrees sets it to count them.
+	onNativeStmt func(index int)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that

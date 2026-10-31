@@ -73,7 +73,7 @@ func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, er
 	case stmtFunc:
 		// lowerDeclaration only sees statements inside a body; top-level
 		// functions arrive through transformTopLevelDeclaration.
-		return nil, nil, nestedFunctionError(s.nestedFunc())
+		return nil, nil, nestedFunctionError(s.nestedFunc(t))
 	case stmtType:
 		decl, err := t.lowerLocalTypeDecl(s.typeDecl(t))
 		return decl, nil, err
