@@ -152,6 +152,16 @@ func TestScopeModel(t *testing.T) {
 			want: []string{"g"},
 		},
 		{
+			name: "local type declaration binds its name as a constructor",
+			body: "type Inner struct {\n        N int\n    }\n    return Inner(p).N + outer",
+			want: []string{"outer"},
+		},
+		{
+			name: "local type name is not bound before its declaration or after its block",
+			body: "val a = Inner(p)\n    if p > 0 {\n        type Inner struct { N int }\n        Println(Inner(p))\n    }\n    return Inner(outer)",
+			want: []string{"Inner", "Println", "outer"},
+		},
+		{
 			name: "type annotations are not references",
 			body: "val t Widget = mk()\nreturn p",
 			want: []string{"mk"},

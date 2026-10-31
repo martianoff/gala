@@ -86,6 +86,22 @@ func main() {
 			symbol: "MissingPoint",
 		},
 		{
+			name: "constructor of a local type outside its block",
+			src: `package main
+
+func main() {
+    if true {
+        type Inner struct {
+            N int
+        }
+        Println(Inner(1).N)
+    }
+    Println(Inner(2))
+}
+`,
+			symbol: "Inner",
+		},
+		{
 			name: "undefined name inside a lambda body",
 			src: `package main
 
@@ -318,6 +334,23 @@ func main() {
         val inner = (v int) => v * 3
         return inner(v)
     }, 2))
+}
+`,
+		},
+		{
+			name: "constructor of a type declared inside a function",
+			src: `package main
+
+func localType() int {
+    type Inner struct {
+        N int
+    }
+    val i = Inner(1)
+    return i.N
+}
+
+func main() {
+    Println(localType())
 }
 `,
 		},

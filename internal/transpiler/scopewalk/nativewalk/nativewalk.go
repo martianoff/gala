@@ -215,6 +215,11 @@ func (w walk) walk(n native.GalaNodeRef) {
 		w.walk(d.Expression().GalaNodeRef)
 		w.bindID(d.Identifier())
 		return
+	// A type declaration binds its name for the rest of its block (see the
+	// ANTLR twin).
+	case native.GalaKIND_typeDeclaration:
+		w.bindID(native.TypeDeclarationNode{GalaNodeRef: n}.Identifier())
+		// No return: the body still gets the generic recursion.
 
 	// Reference-contributing leaves.
 	case native.GalaKIND_postfixExpr:

@@ -100,7 +100,7 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	case native.GalaKIND_functionDeclaration:
 		return oneDecl(t.lowerFuncDecl(t.readFuncDeclNative(native.FunctionDeclarationNode{GalaNodeRef: decl})))
 	case native.GalaKIND_typeDeclaration:
-		return t.lowerTypeDecl(t.readTypeDeclNative(native.TypeDeclarationNode{GalaNodeRef: decl}))
+		return t.lowerTypeDecl(t.readTypeDeclNative(native.TypeDeclarationNode{GalaNodeRef: decl}), false)
 	case native.GalaKIND_structShorthandDeclaration:
 		return t.lowerShorthandDecl(t.readShorthandDeclNative(native.StructShorthandDeclarationNode{GalaNodeRef: decl}))
 	case native.GalaKIND_sealedTypeDeclaration:

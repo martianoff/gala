@@ -44,7 +44,11 @@ type scope struct {
 	// set by whatever emitted the declaration, so a read always matches it.
 	// Allocated on first use.
 	boxedVals map[string]bool
-	parent    *scope
+	// onPop runs, last first, when the scope is popped: it puts back what a
+	// declaration scoped to the block replaced, such as the metadata a local
+	// type declaration registers (see transformLocalTypeDeclaration).
+	onPop  []func()
+	parent *scope
 }
 
 func (t *galaASTTransformer) pushScope() {
@@ -59,6 +63,9 @@ func (t *galaASTTransformer) pushScope() {
 
 func (t *galaASTTransformer) popScope() {
 	if t.currentScope != nil {
+		for i := len(t.currentScope.onPop) - 1; i >= 0; i-- {
+			t.currentScope.onPop[i]()
+		}
 		t.currentScope = t.currentScope.parent
 	}
 }

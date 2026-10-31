@@ -46,7 +46,7 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 		return []ast.Decl{decl}, nil
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
+		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext), false)
 	}
 	if structShorthandCtx := ctx.StructShorthandDeclaration(); structShorthandCtx != nil {
 		return t.transformStructShorthandDeclaration(structShorthandCtx.(*grammar.StructShorthandDeclarationContext))
@@ -75,14 +75,8 @@ func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContex
 		return nil, nil, checkNestedFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		decls, err := t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(decls) > 0 {
-			return decls[0], nil, nil
-		}
-		return nil, nil, nil
+		decl, err := t.transformLocalTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
+		return decl, nil, err
 	}
 	if importCtx := ctx.ImportDeclaration(); importCtx != nil {
 		decl, err := t.transformImportDeclaration(importCtx.(*grammar.ImportDeclarationContext))
@@ -1771,12 +1765,13 @@ func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 	return d
 }
 
-func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {
-	return t.lowerTypeDecl(readTypeDecl(ctx))
+func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext, local bool) ([]ast.Decl, error) {
+	return t.lowerTypeDecl(readTypeDecl(ctx), local)
 }
 
-// lowerTypeDecl lowers a type declaration.
-func (t *galaASTTransformer) lowerTypeDecl(d typeDecl) ([]ast.Decl, error) {
+// lowerTypeDecl lowers a type declaration. A local one (declared in a function
+// body) gets the type alone, without generated methods.
+func (t *galaASTTransformer) lowerTypeDecl(d typeDecl, local bool) ([]ast.Decl, error) {
 	name := d.name
 	var decls []ast.Decl
 
@@ -1831,6 +1826,10 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl) ([]ast.Decl, error) {
 			Tok:   token.TYPE,
 			Specs: []ast.Spec{typeSpec},
 		})
+		if local {
+			// Go has no methods on a type declared in a function body.
+			return decls, nil
+		}
 
 		// Methods — skip Copy/Equal/Unapply if user-defined
 		hasCopy, hasEqual, hasUnapply := t.userDefinedMethodFlags(name)
