@@ -251,7 +251,7 @@ func (t *galaASTTransformer) hasOpenTypeArg(typ transpiler.Type, meta *transpile
 // assertion held. std.As is the Go assertion plus a look through std's own
 // transparent wrappers (Immutable, a recovered panic's error), as for a type
 // pattern `case x: T`.
-func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) (ast.Expr, ast.Stmt, ast.Expr) {
+func (t *galaASTTransformer) assertPatternSubject(objExpr, assertType ast.Expr) (*ast.Ident, ast.Stmt, *ast.Ident) {
 	castName := t.nextTempVar()
 	okName := t.nextTempVar()
 	stmt := t.patternDefine([]string{castName, okName}, []patternType{exprType(assertType), boolPatternType},

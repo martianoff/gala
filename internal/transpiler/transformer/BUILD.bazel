@@ -171,6 +171,7 @@ go_test(
         "exhaustiveness_test.go",
         "expected_arg_stack_test.go",
         "expected_type_sealed_variant_overlap_test.go",
+        "extractor_interface_subject_test.go",
         "fmt_alias_test.go",
         "forbidden_builtins_test.go",
         "forbidden_statement_keywords_test.go",
