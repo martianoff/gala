@@ -449,15 +449,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				// Clear fields to avoid duplicates if re-analyzing
-				meta.IsInterface = false
-				meta.Fields = make(map[string]transpiler.Type)
-				meta.FieldNames = nil
-				meta.ImmutFlags = nil
-				meta.StoredAsDeclared = nil
-				meta.FieldPositions = nil
-				meta.FieldDocs = nil
-				meta.Pos = nativePos(id.GalaNodeRef)
+				recollectType(meta, nativePos(id.GalaNodeRef))
 				nativeSetDoc(&meta.Doc, docs, decl)
 			} else {
 				meta = &transpiler.TypeMetadata{
@@ -561,14 +553,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				meta.Fields = make(map[string]transpiler.Type)
-				meta.FieldNames = nil
-				meta.ImmutFlags = nil
-				meta.StoredAsDeclared = nil
-				meta.FieldPositions = nil
-				meta.FieldDocs = nil
-				meta.FieldDefaults = nil
-				meta.Pos = pos
+				recollectType(meta, pos)
 				nativeSetDoc(&meta.Doc, docs, decl)
 			} else {
 				meta = &transpiler.TypeMetadata{

@@ -442,44 +442,11 @@ struct Pair(a int, b int)
 			"box.Pair": {nil, nil},
 		}},
 	}
-	type collector func(*galaAnalyzer, *galaparser.Parsed, *fileDecls) error
-	collectors := map[string]collector{
-		"antlr": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
-			return a.collectFileTypes(p.Tree.(*grammar.SourceFileContext), fd)
-		},
-		"native": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
-			nf := nativeFileOf(p.CleanNative())
-			if !nf.ok() {
-				return fmt.Errorf("a clean parse has no native tree")
-			}
-			return a.collectFileTypesNative(nf, fd)
-		},
-	}
-	parse := func(t *testing.T, src string) *galaparser.Parsed {
-		parsed := galaparser.NewAntlrGalaParser().ParseFile(src)
-		if parsed.Err() != nil {
-			t.Fatal(parsed.Err())
-		}
-		return parsed
-	}
 	for _, c := range cases {
-		for name, collect := range collectors {
+		for name, collect := range typeCollectors {
 			t.Run(c.name+"/"+name, func(t *testing.T) {
 				a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
-				dir := t.TempDir()
-				first := parse(t, generic)
-				fd := newCollectedFile(a, "box", filepath.Join(dir, "box.gala"), first.Docs)
-				if err := collect(a, first, fd); err != nil {
-					t.Fatalf("first collection: %v", err)
-				}
-				// The same file under another spelling: its types' entries
-				// are reused, not reported as redefined.
-				again := parse(t, c.again)
-				fd.filePath = dir + string(filepath.Separator) + "." + string(filepath.Separator) + "box.gala"
-				fd.docs = again.Docs
-				if err := collect(a, again, fd); err != nil {
-					t.Fatalf("second collection: %v", err)
-				}
+				fd := collectTwice(t, a, collect, generic, c.again, nil)
 				for key, w := range c.want {
 					meta := fd.richAST.Types[key]
 					if meta == nil {
@@ -493,6 +460,112 @@ struct Pair(a int, b int)
 					}
 				}
 			})
+		}
+	}
+}
+
+// typeCollector collects the types of a parsed file into fd, on one twin's
+// tree.
+type typeCollector func(*galaAnalyzer, *galaparser.Parsed, *fileDecls) error
+
+// typeCollectors are the two twins of the type collection, by tree.
+var typeCollectors = map[string]typeCollector{
+	"antlr": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
+		return a.collectFileTypes(p.Tree.(*grammar.SourceFileContext), fd)
+	},
+	"native": func(a *galaAnalyzer, p *galaparser.Parsed, fd *fileDecls) error {
+		nf := nativeFileOf(p.CleanNative())
+		if !nf.ok() {
+			return fmt.Errorf("a clean parse has no native tree")
+		}
+		return a.collectFileTypesNative(nf, fd)
+	},
+}
+
+// parseClean parses src, failing tb when it does not parse.
+func parseClean(tb testing.TB, src string) *galaparser.Parsed {
+	tb.Helper()
+	parsed := galaparser.NewAntlrGalaParser().ParseFile(src)
+	if parsed.Err() != nil {
+		tb.Fatal(parsed.Err())
+	}
+	return parsed
+}
+
+// collectOnce collects the types of src, the file box.gala of package box at
+// path, into a fresh RichAST.
+func collectOnce(tb testing.TB, collect typeCollector, path, src string) *fileDecls {
+	tb.Helper()
+	a := newCollectionAnalyzer(tb, galaparser.NewAntlrGalaParser(), nil)
+	parsed := parseClean(tb, src)
+	fd := newCollectedFile(a, "box", path, parsed.Docs)
+	if err := collect(a, parsed, fd); err != nil {
+		tb.Fatalf("collection: %v", err)
+	}
+	return fd
+}
+
+// collectTwice collects the types of first, the file box.gala of package box,
+// then of again as the same file under another spelling, so the second
+// collection reuses the entries of the first rather than reporting them
+// redefined. between, when not nil, runs on the first collection's result.
+// The returned fileDecls has the second spelling as its filePath.
+func collectTwice(tb testing.TB, a *galaAnalyzer, collect typeCollector, first, again string, between func(*fileDecls)) *fileDecls {
+	tb.Helper()
+	dir := tb.TempDir()
+	parsed := parseClean(tb, first)
+	fd := newCollectedFile(a, "box", filepath.Join(dir, "box.gala"), parsed.Docs)
+	if err := collect(a, parsed, fd); err != nil {
+		tb.Fatalf("first collection: %v", err)
+	}
+	if between != nil {
+		between(fd)
+	}
+	parsed = parseClean(tb, again)
+	fd.filePath = dir + string(filepath.Separator) + "." + string(filepath.Separator) + "box.gala"
+	fd.docs = parsed.Docs
+	if err := collect(a, parsed, fd); err != nil {
+		tb.Fatalf("second collection: %v", err)
+	}
+	return fd
+}
+
+// TestRecollectedTypeChangesForm: a type whose declaration changes form
+// between two collections of its file (a shorthand struct, a block struct, an
+// interface) gets, from both twins, the entry a first collection of its new
+// declaration gives, with no flag, field or interface method left from the
+// old form. The methods declared on a struct survive the re-collection.
+func TestRecollectedTypeChangesForm(t *testing.T) {
+	parseWithGalop(t)
+	forms := []struct{ name, src string }{
+		{"shorthand", "package box\n\nstruct Cfg[T any](Name string, Tries int = 3, Extra T)\n"},
+		{"block", "package box\n\ntype Cfg struct {\n    var Name string\n    Size int\n}\n"},
+		{"interface", "package box\n\ntype Cfg interface {\n    Name() string\n    Tries(n int) int\n}\n"},
+	}
+	// A method another file declares on Cfg, added between the collections.
+	declared := &transpiler.MethodMetadata{Name: "Describe", Package: "box", DefinedIn: "other.gala"}
+	for _, from := range forms {
+		for _, to := range forms {
+			if from.name == to.name {
+				continue
+			}
+			for name, collect := range typeCollectors {
+				t.Run(from.name+"_to_"+to.name+"/"+name, func(t *testing.T) {
+					a := newCollectionAnalyzer(t, galaparser.NewAntlrGalaParser(), nil)
+					fd := collectTwice(t, a, collect, from.src, to.src, func(fd *fileDecls) {
+						if from.name != "interface" {
+							fd.richAST.Types["box.Cfg"].Methods[declared.Name] = declared
+						}
+					})
+					want := collectOnce(t, collect, fd.filePath, to.src).richAST.Types["box.Cfg"]
+					if from.name != "interface" {
+						want.Methods[declared.Name] = declared
+					}
+					if got := fd.richAST.Types["box.Cfg"]; !reflect.DeepEqual(got, want) {
+						t.Errorf("re-collected entry:\n got %+v\nwant %+v", *got, *want)
+					}
+				})
+			}
 		}
 	}
 }

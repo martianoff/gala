@@ -75,15 +75,7 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				// Clear fields to avoid duplicates if re-analyzing
-				meta.IsInterface = false
-				meta.Fields = make(map[string]transpiler.Type)
-				meta.FieldNames = nil
-				meta.ImmutFlags = nil
-				meta.StoredAsDeclared = nil
-				meta.FieldPositions = nil
-				meta.FieldDocs = nil
-				meta.Pos = transpiler.PosFromToken(ctx.Identifier().GetStart())
+				recollectType(meta, transpiler.PosFromToken(ctx.Identifier().GetStart()))
 				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
 				meta = &transpiler.TypeMetadata{
@@ -207,14 +199,7 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						existing.DefinedIn, filePath, existing.Pos)
 				}
 				meta = existing
-				meta.Fields = make(map[string]transpiler.Type)
-				meta.FieldNames = nil
-				meta.ImmutFlags = nil
-				meta.StoredAsDeclared = nil
-				meta.FieldPositions = nil
-				meta.FieldDocs = nil
-				meta.FieldDefaults = nil
-				meta.Pos = pos
+				recollectType(meta, pos)
 				setDoc(&meta.Doc, docs, ctx.GetStart())
 			} else {
 				meta = &transpiler.TypeMetadata{
@@ -266,6 +251,30 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 		}
 	}
 	return nil
+}
+
+// recollectType resets meta, a same-package entry that an earlier collection
+// or a cache load filled, to the entry a first collection of its declaration
+// starts from, at pos. Its declaration may have changed form since (a
+// shorthand struct become an interface, say), so no field it describes
+// survives. Name and Package are its key. The methods declared on it, which
+// other files may have added, are kept. An interface's methods are its own
+// specs, which its declaration collects again. Doc is kept as well: the
+// caller's setDoc replaces it only when the declaration has a doc comment.
+// The entry is reset in place, so references to it stay valid.
+func recollectType(meta *transpiler.TypeMetadata, pos transpiler.SourcePos) {
+	methods := meta.Methods
+	if meta.IsInterface || methods == nil {
+		methods = make(map[string]*transpiler.MethodMetadata)
+	}
+	*meta = transpiler.TypeMetadata{
+		Name:    meta.Name,
+		Package: meta.Package,
+		Doc:     meta.Doc,
+		Pos:     pos,
+		Methods: methods,
+		Fields:  make(map[string]transpiler.Type),
+	}
 }
 
 // collectFileFuncs records the sealed and opaque types, methods and top-level
