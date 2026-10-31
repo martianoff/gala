@@ -143,6 +143,10 @@ type galaASTTransformer struct {
 	// native walk lowers. It observes and changes nothing;
 	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
 	onNativeDecl func()
+	// onNativeStmt, when set, is told of each statement the native walk
+	// lowers in a block, by its node index and its first line. It observes
+	// and changes nothing; TestNativeWalkAgrees sets it to count them.
+	onNativeStmt func(index, line int)
 
 	// signatureDots holds, while the signature of a method is lowered whose
 	// receiver type another file of the package declares, the packages that
@@ -779,6 +783,22 @@ func (t *galaASTTransformer) semanticErrorAt(ctx antlr.ParserRuleContext, msg st
 	}
 	// Fall back to last tracked position from enclosing transformation
 	return galaerr.NewSemanticErrorAt(t.lastLine, t.lastCol, msg)
+}
+
+// semanticErrorAtNode is semanticErrorAt of n, a node of either tree.
+func (t *galaASTTransformer) semanticErrorAtNode(n srcNode, msg string) *galaerr.SemanticError {
+	if n.node.Ok() {
+		line, col := n.start()
+		return galaerr.NewSemanticErrorInFile(t.filePath, line, col, msg)
+	}
+	return t.semanticErrorAt(n.ctx, msg)
+}
+
+// semanticErrorAtStart is galaerr.NewSemanticErrorAt n's first token: a
+// diagnostic without the file's path.
+func semanticErrorAtStart(n srcNode, msg string) *galaerr.SemanticError {
+	line, col := n.start()
+	return galaerr.NewSemanticErrorAt(line, col, msg)
 }
 
 // semanticErrorIn is semanticErrorAt of the node at r.

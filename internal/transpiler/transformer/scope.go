@@ -46,7 +46,7 @@ type scope struct {
 	boxedVals map[string]bool
 	// onPop runs, last first, when the scope is popped: it puts back what a
 	// declaration scoped to the block replaced, such as the metadata a local
-	// type declaration registers (see transformLocalTypeDeclaration).
+	// type declaration registers (see lowerLocalTypeDecl).
 	onPop  []func()
 	parent *scope
 }

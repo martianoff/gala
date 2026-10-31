@@ -60,51 +60,44 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 	return nil, nil
 }
 
-func (t *galaASTTransformer) transformDeclaration(ctx grammar.IDeclarationContext) (ast.Decl, ast.Stmt, error) {
-	if valCtx := ctx.ValDeclaration(); valCtx != nil {
-		decl, err := t.transformValDeclaration(valCtx.(*grammar.ValDeclarationContext))
+// lowerDeclaration lowers s, a statement that is a declaration, other than a
+// `use` (see lowerStatement).
+func (t *galaASTTransformer) lowerDeclaration(s stmtSrc) (ast.Decl, ast.Stmt, error) {
+	switch s.kind {
+	case stmtVal:
+		decl, err := t.lowerValDecl(s.binding(t))
 		return decl, nil, err
-	}
-	if varCtx := ctx.VarDeclaration(); varCtx != nil {
-		decl, err := t.transformVarDeclaration(varCtx.(*grammar.VarDeclarationContext))
+	case stmtVar:
+		decl, err := t.lowerVarDecl(s.binding(t))
 		return decl, nil, err
-	}
-	if funcCtx := ctx.FunctionDeclaration(); funcCtx != nil {
-		// transformDeclaration only sees statements inside a body; top-level
+	case stmtFunc:
+		// lowerDeclaration only sees statements inside a body; top-level
 		// functions arrive through transformTopLevelDeclaration.
-		return nil, nil, checkNestedFunctionDeclaration(funcCtx.(*grammar.FunctionDeclarationContext))
-	}
-	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		decl, err := t.transformLocalTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
+		return nil, nil, nestedFunctionError(s.nestedFunc(t))
+	case stmtType:
+		decl, err := t.lowerLocalTypeDecl(s.typeDecl(t))
 		return decl, nil, err
-	}
-	if importCtx := ctx.ImportDeclaration(); importCtx != nil {
-		decl, err := t.transformImportDeclaration(importCtx.(*grammar.ImportDeclarationContext))
-		return decl, nil, err
-	}
-	if ifCtx := ctx.IfStatement(); ifCtx != nil {
-		stmt, err := t.transformIfStatement(ifCtx.(*grammar.IfStatementContext))
+	case stmtImport:
+		return t.lowerImportDecl(s.importSpecs()), nil, nil
+	case stmtIf:
+		stmt, err := t.lowerIfStatement(s.ifStmt(), tailDiscarded, slot{})
 		return nil, stmt, err
-	}
-	if forCtx := ctx.ForStatement(); forCtx != nil {
-		stmt, err := t.transformForStatement(forCtx.(*grammar.ForStatementContext))
+	case stmtFor:
+		stmt, err := t.lowerForStatement(s.forStmt())
 		if err == nil {
 			t.markUserLoop(stmt)
 		}
 		return nil, stmt, err
-	}
-	if simpleCtx := ctx.SimpleStatement(); simpleCtx != nil {
-		stmt, err := t.transformSimpleStatement(simpleCtx.(*grammar.SimpleStatementContext))
+	case stmtSimple:
+		stmt, err := t.lowerSimpleStatement(s.simpleS, false)
 		return nil, stmt, err
-	}
 	// A block lowers a `bind` and the `also`s after it as one FlatMap chain
 	// before reaching its statements one by one, so either one here has no
 	// chain to belong to.
-	if ad := ctx.AlsoDeclaration(); ad != nil {
-		return nil, nil, t.semanticErrorAt(ad, "`also` must follow a `bind`")
-	}
-	if bd := ctx.BindDeclaration(); bd != nil {
-		return nil, nil, t.semanticErrorAt(bd, "`bind` is not supported here")
+	case stmtAlso:
+		return nil, nil, t.semanticErrorAtNode(s.kid, "`also` must follow a `bind`")
+	case stmtBind:
+		return nil, nil, t.semanticErrorAtNode(s.kid, "`bind` is not supported here")
 	}
 	return nil, nil, nil
 }
@@ -257,6 +250,16 @@ type bindingDecl struct {
 	blankForm, blankHint string
 }
 
+// ctxDeclNames is the names of the identifier list idList, on ANTLR's tree.
+func ctxDeclNames(idList grammar.IIdentifierListContext) []declName {
+	ids := idList.(*grammar.IdentifierListContext).AllIdentifier()
+	names := make([]declName, len(ids))
+	for i, id := range ids {
+		names[i] = declName{text: id.GetText(), at: srcNode{ctx: id}}
+	}
+	return names
+}
+
 // readBindingDecl reads a val or var declaration, keyword, on ANTLR's tree.
 func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
 	d := bindingDecl{at: srcNode{ctx: ctx}, topLevel: isTopLevelDecl(ctx), typ: ctx.Type_(), exprs: ctx.ExpressionList()}
@@ -272,9 +275,7 @@ func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
 			d.nExprs = len(d.exprs.(*grammar.ExpressionListContext).AllExpression())
 		}
 	}
-	for _, idCtx := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
-		d.names = append(d.names, declName{text: idCtx.GetText(), at: srcNode{ctx: idCtx}})
-	}
+	d.names = ctxDeclNames(idList)
 	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
 		d.blankHint = blankDeclarationHint(ctx)
@@ -731,15 +732,6 @@ func isLoneBlank(names []declName) bool {
 	return len(names) == 1 && names[0].text == "_"
 }
 
-// checkLoneBlank is GALA-E0060 for a declaration of form whose names are
-// exactly `_`, with a hint fitted to where the declaration sits.
-func checkLoneBlank(ctx antlr.ParserRuleContext, names []grammar.IIdentifierContext, form string) error {
-	if len(names) != 1 || names[0].GetText() != "_" {
-		return nil
-	}
-	return loneBlankError(srcNode{ctx: ctx}, []declName{{text: "_", at: srcNode{ctx: names[0]}}}, form, blankDeclarationHint(ctx))
-}
-
 // loneBlankError is GALA-E0060 for the declaration at at, of form, whose
 // names are a lone `_`, or nil when they are not.
 func loneBlankError(at srcNode, names []declName, form, hint string) error {
@@ -984,7 +976,7 @@ type funcDecl struct {
 	// none: the grammar's list has at least one.
 	typeParams []typeParam
 	sig        grammar.ISignatureContext
-	block      grammar.IBlockContext      // nil for an expression body
+	block      blockSrc                   // the zero blockSrc for an expression body
 	expr       grammar.IExpressionContext // nil for a block body
 }
 
@@ -999,7 +991,10 @@ type receiverDecl struct {
 
 // readFuncDecl reads a function declaration on ANTLR's tree.
 func readFuncDecl(ctx *grammar.FunctionDeclarationContext) funcDecl {
-	d := funcDecl{name: ctx.Identifier().GetText(), sig: ctx.Signature(), block: ctx.Block(), expr: ctx.Expression()}
+	d := funcDecl{name: ctx.Identifier().GetText(), sig: ctx.Signature(), expr: ctx.Expression()}
+	if b, ok := ctx.Block().(*grammar.BlockContext); ok && b != nil {
+		d.block = antlrBlock(b)
+	}
 	if r := ctx.Receiver(); r != nil {
 		recvCtx := r.(*grammar.ReceiverContext)
 		d.recv = &receiverDecl{name: recvCtx.Identifier().GetText(), at: srcNode{ctx: recvCtx}, isVar: recvCtx.VAR() != nil, typ: recvCtx.Type_()}
@@ -1185,24 +1180,23 @@ func (t *galaASTTransformer) lowerFuncDecl(d funcDecl) (ast.Decl, error) {
 	defer t.enterReturnSlot(funcSlot)()
 
 	var body *ast.BlockStmt
-	if d.block != nil {
+	if d.block.ok() {
 		// A function with a result type returns its body's trailing
 		// expression, as a lambda does: the body is lowered so that value is a
 		// `return`, and one that can still finish without a value is rejected
 		// here rather than left to Go's "missing return".
-		block := d.block.(*grammar.BlockContext)
 		var b *ast.BlockStmt
 		var err error
 		if hasResult {
-			b, err = t.transformFunctionBody(block)
+			b, err = t.lowerBlock(d.block, tailReturn, slot{})
 		} else {
-			b, err = t.transformBlock(block)
+			b, err = t.lowerBlock(d.block, tailDiscarded, slot{})
 		}
 		if err != nil {
 			return nil, err
 		}
 		if hasResult && !isTerminatingStmt(b) {
-			return nil, t.missingReturnError(block, "function "+funcSlot.funcName, funcSlot.typ.String())
+			return nil, t.missingReturnError(d.block, "function "+funcSlot.funcName, funcSlot.typ.String())
 		}
 		body = b
 	} else if d.expr != nil && !hasResult {
@@ -2009,10 +2003,6 @@ func readImportDecl(ctx *grammar.ImportDeclarationContext) []importSpecDecl {
 		specs = append(specs, d)
 	}
 	return specs
-}
-
-func (t *galaASTTransformer) transformImportDeclaration(ctx *grammar.ImportDeclarationContext) (ast.Decl, error) {
-	return t.lowerImportDecl(readImportDecl(ctx)), nil
 }
 
 // lowerImportDecl lowers an import declaration of specs.

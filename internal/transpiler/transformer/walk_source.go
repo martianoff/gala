@@ -156,7 +156,7 @@ func (t *galaASTTransformer) lowerTopDecl(d topDecl) ([]ast.Decl, error) {
 // readDeclDocsNative is readDeclDocs of td, a topLevelDeclaration node.
 func readDeclDocsNative(td native.GalaNodeRef) declDocs {
 	dd := declDocs{doc: parser.NativeDocKeyOf(td)}
-	decl, ok := topDeclKid(td)
+	decl, ok := firstKidNode(td)
 	if !ok {
 		return dd
 	}

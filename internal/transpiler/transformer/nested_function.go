@@ -9,8 +9,33 @@ import (
 	"martianoff/gala/internal/transpiler"
 )
 
-// checkNestedFunctionDeclaration rejects a named `func` declared inside a
-// function body with GALA-E0052.
+// nestedFunc is a function declaration in a body: its name, where it starts,
+// the column just past its name, its signature, and whether it has a
+// receiver or type parameters.
+type nestedFunc struct {
+	name              string
+	line, col, endCol int
+	sig               grammar.ISignatureContext
+	method, generic   bool
+}
+
+// readNestedFunc reads the function declaration ctx on ANTLR's tree.
+func readNestedFunc(ctx *grammar.FunctionDeclarationContext) nestedFunc {
+	id := ctx.Identifier()
+	name := id.GetText()
+	return nestedFunc{
+		name:    name,
+		line:    ctx.GetStart().GetLine(),
+		col:     ctx.GetStart().GetColumn(),
+		endCol:  id.GetStop().GetColumn() + len([]rune(name)),
+		sig:     ctx.Signature(),
+		method:  ctx.Receiver() != nil,
+		generic: ctx.TypeParameters() != nil,
+	}
+}
+
+// nestedFunctionError rejects d, a named `func` declared inside a function
+// body, with GALA-E0052.
 //
 // The grammar admits a function declaration wherever a statement goes, but a
 // local named function is not part of GALA — a local function is a lambda
@@ -27,22 +52,20 @@ import (
 // Each hint leads with a short clause ended by "; ": the caret annotation shows
 // only the hint's first clause (galaerr's terseHint cuts at " (", "; " or ". "),
 // and a signature's own " (" must not be where that cut lands.
-func checkNestedFunctionDeclaration(ctx *grammar.FunctionDeclarationContext) error {
-	name := ctx.Identifier().GetText()
-	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
-	endCol := ctx.Identifier().GetStop().GetColumn() + len([]rune(name))
+func nestedFunctionError(d nestedFunc) error {
+	name, line, col, endCol := d.name, d.line, d.col, d.endCol
 
-	sig := lambdaSignatureOf(ctx.Signature())
+	sig := lambdaSignatureOf(d.sig)
 	kind, hint := "function", ""
 	switch {
-	case ctx.Receiver() != nil:
+	case d.method:
 		kind = "method"
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a method sits beside its receiver type", name)
-	case ctx.TypeParameters() != nil:
+	case d.generic:
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot take type parameters", name)
 	case sig.hasDefault:
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot take default parameter values", name)
-	case ctx.Signature().GoResults() != nil:
+	case d.sig.GoResults() != nil:
 		hint = fmt.Sprintf("declare `%s` at the top level of the file; a lambda cannot declare a Go result list", name)
 	case sig.partial:
 		hint = "write it as a lambda bound to a `val`; a lambda names every parameter, as in `(x int) =>`"

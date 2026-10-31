@@ -1090,7 +1090,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	}
 
 	// A `bind` takes over the rest of the branch (see lowerIfExprBranchBind).
-	bindAt := slices.IndexFunc(stmts, func(s grammar.IStatementContext) bool { return bindDeclFromStatement(s) != nil })
+	bindAt := slices.IndexFunc(stmts, func(s grammar.IStatementContext) bool { return stmtKindOf(s) == stmtBind })
 	end := len(stmts) - 1
 	if bindAt >= 0 {
 		end = bindAt
@@ -1115,7 +1115,8 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	// Try to extract expression from the last statement:
 	// statement → declaration → simpleStatement → expression
 	lastStmtCtx := stmts[len(stmts)-1].(*grammar.StatementContext)
-	if exprCtx := trailingValueExpression(lastStmtCtx); exprCtx != nil {
+	last := antlrStmt(lastStmtCtx)
+	if exprCtx := last.valueExpr(t); exprCtx != nil {
 		// The branch's value is its trailing expression; loop control has none.
 		if bs, ok := t.lowerLoopControl(exprCtx); ok {
 			if s.hoist != "" {
@@ -1132,8 +1133,8 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 
 	// A trailing if/else chain carries the branch's value in its branches, as
 	// at the tail of a match arm.
-	if ifCtx := ifStatementOf(lastStmtCtx); ifCtx != nil {
-		b, err := t.lowerIfExprBranchTailIf(ifCtx, s)
+	if last.kind == stmtIf {
+		b, err := t.lowerIfExprBranchTailIf(last.kid.ctx.(*grammar.IfStatementContext), s)
 		if err != nil {
 			return loweredIfBranch{}, err
 		}
@@ -1153,7 +1154,7 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 	// `return nil` after a typed return. We also surface the return's value
 	// expression as the branch expression so the IIFE result type can be
 	// inferred from it (rather than defaulting to `any`).
-	if retStmt, ok := lastStmt.(*ast.ReturnStmt); ok && lastStmtCtx.ReturnStatement() != nil {
+	if retStmt, ok := lastStmt.(*ast.ReturnStmt); ok && last.kind == stmtReturn {
 		var branchExpr ast.Expr = ast.NewIdent("nil")
 		if len(retStmt.Results) > 0 {
 			branchExpr = retStmt.Results[0]
@@ -1173,7 +1174,7 @@ func (t *galaASTTransformer) lowerIfExprBranchTailIf(ifCtx *grammar.IfStatementC
 		return loweredIfBranch{}, err
 	}
 	if !ok {
-		if err := t.checkUnpromotedBranchTails(ifCtx, promoted); err != nil {
+		if err := t.checkUnpromotedBranchTails(ifSrc{ctx: ifCtx}, promoted); err != nil {
 			return loweredIfBranch{}, err
 		}
 		return noValueBranch([]ast.Stmt{promoted}), nil
