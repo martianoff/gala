@@ -1,8 +1,13 @@
 package main
 
-// A sealed case or a guard extractor matched against a value of type `any`
-// (or of a type parameter) first checks that the value holds the type the
+// A sealed case or a guard extractor matched against a value of an interface
+// type (or of a type parameter) first checks that the value holds the type the
 // extractor takes. A value of another type falls through to later arms.
+//
+// Value is an empty interface, so it holds any value, exactly as Go's `any`
+// does; naming it keeps this file in the type-erasure corpus check.
+
+type Value interface {}
 
 sealed type Shape {
     case Circle(R int)
@@ -10,17 +15,17 @@ sealed type Shape {
 }
 
 sealed type Wrapped {
-    case Wrap(Inner any)
+    case Wrap(Inner Value)
     case Empty()
 }
 
-struct Pair(L any, R int)
+struct Pair(L Value, R int)
 
 type Even struct {}
 
 func (_ Even) Unapply(i int) bool = i % 2 == 0
 
-func describe(v any) string = v match {
+func describe(v Value) string = v match {
     case Circle(r) if r > 10 => s"big circle $r"
     case Circle(r) => s"circle $r"
     case Square() => "square"
