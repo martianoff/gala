@@ -17,6 +17,9 @@ func (a *galaAnalyzer) inferPackageValInitTypeNative(e native.ExpressionNode, pk
 	if !postfix.Ok() {
 		return signedNumberType(e.GetText())
 	}
+	if len(postfix.AllCaseClause()) > 0 {
+		return transpiler.NilType{} // a trailing match: typed by its arms
+	}
 	primary := postfix.PrimaryExpr().Primary()
 	if !primary.Ok() {
 		return transpiler.NilType{}

@@ -551,6 +551,10 @@ val NegFloat = -1.5
 val Plus = +2
 val Not = !true
 val Sum = 1 + 2
+val ESum = Earlier + 1
+val Mask = -0x10
+val HexE = -0xE
+val Exp = -1e3
 val Concat = "a" + "b"
 val Ref = Full
 val Later = Earlier
@@ -622,6 +626,103 @@ func initializersInferred(sf *grammar.SourceFileContext) int {
 		}
 	}
 	return n
+}
+
+// valShapesSrc holds initializers that both twins of the package-level
+// initializer inference once typed alike and wrongly, which
+// TestValInferenceAgrees cannot catch.
+const valShapesSrc = `package shapes
+
+val E = 2
+val ESum = E + 1
+val EDiff = E - 1
+val Matched = 3 match {
+    case 3 => "three"
+    case _ => "other"
+}
+val Mask = -0x10
+val HexE = -0xE
+val Bin = -0b101
+val Oct = +0o17
+val Exp = -1e3
+`
+
+// valShapes is, for each binding of valShapesSrc, the type the initializer
+// inference gives its initializer ("" for none: the shape is not one it
+// settles) and the type the binding records once the transformer's own
+// inference has typed what it left untyped.
+var valShapes = []struct{ name, init, inferred, recorded string }{
+	// An operand named like an exponent makes no number.
+	{"ESum", "E+1", "", "int"},
+	{"EDiff", "E-1", "", "int"},
+	// A trailing match is typed by its arms, not by its scrutinee.
+	{"Matched", `3match{case3=>"three"case_=>"other"}`, "", "string"},	// A signed literal takes its literal's type, whatever its base.
+	{"Mask", "-0x10", "int", "int"},
+	{"HexE", "-0xE", "int", "int"},
+	{"Bin", "-0b101", "int", "int"},
+	{"Oct", "+0o17", "int", "int"},
+	{"Exp", "-1e3", "float64", "float64"},
+}
+
+// TestValInitTypeShapes: the initializer inference of valShapesSrc's
+// bindings on the native tree gives each the type valShapes holds (ANTLR's
+// twin is held to it by TestValInferenceAgrees, whose corpus has these
+// shapes), and on either tree the binding records its own type — never a
+// wrong one in place of one the inference cannot tell.
+func TestValInitTypeShapes(t *testing.T) {
+	parseWithGalop(t)
+	_, searchPaths := collectionCorpus(t)
+	shapeType := func(typ transpiler.Type) string {
+		if typ == nil || typ.IsNil() {
+			return ""
+		}
+		return typ.String()
+	}
+	for _, tree := range []string{"native", "antlr"} {
+		t.Run(tree, func(t *testing.T) {
+			var p transpiler.GalaParser = galaparser.NewAntlrGalaParser()
+			if tree == "antlr" {
+				p = antlrOnly{p}
+			}
+			a := newCollectionAnalyzer(t, p, searchPaths)
+			path := filepath.Join(t.TempDir(), "shapes.gala")
+			if err := os.WriteFile(path, []byte(valShapesSrc), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			inferred := map[string]string{}
+			a.onInferInit = func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type) {
+				inferred[e.GetText()] = shapeType(got)
+			}
+			an, ok := analyzeForCollection(t, a, path, valShapesSrc, []string{})
+			a.onInferInit = nil
+			if !ok {
+				t.Fatal("valShapesSrc does not parse")
+			}
+			if an.trace.native != (tree == "native") {
+				t.Fatalf("collected on the native tree: %v, want %v", an.trace.native, tree == "native")
+			}
+			rich, ok := an.result.(*transpiler.RichAST)
+			if !ok {
+				t.Fatalf("analyze: %v", an.result)
+			}
+			for _, s := range valShapes {
+				if tree == "native" {
+					if got, ok := inferred[s.init]; !ok {
+						t.Errorf("%s: %q was not inferred on the native tree", s.name, s.init)
+					} else if got != s.inferred {
+						t.Errorf("%s: %q is inferred as %q on the native tree, want %q", s.name, s.init, got, s.inferred)
+					}
+				}
+				pv := rich.PackageVals[s.name]
+				if pv == nil {
+					t.Fatalf("%s is not recorded", s.name)
+				}
+				if got := shapeType(pv.Type); got != s.recorded {
+					t.Errorf("%s records %q, want %q", s.name, got, s.recorded)
+				}
+			}
+		})
+	}
 }
 
 // TestValInferenceAgrees holds the inference of package-level initializers on

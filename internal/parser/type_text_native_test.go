@@ -160,6 +160,30 @@ func TestNativeTypeHelpers(t *testing.T) {
 	}
 }
 
+// TestNativeTextConjuredToken: in a tree converted from ANTLR's error
+// recovery, a node that spans one stream token can also hold a conjured one
+// (a package clause whose `package` keyword is missing or misspelt), and
+// NativeText includes its text, as GetText does.
+func TestNativeTextConjuredToken(t *testing.T) {
+	for _, src := range []string{
+		"main\n\nval x = 1\n",
+		"packe main\n\nval x = 1\n",
+		"packag\n\nval x = 1\n",
+	} {
+		p := parseConverted(src)
+		tree, err := p.Native.Tree()
+		if err != nil {
+			t.Fatalf("%q: %v", src, err)
+		}
+		if len(tree.Conjured) == 0 {
+			t.Fatalf("%q: the recovered tree conjures no token", src)
+		}
+		if msg := checkNative(p, parseFileAs(EngineANTLR, src).text); msg != "" {
+			t.Errorf("%q: %s", src, msg)
+		}
+	}
+}
+
 // TestNativeDocKeyOfGalopParse checks NativeDocKeyOf on a tree galop's native
 // parser makes itself, from galop's native lexer, rather than one converted
 // from ANTLR's (whose tokens carry ANTLR's lines and columns): after

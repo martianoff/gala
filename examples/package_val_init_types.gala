@@ -1,0 +1,34 @@
+package main
+
+import (
+    . "martianoff/gala/collection_immutable"
+
+    "martianoff/gala/examples/package_val_init_types/consts"
+)
+
+// An importer types another package's vals by that package's metadata. A
+// generic call takes its type argument from it, so a wrong recorded type is
+// a Go compile error here, and a missing one leaves the call uninferred.
+
+func identity[T any](x T) T = x
+
+func main() {
+    val next = identity(consts.Next)
+    val prev = identity(consts.Prev)
+    Println(s"next=$next prev=$prev sum=${next + prev}")
+
+    val label = identity(consts.Label)
+    Println(s"label=$label size=${label.Size()}")
+
+    val mask = identity(consts.Mask)
+    val hexE = identity(consts.HexE)
+    val bits = identity(consts.Bits)
+    val perm = identity(consts.Perm)
+    Println(s"mask=$mask hexE=$hexE bits=$bits perm=$perm and=${mask & 0xff}")
+
+    val tiny = identity(consts.Tiny)
+    Println(f"tiny=$tiny%.4f")
+
+    val all = ArrayOf(consts.Next, consts.Mask, consts.HexE, consts.Bits, consts.Perm)
+    Println(s"total=${all.FoldLeft(0, (acc, n) => acc + n)}")
+}

@@ -1,0 +1,35 @@
+package consts
+
+// Package-level vals whose element type an importer reads from this
+// package's metadata: an initializer whose text looks like a number but is
+// not one, a trailing match, and signed literals in every base.
+
+// E is an int named like an exponent.
+val E = 2
+
+// Next adds to E: an int, though its text `E+1` reads like a float literal.
+val Next = E + 1
+
+// Prev subtracts from E: an int too.
+val Prev = E - 1
+
+// Label is typed by its match arms (string), not by its scrutinee (int).
+val Label = 3 match {
+    case 3 => "three"
+    case _ => "other"
+}
+
+// Mask is a signed hex literal.
+val Mask = -0x10
+
+// HexE is a signed hex literal whose digit E is no exponent.
+val HexE = -0xE
+
+// Bits is a signed binary literal.
+val Bits = -0b101
+
+// Perm is a signed octal literal.
+val Perm = +0o17
+
+// Tiny is a signed float literal with an exponent.
+val Tiny = -1e-3

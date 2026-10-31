@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -4496,13 +4497,14 @@ func (a *galaAnalyzer) extractPackageVals(sourceFile *grammar.SourceFileContext,
 // binding from its initializer's parse tree, for the shapes the collected
 // metadata settles without full expression inference:
 //
-//   - a literal (`3`, `-3`, `"x"`, `true`, `s"..."`);
+//   - a literal (`3`, `-3`, `-0x10`, `"x"`, `true`, `s"..."`);
 //   - a reference to another package-level binding (`Other`, `pkg.Other`);
 //   - a non-generic constructor or function call (`Name(...)`, `pkg.Name(...)`):
 //     a struct literal, a companion's (e.g. a sealed variant's) or the struct's
 //     own Apply result, or a function's declared return type.
 //
-// Anything else — including a void call — yields NilType. That still unwraps
+// Anything else — including a void call, an operator expression (`E + 1`)
+// and a trailing match, which its arms type — yields NilType. That still unwraps
 // correctly at a use site (which needs only the val/var classification) but
 // weakens downstream inference, e.g. which fields of an imported struct-typed
 // val are Immutable. A reference to a binding declared later in the same file
@@ -4517,6 +4519,9 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 	if postfix == nil {
 		// Not a single operand: of those, only a signed number is recognised.
 		return signedNumberType(expr.GetText())
+	}
+	if len(postfix.AllCaseClause()) > 0 {
+		return transpiler.NilType{} // a trailing match: typed by its arms
 	}
 	primary := transformer.PrimaryOf(postfix)
 	if primary == nil {
@@ -4566,10 +4571,11 @@ func (a *galaAnalyzer) inferPackageValInitType(expr grammar.IExpressionContext, 
 }
 
 // signedNumberType is the type of an initializer that is not a single
-// operand, by its text: of those, only a signed number is recognised.
+// operand, by its text: of those, only a signed number literal is
+// recognised.
 func signedNumberType(text string) transpiler.Type {
-	if isNumericLiteral(text) {
-		return transpiler.BasicType{Name: inferLiteralType(text)}
+	if typ := numericLiteralType(text); typ != "" {
+		return transpiler.BasicType{Name: typ}
 	}
 	return transpiler.NilType{}
 }
@@ -4706,42 +4712,28 @@ func inferLiteralType(expr string) string {
 	if len(expr) >= 2 && expr[0] == '\'' && expr[len(expr)-1] == '\'' {
 		return "rune"
 	}
-	// Check for float (contains . or e/E)
-	if isNumericLiteral(expr) {
-		for _, c := range expr {
-			if c == '.' || c == 'e' || c == 'E' {
-				return "float64"
-			}
-		}
-		return "int"
-	}
-	return ""
+	return numericLiteralType(expr)
 }
 
-// isNumericLiteral checks if a string looks like a numeric literal.
-func isNumericLiteral(s string) bool {
-	if len(s) == 0 {
-		return false
+// Numeric literals with an optional sign, as gala.g4's INT_LIT and FLOAT_LIT
+// lex them.
+var (
+	intLiteral   = regexp.MustCompile(`^[+-]?(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|[0-9]+)$`)
+	floatLiteral = regexp.MustCompile(`^[+-]?([0-9]+\.[0-9]*([eE][+-]?[0-9]+)?|\.[0-9]+([eE][+-]?[0-9]+)?|[0-9]+[eE][+-]?[0-9]+)$`)
+)
+
+// numericLiteralType is the type of s when s is a numeric literal with an
+// optional sign, "int" or "float64", and "" otherwise. It reads s as the
+// lexer does: an identifier is no literal, even one named like an exponent
+// (`E+1`), and a hex digit E is no exponent (`0xE`).
+func numericLiteralType(s string) string {
+	switch {
+	case intLiteral.MatchString(s):
+		return "int"
+	case floatLiteral.MatchString(s):
+		return "float64"
 	}
-	start := 0
-	if s[0] == '-' || s[0] == '+' {
-		start = 1
-	}
-	if start >= len(s) {
-		return false
-	}
-	hasDigit := false
-	for i := start; i < len(s); i++ {
-		c := s[i]
-		if c >= '0' && c <= '9' {
-			hasDigit = true
-		} else if c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-' {
-			// valid in float literals
-		} else {
-			return false
-		}
-	}
-	return hasDigit
+	return ""
 }
 
 // typesCompatibleForDefault checks if a literal type is compatible with a parameter type.
@@ -4749,19 +4741,20 @@ func typesCompatibleForDefault(paramType, literalType string) bool {
 	if paramType == literalType {
 		return true
 	}
-	// Numeric widening: int literal can be used for int, int8, int16, int32, int64, uint*, float*
+	// Numeric widening, as Go converts an untyped constant: an int literal
+	// can be used for any integer, float or complex type
 	if literalType == "int" {
 		switch paramType {
 		case "int", "int8", "int16", "int32", "int64",
-			"uint", "uint8", "uint16", "uint32", "uint64",
-			"float32", "float64", "byte", "rune":
+			"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+			"float32", "float64", "complex64", "complex128", "byte", "rune":
 			return true
 		}
 	}
-	// Float literal can be used for float32, float64
+	// and a float literal for any float or complex type.
 	if literalType == "float64" {
 		switch paramType {
-		case "float32", "float64":
+		case "float32", "float64", "complex64", "complex128":
 			return true
 		}
 	}

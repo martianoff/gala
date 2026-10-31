@@ -3087,6 +3087,26 @@ gala_exec_test(
     ],
 )
 
+# An importer types another package's vals by that package's recorded
+# element types: an initializer that only looks numeric (`E + 1`), a trailing
+# match, and signed literals in every base.
+gala_library(
+    name = "package_val_init_types_consts",
+    srcs = ["package_val_init_types/consts/consts.gala"],
+    importpath = "martianoff/gala/examples/package_val_init_types/consts",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "package_val_init_types",
+    src = "package_val_init_types.gala",
+    expected = "package_val_init_types.out",
+    deps = [
+        ":package_val_init_types_consts",
+        "//collection_immutable",
+    ],
+)
+
 # `.Copy(...)` on a generic struct keeps the receiver's type arguments:
 # val-bound, if/match arms, pointer receivers, nested and
 # multi-parameter generics, no overrides, a sealed variant, cross-package.

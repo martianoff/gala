@@ -1,0 +1,5 @@
+next=3 prev=1 sum=4
+label=three size=5
+mask=-16 hexE=-14 bits=-5 perm=15 and=240
+tiny=-0.0010
+total=-17
