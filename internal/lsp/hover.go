@@ -12,6 +12,7 @@ import (
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/owenrumney/go-lsp/lsp"
 
+	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/resolver"
@@ -34,7 +35,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 	text := h.documents[uri]
 	richAST := h.richASTs[uri]
 	varTypes := h.varTypes[uri]
-	tree := h.parseTrees[uri]
+	tree, handle := h.parseTrees[uri], h.parseNatives[uri]
 	h.mu.Unlock()
 
 	if text == "" || richAST == nil {
@@ -42,7 +43,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 	}
 
 	line, char := h.index(text).toByte(params.Position)
-	info := h.hoverInfo(text, uriToPath(uri), richAST, tree, varTypes, line, char)
+	info := h.hoverInfo(text, uriToPath(uri), richAST, tree, handle, varTypes, line, char)
 	if info == "" {
 		return nil, nil
 	}
@@ -57,7 +58,7 @@ func (h *GalaHandler) Hover(ctx context.Context, params *lsp.HoverParams) (*lsp.
 // path is the on-disk path of the document being hovered; it is what the
 // analyzer recorded as DefinedIn, and is how a declaration in this file is told
 // apart from a same-named one elsewhere in the package.
-func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, tree antlr.Tree, varTypes map[string]string, line, char int) string {
+func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, tree antlr.Tree, handle *parser.Native, varTypes map[string]string, line, char int) string {
 	lines := strings.Split(text, "\n")
 	if line >= len(lines) {
 		return ""
@@ -125,20 +126,37 @@ func (h *GalaHandler) hoverInfo(text, path string, richAST *transpiler.RichAST, 
 		return info
 	}
 
-	return lookupSymbol(richAST, word, func() *resolver.TypeResolver { return fileResolver(richAST, tree) })
+	return lookupSymbol(richAST, word, func() *resolver.TypeResolver {
+		paths, onNative := dotImportPathsOf(tree, handle)
+		h.noteTreeRead(treeReadDotImports, onNative)
+		return fileResolver(richAST, paths)
+	})
 }
 
-// fileResolver resolves a bare name as the transformer does in the file with
-// this parse tree (resolver.TypeResolver): its own package, then std, then
-// the GALA packages it dot-imports, in source order.
-func fileResolver(richAST *transpiler.RichAST, tree antlr.Tree) *resolver.TypeResolver {
+// fileResolver resolves a bare name as the transformer does in a file of
+// richAST's package that dot-imports dotImports, in source order
+// (resolver.TypeResolver): its own package, then std, then the GALA packages
+// among dotImports.
+func fileResolver(richAST *transpiler.RichAST, dotImports []string) *resolver.TypeResolver {
 	r := &resolver.TypeResolver{PackageName: richAST.PackageName}
-	for _, path := range analyzer.DotImportPaths(tree) {
+	for _, path := range dotImports {
 		if pkg := richAST.Packages[path]; pkg != "" {
 			r.Imports = append(r.Imports, resolver.PackageInfo{PkgName: pkg, IsDot: true})
 		}
 	}
 	return r
+}
+
+// dotImportPathsOf is analyzer.DotImportPaths of the parse whose ANTLR tree is
+// tree and whose native-tree handle is handle. It reads the native tree only
+// when another feature has converted it already: the imports are a few nodes
+// of ANTLR's tree, and converting the whole file to read them would cost a
+// hover more than it saves. onNative says which tree it read.
+func dotImportPathsOf(tree antlr.Tree, handle *parser.Native) (paths []string, onNative bool) {
+	if root, ok := handle.ConvertedRoot(); ok {
+		return analyzer.DotImportPathsNative(root), true
+	}
+	return analyzer.DotImportPaths(tree), false
 }
 
 // resolveVisible is the key of m that name means: the one the resolver res

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"martianoff/gala/internal/transpiler"
+	"martianoff/gala/internal/transpiler/analyzer"
 	"martianoff/gala/internal/transpiler/resolver"
 )
 
@@ -91,7 +92,7 @@ func TestLookupSymbolHonorsTheFileDotImports(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%q: %v", imports, err)
 		}
-		got := lookupSymbol(rich, "AsIs", func() *resolver.TypeResolver { return fileResolver(rich, tree) })
+		got := lookupSymbol(rich, "AsIs", func() *resolver.TypeResolver { return fileResolver(rich, analyzer.DotImportPaths(tree)) })
 		if !strings.Contains(got, "AsIs of yaml.") {
 			t.Errorf("%q: AsIs hovered as\n%s\nwant yaml's case", imports, got)
 		}

@@ -277,3 +277,11 @@ func checkGeneratedCodecNamesNative(root native.GalaNodeRef) error {
 	}
 	return transformer.GeneratedCodecNameError(galaparser.NativeText(found), nativePos(found))
 }
+
+// DotImportPathsNative is DotImportPaths of root, a file's native tree.
+func DotImportPathsNative(root native.GalaNodeRef) []string {
+	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
+		return nil
+	}
+	return dotImportPaths(scanFileImportsNative(root))
+}
