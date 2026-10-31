@@ -1,0 +1,19 @@
+package main
+
+import (
+    lib "martianoff/gala/examples/std_shadow_lib"
+    "martianoff/gala/std"
+)
+
+// std_shadow_lib declares `func Void(n int)`, a name std declares as a type.
+// Dot-imported, a bare `Void` would name both (GALA-E0087), so each side is
+// written with its qualifier: `lib.Void` for the function, `std.Void` for
+// std's type. A type position (`Try[Void]`) names std's type unqualified.
+
+func done() Try[Void] = Success(std.Void())
+
+func main() {
+    Println(lib.Void(1))
+    Println(std.NoSuchElementError("gone").Error())
+    Println(done().IsSuccess())
+}

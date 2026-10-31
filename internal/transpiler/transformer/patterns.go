@@ -139,7 +139,10 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 	// has a primary with identifier `Foo`, but it's not a simple binding.
 	// Also handles generic patterns with explicit type arguments like Unwrap[int](v).
 	if primaryExprCtx, argList, explicitTypeArgs := t.getCallPatternWithTypeArgsFromExpression(patExprCtx); primaryExprCtx != nil {
+		// An extractor names a type or companion, never a function.
+		t.typeNameDepth++
 		patternExpr, err := t.transformPrimaryExpr(primaryExprCtx)
+		t.typeNameDepth--
 		if err != nil {
 			return nil, nil, err
 		}

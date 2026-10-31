@@ -336,6 +336,13 @@ func main() {
 			render: renderDotImportCollisionRepro,
 		},
 		{
+			// Needs a real dot-imported package on disk that declares the
+			// function std also names as a type.
+			name:   "std type and a dot-imported function of one name",
+			code:   galaerr.CodeDotImportPreludeAmbiguity, // GALA-E0087
+			render: renderDotImportPreludeAmbiguityRepro,
+		},
+		{
 			// The `len` row also pins the terse caret annotation, which is
 			// derived by truncating the hint at its first " (" — a detail no
 			// other covered code exercises.
@@ -1621,17 +1628,11 @@ func main() {
 // the page quotes.
 func renderDotImportCollisionRepro(t *testing.T) string {
 	t.Helper()
-	searchRoot := t.TempDir()
+	pkgs := map[string]string{}
 	for _, pkg := range []string{"pkg_a", "pkg_b"} {
-		dir := filepath.Join(searchRoot, pkg)
-		require.NoError(t, os.MkdirAll(dir, 0o755))
-		src := "package " + pkg + "\n\nfunc Greet() string = \"hello from " + pkg + "\"\n"
-		require.NoError(t, os.WriteFile(filepath.Join(dir, pkg+".gala"), []byte(src), 0o600))
+		pkgs[pkg+"/"+pkg+".gala"] = "package " + pkg + "\n\nfunc Greet() string = \"hello from " + pkg + "\"\n"
 	}
-
-	mainDir := filepath.Join(searchRoot, "main")
-	require.NoError(t, os.MkdirAll(mainDir, 0o755))
-	mainSrc := `package main
+	return renderSiblingPackageRepro(t, pkgs, `package main
 
 import (
     . "martianoff/gala/pkg_a"
@@ -1641,8 +1642,35 @@ import (
 func main() {
     Println("hi")
 }
-`
-	mainPath := filepath.Join(mainDir, "main.gala")
+`)
+}
+
+// renderDotImportPreludeAmbiguityRepro drives GALA-E0087: main dot-imports a
+// package that declares a function named like std's Void type and calls it
+// by its bare name.
+func renderDotImportPreludeAmbiguityRepro(t *testing.T) string {
+	t.Helper()
+	return renderSiblingPackageRepro(t, map[string]string{
+		"util/util.gala": "package util\n\nfunc Void() = Println(\"cleanup done\")\n",
+	}, `package main
+
+import . "martianoff/gala/util"
+
+func main() {
+    Void()
+}
+`)
+}
+
+// renderSiblingPackageRepro writes pkgs (source by path relative to a temp search
+// root, imported as martianoff/gala/<dir>) beside main/main.gala holding
+// mainSrc, transpiles main and renders the error it fails with, its path
+// shown as main.gala.
+func renderSiblingPackageRepro(t *testing.T, pkgs map[string]string, mainSrc string) string {
+	t.Helper()
+	searchRoot := writeGalaModule(t, pkgs)
+	mainPath := filepath.Join(searchRoot, "main", "main.gala")
+	require.NoError(t, os.MkdirAll(filepath.Dir(mainPath), 0o755))
 	require.NoError(t, os.WriteFile(mainPath, []byte(mainSrc), 0o600))
 
 	_, err := newDocGuardTranspilerWithPaths(searchRoot).Transpile(mainSrc, mainPath)

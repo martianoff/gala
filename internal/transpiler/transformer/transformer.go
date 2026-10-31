@@ -42,11 +42,11 @@ type galaASTTransformer struct {
 	activeTypeParams    map[string]bool // type parameters bound by the enclosing generic declarations; see type_params.go
 	// equalOwner is the type whose Equal method is being transformed, nil
 	// outside one: there `==` on that type is Go's (see equalityOf).
-	equalOwner *transpiler.TypeMetadata
-	typeParamNames      map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
-	structFields        map[string][]string
-	structFieldTypes    map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
-	genericMethods      map[string]map[string]bool            // receiverType -> methodName -> isGeneric
+	equalOwner       *transpiler.TypeMetadata
+	typeParamNames   map[string]bool // names declared as a type parameter by any known generic; built lazily per file, see declaredTypeParamNames
+	structFields     map[string][]string
+	structFieldTypes map[string]map[string]transpiler.Type // structName -> fieldName -> typeName
+	genericMethods   map[string]map[string]bool            // receiverType -> methodName -> isGeneric
 	// ptrStars holds the `*T` expressions emitted for a non-null `Ptr[T]`, so a
 	// type read back from generated Go keeps the marker (see ptr.go).
 	ptrStars map[*ast.StarExpr]bool
@@ -64,7 +64,19 @@ type galaASTTransformer struct {
 	// every file in the package, so GALA's `strings` and Go's `strings` collide
 	// there — as do io, path, json, crypto and fs. Membership here is metadata,
 	// not an import-path heuristic.
-	galaPkgPaths           map[string]bool
+	galaPkgPaths map[string]bool
+	// dotImportedVals maps each package-level binding registerDotImportedVals
+	// bound in the file's root scope to the dot import that brought it in.
+	dotImportedVals map[string]*ImportEntry
+	// galaDotImports are the file's dot imports of GALA packages other than a
+	// prelude package: the ones whose functions can make a bare name
+	// ambiguous with a prelude type (GALA-E0087).
+	galaDotImports []*ImportEntry
+	// typeNameDepth is above zero while names that can only be types are
+	// transformed: the type arguments of an instantiation (`None[Void]()`)
+	// and the extractor of a constructor pattern (`case Some(x)`). No value
+	// can stand there, so a dot-imported value never makes them ambiguous.
+	typeNameDepth          int
 	typeMetas              map[string]*transpiler.TypeMetadata
 	variantNames           map[string]bool                                // bare name of every sealed variant in typeMetas (GALA-E0061 pre-filter)
 	companionObjects       map[string]*transpiler.CompanionObjectMetadata // companion name -> metadata
@@ -492,6 +504,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	// against the import set and is meant to be taken once every
 	// import-derived setup step has run.
 	t.registerDotImportedVals()
+	t.collectGalaDotImports()
 	t.cacheTypeResolver()
 
 	t.variantNames = collectVariantNames(t.typeMetas)
@@ -1133,6 +1146,79 @@ func (t *galaASTTransformer) namesOwnFunction(fun ast.Expr) bool {
 	base, _ := splitCallFunTypeArgs(fun)
 	id, ok := base.(*ast.Ident)
 	return ok && t.shadowingScope(id.Name) == nil && t.packageDeclaresFunction(id.Name)
+}
+
+// preludeDotImportAmbiguity reports GALA-E0087 for name, a bare name written
+// as a value at ctx that the dot import dot brings in as a kind ("function" or
+// "value"), when a prelude package (imported into every file without an import
+// declaration) declares a type of that name. Neither import outranks the
+// other: the package's own declarations and local bindings are resolved before
+// this is asked, and both imports bring the name in without a qualifier. A
+// type position never asks, because only the prelude's name is a type there.
+// A dot import of a prelude package brings in nothing the prelude does not,
+// and a default lowered from another package was written against that
+// package's imports, not this file's, so neither is ambiguous here.
+func (t *galaASTTransformer) preludeDotImportAmbiguity(ctx antlr.ParserRuleContext, name string, dot *ImportEntry, kind string) error {
+	if dot == nil || t.typeNameDepth > 0 || t.loweringForeignDefault() || registry.Global.IsPreludePackage(dot.PkgName) {
+		return nil
+	}
+	prelude := t.preludeTypePackage(name)
+	if prelude == nil {
+		return nil
+	}
+	pkg := transpiler.PackageDisplayName(dot.PkgName)
+	// The prelude's qualifier: the name the file imports it under, when it
+	// does, else its own name after an import the hint asks for.
+	typeFix := fmt.Sprintf("add `import %q` and write `%s.%s`", prelude.ImportPath, prelude.Name, name)
+	for _, entry := range t.importManager.All() {
+		if entry.Path == prelude.ImportPath && !entry.IsDot && !entry.Implicit() {
+			typeFix = fmt.Sprintf("write `%s.%s`", entry.Alias, name)
+			break
+		}
+	}
+	line, col := ctx.GetStart().GetLine(), ctx.GetStart().GetColumn()
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeDotImportPreludeAmbiguity,
+		line, col,
+		fmt.Sprintf("%q is ambiguous: it is a type of the implicitly imported package %s and a %s of the dot-imported package %s",
+			name, prelude.Name, kind, pkg),
+		fmt.Sprintf("qualify the name to pick one; for the %s, drop the dot from the import of %s and write `%s.%s`; for the type, %s",
+			kind, pkg, pkg, name, typeFix),
+	).WithSpan(col + len([]rune(name)))
+}
+
+// collectGalaDotImports records the file's dot imports that can make a bare
+// name ambiguous with a prelude type (see galaDotImports).
+func (t *galaASTTransformer) collectGalaDotImports() {
+	t.galaDotImports = nil
+	for _, entry := range t.importManager.All() {
+		if entry.IsDot && t.galaPkgPaths[entry.Path] && !registry.Global.IsPreludePackage(entry.PkgName) {
+			t.galaDotImports = append(t.galaDotImports, entry)
+		}
+	}
+}
+
+// preludeTypePackage returns the prelude package that declares a type named
+// name, nil when none does.
+func (t *galaASTTransformer) preludeTypePackage(name string) *registry.PackageInfo {
+	for _, p := range registry.Global.PreludePackages() {
+		if _, ok := t.typeMetas[p.Name+"."+name]; ok {
+			return p
+		}
+	}
+	return nil
+}
+
+// dotImportedFunction returns the dot import whose GALA package declares a
+// function named name, nil when none does. The package-level vals of a dot
+// import are bound in scope instead (see dotImportedVals).
+func (t *galaASTTransformer) dotImportedFunction(name string) *ImportEntry {
+	for _, entry := range t.galaDotImports {
+		if t.importedFunction(entry, name) != nil {
+			return entry
+		}
+	}
+	return nil
 }
 
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.

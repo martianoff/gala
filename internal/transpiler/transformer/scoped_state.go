@@ -62,6 +62,7 @@ func (t *galaASTTransformer) scopedStateChecks() []struct {
 		{"localDeclaration", t.localDeclaration},
 		{"signatureDots", t.signatureDots != nil},
 		{"equalOwner", t.equalOwner != nil},
+		{"typeNameDepth", t.typeNameDepth != 0},
 	}
 }
 
@@ -97,6 +98,8 @@ var accumulatedStateFields = []string{
 	"resultGenericMethods",
 	"functions",
 	"galaPkgPaths",
+	"dotImportedVals",
+	"galaDotImports",
 	"typeMetas",
 	"hasOpaque",
 	"ptrReceiverMethods",
@@ -183,7 +186,7 @@ func (t *galaASTTransformer) restoreScopedState(s scopedStateSnapshot) {
 	t.expectedArgTypes.stack = t.expectedArgTypes.stack[:s.argDepth]
 	t.loweringDefault, t.tryThunkLambda, t.pendingMatchStmtBlock = nil, nil, nil
 	t.matchInStatementPos, t.localDeclaration, t.hoistedPre = false, false, nil
-	t.signatureDots, t.equalOwner = nil, nil
+	t.signatureDots, t.equalOwner, t.typeNameDepth = nil, nil, 0
 }
 
 // scopedStateResidue reports the scoped fields that are still set. It is the
