@@ -26,6 +26,10 @@ import (
 // resolves their imports.
 func nativeCorpus(t *testing.T) (map[string]string, []string, string) {
 	t.Helper()
+	// Only galop's parses come with a native tree, whatever the build's or
+	// environment's default engine.
+	parser.RequestEngine(string(parser.EngineGalop))
+	t.Cleanup(func() { parser.RequestEngine("") })
 	stdFile, err := bazel.Runfile("std/option.gala")
 	require.NoError(t, err, "the std sources are not staged")
 	files, err := bazel.ListRunfiles()
