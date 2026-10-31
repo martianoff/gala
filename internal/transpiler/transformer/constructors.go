@@ -27,7 +27,12 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		}
 		ident := ast.NewIdent(name)
 		// First check if it's a local variable - if so, don't try to resolve as std type
-		if t.bindingScope(name) != nil {
+		if s := t.bindingScope(name); s != nil {
+			if s.parent == nil {
+				if err := t.preludeDotImportAmbiguity(ctx, name, t.dotImportedVals[name], "value"); err != nil {
+					return nil, err
+				}
+			}
 			if _, boxed := t.valKind(name); boxed {
 				return &ast.CallExpr{
 					Fun: &ast.SelectorExpr{
@@ -59,6 +64,9 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		// Only check typeMetas directly to see if std.name exists as a type definition
 		// NOTE: Direct access is intentional here - we need exact match, not resolution
 		if _, isStdType := t.typeMetas[withStdPrefix(name)]; isStdType && !ownFunc {
+			if err := t.preludeDotImportAmbiguity(ctx, name, t.dotImportedFunction(name), "function"); err != nil {
+				return nil, err
+			}
 			return t.stdIdent(name), nil
 		}
 		// Check if it's a std function (from metadata)

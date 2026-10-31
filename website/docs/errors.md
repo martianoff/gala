@@ -136,6 +136,7 @@ Same code, same message; the column is zero-based in the terse form. See [Compil
 | [GALA-E0084](/docs/errors/gala-e0084/) | Values that cannot be compared with == | Types |
 | [GALA-E0085](/docs/errors/gala-e0085/) | Struct tag on a field | Go surface |
 | [GALA-E0086](/docs/errors/gala-e0086/) | Type parameter on an interface method | Declarations |
+| [GALA-E0087](/docs/errors/gala-e0087/) | Name is both a std type and a dot-imported value | Packages |
 
 Every code the compiler can emit now has a page. Codes are never renumbered and never change meaning, so a code you find in an old build log still means the same thing here.
 
@@ -171,7 +172,7 @@ Everyday type mismatches transpile cleanly and surface from the **Go compiler** 
 
 **Opaque types** — [E0062](/docs/errors/gala-e0062/) an underlying type that is not a scalar · [E0063](/docs/errors/gala-e0063/) a direct conversion between two opaque types · [E0064](/docs/errors/gala-e0064/) an implicit conversion to or from an opaque type · [E0065](/docs/errors/gala-e0065/) an opaque-type pattern with other than one sub-pattern. Start with [Opaque Types](/docs/language-reference/#opaque-types).
 
-**Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import. See [Dependency Management](/docs/dependency-management/).
+**Packages and imports** — [E0010](/docs/errors/gala-e0010/), [E0020](/docs/errors/gala-e0020/), [E0025](/docs/errors/gala-e0025/), [E0026](/docs/errors/gala-e0026/), [E0032](/docs/errors/gala-e0032/), [E0041](/docs/errors/gala-e0041/) internal-package visibility, [E0046](/docs/errors/gala-e0046/) duplicate import, [E0087](/docs/errors/gala-e0087/) a name that is both a std type and a dot-imported value. See [Dependency Management](/docs/dependency-management/).
 
 **Go constructs with no GALA surface** — [E0007](/docs/errors/gala-e0007/) slice literals · [E0008](/docs/errors/gala-e0008/) map literals · [E0035](/docs/errors/gala-e0035/) builtins like `len` and `panic` · [E0036](/docs/errors/gala-e0036/) statement keywords like `defer` and `go` · [E0040](/docs/errors/gala-e0040/) slice/map types in an expression · [E0047](/docs/errors/gala-e0047/) the `if` initializer statement · [E0055](/docs/errors/gala-e0055/) a Go keyword used as a name · [E0085](/docs/errors/gala-e0085/) a struct tag on a field. Each names its GALA replacement or the fix.
 
