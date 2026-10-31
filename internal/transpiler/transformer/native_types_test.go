@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,17 +27,19 @@ type typeRun struct {
 	converted bool
 }
 
-// transpileTypes transpiles src as walkPipeline.transpile does, recording
-// the types lowered off the native tree.
-func transpileTypes(w *walkPipeline, path, src string) typeRun {
+// transpileTypes transpiles src as walkPipeline.transpile does, with the
+// import search path searchPaths, recording the types lowered off the
+// native tree. antlrOnly makes the transformer walk ANTLR's tree whatever
+// the parse came with.
+func transpileTypes(searchPaths []string, antlrOnly bool, path, src string) typeRun {
 	tr := transformer.NewGalaASTTransformer()
 	run := typeRun{lines: map[int]bool{}}
 	transformer.OnNativeType(tr, func(line int) { run.lines[line] = true })
-	if w.antlrOnly {
+	if antlrOnly {
 		tr = withoutNative{tr}
 	}
 	p := &handleParser{GalaParser: transpiler.NewAntlrGalaParser()}
-	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, w.searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
+	run.out, run.err = transpiler.NewGalaToGoTranspiler(p, analyzer.NewGalaAnalyzer(p, searchPaths), tr, generator.NewGoCodeGenerator()).Transpile(src, path)
 	run.converted = p.compiled.Converted()
 	return run
 }
@@ -206,17 +209,17 @@ type W struct {
 func TestNativeTypeCases(t *testing.T) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	t.Cleanup(func() { galaparser.RequestEngine("") })
-	_, searchPaths := walkCorpus(t)
-	nativeW, antlrW := &walkPipeline{searchPaths: searchPaths}, &walkPipeline{searchPaths: searchPaths, antlrOnly: true}
+	stdFile, err := bazel.Runfile("std/option.gala")
+	require.NoError(t, err, "std sources not staged")
+	searchPaths := []string{filepath.Dir(filepath.Dir(stdFile))}
 	dir := t.TempDir()
 	for _, c := range typeCases {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "_"), "main.gala")
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 			require.NoError(t, os.WriteFile(path, []byte(c.src), 0o644))
-			_, clean := countTree(c.src)
-			require.True(t, clean, "the case does not parse cleanly with galop")
-			n, a := transpileTypes(nativeW, path, c.src), transpileTypes(antlrW, path, c.src)
+			require.NotNil(t, transpiler.NewAntlrGalaParser().ParseFile(c.src).CleanNative(), "the case does not parse cleanly with galop")
+			n, a := transpileTypes(searchPaths, false, path, c.src), transpileTypes(searchPaths, true, path, c.src)
 			require.True(t, n.converted, "the analysis did not convert the native tree, so the walk read ANTLR's")
 			assert.Empty(t, a.lines, "the ANTLR walk lowered types off the native tree")
 			if c.fails {

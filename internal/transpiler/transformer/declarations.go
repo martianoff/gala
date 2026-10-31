@@ -235,8 +235,8 @@ type bindingDecl struct {
 	// pattern's; tuple is the pattern's range when there is one.
 	names []declName
 	tuple srcNode
-	// typ is the type annotation and exprs the initializer list, none
-	// when there is none.
+	// typ is the type annotation, no type when there is none, and exprs the
+	// initializer list, nil when there is none.
 	typ   typeSrc
 	exprs grammar.IExpressionListContext
 	// For a tuple pattern only, which its diagnostics read: typAt and
