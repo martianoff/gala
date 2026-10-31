@@ -27,11 +27,16 @@ type EnterFunctionScope func(w *scopewalk.Walker, fn native.FunctionDeclarationN
 // that Walker's Visitor, under its options, in its scopes.
 type Walker struct{ w walk }
 
-// New is w's walk on the native tree. enter, which may be nil, stands in for
-// w's Options.EnterFunctionScope, whose hook takes an ANTLR context and is
-// never called on this tree.
+// New is w's walk on the native tree. enter stands in for w's
+// Options.EnterFunctionScope, whose hook takes an ANTLR context and is never
+// called on this tree. enter is nil exactly when that option is: New panics
+// on a hook without its native twin, which the walk would otherwise drop.
 func New(w *scopewalk.Walker, enter EnterFunctionScope) Walker {
-	return Walker{walk{w, w.Options(), enter}}
+	opts := w.Options()
+	if (opts.EnterFunctionScope != nil) != (enter != nil) {
+		panic("nativewalk: Options.EnterFunctionScope and the native enter hook must be set together")
+	}
+	return Walker{walk{w, opts, enter}}
 }
 
 // Walk is scopewalk.Walker.Walk of node n.

@@ -58,18 +58,16 @@ type nativeFile struct {
 
 // nativeFileOf is the native tree of a parse's handle h, converted now if it
 // was not yet, with its top-level declarations bucketed in one pass; or no
-// tree when there is none (a nil handle, or the conversion failed), and the
-// file is collected, and checked, on ANTLR's tree. Neither the collection nor
-// the undefined-symbol check crosses from the native tree to ANTLR's.
+// tree when there is none (a nil handle, the conversion failed, or the tree
+// is not well formed: see Native.WellFormed), and the file is collected, and
+// checked, on ANTLR's tree. Neither the collection nor the undefined-symbol
+// check crosses from the native tree to ANTLR's.
 func nativeFileOf(h *galaparser.Native) nativeFile {
-	tree, err := h.Tree()
-	if err != nil {
+	if !h.WellFormed() {
 		return nativeFile{}
 	}
+	tree, _ := h.Tree()
 	root := tree.Root()
-	if root.Kind() != native.GalaKIND_sourceFile {
-		return nativeFile{}
-	}
 	nf := nativeFile{root: native.SourceFileNode{GalaNodeRef: root}}
 	for decl := range nativeTopLevelDecls(root) {
 		switch decl.Kind() {

@@ -80,6 +80,29 @@ func (t *Native) convert() {
 	}
 }
 
+// WellFormed reports whether the tree converted with the shape its readers
+// rely on: a source-file root, and one ANTLR context per node with the
+// root's a source file, so Ctx and Node pair the two trees. A reader that
+// gets false works on the ANTLR tree instead. The check is constant-time. A
+// nil *Native is not well formed.
+func (t *Native) WellFormed() bool {
+	tree, err := t.Tree()
+	return err == nil && wellFormed(tree, t.ctxs)
+}
+
+// wellFormed is WellFormed's check of tree, whose nodes' contexts are ctxs.
+func wellFormed(tree *native.GalaTree, ctxs []antlr.ParserRuleContext) bool {
+	if len(ctxs) != len(tree.Nodes) {
+		return false
+	}
+	root := tree.Root()
+	if !root.Ok() || root.Kind() != native.GalaKIND_sourceFile {
+		return false
+	}
+	_, ok := ctxs[root.Index()].(*grammar.SourceFileContext)
+	return ok
+}
+
 // Ctx is the ANTLR context of native node n, or nil when n is no node of this
 // tree.
 func (t *Native) Ctx(n native.GalaNodeRef) antlr.ParserRuleContext {

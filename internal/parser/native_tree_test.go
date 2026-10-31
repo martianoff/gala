@@ -34,6 +34,9 @@ func checkNative(p *Parsed, text string) string {
 	if last := len(n.ctxs) - 1; tree.Root().Index() != last || n.ctxs[last] != p.Tree {
 		return "the root, and its context the tree, are not last"
 	}
+	if !n.WellFormed() {
+		return "the tree is not well formed"
+	}
 	for i := range tree.Nodes {
 		node := tree.Node(i)
 		ctx := n.Ctx(node)
@@ -142,6 +145,34 @@ func TestParseFileNativeConcurrent(t *testing.T) {
 		if got[i] == nil || got[i] != got[0] {
 			t.Fatalf("goroutine %d got %p, goroutine 0 %p", i, got[i], got[0])
 		}
+	}
+}
+
+// TestWellFormed: a converted parse is well formed, and not once the root
+// lacks its context or has another rule's, a context is missing, or the tree
+// has no nodes.
+func TestWellFormed(t *testing.T) {
+	p := parseWithGalop("package main\n\nval x = 1\n\nfunc f() int = 2\n")
+	tree, err := p.Native.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Native.WellFormed() {
+		t.Fatal("a converted parse is not well formed")
+	}
+	root := tree.Root().Index()
+	for _, ctx := range []antlr.ParserRuleContext{nil, p.Native.ctxs[root-1]} {
+		ctxs := append([]antlr.ParserRuleContext(nil), p.Native.ctxs...)
+		ctxs[root] = ctx
+		if wellFormed(tree, ctxs) {
+			t.Errorf("well formed with root context %T", ctx)
+		}
+	}
+	if wellFormed(tree, p.Native.ctxs[1:]) {
+		t.Error("well formed with a context missing")
+	}
+	if wellFormed(&native.GalaTree{}, nil) {
+		t.Error("an empty tree is well formed")
 	}
 }
 
