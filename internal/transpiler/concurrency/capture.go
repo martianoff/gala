@@ -91,9 +91,7 @@ var captureOptions = scopewalk.Options{ParseInterpolations: true}
 // lambda. The lambda's declared parameters are bound (never captured); its body
 // may be an expression (`(x) => x + n`) or a block (`(x) => { ... }`).
 func FreeVariablesInLambda(lambda grammar.ILambdaExpressionContext) []Capture {
-	c := newCaptureCollector()
-	c.walker.WalkLambda(lambda)
-	return c.out
+	return capturesOf(func(w *scopewalk.Walker) { w.WalkLambda(lambda) })
 }
 
 // FreeVariablesInExpression returns the free variables of a bare expression —
@@ -104,14 +102,25 @@ func FreeVariablesInLambda(lambda grammar.ILambdaExpressionContext) []Capture {
 // paramNames lets a caller seed additional bound names (e.g. an implicit
 // parameter of the thunk); pass nil/empty for the common Future/Spawn thunk.
 func FreeVariablesInExpression(paramNames []string, expr grammar.IExpressionContext) []Capture {
+	return capturesOf(func(w *scopewalk.Walker) { inThunkScope(w, paramNames, func() { w.Walk(expr) }) })
+}
+
+// capturesOf is the captures walk reports to a capture collector's walker.
+func capturesOf(walk func(*scopewalk.Walker)) []Capture {
 	c := newCaptureCollector()
-	c.walker.PushScope()
-	for _, p := range paramNames {
-		c.walker.Bind(p)
-	}
-	c.walker.Walk(expr)
-	c.walker.PopScope()
+	walk(c.walker)
 	return c.out
+}
+
+// inThunkScope runs walk in a scope of w's of its own, where paramNames are
+// bound: the scope of the thunk a bare expression stands for.
+func inThunkScope(w *scopewalk.Walker, paramNames []string, walk func()) {
+	w.PushScope()
+	for _, p := range paramNames {
+		w.Bind(p)
+	}
+	walk()
+	w.PopScope()
 }
 
 // captureCollector turns the shared walker's unbound-reference stream into the
