@@ -50,7 +50,7 @@ func (b blockSrc) at() srcNode {
 // statements is b's statements, in order.
 func (b blockSrc) statements() []stmtSrc {
 	if b.node.Ok() {
-		var out []stmtSrc
+		out := make([]stmtSrc, 0, b.node.ChildCount())
 		for n := range galaparser.NativeKids(b.node, native.GalaKIND_statement) {
 			out = append(out, nativeStmt(n))
 		}
@@ -67,14 +67,12 @@ func (b blockSrc) statements() []stmtSrc {
 // lastStatement is b's last statement, and false when it has none.
 func (b blockSrc) lastStatement() (stmtSrc, bool) {
 	if b.node.Ok() {
-		var last native.GalaNodeRef
-		for n := range galaparser.NativeKids(b.node, native.GalaKIND_statement) {
-			last = n
+		for i := b.node.ChildCount() - 1; i >= 0; i-- {
+			if n := b.node.Child(i).Node(); n.Ok() && n.Kind() == native.GalaKIND_statement {
+				return nativeStmt(n), true
+			}
 		}
-		if !last.Ok() {
-			return stmtSrc{}, false
-		}
-		return nativeStmt(last), true
+		return stmtSrc{}, false
 	}
 	all := b.ctx.AllStatement()
 	if len(all) == 0 {
@@ -140,6 +138,8 @@ type stmtSrc struct {
 	at   srcNode
 	kind stmtKind
 	kid  srcNode
+	// simpleS is kid read as a simple statement, when s is one.
+	simpleS simpleSrc
 }
 
 // antlrStmt reads the statement ctx on ANTLR's tree.
@@ -179,7 +179,7 @@ func antlrStmt(ctx *grammar.StatementContext) stmtSrc {
 	case *grammar.ForStatementContext:
 		s.kind = stmtFor
 	case *grammar.SimpleStatementContext:
-		s.kind = stmtSimple
+		s.kind, s.simpleS = stmtSimple, antlrSimple(kid.(*grammar.SimpleStatementContext))
 	}
 	return s
 }
@@ -221,7 +221,7 @@ func nativeStmt(n native.GalaNodeRef) stmtSrc {
 	case native.GalaKIND_forStatement:
 		s.kind = stmtFor
 	case native.GalaKIND_simpleStatement:
-		s.kind = stmtSimple
+		s.kind, s.simpleS = stmtSimple, nativeSimple(kid)
 	}
 	return s
 }
@@ -277,15 +277,7 @@ func antlrStmts(t *galaASTTransformer, stmts []stmtSrc) []grammar.IStatementCont
 }
 
 // simple is s's simple statement; the zero simpleSrc when s is none.
-func (s stmtSrc) simple() simpleSrc {
-	switch {
-	case s.kind != stmtSimple:
-		return simpleSrc{}
-	case s.kid.node.Ok():
-		return nativeSimple(s.kid.node)
-	}
-	return antlrSimple(s.kid.ctx.(*grammar.SimpleStatementContext))
-}
+func (s stmtSrc) simple() simpleSrc { return s.simpleS }
 
 // ifStmt is s's if-statement; the zero ifSrc when s is none.
 func (s stmtSrc) ifStmt() ifSrc {
@@ -309,10 +301,7 @@ func (s stmtSrc) forStmt() forSrc {
 // valueExpr is the expression of s when s is an expression statement, and
 // nil otherwise (trailingValueExpression).
 func (s stmtSrc) valueExpr(t *galaASTTransformer) grammar.IExpressionContext {
-	if s.kind != stmtSimple {
-		return nil
-	}
-	return s.simple().expr(t)
+	return s.simpleS.expr(t)
 }
 
 // returnExpr is the value of s, a return statement, and nil when it has
@@ -493,15 +482,9 @@ func (s simpleSrc) expr(t *galaASTTransformer) grammar.IExpressionContext {
 // target is a name.
 func (s simpleSrc) assignsOneName() bool {
 	if s.kid.node.Ok() {
-		count, text := 0, ""
 		lhs := native.AssignmentNode{GalaNodeRef: s.kid.node}.ExpressionList(0)
-		for e := range galaparser.NativeKids(lhs.GalaNodeRef, native.GalaKIND_expression) {
-			if count++; count > 1 {
-				return false
-			}
-			text = galaparser.NativeText(e)
-		}
-		return count == 1 && token.IsIdentifier(text)
+		target, ok := galaparser.OnlyNativeKid(lhs.GalaNodeRef, native.GalaKIND_expression)
+		return ok && token.IsIdentifier(galaparser.NativeText(target))
 	}
 	targets := s.kid.ctx.(*grammar.AssignmentContext).AllExpressionList()[0].AllExpression()
 	return len(targets) == 1 && token.IsIdentifier(targets[0].GetText())
@@ -588,9 +571,10 @@ func (s simpleSrc) shortVar(t *galaASTTransformer) shortVarDecl {
 		return d
 	}
 	ctx := s.kid.ctx.(*grammar.ShortVarDeclContext)
-	d := shortVarDecl{at: s.kid, exprs: ctx.ExpressionList().(*grammar.ExpressionListContext)}
-	for _, id := range ctx.IdentifierList().(*grammar.IdentifierListContext).AllIdentifier() {
-		d.names = append(d.names, declName{text: id.GetText(), at: srcNode{ctx: id}})
+	d := shortVarDecl{
+		at:    s.kid,
+		names: ctxDeclNames(ctx.IdentifierList()),
+		exprs: ctx.ExpressionList().(*grammar.ExpressionListContext),
 	}
 	if isLoneBlank(d.names) {
 		d.blankHint = blankDeclarationHint(ctx)
@@ -664,14 +648,6 @@ func (s ifSrc) block(i int) blockSrc {
 		return blockSrc{ctx: b}
 	}
 	return blockSrc{}
-}
-
-// hasElse reports whether s has an `else`.
-func (s ifSrc) hasElse() bool {
-	if s.node.Ok() {
-		return s.native().ELSE().Ok()
-	}
-	return s.ctx.ELSE() != nil
 }
 
 // elseIf is the if-statement of s's `else if`; the zero ifSrc when it has
@@ -761,10 +737,8 @@ func (s forSrc) rangeClause(t *galaASTTransformer) (rangeDecl, bool) {
 			break
 		}
 	}
-	if ids, ok := rc.IdentifierList().(*grammar.IdentifierListContext); ok && ids != nil {
-		for _, id := range ids.AllIdentifier() {
-			d.names = append(d.names, declName{text: id.GetText(), at: srcNode{ctx: id}})
-		}
+	if ids := rc.IdentifierList(); ids != nil {
+		d.names = ctxDeclNames(ids)
 	}
 	return d, true
 }

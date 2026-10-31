@@ -477,12 +477,6 @@ func (t *galaASTTransformer) transformValueBlock(ctx *grammar.BlockContext, s sl
 	return t.transformBlockWithTail(ctx, tailValue, s)
 }
 
-// transformFunctionBody lowers the block body of a function declared with a
-// result type: its trailing expression is the implicit return value.
-func (t *galaASTTransformer) transformFunctionBody(ctx *grammar.BlockContext) (*ast.BlockStmt, error) {
-	return t.transformBlockWithTail(ctx, tailReturn, slot{})
-}
-
 // transformBlockWithTail lowers the block ctx (see lowerBlock).
 func (t *galaASTTransformer) transformBlockWithTail(ctx *grammar.BlockContext, tail blockTail, lastValueExpected slot) (*ast.BlockStmt, error) {
 	return t.lowerBlock(antlrBlock(ctx), tail, lastValueExpected)
@@ -540,6 +534,8 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 			// or if-expression whose arm it is. When that is not known, a
 			// block whose value is consumed takes it from its own trailing
 			// value, and fills the enclosing lambda's slot with it.
+			// The chain reads the rest of the block on ANTLR's tree (bind.go).
+			chain := antlrStmts(t, allStmts[i:])
 			hoisted := lastValueExpected.hoist != ""
 			typ := t.returnSlot.typ
 			if tail != tailReturn {
@@ -552,14 +548,14 @@ func (t *galaASTTransformer) lowerBlock(b blockSrc, tail blockTail, lastValueExp
 				}
 			}
 			if hoisted {
-				if err := t.checkNoEscapeAfterBind(antlrStmts(t, allStmts[i:]), "a match arm"); err != nil {
+				if err := t.checkNoEscapeAfterBind(chain, "a match arm"); err != nil {
 					return nil, err
 				}
 				// The chain's continuations are functions of their own.
 				defer t.enterIIFEReturnSlot(typ)()
 			}
 			res := t.newBindResult(typ)
-			expr, err := t.desugarBindChain(antlrStmts(t, allStmts[i:]), res)
+			expr, err := t.desugarBindChain(chain, res)
 			if err != nil {
 				return nil, err
 			}
@@ -1420,20 +1416,18 @@ func (t *galaASTTransformer) lowerIfStatement(ifS ifSrc, tail blockTail, s slot)
 		Body: body,
 	}
 
-	if ifS.hasElse() {
-		if b := ifS.block(1); b.ok() {
-			elseBody, err := t.lowerBlock(b, tail, s)
-			if err != nil {
-				return nil, err
-			}
-			stmt.Else = elseBody
-		} else if elseIf := ifS.elseIf(); elseIf.ok() {
-			elseStmt, err := t.lowerIfStatement(elseIf, tail, s)
-			if err != nil {
-				return nil, err
-			}
-			stmt.Else = elseStmt
+	if b := ifS.block(1); b.ok() {
+		elseBody, err := t.lowerBlock(b, tail, s)
+		if err != nil {
+			return nil, err
 		}
+		stmt.Else = elseBody
+	} else if elseIf := ifS.elseIf(); elseIf.ok() {
+		elseStmt, err := t.lowerIfStatement(elseIf, tail, s)
+		if err != nil {
+			return nil, err
+		}
+		stmt.Else = elseStmt
 	}
 
 	return stmt, nil

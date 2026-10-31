@@ -250,6 +250,16 @@ type bindingDecl struct {
 	blankForm, blankHint string
 }
 
+// ctxDeclNames is the names of the identifier list idList, on ANTLR's tree.
+func ctxDeclNames(idList grammar.IIdentifierListContext) []declName {
+	ids := idList.(*grammar.IdentifierListContext).AllIdentifier()
+	names := make([]declName, len(ids))
+	for i, id := range ids {
+		names[i] = declName{text: id.GetText(), at: srcNode{ctx: id}}
+	}
+	return names
+}
+
 // readBindingDecl reads a val or var declaration, keyword, on ANTLR's tree.
 func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
 	d := bindingDecl{at: srcNode{ctx: ctx}, topLevel: isTopLevelDecl(ctx), typ: ctx.Type_(), exprs: ctx.ExpressionList()}
@@ -265,9 +275,7 @@ func readBindingDecl(ctx tupleDeclaration, keyword string) bindingDecl {
 			d.nExprs = len(d.exprs.(*grammar.ExpressionListContext).AllExpression())
 		}
 	}
-	for _, idCtx := range idList.(*grammar.IdentifierListContext).AllIdentifier() {
-		d.names = append(d.names, declName{text: idCtx.GetText(), at: srcNode{ctx: idCtx}})
-	}
+	d.names = ctxDeclNames(idList)
 	if d.exprs != nil && !d.tuple.ok() && isLoneBlank(d.names) {
 		d.blankForm = blankDeclarationForm(keyword, d.typ)
 		d.blankHint = blankDeclarationHint(ctx)

@@ -59,7 +59,7 @@ func nativeRange(n native.GalaNodeRef) srcRange {
 	return r
 }
 
-// nativeDeclNames is readDeclNames of the identifier list idList.
+// nativeDeclNames is ctxDeclNames of the identifier list idList.
 func nativeDeclNames(idList native.GalaNodeRef) []declName {
 	var names []declName
 	for id := range galaparser.NativeKids(idList, native.GalaKIND_identifier) {
@@ -87,7 +87,7 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	// Track position for error reporting in deeply-nested helpers
 	start := td.Start()
 	t.lastLine, t.lastCol = int(start.Line), int(start.Column)
-	decl, ok := topDeclKid(td)
+	decl, ok := firstKidNode(td)
 	if !ok {
 		return nil, nil
 	}
@@ -110,16 +110,6 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 		return t.transformOpaqueTypeDeclaration(crossTo[*grammar.OpaqueTypeDeclarationContext](t, decl))
 	}
 	return nil, nil
-}
-
-// topDeclKid is the declaration td, a topLevelDeclaration node, holds, and
-// false when it holds none (parse-error recovery).
-func topDeclKid(td native.GalaNodeRef) (native.GalaNodeRef, bool) {
-	if td.ChildCount() == 0 {
-		return native.GalaNodeRef{}, false
-	}
-	decl := td.Child(0).Node()
-	return decl, decl.Ok()
 }
 
 // oneDecl is the result of lowering a declaration to the one Go declaration
