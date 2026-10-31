@@ -46,7 +46,7 @@ func (t *galaASTTransformer) transformTopLevelDeclaration(ctx grammar.ITopLevelD
 		return []ast.Decl{decl}, nil
 	}
 	if typeCtx := ctx.TypeDeclaration(); typeCtx != nil {
-		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext), false)
+		return t.transformTypeDeclaration(typeCtx.(*grammar.TypeDeclarationContext))
 	}
 	if structShorthandCtx := ctx.StructShorthandDeclaration(); structShorthandCtx != nil {
 		return t.transformStructShorthandDeclaration(structShorthandCtx.(*grammar.StructShorthandDeclarationContext))
@@ -1765,8 +1765,8 @@ func readTypeDecl(ctx *grammar.TypeDeclarationContext) typeDecl {
 	return d
 }
 
-func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext, local bool) ([]ast.Decl, error) {
-	return t.lowerTypeDecl(readTypeDecl(ctx), local)
+func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarationContext) ([]ast.Decl, error) {
+	return t.lowerTypeDecl(readTypeDecl(ctx), false)
 }
 
 // lowerTypeDecl lowers a type declaration. A local one (declared in a function
@@ -1774,6 +1774,10 @@ func (t *galaASTTransformer) transformTypeDeclaration(ctx *grammar.TypeDeclarati
 func (t *galaASTTransformer) lowerTypeDecl(d typeDecl, local bool) ([]ast.Decl, error) {
 	name := d.name
 	var decls []ast.Decl
+	var localMeta *transpiler.TypeMetadata
+	if local {
+		localMeta = t.declareLocalType(d)
+	}
 
 	// Process Type Parameters first
 	var tParams *ast.FieldList
@@ -1827,6 +1831,9 @@ func (t *galaASTTransformer) lowerTypeDecl(d typeDecl, local bool) ([]ast.Decl, 
 			Specs: []ast.Spec{typeSpec},
 		})
 		if local {
+			localMeta.Fields = t.structFieldTypes[name]
+			localMeta.FieldNames = fieldNames
+			localMeta.ImmutFlags = immutFlags
 			// Go has no methods on a type declared in a function body.
 			return decls, nil
 		}

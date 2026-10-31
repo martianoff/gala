@@ -13,8 +13,10 @@ import (
 // `Inner(N = 1)` — so it gets the metadata a top-level struct has from the
 // analyzer: its field layout and a TypeMetadata, keyed by its bare name. The
 // bare key is an exact match, so inside its block the local type answers for
-// its name ahead of a package-level type of the same name (whose key is
-// `pkg.Name`), as Go's scoping says it must.
+// its name ahead of a package-level type of the same name, as Go's scoping
+// says it must. (A package-level type is keyed `pkg.Name`, except in package
+// main, where its key is the bare name too: scopeLocalTypeName saves and
+// restores it, so the shadowing holds there as well.)
 //
 // Everything registered here is scoped to the enclosing block: popping the
 // block's scope puts back what the declaration replaced, so the type is not
@@ -25,36 +27,38 @@ import (
 // without the Copy/Equal/Unapply methods a top-level struct gets (copy and
 // pattern matching lower inline instead).
 func (t *galaASTTransformer) transformLocalTypeDeclaration(ctx *grammar.TypeDeclarationContext) (ast.Decl, error) {
-	name := ctx.Identifier().GetText()
-	t.scopeLocalTypeName(name)
-
-	var meta *transpiler.TypeMetadata
-	if ctx.StructType() != nil {
-		// Registered before the fields are lowered, so a field naming the
-		// type itself (`next Option[Node]`) resolves to it.
-		meta = &transpiler.TypeMetadata{
-			Name:    name,
-			Package: t.packageName,
-			Methods: map[string]*transpiler.MethodMetadata{},
-		}
-		if tp := ctx.TypeParameters(); tp != nil {
-			for _, p := range tp.(*grammar.TypeParametersContext).TypeParameterList().AllTypeParameter() {
-				meta.TypeParams = append(meta.TypeParams, p.(*grammar.TypeParameterContext).Identifier(0).GetText())
-			}
-		}
-		t.typeMetas[name] = meta
-	}
-
-	decls, err := t.transformTypeDeclaration(ctx, true)
+	decls, err := t.lowerTypeDecl(readTypeDecl(ctx), true)
 	if err != nil || len(decls) == 0 {
 		return nil, err
 	}
-	if meta != nil {
-		meta.Fields = t.structFieldTypes[name]
-		meta.FieldNames = t.structFields[name]
-		meta.ImmutFlags = t.structImmutFields[name]
-	}
 	return decls[0], nil
+}
+
+// declareLocalType scopes d's name to the current block and, for a struct,
+// registers its TypeMetadata. It runs before the fields are lowered, so a
+// field naming the type itself (`next Option[Node]`) resolves to it; the
+// field layout is filled in once they are (see lowerTypeDecl).
+func (t *galaASTTransformer) declareLocalType(d typeDecl) *transpiler.TypeMetadata {
+	t.scopeLocalTypeName(d.name)
+	if d.kind != structTypeDecl {
+		return nil
+	}
+	meta := &transpiler.TypeMetadata{
+		Name:    d.name,
+		Package: t.packageName,
+		Methods: map[string]*transpiler.MethodMetadata{},
+	}
+	for _, p := range d.typeParams {
+		meta.TypeParams = append(meta.TypeParams, p.name)
+		if p.constraint != "" {
+			if meta.TypeParamConstraints == nil {
+				meta.TypeParamConstraints = map[string]string{}
+			}
+			meta.TypeParamConstraints[p.name] = p.constraint
+		}
+	}
+	t.typeMetas[d.name] = meta
+	return meta
 }
 
 // scopeLocalTypeName clears the transformer's bare-name entries for name, and
