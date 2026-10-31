@@ -34,8 +34,9 @@ type walkRun struct {
 
 // walkPipeline transpiles files the way the CLI does, parsing with galop, each
 // with an analyzer of its own: a package that fails to load stands an
-// analyzer's undefined-symbol check down for every later file, and with it the
-// conversion the native walk reads. antlrOnly makes its transformer walk ANTLR's
+// analyzer's undefined-symbol check down for every later file (the analysis
+// still converts the tree the native walk reads). antlrOnly makes its
+// transformer walk ANTLR's
 // tree whatever the parse came with.
 type walkPipeline struct {
 	searchPaths []string
