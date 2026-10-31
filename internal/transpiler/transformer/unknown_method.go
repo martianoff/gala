@@ -258,11 +258,7 @@ func sealedPredicatePattern(typeMeta *transpiler.TypeMetadata, method string) (s
 	}
 	for i := range typeMeta.SealedVariants {
 		if v := &typeMeta.SealedVariants[i]; v.Name == name {
-			wildcards := make([]string, len(v.FieldNames))
-			for j := range wildcards {
-				wildcards[j] = "_"
-			}
-			return name + "(" + strings.Join(wildcards, ", ") + ")", true
+			return name + "(" + repeatJoin("_", len(v.FieldNames)) + ")", true
 		}
 	}
 	return "", false

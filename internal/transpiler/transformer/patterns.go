@@ -170,8 +170,8 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		// `case shapes.Circle` spells none of the case's fields, and on a
 		// subject that may hold any type `case std.None` cannot name the type
 		// arguments of the case it tests: both are errors (GALA-E0039).
-		if len(variant.FieldNames) > 0 || (len(parent.TypeParams) > 0 && t.holdsAnyTypeKnown(matchedType)) {
-			return nil, nil, untestableCaseError(patExprCtx.GetText(), true, variant, parent, matchedType, patExprCtx.GetStart())
+		if caseUntestable(variant, parent, t.holdsAnyTypeKnown(matchedType)) {
+			return nil, nil, untestableCaseError(patExprCtx.GetText(), variant, parent, matchedType, patExprCtx.GetStart())
 		}
 		// `case shapes.Square` is `case shapes.Square()`, as the unqualified
 		// spelling is.
@@ -373,12 +373,7 @@ func (t *galaASTTransformer) sealedVariantOfMatchedType(name string, matchedType
 	if meta == nil || !meta.IsSealed || !t.visibleHere(name, meta) {
 		return nil, nil
 	}
-	for i := range meta.SealedVariants {
-		if meta.SealedVariants[i].Name == name {
-			return &meta.SealedVariants[i], meta
-		}
-	}
-	return nil, nil
+	return sealedCaseNamed(meta, name)
 }
 
 // bareVariantBindingError reports a bare identifier in pattern position that
@@ -394,13 +389,13 @@ func bareVariantBindingError(name string, variant *transpiler.SealedVariant, par
 		fmt.Sprintf("`%s` is a variant of sealed type %q, so `case %s` binds a new variable and matches every value instead of testing for %s",
 			name, parent.Name, name, name),
 		fmt.Sprintf("write `case %s(%s)` to match the variant, or rename the binding if you meant to capture the whole value",
-			name, wildcards(len(variant.FieldNames))),
+			name, repeatJoin("_", len(variant.FieldNames))),
 	)
 }
 
-// wildcards returns n `_` sub-patterns, comma-separated.
-func wildcards(n int) string {
-	return strings.TrimSuffix(strings.Repeat("_, ", n), ", ")
+// repeatJoin returns n copies of elem, comma-separated: `_, _`.
+func repeatJoin(elem string, n int) string {
+	return strings.TrimSuffix(strings.Repeat(elem+", ", n), ", ")
 }
 
 // isStableIdentifierPattern reports whether a bare identifier in a pattern is a
@@ -463,7 +458,9 @@ func (t *galaASTTransformer) isBindingPatternOf(text string, matchedType transpi
 // against a sealed type that declares `case endFrame()` matches that variant.
 // A variant of some OTHER sealed type is not a test of a value whose type is
 // known: the name binds, as sealedVariantOfMatchedType documents — unless it
-// is a variant of the value's sealed view (see sealedViewOf).
+// is a variant of the value's sealed view (see sealedViewOf). A case the name
+// cannot test (see untestableBareCase) is not a binding either: it is an
+// error, which transformSimpleBindingOrLiteral reports.
 func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.Type) bool {
 	if variant, _ := t.sealedVariantOfMatchedType(name, matchedType); variant != nil {
 		return true
@@ -500,25 +497,32 @@ func (t *galaASTTransformer) untestableBareCase(name string, matchedType transpi
 		return nil, nil
 	}
 	variant, parent := sealedCaseNamed(t.findSealedParentForVariant(name, meta.Package), name)
-	if variant == nil || (len(variant.FieldNames) == 0 && len(parent.TypeParams) == 0) {
+	if variant == nil || !caseUntestable(variant, parent, true) {
 		return nil, nil
 	}
 	return variant, parent
 }
 
+// caseUntestable reports whether a case pattern written without parentheses
+// cannot test for variant, of sealed type parent: the case has fields, which
+// it does not spell, or anySubject — the subject may hold any type — and
+// parent is generic, whose type arguments it does not name.
+func caseUntestable(variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, anySubject bool) bool {
+	return len(variant.FieldNames) > 0 || (anySubject && len(parent.TypeParams) > 0)
+}
+
 // holdsAnyTypeKnown is holdsAnyType for a subject whose type may be unknown.
 func (t *galaASTTransformer) holdsAnyTypeKnown(matchedType transpiler.Type) bool {
-	return matchedType != nil && !transpiler.IsUnusable(matchedType) && t.holdsAnyType(matchedType)
+	return !transpiler.IsUnusable(matchedType) && t.holdsAnyType(matchedType)
 }
 
 // untestableCaseError reports a case pattern written without parentheses —
-// `case Circle`, or `case shapes.Circle` when qualified — that cannot test for
-// variant: it has fields (GALA-E0039, as on a subject of its sealed type), or
-// its sealed type parent is generic and the subject, of matchedType, may hold
-// any type, so the case's type arguments cannot be inferred. A bare name
-// would bind a catch-all; a qualified one would not compile.
-func untestableCaseError(written string, qualified bool, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, matchedType transpiler.Type, at antlr.Token) error {
+// `case Circle`, or `case shapes.Circle` qualified — that cannot test for
+// variant (see caseUntestable), as GALA-E0039. A bare name would bind a
+// catch-all; a qualified one would not compile.
+func untestableCaseError(written string, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, matchedType transpiler.Type, at antlr.Token) error {
 	line, col := at.GetLine(), at.GetColumn()
+	qualified := strings.Contains(written, ".")
 	if len(variant.FieldNames) > 0 {
 		if !qualified {
 			return bareVariantBindingError(written, variant, parent, line, col)
@@ -526,15 +530,17 @@ func untestableCaseError(written string, qualified bool, variant *transpiler.Sea
 		return galaerr.NewCodedSemanticError(galaerr.CodeBareVariantBinding, line, col,
 			fmt.Sprintf("`case %s` names variant %s of sealed type %q without its fields, so it cannot test for it",
 				written, variant.Name, parent.Name),
-			fmt.Sprintf("write `case %s(%s)` to match the variant", written, wildcards(len(variant.FieldNames))))
+			fmt.Sprintf("write `case %s(%s)` to match the variant", written, repeatJoin("_", len(variant.FieldNames))))
 	}
-	example := strings.TrimSuffix(written, variant.Name) + parent.Name + "[" + strings.Repeat("int, ", len(parent.TypeParams)-1) + "int]"
+	example := strings.TrimSuffix(written, variant.Name) + parent.Name + "[" + repeatJoin("int", len(parent.TypeParams)) + "]"
 	subject := displayType(matchedType)
-	msg := fmt.Sprintf("`%s` is a variant of generic sealed type %q, so `case %s` binds a new variable and matches every value: a value of type %s cannot be tested for %s without %s's type arguments",
-		written, parent.Name, written, subject, variant.Name, parent.Name)
+	var msg string
 	if qualified {
 		msg = fmt.Sprintf("`case %s` cannot test a value of type %s: %s is a variant of generic sealed type %q, and the pattern cannot name %s's type arguments",
 			written, subject, variant.Name, parent.Name, parent.Name)
+	} else {
+		msg = fmt.Sprintf("`%s` is a variant of generic sealed type %q, so `case %s` binds a new variable and matches every value: a value of type %s cannot be tested for %s without %s's type arguments",
+			written, parent.Name, written, subject, variant.Name, parent.Name)
 	}
 	return galaerr.NewCodedSemanticError(galaerr.CodeBareVariantBinding, line, col, msg,
 		fmt.Sprintf("match on a typed subject (e.g. `%s`), or use a lowercase name to bind the value", example))
@@ -667,7 +673,7 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		// test (`case Circle`, `case None`) is an error, as a field-bearing
 		// one is on a subject of its sealed type, not a catch-all binding.
 		if variant, parent := t.untestableBareCase(name, matchedType); variant != nil {
-			return nil, nil, untestableCaseError(name, false, variant, parent, matchedType, patExprCtx.GetStart())
+			return nil, nil, untestableCaseError(name, variant, parent, matchedType, patExprCtx.GetStart())
 		}
 
 		// A name bound earlier in this same pattern is neither a fresh binding
