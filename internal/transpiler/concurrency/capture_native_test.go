@@ -18,6 +18,10 @@ import (
 // stagedSources is the .gala files staged as the test's data, sorted.
 func stagedSources(t *testing.T) []string {
 	t.Helper()
+	// Only galop's parses come with a native tree, whatever the build's or
+	// environment's default engine.
+	parser.RequestEngine(string(parser.EngineGalop))
+	t.Cleanup(func() { parser.RequestEngine("") })
 	files, err := bazel.ListRunfiles()
 	require.NoError(t, err)
 	var paths []string
