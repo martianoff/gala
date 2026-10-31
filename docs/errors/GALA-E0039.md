@@ -2,7 +2,8 @@
 
 **When it fires.** A `case` pattern is a bare identifier that names a
 field-bearing `case` variant of the type being matched — `case Circle` against a
-`Shape`, or `case Some` against an `Option[T]`.
+`Shape`, or `case Some` against an `Option[T]` — or, on a subject of an
+interface or type-parameter type, a variant it cannot test (see below).
 
 A bare identifier in pattern position is a *variable binding*, and a binding
 matches every value. So the arm reads as a test for that variant but behaves as
@@ -88,6 +89,21 @@ val d = n match {
     case _      => "other"
 }
 ```
+
+**Interface and type-parameter subjects.** A subject of an interface type
+(`any` included) or of a type parameter may hold a value of any sealed type, so
+there a capitalized variant name is never a binding. A zero-field variant of a
+non-generic sealed type tests for it (`case Square` is `case Square()`). Any
+other variant name is this error:
+
+- a field-bearing variant, as on a subject of its sealed type — write
+  `case Circle(_)`;
+- a variant of a generic sealed type, `case None`. It cannot be tested at all,
+  because the pattern names no type arguments. Match on a typed subject, such
+  as `Option[int]`, or use a lowercase name to bind the value.
+
+The same goes for a variant named through a dot import or qualified
+(`case shapes.Circle`, `case std.None`). A lowercase name still binds.
 
 **Zero-field variants are not affected.** For a variant that declares no fields,
 the bare form is the documented shorthand and continues to work — `case Point`

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/antlr4-go/antlr/v4"
+
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -164,10 +166,16 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 		return t.transformConstructorCallPattern(rawName, argList, explicitTypeArgs, objExpr, matchedType, patExprCtx)
 	}
 
-	// `case shapes.Square` is `case shapes.Square()`, as the unqualified
-	// spelling is.
-	if rawName := t.qualifiedZeroFieldCase(patExprCtx); rawName != "" {
-		return t.transformConstructorCallPattern(rawName, nil, nil, objExpr, matchedType, patExprCtx)
+	if variant, parent := t.qualifiedCase(patExprCtx); variant != nil {
+		// `case shapes.Circle` spells none of the case's fields, and on a
+		// subject that may hold any type `case std.None` cannot name the type
+		// arguments of the case it tests: both are errors (GALA-E0039).
+		if len(variant.FieldNames) > 0 || (len(parent.TypeParams) > 0 && t.holdsAnyTypeKnown(matchedType)) {
+			return nil, nil, untestableCaseError(patExprCtx.GetText(), true, variant, parent, matchedType, patExprCtx.GetStart())
+		}
+		// `case shapes.Square` is `case shapes.Square()`, as the unqualified
+		// spelling is.
+		return t.transformConstructorCallPattern(parent.Package+"."+variant.Name, nil, nil, objExpr, matchedType, patExprCtx)
 	}
 
 	// Simple Binding - bind variable with the matched type
@@ -177,34 +185,48 @@ func (t *galaASTTransformer) transformExpressionPatternWithType(patExprCtx gramm
 }
 
 // qualifiedZeroFieldCase returns the name a pattern `pkg.Name` resolves to —
-// "shapes.Square", with an import alias resolved — when pkg is an imported
-// package and Name a zero-field sealed variant it declares and exports. It
-// returns "" for anything else, such as a qualified constant (`math.MaxInt8`),
-// which is compared by ==.
+// "shapes.Square", with an import alias resolved — when it names a zero-field
+// sealed case (see qualifiedCase). It returns "" for anything else.
 func (t *galaASTTransformer) qualifiedZeroFieldCase(ctx grammar.IExpressionContext) string {
+	if variant, parent := t.qualifiedCase(ctx); variant != nil && len(variant.FieldNames) == 0 {
+		return parent.Package + "." + variant.Name
+	}
+	return ""
+}
+
+// qualifiedCase returns the sealed case a pattern `pkg.Name` names, and its
+// sealed type, when pkg is an imported package and Name a case it declares
+// and exports. It returns nils for anything else, such as a qualified
+// constant (`math.MaxInt8`), which is compared by ==.
+func (t *galaASTTransformer) qualifiedCase(ctx grammar.IExpressionContext) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
 	postfix := t.getSinglePostfixExpr(ctx)
 	if postfix == nil || len(postfix.AllPostfixSuffix()) != 1 || postfix.CaseClause(0) != nil {
-		return ""
+		return nil, nil
 	}
 	member := postfix.PostfixSuffix(0).(*grammar.PostfixSuffixContext)
 	primary := PrimaryOf(postfix)
 	if suffixOpener(member) != "." || member.Identifier() == nil || primary == nil || primary.Identifier() == nil {
-		return ""
+		return nil, nil
 	}
 	pkg, name := primary.Identifier().GetText(), member.Identifier().GetText()
 	if !token.IsExported(name) || t.bindingScope(pkg) != nil || !t.importManager.IsPackage(pkg) {
-		return ""
+		return nil, nil
 	}
-	parent := t.findSealedParentForVariant(name, pkg)
+	return sealedCaseNamed(t.findSealedParentForVariant(name, pkg), name)
+}
+
+// sealedCaseNamed returns parent's case called name, and parent; nils when
+// parent is nil or has no such case.
+func sealedCaseNamed(parent *transpiler.TypeMetadata, name string) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
 	if parent == nil {
-		return ""
+		return nil, nil
 	}
-	for _, v := range parent.SealedVariants {
-		if v.Name == name && len(v.FieldNames) == 0 {
-			return parent.Package + "." + name
+	for i := range parent.SealedVariants {
+		if parent.SealedVariants[i].Name == name {
+			return &parent.SealedVariants[i], parent
 		}
 	}
-	return ""
+	return nil, nil
 }
 
 // transformConstructorCallPattern lowers a call-shaped pattern whose constructor
@@ -366,18 +388,19 @@ func (t *galaASTTransformer) sealedVariantOfMatchedType(name string, matchedType
 // distinguished. Rejecting it cannot break a program that was not already
 // misleading.
 func bareVariantBindingError(name string, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, line, col int) error {
-	placeholders := make([]string, len(variant.FieldNames))
-	for i := range placeholders {
-		placeholders[i] = "_"
-	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeBareVariantBinding,
 		line, col,
 		fmt.Sprintf("`%s` is a variant of sealed type %q, so `case %s` binds a new variable and matches every value instead of testing for %s",
 			name, parent.Name, name, name),
 		fmt.Sprintf("write `case %s(%s)` to match the variant, or rename the binding if you meant to capture the whole value",
-			name, strings.Join(placeholders, ", ")),
+			name, wildcards(len(variant.FieldNames))),
 	)
+}
+
+// wildcards returns n `_` sub-patterns, comma-separated.
+func wildcards(n int) string {
+	return strings.TrimSuffix(strings.Repeat("_, ", n), ", ")
 }
 
 // isStableIdentifierPattern reports whether a bare identifier in a pattern is a
@@ -451,8 +474,70 @@ func (t *galaASTTransformer) bareNameTests(name string, matchedType transpiler.T
 			return true
 		}
 	}
-	meta, _ := t.bareExtractor(name, matchedType)
-	return meta != nil
+	if meta, _ := t.bareExtractor(name, matchedType); meta != nil {
+		return true
+	}
+	// A case the name cannot test is an error, never a binding.
+	variant, _ := t.untestableBareCase(name, matchedType)
+	return variant != nil
+}
+
+// untestableBareCase returns the sealed case a bare exported name names, and
+// its sealed type, when the subject may hold any type (see holdsAnyType) and
+// the name cannot test it for that case: the case has fields, which the
+// pattern does not spell, or its sealed type is generic, and a dynamic value
+// cannot be tested without type arguments the pattern does not name. Such a
+// name is an error (see untestableCaseError) rather than a binding that
+// matches every value; a zero-field case of a non-generic sealed type tests
+// the subject (see mayHoldVariant). It returns nils for anything else, a
+// lowercase name included, which binds.
+func (t *galaASTTransformer) untestableBareCase(name string, matchedType transpiler.Type) (*transpiler.SealedVariant, *transpiler.TypeMetadata) {
+	if !token.IsExported(name) || !t.holdsAnyTypeKnown(matchedType) {
+		return nil, nil
+	}
+	meta := t.getTypeMeta(name)
+	if meta == nil {
+		return nil, nil
+	}
+	variant, parent := sealedCaseNamed(t.findSealedParentForVariant(name, meta.Package), name)
+	if variant == nil || (len(variant.FieldNames) == 0 && len(parent.TypeParams) == 0) {
+		return nil, nil
+	}
+	return variant, parent
+}
+
+// holdsAnyTypeKnown is holdsAnyType for a subject whose type may be unknown.
+func (t *galaASTTransformer) holdsAnyTypeKnown(matchedType transpiler.Type) bool {
+	return matchedType != nil && !transpiler.IsUnusable(matchedType) && t.holdsAnyType(matchedType)
+}
+
+// untestableCaseError reports a case pattern written without parentheses —
+// `case Circle`, or `case shapes.Circle` when qualified — that cannot test for
+// variant: it has fields (GALA-E0039, as on a subject of its sealed type), or
+// its sealed type parent is generic and the subject, of matchedType, may hold
+// any type, so the case's type arguments cannot be inferred. A bare name
+// would bind a catch-all; a qualified one would not compile.
+func untestableCaseError(written string, qualified bool, variant *transpiler.SealedVariant, parent *transpiler.TypeMetadata, matchedType transpiler.Type, at antlr.Token) error {
+	line, col := at.GetLine(), at.GetColumn()
+	if len(variant.FieldNames) > 0 {
+		if !qualified {
+			return bareVariantBindingError(written, variant, parent, line, col)
+		}
+		return galaerr.NewCodedSemanticError(galaerr.CodeBareVariantBinding, line, col,
+			fmt.Sprintf("`case %s` names variant %s of sealed type %q without its fields, so it cannot test for it",
+				written, variant.Name, parent.Name),
+			fmt.Sprintf("write `case %s(%s)` to match the variant", written, wildcards(len(variant.FieldNames))))
+	}
+	example := strings.TrimSuffix(written, variant.Name) + parent.Name + "[" + strings.Repeat("int, ", len(parent.TypeParams)-1) + "int]"
+	subject := displayType(matchedType)
+	msg := fmt.Sprintf("`%s` is a variant of generic sealed type %q, so `case %s` binds a new variable and matches every value: a value of type %s cannot be tested for %s without %s's type arguments",
+		written, parent.Name, written, subject, variant.Name, parent.Name)
+	if qualified {
+		msg = fmt.Sprintf("`case %s` cannot test a value of type %s: %s is a variant of generic sealed type %q, and the pattern cannot name %s's type arguments",
+			written, subject, variant.Name, parent.Name, parent.Name)
+	}
+	return galaerr.NewCodedSemanticError(galaerr.CodeBareVariantBinding, line, col, msg,
+		fmt.Sprintf("match on a typed subject (e.g. `%s`), or use a lowercase name to bind the value", example))
 }
 
 // bareExtractor returns the zero-field extractor (see zeroFieldExtractor) a
@@ -576,6 +661,13 @@ func (t *galaASTTransformer) transformSimpleBindingOrLiteral(patExprCtx grammar.
 		// inferred. Writing `case Debug =>` stays equivalent to `case Debug() =>`.
 		if meta, unapplyMeta := t.bareExtractor(name, matchedType); meta != nil {
 			return t.generateDirectUnapplyPattern(name, meta, nil, unapplyMeta, objExpr, nil, matchedType, patExprCtx)
+		}
+
+		// On a subject that may hold any type, a case the bare name cannot
+		// test (`case Circle`, `case None`) is an error, as a field-bearing
+		// one is on a subject of its sealed type, not a catch-all binding.
+		if variant, parent := t.untestableBareCase(name, matchedType); variant != nil {
+			return nil, nil, untestableCaseError(name, false, variant, parent, matchedType, patExprCtx.GetStart())
 		}
 
 		// A name bound earlier in this same pattern is neither a fresh binding
