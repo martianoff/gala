@@ -187,8 +187,9 @@ func invalidInterfaceLiteral(line, col int, msg, hint string) error {
 }
 
 // checkInterfaceLiteralTarget rejects an interface a literal cannot build: one
-// with a generic method or another package's unexported method, or a generic
-// one whose type arguments are unknown.
+// with another package's unexported method, or a generic one whose type
+// arguments are unknown. A generic method spec never gets here: it is
+// GALA-E0086 at the interface.
 func (t *galaASTTransformer) checkInterfaceLiteralTarget(lit interfaceLiteral, line, col int) error {
 	name := t.displayTypeName(lit.meta)
 	if lit.goGeneric {
@@ -200,11 +201,7 @@ func (t *galaASTTransformer) checkInterfaceLiteralTarget(lit interfaceLiteral, l
 			fmt.Sprintf("declare a Go or GALA type that implements %s", name))
 	}
 	for _, m := range lit.methods {
-		switch {
-		case len(lit.meta.Methods[m].TypeParams) > 0:
-			return invalidInterfaceLiteral(line, col, fmt.Sprintf("method %s of %s is generic, and a function cannot implement a generic method", m, name),
-				fmt.Sprintf("declare a GALA struct that implements %s", name))
-		case !t.isLocalPackage(lit.meta.Package) && !token.IsExported(m):
+		if !t.isLocalPackage(lit.meta.Package) && !token.IsExported(m) {
 			return invalidInterfaceLiteral(line, col, fmt.Sprintf("method %s of %s is unexported, so only package %s can implement it", m, name, lit.meta.Package),
 				fmt.Sprintf("build the value in package %s", lit.meta.Package))
 		}

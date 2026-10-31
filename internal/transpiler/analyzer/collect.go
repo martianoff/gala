@@ -154,24 +154,24 @@ func (a *galaAnalyzer) collectFileTypes(sourceFile *grammar.SourceFileContext, f
 						)
 					}
 					seenSpecs[methodName] = true
+					if tps, cons := typeParamsOf(msCtx.TypeParameters()); len(tps) > 0 {
+						id := msCtx.Identifier().GetStart()
+						return genericInterfaceMethodError(id.GetLine(), id.GetColumn(), meta, methodName, tps, cons)
+					}
 					methodMeta := &transpiler.MethodMetadata{
 						Name:      methodName,
 						Package:   pkgName,
 						Doc:       docAt(docs, msCtx.GetStart()),
 						DefinedIn: filePath,
 					}
-					methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(msCtx.TypeParameters(), pkgName)
-					var allTypeParams []string
-					allTypeParams = append(allTypeParams, meta.TypeParams...)
-					allTypeParams = append(allTypeParams, methodMeta.TypeParams...)
-					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, allTypeParams)
+					methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(msCtx.Signature(), pkgName, meta.TypeParams)
 					if msCtx.Signature().Parameters() != nil {
 						pCtx := msCtx.Signature().Parameters().(*grammar.ParametersContext)
 						if pList := pCtx.ParameterList(); pList != nil {
 							for _, p := range pList.(*grammar.ParameterListContext).AllParameter() {
 								paramCtx := p.(*grammar.ParameterContext)
 								if paramCtx.Type_() != nil {
-									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
+									methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, meta.TypeParams))
 									methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
 								} else {
 									methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
@@ -630,4 +630,40 @@ func (fd *fileDecls) sealedDeclaredHere(fullName string) {
 			spans: spans,
 		})
 	}
+}
+
+// genericInterfaceMethodError is GALA-E0086 for the method spec methodName,
+// at line:col, of the interface iface: the spec declares the type parameters
+// methodTPs, whose constraints, as written, are methodCons. Go interface
+// methods cannot have type parameters, and a call through an interface value
+// is dispatched at run time, so no set of instantiations can be generated for
+// it. The hint moves the parameters onto the interface, after its own; a
+// name the interface already declares is listed once.
+func genericInterfaceMethodError(line, col int, iface *transpiler.TypeMetadata, methodName string, methodTPs []string, methodCons map[string]string) error {
+	typeName := iface.Name
+	var decl []string
+	seen := make(map[string]bool)
+	add := func(tp, constraint string) {
+		if !seen[tp] {
+			seen[tp] = true
+			decl = append(decl, tp+" "+constraint)
+		}
+	}
+	for _, tp := range iface.TypeParams {
+		add(tp, iface.TypeParamConstraints[tp])
+	}
+	for _, tp := range methodTPs {
+		add(tp, methodCons[tp])
+	}
+	noun := "a type parameter"
+	if len(methodTPs) > 1 {
+		noun = "type parameters"
+	}
+	return galaerr.NewCodedSemanticError(
+		galaerr.CodeGenericInterfaceMethod,
+		line, col,
+		fmt.Sprintf("interface method %q of %q declares %s [%s]: a Go interface method cannot have type parameters", methodName, typeName, noun, strings.Join(methodTPs, ", ")),
+		fmt.Sprintf("declare %s on the interface instead (type %s[%s] interface { ... }), or write %s as a generic function that takes a %s",
+			strings.Join(methodTPs, ", "), typeName, strings.Join(decl, ", "), methodName, typeName),
+	)
 }

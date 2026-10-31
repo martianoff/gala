@@ -1636,6 +1636,8 @@ func main() {
 }
 ```
 
+A method spec of an interface cannot declare type parameters of its own, as in `Map[T any](f func(string) T) T`: a Go interface method cannot have them, and a call through an interface is dispatched at run time, so there is no set of instantiations to generate ([GALA-E0086](errors/GALA-E0086.md)). Put the type parameter on the interface, or write the operation as a generic function that takes the interface value.
+
 ### Interface Literals
 
 An interface literal builds a value of an interface from functions, one per method, without declaring a struct. Call the interface by name and give each method as a named argument:
@@ -1665,7 +1667,7 @@ func main() {
 - **A method with a Go result list**, such as `Write(p []byte) (int, error)`, takes a lambda that returns the GALA value of those results, here a `Try[int]`, as a lambda passed to a Go function does.
 - **A variadic method's** last parameter reaches the function as a slice.
 - **Go interfaces** work the same way: `fmt.Stringer(String = () => "hi")`, `io.Writer(Write = ...)`, `sort.Interface(Len = ..., Less = ..., Swap = ...)`.
-- **What a literal cannot implement:** a generic method; an unexported method of an interface from another package, which only that package can implement; and a Go interface that is generic or has a method using a type GALA cannot spell exactly, such as `context.Context`, whose `Done` returns a receive-only channel.
+- **What a literal cannot implement:** an unexported method of an interface from another package, which only that package can implement; and a Go interface that is generic or has a method using a type GALA cannot spell exactly, such as `context.Context`, whose `Done` returns a receive-only channel.
 
 A literal is an ordinary interface value. Its functions can close over local state, including `var`s, so, like any interface value, it cannot be captured by a `Future` body ([`GALA-E0037`](errors/GALA-E0037.md)). It compares equal only to itself, through any copy of it, and never to another literal, even one with the same functions.
 

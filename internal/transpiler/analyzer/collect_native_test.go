@@ -235,6 +235,7 @@ var collectionErrorInputs = []struct {
 	{"duplicate struct field", [][2]string{{"main.gala", "package main\n\ntype P struct {\n    A int\n    A string\n}\n"}}},
 	{"duplicate shorthand field", [][2]string{{"main.gala", "package main\n\nstruct Q(a int, b int, a string)\n"}}},
 	{"duplicate interface method", [][2]string{{"main.gala", "package main\n\ntype R interface {\n    Run() int\n    Run() string\n}\n"}}},
+	{"type parameter on an interface method", [][2]string{{"main.gala", "package main\n\ntype Pair[A any] interface {\n    Zip[B any, C comparable](b B, c C) A\n}\n"}}},
 	{"duplicate sealed case", [][2]string{{"main.gala", "package main\n\nsealed type Shape {\n    case Dot()\n    case Dot()\n}\n"}}},
 	{"std conflict: type", [][2]string{{"main.gala", "package main\n\ntype Option struct {\n    X int\n}\n"}}},
 	{"std conflict: shorthand", [][2]string{{"main.gala", "package main\n\nstruct Try(x int)\n"}}},

@@ -68,11 +68,10 @@ type Repo interface {
 }
 ```
 
-A type parameter on the method *spec* is not an option: Go requires interface
-methods to have no type parameters, so `Find[K any](key K) string` inside an
-interface produces Go that does not compile
-(`interface method must have no type parameters`). Put the type parameter on
-the interface itself instead:
+A type parameter on the method *spec* is not an option: a Go interface method
+cannot have type parameters, so `Find[K any](key K) string` inside an
+interface is [GALA-E0086](GALA-E0086.md). Put the type parameter on the
+interface itself instead:
 
 ```gala
 type Repo[K any] interface {
