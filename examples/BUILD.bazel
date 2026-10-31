@@ -58,6 +58,10 @@ filegroup(
         "field_named_like_type/main.gala",
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
+        "foreign_default_dot_scope/lib/lib.gala",
+        "foreign_default_dot_scope/pa/pa.gala",
+        "foreign_default_dot_scope/pb/pb.gala",
+        "foreign_default_dot_scope_test.gala",
         "generic_alias_crosspkg/report/report.gala",
         "generic_alias_crosspkg/shapes/shapes.gala",
         "generic_alias_crosspkg_test.gala",
@@ -2898,6 +2902,42 @@ gala_exec_test(
     src = "cross_pkg_sealed_qualified_match_test.gala",
     expected = "cross_pkg_sealed_qualified_match_test.out",
     gala_deps = [":cross_pkg_sealed_qualified_match_event"],
+)
+
+# Defaults declared in a file that dot-imports pa, lowered in one that
+# dot-imports pb, which declares the same names: they resolve those names as
+# pa's, the way the file that wrote them does.
+gala_library(
+    name = "foreign_default_dot_scope_pa",
+    srcs = ["foreign_default_dot_scope/pa/pa.gala"],
+    importpath = "martianoff/gala/examples/foreign_default_dot_scope/pa",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "foreign_default_dot_scope_pb",
+    srcs = ["foreign_default_dot_scope/pb/pb.gala"],
+    importpath = "martianoff/gala/examples/foreign_default_dot_scope/pb",
+    visibility = ["//visibility:public"],
+)
+
+gala_library(
+    name = "foreign_default_dot_scope_lib",
+    srcs = ["foreign_default_dot_scope/lib/lib.gala"],
+    gala_deps = [":foreign_default_dot_scope_pa"],
+    importpath = "martianoff/gala/examples/foreign_default_dot_scope/lib",
+    visibility = ["//visibility:public"],
+)
+
+gala_exec_test(
+    name = "foreign_default_dot_scope_test",
+    src = "foreign_default_dot_scope_test.gala",
+    expected = "foreign_default_dot_scope_test.out",
+    gala_deps = [
+        ":foreign_default_dot_scope_lib",
+        ":foreign_default_dot_scope_pa",
+        ":foreign_default_dot_scope_pb",
+    ],
 )
 
 # Struct extractor patterns on generic structs: field types substituted with the

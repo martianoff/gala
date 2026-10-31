@@ -1,0 +1,13 @@
+package pb
+
+// The same names as pa, with other types: a case Same of another sealed type,
+// and a Point whose field is a string.
+sealed type KindB {
+    case Same()
+    case OtherB()
+    case Hit(N string)
+}
+
+func Pick() KindB = OtherB()
+
+struct Point(X string)

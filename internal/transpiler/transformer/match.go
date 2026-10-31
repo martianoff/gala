@@ -840,7 +840,7 @@ func (t *galaASTTransformer) inferMatchedTypeFromCases(caseClauses []grammar.ICa
 // one precedence for both: a bare name is the file's own package's case, then
 // std's, then a dot import's in the import manager's order; a keyless
 // package's (main, test) is found under its bare key. While a default written
-// in another file is lowered, that file's dot imports come after this file's
+// in another file is lowered, that file's dot imports come before this file's
 // (WithForeignQualifiers), as for every type name. A qualifier imported here
 // (or by that file) is first resolved by import path to the key its
 // package's metadata is recorded under, which an alias or a default's foreign

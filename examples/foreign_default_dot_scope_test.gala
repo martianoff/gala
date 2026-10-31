@@ -1,0 +1,20 @@
+package main
+
+import (
+    . "martianoff/gala/examples/foreign_default_dot_scope/pb"
+    "martianoff/gala/examples/foreign_default_dot_scope/lib"
+)
+
+// lib's defaults name Same, Pick and Point through lib's dot import of pa.
+// This file dot-imports pb, which declares those names too, with other types.
+// The defaults are lowered here but resolve their bare names as lib's file
+// does: Some(Same()) is an Option of pa's KindA, and p.X is pa's int field.
+// They used to resolve through this file's dot import first and fail to
+// compile (an Option of pb's KindB, a string p.X).
+func main() {
+    Println(lib.Matched())
+    Println(lib.Mapped())
+    Println(lib.Folded())
+    Println(lib.Built())
+    Println(Pick(), Point("own"))
+}
