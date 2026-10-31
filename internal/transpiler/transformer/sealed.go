@@ -33,7 +33,6 @@ func (t *galaASTTransformer) transformSealedTypeDeclaration(ctx *grammar.SealedT
 // lowerSealedDecl lowers a sealed type declaration, read from either tree
 // (sealed_source.go).
 func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
-	t.noteNativeType(d.at)
 	name := d.name
 	if err := t.selfContainingTypeError(name, d.nameAt); err != nil {
 		return nil, err
@@ -43,7 +42,7 @@ func (t *galaASTTransformer) lowerSealedDecl(d sealedDecl) ([]ast.Decl, error) {
 
 	// Process Type Parameters
 	var tParams *ast.FieldList
-	if d.generic {
+	if len(d.typeParams) > 0 {
 		tParams = lowerTypeParams(d.typeParams)
 		defer t.bindTypeParams(tParams.List...)()
 	}

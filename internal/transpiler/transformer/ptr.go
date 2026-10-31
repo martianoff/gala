@@ -65,7 +65,13 @@ func (t *galaASTTransformer) isPtrTypeExpr(typeExpr ast.Expr) bool {
 
 // ptrError is a GALA-E0080 at ctx.
 func ptrError(ctx antlr.ParserRuleContext, msg, hint string) error {
-	return spanError(galaerr.CodePtrNullability, ctx, ctx, msg, hint)
+	return ptrErrorAt(srcNode{ctx: ctx}, msg, hint)
+}
+
+// ptrErrorAt is ptrError at a node of either tree.
+func ptrErrorAt(at srcNode, msg, hint string) error {
+	r := at.rng()
+	return spanErrorAt(galaerr.CodePtrNullability, r, r, msg, hint)
 }
 
 // checkPtrSlot rejects a value that may be nil filling a slot whose type has
@@ -329,8 +335,7 @@ func (t *galaASTTransformer) checkPtrTypeArgAt(o typeParamOwner, tp string, type
 	if !bad {
 		return nil
 	}
-	r := at.rng()
-	return spanErrorAt(galaerr.CodePtrNullability, r, r, msg, hint)
+	return ptrErrorAt(at, msg, hint)
 }
 
 // ptrTypeArgMisuse returns the GALA-E0080 message and hint of checkPtrTypeArg

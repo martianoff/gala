@@ -14,11 +14,9 @@ import (
 
 // sealedDecl is a sealed type declaration.
 type sealedDecl struct {
-	name   string
-	at     srcNode // the declaration
-	nameAt srcNode
-	// generic reports that it declares typeParams.
-	generic    bool
+	name       string
+	at         srcNode // the declaration
+	nameAt     srcNode
 	typeParams []typeParam
 	cases      []sealedCaseDecl
 }
@@ -44,7 +42,7 @@ func readSealedDecl(ctx *grammar.SealedTypeDeclarationContext) sealedDecl {
 	id := ctx.Identifier()
 	d := sealedDecl{name: id.GetText(), at: srcNode{ctx: ctx}, nameAt: srcNode{ctx: id}}
 	if tps := ctx.TypeParameters(); tps != nil {
-		d.generic, d.typeParams = true, readTypeParams(tps.(*grammar.TypeParametersContext))
+		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
 	for _, caseCtx := range ctx.AllSealedCase() {
 		sc := caseCtx.(*grammar.SealedCaseContext)
@@ -65,7 +63,7 @@ func readSealedDeclNative(n native.SealedTypeDeclarationNode) sealedDecl {
 	id := n.Identifier()
 	d := sealedDecl{name: id.GetText(), at: srcNode{node: n.GalaNodeRef}, nameAt: srcNode{node: id.GalaNodeRef}}
 	if tps := n.TypeParameters(); tps.Ok() {
-		d.generic, d.typeParams = true, nativeTypeParams(tps)
+		d.typeParams = nativeTypeParams(tps)
 	}
 	for c := range galaparser.NativeKids(n.GalaNodeRef, native.GalaKIND_sealedCase) {
 		sc := native.SealedCaseNode{GalaNodeRef: c}
@@ -82,9 +80,7 @@ func readSealedDeclNative(n native.SealedTypeDeclarationNode) sealedDecl {
 
 // opaqueDecl is an opaque type declaration.
 type opaqueDecl struct {
-	name string
-	// generic reports that it declares typeParams.
-	generic    bool
+	name       string
 	typeParams []typeParam
 	// underlying is the type it is declared over.
 	underlying typeSrc
@@ -94,7 +90,7 @@ type opaqueDecl struct {
 func readOpaqueDecl(ctx *grammar.OpaqueTypeDeclarationContext) opaqueDecl {
 	d := opaqueDecl{name: ctx.Identifier().GetText(), underlying: antlrType(ctx.Type_())}
 	if tps := ctx.TypeParameters(); tps != nil {
-		d.generic, d.typeParams = true, readTypeParams(tps.(*grammar.TypeParametersContext))
+		d.typeParams = readTypeParams(tps.(*grammar.TypeParametersContext))
 	}
 	return d
 }
@@ -103,7 +99,7 @@ func readOpaqueDecl(ctx *grammar.OpaqueTypeDeclarationContext) opaqueDecl {
 func readOpaqueDeclNative(n native.OpaqueTypeDeclarationNode) opaqueDecl {
 	d := opaqueDecl{name: n.Identifier().GetText(), underlying: nativeType(n.Type_())}
 	if tps := n.TypeParameters(); tps.Ok() {
-		d.generic, d.typeParams = true, nativeTypeParams(tps)
+		d.typeParams = nativeTypeParams(tps)
 	}
 	return d
 }

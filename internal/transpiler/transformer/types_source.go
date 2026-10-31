@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"go/ast"
-	"strings"
 
 	galaparser "martianoff/gala/internal/parser"
 	"martianoff/gala/internal/parser/grammar"
@@ -98,24 +97,29 @@ func (s typeSrc) named() bool {
 	return s.ctx.QualifiedIdentifier() != nil
 }
 
-// nameParts is the identifiers of a named type's name, in order, and the
-// name's text.
-func (s typeSrc) nameParts() ([]string, string) {
+// nameParts is the identifiers of a named type's name, in order.
+func (s typeSrc) nameParts() []string {
 	if s.node.Ok() {
-		qid := s.node.QualifiedIdentifier()
 		var parts []string
-		for id := range galaparser.NativeKids(qid.GalaNodeRef, native.GalaKIND_identifier) {
+		for id := range galaparser.NativeKids(s.node.QualifiedIdentifier().GalaNodeRef, native.GalaKIND_identifier) {
 			parts = append(parts, galaparser.NativeText(id))
 		}
-		return parts, qid.GetText()
+		return parts
 	}
-	qid := s.ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext)
-	ids := qid.AllIdentifier()
+	ids := s.ctx.QualifiedIdentifier().(*grammar.QualifiedIdentifierContext).AllIdentifier()
 	parts := make([]string, len(ids))
 	for i, id := range ids {
 		parts[i] = id.GetText()
 	}
-	return parts, qid.GetText()
+	return parts
+}
+
+// nameText is a named type's name as written, its tokens run together.
+func (s typeSrc) nameText() string {
+	if s.node.Ok() {
+		return s.node.QualifiedIdentifier().GetText()
+	}
+	return s.ctx.QualifiedIdentifier().GetText()
 }
 
 // typeArgs is a named type's type arguments and true when it is written
@@ -126,11 +130,7 @@ func (s typeSrc) typeArgs() ([]typeSrc, bool) {
 		if !args.Ok() {
 			return nil, false
 		}
-		var out []typeSrc
-		for n := range galaparser.NativeKids(args.TypeList().GalaNodeRef, native.GalaKIND_type) {
-			out = append(out, nativeType(native.TypeNode{GalaNodeRef: n}))
-		}
-		return out, true
+		return nativeTypes(args.TypeList().GalaNodeRef), true
 	}
 	if s.ctx.TypeArguments() == nil {
 		return nil, false
@@ -140,12 +140,25 @@ func (s typeSrc) typeArgs() ([]typeSrc, bool) {
 	if !ok {
 		return nil, true
 	}
-	all := list.AllType_()
+	return antlrTypes(list.AllType_()), true
+}
+
+// nativeTypes is the child types of n.
+func nativeTypes(n native.GalaNodeRef) []typeSrc {
+	var out []typeSrc
+	for c := range galaparser.NativeKids(n, native.GalaKIND_type) {
+		out = append(out, nativeType(native.TypeNode{GalaNodeRef: c}))
+	}
+	return out
+}
+
+// antlrTypes is the types all.
+func antlrTypes(all []grammar.ITypeContext) []typeSrc {
 	out := make([]typeSrc, len(all))
 	for i, a := range all {
 		out[i] = antlrType(a)
 	}
-	return out, true
+	return out
 }
 
 // hasTypeArgs reports whether s is written with type arguments.
@@ -171,44 +184,47 @@ const (
 // V of `map[K]V`.
 func (s typeSrc) elems() []typeSrc {
 	if s.node.Ok() {
-		var elems []typeSrc
-		for n := range galaparser.NativeKids(s.node.GalaNodeRef, native.GalaKIND_type) {
-			elems = append(elems, nativeType(native.TypeNode{GalaNodeRef: n}))
-		}
-		return elems
+		return nativeTypes(s.node.GalaNodeRef)
 	}
-	all := s.ctx.AllType_()
-	elems := make([]typeSrc, len(all))
-	for i, e := range all {
-		elems[i] = antlrType(e)
-	}
-	return elems
+	return antlrTypes(s.ctx.AllType_())
 }
 
-// shape is the form of s, which is not named, and its elems.
-func (s typeSrc) shape() (typeShape, []typeSrc) {
-	elems := s.elems()
+// startText is the text of s's first token.
+func (s typeSrc) startText() string {
 	if s.node.Ok() {
-		switch start := galaparser.NativeStartText(s.node.GalaNodeRef); {
-		case start == "*" && len(elems) > 0:
-			return shapePointer, elems
-		case start == "[" && len(elems) > 0:
-			return shapeSlice, elems
-		case start == "map" && len(elems) >= 2:
-			return shapeMap, elems
-		case s.node.Signature().Ok():
-			return shapeFunc, nil
-		}
-		return shapeOther, nil
+		return galaparser.NativeStartText(s.node.GalaNodeRef)
 	}
-	switch txt := s.ctx.GetText(); {
-	case strings.HasPrefix(txt, "*") && len(elems) > 0:
-		return shapePointer, elems
-	case strings.HasPrefix(txt, "[]") && len(elems) > 0:
-		return shapeSlice, elems
-	case strings.HasPrefix(txt, "map[") && len(elems) >= 2:
-		return shapeMap, elems
-	case s.ctx.Signature() != nil:
+	return s.ctx.GetStart().GetText()
+}
+
+// hasSignature reports whether s is written with a signature, a function
+// type's.
+func (s typeSrc) hasSignature() bool {
+	if s.node.Ok() {
+		return s.node.Signature().Ok()
+	}
+	return s.ctx.Signature() != nil
+}
+
+// shape is the form of s, which is not named, and, for a pointer, slice or
+// map type, its elems.
+func (s typeSrc) shape() (typeShape, []typeSrc) {
+	var shape typeShape
+	minElems := 1
+	switch s.startText() {
+	case "*":
+		shape = shapePointer
+	case "[":
+		shape = shapeSlice
+	case "map":
+		shape, minElems = shapeMap, 2
+	}
+	if shape != shapeOther {
+		if elems := s.elems(); len(elems) >= minElems {
+			return shape, elems
+		}
+	}
+	if s.hasSignature() {
 		return shapeFunc, nil
 	}
 	return shapeOther, nil
@@ -267,12 +283,7 @@ func antlrSigResults(ctx *grammar.SignatureContext) []typeSrc {
 	if !ok {
 		return nil
 	}
-	all := list.AllType_()
-	out := make([]typeSrc, len(all))
-	for i, typ := range all {
-		out[i] = antlrType(typ)
-	}
-	return out
+	return antlrTypes(list.AllType_())
 }
 
 // nativeSigResults is antlrSigResults of the signature node sig.
@@ -280,11 +291,7 @@ func nativeSigResults(sig native.SignatureNode) []typeSrc {
 	if typ := sig.Type_(); typ.Ok() {
 		return []typeSrc{nativeType(typ)}
 	}
-	var out []typeSrc
-	for n := range galaparser.NativeKids(sig.GoResults().GalaNodeRef, native.GalaKIND_type) {
-		out = append(out, nativeType(native.TypeNode{GalaNodeRef: n}))
-	}
-	return out
+	return nativeTypes(sig.GoResults().GalaNodeRef)
 }
 
 // noteNativeType tells onNativeType of n when it is a node of the native tree.

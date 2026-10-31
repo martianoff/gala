@@ -106,8 +106,10 @@ func (t *galaASTTransformer) transformTopLevelDeclarationNative(td native.GalaNo
 	case native.GalaKIND_structShorthandDeclaration:
 		return t.lowerShorthandDecl(t.readShorthandDeclNative(native.StructShorthandDeclarationNode{GalaNodeRef: decl}))
 	case native.GalaKIND_sealedTypeDeclaration:
+		t.noteNativeType(srcNode{node: decl})
 		return t.lowerSealedDecl(readSealedDeclNative(native.SealedTypeDeclarationNode{GalaNodeRef: decl}))
 	case native.GalaKIND_opaqueTypeDeclaration:
+		t.noteNativeType(srcNode{node: decl})
 		return t.lowerOpaqueDecl(readOpaqueDeclNative(native.OpaqueTypeDeclarationNode{GalaNodeRef: decl}))
 	}
 	return nil, nil
@@ -176,7 +178,7 @@ func (t *galaASTTransformer) readBindingDeclNative(n nativeBinding, keyword stri
 	if tp := n.TuplePattern(); tp.Ok() {
 		d.tuple = srcNode{node: tp.GalaNodeRef}
 		if typ.Ok() {
-			d.typAt = srcNode{node: typ.GalaNodeRef}
+			d.typAt = d.typ.at()
 		}
 		if list.Ok() {
 			d.exprsAt = srcNode{node: list.GalaNodeRef}

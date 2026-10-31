@@ -2161,10 +2161,6 @@ func (t *galaASTTransformer) lowerStructField(f structFieldDecl) (*ast.Field, er
 	return field, nil
 }
 
-func (t *galaASTTransformer) transformTypeParameters(ctx *grammar.TypeParametersContext) (*ast.FieldList, error) {
-	return lowerTypeParams(readTypeParams(ctx)), nil
-}
-
 // typeParam is a declared type parameter: its name and its constraint.
 type typeParam struct{ name, constraint string }
 
