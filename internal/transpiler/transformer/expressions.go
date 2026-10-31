@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
+	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"slices"
 )
@@ -17,6 +18,12 @@ import (
 func (t *galaASTTransformer) transformExpression(ctx grammar.IExpressionContext) (ast.Expr, error) {
 	if ctx == nil {
 		return nil, nil
+	}
+	// An expression of the file the native walk reads is lowered on its
+	// native node, wherever its lowering is entered from (see
+	// expressions_source.go).
+	if n, ok := t.nativeNodeOf(ctx, native.GalaKIND_expression); ok {
+		return t.lowerExprNative(n)
 	}
 	// Track position for error reporting in deeply-nested helpers
 	if prc, ok := ctx.(antlr.ParserRuleContext); ok {
@@ -47,7 +54,7 @@ func (t *galaASTTransformer) transformOrExpr(ctx *grammar.OrExprContext) (ast.Ex
 		if err != nil {
 			return nil, err
 		}
-		if result, err = t.binaryOperation("||", token.LOR, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation("||", token.LOR, srcNode{ctx: ctx}, result, right); err != nil {
 			return nil, err
 		}
 	}
@@ -71,7 +78,7 @@ func (t *galaASTTransformer) transformAndExpr(ctx *grammar.AndExprContext) (ast.
 		if err != nil {
 			return nil, err
 		}
-		if result, err = t.binaryOperation("&&", token.LAND, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation("&&", token.LAND, srcNode{ctx: ctx}, result, right); err != nil {
 			return nil, err
 		}
 	}
@@ -102,10 +109,10 @@ func (t *galaASTTransformer) transformEqualityExpr(ctx *grammar.EqualityExprCont
 			return nil, err
 		}
 		tok := t.getBinaryToken(opText)
-		if result, err = t.binaryOperation(opText, tok, ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, tok, srcNode{ctx: ctx}, result, right); err != nil {
 			return nil, err
 		}
-		if result, err = t.lowerEquality(relExprs[i-1], relExprs[i], result); err != nil {
+		if result, err = t.lowerEquality(srcNode{ctx: relExprs[i-1]}, srcNode{ctx: relExprs[i]}, result); err != nil {
 			return nil, err
 		}
 	}
@@ -133,7 +140,7 @@ func (t *galaASTTransformer) transformRelationalExpr(ctx *grammar.RelationalExpr
 		if err != nil {
 			return nil, err
 		}
-		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), srcNode{ctx: ctx}, result, right); err != nil {
 			return nil, err
 		}
 	}
@@ -161,7 +168,7 @@ func (t *galaASTTransformer) transformAdditiveExpr(ctx *grammar.AdditiveExprCont
 		if err != nil {
 			return nil, err
 		}
-		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), srcNode{ctx: ctx}, result, right); err != nil {
 			return nil, err
 		}
 	}
@@ -189,7 +196,7 @@ func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.Multiplica
 		if err != nil {
 			return nil, err
 		}
-		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), ctx, result, right); err != nil {
+		if result, err = t.binaryOperation(opText, t.getBinaryToken(opText), srcNode{ctx: ctx}, result, right); err != nil {
 			return nil, err
 		}
 	}
@@ -200,28 +207,12 @@ func (t *galaASTTransformer) transformMultiplicativeExpr(ctx *grammar.Multiplica
 func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (ast.Expr, error) {
 	// Check for unary operator
 	if unaryOp := ctx.UnaryOp(); unaryOp != nil {
-		opText := unaryOp.GetText()
-
 		innerUnary := ctx.UnaryExpr().(*grammar.UnaryExprContext)
 		expr, err := t.transformUnaryExpr(innerUnary)
 		if err != nil {
 			return nil, err
 		}
-		if opText == "&" {
-			if err := t.immutableAddressError(ctx, innerUnary, expr); err != nil {
-				return nil, err
-			}
-			return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}, nil
-		}
-		if opText == "*" {
-			return &ast.StarExpr{X: expr}, nil
-		}
-		if opText == "!" {
-			expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
-		}
-		// Automatic unwrapping for other unary operands
-		expr = t.unwrapImmutable(expr)
-		return &ast.UnaryExpr{Op: t.getUnaryToken(opText), X: expr}, nil
+		return t.unaryOperation(unaryOp.GetText(), srcNode{ctx: ctx}, srcNode{ctx: innerUnary}, expr)
 	}
 
 	// Otherwise it's a postfixExpr
@@ -230,6 +221,27 @@ func (t *galaASTTransformer) transformUnaryExpr(ctx *grammar.UnaryExprContext) (
 	}
 
 	return nil, galaerr.NewSemanticErrorAt(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), "unaryExpr must have unaryOp or postfixExpr")
+}
+
+// unaryOperation builds `op expr` from the lowered operand expr of the unary
+// expression at, whose operand is written at operand. Taking the address of a
+// val is GALA-E0058 (immutableAddressError, which reads the operand on
+// ANTLR's tree).
+func (t *galaASTTransformer) unaryOperation(op string, at, operand srcNode, expr ast.Expr) (ast.Expr, error) {
+	switch op {
+	case "&":
+		if err := t.immutableAddressError(at, operand, expr); err != nil {
+			return nil, err
+		}
+		return &ast.UnaryExpr{Op: token.AND, X: t.sealPlainValPath(expr)}, nil
+	case "*":
+		return &ast.StarExpr{X: expr}, nil
+	case "!":
+		expr = t.wrapWithAssertion(expr, ast.NewIdent("bool"))
+	}
+	// Automatic unwrapping for other unary operands
+	expr = t.unwrapImmutable(expr)
+	return &ast.UnaryExpr{Op: t.getUnaryToken(op), X: expr}, nil
 }
 
 // getChildOperatorText safely extracts the operator text from a parse tree child node.
@@ -275,11 +287,11 @@ func (t *galaASTTransformer) transformExpressionListAgainst(ctx *grammar.Express
 // binaryOperation builds `left op right` from two lowered operands: it rejects
 // a Go call's Try or Tuple as an operand (GALA-E0049) and reads vals through
 // their Immutable wrapper.
-func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, ctx antlr.ParserRuleContext, left, right ast.Expr) (ast.Expr, error) {
-	if err := t.checkGoResultOperands(op, ctx, left, right); err != nil {
+func (t *galaASTTransformer) binaryOperation(op string, tok token.Token, at srcNode, left, right ast.Expr) (ast.Expr, error) {
+	if err := t.checkGoResultOperands(op, at, left, right); err != nil {
 		return nil, err
 	}
-	if err := t.checkPtrNilComparison(tok, ctx, left, right); err != nil {
+	if err := t.checkPtrNilComparison(tok, at, left, right); err != nil {
 		return nil, err
 	}
 	return &ast.BinaryExpr{X: t.unwrapImmutable(left), Op: tok, Y: t.unwrapImmutable(right)}, nil
@@ -613,7 +625,7 @@ func (t *galaASTTransformer) getUnaryToken(op string) token.Token {
 	}
 }
 
-// transformPrimary, transformCompositeLiteral, transformLiteral moved to constructors.go
+// transformPrimary, lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral moved to constructors.go
 // Lambda-related functions moved to lambdas.go
 // findLambdaInExpression moved to lambdas.go
 func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionContext) (ast.Expr, error) {
@@ -624,22 +636,31 @@ func (t *galaASTTransformer) transformIfExpression(ctx *grammar.IfExpressionCont
 // it fills (zero when none): each branch value is lowered against it, and its
 // type informs the IIFE's result type (see branchingResultType).
 func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpressionContext, s slot) (ast.Expr, error) {
+	return t.lowerIfExpression(t.ifExprOf(ctx), s)
+}
+
+// lowerIfExpression is transformIfExpressionAgainst of e, on either tree.
+func (t *galaASTTransformer) lowerIfExpression(e ifExprSrc, s slot) (ast.Expr, error) {
 	// 'if' '(' cond ')' thenBranch 'else' elseBranch
 	// Branches can be either expressions or blocks.
-	cond, err := t.transformExpression(ctx.Expression())
+	if e.node.Ok() {
+		t.nativeShape(e.node, "if")
+	}
+	cond, err := t.lowerExpr(e.cond())
 	if err != nil {
 		return nil, err
 	}
+	line, col := e.at().start()
 	// The if-expression lowers to an IIFE, which gives its branches their own
 	// return slot: a `return` in a branch leaves only the IIFE (GALA-E0069
 	// unless the IIFE is itself the result, see branching_calls.go). An open
 	// slot type holds placeholders, so it is no return type.
-	branches := ctx.AllIfExprBranch()
+	branches := e.branches()
 	// An if-expression whose value a local declaration stores, and whose
 	// branches hold a `return`, `break` or `continue`, is lowered as
 	// statements storing its value (see hoisted_value.go): its control flow
 	// acts on the enclosing function or loop.
-	if s.hoist != "" && !escapesConstruct(t, branches...) {
+	if s.hoist != "" && !t.branchesEscape(branches) {
 		s.hoist = ""
 	}
 	if s.hoist == "" {
@@ -653,7 +674,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	lowerBranch := func(i int, bs slot) (transpiler.Type, error) {
 		b := &lowered[i]
 		var err error
-		if *b, err = t.transformIfExprBranch(branches[i].(*grammar.IfExprBranchContext), bs); err != nil || !siblingTyped {
+		if *b, err = t.lowerIfExprBranch(branches[i], bs); err != nil || !siblingTyped {
 			return nil, err
 		}
 		if s.hoist != "" && (b.terminates || t.leaves(b.stmts)) {
@@ -666,7 +687,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 		return nil, err
 	}
 	if s.hoist != "" {
-		return t.hoistIfExpression(ctx, cond, s, lowered)
+		return t.hoistIfExpression(e, cond, s, lowered)
 	}
 	if err := t.checkNoLoopControlInValue("an if-expression", lowered[0].stmts, lowered[1].stmts); err != nil {
 		return nil, err
@@ -709,7 +730,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 	if transpiler.IsUnusable(t.branchingResultType(retType, s)) {
 		for i, b := range lowered {
 			if !b.noValue && !branchTypes[i].IsVoid() {
-				return nil, unknownBranchTypeError(ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+				return nil, unknownBranchTypeError(line, col)
 			}
 		}
 		retType = transpiler.VoidType{}
@@ -737,7 +758,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 				}}},
 			},
 		}
-		t.recordBranchingCall(call, "if-expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		t.recordBranchingCall(call, "if-expression", line, col)
 		return call, nil
 	}
 
@@ -783,7 +804,7 @@ func (t *galaASTTransformer) transformIfExpressionAgainst(ctx *grammar.IfExpress
 			},
 		},
 	}
-	t.recordBranchingCall(call, "if-expression", ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	t.recordBranchingCall(call, "if-expression", line, col)
 	return call, nil
 }
 
@@ -843,7 +864,7 @@ func noValueBranch(stmts []ast.Stmt) loweredIfBranch {
 // a type: then every other branch needs a value. Otherwise one is needed only
 // next to a branch that has one; with none, the if-expression has no type at
 // all, which GALA-E0068 reports.
-func (t *galaASTTransformer) checkIfBranchValues(branches []grammar.IIfExprBranchContext, lowered [2]loweredIfBranch, typed bool) error {
+func (t *galaASTTransformer) checkIfBranchValues(branches [2]ifBranchSrc, lowered [2]loweredIfBranch, typed bool) error {
 	missing := -1
 	valued := false
 	for i, b := range lowered {
@@ -859,15 +880,15 @@ func (t *galaASTTransformer) checkIfBranchValues(branches []grammar.IIfExprBranc
 		}
 	}
 	if missing >= 0 && (typed || valued) {
-		return t.noValueBranchError(branches[missing].(*grammar.IfExprBranchContext))
+		return t.noValueBranchError(branches[missing].at())
 	}
 	return nil
 }
 
-// noValueBranchError reports that branch, of an if-expression whose value is
-// used, produces no value.
-func (t *galaASTTransformer) noValueBranchError(branch *grammar.IfExprBranchContext) error {
-	return t.semanticErrorAt(branch,
+// noValueBranchError reports that the branch at at, of an if-expression whose
+// value is used, produces no value.
+func (t *galaASTTransformer) noValueBranchError(at srcNode) error {
+	return t.semanticErrorAtNode(at,
 		"this branch of the if-expression produces no value, but the if-expression's value is used; end the branch in a value")
 }
 
@@ -876,8 +897,9 @@ func (t *galaASTTransformer) noValueBranchError(branch *grammar.IfExprBranchCont
 // branch that terminates (ends in a `return`, `break` or `continue`) stores
 // none. The value's type is that of the branches that store one (see
 // hoistedType).
-func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext, cond ast.Expr, s slot, branches [2]loweredIfBranch) (ast.Expr, error) {
-	if err := t.checkIfBranchValues(ctx.AllIfExprBranch(), branches, false); err != nil {
+func (t *galaASTTransformer) hoistIfExpression(e ifExprSrc, cond ast.Expr, s slot, branches [2]loweredIfBranch) (ast.Expr, error) {
+	line, col := e.at().start()
+	if err := t.checkIfBranchValues(e.branches(), branches, false); err != nil {
 		return nil, err
 	}
 	var types [2]transpiler.Type
@@ -894,7 +916,7 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 	}
 	allLeave := branches[0].terminates && branches[1].terminates
 	typ, err := t.hoistedType("if-expression", t.unifyBranchTypes(types[0], types[1]), s, allLeave,
-		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(), branches[0].stmts, branches[1].stmts)
+		line, col, branches[0].stmts, branches[1].stmts)
 	if err != nil {
 		return nil, err
 	}
@@ -911,7 +933,7 @@ func (t *galaASTTransformer) hoistIfExpression(ctx *grammar.IfExpressionContext,
 		return &ast.BlockStmt{List: b.stmts}
 	}
 	ifStmt := &ast.IfStmt{Cond: cond, Body: store(branches[0]), Else: store(branches[1])}
-	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+	return t.hoistedResult(s.hoist, []ast.Stmt{ifStmt}, typ, line, col)
 }
 
 // expressionIsBareMatch reports whether the expression context is a bare
@@ -1066,19 +1088,7 @@ func isNilLiteral(exprCtx grammar.IExpressionContext) bool {
 // code returning a placeholder (see loweredIfBranch.needsValueReturn).
 func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchContext, s slot) (loweredIfBranch, error) {
 	if exprCtx := ctx.Expression(); exprCtx != nil {
-		if bs, ok := t.lowerLoopControl(exprCtx); ok {
-			if s.hoist != "" {
-				// Lowered as statements, the branch acts on the loop: it
-				// terminates, with no value.
-				return loweredIfBranch{stmts: []ast.Stmt{bs}, terminates: true}, nil
-			}
-			return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
-		}
-		expr, err := t.lowerResultAgainst(exprCtx, s, true)
-		if err != nil {
-			return loweredIfBranch{}, err
-		}
-		return loweredIfBranch{expr: expr}, nil
+		return t.lowerIfExprBranchValue(antlrExpr(exprCtx), s)
 	}
 
 	// Block branch: transform all statements, use last as the result expression.
@@ -1162,6 +1172,24 @@ func (t *galaASTTransformer) transformIfExprBranch(ctx *grammar.IfExprBranchCont
 		return loweredIfBranch{stmts: preceding, expr: branchExpr, terminates: true}, nil
 	}
 	return noValueBranch(preceding), nil
+}
+
+// lowerIfExprBranchValue lowers e, an if-expression branch that is an
+// expression, against s (see transformIfExprBranch).
+func (t *galaASTTransformer) lowerIfExprBranchValue(e exprSrc, s slot) (loweredIfBranch, error) {
+	if bs, ok := t.lowerLoopControlSrc(e); ok {
+		if s.hoist != "" {
+			// Lowered as statements, the branch acts on the loop: it
+			// terminates, with no value.
+			return loweredIfBranch{stmts: []ast.Stmt{bs}, terminates: true}, nil
+		}
+		return loweredIfBranch{}, t.loopControlInValueError("an if-expression", bs)
+	}
+	expr, err := t.lowerResultAgainst(e.antlr(t), s, true)
+	if err != nil {
+		return loweredIfBranch{}, err
+	}
+	return loweredIfBranch{expr: expr}, nil
 }
 
 // lowerIfExprBranchTailIf lowers the if/else chain ifCtx at the tail of an
@@ -1768,7 +1796,3 @@ func (t *galaASTTransformer) unwrapImmutable(expr ast.Expr) ast.Expr {
 	}
 	return expr
 }
-
-// transformTupleLiteral transforms (a, b) to std.Tuple{V1: NewImmutable(a), V2: NewImmutable(b)},
-// (a, b, c) to std.Tuple3{V1: NewImmutable(a), V2: NewImmutable(b), V3: NewImmutable(c)}, etc.
-// transformTupleLiteral moved to postfix.go

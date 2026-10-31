@@ -27,14 +27,14 @@ func (t *galaASTTransformer) lowerSimpleStatement(s simpleSrc, mutable bool) (as
 	case simpleShortVar:
 		return t.lowerShortVarDecl(s.shortVar(t), mutable)
 	case simpleExpr:
-		exprCtx := s.expr(t)
-		if bs, ok := t.lowerLoopControl(exprCtx); ok {
+		e := s.exprSrc()
+		if bs, ok := t.lowerLoopControlSrc(e); ok {
 			return bs, nil
 		}
-		if err := t.checkForbiddenStatementKeyword(exprCtx); err != nil {
+		if err := t.checkForbiddenStatementKeywordSrc(e); err != nil {
 			return nil, err
 		}
-		expr, err := t.transformExpression(exprCtx)
+		expr, err := t.lowerExpr(e)
 		if err != nil {
 			return nil, err
 		}
@@ -92,23 +92,25 @@ func ForbiddenStatementKeywordSuggestion(name string) (string, bool) {
 // keywords, and the analyzer rejects a declaration spelled like one
 // (GALA-E0055), so the name never refers to anything the program declared.
 func (t *galaASTTransformer) checkForbiddenStatementKeyword(exprCtx grammar.IExpressionContext) error {
+	return t.checkForbiddenStatementKeywordSrc(antlrExpr(exprCtx))
+}
+
+// checkForbiddenStatementKeywordSrc is checkForbiddenStatementKeyword of e,
+// on either tree.
+func (t *galaASTTransformer) checkForbiddenStatementKeywordSrc(e exprSrc) error {
 	// Only a bare identifier statement (`defer`) is the accident; anything with
 	// a postfix (`x.defer()`), operator, or arguments is a normal expression.
-	if !t.isDirectVariableExpression(exprCtx) {
+	name, line, col := e.bareName(t)
+	if name == "" {
 		return nil
 	}
-	pc := t.getPrimaryFromExpression(exprCtx)
-	if pc == nil || pc.Identifier() == nil {
-		return nil
-	}
-	name := pc.Identifier().GetText()
 	suggestion, isKeyword := forbiddenStatementKeywordSuggestions[name]
 	if !isKeyword {
 		return nil
 	}
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeForbiddenStatementKeyword,
-		exprCtx.GetStart().GetLine(), exprCtx.GetStart().GetColumn(),
+		line, col,
 		fmt.Sprintf("bare Go statement keyword %q is not part of GALA's surface", name),
 		suggestion,
 	)
@@ -1106,8 +1108,8 @@ func (t *galaASTTransformer) checkValueUsedHint(exprCtx grammar.IExpressionConte
 // lowerForStatement lowers a for-statement.
 func (t *galaASTTransformer) lowerForStatement(f forSrc) (ast.Stmt, error) {
 	// Handle condition-only for loop: for condition { ... }
-	if condCtx := f.cond(t); condCtx != nil {
-		cond, err := t.transformExpression(condCtx)
+	if c := f.cond(); c.ok() {
+		cond, err := t.lowerExpr(c)
 		if err != nil {
 			return nil, err
 		}
@@ -1128,7 +1130,7 @@ func (t *galaASTTransformer) lowerForStatement(f forSrc) (ast.Stmt, error) {
 		defer t.popScope()
 
 		// Transform the range expression
-		rangeExpr, err := t.transformExpression(rangeClause.expr)
+		rangeExpr, err := t.lowerExpr(rangeClause.expr)
 		if err != nil {
 			return nil, err
 		}
@@ -1269,15 +1271,21 @@ func (t *galaASTTransformer) singleAssignmentLHSName(lhsCtx *grammar.ExpressionL
 	if len(exprs) != 1 {
 		return "", false
 	}
-	exprCtx := exprs[0]
+	name := t.bareIdentifier(exprs[0])
+	return name, name != ""
+}
+
+// bareIdentifier is the name exprCtx is when it is a bare identifier, with
+// no operator or postfix (field access, indexing, a call), and "" otherwise.
+func (t *galaASTTransformer) bareIdentifier(exprCtx grammar.IExpressionContext) string {
 	if !t.isDirectVariableExpression(exprCtx) {
-		return "", false
+		return ""
 	}
 	pc := t.getPrimaryFromExpression(exprCtx)
 	if pc == nil || pc.Identifier() == nil {
-		return "", false
+		return ""
 	}
-	return pc.Identifier().GetText(), true
+	return pc.Identifier().GetText()
 }
 
 // isDirectVariableExpression checks whether the expression is a bare identifier
@@ -1377,7 +1385,7 @@ func (t *galaASTTransformer) lowerIfStatement(ifS ifSrc, tail blockTail, s slot)
 		return nil, err
 	}
 
-	cond, err := t.transformExpression(ifS.cond(t))
+	cond, err := t.lowerExpr(ifS.cond())
 	if err != nil {
 		return nil, err
 	}

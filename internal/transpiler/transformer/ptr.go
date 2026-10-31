@@ -734,7 +734,7 @@ func nullableWherePtr(expected, actual transpiler.Type) bool {
 
 // checkPtrNilComparison rejects `p == nil` and `p != nil` on a `Ptr`
 // (GALA-E0080): a Ptr is never nil, so the comparison asks nothing.
-func (t *galaASTTransformer) checkPtrNilComparison(tok token.Token, ctx antlr.ParserRuleContext, left, right ast.Expr) error {
+func (t *galaASTTransformer) checkPtrNilComparison(tok token.Token, at srcNode, left, right ast.Expr) error {
 	if tok != token.EQL && tok != token.NEQ {
 		return nil
 	}
@@ -750,6 +750,7 @@ func (t *galaASTTransformer) checkPtrNilComparison(tok token.Token, ctx antlr.Pa
 	if !transpiler.IsPtr(typ) {
 		return nil
 	}
+	ctx := t.ctxAt(at)
 	return ptrError(ctx,
 		fmt.Sprintf("%s compares a %s with nil, but a Ptr is never nil", transpiler.SourceText(ctx), displayType(typ)),
 		"drop the comparison; "+ptrMayBeAbsentHint)

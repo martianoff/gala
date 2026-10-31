@@ -6,8 +6,6 @@ import (
 	"go/token"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/transpiler"
@@ -15,103 +13,122 @@ import (
 )
 
 // This file contains struct construction and literal transformation logic extracted from expressions.go
-// Functions: transformPrimary, transformCompositeLiteral, transformLiteral
+// Functions: transformPrimary, lowerIdentifier, lowerParenthesized, transformCompositeLiteral, lowerLiteral
 
 func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.Expr, error) {
-	if ctx.Identifier() != nil {
-		name := ctx.Identifier().GetText()
-		// A `break` / `continue` statement is lowered before it gets here
-		// (see lowerLoopControl); reaching it means it is read as a value.
-		if _, isLoopControl := loopControlToken(name); isLoopControl {
-			return nil, t.loopControlAsValueError(ctx, name)
-		}
-		ident := ast.NewIdent(name)
-		// First check if it's a local variable - if so, don't try to resolve as std type
-		if s := t.bindingScope(name); s != nil {
-			if s.parent == nil {
-				if err := t.preludeDotImportAmbiguity(ctx, name, t.dotImportedVals[name], "value"); err != nil {
-					return nil, err
-				}
-			}
-			if _, boxed := t.valKind(name); boxed {
-				return &ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ident,
-						Sel: ast.NewIdent(transpiler.MethodGet),
-					},
-				}, nil
-			}
-			return ident, nil
-		}
-
-		// A type parameter of the enclosing generic declaration shadows every
-		// name outside it — a package-level val (see bindingScope), std's
-		// names, an import's — as in Go: `Some[Left](a)` in `func f[Left any]`
-		// names the type parameter, not std's Left.
-		if t.activeTypeParams[name] {
-			return ident, nil
-		}
-
-		// A type or function the package declares shadows a std type or
-		// companion of the same name (`Seq`, `Left`, `func Void()`). A
-		// default lowered from another package names that package's
-		// function, which is qualified below.
-		ownFunc := t.packageDeclaresFunction(name)
-		if t.packageDeclaresType(name) || ownFunc && !t.loweringForeignDefault() {
-			return ident, nil
-		}
-		// Check if this identifier is a std package type (not a variable with std type)
-		// Only check typeMetas directly to see if std.name exists as a type definition
-		// NOTE: Direct access is intentional here - we need exact match, not resolution
-		if _, isStdType := t.typeMetas[withStdPrefix(name)]; isStdType && !ownFunc {
-			if err := t.preludeDotImportAmbiguity(ctx, name, t.dotImportedFunction(name), "function"); err != nil {
-				return nil, err
-			}
-			return t.stdIdent(name), nil
-		}
-		// Check if it's a std function (from metadata)
-		resolvedFunc := t.getFunction(name)
-		if resolvedFunc != nil && resolvedFunc.Package == registry.StdPackageName {
-			return t.stdIdent(name), nil
-		}
-		// Function from another GALA package (e.g., ArrayTabulate from
-		// collection_immutable). Either keep the bare name (when the package
-		// is dot-imported in this file) and mark the dot-import as used, or
-		// qualify as `pkg.Name` and add a transitive import. Without this,
-		// a sibling file's dot-import propagates the function's metadata into
-		// our richAST so the lambda's parameter type is inferred correctly,
-		// but the call site emits an unqualified `Name(...)` that the Go
-		// compiler rejects with `undefined: Name`.
-		if resolvedFunc != nil && resolvedFunc.Package != "" && resolvedFunc.Package != t.packageName {
-			pkg := resolvedFunc.Package
-			if t.importManager.IsDotImported(pkg) {
-				t.markDotImportUsed(pkg)
-				return ident, nil
-			}
-			alias := pkg
-			if a, ok := t.packageQualifier(pkg); ok {
-				alias = a
-			}
-			return &ast.SelectorExpr{
-				X:   ast.NewIdent(alias),
-				Sel: ast.NewIdent(name),
-			}, nil
-		}
-		// Check if it's a known std exported function (defined in Go, not GALA)
-		if registry.IsStdFunction(name) {
-			return t.stdIdent(name), nil
-		}
-		return ident, nil
+	if id := ctx.Identifier(); id != nil {
+		return t.lowerIdentifier(id.GetText(), srcNode{ctx: ctx})
 	}
-	if ctx.Literal() != nil {
-		return t.transformLiteral(ctx.Literal().(*grammar.LiteralContext))
+	if lit := ctx.Literal(); lit != nil {
+		return t.lowerLiteral(antlrLiteral(lit.(*grammar.LiteralContext)))
 	}
 	// Handle composite literal (e.g., map[K]V{}, struct{}{})
 	if ctx.CompositeLiteral() != nil {
 		return t.transformCompositeLiteral(ctx.CompositeLiteral().(*grammar.CompositeLiteralContext))
 	}
-	if tupleListCtx := ctx.TupleExpressionList(); tupleListCtx != nil {
-		el := tupleListCtx.(*grammar.TupleExpressionListContext)
+	var elems []exprSrc
+	if list, ok := ctx.TupleExpressionList().(*grammar.TupleExpressionListContext); ok && list != nil {
+		all := list.AllExpression()
+		elems = make([]exprSrc, len(all))
+		for i, e := range all {
+			elems[i] = antlrExpr(e)
+		}
+	}
+	return t.lowerParenthesized(elems, srcNode{ctx: ctx})
+}
+
+// lowerIdentifier lowers name, a primary written at at: a binding, a type
+// parameter, a type or function of the package, std's or another package's.
+func (t *galaASTTransformer) lowerIdentifier(name string, at srcNode) (ast.Expr, error) {
+	// A `break` / `continue` statement is lowered before it gets here
+	// (see lowerLoopControl); reaching it means it is read as a value.
+	if _, isLoopControl := loopControlToken(name); isLoopControl {
+		return nil, t.loopControlAsValueError(at, name)
+	}
+	ident := ast.NewIdent(name)
+	// First check if it's a local variable - if so, don't try to resolve as std type
+	if s := t.bindingScope(name); s != nil {
+		if s.parent == nil {
+			if err := t.preludeDotImportAmbiguity(at, name, t.dotImportedVals[name], "value"); err != nil {
+				return nil, err
+			}
+		}
+		if _, boxed := t.valKind(name); boxed {
+			return &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ident,
+					Sel: ast.NewIdent(transpiler.MethodGet),
+				},
+			}, nil
+		}
+		return ident, nil
+	}
+
+	// A type parameter of the enclosing generic declaration shadows every
+	// name outside it — a package-level val (see bindingScope), std's
+	// names, an import's — as in Go: `Some[Left](a)` in `func f[Left any]`
+	// names the type parameter, not std's Left.
+	if t.activeTypeParams[name] {
+		return ident, nil
+	}
+
+	// A type or function the package declares shadows a std type or
+	// companion of the same name (`Seq`, `Left`, `func Void()`). A
+	// default lowered from another package names that package's
+	// function, which is qualified below.
+	ownFunc := t.packageDeclaresFunction(name)
+	if t.packageDeclaresType(name) || ownFunc && !t.loweringForeignDefault() {
+		return ident, nil
+	}
+	// Check if this identifier is a std package type (not a variable with std type)
+	// Only check typeMetas directly to see if std.name exists as a type definition
+	// NOTE: Direct access is intentional here - we need exact match, not resolution
+	if _, isStdType := t.typeMetas[withStdPrefix(name)]; isStdType && !ownFunc {
+		if err := t.preludeDotImportAmbiguity(at, name, t.dotImportedFunction(name), "function"); err != nil {
+			return nil, err
+		}
+		return t.stdIdent(name), nil
+	}
+	// Check if it's a std function (from metadata)
+	resolvedFunc := t.getFunction(name)
+	if resolvedFunc != nil && resolvedFunc.Package == registry.StdPackageName {
+		return t.stdIdent(name), nil
+	}
+	// Function from another GALA package (e.g., ArrayTabulate from
+	// collection_immutable). Either keep the bare name (when the package
+	// is dot-imported in this file) and mark the dot-import as used, or
+	// qualify as `pkg.Name` and add a transitive import. Without this,
+	// a sibling file's dot-import propagates the function's metadata into
+	// our richAST so the lambda's parameter type is inferred correctly,
+	// but the call site emits an unqualified `Name(...)` that the Go
+	// compiler rejects with `undefined: Name`.
+	if resolvedFunc != nil && resolvedFunc.Package != "" && resolvedFunc.Package != t.packageName {
+		pkg := resolvedFunc.Package
+		if t.importManager.IsDotImported(pkg) {
+			t.markDotImportUsed(pkg)
+			return ident, nil
+		}
+		alias := pkg
+		if a, ok := t.packageQualifier(pkg); ok {
+			alias = a
+		}
+		return &ast.SelectorExpr{
+			X:   ast.NewIdent(alias),
+			Sel: ast.NewIdent(name),
+		}, nil
+	}
+	// Check if it's a known std exported function (defined in Go, not GALA)
+	if registry.IsStdFunction(name) {
+		return t.stdIdent(name), nil
+	}
+	return ident, nil
+}
+
+// lowerParenthesized lowers `(elems)` written at at: a tuple literal of two
+// or more elements, a grouping of one, and `()`, which is no value.
+func (t *galaASTTransformer) lowerParenthesized(elems []exprSrc, at srcNode) (ast.Expr, error) {
+	line, col := at.start()
+	if len(elems) > 0 {
 		// When a tuple literal flows into a Tuple-shaped enclosing context
 		// (e.g., the return position of a function declared to return
 		// `Tuple[int, Cmd[Msg]]`, or a call argument expecting
@@ -121,27 +138,23 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 		// synthesized composite literal carries concrete element types
 		// rather than collapsing to `any` when an element's standalone
 		// type happens to resolve to nil/any.
-		elemExprs := el.AllExpression()
-		if len(elemExprs) > 1 {
+		if len(elems) > 1 {
+			elemExprs := make([]grammar.IExpressionContext, len(elems))
+			for i, e := range elems {
+				elemExprs[i] = e.antlr(t)
+			}
 			perElemExpected := t.tupleElementExpectedTypes(len(elemExprs))
 			exprs, err := t.transformTupleElementExpressions(elemExprs, perElemExpected)
 			if err != nil {
 				return nil, err
 			}
-			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+			return t.transformTupleLiteralWithExpected(exprs, perElemExpected, line, col)
 		}
-		exprs := make([]ast.Expr, 0, len(elemExprs))
-		for _, eCtx := range elemExprs {
-			expr, err := t.transformExpression(eCtx)
-			if err != nil {
-				return nil, err
-			}
-			exprs = append(exprs, expr)
+		expr, err := t.lowerExpr(elems[0])
+		if err != nil {
+			return nil, err
 		}
-		if len(exprs) == 1 {
-			return &ast.ParenExpr{X: exprs[0]}, nil
-		}
-		return t.transformTupleLiteral(exprs, ctx.GetStart().GetLine(), ctx.GetStart().GetColumn())
+		return &ast.ParenExpr{X: expr}, nil
 	}
 	// Empty parenthesized expression `()` — the grammar admits it because
 	// `'(' expressionList? ')'` makes the inner list optional, but GALA
@@ -152,7 +165,7 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 	// node type <nil>` far from the source span.
 	return nil, galaerr.NewCodedSemanticError(
 		galaerr.CodeEmptyParenExpression,
-		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+		line, col,
 		"empty parenthesized expression \"()\" cannot be used as a value",
 		"use a real statement (e.g. `Println(\"…\")`) or remove the arm if it cannot occur",
 	)
@@ -644,8 +657,8 @@ func (t *galaASTTransformer) transformCompositeLiteral(ctx *grammar.CompositeLit
 // classic `0644` form GALA keeps), so `08` or `0129` used to reach the
 // generated Go verbatim and fail to parse there — an internal transpiler
 // error instead of a diagnostic at the literal.
-func (t *galaASTTransformer) checkIntLiteral(node antlr.TerminalNode) error {
-	text := node.GetText()
+func (t *galaASTTransformer) checkIntLiteral(tok litTok) error {
+	text := tok.text
 	if len(text) < 2 || text[0] != '0' || strings.IndexFunc(text, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
 		return nil
 	}
@@ -653,59 +666,51 @@ func (t *galaASTTransformer) checkIntLiteral(node antlr.TerminalNode) error {
 	if bad < 0 {
 		return nil
 	}
-	tok := node.GetSymbol()
-	err := galaerr.NewSyntaxError(tok.GetLine(), tok.GetColumn()+bad,
+	err := galaerr.NewSyntaxError(tok.line, tok.col+bad,
 		fmt.Sprintf("invalid digit %q in octal literal %s (a leading 0 makes an integer literal octal; drop the leading zeros for a decimal number)", text[bad], text))
 	err.FilePath = t.filePath
 	return err
 }
 
-func (t *galaASTTransformer) transformLiteral(ctx *grammar.LiteralContext) (ast.Expr, error) {
-	if ctx.INT_LIT() != nil {
-		if err := t.checkIntLiteral(ctx.INT_LIT()); err != nil {
-			return nil, err
-		}
-		return &ast.BasicLit{Kind: token.INT, Value: ctx.INT_LIT().GetText()}, nil
-	}
-	if ctx.FLOAT_LIT() != nil {
-		return &ast.BasicLit{Kind: token.FLOAT, Value: ctx.FLOAT_LIT().GetText()}, nil
-	}
+// lowerLiteral lowers the literal l.
+func (t *galaASTTransformer) lowerLiteral(l literalSrc) (ast.Expr, error) {
 	// A literal's raw source text is copied verbatim into the generated Go
 	// literal, so its escape sequences must be ones Go accepts — GALA's lexer
 	// admits `\` followed by any character. Backtick raw strings have no
 	// escapes and are not scanned.
-	if ctx.STRING() != nil {
-		if err := t.checkLiteralEscapes(ctx.STRING(), escapeKindString); err != nil {
+	switch l.kind {
+	case litInt:
+		if err := t.checkIntLiteral(l.tok); err != nil {
 			return nil, err
 		}
-		return &ast.BasicLit{Kind: token.STRING, Value: ctx.STRING().GetText()}, nil
-	}
-	if ctx.CHAR_LIT() != nil {
-		if err := t.checkLiteralEscapes(ctx.CHAR_LIT(), escapeKindRune); err != nil {
+		return &ast.BasicLit{Kind: token.INT, Value: l.tok.text}, nil
+	case litFloat:
+		return &ast.BasicLit{Kind: token.FLOAT, Value: l.tok.text}, nil
+	case litString:
+		if err := t.checkLiteralEscapes(l.tok, escapeKindString); err != nil {
 			return nil, err
 		}
-		return &ast.BasicLit{Kind: token.CHAR, Value: ctx.CHAR_LIT().GetText()}, nil
-	}
-	if ctx.RAW_STRING() != nil {
-		return &ast.BasicLit{Kind: token.STRING, Value: ctx.RAW_STRING().GetText()}, nil
-	}
-	if ctx.INTERPOLATED_STRING() != nil {
-		if err := t.checkLiteralEscapes(ctx.INTERPOLATED_STRING(), escapeKindInterp); err != nil {
+		return &ast.BasicLit{Kind: token.STRING, Value: l.tok.text}, nil
+	case litChar:
+		if err := t.checkLiteralEscapes(l.tok, escapeKindRune); err != nil {
 			return nil, err
 		}
-		return t.transformInterpolatedString(ctx.INTERPOLATED_STRING())
-	}
-	if ctx.FORMAT_STRING() != nil {
-		if err := t.checkLiteralEscapes(ctx.FORMAT_STRING(), escapeKindFormat); err != nil {
+		return &ast.BasicLit{Kind: token.CHAR, Value: l.tok.text}, nil
+	case litRawString:
+		return &ast.BasicLit{Kind: token.STRING, Value: l.tok.text}, nil
+	case litInterpolated:
+		if err := t.checkLiteralEscapes(l.tok, escapeKindInterp); err != nil {
 			return nil, err
 		}
-		return t.transformFormatString(ctx.FORMAT_STRING())
-	}
-	if ctx.GetText() == "true" || ctx.GetText() == "false" {
-		return ast.NewIdent(ctx.GetText()), nil
-	}
-	if ctx.GetText() == "nil" {
-		return ast.NewIdent("nil"), nil
+		return t.transformInterpolatedString(l.tok)
+	case litFormat:
+		if err := t.checkLiteralEscapes(l.tok, escapeKindFormat); err != nil {
+			return nil, err
+		}
+		return t.transformFormatString(l.tok)
+	case litWord:
+		// `true`, `false` or `nil`.
+		return ast.NewIdent(l.tok.text), nil
 	}
 	return nil, nil
 }

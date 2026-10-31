@@ -16,16 +16,20 @@ import (
 // each of its readers has an ANTLR half and a native half that give the same
 // value for the same node, so blocks and statements are lowered once, the
 // same way, whichever tree they come from (lowerBlock, lowerStatement,
-// lowerIfStatement, lowerForStatement, lowerSimpleStatement). Expressions,
-// types and the bind chains below a statement are read on ANTLR's tree: the
+// lowerIfStatement, lowerForStatement, lowerSimpleStatement). A condition,
+// a range operand and an expression statement are read as exprSrc values
+// (expressions_source.go); the expressions other readers hand on as
+// contexts find their native node again when lowered (transformExpression).
+// Types and the bind chains below a statement are read on ANTLR's tree: the
 // native readers cross to it with crossTo.
 //
 // The native halves dispatch with Kind() and read children through the rule
 // handles and NativeKids, never through Typed() or the All accessors (see
 // declarations_native.go). A native block is reached from a function
 // declaration's body (readFuncDeclNative), from a lambda's (lambdas_source.go)
-// and from the if and for statements inside them: a match arm's block is
-// below an expression, which is still read on ANTLR's tree.
+// and from the if and for statements inside them: a match arm's or an
+// if-expression branch's block is below an expression whose statements are
+// still read on ANTLR's tree.
 
 // blockSrc is a block.
 type blockSrc struct {
@@ -483,13 +487,19 @@ func (s simpleSrc) ok() bool { return s.at.ok() }
 // expr is the expression of s, an expression statement, and nil when s is
 // another kind.
 func (s simpleSrc) expr(t *galaASTTransformer) grammar.IExpressionContext {
+	return s.exprSrc().antlr(t)
+}
+
+// exprSrc is the expression of s, an expression statement, and the zero
+// exprSrc when s is another kind.
+func (s simpleSrc) exprSrc() exprSrc {
 	switch {
 	case s.kind != simpleExpr:
-		return nil
+		return exprSrc{}
 	case s.kid.node.Ok():
-		return crossTo[*grammar.ExpressionContext](t, s.kid.node)
+		return nativeExpr(s.kid.node)
 	}
-	return s.kid.ctx.(grammar.IExpressionContext)
+	return antlrExpr(s.kid.ctx.(grammar.IExpressionContext))
 }
 
 // assignsOneName reports whether s, an assignment, has one target and the
@@ -651,11 +661,11 @@ func (s ifSrc) hasInit() bool {
 }
 
 // cond is s's condition.
-func (s ifSrc) cond(t *galaASTTransformer) grammar.IExpressionContext {
+func (s ifSrc) cond() exprSrc {
 	if s.node.Ok() {
-		return crossTo[*grammar.ExpressionContext](t, s.native().Expression().GalaNodeRef)
+		return nativeExpr(s.native().Expression().GalaNodeRef)
 	}
-	return s.ctx.Expression()
+	return antlrExpr(s.ctx.Expression())
 }
 
 // block is s's i-th block: 0 its body, 1 its else block; the zero blockSrc
@@ -705,19 +715,19 @@ func (s forSrc) body() blockSrc {
 	return blockSrc{ctx: s.ctx.Block().(*grammar.BlockContext)}
 }
 
-// cond is the condition of s, a condition-only loop (`for cond { }`), and nil
-// when s is another kind of loop.
-func (s forSrc) cond(t *galaASTTransformer) grammar.IExpressionContext {
+// cond is the condition of s, a condition-only loop (`for cond { }`), and
+// the zero exprSrc when s is another kind of loop.
+func (s forSrc) cond() exprSrc {
 	if s.node.Ok() {
 		if c := s.native().ForCondition(); c.Ok() {
-			return crossTo[*grammar.ExpressionContext](t, c.Expression().GalaNodeRef)
+			return nativeExpr(c.Expression().GalaNodeRef)
 		}
-		return nil
+		return exprSrc{}
 	}
 	if c := s.ctx.ForCondition(); c != nil {
-		return c.(*grammar.ForConditionContext).Expression()
+		return antlrExpr(c.(*grammar.ForConditionContext).Expression())
 	}
-	return nil
+	return exprSrc{}
 }
 
 // rangeDecl is the range clause of a loop: where it is written, the names it
@@ -727,7 +737,7 @@ type rangeDecl struct {
 	at     srcNode
 	names  []declName
 	assign bool
-	expr   grammar.IExpressionContext
+	expr   exprSrc
 }
 
 // rangeClause reads s's range clause, and false when s has none.
@@ -737,7 +747,7 @@ func (s forSrc) rangeClause(t *galaASTTransformer) (rangeDecl, bool) {
 		if !rc.Ok() {
 			return rangeDecl{}, false
 		}
-		d := rangeDecl{at: srcNode{node: rc.GalaNodeRef}, expr: crossTo[*grammar.ExpressionContext](t, rc.Expression().GalaNodeRef)}
+		d := rangeDecl{at: srcNode{node: rc.GalaNodeRef}, expr: nativeExpr(rc.Expression().GalaNodeRef)}
 		for i := range rc.ChildCount() {
 			if c := rc.Child(i); c.IsToken() && c.Terminal().GetText() == "=" {
 				d.assign = true
@@ -753,7 +763,7 @@ func (s forSrc) rangeClause(t *galaASTTransformer) (rangeDecl, bool) {
 	if !ok || rc == nil {
 		return rangeDecl{}, false
 	}
-	d := rangeDecl{at: srcNode{ctx: rc}, expr: rc.Expression()}
+	d := rangeDecl{at: srcNode{ctx: rc}, expr: antlrExpr(rc.Expression())}
 	for _, c := range rc.GetChildren() {
 		if term, ok := c.(antlr.TerminalNode); ok && term.GetText() == "=" {
 			d.assign = true

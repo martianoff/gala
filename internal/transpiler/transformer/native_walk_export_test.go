@@ -26,3 +26,13 @@ func OnNativeLambda(tr transpiler.ASTTransformer, f func(index int)) {
 func OnNativeCapture(tr transpiler.ASTTransformer, f func()) {
 	tr.(*galaASTTransformer).onNativeCapture = f
 }
+
+// OnNativeExpr sets tr's onNativeExpr hook for the native walk tests.
+func OnNativeExpr(tr transpiler.ASTTransformer, f func(index, line int)) {
+	tr.(*galaASTTransformer).onNativeExpr = f
+}
+
+// OnNativeShape sets tr's onNativeShape hook for TestNativeExprWalk.
+func OnNativeShape(tr transpiler.ASTTransformer, f func(line int, shape string)) {
+	tr.(*galaASTTransformer).onNativeShape = f
+}

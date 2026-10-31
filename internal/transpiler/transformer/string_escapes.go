@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/interpolation"
 )
@@ -240,13 +238,9 @@ var (
 
 // checkLiteralEscapes validates the escape sequences in a literal token and
 // returns a framed, `.gala`-positioned diagnostic for the first invalid one.
-// node is the terminal for the literal token. Returns nil when every escape is
-// valid.
-func (t *galaASTTransformer) checkLiteralEscapes(node antlr.TerminalNode, kind literalEscapeKind) error {
-	if node == nil {
-		return nil
-	}
-	text := node.GetText()
+// tok is the literal token. Returns nil when every escape is valid.
+func (t *galaASTTransformer) checkLiteralEscapes(tok litTok, kind literalEscapeKind) error {
+	text := tok.text
 	q := kind.quote
 	var (
 		bad badEscape
@@ -271,17 +265,16 @@ func (t *galaASTTransformer) checkLiteralEscapes(node antlr.TerminalNode, kind l
 	hint := "valid escapes are " + validEscapeList(q) +
 		"; to write a literal backslash (in a regular expression, for example) double it (\\\\) or use a backtick raw string"
 
-	// ANTLR reports positions as 0-based rune indices, so convert the byte
+	// Columns are 0-based rune indices, so convert the byte
 	// offset of the escape within the token into a rune offset before adding
 	// it to the token's column. GALA string, rune and interpolated literals
 	// cannot span lines, so the line is the token's own.
-	tok := node.GetSymbol()
-	startCol := tok.GetColumn() + utf8.RuneCountInString(text[:bad.Offset])
+	startCol := tok.col + utf8.RuneCountInString(text[:bad.Offset])
 	endCol := startCol + utf8.RuneCountInString(bad.Seq)
 
 	err := galaerr.NewCodedSemanticError(
 		galaerr.CodeInvalidStringEscape,
-		tok.GetLine(),
+		tok.line,
 		startCol,
 		msg,
 		hint,

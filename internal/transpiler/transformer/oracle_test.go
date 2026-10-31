@@ -352,8 +352,8 @@ var unwrappedTranspilerFiles = map[string]string{
 	"compilation_gate_test.go":    "example corpus; checked by TestGeneratedGoOracleCorpus",
 	"generated_format_test.go":    "example corpus; checked by TestGeneratedGoOracleCorpus",
 	"generic_alias_arity_test.go": "deliberately invalid Go: a wrong type-argument count is left for the Go compiler to report",
-	"native_walk_test.go":         "differential, in a target of its own: holds the native walk's Go to the ANTLR walk's byte for byte, and the ANTLR walk's Go is what the oracle checks",
 	"native_types_test.go":        "differential, in native_walk_test: holds the native lowering of types and of sealed and opaque declarations to the ANTLR one, byte for byte",
+	"native_walk_helpers_test.go": "differential, in a target of its own: holds the native walk's Go to the ANTLR walk's byte for byte, and the ANTLR walk's Go is what the oracle checks",
 }
 
 // TestOracleCoversEveryTranspiler keeps new tests on the checked constructor.

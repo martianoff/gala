@@ -263,7 +263,7 @@ func (t *galaASTTransformer) buildTailBranch(
 		return nil, false, err
 	}
 	if b.noValue && !t.leaves(b.stmts) {
-		return nil, false, t.noValueBranchError(branchCtx)
+		return nil, false, t.noValueBranchError(srcNode{ctx: branchCtx})
 	}
 	if b.needsValueReturn() {
 		return append(b.stmts, &ast.ReturnStmt{Results: []ast.Expr{t.wrapWithAssertion(b.expr, tc.retType)}}), false, nil

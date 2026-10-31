@@ -639,10 +639,10 @@ func hasMember(meta *transpiler.TypeMetadata, member string) bool {
 // checkGoResultOperands reports a converted Go call — or a val bound to one —
 // used as an operand of op: `strconv.Atoi(s) * 2`. A Tuple compares with
 // `==` and `!=` like any Tuple; no other operator applies to a Try or a Tuple.
-func (t *galaASTTransformer) checkGoResultOperands(op string, ctx antlr.ParserRuleContext, operands ...ast.Expr) error {
+func (t *galaASTTransformer) checkGoResultOperands(op string, at srcNode, operands ...ast.Expr) error {
 	for _, e := range operands {
 		if res := t.goResultOf(e); res != nil && !(!res.Fails && (op == "==" || op == "!=")) {
-			return t.goResultMisuse(res, fmt.Sprintf("it cannot be an operand of `%s`", op), ctx)
+			return t.goResultMisuse(res, fmt.Sprintf("it cannot be an operand of `%s`", op), t.ctxAt(at))
 		}
 	}
 	return nil

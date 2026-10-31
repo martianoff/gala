@@ -26,6 +26,7 @@ go_library(
         "exhaustiveness.go",
         "expected_arg_stack.go",
         "expressions.go",
+        "expressions_source.go",
         "extractor_call.go",
         "generated_codec_names.go",
         "go_constructors.go",
@@ -453,20 +454,27 @@ go_test(
 # gazelle:exclude native_walk_test.go
 # gazelle:exclude native_walk_export_test.go
 # gazelle:exclude native_types_test.go
+# gazelle:exclude native_walk_helpers_test.go
+# gazelle:exclude native_expr_walk_test.go
 go_test(
     # keep
     name = "native_walk_test",
     # Walks the whole GALA corpus (every example plus the stdlib) on both
     # trees, like transformer_test's corpus guards, so it needs the large
     # timeout too: it takes ~235s on the main CI lane and crosses the default
-    # medium 300s on the slower ANTLR-parser lane.
+    # medium 300s on the slower ANTLR-parser lane. TestNativeExprWalk adds
+    # a few seconds; a target of its own would recompile the transformer's
+    # dependencies for its internal test file a second time, which Bazel
+    # rejects as conflicting actions.
     size = "large",
     # Two shards, so the case tests (TestNativeWalkCases, TestNativeTypeCases)
     # can run beside the corpus run rather than after it.
     shard_count = 2,
     srcs = [
+        "native_expr_walk_test.go",
         "native_types_test.go",
         "native_walk_export_test.go",
+        "native_walk_helpers_test.go",
         "native_walk_test.go",
     ],
     data = [

@@ -21,7 +21,9 @@ import (
 
 // lambdaSrc is a lambda expression: its node when it is read on the native
 // tree, and its context, which a lambda reached from ANTLR's tree keeps for
-// the readers not ported yet (lambdaArgCallee, the Try thunk's identity).
+// the readers not ported yet (lambdaArgCallee, the Try thunk's identity). A
+// lambda the native expression walk reaches (lowerPrimaryExprNative) has no
+// context: it is lowered context-free, where neither reader runs.
 type lambdaSrc struct {
 	ctx  *grammar.LambdaExpressionContext
 	node native.LambdaExpressionNode

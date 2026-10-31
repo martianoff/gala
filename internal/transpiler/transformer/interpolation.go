@@ -6,8 +6,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/antlr4-go/antlr/v4"
-
 	"martianoff/gala/internal/interpolation"
 	"martianoff/gala/internal/parser"
 	"martianoff/gala/internal/transpiler"
@@ -69,42 +67,37 @@ func (t *galaASTTransformer) isBuiltinPrint(base ast.Expr) bool {
 // transformInterpolatedString handles s"..." string interpolation.
 // Auto-infers format verbs from expression types.
 //
-// It takes the literal's terminal node rather than its text so the embedded
+// It takes the literal's token rather than its text so the embedded
 // expressions can be re-parsed at their real source position; see
 // parseAndTransformExpr for why that matters.
-func (t *galaASTTransformer) transformInterpolatedString(node antlr.TerminalNode) (ast.Expr, error) {
+func (t *galaASTTransformer) transformInterpolatedString(tok litTok) (ast.Expr, error) {
 	// Strip s" prefix and " suffix
-	raw := node.GetText()
-	content := raw[2 : len(raw)-1]
+	content := tok.text[2 : len(tok.text)-1]
 	parts := interpolation.Split(content)
-	line, col := interpContentOrigin(node)
+	line, col := interpContentOrigin(tok)
 	return t.buildSprintfCall(parts, false, content, line, col)
 }
 
 // transformFormatString handles f"..." format string interpolation.
 // Uses explicit format specs when provided, falls back to auto-infer.
-func (t *galaASTTransformer) transformFormatString(node antlr.TerminalNode) (ast.Expr, error) {
+func (t *galaASTTransformer) transformFormatString(tok litTok) (ast.Expr, error) {
 	// Strip f" prefix and " suffix
-	raw := node.GetText()
-	content := raw[2 : len(raw)-1]
+	content := tok.text[2 : len(tok.text)-1]
 	parts := interpolation.Split(content)
-	line, col := interpContentOrigin(node)
+	line, col := interpContentOrigin(tok)
 	return t.buildSprintfCall(parts, true, content, line, col)
 }
 
 // interpContentOrigin returns the 1-based line and 0-based rune column at which
 // an interpolated literal's CONTENT begins — that is, just past the two-rune
-// `s"` / `f"` opener. A nil or position-less node yields (0, 0), which callers
-// treat as "no position available" and fall back to unrebased parsing.
-func interpContentOrigin(node antlr.TerminalNode) (int, int) {
-	if node == nil {
+// `s"` / `f"` opener. A position-less token (line 0) yields (0, 0), which
+// callers treat as "no position available" and fall back to unrebased
+// parsing.
+func interpContentOrigin(tok litTok) (int, int) {
+	if tok.line == 0 {
 		return 0, 0
 	}
-	sym := node.GetSymbol()
-	if sym == nil {
-		return 0, 0
-	}
-	return sym.GetLine(), sym.GetColumn() + 2
+	return tok.line, tok.col + 2
 }
 
 // interpPartOrigin maps a part's byte Offset within content to an absolute

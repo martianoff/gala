@@ -32,21 +32,6 @@ type loopControlSite struct {
 	line, col int
 }
 
-// loopControlKeyword reports whether exprCtx is a bare `break` or `continue`,
-// and which.
-// It runs on every expression statement, so it looks at the tokens rather than
-// walking the precedence chain: a bare name is a single token.
-func (t *galaASTTransformer) loopControlKeyword(exprCtx grammar.IExpressionContext) (token.Token, bool) {
-	if exprCtx == nil {
-		return token.ILLEGAL, false
-	}
-	start, stop := exprCtx.GetStart(), exprCtx.GetStop()
-	if start == nil || stop == nil || start.GetTokenIndex() != stop.GetTokenIndex() {
-		return token.ILLEGAL, false
-	}
-	return loopControlToken(start.GetText())
-}
-
 // loopControlToken maps the names `break` and `continue` to their Go tokens.
 func loopControlToken(name string) (token.Token, bool) {
 	switch name {
@@ -61,7 +46,16 @@ func loopControlToken(name string) (token.Token, bool) {
 // lowerLoopControl lowers a statement that is a bare `break` or `continue` to a
 // Go BranchStmt, recording its source position for checkLoopControl.
 func (t *galaASTTransformer) lowerLoopControl(exprCtx grammar.IExpressionContext) (*ast.BranchStmt, bool) {
-	tok, ok := t.loopControlKeyword(exprCtx)
+	return t.lowerLoopControlSrc(antlrExpr(exprCtx))
+}
+
+// lowerLoopControlSrc is lowerLoopControl of e, on either tree.
+func (t *galaASTTransformer) lowerLoopControlSrc(e exprSrc) (*ast.BranchStmt, bool) {
+	name, line, col, ok := e.soleToken()
+	if !ok {
+		return nil, false
+	}
+	tok, ok := loopControlToken(name)
 	if !ok {
 		return nil, false
 	}
@@ -69,8 +63,7 @@ func (t *galaASTTransformer) lowerLoopControl(exprCtx grammar.IExpressionContext
 	if t.loopControlSites == nil {
 		t.loopControlSites = make(map[*ast.BranchStmt]loopControlSite)
 	}
-	start := exprCtx.GetStart()
-	t.loopControlSites[stmt] = loopControlSite{line: start.GetLine(), col: start.GetColumn()}
+	t.loopControlSites[stmt] = loopControlSite{line: line, col: col}
 	return stmt, true
 }
 
@@ -85,10 +78,11 @@ func (t *galaASTTransformer) markUserLoop(loop ast.Stmt) {
 
 // loopControlAsValueError rejects a `break` or `continue` used where a value is
 // read (`val x = break`, `f(continue)`).
-func (t *galaASTTransformer) loopControlAsValueError(ctx *grammar.PrimaryContext, name string) error {
+func (t *galaASTTransformer) loopControlAsValueError(at srcNode, name string) error {
+	line, col := at.start()
 	return galaerr.NewCodedSemanticError(
 		galaerr.CodeLoopControlOutsideLoop,
-		ctx.GetStart().GetLine(), ctx.GetStart().GetColumn(),
+		line, col,
 		fmt.Sprintf("`%s` is a statement, not a value", name),
 		fmt.Sprintf("write `%s` on its own line inside a `for` loop", name))
 }

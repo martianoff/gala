@@ -475,10 +475,10 @@ func isLiteral(expr ast.Expr) bool {
 // lowerEquality lowers `left == right` or `left != right`, cmp, to
 // `left.Equal(right)` or `!left.Equal(right)` when that is how its operands
 // compare (operandsEquality), and rejects a comparison of a type that has
-// neither Equal nor Go's == (GALA-E0084). leftCtx and rightCtx are the
-// operands as written; cmp's operands are read through their Immutable
-// wrapper. A comparison with nil is left to the checks of nil.
-func (t *galaASTTransformer) lowerEquality(leftCtx, rightCtx antlr.ParserRuleContext, cmp ast.Expr) (ast.Expr, error) {
+// neither Equal nor Go's == (GALA-E0084). left and right are the operands
+// as written; cmp's operands are read through their Immutable wrapper. A
+// comparison with nil is left to the checks of nil.
+func (t *galaASTTransformer) lowerEquality(left, right srcNode, cmp ast.Expr) (ast.Expr, error) {
 	bin, ok := cmp.(*ast.BinaryExpr)
 	if !ok || (bin.Op != token.EQL && bin.Op != token.NEQ) || isNilIdent(bin.X) || isNilIdent(bin.Y) {
 		return cmp, nil
@@ -487,11 +487,11 @@ func (t *galaASTTransformer) lowerEquality(leftCtx, rightCtx antlr.ParserRuleCon
 	eq, badType, swapped := t.operandsEquality(xType, yType, isLiteral(bin.X))
 	switch {
 	case eq.mode == eqIncomparable:
-		return nil, t.incomparableOperandsError(leftCtx, rightCtx, bin.Op, badType, eq)
+		return nil, t.incomparableOperandsError(t.ctxAt(left), t.ctxAt(right), bin.Op, badType, eq)
 	case eq.mode == eqMethod && swapped:
-		return t.equalCallExpr(bin.Y, yType, bin.X, bin.Op == token.NEQ, rightCtx)
+		return t.equalCallExpr(bin.Y, yType, bin.X, bin.Op == token.NEQ, right)
 	case eq.mode == eqMethod:
-		return t.equalCallExpr(bin.X, xType, bin.Y, bin.Op == token.NEQ, leftCtx)
+		return t.equalCallExpr(bin.X, xType, bin.Y, bin.Op == token.NEQ, left)
 	}
 	return cmp, nil
 }
@@ -499,8 +499,9 @@ func (t *galaASTTransformer) lowerEquality(leftCtx, rightCtx antlr.ParserRuleCon
 // equalCallExpr is `x.Equal(y)`, negated when negate is set. An Equal with a
 // pointer receiver is called on x's address, or on a copy when Go cannot
 // address x (addressableReceiver); pos locates x.
-func (t *galaASTTransformer) equalCallExpr(x ast.Expr, xType transpiler.Type, y ast.Expr, negate bool, pos antlr.ParserRuleContext) (ast.Expr, error) {
-	recv, err := t.addressableReceiver(x, xType, "Equal", pos.GetStart().GetLine(), pos.GetStart().GetColumn())
+func (t *galaASTTransformer) equalCallExpr(x ast.Expr, xType transpiler.Type, y ast.Expr, negate bool, pos srcNode) (ast.Expr, error) {
+	line, col := pos.start()
+	recv, err := t.addressableReceiver(x, xType, "Equal", line, col)
 	if err != nil {
 		return nil, err
 	}
@@ -571,7 +572,7 @@ func (t *galaASTTransformer) lowerPatternEquality(ctx grammar.IExpressionContext
 			fmt.Sprintf("case %s compares the matched value with %s by ==, which cannot compare %s values: %s", name, name, t.sourceTypeName(badType), t.incomparableReason(r)),
 			hint)
 	case eqMethod:
-		return t.equalCallExpr(subject, subjectType, pattern, false, ctx)
+		return t.equalCallExpr(subject, subjectType, pattern, false, srcNode{ctx: ctx})
 	}
 	return cond, nil
 }
