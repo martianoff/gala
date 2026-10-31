@@ -552,9 +552,10 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 //
 // handle is tree's native-tree handle (from Parsed.CleanNative), or nil.
 // The top-level file, outside the LSP, is read on its native tree when there
-// is one, from its first read to its last, and on tree otherwise (see
-// readsNative, collect_native.go and file_checks_native.go). Nothing keeps
-// it.
+// is one, and on tree otherwise (see readsNative, collect_native.go and
+// file_checks_native.go); only the inference of the package's untyped vals
+// (inferPackageValTypes, the transformer's) reads tree either way. Nothing
+// keeps it.
 //
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
@@ -602,9 +603,10 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// The tree the file is read on, decided once, before its first read: its
 	// native tree when it is the compiled file outside the LSP and its parse
 	// came with a handle that converts (see nativeFileOf), ANTLR's tree
-	// otherwise. Every read below takes the same tree, so a file is read on
-	// one tree or the other, never a mix. The imported packages' files are
-	// read on ANTLR's tree: the parsed-file cache keeps no handle.
+	// otherwise. Every analyzer read below takes the same tree, so a file is
+	// read on one tree or the other, never a mix; inferPackageValTypes, the
+	// transformer's pass, still reads ANTLR's. The imported packages' files
+	// are read on ANTLR's tree: the parsed-file cache keeps no handle.
 	readsNative := isTopLevel && !a.skipUndefinedCheck
 	var nf nativeFile
 	if readsNative {
@@ -1138,17 +1140,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// The file's own names first, on its tree, then its siblings', on
 	// ANTLR's: the parsed-file cache keeps no native tree. The result does
 	// not depend on the order.
-	own := readTree(a, filePath, "top-level names", nf,
-		func(root native.GalaNodeRef) ownNames {
-			o := newOwnNames()
-			collectTopLevelDeclaredNamesNative(root, o.types, o.methods)
-			return o
-		},
-		func() ownNames {
-			o := newOwnNames()
-			collectTopLevelDeclaredNames(sourceFile, o.types, o.methods)
-			return o
-		})
+	own := readTree(a, filePath, "top-level names", nf, ownNamesNative,
+		func() ownNames { return ownNamesOf(sourceFile) })
 	a.currentOwnTypes, a.currentOwnMethods = own.types, own.methods
 	for _, sf := range siblingTrees {
 		collectTopLevelDeclaredNames(sf, a.currentOwnTypes, a.currentOwnMethods)
@@ -1178,10 +1171,11 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	fd := &fileDecls{richAST: richAST, pkgName: pkgName, filePath: filePath, absFilePath: absFilePath, docs: docs, decls: decls}
 	// checksUndefined says whether the undefined-symbol check (GALA-E0023,
-	// below, after the collection) runs: on the tree the file is read on.
+	// below, after the collection) runs: only once every import loaded. It
+	// reads the tree the file is read on.
 	checksUndefined := isTopLevel && !a.skipUndefinedCheck && a.fileImportsFullyLoaded(fileImports, richAST)
 	if a.onCollect != nil && isTopLevel {
-		a.onCollect(collectTrace{filePath: filePath, checksUndefined: checksUndefined, readsNative: readsNative, hasHandle: handle != nil, native: nf.ok()})
+		a.onCollect(collectTrace{filePath: filePath, checksUndefined: checksUndefined, hasHandle: handle != nil, native: nf.ok()})
 	}
 
 	// 1. Collect all types
@@ -1356,9 +1350,11 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
-		receiverTypes := methodReceiverTypes(sourceFile)
+		var receiverTypes iter.Seq[string]
 		if nf.ok() {
 			receiverTypes = methodReceiverTypesNative(nf)
+		} else {
+			receiverTypes = methodReceiverTypes(sourceFile)
 		}
 		richAST.ReceiverDotImports = a.receiverDotImports(receiverTypes, richAST, filePath, fileDotImportPaths)
 	}

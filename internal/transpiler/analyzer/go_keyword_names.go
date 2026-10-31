@@ -57,10 +57,12 @@ func checkGoKeywordNames(sf *grammar.SourceFileContext) error {
 			return
 		}
 		if id, ok := node.(*grammar.IdentifierContext); ok {
-			k.see(id.GetText(), transpiler.PosFromToken(id.GetStart()),
-				func() bool { return isBareStatement(id) },
-				func() bool { return declaresName(id) },
-				func() bool { return inPattern(id) })
+			if name := id.GetText(); keywordNamed(name) {
+				k.see(name, transpiler.PosFromToken(id.GetStart()),
+					func() bool { return isBareStatement(id) },
+					func() bool { return declaresName(id) },
+					func() bool { return inPattern(id) })
+			}
 			return
 		}
 		for _, child := range node.GetChildren() {
@@ -88,12 +90,17 @@ type keywordNames struct {
 // declaration was found.
 func (k *keywordNames) done() bool { return k.firstDecl != nil }
 
-// see considers the identifier name at at. bare, decl and pattern say whether
-// it is a whole statement on its own (isBareStatement), the name a
-// declaration introduces (declaresName), and part of a case pattern
-// (inPattern); each is asked only when the answer matters.
+// keywordNamed reports whether name is spelled like a Go keyword: the
+// identifiers keywordNames.see is told of.
+func keywordNamed(name string) bool { return token.IsKeyword(name) }
+
+// see considers the identifier name, spelled like a Go keyword
+// (keywordNamed), at at. bare, decl and pattern say whether it is a whole
+// statement on its own (isBareStatement), the name a declaration introduces
+// (declaresName), and part of a case pattern (inPattern); each is asked only
+// when the answer matters.
 func (k *keywordNames) see(name string, at transpiler.SourcePos, bare, decl, pattern func() bool) {
-	if !token.IsKeyword(name) || (bareStatementKeywords[name] && bare()) {
+	if bareStatementKeywords[name] && bare() {
 		return
 	}
 	isDecl := decl()

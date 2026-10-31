@@ -140,8 +140,8 @@ func analyzeParsedForCollection(tb testing.TB, a *galaAnalyzer, path string, par
 // checkTrace fails tb unless an's file was collected on the tree it should
 // have been: on its native tree exactly when its parse came with a handle
 // (wantHandle, which a galop parse without syntax errors has), whether or not
-// the undefined-symbol check runs on it, so a converter or bridge that fails quietly
-// cannot turn the comparison into ANTLR's against ANTLR's.
+// the undefined-symbol check runs on it, so a converter or bridge that fails
+// quietly cannot turn the comparison into ANTLR's against ANTLR's.
 func checkTrace(tb testing.TB, name string, an analysis, wantHandle bool) bool {
 	tb.Helper()
 	switch t := an.trace; {
@@ -153,8 +153,6 @@ func checkTrace(tb testing.TB, name string, an analysis, wantHandle bool) bool {
 		tb.Errorf("%s: analyze reported no collection", name)
 	case t.hasHandle != wantHandle:
 		tb.Errorf("%s: the parse came with a handle: %v, want %v", name, t.hasHandle, wantHandle)
-	case !t.readsNative:
-		tb.Errorf("%s: not read on its native tree, as the compiled file outside the LSP is", name)
 	case t.native != t.hasHandle:
 		tb.Errorf("%s: collected on the native tree: %v, want %v (whether the parse came with a handle)", name, t.native, t.hasHandle)
 	default:

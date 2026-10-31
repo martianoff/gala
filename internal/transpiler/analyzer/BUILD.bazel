@@ -127,8 +127,9 @@ go_test(
 )
 
 # The collection of declarations, the undefined-symbol check and the other
-# reads of the compiled file on the native tree, held to ANTLR's over the GALA sources TestEnginesAgree parses
-# and the examples of the error reference pages. A target of its own: staging
+# reads of the compiled file on the native tree, held to ANTLR's over the
+# GALA sources TestEnginesAgree parses and the examples of the error
+# reference pages. A target of its own: staging
 # all of them would load packages that analyzer_test's cases rely on not
 # loading. Gazelle leaves the files out of analyzer_test (the exclude
 # directives) and keeps this rule as written.

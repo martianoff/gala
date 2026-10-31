@@ -34,15 +34,13 @@ import (
 // through Typed(), which builds a handle per node.
 
 // collectTrace is what analyze tells galaAnalyzer.onCollect about a file:
-// whether the undefined-symbol check runs on it, whether it is read on its
-// native tree when it has one (readsNative), whether its parse came with a
-// native-tree handle, and whether its declarations are collected on the
-// native tree, which they are exactly when readsNative and hasHandle hold and
-// the tree converts.
+// whether the undefined-symbol check runs on it, whether its parse came with
+// a native-tree handle, and whether its declarations are collected on the
+// native tree, which, outside the LSP (see readsNative in analyze), they are
+// exactly when it has a handle and the tree converts.
 type collectTrace struct {
 	filePath        string
 	checksUndefined bool
-	readsNative     bool
 	hasHandle       bool
 	native          bool
 }
@@ -123,8 +121,13 @@ func (f nativeFile) ok() bool { return f.root.Ok() }
 
 // nativePos is transpiler.PosFromToken of n's first token.
 func nativePos(n native.GalaNodeRef) transpiler.SourcePos {
-	start := n.Start()
-	return transpiler.SourcePos{Line: int(start.Line), Column: int(start.Column)}
+	return nativeTokenPos(n.Start())
+}
+
+// nativeTokenPos is where tok starts: its line and its column in code points,
+// as ANTLR counts them.
+func nativeTokenPos(tok native.GalaToken) transpiler.SourcePos {
+	return transpiler.SourcePos{Line: int(tok.Line), Column: int(tok.Column)}
 }
 
 // nativeDocAt is docAt of n's first token: the doc comment of the

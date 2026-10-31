@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	galaparser "martianoff/gala/internal/parser"
+	"martianoff/gala/internal/parser/grammar"
 	"martianoff/gala/internal/parser/native"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/transformer"
@@ -59,6 +60,13 @@ func newOwnNames() ownNames {
 	return ownNames{types: make(map[string]bool), methods: make(map[string]map[string]bool)}
 }
 
+// ownNamesOf is the names sf's top-level declarations introduce.
+func ownNamesOf(sf *grammar.SourceFileContext) ownNames {
+	o := newOwnNames()
+	collectTopLevelDeclaredNames(sf, o.types, o.methods)
+	return o
+}
+
 // packageClause is what a file's package clause says: the package's name, and
 // the doc comment on the clause in docs, the file's doc comments.
 type packageClause struct {
@@ -97,15 +105,11 @@ func scanFileImportsNative(root native.GalaNodeRef) []fileImport {
 	return out
 }
 
-// nativeTokenPos is where tok starts: its line and its column in code points, as
-// ANTLR counts them.
-func nativeTokenPos(tok native.GalaToken) transpiler.SourcePos {
-	return transpiler.SourcePos{Line: int(tok.Line), Column: int(tok.Column)}
-}
-
-// collectTopLevelDeclaredNamesNative is collectTopLevelDeclaredNames of root.
-func collectTopLevelDeclaredNamesNative(root native.GalaNodeRef, out map[string]bool, methods map[string]map[string]bool) {
-	forEachTopLevelNameNative(root, topLevelNameRecorder(out, methods))
+// ownNamesNative is ownNamesOf root.
+func ownNamesNative(root native.GalaNodeRef) ownNames {
+	o := newOwnNames()
+	forEachTopLevelNameNative(root, topLevelNameRecorder(o.types, o.methods))
+	return o
 }
 
 // checkDotImportCollisionsNative is checkDotImportCollisions of root.
@@ -170,10 +174,12 @@ func checkGoKeywordNamesNative(root native.GalaNodeRef) error {
 		if n.Kind() != native.GalaKIND_identifier {
 			return true
 		}
-		k.see(galaparser.NativeText(n), nativePos(n),
-			func() bool { return isBareStatementNative(n) },
-			func() bool { return declaresNameNative(n) },
-			func() bool { return inPatternNative(n) })
+		if name := galaparser.NativeText(n); keywordNamed(name) {
+			k.see(name, nativePos(n),
+				func() bool { return isBareStatementNative(n) },
+				func() bool { return declaresNameNative(n) },
+				func() bool { return inPatternNative(n) })
+		}
 		return false
 	})
 	return k.err()

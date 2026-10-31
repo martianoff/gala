@@ -251,7 +251,7 @@ func TestFileChecksAgree(t *testing.T) {
 		inputs = append(inputs, input{in.name, in.files, true, in.code})
 	}
 
-	files, nativeFiles, reads, errs := 0, 0, 0, 0
+	files, reads, errs := 0, 0, 0
 	for _, in := range inputs {
 		paths := []string{in.files[0][0]}
 		if !filepath.IsAbs(paths[0]) {
@@ -277,13 +277,11 @@ func TestFileChecksAgree(t *testing.T) {
 		// Each read is compared as it is made: what a read gives may change
 		// later (the top-level names take the siblings' in).
 		var made []string
-		native := true
 		nativeA.onTreeRead = func(r treeRead) {
 			if r.filePath != paths[0] {
 				return
 			}
 			made = append(made, r.what)
-			native = native && r.native
 			assert.True(t, r.native, "%s: the read of the %s took ANTLR's tree", name, r.what)
 			assert.Equal(t, r.antlr(), r.got, "%s: the read of the %s differs between the trees", name, r.what)
 			if err, ok := r.got.(error); ok && err != nil {
@@ -298,9 +296,7 @@ func TestFileChecksAgree(t *testing.T) {
 		// The reads come in order, and an analysis that succeeds makes them
 		// all; one that fails stops after some.
 		_, failed := an.result.(error)
-		if assert.NotEmpty(t, made, "%s: analyze made no read", name) && native {
-			nativeFiles++
-		}
+		assert.NotEmpty(t, made, "%s: analyze made no read", name)
 		if assert.LessOrEqual(t, len(made), len(fileReads), "%s: reads %v", name, made) {
 			assert.Equal(t, fileReads[:len(made)], made, "%s: the reads", name)
 		}
@@ -329,7 +325,6 @@ func TestFileChecksAgree(t *testing.T) {
 	// Every staged source parses with a native tree; floors catch the sources
 	// not being staged or the native path going unused.
 	require.GreaterOrEqual(t, files, 600, "files read")
-	require.GreaterOrEqual(t, nativeFiles, files, "files read on the native tree, of %d", files)
 	require.GreaterOrEqual(t, errs, 20, "errors found")
 	t.Logf("%d files, all read on the native tree: %d reads, %d errors", files, reads, errs)
 }
