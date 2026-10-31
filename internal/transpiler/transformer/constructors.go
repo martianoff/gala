@@ -47,15 +47,18 @@ func (t *galaASTTransformer) transformPrimary(ctx *grammar.PrimaryContext) (ast.
 			return ident, nil
 		}
 
-		// A type the package declares shadows a std type or companion of the
-		// same name (`Seq`, `Left`).
-		if t.packageDeclaresType(name) {
+		// A type or function the package declares shadows a std type or
+		// companion of the same name (`Seq`, `Left`, `func Void()`). A
+		// default lowered from another package names that package's
+		// function, which is qualified below.
+		ownFunc := t.packageDeclaresFunction(name)
+		if t.packageDeclaresType(name) || ownFunc && !t.loweringForeignDefault() {
 			return ident, nil
 		}
 		// Check if this identifier is a std package type (not a variable with std type)
 		// Only check typeMetas directly to see if std.name exists as a type definition
 		// NOTE: Direct access is intentional here - we need exact match, not resolution
-		if _, isStdType := t.typeMetas[withStdPrefix(name)]; isStdType {
+		if _, isStdType := t.typeMetas[withStdPrefix(name)]; isStdType && !ownFunc {
 			return t.stdIdent(name), nil
 		}
 		// Check if it's a std function (from metadata)

@@ -1,0 +1,33 @@
+package main
+
+import "errors"
+
+// A function the package declares shadows a std type of the same name where
+// the name is written as a value: a bare `Void()` calls the package's
+// function, never constructs std's Void. A type position (`Try[Void]`) still
+// names std's type, and std's own functions keep using it.
+
+func Void() = Println("Void called as a statement")
+
+func NoSuchElementError(msg string) string = s"no element: $msg"
+
+func Ordered(n int) int = n * 10
+
+func Hashable(n int) = Println(s"hash $n")
+
+func apply(f func(int) int, n int) int = f(n)
+
+func check(fail bool) error = if (fail) errors.New("boom") else nil
+
+func closeAll(fail bool) Try[Void] = FromError(check(fail))
+
+func main() {
+    Void()
+    Println(NoSuchElementError("x"))
+    Println(Ordered(4))
+    Println(apply(Ordered, 2))
+    Hashable(5)
+    val h = Hashable
+    h(6)
+    Println(closeAll(false).IsSuccess(), closeAll(true).IsFailure())
+}

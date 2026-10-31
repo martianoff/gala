@@ -1106,6 +1106,36 @@ func (t *galaASTTransformer) packageDeclaresType(name string) bool {
 	return ok && meta != nil && meta.Package == t.packageName
 }
 
+// packageDeclaresFunction reports whether the package bare names resolve in
+// first (see resolutionPackage) declares a function named by the bare name, in
+// a .gala file or a hand-written .go one. Written as a value (`Void()`,
+// `apply(Void)`), such a name is that function, whatever type an import
+// exports under it: a package-level declaration outranks every import, the
+// implicit std import included. A type position still names the type, as the
+// function is no type. A type parameter of the enclosing declaration hides
+// the function, as it does in getFunction.
+func (t *galaASTTransformer) packageDeclaresFunction(name string) bool {
+	if name == "" || strings.Contains(name, ".") || t.activeTypeParams[name] {
+		return false
+	}
+	pkg := t.resolutionPackage()
+	if fm := t.functions[ownFunctionKey(pkg, name)]; fm != nil && fm.Package == pkg {
+		return true
+	}
+	return t.ownGoFuncSignature(name) != nil
+}
+
+// namesOwnFunction reports whether a call target, with any type arguments
+// (`Void[int]`), is a bare name the package declares a function under (see
+// packageDeclaresFunction) and no local binding shadows (see
+// shadowingScope), so the call is to that function rather than a
+// construction of a same-named type an import exports.
+func (t *galaASTTransformer) namesOwnFunction(fun ast.Expr) bool {
+	base, _ := splitCallFunTypeArgs(fun)
+	id, ok := base.(*ast.Ident)
+	return ok && t.shadowingScope(id.Name) == nil && t.packageDeclaresFunction(id.Name)
+}
+
 // resolveTypeMetaName resolves a type name to the key used in typeMetas map.
 // Returns empty string if not found. A bare name the package's own .go files
 // declare resolves to its `pkg.Name` key though typeMetas has no entry for it:
