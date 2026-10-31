@@ -15,14 +15,9 @@ import (
 	"martianoff/gala/internal/parser/native"
 )
 
-// TestCapturesAgree runs the capture analysis on both trees of every clean
-// file of the corpus: FreeVariablesInLambda against FreeVariablesInLambdaNative
-// for every lambda, and FreeVariablesInExpression against
-// FreeVariablesInExpressionNative for the expression of every argument, the shape
-// of a thunk argument, with no parameters and with one. Each case calls the
-// native twin on a node of the file's native tree, whose bridge gives the
-// ANTLR context the other reads.
-func TestCapturesAgree(t *testing.T) {
+// stagedSources is the .gala files staged as the test's data, sorted.
+func stagedSources(t *testing.T) []string {
+	t.Helper()
 	files, err := bazel.ListRunfiles()
 	require.NoError(t, err)
 	var paths []string
@@ -33,6 +28,18 @@ func TestCapturesAgree(t *testing.T) {
 	}
 	sort.Strings(paths)
 	require.Greater(t, len(paths), 300, "the corpus is not staged")
+	return paths
+}
+
+// TestCapturesAgree runs the capture analysis on both trees of every clean
+// file of the corpus: FreeVariablesInLambda against FreeVariablesInLambdaNative
+// for every lambda, and FreeVariablesInExpression against
+// FreeVariablesInExpressionNative for the expression of every argument, the shape
+// of a thunk argument, with no parameters and with one. Each case calls the
+// native twin on a node of the file's native tree, whose bridge gives the
+// ANTLR context the other reads.
+func TestCapturesAgree(t *testing.T) {
+	paths := stagedSources(t)
 
 	p := parser.NewAntlrGalaParser()
 	clean, lambdas, exprs, captured := 0, 0, 0, 0
