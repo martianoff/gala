@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"martianoff/gala/internal/transpiler"
 	"martianoff/gala/internal/transpiler/transformer"
 )
@@ -396,13 +397,15 @@ func TestImportManager_UnaliasedGoImportNames(t *testing.T) {
 	assert.Equal(t, "r2", aliased.QualifierFor("rand"), "a written alias wins")
 }
 
-// TestImportManager_ForeignDotImportsComeFirst: while a default written in
-// another file is lowered, that file's dot imports are tried before this
-// file's, so a name both declare means what it means where the default was
-// written. A path both files dot-import moves to the front rather than being
-// listed twice, the other imports keep their places, and restoring puts the
-// order back, keeping an import added in between.
-func TestImportManager_ForeignDotImportsComeFirst(t *testing.T) {
+// TestImportManager_ForeignDotImportsReplaceOwn: while a default written in
+// another file is lowered, the dot imports are that file's alone, so a bare
+// name means what it means where the default was written and never resolves
+// through a dot import of the file lowering it. A path both files dot-import
+// keeps this file's entry, the named imports keep their places (and stay
+// reachable, behind the foreign qualifiers, for generated code), and
+// restoring puts this file's dot imports back, keeping an import added in
+// between.
+func TestImportManager_ForeignDotImportsReplaceOwn(t *testing.T) {
 	m := transformer.NewImportManager()
 	m.Add("fmt", "", false, "fmt")
 	m.Add("example.com/pb", "", true, "pb")
@@ -415,26 +418,44 @@ func TestImportManager_ForeignDotImportsComeFirst(t *testing.T) {
 		return out
 	}
 
-	restore := m.WithForeignQualifiers(nil, map[string]string{"example.com/pa": "pa", "example.com/pc": "pc"})
-	assert.Equal(t, []string{"pa", "pc", "pb"}, m.GetDotImports())
-	assert.Equal(t, []string{"example.com/pc", "fmt", "example.com/pa", "example.com/pb"}, paths())
+	pa, _ := m.GetByPath("example.com/pa")
+	restore := m.WithForeignQualifiers(map[string]string{"strs": "strings"}, map[string]string{"example.com/pa": "pa", "example.com/pc": "pc"})
+	assert.Equal(t, []string{"pa", "pc"}, m.GetDotImports())
+	assert.Equal(t, []string{"example.com/pc", "fmt", "example.com/pa"}, paths())
+	assert.True(t, m.IsDotImportedPath("example.com/pb"), "generated code is still spelled with this file's dot imports")
+	assert.True(t, m.IsDotImported("pb"))
+	assert.Same(t, pa, m.All()[2], "a path both files dot-import keeps this file's entry")
+	foreign, ok := m.GetByAlias("strs")
+	require.True(t, ok)
+	assert.Equal(t, "strings", foreign.Path)
+	own, ok := m.GetByAlias("fmt")
+	require.True(t, ok, "this file's named imports stay reachable")
+	assert.Equal(t, "fmt", own.Path)
 	m.Add("strings", "", false, "strings")
 	restore()
 
 	assert.Equal(t, []string{"pb", "pa"}, m.GetDotImports())
 	assert.Equal(t, []string{"fmt", "example.com/pb", "example.com/pa", "strings"}, paths())
+	_, ok = m.GetByAlias("strs")
+	assert.False(t, ok, "the foreign qualifiers go out of scope")
 
-	// Reordered and restored with nothing added in between.
-	restore = m.WithForeignQualifiers(nil, map[string]string{"example.com/pa": "pa"})
-	assert.Equal(t, []string{"pa", "pb"}, m.GetDotImports())
+	// A default whose file dot-imports nothing sees none of this file's
+	// dot imports; restored with nothing added in between.
+	restore = m.WithForeignQualifiers(nil, nil)
+	assert.Empty(t, m.GetDotImports())
+	assert.Equal(t, []string{"fmt", "strings"}, paths())
 	restore()
 	assert.Equal(t, []string{"pb", "pa"}, m.GetDotImports())
+	assert.Equal(t, []string{"fmt", "example.com/pb", "example.com/pa", "strings"}, paths())
 
-	// Already first: the imports, and the revision they are cached by, stay.
-	rev := m.Revision()
-	restore = m.WithForeignQualifiers(nil, map[string]string{"example.com/pb": "pb"})
-	assert.Equal(t, []string{"pb", "pa"}, m.GetDotImports())
-	assert.Equal(t, rev, m.Revision())
+	// The same dot imports in the same order: the imports, and the revision
+	// they are cached by, stay.
+	one := transformer.NewImportManager()
+	one.Add("example.com/pb", "", true, "pb")
+	rev := one.Revision()
+	restore = one.WithForeignQualifiers(nil, map[string]string{"example.com/pb": "pb"})
+	assert.Equal(t, []string{"pb"}, one.GetDotImports())
+	assert.Equal(t, rev, one.Revision())
 	restore()
-	assert.Equal(t, rev, m.Revision())
+	assert.Equal(t, rev, one.Revision())
 }

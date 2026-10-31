@@ -58,6 +58,7 @@ filegroup(
         "field_named_like_type/main.gala",
         "foldleft_method/main.gala",
         "foldleft_spread_type.gala",
+        "foreign_default_dot_scope/lib/inside.gala",
         "foreign_default_dot_scope/lib/lib.gala",
         "foreign_default_dot_scope/pa/pa.gala",
         "foreign_default_dot_scope/pb/pb.gala",
@@ -2906,7 +2907,8 @@ gala_exec_test(
 
 # Defaults declared in a file that dot-imports pa, lowered in one that
 # dot-imports pb, which declares the same names: they resolve those names as
-# pa's, the way the file that wrote them does.
+# pa's, the way the file that wrote them does — in another package, and in
+# lib's other file.
 gala_library(
     name = "foreign_default_dot_scope_pa",
     srcs = ["foreign_default_dot_scope/pa/pa.gala"],
@@ -2923,8 +2925,14 @@ gala_library(
 
 gala_library(
     name = "foreign_default_dot_scope_lib",
-    srcs = ["foreign_default_dot_scope/lib/lib.gala"],
-    gala_deps = [":foreign_default_dot_scope_pa"],
+    srcs = [
+        "foreign_default_dot_scope/lib/inside.gala",
+        "foreign_default_dot_scope/lib/lib.gala",
+    ],
+    gala_deps = [
+        ":foreign_default_dot_scope_pa",
+        ":foreign_default_dot_scope_pb",
+    ],
     importpath = "martianoff/gala/examples/foreign_default_dot_scope/lib",
     visibility = ["//visibility:public"],
 )

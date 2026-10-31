@@ -158,6 +158,7 @@ go_test(
         "crosspkg_package_val_test.go",
         "default_case_test.go",
         "default_immutability_test.go",
+        "default_lexical_scope_test.go",
         "default_type_param_binding_test.go",
         "default_values_test.go",
         "doc_comments_test.go",

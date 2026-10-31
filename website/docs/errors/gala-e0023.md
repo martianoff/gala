@@ -11,11 +11,14 @@ last_modified_at: 2026-10-01
 
 # GALA-E0023 — Undefined variable
 
-**What it means.** A name has no binding in the current environment. Three usual causes:
+**What it means.** A name has no binding in the current environment. Four usual causes:
 
 - the name is misspelled;
 - it lives in another package that this file does not import;
-- it is bound by a pattern that did not actually fire, or referenced outside its arm.
+- it is bound by a pattern that did not actually fire, or referenced outside its arm;
+- a parameter default names something only the *calling* file imports. A default
+  resolves its names where it is written, so the error points at the default, and
+  the import belongs in the default's own file.
 
 ---
 

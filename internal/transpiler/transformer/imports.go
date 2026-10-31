@@ -42,6 +42,11 @@ type ImportManager struct {
 	// foreign holds the qualifiers of the file a default being lowered was
 	// declared in (see WithForeignQualifiers); nil otherwise.
 	foreign map[string]*ImportEntry
+	// hiddenDots holds this file's dot imports that the default being
+	// lowered has out of scope (see WithForeignQualifiers). Source names do
+	// not resolve through them, but generated code is still spelled with
+	// them (see IsDotImported).
+	hiddenDots []*ImportEntry
 
 	// revision changes whenever the entry set, or a field of an existing
 	// entry, changes. It is what lets a consumer that copies entries out of
@@ -215,7 +220,8 @@ func (m *ImportManager) removeEntry(entry *ImportEntry) {
 		delete(m.byPkgName, entry.PkgName)
 	}
 
-	// Remove from dotImports
+	// Remove from dotImports, and from the ones a default has out of scope
+	m.hiddenDots = slices.DeleteFunc(m.hiddenDots, func(e *ImportEntry) bool { return e == entry })
 	if entry.IsDot {
 		for i, e := range m.dotImports {
 			if e == entry {
@@ -371,7 +377,7 @@ func (m *ImportManager) IsPackage(name string) bool {
 
 // GetByAlias returns the import entry for a given alias. While a default
 // declared in another file is lowered, the qualifiers that file binds come
-// first (see WithForeignQualifiers).
+// first, ahead of this file's (see WithForeignQualifiers).
 func (m *ImportManager) GetByAlias(alias string) (*ImportEntry, bool) {
 	if entry, ok := m.foreign[alias]; ok {
 		return entry, true
@@ -382,15 +388,21 @@ func (m *ImportManager) GetByAlias(alias string) (*ImportEntry, bool) {
 
 // WithForeignQualifiers puts the imports of the file a default was written in
 // in scope until the returned function is called: each qualifier of imports
-// (qualifier → import path) names its path, and each package of dots (import
-// path → package name) is dot-imported ahead of this file's own dot imports.
-// A default lowered here was written against its own file's imports, which
-// this file may lack or bind otherwise; a bare name means there what that
-// file's dot imports make it mean, so they are tried first even where this
-// file dot-imports another package declaring the name too. Only how source
-// names resolve is affected; the generated code refers to packages through
-// this file's own names (see PathForQualifier), which the caller spells once
-// the default is lowered.
+// (qualifier → import path) names its path, and the packages of dots (import
+// path → package name) are the only dot imports. A default is lexically
+// scoped: a bare name in it means what that file's dot imports make it mean,
+// and this file's own dot imports are out of scope while it is lowered,
+// whether or not they declare the name too (transformDefaultExpr reports a
+// name that only they would resolve). Only how source names resolve is
+// affected; the generated code refers to packages through this file's own
+// names (see PathForQualifier), which the caller spells once the default is
+// lowered.
+//
+// This file's named imports stay reachable behind imports through
+// GetByAlias: generated code, among it a declared type spelled for this
+// file, is read back through them while the default is lowered. For the same
+// reason IsDotImported still counts this file's dot imports: code is spelled
+// for this file.
 func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (restore func()) {
 	prev := m.foreign
 	m.foreign = make(map[string]*ImportEntry, len(prev)+len(imports))
@@ -400,65 +412,75 @@ func (m *ImportManager) WithForeignQualifiers(imports, dots map[string]string) (
 	for q, path := range imports {
 		m.foreign[q] = &ImportEntry{Path: path, PkgName: q, Alias: q, named: true}
 	}
-	// front is the foreign file's dot imports, in a stable resolution order:
-	// the entry this file already has for a path (which may sit behind
-	// another of its dot imports), else a new one, added for the duration.
-	var front, added []*ImportEntry
+	// scoped is the foreign file's dot imports, in a stable resolution
+	// order: the entry this file already has for a path, else a new one,
+	// added for the duration.
+	var scoped, added []*ImportEntry
 	for _, path := range slices.Sorted(maps.Keys(dots)) {
 		if entry := m.dotImportByPath(path); entry != nil {
-			front = append(front, entry)
+			scoped = append(scoped, entry)
 			continue
 		}
 		pkgName := dots[path]
 		entry := &ImportEntry{Path: path, PkgName: pkgName, Alias: pkgName, IsDot: true, implicit: true}
-		front = append(front, entry)
+		scoped = append(scoped, entry)
 		added = append(added, entry)
 	}
 	prevEntries, prevDots := m.entries, m.dotImports
-	dotImports := slices.Concat(front, slices.DeleteFunc(slices.Clone(prevDots), func(e *ImportEntry) bool { return slices.Contains(front, e) }))
-	if len(added) == 0 && slices.Equal(dotImports, prevDots) {
-		// Already in that order: nothing to change, nor to rebuild from.
+	if len(added) == 0 && slices.Equal(scoped, prevDots) {
+		// The same dot imports in the same order: nothing to change, nor to
+		// rebuild from.
 		return func() { m.foreign = prev }
 	}
+	hidden := slices.DeleteFunc(slices.Clone(prevDots), func(e *ImportEntry) bool { return slices.Contains(scoped, e) })
+	prevHidden := m.hiddenDots
+	m.hiddenDots = slices.Concat(prevHidden, hidden)
 	// Only the entry set is revision-tracked; the named qualifiers live in
 	// foreign, outside it.
-	m.entries, m.dotImports = reorderDotEntries(prevEntries, prevDots, dotImports, added), dotImports
+	m.entries, m.dotImports = scopeDotEntries(prevEntries, prevDots, scoped, added), scoped
 	m.revision++
-	reordered := m.revision
+	scopedRev := m.revision
 	return func() {
-		m.foreign = prev
-		if m.revision == reordered {
+		stillHidden := m.hiddenDots
+		m.foreign, m.hiddenDots = prev, prevHidden
+		if m.revision == scopedRev {
 			// No import was added or dropped meanwhile: the old slices,
-			// which the reordering copied rather than changed, still hold.
+			// which scoping copied rather than changed, still hold.
 			m.entries, m.dotImports = prevEntries, prevDots
 		} else {
-			m.entries = restoreImportOrder(m.entries, prevEntries, added)
-			m.dotImports = restoreImportOrder(m.dotImports, prevDots, added)
+			// The dot imports scoping took out count as still there,
+			// unless one was dropped meanwhile (see removeEntry).
+			live := slices.DeleteFunc(slices.Clone(hidden), func(e *ImportEntry) bool { return !slices.Contains(stillHidden, e) })
+			m.entries = restoreImportOrder(slices.Concat(m.entries, live), prevEntries, added)
+			m.dotImports = restoreImportOrder(slices.Concat(m.dotImports, live), prevDots, added)
 		}
 		m.revision++
 	}
 }
 
-// reorderDotEntries returns a copy of entries, whose dot imports are dots,
-// with them in the order of reordered instead: the entries of added (in
-// reordered, not in dots) first, then entries with each slot a dot import
-// held taken by the next of reordered's others. Every other entry keeps its
-// place.
-func reorderDotEntries(entries, dots, reordered, added []*ImportEntry) []*ImportEntry {
-	next := slices.DeleteFunc(slices.Clone(reordered), func(e *ImportEntry) bool { return slices.Contains(added, e) })
-	out := slices.Concat(added, entries)
-	for i := len(added); i < len(out); i++ {
-		if len(next) > 0 && slices.Contains(dots, out[i]) {
-			out[i], next = next[0], next[1:]
+// scopeDotEntries returns a copy of entries, whose dot imports are dots, with
+// scoped as its dot imports instead: the entries of added (in scoped, not in
+// dots) first, then entries with each slot a dot import held taken by the
+// next of scoped's others, and dropped once those run out. Every other entry
+// keeps its place.
+func scopeDotEntries(entries, dots, scoped, added []*ImportEntry) []*ImportEntry {
+	next := slices.DeleteFunc(slices.Clone(scoped), func(e *ImportEntry) bool { return slices.Contains(added, e) })
+	out := slices.Clone(added)
+	for _, e := range entries {
+		switch {
+		case !slices.Contains(dots, e):
+			out = append(out, e)
+		case len(next) > 0:
+			out, next = append(out, next[0]), next[1:]
 		}
 	}
 	return out
 }
 
-// restoreImportOrder undoes a reordering of prev into cur, which an import
-// may have been added to or dropped from since: the result holds
-// the entries of cur not in drop, those that prev holds in prev's order, then
-// those added since in cur's order.
+// restoreImportOrder undoes a scoping of prev into cur, which an import may
+// have been added to or dropped from since: the result holds the entries of
+// cur not in drop, those that prev holds in prev's order, then those added
+// since in cur's order.
 func restoreImportOrder(cur, prev, drop []*ImportEntry) []*ImportEntry {
 	kept := func(e *ImportEntry) bool { return slices.Contains(cur, e) && !slices.Contains(drop, e) }
 	out := slices.DeleteFunc(slices.Clone(prev), func(e *ImportEntry) bool { return !kept(e) })
@@ -493,19 +515,18 @@ func (m *ImportManager) ResolveAlias(alias string) (string, bool) {
 	return entry.PkgName, true
 }
 
-// IsDotImported checks if a package is dot-imported.
+// IsDotImported reports whether generated code may name a package's members
+// unqualified: whether it is dot-imported, or is a dot import of this file
+// that a default being lowered has out of scope (see WithForeignQualifiers).
+// It answers how code is spelled, not how a source name resolves.
 func (m *ImportManager) IsDotImported(pkgName string) bool {
-	for _, entry := range m.dotImports {
-		if entry.PkgName == pkgName {
-			return true
-		}
-	}
-	return false
+	has := func(e *ImportEntry) bool { return e.PkgName == pkgName }
+	return slices.ContainsFunc(m.dotImports, has) || slices.ContainsFunc(m.hiddenDots, has)
 }
 
-// IsDotImportedPath reports whether the package at path is dot-imported.
+// IsDotImportedPath is IsDotImported for the package at path.
 func (m *ImportManager) IsDotImportedPath(path string) bool {
-	return m.dotImportByPath(path) != nil
+	return m.dotImportByPath(path) != nil || slices.ContainsFunc(m.hiddenDots, func(e *ImportEntry) bool { return e.Path == path })
 }
 
 // dotImportByPath returns the dot import of the package at path, nil when
@@ -544,8 +565,8 @@ func (m *ImportManager) PathForQualifier(qualifier string) (string, bool) {
 }
 
 // All returns all import entries in declaration order, except that while a
-// default written in another file is lowered, the dot imports are in the
-// order they resolve in: that file's first (see WithForeignQualifiers).
+// default written in another file is lowered, the dot imports are that
+// file's, first, in place of this file's (see WithForeignQualifiers).
 func (m *ImportManager) All() []*ImportEntry {
 	return m.entries
 }
