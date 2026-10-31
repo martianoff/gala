@@ -107,7 +107,8 @@ type callContext struct {
 //
 // The tree parsed for the document's latest analysis is reused when it was
 // parsed from exactly that text; any other tree — another caret's patch, an
-// older edit — would put the call at the wrong offsets.
+// older edit — would put the call at the wrong offsets. Without such a tree it
+// parses src afresh and walks ANTLR's tree of it.
 func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callContext {
 	src, offset := patchTextForSignature(text, line, char)
 	if offset < 0 {
@@ -120,8 +121,9 @@ func (h *GalaHandler) findCallAtCaret(uri, text string, line, char int) *callCon
 	}
 	h.mu.Unlock()
 	if tree == nil {
-		parsed := h.parser.ParseFile(src)
-		if tree, handle = parsed.Tree, h.nativeOf(parsed); tree == nil {
+		// A throwaway parse, read once: converting the whole file to the
+		// native tree for one lookup would cost more than ANTLR's walk.
+		if tree = h.parser.ParseFile(src).Tree; tree == nil {
 			return nil
 		}
 	}

@@ -47,6 +47,7 @@ go_test(
     srcs = [
         "bom_test.go",
         "call_argument_completion_test.go",
+        "close_during_analysis_internal_test.go",
         "completion_docs_test.go",
         "concurrent_analysis_test.go",
         "declarations_internal_test.go",

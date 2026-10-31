@@ -170,7 +170,7 @@ func callShapeNative(callSuffix, parent native.GalaNodeRef) (callShape, bool) {
 		}
 	}
 	for arg := range parser.NativeKids(argList.GalaNodeRef, native.GalaKIND_argument) {
-		if arg.StopIndex() < 0 {
+		if arg.StopIndex() < arg.StartIndex() { // no tokens, as walk tests it
 			continue
 		}
 		ca := callArg{start: int(arg.Start().Start), end: int(arg.Stop().End)}

@@ -381,9 +381,11 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		// work while mid-edit.
 		if tree != nil {
 			h.mu.Lock()
-			h.parseTrees[uri] = tree
-			h.parseNatives[uri] = nil // an error-recovered tree is ANTLR's alone
-			h.parseTexts[uri] = text
+			if h.isOpenLocked(uri) {
+				h.parseTrees[uri] = tree
+				h.parseNatives[uri] = nil // an error-recovered tree is ANTLR's alone
+				h.parseTexts[uri] = text
+			}
 			h.mu.Unlock()
 		}
 		h.tryAnalyzePartial(uri, filePath, text, tree, docs)
@@ -408,8 +410,10 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 			typeMap[name] = cleanGoTypeForDisplay(typ.String())
 		}
 		h.mu.Lock()
-		h.varTypes[uri] = typeMap
-		h.lambdaHints[uri] = result.LambdaParamHints
+		if h.isOpenLocked(uri) {
+			h.varTypes[uri] = typeMap
+			h.lambdaHints[uri] = result.LambdaParamHints
+		}
 		h.mu.Unlock()
 	}
 
@@ -532,7 +536,9 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.T
 	// transform means no in-place mutation, so publishing directly is safe here
 	// — if a transform is ever added, it has to go through transformAndPublish.
 	h.mu.Lock()
-	h.richASTs[uri] = richAST
+	if h.isOpenLocked(uri) {
+		h.richASTs[uri] = richAST
+	}
 	h.mu.Unlock()
 }
 
@@ -650,8 +656,10 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 			typeMap[name] = cleanGoTypeForDisplay(typ.String())
 		}
 		h.mu.Lock()
-		h.varTypes[uri] = typeMap
-		h.lambdaHints[uri] = result.LambdaParamHints
+		if h.isOpenLocked(uri) {
+			h.varTypes[uri] = typeMap
+			h.lambdaHints[uri] = result.LambdaParamHints
+		}
 		h.mu.Unlock()
 	}
 }
@@ -667,8 +675,10 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 // `concurrent map read and map write` fatal. Routing both analysis paths through
 // here means a third cannot reintroduce the order that caused it.
 //
-// Publication is unconditional: a failed transform still leaves the analyzer's
-// metadata available, which is what publishing early was really buying.
+// Publication does not depend on the transform succeeding: a failed transform
+// still leaves the analyzer's metadata available, which is what publishing early
+// was really buying. It does depend on the document still being open (see
+// isOpenLocked).
 //
 // It also cost something, worth naming: for the duration of the transform,
 // hover, completion and signature help keep answering from the PREVIOUS
@@ -681,13 +691,27 @@ func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAS
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
 
 	h.mu.Lock()
-	h.richASTs[uri] = richAST
-	h.parseTrees[uri] = parsed.Tree
-	h.parseNatives[uri] = h.nativeOf(parsed)
-	h.parseTexts[uri] = text
+	if h.isOpenLocked(uri) {
+		h.richASTs[uri] = richAST
+		h.parseTrees[uri] = parsed.Tree
+		h.parseNatives[uri] = h.nativeOf(parsed)
+		h.parseTexts[uri] = text
+	}
 	h.mu.Unlock()
 
 	return result, err
+}
+
+// isOpenLocked reports whether uri is an open document; h.mu must be held.
+//
+// Every store of an analysis's results checks it under the same lock as the
+// store. An analysis runs unlocked and can outlive its document: DidClose
+// cancels it and drops the URI's entries, but the analysis looks at its
+// context only after storing, so without the check it would put a closed
+// document's tree, text and AST back, and nothing would remove them again.
+func (h *GalaHandler) isOpenLocked(uri string) bool {
+	_, open := h.documents[uri]
+	return open
 }
 
 // --- Helpers ---
