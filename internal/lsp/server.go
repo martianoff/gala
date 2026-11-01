@@ -89,6 +89,11 @@ type GalaHandler struct {
 	// handler on ANTLR's tree alone, they give it a parser whose parses have
 	// no native-tree handle.
 	onTreeRead  func(what string, onNative bool)
+	// parsedFiles is the parsed-file cache every document's analysis shares:
+	// the parses and native trees of the files on disk that the analyses
+	// read (a package's other files, the files of imported packages), kept
+	// across keystrokes until a file changes (see analyzer.ParsedFiles).
+	parsedFiles *analyzer.ParsedFiles
 	varTypes    map[string]map[string]string            // URI -> (varName -> type) from transpiler
 	lambdaHints map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
 }
@@ -164,6 +169,7 @@ func NewGalaHandler() *GalaHandler {
 		analysisCancels: make(map[string]context.CancelFunc),
 		parser:          transpiler.NewAntlrGalaParser(),
 		generator:       generator.NewGoCodeGenerator(),
+		parsedFiles:     analyzer.NewParsedFiles(),
 	}
 }
 
@@ -445,6 +451,9 @@ func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string)
 // analyzer does not discover on its own (see packageFiles).
 func (h *GalaHandler) newAnalyzer(filePath, text string) transpiler.Analyzer {
 	a := analyzer.NewGalaAnalyzerForLSP(h.parser, h.getSearchPaths(filePath))
+	if s, ok := a.(interface{ SetParsedFiles(*analyzer.ParsedFiles) }); ok {
+		s.SetParsedFiles(h.parsedFiles)
+	}
 	if len(h.goSrcDirs) > 0 {
 		if s, ok := a.(interface{ SetGoSrcDirs(map[string]string) }); ok {
 			s.SetGoSrcDirs(h.goSrcDirs)

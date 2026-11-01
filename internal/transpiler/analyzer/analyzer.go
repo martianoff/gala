@@ -490,6 +490,33 @@ func (a *galaAnalyzer) SetPackageFiles(files []string) {
 	a.packageFiles = files
 }
 
+// ParsedFiles is a parsed-file cache that analyzers built one after another
+// share: each file's parse and its converted native tree, keyed by path and
+// dropped when the file's mtime or size changes, as an analyzer's own cache
+// is (see parseFileCached). The language server builds an analyzer per
+// keystroke; sharing one ParsedFiles keeps it from parsing and converting
+// every sibling and imported file again each time. The entries are read, not
+// written, after they are cached, so analyses running at once share them.
+type ParsedFiles struct {
+	mu    sync.Mutex
+	files map[string]*parsedFileEntry
+}
+
+// NewParsedFiles returns an empty ParsedFiles.
+func NewParsedFiles() *ParsedFiles {
+	return &ParsedFiles{files: make(map[string]*parsedFileEntry)}
+}
+
+// SetParsedFiles makes the analyzer cache its parsed files in files, shared
+// with the other analyzers given it, instead of a cache of its own. A nil
+// files leaves the analyzer's own cache.
+func (a *galaAnalyzer) SetParsedFiles(files *ParsedFiles) {
+	if files == nil {
+		return
+	}
+	a.parsedFileCache, a.parsedFileCacheMu = files.files, &files.mu
+}
+
 // resolveGoSrcDir maps a Go import path to its on-disk .go source directory
 // using the wired goSrcDirs table. It first tries an exact match, then the
 // longest registered import-path prefix (a module path), appending the
@@ -4752,9 +4779,7 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	}
 	parsed := a.parser.ParseFile(string(content))
 	if err := parsed.Err(); err != nil {
-		entry := &parsedFileEntry{syntaxErr: galaerr.WithFilePath(err, path), mtime: info.ModTime(), size: info.Size()}
-		a.cacheParsedFile(canonPath, entry)
-		return entry
+		return a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: galaerr.WithFilePath(err, path), mtime: info.ModTime(), size: info.Size()})
 	}
 	otherSF, ok := parsed.Tree.(*grammar.SourceFileContext)
 	if !ok {
@@ -4774,15 +4799,13 @@ func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	if !nf.ok() {
 		parsed.Native = nil
 	}
-	entry := &parsedFileEntry{
+	return a.cacheParsedFile(canonPath, &parsedFileEntry{
 		parsed:  parsed,
 		nf:      nf,
 		pkgName: pkgName,
 		mtime:   info.ModTime(),
 		size:    info.Size(),
-	}
-	a.cacheParsedFile(canonPath, entry)
-	return entry
+	})
 }
 
 // tree is the entry's source-file tree, nil for a file that does not parse.
@@ -4795,14 +4818,21 @@ func (e *parsedFileEntry) tree() *grammar.SourceFileContext {
 }
 
 // cacheParsedFile records a parse result in parsedFileCache, when the analyzer
-// keeps one.
-func (a *galaAnalyzer) cacheParsedFile(canonPath string, entry *parsedFileEntry) {
+// keeps one, and returns the entry the cache holds for the file. That is an
+// entry of the same file version cached meanwhile by another analysis
+// sharing the cache (see ParsedFiles), when there is one, so that every
+// analysis pairs the file's tree with the parse that made it (cachedForTree).
+func (a *galaAnalyzer) cacheParsedFile(canonPath string, entry *parsedFileEntry) *parsedFileEntry {
 	if a.parsedFileCache == nil {
-		return
+		return entry
 	}
 	a.parsedFileCacheMu.Lock()
+	defer a.parsedFileCacheMu.Unlock()
+	if old, ok := a.parsedFileCache[canonPath]; ok && old.mtime.Equal(entry.mtime) && old.size == entry.size {
+		return old
+	}
 	a.parsedFileCache[canonPath] = entry
-	a.parsedFileCacheMu.Unlock()
+	return entry
 }
 
 // docAt returns the doc comment attached to the declaration whose first token is

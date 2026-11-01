@@ -449,6 +449,41 @@ func TestCachedForTreeRejectsForeignTree(t *testing.T) {
 	}
 }
 
+// TestSharedParsedFiles: analyzers given one ParsedFiles share each file's
+// parse until the file changes, and an entry cached while another analysis
+// parsed the same version wins over the later one.
+func TestSharedParsedFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.gala")
+	if err := os.WriteFile(path, []byte("package spkg\n\nfunc Thing() int = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := parser.NewAntlrGalaParser()
+	files := NewParsedFiles()
+	analyzerSharing := func() *galaAnalyzer {
+		a := NewGalaAnalyzerForLSP(p, nil).(*galaAnalyzer)
+		a.SetParsedFiles(files)
+		return a
+	}
+	first := analyzerSharing().parseFileEntry(path)
+	if first == nil || first.tree() == nil || !first.nf.ok() {
+		t.Fatal("the file has no cached parse with a native tree")
+	}
+	if again := analyzerSharing().parseFileEntry(path); again != first {
+		t.Error("a second analyzer parsed the unchanged file again")
+	}
+	a := analyzerSharing()
+	if got := a.cacheParsedFile(a.parsedFileCacheKey(path), &parsedFileEntry{mtime: first.mtime, size: first.size}); got != first {
+		t.Error("a second parse of the same version replaced the cached one")
+	}
+	if err := os.WriteFile(path, []byte("package spkg\n\nfunc Thing() int = 22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed := analyzerSharing().parseFileEntry(path); changed == nil || changed == first {
+		t.Error("the changed file's stale parse was kept")
+	}
+}
+
 func TestLooksLikeCacheDir(t *testing.T) {
 	// A CacheVersion bump must leave previous generations prunable, or every
 	// bump strands hundreds of megabytes per project forever.
