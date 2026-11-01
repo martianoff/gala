@@ -160,6 +160,11 @@ func (c *Checker) isShareable(t transpiler.Type, visited map[string]bool) bool {
 		// Bare Go map: mutable and not safe for concurrent access.
 		return false
 
+	case transpiler.StructType:
+		// The empty struct, a signal channel's element, holds nothing to
+		// race on. A Go struct's fields are mutable, as for a named one.
+		return len(v.Fields) == 0
+
 	case transpiler.PointerType:
 		// Bare Go pointer: shared mutable aliasing.
 		return false

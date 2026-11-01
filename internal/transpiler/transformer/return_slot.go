@@ -3,6 +3,7 @@ package transformer
 import (
 	"errors"
 	"go/ast"
+	"slices"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/transpiler"
@@ -111,6 +112,8 @@ func (t *galaASTTransformer) typeMentionsUnresolvedTypeParam(typ transpiler.Type
 		return t.typeMentionsUnresolvedTypeParam(v.Elem)
 	case transpiler.ChanType:
 		return t.typeMentionsUnresolvedTypeParam(v.Elem)
+	case transpiler.StructType:
+		return slices.ContainsFunc(v.FieldTypes(), t.typeMentionsUnresolvedTypeParam)
 	case transpiler.PointerType:
 		return t.typeMentionsUnresolvedTypeParam(v.Elem)
 	case transpiler.MapType:

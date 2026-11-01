@@ -2449,6 +2449,15 @@ gala_exec_test(
     expected = "case_guard_bool.out",
 )
 
+# Verification: an anonymous Go struct type (a signal channel's struct{}) is
+# typed concretely, so the channel and its received value fit in an Option.
+gala_exec_test(
+    name = "anonymous_struct_type",
+    src = "anonymous_struct_type.gala",
+    expected = "anonymous_struct_type.out",
+    deps = ["//go_interop"],
+)
+
 # Verification: ToBytes/ToString/ToRunes byte conversion helpers
 gala_exec_test(
     name = "byte_conversion",

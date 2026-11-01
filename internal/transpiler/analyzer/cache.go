@@ -178,7 +178,10 @@ import (
 // v36: a Go channel type is a transpiler.ChanType that keeps its element type
 // and direction. A v35 payload names it as an opaque NamedType, so receiving
 // from it inferred nothing.
-const CacheVersion = "v36"
+//
+// v37: an anonymous Go struct type, such as a signal channel's struct{}, is a
+// transpiler.StructType. A v36 payload names it as any.
+const CacheVersion = "v37"
 
 // CompilerVersion is set by the CLI to include the compiler version and git commit
 // in the cache directory path. When the transpiler binary is upgraded, the cache path

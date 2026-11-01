@@ -282,6 +282,14 @@ func (t *galaASTTransformer) typeArgKey(typ transpiler.Type) (string, bool) {
 	case transpiler.ChanType:
 		elem, ok := t.typeArgKey(ty.Elem)
 		return transpiler.ChanType{Elem: transpiler.BasicType{Name: elem}, Dir: ty.Dir}.String(), ok
+	case transpiler.StructType:
+		ok := true
+		keyed := ty.MapFields(func(f transpiler.Type) transpiler.Type {
+			key, fieldOK := t.typeArgKey(f)
+			ok = ok && fieldOK
+			return transpiler.BasicType{Name: key}
+		})
+		return keyed.String(), ok
 	case transpiler.MapType:
 		key, okK := t.typeArgKey(ty.Key)
 		elem, okE := t.typeArgKey(ty.Elem)

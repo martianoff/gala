@@ -49,6 +49,7 @@ const (
 	typeTagVoid    uint8 = 9
 	typeTagPtr     uint8 = 10 // non-null pointer Ptr[T]
 	typeTagChan    uint8 = 11
+	typeTagStruct  uint8 = 12
 )
 
 // encodeCachedRichAST serializes c using the binary codec. The returned
@@ -264,6 +265,15 @@ func (e *encoder) writeType(t transpiler.Type) {
 		e.writeByte(typeTagChan)
 		e.writeUvarint(uint64(v.Dir))
 		e.writeType(v.Elem)
+	case transpiler.StructType:
+		e.writeByte(typeTagStruct)
+		e.writeUvarint(uint64(len(v.Fields)))
+		for _, f := range v.Fields {
+			e.writeString(f.Name)
+			e.writeBool(f.Embedded)
+			e.writeString(f.Tag)
+			e.writeType(f.Type)
+		}
 	case transpiler.PointerType:
 		if v.NonNull {
 			e.writeByte(typeTagPtr)
@@ -770,6 +780,14 @@ func (d *decoder) readType() transpiler.Type {
 			return nil
 		}
 		return transpiler.ChanType{Elem: d.readType(), Dir: dir}
+	case typeTagStruct:
+		var st transpiler.StructType
+		for n := d.readUvarint(); n > 0 && d.err == nil; n-- {
+			f := transpiler.StructField{Name: d.readString(), Embedded: d.readBool(), Tag: d.readString()}
+			f.Type = d.readType()
+			st.Fields = append(st.Fields, f)
+		}
+		return st
 	case typeTagPointer:
 		return transpiler.PointerType{Elem: d.readType()}
 	case typeTagPtr:

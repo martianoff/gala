@@ -43,3 +43,25 @@ func TestNestedChanTypeExpr(t *testing.T) {
 		assert.Equal(t, tt.want, tt.typ.String())
 	}
 }
+
+// An anonymous Go struct type is emitted as Go spells it, so a signal
+// channel's element is `struct{}`, not `any`.
+func TestStructTypeExpr(t *testing.T) {
+	tr := NewGalaASTTransformer().(*galaASTTransformer)
+	for _, tt := range []struct {
+		typ  transpiler.Type
+		want string
+	}{
+		{transpiler.ChanType{Elem: transpiler.StructType{}, Dir: transpiler.ChanRecv}, "<-chan struct{}"},
+		{transpiler.StructType{Fields: []transpiler.StructField{
+			{Name: "X", Type: transpiler.BasicType{Name: "int"}, Tag: `json:"x"`},
+			{Name: "Point", Type: transpiler.BasicType{Name: "Point"}, Embedded: true},
+		}}, "struct {\n\tX\tint\t\"json:\\\"x\\\"\"\n\tPoint\n}"},
+	} {
+		var buf bytes.Buffer
+		expr := tr.typeToExpr(tt.typ)
+		assert.NoError(t, printer.Fprint(&buf, token.NewFileSet(), expr))
+		assert.Equal(t, tt.want, buf.String())
+		assert.Equal(t, tt.typ.String(), tr.astTypeToTranspilerType(expr).String(), "the emitted type reads back as itself")
+	}
+}

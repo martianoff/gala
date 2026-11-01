@@ -1027,6 +1027,28 @@ func syntacticGoType(expr ast.Expr, imports map[string]string, pkgName string, t
 	case *ast.ParenExpr:
 		return syntacticGoType(e.X, imports, pkgName, typeParams)
 
+	case *ast.StructType:
+		// Only the empty struct: a field's spelling needs the type checker
+		// to be exact (see goTypeToTranspilerType).
+		if e.Fields == nil || len(e.Fields.List) == 0 {
+			return transpiler.StructType{}
+		}
+		return transpiler.NilType{}
+
+	case *ast.ChanType:
+		elem := syntacticGoType(e.Value, imports, pkgName, typeParams)
+		if elem.IsNil() {
+			return transpiler.NilType{}
+		}
+		dir := transpiler.ChanBoth
+		switch e.Dir {
+		case ast.RECV:
+			dir = transpiler.ChanRecv
+		case ast.SEND:
+			dir = transpiler.ChanSend
+		}
+		return transpiler.ChanType{Elem: elem, Dir: dir}
+
 	case *ast.Ellipsis:
 		// convertSignature stores a variadic parameter element-wise, so `...T`
 		// recovers as T to stay index-aligned with it.
@@ -1286,8 +1308,15 @@ func extractTypeData(tn *types.TypeName, forceKind string, own bool) *transpiler
 		}
 	}
 
-	// Set underlying type
-	data.Underlying = goTypeToTranspilerType(typ.Underlying())
+	// Set underlying type. A named struct's fields are in Fields, and its
+	// underlying struct, unexported fields and all, is never spelled in GALA
+	// or emitted, so it stays the placeholder rather than a StructType that
+	// would copy every field into the cache a second time.
+	if _, isStruct := typ.Underlying().(*types.Struct); isStruct {
+		data.Underlying = transpiler.BasicType{Name: "any"}
+	} else {
+		data.Underlying = goTypeToTranspilerType(typ.Underlying())
+	}
 	data.NoCopy = noCopyReason(typ)
 	// A generic type's comparability depends on its type arguments.
 	if !isGenericGoType(typ) {
@@ -1627,8 +1656,29 @@ func goTypeToTranspilerType(t types.Type) transpiler.Type {
 		return transpiler.BasicType{Name: "any"}
 
 	case *types.Struct:
-		// Anonymous struct — can't represent directly, return any
-		return transpiler.BasicType{Name: "any"}
+		// An anonymous struct, such as a signal channel's `struct{}`, keeps
+		// its fields, so it is spelled as Go has it.
+		var st transpiler.StructType
+		for i := 0; i < t.NumFields(); i++ {
+			f := t.Field(i)
+			if !f.Exported() {
+				// The same spelling in another package is another type.
+				return transpiler.BasicType{Name: "any"}
+			}
+			st.Fields = append(st.Fields, transpiler.StructField{
+				Name:     f.Name(),
+				Type:     goTypeToTranspilerType(f.Type()),
+				Embedded: f.Embedded(),
+				Tag:      t.Tag(i),
+			})
+		}
+		// A field whose type the model does not spell exactly (an array's
+		// length, a type's arguments, an interface's methods) would make the
+		// struct another type: it stays the placeholder it was.
+		if st.String() != types.TypeString(t, func(p *types.Package) string { return p.Name() }) {
+			return transpiler.BasicType{Name: "any"}
+		}
+		return st
 
 	case *types.TypeParam:
 		// Generic type parameter

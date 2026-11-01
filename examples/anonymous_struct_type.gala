@@ -1,0 +1,24 @@
+package main
+
+import (
+    "context"
+
+    "martianoff/gala/go_interop"
+)
+
+// An anonymous Go struct type keeps its Go spelling: a signal channel is a
+// `chan struct{}`, and a value received from it is a `struct{}`, so both can
+// be held in a GALA container.
+func main() {
+    val signal = go_interop.NewSignal()
+    val held = Some(signal)
+    go_interop.CloseSignal(signal)
+    val v = <-signal
+    Println(held.IsDefined(), v)
+    Println(Some(v).IsDefined())
+
+    val (ctx, cancel) = context.WithCancel(context.Background())
+    val done = Some(ctx.Done())
+    cancel()
+    Println(<-done.Get())
+}

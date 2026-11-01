@@ -1294,6 +1294,8 @@ func typeHasMaskedPart(typ transpiler.Type) bool {
 		return typeHasMaskedPart(v.Elem)
 	case transpiler.ChanType:
 		return typeHasMaskedPart(v.Elem)
+	case transpiler.StructType:
+		return slices.ContainsFunc(v.FieldTypes(), typeHasMaskedPart)
 	case transpiler.PointerType:
 		return typeHasMaskedPart(v.Elem)
 	case transpiler.MapType:
