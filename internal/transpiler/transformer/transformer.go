@@ -151,6 +151,10 @@ type galaASTTransformer struct {
 	// its top-level walk reads that tree (see walkSource), nil while it reads
 	// ANTLR's. The native walk crosses to ANTLR's tree through it (crossTo).
 	native *galaparser.Native
+	// walkedNative is whether the last transform's top-level walk read the
+	// native tree (see newWalkSource). Unlike native, it outlives the
+	// transform, for the callers that report the tree it read.
+	walkedNative bool
 	// onNativeDecl, when set, is told of each top-level declaration the
 	// native walk lowers. It observes and changes nothing;
 	// TestNativeWalkAgrees sets it to prove which tree each file's walk read.
@@ -236,6 +240,7 @@ func (t *galaASTTransformer) TransformForLSP(richAST *transpiler.RichAST) (*tran
 		File:             file,
 		VarTypes:         varTypes,
 		LambdaParamHints: hints,
+		WalkedNative:     t.walkedNative,
 	}, transformErr
 }
 
@@ -265,15 +270,15 @@ func (t *galaASTTransformer) Transform(richAST *transpiler.RichAST) (*token.File
 // the result (the file's real transform reports it), as is one whose type is
 // unknown or void. richAST is read, not written: the caller passes a copy whose
 // Types map the transform may extend.
-func InferPackageValTypes(richAST *transpiler.RichAST) map[string]transpiler.Type {
+//
+// The file is walked as its transform walks it (see newWalkSource): on
+// richAST.Native's tree when that is converted and is richAST.Tree's, on
+// ANTLR's tree otherwise. onNative says which.
+func InferPackageValTypes(richAST *transpiler.RichAST) (types map[string]transpiler.Type, onNative bool) {
 	t := NewGalaASTTransformer().(*galaASTTransformer)
 	t.valTypes = make(map[string]transpiler.Type)
-	// The inference walks ANTLR's tree (bindingNames reads only that one):
-	// the file it is given need not be the one a native handle belongs to.
-	view := *richAST
-	view.Native = nil
-	_, _, _ = t.transform(&view, false)
-	return t.valTypes
+	_, _, _ = t.transform(richAST, false)
+	return t.valTypes, t.walkedNative
 }
 
 // lowersCleanly lowers one top-level declaration, reporting whether it lowered
@@ -495,6 +500,7 @@ func (t *galaASTTransformer) transform(richAST *transpiler.RichAST, collectLSPMe
 	}
 	src := newWalkSource(richAST, sourceFile)
 	t.native = src.h
+	t.walkedNative = src.root.Ok()
 
 	pkgName, pkgDoc := src.packageClause()
 	t.packageName = pkgName

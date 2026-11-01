@@ -413,7 +413,7 @@ func TestPackageDocDoesNotCrossPackages(t *testing.T) {
 
 // Doc offsets are parse-local, so docs must only be handed to the caller
 // holding the tree they were harvested from.
-func TestParsedForTreeRejectsForeignTree(t *testing.T) {
+func TestCachedForTreeRejectsForeignTree(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.gala")
 	src := "package spkg\n\n// Thing does a thing.\nfunc Thing() int = 1\n"
@@ -429,12 +429,12 @@ func TestParsedForTreeRejectsForeignTree(t *testing.T) {
 		t.Fatalf("parseFileCached: %v", err)
 	}
 	key := a.parsedFileCacheKey(path)
-	got := a.parsedForTree(key, tree)
+	got, _ := a.cachedForTree(key, tree)
 	if got == nil || len(got.Docs) == 0 {
 		t.Fatal("matching tree returned no docs")
 	}
-	if got.Native != nil {
-		t.Error("the parsed-file cache keeps a native tree, which nothing reads yet")
+	if !got.Native.Converted() || !got.Native.Bridged() {
+		t.Error("the parsed-file cache keeps no converted native tree that bridges, which the file's reads take")
 	}
 
 	// A tree from a different parse of the same path must not be paired with
@@ -444,8 +444,43 @@ func TestParsedForTreeRejectsForeignTree(t *testing.T) {
 	if other == nil {
 		t.Fatal("second parse produced no source file")
 	}
-	if got := a.parsedForTree(key, other); got != nil {
+	if got, _ := a.cachedForTree(key, other); got != nil {
 		t.Errorf("a parse handed to a tree from a different parse: %v", got.Docs)
+	}
+}
+
+// TestSharedParsedFiles: analyzers given one ParsedFiles share each file's
+// parse until the file changes, and an entry cached while another analysis
+// parsed the same version wins over the later one.
+func TestSharedParsedFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.gala")
+	if err := os.WriteFile(path, []byte("package spkg\n\nfunc Thing() int = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := parser.NewAntlrGalaParser()
+	files := NewParsedFiles()
+	analyzerSharing := func() *galaAnalyzer {
+		a := NewGalaAnalyzerForLSP(p, nil).(*galaAnalyzer)
+		a.SetParsedFiles(files)
+		return a
+	}
+	first := analyzerSharing().parseFileEntry(path)
+	if first == nil || first.tree() == nil || !first.nf.ok() {
+		t.Fatal("the file has no cached parse with a native tree")
+	}
+	if again := analyzerSharing().parseFileEntry(path); again != first {
+		t.Error("a second analyzer parsed the unchanged file again")
+	}
+	a := analyzerSharing()
+	if got := a.cacheParsedFile(a.parsedFileCacheKey(path), &parsedFileEntry{mtime: first.mtime, size: first.size}); got != first {
+		t.Error("a second parse of the same version replaced the cached one")
+	}
+	if err := os.WriteFile(path, []byte("package spkg\n\nfunc Thing() int = 22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed := analyzerSharing().parseFileEntry(path); changed == nil || changed == first {
+		t.Error("the changed file's stale parse was kept")
 	}
 }
 

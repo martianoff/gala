@@ -845,6 +845,9 @@ type TransformResult struct {
 	// inferred from the expected call-site type. Used by the LSP for
 	// reliable inlay hint placement without text-based parsing.
 	LambdaParamHints []LambdaParamHint
+	// WalkedNative is whether the transform's top-level walk read the native
+	// tree of RichAST.Native, rather than ANTLR's tree.
+	WalkedNative bool
 }
 
 // LambdaParamHint records a single lambda parameter whose type was inferred

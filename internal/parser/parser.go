@@ -32,10 +32,6 @@ type sourceFileParseResult struct {
 	stream *antlr.CommonTokenStream
 	tree   antlr.Tree
 	errors []error
-	// galop says galop's parser made tree. Only its parses get a native tree:
-	// a tree ANTLR's parser made, with ANTLR's engine or as galop's fallback,
-	// is read on the ANTLR paths alone.
-	galop bool
 }
 
 // parseSourceFileAttempt parses input once under the given ANTLR prediction
@@ -105,12 +101,14 @@ type Parsed struct {
 	Docs   Docs
 	Errors []error
 	// Native is the parse's native tree (see Native), nil when there is none:
-	// the parse gave no tree, or ANTLR's parser made it (with ANTLR's engine,
-	// or as galop's fallback on a syntax error or panic), so that code with a
-	// native and an ANTLR path takes the ANTLR one end to end. Until it
-	// converts it holds the token stream and the source text, which a clean
-	// parse's tree does not keep alive, so a holder that keeps a Parsed long
-	// but never reads the native tree drops it.
+	// the parse gave no tree, or it reported an error (Errors is not empty:
+	// a syntax error, or a source-text or blank-line check), so that code
+	// with a native and an ANTLR path reads such a tree on the ANTLR one end
+	// to end. Every parse without errors has one, whichever parser made its
+	// tree: galop's, or ANTLR's (with ANTLR's engine, or as galop's
+	// fallback). Until it converts it holds the token stream and the source
+	// text, which a clean parse's tree does not keep alive, so a holder that
+	// keeps a Parsed long but never reads the native tree drops it.
 	Native *Native
 }
 
@@ -131,7 +129,7 @@ func (p *Parsed) Lenient() (antlr.Tree, Docs, []error) {
 
 // CleanNative is the native-tree handle of a parse without syntax errors,
 // nil for one with them (an error-recovered tree is ANTLR's to read), for no
-// parse, or when there is no handle (a parse by ANTLR's parser has none). The
+// parse, or when the holder dropped the handle. The
 // transpiler's native-tree readers take their handle from here, so a parse
 // without one is read on ANTLR's tree end to end.
 func (p *Parsed) CleanNative() *Native {
@@ -207,7 +205,7 @@ func (p *AntlrGalaParser) ParseFile(input string) *Parsed {
 	}
 
 	parsed := &Parsed{Tree: result.tree, Docs: docs, Errors: errs}
-	if result.galop {
+	if len(errs) == 0 {
 		parsed.Native = newNative(result.tree, result.stream, input)
 	}
 	return parsed
@@ -281,7 +279,7 @@ func parseSourceFile(input string, engine Engine) sourceFileParseResult {
 			tree, ok, panicked := tryGalop(input, in, galopSourceFile)
 			clean := len(lexErrs.Errors) == 0 && !panicked
 			if ok && clean {
-				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree, galop: true}
+				return sourceFileParseResult{input: in.input, stream: in.stream, tree: tree}
 			}
 			if clean {
 				reuse = in

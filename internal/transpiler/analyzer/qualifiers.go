@@ -1,9 +1,6 @@
 package analyzer
 
-import (
-	"martianoff/gala/internal/parser/grammar"
-	"martianoff/gala/internal/transpiler"
-)
+import "martianoff/gala/internal/transpiler"
 
 // importBinding is one import of a file.
 type importBinding struct {
@@ -33,14 +30,9 @@ type fileQualifiers struct {
 	dots []importBinding
 }
 
-// qualifiersForFile builds sf's import table. richAST supplies package names,
-// so it must run after the file's imports were loaded.
-func (a *galaAnalyzer) qualifiersForFile(sf *grammar.SourceFileContext, richAST *transpiler.RichAST) fileQualifiers {
-	return a.qualifiersFor(scanFileImports(sf), richAST)
-}
-
-// qualifiersFor is the import table of a file whose imports are imports (see
-// qualifiersForFile).
+// qualifiersFor is the import table of a file whose imports are imports.
+// richAST supplies package names, so it must run after the file's imports
+// were loaded.
 func (a *galaAnalyzer) qualifiersFor(imports []fileImport, richAST *transpiler.RichAST) fileQualifiers {
 	names := transpiler.NewRankedNames[importBinding]()
 	var q fileQualifiers

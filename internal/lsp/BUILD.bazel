@@ -123,6 +123,7 @@ go_test(
     deps = [
         "//galaerr",
         "//internal/parser",
+        "//internal/transpiler",
         "//internal/transpiler/analyzer",
         "@com_github_owenrumney_go_lsp//lsp",
         "@com_github_stretchr_testify//assert",

@@ -16,16 +16,12 @@ import (
 const (
 	treeReadSignatureCall = "signature help: the call at the caret"
 	treeReadDotImports    = "hover: the dot imports"
+	// The document's analysis and its transform read the tree its parse
+	// gives them: the native tree of a clean parse whose handle bridges,
+	// ANTLR's error-recovered tree otherwise.
+	treeReadAnalysis  = "the analysis"
+	treeReadTransform = "the transform"
 )
-
-// nativeOf is the native-tree handle kept with parsed: its CleanNative, or
-// nil when h keeps every feature on ANTLR's tree.
-func (h *GalaHandler) nativeOf(parsed *parser.Parsed) *parser.Native {
-	if h.antlrTreeOnly {
-		return nil
-	}
-	return parsed.CleanNative()
-}
 
 // noteTreeRead tells h.onTreeRead, when set, of the read what, which took the
 // native tree when onNative holds.

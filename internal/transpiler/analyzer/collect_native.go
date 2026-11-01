@@ -18,17 +18,16 @@ import (
 // in the same order, with the same diagnostics. TestCollectionsAgree and
 // TestCollectionDiagnosticsAgree hold each pair together.
 //
-// analyze reads the compiled file on its native tree, from its first read on
-// (file_checks_native.go), when the file is analyzed outside the LSP and its
-// parse came with a handle (see nativeFileOf and readsNative there). The
-// undefined-symbol check reads that tree too (undefined_symbol_native.go).
-// Every other file is collected on ANTLR's tree: a parse by ANTLR's parser or
-// one with syntax errors (no handle, see Parsed.CleanNative), an LSP buffer
-// or a tree a caller handed in bare, and a sibling or an imported file (the
-// parsed-file cache keeps no handle). A file is collected on one tree or the
-// other, never on a mix, and the native collection reads no ANTLR context:
-// the initializers of package-level bindings are inferred on the native tree
-// too (infer_native.go).
+// analyze reads a file on its native tree, from its first read on
+// (file_checks_native.go), when its parse came with a handle that bridges
+// (see nativeFileOf): the compiled file, an LSP buffer, a sibling and a file
+// of an imported package alike (siblings_native.go). The undefined-symbol
+// check reads that tree too (undefined_symbol_native.go). A file is
+// collected on ANTLR's tree when its parse had syntax errors (no handle, see
+// Parsed.CleanNative) or a caller handed in a bare tree. A file is collected
+// on one tree or the other, never on a mix, and the native collection reads
+// no ANTLR context: the initializers of package-level bindings are inferred
+// on the native tree too (infer_native.go).
 //
 // Children are read through the rule handles and dispatched on Kind(), never
 // through Typed(), which builds a handle per node.
@@ -36,8 +35,8 @@ import (
 // collectTrace is what analyze tells galaAnalyzer.onCollect about a file:
 // whether the undefined-symbol check runs on it, whether its parse came with
 // a native-tree handle, and whether its declarations are collected on the
-// native tree, which, outside the LSP (see readsNative in analyze), they are
-// exactly when it has a handle and the tree converts.
+// native tree, which they are exactly when it has a handle and the tree
+// converts and bridges (nativeFileOf).
 type collectTrace struct {
 	filePath        string
 	checksUndefined bool
@@ -421,6 +420,60 @@ func nativeParams(params native.ParametersNode) iter.Seq2[int, native.ParameterN
 	}
 }
 
+// recordStructFieldNative records on meta the struct field fctx declares,
+// resolved with meta's type parameters, as collectFileTypes and the sibling
+// pass record one: its type, its order and mutability, where its name is and
+// its doc comment.
+func (a *galaAnalyzer) recordStructFieldNative(meta *transpiler.TypeMetadata, fctx native.StructFieldNode, pkgName string, docs galaparser.Docs) {
+	fieldID := fctx.Identifier()
+	fieldName := fieldID.GetText()
+	meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.NativeTypeText(fctx.Type_()), pkgName, meta.TypeParams)
+	meta.FieldNames = append(meta.FieldNames, fieldName)
+	meta.ImmutFlags = append(meta.ImmutFlags, !fctx.VAR().Ok())
+	if meta.FieldPositions == nil {
+		meta.FieldPositions = make(map[string]transpiler.SourcePos)
+	}
+	meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
+	addFieldDoc(meta, fieldName, nativeDocAt(docs, fctx.GalaNodeRef))
+}
+
+// interfaceMethodNative is the metadata of the method msCtx, a method spec
+// of the interface meta, declared in definedIn: its signature, resolved with
+// meta's type parameters, and its parameters' types only.
+func (a *galaAnalyzer) interfaceMethodNative(meta *transpiler.TypeMetadata, msCtx native.MethodSpecNode, pkgName, definedIn string, docs galaparser.Docs) *transpiler.MethodMetadata {
+	methodMeta := &transpiler.MethodMetadata{
+		Name:       msCtx.Identifier().GetText(),
+		Package:    pkgName,
+		Doc:        nativeDocAt(docs, msCtx.GalaNodeRef),
+		DefinedIn:  definedIn,
+		OfTypeDecl: true,
+	}
+	sig := msCtx.Signature()
+	methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)
+	params := a.nativeParamsOf(sig.Parameters(), pkgName, meta.TypeParams)
+	methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
+	return methodMeta
+}
+
+// recordShorthandFieldNative records on meta the field pctx, a parameter of a
+// struct shorthand, declares, through decls (see recordShorthandField), as
+// collectFileTypes and the sibling pass record one: its type, resolved with
+// meta's type parameters, where its name is and its default.
+func (a *galaAnalyzer) recordShorthandFieldNative(meta *transpiler.TypeMetadata, pctx native.ParameterNode, pkgName string, decls *packageDecls) {
+	fieldID := pctx.Identifier()
+	fieldName := fieldID.GetText()
+	fieldType := ""
+	if typ := pctx.Type_(); typ.Ok() {
+		fieldType = galaparser.NativeTypeText(typ)
+	}
+	decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(fieldType, pkgName, meta.TypeParams), pctx.VAL().Ok(), pctx.VAR().Ok())
+	if meta.FieldPositions == nil {
+		meta.FieldPositions = make(map[string]transpiler.SourcePos)
+	}
+	meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
+	nativeRecordFieldDefault(meta, fieldName, pctx)
+}
+
 // collectFileTypesNative is collectFileTypes.
 func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) error {
 	richAST, pkgName, filePath, absFilePath, docs, decls := fd.richAST, fd.pkgName, fd.filePath, fd.absFilePath, fd.docs, fd.decls
@@ -468,14 +521,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 							"rename or remove the duplicate field",
 						)
 					}
-					meta.Fields[fieldName] = a.resolveTypeWithParams(galaparser.NativeTypeText(fctx.Type_()), pkgName, meta.TypeParams)
-					meta.FieldNames = append(meta.FieldNames, fieldName)
-					meta.ImmutFlags = append(meta.ImmutFlags, !fctx.VAR().Ok())
-					if meta.FieldPositions == nil {
-						meta.FieldPositions = make(map[string]transpiler.SourcePos)
-					}
-					meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-					addFieldDoc(meta, fieldName, nativeDocAt(docs, fNode))
+					a.recordStructFieldNative(meta, fctx, pkgName, docs)
 				}
 				meta.DefinedIn = filePath
 			}
@@ -503,19 +549,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 						pos := nativePos(msID.GalaNodeRef)
 						return genericInterfaceMethodError(pos.Line, pos.Column, meta, methodName, tps, cons)
 					}
-					methodMeta := &transpiler.MethodMetadata{
-						Name:       methodName,
-						Package:    pkgName,
-						Doc:        nativeDocAt(docs, msNode),
-						DefinedIn:  filePath,
-						OfTypeDecl: true,
-					}
-					sig := msCtx.Signature()
-					methodMeta.ReturnType, methodMeta.GoResults = a.nativeSignatureResult(sig, pkgName, meta.TypeParams)
-					// An interface method records its parameters' types only.
-					params := a.nativeParamsOf(sig.Parameters(), pkgName, meta.TypeParams)
-					methodMeta.ParamTypes, methodMeta.Variadic = params.types, params.variadic
-					meta.Methods[methodName] = methodMeta
+					meta.Methods[methodName] = a.interfaceMethodNative(meta, msCtx, pkgName, filePath, docs)
 				}
 			}
 
@@ -558,12 +592,7 @@ func (a *galaAnalyzer) collectFileTypesNative(nf nativeFile, fd *fileDecls) erro
 							"rename or remove the duplicate field",
 						)
 					}
-					decls.recordShorthandField(meta, fieldName, a.resolveTypeWithParams(galaparser.NativeTypeText(pctx.Type_()), pkgName, meta.TypeParams), pctx.VAL().Ok(), pctx.VAR().Ok())
-					if meta.FieldPositions == nil {
-						meta.FieldPositions = make(map[string]transpiler.SourcePos)
-					}
-					meta.FieldPositions[fieldName] = nativePos(fieldID.GalaNodeRef)
-					nativeRecordFieldDefault(meta, fieldName, pctx)
+					a.recordShorthandFieldNative(meta, pctx, pkgName, decls)
 				}
 				meta.IsShorthand = true
 				meta.DefinedIn = filePath

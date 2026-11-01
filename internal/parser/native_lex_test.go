@@ -310,7 +310,7 @@ func TestCheckEmptyLinesNativeMatchesANTLR(t *testing.T) {
 		// galop's engine builds ANTLR's tree, the same tree as ANTLR's parser
 		// for input that parses (TestEnginesAgree), at a fraction of the cost.
 		r := parseSourceFile(input, EngineGalop)
-		if len(r.errors) > 0 || !r.galop {
+		if len(r.errors) > 0 {
 			t.Errorf("input %d (%.60q): native parses, galop's ANTLR-tree parse does not: %v", k, input, r.errors)
 			continue
 		}

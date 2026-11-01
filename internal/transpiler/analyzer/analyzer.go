@@ -199,14 +199,10 @@ type galaAnalyzer struct {
 	// Analyze to return partial results alongside errors, which is a separate
 	// change.
 	skipUndefinedCheck bool
-	// antlrTreeOnly keeps every file on ANTLR's tree, its native tree unread
-	// and unconverted. The LSP sets it: an editor buffer is analyzed per
-	// keystroke, where converting costs more than the reads it would serve.
-	antlrTreeOnly bool
 	// onCollect, when set, is told which tree analyze collects the top-level
 	// file's declarations on, and why (see collectTrace); the files of the
-	// packages it imports, collected on ANTLR's tree, are not reported. It observes and changes nothing; the collection tests
-	// set it to prove which tree each file took.
+	// packages it imports are not reported. It observes and changes nothing;
+	// the collection tests set it to prove which tree each file took.
 	onCollect func(collectTrace)
 	// onInferInit, when set, is told of each package-level initializer
 	// inferred on the native tree (inferPackageValInitTypeNative): the
@@ -225,6 +221,13 @@ type galaAnalyzer struct {
 	// TestFileChecksAgree sets it to prove which tree each read took, and to
 	// make the read on ANTLR's tree in the same state and compare.
 	onTreeRead func(treeRead)
+	// onPackageRead, when set, is told of each read of a file of the
+	// analyzed package other than the analyzed file (its imports, its
+	// top-level names, its declarations; see siblings_native.go), and of the
+	// inference of each file's package-level bindings (inferPackageValTypes).
+	// It observes and changes nothing; TestCollectionsAgree sets it to
+	// prove which tree each read took.
+	onPackageRead func(treeRead)
 
 	// goSrcDirs maps a Go import-path prefix (a module path, or an exact
 	// package path) to the on-disk directory holding that package's .go
@@ -303,11 +306,14 @@ type pkgResultCacheEntry struct {
 // (mtime, size) pair is the staleness check: if either changes between
 // stat calls, the cached tree is dropped and the file is re-parsed.
 type parsedFileEntry struct {
-	// parsed is the file's parse, tree and doc comments (see parsedForTree),
-	// without its native-tree handle: a sibling's or an imported file's
-	// declarations are collected on ANTLR's tree, and an unconverted handle
-	// would keep the file's token stream alive (see parser.Parsed.Native).
-	parsed  *galaparser.Parsed
+	// parsed is the file's parse (see cachedForTree): its tree, its doc
+	// comments and its native-tree handle, converted already (see
+	// parseFileCached), which a sibling's or an imported file's reads take
+	// (see siblings_native.go).
+	parsed *galaparser.Parsed
+	// nf is the native tree of parsed's handle, its declarations bucketed
+	// once (nativeFileOf), for every analysis that reads the file.
+	nf      nativeFile
 	pkgName string
 	// syntaxErr is the parse failure of a file that does not parse (tree is
 	// nil then), stamped with the file's path. Cached like a tree, so a
@@ -409,7 +415,6 @@ func NewGalaAnalyzerForLSP(p transpiler.GalaParser, searchPaths []string, projec
 		resolver:            module.NewResolver(searchPaths),
 		cache:               newAnalysisCache(resolveCacheRoot(root)),
 		skipUndefinedCheck:  true,
-		antlrTreeOnly:       true,
 	}
 }
 
@@ -485,6 +490,33 @@ func (a *galaAnalyzer) SetPackageFiles(files []string) {
 	a.packageFiles = files
 }
 
+// ParsedFiles is a parsed-file cache that analyzers built one after another
+// share: each file's parse and its converted native tree, keyed by path and
+// dropped when the file's mtime or size changes, as an analyzer's own cache
+// is (see parseFileCached). The language server builds an analyzer per
+// keystroke; sharing one ParsedFiles keeps it from parsing and converting
+// every sibling and imported file again each time. The entries are read, not
+// written, after they are cached, so analyses running at once share them.
+type ParsedFiles struct {
+	mu    sync.Mutex
+	files map[string]*parsedFileEntry
+}
+
+// NewParsedFiles returns an empty ParsedFiles.
+func NewParsedFiles() *ParsedFiles {
+	return &ParsedFiles{files: make(map[string]*parsedFileEntry)}
+}
+
+// SetParsedFiles makes the analyzer cache its parsed files in files, shared
+// with the other analyzers given it, instead of a cache of its own. A nil
+// files leaves the analyzer's own cache.
+func (a *galaAnalyzer) SetParsedFiles(files *ParsedFiles) {
+	if files == nil {
+		return
+	}
+	a.parsedFileCache, a.parsedFileCacheMu = files.files, &files.mu
+}
+
 // resolveGoSrcDir maps a Go import path to its on-disk .go source directory
 // using the wired goSrcDirs table. It first tries an exact match, then the
 // longest registered import-path prefix (a module path), appending the
@@ -557,11 +589,10 @@ func (a *galaAnalyzer) AnalyzeParsed(parsed *galaparser.Parsed, filePath string)
 // attachment site degrades to an empty Doc rather than failing.
 //
 // handle is tree's native-tree handle (from Parsed.CleanNative), or nil.
-// The top-level file, outside the LSP, is read on its native tree when there
-// is one, and on tree otherwise (see readsNative, collect_native.go and
-// file_checks_native.go); only the inference of the package's untyped vals
-// (inferPackageValTypes, the transformer's) reads tree either way. Nothing
-// keeps it.
+// The file is read on its native tree when there is one, and on tree
+// otherwise (see nf below, collect_native.go and file_checks_native.go), as
+// are its siblings and the files of the packages it imports
+// (siblings_native.go). Nothing keeps it.
 //
 // A sibling file of the package that does not parse is left out of the
 // analysis, so a name it declares is undefined here. Its syntax errors are
@@ -607,17 +638,14 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	}
 
 	// The tree the file is read on, decided once, before its first read: its
-	// native tree when it is the compiled file outside the LSP and its parse
-	// came with a handle that converts (see nativeFileOf), ANTLR's tree
-	// otherwise. Every analyzer read below takes the same tree, so a file is
-	// read on one tree or the other, never a mix; inferPackageValTypes, the
-	// transformer's pass, still reads ANTLR's. The imported packages' files
-	// are read on ANTLR's tree: the parsed-file cache keeps no handle.
-	readsNative := isTopLevel && !a.antlrTreeOnly
-	var nf nativeFile
-	if readsNative {
-		nf = nativeFileOf(handle)
-	}
+	// native tree when its parse came with a handle that converts and
+	// bridges (see nativeFileOf), ANTLR's tree otherwise. Every analyzer read
+	// below takes the same tree, so a file is read on one tree or the other,
+	// never a mix, and so does inferPackageValTypes, the transformer's pass.
+	// Each sibling is read the same way, on its own native tree when it has
+	// one (siblings_native.go), and so is each file of an imported package
+	// (analyzePackage).
+	nf := nativeFileOf(handle)
 
 	// GALA-E0055: a name spelled like a Go keyword cannot reach the generated
 	// Go. Checked first, so no later check reports a symptom of the same name.
@@ -787,6 +815,15 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	}
 
 	logPhase("sibling-discovery ("+fmt.Sprintf("%d files", len(siblingTrees))+")", phaseStart)
+
+	// Each sibling's parse, as the parsed-file cache holds it with the
+	// sibling's tree (nil when it holds none, see cachedForTree): its doc
+	// comments and its native tree, which its reads take when it has one.
+	siblingParsed := make([]*galaparser.Parsed, len(siblingTrees))
+	siblingNFs := make([]nativeFile, len(siblingTrees))
+	for i, sib := range siblingTrees {
+		siblingParsed[i], siblingNFs[i] = a.cachedFile(siblingPathAt(siblingPaths, i), sib)
+	}
 
 	richAST := &transpiler.RichAST{
 		Tree:             tree,
@@ -1021,8 +1058,10 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// 0.75 Also scan sibling imports to ensure all GALA packages used by siblings
 	// are loaded into richAST.Types. Without this, resolveTypeWithParams for sibling
 	// struct fields can't find types from packages that only siblings import.
-	for _, sibTree := range siblingTrees {
-		a.scanImports(sibTree, richAST, mergeVisited)
+	siblingImports := make([][]fileImport, len(siblingTrees))
+	for i, sibTree := range siblingTrees {
+		siblingImports[i] = a.packageFileImports(siblingPathAt(siblingPaths, i), sibTree, siblingNFs[i])
+		a.loadGalaImports(siblingImports[i], richAST, mergeVisited)
 	}
 	if len(richAST.PackageKeys) > 0 {
 		// A sibling's import may have keyed a package merged above (see
@@ -1037,8 +1076,8 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	// Every sibling's import table (see fileQualifiers).
 	siblingQuals := make([]fileQualifiers, len(siblingTrees))
-	for i, sib := range siblingTrees {
-		siblingQuals[i] = a.qualifiersForFile(sib, richAST)
+	for i, imports := range siblingImports {
+		siblingQuals[i] = a.qualifiersFor(imports, richAST)
 	}
 	packageQuals := append([]fileQualifiers{fileQuals}, siblingQuals...)
 	richAST.PackageImportPaths = make(map[string]bool)
@@ -1143,15 +1182,14 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	a.currentRichAST = richAST
 	a.currentDotImportPkgs = dotImportPkgs
 	a.currentQualifiers = fileQuals
-	// The file's own names first, on its tree, then its siblings', on
-	// ANTLR's: the parsed-file cache keeps no native tree. The result does
-	// not depend on the order.
+	// The file's own names first, then its siblings', each on its tree. The
+	// result does not depend on the order.
 	own := readTree(a, filePath, "top-level names", nf, ownNamesNative,
 		func() ownNames { return ownNamesOf(sourceFile) })
-	a.currentOwnTypes, a.currentOwnMethods = own.types, own.methods
-	for _, sf := range siblingTrees {
-		collectTopLevelDeclaredNames(sf, a.currentOwnTypes, a.currentOwnMethods)
+	for i, sf := range siblingTrees {
+		own.add(a.packageFileNames(siblingPathAt(siblingPaths, i), sf, siblingNFs[i]))
 	}
+	a.currentOwnTypes, a.currentOwnMethods = own.types, own.methods
 	for name := range richAST.OwnGoTypes {
 		// A .go file is not checked for the reserved std names, which keep
 		// their std meaning in GALA source.
@@ -1215,27 +1253,19 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 	// (structs, sealed types, methods) to enable complete cross-file type resolution.
 	// Directory scanning skips main/test packages since sibling files in those packages
 	// may be unrelated programs sharing a directory (e.g., examples/).
-	if len(a.packageFiles) > 0 {
-		// Explicit package files: full metadata extraction for ALL packages including main/test
+	//
+	// Explicit package files: full metadata extraction for ALL packages
+	// including main/test. Directory-discovered siblings: the same; they are
+	// already filtered to matching package name during discovery (lines
+	// above), so it's safe to extract full struct field info without
+	// pollution concerns.
+	if len(a.packageFiles) > 0 || (pkgName != "main" && pkgName != "test") {
 		for i, sibTree := range siblingTrees {
-			sibPath := ""
-			if i < len(siblingPaths) {
-				sibPath = siblingPaths[i]
+			var docs galaparser.Docs
+			if siblingParsed[i] != nil {
+				docs = siblingParsed[i].Docs
 			}
-			if err := a.extractSiblingFullMetadata(sibTree, siblingQuals[i], pkgName, richAST, sibPath, decls); err != nil {
-				return nil, err
-			}
-		}
-	} else if pkgName != "main" && pkgName != "test" {
-		// Directory-discovered siblings: full metadata extraction (same as --package-files mode).
-		// Siblings are already filtered to matching package name during discovery (lines above),
-		// so it's safe to extract full struct field info without pollution concerns.
-		for i, sibTree := range siblingTrees {
-			sibPath := ""
-			if i < len(siblingPaths) {
-				sibPath = siblingPaths[i]
-			}
-			if err := a.extractSiblingFullMetadata(sibTree, siblingQuals[i], pkgName, richAST, sibPath, decls); err != nil {
+			if err := a.extractSiblingFullMetadata(sibTree, siblingNFs[i], docs, siblingQuals[i], pkgName, richAST, siblingPathAt(siblingPaths, i), decls); err != nil {
 				return nil, err
 			}
 		}
@@ -1368,8 +1398,13 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 
 	phaseStart = time.Now()
 	richAST.ApplyPackageKeys()
+	handles := []*galaparser.Native{handle}
+	for _, p := range siblingParsed {
+		handles = append(handles, p.CleanNative())
+	}
 	a.inferPackageValTypes(richAST,
 		append([]*grammar.SourceFileContext{sourceFile}, siblingTrees...),
+		handles,
 		append([]string{absFilePath}, siblingPaths...))
 	logPhase("infer-package-val-types", phaseStart)
 	if isTopLevel {
@@ -1396,10 +1431,13 @@ func (a *galaAnalyzer) analyze(tree antlr.Tree, docs galaparser.Docs, handle *ga
 // metadata, so without it a lambda passed to one of its methods there has no
 // parameter type to infer.
 //
-// trees and paths are the package's files, in parallel. A binding can read
-// another file's binding, so files are revisited while a pass still types
-// something: each pass types at least one more binding or ends the loop.
-func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees []*grammar.SourceFileContext, paths []string) {
+// trees, handles and paths are the package's files, in parallel: each one's
+// tree, native-tree handle (nil for none) and path. A file is walked on its
+// native tree when its handle has one that bridges, as the analysis read it,
+// and on its tree otherwise. A binding can read another file's binding, so
+// files are revisited while a pass still types something: each pass types at
+// least one more binding or ends the loop.
+func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees []*grammar.SourceFileContext, handles []*galaparser.Native, paths []string) {
 	untyped := func(path string) bool {
 		for _, pv := range richAST.PackageVals {
 			if pv.Type.IsNil() && a.paths.sameFile(pv.DefinedIn, path) {
@@ -1419,9 +1457,12 @@ func (a *galaAnalyzer) inferPackageValTypes(richAST *transpiler.RichAST, trees [
 			// this package's record.
 			view := *richAST
 			view.Tree = tree
+			view.Native = handles[i]
 			view.FilePath = paths[i]
 			view.Types = maps.Clone(richAST.Types)
-			for name, typ := range transformer.InferPackageValTypes(&view) {
+			types, onNative := transformer.InferPackageValTypes(&view)
+			a.notePackageRead(paths[i], "val types", onNative)
+			for name, typ := range types {
 				if pv := richAST.PackageVals[name]; pv != nil && pv.Type.IsNil() {
 					typed := *pv
 					typed.Type = typ
@@ -2303,27 +2344,27 @@ func (a *galaAnalyzer) resolveTypeWithParams(typeName string, pkgName string, ty
 	return a.resolveBaseName(typeName, pkgName)
 }
 
-// scanImports processes GALA imports from a source file and loads their metadata
-// into richAST. This is used to ensure sibling files' dependencies are available
-// for type resolution during extractSiblingFullMetadata.
+// loadGalaImports loads the metadata of the GALA packages among imports, a
+// sibling's (packageFileImports), into richAST (see loadGalaImport). This is
+// used to ensure sibling files' dependencies are available for type
+// resolution during extractSiblingFullMetadata.
 //
 // mergeVisited is the closure-walk dedup set scoped to the enclosing top-level
-// Analyze call. Pass nil to allocate one fresh per scan; pass the Analyze-level
-// set to share visited bookkeeping across the whole call so sibling imports
-// don't re-walk the std/collection_immutable subtree the main file already merged.
-func (a *galaAnalyzer) scanImports(sf *grammar.SourceFileContext, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
-	if mergeVisited == nil {
-		mergeVisited = make(map[string]bool)
+// Analyze call, shared across the whole call so sibling imports don't re-walk
+// the std/collection_immutable subtree the main file already merged.
+func (a *galaAnalyzer) loadGalaImports(imports []fileImport, richAST *transpiler.RichAST, mergeVisited map[string]bool) {
+	for _, imp := range imports {
+		a.loadGalaImport(imp.Path, richAST, mergeVisited)
 	}
-	for _, impDecl := range sf.AllImportDeclaration() {
-		ctx := impDecl.(*grammar.ImportDeclarationContext)
-		for _, spec := range ctx.AllImportSpec() {
-			s := spec.(*grammar.ImportSpecContext)
-			path := strings.Trim(s.STRING().GetText(), "\"")
+}
 
-			a.loadGalaImport(path, richAST, mergeVisited)
-		}
+// siblingPathAt is paths[i], the path of the i-th sibling, or "" when there
+// is none.
+func siblingPathAt(paths []string, i int) string {
+	if i < len(paths) {
+		return paths[i]
 	}
+	return ""
 }
 
 // loadGalaImport analyzes the GALA package at path, when path names one, and
@@ -2733,14 +2774,14 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 		// part that benefited from parallelism above.
 		{
 			// The doc comments the file was parsed with, for the docs of its
-			// declarations.
+			// declarations, and its native-tree handle, the tree analyze
+			// reads it on when there is one.
 			var docs galaparser.Docs
-			if p := a.parsedForFile(filePath, tree); p != nil {
+			p, nf := a.cachedFile(filePath, tree)
+			if p != nil {
 				docs = p.Docs
 			}
-			// No native tree: the parsed-file cache keeps none, and only
-			// the top-level file is read on its native tree (see analyze).
-			res, err := a.analyze(tree, docs, nil, filePath)
+			res, err := a.analyze(tree, docs, p.CleanNative(), filePath)
 			if err == nil {
 				if pkgAST.PackageName == "" {
 					pkgAST.PackageName = res.PackageName
@@ -2789,7 +2830,7 @@ func (a *galaAnalyzer) analyzePackage(relPath, importPath string) (_ *transpiler
 				}
 				pkgAST.Merge(res)
 				mergeOwnPackageVals(pkgAST, res, sameAsFilePath)
-				scopes.addFile(canonFile, a.qualifiersForFile(tree, res), res)
+				scopes.addFile(canonFile, a.qualifiersFor(a.packageFileImports(filePath, tree, nf), res), res)
 			}
 		}
 	}
@@ -3761,23 +3802,46 @@ func isSealedEntry(meta *transpiler.TypeMetadata) bool { return meta.IsSealed }
 // rejected here rather than silently overwriting — or being silently dropped
 // by — the first declaration and reaching the Go compiler as "already
 // declared".
-func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, sibQuals fileQualifiers, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
+//
+// The sibling is read on nf, its native tree, when that is one (see
+// extractSiblingDeclsNative), and on sibTree, its ANTLR tree, otherwise.
+// docs are its doc comments, from the parse that gave both trees.
+func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileContext, nf nativeFile, docs galaparser.Docs, sibQuals fileQualifiers, pkgName string, richAST *transpiler.RichAST, sibFilePath string, decls *packageDecls) error {
 	// The sibling's declarations resolve against the sibling's own imports.
 	outerQualifiers := a.currentQualifiers
 	a.currentQualifiers = sibQuals
 	defer func() { a.currentQualifiers = outerQualifiers }()
-	absSibPath := a.parsedFileCacheKey(sibFilePath)
-	var docs galaparser.Docs
-	if p := a.parsedForTree(absSibPath, sibTree); p != nil {
-		docs = p.Docs
-	}
+	sx := siblingExtraction{pkgName: pkgName, richAST: richAST, absSibPath: a.parsedFileCacheKey(sibFilePath), docs: docs, decls: decls}
 	// sibDisplay is how diagnostics name this sibling: the caller's spelling,
 	// which matches how the caret path is printed for the file under
 	// compilation. absSibPath stays the identity used for comparisons.
-	sibDisplay := sibFilePath
-	if sibDisplay == "" {
-		sibDisplay = absSibPath
+	sx.sibDisplay = sibFilePath
+	if sx.sibDisplay == "" {
+		sx.sibDisplay = sx.absSibPath
 	}
+	a.notePackageRead(sibFilePath, "declarations", nf.ok())
+	if nf.ok() {
+		return a.extractSiblingDeclsNative(nf, sx)
+	}
+	return a.extractSiblingDecls(sibTree, sx)
+}
+
+// siblingExtraction is what extractSiblingFullMetadata's two readers of a
+// sibling's declarations share: the package, the RichAST they record into,
+// the sibling's canonical path and its spelling for diagnostics, its doc
+// comments, and the package's declarations seen so far.
+type siblingExtraction struct {
+	pkgName                string
+	richAST                *transpiler.RichAST
+	absSibPath, sibDisplay string
+	docs                   galaparser.Docs
+	decls                  *packageDecls
+}
+
+// extractSiblingDecls is extractSiblingFullMetadata's reading of sibTree, the
+// sibling's ANTLR tree.
+func (a *galaAnalyzer) extractSiblingDecls(sibTree *grammar.SourceFileContext, sx siblingExtraction) error {
+	pkgName, richAST, absSibPath, sibDisplay, docs, decls := sx.pkgName, sx.richAST, sx.absSibPath, sx.sibDisplay, sx.docs, sx.decls
 	// 1. Collect struct types with full field info
 	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
 		if typeDecl := topDecl.TypeDeclaration(); typeDecl != nil {
@@ -3794,23 +3858,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// from the current file) and DefinedIn from main analysis.
 			meta := a.startTypeEntry(richAST, fullTypeName, typeName, pkgName, pos, absSibPath)
 			meta.Doc = docAt(docs, ctx.GetStart())
-			if ctx.TypeParameters() != nil {
-				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-				if tpList := tpCtx.TypeParameterList(); tpList != nil {
-					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-						tpCtx := tp.(*grammar.TypeParameterContext)
-						tpId := tpCtx.Identifier(0)
-						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
-						if len(tpCtx.AllIdentifier()) > 1 {
-							constraint := tpCtx.Identifier(1).GetText()
-							if meta.TypeParamConstraints == nil {
-								meta.TypeParamConstraints = make(map[string]string)
-							}
-							meta.TypeParamConstraints[tpId.GetText()] = constraint
-						}
-					}
-				}
-			}
+			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 			if ctx.StructType() != nil {
 				structType := ctx.StructType().(*grammar.StructTypeContext)
 				for _, field := range structType.AllStructField() {
@@ -3875,15 +3923,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			// sibling files and to anything declared above them, so an alias
 			// used before its declaration was reported as an unknown type.
 			if ctx.TypeAlias() != nil {
-				if aliasTarget := typeAliasTarget(ctx); aliasTarget != "" {
-					underlyingType := a.resolveTypeWithParams(aliasTarget, pkgName, meta.TypeParams)
-					if !underlyingType.IsNil() {
-						if richAST.TypeAliases == nil {
-							richAST.TypeAliases = make(map[string]transpiler.Type)
-						}
-						richAST.TypeAliases[typeName] = underlyingType
-					}
-				}
+				a.recordSiblingAlias(richAST, typeName, typeAliasTarget(ctx), pkgName, meta.TypeParams)
 			}
 		}
 
@@ -3904,23 +3944,7 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 			if meta.DefinedIn == "" {
 				meta.DefinedIn = absSibPath
 			}
-			if ctx.TypeParameters() != nil {
-				tpCtx := ctx.TypeParameters().(*grammar.TypeParametersContext)
-				if tpList := tpCtx.TypeParameterList(); tpList != nil {
-					for _, tp := range tpList.(*grammar.TypeParameterListContext).AllTypeParameter() {
-						tpCtx := tp.(*grammar.TypeParameterContext)
-						tpId := tpCtx.Identifier(0)
-						meta.TypeParams = append(meta.TypeParams, tpId.GetText())
-						if len(tpCtx.AllIdentifier()) > 1 {
-							constraint := tpCtx.Identifier(1).GetText()
-							if meta.TypeParamConstraints == nil {
-								meta.TypeParamConstraints = make(map[string]string)
-							}
-							meta.TypeParamConstraints[tpId.GetText()] = constraint
-						}
-					}
-				}
-			}
+			meta.TypeParams, meta.TypeParamConstraints = typeParamsOf(ctx.TypeParameters())
 			if ctx.Parameters() != nil {
 				paramsCtx := ctx.Parameters().(*grammar.ParametersContext)
 				if paramsCtx.ParameterList() != nil {
@@ -3980,168 +4004,114 @@ func (a *galaAnalyzer) extractSiblingFullMetadata(sibTree *grammar.SourceFileCon
 
 	// 3. Collect methods and functions
 	for _, topDecl := range sibTree.AllTopLevelDeclaration() {
-		if funcDeclCtx := topDecl.FunctionDeclaration(); funcDeclCtx != nil {
-			ctx := funcDeclCtx.(*grammar.FunctionDeclarationContext)
-			if ctx.Receiver() != nil {
-				recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
-				baseType := getBaseTypeName(recvCtx.Type_())
-				if baseType == "" {
-					continue
-				}
-				methodName := ctx.Identifier().GetText()
-				fullBaseType := baseType
-				if pkgName != "" && pkgName != "main" && pkgName != "test" && !strings.Contains(baseType, ".") {
-					fullBaseType = pkgName + "." + baseType
-				}
+		funcDeclCtx := topDecl.FunctionDeclaration()
+		if funcDeclCtx == nil {
+			continue
+		}
+		ctx := funcDeclCtx.(*grammar.FunctionDeclarationContext)
+		sibPos := transpiler.PosFromToken(ctx.Identifier().GetStart())
+		if ctx.Receiver() != nil {
+			recvCtx := ctx.Receiver().(*grammar.ReceiverContext)
+			baseType := getBaseTypeName(recvCtx.Type_())
+			if baseType == "" {
+				continue
+			}
+			sm := siblingMethod{name: ctx.Identifier().GetText(), baseType: baseType, pos: sibPos}
+			if err := a.checkSiblingMethod(&sm, pkgName, absSibPath, sibDisplay, decls); err != nil {
+				return err
+			}
+			methodMeta := &transpiler.MethodMetadata{
+				Name:            sm.name,
+				Package:         pkgName,
+				Doc:             docAt(docs, ctx.GetStart()),
+				Pos:             sibPos,
+				ReceiverName:    recvCtx.Identifier().GetText(),
+				PointerReceiver: isPointerReceiver(recvCtx),
+				PtrReceiver:     isPtrReceiver(recvCtx),
+				DefinedIn:       absSibPath,
+			}
+			methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
 
-				sibPos := transpiler.PosFromToken(ctx.Identifier().GetStart())
-				// A method the analyzed file (or an earlier sibling) already
-				// declares on the same type is a duplicate. Without this the
-				// duplicate was silently dropped below — the receiver type's
-				// Methods map keeps whichever definition landed first — and
-				// both definitions still reached the generated Go, where the
-				// Go compiler rejected them with "method already declared".
-				//
-				// Reported only when the original is the file being analyzed:
-				// the caret then lands on real source in the file the
-				// diagnostic is rendered against. A collision between two
-				// siblings is left to the Analyze call for one of those two
-				// files, which sees it as this same main-file case.
-				prev, dup := decls.recordMethod(fullBaseType+"."+methodName, absSibPath, sibPos)
-				if dup && a.paths.sameFile(prev.file, decls.mainFile) {
-					return methodRedefinedError(methodName, baseType, pkgName,
-						prev.pos.Line, prev.pos.Column,
-						sibDisplay, decls.mainFile, sibPos)
-				}
+			recvNames := receiverTypeArgNames(recvCtx.Type_())
+			allTypeParams := sm.typeParamScope(richAST, recvNames, methodMeta.TypeParams)
 
-				methodMeta := &transpiler.MethodMetadata{
-					Name:            methodName,
-					Package:         pkgName,
-					Doc:             docAt(docs, ctx.GetStart()),
-					Pos:             sibPos,
-					ReceiverName:    recvCtx.Identifier().GetText(),
-					PointerReceiver: isPointerReceiver(recvCtx),
-					PtrReceiver:     isPtrReceiver(recvCtx),
-					DefinedIn:       absSibPath,
-				}
-				methodMeta.TypeParams, methodMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
-
-				var typeTypeParams []string
-				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-					typeTypeParams = typeMeta.TypeParams
-				}
-				recvNames := receiverTypeArgNames(recvCtx.Type_())
-				allTypeParams := methodTypeParamScope(recvNames, typeTypeParams, methodMeta.TypeParams)
-
-				methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, allTypeParams)
-				// Mirror the section-2 IsGeneric detection so that sibling-extracted
-				// methods carry the same function-form flag as methods analyzed
-				// directly. Without this, merging a sibling's Analyze result (with
-				// IsGeneric=true) on top of an earlier sibling's result (with
-				// IsGeneric=false from extraction here) would clobber the true
-				// flag and the transpiler would emit method-syntax calls against
-				// a standalone-function definition.
-				if a.causesInstantiationCycle(recvCtx.Type_(), ctx.Signature()) {
-					methodMeta.IsGeneric = true
-				}
-				if ctx.Signature().Parameters() != nil {
-					pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
-					if pList := pCtx.ParameterList(); pList != nil {
-						for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
-							paramCtx := p.(*grammar.ParameterContext)
-							if paramCtx.Type_() != nil {
-								methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
-								methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
-							} else {
-								methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
-							}
-							if paramCtx.Identifier() != nil {
-								methodMeta.ParamNames = append(methodMeta.ParamNames, paramCtx.Identifier().GetText())
-							} else {
-								methodMeta.ParamNames = append(methodMeta.ParamNames, "")
-							}
-							recordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
+			methodMeta.ReturnType, methodMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, allTypeParams)
+			// Mirror the section-2 IsGeneric detection so that sibling-extracted
+			// methods carry the same function-form flag as methods analyzed
+			// directly. Without this, merging a sibling's Analyze result (with
+			// IsGeneric=true) on top of an earlier sibling's result (with
+			// IsGeneric=false from extraction here) would clobber the true
+			// flag and the transpiler would emit method-syntax calls against
+			// a standalone-function definition.
+			if a.causesInstantiationCycle(recvCtx.Type_(), ctx.Signature()) {
+				methodMeta.IsGeneric = true
+			}
+			if ctx.Signature().Parameters() != nil {
+				pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+				if pList := pCtx.ParameterList(); pList != nil {
+					for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+						paramCtx := p.(*grammar.ParameterContext)
+						if paramCtx.Type_() != nil {
+							methodMeta.ParamTypes = append(methodMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, allTypeParams))
+							methodMeta.Variadic = paramCtx.ELLIPSIS() != nil
+						} else {
+							methodMeta.ParamTypes = append(methodMeta.ParamTypes, transpiler.NilType{})
 						}
-					}
-				}
-				decls.recordReceiver(methodMeta, recvNames, fullBaseType)
-
-				if typeMeta, ok := richAST.Types[fullBaseType]; ok {
-					if _, exists := typeMeta.Methods[methodName]; !exists {
-						typeMeta.Methods[methodName] = methodMeta
-					} else if !typeMeta.Methods[methodName].IsGeneric && methodMeta.IsGeneric {
-						// Upgrade IsGeneric=false to true if sibling extraction
-						// detects the instantiation-cycle pattern that section 2
-						// may have missed (e.g. when the receiver type wasn't yet
-						// populated in this file's richAST). IsGeneric is
-						// append-only: once any pass sets it true, later passes
-						// keep it true. Fixes cross-package stdlib generic method
-						// dispatch (Array.ZipWithIndex, Array.Grouped, etc.).
-						typeMeta.Methods[methodName].IsGeneric = true
-					}
-				} else {
-					richAST.Types[fullBaseType] = &transpiler.TypeMetadata{
-						Name:    baseType,
-						Package: pkgName,
-						Methods: map[string]*transpiler.MethodMetadata{methodName: methodMeta},
-						Fields:  make(map[string]transpiler.Type),
-					}
-				}
-			} else {
-				funcName := ctx.Identifier().GetText()
-				fullFuncName := funcName
-				if pkgName != "" && pkgName != "main" && pkgName != "test" {
-					fullFuncName = pkgName + "." + funcName
-				}
-				sibPos := transpiler.PosFromToken(ctx.Identifier().GetStart())
-				// Same rule as for methods above: a top-level function the
-				// analyzed file already declares is a redeclaration, and was
-				// previously dropped here without a word.
-				prev, dup := decls.recordFunc(fullFuncName, absSibPath, sibPos)
-				if dup && a.paths.sameFile(prev.file, decls.mainFile) {
-					return funcRedeclaredError(funcName, pkgName,
-						prev.pos.Line, prev.pos.Column,
-						sibDisplay, decls.mainFile, sibPos)
-				}
-				if _, ok := richAST.Functions[fullFuncName]; !ok {
-					funcMeta := &transpiler.FunctionMetadata{
-						Name:      funcName,
-						Package:   pkgName,
-						Doc:       docAt(docs, ctx.GetStart()),
-						Pos:       sibPos,
-						DefinedIn: absSibPath,
-					}
-					funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
-					funcMeta.ReturnType, funcMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, funcMeta.TypeParams)
-					if ctx.Signature().Parameters() != nil {
-						pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
-						if pList := pCtx.ParameterList(); pList != nil {
-							for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
-								paramCtx := p.(*grammar.ParameterContext)
-								if paramCtx.Type_() != nil {
-									funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
-									funcMeta.Variadic = paramCtx.ELLIPSIS() != nil
-								} else {
-									funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
-								}
-								if paramCtx.Identifier() != nil {
-									funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
-								} else {
-									funcMeta.ParamNames = append(funcMeta.ParamNames, "")
-								}
-								recordParamDefault(&funcMeta.DefaultExprs, i, paramCtx)
-							}
+						if paramCtx.Identifier() != nil {
+							methodMeta.ParamNames = append(methodMeta.ParamNames, paramCtx.Identifier().GetText())
+						} else {
+							methodMeta.ParamNames = append(methodMeta.ParamNames, "")
 						}
+						recordParamDefault(&methodMeta.DefaultExprs, i, paramCtx)
 					}
-					richAST.Functions[fullFuncName] = funcMeta
+				}
+			}
+			sm.add(richAST, methodMeta, recvNames, pkgName, decls)
+			continue
+		}
+
+		sf := siblingFunc{name: ctx.Identifier().GetText(), pos: sibPos}
+		if err := a.checkSiblingFunc(&sf, pkgName, absSibPath, sibDisplay, decls); err != nil {
+			return err
+		}
+		if _, ok := richAST.Functions[sf.fullName]; ok {
+			continue
+		}
+		funcMeta := &transpiler.FunctionMetadata{
+			Name:      sf.name,
+			Package:   pkgName,
+			Doc:       docAt(docs, ctx.GetStart()),
+			Pos:       sibPos,
+			DefinedIn: absSibPath,
+		}
+		funcMeta.TypeParams, funcMeta.TypeParamConstraints = a.declaredTypeParams(ctx.TypeParameters(), pkgName)
+		funcMeta.ReturnType, funcMeta.GoResults = a.signatureResult(ctx.Signature(), pkgName, funcMeta.TypeParams)
+		if ctx.Signature().Parameters() != nil {
+			pCtx := ctx.Signature().Parameters().(*grammar.ParametersContext)
+			if pList := pCtx.ParameterList(); pList != nil {
+				for i, p := range pList.(*grammar.ParameterListContext).AllParameter() {
+					paramCtx := p.(*grammar.ParameterContext)
+					if paramCtx.Type_() != nil {
+						funcMeta.ParamTypes = append(funcMeta.ParamTypes, a.resolveTypeWithParams(galaparser.TypeText(paramCtx.Type_()), pkgName, funcMeta.TypeParams))
+						funcMeta.Variadic = paramCtx.ELLIPSIS() != nil
+					} else {
+						funcMeta.ParamTypes = append(funcMeta.ParamTypes, transpiler.NilType{})
+					}
+					if paramCtx.Identifier() != nil {
+						funcMeta.ParamNames = append(funcMeta.ParamNames, paramCtx.Identifier().GetText())
+					} else {
+						funcMeta.ParamNames = append(funcMeta.ParamNames, "")
+					}
+					recordParamDefault(&funcMeta.DefaultExprs, i, paramCtx)
 				}
 			}
 		}
+		richAST.Functions[sf.fullName] = funcMeta
 	}
 
 	// The sibling's package-level bindings, recorded here rather than by the
 	// caller so they reuse the canonical path and docs map resolved above —
-	// parsedForTree's own note explains why re-deriving them per sibling is worth
+	// cachedForTree's own note explains why re-deriving them per sibling is worth
 	// avoiding.
 	a.extractPackageVals(sibTree, pkgName, richAST, docs, absSibPath)
 	return nil
@@ -4774,10 +4744,22 @@ var _ transpiler.Analyzer = (*galaAnalyzer)(nil)
 // when the same project files were just parsed during sibling discovery,
 // the import-resolution pass does not redo the work).
 func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext, string, error) {
+	entry := a.parseFileEntry(path)
+	if entry == nil {
+		return nil, "", nil
+	}
+	return entry.tree(), entry.pkgName, entry.syntaxErr
+}
+
+// parseFileEntry is parseFileCached's entry for path, the whole parse: nil
+// for a file that cannot be read or has no package clause. A caller that
+// needs more of the parse than its tree takes it from here, with no second
+// cache lookup.
+func (a *galaAnalyzer) parseFileEntry(path string) *parsedFileEntry {
 	canonPath := a.parsedFileCacheKey(path)
 	info, err := os.Stat(canonPath)
 	if err != nil {
-		return nil, "", nil
+		return nil
 	}
 	if a.parsedFileCache != nil {
 		a.parsedFileCacheMu.Lock()
@@ -4785,7 +4767,7 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 		if ok {
 			if entry.mtime.Equal(info.ModTime()) && entry.size == info.Size() {
 				a.parsedFileCacheMu.Unlock()
-				return entry.tree(), entry.pkgName, entry.syntaxErr
+				return entry
 			}
 			delete(a.parsedFileCache, canonPath)
 		}
@@ -4793,31 +4775,37 @@ func (a *galaAnalyzer) parseFileCached(path string) (*grammar.SourceFileContext,
 	}
 	content, err := ioutil.ReadFile(canonPath)
 	if err != nil {
-		return nil, "", nil
+		return nil
 	}
 	parsed := a.parser.ParseFile(string(content))
 	if err := parsed.Err(); err != nil {
-		err = galaerr.WithFilePath(err, path)
-		a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: err, mtime: info.ModTime(), size: info.Size()})
-		return nil, "", err
+		return a.cacheParsedFile(canonPath, &parsedFileEntry{syntaxErr: galaerr.WithFilePath(err, path), mtime: info.ModTime(), size: info.Size()})
 	}
 	otherSF, ok := parsed.Tree.(*grammar.SourceFileContext)
 	if !ok {
-		return nil, "", nil
+		return nil
 	}
 	pkgClause, ok := otherSF.PackageClause().(*grammar.PackageClauseContext)
 	if !ok || pkgClause.Identifier() == nil {
-		return nil, "", nil
+		return nil
 	}
 	pkgName := pkgClause.Identifier().GetText()
-	a.cacheParsedFile(canonPath, &parsedFileEntry{
-		// The tree and doc comments only (see parsedFileEntry.parsed).
-		parsed:  &galaparser.Parsed{Tree: parsed.Tree, Docs: parsed.Docs},
+	// Converted here (Bridged converts), on the goroutine that parsed it
+	// (parseFilesConcurrent), rather than by its first reader: every reader
+	// takes the native tree when the handle bridges, and a converted handle
+	// no longer holds the token stream (see parser.Parsed.Native). A handle
+	// that does not bridge would serve no reader: it is not kept.
+	nf := nativeFileOf(parsed.CleanNative())
+	if !nf.ok() {
+		parsed.Native = nil
+	}
+	return a.cacheParsedFile(canonPath, &parsedFileEntry{
+		parsed:  parsed,
+		nf:      nf,
 		pkgName: pkgName,
 		mtime:   info.ModTime(),
 		size:    info.Size(),
 	})
-	return otherSF, pkgName, nil
 }
 
 // tree is the entry's source-file tree, nil for a file that does not parse.
@@ -4830,14 +4818,21 @@ func (e *parsedFileEntry) tree() *grammar.SourceFileContext {
 }
 
 // cacheParsedFile records a parse result in parsedFileCache, when the analyzer
-// keeps one.
-func (a *galaAnalyzer) cacheParsedFile(canonPath string, entry *parsedFileEntry) {
+// keeps one, and returns the entry the cache holds for the file. That is an
+// entry of the same file version cached meanwhile by another analysis
+// sharing the cache (see ParsedFiles), when there is one, so that every
+// analysis pairs the file's tree with the parse that made it (cachedForTree).
+func (a *galaAnalyzer) cacheParsedFile(canonPath string, entry *parsedFileEntry) *parsedFileEntry {
 	if a.parsedFileCache == nil {
-		return
+		return entry
 	}
 	a.parsedFileCacheMu.Lock()
+	defer a.parsedFileCacheMu.Unlock()
+	if old, ok := a.parsedFileCache[canonPath]; ok && old.mtime.Equal(entry.mtime) && old.size == entry.size {
+		return old
+	}
 	a.parsedFileCache[canonPath] = entry
-	a.parsedFileCacheMu.Unlock()
+	return entry
 }
 
 // docAt returns the doc comment attached to the declaration whose first token is
@@ -4880,24 +4875,25 @@ func addFieldDoc(meta *transpiler.TypeMetadata, fieldName, doc string) {
 	meta.FieldDocs[fieldName] = doc
 }
 
-// parsedForFile returns the parse of `path` (its tree and doc comments), for a
-// caller that holds the matching tree.
+// cachedFile returns the parse of `path` (its tree, doc comments and native
+// tree, see cachedForTree), for a caller that holds the matching tree.
 //
 // Sibling files reach the analyzer as bare trees through three routes — the
 // explicit package-file list, an in-memory sibling-tree cache hit, and a fresh
 // directory scan — and all three go through parseFileCached, which stores the
 // whole parse under the same key. Looking it up by path afterwards keeps one
 // source of truth instead of threading a parallel slice down all three;
-// parsedForTree then checks that what came back belongs to this tree.
-func (a *galaAnalyzer) parsedForFile(path string, tree *grammar.SourceFileContext) *galaparser.Parsed {
+// cachedForTree then checks that what came back belongs to this tree.
+func (a *galaAnalyzer) cachedFile(path string, tree *grammar.SourceFileContext) (*galaparser.Parsed, nativeFile) {
 	if path == "" {
-		return nil
+		return nil, nativeFile{}
 	}
-	return a.parsedForTree(a.parsedFileCacheKey(path), tree)
+	return a.cachedForTree(a.parsedFileCacheKey(path), tree)
 }
 
-// parsedForTree returns the parse cached for canonPath, but only if it is the
-// very parse that produced `tree`.
+// cachedForTree returns the parse cached for canonPath and its native tree,
+// bucketed when it was cached (parsedFileEntry.nf, no tree when it has none),
+// but only if it is the very parse that produced `tree`.
 //
 // Doc keys are parse-local: they mean nothing except against the token stream
 // they were harvested from. Callers hold a tree from one cache
@@ -4911,20 +4907,20 @@ func (a *galaAnalyzer) parsedForFile(path string, tree *grammar.SourceFileContex
 // Taking the absolute path from the caller also matters: sibling extraction runs
 // per file per Analyze, so re-deriving it here turned one filepath.Abs per
 // sibling into two.
-func (a *galaAnalyzer) parsedForTree(canonPath string, tree *grammar.SourceFileContext) *galaparser.Parsed {
+func (a *galaAnalyzer) cachedForTree(canonPath string, tree *grammar.SourceFileContext) (*galaparser.Parsed, nativeFile) {
 	if a.parsedFileCache == nil || canonPath == "" {
-		return nil
+		return nil, nativeFile{}
 	}
 	a.parsedFileCacheMu.Lock()
 	defer a.parsedFileCacheMu.Unlock()
 	if entry, ok := a.parsedFileCache[canonPath]; ok && entry.tree() == tree {
-		return entry.parsed
+		return entry.parsed, entry.nf
 	}
-	return nil
+	return nil, nativeFile{}
 }
 
 // parsedFileCacheKey derives the parsedFileCache key for a path. Writer
-// (parseFileCached) and readers (parsedForTree) must agree exactly: a
+// (parseFileCached) and readers (cachedForTree) must agree exactly: a
 // divergence makes every doc lookup miss silently, since a miss is a legal
 // "undocumented" result.
 func (a *galaAnalyzer) parsedFileCacheKey(path string) string {

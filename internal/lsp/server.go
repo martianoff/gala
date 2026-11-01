@@ -80,17 +80,20 @@ type GalaHandler struct {
 	parseTrees map[string]antlr.Tree
 	// parseNatives is, by URI, the native-tree handle of the parse that gave
 	// parseTrees[URI] (parser.Parsed.CleanNative), nil when there is none.
-	// It converts only when a feature reads the native tree (see
-	// callAtOffset).
+	// The document's analysis converts it (see analyzeClean).
 	parseNatives map[string]*parser.Native
 	parseTexts   map[string]string                       // URI -> the source that produced parseTrees[URI] (may be surgically patched)
-	// antlrTreeOnly keeps every feature on ANTLR's tree: no parse is kept
-	// with its native-tree handle (see nativeOf). onTreeRead, when set, is
-	// told of each read of a document's tree by a feature with a native twin:
-	// which read, and whether it took the native tree. Both are for tests,
-	// which compare the trees' answers.
-	antlrTreeOnly bool
-	onTreeRead    func(what string, onNative bool)
+	// onTreeRead, when set, is told of each read of a document's tree by a
+	// feature with a native twin: which read, and whether it took the native
+	// tree. It is for tests, which compare the trees' answers; to keep a
+	// handler on ANTLR's tree alone, they give it a parser whose parses have
+	// no native-tree handle.
+	onTreeRead  func(what string, onNative bool)
+	// parsedFiles is the parsed-file cache every document's analysis shares:
+	// the parses and native trees of the files on disk that the analyses
+	// read (a package's other files, the files of imported packages), kept
+	// across keystrokes until a file changes (see analyzer.ParsedFiles).
+	parsedFiles *analyzer.ParsedFiles
 	varTypes    map[string]map[string]string            // URI -> (varName -> type) from transpiler
 	lambdaHints map[string][]transpiler.LambdaParamHint // URI -> lambda param hints from transformer
 }
@@ -166,6 +169,7 @@ func NewGalaHandler() *GalaHandler {
 		analysisCancels: make(map[string]context.CancelFunc),
 		parser:          transpiler.NewAntlrGalaParser(),
 		generator:       generator.NewGoCodeGenerator(),
+		parsedFiles:     analyzer.NewParsedFiles(),
 	}
 }
 
@@ -392,7 +396,7 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 		return diagnostics
 	}
 
-	richAST, err := transpiler.Analyze(h.newAnalyzer(filePath, text), tree, docs, filePath)
+	richAST, err := h.analyzeClean(parsed, filePath, text)
 	if err != nil {
 		diagnostics = append(diagnostics, errorsToDiagnostics(err, x, filePath)...)
 		return diagnostics
@@ -432,11 +436,24 @@ func (h *GalaHandler) analyzeFile(uri, filePath, text string) []lsp.Diagnostic {
 	return diagnostics
 }
 
+// analyzeClean analyzes parsed, a parse of text without syntax errors, on its
+// native tree when it has one, as the analyzer reads the other files it
+// takes in.
+func (h *GalaHandler) analyzeClean(parsed *parser.Parsed, filePath, text string) (*transpiler.RichAST, error) {
+	if h.onTreeRead != nil { // Bridged converts: only a test's hook asks first
+		h.noteTreeRead(treeReadAnalysis, parsed.CleanNative().Bridged())
+	}
+	return h.newAnalyzer(filePath, text).AnalyzeParsed(parsed, filePath)
+}
+
 // newAnalyzer builds the analyzer for one document: search paths, Go source
 // directories, and the files of a multi-file `main` package, which the
 // analyzer does not discover on its own (see packageFiles).
 func (h *GalaHandler) newAnalyzer(filePath, text string) transpiler.Analyzer {
 	a := analyzer.NewGalaAnalyzerForLSP(h.parser, h.getSearchPaths(filePath))
+	if s, ok := a.(interface{ SetParsedFiles(*analyzer.ParsedFiles) }); ok {
+		s.SetParsedFiles(h.parsedFiles)
+	}
 	if len(h.goSrcDirs) > 0 {
 		if s, ok := a.(interface{ SetGoSrcDirs(map[string]string) }); ok {
 			s.SetGoSrcDirs(h.goSrcDirs)
@@ -525,6 +542,7 @@ func (h *GalaHandler) tryAnalyzePartial(uri, filePath, text string, tree antlr.T
 	}
 	defer func() { recover() }()
 
+	h.noteTreeRead(treeReadAnalysis, false) // an error-recovered tree is ANTLR's alone
 	richAST, err := transpiler.Analyze(h.newAnalyzer(filePath, text), tree, docs, filePath)
 	if err != nil || richAST == nil {
 		return
@@ -633,13 +651,12 @@ func (h *GalaHandler) ensureAnalysisForSignature(uri string, line, char int) {
 // to their normal "no data" behavior.
 func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 	parsed := h.parser.ParseFile(cleanText)
-	tree, docs, err := parsed.Strict()
-	if err != nil {
+	if parsed.Err() != nil {
 		return
 	}
 
 	filePath := uriToPath(uri)
-	richAST, aerr := transpiler.Analyze(h.newAnalyzer(filePath, cleanText), tree, docs, filePath)
+	richAST, aerr := h.analyzeClean(parsed, filePath, cleanText)
 	if aerr != nil {
 		fmt.Fprintf(os.Stderr, "[%s] analyze failed: %v\n", caller, aerr)
 		return
@@ -688,13 +705,19 @@ func (h *GalaHandler) analyzeAndCache(uri, cleanText, caller string) {
 // transformer writes — a copy, or a per-URI generation — not resurrecting the
 // ordering that crashed the server.
 func (h *GalaHandler) transformAndPublish(uri string, richAST *transpiler.RichAST, parsed *parser.Parsed, text string) (*transpiler.TransformResult, error) {
+	// The transform walks the native tree the analysis converted (see the
+	// transformer's walkSource); the published AST does not keep it.
+	handle := parsed.CleanNative()
+	richAST.Native = handle
 	result, err := transformer.NewGalaASTTransformer().TransformForLSP(richAST)
+	richAST.Native = nil
+	h.noteTreeRead(treeReadTransform, result != nil && result.WalkedNative)
 
 	h.mu.Lock()
 	if h.isOpenLocked(uri) {
 		h.richASTs[uri] = richAST
 		h.parseTrees[uri] = parsed.Tree
-		h.parseNatives[uri] = h.nativeOf(parsed)
+		h.parseNatives[uri] = handle
 		h.parseTexts[uri] = text
 	}
 	h.mu.Unlock()

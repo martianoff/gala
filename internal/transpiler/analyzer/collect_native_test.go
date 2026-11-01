@@ -18,8 +18,8 @@ import (
 )
 
 // parseWithGalop makes tb's parses use galop's parser whatever the build's
-// or environment's default, until tb ends: only its parses come with a
-// native tree, which these tests compare ANTLR's collection to.
+// or environment's default, until tb ends, the parser that makes the native
+// trees these tests compare ANTLR's collection to by default.
 func parseWithGalop(tb testing.TB) {
 	galaparser.RequestEngine(string(galaparser.EngineGalop))
 	tb.Cleanup(func() { galaparser.RequestEngine("") })
@@ -174,8 +174,34 @@ func TestCollectionsAgree(t *testing.T) {
 	p := galaparser.NewAntlrGalaParser()
 	nativeA := newCollectionAnalyzer(t, p, searchPaths)
 	antlrA := newCollectionAnalyzer(t, antlrOnly{p}, searchPaths)
+	// The reads of the files besides the one analyzed: its siblings' and the
+	// files of the packages it imports (the proof the sibling and import reads
+	// took their tree). Each must take the tree its analyzer reads.
+	otherReads := map[string]int{}
+	var subject string
+	checkReads := func(onNative bool) func(treeRead) {
+		return func(r treeRead) {
+			if r.filePath == subject {
+				return
+			}
+			if r.native != onNative {
+				t.Errorf("%s: the read of %s's %s took the native tree: %v, want %v", subject, r.filePath, r.what, r.native, onNative)
+			}
+			if onNative {
+				otherReads[r.what]++
+				if r.antlr != nil {
+					if diff := firstDiff(reflect.ValueOf(r.got), reflect.ValueOf(r.antlr()), "", map[visit]bool{}); diff != "" {
+						t.Errorf("%s: the read of %s's %s differs between the trees at %s", subject, r.filePath, r.what, diff)
+					}
+				}
+			}
+		}
+	}
+	nativeA.onTreeRead, nativeA.onPackageRead = checkReads(true), checkReads(true)
+	antlrA.onTreeRead, antlrA.onPackageRead = checkReads(false), checkReads(false)
 	analyzed, native := 0, 0
 	for _, path := range paths {
+		subject = path
 		text, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -202,7 +228,13 @@ func TestCollectionsAgree(t *testing.T) {
 	if analyzed < 200 || native < analyzed*3/4 {
 		t.Fatalf("analyzed %d sources, %d of them collected on the native tree", analyzed, native)
 	}
-	t.Logf("analyzed %d sources, %d of them collected on the native tree", analyzed, native)
+	t.Logf("analyzed %d sources, %d of them collected on the native tree; reads of the other files: %v", analyzed, native, otherReads)
+	// Every kind of read of a sibling or an imported file was made, often.
+	for _, what := range []string{"imports", "top-level names", "top-level type names", "declarations", "val types", "package clause"} {
+		if otherReads[what] < 20 {
+			t.Errorf("%d native reads of other files' %s", otherReads[what], what)
+		}
+	}
 }
 
 // collectionErrorInputs are sources whose analysis fails in the collection
@@ -844,7 +876,7 @@ func TestValInferenceAgrees(t *testing.T) {
 		sources = append(sources, source{path, text, true})
 	}
 
-	files, inferred, typed := 0, 0, 0
+	files, inferred, typed, otherInferred := 0, 0, 0, 0
 	for _, src := range sources {
 		parsed := a.parser.ParseFile(src.text)
 		if parsed.Err() != nil {
@@ -854,13 +886,23 @@ func TestValInferenceAgrees(t *testing.T) {
 			continue
 		}
 		reported, reportedTyped := 0, 0
+		subjectTree, _ := parsed.Native.Tree()
 		a.onInferInit = func(e native.ExpressionNode, pkgName string, richAST *transpiler.RichAST, got transpiler.Type) {
-			reported++
-			if !got.IsNil() {
-				reportedTyped++
+			// The initializers of the subject are counted; those of its
+			// siblings and of the files of its imports, inferred on their
+			// own native trees, are compared too.
+			handle := parsed.Native
+			if e.Tree() == subjectTree {
+				reported++
+				if !got.IsNil() {
+					reportedTyped++
+				}
+			} else {
+				handle = cachedHandleOf(a, e.GalaNodeRef)
+				otherInferred++
 			}
 			pos := nativePos(e.GalaNodeRef)
-			ctx, ok := parsed.Native.Ctx(e.GalaNodeRef).(*grammar.ExpressionContext)
+			ctx, ok := handle.Ctx(e.GalaNodeRef).(*grammar.ExpressionContext)
 			if !ok {
 				t.Errorf("%s:%d:%d: the initializer has no expression context", src.path, pos.Line, pos.Column)
 				return
@@ -890,10 +932,23 @@ func TestValInferenceAgrees(t *testing.T) {
 		}
 		t.Errorf("%s: %d initializers inferred on the native tree, want %d (collected natively: %v)", src.path, reported, want, an.trace.native)
 	}
-	if files < 200 || inferred < 80 || typed < inferred/2 {
-		t.Fatalf("%d files, %d initializers inferred on the native tree, %d of them typed", files, inferred, typed)
+	if files < 200 || inferred < 80 || typed < inferred/2 || otherInferred < 80 {
+		t.Fatalf("%d files, %d initializers inferred on the native tree, %d of them typed, %d of other files", files, inferred, typed, otherInferred)
 	}
-	t.Logf("%d files, %d initializers inferred on the native tree, %d of them typed", files, inferred, typed)
+	t.Logf("%d files, %d initializers inferred on the native tree, %d of them typed, %d of other files", files, inferred, typed, otherInferred)
+}
+
+// cachedHandleOf is the native-tree handle a's parsed-file cache holds for
+// the tree of n, or nil.
+func cachedHandleOf(a *galaAnalyzer, n native.GalaNodeRef) *galaparser.Native {
+	a.parsedFileCacheMu.Lock()
+	defer a.parsedFileCacheMu.Unlock()
+	for _, e := range a.parsedFileCache {
+		if tree, err := e.parsed.CleanNative().Tree(); err == nil && tree == n.Tree() {
+			return e.parsed.Native
+		}
+	}
+	return nil
 }
 
 // visit is a pair of pointers firstDiff has compared, or is comparing.

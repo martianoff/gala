@@ -26,21 +26,28 @@ import (
 // when set, is told of it, with a way to make it on ANTLR's tree in the same
 // state.
 func readTree[T any](a *galaAnalyzer, filePath, what string, nf nativeFile, onNative func(native.GalaNodeRef) T, onANTLR func() T) T {
+	return readOn(a.onTreeRead, filePath, what, nf, onNative, onANTLR)
+}
+
+// readOn is readTree telling hook, when set, of the read.
+func readOn[T any](hook func(treeRead), filePath, what string, nf nativeFile, onNative func(native.GalaNodeRef) T, onANTLR func() T) T {
 	var got T
 	if nf.ok() {
 		got = onNative(nf.root.GalaNodeRef)
 	} else {
 		got = onANTLR()
 	}
-	if a.onTreeRead != nil {
-		a.onTreeRead(treeRead{filePath: filePath, what: what, native: nf.ok(), got: got, antlr: func() any { return onANTLR() }})
+	if hook != nil {
+		hook(treeRead{filePath: filePath, what: what, native: nf.ok(), got: got, antlr: func() any { return onANTLR() }})
 	}
 	return got
 }
 
 // treeRead is what readTree tells galaAnalyzer.onTreeRead about a read: the
 // file, the read, whether it took the native tree, what it gave, and how to
-// make it again, in the same state, on ANTLR's tree.
+// make it again, in the same state, on ANTLR's tree. A read that records
+// metadata cannot be made again: it has no got and no antlr (see
+// notePackageRead).
 type treeRead struct {
 	filePath, what string
 	native         bool
@@ -110,6 +117,21 @@ func ownNamesNative(root native.GalaNodeRef) ownNames {
 	o := newOwnNames()
 	forEachTopLevelNameNative(root, topLevelNameRecorder(o.types, o.methods))
 	return o
+}
+
+// typeNamesOf is ownNamesOf sf's names without its methods: each name, and
+// whether it names a type.
+func typeNamesOf(sf *grammar.SourceFileContext) map[string]bool {
+	names := make(map[string]bool)
+	collectTopLevelDeclaredNames(sf, names, nil)
+	return names
+}
+
+// typeNamesNative is typeNamesOf root.
+func typeNamesNative(root native.GalaNodeRef) map[string]bool {
+	names := make(map[string]bool)
+	forEachTopLevelNameNative(root, topLevelNameRecorder(names, nil))
+	return names
 }
 
 // checkDotImportCollisionsNative is checkDotImportCollisions of root.
