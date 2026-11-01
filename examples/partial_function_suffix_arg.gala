@@ -1,0 +1,19 @@
+package main
+
+// show takes the Option a partial function returns, not the partial function.
+func show(o Option[int]) string = o match {
+    case Some(x) => s"got $x"
+    case None() => "none"
+}
+
+// describe takes any value, so it must see the applied result.
+func describe[T any](v T) string = s"$v"
+
+func main() {
+    // Applying a partial function in an argument passes its Option result.
+    Println(show({ case n: int if n > 0 => n * 2 }(3)))
+    Println(show({ case n: int if n > 0 => n * 2 }(-1)))
+    Println(describe({ case n: int => n + 1 }(4)))
+    // A member on the result is applied too.
+    Println({ case n: int => n * 10 }(2).GetOrElse(0))
+}

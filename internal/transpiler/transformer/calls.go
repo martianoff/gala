@@ -704,7 +704,7 @@ func (t *galaASTTransformer) tryTransformGenericMethodAsFunction(
 			// Also skip placeholder-lambda expressions (L4): they contain `_`
 			// identifiers that only make sense once rewritten as a lambda,
 			// which happens later in transformArgument.
-			if v.lambda.ok() || t.lambdaIn(v.expr).ok() || t.partialIn(v.expr).ok() {
+			if v.lambda.ok() || t.lambdaIn(v.expr).ok() || t.barePartial(v.expr).ok() {
 				continue
 			}
 			if countPlaceholders(v.expr) > 0 {
@@ -2049,7 +2049,7 @@ func (t *galaASTTransformer) lowerFunctionArg(
 // then bind from the value it produces.
 func (t *galaASTTransformer) isPlaceholderLambdaArg(e exprSrc, slotType transpiler.Type) bool {
 	return e.ok() && t.resolveTranspilerTypeAsFuncType(slotType) != nil && countPlaceholders(e) > 0 &&
-		!t.partialIn(e).ok() && !t.lambdaIn(e).ok()
+		!t.barePartial(e).ok() && !t.lambdaIn(e).ok()
 }
 
 // resolveNamedArgExpectedFuncType looks up the expected type for a named
@@ -4649,8 +4649,9 @@ func (t *galaASTTransformer) transformArgument(e exprSrc, s slot, strict bool) (
 		}
 	}
 	expectedType := s.typ
-	// Try to find a partial function literal in this expression
-	if pf := t.partialIn(e); pf.ok() {
+	// A partial function literal standing alone lowers against the slot; one
+	// with a suffix applied (`{ case ... }(x)`) is an ordinary expression.
+	if pf := t.barePartial(e); pf.ok() {
 		return t.transformPartialFunctionLiteral(pf, slot{typ: funcSlot, open: s.open})
 	}
 

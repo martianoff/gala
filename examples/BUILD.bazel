@@ -1325,6 +1325,12 @@ gala_exec_test(
 )
 
 gala_exec_test(
+    name = "partial_function_suffix_arg",
+    src = "partial_function_suffix_arg.gala",
+    expected = "partial_function_suffix_arg.out",
+)
+
+gala_exec_test(
     name = "pf_repro",
     src = "pf_repro.gala",
     expected = "pf_repro.out",

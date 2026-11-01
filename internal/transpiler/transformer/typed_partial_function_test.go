@@ -100,3 +100,41 @@ func TestTypedPartialFunctionQualifiedStd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, got, "func(_pf_arg int) std.Option[int] {")
 }
+
+// TestPartialFunctionWithSuffixArgument covers a partial-function literal
+// with a suffix applied to it, passed as a call argument: the argument is the
+// applied result, not the literal, so the suffix must survive lowering.
+func TestPartialFunctionWithSuffixArgument(t *testing.T) {
+	trans := newTranspiler()
+	const decls = "package main\n\n" +
+		"func show(o Option[int]) string = o.Map((x) => s\"got $x\").GetOrElse(\"none\")\n\n" +
+		"func describe[T any](v T) string = s\"$v\"\n\n"
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "call suffix against a concrete slot",
+			body: "func main() {\n    Println(show({ case n: int => n * 2 }(3)))\n}",
+			want: "}(3))",
+		},
+		{
+			name: "call suffix against a generic slot",
+			body: "func main() {\n    Println(describe({ case n: int => n + 1 }(4)))\n}",
+			want: "}(4))",
+		},
+		{
+			name: "member suffix after the call",
+			body: "func main() {\n    Println({ case n: int => n * 10 }(2).GetOrElse(0))\n}",
+			want: "}(2).GetOrElse(0)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := trans.Transpile(decls+tt.body+"\n", "")
+			require.NoError(t, err)
+			assert.Contains(t, got, tt.want)
+		})
+	}
+}
