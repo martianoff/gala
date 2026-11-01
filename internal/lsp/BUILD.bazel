@@ -118,6 +118,7 @@ go_test(
         "//examples:all_gala_sources",
         "//go_interop:types.go",
         "//std:gala_sources",
+        "testdata/handler_answers.golden",
     ],
     embed = [":lsp"],
     tags = ["no-sandbox"],
