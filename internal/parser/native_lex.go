@@ -3,6 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"unicode/utf8"
 
 	"martianoff/gala/galaerr"
 	"martianoff/gala/internal/parser/native"
@@ -49,11 +50,21 @@ func byteAt(src string, i int) int {
 // ANTLR counts them; line <= 0 starts at 1:0, as seedLexer does) and applies
 // the line-break rule. A leading UTF-8 BOM is dropped first, as ParseFile and
 // VisitTokens drop it, so the tokens index the source without it (ts.Src).
+// Invalid UTF-8 is read as ANTLR's input stream reads it: each byte that is
+// not part of a valid encoding is U+FFFD, so token text, doc comments and
+// columns are ANTLR's. ts.Src is then that decoded text.
 func lexNative(src string, line, col int) *native.GalaTokens {
 	if line <= 0 {
 		line, col = 1, 0
 	}
-	ts := native.GalaLexAt(galaerr.StripBOM(src), line, col)
+	src = galaerr.StripBOM(src)
+	if !utf8.ValidString(src) {
+		// A Go string-to-rune conversion turns each invalid byte into
+		// U+FFFD, as ANTLR's NewInputStream does. galop's native lexer
+		// keeps the raw byte in token text (martianoff/galop#45).
+		src = string([]rune(src))
+	}
+	ts := native.GalaLexAt(src, line, col)
 	RetypeNewlines(ts)
 	return ts
 }

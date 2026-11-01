@@ -3,6 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"os"
 	"runtime"
@@ -121,15 +122,20 @@ func firstTokenDiff(want, got []string) string {
 }
 
 // corpusInputs is every staged source, two broken variants of each (lexical
-// errors, unbalanced brackets), every 15th with CRLF line ends, and the
-// position inputs.
+// errors, unbalanced brackets, invalid UTF-8 where a cut splits a multibyte
+// character), about one in 15 with CRLF line ends, and the position inputs.
+// Each file's variants are drawn from the file's own text, so they are the
+// same whichever files a test lane stages.
 func corpusInputs(t *testing.T) []string {
 	t.Helper()
-	r := rand.New(rand.NewSource(3))
 	inputs := slices.Clone(positionInputs)
-	for n, src := range sourceTexts(t) {
+	for _, src := range sourceTexts(t) {
+		h := fnv.New64a()
+		h.Write([]byte(src))
+		seed := h.Sum64()
+		r := rand.New(rand.NewSource(int64(seed)))
 		inputs = append(inputs, src, breakSource(r, src), breakSource(r, src))
-		if n%15 == 0 {
+		if seed%15 == 0 {
 			inputs = append(inputs, strings.ReplaceAll(src, "\n", "\r\n"))
 		}
 	}
@@ -194,6 +200,36 @@ func TestNativeLexMatchesANTLR(t *testing.T) {
 		t.Errorf("only %d tokens re-typed and %d doc comments over the corpus", retyped, documented)
 	}
 	t.Logf("%d re-typed tokens, %d doc comments", retyped, documented)
+}
+
+// TestNativeLexInvalidUTF8: a byte that is not valid UTF-8, in a comment, a
+// doc comment, a string or an identifier, lexes as ANTLR lexes it, as U+FFFD:
+// the same token text, columns and doc comments.
+func TestNativeLexInvalidUTF8(t *testing.T) {
+	for _, src := range []string{
+		"package main\n\n// Two placeho\x94 sum via FoldLeft.\nfunc f() int = 1\n",
+		"package main\n\n/* surface\x94 a\n   successful */\nval x = 1 // trailing \xff\xfe\n",
+		"package main\n\nval s = \"a\x94b\" + `c\xe2\x82d`\n",
+		"package main\n\nval a\x94b = 1\nval ✓\x94 = 2\n",
+		"package main\n\n// cut at the end \xe2\x82",
+		"\xef\xbb\xbfpackage main\n\n// after a BOM \x94\nval x = 1\n",
+	} {
+		want, stream := antlrLex(t, galaerr.StripBOM(src), 0, 0)
+		ts := lexNative(src, 0, 0)
+		if d := firstTokenDiff(want, printNative(ts)); d != "" {
+			t.Errorf("%q: %s", src, d)
+		}
+		wantDocs, gotDocs := extractDocComments(stream.GetAllTokens()), nativeDocComments(ts)
+		if fmt.Sprint(wantDocs) != fmt.Sprint(gotDocs) {
+			t.Errorf("%q: doc comments differ\nANTLR:  %q\nnative: %q", src, wantDocs, gotDocs)
+		}
+	}
+	// The same holds for an expression lexed at an offset.
+	for _, expr := range []string{"\"a\x94b\" + c", "f(x) /* \x94 */ + 1"} {
+		if d := firstTokenDiff(antlrTokens(t, expr, 4, 9), nativeTokens(expr, 4, 9)); d != "" {
+			t.Errorf("%q at 4:9: %s", expr, d)
+		}
+	}
 }
 
 // TestRetypeNewlinesCases lexes the sources of newline_test.go's line-break
